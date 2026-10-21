@@ -187,7 +187,7 @@ The architect checked these closed forms with `sympy` and 30-digit decimals in a
 No test fails for speed. A benchmark target measures and prints:
 
 1. time of each property against requested accuracy (`10^-6` to `10^-30`) for each primitive and the bodies of cases 7 to 13;
-2. the largest working precision and the work units used;
+2. the `Decider` counters each call adds (`DecisionStats`, including its `max_bits`), the wall time, and the width of every enclosure returned. The precision and `Ball` work of measurement's own integration are not reached through the `Decider`, so no public interface can observe them; the benchmark records them as not observable until an observation interface exists;
 3. time for the results of piece 5's first-milestone cases, once they exist.
 
 The numbers are written to the benchmark output so later runs can be compared.

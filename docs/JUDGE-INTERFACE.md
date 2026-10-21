@@ -81,6 +81,7 @@ Every surface of an operand is parametrised in that operand's local frame, with 
 ```
 
 `op` is `unite`, `subtract` or `intersect`. `args` names two operands or earlier steps. Chains are written as several steps; `result` names the last.
+The two names may be the same (`["a", "a"]`). With `X` the body they name, `X ∪ X` and `X ∩ X` are `X`, and `X − X` is empty, as the regularised set operations give. The step makes no decision, and its result carries `X`'s marks once.
 
 ### Measure
 

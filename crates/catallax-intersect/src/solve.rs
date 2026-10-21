@@ -1,7 +1,11 @@
 use crate::math::*;
 use catallax_numbers::{Decider, MPoly, Outcome, Rational, Real, Refusal, UPoly};
 use catallax_shapes::Point3;
-use std::collections::{BTreeMap, VecDeque};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
 // Lexicographic elimination order y > z > t. The separating coordinate is
 // t = x + a*y + b*z. All reductions are over the exact rational field.
@@ -134,7 +138,42 @@ fn reduce(mut p: P, basis: &[P]) -> P {
     }
     remainder
 }
-fn groebner(generators: Vec<P>) -> Vec<P> {
+struct CachedBasis {
+    generators: Vec<P>,
+    basis: Arc<[P]>,
+}
+
+thread_local! {
+    // Basis reduction is pure rational arithmetic. Ordered polynomial values
+    // keep independent stores and different shears distinct.
+    static BASES: RefCell<VecDeque<CachedBasis>> = const { RefCell::new(VecDeque::new()) };
+}
+
+fn groebner(generators: Vec<P>) -> Arc<[P]> {
+    if let Some(basis) = BASES.with(|bases| {
+        bases
+            .borrow()
+            .iter()
+            .find(|entry| entry.generators == generators)
+            .map(|entry| entry.basis.clone())
+    }) {
+        return basis;
+    }
+    let basis: Arc<[P]> = uncached_groebner(generators.clone()).into();
+    BASES.with(|bases| {
+        let mut bases = bases.borrow_mut();
+        if bases.len() == 32 {
+            bases.pop_front();
+        }
+        bases.push_back(CachedBasis {
+            generators,
+            basis: basis.clone(),
+        });
+    });
+    basis
+}
+
+fn uncached_groebner(generators: Vec<P>) -> Vec<P> {
     let mut basis: Vec<P> = vec![];
     let mut pairs = VecDeque::new();
     for p in generators {

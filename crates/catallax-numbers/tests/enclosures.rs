@@ -153,6 +153,29 @@ blind_test!(ball_arithmetic_encloses_every_interval_sign_pair, {
 });
 
 #[test]
+fn ball_construction_preserves_signed_ties_and_exact_residuals() {
+    for (value, precision, midpoint, radius) in [
+        ("0", 0, "0", "0"),
+        ("3", 0, "4", "1"),
+        ("-3", 0, "-2", "1"),
+        ("3/2", 1, "2", "1/2"),
+        ("-3/2", 1, "-1", "1/2"),
+        ("7/4", 2, "2", "1/4"),
+        ("-7/4", 2, "-3/2", "1/4"),
+        ("9/8", 3, "5/4", "1/8"),
+        ("-9/8", 3, "-1", "1/8"),
+        ("1/3", 3, "5/16", "3/128"),
+        ("-1/3", 3, "-5/16", "3/128"),
+    ] {
+        let input = r(value);
+        let ball = Ball::from_rational(&input, precision);
+        assert_eq!(ball.mid(), r(midpoint), "{value} at {precision} bits");
+        assert_eq!(ball.rad(), r(radius), "{value} at {precision} bits");
+        ball_contains(&ball, &oq(&input));
+    }
+}
+
+#[test]
 fn ball_alignment_handles_signed_exponent_gaps_and_exact_cancellation() {
     for precision in [1, 53, 1024] {
         for left_power in [-257, -1, 0, 1, 257] {

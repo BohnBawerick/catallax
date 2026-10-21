@@ -25,6 +25,10 @@ impl Binary {
         Self { mantissa, exponent }
     }
 
+    pub(super) fn from_integer(value: Integer) -> Self {
+        Self::new(value, 0)
+    }
+
     pub(super) fn from_rational(value: Rational) -> Self {
         let power = value.d.bit_length() - 1;
         debug_assert_eq!(value.d.0.trailing_zeros(), Some(power));

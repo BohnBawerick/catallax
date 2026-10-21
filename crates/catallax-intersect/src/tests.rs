@@ -96,6 +96,29 @@ fn rational_configuration_fields_and_no_decisions() {
     assert!(g.side_of(tilted, &vertex, &mut d).is_coincident());
 }
 #[test]
+fn surface_definitions_and_argument_order_survive_repeated_queries() {
+    // Every fresh store reuses the same handles. Different radii, centres and
+    // argument orders must still give their own exact oriented circle.
+    for offset in (0..40).chain([0, 17, 39]) {
+        let mut g = GeomStore::new();
+        let mut d = dec();
+        let radius = 5 + offset % 3;
+        let a = sphere(&mut g, p(offset, 0, 0), radius);
+        let b = sphere(&mut g, p(offset + 6, 0, 0), radius);
+        for (left, right, direction) in [(a, b, 6), (b, a, -6), (a, b, 6)] {
+            let c = curve(&components(&mut g, left, right, &mut d)[0]);
+            let Curve::Circle(circle) = g.curve(c) else {
+                panic!("sphere section must be a rational circle");
+            };
+            assert_eq!(circle.center, p(offset + 3, 0, 0));
+            assert_eq!(circle.radius_sq, r(radius * radius - 9));
+            assert_eq!(circle.normal, v(direction, 0, 0));
+            assert_eq!(circle.ref_dir, v(0, 0, direction));
+        }
+    }
+}
+
+#[test]
 fn irrational_lines_and_circles_keep_exact_definitions() {
     let mut g = GeomStore::new();
     let mut d = dec();

@@ -42,7 +42,7 @@ impl Real {
     /// Exact rational leaf.
     pub fn from_rational(r: Rational) -> Self {
         let approx = Interval::from_rational(&r);
-        Self::make(Expr::Rational(r.clone()), approx, None, Some(r), true)
+        Self::make(Expr::Rational(r.clone()), approx, || None, Some(r), true)
     }
     /// Exact integer leaf.
     pub fn from_i64(v: i64) -> Self {
@@ -52,7 +52,7 @@ impl Real {
     pub fn from_algebraic(a: Algebraic) -> Self {
         let (lo, hi) = a.isolating_interval();
         let approx = Interval::from_rational(&lo).hull(&Interval::from_rational(&hi));
-        let coarse = Some(Ball::bounds(lo, hi, 1));
+        let coarse = || Some(Ball::bounds(lo, hi, 1));
         let rational = a.as_rational().cloned();
         Self::make(Expr::Algebraic(a), approx, coarse, rational, true)
     }
@@ -65,7 +65,7 @@ impl Real {
         Self::make(
             Expr::Coordinate(Arc::new(root.clone()), axis),
             approx,
-            Some(Ball::bounds(lo, hi, 1)),
+            || Some(Ball::bounds(lo, hi, 1)),
             None,
             true,
         )
@@ -76,7 +76,7 @@ impl Real {
         Self::make(
             Expr::Sqrt(self.clone()),
             approx,
-            self.node.coarse.as_ref().and_then(Ball::sqrt),
+            || self.node.coarse.as_ref().and_then(Ball::sqrt),
             None,
             self.node.fast_defined && self.node.approx.lo() >= 0.0,
         )
@@ -86,7 +86,7 @@ impl Real {
         Self::make(
             Expr::Square(self.clone()),
             self.node.approx.square(),
-            self.node.coarse.as_ref().map(Ball::square),
+            || self.node.coarse.as_ref().map(Ball::square),
             self.node.rational.as_ref().map(|r| r * r),
             self.node.fast_defined,
         )
@@ -123,7 +123,7 @@ impl Real {
         Self::make(
             Expr::Pow(self.clone(), exp),
             r,
-            self.node.coarse.as_ref().map(|b| b.pow_u32(exp)),
+            || self.node.coarse.as_ref().map(|b| b.pow_u32(exp)),
             rational,
             self.node.fast_defined,
         )
@@ -146,14 +146,14 @@ impl Real {
     fn make(
         expr: Expr,
         approx: Interval,
-        coarse: Option<Ball>,
+        coarse: impl FnOnce() -> Option<Ball>,
         rational: Option<Rational>,
         fast_defined: bool,
     ) -> Self {
         let coarse = rational
             .as_ref()
             .map(|r| Ball::from_rational(r, 1))
-            .or(coarse)
+            .or_else(coarse)
             .or_else(|| {
                 if fast_defined && approx.is_finite() {
                     Some(Ball::bounds(
@@ -176,12 +176,13 @@ impl Real {
         }
     }
     fn add(&self, rhs: &Self) -> Self {
-        let coarse = self
-            .node
-            .coarse
-            .as_ref()
-            .zip(rhs.node.coarse.as_ref())
-            .map(|(a, b)| a + b);
+        let coarse = || {
+            self.node
+                .coarse
+                .as_ref()
+                .zip(rhs.node.coarse.as_ref())
+                .map(|(a, b)| a + b)
+        };
         let rational = self
             .node
             .rational
@@ -197,12 +198,13 @@ impl Real {
         )
     }
     fn sub(&self, rhs: &Self) -> Self {
-        let coarse = self
-            .node
-            .coarse
-            .as_ref()
-            .zip(rhs.node.coarse.as_ref())
-            .map(|(a, b)| a - b);
+        let coarse = || {
+            self.node
+                .coarse
+                .as_ref()
+                .zip(rhs.node.coarse.as_ref())
+                .map(|(a, b)| a - b)
+        };
         let rational = self
             .node
             .rational
@@ -218,12 +220,13 @@ impl Real {
         )
     }
     fn mul(&self, rhs: &Self) -> Self {
-        let coarse = self
-            .node
-            .coarse
-            .as_ref()
-            .zip(rhs.node.coarse.as_ref())
-            .map(|(a, b)| a * b);
+        let coarse = || {
+            self.node
+                .coarse
+                .as_ref()
+                .zip(rhs.node.coarse.as_ref())
+                .map(|(a, b)| a * b)
+        };
         let rational = self
             .node
             .rational
@@ -239,12 +242,13 @@ impl Real {
         )
     }
     fn div(&self, rhs: &Self) -> Self {
-        let coarse = self
-            .node
-            .coarse
-            .as_ref()
-            .zip(rhs.node.coarse.as_ref())
-            .and_then(|(a, b)| a.checked_div(b));
+        let coarse = || {
+            self.node
+                .coarse
+                .as_ref()
+                .zip(rhs.node.coarse.as_ref())
+                .and_then(|(a, b)| a.checked_div(b))
+        };
         let rational = self
             .node
             .rational
@@ -263,7 +267,7 @@ impl Real {
         Self::make(
             Expr::Neg(self.clone()),
             -self.approx(),
-            self.node.coarse.as_ref().map(|b| -b),
+            || self.node.coarse.as_ref().map(|b| -b),
             self.node.rational.as_ref().map(|r| -r),
             self.node.fast_defined,
         )

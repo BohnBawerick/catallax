@@ -238,12 +238,29 @@ fn jets<S: Scalar>(
             }
         }
         Node::Mul(a, b) => {
+            let square = Arc::ptr_eq(&a.0, &b.0);
             let a = jets(a, t, n, p, dec, cache)?;
             let b = jets(b, t, n, p, dec, cache)?;
-            for k in 0..=n {
-                for i in 0..=k {
+            let a_order = a.iter().rposition(|v| !v.is_zero()).unwrap_or(0);
+            let b_order = b.iter().rposition(|v| !v.is_zero()).unwrap_or(0);
+            let mut products = if square {
+                vec![None; a_order + 1]
+            } else {
+                Vec::new()
+            };
+            for k in 0..=a_order.saturating_add(b_order).min(n) {
+                for i in k.saturating_sub(b_order)..=k.min(a_order) {
                     check_deadline(dec)?;
-                    if !a[i].is_zero() && !b[k - i].is_zero() {
+                    if square {
+                        let index = i.min(k - i);
+                        if i == index {
+                            products[index] = (!a[i].is_zero() && !a[k - i].is_zero())
+                                .then(|| a[i].times(&a[k - i]));
+                        }
+                        if let Some(product) = &products[i.min(k - i)] {
+                            out[k] = out[k].plus(product);
+                        }
+                    } else if !a[i].is_zero() && !b[k - i].is_zero() {
                         out[k] = out[k].plus(&a[i].times(&b[k - i]));
                     }
                 }
@@ -253,9 +270,10 @@ fn jets<S: Scalar>(
             let a = jets(a, t, n, p, dec, cache)?;
             let b = jets(b, t, n, p, dec, cache)?;
             let inverse = S::integer(1, p).divide(&b[0]).ok_or(JetError::Split)?;
+            let order = b.iter().rposition(|v| !v.is_zero()).unwrap_or(0);
             for k in 0..=n {
                 let mut v = a[k].clone();
-                for i in 1..=k {
+                for i in 1..=k.min(order) {
                     check_deadline(dec)?;
                     if !b[i].is_zero() && !out[k - i].is_zero() {
                         v = v.minus(&b[i].times(&out[k - i]));
@@ -276,12 +294,22 @@ fn jets<S: Scalar>(
                         .ok_or(JetError::Split)?,
                 )
             };
+            let mut products = Vec::with_capacity(n / 2);
             for k in 1..=n {
                 let mut v = a[k].clone();
+                products.clear();
                 for i in 1..k {
                     check_deadline(dec)?;
-                    if !out[i].is_zero() && !out[k - i].is_zero() {
-                        v = v.minus(&out[i].times(&out[k - i]));
+                    if i <= k / 2 {
+                        products.push(
+                            (!out[i].is_zero() && !out[k - i].is_zero())
+                                .then(|| out[i].times(&out[k - i])),
+                        );
+                    }
+                    // Reuse each symmetric product, but retain every
+                    // subtraction in its original order and precision.
+                    if let Some(product) = &products[i.min(k - i) - 1] {
+                        v = v.minus(product);
                     }
                 }
                 out[k] = if v.is_zero() {

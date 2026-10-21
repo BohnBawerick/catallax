@@ -305,31 +305,27 @@ blind_test!(case_33_own_surfaces_are_fact_settled_even_after_deadline, {
         }
     }
 });
-blind_test!(
-    #[ignore = "independent tilted-cylinder witness same_point at scale 1e-14 exhausts the default work budget at 8192 bits; zero proof remains exact"]
-    cases_44_45_hits_scale_and_placement,
-    {
-        let fixtures = hits();
-        for exponent in -30..=30 {
-            for c in &fixtures {
-                check(
-                    c,
-                    &n(10).pow(exponent).unwrap(),
-                    &Pose::identity(),
-                    Decider::default(),
-                    Mode::Exact,
-                );
-            }
-        }
-        let mut rng = Rng(0x043245);
-        for _ in 0..20 {
-            let pose = rng.pose();
-            for c in &fixtures {
-                check(c, &n(1), &pose, Decider::default(), Mode::Exact);
-            }
+blind_test!(cases_44_45_hits_scale_and_placement, {
+    let fixtures = hits();
+    for exponent in -30..=30 {
+        for c in &fixtures {
+            check(
+                c,
+                &n(10).pow(exponent).unwrap(),
+                &Pose::identity(),
+                Decider::default(),
+                Mode::Exact,
+            );
         }
     }
-);
+    let mut rng = Rng(0x043245);
+    for _ in 0..20 {
+        let pose = rng.pose();
+        for c in &fixtures {
+            check(c, &n(1), &pose, Decider::default(), Mode::Exact);
+        }
+    }
+});
 blind_test!(case_46_hit_determinism, {
     for case in hits() {
         let mut base = GeomStore::new();

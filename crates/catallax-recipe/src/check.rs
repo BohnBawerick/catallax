@@ -259,6 +259,31 @@ impl Ctx<'_> {
         };
         use Operation as O;
         match (&step.op, role) {
+            (O::Block { .. } | O::Cylinder { .. }, Role::Start | Role::End) => Ok(()),
+            (O::Cone { base_radius, .. }, Role::Start)
+                if base_radius.value().sign() == catallax_numbers::Sign::Positive =>
+            {
+                Ok(())
+            }
+            (O::Cone { top_radius, .. }, Role::End)
+                if top_radius.value().sign() == catallax_numbers::Sign::Positive =>
+            {
+                Ok(())
+            }
+            (
+                O::Block { .. },
+                Role::Side {
+                    segment,
+                    path: None,
+                },
+            ) if matches!(segment.as_str(), "x_min" | "x_max" | "y_min" | "y_max") => Ok(()),
+            (
+                O::Cylinder { .. } | O::Sphere { .. } | O::Cone { .. } | O::Torus { .. },
+                Role::Side {
+                    segment,
+                    path: None,
+                },
+            ) if segment.as_str() == "wall" => Ok(()),
             (
                 O::Extrude { .. } | O::Revolve { .. } | O::Sweep { .. } | O::Loft { .. },
                 Role::Start | Role::End,

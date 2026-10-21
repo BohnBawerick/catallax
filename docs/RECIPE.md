@@ -1,10 +1,10 @@
 # Catallax recipe language
 
-Version 1, format `catallax-recipe/1`. [PRD.md](PRD.md) sections 2, 4 and 10 step 3 ask for this document.
+Version 2, format `catallax-recipe/2`. [PRD.md](PRD.md) sections 2, 4 and 10 step 3 ask for this document.
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
-The crate `catallax-recipe` holds the data model: the types, their canonical JSON text and the checks that need no geometry. Nothing evaluates a recipe yet. No kernel implements an operation from this document, and neither kernel reports names yet.
+The crate `catallax-recipe` holds the data model: the types, their canonical JSON text and the checks that need no geometry. `catallax-field` evaluates the stock solids of section 4.0 and booleans, with recipe-named supporting faces and certified queries described in [FIELD.md](FIELD.md). Other recipe operations and B-rep recipe evaluation remain unimplemented.
 
 The exchange contract in [JUDGE-INTERFACE.md](JUDGE-INTERFACE.md) is unchanged. Its question format stays the way the independent tester talks to the B-rep half. The recipe language sits beside it and does not replace it.
 
@@ -144,8 +144,8 @@ Each operation's section lists the roles it makes. All of them:
 
 | Role | Made by | Fields |
 |---|---|---|
-| `start`, `end` | extrude, revolve, sweep, loft | none |
-| `side` | extrude, revolve, sweep, loft | `segment`; for a sweep also `path` |
+| `start`, `end` | block, cylinder, cone, extrude, revolve, sweep, loft | none |
+| `side` | stock solids, extrude, revolve, sweep, loft | `segment`; a fixed segment id for stock solids; for a sweep also `path` |
 | `hole` | hole | `at` (placement id), `part` |
 | `blend` | fillet | `edge` (edge name) |
 | `bevel` | chamfer | `edge` |
@@ -192,7 +192,7 @@ An edge lies between two faces. Its **edge name** is the pair of the first origi
                { "step": "base", "role": { "side": { "segment": "top" } } } ] }
 ```
 
-A **vertex name** lists the first origin of each face that meets at the vertex, in canonical order, at least two of them.
+A **vertex name** lists the first origin of each face that meets at the vertex, in canonical order. Ordinary vertices have at least two origins. A singular vertex such as a cone apex has one, the wall's origin. The list is never empty and never repeats an origin.
 
 Edge and vertex names appear inside roles: a fillet names its blend face by the edge it rounds. The edge or vertex they name is on the step's input body.
 
@@ -261,6 +261,56 @@ Each kernel reports, for every face of every body it builds, its origin set. In 
 ## 4. Operations
 
 Notation: `S` is the input body, `∂S` its boundary, `d(p, X)` the distance from a point to a set, `B(c, r)` the closed ball. For a face `F`, `S_F` is its surface extended beyond the face, and `n_F` its unit normal pointing out of the material.
+
+### 4.0 Stock solids
+
+Sketch, extrude and revolve remain the main way users build parts. Stock solids give both kernels the exact inputs the B-rep builders already accept, without requiring those feature evaluators first. Every stock operation makes a body and takes a required `pose`, the rigid placement of section 1.3. The sets below are in local coordinates before that pose. No dimensions pass through floating point.
+
+| `op` | Parameters in canonical order after `op` | One local solid definition |
+|---|---|---|
+| `block` | `size: [sx, sy, sz]`, `pose` | `0 <= x <= sx`, `0 <= y <= sy`, `0 <= z <= sz` |
+| `cylinder` | `radius: r`, `height: h`, `pose` | `x² + y² <= r²`, `0 <= z <= h` |
+| `sphere` | `radius: r`, `pose` | `x² + y² + z² <= r²` |
+| `cone` | `base_radius: rb`, `top_radius: rt`, `height: h`, `pose` | `0 <= z <= h`, `x² + y² <= (rb + (rt-rb)z/h)²` |
+| `torus` | `major: R`, `minor: r`, `pose` | `(sqrt(x²+y²)-R)² + z² <= r²` |
+
+The cone definition includes capped expanding and contracting frusta, the top apex at `rt = 0`, and the cylinder at `rb = rt`. The current B-rep builder still refuses equal radii, even though that geometry is possible. The field evaluator accepts the cylinder definition; this does not change the B-rep builder. Ring tori require `0 < r < R`, so the equivalent quartic has no extra solid branch.
+
+Impossible inputs:
+
+- block: any side length not positive;
+- cylinder: radius or height not positive;
+- sphere: radius not positive;
+- cone: base radius or height not positive, or top radius negative;
+- torus: tube radius not positive, or major radius not greater than tube radius;
+- every stock solid: the zero rotation quaternion.
+
+The field evaluator reports `field.impossible-primitive` for invalid dimensions and `shapes.zero-quaternion` for the invalid pose. The recipe structural reader does not perform geometric validation. B-rep refusal codes remain unchanged; unifying them belongs to the B-rep recipe adapter, not to this field implementation.
+
+**Face names.** The creating stock step supplies `step` in every origin.
+
+| Solid | Roles and exact trimmed domains |
+|---|---|
+| block | `start` at `z = 0`, `end` at `z = sz`; `side` with fixed segment ids `x_min`, `x_max`, `y_min`, `y_max` on the corresponding coordinate bounds, trimmed by the other bounds |
+| cylinder | `start` and `end` for the two closed disks; `side` with segment `wall` for `x²+y² = r²`, `0 <= z <= h` |
+| sphere | `side` with segment `wall`, the whole sphere |
+| cone | `start` for the base disk; `end` for the top disk only when `rt > 0`; `side` with segment `wall` for the conical side between the caps, or the cylindrical side for equal radii |
+| torus | `side` with segment `wall`, the whole torus |
+
+For example, a sphere's face is `{"step":"ball","role":{"side":{"segment":"wall"}}}`. `path` is absent for every stock `side`. Fixed segment ids are local to their stock operation, not user-created sketch elements. A cone apex has no zero-area `end` face.
+
+**Edge and vertex names.** Section 3.3 applies without arena indices. Each box edge is between two adjacent named planes; each corner lists its three named planes. A capped cylinder has two ring edges, between `start` and `wall`, and between `end` and `wall`, and no vertices. A frustum has the same rings where their radii are positive. A cone with a top apex has one base ring and one singular vertex named by the singleton wall origin. A sphere and a torus have no physical edges or vertices. Parameter seams and sphere poles create none.
+
+**Equivalent features.** A stock solid must give the same set and named result as its canonical equivalent extrude or revolve once those evaluators exist in the B-rep half. The creating stock step id stays the identity of that equivalent operation; internal construction steps must not leak different origins.
+
+- A block is a rectangle extruded by `sz`. Its profile segments use the fixed side ids above, so the generated `start`, `end` and `side` roles agree directly.
+- A cylinder is a circle with segment id `wall`, extruded by `h`.
+- A sphere is a half-circle meridian `wall` revolved through 360 degrees.
+- A torus is a circle meridian `wall`, centred at radial distance `R`, revolved through 360 degrees.
+- A cone is its axial trapezoid or triangle revolved through 360 degrees. The sloped meridian generates `side.wall`. The lower and upper radial meridians generate the named `start` and `end` disks. An expansion to generic revolve must map those radial-segment side origins to these cap origins before exposing the stock result. The axis generates no face.
+
+This is a naming obligation on the eventual feature expansion, not an implementation of sketch, extrude or revolve in `catallax-field`.
+
 
 ### 4.1 Extrude
 
@@ -672,7 +722,7 @@ A recipe is a JSON text, RFC 8259, in UTF-8:
 
 | Key | Value |
 |---|---|
-| `format` | `"catallax-recipe/1"` |
+| `format` | `"catallax-recipe/2"` |
 | `name` | the part's name |
 | `description` | optional |
 | `steps` | list of steps; each is an object with `id`, `op` and the operation's parameters |
@@ -682,7 +732,7 @@ A small recipe in canonical text:
 
 ```json
 {
-  "format": "catallax-recipe/1",
+  "format": "catallax-recipe/2",
   "name": "plate",
   "steps": [
     {
@@ -760,9 +810,9 @@ A small recipe in canonical text:
 }
 ```
 
-`crates/catallax-recipe/tests/fixtures/every-operation.json` uses every operation and names every role.
+`crates/catallax-recipe/tests/fixtures/every-operation.json` covers the original feature operations and roles. `tests/primitives.rs` covers stock-solid round trips, exact parameters, face references and singleton apex names.
 
-**Reading.** A reader accepts any whitespace, any key order and any spelling of a number in the grammar. It rejects unknown keys, unknown operations and roles, ids outside the grammar, JSON numbers where an exact number belongs, edge names whose two origins are equal, and vertex names with fewer than two origins.
+**Reading.** A reader accepts any whitespace, any key order and any spelling of a number in the grammar. It rejects unknown keys, unknown operations and roles, ids outside the grammar, JSON numbers where an exact number belongs, edge names whose two origins are equal, and vertex names with no origins or repeated origins.
 
 **Writing.** The same recipe always gives the same bytes. The canonical text:
 
@@ -773,6 +823,9 @@ A small recipe in canonical text:
 - ends with one newline.
 
 **Versions.** The format name carries the version. Any change of meaning or schema makes a new version and an entry in [INTERFACE-CHANGES.md](INTERFACE-CHANGES.md). A reader reads only the versions it knows, and older ones go through an explicit conversion.
+
+Version 2 adds the five stock-solid operations and permits singleton singular-vertex names. Version 1 files containing only the original operations migrate by explicitly changing `format` to `catallax-recipe/2`, then parsing, checking and writing canonical text. Their existing operations, numbers, placements and names keep their meaning. The reader does not silently relabel older files or accept a version alias.
+
 
 Choices:
 

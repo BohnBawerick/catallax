@@ -1,7 +1,7 @@
 {
-  "format": "catallax-recipe/1",
+  "format": "catallax-recipe/2",
   "name": "every-operation",
-  "description": "One step of every operation and a name of every role. The geometry is meant to read sensibly, but nothing here has been built.",
+  "description": "Feature operations and their roles. Primitive operations are covered separately. The geometry is meant to read sensibly, but nothing here has been built.",
   "steps": [
     {
       "id": "outline",

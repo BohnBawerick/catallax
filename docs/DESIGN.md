@@ -8,7 +8,7 @@
 2. The B-rep stores shapes, edges and vertices by their definitions. Coordinates and approximating curves are caches, never geometric truth. A proven answer is never wrong.
 3. The kernels agree exactly where mathematics allows. Where necessity forces approximation, the proven geometric discrepancy is at most 1 nm, or 0.000001 mm. Section 3.1 of the PRD defines the only two permitted cases.
 
-The current repository implements the B-rep starting code. [RECIPE.md](RECIPE.md) defines the recipe language and `catallax-recipe` holds its data model. Recipe evaluation, the field evaluator, agreement checks and operation-derived names in the kernels are planned, not shipped. Publishing these rules does not change the existing numerical or file contracts.
+The repository implements the B-rep starting code and an independent analytic field evaluator for recipe stock solids and booleans. [RECIPE.md](RECIPE.md) defines the shared language, `catallax-recipe` holds its data model, and [FIELD.md](FIELD.md) states the field query guarantees and unresolved cases. B-rep recipe evaluation, agreement checks and operation-derived B-rep names are still planned. The existing B-rep numerical and exchange contracts are unchanged.
 
 ## Rules for the inside of the B-rep kernel
 

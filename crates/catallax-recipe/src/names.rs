@@ -51,13 +51,13 @@ impl PartialOrd for Origin {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum Role {
-    /// The profile region where a sweep starts.
+    /// The starting profile region, or the lower cap of a stock solid.
     Start,
-    /// The profile region where a sweep ends.
+    /// The ending profile region, or the upper cap of a stock solid when present.
     End,
-    /// The face swept from one profile segment, and for a sweep along one path segment.
+    /// A swept profile segment or the fixed side segment of a stock solid.
     Side {
-        /// The profile segment.
+        /// The profile segment, or a stock solid's fixed segment id.
         segment: ElementId,
         /// The path segment, for a sweep only.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -256,12 +256,12 @@ pub struct VertexName {
 }
 
 impl VertexName {
-    /// The vertex where faces of these origins meet, in any order. Needs at least two
-    /// different origins and no repeats.
+    /// The vertex where faces of these origins meet, in any order. A singular vertex
+    /// such as a cone apex has one origin. Needs at least one origin and no repeats.
     pub fn new(mut faces: Vec<Origin>) -> Result<Self, NameError> {
         faces.sort();
-        if faces.len() < 2 {
-            return Err(NameError("a vertex name needs at least two origins"));
+        if faces.is_empty() {
+            return Err(NameError("a vertex name needs at least one origin"));
         }
         if faces.windows(2).any(|w| w[0] == w[1]) {
             return Err(NameError("a vertex name lists an origin twice"));

@@ -35,6 +35,49 @@ impl ValueKind {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum Operation {
+    /// The box from the local origin to `size`, placed by `pose`.
+    Block {
+        /// Positive side lengths in millimetres.
+        size: [Number; 3],
+        /// Rigid placement.
+        pose: Pose,
+    },
+    /// A capped cylinder on local `z`, from zero to `height`.
+    Cylinder {
+        /// Positive radius.
+        radius: Number,
+        /// Positive height.
+        height: Number,
+        /// Rigid placement.
+        pose: Pose,
+    },
+    /// A sphere centred at the local origin.
+    Sphere {
+        /// Positive radius.
+        radius: Number,
+        /// Rigid placement.
+        pose: Pose,
+    },
+    /// A capped circular frustum on local `z`.
+    Cone {
+        /// Non-negative radius at zero.
+        base_radius: Number,
+        /// Non-negative radius at `height`; at least one radius is positive.
+        top_radius: Number,
+        /// Positive height.
+        height: Number,
+        /// Rigid placement.
+        pose: Pose,
+    },
+    /// A ring torus about local `z`, centred at the local origin.
+    Torus {
+        /// Radius of the core circle.
+        major: Number,
+        /// Positive tube radius, strictly less than `major`.
+        minor: Number,
+        /// Rigid placement.
+        pose: Pose,
+    },
     /// A planar region bounded by closed loops.
     Sketch {
         /// Places the sketch: its plane is the local `z = 0` plane, its normal local `+z`.
@@ -249,6 +292,11 @@ impl Operation {
     /// The operation's name, as written in a recipe.
     pub fn name(&self) -> &'static str {
         match self {
+            Operation::Block { .. } => "block",
+            Operation::Cylinder { .. } => "cylinder",
+            Operation::Sphere { .. } => "sphere",
+            Operation::Cone { .. } => "cone",
+            Operation::Torus { .. } => "torus",
             Operation::Sketch { .. } => "sketch",
             Operation::Path { .. } => "path",
             Operation::Extrude { .. } => "extrude",
@@ -288,6 +336,11 @@ impl Operation {
         use ValueKind::{Body, Path, Profile};
         match self {
             Operation::Sketch { .. }
+            | Operation::Block { .. }
+            | Operation::Cylinder { .. }
+            | Operation::Sphere { .. }
+            | Operation::Cone { .. }
+            | Operation::Torus { .. }
             | Operation::Path { .. }
             | Operation::ImportStep { .. }
             | Operation::ImportMesh { .. } => vec![],

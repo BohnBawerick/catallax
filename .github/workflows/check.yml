@@ -2,7 +2,7 @@ name: check
 
 on:
   push:
-    branches: [main, fm/catallax-publish]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

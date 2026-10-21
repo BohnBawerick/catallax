@@ -433,7 +433,36 @@ impl GeomStore {
             return fact_decision(dec);
         }
         let d = self.position(a).minus(&self.position(b));
-        decide_zeroes([d.x, d.y, d.z], dec, |bounds, _| {
+        let mut coordinates = [d.x, d.y, d.z];
+        // Intervals and cheap rational values only schedule the queries.
+        // The decider still certifies separation before any conclusion.
+        if let Some(i) = coordinates.iter().position(|value| {
+            value.approx().sign().is_some()
+                || value.as_rational().is_some_and(|r| r.sign() != Sign::Zero)
+        }) {
+            coordinates.swap(0, i);
+        } else {
+            for i in 0..coordinates.len() {
+                if coordinates[i].as_rational().is_some() {
+                    continue;
+                }
+                let Some(width) = Rational::from_f64_exact(coordinates[i].approx().width()) else {
+                    continue;
+                };
+                if width.sign() != Sign::Positive {
+                    continue;
+                }
+                match dec.enclose(&coordinates[i], &width) {
+                    Ok(ball) if ball.sign().is_some() => {
+                        coordinates.swap(0, i);
+                        break;
+                    }
+                    Err(r) if r.code == "numbers.deadline" => return Outcome::Refused(r),
+                    _ => {}
+                }
+            }
+        }
+        decide_zeroes(coordinates, dec, |bounds, _| {
             Ok(math::sqrt_upper(&sum_squares(bounds)))
         })
     }

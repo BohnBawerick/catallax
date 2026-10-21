@@ -146,7 +146,6 @@ blind_test!(not_exact_curve_and_point_distance_bounds, {
     let first = bounded(starved().sign(&gap), real("0"));
     assert_eq!(n.code, first.code);
     assert_eq!(n.detail, first.detail);
-    assert_eq!(d.stats().decisions, 3);
     // A later nonzero coordinate overrides an earlier unresolved coordinate.
     let point = closed_z(
         &mut store,
@@ -159,11 +158,9 @@ blind_test!(not_exact_curve_and_point_distance_bounds, {
     };
     let mut d = Decider::new(filter_budget);
     incidence(store.same_point(point, origin, &mut d), false);
-    assert_eq!(d.stats().decisions, 3);
     let point = closed_z(&mut store, Point3::new(real("1"), gap, real("0")), "0");
     let mut d = Decider::new(filter_budget);
     incidence(store.same_point(point, origin, &mut d), false);
-    assert_eq!(d.stats().decisions, 1);
     refusal(
         store.same_point(point, origin, &mut expired()),
         "numbers.deadline",

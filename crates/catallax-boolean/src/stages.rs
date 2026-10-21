@@ -101,6 +101,7 @@ pub enum FaceClass {
 #[derive(Clone, Debug)]
 pub struct Classification {
     classes: BTreeMap<FaceId, FaceClass>,
+    coincident: BTreeMap<FaceId, FaceId>,
     marks: MarkLog,
 }
 
@@ -115,6 +116,7 @@ impl Classification {
 #[derive(Clone, Debug)]
 pub struct Selection {
     pub(crate) faces: Vec<(FaceId, Sense)>,
+    pub(crate) coincident: BTreeMap<FaceId, FaceId>,
     pub(crate) marks: MarkLog,
 }
 
@@ -161,6 +163,7 @@ pub fn classify(
     dec: &mut Decider,
 ) -> Answered<Classification> {
     let mut classes = BTreeMap::new();
+    let mut coincident = BTreeMap::new();
     for (pieces, other) in [
         (&imprinted.first, imprinted.b),
         (&imprinted.second, imprinted.a),
@@ -168,6 +171,7 @@ pub fn classify(
         let other_faces = model.faces_of_body(other);
         for &piece in pieces {
             let face = model.face(piece).clone();
+            let mut counterpart = None;
             let class = crate::points::find(model, piece, dec, |model, point, rational, dec| {
                 for &other_face in &other_faces {
                     let opposite = model.face(other_face).clone();
@@ -196,6 +200,11 @@ pub fn classify(
                             }
                         };
                         let same = agree == (face.sense == opposite.sense);
+                        if !model.face_origins(piece).is_empty()
+                            || !model.face_origins(other_face).is_empty()
+                        {
+                            counterpart = Some(other_face);
+                        }
                         return Ok(Some(if same {
                             FaceClass::OnSame
                         } else {
@@ -215,10 +224,14 @@ pub fn classify(
                 }
             })?;
             classes.insert(piece, class);
+            if let Some(other) = counterpart {
+                coincident.insert(piece, other);
+            }
         }
     }
     Ok(Answer::exact(Classification {
         classes,
+        coincident,
         marks: MarkLog::new(),
     }))
 }
@@ -260,7 +273,20 @@ pub fn keep(classification: &Classification, imprinted: &Imprinted, op: BoolOp) 
     }
     let mut marks = imprinted.marks.clone();
     marks.extend(&classification.marks);
-    Selection { faces, marks }
+    let coincident = faces
+        .iter()
+        .filter_map(|(face, _)| {
+            classification
+                .coincident
+                .get(face)
+                .map(|other| (*face, *other))
+        })
+        .collect();
+    Selection {
+        faces,
+        coincident,
+        marks,
+    }
 }
 
 /// Stage 5: join the chosen pieces into a new body.

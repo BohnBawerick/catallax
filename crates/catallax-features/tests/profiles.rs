@@ -243,3 +243,77 @@ fn empty_profile_is_empty_but_zero_distance_is_still_impossible() {
         "extrude.zero-distance"
     );
 }
+
+#[test]
+fn pythagorean_oblique_polygon_extrusion_has_exact_properties() {
+    let profile = Profile::new(
+        &Pose::identity(),
+        &[rectangle(0, 0, 4, 2)],
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let mut model = Model::new();
+    let direction = catallax_shapes::RVector3::new(r(0), r(3), r(4));
+    let body = extrude(
+        &mut model,
+        &profile,
+        &StepId::new("slant").unwrap(),
+        &r(5),
+        Some(&direction),
+    )
+    .unwrap();
+    assert!(model.check(body).is_empty());
+    let properties = measure(&model, body);
+    assert!(properties.volume.contains(&r(32)));
+    assert!(properties.area.contains(&r(72)));
+    for (value, expected) in
+        properties
+            .centroid
+            .unwrap()
+            .iter()
+            .zip([r(2), Rational::from_ratio(5, 2).unwrap(), r(2)])
+    {
+        assert!(value.contains(&expected));
+    }
+}
+
+#[test]
+fn odd_nesting_preserves_islands_inside_holes() {
+    let (model, body) = build(
+        &[
+            circle("hole", 0, 0, 3),
+            circle("island", 0, 0, 1),
+            circle("outside", 0, 0, 5),
+        ],
+        2,
+    );
+    assert_eq!(model.counts(body).lumps, 2);
+    let properties = measure(&model, body);
+    contains(&properties.volume, b(34) * pi());
+    contains(&properties.area, b(70) * pi());
+}
+
+#[test]
+fn extrusion_rejects_zero_and_in_plane_directions_before_construction() {
+    let profile = Profile::new(
+        &Pose::identity(),
+        &[rectangle(0, 0, 4, 2)],
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let step = StepId::new("sweep").unwrap();
+    for (direction, code) in [
+        (catallax_shapes::RVector3::zero(), "extrude.zero-direction"),
+        (
+            catallax_shapes::RVector3::new(r(3), r(4), r(0)),
+            "extrude.zero-thickness",
+        ),
+    ] {
+        assert_eq!(
+            extrude(&mut Model::new(), &profile, &step, &r(1), Some(&direction))
+                .unwrap_err()
+                .code,
+            code
+        );
+    }
+}

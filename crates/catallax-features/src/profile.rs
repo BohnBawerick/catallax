@@ -342,6 +342,18 @@ fn ccw(segments: &[Arc], dec: &Decider) -> Result<bool, Refusal> {
     }
 }
 
+pub(crate) fn placement(plane: &catallax_recipe::Pose) -> Result<Pose, Refusal> {
+    let [w, x, y, z] = plane.rotation.each_ref().map(|x| x.value().clone());
+    Ok(Pose::new(
+        Rotation::from_quaternion(w, x, y, z)?,
+        RVector3::new(
+            plane.translation.0[0].value().clone(),
+            plane.translation.0[1].value().clone(),
+            plane.translation.0[2].value().clone(),
+        ),
+    ))
+}
+
 impl Profile {
     /// Validates a solved sketch. Crossing, tangency and nesting decisions are exact.
     pub fn new(
@@ -349,16 +361,7 @@ impl Profile {
         loops: &[Loop],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let q = plane.rotation.clone().map(|x| x.value().clone());
-        let [w, x, y, z] = q;
-        let pose = Pose::new(
-            Rotation::from_quaternion(w, x, y, z)?,
-            RVector3::new(
-                plane.translation.0[0].value().clone(),
-                plane.translation.0[1].value().clone(),
-                plane.translation.0[2].value().clone(),
-            ),
-        );
+        let pose = placement(plane)?;
         let mut boundaries = Vec::with_capacity(loops.len());
         for lp in loops {
             if lp.0.is_empty() {

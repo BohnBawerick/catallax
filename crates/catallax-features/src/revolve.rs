@@ -3,10 +3,10 @@
 use catallax_numbers::{Decider, MarkLog, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Axis, Origin, Role, StepId, Turn};
 use catallax_shapes::{
-    Circle, Cone, Curve, Cylinder, GeomKey, Line, Plane, Point3, PointDef, RPoint3, RVector3,
-    Sphere, Surface, Torus,
+    Circle, Cone, Curve, Cylinder, Line, Plane, Point3, PointDef, RPoint3, RVector3, Sphere,
+    Surface, Torus,
 };
-use catallax_topology::{Body, BodyId, BodyKind, Edge, Loop, Lump, Model, Sense, Shell, Vertex};
+use catallax_topology::{Body, BodyId, BodyKind, Edge, Lump, Model, Sense, Shell, Vertex};
 
 use crate::{
     Profile,
@@ -30,10 +30,10 @@ fn qpoint(p: &[Rational; 2]) -> RPoint3 {
 fn unit_z() -> RVector3 {
     RVector3::new(Rational::zero(), Rational::zero(), Rational::one())
 }
-fn rational_radius(radius_sq: &Rational) -> Result<Rational, Refusal> {
+fn rational_radius(radius_sq: &Rational, code: &'static str) -> Result<Rational, Refusal> {
     sqrt(radius_sq).ok_or_else(|| {
         bad(
-            "features.algebraic-radius",
+            code,
             "the analytic surface store needs an exact squared-radius surface definition",
         )
     })
@@ -63,7 +63,7 @@ impl Frame {
         } else {
             let length = sqrt(&self.norm).ok_or_else(|| {
                 bad(
-                    "features.algebraic-frame",
+                    "features.unsupported-algebraic-placement",
                     "the analytic geometry store needs an algebraic rotation frame",
                 )
             })?;
@@ -81,7 +81,14 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
         let centre = qpoint(centre);
         let projection = frame.project(&centre);
         let offset = centre.minus(&projection);
-        let radius = rational_radius(radius_sq)?;
+        let radius = rational_radius(
+            radius_sq,
+            if offset.is_zero() {
+                "features.unsupported-algebraic-sphere-radius"
+            } else {
+                "features.unsupported-algebraic-torus-radius"
+            },
+        )?;
         return Ok(Some(if offset.is_zero() {
             Surface::Sphere(Sphere {
                 center: centre,
@@ -90,7 +97,16 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
                 ref_dir: frame.axis.cross(&unit_z()),
             })
         } else {
-            let major = rational_radius(&offset.norm_squared())?;
+            let major = rational_radius(
+                &offset.norm_squared(),
+                "features.unsupported-algebraic-torus-radius",
+            )?;
+            if major <= radius {
+                return Err(bad(
+                    "features.unsupported-spindle-torus",
+                    "revolving this arc needs a horn or spindle torus sheet, not the ring-torus representation",
+                ));
+            }
             Surface::Torus(Torus {
                 center: projection,
                 axis: frame.axis.clone(),
@@ -121,7 +137,10 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
         return Ok(Some(Surface::Cylinder(Cylinder {
             origin: frame.project(&start),
             axis: frame.axis.clone(),
-            radius: rational_radius(&radial.norm_squared())?,
+            radius: rational_radius(
+                &radial.norm_squared(),
+                "features.unsupported-algebraic-cylinder-radius",
+            )?,
             ref_dir: radial,
         })));
     }
@@ -147,6 +166,47 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
     })))
 }
 
+fn full_turn_axis_contacts(
+    boundary: &[Arc],
+    frame: &Frame,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let on_axis = |s: &Arc| {
+        s.circle.is_none()
+            && frame.signed(&qpoint(&s.start)).is_zero()
+            && frame.signed(&qpoint(&s.end)).is_zero()
+    };
+    for (i, segment) in boundary.iter().enumerate() {
+        let previous = &boundary[(i + boundary.len() - 1) % boundary.len()];
+        if !segment.full
+            && frame.signed(&qpoint(&segment.start)).is_zero()
+            && !on_axis(segment)
+            && !on_axis(previous)
+        {
+            return Err(bad(
+                "boolean.self-touching-shell",
+                "an isolated profile vertex on the axis pinches the full-turn shell",
+            ));
+        }
+        if let Some((centre, radius_sq, _)) = &segment.circle {
+            let distance = frame.signed(&qpoint(centre));
+            if &distance * &distance == radius_sq * &frame.norm {
+                let touch = frame.project(&qpoint(centre));
+                let point = [touch.x, touch.y];
+                if (segment.full || (point != segment.start && point != segment.end))
+                    && segment.contains(&point.each_ref().map(|r| Real::from(r.clone())), dec)?
+                {
+                    return Err(bad(
+                        "boolean.self-touching-shell",
+                        "an interior arc tangency to the axis pinches the full-turn shell",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn material_side(boundary: &[Arc], frame: &Frame, dec: &mut Decider) -> Result<Sign, Refusal> {
     let mut positive = false;
     let mut negative = false;
@@ -156,15 +216,6 @@ fn material_side(boundary: &[Arc], frame: &Frame, dec: &mut Decider) -> Result<S
             Real::from(frame.signed(&qpoint(&segment.end))),
         ];
         if let Some((centre, radius_sq, _)) = &segment.circle {
-            if segment.full {
-                let distance = frame.signed(&qpoint(centre));
-                if &distance * &distance == radius_sq * &frame.norm {
-                    return Err(bad(
-                        "boolean.self-touching-shell",
-                        "a circle tangent to the revolution axis makes a pinched shell",
-                    ));
-                }
-            }
             let radius = (Real::from(radius_sq.clone()) / Real::from(frame.norm.clone())).sqrt();
             for flip in [-1, 1] {
                 let scale = &Real::from_i64(flip) * &radius;
@@ -248,27 +299,41 @@ pub fn revolve(
         return Ok(catallax_topology::empty(model));
     }
     let full = *angle == Rational::from_i64(360);
-    let (cosine, sine) = match angle.to_string().as_str() {
-        "90" => (Rational::zero(), Rational::one()),
-        "180" => (-Rational::one(), Rational::zero()),
-        "270" => (Rational::zero(), -Rational::one()),
-        "360" => (Rational::one(), Rational::zero()),
-        _ => {
-            return Err(bad(
-                "features.algebraic-angle",
-                "the analytic geometry store needs exact algebraic cap planes for this rational-degree angle",
-            ));
-        }
+    let outer_sides: Vec<_> = profile
+        .loops
+        .iter()
+        .filter(|b| b.depth % 2 == 0)
+        .map(|b| {
+            let side = material_side(&b.segments, &frame, dec)?;
+            if full {
+                full_turn_axis_contacts(&b.segments, &frame, dec)?;
+            }
+            Ok(side)
+        })
+        .collect::<Result<_, Refusal>>()?;
+    let (cosine, sine) = if *angle == Rational::from_i64(90) {
+        (Rational::zero(), Rational::one())
+    } else if *angle == Rational::from_i64(180) {
+        (-Rational::one(), Rational::zero())
+    } else if *angle == Rational::from_i64(270) {
+        (Rational::zero(), -Rational::one())
+    } else if full {
+        (Rational::one(), Rational::zero())
+    } else {
+        return Err(bad(
+            "features.unsupported-algebraic-revolve-frame",
+            "this rational-degree angle needs algebraic rotated cap and trimming-curve definitions",
+        ));
     };
     let normal = profile.pose.apply_vector(&unit_z());
     let mut bodies = Vec::new();
-    for (outer, boundary) in profile
+    for ((outer, boundary), side) in profile
         .loops
         .iter()
         .enumerate()
         .filter(|(_, b)| b.depth % 2 == 0)
+        .zip(outer_sides)
     {
-        let side = material_side(&boundary.segments, &frame, dec)?;
         let forward = if side == Sign::Positive {
             Sense::Same
         } else {
@@ -280,6 +345,7 @@ pub fn revolve(
             }))
             .collect();
         let mut faces = Vec::new();
+        let mut shells = Vec::new();
         let mut start_paths = Vec::new();
         let mut end_paths = Vec::new();
         for index in indices {
@@ -289,7 +355,7 @@ pub fn revolve(
             for s in segments {
                 let p = qpoint(&s.start);
                 let on_axis = frame.signed(&p).is_zero();
-                let first = if s.full || (full && !on_axis) {
+                let first = if s.full || full {
                     None
                 } else {
                     let point = model
@@ -332,7 +398,7 @@ pub fn revolve(
                 let surface = carrier(s, &frame)?;
                 let mut profile_edges = Vec::new();
                 if !full {
-                    for layer in 0..2 {
+                    for (layer, start_vertex) in vertices[i].iter().copied().enumerate() {
                         if layer == 1 && surface.is_none() {
                             profile_edges.push(profile_edges[0]);
                             continue;
@@ -387,7 +453,7 @@ pub fn revolve(
                         profile_edges.push(model.add_edge(Edge {
                             curve,
                             sense: edge_sense,
-                            start: vertices[i][layer],
+                            start: start_vertex,
                             end: vertices[next][layer],
                         }));
                     }
@@ -465,31 +531,21 @@ pub fn revolve(
                         },
                     })
                     .collect();
-                let stored = face(model, surface, sense, paths, origins);
-                // A full cone retains its singular apex as a point-only loop.
-                let stored = if full && matches!(local_surface, Surface::Cone(_)) {
-                    let apex = vertices[i][0].or(vertices[next][0]);
-                    if let Some(apex) = apex {
-                        let point_loop = model.add_loop(Loop::Vertex(apex));
-                        let mut f = model.face(stored).clone();
-                        f.loops.push(point_loop);
-                        let origins = model.face_origins(stored).to_vec();
-                        let surface = f.surface;
-                        let point = model.vertex(apex).point;
-                        model.geom_mut().record_fact(catallax_numbers::Fact {
-                            kind: catallax_numbers::FactKind::Incident,
-                            a: GeomKey::Point(point),
-                            b: GeomKey::Surface(surface),
-                            at: None,
-                            origin: catallax_numbers::FactOrigin::Construction("features.revolve"),
-                        });
-                        model.add_named_face(f, origins)
+                let apex = if full {
+                    if let Surface::Cone(cone) = &local_surface
+                        && (qpoint(&s.start) == cone.apex || qpoint(&s.end) == cone.apex)
+                    {
+                        let point = model
+                            .geom_mut()
+                            .add_point(PointDef::Explicit(profile.pose.apply_point(&cone.apex)));
+                        Some(model.add_vertex(Vertex { point }))
                     } else {
-                        stored
+                        None
                     }
                 } else {
-                    stored
+                    None
                 };
+                let stored = face(model, surface, sense, paths, apex, origins);
                 faces.push(stored);
             }
             if forward == Sense::Same {
@@ -499,6 +555,11 @@ pub fn revolve(
             }
             start_paths.push(start_path);
             end_paths.push(end_path);
+            if full {
+                shells.push(model.add_shell(Shell {
+                    faces: std::mem::take(&mut faces),
+                }));
+            }
         }
         if !full {
             let origin = profile.pose.apply_point(&RPoint3::origin());
@@ -512,6 +573,7 @@ pub fn revolve(
                 }),
                 reverse(forward),
                 start_paths,
+                None,
                 vec![Origin {
                     step: step.clone(),
                     role: Role::Start,
@@ -533,16 +595,17 @@ pub fn revolve(
                 }),
                 forward,
                 end_paths,
+                None,
                 vec![Origin {
                     step: step.clone(),
                     role: Role::End,
                 }],
             ));
         }
-        let shell = model.add_shell(Shell { faces });
-        let lump = model.add_lump(Lump {
-            shells: vec![shell],
-        });
+        if !full {
+            shells.push(model.add_shell(Shell { faces }));
+        }
+        let lump = model.add_lump(Lump { shells });
         bodies.push(model.add_body(Body {
             kind: BodyKind::Solid,
             lumps: vec![lump],

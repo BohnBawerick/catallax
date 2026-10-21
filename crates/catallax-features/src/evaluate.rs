@@ -141,6 +141,9 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
     let mut bodies: BTreeMap<StepId, BodyValue> = BTreeMap::new();
     for step in &recipe.steps {
         let build = |model: &mut Model, dec: &mut Decider| -> Result<Option<BodyValue>, Refusal> {
+            if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id)? {
+                return Ok(Some(BodyValue { body, radius }));
+            }
             Ok(Some(match &step.op {
                 Operation::Sketch { .. } => return Ok(None),
                 Operation::Extrude {

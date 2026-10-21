@@ -137,8 +137,8 @@ fn repeated_recipe_builds_have_identical_step_bytes_and_origin_sets() {
         json!({"id":"body", "op":"extrude", "profile":"profile", "distance":"-3"}),
     ];
     let a = build(steps.clone(), "body");
-    let b = build(steps, "body");
-    assert_eq!(export(&a), export(&b));
+    let expected_step = export(&a);
+    let expected_mass = mass(&a);
     let names = |b: &Built| {
         b.model
             .faces_of_body(b.result)
@@ -146,7 +146,26 @@ fn repeated_recipe_builds_have_identical_step_bytes_and_origin_sets() {
             .map(|f| b.model.face_origins(f).to_vec())
             .collect::<Vec<_>>()
     };
-    assert_eq!(names(&a), names(&b));
+    let expected_names = names(&a);
+    for count in [1, 2, 4] {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..count)
+                .map(|_| {
+                    let steps = &steps;
+                    scope.spawn(move || {
+                        let built = build(steps.clone(), "body");
+                        (export(&built), mass(&built), names(&built))
+                    })
+                })
+                .collect();
+            for handle in handles {
+                let (step, properties, origins) = handle.join().unwrap();
+                assert_eq!(step, expected_step);
+                assert_eq!(properties, expected_mass);
+                assert_eq!(origins, expected_names);
+            }
+        });
+    }
 }
 
 #[test]
@@ -228,4 +247,54 @@ fn consecutive_collinear_segments_merge_their_side_origins() {
         })
         .collect();
     assert_eq!(ids, ["bottom", "bottom_left"]);
+}
+
+#[test]
+fn coincident_boolean_faces_keep_all_origins_without_double_geometry() {
+    for kind in ["union", "intersect"] {
+        let built = build(
+            vec![
+                rectangle("profile", 0, 0, 4, 2, 0),
+                json!({"id":"a", "op":"extrude", "profile":"profile", "distance":"3"}),
+                json!({"id":"b", "op":"extrude", "profile":"profile", "distance":"3"}),
+                json!({"id":"result", "op":"boolean", "kind":kind, "target":"a", "tool":"b"}),
+            ],
+            "result",
+        );
+        assert!(mass(&built).volume.contains(&Rational::from_i64(24)));
+        assert_eq!(built.model.counts(built.result).faces, 6);
+        for face in built.model.faces_of_body(built.result) {
+            let origins = built.model.face_origins(face);
+            assert_eq!(origins.len(), 2, "{kind}: {origins:?}");
+            assert_eq!(origins[0].step.as_str(), "a");
+            assert_eq!(origins[1].step.as_str(), "b");
+            assert_eq!(origins[0].role, origins[1].role);
+        }
+    }
+}
+
+#[test]
+fn existing_stock_body_intersects_a_named_extrusion() {
+    let built = build(
+        vec![
+            json!({"id":"stock", "op":"block", "size":["4","2","3"], "pose":{"rotation":["1","0","0","0"], "translation":["0","0","0"]}}),
+            rectangle("profile", 2, 0, 4, 2, 0),
+            json!({"id":"feature", "op":"extrude", "profile":"profile", "distance":"3"}),
+            json!({"id":"result", "op":"boolean", "kind":"intersect", "target":"stock", "tool":"feature"}),
+        ],
+        "result",
+    );
+    let properties = mass(&built);
+    assert!(properties.volume.contains(&Rational::from_i64(12)));
+    assert!(properties.area.contains(&Rational::from_i64(32)));
+    for (value, expected) in properties.centroid.unwrap().iter().zip([
+        Rational::from_i64(3),
+        Rational::from_i64(1),
+        Rational::from_ratio(3, 2).unwrap(),
+    ]) {
+        assert!(value.contains(&expected));
+    }
+    for face in built.model.faces_of_body(built.result) {
+        assert!(!built.model.face_origins(face).is_empty());
+    }
 }

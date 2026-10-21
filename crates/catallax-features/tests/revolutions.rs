@@ -224,3 +224,85 @@ fn impossible_revolutions_report_the_recipe_reason() {
         "revolve.axis-plane"
     );
 }
+
+#[test]
+fn revolved_profile_holes_form_separate_void_shells() {
+    let outside = polygon(&[(5, -3), (5, 3), (1, 3), (1, -3)]);
+    let hole = Loop(vec![Segment::Circle {
+        id: ElementId::new("void").unwrap(),
+        centre: p(3, 0),
+        radius: 1.into(),
+    }]);
+    let (model, body) = build(&[outside, hole], 360);
+    assert_eq!(model.counts(body).lumps, 1);
+    assert_eq!(model.counts(body).shells, 2);
+    let properties = mass(&model, body);
+    let pi = Ball::pi(192);
+    contains(&properties.volume, b(144) * pi.clone() - b(6) * pi.square());
+    contains(&properties.area, b(120) * pi.clone() + b(12) * pi.square());
+}
+
+#[test]
+fn isolated_axis_contacts_refuse_only_a_pinched_full_shell() {
+    let section = polygon(&[(3, 1), (2, 4), (0, 0)]);
+    let profile = Profile::new(
+        &Pose::identity(),
+        std::slice::from_ref(&section),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let step = StepId::new("turn").unwrap();
+    assert_eq!(
+        revolve(
+            &mut Model::new(),
+            &profile,
+            &step,
+            &axis(),
+            &r(360),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
+        "boolean.self-touching-shell"
+    );
+    let (model, body) = build(&[section], 90);
+    let properties = mass(&model, body);
+    let pi = Ball::pi(192);
+    contains(
+        &properties.volume,
+        Ball::from_rational(&Rational::from_ratio(25, 6).unwrap(), 192) * pi.clone(),
+    );
+    contains(
+        &properties.area,
+        b(2) * pi.clone() * b(10).sqrt().unwrap() + pi.clone() * b(5).sqrt().unwrap() + b(10),
+    );
+    let centroid = properties.centroid.unwrap();
+    let radial = b(19).checked_div(&(b(5) * pi)).unwrap();
+    contains(&centroid[0], radial.clone());
+    assert!(centroid[1].contains(&Rational::from_ratio(9, 5).unwrap()));
+    contains(&centroid[2], -radial);
+    let tangent_circle = Loop(vec![Segment::Circle {
+        id: ElementId::new("wall").unwrap(),
+        centre: p(1, 0),
+        radius: 1.into(),
+    }]);
+    let profile = Profile::new(
+        &Pose::identity(),
+        &[tangent_circle],
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        revolve(
+            &mut Model::new(),
+            &profile,
+            &step,
+            &axis(),
+            &r(90),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
+        "features.unsupported-spindle-torus"
+    );
+}

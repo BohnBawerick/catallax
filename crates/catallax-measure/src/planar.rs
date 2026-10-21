@@ -96,13 +96,21 @@ pub(crate) fn line(
     anchor: &RPoint3,
     property: crate::surface::Property,
 ) -> Option<[Rational; 5]> {
-    let Surface::Plane(plane) = surface else {
-        return None;
-    };
     let PointDef::Explicit(from) = geom.point(from?) else {
         return None;
     };
     let PointDef::Explicit(to) = geom.point(to?) else {
+        return None;
+    };
+    if let Surface::Cone(cone) = surface
+        && (from == &cone.apex || to == &cone.apex)
+    {
+        // Along a straight generator, axis . (q x dq) is identically zero.
+        // Every cone boundary form therefore has zero integral. Evaluating its
+        // radial-unit-vector factors at the apex would introduce a removable 0/0.
+        return Some(std::array::from_fn(|_| Rational::zero()));
+    }
+    let Surface::Plane(plane) = surface else {
         return None;
     };
     let reference_squared = plane.ref_dir.norm_squared();

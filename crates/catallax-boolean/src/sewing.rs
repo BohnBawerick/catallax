@@ -118,12 +118,16 @@ fn read(model: &Model, selection: &Selection) -> Result<FaceUses, Refusal> {
             }
             loops.push(loop_uses);
         }
+        let mut origins = model.face_origins(face_id).to_vec();
+        if let Some(other) = selection.coincident.get(&face_id) {
+            origins.extend(model.face_origins(*other).iter().cloned());
+        }
         faces.push(FaceData {
             surface: face.surface,
             sense: product(face.sense, selected_sense),
             original: face_index,
             loops,
-            origins: model.face_origins(face_id).to_vec(),
+            origins,
         });
     }
     Ok((faces, uses, by_edge))

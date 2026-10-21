@@ -7,7 +7,7 @@ use catallax_shapes::{
 };
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell,
-    Vertex,
+    Vertex, VertexId,
 };
 
 use crate::Profile;
@@ -45,10 +45,11 @@ pub(crate) fn face(
     surface: Surface,
     sense: Sense,
     paths: Vec<Vec<(EdgeId, Sense)>>,
+    apex: Option<VertexId>,
     origins: Vec<Origin>,
 ) -> FaceId {
     let surface = model.geom_mut().add_surface(surface);
-    let mut loops = Vec::with_capacity(paths.len());
+    let mut loops = Vec::with_capacity(paths.len() + usize::from(apex.is_some()));
     for path in paths {
         let mut coedges = Vec::with_capacity(path.len());
         for (edge, direction) in path {
@@ -68,6 +69,14 @@ pub(crate) fn face(
         }
         loops.push(model.add_loop(Loop::Coedges(coedges)));
     }
+    if let Some(vertex) = apex {
+        incident(
+            model,
+            GeomKey::Point(model.vertex(vertex).point),
+            GeomKey::Surface(surface),
+        );
+        loops.push(model.add_loop(Loop::Vertex(vertex)));
+    }
     model.add_named_face(
         Face {
             surface,
@@ -84,7 +93,7 @@ fn incident(model: &mut Model, a: GeomKey, b: GeomKey) {
         a,
         b,
         at: None,
-        origin: FactOrigin::Construction("features.extrude"),
+        origin: FactOrigin::Construction("features.sweep"),
     });
 }
 
@@ -122,9 +131,12 @@ pub fn extrude(
             "extrusion direction lies in the sketch plane",
         ));
     }
+    if profile.is_empty() {
+        return Ok(catallax_topology::empty(model));
+    }
     let length = sqrt(&direction.norm_squared()).ok_or_else(|| {
         Refusal::new(
-            "features.algebraic-frame",
+            "features.unsupported-algebraic-placement",
             "the analytic geometry store needs an exact algebraic placement for this direction",
         )
     })?;
@@ -281,13 +293,13 @@ pub(crate) fn extrude_vector(
                 let (surface, sense) = if let Some((c, radius_sq, turn)) = &s.circle {
                     if !vector.cross(&normal).is_zero() {
                         return Err(Refusal::new(
-                            "features.oblique-cylinder",
+                            "features.unsupported-elliptic-cylinder",
                             "an oblique circular sweep needs an exact elliptic-cylinder definition",
                         ));
                     }
                     let radius = sqrt(radius_sq).ok_or_else(|| {
                         Refusal::new(
-                            "features.algebraic-radius",
+                            "features.unsupported-algebraic-cylinder-radius",
                             "the analytic surface store needs a squared-radius cylinder definition",
                         )
                     })?;
@@ -335,7 +347,7 @@ pub(crate) fn extrude_vector(
                         },
                     })
                     .collect();
-                sides.push(face(model, surface, sense, paths, origins));
+                sides.push(face(model, surface, sense, paths, None, origins));
             }
             if positive {
                 start_path.reverse();
@@ -360,6 +372,7 @@ pub(crate) fn extrude_vector(
             }),
             reverse(forward),
             bottom,
+            None,
             vec![Origin {
                 step: step.clone(),
                 role: Role::Start,
@@ -374,6 +387,7 @@ pub(crate) fn extrude_vector(
             }),
             forward,
             top,
+            None,
             vec![Origin {
                 step: step.clone(),
                 role: Role::End,

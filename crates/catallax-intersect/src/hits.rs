@@ -66,30 +66,35 @@ fn carrier_equations(geom: &GeomStore, c: CurveId, f: &CurveForm) -> Vec<MPoly> 
             normal,
             radius_sq,
             ref_dir,
-        } => point_rational(center).map(|center| {
-            Curve::Circle(Circle {
-                center,
-                normal: normal.clone(),
-                radius_sq: radius_sq.clone(),
-                ref_dir: ref_dir.clone(),
-            })
-        }),
+        } => point_rational(center)
+            .zip(radius_sq.as_rational())
+            .map(|(center, radius_sq)| {
+                Curve::Circle(Circle {
+                    center,
+                    normal: normal.clone(),
+                    radius_sq,
+                    ref_dir: ref_dir.clone(),
+                })
+            }),
         CurveForm::Ellipse {
             center,
             normal,
             major_dir,
             major_sq,
             minor_sq,
-        } => point_rational(center).map(|center| {
-            Curve::Ellipse(Ellipse {
-                center,
-                normal: normal.clone(),
-                major_dir: major_dir.clone(),
-                major_sq: major_sq.clone(),
-                minor_sq: minor_sq.clone(),
-            })
-        }),
-        CurveForm::Branch => None,
+        } => point_rational(center)
+            .zip(major_sq.as_rational())
+            .zip(minor_sq.as_rational())
+            .map(|((center, major_sq), minor_sq)| {
+                Curve::Ellipse(Ellipse {
+                    center,
+                    normal: normal.clone(),
+                    major_dir: major_dir.clone(),
+                    major_sq,
+                    minor_sq,
+                })
+            }),
+        CurveForm::Branch | CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. } => None,
     };
     curve.as_ref().unwrap_or(geom.curve(c)).equations(geom)
 }

@@ -43,15 +43,15 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
         Curve::Circle(l) => CurveForm::Circle {
             center: l.center.to_real(),
             normal: l.normal.clone(),
-            radius_sq: l.radius_sq.clone(),
+            radius_sq: real(&l.radius_sq),
             ref_dir: l.ref_dir.clone(),
         },
         Curve::Ellipse(l) => CurveForm::Ellipse {
             center: l.center.to_real(),
             normal: l.normal.clone(),
             major_dir: l.major_dir.clone(),
-            major_sq: l.major_sq.clone(),
-            minor_sq: l.minor_sq.clone(),
+            major_sq: real(&l.major_sq),
+            minor_sq: real(&l.minor_sq),
         },
         Curve::Intersection(i) => {
             let plan = p.unwrap();
@@ -172,6 +172,23 @@ pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) ->
 fn sqrt_upper(r: &Rational) -> Rational {
     Ball::from_rational(r, 64).sqrt().unwrap().hi()
 }
+fn equal_dimensions(a: &Real, b: &Real, dec: &mut Decider) -> Outcome<Apart> {
+    if let (Some(a), Some(b)) = (a.as_rational(), b.as_rational()) {
+        return if a == b {
+            zero()
+        } else {
+            Outcome::Proven(Apart)
+        };
+    }
+    match dec.sign(&(a - b)).map(|_| Apart) {
+        Outcome::NotExact(mut n) => {
+            // |sqrt(a) - sqrt(b)| <= sqrt(|a - b|) for nonnegative a, b.
+            n.bound = sqrt_upper(&n.bound);
+            Outcome::NotExact(n)
+        }
+        other => other,
+    }
+}
 fn equal_points(a: &Point3, b: &Point3, dec: &mut Decider) -> Outcome<Apart> {
     match dec.sign(&a.minus(b).norm_squared()).map(|_| Apart) {
         Outcome::NotExact(mut n) => {
@@ -262,10 +279,12 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 ..
             },
         ) => {
-            if ra == rb && na.cross(&nb).is_zero() {
-                equal_points(&a, &b, dec)
-            } else {
-                Outcome::Proven(Apart)
+            if !na.cross(&nb).is_zero() {
+                return Outcome::Proven(Apart);
+            }
+            match equal_dimensions(&ra, &rb, dec) {
+                Outcome::ProvenCoincident(_) => equal_points(&a, &b, dec),
+                other => other,
             }
         }
         (
@@ -284,11 +303,16 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 minor_sq: sb,
             },
         ) => {
-            if ma == mb && sa == sb && na.cross(&nb).is_zero() && da.cross(&db).is_zero() {
-                equal_points(&a, &b, dec)
-            } else {
-                Outcome::Proven(Apart)
+            if !na.cross(&nb).is_zero() || !da.cross(&db).is_zero() {
+                return Outcome::Proven(Apart);
             }
+            for (a, b) in [(&ma, &mb), (&sa, &sb)] {
+                match equal_dimensions(a, b, dec) {
+                    Outcome::ProvenCoincident(_) => {}
+                    other => return other,
+                }
+            }
+            equal_points(&a, &b, dec)
         }
         (CurveForm::Branch, CurveForm::Branch) => {
             let (Curve::Intersection(ia), Curve::Intersection(ib)) = (geom.curve(a), geom.curve(b))
@@ -387,7 +411,9 @@ pub(super) fn cyclic(
                     }
                 })
         }
-        CurveForm::Line { .. } => panic!("cyclic order requires closed curve"),
+        CurveForm::Line { .. } | CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. } => {
+            panic!("cyclic order requires closed curve")
+        }
         CurveForm::Branch => {
             let result = (|| -> Result<Outcome<Cyclic>, Failure> {
                 let charts = charts(geom, c, dec)?;
@@ -489,14 +515,16 @@ pub(super) fn tangent(
             let d = position.minus(&center);
             let v = normal.cross(&major_dir);
             let u = major_dir.to_real().scaled(
-                &(d.dot(&major_dir.to_real()) / real(&(major_dir.norm_squared() * major_sq))),
+                &(d.dot(&major_dir.to_real()) / (real(&major_dir.norm_squared()) * major_sq)),
             );
             let v = v
                 .to_real()
-                .scaled(&(d.dot(&v.to_real()) / real(&(v.norm_squared() * minor_sq))));
+                .scaled(&(d.dot(&v.to_real()) / (real(&v.norm_squared()) * minor_sq)));
             normal.to_real().cross(&u.plus(&v))
         }
-        CurveForm::Branch => unreachable!(),
+        CurveForm::Branch | CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. } => {
+            unreachable!("non-analytic forms are stored as intersection curves")
+        }
     };
     Ok([t.clone(), t])
 }

@@ -469,11 +469,10 @@ pub(super) fn form_charts(form: &CurveForm) -> Vec<Chart> {
         } => {
             let u = ref_dir
                 .to_real()
-                .scaled(&root(&(radius_sq / &ref_dir.norm_squared())));
-            let v = normal
-                .cross(ref_dir)
-                .to_real()
-                .scaled(&root(&(radius_sq / &normal.cross(ref_dir).norm_squared())));
+                .scaled(&root_real(&(radius_sq / &real(&ref_dir.norm_squared()))));
+            let v = normal.cross(ref_dir).to_real().scaled(&root_real(
+                &(radius_sq / &real(&normal.cross(ref_dir).norm_squared())),
+            ));
             analytic(center.clone(), u, v)
         }
         CurveForm::Ellipse {
@@ -485,11 +484,11 @@ pub(super) fn form_charts(form: &CurveForm) -> Vec<Chart> {
         } => {
             let u = major_dir
                 .to_real()
-                .scaled(&root(&(major_sq / &major_dir.norm_squared())));
+                .scaled(&root_real(&(major_sq / &real(&major_dir.norm_squared()))));
             let cross = normal.cross(major_dir);
             let v = cross
                 .to_real()
-                .scaled(&root(&(minor_sq / &cross.norm_squared())));
+                .scaled(&root_real(&(minor_sq / &real(&cross.norm_squared()))));
             analytic(center.clone(), u, v)
         }
         _ => unreachable!("closed analytic form"),

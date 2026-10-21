@@ -111,8 +111,8 @@ pub enum CurveForm {
         center: Point3,
         /// Normal of its plane.
         normal: RVector3,
-        /// Squared radius.
-        radius_sq: Rational,
+        /// Positive squared radius.
+        radius_sq: catallax_numbers::Real,
         /// Direction of the point at `t = 0`.
         ref_dir: RVector3,
     },
@@ -124,12 +124,38 @@ pub enum CurveForm {
         normal: RVector3,
         /// Direction of the major axis and of the point at `t = 0`.
         major_dir: RVector3,
-        /// Squared semi-major axis.
-        major_sq: Rational,
-        /// Squared semi-minor axis.
-        minor_sq: Rational,
+        /// Positive squared semi-major axis.
+        major_sq: catallax_numbers::Real,
+        /// Positive squared semi-minor axis.
+        minor_sq: catallax_numbers::Real,
     },
-    /// A branch of a quartic meeting curve with no closed form.
+    /// A parabola `y² = 4 focal x` in its oriented plane.
+    Parabola {
+        /// Vertex.
+        vertex: Point3,
+        /// Plane normal; fixes the natural direction at the vertex.
+        normal: RVector3,
+        /// Direction from the vertex towards the focus.
+        axis_dir: RVector3,
+        /// Positive distance from the vertex to the focus.
+        focal: catallax_numbers::Real,
+    },
+    /// One selected branch of `x²/transverse_sq - y²/conjugate_sq = 1`.
+    Hyperbola {
+        /// Centre of the two-branch carrier.
+        center: Point3,
+        /// Plane normal; fixes the natural direction at the vertex.
+        normal: RVector3,
+        /// Direction of the transverse axis.
+        axis_dir: RVector3,
+        /// Positive squared transverse semi-axis.
+        transverse_sq: catallax_numbers::Real,
+        /// Positive squared conjugate semi-axis.
+        conjugate_sq: catallax_numbers::Real,
+        /// Sign of the transverse coordinate on this component.
+        branch: catallax_numbers::StrictSign,
+    },
+    /// An intersection branch with no conic closed form.
     Branch,
 }
 
@@ -247,6 +273,32 @@ pub fn intersect_curve_surface(
 /// The closed form of a curve's carrier.
 pub fn curve_form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<CurveForm, Refusal> {
     query::form(geom, c, dec)
+}
+
+/// Whether a curve closes on itself, rather than requiring ordered finite endpoints.
+///
+/// Lines, parabolas and hyperbola branches are open. Circles, ellipses and
+/// the supported cylinder/sphere and cylinder/cylinder branches are closed.
+/// Unsupported curve definitions return the same refusal as [`curve_form`].
+pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<bool, Refusal> {
+    if let Some(closed) = geom.curve(c).is_closed() {
+        return Ok(closed);
+    }
+    match query::form(geom, c, dec)? {
+        CurveForm::Line { .. } | CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. } => {
+            Ok(false)
+        }
+        CurveForm::Circle { .. } | CurveForm::Ellipse { .. } => Ok(true),
+        CurveForm::Branch => {
+            let plan = query::validate(geom, c)?.expect("intersection branch");
+            match &plan.frame {
+                Some(pair::Frame::CylinderSphere { .. } | pair::Frame::Cylinders { .. }) => {
+                    Ok(true)
+                }
+                None => Err(math::refused_curve()),
+            }
+        }
+    }
 }
 
 /// Whether a point lies on the closure of the curve itself (for an

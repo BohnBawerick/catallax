@@ -1,6 +1,6 @@
 //! Certified helpers shared by the stages and point queries.
 
-use catallax_intersect::{CurveForm, Cyclic, curve_form, cyclic_order, on_curve, order_on_curve};
+use catallax_intersect::{Cyclic, curve_is_closed, cyclic_order, on_curve, order_on_curve};
 use catallax_numbers::{
     Decider, Fact, FactKind, FactOrigin, Outcome, Rational, Real, Refusal, Sign, StrictOrder,
     StrictSign,
@@ -91,29 +91,28 @@ pub(crate) fn on_arc(
     if coincident(model.geom().same_point(a, b, dec), code)? {
         return Ok(true);
     }
-    match curve_form(model.geom(), curve, dec)? {
-        CurveForm::Line { .. } => {
-            let after = match order_on_curve(model.geom(), curve, a, point, dec) {
-                Outcome::Proven(StrictOrder::Less) => true,
-                Outcome::Proven(_) | Outcome::ProvenCoincident(_) => false,
-                Outcome::NotExact(n) => return Err(refusal(code, n.detail)),
-                Outcome::Refused(r) => return Err(r),
-            };
-            let before = match order_on_curve(model.geom(), curve, point, b, dec) {
-                Outcome::Proven(StrictOrder::Less) => true,
-                Outcome::Proven(_) | Outcome::ProvenCoincident(_) => false,
-                Outcome::NotExact(n) => return Err(refusal(code, n.detail)),
-                Outcome::Refused(r) => return Err(r),
-            };
-            Ok(after && before)
-        }
-        _ => match cyclic_order(model.geom(), curve, [a, point, b], dec) {
+    if !curve_is_closed(model.geom(), curve, dec)? {
+        let after = match order_on_curve(model.geom(), curve, a, point, dec) {
+            Outcome::Proven(StrictOrder::Less) => true,
+            Outcome::Proven(_) | Outcome::ProvenCoincident(_) => false,
+            Outcome::NotExact(n) => return Err(refusal(code, n.detail)),
+            Outcome::Refused(r) => return Err(r),
+        };
+        let before = match order_on_curve(model.geom(), curve, point, b, dec) {
+            Outcome::Proven(StrictOrder::Less) => true,
+            Outcome::Proven(_) | Outcome::ProvenCoincident(_) => false,
+            Outcome::NotExact(n) => return Err(refusal(code, n.detail)),
+            Outcome::Refused(r) => return Err(r),
+        };
+        Ok(after && before)
+    } else {
+        match cyclic_order(model.geom(), curve, [a, point, b], dec) {
             Outcome::Proven(Cyclic::Forward) => Ok(true),
             Outcome::Proven(Cyclic::Backward) => Ok(false),
             Outcome::ProvenCoincident(_) => Ok(true),
             Outcome::NotExact(n) => Err(refusal(code, n.detail)),
             Outcome::Refused(r) => Err(r),
-        },
+        }
     }
 }
 

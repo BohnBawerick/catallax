@@ -140,7 +140,7 @@ fn circle(center: Point3, normal: RVector3, radius_sq: Rational, ref_dir: RVecto
     CurveForm::Circle {
         center,
         normal,
-        radius_sq,
+        radius_sq: real(&radius_sq),
         ref_dir,
     }
 }
@@ -210,8 +210,10 @@ fn plane_cylinder(p: &Plane, c: &Cylinder, sigma: Rational) -> Plan {
                 major_dir: c
                     .axis
                     .minus(&p.normal.scaled(&(&s / &p.normal.norm_squared()))),
-                major_sq: r2.clone() * p.normal.norm_squared() * c.axis.norm_squared() / sq(&s),
-                minor_sq: r2,
+                major_sq: real(
+                    &(r2.clone() * p.normal.norm_squared() * c.axis.norm_squared() / sq(&s)),
+                ),
+                minor_sq: real(&r2),
             },
             Contact::Crossing,
         );
@@ -397,8 +399,8 @@ fn cylinders(a: &Cylinder, b: &Cylinder) -> Result<Plan, Refusal> {
                     center: fb.to_real(),
                     normal,
                     major_dir,
-                    major_sq: r(2) * sq(&big.radius) / denom,
-                    minor_sq: sq(&big.radius),
+                    major_sq: real(&(r(2) * sq(&big.radius) / denom)),
+                    minor_sq: real(&sq(&big.radius)),
                 },
                 witness: None,
                 contact: Contact::Crossing,
@@ -700,7 +702,7 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
                     } => Curve::Circle(Circle {
                         center: point_rational(center).expect("analytic rational center"),
                         normal: normal.clone(),
-                        radius_sq: radius_sq.clone(),
+                        radius_sq: radius_sq.as_rational().expect("analytic rational radius"),
                         ref_dir: ref_dir.clone(),
                     }),
                     CurveForm::Ellipse {
@@ -713,10 +715,18 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
                         center: point_rational(center).expect("analytic rational center"),
                         normal: normal.clone(),
                         major_dir: major_dir.clone(),
-                        major_sq: major_sq.clone(),
-                        minor_sq: minor_sq.clone(),
+                        major_sq: major_sq
+                            .as_rational()
+                            .expect("analytic rational major axis"),
+                        minor_sq: minor_sq
+                            .as_rational()
+                            .expect("analytic rational minor axis"),
                     }),
-                    CurveForm::Branch => unreachable!("a branch has a witness"),
+                    CurveForm::Branch
+                    | CurveForm::Parabola { .. }
+                    | CurveForm::Hyperbola { .. } => {
+                        unreachable!("non-rational form has a witness")
+                    }
                 }
             };
             let analytic = !matches!(definition, Curve::Intersection(_));

@@ -61,11 +61,11 @@ fn surface_fixture_residual_smoke() {
                         check(&p);
                         singular(&case.a.gradient(&p).cross(&case.b.gradient(&p)));
                     }
-                    match *shape {
+                    match shape {
                         Shape::Analytic(curve) => {
                             let p = curve.parameter_origin(&g);
                             check(&p);
-                            match curve {
+                            match *curve {
                                 Curve::Line(c) => check(&p.plus(&c.dir.to_real())),
                                 Curve::Circle(c) => check(
                                     &c.center

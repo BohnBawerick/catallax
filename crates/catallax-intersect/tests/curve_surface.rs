@@ -276,7 +276,7 @@ blind_test!(case_33_own_surfaces_are_fact_settled_even_after_deadline, {
             let oracle::Part::Curve { shape, .. } = part else {
                 continue;
             };
-            let oracle::Shape::Intersection { witness, .. } = *shape else {
+            let oracle::Shape::Intersection { witness, .. } = shape else {
                 continue;
             };
             let mut g = GeomStore::new();

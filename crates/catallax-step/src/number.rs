@@ -157,6 +157,11 @@ pub(crate) fn sqrt(value: &Rational) -> Real {
         Real::from_rational(value.clone()).sqrt()
     }
 }
+pub(crate) fn sqrt_real(value: &Real) -> Real {
+    value
+        .as_rational()
+        .map_or_else(|| value.sqrt(), |q| sqrt(&q))
+}
 
 fn integer_sqrt(value: &Integer) -> Integer {
     if value.is_zero() {

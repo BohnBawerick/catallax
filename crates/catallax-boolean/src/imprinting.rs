@@ -8,7 +8,7 @@ use crate::graph::sort_points;
 use crate::points::{curve_sample, left_probe};
 use crate::region::{Location, locate, signatures};
 use crate::stages::{Imprinted, IntersectionGraph};
-use catallax_intersect::{CurveForm, curve_form, same_curve, tangent_at};
+use catallax_intersect::{curve_is_closed, same_curve, tangent_at};
 use catallax_numbers::{
     Answer, Answered, Decider, Fact, FactKind, FactOrigin, Refusal, Sign, ZeroProof,
 };
@@ -129,11 +129,7 @@ impl Builder {
             }
         }
         sort_points(model, curve, &mut cuts, dec)?;
-        let line = matches!(
-            curve_form(model.geom(), curve, dec)?,
-            CurveForm::Line { .. }
-        );
-        let whole = !line && (from.is_none() || from == to);
+        let whole = curve_is_closed(model.geom(), curve, dec)? && (from.is_none() || from == to);
         let arcs = if whole && cuts.is_empty() {
             vec![(None, None)]
         } else if whole {

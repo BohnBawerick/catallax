@@ -6,7 +6,7 @@ use crate::points::curve_sample;
 use crate::region::{Location, locate};
 use crate::stages::{IntersectionGraph, SectionEdge};
 use catallax_intersect::{
-    Component, CurveForm, CurveSurface, Cyclic, SurfacePair, curve_form, cyclic_order,
+    Component, CurveSurface, Cyclic, SurfacePair, curve_is_closed, cyclic_order,
     intersect_curve_surface, intersect_surfaces, on_curve, order_on_curve, same_curve,
 };
 use catallax_numbers::{
@@ -26,15 +26,12 @@ pub(crate) fn sort_points(
     if points.len() < 2 {
         return Ok(());
     }
-    let line = matches!(
-        curve_form(model.geom(), curve, dec)?,
-        CurveForm::Line { .. }
-    );
+    let open = !curve_is_closed(model.geom(), curve, dec)?;
     let anchor = points[0];
     for i in 1..points.len() {
         let mut j = i;
         while j > 0 {
-            let before = if line {
+            let before = if open {
                 match order_on_curve(model.geom(), curve, points[j], points[j - 1], dec) {
                     Outcome::Proven(StrictOrder::Less) => true,
                     Outcome::Proven(StrictOrder::Greater) => false,
@@ -303,11 +300,8 @@ pub(crate) fn intersect(
             }
         }
         sort_points(model, curve, &mut cuts, dec)?;
-        let line = matches!(
-            curve_form(model.geom(), curve, dec)?,
-            CurveForm::Line { .. }
-        );
-        let arcs = if line {
+        let closed = curve_is_closed(model.geom(), curve, dec)?;
+        let arcs = if !closed {
             cuts.windows(2)
                 .map(|w| (Some(w[0]), Some(w[1])))
                 .collect::<Vec<_>>()
@@ -347,7 +341,7 @@ pub(crate) fn intersect(
             }
             pieces.push(edge);
         }
-        if !line && pieces.len() > 1 {
+        if closed && pieces.len() > 1 {
             let n = pieces.len();
             if pieces[n - 1].end == pieces[0].start
                 && same_faces(&pieces[n - 1], &pieces[0])
@@ -361,7 +355,7 @@ pub(crate) fn intersect(
                 pieces[0].start = last.start;
             }
         }
-        if !line
+        if closed
             && pieces.len() == 1
             && pieces[0].start == pieces[0].end
             && pieces[0].start.is_some_and(|p| {

@@ -10,21 +10,24 @@ pub enum Expected {
 }
 #[derive(Clone, Debug)]
 pub enum Shape {
-    Analytic(Curve),
-    Intersection { witness: Point3, form: CurveForm },
+    Analytic(Box<Curve>),
+    Intersection {
+        witness: Point3,
+        form: Box<CurveForm>,
+    },
 }
 #[derive(Clone, Debug)]
 pub enum Part {
     Point(Point3),
     Curve {
-        shape: Box<Shape>,
+        shape: Shape,
         contact: Contact,
         singular: Vec<Point3>,
     },
 }
 fn cv(shape: Shape, contact: Contact) -> Part {
     Part::Curve {
-        shape: Box::new(shape),
+        shape,
         contact,
         singular: vec![],
     }
@@ -32,10 +35,10 @@ fn cv(shape: Shape, contact: Contact) -> Part {
 fn line(o: Point3, d: RVector3, contact: Contact) -> Part {
     cv(
         match rational_point(&o) {
-            Some(origin) => Shape::Analytic(Curve::Line(Line::new(origin, d).unwrap())),
+            Some(origin) => Shape::Analytic(Box::new(Curve::Line(Line::new(origin, d).unwrap()))),
             None => Shape::Intersection {
                 witness: o.clone(),
-                form: CurveForm::Line { origin: o, dir: d },
+                form: Box::new(CurveForm::Line { origin: o, dir: d }),
             },
         },
         contact,
@@ -49,9 +52,9 @@ fn circle(
     contact: Contact,
 ) -> Part {
     let shape = match rational_point(&o) {
-        Some(center) => Shape::Analytic(Curve::Circle(
+        Some(center) => Shape::Analytic(Box::new(Curve::Circle(
             Circle::new(center, normal, radius_sq, reference).unwrap(),
-        )),
+        ))),
         None => {
             let witness = o.plus(
                 &reference
@@ -60,12 +63,12 @@ fn circle(
             );
             Shape::Intersection {
                 witness,
-                form: CurveForm::Circle {
+                form: Box::new(CurveForm::Circle {
                     center: o,
                     normal,
-                    radius_sq,
+                    radius_sq: Real::from(radius_sq),
                     ref_dir: reference,
-                },
+                }),
             }
         }
     };
@@ -73,18 +76,18 @@ fn circle(
 }
 fn ellipse(o: RPoint3, normal: RVector3, major: RVector3, a: Rational, b: Rational) -> Part {
     cv(
-        Shape::Analytic(Curve::Ellipse(
+        Shape::Analytic(Box::new(Curve::Ellipse(
             Ellipse::new(o, normal, major, a, b).unwrap(),
-        )),
+        ))),
         Contact::Crossing,
     )
 }
 fn branch(witness: Point3, singular: Vec<Point3>) -> Part {
     Part::Curve {
-        shape: Box::new(Shape::Intersection {
+        shape: Shape::Intersection {
             witness,
-            form: CurveForm::Branch,
-        }),
+            form: Box::new(CurveForm::Branch),
+        },
         contact: Contact::Crossing,
         singular,
     }

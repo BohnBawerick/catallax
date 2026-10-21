@@ -48,6 +48,12 @@ Choices:
 - **Angles in rational degrees.** A rational number of degrees is a rational multiple of pi, so its sine and cosine are algebraic numbers and the B-rep can hold them exactly. Their degree can be high: `cos 1°` has degree 48. The alternative is giving each angle as a rational point on the unit circle, such as `(3/5, 4/5)`. Every value then stays rational, but no user can type "30 degrees".
 - **Poses by quaternion, not by origin, normal and x-direction.** A quaternion gives an orthonormal frame by construction, and every rational rotation matrix comes from an integer quaternion. The alternative is three vectors, as SolidDraft's slot uses. Users read those easily, but rational vectors are rarely exactly unit length and orthogonal, so the frame needs a tolerance check.
 
+### 1.3.1 Algebraic evaluation of rational inputs
+
+The 2026-10-22 architecture decision changes evaluated geometry, not this version 2 input grammar. A rational degree angle is converted to certified algebraic sine/cosine values. Normalising a direction or computing an arc radius may also introduce algebraic values. Both evaluators keep these expressions exactly in the shared shape definitions; they must not reject a legal input merely because the result is not rational. An arc centred at the origin through `(1,1)` has radius `sqrt(2)` without requiring a new number syntax.
+
+An oblique circular extrusion reduces to an elliptic-cylinder support with the original cap planes and finite sweep domain. A supported meridional revolve reduces to analytic supports with exact angular trims. The recipe and segment origins remain the definition of the operation after reduction. Unsupported trimmed revolution carriers remain implementation gaps, not additional impossible inputs. Generic derived-surface storage for future profiles follows the architecture decision when its full proof/query path is supplied.
+
 ### 1.4 Solids, faces and agreement
 
 A body is a solid: a bounded closed set `S` in space that is the closure of its interior. Set operations are regularised: `A ∪* B` is the closure of the interior of `A ∪ B`, and likewise for `−` and `∩`. The empty set is a valid body. Its result is the empty body, not a refusal.

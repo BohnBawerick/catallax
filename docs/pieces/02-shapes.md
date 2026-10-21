@@ -4,6 +4,61 @@ Status: complete for blind test writing and blind building.
 
 This is the input the test writer and the creator get, together with `docs/DESIGN.md`, `docs/ARCHITECTURE.md` and piece 1's description `docs/pieces/01-numbers-and-decisions.md`. This piece is built on piece 1's numbers and outcomes and uses them exactly as that description defines them. Nothing else is needed.
 
+## Approved algebraic-definition contract
+
+This section implements the documentation part of the 2026-10-22 architecture decision. Code migration is pending. It supersedes the rational-only number table, pose/surface/curve signatures, equality guarantees and relevant tests below. The remaining formulas and rational examples remain requirements for the rational fast path. The old signature listing is a baseline, not the target API for this migration.
+
+### Definition types and validation
+
+| Definition | Target type |
+| --- | --- |
+| Surface and analytic-curve point fields | `Point3` with `Real` coordinates |
+| Directions, normals, axes, references and translations | `Vector3` with `Real` coordinates |
+| Radii, squared radii, squared semi-axes and slopes | `Real` |
+| Rotation matrix entries | `Real` |
+| Implicit polynomials and curve equations | Piece 1 `RealPoly`, in three variables |
+| Rational inputs and exact rational fast paths | Existing `Rational`, `RPoint3`, `RVector3`, `MPoly` |
+
+`Real` is algebraic, not an arbitrary computable-real interface. Keep expressions and shared certified roots as definitions; cached coordinates or enclosures do not replace them. Directions remain unnormalised. Squared dimensions remain squared, even when they are irrational. Conversion from the rational types is exact and must not require a proof.
+
+Analytic constructors take the target field types and a final `&mut Decider`, returning `Result<Self, Refusal>`. First validate every field's expression domain in declaration order, including position coordinates. Then preserve the invariant-check order below: directions, positive dimensions and kind-specific inequalities, then perpendicularity. Within each group, visit fields in declaration order. Success requires proofs of all invariants. `NotExact` cannot validate a nonzero axis, positivity, perpendicularity or a divisor; return its original numeric reason as a temporary failure. Proven invalid geometry uses the existing `shapes.*` code. No approximate constructor is added. Public fields, if retained during migration, carry the same caller obligation as the existing raw structs: invalid raw definitions are programming errors.
+
+Remove `PartialEq`, `Eq` and `Hash` from definitions containing `Real`, including `Rotation`, `Pose`, analytic structs, `Surface` and `Curve`. Handles and kind tags retain their traits; rational input structs retain theirs. Geometry equality belongs to `same_surface`, `same_point` and piece 4's `same_curve`, using facts then exact decisions. An expression or construction key can prove identity for cache reuse, but unequal keys cannot prove different geometry. Do not compare independent algebraic roots by their isolating intervals or polynomial text.
+
+`Surface::implicit()`, `GeomStore::implicit()` and `Curve::equations()` return `RealPoly` or `Vec<RealPoly>`. Preserve the exact scaling of every formula below. For rational defining data, construct the existing polynomial without avoidable square roots, so it converts back to the identical `MPoly`. An algebraic expression that happens to be rational need not be detected by the cheap conversion. Gradients and rigid-transform identities hold for all validated algebraic points. `same_surface` retains the listed geometric criteria, evaluated through the decider when quantities are non-rational. Its rational fast path retains the existing no-decision result. For elliptic cylinders, compare axis lines and the transverse quadratic forms, including their eigenvalues and eigendirections; reference directions are geometric for an ellipse. Equality of proportional implicit polynomials alone does not prove equality of selected nappes or trimmed domains.
+
+Chart evaluation must enclose algebraic constants through piece 1 under the caller's policy. Add a final `&Decider` argument and an outer `Result<_, Refusal>` to `Surface::{evaluate, derivatives, parameters_of}` and `Curve::evaluate`; preserve each method's existing inner return type and input-precision/containment rules. A `parameters_of` seam/domain ambiguity remains `Ok(None)`, distinct from an enclosure failure. `implicit`, `gradient`, `transformed` and `parameter_origin` still only build exact expressions and need no decision context. This prevents unbudgeted coefficient refinement or hidden rationalisation in measurement, meshing and export.
+
+### Poses and explicit points
+
+Keep `Rotation::from_quaternion(Rational, Rational, Rational, Rational)` as the checked rational-input convenience constructor. Add `Rotation::from_real_quaternion(Real, Real, Real, Real, &mut Decider) -> Result<Rotation, Refusal>` with the same matrix formula and a proven nonzero norm. `matrix()` returns `&[[Real; 3]; 3]`. The algebraic constructor validates expression domains before division. Composition and inversion preserve certified orthogonality and determinant one by construction; do not re-prove them after every application.
+
+`Pose::translation` uses `Vector3`. The checked constructor is `Pose::new(rotation: Rotation, translation: Vector3, dec: &mut Decider) -> Result<Pose, Refusal>`; it validates the translation expressions. `identity`, `then` and `inverse` remain infallible on validated poses. `Rotation::apply` and `Pose::apply_vector` take `&Vector3` and return `Vector3`; `Pose::apply_point` takes `&Point3` and returns `Point3`. The existing `apply_real` and `apply_real_point` may remain aliases. Rational callers convert once at this boundary. Posing an entity preserves its exact dimensions and construction provenance. Tests compare posed coordinates through exact decisions, not structural `==`.
+
+A recipe angle in rational degrees uses piece 1's certified sine/cosine constructor. A rotation about an algebraic axis can use the half-angle quaternion with the exactly normalised axis. A 45-degree revolve therefore has exact end-cap and edge positions. Normalising `[1, 0, 1]` gives `[1/sqrt(2), 0, 1/sqrt(2)]`; an extrude along it retains that expression rather than refusing or rounding it.
+
+Widen `PointDef::Explicit` to `Explicit(Point3)`. Its coordinates are exact input or construction expressions, not rounded measurements. Rational callers use `to_real()`. `Meet` continues to store the defining objects and the selected solution; do not replace a meeting definition with an explicit coordinate cache. The caller must validate explicit expressions before insertion, just as it guarantees meeting-point incidence. All explicit-point approximations become caches of the exact expressions with the same enclosure rule as other points.
+
+### Elliptic cylinders
+
+Add `EllipticCylinder` to `Surface` and `SurfaceKind` with fields `origin: Point3`, `axis: Vector3`, `major_dir: Vector3`, `major_sq: Real`, `minor_sq: Real`. Its constructor follows the validation rules above, requiring nonzero perpendicular directions and `0 < minor_sq < major_sq`. Invalid squared semi-axis values use `shapes.ellipse-axes`, as for an ellipse. Zero direction vectors still use `shapes.zero-vector`. Equal axes reduce to `Cylinder` with radius `sqrt(major_sq)` before this constructor; negative or zero axes do not silently reduce.
+
+Let `e3 = axis / |axis|`, `e1 = major_dir / |major_dir|`, `e2 = e3 x e1`, `d = x - origin`, `a = sqrt(major_sq)` and `b = sqrt(minor_sq)`.
+
+- The implicit is `f(x) = (d . e1)^2 / major_sq + (d . e2)^2 / minor_sq - 1`, with outward gradient and no rescaling. Expand normalised squared projections using unnormalised dot products divided by squared direction lengths, avoiding unnecessary square roots in rational coefficients.
+- `S(u,v) = origin + a cos(u) e1 + b sin(u) e2 + v e3`; domain `[Periodic, Line]`.
+- `dS/du = -a sin(u) e1 + b cos(u) e2`; `dS/dv = e3`.
+- `parameters_of` uses `u = angle((d . e1)/a, (d . e2)/b)` and `v = d . e3`, with the existing seam/axis enclosure rules. The liveness scale is `b`.
+- Changing `major_dir` changes geometry except for its sign. Axis and reference signs choose parameter orientation and seam, not a different point set. Transformation preserves both squared semi-axes.
+
+For a circle of radius `r` in a plane with unit normal `n`, extruded along unit direction `e`, nonzero `n . e`, the transverse ellipse has squared semi-axes `r^2` and `r^2 (n . e)^2`. A major direction is `n x e` when nonzero. If they are parallel, use `Cylinder`. The original start/end planes trim this carrier obliquely; replacing them by perpendicular caps would change the solid. Build the carrier and trims from the same profile/sweep definition and retain its recipe origins.
+
+No unrestricted `Quadric`, `Extruded` or `Revolved` surface variant is added in this foundation. The analytic reductions cover line extrusion, circular-arc extrusion, meridional line revolution and ring circular-arc revolution. Other valid patches remain named implementation gaps until their domain-aware carrier and full consumer support land. In particular, `shapes.torus-self-intersecting` describes an invalid whole ring torus; it is not evidence that every trimmed circular revolution with that carrier is impossible.
+
+### Acceptance of the migration
+
+Preserve the successful rational corpus and add independent cases for algebraic poses/dimensions, an arc with radius `sqrt(2)`, 45-degree and non-quadratic rational-degree rotations, extrusion along `[1,0,1]`, and oblique circular extrusion. Check exact incidence, normal orientation, component selection and pose/inverse identities. An elliptic-cylinder check must use its defining swept circle as an independent oracle. Compare cold/warm caches and thread counts. Failure to prove a constructor invariant must never produce a successful geometry definition.
+
 ## What this piece is for
 
 Piece 2 holds the exact definitions of geometry and answers exact questions about one or two objects at a time.

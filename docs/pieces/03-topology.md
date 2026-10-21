@@ -4,6 +4,14 @@ Status: complete for blind test writing and blind building.
 
 This is the input the test writer and the creator get, together with `docs/DESIGN.md`, `docs/ARCHITECTURE.md`, piece 1's description `docs/pieces/01-numbers-and-decisions.md` and piece 2's description `docs/pieces/02-shapes.md`. This piece stores its geometry in piece 2's `GeomStore` and uses piece 1's facts, refusals and marks exactly as those descriptions define them. Nothing else is needed.
 
+## Approved algebraic-definition migration
+
+Under the 2026-10-22 architecture decision, geometry handles and append-only topology stay unchanged. Piece 2's poses and stored definitions become algebraic; the rational builder size/radius inputs below remain valid convenience APIs for the existing exchange. Builders convert exact rational inputs to the shared definitions without rounding. A transformed primitive may contain algebraic fields even when its local dimensions are rational. The rational-only pose statements below describe the retained baseline.
+
+Recipe builders retain each operation's exact profile, sweep law, finite trim and origin set when reducing a side to an analytic carrier. Reusing a carrier does not merge operation identities. Oblique cylinder caps remain the translated sketch planes. Open conics require bounded edges with endpoints; an edge without endpoints requires certified closure from piece 4. Topology checks may use recorded closure facts rather than depending on the intersection crate. They must not infer closure from a curve being non-linear.
+
+The rational subset of sketch/extrude/revolve may land before the shared foundation. Temporary failures for irrational dimensions, frames or unsupported carriers must name the missing coverage and remain repair cases. Only the recipe's proven impossible inputs justify an impossible-geometry refusal. Coverage of a legal feature requires its topology, measurement and export paths, not just successful side-surface construction.
+
 ## What this piece is for
 
 Piece 3 holds the boundary representation: bodies, lumps, shells, faces, loops, coedges, edges and vertices, all over piece 2's exact geometry.

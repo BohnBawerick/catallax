@@ -4,6 +4,22 @@ Status: complete for blind test writing and blind building.
 
 This is the input the test writer and the creator get, together with `docs/DESIGN.md`, `docs/ARCHITECTURE.md`, `docs/JUDGE-INTERFACE.md` (the STEP file) and the descriptions of pieces 1 to 4 in `docs/pieces/`. This piece reads piece 3's `Model`, piece 2's definitions and piece 4's closed forms and traces, and uses piece 1's numbers, outcomes and marks exactly as those descriptions define them. Nothing else is needed.
 
+## Approved algebraic-definition migration
+
+The 2026-10-22 architecture decision preserves the exchange text, topology conventions, entity ordering and report fields below. It widens the exact data supplied to the exporter. Algebraic positions, directions, radii and conic dimensions pass through the existing certified decimal enclosure path. Frame normalisation and every coefficient's rounding contribute to the deviation over the finite face/edge extent. No decimal reconstruction becomes the kernel's definition.
+
+Extend the geometry mapping as follows:
+
+| Exact support | Export representation |
+| --- | --- |
+| Elliptic cylinder | `SURFACE_OF_LINEAR_EXTRUSION` of the transverse `ELLIPSE` in piece 2's frame, with extrusion vector along its unit axis; retain the actual face trims |
+| Parabola | `PARABOLA` at the vertex, reference along the opening axis, with focal distance `focal` |
+| One hyperbola branch | `HYPERBOLA` with semi-axis `sqrt(transverse_sq)` and semi-imaginary-axis `sqrt(conjugate_sq)`; orient the placement to select the stored branch and preserve the edge's natural direction |
+
+These STEP entity definitions are documented by STEP Tools for [linear extrusion](https://steptools.com/docs/stp_aim/html/t_surface_of_linear_extrusion.html), [parabola](https://steptools.com/docs/stp_aim/html/t_parabola.html) and [hyperbola](https://www.steptools.com/docs/stp_aim/html/t_hyperbola.html). Verify the chosen placements and bounded trims by reading back independent fixtures. If an entity is unsuitable for the selected AP242 representation, use a certified rational spline representation of that finite patch/arc; an unproved sampled fit is not an alternative. An exact analytic representation still has decimal-rounding error.
+
+Open curves must have finite edge endpoints. Existing ring handling applies only after piece 4 proves closure. Keep the existing entity sequence and bytes for the successful rational corpus during conic preparation. The new geometry must not change manifest kind tags or `JUDGE-INTERFACE.md`. The existing tolerance/report policy below remains the baseline; this migration does not settle the separate PRD-wide 1 nm enforcement gap.
+
 ## What this piece is for
 
 Piece 7 writes bodies as STEP AP242 files (ISO 10303-21 text) that other kernels read as valid solids. It is the outbound half of conversion at the border (DESIGN.md): exact geometry becomes ordinary STEP entities, and the export proves and reports the largest distance between what it wrote and the exact model.

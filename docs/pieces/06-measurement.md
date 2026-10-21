@@ -4,6 +4,14 @@ Status: complete for blind test writing and blind building.
 
 This is the input the test writer and the creator get, together with `docs/DESIGN.md`, `docs/ARCHITECTURE.md` and the descriptions of pieces 1 to 4 in `docs/pieces/`. This piece reads piece 3's `Model`, evaluates piece 2's surface parametrisations and piece 4's traces, and uses piece 1's `Ball` arithmetic, outcomes and marks exactly as those descriptions define them. Nothing else is needed.
 
+## Approved algebraic-definition migration
+
+The 2026-10-22 architecture decision widens surface constants, frame transformations and curve forms to `Real`. Compile exact expressions into the existing certified integration path; coefficient enclosures contribute to every remainder and property bound. Keep the rational path and public `Accuracy`, `Enclosure` and mass-property interfaces unchanged. No conversion to rational approximations is permitted inside a proof.
+
+Add elliptic-cylinder support using piece 2's chart and derivatives. Its area density is `sqrt(major_sq sin(u)^2 + minor_sq cos(u)^2)`; compute its perimeter as a certified integral, without adding transcendental nodes to `Real`. Integrate over the actual oblique cap/edge trims. For an extruded planar region of area `A`, use `A * abs(v . n)` as an independent volume check, where `v` is the exact sweep vector and `n` the unit profile normal. A full right elliptic cylinder provides the independent volume check `pi * sqrt(major_sq * minor_sq) * h`.
+
+Use certified closure and finite conic traces from piece 4. A parabola or hyperbola support is unbounded but a solid's face/edge domain is bounded; integrate that domain. Preserve seam and singularity treatment. Add algebraic placement invariance, open-conic trims and oblique circular extrusions to the independent tests before claiming feature coverage. Existing budget and accuracy failure policies remain unchanged and remain separate from PRD completion.
+
 ## What this piece is for
 
 Piece 6 computes the volume, surface area and centre of mass of a body, and the area of one face, as proven enclosures: intervals with exact rational ends that contain the true value for the body as built.

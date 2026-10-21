@@ -6,6 +6,43 @@ The seven pieces below implement the B-rep half, exported without source history
 
 The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels. The former 1-in-10,000 programme and grid-cell product gates are retired. Mathematical regression tests remain; speed per click matters for the interactive CAD tool.
 
+## Exact geometry definitions: decision of 2026-10-22
+
+Adopt algebraic analytic definitions. Use the existing `Real` expression type for defining positions, directions, dimensions and rigid motions. It already contains only algebraic operations and certified algebraic leaves. Keep rational input types and rational arithmetic as the fast path. This is an approved implementation contract, not a claim that the code below already implements it. The migration sections in pieces 1 to 7 take precedence over their retained rational baseline descriptions.
+
+| Decision | Reason | Alternative and cost |
+| --- | --- | --- |
+| Use `Real`, with proven constructor invariants | Retains construction expressions and shared roots without eagerly eliminating each coordinate | Store every field as `Algebraic`. Equality still needs proof, and eager conversion can grow polynomial degrees and discard useful construction structure |
+| Add `RealPoly` beside rational `MPoly` | Algebraic frames produce algebraic implicit coefficients; intersections and field signs must read the same definitions | Keep rational polynomials by eliminating coefficients immediately. This introduces conjugate solutions and requires branch constraints at every use |
+| Add `EllipticCylinder` now; retain the five existing analytic surface kinds | Oblique circle extrusion needs it. Current revolve profiles use lines and circular arcs with an axis in the sketch plane | Add every quadric now. More kinds require chart, domain, singularity, intersection, integration and export contracts without a current recipe operation requiring them |
+| Defer generic `Extruded` and `Revolved` surface variants until profiles need them | Lines and circles have analytic reductions that reuse exact predicates and distance methods | Add derived surfaces now. This retains a direct sweep parameter but duplicates analytic carriers and needs cross-kind equality and a general certified intersection path immediately |
+| Retain the operation definition and names through analytic reduction | A support surface alone loses trims, source segments and branch choices | Store only the reduced carrier. This is smaller but cannot reconstruct the feature or distinguish surviving patches |
+
+Other quadrics join when an operation requires them, with a chart/domain and proof contract, not as an unchecked polynomial escape hatch. Generic derived surfaces are required for spline profiles, sweeps and lofts whose supports do not reduce analytically. They must retain immutable profile/path references, exact laws, domains and orientation; their charts, predicates, intersection certificates, integration and export must land together. A point evaluator alone is insufficient. A valid patch of a non-ring circular revolution also needs a domain-aware carrier before that case can be claimed complete; the stock ring-torus constructor must not be used to declare that patch impossible.
+
+The costs are larger expression graphs, algebraic equality decisions and potentially high-degree elimination. Rational degrees have algebraic sine and cosine, but their degree is unbounded as angle denominators grow. Retain rational and quadratic fast paths, shared immutable expressions and construction facts. Do not rationalise, snap a frame, raise global budgets, or eagerly compute a minimal polynomial for every field. Measure construction, predicates, intersections and repeated field queries separately. Eager canonical numbers would simplify cache keys at the cost of paying elimination even for display-only queries.
+
+Determinism comes from fixed construction and monomial orders, certified root selectors, deterministic work accounting and ordered result assembly. Expression identity is not mathematical equality. Caches must not change proof outcomes or work allowances; thread scheduling must not choose roots, branches or topology. The existing wall-clock deadline conflict remains the separate policy issue below. Widening types does not resolve it, change the 1 nm rule or make unsupported geometry impossible.
+
+### Integration order
+
+Use one shared foundation, with the following merge order. Feature branches consume its final merged base once; they do not each introduce a competing geometry representation.
+
+1. Land this documentation decision.
+2. Land the separate conic preparation change first: `CurveForm` dimensions become `Real`, parabola and hyperbola forms and the closure query are added, and all current consumers compile. Existing successful rational exchange fixtures must retain byte-identical STEP and geometric manifest content, excluding elapsed-time fields. This step adds representation, not a claim of complete cone/torus intersections.
+3. Land a single coordinated algebraic foundation across numbers, shapes and every existing consumer, including field. It adds `RealPoly`, widens frames/poses and stored analytic dimensions, adds elliptic cylinders, and supplies certified angle construction. It includes the consumer adaptations needed to preserve the existing rational subset. Publish this merged commit as the common base. Keeping the rational subset usable avoids a period in which either evaluator needs its own fork of the definitions.
+4. Rebase the cone/torus, sketch/extrude/revolve, display-mesh, fix batch 5 and field feature lanes once onto that base. Independent fixes and the already-authorised rational recipe subset may land before step 3 if they do not widen interfaces; fold those commits into the common base. Later corrections must preserve the agreed interfaces or receive a new recorded decision.
+
+| Lane | Adaptation after the common base |
+| --- | --- |
+| Cone/torus booleans | Use algebraic coefficients and dimensions; preserve nappe and component selectors; implement open-conic membership/order/finite traces; use proven closure instead of treating every non-line as a ring |
+| Sketch, extrude, revolve | Build exact sweep vectors and rational-degree rotations; reduce supported sides to analytic definitions; retain trims and origin sets; remove rational-only refusals as each full operation path gains coverage |
+| Display meshes | Consume certified charts, derivatives and finite trimmed traces for all supported kinds; cache rounded vertices only; retain face origins and deviation bounds; do not rediscover topology from samples |
+| Fix batch 5 | Keep fixes on the shared predicates and closure query; remove rational-only coefficient assumptions in contact, probe and classification paths; retain independent regressions and construction facts |
+| Field kernel | Migrate support polynomials, gradients, ray germs and pose comparisons in step 3; extend recipe coverage on the same definitions afterwards; certify metric bounds separately from polynomial signs |
+
+Cone/torus and recipe coverage may then land independently, with consumer and agreement regressions for each added case. Merge their completed operation paths before declaring display/field agreement for those operations. Uncoordinated per-lane widening is the rejected alternative: it gives earlier isolated patches but forces repeated rebases and leaves field and B-rep interpreting different types. No lane may report a valid input as impossible because its implementation is unfinished. Keep specific temporary failure reasons and coverage tests until repaired. The command-line contract in `JUDGE-INTERFACE.md` remains unchanged. Its fixed kind tags cannot describe elliptic-cylinder faces or open conics; exposing those new library/recipe results through the CLI requires a separate versioned exchange decision. No silent tag remapping is authorised.
+
 ## The seven pieces
 
 | Piece | Crate | Job | Depends on |

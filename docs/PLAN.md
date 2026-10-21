@@ -11,7 +11,7 @@ The existing tests include ignored cases. Their source records the reasons; a gr
 ## Next work, in order
 
 1. Continue independent testing of the B-rep half and repair refusals of possible geometry. General cone and torus pairs, ambiguous imprints and classification, precision limits and missed measurement accuracy remain unfinished work. Only impossible geometry is an acceptable final refusal.
-2. Define the recipe language and one mathematical definition per operation. Define face and edge names from their creating operations and input references, with explicit split, merge and rebuild rules. Arena indices are not persistent names.
+2. [RECIPE.md](RECIPE.md) defines the recipe language: one mathematical definition per operation, and face and edge names from their creating operations, with explicit split, merge and rebuild rules. Settle its open items in section 7, then make the B-rep report origin sets for the operations it builds. Arena indices are not persistent names.
 3. Define and enforce a composable geometric error policy. A bounded decision may stand in for exact coincidence only after proving the gap smaller than 1 nm. Existing scalar, angle and distance marks do not yet establish that invariant over a whole result.
 4. Build a field evaluator for everything the B-rep already builds, then development agreement checks and a cheap background comparison near each edit. Do not mistake display-mesh accuracy for a 1 nm proof.
 5. Widen both kernels together through sketches, extrude and revolve, holes, fillets and chamfers, shell and offset, draft, sweep and loft, pattern and mirror. Every operation needs its shared definition before two implementations can agree.

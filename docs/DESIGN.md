@@ -8,7 +8,7 @@
 2. The B-rep stores shapes, edges and vertices by their definitions. Coordinates and approximating curves are caches, never geometric truth. A proven answer is never wrong.
 3. The kernels agree exactly where mathematics allows. Where necessity forces approximation, the proven geometric discrepancy is at most 1 nm, or 0.000001 mm. Section 3.1 of the PRD defines the only two permitted cases.
 
-The current repository implements the B-rep starting code. The recipe, field evaluator, agreement checks and operation-derived names are planned, not shipped. Publishing these rules does not change the existing numerical or file contracts.
+The current repository implements the B-rep starting code. [RECIPE.md](RECIPE.md) defines the recipe language and `catallax-recipe` holds its data model. Recipe evaluation, the field evaluator, agreement checks and operation-derived names in the kernels are planned, not shipped. Publishing these rules does not change the existing numerical or file contracts.
 
 ## Rules for the inside of the B-rep kernel
 
@@ -81,7 +81,7 @@ Kernel crates forbid `unsafe`. Growing public enums are non-exhaustive. Dependen
 
 ### R14. Name entities by their creating operation
 
-A future recipe reference names, for example, the edge between the side of extrude 1 and the floor of cut 2. It must not depend on result traversal order or arena index. Existing store-local handles remain implementation identities, not persistent feature references. Defining the naming and rebuild rules is recipe-language work.
+A future recipe reference names, for example, the edge between the side of extrude 1 and the floor of cut 2. It must not depend on result traversal order or arena index. Existing store-local handles remain implementation identities, not persistent feature references. [RECIPE.md](RECIPE.md) section 3 defines the naming and rebuild rules; the B-rep does not report these names yet.
 
 ## Conversion at the border
 

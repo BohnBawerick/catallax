@@ -71,6 +71,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "catallax-recipe"
+version = "0.0.0"
+dependencies = [
+ "catallax-numbers",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "catallax-shapes"
 version = "0.0.0"
 dependencies = [

@@ -1,0 +1,16 @@
+[package]
+name = "catallax-recipe"
+description = "Catallax recipe language: the feature tree, operation and naming types, and their canonical JSON form."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+catallax-numbers.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true

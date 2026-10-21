@@ -26,6 +26,7 @@ version = "0.0.0"
 dependencies = [
  "catallax-intersect",
  "catallax-numbers",
+ "catallax-recipe",
  "catallax-shapes",
  "catallax-topology",
 ]
@@ -42,6 +43,20 @@ dependencies = [
  "catallax-step",
  "catallax-topology",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "catallax-features"
+version = "0.0.0"
+dependencies = [
+ "catallax-boolean",
+ "catallax-measure",
+ "catallax-numbers",
+ "catallax-recipe",
+ "catallax-shapes",
+ "catallax-step",
+ "catallax-topology",
  "serde_json",
 ]
 
@@ -131,6 +146,7 @@ name = "catallax-topology"
 version = "0.0.0"
 dependencies = [
  "catallax-numbers",
+ "catallax-recipe",
  "catallax-shapes",
 ]
 

@@ -335,14 +335,18 @@ fn pieces(
             cells.entry(signature).or_default().push(l);
         }
     }
+    let origins = model.face_origins(face).to_vec();
     let result = cells
         .into_values()
         .map(|loops| {
-            model.add_face(Face {
-                surface: f.surface,
-                sense: f.sense,
-                loops,
-            })
+            model.add_named_face(
+                Face {
+                    surface: f.surface,
+                    sense: f.sense,
+                    loops,
+                },
+                origins.clone(),
+            )
         })
         .collect::<Vec<_>>();
     if result.is_empty() {

@@ -9,6 +9,7 @@ use crate::points::curve_sample;
 use crate::stages::{Imprinted, Selection};
 use catallax_intersect::{Component, SurfacePair, intersect_surfaces, same_curve, tangent_at};
 use catallax_numbers::{Answer, Answered, Decider, Outcome, Refusal, Sign};
+use catallax_recipe::Origin;
 use catallax_shapes::{Curve, CurveId, GeomKey, PointId, RVector3, SurfaceId};
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, Face, FaceId, Loop, Lump, Model, Sense, Shell, Vertex,
@@ -46,6 +47,7 @@ struct FaceData {
     sense: Sense,
     original: usize,
     loops: Vec<Vec<(usize, Sense)>>,
+    origins: Vec<Origin>,
 }
 #[derive(Clone)]
 struct Use {
@@ -121,6 +123,7 @@ fn read(model: &Model, selection: &Selection) -> Result<FaceUses, Refusal> {
             sense: product(face.sense, selected_sense),
             original: face_index,
             loops,
+            origins: model.face_origins(face_id).to_vec(),
         });
     }
     Ok((faces, uses, by_edge))
@@ -279,8 +282,14 @@ fn merge_faces(
                 sense: face.sense,
                 original: i,
                 loops: Vec::new(),
+                origins: Vec::new(),
             });
         }
+    }
+    for (i, face) in faces.iter().enumerate() {
+        result[mapping[&merged.root(i)]]
+            .origins
+            .extend(face.origins.iter().cloned());
     }
     let mut visited = BTreeSet::new();
     for seed in 0..uses.len() {
@@ -696,11 +705,14 @@ pub(crate) fn sew(
                 loops.push(model.add_loop(Loop::Coedges(cs)));
             }
         }
-        stored_faces.push(model.add_face(Face {
-            surface: face.surface,
-            sense: face.sense,
-            loops,
-        }));
+        stored_faces.push(model.add_named_face(
+            Face {
+                surface: face.surface,
+                sense: face.sense,
+                loops,
+            },
+            face.origins.clone(),
+        ));
     }
     let mut shell_faces: BTreeMap<usize, Vec<FaceId>> = BTreeMap::new();
     for (i, face) in faces.iter().enumerate() {

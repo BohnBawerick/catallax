@@ -49,6 +49,10 @@ Trace constants retain exact `Real` definitions and cache enclosures on demand t
 
 Trace clones share a bounded FIFO cache of Taylor enclosures keyed by the exact parameter ball, precision and order. Constant enclosures reuse the nearest cached working precision at least as high as the request, with outward rounding to the requested precision. A regression first refuses an unresolved reciprocal at low precision, separates it at higher precision, then checks that later lower-precision evaluations reuse that enclosure instead of refusing again. Cache warming can tighten later enclosures but never changes their validity. Both the circle Taylor regression and the constant-cache regression verify that an expired decider still refuses a cached request.
 
+Surface-pair plans and rational Groebner bases have separate 32-entry thread-local FIFO caches. Keys contain complete ordered surface definitions or ordered polynomial coefficients, never store handles or addresses. Cached plans contain no store handles, and each intersection call still adds its own definitions and facts. Root isolation and every numeric predicate still run through the caller's decider. The `surface_definitions_and_argument_order_survive_repeated_queries` regression checks exact oriented sphere sections across fresh stores, changed centres and radii, swapped arguments, repeated calls and eviction.
+
+Cache hits share immutable plans and basis slices instead of copying their vectors and arbitrary-precision coefficients. Constructing new store entities still copies the definitions those entities own.
+
 ## Resolved specification correction
 
 Case 27's original description reversed the inner-tangency near misses. For cylinder radius 3, sphere radius 2 and centre `(d, 0, 0)`,

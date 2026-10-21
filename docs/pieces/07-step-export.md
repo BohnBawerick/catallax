@@ -40,7 +40,7 @@ END-ISO-10303-21;
 
 **Strings.** A string is written between apostrophes. An apostrophe inside it is doubled, a backslash is doubled, and a character outside printable ASCII (`0x20` to `0x7E`) is written as `\X2\` followed by its UTF-16 code units as four upper-case hexadecimal digits each, then `\X0\`.
 
-**Numbers.** A real number is written with `significant_digits` significant digits (a value below 1 is treated as 1), as a decimal within one unit in its last written place of the exact value. Its text is piece 1's `to_decimal_bounds` notation with two changes that STEP needs: a number without a decimal point or exponent gets a trailing `.` (`12000.`), and a number in scientific notation has `E` for `e` and a `.` after its first digit when it has no other (`1.E+30`, `2.5E-7`). Zero is `0.`. Which of the two nearest decimals is written is the creator's choice; it is deterministic. Integers that STEP needs as integers (a B-spline degree, knot multiplicities, the year 2014) are written as plain digits.
+**Numbers.** A real number is written with `significant_digits` significant digits (a value below 1 is treated as 1), as a decimal within one unit in its last written place of the exact value. Its text is piece 1's `to_decimal_bounds` notation with two changes that STEP needs: a number without a decimal point or exponent gets a trailing `.` (`12000.`), and a number in scientific notation has `E` for `e` and a `.` after its first digit when it has no other (`1.E+30`, `2.5E-7`). Zero is `0.`. Which of the two nearest decimals is written is the creator's choice; it is deterministic. When the budget allows no enclosure narrow enough to prove a decimal within that unit, the export refuses with `step.budget-exhausted` (Budgets and the deadline). Integers that STEP needs as integers (a B-spline degree, knot multiplicities, the year 2014) are written as plain digits.
 
 An enclosure that contains zero does not establish an exact zero. If decimal refinement stalls, piece 1 may prove the number coincident with zero; only that proof permits `0.` with zero rounding error. A nonzero or unresolved value keeps the existing certification refusal. Successful decimal certificates retain their existing bounds.
 
@@ -153,6 +153,8 @@ How the bounds are proven is the creator's choice. A method that fits: bound the
 
 This piece counts its `Ball` work as piece 6 does: one operation at working precision `p` costs `ceil(p / 64)^2` units, and it never uses more than the `Decider` policy's `max_precision_bits` or `max_work` on one curve or surface. Exact values it rounds (vertex positions, irrational centres and radii) are enclosed through `Decider::enclose` and `GeomStore::enclose_point`, which refuse after the deadline. So after the deadline an export refuses with `numbers.deadline` at its first such call and writes nothing, and one that needs none may finish (ARCHITECTURE.md, "The time budget").
 
+The export refuses with `step.budget-exhausted` and writes nothing when the budget allows no proven bound on something the file needs. Two examples are `atan(slope)` for a cone under `max_work = 0`, and a spline fit to a branch whose first bound needs more work than is left. It also refuses when an enclosure is too wide to write a number within one unit in its last written place. A spline fit whose proven bound misses `curve_tolerance` is not refused: it is written with the mark `step.tolerance-not-reached` (The deviation). The export never builds a `numbers.*` refusal of its own; those come only from piece 1's calls.
+
 ## Writing
 
 `write_step(model, bodies, options, dec, out)` builds the whole file first and writes it to `out` only when everything succeeded, so a refusal writes nothing. An error from `out` is refused with `step.io-error`, whose detail is the error's text; the bytes already written are then undefined.
@@ -172,6 +174,7 @@ The returned `StepReport` counts what the file holds: `solids` (items of `#16` o
 | `step.not-solid` | a body's kind is neither `Solid` nor `Empty` (piece 3 has no such kind yet, so no test reaches it) |
 | `step.unsupported-geometry` | a surface or curve form this piece cannot write (none today; the enums are non-exhaustive) |
 | `step.io-error` | writing to `out` failed |
+| `step.budget-exhausted` | the budget allowed no proven bound on a value or spline fit the file needs, or no enclosure narrow enough to write a number within one unit in its last written place |
 
 Refusals of pieces 1, 2 and 4 pass through unchanged.
 
@@ -238,7 +241,7 @@ These need piece 4 to make the curves.
 
 16. A body with edges on intersection curves with a line form or a circle form (piece 5's case 13 or the irrational case of 30, or a hand-built body on piece 4's case 6 lines): those edges are written as `LINE` and `CIRCLE`, never as B-splines, and `approximated_curves` is 0.
 17. A body with branch edges (piece 5's case 23 `A ∩ B`, or a hand-built body on piece 4's case 25 loop): each branch edge is one `B_SPLINE_CURVE_WITH_KNOTS`, clamped, with its first and last control points equal (as text) to its vertices' points; `approximated_curves` counts them. The test evaluates each B-spline exactly from its written decimals at 1,000 parameters per span and checks that every point is within `max_deviation` of both of the branch's surfaces, by the exact distance to each surface enclosed with `Ball` arithmetic (piece 2's distance conversions are upper bounds that can be up to about twice the distance, so they may be used only against `2 max_deviation`), and that `max_deviation` is at most `10^-7`. With `curve_tolerance` `10^-12`: the same check at `10^-12`, or the mark with the bound reached.
-18. Under `BudgetPolicy { max_precision_bits: 64, max_work: 10_000 }` (this budget admits piece 1's `f64` filter), case 17 either meets the tolerance or carries the mark with its proven bound; the bound always holds.
+18. Under `BudgetPolicy { max_precision_bits: 64, max_work: 10_000 }` (this budget admits piece 1's `f64` filter), case 17 either meets the tolerance, carries the mark with its proven bound, or is refused by piece 1, 2 or 4 with that piece's code unchanged or with `step.budget-exhausted`, writing nothing to `out`. Piece 4's `trace` may refuse at this budget, for example with `numbers.budget-exhausted`, since it refuses whenever a decision locating the arc's ends ends `NotExact` or piece 1 refuses. When the export answers, the bound always holds. Under `BudgetPolicy { max_precision_bits: 64, max_work: 0 }` every export of cases 1 to 17 gives the same three outcomes: an answer within the tolerance, an answer with the mark whose bound holds, or one of those refusals.
 
 ### Determinism
 

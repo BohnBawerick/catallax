@@ -19,17 +19,25 @@ impl Ball {
     /// Contains a rational, rounding its midpoint to the requested significant bits.
     pub fn from_rational(r: &Rational, precision: u32) -> Self {
         let p = precision.max(1);
-        let mid = rounded(r, p, false);
-        let rad = rounded(&(r - &mid).abs(), p, true);
+        if r.is_integer() {
+            return Self::from_integer(r.numerator(), p);
+        }
+        let numerator = Binary::from_integer(r.numerator().clone());
+        let denominator = Binary::from_integer(r.denominator().clone());
+        let mid = numerator.div_rounded(&denominator, p, false);
+        // |r - mid| = |n - mid*d| / d. Keep that residual dyadic;
+        // normalizing a new rational would only add redundant GCDs.
+        let error = (&numerator - &(&mid * &denominator)).abs();
+        let rad = error.div_rounded(&denominator, p, true);
         Self {
-            mid: Binary::from_rational(mid),
-            rad: Binary::from_rational(rad),
+            mid,
+            rad,
             precision: p,
         }
     }
     /// Contains an integer at the requested precision.
     pub fn from_integer(n: &Integer, precision: u32) -> Self {
-        Self::from_rational(&Rational::from_integer(n.clone()), precision)
+        Self::centered(&Binary::from_integer(n.clone()), &Binary::zero(), precision)
     }
     /// Working precision.
     pub fn precision(&self) -> u32 {

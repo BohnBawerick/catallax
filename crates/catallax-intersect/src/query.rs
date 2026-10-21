@@ -10,8 +10,9 @@ use catallax_numbers::{
 use catallax_shapes::{
     Apart, Curve, CurveId, GeomKey, GeomStore, Point3, PointId, Surface, Vector3,
 };
+use std::sync::Arc;
 
-pub(super) fn validate(geom: &GeomStore, c: CurveId) -> Result<Option<Plan>, Refusal> {
+pub(super) fn validate(geom: &GeomStore, c: CurveId) -> Result<Option<Arc<Plan>>, Refusal> {
     match geom.curve(c) {
         Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_) => Ok(None),
         Curve::Intersection(i) => {
@@ -115,7 +116,7 @@ fn orientation(geom: &GeomStore, c: CurveId) -> Result<Real, Refusal> {
     let Some(plan) = validate(geom, c)? else {
         return Ok(Real::one());
     };
-    let Some(divider) = plan.divider else {
+    let Some(divider) = &plan.divider else {
         return Ok(Real::one());
     };
     let Curve::Intersection(i) = geom.curve(c) else {
@@ -139,7 +140,7 @@ pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) ->
     let Outcome::ProvenCoincident(proof) = carrier else {
         return carrier;
     };
-    let Some(divider) = plan.and_then(|p| p.divider) else {
+    let Some(divider) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
         return Outcome::ProvenCoincident(proof);
     };
     let Curve::Intersection(i) = geom.curve(c) else {
@@ -150,7 +151,7 @@ pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) ->
         Outcome::ProvenCoincident(c) => return Outcome::ProvenCoincident(c),
         Outcome::Refused(e) => return Outcome::Refused(e),
         Outcome::NotExact(mut n) => {
-            n.bound = n.bound / divider.length_lower;
+            n.bound = &n.bound / &divider.length_lower;
             return Outcome::NotExact(n);
         }
     };
@@ -161,7 +162,7 @@ pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) ->
         Outcome::Refused(e) => Outcome::Refused(e),
         Outcome::NotExact(mut n) => match dec.enclose(&divider.value(&geom.position(p)), &r(1)) {
             Ok(b) => {
-                n.bound = b.lo().abs().max(b.hi().abs()) / divider.length_lower;
+                n.bound = &b.lo().abs().max(b.hi().abs()) / &divider.length_lower;
                 Outcome::NotExact(n)
             }
             Err(e) => Outcome::Refused(e),

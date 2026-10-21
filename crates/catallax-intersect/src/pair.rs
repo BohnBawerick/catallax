@@ -7,6 +7,7 @@ use catallax_shapes::{
     Circle, Curve, Cylinder, Ellipse, GeomKey, GeomStore, IntersectionCurve, Line, Meet, MeetOf,
     Plane, Point3, PointDef, Position, RPoint3, RVector3, Sphere, Surface, SurfaceId, Vector3,
 };
+use std::{cell::RefCell, collections::VecDeque, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(super) struct Divider {
@@ -583,7 +584,42 @@ fn cylinder_sphere(c: &Cylinder, s: &Sphere, sigma: Rational) -> Plan {
         frame,
     )
 }
-pub(super) fn plan(a: &Surface, b: &Surface) -> Result<Plan, Refusal> {
+struct CachedPlan {
+    surfaces: [Surface; 2],
+    plan: Arc<Plan>,
+}
+
+thread_local! {
+    // Keys are complete ordered definitions, never arena handles or addresses.
+    // The cache cannot retain a whole model and has a fixed per-thread cap.
+    static PLANS: RefCell<VecDeque<CachedPlan>> = const { RefCell::new(VecDeque::new()) };
+}
+
+pub(super) fn plan(a: &Surface, b: &Surface) -> Result<Arc<Plan>, Refusal> {
+    if let Some(plan) = PLANS.with(|plans| {
+        plans
+            .borrow()
+            .iter()
+            .find(|entry| entry.surfaces[0] == *a && entry.surfaces[1] == *b)
+            .map(|entry| entry.plan.clone())
+    }) {
+        return Ok(plan);
+    }
+    let plan = Arc::new(uncached_plan(a, b)?);
+    PLANS.with(|plans| {
+        let mut plans = plans.borrow_mut();
+        if plans.len() == 32 {
+            plans.pop_front();
+        }
+        plans.push_back(CachedPlan {
+            surfaces: [a.clone(), b.clone()],
+            plan: plan.clone(),
+        });
+    });
+    Ok(plan)
+}
+
+fn uncached_plan(a: &Surface, b: &Surface) -> Result<Plan, Refusal> {
     Ok(match (a, b) {
         (Surface::Plane(a), Surface::Plane(b)) => planes(a, b),
         (Surface::Plane(p), Surface::Cylinder(c)) => plane_cylinder(p, c, r(1)),
@@ -618,12 +654,13 @@ fn add_point(
 }
 pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Answered<SurfacePair> {
     let plan = plan(geom.surface(a), geom.surface(b))?;
-    if let Some(answer) = plan.terminal {
-        return Ok(Answer::exact(answer));
+    if let Some(answer) = &plan.terminal {
+        return Ok(Answer::exact(answer.clone()));
     }
     let points: Vec<_> = plan
         .points
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|p| add_point(geom, [a, b], p))
         .collect();
     let mut components = vec![];
@@ -639,18 +676,21 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
             components.push(Component::Point { point });
         }
     } else {
-        for spec in plan.curves {
-            let witness = spec.witness.map(|p| add_point(geom, [a, b], p));
+        for spec in &plan.curves {
+            let witness = spec
+                .witness
+                .as_ref()
+                .map(|p| add_point(geom, [a, b], p.clone()));
             let definition = if let Some(witness) = witness {
                 Curve::Intersection(IntersectionCurve {
                     surfaces: [a, b],
                     witness,
                 })
             } else {
-                match spec.form {
+                match &spec.form {
                     CurveForm::Line { origin, dir } => Curve::Line(Line {
-                        origin: point_rational(&origin).expect("analytic rational origin"),
-                        dir,
+                        origin: point_rational(origin).expect("analytic rational origin"),
+                        dir: dir.clone(),
                     }),
                     CurveForm::Circle {
                         center,
@@ -658,10 +698,10 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
                         radius_sq,
                         ref_dir,
                     } => Curve::Circle(Circle {
-                        center: point_rational(&center).expect("analytic rational center"),
-                        normal,
-                        radius_sq,
-                        ref_dir,
+                        center: point_rational(center).expect("analytic rational center"),
+                        normal: normal.clone(),
+                        radius_sq: radius_sq.clone(),
+                        ref_dir: ref_dir.clone(),
                     }),
                     CurveForm::Ellipse {
                         center,
@@ -670,11 +710,11 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
                         major_sq,
                         minor_sq,
                     } => Curve::Ellipse(Ellipse {
-                        center: point_rational(&center).expect("analytic rational center"),
-                        normal,
-                        major_dir,
-                        major_sq,
-                        minor_sq,
+                        center: point_rational(center).expect("analytic rational center"),
+                        normal: normal.clone(),
+                        major_dir: major_dir.clone(),
+                        major_sq: major_sq.clone(),
+                        minor_sq: minor_sq.clone(),
                     }),
                     CurveForm::Branch => unreachable!("a branch has a witness"),
                 }
@@ -701,7 +741,7 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
                     None,
                 );
             }
-            let singular: Vec<_> = spec.singular.into_iter().map(|i| points[i]).collect();
+            let singular: Vec<_> = spec.singular.iter().map(|&i| points[i]).collect();
             for p in &singular {
                 record(
                     geom,

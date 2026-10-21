@@ -390,6 +390,14 @@ impl Rational {
                 d: Integer(BigInt::one() << (exponent - cancel)),
             };
         }
+        if self.d == rhs.d {
+            let numerator = if subtract {
+                &self.n - &rhs.n
+            } else {
+                &self.n + &rhs.n
+            };
+            return Self::new(numerator, self.d.clone()).expect("positive denominator");
+        }
         let g = self.d.0.gcd(&rhs.d.0);
         let a = &self.d.0 / &g;
         let b = &rhs.d.0 / &g;
@@ -408,6 +416,15 @@ impl Rational {
         self.add_sub(rhs, true)
     }
     pub(crate) fn mul(&self, rhs: &Self) -> Self {
+        if self.is_zero() || rhs.is_zero() {
+            return Self::zero();
+        }
+        if self.n.0.is_one() && self.d.0.is_one() {
+            return rhs.clone();
+        }
+        if rhs.n.0.is_one() && rhs.d.0.is_one() {
+            return self.clone();
+        }
         let a = self.d.0.trailing_zeros().unwrap();
         let b = rhs.d.0.trailing_zeros().unwrap();
         if self.d.0.bits() == a + 1 && rhs.d.0.bits() == b + 1 {

@@ -60,6 +60,12 @@ Dyadic sums/differences normalize the integer numerator before constructing the 
 
 Shared odd-denominator regressions check addition, subtraction, cancellation to zero and reciprocals against GMP at 53, 607 and 2,048 bits. Addition cancels only against the shared denominator GCD, and a reciprocal swaps already coprime fields without another GCD. Sign-stable ball products form their exact center and radius before rounding; a before/after arithmetic probe retained the same midpoint/radius hash across 40,000 products.
 
+Equal non-dyadic denominators need only the numerator sum or difference and its final normalization, without denominator GCDs or cross-products. Zero and unit rational products reuse their normalized answers before cross-cancellation. The existing GMP field-law, shared-denominator, signed-cancellation and zero-domain tests cover these paths.
+
+Real-expression construction evaluates operand-derived coarse balls only when no exact rational cache exists. The rational cache already takes precedence, so computing both balls discarded work. Expression dependencies, approximate intervals and definedness flags are unchanged. Existing shared-zero and undefined-outer-operation regressions cover those dependencies.
+
+Ball construction rounds `n/d` with exact binary quotient arithmetic, then rounds the exact residual `|n - mid*d|/d` outward for its radius. Integers use the same binary centering path as arithmetic. Neither path needs to normalize temporary rational fractions. `ball_construction_preserves_signed_ties_and_exact_residuals` checks zero, positive and negative midpoint ties, precision-zero clamping and non-dyadic residuals; the existing GMP and MPFR families cover signs, scales and deep precision.
+
 Dyadic alignment borrows the unshifted mantissa and shifts only the operand with the larger exponent. Equal exponents need no shifted copies. An unchanged rounded midpoint has exactly zero rounding error, without subtracting equal mantissas.
 
 Ball products form the same exact interval before rounding. For sign-stable midpoint-radius inputs `(m,r)` and `(n,s)`, its center is `mn + sign(mn)rs` and radius is `|m|s + |n|r`. When only one interval crosses zero, the stable interval's endpoint farthest from zero scales the crossing interval's center and radius. Two zero-crossing intervals retain the four extremal products. These identities avoid expanding wide endpoints and then cancelling them again; midpoint rounding, outward radius rounding and work charges are unchanged.

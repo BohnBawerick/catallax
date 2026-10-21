@@ -326,6 +326,27 @@ Why: a nonnegative enclosure of an algebraic zero can have a positive midpoint a
 Migration: no signature, rounding rule or default budget changes. Previously successful certificates take the same path. Regressions use a cubic algebraic identity and a tiny positive perturbation to distinguish exact zero from a small unresolved value.
 
 
+## 2026-10-19: what a boolean stage record's statistics mean
+
+Pieces: 5, cli
+Change: in `StageRecord::stats`, every counter other than `max_bits` is what the stage added to the `Decider`'s statistics, and `max_bits` is the `Decider`'s running `max_bits` when the stage ended, an upper bound on the stage's own peak. Piece 5 reads statistics only through `stats()`, never `take_stats()`.
+Why: piece 1's `Decider` keeps only a running maximum precision and offers no way to restore cleared statistics, so a stage's own `max_bits` cannot be observed without clearing the caller's totals.
+Migration: piece 5 snapshots `dec.stats()` around each stage. Its test writer checks case 53 as now written. No signature changes.
+
+## 2026-10-19: STEP export refuses when the budget allows no bound
+
+Pieces: 7
+Change: new refusal code `step.budget-exhausted`. The export refuses with it, writing nothing, when the budget allows no proven bound on a value or spline fit the file needs, or no enclosure narrow enough to write a number within one unit in its last written place. A spline fit with a proven bound that misses `curve_tolerance` is still written with the mark `step.tolerance-not-reached`.
+Why: the description gave no outcome for an export whose budget reaches no bound at all, and the export must not invent a `numbers.*` refusal. Piece 6 already has the matching `measure.budget-exhausted`.
+Migration: the piece 7 creator returns the code in those cases. The piece 7 test writer accepts it in case 18 and its zero-work variant.
+
+## 2026-10-19: a step may name one body twice
+
+Pieces: judge interface, cli
+Change: a step's `args` may name the same operand or step twice. `X ∪ X` and `X ∩ X` are `X`, and `X − X` is empty. `catallax-cli` answers such a step by that set rule, without calling piece 5's `boolean`, whenever both arguments resolve to the same `BodyId`. The result carries `X`'s marks once, and the step makes no decision. The question format is unchanged, so its version stays at 2.
+Why: the question format already accepted repeated names, but piece 5 treats one `BodyId` passed as both operands as a programming error, so such a valid question made the program panic.
+Migration: the CLI builder applies the set rule. Pieces 1 to 7 are unchanged.
+
 ## 2026-10-22: publish Catallax and retain the version 2 exchange
 
 Pieces: all, cli, exchange

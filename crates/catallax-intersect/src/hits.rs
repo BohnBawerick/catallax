@@ -14,6 +14,7 @@ use catallax_shapes::{
     Circle, Curve, CurveId, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3, PointDef,
     Position, SurfaceId,
 };
+use std::sync::Arc;
 
 #[derive(Clone)]
 struct Candidate {
@@ -96,7 +97,7 @@ fn keep_branch(
     geom: &GeomStore,
     c: CurveId,
     p: &Point3,
-    plan: &Option<Plan>,
+    plan: &Option<Arc<Plan>>,
     dec: &mut Decider,
     marks: &mut MarkLog,
 ) -> Result<Option<bool>, Refusal> {

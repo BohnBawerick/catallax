@@ -21,8 +21,8 @@
     "bio": "https://pedro.zigrawbohnbawerick.org/"
   },
   "historical_robustness": {
-    "source": "Project-owner supplied report of fix batch 4, matched run on the source exact-brep hard-test corpus.",
-    "scope": "Historical source-run figures, not a measurement of this public revision. The public starting tree excludes that fix batch. Raw source-run artifacts are not included here; these totals are owner-reported, not independently reproduced by this site capture.",
+    "source": "Project-owner supplied report of the latest kernel, matched against our own hard-test corpus.",
+    "scope": "Historical source-run figures, not a measurement of this public revision. The measured source changes are not in the public starting tree. Raw source-run artifacts are not included here; these totals are owner-reported, not independently reproduced by this site capture.",
     "requests": {
       "total": 379,
       "answered": 363,

@@ -39,11 +39,12 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Ambiguous and unsupported cases remain unfinished work.
 - `catallax-measure` computes volume, area and centroid with proven bounds for the body actually built.
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.
+- `catallax-mesh` builds shared-edge display meshes of analytic faces and certified intersection traces, with picking IDs, proven chord bounds and OBJ export.
 - `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/2` JSON form. It evaluates no geometry.
 - `catallax-field` compiles recipe stock solids and booleans into a fixed-order tape, keeps names outside that tape, and supplies tentative and proven scalar/batch queries. Boolean residuals carry conservative distance bounds, not a true-distance claim.
 - `catallax-cli` builds `catallax` and the legacy `exact-brep` program from the same main. They read a question, build and operate, measure, and write a manifest and optional STEP file.
 
-Sketch features, fillets, chamfers, shell, offset, draft, sweep, loft, display meshes and STEP import are still missing. The kernel does not yet implement the whole PRD. Existing ignored regressions remain visible; publishing the code does not resolve them.
+Sketch features, fillets, chamfers, shell, offset, draft, sweep, loft and STEP import are still missing. The kernel does not yet implement the whole PRD. Existing ignored regressions remain visible; publishing the code does not resolve them.
 
 ## Building
 
@@ -66,6 +67,52 @@ python3 -B -m unittest discover -s tools/edge-hunt -v
 ```
 
 GitHub-hosted CI runs formatting, clippy, all enabled release tests and doctests. Crate `TESTS.md` files describe extra opt-in workloads. Timing benchmarks report measurements, never correctness gates.
+
+## Display meshes
+
+`catallax_mesh::mesh_body(&model, body, &options, &mut decider)` returns an
+`Answered<Mesh>`. `MeshOptions::chord_tolerance` is a positive exact length in
+millimetres. `max_vertices` limits deterministic refinement, including temporary
+periodic chart copies. The default is 0.01 mm and one million vertices.
+
+`Mesh::positions` is shared across faces. Each `Triangle` carries its input
+`FaceId`; each `FaceMesh` identifies a contiguous triangle range and its proven
+maximum chord error. `EdgeMesh` records the one polyline used by both incident
+faces, including its proven curve-to-polyline error. Face IDs belong to the
+input model, not to rebuild-stable recipe names.
+
+Planes, cylinders, cones, spheres and tori use their exact definitions.
+Intersection edges use piece 4's certified traces. Surface bounds use Taylor's
+theorem and analytic second-derivative bounds over parameter triangles.
+Bounds include replacement of boundary vertices and binary64 coordinate
+rounding. They describe chord error against the analytic face and edge
+definitions, not a proof that polygonal trims equal the exact curved region.
+All covered definitions have proven bounds, so no sampled estimate is presented
+as a proof. Input and trace marks are preserved.
+
+The implementation is serial with fixed traversal, subdivision and output
+orders. Pure-Rust angle projection and dyadic periodic coordinates avoid
+platform trigonometric libraries and inconsistent seam copies. Concurrent
+callers do not share state. Tests compare OBJ bytes with 1, 2 and 4 workers,
+count every mesh edge twice with opposite directions, and sample triangle
+interiors against independent analytic distance formulas.
+
+Write an OBJ for Blender without changing the judge CLI:
+
+```sh
+cargo run --release -p catallax-mesh --example obj -- torus torus.obj 0.05
+cargo run --release -p catallax-mesh --example obj -- cross intersection.obj 0.05
+```
+
+The example also accepts `block`, `cylinder`, `cone`, `frustum`, `sphere`,
+`drill` and `lens`. Library callers write any built body with `Mesh::write_obj`.
+OBJ groups are named `face_<id>`, and their triangles share vertex indices.
+Resource or coordinate-precision failures return `mesh.precision-or-budget`;
+invalid controls return `mesh.invalid-options`. No over-tolerance or
+non-watertight mesh is returned as a successful answer. A caller-supplied
+wall-clock deadline can still cancel meshing through `Decider`; the default
+library decider has no deadline.
+
 
 ## Where to start
 

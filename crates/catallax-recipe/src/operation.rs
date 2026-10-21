@@ -102,6 +102,16 @@ pub enum Operation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
     },
+    /// Cuts a profile through a target in both directions, without end caps.
+    ExtrudeThrough {
+        /// The body to cut.
+        target: StepId,
+        /// The sketch step.
+        profile: StepId,
+        /// Tool direction; the sketch normal when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+    },
     /// A profile turned about an axis in its plane.
     Revolve {
         /// The sketch step.
@@ -300,6 +310,7 @@ impl Operation {
             Operation::Sketch { .. } => "sketch",
             Operation::Path { .. } => "path",
             Operation::Extrude { .. } => "extrude",
+            Operation::ExtrudeThrough { .. } => "extrude_through",
             Operation::Revolve { .. } => "revolve",
             Operation::Hole { .. } => "hole",
             Operation::Boolean { .. } => "boolean",
@@ -347,6 +358,9 @@ impl Operation {
             Operation::Extrude { profile, .. } | Operation::Revolve { profile, .. } => {
                 vec![(profile, Profile)]
             }
+            Operation::ExtrudeThrough {
+                target, profile, ..
+            } => vec![(target, Body), (profile, Profile)],
             Operation::Hole { target, .. } => vec![(target, Body)],
             Operation::Boolean { target, tool, .. }
             | Operation::SmoothBlend { target, tool, .. } => {

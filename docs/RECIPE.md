@@ -1,10 +1,10 @@
 # Catallax recipe language
 
-Version 2, format `catallax-recipe/2`. [PRD.md](PRD.md) sections 2, 4 and 10 step 3 ask for this document.
+Version 3, format `catallax-recipe/3`. [PRD.md](PRD.md) sections 2, 4 and 10 step 3 ask for this document.
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
-The crate `catallax-recipe` holds the data model: the types, their canonical JSON text and the checks that need no geometry. `catallax-field` evaluates the stock solids of section 4.0 and booleans, with recipe-named supporting faces and certified queries described in [FIELD.md](FIELD.md). Other recipe operations and B-rep recipe evaluation remain unimplemented.
+The crate `catallax-recipe` holds the data model: the types, their canonical JSON text and the checks that need no geometry. `catallax-field` evaluates stock solids and booleans, with the certified queries described in [FIELD.md](FIELD.md). `catallax-features::evaluate` builds named B-rep stock solids, sketches, extrusions, revolutions, through-all cuts and booleans. Its current rational analytic representation leaves the legal-input bugs in section 7.14 open. The two evaluators do not yet cover the whole language.
 
 The exchange contract in [JUDGE-INTERFACE.md](JUDGE-INTERFACE.md) is unchanged. Its question format stays the way the independent tester talks to the B-rep half. The recipe language sits beside it and does not replace it.
 
@@ -20,7 +20,7 @@ A value is one of three kinds:
 
 | Kind | Made by | Read by |
 |---|---|---|
-| profile | `sketch` | `extrude`, `revolve`, `sweep`, `loft` |
+| profile | `sketch` | `extrude`, `extrude_through`, `revolve`, `sweep`, `loft` |
 | path | `path` | `sweep` |
 | body | every other operation | the operations that act on solids |
 
@@ -50,7 +50,7 @@ Choices:
 
 ### 1.3.1 Algebraic evaluation of rational inputs
 
-The 2026-10-22 architecture decision changes evaluated geometry, not this version 2 input grammar. A rational degree angle is converted to certified algebraic sine/cosine values. Normalising a direction or computing an arc radius may also introduce algebraic values. Both evaluators keep these expressions exactly in the shared shape definitions; they must not reject a legal input merely because the result is not rational. An arc centred at the origin through `(1,1)` has radius `sqrt(2)` without requiring a new number syntax.
+The 2026-10-22 architecture decision changes evaluated geometry, not the rational number input grammar. A rational degree angle is converted to certified algebraic sine/cosine values. Normalising a direction or computing an arc radius may also introduce algebraic values. Both evaluators keep these expressions exactly in the shared shape definitions; they must not reject a legal input merely because the result is not rational. An arc centred at the origin through `(1,1)` has radius `sqrt(2)` without requiring a new number syntax.
 
 An oblique circular extrusion reduces to an elliptic-cylinder support with the original cap planes and finite sweep domain. A supported meridional revolve reduces to analytic supports with exact angular trims. The recipe and segment origins remain the definition of the operation after reduction. Unsupported trimmed revolution carriers remain implementation gaps, not additional impossible inputs. Generic derived-surface storage for future profiles follows the architecture decision when its full proof/query path is supplied.
 
@@ -151,7 +151,7 @@ Each operation's section lists the roles it makes. All of them:
 | Role | Made by | Fields |
 |---|---|---|
 | `start`, `end` | block, cylinder, cone, extrude, revolve, sweep, loft | none |
-| `side` | stock solids, extrude, revolve, sweep, loft | `segment`; a fixed segment id for stock solids; for a sweep also `path` |
+| `side` | stock solids, extrude, extrude_through, revolve, sweep, loft | `segment`; a fixed segment id for stock solids; for a sweep also `path` |
 | `hole` | hole | `at` (placement id), `part` |
 | `blend` | fillet | `edge` (edge name) |
 | `bevel` | chamfer | `edge` |
@@ -315,7 +315,7 @@ For example, a sphere's face is `{"step":"ball","role":{"side":{"segment":"wall"
 - A torus is a circle meridian `wall`, centred at radial distance `R`, revolved through 360 degrees.
 - A cone is its axial trapezoid or triangle revolved through 360 degrees. The sloped meridian generates `side.wall`. The lower and upper radial meridians generate the named `start` and `end` disks. An expansion to generic revolve must map those radial-segment side origins to these cap origins before exposing the stock result. The axis generates no face.
 
-This is a naming obligation on the eventual feature expansion, not an implementation of sketch, extrude or revolve in `catallax-field`.
+This remains a naming obligation on the eventual canonical feature expansion. The current B-rep feature evaluator preserves explicitly authored sweep origins but does not yet certify stock-to-feature equivalence or perform the cone-cap origin remapping. The field evaluator does not implement sketch, extrude or revolve.
 
 
 ### 4.1 Extrude
@@ -340,6 +340,28 @@ Two consecutive collinear lines make coplanar side faces. These merge (ND6), and
 
 - **A negative distance is allowed.** It extrudes the other way, and `start` stays in the sketch plane. Flipping the direction is then a parameter edit that keeps every name. The alternative is requiring `d > 0`, as SolidDraft's slot does, and flipping by `direction`. One sign rule is less to explain, but a flip becomes a different kind of edit.
 
+#### 4.1.1 Through-all cut
+
+Version 3 adds `op: "extrude_through"` with fields in this order:
+
+| Parameter | Value |
+|---|---|
+| `target` | body `S` |
+| `profile` | sketch step, region `R`, unit normal `n` |
+| `direction` | optional non-zero vector `w`; defaults to `n` |
+
+**Definition.** Let `T = { q + t w : q in R, t in the real numbers }`. The result is `S −* T`. The tool extends in both directions from the sketch plane. A one-sided blind cut is an ordinary signed `extrude` followed by `boolean` subtraction.
+
+**Names.** Target faces keep their origins. Tool walls carry this step's `side` origins, with the sketch segment ids. There are no `start` or `end` origins because the infinite tool has no caps. Collinear or cocircular consecutive segments merge their origin sets.
+
+**Impossible.** `w = 0`, or `w · n = 0`. Empty profiles leave the target unchanged; an empty target stays empty. The self-touching-shell rule still applies.
+
+The B-rep implementation uses finite construction caps whose exclusion is proved from the target's defining bounds, not an arbitrary large length. Let the target lie within the sphere of radius `B` about model-space zero, and let `o` be the sketch origin. Choose
+
+`k = ((B + |o|₁) |n|₁) / |w · n| + 1`.
+
+For every target point, its line parameter `(p − o) · n / (w · n)` lies strictly between `−k` and `k`. Sweeping the shifted profile `R − k w` by `2 k w` therefore gives exactly the same cut inside `S`, with both caps outside it. Stock and swept definitions supply conservative bounds; union takes their maximum, intersection their minimum, and subtraction keeps the target bound. No finite construction cap can survive on the result boundary.
+
 ### 4.2 Revolve
 
 | Parameter | Value |
@@ -351,6 +373,8 @@ Two consecutive collinear lines make coplanar side faces. These merge (ND6), and
 **Definition.** `Rot(φ)` turns by `φ` degrees about the axis, counterclockwise about `u` by the right-hand rule. The solid is the union of `Rot(φ)(R)` for `φ` in `[0, θ]`.
 
 **Names.** `start`, the face `R`. `end`, the face `Rot(θ)(R)`. Neither exists when `θ = 360`. `side` with `segment` `s`, the surface `s` sweeps. A segment that lies on the axis sweeps no area and makes no face.
+
+At 180 degrees, caps joined along an axis segment merge into one physical face carrying both `start` and `end` origins. The shared axis segment is not a physical edge. Disjoint caps remain separate faces.
 
 **Impossible.** `θ <= 0` or `θ > 360`. `u = 0`. An axis that does not lie in the sketch plane. An axis that meets the interior of `R`, because the solid would then pass through itself. The region may touch the axis along segments or at points.
 
@@ -728,7 +752,7 @@ A recipe is a JSON text, RFC 8259, in UTF-8:
 
 | Key | Value |
 |---|---|
-| `format` | `"catallax-recipe/2"` |
+| `format` | `"catallax-recipe/3"` |
 | `name` | the part's name |
 | `description` | optional |
 | `steps` | list of steps; each is an object with `id`, `op` and the operation's parameters |
@@ -738,7 +762,7 @@ A small recipe in canonical text:
 
 ```json
 {
-  "format": "catallax-recipe/2",
+  "format": "catallax-recipe/3",
   "name": "plate",
   "steps": [
     {
@@ -830,7 +854,7 @@ A small recipe in canonical text:
 
 **Versions.** The format name carries the version. Any change of meaning or schema makes a new version and an entry in [INTERFACE-CHANGES.md](INTERFACE-CHANGES.md). A reader reads only the versions it knows, and older ones go through an explicit conversion.
 
-Version 2 adds the five stock-solid operations and permits singleton singular-vertex names. Version 1 files containing only the original operations migrate by explicitly changing `format` to `catallax-recipe/2`, then parsing, checking and writing canonical text. Their existing operations, numbers, placements and names keep their meaning. The reader does not silently relabel older files or accept a version alias.
+Version 2 added the five stock-solid operations and singleton singular-vertex names. Version 3 adds `extrude_through`; older operation meanings do not change. Reviewed version 1 or 2 files migrate by explicitly changing `format` to `catallax-recipe/3`, then parsing, checking and writing canonical text. The reader does not silently relabel older files or accept a version alias. The field evaluator accepts the current schema but still refuses sketches and feature operations with `field.unsupported-operation`.
 
 
 Choices:
@@ -934,9 +958,9 @@ A path corner makes the frame jump. Options: a mitre, where profiles meet at the
 
 Section 4.12 matches points at equal fractions of arc length. A line-to-line ruled surface is then a bilinear patch, an exact spline. Arc-length correspondence on arcs makes surfaces that are not NURBS. Both kernels hold them exactly by definition, and STEP would approximate them. PRD section 4 says "exact spline faces" for lofts, which needs a rational parametrisation of arcs instead. Open: which parametrisation; whether a smooth loft spaces sections uniformly, as now, or by chord length; and what to do when corresponding loops have different segment counts, where the options are refusing or splitting segments.
 
-### 7.8 Through-all and up-to-face extrudes
+### 7.8 Up-to-face and one-sided through-all extrudes
 
-Version 1 extrudes by a distance. A cut "through all" can use a long tool today, but that tool's length is arbitrary. Options: an unbounded extrude, defined as for `"through"` holes; end conditions "up to face" and "up to next", which read a face reference.
+Section 4.1.1 settles a two-sided through-all cut against a named target. An unbounded body-valued extrude, a one-sided through-all cut, and end conditions "up to face" or "up to next" remain open. The latter two need face references and a rule for several intersections.
 
 ### 7.9 Feature patterns
 
@@ -957,3 +981,23 @@ After an edit moves a part, the stored `near` point is stale but still chooses. 
 ### 7.13 Which piece keeps a split segment's id
 
 Section 3.5 leaves this to the sketch editor. A shared rule, such as "the piece containing the old start point", would make two editors behave the same.
+
+### 7.14 B-rep feature geometry bugs
+
+These are valid geometry, not additions to the impossible-input lists. The current B-rep feature implementation refuses them explicitly until the shared exact surface and frame representation is widened:
+
+| Bug | Refusal code | Missing exact geometry |
+|---|---|---|
+| A signed extrusion whose normalized direction is irrational, such as `[1, 0, 1]`; a quarter-turn revolve about an axis with an irrational unit vector | `features.unsupported-algebraic-placement` | Algebraic placements and rotated frames |
+| A non-cardinal rational-degree revolve, such as 45 degrees | `features.unsupported-algebraic-revolve-frame` | Algebraic rotated cap and trimming-curve definitions |
+| An oblique extrusion of a circle or arc, such as direction `[3, 0, 4]` from the XY plane | `features.unsupported-elliptic-cylinder` | Elliptic cylinders, not circular cylinders |
+| A cylinder generated with irrational radius, including an arc with radius squared 2 | `features.unsupported-algebraic-cylinder-radius` | Cylinders with exact algebraic radii or squared-radius definitions |
+| A revolved circular arc producing a sphere with irrational radius | `features.unsupported-algebraic-sphere-radius` | Spheres with exact algebraic radii |
+| A revolved arc or circle whose torus major or minor radius is irrational | `features.unsupported-algebraic-torus-radius` | Tori with exact algebraic radii |
+| A valid trimmed horn or spindle torus sheet generated from an arc | `features.unsupported-spindle-torus` | Non-ring torus sheets and their branch predicates |
+
+Extrusion supports axis-aligned and Pythagorean directions whose unit vectors are rational. Circular sweeps additionally require a normal direction and a rational surface radius. Revolve supports full turns and partial turns of 90, 180 or 270 degrees when the required frames and dimensions are rational. Zero degrees is impossible, not an empty partial revolve.
+
+The language still specifies angles as rational degrees. A non-cardinal Pythagorean unit-circle point does not correspond to a rational number of degrees, so it has no exact input spelling in this schema. Supporting explicit rational cosine/sine pairs needs a separately versioned angle representation. No rounded degree value is treated as the exact Pythagorean angle.
+
+Inherited cone/torus boolean gaps and unresolved exact decisions remain unfinished kernel work too. These feature limits do not justify approximate geometry, extra impossible-input rules, or a claim that the complete PRD is implemented.

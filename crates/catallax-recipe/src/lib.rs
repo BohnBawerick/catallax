@@ -3,7 +3,7 @@
 //! A recipe is the feature tree both kernels build a part from. It is a list of steps;
 //! each step runs one operation, reads the values of earlier steps by their ids, and
 //! names faces and edges by the operations that made them, never by their order in a
-//! result. This crate holds the types, their canonical JSON text (`catallax-recipe/2`)
+//! result. This crate holds the types, their canonical JSON text (`catallax-recipe/3`)
 //! and the checks that need no geometry. It evaluates nothing.
 //!
 //! The contract is `docs/RECIPE.md`.
@@ -12,7 +12,7 @@
 //! use catallax_recipe::Recipe;
 //!
 //! let text = r#"{
-//!   "format": "catallax-recipe/2",
+//!   "format": "catallax-recipe/3",
 //!   "name": "plate",
 //!   "steps": [
 //!     { "id": "outline", "op": "sketch",

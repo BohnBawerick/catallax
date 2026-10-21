@@ -22,7 +22,7 @@ Catallax was started by Pedro De Paiva.
 
 ## One recipe, two kernels
 
-One recipe, the feature tree, is the master. An exact B-rep kernel and a signed distance field kernel build each part from it, using one mathematical definition for each operation. Faces and edges will be named by the operation that created them, not their position in a result list.
+One recipe, the feature tree, is the master. An exact B-rep kernel and a signed distance field kernel build each part from it, using one mathematical definition for each operation. Recipe builds name faces and edges by the operations that created them, not their position in a result list.
 
 The kernels must agree exactly where mathematics allows, and within 1 nm only where necessity forces a tolerance. Impossible geometry is the only acceptable final refusal. Every other refusal is unfinished work. The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels, not a claim to beat them.
 
@@ -40,11 +40,12 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-measure` computes volume, area and centroid with proven bounds for the body actually built.
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.
 - `catallax-mesh` builds shared-edge display meshes of analytic faces and certified intersection traces, with picking IDs, proven chord bounds and OBJ export.
-- `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/2` JSON form. It evaluates no geometry.
+- `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/3` JSON form. It evaluates no geometry.
 - `catallax-field` compiles recipe stock solids and booleans into a fixed-order tape, keeps names outside that tape, and supplies tentative and proven scalar/batch queries. Boolean residuals carry conservative distance bounds, not a true-distance claim.
+- `catallax-features::evaluate` builds named B-rep stock solids, exact line/circle/arc profiles with holes, signed extrusions, rationally represented full and partial revolutions, explicit booleans and target-bounded through-all cuts. `Built` retains an immutable recipe definition and returns the model, result and intermediate body handles; `Model::face_origins`, `edge_name` and `vertex_name` expose the names. Split faces keep their origins and merged faces take their union.
 - `catallax-cli` builds `catallax` and the legacy `exact-brep` program from the same main. They read a question, build and operate, measure, and write a manifest and optional STEP file.
 
-Sketch features, fillets, chamfers, shell, offset, draft, sweep, loft and STEP import are still missing. The kernel does not yet implement the whole PRD. Existing ignored regressions remain visible; publishing the code does not resolve them.
+General algebraic feature frames, oblique circular sweeps and some generated radii remain unsupported legal geometry, listed with specific refusal codes in [RECIPE.md section 7.14](docs/RECIPE.md#714-b-rep-feature-geometry-bugs). Fillets, chamfers, shell, offset, draft, sweep, loft and STEP import remain missing. The kernel does not yet implement the whole PRD. Existing ignored regressions remain visible.
 
 ## Building
 

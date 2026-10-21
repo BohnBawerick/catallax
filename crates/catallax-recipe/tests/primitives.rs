@@ -3,7 +3,7 @@
 use catallax_recipe::{EdgeName, ElementId, Operation, Origin, Recipe, Role, StepId, VertexName};
 
 const SOLIDS: &str = r#"{
-  "format":"catallax-recipe/2", "name":"stock solids",
+  "format":"catallax-recipe/3", "name":"stock solids",
   "steps":[
     {"id":"box", "op":"block", "size":["2.00","3/2","4"], "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
     {"id":"tube", "op":"cylinder", "radius":"1/3", "height":"7", "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},

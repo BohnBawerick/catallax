@@ -289,7 +289,9 @@ impl Ctx<'_> {
                 Role::Start | Role::End,
             ) => Ok(()),
             (
-                O::Extrude { profile, .. } | O::Revolve { profile, .. },
+                O::Extrude { profile, .. }
+                | O::ExtrudeThrough { profile, .. }
+                | O::Revolve { profile, .. },
                 Role::Side {
                     segment,
                     path: None,

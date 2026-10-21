@@ -488,3 +488,45 @@ Pieces: CLI verification and algebraic geometry consumers
 Change: the manifest/3 publisher recognises `elliptic-cylinder` under the preceding deterministic-verification decision. Parabolas and hyperbolas retain their distinct manifest/3 tags. The shared-algebraic-foundation entry's CLI restriction applies to the legacy question/2 and manifest/2 exchange, whose tags and refusals remain unchanged.
 Why: the verification exchange landed while its geometry consumers were being widened; its explicit versioned vocabulary must not inherit the legacy publication restriction.
 Migration: select extended publication only for `catallax-verify`. Keep legacy commands on their existing vocabulary. Request-scoped work accounting also covers the new checked algebraic proofs; neither exchange's numeric limits or default allowance changes.
+
+## 2026-10-22: retain curve-meeting and root-refinement proofs
+
+Pieces: 1, 5
+Change: explicit curve meetings name both proven carriers in their point definitions. Line substitution uses the common polynomial GCD as its incidence certificate instead of re-evaluating its roots. Analytic conic candidates retain their exact equation checks without repeating curve membership. A finite meeting with either support exhausts the candidates for an intersection branch; the other support and component predicate remain mandatory. Certified branch membership retains its original proof as incidence. Root enclosure certificates retain exact bisection endpoints and the lower-end sign, so higher-precision calls can continue the same sequence when their sign-filter precision agrees, replaying the cold-evaluation work.
+Why: later boundary queries discarded already-proven curve incidence, and increasing enclosure precision repeated exact polynomial evaluation over the same bisection prefix.
+Migration: no public signatures, default budgets, deadline or exchange-format changes. A completed refinement retains the same bisection sequence and rounding. Cold and warmed caches retain identical work charges under the selected sign algorithm. Refined snapshots and changed defining polynomials retain separate certificates.
+
+## 2026-10-22: skip zero and repeated Taylor products
+
+Piece: 4
+Change: interval Taylor multiplication and division skip coefficient ranges proved identically zero. Squared expressions and square-root recurrences compute symmetric products once, while retaining the original order of rounded additions and subtractions.
+Why: high-order traces used by face membership and measurement repeatedly multiplied the same coefficient pairs or scanned zero tails.
+Migration: no public signatures, trace definitions, orders, precision or rounding rules change. A before/after public-API probe retained identical midpoint, radius and precision fingerprints for 57,456 coefficients across circles and quartic branches, Taylor orders zero through twenty and four working precisions.
+
+## 2026-10-22: filter algebraic bisection signs
+
+Piece: 1
+Change: when the odd part of a bisection denominator exceeds 512 bits, root enclosure tries a budgeted polynomial ball at the caller's working precision, capped at 512 bits, before exact rational Horner evaluation. Smaller odd denominators retain the direct exact path. Only a strict interval sign selects a side; zero-containing enclosures retain exact evaluation. Bisection points, root selection and final rounding stay unchanged.
+Why: a certified bracket can have very large odd denominators without needing equally large working precision. Exact polynomial values at every midpoint exhausted the budget even for the real root of `x^3 - 2`.
+Migration: no public signature, default allowance or deadline changes. A regression brackets `cbrt(2)` with 4,096-bit odd denominators and requires width `1e-30` within one million work units; GMP cubic inequalities check containment. The cold/warm precision-history matrix checks work identity and insufficient-allowance fallback.
+
+## 2026-10-22: schedule separated point coordinates first
+
+Piece: 2
+Change: point equality first schedules coordinate differences with a cheap nonzero rational value or a cached conservative interval excluding zero. If these do not separate, metered enclosures at the existing interval widths precede exact-zero comparisons. Enclosures only schedule queries; the decider still certifies each conclusion under its original policy and deadline. Coincident points retain their original coordinate order, and the distance bound remains the symmetric Euclidean bound.
+Why: canonical-point searches attempted expensive algebraic coincidence in an earlier coordinate even when another coordinate already separated the points.
+Migration: no public signatures, geometric definitions or default policies change. Predicate regressions retain their incidence, bounded uncertainty, domain and deadline checks; fixed query-count assertions that prescribed coordinate order are removed.
+
+## 2026-10-22: seed polynomial content from a small coefficient
+
+Piece: 1
+Change: primitive integer normalization starts its coefficient GCD from a nonzero coefficient of minimum bit length, stops when the content is one, and avoids dividing an already primitive positive-leading polynomial by one.
+Why: annihilator construction spent time computing content from very large constant terms even when a unit coefficient already certified primitive content.
+Migration: no public signature, policy or normalized coefficient changes. Existing polynomial and root suites retain their rational-content, sign, multiplicity and independent-oracle checks. A 65,536-bit monic-polynomial smoke probe retains every coefficient.
+
+## 2026-10-22: certify polynomial coprimality in a finite field
+
+Piece: 1
+Change: polynomial GCD first tries a fixed 31-bit prime. It concludes coprimality over the rationals only when every coefficient denominator is invertible, both degrees are preserved, and finite-field Euclid ends at a nonzero constant. Otherwise the existing exact polynomial GCD runs unchanged.
+Why: square-free annihilators repeatedly entered large integer remainder and content calculations merely to establish that the GCD with their derivative was one.
+Migration: no public signatures, coefficient domains, default budgets or deadline changes. Normalized GCDs stay unchanged. Regressions cover a common factor lost by modular degree reduction, noninvertible rational denominators and coprime rational polynomials whose modular images share a factor.

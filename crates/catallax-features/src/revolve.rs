@@ -325,6 +325,7 @@ pub fn revolve(
             "this rational-degree angle needs algebraic rotated cap and trimming-curve definitions",
         ));
     };
+    let half_turn = !full && sine.is_zero();
     let normal = profile.pose.apply_vector(&unit_z());
     let mut bodies = Vec::new();
     for ((outer, boundary), side) in profile
@@ -348,6 +349,7 @@ pub fn revolve(
         let mut shells = Vec::new();
         let mut start_paths = Vec::new();
         let mut end_paths = Vec::new();
+        let mut merge_caps = false;
         for index in indices {
             let segments = &profile.loops[index].segments;
             let mut vertices = Vec::new();
@@ -396,6 +398,7 @@ pub fn revolve(
             for (i, s) in segments.iter().enumerate() {
                 let next = (i + 1) % segments.len();
                 let surface = carrier(s, &frame)?;
+                merge_caps |= half_turn && surface.is_none();
                 let mut profile_edges = Vec::new();
                 if !full {
                     for (layer, start_vertex) in vertices[i].iter().copied().enumerate() {
@@ -606,11 +609,17 @@ pub fn revolve(
             shells.push(model.add_shell(Shell { faces }));
         }
         let lump = model.add_lump(Lump { shells });
-        bodies.push(model.add_body(Body {
+        let body = model.add_body(Body {
             kind: BodyKind::Solid,
             lumps: vec![lump],
             marks: MarkLog::new(),
-        }));
+        });
+        let body = if merge_caps {
+            catallax_boolean::make_maximal(model, body, dec)?.value
+        } else {
+            body
+        };
+        bodies.push(body);
     }
     let mut bodies = bodies.into_iter();
     let Some(mut result) = bodies.next() else {

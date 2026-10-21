@@ -3,7 +3,7 @@
 use catallax_features::{Profile, revolve};
 use catallax_numbers::{Ball, Decider, Rational};
 use catallax_recipe::{
-    Axis, ElementId, Loop, Point2, Point3, Pose, Segment, StepId, Turn, Vector3,
+    Axis, ElementId, Loop, Point2, Point3, Pose, Role, Segment, StepId, Turn, Vector3,
 };
 use catallax_topology::{BodyId, Model};
 
@@ -119,13 +119,71 @@ fn full_and_partial_annular_revolutions() {
 
 #[test]
 fn triangular_profile_revolves_to_a_cone_with_an_apex() {
-    let (model, body) = build(&[polygon(&[(3, 0), (0, 4), (0, 0)])], 360);
+    let (mut model, body) = build(&[polygon(&[(3, 0), (0, 4), (0, 0)])], 360);
+    let body = catallax_boolean::make_maximal(&mut model, body, &mut Decider::default())
+        .unwrap()
+        .value;
+    assert!(model.check(body).is_empty());
+    assert_eq!(model.counts(body).vertices, 1);
     let mass = mass(&model, body);
     contains(&mass.volume, b(12) * Ball::pi(192));
     contains(&mass.area, b(24) * Ball::pi(192));
     for (value, expected) in mass.centroid.unwrap().iter().zip([0, 1, 0]) {
         assert!(value.contains(&r(expected)));
     }
+}
+
+#[test]
+fn half_turn_caps_merge_without_an_axis_seam() {
+    let (model, body) = build(&[polygon(&[(3, 0), (0, 4), (0, 0)])], 180);
+    let counts = model.counts(body);
+    assert_eq!(counts.faces, 3);
+    assert_eq!(counts.edges, 4);
+    assert_eq!(counts.vertices, 3);
+    let merged = model.faces_of_body(body).into_iter().find(|face| {
+        let origins = model.face_origins(*face);
+        origins.iter().any(|o| o.role == Role::Start) && origins.iter().any(|o| o.role == Role::End)
+    });
+    assert!(
+        merged.is_some(),
+        "the physical axial section has both cap origins"
+    );
+    let properties = mass(&model, body);
+    contains(&properties.volume, b(6) * Ball::pi(192));
+    contains(&properties.area, b(12) * Ball::pi(192) + b(12));
+    let centroid = properties.centroid.unwrap();
+    assert!(centroid[0].contains(&r(0)));
+    assert!(centroid[1].contains(&r(1)));
+    contains(&centroid[2], -b(3).checked_div(&Ball::pi(192)).unwrap());
+
+    let meridian = Loop(vec![
+        Segment::Arc {
+            id: ElementId::new("round").unwrap(),
+            centre: p(0, 0),
+            to: p(0, 2),
+            turn: Turn::Ccw,
+        },
+        Segment::Line {
+            id: ElementId::new("axis").unwrap(),
+            to: p(0, -2),
+        },
+    ]);
+    let (model, body) = build(&[meridian], 180);
+    let counts = model.counts(body);
+    assert_eq!(counts.faces, 2);
+    assert_eq!(counts.edges, 1);
+    assert_eq!(counts.ring_edges, 1);
+    assert_eq!(counts.vertices, 0);
+    let properties = mass(&model, body);
+    contains(
+        &properties.volume,
+        Ball::from_rational(&Rational::from_ratio(16, 3).unwrap(), 192) * Ball::pi(192),
+    );
+    contains(&properties.area, b(12) * Ball::pi(192));
+    let centroid = properties.centroid.unwrap();
+    assert!(centroid[0].contains(&r(0)));
+    assert!(centroid[1].contains(&r(0)));
+    assert!(centroid[2].contains(&Rational::from_ratio(-3, 4).unwrap()));
 }
 
 #[test]

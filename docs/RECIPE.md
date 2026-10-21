@@ -374,6 +374,8 @@ For every target point, its line parameter `(p − o) · n / (w · n)` lies stri
 
 **Names.** `start`, the face `R`. `end`, the face `Rot(θ)(R)`. Neither exists when `θ = 360`. `side` with `segment` `s`, the surface `s` sweeps. A segment that lies on the axis sweeps no area and makes no face.
 
+At 180 degrees, caps joined along an axis segment merge into one physical face carrying both `start` and `end` origins. The shared axis segment is not a physical edge. Disjoint caps remain separate faces.
+
 **Impossible.** `θ <= 0` or `θ > 360`. `u = 0`. An axis that does not lie in the sketch plane. An axis that meets the interior of `R`, because the solid would then pass through itself. The region may touch the axis along segments or at points.
 
 ### 4.3 Hole and countersink

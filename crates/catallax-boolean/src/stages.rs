@@ -298,3 +298,12 @@ pub fn sew(
 ) -> Answered<BodyId> {
     crate::sewing::sew(model, imprinted, selection, dec)
 }
+
+/// Remove redundant same-support boundaries and degree-two vertices from a
+/// structurally valid body. Preserve its proven lump/void partition and origins.
+/// Unlike a boolean, this requires no second solid or surface classification.
+/// Shell orientation and nesting must already be valid; this does not repair
+/// self-intersections or classify material.
+pub fn make_maximal(model: &mut Model, body: BodyId, dec: &mut Decider) -> Answered<BodyId> {
+    crate::sewing::make_maximal(model, body, dec)
+}

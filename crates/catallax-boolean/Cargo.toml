@@ -1,0 +1,25 @@
+[package]
+name = "catallax-boolean"
+description = "Piece 5 of catallax: the boolean engine (intersect, imprint, classify, keep, sew)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+catallax-numbers.workspace = true
+catallax-shapes.workspace = true
+catallax-topology.workspace = true
+catallax-intersect.workspace = true
+
+[[bench]]
+name = "speed"
+harness = false
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "blind_speed"
+harness = false

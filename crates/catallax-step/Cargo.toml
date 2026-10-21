@@ -1,0 +1,32 @@
+[package]
+name = "catallax-step"
+description = "Piece 7 of catallax: STEP AP242 export with a proven deviation report."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+catallax-numbers.workspace = true
+catallax-shapes.workspace = true
+catallax-topology.workspace = true
+catallax-intersect.workspace = true
+
+[dev-dependencies]
+catallax-boolean.workspace = true
+
+[features]
+implementation = []
+
+[[bench]]
+name = "export"
+harness = false
+required-features = ["implementation"]
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "speed"
+harness = false

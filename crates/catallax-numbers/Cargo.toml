@@ -1,0 +1,27 @@
+[package]
+name = "catallax-numbers"
+description = "Piece 1 of catallax: exact numbers, enclosures, certified decisions, budgets, construction facts and marks."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# Test binaries only. Enables the process-local deterministic deadline clock.
+test-deadline = []
+
+[dependencies]
+num-bigint = "0.4"
+num-integer = "0.1"
+num-traits = "0.2"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+rug = { version = "1.28", default-features = false, features = ["integer", "rational", "float", "std"] }
+
+[[bench]]
+name = "speed"
+harness = false

@@ -5,8 +5,9 @@
 use crate::geometry::{coincident, natural_ends, on_arc, oriented, product, refusal, sign, unit};
 use crate::region::Location;
 use catallax_intersect::{
-    Component, CurveForm, CurveSurface, Cyclic, SurfacePair, curve_form, cyclic_order,
-    intersect_curve_surface, intersect_surfaces, on_curve, order_on_curve, tangent_at,
+    Component, CurveForm, CurveSurface, Cyclic, SurfacePair, curve_form, curve_is_closed,
+    cyclic_order, intersect_curve_surface, intersect_surfaces, on_curve, order_on_curve,
+    tangent_at,
 };
 use catallax_numbers::{
     Decider, Fact, FactKind, FactOrigin, Outcome, Refusal, Sign, StrictOrder, ZeroProof,
@@ -110,6 +111,7 @@ fn first_hit(
         curve_form(model.geom(), curve, dec)?,
         CurveForm::Line { .. }
     );
+    let open = !curve_is_closed(model.geom(), curve, dec)?;
     let f = model.face(face).clone();
     let mut first: Option<(PointId, Sign)> = None;
     for &(edge_id, use_sense) in edges {
@@ -180,7 +182,7 @@ fn first_hit(
             if vertex {
                 return Ok(None);
             }
-            if line {
+            if open {
                 match order_on_curve(model.geom(), curve, point, hit, dec) {
                     Outcome::Proven(StrictOrder::Less) => {}
                     Outcome::Proven(_) => continue,
@@ -212,7 +214,7 @@ fn first_hit(
                 )? {
                     return Ok(None);
                 }
-                if line {
+                if open {
                     match order_on_curve(model.geom(), curve, hit, previous, dec) {
                         Outcome::Proven(StrictOrder::Less) => true,
                         Outcome::Proven(_) => false,

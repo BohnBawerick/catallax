@@ -93,6 +93,10 @@ blind_test!(case_46_every_query_replays_identically_on_eight_threads, {
             Some(ss) => closed(&mut base, p, &ss),
             None => explicit(&mut base, rational_point(&p).unwrap()),
         });
+        assert_eq!(
+            curve_is_closed(&base, c, &mut Decider::default()).unwrap(),
+            !line
+        );
         let results = std::thread::scope(|scope| {
             (0..8)
                 .map(|_| {

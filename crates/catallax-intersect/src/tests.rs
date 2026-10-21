@@ -150,7 +150,7 @@ fn irrational_lines_and_circles_keep_exact_definitions() {
         assert!(g.side_of(z, &point, &mut d).is_coincident());
         assert!(g.side_of(s, &point, &mut d).is_coincident());
         assert!(
-            matches!(curve_form(&g,c,&mut d).unwrap(),CurveForm::Circle{radius_sq,..}if radius_sq==r(25))
+            matches!(curve_form(&g,c,&mut d).unwrap(),CurveForm::Circle{radius_sq,..}if radius_sq.as_rational()==Some(r(25)))
         );
     }
 }
@@ -454,4 +454,64 @@ fn intersection_line_order_uses_one_decision() {
         Outcome::Proven(StrictOrder::Less)
     ));
     assert_eq!(d.stats().decisions - before, 1);
+}
+
+#[test]
+fn irrational_conic_dimensions_preserve_exact_points_and_taylor_bounds() {
+    let radius = Real::from_i64(3) + Real::from_i64(3).sqrt() / Real::from_i64(2);
+    let major = Real::from_i64(2) + Real::from_i64(2).sqrt();
+    let forms = [
+        (
+            CurveForm::Circle {
+                center: p(0, 0, 0).to_real(),
+                normal: v(0, 0, 2),
+                radius_sq: radius.square(),
+                ref_dir: v(3, 0, 0),
+            },
+            radius.clone(),
+            radius,
+        ),
+        (
+            CurveForm::Ellipse {
+                center: p(0, 0, 0).to_real(),
+                normal: v(0, 0, 2),
+                major_dir: v(3, 0, 0),
+                major_sq: major.square(),
+                minor_sq: Real::from_i64(2),
+            },
+            major,
+            Real::from_i64(2).sqrt(),
+        ),
+    ];
+    let mut dec = dec();
+    for (form, a, b) in forms {
+        let charts = crate::chart::form_charts(&form);
+        let parameter = Real::from(Rational::from_ratio(1, 3).unwrap());
+        let point = charts[0].position(&parameter);
+        assert!(
+            dec.sign(
+                &(point.x.square() / a.square() + point.y.square() / b.square() - Real::one())
+            )
+            .is_coincident()
+        );
+        let coords = charts[0]
+            .restricted(Real::zero(), Real::one(), &mut dec)
+            .unwrap();
+        let piece = TracePiece::new(coords);
+        let coefficients = piece
+            .taylor(&Ball::from_rational(&r(0), 128), 4, &dec)
+            .unwrap();
+        for (order, axis, expected) in [
+            (0, 0, a.clone()),
+            (1, 1, &Real::from_i64(2) * &b),
+            (2, 0, &Real::from_i64(-2) * &a),
+            (3, 1, &Real::from_i64(-2) * &b),
+            (4, 0, &Real::from_i64(2) * &a),
+        ] {
+            let bound = &coefficients[order][axis];
+            let expected = dec.enclose_at(&expected, 256).unwrap();
+            assert!(bound.lo() <= expected.lo() && bound.hi() >= expected.hi());
+            assert!(bound.rad() < Rational::one().mul_pow2(-110));
+        }
+    }
 }

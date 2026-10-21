@@ -374,6 +374,13 @@ fn result_summary(
             catallax_intersect::CurveForm::Circle { .. } => "circle",
             catallax_intersect::CurveForm::Ellipse { .. } => "ellipse",
             catallax_intersect::CurveForm::Branch => "intersection",
+            catallax_intersect::CurveForm::Parabola { .. }
+            | catallax_intersect::CurveForm::Hyperbola { .. } => {
+                return Err(Refusal::new(
+                    "intersect.unsupported-curve",
+                    "open conic edge kinds require a versioned exchange contract",
+                ));
+            }
             _ => panic!("unknown curve form"),
         };
         *edges_by_kind.entry(name.into()).or_insert(0) += 1;

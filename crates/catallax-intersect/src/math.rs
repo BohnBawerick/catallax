@@ -102,6 +102,9 @@ pub(super) fn rational_sqrt(x: &Rational) -> Option<Rational> {
 pub(super) fn root(x: &Rational) -> Real {
     rational_sqrt(x).map_or_else(|| real(x).sqrt(), Real::from_rational)
 }
+pub(super) fn root_real(x: &Real) -> Real {
+    x.as_rational().map_or_else(|| x.sqrt(), |q| root(&q))
+}
 pub(super) fn point_rational(p: &Point3) -> Option<RPoint3> {
     Some(RPoint3::new(
         p.x.as_rational()?,

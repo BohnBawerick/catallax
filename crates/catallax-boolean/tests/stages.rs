@@ -32,7 +32,7 @@ blind_test!(case_48_through_hole_graph_has_two_circle_rings, {
         else {
             panic!("not a circle")
         };
-        assert_eq!(radius_sq, r(9));
+        assert!(dec.compare(&radius_sq, &Real::from(r(9))).is_coincident());
         assert!(normal.cross(&v(0, 0, 1)).is_zero());
         let Surface::Plane(plane) = plane else {
             unreachable!()

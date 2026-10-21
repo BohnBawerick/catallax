@@ -200,7 +200,7 @@ blind_test!(case_35_closed_forms_and_alternate_witnesses, {
             &Point3::new(rr(0), rr(0), rr(1) + (&rr(sign) * &h)),
         );
         assert_eq!(normal, vi([0, 0, -sign]));
-        assert_eq!(radius_sq, n(25));
+        real_eq(&radius_sq, &rr(25));
         assert_eq!(ref_dir, vi([1, 0, 0]));
     }
     let plane = g.add_surface(axis_plane(0, n(1)));

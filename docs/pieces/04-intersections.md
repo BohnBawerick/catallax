@@ -58,11 +58,11 @@ It works on geometry only. It never sees faces or edges; trimming curves to face
 | Configuration quantities: dot and cross products, squared distances, squared radii | `Rational` | Exact. Every configuration of a plane, cylinder and sphere pair is decided by the sign of a rational, with no `Decider` call |
 | Fields of the lines, circles and ellipses this piece adds | `Rational`, `RPoint3`, `RVector3` | Exact rationals, as piece 2's analytic curves require |
 | Positions of the points this piece adds (witnesses, singular points, tangent points, hits) | `Point3`, whose coordinates are `Real` | Exact real numbers built from rationals, square roots and `Algebraic` leaves, or certified system roots |
-| Closed forms returned by `curve_form` | `Point3` for points, `RVector3` for directions, `Rational` for squared lengths | Exact; a point may be irrational, a direction never is |
+| Closed forms returned by `curve_form` | `Point3` for points, `RVector3` for directions, `Real` for squared lengths and focal length | Exact; points and dimensions may be irrational, directions remain rational |
 | Traces | `Ball` | Proven enclosures at the caller's precision |
 | Parameter values inside traces | `Rational` ranges, `Ball` arguments | Caches for measurement and export; no decision reads them |
 
-A length that is the square root of a rational is kept squared, as piece 2 does.
+A conic's squared dimensions are exact `Real` expressions. Primitive analytic curves in piece 2 still have rational squared dimensions. Extract a `Rational` with `Real::as_rational` only when storing such a primitive; an irrational dimension stays in its intersection definition.
 Directions are never normalised; unit vectors appear only inside `Real` and `Ball` expressions.
 For a vector `v`, `|v|` means `sqrt(v . v)` as a `Real`, and `v^` means `v / |v|`.
 
@@ -234,8 +234,12 @@ The upper branch is the one on the side `(p - F) . w > 0`. In CS7, `d = R - r` i
 
 `curve_form(geom, c, dec)` returns the exact shape of the carrier of a curve, as `CurveForm`:
 
-- `Line { origin, dir }`, `Circle { center, normal, radius_sq, ref_dir }` or `Ellipse { center, normal, major_dir, major_sq, minor_sq }`, with the same meaning as piece 2's analytic curves and the same natural direction, except that `origin` and `center` are `Point3` and may be irrational;
-- `Branch`: a branch of a quartic meeting curve with no closed form.
+- `Line { origin, dir }`, `Circle { center, normal, radius_sq, ref_dir }` or `Ellipse { center, normal, major_dir, major_sq, minor_sq }`, with the same meaning as piece 2's analytic curves and the same natural direction, except that `origin` and `center` are `Point3` and the squared dimensions are `Real`;
+- `Parabola { vertex, normal, axis_dir, focal }`: the open conic `y² = 4 focal x`, with positive exact `Real` focal length. The unit `x` direction is `axis_dir`, the unit `y` direction is `normal x axis_dir`, and the origin is `vertex`;
+- `Hyperbola { center, normal, axis_dir, transverse_sq, conjugate_sq, branch }`: one branch of `x²/transverse_sq - y²/conjugate_sq = 1`, with positive exact `Real` squared dimensions and `sign(x) = branch`. The unit `x` direction is `axis_dir`, the unit `y` direction is `normal x axis_dir`, and the origin is `center`. Opposite `StrictSign` selectors name different components;
+- `Branch`: an intersection branch with no conic closed form.
+
+For both open conics, the two defining directions are nonzero and perpendicular. Increasing `y` fixes the natural direction. These forms extend the public type only; the supported surface-pair set remains plane, cylinder and sphere. No cone or torus pair is added by this interface cutover.
 
 For a line, circle or ellipse it returns that curve's own fields and makes no decision. For an intersection curve on surfaces `[s0, s1]` with witness `p` it returns the form of the component of the tables that contains `p`. The configuration is exact rational arithmetic; which component holds `p` (and so the sign of a line's `dir` or a circle's `normal`) is one `Decider::sign` decision on the dividing quantity named below. When that decision ends `NotExact`, `curve_form` refuses with the `NotExact`'s code; a `Refused` is returned unchanged:
 
@@ -309,6 +313,8 @@ These take `&GeomStore` and never add to it or record facts. A caller that wants
 The quantity is zero only at a singular point, which lies on both branches. The configurations with one curve component (CC3, CS6) need no branch decision. It is settled by fact when `holds(Incident, Point(p), Curve(c))` is true, with one `note_fact_decision`. A `NotExact` carries a `Distance` bound: piece 2's `point_on_curve` bound when a surface was undecided, and otherwise a proven upper bound on the point's distance to the dividing plane (piece 1's bound on the quantity divided by a rational lower bound on the length of its vector). The surfaces are decided first.
 
 **`same_curve(geom, a, b, dec) -> Outcome<Apart>`**: whether the closures of the two curves are the same point set. Settled by fact when `holds(Coincident, Curve(a), Curve(b))` is true, which includes `a == b`. Two analytic curves are compared with exact rational arithmetic, like piece 2's `same_surface`: two lines when their directions are parallel and one origin lies on the other line; two circles when the centres, the squared radii and the normal lines agree; two ellipses when the centres, the normal lines, `major_sq`, `minor_sq` and the major axis lines agree. A circle is never the same as an ellipse, and kinds of `curve_form` that differ are never the same. Otherwise it compares the closed forms with decisions, or for two branches, checks that both lie on the same two surfaces (up to `same_surface`) and that one witness is `on_curve` of the other. A `NotExact` carries the `Distance` bound of the first comparison that ended `NotExact`: a proven upper bound on the distance between the two points it compared, or the bound of `on_curve` of one witness on the other curve.
+
+**`curve_is_closed(geom, c, dec) -> Result<bool, Refusal>`**: whether a curve closes on itself. Analytic lines return false; analytic circles and ellipses return true, without a decision. For an intersection curve it validates the definition and queries its form. Line, parabola and hyperbola forms are open; the currently supported circle, ellipse and quartic branch forms are closed. Branch closure follows from the certified cylinder/sphere or cylinder/cylinder frame. Unsupported definitions or unknown closure refuse with `intersect.unsupported-curve`, never a guessed boolean. Callers use this query rather than assume that every non-line is closed.
 
 **`order_on_curve(geom, c, p, q, dec) -> Outcome<StrictOrder>`**: on a curve whose form is a line, the sign of `(q - p) . dir`: `Proven(Less)` when `p` comes before `q` in the natural direction, `ProvenCoincident` when the two points are at the same place along the line. It is one `Decider::sign` decision, and a `NotExact` keeps piece 1's bound on `(q - p) . dir` (a `Value` bound).
 
@@ -401,8 +407,10 @@ pub enum Cyclic { Forward, Backward }
 #[derive(Clone, Debug)]
 pub enum CurveForm {
     Line { origin: Point3, dir: RVector3 },
-    Circle { center: Point3, normal: RVector3, radius_sq: Rational, ref_dir: RVector3 },
-    Ellipse { center: Point3, normal: RVector3, major_dir: RVector3, major_sq: Rational, minor_sq: Rational },
+    Circle { center: Point3, normal: RVector3, radius_sq: Real, ref_dir: RVector3 },
+    Ellipse { center: Point3, normal: RVector3, major_dir: RVector3, major_sq: Real, minor_sq: Real },
+    Parabola { vertex: Point3, normal: RVector3, axis_dir: RVector3, focal: Real },
+    Hyperbola { center: Point3, normal: RVector3, axis_dir: RVector3, transverse_sq: Real, conjugate_sq: Real, branch: StrictSign },
     Branch,
 }
 
@@ -423,6 +431,7 @@ pub fn supports(a: SurfaceKind, b: SurfaceKind) -> bool;
 pub fn intersect_surfaces(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId, dec: &mut Decider) -> Answered<SurfacePair>;
 pub fn intersect_curve_surface(geom: &mut GeomStore, c: CurveId, s: SurfaceId, dec: &mut Decider) -> Answered<CurveSurface>;
 pub fn curve_form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<CurveForm, Refusal>;
+pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<bool, Refusal>;
 pub fn on_curve(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) -> Outcome<Apart>;
 pub fn same_curve(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) -> Outcome<Apart>;
 pub fn order_on_curve(geom: &GeomStore, c: CurveId, p: PointId, q: PointId, dec: &mut Decider) -> Outcome<StrictOrder>;

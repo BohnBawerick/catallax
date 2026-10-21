@@ -216,7 +216,7 @@ impl<'a> Exporter<'a> {
                 radius_sq,
                 ref_dir,
             } => {
-                let radius = number::real(&number::sqrt(radius_sq), self.digits(), self.dec)?;
+                let radius = number::real(&number::sqrt_real(radius_sq), self.digits(), self.dec)?;
                 self.ellipse(center, normal, ref_dir, radius, None)?
             }
             CurveForm::Ellipse {
@@ -226,8 +226,8 @@ impl<'a> Exporter<'a> {
                 major_sq,
                 minor_sq,
             } => {
-                let major = number::real(&number::sqrt(major_sq), self.digits(), self.dec)?;
-                let minor = number::real(&number::sqrt(minor_sq), self.digits(), self.dec)?;
+                let major = number::real(&number::sqrt_real(major_sq), self.digits(), self.dec)?;
+                let minor = number::real(&number::sqrt_real(minor_sq), self.digits(), self.dec)?;
                 self.ellipse(center, normal, major_dir, major, Some(minor))?
             }
             CurveForm::Branch => return Ok(None),
@@ -412,7 +412,7 @@ impl<'a> Exporter<'a> {
             .curve_geometry(&CurveForm::Circle {
                 center: center.clone(),
                 normal: axis.clone(),
-                radius_sq: radius * radius,
+                radius_sq: Real::from(radius * radius),
                 ref_dir: reference.clone(),
             })?
             .unwrap();

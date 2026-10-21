@@ -28,7 +28,7 @@ Piece 7 writes bodies as STEP AP242 files (ISO 10303-21 text) that other kernels
 
 | What | Type | Meaning |
 | --- | --- | --- |
-| Geometry read | the model's definitions; `Point3`, `RVector3`, `Rational` from piece 4's `curve_form` | Exact |
+| Geometry read | the model's definitions; `Point3`, `RVector3`, `Real` from piece 4's `curve_form` | Exact |
 | Numbers written | decimal text | Rounded to `significant_digits` significant digits |
 | `max_deviation`, `curve_tolerance` | `Rational` | Millimetres, exact |
 | Work inside the export | `Ball` | Proven enclosures |

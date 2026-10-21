@@ -4,7 +4,7 @@
 use crate::geometry::{product, refusal, sign};
 use crate::region::Location;
 use catallax_intersect::{CurveForm, curve_form};
-use catallax_numbers::{Decider, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Refusal, Sign};
 use catallax_shapes::{PointId, Surface};
 use catallax_topology::{FaceId, Loop, LoopId, Model, Sense};
 
@@ -67,7 +67,7 @@ fn plane_winding(
             return Ok(None);
         };
         let side = sign(
-            &(query.minus(&center).norm_squared() - Real::from(radius_sq)),
+            &(query.minus(&center).norm_squared() - radius_sq),
             dec,
             "boolean.classify-ambiguous",
         )?;

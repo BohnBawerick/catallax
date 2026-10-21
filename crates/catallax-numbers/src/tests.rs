@@ -1153,3 +1153,66 @@ fn singleton_zero_is_distinct_from_a_ball_that_only_contains_zero() {
     }
     assert!(!tiny.is_exact_zero());
 }
+
+fn odd_denominator_cubic_root() -> Real {
+    // The cubic is strictly increasing, and these exact endpoints bracket
+    // cbrt(2). A large odd denominator is certificate representation, not
+    // mathematical uncertainty that requires huge exact Horner products.
+    let denominator = Integer::one().mul_pow2(4096) - Integer::one();
+    let epsilon = Rational::new(Integer::one(), denominator).unwrap();
+    let root = Algebraic::isolated(
+        UPoly::new(vec![q("-2"), q("0"), q("0"), q("1")]),
+        &Rational::one() + &epsilon,
+        &Rational::from_i64(2) - &epsilon,
+    );
+    Real::from_algebraic(root)
+}
+
+#[test]
+fn high_denominator_root_brackets_refine_with_a_small_work_budget() {
+    let value = odd_denominator_cubic_root();
+    let mut dec = Decider::new(BudgetPolicy {
+        max_precision_bits: 512,
+        max_work: 1_000_000,
+    });
+    let width = q("1e-30");
+    let enclosure = dec.enclose(&value, &width).unwrap();
+    assert!(enclosure.rad().mul_pow2(1) <= width);
+    let oracle = |r: Rational| {
+        rug::Rational::from((
+            r.numerator().to_string().parse::<rug::Integer>().unwrap(),
+            r.denominator().to_string().parse::<rug::Integer>().unwrap(),
+        ))
+    };
+    let lo = oracle(enclosure.lo());
+    let hi = oracle(enclosure.hi());
+    assert!(lo.clone().square() * lo < 2);
+    assert!(hi.clone().square() * hi > 2);
+}
+
+#[test]
+fn filtered_bisection_prefixes_preserve_cold_work_at_budget_boundaries() {
+    let warmed = odd_denominator_cubic_root();
+    for precision in [128, 512, 768] {
+        Decider::default().enclose_at(&warmed, precision).unwrap();
+    }
+    let target = q("1e-220");
+    let fingerprint = |result: Result<Ball, Refusal>| {
+        result.map(|ball| (ball.mid(), ball.rad(), ball.precision()))
+    };
+    for max_work in [1_000_000, BudgetPolicy::default().max_work] {
+        let policy = BudgetPolicy {
+            max_precision_bits: 768,
+            max_work,
+        };
+        let mut cold = Decider::new(policy);
+        let mut warm = Decider::new(policy);
+        let cold_result = cold.enclose(&odd_denominator_cubic_root(), &target);
+        let warm_result = warm.enclose(&warmed, &target);
+        if max_work == BudgetPolicy::default().max_work {
+            assert!(cold_result.as_ref().unwrap().rad().mul_pow2(1) <= target);
+        }
+        assert_eq!(fingerprint(cold_result), fingerprint(warm_result));
+        assert_eq!(cold.stats(), warm.stats());
+    }
+}

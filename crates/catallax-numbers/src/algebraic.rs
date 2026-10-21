@@ -25,7 +25,15 @@ pub(crate) struct AlgebraicRoot {
     pub polynomial: UPoly,
     pub lo: Rational,
     pub hi: Rational,
-    pub enclosures: Mutex<BTreeMap<u32, (Ball, u64)>>,
+    pub enclosures: Mutex<BTreeMap<u32, RootEnclosure>>,
+}
+#[derive(Debug)]
+pub(crate) struct RootEnclosure {
+    pub ball: Ball,
+    pub cost: u64,
+    pub lo: Rational,
+    pub hi: Rational,
+    pub lower_sign: Option<Sign>,
 }
 impl AlgebraicRoot {
     fn new(polynomial: UPoly, lo: Rational, hi: Rational) -> Self {
@@ -718,7 +726,11 @@ fn interval_newton_bracket(
     Ok((sa != sb).then_some(Narrowing::Bracket(a, b)))
 }
 
-fn eval_ball_checked(p: &UPoly, x: &Ball, work: &mut Work) -> Result<Ball, &'static str> {
+pub(crate) fn eval_ball_checked(
+    p: &UPoly,
+    x: &Ball,
+    work: &mut Work,
+) -> Result<Ball, &'static str> {
     let precision = x.precision();
     let mut value = Ball::from_rational(&Rational::zero(), precision);
     for c in p.coefficients().iter().rev() {

@@ -5,7 +5,7 @@ use crate::{
     RealRoot, Refusal, RootBox, Sign, StrictOrder, StrictSign, UPoly, ZeroProof,
 };
 use crate::{
-    algebraic::{self, AlgebraicRepr},
+    algebraic::{self, AlgebraicRepr, RootEnclosure},
     real::Expr,
     system,
 };
@@ -1049,40 +1049,85 @@ fn evaluate_uncached(
         }
     }
 }
+const ROOT_SIGN_FILTER_BITS: u32 = 512;
+
+fn root_polynomial_sign(
+    polynomial: &UPoly,
+    x: &Rational,
+    precision: u32,
+    work: &mut Work,
+) -> Result<Sign, &'static str> {
+    let denominator = x.denominator();
+    let bits = denominator.bit_length();
+    if bits <= u64::from(ROOT_SIGN_FILTER_BITS)
+        || bits
+            - denominator
+                .0
+                .trailing_zeros()
+                .expect("positive denominator")
+            <= u64::from(ROOT_SIGN_FILTER_BITS)
+    {
+        return Ok(work.eval_poly(polynomial, x)?.sign());
+    }
+    work.ball(precision, true)?;
+    let argument = Ball::from_rational(x, precision);
+    let value = algebraic::eval_ball_checked(polynomial, &argument, work)?;
+    match value.sign() {
+        Some(StrictSign::Negative) => Ok(Sign::Negative),
+        Some(StrictSign::Positive) => Ok(Sign::Positive),
+        None => Ok(work.eval_poly(polynomial, x)?.sign()),
+    }
+}
+
 fn enclose_algebraic(a: &Algebraic, p: u32, w: &mut Work) -> Result<Ball, &'static str> {
     w.ball(p, true)?;
     match &a.repr {
         AlgebraicRepr::Rational(r) => Ok(Ball::from_rational(r, p)),
         AlgebraicRepr::Root(root) => {
-            {
-                let cache = root.enclosures.lock().unwrap();
-                if let Some((ball, cost)) = cache.get(&p)
-                    && *cost <= w.policy.max_work.saturating_sub(w.used)
-                {
-                    // Reuse the certificate, not its budget allowance. If the
-                    // allowance is insufficient, retain ordinary partial-work
-                    // accounting by running the original calculation below.
-                    w.charge(*cost)?;
-                    return Ok(ball.clone());
-                }
-            }
+            let filter_precision = p.min(ROOT_SIGN_FILTER_BITS);
             let start = w.used;
-            let ball = (|| -> Result<Ball, &'static str> {
-                let mut lo = root.lo.clone();
-                let mut hi = root.hi.clone();
-                let target = Rational::one().mul_pow2(-i64::from(p));
-                // Keep the same bisection sequence and rounding at each
-                // precision; never substitute a higher-precision cached ball.
-                if &hi - &lo <= target {
-                    return Ok(Ball::bounds(lo, hi, p));
+            let (mut lo, mut hi, mut lower_sign) = {
+                let cache = root.enclosures.lock().unwrap();
+                let allowance = w.policy.max_work.saturating_sub(w.used);
+                if let Some(certificate) = cache.get(&p)
+                    && certificate.cost <= allowance
+                {
+                    w.charge(certificate.cost)?;
+                    return Ok(certificate.ball.clone());
                 }
-                let s = w.eval_poly(&root.polynomial, &lo)?.sign();
+                if let Some((prefix_precision, prefix)) = cache.range(..p).next_back()
+                    && (*prefix_precision).min(ROOT_SIGN_FILTER_BITS) == filter_precision
+                    && prefix.cost <= allowance
+                {
+                    // Only identical sign-filter precision has identical
+                    // prefix work. Replay it before continuing the same
+                    // bisections; never substitute a later, tighter bracket.
+                    w.charge(prefix.cost)?;
+                    (prefix.lo.clone(), prefix.hi.clone(), prefix.lower_sign)
+                } else {
+                    (root.lo.clone(), root.hi.clone(), None)
+                }
+            };
+            let target = Rational::one().mul_pow2(-i64::from(p));
+            let ball = if lower_sign == Some(Sign::Zero) {
+                Ball::from_rational(&lo, p)
+            } else if &hi - &lo <= target {
+                Ball::bounds(lo.clone(), hi.clone(), p)
+            } else {
+                let s = match lower_sign {
+                    Some(s) => s,
+                    None => root_polynomial_sign(&root.polynomial, &lo, filter_precision, w)?,
+                };
+                lower_sign = Some(s);
                 loop {
                     w.exact(&lo, &hi, false)?;
                     let mid = (&lo + &hi).mul_pow2(-1);
-                    let t = w.eval_poly(&root.polynomial, &mid)?.sign();
+                    let t = root_polynomial_sign(&root.polynomial, &mid, filter_precision, w)?;
                     if t == Sign::Zero {
-                        return Ok(Ball::from_rational(&mid, p));
+                        lo = mid.clone();
+                        hi = mid;
+                        lower_sign = Some(Sign::Zero);
+                        break Ball::from_rational(&lo, p);
                     }
                     if t == s {
                         lo = mid;
@@ -1090,17 +1135,22 @@ fn enclose_algebraic(a: &Algebraic, p: u32, w: &mut Work) -> Result<Ball, &'stat
                         hi = mid;
                     }
                     if &hi - &lo <= target {
-                        break;
+                        break Ball::bounds(lo.clone(), hi.clone(), p);
                     }
                 }
-                Ok(Ball::bounds(lo, hi, p))
-            })()?;
-            let cost = w.used - start;
+            };
+            let certificate = RootEnclosure {
+                ball: ball.clone(),
+                cost: w.used - start,
+                lo,
+                hi,
+                lower_sign,
+            };
             let mut cache = root.enclosures.lock().unwrap();
             if cache.len() == 8 && !cache.contains_key(&p) {
                 cache.pop_first();
             }
-            cache.insert(p, (ball.clone(), cost));
+            cache.insert(p, certificate);
             Ok(ball)
         }
     }

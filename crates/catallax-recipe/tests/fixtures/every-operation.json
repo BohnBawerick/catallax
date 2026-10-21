@@ -1,0 +1,1059 @@
+{
+  "format": "catallax-recipe/1",
+  "name": "every-operation",
+  "description": "One step of every operation and a name of every role. The geometry is meant to read sensibly, but nothing here has been built.",
+  "steps": [
+    {
+      "id": "outline",
+      "op": "sketch",
+      "plane": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "0"]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": ["80", "0"]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": ["80", "40"]
+          },
+          {
+            "kind": "arc",
+            "id": "corner",
+            "centre": ["70", "40"],
+            "to": ["70", "50"],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": ["0", "50"]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": ["0", "0"]
+          }
+        ],
+        [
+          {
+            "kind": "circle",
+            "id": "bore",
+            "centre": ["20", "25"],
+            "radius": "5"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "outline",
+      "distance": "10"
+    },
+    {
+      "id": "boss-sketch",
+      "op": "sketch",
+      "plane": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "10"]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "rim",
+            "centre": ["50", "25"],
+            "radius": "8"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "boss",
+      "op": "extrude",
+      "profile": "boss-sketch",
+      "distance": "15",
+      "direction": ["0", "0", "2"]
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "base",
+      "tool": "boss"
+    },
+    {
+      "id": "ring-sketch",
+      "op": "sketch",
+      "plane": {
+        "rotation": ["1", "1", "0", "0"],
+        "translation": ["0", "0", "0"]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "inner",
+            "to": ["10", "0"]
+          },
+          {
+            "kind": "line",
+            "id": "foot",
+            "to": ["15", "0"]
+          },
+          {
+            "kind": "line",
+            "id": "outer",
+            "to": ["15", "-5"]
+          },
+          {
+            "kind": "line",
+            "id": "head",
+            "to": ["10", "-5"]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "ring",
+      "op": "revolve",
+      "profile": "ring-sketch",
+      "axis": {
+        "point": ["0", "0", "0"],
+        "direction": ["0", "0", "1"]
+      },
+      "angle": "360"
+    },
+    {
+      "id": "holes",
+      "op": "hole",
+      "target": "joined",
+      "at": [
+        {
+          "id": "front",
+          "point": ["65", "10", "10"],
+          "direction": ["0", "0", "-1"]
+        },
+        {
+          "id": "back",
+          "point": ["65", "40", "10"],
+          "direction": ["0", "0", "-1"]
+        }
+      ],
+      "diameter": "6.6",
+      "depth": "through",
+      "tip": "flat",
+      "head": {
+        "countersink": {
+          "diameter": "12.4",
+          "angle": "90"
+        }
+      }
+    },
+    {
+      "id": "pins",
+      "op": "hole",
+      "target": "holes",
+      "at": [
+        {
+          "id": "pin",
+          "point": ["10", "10", "10"],
+          "direction": ["0", "0", "-1"]
+        }
+      ],
+      "diameter": "3",
+      "depth": {
+        "blind": "6"
+      },
+      "tip": {
+        "cone": "118"
+      },
+      "head": {
+        "counterbore": {
+          "diameter": "5",
+          "depth": "1"
+        }
+      }
+    },
+    {
+      "id": "round",
+      "op": "fillet",
+      "body": "pins",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "base",
+              "role": "end"
+            },
+            {
+              "step": "base",
+              "role": {
+                "side": {
+                  "segment": "top"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "boss",
+              "role": {
+                "side": {
+                  "segment": "rim"
+                }
+              }
+            },
+            {
+              "step": "base",
+              "role": "end"
+            }
+          ],
+          "touching": [
+            {
+              "step": "boss"
+            }
+          ],
+          "near": ["58", "25", "10"]
+        }
+      ],
+      "radius": "2"
+    },
+    {
+      "id": "bevel",
+      "op": "chamfer",
+      "body": "round",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "base",
+              "role": {
+                "side": {
+                  "segment": "bottom"
+                }
+              }
+            },
+            {
+              "step": "base",
+              "role": "start"
+            }
+          ]
+        }
+      ],
+      "distance": "1",
+      "other_distance": "1.5"
+    },
+    {
+      "id": "edges",
+      "op": "chamfer",
+      "body": "bevel",
+      "edges": "all",
+      "distance": "0.25"
+    },
+    {
+      "id": "hollow",
+      "op": "shell",
+      "body": "edges",
+      "open": [
+        {
+          "face": {
+            "step": "boss",
+            "role": "end"
+          }
+        }
+      ],
+      "thickness": "2"
+    },
+    {
+      "id": "grown",
+      "op": "offset",
+      "body": "hollow",
+      "distance": "0.5"
+    },
+    {
+      "id": "skin",
+      "op": "thicken",
+      "body": "grown",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": "start"
+          }
+        }
+      ],
+      "thickness": "1",
+      "side": "back"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "grown",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "left"
+              }
+            }
+          }
+        }
+      ],
+      "pull": ["0", "0", "1"],
+      "neutral": {
+        "point": ["0", "0", "0"],
+        "normal": ["0", "0", "1"]
+      },
+      "angle": "3"
+    },
+    {
+      "id": "rail",
+      "op": "path",
+      "start": ["0", "0", "0"],
+      "segments": [
+        {
+          "kind": "line",
+          "id": "rise",
+          "to": ["0", "0", "20"]
+        },
+        {
+          "kind": "arc",
+          "id": "bend",
+          "centre": ["10", "0", "20"],
+          "to": ["10", "0", "30"],
+          "axis": ["0", "1", "0"]
+        }
+      ]
+    },
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "0"]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "wire",
+            "centre": ["0", "0"],
+            "radius": "2"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "tube",
+      "op": "sweep",
+      "profile": "section",
+      "path": "rail",
+      "orientation": "rotation_minimising"
+    },
+    {
+      "id": "foot-sketch",
+      "op": "sketch",
+      "plane": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["100", "0", "0"]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "a",
+            "to": ["10", "0"]
+          },
+          {
+            "kind": "line",
+            "id": "b",
+            "to": ["10", "10"]
+          },
+          {
+            "kind": "line",
+            "id": "c",
+            "to": ["0", "10"]
+          },
+          {
+            "kind": "line",
+            "id": "d",
+            "to": ["0", "0"]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "head-sketch",
+      "op": "sketch",
+      "plane": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["102", "2", "30"]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "p",
+            "to": ["6", "0"]
+          },
+          {
+            "kind": "line",
+            "id": "q",
+            "to": ["6", "6"]
+          },
+          {
+            "kind": "line",
+            "id": "r",
+            "to": ["0", "6"]
+          },
+          {
+            "kind": "line",
+            "id": "s",
+            "to": ["0", "0"]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "column",
+      "op": "loft",
+      "sections": [
+        {
+          "profile": "foot-sketch",
+          "start": ["a"]
+        },
+        {
+          "profile": "head-sketch",
+          "start": ["p"]
+        }
+      ],
+      "shape": "ruled"
+    },
+    {
+      "id": "columns",
+      "op": "pattern",
+      "body": "column",
+      "layout": {
+        "circular": {
+          "axis": {
+            "point": ["0", "0", "0"],
+            "direction": ["0", "0", "1"]
+          },
+          "count": 4,
+          "angle": "90"
+        }
+      }
+    },
+    {
+      "id": "row",
+      "op": "pattern",
+      "body": "ring",
+      "layout": {
+        "linear": {
+          "vector": ["40", "0", "0"],
+          "count": 3
+        }
+      }
+    },
+    {
+      "id": "mirrored",
+      "op": "mirror",
+      "body": "drafted",
+      "plane": {
+        "point": ["80", "0", "0"],
+        "normal": ["1", "0", "0"]
+      },
+      "keep_original": true
+    },
+    {
+      "id": "truss",
+      "op": "lattice",
+      "region": "joined",
+      "cell": "octet",
+      "size": "5",
+      "frame": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "0"]
+      },
+      "radius": {
+        "linear": {
+          "from": ["0", "0", "0"],
+          "to": ["80", "0", "0"],
+          "start": "0.4",
+          "end": "0.8"
+        }
+      }
+    },
+    {
+      "id": "frame",
+      "op": "lattice",
+      "region": "joined",
+      "cell": {
+        "custom": {
+          "nodes": [
+            ["0", "0", "0"],
+            ["1", "1", "1"]
+          ],
+          "beams": [
+            [0, 1]
+          ]
+        }
+      },
+      "size": "4",
+      "frame": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "0"]
+      },
+      "radius": {
+        "constant": "0.3"
+      }
+    },
+    {
+      "id": "sponge",
+      "op": "gyroid",
+      "region": "joined",
+      "period": "8",
+      "level": {
+        "distance": {
+          "faces": [
+            {
+              "face": {
+                "step": "holes",
+                "role": {
+                  "hole": {
+                    "at": "front",
+                    "part": "wall"
+                  }
+                }
+              }
+            }
+          ],
+          "near": "0.9",
+          "far": "0.3",
+          "span": "10"
+        }
+      },
+      "kind": "sheet",
+      "frame": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "0"]
+      }
+    },
+    {
+      "id": "blob",
+      "op": "smooth_blend",
+      "kind": "union",
+      "target": "mirrored",
+      "tool": "sponge",
+      "radius": "3"
+    },
+    {
+      "id": "bracket",
+      "op": "import_step",
+      "file": {
+        "name": "bracket.step",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "pose": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["200", "0", "0"]
+      },
+      "decisions": {
+        "gap-03": "noise",
+        "gap-17": "intended"
+      }
+    },
+    {
+      "id": "scan",
+      "op": "import_mesh",
+      "file": {
+        "name": "scan.stl",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "pose": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "200", "0"]
+      },
+      "scale": "25.4"
+    },
+    {
+      "id": "with-bracket",
+      "op": "boolean",
+      "kind": "union",
+      "target": "blob",
+      "tool": "bracket"
+    },
+    {
+      "id": "with-tube",
+      "op": "boolean",
+      "kind": "union",
+      "target": "with-bracket",
+      "tool": "tube"
+    },
+    {
+      "id": "with-columns",
+      "op": "boolean",
+      "kind": "union",
+      "target": "with-tube",
+      "tool": "columns"
+    },
+    {
+      "id": "with-row",
+      "op": "boolean",
+      "kind": "union",
+      "target": "with-columns",
+      "tool": "row"
+    },
+    {
+      "id": "with-scan",
+      "op": "boolean",
+      "kind": "union",
+      "target": "with-row",
+      "tool": "scan"
+    },
+    {
+      "id": "with-skin",
+      "op": "boolean",
+      "kind": "union",
+      "target": "with-scan",
+      "tool": "skin"
+    },
+    {
+      "id": "with-truss",
+      "op": "boolean",
+      "kind": "union",
+      "target": "with-skin",
+      "tool": "truss"
+    },
+    {
+      "id": "all-parts",
+      "op": "boolean",
+      "kind": "union",
+      "target": "with-truss",
+      "tool": "frame"
+    },
+    {
+      "id": "finish",
+      "op": "fillet",
+      "body": "all-parts",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "round",
+              "role": {
+                "blend": {
+                  "edge": {
+                    "between": [
+                      {
+                        "step": "base",
+                        "role": "end"
+                      },
+                      {
+                        "step": "base",
+                        "role": {
+                          "side": {
+                            "segment": "top"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "step": "base",
+              "role": "end"
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "edges",
+              "role": {
+                "corner": {
+                  "vertex": {
+                    "faces": [
+                      {
+                        "step": "base",
+                        "role": "start"
+                      },
+                      {
+                        "step": "base",
+                        "role": {
+                          "side": {
+                            "segment": "bottom"
+                          }
+                        }
+                      },
+                      {
+                        "step": "base",
+                        "role": {
+                          "side": {
+                            "segment": "left"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "step": "bevel",
+              "role": {
+                "bevel": {
+                  "edge": {
+                    "between": [
+                      {
+                        "step": "base",
+                        "role": "start"
+                      },
+                      {
+                        "step": "base",
+                        "role": {
+                          "side": {
+                            "segment": "bottom"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "hollow",
+              "role": {
+                "inner": {
+                  "of": {
+                    "step": "base",
+                    "role": "start"
+                  }
+                }
+              }
+            },
+            {
+              "step": "hollow",
+              "role": {
+                "round": {
+                  "edge": {
+                    "between": [
+                      {
+                        "step": "base",
+                        "role": "end"
+                      },
+                      {
+                        "step": "boss",
+                        "role": {
+                          "side": {
+                            "segment": "rim"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "grown",
+              "role": {
+                "round_corner": {
+                  "vertex": {
+                    "faces": [
+                      {
+                        "step": "base",
+                        "role": "end"
+                      },
+                      {
+                        "step": "base",
+                        "role": {
+                          "side": {
+                            "segment": "bottom"
+                          }
+                        }
+                      },
+                      {
+                        "step": "base",
+                        "role": {
+                          "side": {
+                            "segment": "right"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "step": "mirrored",
+              "role": {
+                "copy": {
+                  "instance": 1,
+                  "of": {
+                    "step": "base",
+                    "role": "end"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "pins",
+              "role": {
+                "hole": {
+                  "at": "pin",
+                  "part": "counterbore_wall"
+                }
+              }
+            },
+            {
+              "step": "pins",
+              "role": {
+                "hole": {
+                  "at": "pin",
+                  "part": "counterbore_floor"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "pins",
+              "role": {
+                "hole": {
+                  "at": "pin",
+                  "part": "tip"
+                }
+              }
+            },
+            {
+              "step": "holes",
+              "role": {
+                "hole": {
+                  "at": "back",
+                  "part": "countersink"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "holes",
+              "role": {
+                "hole": {
+                  "at": "back",
+                  "part": "entry"
+                }
+              }
+            },
+            {
+              "step": "bracket",
+              "role": {
+                "imported": {
+                  "key": "#1234"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "blob",
+              "role": "smooth"
+            },
+            {
+              "step": "sponge",
+              "role": "surface"
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "truss",
+              "role": "beams"
+            },
+            {
+              "step": "frame"
+            }
+          ]
+        }
+      ],
+      "radius": "1/3"
+    },
+    {
+      "id": "tidy",
+      "op": "thicken",
+      "body": "finish",
+      "faces": [
+        {
+          "face": {
+            "step": "tube",
+            "role": {
+              "side": {
+                "segment": "wire",
+                "path": "bend"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "tube",
+            "role": "start"
+          },
+          "touching": [
+            {
+              "step": "tube",
+              "role": "end"
+            }
+          ]
+        },
+        {
+          "face": {
+            "step": "column",
+            "role": {
+              "side": {
+                "segment": "a"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "columns",
+            "role": {
+              "copy": {
+                "instance": 3,
+                "of": {
+                  "step": "column",
+                  "role": "end"
+                }
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "row",
+            "role": {
+              "copy": {
+                "instance": 2,
+                "of": {
+                  "step": "ring",
+                  "role": {
+                    "side": {
+                      "segment": "outer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "skin",
+            "role": {
+              "offset": {
+                "of": {
+                  "step": "base",
+                  "role": "start"
+                }
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "skin",
+            "role": {
+              "rim": {
+                "edge": {
+                  "between": [
+                    {
+                      "step": "base",
+                      "role": "start"
+                    },
+                    {
+                      "step": "base",
+                      "role": {
+                        "side": {
+                          "segment": "left"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "scan",
+            "role": "mesh"
+          }
+        },
+        {
+          "face": {
+            "step": "pins",
+            "role": {
+              "hole": {
+                "at": "pin",
+                "part": "wall"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "holes",
+            "role": {
+              "hole": {
+                "at": "front",
+                "part": "wall"
+              }
+            }
+          },
+          "near": ["65", "13.3", "5"]
+        }
+      ],
+      "thickness": "1",
+      "side": "front"
+    }
+  ],
+  "result": "tidy"
+}

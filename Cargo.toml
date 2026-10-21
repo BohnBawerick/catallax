@@ -8,6 +8,7 @@ members = [
     "crates/catallax-boolean",
     "crates/catallax-measure",
     "crates/catallax-step",
+    "crates/catallax-recipe",
     "crates/catallax-cli",
 ]
 
@@ -26,6 +27,7 @@ catallax-intersect = { path = "crates/catallax-intersect" }
 catallax-boolean = { path = "crates/catallax-boolean" }
 catallax-measure = { path = "crates/catallax-measure" }
 catallax-step = { path = "crates/catallax-step" }
+catallax-recipe = { path = "crates/catallax-recipe" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

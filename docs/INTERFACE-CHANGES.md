@@ -332,3 +332,10 @@ Pieces: all, cli, exchange
 Change: workspace packages, Rust crate paths and directories use `catallax-` and `catallax_`. `catallax-cli` builds `catallax` and `exact-brep` from the same main. Benchmark and dev-only deadline environment identifiers use `CATALLAX_`. Protocol strings `exact-brep-question/2`, `exact-brep-manifest/2` and `kernel.name = exact-brep` remain unchanged.
 Why: the B-rep implementation becomes the starting code for a new public MIT kernel with one recipe and two evaluators. Rename packages without breaking the existing exchange.
 Migration: Rust callers use the new crate names. Existing exchange clients may keep invoking `exact-brep`. A future protocol rename requires a versioned contract change. The new refusal rule, 1 nm necessity bound and operation-derived persistent names are documented requirements with explicit implementation gaps, not geometry changes in this publication.
+
+## 2026-10-22: recipe format `catallax-recipe/1` and crate `catallax-recipe`
+
+Pieces: recipe (new); the judge interface is unchanged
+Change: `docs/RECIPE.md` defines the recipe language, version 1: operation definitions, origin-based face and edge names, references, rebuild failures and the canonical JSON file `catallax-recipe/1`. The new crate `catallax-recipe` holds its data model: `Recipe`, `Step`, `Operation` and their parameter types, `Origin`, `Role`, `EdgeName`, `VertexName`, `OriginPattern`, `FaceRef`, `EdgeRef`, `EdgeSelection`, `Number`, `RecipeError` with codes `recipe.<reason>`, `Recipe::parse`, `Recipe::check` and `Recipe::to_text`. It depends only on piece 1, and nothing depends on it yet.
+Why: PRD section 10 step 3. Both kernels and SolidDraft need the same definitions and names before either kernel implements an operation.
+Migration: none. No piece, the CLI or the exchange contract changes. The question format stays the judge's input.

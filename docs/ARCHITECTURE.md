@@ -2,7 +2,7 @@
 
 Catallax's master model is one recipe evaluated by an exact B-rep kernel and a signed distance field kernel. Each operation shares one mathematical definition. [PRD.md](PRD.md) defines that direction; [DESIGN.md](DESIGN.md) governs the B-rep implementation.
 
-The crates below are the implemented B-rep half, exported without source history into this public repository. The recipe language, field kernel, cross-kernel checks and conversions are not implemented. Their boundaries must be defined before adding crates for them. [PLAN.md](PLAN.md) orders that work.
+The crates below are the implemented B-rep half, exported without source history into this public repository. [RECIPE.md](RECIPE.md) defines the recipe language, and `catallax-recipe` holds its data model; nothing evaluates a recipe yet. The field kernel, cross-kernel checks and conversions are not implemented. Their boundaries must be defined before adding crates for them. [PLAN.md](PLAN.md) orders that work.
 
 The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels. The former 1-in-10,000 programme and grid-cell product gates are retired. Mathematical regression tests remain; speed per click matters for the interactive CAD tool.
 
@@ -22,6 +22,9 @@ A front-end crate, `catallax-cli`, builds both `catallax` and `exact-brep` from 
 
 Build order: pieces 1, 2 and 3 in that order; then 4 and 5; with 6 and 7 alongside them.
 Piece 4 needs only 1 and 2, so its work can start as soon as piece 2's interface is stable.
+
+`catallax-recipe` is not a piece of the B-rep half. It depends only on piece 1, for exact numbers, and no piece depends on it yet. Its public types implement serde's `Serialize` and `Deserialize`, and no serde type appears in its function signatures. Its errors are recipe errors with codes `recipe.<reason>`, not refusals.
+
 Future recipe evaluation calls these existing B-rep operations and a separate field evaluator. The two kernels do not convert results after each operation. Conversions happen only when a feature or output needs them.
 
 Dependencies point one way only. A piece never depends on a piece below it in the table, except as listed.
@@ -38,8 +41,9 @@ crates/catallax-intersect/       piece 4
 crates/catallax-boolean/         piece 5
 crates/catallax-measure/         piece 6
 crates/catallax-step/            piece 7
+crates/catallax-recipe/          recipe language data model, beside the pieces
 crates/catallax-cli/             front end, binaries `catallax` and `exact-brep`
-docs/                      this file, DESIGN.md, JUDGE-INTERFACE.md, INTERFACE-CHANGES.md, pieces/
+docs/                      this file, DESIGN.md, JUDGE-INTERFACE.md, RECIPE.md, INTERFACE-CHANGES.md, pieces/
 ```
 
 Every crate forbids `unsafe` code and requires documentation on every public item.
@@ -147,7 +151,7 @@ Storage is single-writer for now: operations take `&mut Model`. Read-only querie
 
 ## Recipe names and two-kernel agreement
 
-Future persistent face and edge names identify the creating operation and its inputs, never the traversal order or an arena index. Store-local `FaceId` and `EdgeId` handles remain useful during evaluation but are not rebuild-stable recipe references. Define splitting, merging and feature-edit naming rules with the recipe language.
+Future persistent face and edge names identify the creating operation and its inputs, never the traversal order or an arena index. Store-local `FaceId` and `EdgeId` handles remain useful during evaluation but are not rebuild-stable recipe references. [RECIPE.md](RECIPE.md) section 3 defines the splitting, merging and feature-edit naming rules; no kernel reports these names yet.
 
 Both evaluators use the same operation definitions and agree exactly where mathematics permits. The only necessary approximations are those in PRD section 3.1, bounded by 1 nm. Definition-exact surfaces that STEP cannot express are approximated only on export.
 

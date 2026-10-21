@@ -50,7 +50,7 @@ Choices:
 
 ### 1.3.1 Algebraic evaluation of rational inputs
 
-The 2026-10-22 architecture decision changes evaluated geometry, not this version 2 input grammar. A rational degree angle is converted to certified algebraic sine/cosine values. Normalising a direction or computing an arc radius may also introduce algebraic values. Both evaluators keep these expressions exactly in the shared shape definitions; they must not reject a legal input merely because the result is not rational. An arc centred at the origin through `(1,1)` has radius `sqrt(2)` without requiring a new number syntax.
+The 2026-10-22 architecture decision changes evaluated geometry, not the rational number input grammar. A rational degree angle is converted to certified algebraic sine/cosine values. Normalising a direction or computing an arc radius may also introduce algebraic values. Both evaluators keep these expressions exactly in the shared shape definitions; they must not reject a legal input merely because the result is not rational. An arc centred at the origin through `(1,1)` has radius `sqrt(2)` without requiring a new number syntax.
 
 An oblique circular extrusion reduces to an elliptic-cylinder support with the original cap planes and finite sweep domain. A supported meridional revolve reduces to analytic supports with exact angular trims. The recipe and segment origins remain the definition of the operation after reduction. Unsupported trimmed revolution carriers remain implementation gaps, not additional impossible inputs. Generic derived-surface storage for future profiles follows the architecture decision when its full proof/query path is supplied.
 

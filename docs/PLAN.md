@@ -20,7 +20,7 @@ The existing tests include ignored cases. Their source records the reasons; a gr
 
 ## Background comparison prerequisites
 
-The B-rep half has no display meshes yet. Build a deterministic display tessellator with explicit mesh-to-exact-surface deviation bounds and face origin sets. Add a B-rep recipe adapter for the same stock definitions and booleans, retaining operation names through trimming and merging. Neither is part of the field crate.
+`catallax-mesh` now supplies deterministic display tessellation with explicit mesh-to-exact-surface deviation bounds and face picking IDs. `catallax-features` supplies the B-rep recipe adapter for stock definitions and booleans, retaining operation names through trimming and merging. Resolve mesh face IDs through `Model::face_origins` before comparing canonical origin sets; arena IDs are not persistent names. Neither implementation is part of the field crate.
 
 The application then needs revision-tagged edit regions, stable point-to-face associations and cancellation that cannot publish stale or partial results. Sample B-rep meshes against certified field queries, use bounds rather than raw residual magnitudes, and compare origin sets as well as locations and directions. The reverse check needs field boundary samples projected onto the appropriate exact B-rep faces, not only one-way vertex checks. Unresolved queries or unbounded upper distances must remain unresolved, never count as a 1 nm agreement certificate. Measure the whole two-way check on representative edits before claiming an interactive budget.
 

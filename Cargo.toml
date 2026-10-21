@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/catallax-numbers",
+    "crates/catallax-shapes",
+    "crates/catallax-topology",
+    "crates/catallax-intersect",
+    "crates/catallax-boolean",
+    "crates/catallax-measure",
+    "crates/catallax-step",
+    "crates/catallax-cli",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/BohnBawerick/catallax"
+publish = false
+
+[workspace.dependencies]
+catallax-numbers = { path = "crates/catallax-numbers" }
+catallax-shapes = { path = "crates/catallax-shapes" }
+catallax-topology = { path = "crates/catallax-topology" }
+catallax-intersect = { path = "crates/catallax-intersect" }
+catallax-boolean = { path = "crates/catallax-boolean" }
+catallax-measure = { path = "crates/catallax-measure" }
+catallax-step = { path = "crates/catallax-step" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+float_cmp = "warn"

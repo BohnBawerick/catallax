@@ -1,0 +1,25 @@
+//! Piece 2 of catallax: shapes.
+//!
+//! Exact geometric definitions (points, poses, analytic surfaces and curves,
+//! intersection curves and vertices by definition), the write-once geometry
+//! store with its fact book, and decisions about single objects.
+//!
+//! The contract is `docs/pieces/02-shapes.md`.
+
+mod curve;
+mod math;
+mod point;
+mod pose;
+mod store;
+mod surface;
+mod vector;
+
+#[cfg(test)]
+mod tests;
+
+pub use curve::{Circle, Curve, CurveKind, Ellipse, IntersectionCurve, Line};
+pub use point::{Meet, MeetOf, PointDef, Position};
+pub use pose::{Pose, Rotation};
+pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
+pub use surface::{Cone, Cylinder, ParamKind, Plane, Sphere, Surface, SurfaceKind, Torus};
+pub use vector::{Point3, RPoint3, RVector3, Vector3};

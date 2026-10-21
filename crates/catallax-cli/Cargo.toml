@@ -1,0 +1,33 @@
+[package]
+name = "catallax-cli"
+description = "Catallax command-line front end and legacy exchange program."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+catallax-numbers.workspace = true
+catallax-shapes.workspace = true
+catallax-topology.workspace = true
+catallax-boolean.workspace = true
+catallax-intersect.workspace = true
+catallax-measure.workspace = true
+catallax-step.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+catallax-numbers = { workspace = true, features = ["test-deadline"] }
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "exact-brep"
+path = "src/main.rs"
+
+[[bin]]
+name = "catallax"
+path = "src/main.rs"

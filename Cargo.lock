@@ -40,6 +40,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "catallax-field"
+version = "0.0.0"
+dependencies = [
+ "catallax-numbers",
+ "catallax-recipe",
+ "catallax-shapes",
+]
+
+[[package]]
 name = "catallax-intersect"
 version = "0.0.0"
 dependencies = [

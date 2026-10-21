@@ -26,7 +26,7 @@ One recipe, the feature tree, is the master. An exact B-rep kernel and a signed 
 
 The kernels must agree exactly where mathematics allows, and within 1 nm only where necessity forces a tolerance. Impossible geometry is the only acceptable final refusal. Every other refusal is unfinished work. The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels, not a claim to beat them.
 
-[The PRD](docs/PRD.md) sets that direction. This first public tree contains the B-rep starting code. [RECIPE.md](docs/RECIPE.md) defines the recipe language, and `catallax-recipe` holds its data model, but nothing evaluates a recipe yet. The field kernel and agreement checks are not built. The inherited mark APIs do not yet enforce the new 1 nm geometric limit. The existing 50-second deadline also conflicts with the same-answer rule because machine load can change an answer into a refusal. Both gaps are explicit in [the plan](docs/PLAN.md).
+[The PRD](docs/PRD.md) sets that direction. The B-rep starting code remains intact. [RECIPE.md](docs/RECIPE.md) defines the shared language, and `catallax-field` now evaluates its stock solids and booleans with exact predicates, bounded distances and named face queries. [FIELD.md](docs/FIELD.md) states the query guarantees and unresolved cases. Cross-kernel agreement checks are not built. The inherited B-rep mark APIs do not yet enforce the new 1 nm geometric limit, and its 50-second deadline conflicts with the same-answer rule. These gaps remain explicit in [the plan](docs/PLAN.md).
 
 ## What works today
 
@@ -39,7 +39,8 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Ambiguous and unsupported cases remain unfinished work.
 - `catallax-measure` computes volume, area and centroid with proven bounds for the body actually built.
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.
-- `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/1` JSON form. It evaluates no geometry.
+- `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/2` JSON form. It evaluates no geometry.
+- `catallax-field` compiles recipe stock solids and booleans into a fixed-order tape, keeps names outside that tape, and supplies tentative and proven scalar/batch queries. Boolean residuals carry conservative distance bounds, not a true-distance claim.
 - `catallax-cli` builds `catallax` and the legacy `exact-brep` program from the same main. They read a question, build and operate, measure, and write a manifest and optional STEP file.
 
 Sketch features, fillets, chamfers, shell, offset, draft, sweep, loft, display meshes and STEP import are still missing. The kernel does not yet implement the whole PRD. Existing ignored regressions remain visible; publishing the code does not resolve them.
@@ -70,6 +71,7 @@ GitHub-hosted CI runs formatting, clippy, all enabled release tests and doctests
 
 - [PRD](docs/PRD.md), [plan](docs/PLAN.md) and [research](docs/research/) explain the direction.
 - [Recipe language](docs/RECIPE.md) defines operations, names and the recipe file.
+- [Field queries](docs/FIELD.md) defines distance semantics, proof limits, selection and batch storage.
 - [Design](docs/DESIGN.md) sets the rules; [architecture](docs/ARCHITECTURE.md) connects the B-rep crates.
 - [Piece contracts](docs/pieces/) describe the current interfaces and mathematical tests.
 - [Interface changes](docs/INTERFACE-CHANGES.md) records migrations.

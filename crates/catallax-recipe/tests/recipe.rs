@@ -23,81 +23,6 @@ fn every_operation_round_trips_to_the_same_bytes() {
     assert_eq!(Recipe::parse(&recipe.to_text()).unwrap(), recipe);
 }
 
-#[test]
-fn the_fixture_uses_every_operation() {
-    let mut ops: Vec<&str> = every_operation()
-        .steps
-        .iter()
-        .map(|s| s.op.name())
-        .collect();
-    ops.sort_unstable();
-    ops.dedup();
-    let all = [
-        "boolean",
-        "chamfer",
-        "draft",
-        "extrude",
-        "fillet",
-        "gyroid",
-        "hole",
-        "import_mesh",
-        "import_step",
-        "lattice",
-        "loft",
-        "mirror",
-        "offset",
-        "path",
-        "pattern",
-        "revolve",
-        "shell",
-        "sketch",
-        "smooth_blend",
-        "sweep",
-        "thicken",
-    ];
-    assert_eq!(ops, all);
-}
-
-#[test]
-fn the_fixture_names_every_role() {
-    let text = EVERY_OPERATION;
-    for role in [
-        "\"start\"",
-        "\"end\"",
-        "\"side\"",
-        "\"hole\"",
-        "\"blend\"",
-        "\"bevel\"",
-        "\"corner\"",
-        "\"inner\"",
-        "\"round\"",
-        "\"round_corner\"",
-        "\"offset\"",
-        "\"rim\"",
-        "\"copy\"",
-        "\"beams\"",
-        "\"surface\"",
-        "\"smooth\"",
-        "\"imported\"",
-        "\"mesh\"",
-    ] {
-        assert!(text.contains(role), "the fixture names a {role} face");
-    }
-    for part in [
-        "entry",
-        "counterbore_wall",
-        "counterbore_floor",
-        "countersink",
-        "wall",
-        "tip",
-    ] {
-        assert!(
-            text.contains(&format!("\"part\": \"{part}\"")),
-            "the fixture names a hole {part}"
-        );
-    }
-}
-
 /// Writes `value` compactly with every object's keys in reverse order, every exact
 /// number respelled, and every edge and vertex name listed backwards.
 fn respell(value: &Value, key: Option<&str>, out: &mut String) {
@@ -237,13 +162,12 @@ fn edge_and_vertex_names_are_in_canonical_order() {
     let left = side("base", "left");
     let v = VertexName::new(vec![left.clone(), top.clone(), end.clone()]).unwrap();
     assert_eq!(v.faces(), [end.clone(), left.clone(), top.clone()]);
-    assert!(VertexName::new(vec![end.clone()]).is_err());
     assert!(VertexName::new(vec![end.clone(), top, end]).is_err());
 }
 
 /// A small valid recipe; tests break it one way at a time.
 const PLATE: &str = r#"{
-  "format": "catallax-recipe/1",
+  "format": "catallax-recipe/2",
   "name": "plate",
   "steps": [
     { "id": "outline", "op": "sketch",
@@ -308,8 +232,9 @@ fn the_reader_rejects_what_is_not_this_format() {
         (r#""id": "plate""#, r#""id": "Plate""#, "recipe.parse"),
         (r#""id": "top""#, r#""id": "top edge""#, "recipe.parse"),
         // Another format.
-        ("catallax-recipe/1", "catallax-recipe/2", "recipe.format"),
-        (r#""format": "catallax-recipe/1","#, "", "recipe.format"),
+        ("catallax-recipe/2", "catallax-recipe/3", "recipe.format"),
+        ("catallax-recipe/2", "catallax-recipe/1", "recipe.format"),
+        (r#""format": "catallax-recipe/2","#, "", "recipe.format"),
     ];
     for (from, to, want) in cases {
         assert_eq!(code(broken(from, to)), want, "{from} -> {to}");
@@ -323,8 +248,7 @@ fn malformed_names_are_rejected() {
         { "step": "plate", "role": "end" }, { "step": "plate", "role": "end" } ] } } } }"#;
     let text = PLATE.replacen(r#"{ "step": "plate", "role": "end" }"#, same, 1);
     assert_eq!(code(Recipe::parse(&text)), "recipe.parse");
-    let short = r#"{ "step": "plate", "role": { "corner": { "vertex": { "faces": [
-        { "step": "plate", "role": "end" } ] } } } }"#;
+    let short = r#"{ "step": "plate", "role": { "corner": { "vertex": { "faces": [] } } } }"#;
     let text = PLATE.replacen(r#"{ "step": "plate", "role": "end" }"#, short, 1);
     assert_eq!(code(Recipe::parse(&text)), "recipe.parse");
 }

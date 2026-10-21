@@ -1,0 +1,16 @@
+[package]
+name = "catallax-field"
+description = "Exact-definition analytic fields, certified queries and recipe face selection."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+catallax-numbers.workspace = true
+catallax-recipe.workspace = true
+catallax-shapes.workspace = true
+
+[lints]
+workspace = true

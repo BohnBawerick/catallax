@@ -1,0 +1,16 @@
+Third-party files
+
+The Catallax kernel is MIT-licensed. These site dependencies retain their own licences.
+
+Fonts, copied unchanged from the studio site:
+- Bricolage Grotesque: SIL Open Font License 1.1. See brand/fonts/bricolagegrotesque-OFL.txt.
+- JetBrains Mono: SIL Open Font License 1.1. See brand/fonts/jetbrainsmono-OFL.txt.
+- Instrument Serif Italic: SIL Open Font License 1.1. See brand/fonts/instrumentserif-OFL.txt.
+Font licence sources: https://github.com/google/fonts/tree/main/ofl/ with the corresponding family directories.
+
+GSAP 3.15.0, ScrollTrigger and SplitText:
+Copyright 2026, GreenSock. All rights reserved. Original copyright and licence headers remain in every vendor JavaScript file. These files use GSAP's Standard "No Charge" License, not MIT.
+https://gsap.com/standard-license
+See vendor/GSAP-LICENSE.txt for the complete published licence snapshot, effective April 30, 2025 and last modified May 30, 2025. GSAP's terms endpoint was temporarily redirecting to its forums-offline notice during this import. The snapshot was obtained from:
+https://github.com/mereyabdenbekuly-ctrl/clodex-ide/blob/main/docs/provenance/dependency-license-texts/gsap-standard-license-2026-07-15.txt
+The original package's own licence notice is retained in vendor/GSAP-NOTICE.txt.

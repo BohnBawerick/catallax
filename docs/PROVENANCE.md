@@ -14,6 +14,11 @@ Because no imported implementation was identified, this publication adds no thir
 
 Cargo resolves registry dependencies under their own licences, as declared in their package metadata. Production uses the num arithmetic crates and serde JSON crates. The independent mathematical test oracles also use `rug` and `gmp-mpfr-sys`, with LGPL terms for those libraries and their native components. They are development dependencies, not a relicensing of the kernel.
 
+Display meshing uses `spade` for constrained triangulation and its `robust`
+predicate dependency, both under MIT OR Apache-2.0, and `libm` under MIT for
+platform-independent angle projection. These are registry dependencies, not
+vendored sources. No dependency type crosses the mesh library's public API.
+
 Review the resolved dependency licences when distributing binaries or native test tools. This repository does not vendor those dependency sources or replace their licence files with the project's MIT text.
 
 ## Publication boundary

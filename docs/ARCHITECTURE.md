@@ -64,6 +64,13 @@ Piece 4 needs only 1 and 2, so its work can start as soon as piece 2's interface
 
 B-rep recipe evaluation will call the existing B-rep operations; field recipe evaluation already compiles the stock solids and booleans independently. The two kernels do not convert results after each operation. Conversions happen only when a feature or output needs them.
 
+`catallax-mesh` is a display-only consumer of pieces 1 to 4. It samples each
+B-rep edge once, triangulates periodic analytic face charts, and returns shared
+positions, face-tagged triangles and proven chord bounds. Its OBJ writer groups
+triangles by input face ID. It does not change the body, STEP export or the
+question/manifest exchange. Display accuracy is not the PRD's 1 nm agreement
+guarantee.
+
 Dependencies point one way only. A piece never depends on a piece below it in the table, except as listed.
 Crates outside this list (third-party) may be used inside a piece, but no third-party type appears in any public signature.
 
@@ -78,6 +85,7 @@ crates/catallax-intersect/       piece 4
 crates/catallax-boolean/         piece 5
 crates/catallax-measure/         piece 6
 crates/catallax-step/            piece 7
+crates/catallax-mesh/            display meshes and OBJ export, beside the pieces
 crates/catallax-recipe/          recipe language data model, beside the pieces
 crates/catallax-field/           independent analytic fields and certified named queries
 crates/catallax-cli/             front end, binaries `catallax` and `exact-brep`

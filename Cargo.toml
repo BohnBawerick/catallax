@@ -8,6 +8,7 @@ members = [
     "crates/catallax-boolean",
     "crates/catallax-measure",
     "crates/catallax-step",
+    "crates/catallax-mesh",
     "crates/catallax-recipe",
     "crates/catallax-field",
     "crates/catallax-cli",
@@ -28,6 +29,7 @@ catallax-intersect = { path = "crates/catallax-intersect" }
 catallax-boolean = { path = "crates/catallax-boolean" }
 catallax-measure = { path = "crates/catallax-measure" }
 catallax-step = { path = "crates/catallax-step" }
+catallax-mesh = { path = "crates/catallax-mesh" }
 catallax-recipe = { path = "crates/catallax-recipe" }
 catallax-field = { path = "crates/catallax-field" }
 

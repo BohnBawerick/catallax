@@ -4,6 +4,42 @@ Status: complete for blind test writing and blind building.
 
 This is the input the test writer and the creator get, together with `docs/DESIGN.md`, `docs/ARCHITECTURE.md`, piece 1's description `docs/pieces/01-numbers-and-decisions.md` and piece 2's description `docs/pieces/02-shapes.md`. This piece stores everything it makes in piece 2's `GeomStore` and decides through piece 1's `Decider`, exactly as those descriptions define them. Nothing else is needed.
 
+## Approved conic and algebraic migration
+
+The 2026-10-22 architecture decision supersedes the rational-only types, line-only open-curve operations and closed-form restrictions below. The existing pair tables remain the rational baseline, not a claim of coverage for newly representable surfaces. Implementation lands in two steps.
+
+### Conic preparation
+
+First widen `CurveForm::Circle::radius_sq` and `CurveForm::Ellipse::{major_sq, minor_sq}` to `Real`. Add these forms, with rational directions in this preparation step:
+
+```rust
+Parabola {
+    vertex: Point3, normal: RVector3, axis_dir: RVector3, focal: Real,
+}
+Hyperbola {
+    center: Point3, normal: RVector3, axis_dir: RVector3,
+    transverse_sq: Real, conjugate_sq: Real, branch: StrictSign,
+}
+```
+
+For either form, `e1` is the normalised `axis_dir`, `e3` the normalised `normal`, and `e2 = e3 x e1`; those directions are nonzero and perpendicular. A parabola requires `focal > 0` and has `C(t) = vertex + focal (t^2 e1 + 2t e2)`, for every real `t`. Its equations are its plane and `y^2 - 4 focal x = 0`, with `x,y` measured from `vertex` in this frame. A hyperbola requires both squared dimensions positive. With `a = sqrt(transverse_sq)`, `b = sqrt(conjugate_sq)` and `s` the sign of `branch`, use `C(t) = center + s a sqrt(1+t^2) e1 + b t e2`, for every real `t`. Its equations are its plane and `x^2/a^2 - y^2/b^2 - 1 = 0`, with the additional selector `sign(x) = branch`. Two hyperbola branches are different components even though their equations agree. Increasing `t` follows the natural direction; choose the frame accordingly from the oriented intersection. These are forms of stored intersection components, not new piece 2 curve variants.
+
+Add `curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<bool, Refusal>`. Lines, parabolas and hyperbola branches are open; complete circles and ellipses are closed. For `Branch`, certify the actual component's closure, including singular endpoints. Unknown closure returns a specific existing numeric or unsupported-curve failure, never a guessed boolean. `Curve::is_closed()` remains the cheap `Option<bool>` query on the stored definition. Consumers needing a definite answer use the piece 4 query.
+
+Extend `order_on_curve` to open conics using their increasing parameter. `cyclic_order` requires proven closure. Open-curve `arc_point` and `trace` require two finite endpoints in natural order; `None, None` is valid only for a proven closed curve. Branch membership includes the component/nappe selector, not just the implicit equations. At a conic endpoint or singularity preserve the stored component and one-sided tangent contract. An unresolved selector cannot supply a marked membership or topology choice.
+
+Keep every existing successful rational answer byte-identical through this preparation. Adapt matches in boolean, measurement, export and CLI together. The unchanged version 2 exchange has only `line`, `circle`, `ellipse` and `intersection` edge tags, with `intersection` restricted to branches without a closed form. It cannot truthfully report a parabola or hyperbola form. Keep the new forms available through library/recipe evaluation; publishing those results through the CLI requires a separate versioned exchange decision. Do not invent a tag or silently relabel a known conic as a branch. This is an exchange coverage gap, not impossible geometry.
+
+### Shared algebraic foundation
+
+After conic preparation, widen every `CurveForm` direction to `Vector3`, including the new forms. Positions remain `Point3`; all dimensions are `Real`. Stored analytic curves follow piece 2's matching field changes. Configuration quantities become `Real`; use rational fast paths when available, otherwise the decider. `Branch` now means a certified intersection component without a recognised analytic form, not only a quartic curve. Its coefficients and equations use `RealPoly` and piece 1's certified algebraic solver path. Never clear an algebraic coefficient by replacing it with a decimal or by accepting all conjugate roots.
+
+The required new coverage includes cone/plane open conics, torus/plane circles with irrational squared radii, and elliptic-cylinder/plane sections. General cone, torus and elliptic-cylinder pairs still require component isolation, singular handling, membership, ordering and certified traces before `supports` may advertise them. A surface enum variant alone is not coverage. Existing unsupported codes stay temporary failures for cases not yet implemented; the first code change that removes a restriction must update the affected baseline table and tests.
+
+Preserve nappe selectors, shared root correlations and construction incidences through all operations. Surface-pair and hit ordering must use exact comparisons in the documented order. Pair reversal changes orientation as specified, never the selected point sets. Traces enclose coefficient uncertainty and chart derivatives at the caller's precision and retain finite trims on open curves.
+
+Use independent section equations to check torus cuts with irrational squared radii, parabola orientation and both hyperbola branches. Test that a point on the opposite branch fails membership and that an open component cannot become a ring edge. Add irrational axis-length ratios to the CC6 cases when their coverage lands. A high-degree algebraic expression must take the shared proof path, not a rational-only special-case refusal.
+
 ## What this piece is for
 
 Piece 4 answers "where do these meet?" exactly, for the surfaces of the first milestone: planes, cylinders and spheres, in every pair and every pose.

@@ -4,6 +4,14 @@ Status: complete for blind test writing and blind building.
 
 This is the input the test writer and the creator get, together with `docs/DESIGN.md`, `docs/ARCHITECTURE.md`, `docs/JUDGE-INTERFACE.md` (the answer's topology) and the descriptions of pieces 1 to 4 in `docs/pieces/`. This piece builds on piece 3's `Model`, decides through pieces 1, 2 and 4, and uses their outcomes, facts and marks exactly as those descriptions define them. Nothing else is needed.
 
+## Approved algebraic-definition migration
+
+The 2026-10-22 architecture decision keeps the five boolean stages and their public result types. Widen internal coefficients, projection frames, probe geometry and germ calculations to piece 1 `Real`/`RealPoly` where definitions can be algebraic. Retain rational fast paths and construction facts. A failed conversion to `Rational` is not a geometric predicate or proof of impossibility.
+
+Use piece 4's certified closure query when building rings, choosing cyclic order or requesting a full trace. Open conics use finite endpoints and their natural linear order. Keep cone nappes and hyperbola branches through intersection, imprint, classification and sewing. Polynomial carrier coincidence does not establish branch or trimmed-face coincidence.
+
+Fix batch 5 joins the common foundation after its merge. Its contact-order and probe regressions must also cover algebraic inputs, without increasing global budgets or using sampled signs. Unsupported cases remain explicit implementation gaps; the wider types do not turn an unresolved branch into a bounded coincidence.
+
 ## What this piece is for
 
 Piece 5 is the one boolean engine of the kernel (DESIGN.md, R7). It unites, subtracts and intersects two bodies of one `Model`, through five named stages that later operations (fillet, shell, offset) reuse:

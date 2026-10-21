@@ -4,6 +4,22 @@ Status: complete for blind test writing and blind building.
 
 This is the only input the test writer and the creator get. Read `docs/DESIGN.md` and `docs/ARCHITECTURE.md` for the rules around it; nothing else is needed.
 
+## Approved algebraic-definition extension
+
+The 2026-10-22 architecture decision adds the contract below. Implementation is pending; the rest of this document describes the retained rational baseline unless this section overrides it.
+
+`Real` stays the existing lazy algebraic expression type. Do not add transcendental nodes or a second scalar type. A stored geometry definition must have proven-valid domains for division and square roots. Constructing an expression remains infallible; validating a geometry definition is a separate decision.
+
+Add `RealPoly`, a polynomial in a fixed number of variables with `Real` coefficients. Use `Monomial`'s existing order and a deterministic expression order when combining terms. Arithmetic, partial derivatives, substitution and exact evaluation build expressions without making decisions. Expose `nvars`, ordered `terms`, `eval_real`, `partial`, arithmetic and conversion from `MPoly`. `as_rational() -> Option<MPoly>` succeeds only when every coefficient's existing `Real::as_rational` succeeds. It must not round or invoke elimination. The rational conversion feeds existing solvers unchanged.
+
+A syntactic term bound is not the mathematical degree. Algebraically zero coefficients may remain until a decider proves zero. Degree selection, leading-coefficient division, polynomial equality and zero-polynomial tests must therefore be certified operations; no caller may use list length or expression identity as those proofs. `RealPoly` has no mathematical `Eq`, `Ord` or `Hash`. Enclosure evaluation includes coefficient error as well as input error, using the caller's precision and decision policy.
+
+For non-rational coefficients, solvers must either operate in a certified common algebraic extension or lower the expression graph to rational polynomial equations with auxiliary variables and certified root/domain selectors. Lowering retains shared leaves and their correlations, positive square-root choices and nonzero divisors. Elimination gives candidate roots; it must not admit other conjugates or denominator zeros. Certify and order candidates against the original equations and component selectors. Rational `UPoly`, `MPoly`, `PolySystem` and `IsolatedRoot` keep their current contracts. Lifted systems need their own certificates when singular; the existing nonsingular `IsolatedRoot` constructor cannot certify them by assertion.
+
+Add a shared budgeted `sin_cos_degrees(angle: &Rational, dec: &mut Decider) -> Result<[Real; 2], Refusal>`, returning sine then cosine. Reduce the exact angle modulo 360, select the intended roots of unity using exact sector/root certificates, and retain those certified algebraic values. Standard rational/quadratic angles use exact fast paths. No floating-point trigonometry or rationalised answer is allowed. Arbitrary rational degree angles may have high algebraic degree; failure to construct their certificate is a temporary coverage/resource failure, never impossible geometry. General `sin(Real)` and `cos(Real)` are not introduced. Continuous trigonometric chart evaluation remains in `Ball`.
+
+Use the existing deterministic work policy for coefficient validation, root selection and elimination. A failed proof keeps its `numbers.*` reason. Cache reuse must preserve outcomes and deterministic work charges across cold/warm and serial/parallel runs. The alternative of eagerly replacing every expression by one isolated number simplifies arithmetic boundaries but pays elimination before it is needed and loses shared construction identities.
+
 ## What this piece is for
 
 Every other piece of the kernel asks this piece two kinds of question.

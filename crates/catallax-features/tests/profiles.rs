@@ -112,6 +112,9 @@ fn circle_and_ring_have_closed_form_mass_properties() {
     let mass = measure(&model, body);
     contains(&mass.volume, b(18) * pi());
     contains(&mass.area, b(30) * pi());
+    for (value, expected) in mass.centroid.unwrap().iter().zip([0, 0, 1]) {
+        assert!(value.contains(&r(expected)));
+    }
     let (model, body) = build(&[circle("hole", 0, 0, 1), circle("outer", 0, 0, 3)], 2);
     let mass = measure(&model, body);
     contains(&mass.volume, b(16) * pi());

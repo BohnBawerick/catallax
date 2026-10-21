@@ -99,10 +99,21 @@ fn full_and_partial_annular_revolutions() {
         );
         let centroid = mass.centroid.unwrap();
         assert!(centroid[1].contains(&r(1)));
-        if angle == 360 {
-            assert!(centroid[0].contains(&r(0)));
-            assert!(centroid[2].contains(&r(0)));
-        }
+        let (x, z, divisor) = match angle {
+            90 => (13, -13, 3),
+            180 => (0, -13, 3),
+            270 => (-13, -13, 9),
+            360 => (0, 0, 1),
+            _ => unreachable!(),
+        };
+        contains(
+            &centroid[0],
+            b(x).checked_div(&(b(divisor) * Ball::pi(192))).unwrap(),
+        );
+        contains(
+            &centroid[2],
+            b(z).checked_div(&(b(divisor) * Ball::pi(192))).unwrap(),
+        );
     }
 }
 

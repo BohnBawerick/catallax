@@ -6,7 +6,7 @@ use catallax_numbers::{Ball, Decider, Rational, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe, RecipeError, StepId};
 use catallax_shapes::{RPoint3, RVector3};
 use catallax_topology::{BodyId, BodyKind, Model};
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
 /// A complete build. Intermediate input bodies remain immutable and queryable.
 #[derive(Clone, Debug)]
@@ -17,6 +17,15 @@ pub struct Built {
     pub result: BodyId,
     /// Every body-producing step, in canonical step-id order.
     pub bodies: BTreeMap<StepId, BodyId>,
+    definition: Arc<Recipe>,
+}
+
+impl Built {
+    /// The immutable recipe definition behind the analytic reductions and trims.
+    /// Origins refer to this snapshot, not a subsequently edited input recipe.
+    pub fn recipe(&self) -> &Recipe {
+        &self.definition
+    }
 }
 
 /// A structural recipe error or the first geometric failure in step order.
@@ -257,5 +266,6 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
             .into_iter()
             .map(|(id, value)| (id, value.body))
             .collect(),
+        definition: Arc::new(recipe.clone()),
     })
 }

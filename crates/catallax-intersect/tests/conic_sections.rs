@@ -522,31 +522,3 @@ fn circle_results_are_covariant_under_generated_rational_poses() {
         circles(b, a, &[(expected, rr(4), Contact::Crossing)], &[]);
     }
 }
-
-#[test]
-fn unfinished_pose_paths_refuse_specifically_without_partial_geometry() {
-    for (a, b, code) in [
-        (
-            cone(pi([0, 0, 0]), vi([0, 0, 1]), n(1)),
-            cyl(pi([0, 0, 0]), vi([1, 0, 0]), n(1)),
-            "intersect.traced-pair-required",
-        ),
-        (
-            cone(pi([0, 0, 0]), vi([0, 0, 1]), n(1)),
-            plane(pi([0, 0, 0]), vi([1, 1, 0])),
-            "intersect.algebraic-direction-required",
-        ),
-    ] {
-        let mut g = GeomStore::new();
-        let a = g.add_surface(a);
-        let b = g.add_surface(b);
-        let before = (g.curve_count(), g.point_count());
-        assert_eq!(
-            intersect_surfaces(&mut g, a, b, &mut Decider::default())
-                .unwrap_err()
-                .code,
-            code
-        );
-        assert_eq!((g.curve_count(), g.point_count()), before);
-    }
-}

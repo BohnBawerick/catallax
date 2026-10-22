@@ -242,3 +242,68 @@ fn construction_refusal_retains_boolean_context_after_measurement_split() {
     assert!(!dir.join("answer.step").exists());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn declared_face_checks_survive_replay_and_report_radius_edit_origins() {
+    use catallax_cli::verification::{Request, answer};
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-face-check-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let problem = json!({
+        "format":"catallax-face-check/1",
+        "recipe":{"format":"catallax-recipe/3","name":"tube","steps":[{
+            "id":"tube","op":"torus","major":"4","minor":"1.0002",
+            "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}
+        }],"result":"tube"},
+        "definitions":[{"face":{"step":"tube"},"definition":{
+            "kind":"fillet","radius":"1",
+            "path":{"kind":"circle","center":["0","0","0"],"normal":["0","0","1"],
+                "radius":"4","reference":["1","0","0"]}
+        }}],
+        "edit":{"step":"tube","parameter":"minor","value":"1.1"}
+    });
+    let response = answer(&Request {
+        format: "catallax-request/1".into(),
+        source: "recipe".into(),
+        problem,
+        out: dir.clone(),
+        max_work: 100_000_000,
+    })
+    .unwrap();
+    assert_eq!(response["manifest"]["status"], "answered", "{response}");
+    let report = &response["manifest"]["face_measurements"];
+    let face = &report["faces"][0];
+    let lower =
+        catallax_numbers::Rational::parse(face["deviation_mm"]["lower"].as_str().unwrap()).unwrap();
+    let upper =
+        catallax_numbers::Rational::parse(face["deviation_mm"]["upper"].as_str().unwrap()).unwrap();
+    let truth = catallax_numbers::Rational::parse("0.0002").unwrap();
+    assert!(lower <= truth && truth <= upper);
+    assert_eq!(face["local_tolerance_mm"], face["deviation_mm"]["upper"]);
+    assert_eq!(
+        report["edit"]["resolved"][0]["faces"][0]["origins"],
+        face["origins"]
+    );
+    assert_eq!(report["edit"]["resolved"][0]["status"], "resolved");
+    let operations = response["operation_log"]["operations"].as_array().unwrap();
+    let measured = operations
+        .iter()
+        .find(|o| o["operation"] == "face_measure")
+        .unwrap();
+    assert_eq!(measured["local_tolerances"][0], *face);
+    let exported: catallax_cli::verification::ExportedQuestion =
+        serde_json::from_slice(&fs::read(dir.join("question.json")).unwrap()).unwrap();
+    let replay = answer(&exported.request(dir.join("replay")).unwrap()).unwrap();
+    assert_eq!(
+        replay["manifest"]["face_measurements"]["faces"],
+        report["faces"]
+    );
+    assert_eq!(replay["work"], response["work"]);
+    assert_eq!(
+        fs::read(dir.join("answer.step")).unwrap(),
+        fs::read(dir.join("replay/answer.step")).unwrap()
+    );
+    fs::remove_dir_all(dir).unwrap();
+}

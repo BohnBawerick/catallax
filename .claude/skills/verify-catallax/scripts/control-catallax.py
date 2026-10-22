@@ -264,7 +264,12 @@ def summarize(report):
 
 
 def comparable(manifest):
-    return {k: v for k, v in manifest.items() if k not in ('stats', 'kernel')}
+    result = {k: v for k, v in manifest.items() if k not in ('stats', 'kernel')}
+    if 'face_measurements' in result:
+        measurements = dict(result['face_measurements'])
+        measurements['display'] = {k: v for k, v in measurements['display'].items() if k != 'first_mesh_ms'}
+        result['face_measurements'] = measurements
+    return result
 
 
 def compare(left, right):

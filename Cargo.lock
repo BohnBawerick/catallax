@@ -55,6 +55,7 @@ dependencies = [
  "catallax-field",
  "catallax-intersect",
  "catallax-measure",
+ "catallax-mesh",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",
@@ -99,6 +100,7 @@ version = "0.0.0"
 dependencies = [
  "catallax-boolean",
  "catallax-features",
+ "catallax-intersect",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",

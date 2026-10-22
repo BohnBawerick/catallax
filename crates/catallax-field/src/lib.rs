@@ -10,6 +10,8 @@
 
 mod features;
 mod geometry;
+/// Proven two-sided deviation of B-rep faces from their own definitions.
+pub mod measurement;
 mod metric;
 mod planar;
 mod profile;

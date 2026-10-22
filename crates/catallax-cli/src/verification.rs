@@ -110,6 +110,10 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
         crate::prepare_output(&request.out)?;
     }
     manifest["kernel"] = serde_json::to_value(crate::kernel_info())?;
+    let mut measured_faces = manifest["face_measurements"]["faces"]
+        .as_array()
+        .into_iter()
+        .flatten();
     let operations: Vec<_> = entries.iter().enumerate().map(|(sequence, entry)| {
         let decisions = entry.after.as_ref().map(|after| {
             let before = &entry.before;
@@ -129,7 +133,9 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
         let marks: Vec<_> = entry.marks.iter().map(|mark| crate::mark_entry(mark, Some(&entry.id))).collect();
         json!({"sequence":sequence,"kernel":entry.kernel,"id":entry.id,"operation":entry.operation,
             "status":if entry.after.is_none() {"interrupted"} else if entry.refusal.is_some() {"refused"} else {"answered"},
-            "decisions":decisions,"marks":marks,"local_tolerances":null,
+            "decisions":decisions,"marks":marks,"local_tolerances":if entry.operation == "face_measure" {
+                measured_faces.next().map(|face| json!([face]))
+            } else { None },
             "refusal":entry.refusal.as_ref().map(|r| json!({"code":r.code,"detail":r.detail})),
             "work":{"before":entry.work_before,"after":entry.work_after,"used":entry.work_after-entry.work_before},
             "wall_ms":entry.wall_ms})
@@ -181,7 +187,23 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             Ok(value)
         }
         "recipe" | "compare" | "field" => {
-            let recipe = match catallax_recipe::Recipe::parse(&request.problem.to_string()) {
+            let display_started = Instant::now();
+            let checks = if request.problem["format"] == "catallax-face-check/1" {
+                if request.source != "recipe" {
+                    return Ok(refused(
+                        "cli.face-definition",
+                        "face checks require the recipe adapter",
+                    ));
+                }
+                match crate::face_checks::FaceChecks::parse(&request.problem) {
+                    Ok(checks) => Some(checks),
+                    Err(error) => return Ok(refused(error.code, error.detail)),
+                }
+            } else {
+                None
+            };
+            let problem = checks.as_ref().map_or(&request.problem, |c| &c.recipe);
+            let recipe = match catallax_recipe::Recipe::parse(&problem.to_string()) {
                 Ok(recipe) => recipe,
                 Err(error) => {
                     let mut value = refused("cli.invalid-recipe", error);
@@ -238,7 +260,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 );
             }
             let mut dec = Decider::default();
-            let built = match catallax_features::evaluate(&recipe, &mut dec) {
+            let mut built = match catallax_features::evaluate(&recipe, &mut dec) {
                 Ok(built) => built,
                 Err(catallax_features::BuildError::Geometry { step, refusal }) => {
                     let mut value = refused(refusal.code, refusal.detail);
@@ -246,6 +268,14 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                     return Ok(value);
                 }
                 Err(error) => return Ok(refused("cli.invalid-recipe", error)),
+            };
+            let measurements = if let Some(checks) = checks {
+                match checks.report(&recipe, &mut built, display_started, &mut dec) {
+                    Ok(report) => Some(report),
+                    Err(error) => return Ok(refused(error.code, error.detail)),
+                }
+            } else {
+                None
             };
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
@@ -294,10 +324,12 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                     Err(error) => return Ok(refused(error.code, error.detail)),
                 }
             }
-            Ok(
-                json!({"format":"catallax-manifest/3","status":"answered","exact":marks.is_empty(),
-                "result":summary,"marks":marks,"step":step,"refusal":null}),
-            )
+            let mut manifest = json!({"format":"catallax-manifest/3","status":"answered","exact":marks.is_empty(),
+                "result":summary,"marks":marks,"step":step,"refusal":null});
+            if let Some(measurements) = measurements {
+                manifest["face_measurements"] = measurements;
+            }
+            Ok(manifest)
         }
         _ => {
             let mut value = refused(

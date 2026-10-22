@@ -4,14 +4,41 @@ use catallax_intersect::{CurveTrace, trace};
 use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal};
 use catallax_shapes::{Point3, RPoint3, RVector3, Surface, Vector3};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 
 use crate::integrate::{Stop, Work};
 use crate::planar;
 use crate::surface::{self, Compiled, Property};
 use crate::{Accuracy, Enclosure};
 
-pub(crate) type TraceCache = HashMap<EdgeId, std::sync::Arc<CurveTrace>>;
+#[derive(Default)]
+pub(crate) struct TraceCache {
+    curves: HashMap<EdgeId, std::sync::Arc<CurveTrace>>,
+    failed_gauges: BTreeSet<GaugeAttempt>,
+    reuse_gauges: bool,
+}
+
+impl TraceCache {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn grouped() -> Self {
+        Self {
+            reuse_gauges: true,
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct GaugeAttempt {
+    face: FaceId,
+    depth: u32,
+    rectangle: bool,
+    precision: u32,
+    candidate: usize,
+}
 
 struct Arc<'a> {
     trace: Option<std::sync::Arc<CurveTrace>>,
@@ -29,6 +56,7 @@ struct Parallel {
 }
 
 struct Curved<'a> {
+    id: FaceId,
     surface: &'a Surface,
     sense: Sense,
     boundaries: Vec<Vec<Arc<'a>>>,
@@ -247,7 +275,7 @@ pub(crate) fn measure(
                             && parallel.is_none()
                             && (integral.is_none() || matches!(surface, Surface::Sphere(_)))
                         {
-                            let traced = match traces.entry(c.edge) {
+                            let traced = match traces.curves.entry(c.edge) {
                                 Entry::Occupied(entry) => entry.into_mut(),
                                 Entry::Vacant(entry) => entry.insert(std::sync::Arc::new(
                                     trace(model.geom(), edge.curve, from, to, dec)?.value,
@@ -275,6 +303,7 @@ pub(crate) fn measure(
             }
         }
         prepared.push(Prepared::Curved(Curved {
+            id,
             surface,
             sense: face.sense,
             boundaries,
@@ -314,6 +343,7 @@ pub(crate) fn measure(
             &indices,
             depth,
             rectangle,
+            traces,
             &mut work,
         );
         remaining = work.remaining();
@@ -352,7 +382,7 @@ pub(crate) fn measure(
             }
             Err(Stop::Budget) => break,
             Err(Stop::Refusal(refusal)) => return Err(refusal),
-            Err(Stop::Split) => {
+            Err(Stop::Split | Stop::GaugeSplit) => {
                 if rectangle && depth < 2 {
                     depth += 1;
                 } else if rectangle {
@@ -429,6 +459,7 @@ fn evaluate(
     indices: &[usize],
     depth: u32,
     rectangle: bool,
+    cache: &mut TraceCache,
     work: &mut Work,
 ) -> Result<Vec<Enclosure>, Stop> {
     let mut sums: Vec<Ball> = indices
@@ -454,6 +485,32 @@ fn evaluate(
                     } else {
                         1
                     };
+                let cacheable = cache.reuse_gauges
+                    && candidates == 6
+                    && !matches!(property, Property::SecondMoment(_, _))
+                    && face.boundaries.iter().flatten().all(|arc| {
+                        arc.integral.is_none() && arc.exact.is_none() && arc.analytic.is_none()
+                    });
+                let face_id = face.id;
+                let precision = work.precision;
+                let key = |candidate| GaugeAttempt {
+                    face: face_id,
+                    depth,
+                    rectangle,
+                    precision,
+                    candidate,
+                };
+                // The area-gauge denominator and its trace zeroth coefficient
+                // are identical across these properties. Reuse only a complete
+                // set of failed gauges, never a geometric nonmembership claim.
+                // Skipping individual gauges in a successful attempt could
+                // change its quadrature-dominance flag.
+                if cacheable
+                    && (0..candidates)
+                        .all(|candidate| cache.failed_gauges.contains(&key(candidate)))
+                {
+                    return Err(Stop::Split);
+                }
                 for candidate in 0..candidates {
                     if face.compiled.len() <= candidate {
                         face.compiled.push(
@@ -478,6 +535,11 @@ fn evaluate(
                         Ok(values) => {
                             answer = Some(values);
                             break;
+                        }
+                        Err(Stop::GaugeSplit) => {
+                            if cacheable && property != Property::Centroid {
+                                cache.failed_gauges.insert(key(candidate));
+                            }
                         }
                         Err(Stop::Split) => {}
                         Err(e) => return Err(e),

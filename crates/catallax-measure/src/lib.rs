@@ -160,7 +160,7 @@ pub fn mass_properties(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<MassProperties> {
-    let mut traces = engine::TraceCache::new();
+    let mut traces = engine::TraceCache::grouped();
     let base = base_properties(model, body, accuracy, &mut traces, dec)?;
     let inertia = inertia_from_centroid(
         model,
@@ -185,14 +185,20 @@ pub fn mass_properties(
 }
 
 /// Requests volume, area and centroid without requesting inertia. Each property
-/// retains its own budget; edge traces are shared exactly as in `mass_properties`.
+/// retains its own budget; edge traces and failed sphere-gauge attempts are shared.
 pub fn volume_area_centroid(
     model: &Model,
     body: BodyId,
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<VolumeAreaCentroid> {
-    base_properties(model, body, accuracy, &mut engine::TraceCache::new(), dec)
+    base_properties(
+        model,
+        body,
+        accuracy,
+        &mut engine::TraceCache::grouped(),
+        dec,
+    )
 }
 
 fn base_properties(

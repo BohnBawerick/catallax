@@ -86,6 +86,8 @@ Panel programs lazily compile coefficient-dependency plans. Symmetric center pas
 
 The selected-coefficient regressions integrate the positive square root and reciprocal of `(1+t)^2`, and its division by a constant, against exact rational antiderivatives. A separate regression keeps zero divisors and negative square roots visible when only a high-order remainder is requested. A temporary before/after trace probe retained all 648 returned panel enclosures and the quadrature-dominance flags exactly. A second full-versus-selected comparison matched 660 coefficient enclosures, including constant and variable divisors, at coefficient scales `10^-30`, `1` and `10^30` and precisions 8, 64, 128 and 256. Dependency pruning can skip charged arithmetic, unlike zero-tail elision; requested coefficient operations retain their order and rounding.
 
+The grouped-property gauge regression unites a radius-4, height-16 cylinder with a radius-5 sphere centred at `(1/4, 0, 8)`, then applies a common rational rigid pose. It requires valid native topology and complete unmarked volume, area and centroid within the unchanged 100-million request allowance. Independent rational bounds on pi bound its volume; reflection symmetry fixes two local centroid coordinates and paired cross-sections bound the third. The original CLI replay refused before a finite centroid enclosure. Complete failed gauge sets can be reused across the three properties; successful attempt arithmetic, analytic arcs and second moments retain their existing paths.
+
 ## Benchmarks
 
 Opt into timings:

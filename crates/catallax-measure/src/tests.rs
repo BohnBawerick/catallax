@@ -670,3 +670,76 @@ fn boolean_union_inertia_equals_parts_with_parallel_axis_shift() {
     assert_eq!(tensor, expected.map(|row| row.map(exact)));
     assert!(measured.marks.is_empty());
 }
+
+#[test]
+fn grouped_properties_reuse_failed_sphere_gauges_before_centroid() {
+    let ((model, body, measured), work) =
+        catallax_numbers::with_operation_budget(100_000_000, || {
+            let mut model = Model::new();
+            let mut dec = Decider::default();
+            let rotation = Rotation::from_quaternion(r(1), r(2), r(3), r(4)).unwrap();
+            let cylinder_pose =
+                Pose::new(rotation.clone(), vector(2, -3, 5).into(), &mut dec).unwrap();
+            let sphere_pose = Pose::new(
+                rotation,
+                RVector3::new(r(77) / r(10), r(5) / r(2), r(123) / r(20)).into(),
+                &mut dec,
+            )
+            .unwrap();
+            let cylinder =
+                catallax_topology::cylinder(&mut model, r(4), r(16), &cylinder_pose).unwrap();
+            let sphere = catallax_topology::sphere(&mut model, r(5), &sphere_pose).unwrap();
+            let body = catallax_boolean::boolean(
+                &mut model,
+                cylinder,
+                sphere,
+                catallax_boolean::BoolOp::Unite,
+                &mut dec,
+            )
+            .unwrap()
+            .body;
+            let measured =
+                volume_area_centroid(&model, body, &Accuracy::default(), &mut dec).unwrap();
+            (model, body, measured)
+        });
+    assert!(!work.exhausted);
+    assert!(model.check(body).is_empty());
+    assert_eq!(model.faces_of_body(body).len(), 5);
+    assert!(measured.marks.is_empty());
+    let values = measured.value;
+    let centroid = values.centroid.unwrap();
+    for value in [&values.volume, &values.area].into_iter().chain(&centroid) {
+        assert!(meets_width(value, &Accuracy::default()));
+    }
+    // The union contains the cylinder and is contained in the disjoint sum.
+    // Archimedes' rational bounds on pi make these independent volume bounds.
+    assert!(values.volume.lo > r(256) * (r(223) / r(71)));
+    assert!(values.volume.hi < (r(256) + r(500) / r(3)) * (r(22) / r(7)));
+
+    // In the unposed frame the sphere centre is (1/4, 0, 8). Reflection
+    // symmetry fixes centroid y=0 and z=8; paired x sections put 0<x<1/4.
+    // These matrix columns are independently expanded from quaternion 1,2,3,4.
+    let offsets = [r(2), r(-3), r(5)];
+    let translated: [Enclosure; 3] = std::array::from_fn(|i| Enclosure {
+        lo: &centroid[i].lo - &offsets[i],
+        hi: &centroid[i].hi - &offsets[i],
+    });
+    let project = |coefficients: [Rational; 3]| {
+        let mut lo = r(0);
+        let mut hi = r(0);
+        for (coefficient, value) in coefficients.into_iter().zip(&translated) {
+            let (lower, upper) = if coefficient < r(0) {
+                (&value.hi, &value.lo)
+            } else {
+                (&value.lo, &value.hi)
+            };
+            lo = lo + &coefficient * lower;
+            hi = hi + &coefficient * upper;
+        }
+        Enclosure { lo, hi }
+    };
+    let x = project([-r(2) / r(3), r(2) / r(3), r(1) / r(3)]);
+    assert!(x.lo > r(0) && x.hi < r(1) / r(4));
+    assert!(project([r(2) / r(15), -r(1) / r(3), r(14) / r(15)]).contains(&r(0)));
+    assert!(project([r(11) / r(15), r(2) / r(3), r(2) / r(15)]).contains(&r(8)));
+}

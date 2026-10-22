@@ -36,9 +36,12 @@ name = "catallax-cli"
 version = "0.0.0"
 dependencies = [
  "catallax-boolean",
+ "catallax-compare",
+ "catallax-features",
  "catallax-intersect",
  "catallax-measure",
  "catallax-numbers",
+ "catallax-recipe",
  "catallax-shapes",
  "catallax-step",
  "catallax-topology",

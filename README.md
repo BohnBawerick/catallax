@@ -80,6 +80,18 @@ python3 -B -m unittest discover -s tools/edge-hunt -v
 
 GitHub-hosted CI runs formatting, clippy, all enabled release tests and doctests. Crate `TESTS.md` files describe extra opt-in workloads. Timing benchmarks report measurements, never correctness gates.
 
+## Verification
+
+`catallax-verify` adds a persistent, deterministic exchange for questions, recipes and sampled two-kernel comparisons. Whole-request work budgets choose outcomes; wall time is reported separately. The legacy `catallax` and `exact-brep` commands retain their existing deadlines and file formats.
+
+```sh
+cargo build --release -p catallax-cli --bins
+.claude/skills/verify-catallax/scripts/control-catallax.py doctor --binary target/release/catallax-verify --json
+.claude/skills/verify-catallax/scripts/control-catallax.py --help
+```
+
+The [verification skill](.claude/skills/verify-catallax/SKILL.md) covers corpus replay, caching, resume, strict STEP comparison and matched-pair timing. The [versioned contract](docs/VERIFY-INTERFACE.md) defines work accounting and the expanded geometry kind tags. Pass private inputs as runtime paths and keep proof artifacts outside the repository.
+
 ## Display meshes
 
 `catallax_mesh::mesh_body(&model, body, &options, &mut decider)` returns an

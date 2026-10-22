@@ -63,9 +63,9 @@ Existing kernel limitations exposed during comparison development remain unrepai
 The application still owns edit-region calculation, worker scheduling, restart policy, attribution to the edited feature and the kernel bug list. SolidDraft integration, development checks, pre-export checks and command-line exchange changes are outside this library.
 
 
-## Open policy conflict
+## Deterministic verification policy
 
-The CLI currently uses a 50-second wall-clock deadline and returns `numbers.deadline` if it passes. Identical questions can therefore answer on an idle machine and refuse under load, contrary to the same-answer rule across machines and thread counts. Decide how to separate cancellation from deterministic geometric outcomes, then review any required exchange-contract change. No deadline behaviour changes in this publication.
+The policy conflict is closed for the opt-in `catallax-verify` exchange. Whole-request work budgets choose outcomes; wall-clock measurements report performance only. External cancellation leaves an incomplete run. The legacy CLI retains its 50-second deadline unchanged until callers migrate. [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md) defines the versions, adapters and replay driver; [ARCHITECTURE.md](ARCHITECTURE.md#the-time-budget) records the allowance and interactive targets.
 
 ## Measure useful latency
 

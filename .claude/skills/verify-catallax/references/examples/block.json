@@ -1,0 +1,1 @@
+{"format":"exact-brep-question/2","id":"verify-block","operands":{"a":{"shape":"block","size":["1","2","3"]}},"steps":[],"result":"a","limits":{"deadline_ms":0}}

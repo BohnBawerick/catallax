@@ -1,0 +1,1 @@
+{"format":"catallax-recipe/3","name":"verify-recipe","steps":[{"id":"box","op":"block","size":["1","2","3"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"box"}

@@ -6,6 +6,7 @@
 
 mod manifest;
 mod question;
+pub mod verification;
 
 pub use manifest::{
     Bound, KernelInfo, Manifest, MarkEntry, Properties, RefusalEntry, ResultSummary, Stats, Status,
@@ -42,6 +43,20 @@ pub fn answer(question: &Question, out_dir: &Path) -> io::Result<Manifest> {
 
 /// Answers using the executable's start time for the deadline and wall time.
 pub fn answer_since(question: &Question, out_dir: &Path, started: Instant) -> io::Result<Manifest> {
+    answer_with_deadline(question, out_dir, started, true)
+}
+
+/// Answers with deterministic operation accounting supplied by the caller.
+pub fn answer_deterministic(question: &Question, out_dir: &Path) -> io::Result<Manifest> {
+    answer_with_deadline(question, out_dir, Instant::now(), false)
+}
+
+fn answer_with_deadline(
+    question: &Question,
+    out_dir: &Path,
+    started: Instant,
+    legacy: bool,
+) -> io::Result<Manifest> {
     prepare_output(out_dir)?;
     let mut manifest = failure(
         Some(question.id.clone()),
@@ -51,9 +66,18 @@ pub fn answer_since(question: &Question, out_dir: &Path, started: Instant) -> io
     );
     let mut model = Model::new();
     let mut dec = Decider::default();
-    dec.set_deadline(started.checked_add(Duration::from_millis(question.limits.deadline_ms)));
-    let result = evaluate(question, out_dir, &mut model, &mut dec, &mut manifest)
-        .and_then(|()| dec.check_deadline().map_err(Failure::from));
+    if legacy {
+        dec.set_deadline(started.checked_add(Duration::from_millis(question.limits.deadline_ms)));
+    }
+    let result = evaluate(
+        question,
+        out_dir,
+        &mut model,
+        &mut dec,
+        &mut manifest,
+        !legacy,
+    )
+    .and_then(|()| dec.check_deadline().map_err(Failure::from));
     manifest.stats.wall_ms = milliseconds(started.elapsed());
     manifest.stats.decisions = dec.take_stats();
     match result {
@@ -151,6 +175,7 @@ fn evaluate(
     model: &mut Model,
     dec: &mut Decider,
     manifest: &mut Manifest,
+    extended: bool,
 ) -> Result<(), Failure> {
     let mut bodies = BTreeMap::new();
     for (name, operand) in &question.operands {
@@ -289,7 +314,7 @@ fn evaluate(
         }
     }
     mark_decimal_accuracy(&properties, &request.accuracy, &mut manifest.marks);
-    let summary = result_summary(model, built.body, dec)?;
+    let summary = result_summary(model, built.body, dec, extended)?;
     if question.export.step && model.body(built.body).kind != BodyKind::Empty {
         let path = out_dir.join("answer.step");
         let mut file = File::create(&path)?;
@@ -348,10 +373,11 @@ fn evaluate(
     Ok(())
 }
 
-fn result_summary(
+pub(crate) fn result_summary(
     model: &Model,
     body: BodyId,
     dec: &mut Decider,
+    extended: bool,
 ) -> Result<ResultSummary, Refusal> {
     let counts = model.counts(body);
     let mut faces_by_kind = BTreeMap::new();
@@ -374,6 +400,8 @@ fn result_summary(
             catallax_intersect::CurveForm::Circle { .. } => "circle",
             catallax_intersect::CurveForm::Ellipse { .. } => "ellipse",
             catallax_intersect::CurveForm::Branch => "intersection",
+            catallax_intersect::CurveForm::Parabola { .. } if extended => "parabola",
+            catallax_intersect::CurveForm::Hyperbola { .. } if extended => "hyperbola",
             catallax_intersect::CurveForm::Parabola { .. }
             | catallax_intersect::CurveForm::Hyperbola { .. } => {
                 return Err(Refusal::new(

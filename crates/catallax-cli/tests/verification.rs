@@ -84,3 +84,28 @@ fn operation_scope_restores_after_panic_and_is_thread_local() {
     let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
     assert_eq!(results, [(false, 0, true), (true, 1, false)]);
 }
+
+#[test]
+fn request_does_not_inherit_callers_numeric_thread_state() {
+    use catallax_cli::verification::{Request, answer};
+    use catallax_numbers::with_operation_budget;
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-isolated-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let request = Request {
+        format: "catallax-request/1".into(),
+        source: "question".into(),
+        problem: question(),
+        out: dir.clone(),
+        max_work: 100_000_000,
+    };
+    let cold = answer(&request).unwrap();
+    let (nested, outer) = with_operation_budget(0, || answer(&request).unwrap());
+    assert_eq!(nested["manifest"]["status"], "answered");
+    assert_eq!(nested["work"], cold["work"]);
+    assert_eq!(outer.used, 0);
+    assert!(!outer.exhausted);
+    fs::remove_dir_all(dir).unwrap();
+}

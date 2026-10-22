@@ -38,6 +38,21 @@ fn refused(code: &str, detail: impl ToString) -> Value {
 /// A panic remains an internal error, never a geometric refusal.
 pub fn answer(request: &Request) -> std::io::Result<Value> {
     let started = Instant::now();
+    // Intersection plans retain shared expression nodes in thread-local caches.
+    // A fresh thread prevents previous requests from changing memoized work.
+    let mut response = std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("catallax-request".into())
+            .stack_size(8 * 1024 * 1024)
+            .spawn_scoped(scope, || answer_isolated(request))?
+            .join()
+            .map_err(|_| std::io::Error::other("request thread panicked"))?
+    })?;
+    response["wall_ms"] = json!(started.elapsed().as_secs_f64() * 1000.0);
+    Ok(response)
+}
+
+fn answer_isolated(request: &Request) -> std::io::Result<Value> {
     crate::prepare_output(&request.out)?;
     let (result, work) = with_operation_budget(request.max_work, || {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluate(request)))
@@ -62,7 +77,7 @@ pub fn answer(request: &Request) -> std::io::Result<Value> {
     manifest["kernel"] = serde_json::to_value(crate::kernel_info())?;
     let response = json!({"format":"catallax-response/1", "manifest":manifest,
         "work":{"used":work.used,"limit":request.max_work,"exhausted":work.exhausted},
-        "wall_ms":started.elapsed().as_secs_f64()*1000.0});
+        "wall_ms":0});
     fs::write(
         request.out.join("manifest.json"),
         serde_json::to_vec_pretty(&response["manifest"])?,

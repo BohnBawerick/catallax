@@ -65,30 +65,31 @@ fn phase_box(x: &Ball, y: &Ball) -> Option<Ball> {
     if x.contains_zero() && y.contains_zero() {
         return None;
     }
-    let mut corners = Vec::with_capacity(4);
-    for a in [x.lo(), x.hi()] {
-        for b in [y.lo(), y.hi()] {
-            if a.is_zero() && b.is_zero() {
-                return None;
-            }
-            corners.push(phase(&a, &b));
-        }
-    }
-    let anchor = corners[0].clone();
+    // The pole guard excludes (0, 0) at every corner.
+    let (x0, x1, y0, y1) = (x.lo(), x.hi(), y.lo(), y.hi());
+    let mut corners = [
+        phase(&x0, &y0),
+        phase(&x0, &y1),
+        phase(&x1, &y0),
+        phase(&x1, &y1),
+    ];
+    let half_turn = r(2);
+    let lower = &corners[0] - &half_turn;
+    let upper = &corners[0] + &half_turn;
     for c in &mut corners {
-        if &*c - &anchor > r(2) {
+        if *c > upper {
             *c = &*c - &r(4);
         }
-        if &anchor - &*c > r(2) {
+        if *c < lower {
             *c = &*c + &r(4);
         }
     }
-    let lo = corners.iter().min()?.clone();
-    let hi = corners.iter().max()?.clone();
-    if &hi - &lo >= r(2) {
+    let lo = corners.iter().min()?;
+    let hi = corners.iter().max()?;
+    if hi >= &(lo + &half_turn) {
         return None;
     }
-    let result = ball(&lo, &hi, x.precision());
+    let result = ball(lo, hi, x.precision());
     (result.hi() - result.lo() < r(2)).then_some(result)
 }
 
@@ -304,4 +305,31 @@ pub(crate) fn winding(
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diamond_projection_keeps_quadrants_seams_and_poles_distinct() {
+        let epsilon = Rational::parse("1e-30").unwrap();
+        for (x0, x1, y0, y1, lo, hi) in [
+            ("1", "2", "1", "2", "1/3", "2/3"),
+            ("-2", "-1", "1", "2", "4/3", "5/3"),
+            ("-2", "-1", "-2", "-1", "7/3", "8/3"),
+            ("1", "2", "-2", "-1", "10/3", "11/3"),
+            ("1", "2", "-1/8", "1/8", "35/9", "37/9"),
+            ("-2", "-1", "0", "0", "2", "2"),
+        ] {
+            let q = |s: &str| Rational::parse(s).unwrap();
+            let result = phase_box(&ball(&q(x0), &q(x1), 128), &ball(&q(y0), &q(y1), 128))
+                .expect("a rectangle avoiding the pole has a diamond lift");
+            let (lo, hi) = (q(lo), q(hi));
+            assert!(result.contains(&lo) && result.contains(&hi));
+            assert!(result.lo() > &lo - &epsilon);
+            assert!(result.hi() < &hi + &epsilon);
+        }
+        assert!(phase_box(&ball(&r(-1), &r(1), 128), &ball(&r(-1), &r(1), 128)).is_none());
+    }
 }

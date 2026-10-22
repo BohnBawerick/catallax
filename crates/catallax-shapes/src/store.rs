@@ -543,12 +543,48 @@ fn decide_zeroes(
     dec: &mut Decider,
     distance_bound: impl FnOnce(&[Rational], &Decider) -> Result<Rational, Refusal>,
 ) -> Outcome<Apart> {
-    let mut bounds = std::array::from_fn::<_, 3, _>(|_| Rational::zero());
+    // Keep equation indices: curve-distance bounds use different units
+    // for different equations, even when a later equation is tested first.
+    let mut pending = [None, None, None];
     let mut count = 0;
+    for (i, value) in values.into_iter().enumerate() {
+        pending[i] = Some(value);
+        count = i + 1;
+    }
+    let mut order = [0, 1, 2];
+    if let Some(i) = (0..count).find(|&i| {
+        let value = pending[i].as_ref().unwrap();
+        value.approx().sign().is_some()
+            || value.as_rational().is_some_and(|r| r.sign() != Sign::Zero)
+    }) {
+        order.swap(0, i);
+    } else {
+        for (i, value) in pending.iter().enumerate().take(count) {
+            let value = value.as_ref().unwrap();
+            if value.as_rational().is_some() {
+                continue;
+            }
+            let Some(width) = Rational::from_f64_exact(value.approx().width()) else {
+                continue;
+            };
+            if width.sign() != Sign::Positive {
+                continue;
+            }
+            match dec.enclose(value, &width) {
+                Ok(ball) if ball.sign().is_some() => {
+                    order.swap(0, i);
+                    break;
+                }
+                Err(r) if r.code == "numbers.deadline" => return Outcome::Refused(r),
+                _ => {}
+            }
+        }
+    }
+    let mut bounds = std::array::from_fn::<_, 3, _>(|_| Rational::zero());
     let mut first_uncertain: Option<NotExact> = None;
     let mut coincidence = None;
-    for (i, value) in values.into_iter().enumerate() {
-        count = i + 1;
+    for i in order.into_iter().take(count) {
+        let value = pending[i].take().unwrap();
         match dec.sign(&value) {
             Outcome::Proven(_) => return Outcome::Proven(Apart),
             Outcome::Refused(r) => return Outcome::Refused(r),

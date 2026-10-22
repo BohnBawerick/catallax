@@ -110,9 +110,25 @@ The certified-root enclosure regression isolates `sqrt(2)/(2^607-1)`, then reque
 
 Shared root snapshots memoize the original enclosure separately at each working precision. A cubic-root regression warms a certificate using an unrestricted working-precision call, then verifies that a limited-budget call still returns its original coarse ball and identical work statistics. GMP cubic inequalities check the warmed certificate; an expired-deadline request must still refuse. New intervals and changed defining polynomials start fresh memos.
 
+The bisection-prefix regression varies precision history through 4,096 bits and work allowances from zero to one million. Cold and warmed cubic-root queries must return identical rounded enclosures, refusal codes and decision statistics, including when a cached prefix costs more than the remaining allowance. Independent GMP cubic inequalities check containment even when a zero-work query retains a wide coarse ball. A higher-precision request may reuse only an earlier prefix with the same sign-filter precision, never a later, tighter bracket.
+
 Definedness checks reuse the immutable `fast_defined` construction proof instead of traversing shared expression graphs as trees. The regression proves a 64-level shared rational zero while retaining refusal for a zero product with an undefined divisor. Domain-error and in-progress root-isolation coverage remains.
 
+`high_denominator_root_brackets_refine_with_a_small_work_budget` uses the strictly increasing polynomial `x^3 - 2` with valid endpoints `1 + 1/(2^4096-1)` and `2 - 1/(2^4096-1)`. It requires a `1e-30` enclosure under one million work units and checks its endpoints with independent GMP arithmetic. The unfiltered bisection path retained only a wider coarse ball. Budgeted interval signs avoid huge exact Horner products unless the sign remains unresolved.
+
+The filtered-prefix cache regression warms the same odd-denominator cubic at 128, 512 and 768 bits, then compares cold and warm 768-bit policies under one million work units and the default work allowance. It checks full enclosure results and statistics across both the fixed-filter boundary and an underfunded cached prefix.
+
+The content-normalization smoke probe uses a degree-16 monic polynomial with 65,536-bit coefficients. A unit leading coefficient proves the content is one independently of the implementation; all coefficients are retained. Existing `polynomials.rs` and unit tests check negative leading signs, rational content, common factors, zero polynomials and multiplicities.
+
+`gcd_preserves_rational_factors_at_large_integer_scales` checks exact common factors when a finite-field image loses degree or cannot invert a rational denominator. A coprime pair with identical modular images must still have rational GCD one. These cases constrain the one-sided coprimality certificate without accepting a finite-field factor as a rational answer.
+
+`singleton_zero_certificates_do_not_require_elimination` reproduces a discarded certificate using `0 * sqrt(2)`. One work unit must prove the known-defined zero, while an empty allowance still stops. A tiny nonzero product may be positive or unresolved, never coincident. A zero with an initially unresolved valid divisor must become provable after definedness is established; a hidden division by zero must still refuse despite its outer zero singleton.
+
 Reciprocal balls use the exact center `m/(m^2-r^2)` and radius `r/(m^2-r^2)`, then the same nearest-midpoint and outward-radius rules, including midpoint rounding error. Integer quotient rounding avoids rational GCDs. The before/after smoke workload covers 4,806 signed, scaled and low-precision hull cases, including zero-crossing divisors and very small radii; all 40,000 results retain the same midpoint/radius fingerprint. The GMP/MPFR enclosure tests check containment independently.
+
+Consuming temporary dyadic magnitudes leaves all arithmetic and rounding unchanged. The complete numbers suite covers signed products, reciprocal residuals and midpoint-rounding errors; a separate public jet smoke comparison checks 57,456 exact midpoint/radius/precision triples across orders 0, 1, 4, 8 and 20 at 8, 64, 128 and 256 bits.
+
+The per-evaluation enclosure memo shares immutable balls internally and returns an owned root after releasing the memo. Existing clipping, undefined-node, nested-radical, root-cache budget-boundary and independent-oracle checks exercise local replacement without modifying another cached value. No shared reference escapes a numerical entry point.
 
 ### Pinned system coordinates
 

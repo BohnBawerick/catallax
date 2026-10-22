@@ -117,6 +117,7 @@ impl Classification {
 pub struct Selection {
     pub(crate) faces: Vec<(FaceId, Sense)>,
     pub(crate) coincident: BTreeMap<FaceId, FaceId>,
+    pub(crate) intersection: bool,
     pub(crate) marks: MarkLog,
 }
 
@@ -285,6 +286,7 @@ pub fn keep(classification: &Classification, imprinted: &Imprinted, op: BoolOp) 
     Selection {
         faces,
         coincident,
+        intersection: op == BoolOp::Intersect,
         marks,
     }
 }

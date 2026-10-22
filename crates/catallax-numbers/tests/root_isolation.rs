@@ -451,3 +451,45 @@ fn shared_root_enclosures_preserve_limited_budgets_and_deadlines() {
     warm.set_deadline(Some(Instant::now()));
     assert!(matches!(warm.enclose_at(&value, 64), Err(error) if error.code == "numbers.deadline"));
 }
+
+#[test]
+fn bisection_prefixes_preserve_rounding_work_and_budget_boundaries() {
+    let polynomial = UPoly::new(vec![r("-2"), r("0"), r("0"), r("1")]);
+    let fresh = || {
+        Real::from_algebraic(
+            roots(&mut Decider::default(), &polynomial)
+                .pop()
+                .unwrap()
+                .value,
+        )
+    };
+    let warmed = fresh();
+    let width = r("1e-90");
+    for bits in [32, 64, 96, 128, 256, 512, 1024, 2048, 4096, 64] {
+        Decider::default().enclose_at(&warmed, bits).unwrap();
+        for max_work in [0, 100, 1_000, 10_000, 1_000_000] {
+            let policy = BudgetPolicy {
+                max_precision_bits: 512,
+                max_work,
+            };
+            let mut cold = Decider::new(policy);
+            let mut warm = Decider::new(policy);
+            let before = cold.enclose(&fresh(), &width);
+            let after = warm.enclose(&warmed, &width);
+            match (before, after) {
+                (Ok(a), Ok(b)) => {
+                    assert_eq!(a.mid(), b.mid());
+                    assert_eq!(a.rad(), b.rad());
+                    assert_eq!(a.precision(), b.precision());
+                    let lo = oq(&b.lo());
+                    let hi = oq(&b.hi());
+                    assert!(lo.clone().square() * lo < 2);
+                    assert!(hi.clone().square() * hi > 2);
+                }
+                (Err(a), Err(b)) => assert_eq!(a.code, b.code),
+                outcomes => panic!("cache history changed the outcome: {outcomes:?}"),
+            }
+            assert_eq!(cold.take_stats(), warm.take_stats());
+        }
+    }
+}

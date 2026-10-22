@@ -4,24 +4,18 @@ The suite is derived from `docs/pieces/04-intersections.md`, the shared design a
 
 ## Commands
 
-Run default checks, including 22 blind contract bodies:
+Run default checks:
 
 ```sh
 cargo test --release -p catallax-intersect --all-targets
 python3 crates/catallax-intersect/tests/verify_math.py
 ```
 
-Explicitly opt in to the remaining hit scale/pose body too. This is a diagnostic run, not the default CI gate:
-
-```sh
-cargo test --release -p catallax-intersect -- --include-ignored --test-threads=1
-```
-
-Comparison and numeric-proof follow-ups enabled the completed blind bodies without changing their independent oracles or expected answers. Only the hit scale/pose body remains ignored: its tilted-cylinder witness comparison at scale `10^-14` exhausts the default work budget at 8,192 bits. Exact quadratic-field signs settle the earlier marked circle-sphere decision at scale `10^-30`. This does not prove the whole hit sweep exact, and a default mark remains a failure. The remaining coverage gap is unfinished work.
+Every blind contract body is enabled. The complete hit scale/placement family passed a release run over all prescribed decimal scales and twenty fixed-seed rational poses before its ignore gate was removed. Its independent tilted-cylinder witnesses, exact residuals, contact labels and hit ordering remain unchanged. Default marks are still failures.
 
 The two fixture-only tests exercise fixture construction and residual checks without calling any `catallax-intersect` function. Rational residuals are checked exactly. Radical residuals use certified enclosures as a smoke check, not as an equality oracle. The independent Python script checks non-obvious fixture arithmetic with `Fraction` and exact quadratic radicals. It also checks the two length constants numerically with separate smooth rational-parameter integrands and 50-digit Decimal arithmetic. Those numerical length checks are not claimed as certified quadrature.
 
-Use release mode. The original inclusive run reached its 600-second observation cap; separate original bodies then had 180-second caps. Follow-up diagnostics retain every body and assertion, including a six-body sequential measurement on one logical CPU with 600-second per-body caps. A timeout is an incomplete observation, not a numerical refusal. The runtime target remains about ten minutes on one core; no test asserts an elapsed-time limit. The unresolved bodies are not counted as passing coverage, and their verification deciders keep the original default policy.
+Use release mode. The original inclusive run reached its 600-second observation cap; separate original bodies then had 180-second caps. Follow-up diagnostics retain every body and assertion, including a six-body sequential measurement on one logical CPU with 600-second per-body caps. A timeout is an incomplete observation, not a numerical refusal. The runtime target remains about ten minutes on one core; no test asserts an elapsed-time limit. The complete hit sweep is now verified under its original default policy.
 
 ## Coverage
 
@@ -47,11 +41,15 @@ Trace tests do not prescribe a parametrisation or a piece count. They check orde
 
 Trace constants retain exact `Real` definitions and cache enclosures on demand through `Decider::enclose_at`. Trace construction does not eagerly enclose constants to `max_precision_bits`. The trace regression checks that constructing a segment with an irrational endpoint leaves its constant enclosures empty, then evaluates Taylor jets at 64 and 256 bits and checks that constants use no more than the requested precision plus the evaluator's 64 guard bits. The numeric suite checks working-precision enclosure of known square roots at zero, divisor retries at higher precision, unchanged decision accounting and in-progress deadlines. High-order interval jets skip exact-zero arithmetic and reuse each denominator's reciprocal throughout a recurrence; the existing order-16 implicit identities and length enclosures exercise these changes.
 
+Taylor recurrences also omit exact-zero coefficient tails and reuse symmetric products in squares and square roots without reordering rounded sums. A public-API before/after smoke probe covered 57,456 coefficient enclosures for circles and quartic cylinder/cylinder and cylinder/sphere branches, orders 0, 1, 4, 8 and 20, and precisions 8, 64, 128 and 256. Every midpoint, radius and precision fingerprint remained identical. The independent trace polynomial and length tests remain the correctness checks.
+
 Trace clones share a bounded FIFO cache of Taylor enclosures keyed by the exact parameter ball, precision and order. Constant enclosures reuse the nearest cached working precision at least as high as the request, with outward rounding to the requested precision. A regression first refuses an unresolved reciprocal at low precision, separates it at higher precision, then checks that later lower-precision evaluations reuse that enclosure instead of refusing again. Cache warming can tighten later enclosures but never changes their validity. Both the circle Taylor regression and the constant-cache regression verify that an expired decider still refuses a cached request.
 
 Surface-pair plans and rational Groebner bases have separate 32-entry thread-local FIFO caches. Keys contain complete ordered surface definitions or ordered polynomial coefficients, never store handles or addresses. Cached plans contain no store handles, and each intersection call still adds its own definitions and facts. Root isolation and every numeric predicate still run through the caller's decider. The `surface_definitions_and_argument_order_survive_repeated_queries` regression checks exact oriented sphere sections across fresh stores, changed centres and radii, swapped arguments, repeated calls and eviction.
 
 Cache hits share immutable plans and basis slices instead of copying their vectors and arbitrary-precision coefficients. Constructing new store entities still copies the definitions those entities own.
+
+Critical pairs are selected by increasing leading-monomial LCM degree with deterministic ties. The chain criterion skips a pair only after both supporting pairs have standard representations in the current basis. The cyclic-system regression independently derives the two real solutions of `xy = yz = zx = 1`, checks every coordinate exactly against `-1` or `1`, and repeats all six generator orders. The complete curve/surface scale and placement family remains enabled.
 
 ## Resolved specification correction
 

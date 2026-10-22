@@ -3,7 +3,7 @@ use catallax_numbers::{Decider, MPoly, Outcome, Rational, Real, RealPoly, Refusa
 use catallax_shapes::Point3;
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
 };
 
@@ -173,34 +173,55 @@ fn groebner(generators: Vec<P>) -> Arc<[P]> {
     basis
 }
 
+fn critical_pair(a: &P, b: &P, i: usize, j: usize) -> (u64, [u32; 3], usize, usize) {
+    let a = a.0.last_key_value().unwrap().0;
+    let b = b.0.last_key_value().unwrap().0;
+    let l = std::array::from_fn(|k| a[k].max(b[k]));
+    (l.iter().map(|&e| u64::from(e)).sum(), l, i, j)
+}
+
 fn uncached_groebner(generators: Vec<P>) -> Vec<P> {
     let mut basis: Vec<P> = vec![];
-    let mut pairs = VecDeque::new();
+    let mut pairs = BTreeSet::new();
+    let mut resolved = BTreeSet::new();
     for p in generators {
         let p = reduce(p, &basis).monic();
         if !p.0.is_empty() {
             let j = basis.len();
-            for i in 0..j {
-                pairs.push_back((i, j));
+            for (i, g) in basis.iter().enumerate() {
+                pairs.insert(critical_pair(g, &p, i, j));
             }
             basis.push(p);
         }
     }
-    while let Some((i, j)) = pairs.pop_front() {
-        let a = basis[i].leading().unwrap().0;
-        let b = basis[j].leading().unwrap().0;
-        if (0..3).all(|k| a[k] == 0 || b[k] == 0) {
+    // Lowest LCM degree first limits coefficient swell; the remaining key
+    // makes ties independent of hashing or allocation order.
+    while let Some((_, l, i, j)) = pairs.pop_first() {
+        let a = basis[i].0.last_key_value().unwrap().0;
+        let b = basis[j].0.last_key_value().unwrap().0;
+        // A processed pair has a standard representation in the current
+        // basis, including when its nonzero remainder became a new generator.
+        // The chain criterion may therefore reuse two such representations.
+        let redundant = (0..3).all(|k| a[k] == 0 || b[k] == 0)
+            || basis.iter().enumerate().any(|(k, g)| {
+                k != i
+                    && k != j
+                    && divides(*g.0.last_key_value().unwrap().0, l)
+                    && resolved.contains(&(i.min(k), i.max(k)))
+                    && resolved.contains(&(j.min(k), j.max(k)))
+            });
+        resolved.insert((i, j));
+        if redundant {
             continue;
         }
-        let l: [u32; 3] = std::array::from_fn(|k| a[k].max(b[k]));
         let s = basis[i]
             .multiple(std::array::from_fn(|k| l[k] - a[k]), &r(1))
             .minus(&basis[j].multiple(std::array::from_fn(|k| l[k] - b[k]), &r(1)));
         let s = reduce(s, &basis).monic();
         if !s.0.is_empty() {
             let j = basis.len();
-            for i in 0..j {
-                pairs.push_back((i, j));
+            for (i, g) in basis.iter().enumerate() {
+                pairs.insert(critical_pair(g, &s, i, j));
             }
             basis.push(s);
         }

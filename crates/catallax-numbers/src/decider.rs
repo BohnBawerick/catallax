@@ -5,12 +5,13 @@ use crate::{
     RealRoot, Refusal, RootBox, Sign, StrictOrder, StrictSign, UPoly, ZeroProof,
 };
 use crate::{
-    algebraic::{self, AlgebraicRepr},
+    algebraic::{self, AlgebraicRepr, RootEnclosure},
     real::Expr,
     system,
 };
 use std::{
     collections::{HashMap, VecDeque},
+    rc::Rc,
     sync::Arc,
     time::Instant,
 };
@@ -254,7 +255,12 @@ impl Decider {
                 return Ok(Some(value.clone()));
             }
             if !x.node.fast_defined {
-                match evaluate(x, 64u32.min(self.policy.max_precision_bits), &mut work) {
+                match evaluate(
+                    x,
+                    64u32.min(self.policy.max_precision_bits),
+                    &mut work,
+                    false,
+                ) {
                     Ok(_) => {}
                     Err(EvalError::Pending(_)) => return Ok(None),
                     Err(EvalError::Domain(error)) => return Err(error),
@@ -374,7 +380,7 @@ impl Decider {
             if p == 0 {
                 break;
             }
-            match evaluate(x, p, &mut work) {
+            match evaluate(x, p, &mut work, false) {
                 Ok(b) => {
                     defined = true;
                     best = Some(tighter(best, b));
@@ -432,15 +438,10 @@ impl Decider {
             max_work: u64::MAX,
         };
         let mut work = Work::new(policy, self.deadline);
-        let result =
-            evaluate_cached(x, precision, &mut work, &mut HashMap::new(), true).map_err(|error| {
-                match error {
-                    EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
-                    EvalError::Limit(code) => {
-                        Refusal::new(code, "working-precision enclosure stopped")
-                    }
-                }
-            });
+        let result = evaluate(x, precision, &mut work, true).map_err(|error| match error {
+            EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
+            EvalError::Limit(code) => Refusal::new(code, "working-precision enclosure stopped"),
+        });
         self.check_deadline()?;
         result
     }
@@ -463,13 +464,9 @@ impl Decider {
                     "requested working precision exceeds the caller's policy",
                 ));
             }
-            evaluate_cached(x, precision, &mut work, &mut HashMap::new(), true).map_err(|error| {
-                match error {
-                    EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
-                    EvalError::Limit(code) => {
-                        Refusal::new(code, "working-precision enclosure stopped")
-                    }
-                }
+            evaluate(x, precision, &mut work, true).map_err(|error| match error {
+                EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
+                EvalError::Limit(code) => Refusal::new(code, "working-precision enclosure stopped"),
             })
         })();
         self.account(&work);
@@ -659,6 +656,14 @@ impl Decider {
                 stopped = Some("numbers.budget-exhausted");
             }
         }
+        // A singleton certificate is sufficient once its entire definition
+        // is known valid; an undefined factor must never disappear into zero.
+        if stopped.is_none()
+            && x.node.fast_defined
+            && x.node.coarse.as_ref().is_some_and(Ball::is_exact_zero)
+        {
+            return coincident(ZeroProof::Algebraic);
+        }
         let mut best = x.node.coarse.clone();
         let mut defined = x.node.fast_defined;
         let mut pending = None;
@@ -671,11 +676,14 @@ impl Decider {
                 stopped = Some("numbers.precision-limit");
                 break;
             }
-            match evaluate(x, p, work) {
+            match evaluate(x, p, work, false) {
                 Ok(b) => {
                     defined = true;
                     best = Some(tighter(best, b.clone()));
                     pending = None;
+                    if best.as_ref().is_some_and(Ball::is_exact_zero) {
+                        return coincident(ZeroProof::Algebraic);
+                    }
                     if let Some(s) = b.sign() {
                         self.stats.refined += 1;
                         return Outcome::Proven(s);
@@ -933,21 +941,25 @@ impl From<&'static str> for EvalError {
         Self::Limit(code)
     }
 }
-fn evaluate(x: &Real, p: u32, w: &mut Work) -> Result<Ball, EvalError> {
-    evaluate_cached(x, p, w, &mut HashMap::new(), false)
+fn evaluate(x: &Real, p: u32, w: &mut Work, known_defined: bool) -> Result<Ball, EvalError> {
+    let mut cache = HashMap::new();
+    let value = evaluate_cached(x, p, w, &mut cache, known_defined)?;
+    // No cached alias survives this evaluation; reclaim the root without copying it.
+    drop(cache);
+    Ok(Rc::unwrap_or_clone(value))
 }
 fn evaluate_cached(
     x: &Real,
     p: u32,
     w: &mut Work,
-    cache: &mut HashMap<*const crate::real::Node, Ball>,
+    cache: &mut HashMap<*const crate::real::Node, Rc<Ball>>,
     known_defined: bool,
-) -> Result<Ball, EvalError> {
+) -> Result<Rc<Ball>, EvalError> {
     let key = Arc::as_ptr(&x.node);
     if let Some(b) = cache.get(&key) {
         return Ok(b.clone());
     }
-    let b = evaluate_uncached(x, p, w, cache, known_defined)?;
+    let b = Rc::new(evaluate_uncached(x, p, w, cache, known_defined)?);
     cache.insert(key, b.clone());
     Ok(b)
 }
@@ -955,7 +967,7 @@ fn evaluate_uncached(
     x: &Real,
     p: u32,
     w: &mut Work,
-    cache: &mut HashMap<*const crate::real::Node, Ball>,
+    cache: &mut HashMap<*const crate::real::Node, Rc<Ball>>,
     known_defined: bool,
 ) -> Result<Ball, EvalError> {
     if x.node.fast_defined
@@ -978,7 +990,7 @@ fn evaluate_uncached(
         Expr::Neg(a) => {
             let b = evaluate_cached(a, p, w, cache, known_defined)?;
             w.ball(p, false)?;
-            Ok(-b)
+            Ok(-b.as_ref())
         }
         Expr::Square(a) => {
             let b = evaluate_cached(a, p, w, cache, known_defined)?;
@@ -1008,11 +1020,11 @@ fn evaluate_uncached(
                 && !b.rad().is_zero()
                 && crate::tower::sign(a, w)? == Some(Sign::Zero)
             {
-                b = Ball::from_rational(&Rational::zero(), p);
+                b = Rc::new(Ball::from_rational(&Rational::zero(), p));
             }
             if !known_defined && b.lo().sign() == Sign::Negative {
                 if zero_proof(a, &b, w)? {
-                    b = Ball::from_rational(&Rational::zero(), p);
+                    b = Rc::new(Ball::from_rational(&Rational::zero(), p));
                 } else {
                     return Err(EvalError::Pending(Refusal::new(
                         "numbers.sqrt-not-separated",
@@ -1040,49 +1052,94 @@ fn evaluate_uncached(
             }
             w.ball(p, matches!(&x.node.expr, Expr::Mul(..) | Expr::Div(..)))?;
             Ok(match &x.node.expr {
-                Expr::Add(..) => &lhs + &rhs,
-                Expr::Sub(..) => &lhs - &rhs,
-                Expr::Mul(..) => &lhs * &rhs,
+                Expr::Add(..) => lhs.as_ref() + rhs.as_ref(),
+                Expr::Sub(..) => lhs.as_ref() - rhs.as_ref(),
+                Expr::Mul(..) => lhs.as_ref() * rhs.as_ref(),
                 Expr::Div(..) => lhs.checked_div(&rhs).unwrap(),
                 _ => unreachable!(),
             })
         }
     }
 }
+const ROOT_SIGN_FILTER_BITS: u32 = 512;
+
+fn root_polynomial_sign(
+    polynomial: &UPoly,
+    x: &Rational,
+    precision: u32,
+    work: &mut Work,
+) -> Result<Sign, &'static str> {
+    let denominator = x.denominator();
+    let bits = denominator.bit_length();
+    if bits <= u64::from(ROOT_SIGN_FILTER_BITS)
+        || bits
+            - denominator
+                .0
+                .trailing_zeros()
+                .expect("positive denominator")
+            <= u64::from(ROOT_SIGN_FILTER_BITS)
+    {
+        return Ok(work.eval_poly(polynomial, x)?.sign());
+    }
+    work.ball(precision, true)?;
+    let argument = Ball::from_rational(x, precision);
+    let value = algebraic::eval_ball_checked(polynomial, &argument, work)?;
+    match value.sign() {
+        Some(StrictSign::Negative) => Ok(Sign::Negative),
+        Some(StrictSign::Positive) => Ok(Sign::Positive),
+        None => Ok(work.eval_poly(polynomial, x)?.sign()),
+    }
+}
+
 fn enclose_algebraic(a: &Algebraic, p: u32, w: &mut Work) -> Result<Ball, &'static str> {
     w.ball(p, true)?;
     match &a.repr {
         AlgebraicRepr::Rational(r) => Ok(Ball::from_rational(r, p)),
         AlgebraicRepr::Root(root) => {
-            {
-                let cache = root.enclosures.lock().unwrap();
-                if let Some((ball, cost)) = cache.get(&p)
-                    && *cost <= w.policy.max_work.saturating_sub(w.used)
-                {
-                    // Reuse the certificate, not its budget allowance. If the
-                    // allowance is insufficient, retain ordinary partial-work
-                    // accounting by running the original calculation below.
-                    w.charge(*cost)?;
-                    return Ok(ball.clone());
-                }
-            }
+            let filter_precision = p.min(ROOT_SIGN_FILTER_BITS);
             let start = w.used;
-            let ball = (|| -> Result<Ball, &'static str> {
-                let mut lo = root.lo.clone();
-                let mut hi = root.hi.clone();
-                let target = Rational::one().mul_pow2(-i64::from(p));
-                // Keep the same bisection sequence and rounding at each
-                // precision; never substitute a higher-precision cached ball.
-                if &hi - &lo <= target {
-                    return Ok(Ball::bounds(lo, hi, p));
+            let (mut lo, mut hi, mut lower_sign) = {
+                let cache = root.enclosures.lock().unwrap();
+                let allowance = w.policy.max_work.saturating_sub(w.used);
+                if let Some(certificate) = cache.get(&p)
+                    && certificate.cost <= allowance
+                {
+                    w.charge(certificate.cost)?;
+                    return Ok(certificate.ball.clone());
                 }
-                let s = w.eval_poly(&root.polynomial, &lo)?.sign();
+                if let Some((prefix_precision, prefix)) = cache.range(..p).next_back()
+                    && (*prefix_precision).min(ROOT_SIGN_FILTER_BITS) == filter_precision
+                    && prefix.cost <= allowance
+                {
+                    // Only identical sign-filter precision has identical
+                    // prefix work. Replay it before continuing the same
+                    // bisections; never substitute a later, tighter bracket.
+                    w.charge(prefix.cost)?;
+                    (prefix.lo.clone(), prefix.hi.clone(), prefix.lower_sign)
+                } else {
+                    (root.lo.clone(), root.hi.clone(), None)
+                }
+            };
+            let target = Rational::one().mul_pow2(-i64::from(p));
+            let ball = if lower_sign == Some(Sign::Zero) {
+                Ball::from_rational(&lo, p)
+            } else if &hi - &lo <= target {
+                Ball::bounds(lo.clone(), hi.clone(), p)
+            } else {
+                let s = match lower_sign {
+                    Some(s) => s,
+                    None => root_polynomial_sign(&root.polynomial, &lo, filter_precision, w)?,
+                };
+                lower_sign = Some(s);
                 loop {
                     w.exact(&lo, &hi, false)?;
                     let mid = (&lo + &hi).mul_pow2(-1);
-                    let t = w.eval_poly(&root.polynomial, &mid)?.sign();
+                    let t = root_polynomial_sign(&root.polynomial, &mid, filter_precision, w)?;
                     if t == Sign::Zero {
-                        return Ok(Ball::from_rational(&mid, p));
+                        lo = mid.clone();
+                        hi = mid;
+                        lower_sign = Some(Sign::Zero);
+                        break Ball::from_rational(&lo, p);
                     }
                     if t == s {
                         lo = mid;
@@ -1090,17 +1147,22 @@ fn enclose_algebraic(a: &Algebraic, p: u32, w: &mut Work) -> Result<Ball, &'stat
                         hi = mid;
                     }
                     if &hi - &lo <= target {
-                        break;
+                        break Ball::bounds(lo.clone(), hi.clone(), p);
                     }
                 }
-                Ok(Ball::bounds(lo, hi, p))
-            })()?;
-            let cost = w.used - start;
+            };
+            let certificate = RootEnclosure {
+                ball: ball.clone(),
+                cost: w.used - start,
+                lo,
+                hi,
+                lower_sign,
+            };
             let mut cache = root.enclosures.lock().unwrap();
             if cache.len() == 8 && !cache.contains_key(&p) {
                 cache.pop_first();
             }
-            cache.insert(p, (ball.clone(), cost));
+            cache.insert(p, certificate);
             Ok(ball)
         }
     }

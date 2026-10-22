@@ -489,6 +489,140 @@ Change: the manifest/3 publisher recognises `elliptic-cylinder` under the preced
 Why: the verification exchange landed while its geometry consumers were being widened; its explicit versioned vocabulary must not inherit the legacy publication restriction.
 Migration: select extended publication only for `catallax-verify`. Keep legacy commands on their existing vocabulary. Request-scoped work accounting also covers the new checked algebraic proofs; neither exchange's numeric limits or default allowance changes.
 
+## 2026-10-22: retain curve-meeting and root-refinement proofs
+
+Pieces: 1, 5
+Change: explicit curve meetings name both proven carriers in their point definitions. Line substitution retains an actual common-polynomial certificate: rational equations use their GCD, and a sole nonzero algebraic equation certifies its roots directly. Otherwise shared predicates check every carrier equation. Analytic conic candidates retain their exact equation checks without repeating curve membership. A finite meeting with either support exhausts the candidates for an intersection branch; the other support and component predicate remain mandatory. Certified branch membership retains its original proof as incidence. Root enclosure certificates retain exact bisection endpoints and the lower-end sign, so higher-precision calls can continue the same sequence when their sign-filter precision agrees, replaying the cold-evaluation work.
+Why: later boundary queries discarded already-proven curve incidence, and increasing enclosure precision repeated exact polynomial evaluation over the same bisection prefix.
+Migration: no public signatures, default budgets, deadline or exchange-format changes. A completed refinement retains the same bisection sequence and rounding. Cold and warmed caches retain identical work charges under the selected sign algorithm. Refined snapshots and changed defining polynomials retain separate certificates.
+
+## 2026-10-22: skip zero and repeated Taylor products
+
+Piece: 4
+Change: interval Taylor multiplication and division skip coefficient ranges proved identically zero. Squared expressions and square-root recurrences compute symmetric products once, while retaining the original order of rounded additions and subtractions.
+Why: high-order traces used by face membership and measurement repeatedly multiplied the same coefficient pairs or scanned zero tails.
+Migration: no public signatures, trace definitions, orders, precision or rounding rules change. A before/after public-API probe retained identical midpoint, radius and precision fingerprints for 57,456 coefficients across circles and quartic branches, Taylor orders zero through twenty and four working precisions.
+
+## 2026-10-22: filter algebraic bisection signs
+
+Piece: 1
+Change: when the odd part of a bisection denominator exceeds 512 bits, root enclosure tries a budgeted polynomial ball at the caller's working precision, capped at 512 bits, before exact rational Horner evaluation. Smaller odd denominators retain the direct exact path. Only a strict interval sign selects a side; zero-containing enclosures retain exact evaluation. Bisection points, root selection and final rounding stay unchanged.
+Why: a certified bracket can have very large odd denominators without needing equally large working precision. Exact polynomial values at every midpoint exhausted the budget even for the real root of `x^3 - 2`.
+Migration: no public signature, default allowance or deadline changes. A regression brackets `cbrt(2)` with 4,096-bit odd denominators and requires width `1e-30` within one million work units; GMP cubic inequalities check containment. The cold/warm precision-history matrix checks work identity and insufficient-allowance fallback.
+
+## 2026-10-22: schedule separated point coordinates first
+
+Piece: 2
+Change: point equality first schedules coordinate differences with a cheap nonzero rational value or a cached conservative interval excluding zero. If these do not separate, metered enclosures at the existing interval widths precede exact-zero comparisons. Enclosures only schedule queries; the decider still certifies each conclusion under its original policy and deadline. Coincident points retain their original coordinate order, and the distance bound remains the symmetric Euclidean bound.
+Why: canonical-point searches attempted expensive algebraic coincidence in an earlier coordinate even when another coordinate already separated the points.
+Migration: no public signatures, geometric definitions or default policies change. Predicate regressions retain their incidence, bounded uncertainty, domain and deadline checks; fixed query-count assertions that prescribed coordinate order are removed.
+
+## 2026-10-22: seed polynomial content from a small coefficient
+
+Piece: 1
+Change: primitive integer normalization starts its coefficient GCD from a nonzero coefficient of minimum bit length, stops when the content is one, and avoids dividing an already primitive positive-leading polynomial by one.
+Why: annihilator construction spent time computing content from very large constant terms even when a unit coefficient already certified primitive content.
+Migration: no public signature, policy or normalized coefficient changes. Existing polynomial and root suites retain their rational-content, sign, multiplicity and independent-oracle checks. A 65,536-bit monic-polynomial smoke probe retains every coefficient.
+
+## 2026-10-22: certify polynomial coprimality in a finite field
+
+Piece: 1
+Change: polynomial GCD first tries a fixed 31-bit prime. It concludes coprimality over the rationals only when every coefficient denominator is invertible, both degrees are preserved, and finite-field Euclid ends at a nonzero constant. Otherwise the existing exact polynomial GCD runs unchanged.
+Why: square-free annihilators repeatedly entered large integer remainder and content calculations merely to establish that the GCD with their derivative was one.
+Migration: no public signatures, coefficient domains, default budgets or deadline changes. Normalized GCDs stay unchanged. Regressions cover a common factor lost by modular degree reduction, noninvertible rational denominators and coprime rational polynomials whose modular images share a factor.
+
+## 2026-10-22: retain singleton-zero enclosure certificates
+
+Piece: 1
+Change: a known-defined immutable zero singleton, or a zero singleton retained after checked refinement, proves coincidence without algebraic elimination or a nonzero-root separation bound. The existing algebraic proof category is used.
+Why: sign decisions discarded exact zero enclosures and could exhaust their allowance reconstructing a zero already certified by interval arithmetic.
+Migration: no public signatures, default allowances or deadline changes. A ball merely containing zero proves nothing. Definedness must be established before using a singleton, including when zero multiplies an expression with a hidden undefined divisor. The regression fails before this change at one work unit; empty allowances still stop, and tiny nonzero enclosures remain non-coincident.
+
+## 2026-10-22: retain contact proofs across shared supports
+
+Piece: 5
+Change: adjacency probes retain zero constant terms proved by shared source equations or typed point/curve-to-surface incidence facts, even when another boundary curve uses a different identity. A whole carrier equation and its exact negation both certify the same zero set.
+Why: expanding a known contact into real polynomial coefficients discarded its construction proof.
+Migration: no curve-membership conclusion is inferred for another selected component. Whole-path exclusion and component checks remain mandatory; no public signature or geometric definition changes.
+
+## 2026-10-22: try separation certificates before contact proofs
+
+Piece: 5
+Change: adjacency probes try boundary equations with zero-excluding cached coefficients first. Endpoint checks likewise try coordinates whose source and endpoint enclosures are disjoint before potentially coincident coordinates.
+Why: an exact contact in the first coordinate could trigger expensive algebraic elimination even when another coordinate immediately separated the whole path.
+Migration: cached bounds select only the order of existential checks. The same exact whole-path and selected-component predicates still decide adjacency; no public signature, default allowance or deadline changes.
+
+## 2026-10-22: share zero-system query scheduling without reordering bounds
+
+Piece: 2
+Change: curve membership now uses the same separation-first scheduling as point equality. A fixed-size pending array retains each equation's original index, so reordered decisions still feed the original equation units into distance bounds.
+Why: a coincident first curve equation could enter expensive elimination before another equation could establish separation.
+Migration: no public signatures or default policy changes. Cached signs and metered enclosures select the query order only; the decider still certifies every conclusion. Existing analytic-curve, intersection-carrier, zero-work bound, undefined-coordinate and deadline tests pass.
+
+## 2026-10-22: prune and prioritize polynomial critical pairs
+
+Piece: 4
+Change: Buchberger reduction uses the chain criterion only for pairs with previously established standard representations. Remaining pairs are selected by leading-monomial LCM degree, then monomial and generator indices.
+Why: redundant FIFO reductions caused coefficient swell in posed finite curve/surface intersections.
+Migration: coefficient operations and domains are unchanged; the criterion uses only leading monomials and resolved-pair identities. Reduced monic bases, root ordering and stored geometry definitions retain the same contracts. A cyclic three-equation regression checks both exact real solutions under all six generator orders; the complete scale and placement family passes.
+
+## 2026-10-22: scale preliminary coefficient enclosures
+
+Piece: 5
+Change: the probe-coefficient sign filter first tries the cached conservative interval width when it is looser than the refinement target. Further refinement is bounded relative to that width as well as by the existing absolute target.
+Why: at large geometric scales, an absolute width alone forced unnecessary precision before testing a coefficient's sign.
+Migration: this changes only a preliminary metered enclosure request. A zero-containing ball still proves nothing, and the exact fallback is unchanged. No geometric tolerance, default allowance, public signature or deadline changes.
+
+## 2026-10-22: omit Taylor coefficients unused by panel certificates
+
+Piece: 6
+Change: integration programs lazily compile center and remainder dependency plans into fixed-size boxed slices, keeping both plans independently lazy without spare-capacity metadata. Symmetric center integration needs even output coefficients; its whole-range certificate needs only the order-20 output coefficient. Products, variable quotients and roots retain every lower coefficient needed by their recurrences. Constant divisors retain their zeroth coefficient and requested numerator coefficients.
+Compiled node, output-index and exact-constant definitions are immutable boxed slices too. The builder counts retained nodes while marking dependencies and allocates their final buffer once; compaction adds no allocation or coefficient arithmetic. Prepared planar area state retains only its numerator and squared normal. Optional open-torus program bundles are indirect, so their payload is not embedded in every curved face.
+Why: evaluating every output coefficient forced arithmetic that never entered the integral or its remainder bound.
+Migration: requested coefficient arithmetic keeps its order and outward rounding; definedness checks and nonsymmetric angular integrals remain intact. No public signature, requested accuracy, default allowance or deadline changes. Regressions use exact antiderivatives and keep undefined zeroth-order operations visible.
+
+## 2026-10-22: consume temporary dyadic magnitudes
+
+Piece: 1
+Change: ball products and midpoint-rounding residuals consume fresh dyadic values when taking absolute values. Midpoint/radius normalization also retains owned, already-precision-sized results instead of copying their integer mantissas. Precision reduction of borrowed balls keeps a borrowed path.
+Why: radius formulas and interval normalization copied temporary results before immediately discarding them. An odd normalized mantissa changes whenever significant bits are discarded, so the representable-center case needs no rounded copy or error subtraction.
+Migration: public signatures, arithmetic, rounding and work charges are unchanged. A 57,456-coefficient public jet workload retains identical midpoints, radii and precisions; independent GMP/MPFR tests check containment.
+
+## 2026-10-22: share immutable evaluation-memo enclosures
+
+Piece: 1
+Change: one real-expression evaluation shares immutable ball values between memo entries and their callers. The memo is dropped before returning the owned root ball. Square-root clipping replaces only its local value.
+Why: memo insertions and hits copied arbitrary-precision midpoint and radius mantissas.
+Migration: memo scope, expression traversal, domain checks, rounding and work charges are unchanged. No public ownership or thread-safety contract changes. The complete numbers suite passes, including cold/warm budget boundaries and known-defined square-root clipping.
+
+## 2026-10-22: avoid rational differences in diamond-chart comparisons
+
+Piece: 5
+Change: cylindrical projection compares each diamond phase against shifted anchor thresholds instead of normalizing a rational difference. Corner bounds are computed once, and four phases use a fixed array.
+Why: chart subdivision repeatedly normalized fractions only to compare their order.
+Migration: phase quotients, corner order, strict wrap cutoffs and outward hull rounding are unchanged. A before/after smoke retains identical results for 2,916 scaled boxes at 8, 64, 128 and 256 bits. Permanent checks independently bound all four quadrants, a periodic seam and an axis, and reject a box containing the projection pole.
+
+## 2026-10-22: restrict straight contact quadrics using their source proof
+
+Piece: 5
+Change: a verified straight planar probe with proven source contact uses `f(t) = t*c1 + t²*(f(q)-c1)`, where `c1 = grad(f)(q)·p + 2*f(q) - grad(f)(q)·q`. The coefficients are affine in the algebraic source point.
+Why: expanding quadratic source-coordinate products reconstructed a zero already supplied by the contact proof.
+Migration: only exact carrier checks and existing incidence proofs enable the reduction. Contact polynomials and endpoints use `RealPoly` and `Point3`; the shared decider certifies degree and endpoint contact without rational-only coefficient assumptions. Other paths retain their original expansion, and whole-path separation and component checks remain mandatory. Regressions independently derive simple, double and contained contacts, reject extraneous algebraic carrier candidates, and retain non-rational quadric contact/interior roots. A standalone smoke checks nine coefficients and fifteen exact path values.
+
+## 2026-10-22: retain owned multivariate accumulators
+
+Piece: 1
+Change: owned polynomial addition retains its left term tree and moves the right terms into it. Entry-based accumulation moves vacant coefficients directly, computes occupied sums once, and removes exact cancellations.
+Why: curve substitution repeatedly cloned growing term trees and copied incoming arbitrary-precision coefficients before discarding them.
+Migration: operator signatures, coefficient domains, term order and normalized results are unchanged. Borrowed addition retains its independent result. Targeted independent polynomial tests cover substitution, cancellation, derivatives, resultants and certified systems; no precision or work-policy changes.
+
+## 2026-10-22: retain connected-exterior intersection proofs
+
+Piece: 5
+Change: an exact, nonsingular intersection of bounded operands without void shells retains the proof that every result shell is outer. Each operand has a connected exterior; those exteriors meet outside the operands' bounds, so their union is connected too. Sewing no longer reconstructs that fact through rational region sampling and ray-root isolation.
+Why: tiny, rigidly placed cylinder/sphere intersections exhausted root-isolation work while rediscovering a shell role already implied by the operation and input topology.
+Migration: selected face senses and topology construction are unchanged. Marked classifications, singular contacts and void-bearing operands retain geometric shell certification. No public signature, coefficient domain, default allowance or deadline changes. The complete 456-Boolean default scale/placement family passes with all original topology and material witnesses, and runs normally again.
+
 ## 2026-10-22: coplanar booleans and same-body set rules
 
 Pieces: boolean engine, field and two-kernel comparison

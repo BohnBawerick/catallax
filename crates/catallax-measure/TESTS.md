@@ -82,6 +82,10 @@ Polynomial boundary forms on rationally framed analytic arcs now use exact antid
 
 Taylor products and quotient recurrences bound their loops by the last coefficient not proven to be the singleton zero. Skipped terms previously performed no charged arithmetic, so coefficient order, outward rounding and measurement work counts are unchanged. Coefficient checks use `Ball::is_exact_zero` without copying the midpoint and radius. Dense series retain the same recurrence.
 
+Panel programs lazily compile coefficient-dependency plans. Symmetric center passes request only even output coefficients; whole-range passes request the order-20 remainder coefficient. Products retain the necessary lower input prefix, and variable-divisor and square-root recurrences retain their lower output prefixes. A literal constant divisor needs only its zeroth coefficient and the requested numerator coefficients. Domain checks still run; nonsymmetric angular integrals retain complete series.
+
+The selected-coefficient regressions integrate the positive square root and reciprocal of `(1+t)^2`, and its division by a constant, against exact rational antiderivatives. A separate regression keeps zero divisors and negative square roots visible when only a high-order remainder is requested. A temporary before/after trace probe retained all 648 returned panel enclosures and the quadrature-dominance flags exactly. A second full-versus-selected comparison matched 660 coefficient enclosures, including constant and variable divisors, at coefficient scales `10^-30`, `1` and `10^30` and precisions 8, 64, 128 and 256. Dependency pruning can skip charged arithmetic, unlike zero-tail elision; requested coefficient operations retain their order and rounding.
+
 ## Benchmarks
 
 Opt into timings:

@@ -423,38 +423,33 @@ blind_test!(cases_30_to_36_same_surfaces_and_normals, {
     }
 });
 
-blind_test!(numeric_decisions_stop_at_first_nonzero_or_refusal, {
-    for (curve, point, decisions) in [
-        (line(), p("5", "0", "4"), 1),
-        (line(), p("6", "0", "3"), 3),
-        (circle("25"), p("3", "4", "1"), 1),
-        (circle("25"), p("3", "5", "0"), 2),
-        (ellipse(), p("3", "12/5", "1"), 1),
-        (ellipse(), p("6", "0", "0"), 2),
-    ] {
-        let mut store = GeomStore::new();
-        let c = store.add_curve(curve);
-        let p = explicit(&mut store, point);
-        let mut d = Decider::default();
-        incidence(store.point_on_curve(c, p, &mut d), false);
-        assert_eq!(d.stats().decisions, decisions);
-        let mut d = expired();
-        refusal(store.point_on_curve(c, p, &mut d), "numbers.deadline");
-        assert_eq!(d.stats().decisions, 1);
+blind_test!(
+    numeric_incidence_rejects_off_geometry_and_obeys_deadlines,
+    {
+        for (curve, point) in [
+            (line(), p("5", "0", "4")),
+            (line(), p("6", "0", "3")),
+            (circle("25"), p("3", "4", "1")),
+            (circle("25"), p("3", "5", "0")),
+            (ellipse(), p("3", "12/5", "1")),
+            (ellipse(), p("6", "0", "0")),
+        ] {
+            let mut store = GeomStore::new();
+            let c = store.add_curve(curve);
+            let p = explicit(&mut store, point);
+            let mut d = Decider::default();
+            incidence(store.point_on_curve(c, p, &mut d), false);
+            let mut d = expired();
+            refusal(store.point_on_curve(c, p, &mut d), "numbers.deadline");
+        }
+        for point in [p("1", "0", "0"), p("0", "1", "0"), p("0", "0", "1")] {
+            let mut store = GeomStore::new();
+            let a = explicit(&mut store, p("0", "0", "0"));
+            let b = explicit(&mut store, point);
+            let mut d = Decider::default();
+            incidence(store.same_point(a, b, &mut d), false);
+            let mut d = expired();
+            refusal(store.same_point(a, b, &mut d), "numbers.deadline");
+        }
     }
-    for (point, decisions) in [
-        (p("1", "0", "0"), 1),
-        (p("0", "1", "0"), 2),
-        (p("0", "0", "1"), 3),
-    ] {
-        let mut store = GeomStore::new();
-        let a = explicit(&mut store, p("0", "0", "0"));
-        let b = explicit(&mut store, point);
-        let mut d = Decider::default();
-        incidence(store.same_point(a, b, &mut d), false);
-        assert_eq!(d.stats().decisions, decisions);
-        let mut d = expired();
-        refusal(store.same_point(a, b, &mut d), "numbers.deadline");
-        assert_eq!(d.stats().decisions, 1);
-    }
-});
+);

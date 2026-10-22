@@ -218,3 +218,15 @@ Each cell retains the existing exact topology counts, topology rules, material w
 The osculating-conic unit test independently derives third- and fourth-order terms, uses unequal tangent speeds, checks reversed comparison order and retains the duplicate-germ refusal. The actual three-dimensional contact is fourth order: on `(x-3)^2+(y-2)^2+z^2=4`, the cylinders `x^2+y^2=9` and `(x-1)^2+y^2=4` differ first in `x-3`, at coefficients `-1/96` and `-1/64` of `z^4`.
 
 `multi_component_probe_does_not_infer_a_branch` exercises both generators of a cylinder cut by a meridian. Exact membership of the cylinder and plane must not create incidence on the other generator. Public curve-membership outcomes are checked against independent line-distance signs.
+
+Analytic-meeting regressions check a line against a translated ellipse with irrational intersection coordinates and reject radial candidates when the line misses the ellipse's plane. A two-circle case rejects extraneous resultant roots. A meridian branch test varies support order, rejects the other generator and rejects candidates that miss the other support. These checks retain bare-coordinate polynomial identities rather than asking construction facts to certify their own expected answers.
+
+Adjacency probes preserve zero constant terms proved by shared source equations or typed point/curve-to-surface incidence facts, not just by an identical boundary-curve handle. A whole carrier equation and its exact negation have the same zero set. An exact arc probe lies on every proven support of its source curve; this does not infer membership in another selected component. `multi_component_probe_does_not_infer_a_branch` keeps the common-support versus selected-component distinction exercised.
+
+Cached coefficient and endpoint bounds select which whole-path separation certificate to try first. They do not replace the Bernstein sign checks, endpoint avoidance or selected-component checks.
+
+The preliminary coefficient filter tries the existing conservative interval width before a tighter target and scales further refinement with that width. This does not introduce a clearance or approximate-zero rule: only a zero-excluding enclosure decides a sign, and unresolved coefficients still require the exact predicate.
+
+`diamond_projection_keeps_quadrants_seams_and_poles_distinct` checks exact rational phase extrema in all four quadrants, across the positive-axis seam and along the negative axis. It also requires a split for a rectangle containing the pole. A separate before/after smoke compares exact midpoint/radius/precision triples for 2,916 scaled rectangles; eliminating rational-difference normalization leaves every result unchanged.
+
+`straight_contacts_keep_simple_double_and_contained_roots` independently derives a sphere contact at `(sqrt(2), sqrt(3), 1)`, a tangential cylinder contact with a mixed `xy` term, and a contained planar path. It checks every coefficient and the resulting whole-path separation decision. The standalone identity smoke also compares fifteen exact path values, including parameters outside `[0,1]`.

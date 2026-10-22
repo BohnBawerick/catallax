@@ -6,8 +6,8 @@ use common::*;
 
 // This is a fixture smoke check, not the mathematical oracle. Rational samples
 // are substituted exactly; radical samples get a residual enclosure. Exact
-// radical derivations live in verify_math.py. The ignored contract tests still
-// compare returned points with same_point and default-budget exact decisions.
+// radical derivations live in verify_math.py. The contract tests also compare
+// returned points with same_point and default-budget exact decisions.
 fn enclose(x: &Real) -> Ball {
     Decider::default().enclose(x, &r("1e-80")).unwrap()
 }

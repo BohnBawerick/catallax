@@ -2,22 +2,33 @@
 //! is certified free of other boundary arcs; displacement alone proves nothing.
 
 use crate::geometry::{natural_ends, on_arc, r, sign, unit};
-use catallax_numbers::{Decider, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
-use catallax_shapes::{CurveId, Point3, PointId, Rotation, Surface, Vector3};
+use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
+use catallax_shapes::{Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, Vector3};
 use catallax_topology::{EdgeId, Model};
 
 fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     if x.as_rational().is_none() && x.approx().sign().is_none() {
-        // Try a modest enclosure before an algebraic zero proof. Near-contact
-        // coefficients often need more than the sign filter's first 64 bits,
-        // but do not need elimination. Only a zero-excluding ball decides.
+        // Try the cached interval's width first: a modest enclosure often
+        // separates a sign before the finer pre-elimination target is needed.
+        // Both stages are filters; a ball containing zero proves nothing.
+        let coarse_width = Rational::from_f64_exact(x.approx().width());
         let bits = dec.policy().max_precision_bits.min(256);
-        let width = Rational::one().mul_pow2(-i64::from(bits));
-        if let Some(value) = dec.enclose(x, &width)?.sign() {
-            return Ok(match value {
-                StrictSign::Negative => Sign::Negative,
-                StrictSign::Positive => Sign::Positive,
-            });
+        let mut width = Rational::one().mul_pow2(-i64::from(bits));
+        if let Some(coarse_width) = &coarse_width {
+            width = width.max(coarse_width.mul_pow2(-i64::from(bits.saturating_sub(64))));
+        }
+        let initial = coarse_width.as_ref().filter(|coarse| *coarse > &width);
+        for width in initial.into_iter().chain(std::iter::once(&width)) {
+            let enclosure = dec.enclose(x, width)?;
+            if let Some(value) = enclosure.sign() {
+                return Ok(match value {
+                    StrictSign::Negative => Sign::Negative,
+                    StrictSign::Positive => Sign::Positive,
+                });
+            }
+            if enclosure.is_exact_zero() {
+                break;
+            }
         }
     }
     sign(x, dec, "boolean.imprint-ambiguous")
@@ -399,6 +410,29 @@ fn numerator(equation: &RealPoly, path: &Path, dec: &mut Decider) -> Result<P, R
     Ok(sum)
 }
 
+/// Restrict a quadric to p + t(q-p), using the proven contact f(p) = 0.
+fn straight_contact(equation: &RealPoly, p: &Point3, q: &Point3, degree: u32) -> P {
+    let q = [q.x.clone(), q.y.clone(), q.z.clone()];
+    let end = equation.eval_real(&q);
+    if degree < 2 {
+        return P(vec![Real::zero(), end]);
+    }
+    // f(t) = t*c1 + t²*(f(q)-c1), where
+    // c1 = grad(f)(q)·p + 2*f(q) - grad(f)(q)·q.
+    // Every coefficient is affine in p; no p_i*p_j needs reconstruction.
+    let gradient: [Real; 3] = std::array::from_fn(|i| equation.partial(i).eval_real(&q));
+    let constant = &end * &Real::from_i64(2)
+        - gradient
+            .iter()
+            .zip(&q)
+            .fold(Real::zero(), |sum, (g, x)| &sum + &(g * x));
+    let first = gradient
+        .into_iter()
+        .zip([&p.x, &p.y, &p.z])
+        .fold(constant, |sum, (g, x)| &sum + &(x * &g));
+    P(vec![Real::zero(), first.clone(), end - first])
+}
+
 /// The source position is an exact arc probe on the supplied source curve.
 pub(crate) fn adjacent(
     model: &Model,
@@ -411,6 +445,19 @@ pub(crate) fn adjacent(
 ) -> Result<bool, Refusal> {
     let (source, p, source_curve) = source;
     let carrier = surface.implicit();
+    let opposite_carrier = -&carrier;
+    let source_equations = model.geom().curve(source_curve).equations(model.geom());
+    // A plane's chart interpolation is the straight segment exactly when
+    // both endpoints lie on the carrier. The source arc supplies its proof.
+    let straight = matches!(surface, Surface::Plane(_))
+        && source_equations
+            .iter()
+            .any(|e| e.same_definition(&carrier) || e.same_definition(&opposite_carrier))
+        && sign(
+            &carrier.eval_real(&[q.x.clone(), q.y.clone(), q.z.clone()]),
+            dec,
+            "boolean.imprint-ambiguous",
+        )? == Sign::Zero;
     for path in paths(surface, p, q, dec)? {
         let d0 = path.denominator.coefficient(0);
         let d1 = path.denominator.coefficient(1);
@@ -430,29 +477,56 @@ pub(crate) fn adjacent(
         let mut clear = true;
         for &edge_id in barriers {
             let edge = model.edge(edge_id);
-            let equations: Vec<_> = model
-                .geom()
-                .curve(edge.curve)
+            let curve = model.geom().curve(edge.curve);
+            let mut equations: Vec<_> = curve
                 .equations(model.geom())
                 .iter()
-                .map(|e| -> Result<P, Refusal> {
-                    // Every path is a parametrisation of this surface.
-                    // Re-expanding its defining zero as algebraic Real
-                    // coefficients would discard that construction proof.
-                    let mut polynomial = if e.same_definition(&carrier) {
-                        P::constant(Real::zero())
-                    } else {
-                        numerator(e, &path, dec)?
-                    };
-                    if edge.curve == source_curve {
-                        // The exact arc probe is on this carrier, and path(0)=p.
-                        // Re-expanding that known zero loses shared-root
-                        // information and can trigger needless elimination.
+                .enumerate()
+                .map(|(index, e)| -> Result<P, Refusal> {
+                    let contact = edge.curve == source_curve
+                        || source_equations
+                            .iter()
+                            .any(|source| source.same_definition(e))
+                        || match curve {
+                            Curve::Intersection(branch) => {
+                                let surface = GeomKey::Surface(branch.surfaces[index]);
+                                let facts = model.geom().facts();
+                                facts.holds(FactKind::Incident, GeomKey::Point(source), surface)
+                                    || facts.holds(
+                                        FactKind::Incident,
+                                        GeomKey::Curve(source_curve),
+                                        surface,
+                                    )
+                            }
+                            _ => false,
+                        };
+                    // Every path parametrises this carrier, so its defining
+                    // equation is identically zero without reconstruction.
+                    let mut polynomial =
+                        if e.same_definition(&carrier) || e.same_definition(&opposite_carrier) {
+                            P::constant(Real::zero())
+                        } else if straight && contact {
+                            let degree = e.total_degree(dec)?.unwrap_or(0);
+                            if degree <= 2 {
+                                straight_contact(e, p, q, degree)
+                            } else {
+                                numerator(e, &path, dec)?
+                            }
+                        } else {
+                            numerator(e, &path, dec)?
+                        };
+                    if contact {
+                        // An exact arc probe also lies on every construction-
+                        // proven support of its source curve. Preserve that
+                        // zero without inferring another branch's membership.
                         polynomial.0[0] = Real::zero();
                     }
                     Ok(polynomial)
                 })
                 .collect::<Result<_, _>>()?;
+            // Separation is existential. Try coefficients whose cached bounds
+            // already exclude zero before asking for exact contact proofs.
+            equations.sort_by_key(|p| p.0.iter().all(|c| c.approx().sign().is_none()));
             let mut separated = false;
             for equation in &equations {
                 if equation.excludes_zero(dec)? {
@@ -487,9 +561,15 @@ pub(crate) fn adjacent(
                 let mut avoids_ends = true;
                 for endpoint in [from, to].into_iter().flatten() {
                     let position = model.geom().position(endpoint);
-                    let coordinates = [position.x, position.y, position.z];
+                    let mut coordinates = [(0, position.x), (1, position.y), (2, position.z)];
                     let mut avoids = false;
-                    for (axis, coordinate) in coordinates.into_iter().enumerate() {
+                    let starts = [&p.x, &p.y, &p.z];
+                    coordinates.sort_by_key(|(axis, coordinate)| {
+                        let a = starts[*axis].approx();
+                        let b = coordinate.approx();
+                        !(a.hi() < b.lo() || b.hi() < a.lo())
+                    });
+                    for (axis, coordinate) in coordinates {
                         if path.numerators[axis]
                             .sub(&path.denominator.scale(coordinate))
                             .excludes_zero(dec)?
@@ -514,4 +594,122 @@ pub(crate) fn adjacent(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::MPoly;
+    use catallax_shapes::RPoint3;
+
+    #[test]
+    fn straight_contacts_keep_simple_double_and_contained_roots() {
+        let sphere = MPoly::from_terms(
+            3,
+            vec![
+                (vec![2, 0, 0], r(1)),
+                (vec![0, 2, 0], r(1)),
+                (vec![0, 0, 2], r(1)),
+                (vec![0, 0, 0], r(-6)),
+            ],
+        );
+        let cylinder = MPoly::from_terms(
+            3,
+            vec![
+                (vec![2, 0, 0], r(1)),
+                (vec![0, 2, 0], r(1)),
+                (vec![1, 1, 0], r(-2)),
+                (vec![0, 0, 2], r(2)),
+                (vec![0, 0, 1], r(-4)),
+            ],
+        );
+        let plane = MPoly::from_terms(3, vec![(vec![1, 0, 0], r(1)), (vec![0, 1, 0], r(-1))]);
+        let sqrt2 = Real::from(r(2)).sqrt();
+        let sqrt3 = Real::from(r(3)).sqrt();
+        let first = &(&sqrt2 * &Real::from(r(3)))
+            + &(&sqrt3 * &Real::from(Rational::from_ratio(7, 2).unwrap()))
+            - Real::from(r(10));
+        let cases = [
+            (
+                sphere,
+                Point3::new(sqrt2.clone(), sqrt3, Real::from(r(1))),
+                RPoint3::new(
+                    Rational::from_ratio(3, 2).unwrap(),
+                    Rational::from_ratio(7, 4).unwrap(),
+                    r(1),
+                ),
+                [
+                    Real::zero(),
+                    first.clone(),
+                    Real::from(Rational::from_ratio(5, 16).unwrap()) - first,
+                ],
+                true,
+            ),
+            (
+                cylinder,
+                Point3::new(sqrt2.clone(), sqrt2.clone(), Real::from(r(2))),
+                RPoint3::new(r(1), r(0), r(2)),
+                [Real::zero(), Real::zero(), Real::one()],
+                true,
+            ),
+            (
+                plane,
+                Point3::new(sqrt2.clone(), sqrt2, Real::from(r(2))),
+                RPoint3::new(r(1), r(1), r(0)),
+                [Real::zero(), Real::zero(), Real::zero()],
+                false,
+            ),
+        ];
+        let mut dec = Decider::default();
+        for (equation, p, q, expected, separates) in cases {
+            assert!(
+                dec.sign(&equation.eval_real(&[p.x.clone(), p.y.clone(), p.z.clone()]))
+                    .is_coincident()
+            );
+            let equation = RealPoly::from(equation);
+            let degree = equation.total_degree(&mut dec).unwrap().unwrap_or(0);
+            let polynomial = straight_contact(&equation, &p, &q.to_real(), degree);
+            for (i, expected) in expected.iter().enumerate() {
+                assert!(
+                    dec.sign(&(&polynomial.coefficient(i) - expected))
+                        .is_coincident()
+                );
+            }
+            assert_eq!(polynomial.excludes_zero(&mut dec).unwrap(), separates);
+        }
+    }
+
+    #[test]
+    fn algebraic_quadric_coefficients_keep_contact_and_interior_roots() {
+        let root = Real::from_i64(2).sqrt();
+        let equation = RealPoly::from_terms(
+            3,
+            vec![
+                (vec![2, 0, 0], Real::one()),
+                (vec![0, 2, 0], root.clone()),
+                (vec![0, 0, 0], -(&Real::one() + &root)),
+            ],
+        );
+        let p = Point3::new(Real::one(), Real::one(), Real::zero());
+        let q = Point3::new(Real::from_i64(2), Real::zero(), Real::zero());
+        let mut dec = Decider::default();
+        assert!(
+            dec.sign(&equation.eval_real(&[p.x.clone(), p.y.clone(), p.z.clone()]))
+                .is_coincident()
+        );
+        let degree = equation.total_degree(&mut dec).unwrap().unwrap();
+        let polynomial = straight_contact(&equation, &p, &q, degree);
+        let expected = [
+            Real::zero(),
+            Real::from_i64(2) - &Real::from_i64(2) * &root,
+            Real::one() + root,
+        ];
+        for (i, expected) in expected.iter().enumerate() {
+            assert!(
+                dec.sign(&(&polynomial.coefficient(i) - expected))
+                    .is_coincident()
+            );
+        }
+        assert!(!polynomial.excludes_zero(&mut dec).unwrap());
+    }
 }

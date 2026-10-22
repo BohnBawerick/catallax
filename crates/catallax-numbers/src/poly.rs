@@ -3,7 +3,10 @@
 // do not charge work; callers keep their existing deterministic reservations.
 
 use crate::{Ball, Integer, Interval, Rational, Real, Sign};
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, btree_map::Entry},
+};
 
 /// Univariate polynomial, lowest degree first, with trailing zeros removed.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
@@ -130,11 +133,87 @@ impl UPoly {
         self.gcd_checked(other, &|| Ok(()))
             .expect("unbounded polynomial gcd")
     }
+    fn coprime_mod_prime(
+        &self,
+        other: &Self,
+        check: &impl Fn() -> Result<(), &'static str>,
+    ) -> Result<bool, &'static str> {
+        // A preserved-degree coprime image proves coprimality over Q.
+        // Missing inverses, degree loss and unlucky images prove nothing.
+        // This prime's residue products fit in u64.
+        const P: u64 = 2_147_483_647;
+        if self.is_zero() || other.is_zero() {
+            return Ok(false);
+        }
+        let modulo = |n: &Integer| {
+            let value = Integer(&n.0 % (P as u32)).to_i64().unwrap();
+            value.rem_euclid(P as i64) as u64
+        };
+        let inverse = |mut base: u64| {
+            let mut power = P - 2;
+            let mut result = 1;
+            while power != 0 {
+                if power & 1 != 0 {
+                    result = result * base % P;
+                }
+                power >>= 1;
+                base = base * base % P;
+            }
+            result
+        };
+        let reduce = |polynomial: &Self| -> Result<Option<Vec<u64>>, &'static str> {
+            let mut values = Vec::with_capacity(polynomial.coefficients.len());
+            for coefficient in &polynomial.coefficients {
+                check()?;
+                let denominator = modulo(&coefficient.d);
+                if denominator == 0 {
+                    return Ok(None);
+                }
+                let numerator = modulo(&coefficient.n);
+                values.push(if denominator == 1 {
+                    numerator
+                } else {
+                    numerator * inverse(denominator) % P
+                });
+            }
+            if values.last() == Some(&0) {
+                return Ok(None);
+            }
+            Ok(Some(values))
+        };
+        let Some(mut a) = reduce(self)? else {
+            return Ok(false);
+        };
+        let Some(mut b) = reduce(other)? else {
+            return Ok(false);
+        };
+        while !b.is_empty() {
+            check()?;
+            let leading_inverse = inverse(*b.last().unwrap());
+            while a.len() >= b.len() {
+                let shift = a.len() - b.len();
+                let factor = a.last().unwrap() * leading_inverse % P;
+                for (i, coefficient) in b.iter().enumerate() {
+                    check()?;
+                    let index = i + shift;
+                    a[index] = (a[index] + P - factor * coefficient % P) % P;
+                }
+                while a.last() == Some(&0) {
+                    a.pop();
+                }
+            }
+            std::mem::swap(&mut a, &mut b);
+        }
+        Ok(a.len() == 1)
+    }
     pub(crate) fn gcd_checked(
         &self,
         other: &Self,
         check: &impl Fn() -> Result<(), &'static str>,
     ) -> Result<Self, &'static str> {
+        if self.coprime_mod_prime(other, check)? {
+            return Ok(Self::constant(Rational::one()));
+        }
         let primitive = |p: Self| -> Result<Self, &'static str> {
             Ok(Self::new(
                 p.primitive_integer_checked(check)?
@@ -233,16 +312,29 @@ impl UPoly {
                 Ok((&c.n * &lcm).div_rem_floor(&c.d).unwrap().0)
             })
             .collect::<Result<_, &'static str>>()?;
-        let mut g = Integer::zero();
+        let Some(seed) = result
+            .iter()
+            .filter(|n| !n.is_zero())
+            .min_by_key(|n| n.bit_length())
+        else {
+            return Ok(Vec::new());
+        };
+        // Start with the smallest coefficient, not an arbitrarily large
+        // constant term. A unit already certifies primitive content.
+        let mut g = seed.abs();
+        let one = Integer::one();
         for n in &result {
             check()?;
+            if g == one {
+                break;
+            }
             g = g.gcd(n);
-        }
-        if g.is_zero() {
-            return Ok(Vec::new());
         }
         if result.last().unwrap().sign() == Sign::Negative {
             g = -g;
+        }
+        if g == one {
+            return Ok(result);
         }
         for n in &mut result {
             check()?;
@@ -649,11 +741,18 @@ impl MPoly {
         if c.is_zero() {
             return;
         }
-        let value = self.terms.get(&m).map_or(c.clone(), |a| a + &c);
-        if value.is_zero() {
-            self.terms.remove(&m);
-        } else {
-            self.terms.insert(m, value);
+        match self.terms.entry(m) {
+            Entry::Vacant(entry) => {
+                entry.insert(c);
+            }
+            Entry::Occupied(mut entry) => {
+                let value = entry.get() + &c;
+                if value.is_zero() {
+                    entry.remove();
+                } else {
+                    *entry.get_mut() = value;
+                }
+            }
         }
     }
     fn add(&self, rhs: &Self) -> Self {
@@ -726,5 +825,22 @@ fn pow_interval(x: Interval, mut e: u32) -> Interval {
 }
 binops!(UPoly; Add::add, Sub::sub, Mul::mul);
 negop!(UPoly);
-binops!(MPoly; Add::add, Sub::sub, Mul::mul);
+// Owned sums retain their accumulated term tree; borrowed sums must copy it.
+impl std::ops::Add for MPoly {
+    type Output = Self;
+    fn add(mut self, rhs: Self) -> Self {
+        assert_eq!(self.nvars, rhs.nvars);
+        for (monomial, coefficient) in rhs.terms {
+            self.accumulate(monomial, coefficient);
+        }
+        self
+    }
+}
+impl std::ops::Add for &MPoly {
+    type Output = MPoly;
+    fn add(self, rhs: Self) -> MPoly {
+        MPoly::add(self, rhs)
+    }
+}
+binops!(MPoly; Sub::sub, Mul::mul);
 negop!(MPoly);

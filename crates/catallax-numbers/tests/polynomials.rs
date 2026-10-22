@@ -53,6 +53,27 @@ blind_test!(polynomial_normal_form_arithmetic_and_factorisation, {
     }
 });
 
+blind_test!(gcd_preserves_rational_factors_at_large_integer_scales, {
+    let prime = r("2147483647");
+    let common = UPoly::new(vec![r("1/2147483647"), r("1")]);
+    let scale = UPoly::constant(prime.clone());
+    let left = &(&common * &poly(&[-3, 1])) * &scale;
+    let right = &(&common * &poly(&[5, 1])) * &scale;
+    // Reducing modulo this integer loses the common factor's degree.
+    assert_eq!(left.gcd(&right), common);
+
+    let common = UPoly::new(vec![r("-1/2147483647"), r("1")]);
+    let left = &common * &poly(&[-3, 1]);
+    let right = &common * &poly(&[5, 1]);
+    // Rational denominators need not be invertible in a chosen finite field.
+    assert_eq!(left.gcd(&right), common);
+
+    let left = poly(&[1, 0, 1]);
+    let right = &left + &UPoly::constant(prime);
+    // A shared finite-field image does not imply a shared rational factor.
+    assert_eq!(left.gcd(&right), poly(&[1]));
+});
+
 blind_test!(
     multivariate_order_substitution_derivatives_and_resultants,
     {

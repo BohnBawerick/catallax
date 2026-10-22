@@ -63,9 +63,11 @@ The parameter liveness family cancels both circle and quaternion denominators wh
 | 37–44 | `parameters.rs`, `generated.rs`: values and derivatives, non-unit/reversed frames, advisory domains, output precision, interval inputs, seams and poles, off-surface inverse formulas, liveness and round trips |
 | 45–49 | `store.rs`: handle order, no deduplication, typed key ordering, construction-fact order/origin, transitive fact paths, cached coordinates, exact positions and ordered enclosure calls |
 | 50–52 | `generated.rs`: scale and placement families, all six decisions repeated, eight-thread equality of outcomes and statistics |
-| Decision fallback rules | `uncertainty.rs`, `decisions.rs`: zero-work unresolved expressions, distance bounds for every surface and analytic curve kind, intersection-carrier bounds, normal-dot value bounds, first nonzero/refusal short-circuit, first unresolved code/detail, no fact mutation |
+| Decision fallback rules | `uncertainty.rs`, `decisions.rs`: zero-work unresolved expressions, distance bounds for every surface and analytic curve kind, intersection-carrier bounds, normal-dot value bounds, nonzero/refusal short-circuit, unresolved code/detail, no fact mutation |
 
 Tests prescribe a zero-proof kind only where the contract does: construction facts and exact-rational `same_surface`. A valid distance bound need not equal one chosen conversion formula. Undefined angular parameters may return `None`; seam tests constrain only defined values when `Some` is returned. No test compares approximate coordinates with an epsilon.
+
+Point equality and curve membership schedule cheap nonzero rational values and cached conservative interval signs first. When these do not separate, they request metered enclosures at the existing interval widths before exact-zero comparisons. The chosen value is still certified by the decider; an interval containing zero proves nothing. Original equation indices are retained for curve-distance conversions, whose equations can have different units. Existing late-coordinate separation, near-coincidence, zero-work distance-bound, undefined-coordinate and deadline cases remain. Tests do not prescribe the number of queries before a separation witness.
 
 ## Speed measurements
 

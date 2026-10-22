@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::{Add, Div, Mul, Neg, Sub};
+use std::sync::OnceLock;
 
 use catallax_intersect::TracePiece;
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
@@ -350,8 +351,10 @@ impl Builder {
         for output in outputs {
             needed[output.index] = true;
         }
+        let mut retained = 0;
         for i in (0..source.len()).rev() {
             if needed[i] {
+                retained += 1;
                 match source[i] {
                     Node::Add(a, b) | Node::Mul(a, b) | Node::Div(a, b) => {
                         needed[a] = true;
@@ -363,7 +366,7 @@ impl Builder {
             }
         }
         let mut indices = vec![0; source.len()];
-        let mut nodes = Vec::new();
+        let mut nodes = Vec::with_capacity(retained);
         for (i, node) in source.iter().enumerate() {
             if needed[i] {
                 indices[i] = nodes.len();
@@ -377,10 +380,13 @@ impl Builder {
                 });
             }
         }
+        let outputs = outputs.iter().map(|e| indices[e.index]).collect();
         Program {
-            nodes,
-            outputs: outputs.iter().map(|e| indices[e.index]).collect(),
-            exact: self.0.borrow().exact.clone(),
+            nodes: nodes.into_boxed_slice(),
+            outputs,
+            exact: self.0.borrow().exact.clone().into_boxed_slice(),
+            center: OnceLock::new(),
+            remainder: OnceLock::new(),
         }
     }
 }
@@ -426,38 +432,115 @@ impl Neg for Expr<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Coefficients {
+    All,
+    Center,
+    Remainder,
+}
+
 pub(crate) struct Program {
-    nodes: Vec<Node>,
-    outputs: Vec<usize>,
-    exact: Vec<Real>,
+    nodes: Box<[Node]>,
+    outputs: Box<[usize]>,
+    exact: Box<[Real]>,
+    center: OnceLock<Box<[u32]>>,
+    remainder: OnceLock<Box<[u32]>>,
 }
 
 impl Program {
+    fn coefficient_plan(nodes: &[Node], outputs: &[usize], mask: u32) -> Box<[u32]> {
+        let mut needed = vec![0; nodes.len()];
+        for &output in outputs {
+            needed[output] |= mask;
+        }
+        for i in (0..nodes.len()).rev() {
+            let mask = needed[i];
+            if mask == 0 {
+                continue;
+            }
+            // Products need all lower input coefficients; quotient and root
+            // recurrences additionally need their own complete lower prefix.
+            let prefix = u32::MAX >> mask.leading_zeros();
+            match nodes[i] {
+                Node::Add(a, b) => {
+                    needed[a] |= mask;
+                    needed[b] |= mask;
+                }
+                Node::Mul(a, b) => {
+                    needed[a] |= prefix;
+                    needed[b] |= prefix;
+                }
+                Node::Div(a, b) if matches!(&nodes[b], Node::Constant(_) | Node::Exact(_)) => {
+                    // A constant divisor has no nonzero higher coefficients.
+                    // Keep its zeroth coefficient for the domain check.
+                    needed[a] |= mask;
+                    needed[b] |= 1;
+                }
+                Node::Div(a, b) => {
+                    needed[i] = prefix;
+                    needed[a] |= prefix;
+                    needed[b] |= prefix;
+                }
+                Node::Sqrt(a) => {
+                    needed[i] = prefix;
+                    needed[a] |= prefix;
+                }
+                Node::Neg(a) => needed[a] |= mask,
+                Node::Constant(_) | Node::Exact(_) | Node::Input(_) => {}
+            }
+        }
+        needed.into_boxed_slice()
+    }
+
     fn evaluate<const N: usize>(
         &self,
         input: &[[Ball; N]],
+        coefficients: Coefficients,
         work: &mut Work,
     ) -> Checked<Vec<[Ball; N]>> {
+        let masks =
+            match coefficients {
+                Coefficients::All => None,
+                Coefficients::Center => Some(self.center.get_or_init(|| {
+                    Self::coefficient_plan(
+                        &self.nodes,
+                        &self.outputs,
+                        (0..ORDER)
+                            .step_by(2)
+                            .fold(0u32, |mask, k| mask | (1u32 << k)),
+                    )
+                })),
+                Coefficients::Remainder => Some(self.remainder.get_or_init(|| {
+                    Self::coefficient_plan(&self.nodes, &self.outputs, 1u32 << ORDER)
+                })),
+            };
         let mut values: Vec<[Ball; N]> = Vec::with_capacity(self.nodes.len());
-        for node in &self.nodes {
+        for (index, node) in self.nodes.iter().enumerate() {
             work.dec.check_deadline()?;
             if let Node::Input(i) = node {
                 values.push(input[*i].clone());
                 continue;
             }
+            let needed = |k: usize| masks.is_none_or(|masks| masks[index] & (1u32 << k) != 0);
             let mut value = work.zeros::<N>();
             match node {
-                Node::Constant(r) => value[0] = work.rational(r)?,
+                Node::Constant(r) => {
+                    if needed(0) {
+                        value[0] = work.rational(r)?;
+                    }
+                }
                 Node::Exact(index) => value[0] = work.real(&self.exact[*index])?,
                 Node::Input(_) => unreachable!(),
                 Node::Add(a, b) => {
                     for (k, coefficient) in value.iter_mut().enumerate() {
-                        *coefficient = work.add(&values[*a][k], &values[*b][k])?;
+                        if needed(k) {
+                            *coefficient = work.add(&values[*a][k], &values[*b][k])?;
+                        }
                     }
                 }
                 Node::Neg(a) => {
                     for (k, coefficient) in value.iter_mut().enumerate() {
-                        if !values[*a][k].is_exact_zero() {
+                        if needed(k) && !values[*a][k].is_exact_zero() {
                             work.charge()?;
                             *coefficient = -&values[*a][k];
                         }
@@ -472,6 +555,9 @@ impl Program {
                     for (k, coefficient) in
                         value.iter_mut().enumerate().take((2 * order + 1).min(N))
                     {
+                        if !needed(k) {
+                            continue;
+                        }
                         for j in k.saturating_sub(order)..=k.min(order) {
                             let index = j.min(k - j);
                             if j == index {
@@ -504,6 +590,9 @@ impl Program {
                         .enumerate()
                         .take((a_order + b_order + 1).min(N))
                     {
+                        if !needed(k) {
+                            continue;
+                        }
                         for j in k.saturating_sub(b_order)..=k.min(a_order) {
                             if !values[*a][j].is_exact_zero() && !values[*b][k - j].is_exact_zero()
                             {
@@ -527,6 +616,9 @@ impl Program {
                             .rposition(|b| !b.is_exact_zero())
                             .unwrap_or(0);
                         for k in 0..N {
+                            if !needed(k) {
+                                continue;
+                            }
                             let mut numerator = values[*a][k].clone();
                             for j in 1..=k.min(order) {
                                 if !values[*b][j].is_exact_zero() && !value[k - j].is_exact_zero() {
@@ -550,6 +642,9 @@ impl Program {
                         let inverse = work.div(&one, &denominator)?;
                         let mut products: [Option<Ball>; N] = std::array::from_fn(|_| None);
                         for k in 1..N {
+                            if !needed(k) {
+                                continue;
+                            }
                             let mut numerator = values[*a][k].clone();
                             for j in 1..k {
                                 let index = j.min(k - j);
@@ -586,7 +681,7 @@ impl Program {
         input.extend((0..3).map(|_| work.zeros()));
         input.extend(extras.iter().map(|b| [b.clone()]));
         Ok(self
-            .evaluate(&input, work)?
+            .evaluate(&input, Coefficients::All, work)?
             .into_iter()
             .map(|[value]| value)
             .collect())
@@ -606,8 +701,8 @@ impl Program {
         // Only the whole-panel remainder needs the full order.
         let at_center = input::<{ ORDER - 1 }>(piece, &center, work)?;
         let on_range = input::<SIZE>(piece, &range, work)?;
-        let center = self.evaluate(&at_center, work)?;
-        let range = self.evaluate(&on_range, work)?;
+        let center = self.evaluate(&at_center, Coefficients::Center, work)?;
+        let range = self.evaluate(&on_range, Coefficients::Remainder, work)?;
         center
             .iter()
             .zip(&range)
@@ -631,7 +726,7 @@ impl Program {
             }
         }
         let width = work.rational(&(b - a))?;
-        self.evaluate(&input, work)?
+        self.evaluate(&input, Coefficients::All, work)?
             .iter()
             .map(|j| work.mul(&j[0], &width))
             .collect()
@@ -665,7 +760,9 @@ impl Program {
         } else {
             input::<SIZE>(piece, &range_argument, work)?
         };
-        let range_angular = angular.evaluate(&range_input, work)?.remove(0);
+        let range_angular = angular
+            .evaluate(&range_input, Coefficients::All, work)?
+            .remove(0);
         let displacement = b - a;
         let offsets = work.interval(
             &displacement.clone().min(Rational::zero()),
@@ -680,7 +777,12 @@ impl Program {
             angle_range[k] = work.div(&range_angular[k - 1], &divisor)?;
         }
         range_input.push(angle_range);
-        let range = self.evaluate(&range_input, work)?;
+        let coefficients = if rectangle {
+            Coefficients::All
+        } else {
+            Coefficients::Remainder
+        };
+        let range = self.evaluate(&range_input, coefficients, work)?;
         if rectangle {
             let width = work.rational(&displacement)?;
             let increment = work.mul(&range_angular[0], &width)?;
@@ -692,7 +794,9 @@ impl Program {
             return Ok((values, end));
         }
         let mut center_input = input::<SIZE>(piece, &center_argument, work)?;
-        let center_angular = angular.evaluate(&center_input, work)?.remove(0);
+        let center_angular = angular
+            .evaluate(&center_input, Coefficients::All, work)?
+            .remove(0);
         let increment = integrate(&center_angular, &range_angular, a, b, &midpoint, work)?;
         let half = integrate(
             &center_angular,
@@ -709,7 +813,7 @@ impl Program {
             angle_center[k] = work.div(&center_angular[k - 1], &divisor)?;
         }
         center_input.push(angle_center);
-        let center = self.evaluate(&center_input, work)?;
+        let center = self.evaluate(&center_input, Coefficients::Center, work)?;
         let values = center
             .iter()
             .zip(&range)
@@ -814,7 +918,9 @@ mod tests {
         // its positive square root near t=0, through degree six.
         let input =
             [1, 2, 1, -2, -2, 0, 1].map(|n| Ball::from_rational(&Rational::from_i64(n), 128));
-        let actual = program.evaluate(&[input], &mut work).unwrap();
+        let actual = program
+            .evaluate(&[input], Coefficients::All, &mut work)
+            .unwrap();
         for (row, expected) in [[1, 4, 6, 0, -11, -12, 2], [1, 1, 0, -1, 0, 0, 0]]
             .iter()
             .enumerate()
@@ -849,6 +955,79 @@ mod tests {
             )
             .unwrap();
             assert!(value.contains(&Rational::from_i64(20 + sign * 2)));
+        }
+    }
+
+    #[test]
+    fn selected_coefficients_preserve_recurrence_and_constant_division() {
+        let policy = BudgetPolicy::default();
+        let dec = Decider::new(policy);
+        let mut work = Work::new(&policy, 128, policy.max_work, &dec).unwrap();
+        let builder = Builder::default();
+        let x = builder.input(0);
+        let program = builder.finish(&[x.sqrt(), builder.k(1) / x, x / builder.k(3)]);
+        let one = Rational::one();
+        let half = one.mul_pow2(-6);
+        // x(t) = (1+t)^2. Its positive root integrates to 2h on [-h,h];
+        // its reciprocal integrates to 1/(1-h) - 1/(1+h).
+        let mut at_center = work.zeros::<{ ORDER - 1 }>();
+        for (coefficient, value) in at_center.iter_mut().zip([1, 2, 1]) {
+            *coefficient = work.rational(&Rational::from_i64(value)).unwrap();
+        }
+        let lower = &one - &half;
+        let upper = &one + &half;
+        let mut on_range = work.zeros::<SIZE>();
+        on_range[0] = work
+            .interval(&(&lower * &lower), &(&upper * &upper))
+            .unwrap();
+        on_range[1] = work
+            .interval(&lower.mul_pow2(1), &upper.mul_pow2(1))
+            .unwrap();
+        on_range[2] = work.rational(&one).unwrap();
+        let center = program
+            .evaluate(&[at_center], Coefficients::Center, &mut work)
+            .unwrap();
+        let range = program
+            .evaluate(&[on_range], Coefficients::Remainder, &mut work)
+            .unwrap();
+        let three = Rational::from_i64(3);
+        let cubic = &(&half * &half) * &half;
+        let quadratic_integral = &half.mul_pow2(1) + &(&cubic.mul_pow2(1) / &three);
+        let expected = [
+            half.mul_pow2(1),
+            &half.mul_pow2(1) / &(&one - &(&half * &half)),
+            &quadratic_integral / &three,
+        ];
+        for ((center, range), expected) in center.iter().zip(&range).zip(expected) {
+            let value = integrate(
+                center,
+                range,
+                &(-&half),
+                &half,
+                &Rational::zero(),
+                &mut work,
+            )
+            .unwrap();
+            assert!(value.contains(&expected));
+            assert!(value.hi() - value.lo() < one.mul_pow2(-50));
+        }
+    }
+
+    #[test]
+    fn selected_remainders_do_not_erase_undefined_low_orders() {
+        let policy = BudgetPolicy::default();
+        let dec = Decider::new(policy);
+        let mut work = Work::new(&policy, 128, policy.max_work, &dec).unwrap();
+        let builder = Builder::default();
+        let x = builder.input(0);
+        for (expression, value) in [(builder.k(0) / x, 0), (x.sqrt(), -1)] {
+            let program = builder.finish(&[expression]);
+            let mut input = work.zeros::<SIZE>();
+            input[0] = work.rational(&Rational::from_i64(value)).unwrap();
+            assert!(matches!(
+                program.evaluate(&[input], Coefficients::Remainder, &mut work),
+                Err(Stop::Split)
+            ));
         }
     }
 }

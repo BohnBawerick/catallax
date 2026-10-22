@@ -9,6 +9,7 @@
 mod curve;
 mod isometry;
 mod math;
+mod offset;
 mod point;
 mod pose;
 mod store;
@@ -20,6 +21,7 @@ mod tests;
 
 pub use curve::{Circle, Curve, CurveKind, Ellipse, IntersectionCurve, Line};
 pub use isometry::Isometry;
+pub use offset::{EllipticOffsetDefinition, OffsetSide};
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};

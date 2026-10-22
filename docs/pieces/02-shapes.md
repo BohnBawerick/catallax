@@ -63,6 +63,12 @@ For a circle of radius `r` in a plane with unit normal `n`, extruded along unit 
 
 No unrestricted `Quadric`, `Extruded` or `Revolved` surface variant is added in this foundation. The analytic reductions cover line extrusion, circular-arc extrusion, meridional line revolution and ring circular-arc revolution. Other valid patches remain named implementation gaps until their domain-aware carrier and full consumer support land. In particular, `shapes.torus-self-intersecting` describes an invalid whole ring torus; it is not evidence that every trimmed circular revolution with that carrier is impossible.
 
+### Elliptic-offset definition records
+
+`EllipticOffsetDefinition::new(original: EllipticCylinder, signed_distance: Real, dec: &mut Decider)` validates and retains an immutable copy of the original support and the exact offset expression. Positive distance selects `OffsetSide::Outward`, negative distance selects `Inward`, and zero retains the original support. `original()` returns the exact `Surface`; `distance()` returns the nonnegative `Real` magnitude required by the field measuring stick's offset definition. `side()` retains the branch that unsigned distance alone cannot distinguish.
+
+The record is intent, not a new `Surface` variant, fitted carrier, finite trimmed face or geometric certificate. Inward offsets still require domain, branch and regularity proofs before construction. This interface does not choose the pending approximated-carrier representation or change the six existing surface kinds.
+
 ### Acceptance of the migration
 
 Preserve the successful rational corpus and add independent cases for algebraic poses/dimensions, an arc with radius `sqrt(2)`, 45-degree and non-quadratic rational-degree rotations, extrusion along `[1,0,1]`, and oblique circular extrusion. Check exact incidence, normal orientation, component selection and pose/inverse identities. An elliptic-cylinder check must use its defining swept circle as an independent oracle. Compare cold/warm caches and thread counts. Failure to prove a constructor invariant must never produce a successful geometry definition.
@@ -734,5 +740,5 @@ The numbers are written to the benchmark output so later runs can be compared.
 - Intersecting surfaces and curves with each other, finding meeting points, choosing branches, and ordering points along curves (piece 4).
 - Whether a point on a cone's carrier lies on the nappe; callers test the sign of `(p - apex) . axis`.
 - Faces, edges and every other topology (piece 3).
-- Free-form surfaces, fillet and offset surfaces. They come later as new variants of the non-exhaustive enums.
-- Any tolerance. This piece has none.
+- Free-form, fillet and offset surface carriers. They come later as new variants of the non-exhaustive enums; the elliptic-offset intent record above does not add a carrier.
+- Geometric tolerance acceptance. Shapes retain exact definitions; geometric consumers own their scoped conversion and certificate proofs.

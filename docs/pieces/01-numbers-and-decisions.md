@@ -22,6 +22,20 @@ Add a shared budgeted `sin_cos_degrees(angle: &Rational, dec: &mut Decider) -> R
 
 Use the existing deterministic work policy for coefficient validation, root selection and elimination. A failed proof keeps its `numbers.*` reason. Cache reuse must preserve outcomes and deterministic work charges across cold/warm and serial/parallel runs. The alternative of eagerly replacing every expression by one isolated number simplifies arithmetic boundaries but pays elimination before it is needed and loses shared construction identities.
 
+## Geometric proof records
+
+`ModellingTolerance::default()` records `1/1_000_000` mm before proof work starts. Its value has no mutation API. `check` accepts only nonnegative millimetre bounds strictly below that value. Equality refuses with `numbers.geometric-gap-exceeded`; negative bounds and other units refuse with `numbers.geometric-gap-unproven`. This setting is not an export accuracy or an entity-local approximation cap.
+
+`EvidenceBound` holds an exact rational upper bound and an `EvidenceUnit`. `enclose_magnitude` uses the caller's decider to enclose a shared `Real`, retaining the caller's declared units without converting a residual into geometry. `add` adds nonnegative bounds with matching units. The geometric caller must prove that addition is the appropriate transfer rule.
+
+`GeometricCertificate<K>` binds `CertificateIdentity<K>`, a bound and a root evidence key. The identity names the immutable recipe revision, representation, exact target and complete `CertificateScope<K>`. Scopes distinguish the whole-solid signed-distance metric, complete named entities, finite parameter boxes and individual queries. `GeometricEvidence<K>` retains that binding, its bound, `GeometricProof<K>`, ordered dependencies and `ProofContext<K>` with producing piece, step and stage. A conversion additionally retains `DecisionEvidence<K>` with the original code, residual enclosure, units, affected entities and selected branch.
+
+`EvidenceBook<K>` is append-only and ordered by stable definition keys. Equal shared records deduplicate; a conflicting use of a key refuses. `check_structure` checks binding, units, the strict cap, domains and reachable dependencies, rejecting missing records and cycles. It does not verify a geometric theorem, valid topology, coverage or material orientation. Neither constructing these public records nor passing structural checking authorizes publication. The geometric consumer must verify the named obligations against the definitions. No mark-log heuristic supplies that proof.
+
+`DecisionBook<K>` records a `RecordedChoice<K>` containing the chosen branch and supporting evidence key. `decide_once` calls its closure only for an unsettled key and checks cancellation before lookup and after a new decision. Failed or interrupted decisions record no choice. `record` accepts an identical repeated choice and refuses a conflicting branch or evidence key. Consumers must validate imported evidence before trusting it. Keys include immutable definition revisions, operands, scope and branch selectors, never pointer addresses or worker completion order. Iteration is in canonical key order.
+
+Record and graph operations use the existing decider cancellation checkpoints and request work accounting. There is no second allowance, and no numeric decision path or legacy `Answer::is_exact` behavior changes merely because these types exist.
+
 ## What this piece is for
 
 Every other piece of the kernel asks this piece two kinds of question.
@@ -295,10 +309,12 @@ A mark is the record of one "not exact" answer, carried on results.
 | `numbers.zero-polynomial` | `real_roots` of the zero polynomial |
 | `numbers.root-not-certified` | `certify_root` could prove neither one root nor no root |
 | `numbers.deadline` | The operation's wall-clock deadline passed |
+| `numbers.geometric-gap-unproven` | Missing or invalid geometric evidence, units, binding, scope or dependencies; a geometric consumer also uses it for an unproved conversion or theorem |
+| `numbers.geometric-gap-exceeded` | The available certified geometric upper bound is greater than or equal to the strict recorded modelling cap; this does not prove the true gap exceeds the cap |
 
 ## Exact public interface
 
-The crate re-exports all of these at its root. Arithmetic operators are implemented for owned values and for references (`&a + &b`) unless noted. Everything listed is `pub`; fields not listed are private.
+The crate re-exports the certificate APIs above and the numeric baseline below at its root. Arithmetic operators are implemented for owned values and for references (`&a + &b`) unless noted. Fields not listed are private.
 
 ```rust
 // Exact integers and rationals
@@ -808,4 +824,4 @@ The numbers are written to the benchmark output so later runs can be compared.
 
 - Points, vectors, surfaces, curves and poses (piece 2).
 - Finding candidate boxes for system roots (piece 4).
-- Any tolerance. This piece has none.
+- Geometric residual conversions, topology and whole-solid theorem verification. This piece records the modelling setting and proof claims and checks their arithmetic and dependency structure.

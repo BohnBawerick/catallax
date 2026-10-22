@@ -12,6 +12,7 @@ mod macros;
 mod algebraic;
 mod angle;
 mod ball;
+mod certificate;
 mod decider;
 mod facts;
 mod generator;
@@ -39,6 +40,12 @@ mod tests;
 pub use algebraic::{Algebraic, RealRoot};
 pub use angle::sin_cos_degrees;
 pub use ball::Ball;
+pub use certificate::{
+    CertificateIdentity, CertificateScope, DecisionBook, DecisionEvidence, EvidenceBook,
+    EvidenceBound, EvidenceUnit, GEOMETRIC_GAP_EXCEEDED, GEOMETRIC_GAP_UNPROVEN,
+    GeometricCertificate, GeometricEvidence, GeometricProof, ModellingTolerance, ProofContext,
+    RecordedChoice,
+};
 pub use decider::{BudgetPolicy, Decider, DecisionStats};
 pub use facts::{Fact, FactBook, FactKind, FactOrigin};
 pub use integer::{Integer, ParseErrorKind, ParseNumberError, Sign};

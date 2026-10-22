@@ -43,6 +43,165 @@ Use one shared foundation, with the following merge order. Feature branches cons
 
 Cone/torus and recipe coverage may then land independently, with consumer and agreement regressions for each added case. Merge their completed operation paths before declaring display/field agreement for those operations. Uncoordinated per-lane widening is the rejected alternative: it gives earlier isolated patches but forces repeated rebases and leaves field and B-rep interpreting different types. No lane may report a valid input as impossible because its implementation is unfinished. Keep specific temporary failure reasons and coverage tests until repaired. The command-line contract in `JUDGE-INTERFACE.md` remains unchanged. Its fixed kind tags cannot describe elliptic-cylinder faces or open conics; exposing those new library/recipe results through the CLI requires a separate versioned exchange decision. No silent tag remapping is authorised.
 
+## Composable geometric error: decision of 2026-10-22
+
+Adopt one proof of geometric error for the whole result, relative to its exact recipe definition. A mark records why a decision stopped; it is not that proof. This is the implementation contract for [PLAN.md](PLAN.md)'s error-policy item. It supersedes the inherited rule below that automatically takes every `NotExact` as coincidence. This documentation decision changes no code, work-budget policy or [JUDGE-INTERFACE.md](JUDGE-INTERFACE.md) contract.
+
+| Decision | Reason | Alternative and cost |
+| --- | --- | --- |
+| Certify the represented solid against the exact recipe result | Bounds remain meaningful after operations, trims and changes of representation | Certify only individual predicates. Small residuals can select a distant branch or remove material |
+| Require a whole-result bound strictly below `1/1_000_000` mm | Many individually small decisions can exhaust the same allowance | Give every operation a fresh 1 nm. A long recipe can drift without limit |
+| Retain typed local evidence and a shared dependency graph | A consumer can verify scope, units, conditioning and inherited error | Sum or take the maximum of the mark log. Neither operation supplies missing geometric proofs |
+| Require a transfer proof for each operation | Boolean boundaries and topology can change discontinuously near contact | Assume booleans are non-expansive because field expressions use `min` and `max`. Those expressions need not be true distance |
+| Keep property and display approximation bounds separate from model error | Area, volume and display chords have different meanings | Treat every bound as millimetres. This accepts dimensionally invalid evidence |
+
+### What the whole-result certificate proves
+
+Let `R` be the regularised solid defined by the exact recipe prefix, including its exact branch and domain rules. Let `B` be the valid solid represented by the returned body. Neither refers to a mesh or a numerical sample. For a nonempty bounded regular closed solid `S`, define `s_S(x)` as the true Euclidean distance to its boundary, negative inside and positive outside, in millimetres. Define
+
+```text
+D(B, R) = sup over x in Euclidean 3-space of |s_B(x) - s_R(x)|
+tau     = 1/1_000_000 mm
+certificate: D(B, R) <= E, where E is a nonnegative exact rational and E < tau
+```
+
+This is an oriented geometric bound. It bounds two-way boundary distance and guarantees the same material classification wherever `|s_R(x)| > E`. Boundary Hausdorff distance alone would miss an inside/outside reversal. The supremum is a proof obligation, not an instruction to sample all space. An implementation may discharge it by analytic bounds or a complete certified cover of trimmed patches, cells and their exterior, with material orientation checked. A finite sample set never discharges it. Intermediate points, curves and open patches use their own scoped correspondence bounds; they are not solids to which `D` applies.
+
+Two empty results have distance zero. An empty result and a nonempty result have no finite certificate under this policy. A bounded decision may not erase the last component and call the empty output close. Prove exact emptiness or refuse. Multiple bodies exported as an assembly need per-body certificates and a matching proof; overlapping bodies are not implicitly replaced by their union.
+
+`E = 0` with a proof means exact geometry. A positive conservative enclosure remains bounded even if the actual result happens to be exact. An empty log, a zero cached residual or an exact-looking file is not an exactness proof. Query and output enclosures may still have width when model geometry is exact.
+
+The certificate must identify the immutable recipe revision, represented body or query, units, covered domain, exact target, bound and proof dependencies. Preserve the original decision code, residual enclosure, affected entities and branch choice beside each geometric conversion. Use stable recipe/definition identities and ordered proof records, never pointer addresses or worker completion order. Shared dependencies form an acyclic graph. Geometry remains stored by definition; approximations and their certificates are separate, explicit representations. A mark never authorises a false construction fact or an invalid shell whose edge merely lies near its face.
+
+### From a local mark to millimetres
+
+Every geometry-changing use of `NotExact` needs both a conversion and a proof of the effect of taking the degenerate branch on the entire affected domain. Each accepted coincidence substitute must itself have a proved geometric gap strictly below `tau`, as well as preserving the whole-result cap. Later cancellation cannot excuse an over-limit local choice. A conversion at one witness does not cover a face, a trimmed curve or a body. Piece 1 cannot infer geometric units from a `Real` expression. The geometric caller owns the conversion and proves every denominator, domain restriction and conditioning bound used in it.
+
+| Evidence | Required conversion and scope |
+| --- | --- |
+| Distance `b` | Use `delta = b` only for the objects and domain named by its certificate. Distance to a carrier plane is not distance to its trimmed face. Distance to two surfaces separately is not distance to their intersection. Establish a branch-preserving projection or another geometric correspondence before using it for either purpose |
+| Angle `a` in radians | Prove the angle convention and a finite lever arm `R`. Rotation about a fixed pivot/axis moves every covered point by at most `R*a`; `2*R*sin(a/2)` may tighten this with a certified enclosure and a valid angle range. Translation uncertainty adds separately. Unbounded supports need finite trims. A normal-angle bound does not bound intersection displacement without a separate intersection-conditioning proof |
+| Scalar parameter `b` | Declare its dimension and exact map `X(t)`. Prove `sup norm(dX/dt) <= L` on the whole parameter interval, then `delta <= L*b`. For several parameters, `sum L_i*b_i` is a conservative bound. This is pointwise correspondence evidence; topology and the whole-result claim still need proof |
+| Raw quantity `b`, including polynomial values, dot products and determinants | Supply an explicit residual-to-geometry theorem. For `n dot (x-o)`, `b/m` bounds plane distance when `norm(n) >= m > 0`. For a proven squared point distance, an outward bound on `sqrt(b)` is a distance. Rescaling an equation must not change the certified geometric meaning. A generic polynomial residual cannot become a distance just by relabelling it |
+| Measurement-only scalar or raw quantity | Keep the property's units and its enclosure. An area width is in mm², a volume width in mm³, a centroid coordinate width in mm. Such an evaluation does not move geometry and contributes zero additional model displacement. Its correctness and requested accuracy are separate obligations. If a property later controls geometry, that consumer must supply a sensitivity proof |
+
+A local inverse bound, for example a residual divided by a derivative lower bound, requires existence of the intended root and validity throughout a certified neighbourhood. A nonzero gradient at one point does not suffice. Intersections need branch existence and an inverse/Jacobian bound over the chosen domain; near-parallel surfaces can amplify arbitrarily small residuals. Singular contacts need a specialised bound, such as a certified square-root modulus, or an exact decision. An angle or scalar with no finite domain or conversion remains unproven. No generic conversion may set its contribution to zero.
+
+Observed enum terminology is `Distance`, `Angle` and `Value`, not four separate variants: [marks.rs](../crates/catallax-numbers/src/marks.rs), `BoundKind`. The policy distinguishes a scalar with known units from an untyped raw `Value`; that distinction requires new evidence, not a new spelling in the existing CLI manifest.
+
+### Composition and the five boolean stages
+
+An operation must prove a transfer relation for the exact operation `F`, the represented inputs `B_i`, their ideal inputs `R_i` and its output `B_out`:
+
+```text
+D(B_out, F(R_1, ..., R_n)) <= T_F(E_1, ..., E_n; input certificates) + delta_F
+E_out = an outward rational upper bound of that right-hand side
+```
+
+`delta_F` covers new bounded choices relative to `F(B_1, ..., B_n)`. `T_F` covers inherited error through the operation. A direct certificate against `F(R_1, ..., R_n)` may replace this decomposition. No default `T_F = max(E_i)` or `sum(E_i)` is valid for arbitrary booleans. Even an exact operation on already bounded inputs needs a transfer proof. Near contact, a small input displacement can create or destroy a component or change which distant patch survives.
+
+For certified consecutive representations of the same target, use the triangle inequality and add their errors. For a complete collection of corresponding patches, a maximum is permitted only after proving that the cover, material orientation and gluing establish the whole-solid metric. A Lipschitz transfer `sum L_i*E_i` is permitted only with proved constants on the whole input uncertainty domain. Otherwise refine or refuse. Certifying a smaller bound directly against the original target is allowed; discarding history is not.
+
+| Stage | Required proof before its result can be used |
+| --- | --- |
+| Intersect | Retain every relevant meeting, component selector and finite trim. Convert local residuals to bounds for the intended meeting locus. Prove the effect of an omitted or merged meeting, including its possible downstream classification changes |
+| Imprint | Prove that the split arrangement covers each input face, that cyclic ordering and incidence are valid, and that merged cuts stay within their certified correspondence. Carry intersection evidence forward. Counting it a second time does not create a new error |
+| Classify | Certify material labels outside the allowed uncertainty region, with oriented local evidence inside it. Taking a tangent or on-boundary branch must not select an unbounded or distant face. An unresolved sample cannot label a whole face without a coverage proof |
+| Keep | Derive the selected material from the operation's regularised set semantics for both operands. Account for lost and retained patches, including thin walls, cavities and possible emptiness. This stage must not treat a small local gap as proof that a component is dispensable |
+| Sew, including maximal merging | Prove a valid represented solid, complete face/edge correspondence and orientation, then close the whole-result certificate against the exact recipe prefix. Account for every new merge or representation change. Publish the body only after `E_out < tau` is proved |
+
+Intermediate stage objects must carry scoped certificates and unresolved proof obligations explicitly. A reusable stage API must not expose such an object as a certified body. Check any available composed bound at each stage and stop before returning an over-limit answer. Check again when closing the result. If a stage cannot bound its downstream effect yet, it may retain alternatives for later proof, but may not irrevocably discard one and publish it as certified.
+
+Recipe evaluation follows the same rule at every body-producing node. Exact rigid motions preserve `E`; a certified uniform scale multiplies it by the absolute scale. Other transformations and features require their own transfer proof. Reusing a body in two operands shares evidence but does not remove its influence through either operand position. For an additive transfer proof, sum both contributions unless a joint proof establishes their dependence. Deduplicate proof identity, never numeric bounds or reason strings. Exact identities such as `A subtract A = empty` may discharge inherited error for that output while retaining the audit record. Separate equal-looking bodies require an equality proof before applying such identities.
+
+There is no per-operation reset and no fixed allocation of 1 nm among stages. A chain with successive certified displacements of `0.4 nm` and `0.4 nm` can have `E = 0.8 nm`; another `0.2 nm` reaches the limit and fails the strict test. Cancellation in the displacement may reduce that bound only if proved. Sharing a subexpression in a recipe must not allow a later operation to overlook its earlier error.
+
+### Refusals and publication
+
+Reserve these stable codes in piece 1 so all consumers report the same failed invariant. The implementation entry must identify the producing piece, recipe step and boolean stage where applicable.
+
+| Code | Trigger |
+| --- | --- |
+| `numbers.geometric-gap-unproven` | A needed local conversion, transfer theorem, valid representation, complete scope or whole-result certificate is missing or cannot be proved within the assigned work allowance |
+| `numbers.geometric-gap-exceeded` | The best certified local substitution gap or whole-result upper bound available for acceptance is greater than or equal to `tau` |
+
+The second code means the available proof cannot meet the cap; it does not claim that the true error exceeds 1 nm. Refine or take an exact branch within the assigned deterministic allowance if possible. If neither succeeds, return the specific refusal and no successful body, property hand-off or export. Never clamp the bound, increase the geometric cap, silently drop marks or label a bounded coincidence as `ProvenCoincident`. These are unfinished-kernel refusals under PRD section 3.2, not proof of impossible input. Existing domain and coverage refusals remain more specific when they occur before a bounded candidate exists.
+
+The certificate is independent of the diagnostic log. Every piece must reject a legacy marked input without sufficient evidence, preserve certificates through passthrough paths, and validate imported or deserialised evidence before trusting it. A producer cannot self-certify merely by constructing a public mark. Final publication checks the whole certificate, including any representation change after the last boolean.
+
+### Measurements, STEP and display
+
+Piece 6 must state whether an enclosure describes `B` or the ideal recipe solid `R`. Shared mass properties must enclose `R`. Numerical quadrature and rounding error for `B` add to certified geometric uncertainty, not to the model's displacement ledger. From the signed-distance certificate, the symmetric difference of `B` and `R` lies within the `E`-tube of `B`'s boundary. A certified upper volume `V_tube` for that tube therefore bounds `|volume(B)-volume(R)|`. Use a complete tube bound, not the unsupported formula `area*E` near corners or contacts. Bounds on coordinate magnitude in the tube also bound first-moment differences. Divide moment intervals by a volume interval proved strictly positive to enclose the centroid. If zero cannot be excluded, preserve `measure.centroid-not-separated`.
+
+A small distance bound alone gives no useful general surface-area bound: arbitrarily corrugated surfaces can be close and have very different areas. Area needs certified patch correspondence and Jacobian bounds, or direct integration over the exact recipe definition. If unavailable, refuse that property with `numbers.geometric-gap-unproven`; do not widen it by an invented multiple of `E`. A property enclosure that misses requested accuracy remains an unfinished accuracy failure even when its geometry certificate passes. Reporting such a diagnostic interval must not count as satisfying the hand-off.
+
+Piece 7 must certify the solid described by the emitted numbers, fitted curves, analytic surfaces and trims. A local curve-fit bound alone is insufficient. For certified export displacement `E_export` relative to `B`, require
+
+```text
+E_file = E_model + E_export < tau
+```
+
+Include decimal rounding, fitted branches, endpoints, surface parameters, edge/face compatibility and any added seams in `E_export`. Maxima may combine independent covered entities only with a whole-solid correspondence proof; consecutive fitting and rounding add unless a joint bound is proved. An exact model does not give the file a free additional 1 nm. Requested export accuracy can be stricter; it cannot relax this cap. Build and check the certificate before publishing the file. Refusal must not leave a success report or a partial artifact presented as usable. Future export accuracy levels and seam support need their own exchange decisions.
+
+Display meshing retains a separate mesh-to-`B` bound `E_mesh`, including position rounding and complete triangle coverage. Its bound relative to `R` is at most `E_model + E_mesh` under the certified correspondence. Display tolerance may be much larger than 1 nm and must not become model error or evidence for a fine hand-off. This decision does not change the CLI's fields, formats, `exact` flag, legacy mark order or `max_deviation` semantics. Exposing whole-result certificates or stronger export reports through that interface requires a separately reviewed versioned change; no caller may reinterpret the old fields to claim this policy is implemented.
+
+### Field and two-kernel comparison
+
+The field evaluator must retain the same exact recipe revision and mathematical definitions. Its certificate describes its represented regularised solid, independently of B-rep results. A field formula evaluated with enclosing arithmetic can define exact geometry with `E_field = 0`; nonzero evaluation width is query uncertainty, not geometry displacement. Prove that claim for the formula and its domain. A sweep or boolean residual is never a true distance merely because its units are millimetres. The field must supply geometric metric bounds and surviving-trim proofs separately. If it changes geometry through a bounded choice, it owes the same conversion, transfer and publication proofs.
+
+For B-rep and field certificates against the same exact recipe, the triangle inequality gives `D(B, F) <= E_brep + E_field`. A fine hand-off requires this sum strictly below `tau`, or a tighter direct whole-result proof. Two separately passing `0.7 nm` certificates do not establish a sub-nanometre agreement. When comparing the exported file to the field, include `E_export` as well. Exact identities can reduce the total only with proof.
+
+`catallax-compare` must name the target of each comparison. For a query at a mesh sample with unsigned distance enclosure `[l,u]` to the represented field boundary, widening by `E_mesh` gives a local bound against the represented B-rep boundary. To infer distance between the ideal boundaries, also widen by both model certificates:
+
+```text
+e = E_mesh + E_brep + E_field
+local interval = [max(0, l-e), u+e]
+```
+
+Do not widen twice when an input query already encloses distance to the ideal target. Keep an unbounded upper bound unbounded. For a certified whole-domain distance interval `[L,U]` and total threshold `t`, `L > t` proves a discrepancy, `U < t` meets the strict fine threshold, and all other cases remain unresolved. Display comparison keeps its own display threshold and sampled scope. A local upper bound or denser sampling cannot establish whole-result agreement. Fine checks require exhaustive certified coverage, including trimmed faces, missed components, orientation and exact empty results. Origin-set agreement remains a separate obligation; numerical proximity does not prove identity or outward direction.
+
+### Shared algebraic definitions and deterministic work
+
+Implement certificate arithmetic in piece 1 using exact rationals and outward enclosures of shared `Real` expressions. Algebraic dimensions, `RealPoly` coefficients, certified roots and exact poses from the preceding architecture decision supply the definitions and conditioning proofs. Do not fork those representations or rationalise an algebraic frame to simplify the ledger. Keep branch selectors, finite domains and proved positive lower bounds through analytic reduction. A bound on an implicit polynomial requires the same coefficient and domain interpretation in both kernels.
+
+The verification CLI owns allocation, charging, defaults and cancellation semantics for deterministic work budgets. This policy adds proof obligations, not a second budget system. The work owner must account for conversion, transfer and certificate verification as well as the original decision. Exhaustion never enlarges `tau`; it yields a bounded answer only if the required certificate is already established. An interrupted computation cannot publish a partial certificate. No wall-clock observation may select a different geometric branch or certificate. Caches and parallel evaluation must preserve the work owner's deterministic outcomes, including refusal and ordered evidence. Tightening budgets can turn an exact answer into a certified bounded one or a refusal; it cannot justify a wrong answer.
+
+### Observed baseline and evidence
+
+The following are source observations at `b66c5fd73b38eacbe7d2be54de92b8264fa23eac`, not claims that the new policy is enforced. The named tests were inspected for their assertions; this decision does not report a fresh execution of those tests.
+
+| Observed behaviour | Source and existing regression evidence |
+| --- | --- |
+| `Decider` retains the magnitude of its best enclosure on an exhausted defined decision. `NotExact` has a rational bound and reason but no geometric domain or units | [decider.rs](../crates/catallax-numbers/src/decider.rs), exhausted-limit return; [outcome.rs](../crates/catallax-numbers/src/outcome.rs), `NotExact`; [decisions.rs](../crates/catallax-numbers/tests/decisions.rs) |
+| `MarkLog::extend` appends; `worst` takes the maximum per kind. `Answer::is_exact` tests log emptiness | [marks.rs](../crates/catallax-numbers/src/marks.rs); [outcome.rs](../crates/catallax-numbers/src/outcome.rs); [records.rs](../crates/catallax-numbers/tests/records.rs), `marks_worst_by_kind_order_and_answer_mapping` |
+| `GeomStore::side_of` converts implicit residuals with `Surface::distance_bound`. Curve incidence can bound distance to carriers without bounding distance to their intersection; normal agreement retains a value bound | [store.rs](../crates/catallax-shapes/src/store.rs); [surface.rs](../crates/catallax-shapes/src/surface.rs); [uncertainty.rs](../crates/catallax-shapes/tests/uncertainty.rs), `intersection_bound_is_to_both_carriers_not_the_curve` and `normals_keep_value_bound_and_decisions_do_not_record_facts` |
+| Curve/surface hits can mark a retained unresolved component with `Distance`, an unresolved contact as tangent with `Value`, and merged unordered hits with their point distance | [hits.rs](../crates/catallax-intersect/src/hits.rs), `keep_branch` and candidate contact/order handling; [query.rs](../crates/catallax-intersect/src/query.rs), dimension/point/line conversion helpers. These sites need new whole-effect regressions |
+| `Body` stores a mark log. `boolean` appends operation marks then both operand logs; empty paths retain operand marks. The propagation regression injects bounds of hundredths of a millimetre and asserts ordering, not a 1 nm cap | [entity.rs](../crates/catallax-topology/src/entity.rs), `Body`; [lib.rs](../crates/catallax-boolean/src/lib.rs), `boolean`; [sewing.rs](../crates/catallax-boolean/src/sewing.rs), `sew`; [contract.rs](../crates/catallax-boolean/tests/contract.rs), `marks_follow_operation_then_first_then_second_even_with_empty` |
+| Measurement accuracy marks contain property enclosure widths as `Value`; `mass_properties` combines its measurement marks without a whole-model displacement calculation | [lib.rs](../crates/catallax-measure/src/lib.rs), `Accuracy::mark` and `mass_properties`; [tests.rs](../crates/catallax-measure/src/tests.rs), `limited_precision_marks_property_widths_in_order`; [measurement.rs](../crates/catallax-measure/tests/measurement.rs), `body_marks_stay_on_body_and_do_not_inflate_measurement` |
+| Export constructs an exact answer then adds a distance mark only when `max_deviation` exceeds requested curve tolerance. Its public report has no composed recipe/model bound, and input body marks do not become export marks | [export.rs](../crates/catallax-step/src/export.rs), `Exporter::build`; [lib.rs](../crates/catallax-step/src/lib.rs), `StepReport`; [tests.rs](../crates/catallax-step/src/tests.rs), `rounding_deviation_and_scale` and `branch_spline_has_certified_bounds_at_default_tight_and_small_budgets`; [contract.rs](../crates/catallax-step/tests/contract.rs), `body_marks_are_not_export_marks` |
+| The recipe build retains an immutable definition. The CLI separately collects body, measurement and export marks, adds marks when decimal rendering misses measurement/export accuracy, and sets manifest exactness by log emptiness | [evaluate.rs](../crates/catallax-features/src/evaluate.rs), `Built`; [lib.rs](../crates/catallax-cli/src/lib.rs), `evaluate`, `mark_decimal_accuracy` and `mark_entry` |
+| Field queries distinguish true distance, residual and unsigned geometric bounds. Comparison widens forward query distances by mesh error and records inherited mesh marks as unresolved | [lib.rs](../crates/catallax-field/src/lib.rs), `Value`, `DistanceBound`, `Query`; [check.rs](../crates/catallax-compare/src/check.rs); [tests.rs](../crates/catallax-compare/src/tests.rs), `unbounded_boolean_upper_distance_never_agrees` and `removed_coplanar_boolean_zeros_stay_unresolved` |
+
+These observations establish why mark propagation alone is insufficient. They do not imply that every `NotExact` is accepted: observed boolean ordering in [graph.rs](../crates/catallax-boolean/src/graph.rs), `sort_points`, refuses ambiguous decisions, and [arc.rs](../crates/catallax-intersect/src/arc.rs) also converts unresolved decisions into refusals.
+
+### Migration and acceptance order
+
+Land interfaces once on the shared algebraic foundation, then migrate producers before accepting their certificates in consumers. Until an operation has migrated, exact paths may remain available with their construction proof; uncertified marked paths must fail closed. No empty-log heuristic may certify an unaudited producer.
+
+1. **Piece 1:** add certificate and typed evidence definitions, rational cap checking and the two refusal codes. Separate diagnostic marks from proof status. Test strict rational comparisons immediately below, at and above `tau`, unit rejection, invalid/missing evidence, deterministic ordering and shared proof identities. Coordinate work accounting with the verification CLI owner without changing that owner's policy.
+2. **Piece 2:** implement scoped residual conversions for all shared analytic definitions, algebraic poses and finite domains. Prove lower bounds and branch correspondence. Test scaled implicit equations, small radii, huge lever arms, normals near parallel, singular cone/torus locations and translated algebraic frames. Retain the carrier-versus-curve regression and require an additional curve-distance proof before promoting its result.
+3. **Piece 3:** bind certificates to valid bodies and immutable recipe targets, including exact primitives and empty bodies. Enforce topology validity independently of metric closeness. Test forged marks, legacy marked operands, removed components, reversed orientation and multiple touching lumps. Failed construction must not publish a body as successful.
+4. **Piece 4:** certify meeting loci, contact classification, finite trims and branch selection. Exercise the observed `hits.rs` mark sites with exhausted budgets. Test near-tangent sphere/plane contacts, nearly parallel planes, clustered hits with unresolved order, open-conic branch changes and narrow finite traces. A tiny polynomial residual with a large meeting displacement must refuse.
+5. **Piece 5 and recipe evaluation:** compose through all five stages, each operand and every feature node. Add independent exact-reference checks for three-step accumulation below/at/above the cap, repeated operands, shared subrecipes, chained subtraction, almost coincident cuts, thin cavities and a component that vanishes near tangency. Check operation and body certificates agree. Exact fast paths, empty paths and maximal merging must pass the same publication gate.
+6. **Piece 6:** enclose exact-target volume, first moments, centroid and area using model evidence plus numerical integration bounds. Test an analytic offset box with known volume change, thin bodies whose volume interval includes zero, large coordinate offsets and close corrugated patches whose areas differ greatly. Assert intervals enclose independent exact values. A model certificate alone must not license an area or centroid claim.
+7. **Piece 7:** compose export with model error and validate the emitted representation. Test a model using `0.8 nm` plus export rounding/fitting using `0.3 nm`, strict equality at 1 nm, individually safe entities with unsafe consecutive transformations, and decimal unit conversion at extreme scales. Read exported values independently and compare certified whole domains, not just writer-side samples. Ensure refusal publishes no usable partial file.
+
+Migrate field, mesh and comparison alongside their dependencies, then require end-to-end recipes with exact, bounded and refused outcomes. Two individually sub-nanometre kernel bounds whose sum exceeds the cap must remain unresolved for hand-off; a certified tighter comparison may settle them. Display agreement must never stand in for the fine proof. Include a component smaller than the sampling spacing and an unsampled slit, plus missing reverse coverage, removed residual zeros and an unbounded distance upper.
+
+Run the same fixtures across thread counts, cold and warm caches, repeat processes and supported machines under identical deterministic allowances. Compare geometry, bounds, proof identities, refusal codes and evidence order, excluding elapsed time. Use analytic/exact references and independently implemented interval checks for correctness; fuzzed samples supplement rather than replace the proof contracts. Threshold tests must use exact rational nanometres, not binary64 equality. Keep adversarial inputs that refuse as unfinished coverage regressions until repaired.
+
+The reassessment point is a complete chain through pieces 1 to 7 and both kernels that demonstrates exact agreement, certified cumulative error below 1 nm, and refusal at or above the cap. Before declaring this policy enforced, inventory every mark producer and consumer, including passthrough and empty-result paths, and show that none bypasses that chain. This ruling authorises implementation of the certificate contract; it does not declare that milestone complete.
+
 ## The seven pieces
 
 | Piece | Crate | Job | Depends on |
@@ -142,9 +301,9 @@ Every single decision returns `catallax_numbers::Outcome<T>`:
 
 `T` is the strict answer: `StrictSign` (`Negative`, `Positive`), `StrictOrder` (`Less`, `Greater`), `Side` (`Front`, `Back`), `Containment` (`Inside`, `Outside`) and so on. The degenerate answer is never a value of `T`; it is always the `ProvenCoincident` variant. This keeps every caller honest about the degenerate case: the compiler makes it handle it.
 
-Treating `NotExact` as coincident is the single rule that turns an unfinished proof into a bounded, visible tolerance. No caller may instead pick a side from the cached approximation.
+Observed inherited behaviour uses `NotExact` as a bounded, visible tolerance at callers that accept it. Under the composable geometric error decision above, taking that branch requires the scoped geometric and whole-result proofs. No caller may instead pick a side from the cached approximation.
 
-The table describes inherited behaviour, not completion of the new PRD. The required bounded outcome is limited to a proven geometric gap smaller than 1 nm, or 0.000001 mm. Scalar and angle marks need a proven distance interpretation and composition across the result. Enforcing that cap is still open; this publication changes no numerical code or outcome API.
+The table describes observed inherited behaviour, not completion of the new PRD. The composable geometric error decision above defines the required conversion, composition and strict 1 nm cap. Enforcement remains implementation work; this publication changes no numerical code or outcome API.
 
 Only impossible geometry is an acceptable final refusal. Unsupported pairs, ambiguous classifications, exhausted budgets, deadline refusals and missed measurement accuracy are unfinished implementation work. Preserve their honest stable codes until the underlying coverage is repaired.
 
@@ -152,7 +311,7 @@ Only impossible geometry is an acceptable final refusal. Unsupported pairs, ambi
 
 Every operation (an intersection, an imprint, a boolean, a measurement, an export) returns `catallax_numbers::Answered<T>`, which is `Result<Answer<T>, Refusal>`.
 `Answer<T>` holds the value and a `MarkLog`: every `NotExact` met on the way, each turned into a `Mark` with its reason code, its bound and the kind of bound (a distance, an angle, or the raw quantity).
-An answer with an empty mark log is exact. An answer with marks is "marked not exact with proven bounds", and the marks travel with the result: `Body` stores the marks of the operation that produced it, merged with the marks of its operands.
+Observed inherited `Answer::is_exact` treats an empty mark log as exact. Observed marked answers retain local bounds, and `Body` stores the marks of the operation that produced it, merged with the marks of its operands. Under the new policy, exactness and whole-result accuracy require a certificate independently of log emptiness; a marked measurement can still describe exact model geometry.
 The boolean refuses with `BooleanRefusal`, which adds the `Stage` that broke, so failures can be filed by the first stage that broke.
 
 ### Refusal and mark codes

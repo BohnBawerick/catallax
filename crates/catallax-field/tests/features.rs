@@ -99,6 +99,70 @@ fn role_names(set: &BTreeSet<Origin>) -> BTreeSet<String> {
 }
 
 #[test]
+fn narrow_planar_chambers_are_not_missed_by_fixed_coordinate_rays() {
+    let recipe = Recipe::parse(&json!({
+        "format":"catallax-recipe/3", "name":"narrow-chamber",
+        "steps":[
+            {"id":"profile","op":"sketch","plane":pose(),"loops":[[
+                {"kind":"line","id":"lower","to":["1","2"]},
+                {"kind":"line","id":"end","to":["1","2000000000001/1000000000000"]},
+                {"kind":"line","id":"upper","to":["0","0"]}
+            ]]},
+            {"id":"wedge","op":"extrude","profile":"profile","distance":"2"},
+            {"id":"remote","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["10","0","0"]}},
+            {"id":"result","op":"boolean","kind":"union","target":"wedge","tool":"remote"}
+        ],
+        "result":"result"
+    }).to_string()).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    assert_eq!(query(&plan, ["0", "0", "1"]).location, Location::Boundary);
+    assert_eq!(
+        query(&plan, ["1/2", "4000000000001/4000000000000", "1"]).location,
+        Location::Inside
+    );
+    assert_eq!(query(&plan, ["1/2", "1", "1"]).location, Location::Boundary);
+    assert_eq!(
+        query(&plan, ["1/2", "999/1000", "1"]).location,
+        Location::Outside
+    );
+}
+
+#[test]
+fn flush_extrusion_caps_regularise_at_face_interiors_edges_and_corners() {
+    for kind in ["union", "subtract", "intersect"] {
+        let mut upper_pose = pose();
+        upper_pose["translation"] = json!(["0", "0", "2"]);
+        let recipe = Recipe::parse(
+            &json!({
+                "format":"catallax-recipe/3", "name":"flush-extrusions",
+                "steps":[
+                    {"id":"lower_profile","op":"sketch","plane":pose(),"loops":rectangle()},
+                    {"id":"upper_profile","op":"sketch","plane":upper_pose,"loops":rectangle()},
+                    {"id":"lower","op":"extrude","profile":"lower_profile","distance":"2"},
+                    {"id":"upper","op":"extrude","profile":"upper_profile","distance":"2"},
+                    {"id":"result","op":"boolean","kind":kind,"target":"lower","tool":"upper"}
+                ],
+                "result":"result"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let plan = Plan::compile(&recipe).unwrap();
+        for p in [["2", "1", "2"], ["0", "1", "2"], ["0", "0", "2"]] {
+            let expected = match kind {
+                "intersect" => Location::Outside,
+                "union" if p[0] == "2" => Location::Inside,
+                _ => Location::Boundary,
+            };
+            assert_eq!(query(&plan, p).location, expected, "{kind} {p:?}");
+        }
+        if kind != "subtract" {
+            assert!(origins(&plan, ["2", "1", "2"]).is_empty(), "{kind}");
+        }
+    }
+}
+
+#[test]
 fn signed_rectangles_oblique_lines_and_cap_normals() {
     for (distance, z, inside_normal, end_normal) in [
         ("2", "1", [0, 0, -1], [0, 0, 1]),

@@ -1,0 +1,105 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P0 crossing pipes",
+  "description": "mm. Equal outer radii 5, bore radii 3, length 20; centred pipes on z and x. Hollow each before union.",
+  "steps": [
+    {
+      "id": "z-outer",
+      "op": "cylinder",
+      "radius": "5",
+      "height": "20",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "-10"
+        ]
+      }
+    },
+    {
+      "id": "z-bore",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "22",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "-11"
+        ]
+      }
+    },
+    {
+      "id": "z-pipe",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "z-outer",
+      "tool": "z-bore"
+    },
+    {
+      "id": "x-outer",
+      "op": "cylinder",
+      "radius": "5",
+      "height": "20",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "1",
+          "0"
+        ],
+        "translation": [
+          "-10",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "x-bore",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "22",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "1",
+          "0"
+        ],
+        "translation": [
+          "-11",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "x-pipe",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "x-outer",
+      "tool": "x-bore"
+    },
+    {
+      "id": "cross",
+      "op": "boolean",
+      "kind": "union",
+      "target": "z-pipe",
+      "tool": "x-pipe"
+    }
+  ],
+  "result": "cross"
+}

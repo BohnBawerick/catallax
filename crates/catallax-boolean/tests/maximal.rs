@@ -159,6 +159,47 @@ blind_test!(
     }
 );
 
+blind_test!(same_body_set_rules_still_normalise_nonmaximal_operands, {
+    for slit in [false, true] {
+        let mut m = Model::new();
+        let a = split_sphere(&mut m, slit);
+        let before = topology_snapshot(&m, &[a]);
+        for op in [BoolOp::Unite, BoolOp::Intersect] {
+            let answer = boolean(&mut m, a, a, op, &mut Decider::default()).unwrap();
+            check_counts(
+                &m,
+                answer.body,
+                &Counts {
+                    lumps: 1,
+                    shells: 1,
+                    faces: 1,
+                    edges: 0,
+                    rings: 0,
+                    vertices: 0,
+                    surfaces: [0, 0, 1],
+                    curves: [0; 4],
+                },
+            );
+            assert_ne!(a, answer.body);
+            assert_eq!(before, topology_snapshot(&m, &[a]));
+            query(
+                &mut m,
+                answer.body,
+                &p("0", "0", "0"),
+                Location::Inside,
+                &mut Decider::default(),
+            );
+            query(
+                &mut m,
+                answer.body,
+                &p("3", "0", "0"),
+                Location::Outside,
+                &mut Decider::default(),
+            );
+        }
+    }
+});
+
 blind_test!(
     sew_restores_ring_edges_and_merges_degree_two_line_vertices,
     {

@@ -21,6 +21,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be5eb007b7cacc6c660343e96f650fedf4b5a77512399eb952ca6642cf8d13f7"
 
 [[package]]
+name = "catallax-app"
+version = "0.0.0"
+dependencies = [
+ "catallax-features",
+ "catallax-mesh",
+ "catallax-numbers",
+ "catallax-recipe",
+ "catallax-topology",
+ "libm",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "catallax-boolean"
 version = "0.0.0"
 dependencies = [
@@ -38,6 +52,7 @@ dependencies = [
  "catallax-boolean",
  "catallax-compare",
  "catallax-features",
+ "catallax-field",
  "catallax-intersect",
  "catallax-measure",
  "catallax-numbers",

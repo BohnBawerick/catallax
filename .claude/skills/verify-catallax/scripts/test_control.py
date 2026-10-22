@@ -122,6 +122,28 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(report['cases'][0]['response']['manifest']['comparison']['verdict'], 'agree')
         self.assertFalse(list((self.out / 'compare').rglob('answer.step')))
 
+    def test_exported_question_keeps_its_allowance_in_batch_replay(self):
+        question = json.loads((EXAMPLES / 'block.json').read_text())
+        exported = self.out / 'question.json'
+        exported.write_text(json.dumps({'format': 'catallax-question/1', 'source': 'question',
+                                        'problem': question, 'max_work': 0}))
+        result = self.command('run', exported, '--binary', BINARY, '--out', self.out / 'replay')
+        self.assertEqual(result['outcomes'], {'numbers.operation-budget': 1})
+        self.assertFalse(list((self.out / 'replay').rglob('answer.step')))
+
+    def test_scoreboard_reports_unsupported_steps_in_both_kernels(self):
+        targets = self.out / 'targets'
+        targets.mkdir()
+        recipe = json.loads((EXAMPLES / 'recipe.json').read_text())
+        recipe['steps'].append({'id': 'offset', 'op': 'offset', 'body': 'box', 'distance': '1'})
+        recipe['result'] = 'offset'
+        (targets / 'part.json').write_text(json.dumps(recipe))
+        result = self.command('parts', targets, '--binary', BINARY, '--out', self.out / 'scoreboard')
+        case = result['cases'][0]
+        self.assertEqual(case['recipe']['manifest']['refusal']['code'], 'features.unsupported-operation')
+        self.assertEqual(case['field']['manifest']['refusal']['code'], 'field.unsupported-operation')
+        self.assertEqual(case['compare']['manifest']['comparison']['verdict'], 'unresolved')
+        self.assertEqual(case['step_check']['code'], 'step.no-export')
 
 if __name__ == '__main__':
     unittest.main()

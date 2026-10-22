@@ -283,19 +283,32 @@ fn cancellation_at_publication_discards_a_complete_computation() {
 }
 
 #[test]
-fn removed_coplanar_boolean_zeros_stay_unresolved() {
-    let report = check(&recipe(vec![
-        block("a", "2", "0"),
-        block("b", "2", "1"),
-        json!({"id":"result","op":"boolean","kind":"subtract","target":"a","tool":"b"}),
-    ]));
-    assert_eq!(report.verdict, Verdict::Unresolved);
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|f| f.pass == Pass::Reverse && matches!(f.reason, Reason::Unresolved(_)))
+fn coplanar_boolean_supports_agree_without_unresolved_observations() {
+    for kind in ["union", "subtract", "intersect"] {
+        for x in ["1", "2"] {
+            let report = check(&recipe(vec![
+                block("a", "2", "0"),
+                block("b", "2", x),
+                json!({"id":"result","op":"boolean","kind":kind,"target":"a","tool":"b"}),
+            ]));
+            assert_eq!(report.verdict, Verdict::Agree, "{kind} x={x}: {report:?}");
+            assert!(report.findings.is_empty(), "{kind} x={x}: {report:?}");
+        }
+    }
+}
+
+#[test]
+fn joined_blocks_remove_the_meeting_plane_without_unresolved_observations() {
+    let report = check_with_options(
+        &recipe(vec![
+            json!({"id":"a","op":"block","size":["20","10","5"],"pose":pose("0")}),
+            json!({"id":"b","op":"block","size":["5","10","5"],"pose":pose("20")}),
+            json!({"id":"result","op":"boolean","kind":"union","target":"a","tool":"b"}),
+        ]),
+        &Options::default(),
     );
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+    assert!(report.findings.is_empty(), "{report:?}");
 }
 
 #[test]
@@ -320,14 +333,16 @@ fn certified_empty_results_and_empty_nonempty_mismatches() {
 }
 
 #[test]
-fn repeated_body_operand_is_reported_without_entering_the_kernel_assertion() {
-    let report = check(&recipe(vec![
-        block("a", "2", "0"),
-        json!({"id":"result","op":"boolean","kind":"subtract","target":"a","tool":"a"}),
-    ]));
-    assert_eq!(report.verdict, Verdict::Unresolved);
-    assert_eq!(report.not_comparable[0].step.as_str(), "result");
-    assert_eq!(report.not_comparable[0].operation, "boolean");
+fn repeated_body_operands_reach_the_set_rules() {
+    for kind in ["union", "subtract", "intersect"] {
+        let report = check(&recipe(vec![
+            block("a", "2", "0"),
+            json!({"id":"result","op":"boolean","kind":kind,"target":"a","tool":"a"}),
+        ]));
+        assert_eq!(report.verdict, Verdict::Agree, "{kind}: {report:?}");
+        assert!(report.findings.is_empty(), "{kind}: {report:?}");
+        assert!(report.not_comparable.is_empty(), "{kind}: {report:?}");
+    }
 }
 
 #[test]

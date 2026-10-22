@@ -164,22 +164,104 @@ impl From<io::Error> for Failure {
     }
 }
 
+/// A question body, before measurement, topology summary or STEP export.
+/// The model owns its operands and intermediate bodies as well as the result.
+pub struct BuiltQuestion {
+    /// Geometry and topology produced by the question.
+    pub model: Model,
+    /// The requested result in `model`.
+    pub body: BodyId,
+    /// Construction marks only; measurement never changes these.
+    pub marks: Vec<MarkEntry>,
+    /// Boolean work recorded in question order.
+    pub per_step: Vec<StepStats>,
+}
+
+/// A construction refusal, with its boolean step and stage when applicable.
+#[derive(Debug)]
+pub struct BuildError {
+    /// The kernel refusal.
+    pub refusal: Refusal,
+    /// Failing boolean step, or `None` for operand construction.
+    pub step: Option<String>,
+    /// Failing boolean stage, when known.
+    pub stage: Option<String>,
+}
+
+impl std::fmt::Display for BuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(step) = &self.step {
+            write!(f, "step {step}: ")?;
+        }
+        write!(f, "{}: {}", self.refusal.code, self.refusal.detail)
+    }
+}
+
+impl std::error::Error for BuildError {}
+
+impl From<Refusal> for BuildError {
+    fn from(refusal: Refusal) -> Self {
+        Self {
+            refusal,
+            step: None,
+            stage: None,
+        }
+    }
+}
+
+impl From<BuildError> for Failure {
+    fn from(error: BuildError) -> Self {
+        Self::Refusal(error.refusal, error.step, error.stage)
+    }
+}
+
+/// Builds a parsed question without measuring or exporting it.
+///
+/// `question.measure`, `question.export` and `question.limits` are output-command
+/// settings, not construction work. The caller controls `dec` and its deadline.
+/// Request proven properties later with `catallax_measure::mass_properties`,
+/// `volume` or `area`, passing the returned model and body.
+pub fn build_question(question: &Question, dec: &mut Decider) -> Result<BuiltQuestion, BuildError> {
+    let mut model = Model::new();
+    let mut per_step = Vec::new();
+    let built = build_into(question, &mut model, dec, &mut per_step)?;
+    Ok(BuiltQuestion {
+        model,
+        body: built.body,
+        marks: built.marks,
+        per_step,
+    })
+}
+
 struct Built {
     body: BodyId,
     marks: Vec<MarkEntry>,
 }
 
-fn evaluate(
+fn build_into(
     question: &Question,
-    out_dir: &Path,
     model: &mut Model,
     dec: &mut Decider,
-    manifest: &mut Manifest,
-    extended: bool,
-) -> Result<(), Failure> {
+    per_step: &mut Vec<StepStats>,
+) -> Result<Built, BuildError> {
     let mut bodies = BTreeMap::new();
     for (name, operand) in &question.operands {
-        dec.check_deadline()?;
+        let span = catallax_numbers::OperationSpan::begin(
+            "brep",
+            name,
+            match operand.shape {
+                ShapeSpec::Block { .. } => "block",
+                ShapeSpec::Cylinder { .. } => "cylinder",
+                ShapeSpec::Sphere { .. } => "sphere",
+                ShapeSpec::Cone { .. } => "cone",
+                ShapeSpec::Torus { .. } => "torus",
+            },
+            dec,
+        );
+        if let Err(refusal) = dec.check_deadline() {
+            span.finish(dec, Some(&refusal), None);
+            return Err(refusal.into());
+        }
         let pose = &operand.pose;
         let body = match &operand.shape {
             ShapeSpec::Block { size } => catallax_topology::block(model, size.clone(), pose),
@@ -201,7 +283,13 @@ fn evaluate(
             ShapeSpec::Torus { major, minor } => {
                 catallax_topology::torus(model, major.clone(), minor.clone(), pose)
             }
-        }?;
+        };
+        span.finish(
+            dec,
+            body.as_ref().err(),
+            body.as_ref().ok().map(|id| &model.body(*id).marks),
+        );
+        let body = body?;
         let marks = model
             .body(body)
             .marks
@@ -211,9 +299,25 @@ fn evaluate(
         bodies.insert(name.as_str(), Built { body, marks });
     }
     for step in &question.steps {
-        dec.check_deadline().map_err(|refusal| {
-            Failure::Refusal(refusal, Some(step.id.clone()), Some("intersect".into()))
-        })?;
+        let span = catallax_numbers::OperationSpan::begin(
+            "brep",
+            &step.id,
+            match step.op {
+                catallax_boolean::BoolOp::Unite => "union",
+                catallax_boolean::BoolOp::Intersect => "intersect",
+                catallax_boolean::BoolOp::Subtract => "subtract",
+                _ => "unknown",
+            },
+            dec,
+        );
+        if let Err(refusal) = dec.check_deadline() {
+            span.finish(dec, Some(&refusal), None);
+            return Err(BuildError {
+                refusal,
+                step: Some(step.id.clone()),
+                stage: Some("intersect".into()),
+            });
+        }
         let a = &bodies[step.args[0].as_str()];
         let b = &bodies[step.args[1].as_str()];
         if a.body == b.body {
@@ -227,30 +331,34 @@ fn evaluate(
                 _ => panic!("unknown boolean operation"),
             };
             let marks = a.marks.clone();
-            manifest.stats.per_step.push(StepStats {
+            per_step.push(StepStats {
                 id: step.id.clone(),
                 wall_ms: 0,
                 decisions: 0,
                 not_exact: 0,
             });
+            span.finish(dec, None, Some(&model.body(body).marks));
             bodies.insert(step.id.as_str(), Built { body, marks });
             continue;
         }
         let before = dec.stats().clone();
         let start = Instant::now();
         let result = catallax_boolean::boolean(model, a.body, b.body, step.op, dec);
-        manifest.stats.per_step.push(StepStats {
+        span.finish(
+            dec,
+            result.as_ref().err().map(|error| &error.refusal),
+            result.as_ref().ok().map(|answer| &answer.marks),
+        );
+        per_step.push(StepStats {
             id: step.id.clone(),
             wall_ms: milliseconds(start.elapsed()),
             decisions: dec.stats().decisions - before.decisions,
             not_exact: dec.stats().not_exact - before.not_exact,
         });
-        let answer = result.map_err(|error| {
-            Failure::Refusal(
-                error.refusal,
-                Some(step.id.clone()),
-                Some(stage_name(error.stage).into()),
-            )
+        let answer = result.map_err(|error| BuildError {
+            refusal: error.refusal,
+            step: Some(step.id.clone()),
+            stage: Some(stage_name(error.stage).into()),
         })?;
         let added = answer
             .marks
@@ -273,57 +381,86 @@ fn evaluate(
             },
         );
     }
-    let built = &bodies[question.result.as_str()];
+    Ok(bodies
+        .remove(question.result.as_str())
+        .expect("parsed result exists"))
+}
+
+fn evaluate(
+    question: &Question,
+    out_dir: &Path,
+    model: &mut Model,
+    dec: &mut Decider,
+    manifest: &mut Manifest,
+    extended: bool,
+) -> Result<(), Failure> {
+    let built = build_into(question, model, dec, &mut manifest.stats.per_step)?;
     manifest.marks.clone_from(&built.marks);
     let request = &question.measure;
-    let mut properties = Properties {
-        volume: None,
-        area: None,
-        centroid: None,
-    };
-    if request.centroid {
-        let answer = catallax_measure::mass_properties(model, built.body, &request.accuracy, dec)?;
-        manifest
-            .marks
-            .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));
-        if request.volume {
-            properties.volume = Some(bound(&answer.value.volume, &request.accuracy));
-        }
-        if request.area {
-            properties.area = Some(bound(&answer.value.area, &request.accuracy));
-        }
-        properties.centroid = Some(answer.value.centroid.as_ref().map(|values| {
-            values
-                .each_ref()
-                .map(|value| bound(value, &request.accuracy))
-        }));
-    } else {
-        if request.volume {
-            let answer = catallax_measure::volume(model, built.body, &request.accuracy, dec)?;
+    let span = catallax_numbers::OperationSpan::begin("brep", &question.result, "measure", dec);
+    let measured = (|| -> Result<Properties, Refusal> {
+        let mut properties = Properties {
+            volume: None,
+            area: None,
+            centroid: None,
+        };
+        if request.centroid {
+            let answer =
+                catallax_measure::mass_properties(model, built.body, &request.accuracy, dec)?;
             manifest
                 .marks
                 .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));
-            properties.volume = Some(bound(&answer.value, &request.accuracy));
+            if request.volume {
+                properties.volume = Some(bound(&answer.value.volume, &request.accuracy));
+            }
+            if request.area {
+                properties.area = Some(bound(&answer.value.area, &request.accuracy));
+            }
+            properties.centroid = Some(answer.value.centroid.as_ref().map(|values| {
+                values
+                    .each_ref()
+                    .map(|value| bound(value, &request.accuracy))
+            }));
+        } else {
+            if request.volume {
+                let answer = catallax_measure::volume(model, built.body, &request.accuracy, dec)?;
+                manifest
+                    .marks
+                    .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));
+                properties.volume = Some(bound(&answer.value, &request.accuracy));
+            }
+            if request.area {
+                let answer = catallax_measure::area(model, built.body, &request.accuracy, dec)?;
+                manifest
+                    .marks
+                    .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));
+                properties.area = Some(bound(&answer.value, &request.accuracy));
+            }
         }
-        if request.area {
-            let answer = catallax_measure::area(model, built.body, &request.accuracy, dec)?;
-            manifest
-                .marks
-                .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));
-            properties.area = Some(bound(&answer.value, &request.accuracy));
-        }
-    }
-    mark_decimal_accuracy(&properties, &request.accuracy, &mut manifest.marks);
-    let summary = result_summary(model, built.body, dec, extended)?;
+        mark_decimal_accuracy(&properties, &request.accuracy, &mut manifest.marks);
+        Ok(properties)
+    })();
+    span.finish(dec, measured.as_ref().err(), None);
+    let properties = measured?;
+    let span = catallax_numbers::OperationSpan::begin("brep", &question.result, "summarize", dec);
+    let summary = result_summary(model, built.body, dec, extended);
+    span.finish(dec, summary.as_ref().err(), None);
+    let summary = summary?;
     if question.export.step && model.body(built.body).kind != BodyKind::Empty {
         let path = out_dir.join("answer.step");
         let mut file = File::create(&path)?;
+        let span = catallax_numbers::OperationSpan::begin("brep", &question.result, "step", dec);
         let exported = catallax_step::write_step(
             model,
             &[built.body],
             &question.export.options,
             dec,
             &mut file,
+        );
+        span.finish(
+            dec,
+            exported.as_ref().err(),
+            exported.as_ref().ok().map(|answer| &answer.marks),
         );
         match exported {
             Ok(answer) => {

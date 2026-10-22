@@ -1,0 +1,53 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P0 seam",
+  "description": "mm. Radius-5 height-10 cylinders. Second translation (4, 0, 0); seam uses exact 3:4 rational z-axis rotation; near-miss gap 0.0000001 mm.",
+  "steps": [
+    {
+      "id": "a",
+      "op": "cylinder",
+      "radius": "5",
+      "height": "10",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "b",
+      "op": "cylinder",
+      "radius": "5",
+      "height": "10",
+      "pose": {
+        "rotation": [
+          "3",
+          "0",
+          "0",
+          "4"
+        ],
+        "translation": [
+          "4",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "a",
+      "tool": "b"
+    }
+  ],
+  "result": "joined"
+}

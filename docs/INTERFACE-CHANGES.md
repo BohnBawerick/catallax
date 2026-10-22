@@ -623,3 +623,23 @@ Change: an exact, nonsingular intersection of bounded operands without void shel
 Why: tiny, rigidly placed cylinder/sphere intersections exhausted root-isolation work while rediscovering a shell role already implied by the operation and input topology.
 Migration: selected face senses and topology construction are unchanged. Marked classifications, singular contacts and void-bearing operands retain geometric shell certification. No public signature, coefficient domain, default allowance or deadline changes. The complete 456-Boolean default scale/placement family passes with all original topology and material witnesses, and runs normally again.
 
+## 2026-10-22: coplanar booleans and same-body set rules
+
+Pieces: boolean engine, field and two-kernel comparison
+Change: the boolean engine accepts the same body as both operands. Subtraction returns empty; union and intersection normalise the retained material through sew. The field classifies complete local plane arrangements, including cancelled common supports, edges and corners. Opposite coincident primitive halfspaces certify empty intersections during compilation. Comparison no longer excludes repeated operands.
+Why: flush unions and coplanar subtraction left removed field supports unresolved, and recipe subtraction from the same body reached a distinct-body assertion.
+Migration: no format or public signature changes. Empty identities still have no boundary samples; separating halfspaces now supply another exact emptiness proof. General curved degeneracies and unbounded Boolean upper distances can remain unresolved. The legacy question exchange is unchanged.
+
+## 2026-10-22: question construction without measurement
+
+Pieces: CLI library, application callers, measurement
+Change: `catallax_cli::build_question(&Question, &mut Decider)` returns a `BuiltQuestion` with its owning `Model`, result `body`, construction `marks` and boolean `per_step` statistics. It performs no property integration, topology summary or export. `BuildError` retains the refusal and optional boolean step and stage.
+Why: an application needs a usable body before requesting proven volume, area or centroid. A later measurement refusal must not discard that body.
+Migration: library consumers that need a body use `build_question`, then call `catallax_measure::volume`, `area` or `mass_properties` on demand. Recipe applications keep using the already unmeasured `catallax_features::evaluate` path. The legacy commands, answer functions, verification defaults, requested enclosures and STEP contract are unchanged. Verification questions can continue opting out with an empty `measure.properties` list.
+
+## 2026-10-22: SolidDraft conversion and application build entry
+
+Pieces: recipe, features, mesh, application
+Change: new `catallax-app` crate exposes `soliddraft::convert`, `build` and `build_soliddraft`. Results carry the exact `Built`, marked display mesh with face and edge picking handles, complete face-origin sets and optional persistent edge/vertex names. SolidDraft conversion returns the original-tag to canonical-step table. Typed errors separate invalid source, not-yet conversion or operations, step-local build refusals, topology faults and display refusals; `Error::code()` returns the stable code. No legacy CLI or exchange format changes.
+Why: SolidDraft needs one entry from recipes to named, displayable bodies without inventing topology identities or taking mesh geometry as the model. Fillet, chamfer, shell and unresolved conversion constructions remain explicit not-yet results.
+Migration: SolidDraft's backend consumes this entry in its own repository. Map returned handles explicitly to backend ids, preserve merged origin sets, and persist names rather than handle indices. `docs/RECIPE.md` section 6.3 describes the output contract and current conversion limits. Recipe booleans also apply exact repeated-operand set identities before invoking the distinct-operand intersection graph, so a body combined with itself no longer panics.

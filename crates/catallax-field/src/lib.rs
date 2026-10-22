@@ -11,6 +11,7 @@
 mod features;
 mod geometry;
 mod metric;
+mod planar;
 mod profile;
 mod samples;
 mod support;
@@ -159,6 +160,7 @@ pub struct Workspace {
     locations: Vec<Location>,
     rays: Vec<Location>,
     active: Vec<usize>,
+    planes: Vec<Vector3>,
 }
 
 /// Reusable batch storage. Results always have the input points' order.
@@ -204,65 +206,73 @@ impl Plan {
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
         for step in &recipe.steps {
-            let node = match &step.op {
-                Operation::Sketch { plane, loops } => {
-                    profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
-                    continue;
-                }
-                Operation::Boolean { kind, target, tool } => {
-                    plan.boolean(*kind, steps[target], steps[tool])
-                }
-                Operation::Extrude {
-                    profile,
-                    distance,
-                    direction,
-                } => {
-                    let built = features::Feature::extrude(
-                        &profiles[profile],
-                        &step.id,
-                        Some(distance.value()),
-                        direction.as_ref(),
-                        false,
-                        dec,
-                    )?;
-                    plan.feature(built, dec)?
-                }
-                Operation::ExtrudeThrough {
-                    target,
-                    profile,
-                    direction,
-                } => {
-                    let built = features::Feature::extrude(
-                        &profiles[profile],
-                        &step.id,
-                        None,
-                        direction.as_ref(),
-                        steps[target] == 0,
-                        dec,
-                    )?;
-                    let tool = plan.feature(built, dec)?;
-                    plan.boolean(BooleanKind::Subtract, steps[target], tool)
-                }
-                Operation::Revolve {
-                    profile,
-                    axis,
-                    angle,
-                } => {
-                    let built = features::Feature::revolve(
-                        &profiles[profile],
-                        &step.id,
+            let span =
+                catallax_numbers::OperationSpan::begin("field", &step.id, step.op.name(), dec);
+            let result = (|| -> Result<Option<usize>, Refusal> {
+                let node = match &step.op {
+                    Operation::Sketch { plane, loops } => {
+                        profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
+                        return Ok(None);
+                    }
+                    Operation::Boolean { kind, target, tool } => {
+                        plan.boolean(*kind, steps[target], steps[tool], dec)?
+                    }
+                    Operation::Extrude {
+                        profile,
+                        distance,
+                        direction,
+                    } => {
+                        let built = features::Feature::extrude(
+                            &profiles[profile],
+                            &step.id,
+                            Some(distance.value()),
+                            direction.as_ref(),
+                            false,
+                            dec,
+                        )?;
+                        plan.feature(built, dec)?
+                    }
+                    Operation::ExtrudeThrough {
+                        target,
+                        profile,
+                        direction,
+                    } => {
+                        let built = features::Feature::extrude(
+                            &profiles[profile],
+                            &step.id,
+                            None,
+                            direction.as_ref(),
+                            steps[target] == 0,
+                            dec,
+                        )?;
+                        let tool = plan.feature(built, dec)?;
+                        plan.boolean(BooleanKind::Subtract, steps[target], tool, dec)?
+                    }
+                    Operation::Revolve {
+                        profile,
                         axis,
-                        angle.value(),
-                        dec,
-                    )?;
-                    plan.feature(built, dec)?
-                }
-                _ => {
-                    let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
-                    plan.leaf(leaf, faces, dec)?
-                }
-            };
-            steps.insert(step.id.clone(), node);
+                        angle,
+                    } => {
+                        let built = features::Feature::revolve(
+                            &profiles[profile],
+                            &step.id,
+                            axis,
+                            angle.value(),
+                            dec,
+                        )?;
+                        plan.feature(built, dec)?
+                    }
+                    _ => {
+                        let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
+                        plan.leaf(leaf, faces, dec)?
+                    }
+                };
+                Ok(Some(node))
+            })();
+            span.finish(dec, result.as_ref().err(), None);
+            if let Some(node) = result? {
+                steps.insert(step.id.clone(), node);
+            }
         }
         plan.root = steps[&recipe.result];
         plan.compact();
@@ -327,9 +337,23 @@ impl Plan {
         Ok(result)
     }
 
-    fn boolean(&mut self, kind: BooleanKind, a: usize, b: usize) -> usize {
+    fn boolean(
+        &mut self,
+        kind: BooleanKind,
+        a: usize,
+        b: usize,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
         use BooleanKind::*;
-        match kind {
+        if kind == Intersect
+            && a != b
+            && let (Instruction::Leaf(i), Instruction::Leaf(j)) =
+                (self.instructions[a], self.instructions[b])
+            && self.leaves[i].separated_by_plane(&self.leaves[j], dec)?
+        {
+            return Ok(0);
+        }
+        Ok(match kind {
             Union if a == b || b == 0 => a,
             Union if a == 0 => b,
             Intersect if a == 0 || b == 0 => 0,
@@ -340,7 +364,7 @@ impl Plan {
                 self.instructions.push(Instruction::Boolean { kind, a, b });
                 self.instructions.len() - 1
             }
-        }
+        })
     }
 
     fn compact(&mut self) {
@@ -381,7 +405,7 @@ impl Plan {
         self.instructions = tape;
     }
 
-    /// Whether exact expression identities proved that the result is empty.
+    /// Whether expression identities or separating primitive halfspaces proved emptiness.
     /// `false` makes no non-emptiness claim for general Boolean expressions.
     pub fn is_proven_empty(&self) -> bool {
         self.root == 0
@@ -507,10 +531,12 @@ impl Plan {
                 storage.active.push(id);
             }
         }
-        if location == Location::Indeterminate
-            && self.boundary_witness(&coordinates, storage, dec)?
-        {
-            location = Location::Boundary;
+        if location == Location::Indeterminate {
+            if let Some(proven) = self.planar_location(&coordinates, storage, dec)? {
+                location = proven;
+            } else if self.boundary_witness(&coordinates, storage, dec)? {
+                location = Location::Boundary;
+            }
         }
         let direction = if location == Location::Boundary {
             self.direction(&coordinates, storage, dec)?
@@ -557,6 +583,36 @@ impl Plan {
             storage.push(location);
         }
         Ok(storage[self.root])
+    }
+
+    fn planar_location(
+        &self,
+        p: &[Rational; 3],
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<Option<Location>, Refusal> {
+        storage.planes.clear();
+        for (slot, instruction) in self.instructions.iter().enumerate() {
+            if let Instruction::Leaf(i) = *instruction {
+                match storage.locations[slot] {
+                    Location::Boundary => {
+                        if !self.leaves[i].planes_at(p, &mut storage.planes, dec)? {
+                            return Ok(None);
+                        }
+                    }
+                    Location::Indeterminate => return Ok(None),
+                    _ => (),
+                }
+            }
+        }
+        // Most genuine corners have cheap transverse witnesses. Exhaustive
+        // plane cells are needed only when that search cannot prove boundary.
+        if storage.planes.len() > 1 && self.boundary_witness(p, storage, dec)? {
+            return Ok(Some(Location::Boundary));
+        }
+        planar::classify(&storage.planes, dec, |n, dec| {
+            self.ray(p, n, &mut storage.rays, dec)
+        })
     }
 
     fn boundary_witness(

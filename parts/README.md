@@ -1,0 +1,37 @@
+# Target parts
+
+These are `catallax-recipe/3` inputs for the roadmap's P0–P5 scoreboard. Dimensions are millimetres, exact decimal or rational strings. P0 is eight separate recipes so an early refusal cannot hide another hard-case family. P1–P5 are complete intended recipes, not reduced substitutes for operations the kernel cannot build yet.
+
+| Input | Fixed dimensions and construction |
+| --- | --- |
+| `P0/crossing-pipes.json` | Two perpendicular pipes centred at the origin. Outer radius 5, bore radius 3, length 20. Through-bore tools extend 1 past each end. Hollow each pipe, then unite. |
+| `P0/line-tangent.json` | Radius-5, height-10 z cylinders whose axes are 10 apart. Union at line contact. |
+| `P0/equal-cylinder-sphere.json` | Radius-5 cylinder from z=-10 to 10 and radius-5 sphere at the origin. Union exercises equal radii and tangent contact. |
+| `P0/block-sphere.json` | Block from the origin to 10,10,10; radius-6 sphere at 10,5,5. Union. |
+| `P0/seam.json` | Radius-5, height-10 cylinders separated by 4 in x. The second uses quaternion 3,0,0,4, an exact rational rotation around z that changes its seam. |
+| `P0/near-miss.json` | Same cylinders, separation 10.0000001 in x, a 0.0000001 gap. Same rotated seam. No tolerance-based contact is assumed. |
+| `P0/general-cone.json` | Two frusta, radii 5 to 2 over height 10. Second translation 2,1,1 and quaternion 2,1,1,0. Union. |
+| `P0/general-torus.json` | Two tori, major radius 8 and tube radius 2. Second translation 1,2,1 and quaternion 2,1,1,0. Union. |
+| `P1-bracket.json` | Plate 60×40×5 extruded from a rectangle; flush flange 60×5×25 above z=5. Boss radius 8, height 10, at 30,25,5; through bore radius 4. Four radius-2 bolts at x=10/50, y=12/32. Flange slot spans x=20..40, z=15..21, with radius-3 ends. Eight overlapping drill cuts plus a straight middle cut preserve the rounded slot and exercise the subtraction chain. |
+| `P2-collar.json` | Rectangle spanning radii 6..12 and axial positions 0..12, revolved 360 degrees about y. Both outer circular edges have 1×1 chamfers. |
+| `P3-filleted-boss.json` | Block 40×30×10, boss radius 8 and height 12 at 20,15,10. Concave junction fillet radius 2, then the four convex top block edges radius 1. |
+| `P4-shelled-tray.json` | Centred 40×30×12 block, inward wall thickness 2 and top face open. Intersect with a centred radius-23 cylinder extending from z=-1 to 13 to round its four corners. |
+| `P5-flanged-housing.json` | Stepped profile revolved about y. Inner radius 8, body outer radius 12 and height 30; flange radius 22 and thickness 5. A diameter-4 through cutter with diameter-8, 90-degree countersink is circular-patterned four times at 90 degrees on radius 17. Subtract the patterned cutters, then fillet the flange/body junction with radius 2. |
+
+Stock quaternions are homogeneous and normalized by the existing exact placement code. Recipes keep operation IDs and origin references fixed. Do not rename them to accommodate a kernel failure. Change dimensions only as a reviewed corpus revision, with a new report and an explanation of why the old input was wrong.
+
+## Run the report
+
+Build `catallax-verify`, then run from the repository root:
+
+```sh
+python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py parts parts \
+  --binary target/release/catallax-verify --out /tmp/catallax-parts \
+  --max-work 1000000 --occt-python /tmp/occt/bin/python --json
+```
+
+The optional OpenCASCADE checker runs in a scratch Python environment with `cadquery-ocp`, not in the kernel. Without a binding, each relevant check reports `step.binding-unavailable`. The [exchange contract](../docs/VERIFY-INTERFACE.md#target-part-scoreboard) defines the report and its coverage limits. The workflow runs on `main` and retains the bundle as `target-parts`.
+
+Every recipe runs through B-rep construction, independent field compilation and sampled comparison, even when one refuses. Unsupported chamfer, fillet, shell and pattern paths remain real operations with typed refusal codes. The report does not skip them or count them as impossible geometry. The fixed checkpoint allowance is deliberately below the exchange's default; a work refusal is coverage at that allowance, not a wall-clock timeout or an invalid part.
+
+A passing STEP check means OpenCASCADE opened the file, found valid topology and matched the face count. Imported volume is recorded, but kernel volume comparison is explicitly unmeasured. Application rebuilds, parameter edits, name retention and whole-result tolerance proofs remain separate roadmap gates. None of these recipes counts as a completed target part solely because this report ran.

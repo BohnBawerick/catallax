@@ -497,17 +497,161 @@ fn optimisation_keeps_all_names_but_never_resurrects_removed_faces() {
 }
 
 #[test]
-fn tangent_regularisation_is_unresolved_rather_than_a_false_boundary() {
+fn coincident_support_classification_proves_both_sides_not_just_sampled_rays() {
+    let mut dec = catallax_numbers::Decider::default();
+    let rotation = catallax_shapes::Rotation::from_quaternion(r(1), r(1), r(2), r(3)).unwrap();
+    let moved = catallax_shapes::Pose::from_rational(rotation, RVector3::new(r(7), r(-3), r(5)));
+    for pose in [catallax_shapes::Pose::identity(), moved] {
+        for (kind, lo, hi) in [
+            (BooleanKind::Union, 0, 3),
+            (BooleanKind::Subtract, 0, 1),
+            (BooleanKind::Intersect, 1, 2),
+        ] {
+            let plan = boolean(block(2, [0, 0, 0]), block(2, [1, 0, 0]), kind)
+                .transformed(&pose, &mut dec)
+                .unwrap();
+            for x in ["-1/2", "1/2", "3/2", "5/2", "7/2"] {
+                let local = fraction([x, "0", "1/2"]);
+                let expected = if local.x > r(lo) && local.x < r(hi) {
+                    Location::Boundary
+                } else {
+                    Location::Outside
+                };
+                let p = pose.apply_rational_point(&local).unwrap();
+                let result = query(&plan, &p);
+                assert_eq!(result.location, expected, "{kind:?} x={x}");
+                for face in plan.faces() {
+                    if face.origin.role
+                        != (Role::Side {
+                            segment: ElementId::new("y_min").unwrap(),
+                            path: None,
+                        })
+                    {
+                        continue;
+                    }
+                    let original_lo = if face.origin.step == id("a") { 0 } else { 1 };
+                    let on_operand = local.x > r(original_lo) && local.x < r(original_lo + 2);
+                    let expected_face = if on_operand && expected == Location::Boundary {
+                        FaceState::OnFace
+                    } else {
+                        FaceState::NotOnFace
+                    };
+                    let selected = plan.select(&face.origin).unwrap();
+                    assert_eq!(
+                        plan.face_query(selected, &p, &mut Workspace::default())
+                            .unwrap()
+                            .state,
+                        expected_face,
+                        "{kind:?} x={x} {:?}",
+                        face.origin,
+                    );
+                }
+            }
+        }
+        for (kind, expected) in [
+            (BooleanKind::Union, Location::Inside),
+            (BooleanKind::Intersect, Location::Outside),
+        ] {
+            let plan = boolean(block(2, [0, 0, 0]), block(2, [2, 0, 0]), kind)
+                .transformed(&pose, &mut dec)
+                .unwrap();
+            let p = pose.apply_rational_point(&point([2, 1, 1])).unwrap();
+            let result = query(&plan, &p);
+            assert_eq!(result.location, expected, "{kind:?}");
+            assert_eq!(result.direction, Direction::Undefined);
+            for face in plan.faces() {
+                let selected = plan.select(&face.origin).unwrap();
+                assert_eq!(
+                    plan.face_query(selected, &p, &mut Workspace::default())
+                        .unwrap()
+                        .state,
+                    FaceState::NotOnFace,
+                    "{kind:?} {:?}",
+                    face.origin,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn removed_contact_planes_are_classified_at_their_edges_and_corners() {
+    for kind in [
+        BooleanKind::Union,
+        BooleanKind::Subtract,
+        BooleanKind::Intersect,
+    ] {
+        let plan = boolean(block(2, [0, 0, 0]), block(2, [2, 0, 0]), kind);
+        for y in 0..=2 {
+            for z in 0..=2 {
+                let expected = match kind {
+                    BooleanKind::Intersect => Location::Outside,
+                    BooleanKind::Union if y == 1 && z == 1 => Location::Inside,
+                    _ => Location::Boundary,
+                };
+                assert_eq!(
+                    query(&plan, &point([2, y, z])).location,
+                    expected,
+                    "{kind:?} y={y} z={z}"
+                );
+            }
+        }
+    }
     let plan = boolean(
         block(2, [0, 0, 0]),
-        block(2, [2, 0, 0]),
-        BooleanKind::Intersect,
+        block(2, [1, 0, 0]),
+        BooleanKind::Subtract,
     );
-    let result = query(&plan, &point([2, 1, 1]));
-    assert_eq!(result.location, Location::Indeterminate);
-    assert_eq!(result.direction, Direction::Undefined);
-    assert!(matches!(result.value, Value::Residual(_)));
-    contains(result.distance.millimetres, &r(0));
+    for p in [["3/2", "0", "0"], ["2", "0", "1"], ["2", "2", "2"]] {
+        assert_eq!(
+            query(&plan, &fraction(p)).location,
+            Location::Outside,
+            "{p:?}"
+        );
+        for face in plan.faces() {
+            assert_eq!(
+                plan.face_query(
+                    plan.select(&face.origin).unwrap(),
+                    &fraction(p),
+                    &mut Workspace::default()
+                )
+                .unwrap()
+                .state,
+                FaceState::NotOnFace,
+                "{p:?} {:?}",
+                face.origin,
+            );
+        }
+    }
+    let pose = catallax_shapes::Pose::from_rational(
+        catallax_shapes::Rotation::from_quaternion(r(1), r(1), r(2), r(3)).unwrap(),
+        RVector3::new(r(7), r(-3), r(5)),
+    );
+    let moved = plan
+        .transformed(&pose, &mut catallax_numbers::Decider::default())
+        .unwrap();
+    for p in [point([2, 0, 1]), point([2, 2, 2])] {
+        assert_eq!(
+            query(&moved, &pose.apply_rational_point(&p).unwrap()).location,
+            Location::Outside,
+        );
+    }
+}
+
+#[test]
+fn a_curved_cusp_is_not_erased_by_outside_ray_samples() {
+    let mut inner = sphere(1);
+    let Operation::Sphere { pose, .. } = &mut inner else {
+        unreachable!()
+    };
+    pose.translation.0[0] = 1.into();
+    let plan = boolean(sphere(2), inner, BooleanKind::Subtract);
+    // The difference has interior approaching the tangent point along curved
+    // paths, although every straight ray from the point is outside.
+    assert!(matches!(
+        query(&plan, &point([2, 0, 0])).location,
+        Location::Boundary | Location::Indeterminate
+    ));
 }
 
 #[test]

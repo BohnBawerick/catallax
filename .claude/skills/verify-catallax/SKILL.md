@@ -9,7 +9,7 @@ Read [the feature map](references/features/README.md), then choose the relevant 
 
 ## Launch
 
-From the repository root, run `cargo build --release -p catallax-cli --bins -j 3`. Use `nice -n 10` on a shared machine. The binary is `target/release/catallax-verify`. The executable driver is `.claude/skills/verify-catallax/scripts/control-catallax.py`; run it with `--help` and a subcommand's `--help` for the complete command reference. Python 3.11 or newer and Linux `taskset` are required for the documented timing workflow.
+From the repository root, run `cargo build --release -p catallax-cli --bins -j 2`. Use `nice -n 10` on a shared machine. The binary is `target/release/catallax-verify`. The executable driver is `.claude/skills/verify-catallax/scripts/control-catallax.py`; run it with `--help` and a subcommand's `--help` for the complete command reference. Python 3.11 or newer and Linux `taskset` are required for the documented timing workflow.
 
 There is no server. `run` starts its own stream workers and closes them when done. Every worker handles several requests without process startup between them. It owns only the processes it starts. Ctrl-C stops those workers; incomplete requests can be resumed. Never share a run output directory between concurrent commands. Cache directories may be shared.
 
@@ -35,6 +35,10 @@ Compare main and candidate builds using `compare "$PROOF/main/run.json" "$PROOF/
 
 For timing use `pair INPUT --baseline BASE_BINARY --candidate CANDIDATE_BINARY --cores CORE --out "$PROOF/pairs" --json`. This does not read caches. It alternates order on one core, with a warmup and three measured pairs by default. Use `legacy` to time the old process-per-question CLI. Record machine load; do not describe a shared machine as idle without evidence.
 
+Each completed request includes `operation_log` and writes `operations.json` plus a portable `question.json`. Replay the latter with `catallax-verify replay QUESTION --out DIR`, or pass it to the driver's `run`. Both preserve its original work allowance. Compare manifests, STEP bytes and work; exclude operation `wall_ms` when comparing logs.
+
+Run `"$DRIVER" parts parts --binary target/release/catallax-verify --out "$PROOF/parts" --max-work 1000000 --json` for the target scoreboard. It runs B-rep, field and sampled comparison independently, including unsupported recipes. For real STEP imports pass `--occt-python` pointing at a scratch environment with `cadquery-ocp`. Inspect every refusal and `step_check`; missing bindings and absent exports are not passing checks. A passing import does not prove volume deviation, application edits or complete target-part acceptance. See `parts/README.md` and the protocol for the recorded dimensions and remaining gates.
+
 ## Evidence
 
 Keep proof outside the repository. Capture the command, doctor output, exit code, `config.json`, `inputs.json`, `run.json`, per-case request/response/manifest/STEP files and matched-pair samples. Check the files themselves, including STEP presence or removal. A response alone does not prove the artifact side effect.
@@ -47,7 +51,7 @@ Run `"$DRIVER" cleanup --out "$PROOF" --dry-run --json`, then `"$DRIVER" cleanup
 
 ## Helpers
 
-`control-catallax.py --help` is the canonical interface. Built-in source adapters cover question/2, recipe/3 and sampled comparison. A trusted custom Python module passed with `--adapter` exports `load(Path)` yielding source/problem objects; it cannot change the kernel's exchange semantics.
+`control-catallax.py --help` is the canonical interface. Built-in source adapters cover question/2, recipe/3, independent field compilation, sampled comparison and portable question/1 replay. A trusted custom Python module passed with `--adapter` exports `load(Path)` yielding source/problem objects; it cannot change the kernel's exchange semantics.
 
 Run `python3 -B -m unittest discover -s .claude/skills/verify-catallax/scripts -p 'test_*.py' -v` after building to verify the driver against real commands. Set `CATALLAX_VERIFY_BINARY` to test a preserved executable.
 

@@ -28,6 +28,39 @@ fn default_work() -> u64 {
     DEFAULT_WORK
 }
 
+/// Portable application-loop question, without artifact paths.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExportedQuestion {
+    /// Must be `catallax-question/1`.
+    pub format: String,
+    /// Verification adapter.
+    pub source: String,
+    /// Complete question or recipe.
+    pub problem: Value,
+    /// Original deterministic allowance.
+    pub max_work: u64,
+}
+
+impl ExportedQuestion {
+    /// Binds the portable question to an owned artifact directory.
+    pub fn request(self, out: PathBuf) -> std::io::Result<Request> {
+        if self.format != "catallax-question/1" {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "expected catallax-question/1",
+            ));
+        }
+        Ok(Request {
+            format: "catallax-request/1".into(),
+            source: self.source,
+            problem: self.problem,
+            out,
+            max_work: self.max_work,
+        })
+    }
+}
+
 fn refused(code: &str, detail: impl ToString) -> Value {
     json!({"format":"catallax-manifest/3", "status":"refused", "exact":false,
         "result":null, "properties":null, "step":null, "marks":[],
@@ -54,8 +87,10 @@ pub fn answer(request: &Request) -> std::io::Result<Value> {
 
 fn answer_isolated(request: &Request) -> std::io::Result<Value> {
     crate::prepare_output(&request.out)?;
-    let (result, work) = with_operation_budget(request.max_work, || {
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluate(request)))
+    let ((result, work), entries) = catallax_numbers::with_operation_log(|| {
+        with_operation_budget(request.max_work, || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluate(request)))
+        })
     });
     let mut manifest = match result {
         Ok(result) => result?,
@@ -75,7 +110,45 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
         crate::prepare_output(&request.out)?;
     }
     manifest["kernel"] = serde_json::to_value(crate::kernel_info())?;
+    let operations: Vec<_> = entries.iter().enumerate().map(|(sequence, entry)| {
+        let decisions = entry.after.as_ref().map(|after| {
+            let before = &entry.before;
+            json!({
+                "total":after.decisions.saturating_sub(before.decisions),
+                "filter":after.filter.saturating_sub(before.filter),
+                "refined":after.refined.saturating_sub(before.refined),
+                "exact":after.exact.saturating_sub(before.exact),
+                "coincident_exact":after.coincident_exact.saturating_sub(before.coincident_exact),
+                "coincident_separation":after.coincident_separation.saturating_sub(before.coincident_separation),
+                "coincident_fact":after.coincident_fact.saturating_sub(before.coincident_fact),
+                "not_exact":after.not_exact.saturating_sub(before.not_exact),
+                "refused":after.refused.saturating_sub(before.refused),
+                "max_bits_high_water":after.max_bits
+            })
+        });
+        let marks: Vec<_> = entry.marks.iter().map(|mark| crate::mark_entry(mark, Some(&entry.id))).collect();
+        json!({"sequence":sequence,"kernel":entry.kernel,"id":entry.id,"operation":entry.operation,
+            "status":if entry.after.is_none() {"interrupted"} else if entry.refusal.is_some() {"refused"} else {"answered"},
+            "decisions":decisions,"marks":marks,"local_tolerances":null,
+            "refusal":entry.refusal.as_ref().map(|r| json!({"code":r.code,"detail":r.detail})),
+            "work":{"before":entry.work_before,"after":entry.work_after,"used":entry.work_after-entry.work_before},
+            "wall_ms":entry.wall_ms})
+    }).collect();
+    let log = json!({"format":"catallax-operation-log/1","status":manifest["status"],
+        "refusal":manifest["refusal"],"marks":manifest["marks"],"operations":operations});
+    fs::write(
+        request.out.join("operations.json"),
+        serde_json::to_vec_pretty(&log)?,
+    )?;
+    fs::write(
+        request.out.join("question.json"),
+        serde_json::to_vec_pretty(&json!({
+            "format":"catallax-question/1","source":request.source,"problem":request.problem,
+            "max_work":request.max_work
+        }))?,
+    )?;
     let response = json!({"format":"catallax-response/1", "manifest":manifest,
+        "operation_log":log,
         "work":{"used":work.used,"limit":request.max_work,"exhausted":work.exhausted},
         "wall_ms":0});
     fs::write(
@@ -107,7 +180,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             value["format"] = json!("catallax-manifest/3");
             Ok(value)
         }
-        "recipe" | "compare" => {
+        "recipe" | "compare" | "field" => {
             let recipe = match catallax_recipe::Recipe::parse(&request.problem.to_string()) {
                 Ok(recipe) => recipe,
                 Err(error) => {
@@ -116,6 +189,19 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                     return Ok(value);
                 }
             };
+            if request.source == "field" {
+                let mut dec = Decider::default();
+                return Ok(
+                    match catallax_field::Plan::compile_checked(&recipe, &mut dec) {
+                        Ok(plan) => {
+                            json!({"format":"catallax-manifest/3","status":"answered","exact":true,
+                        "field":{"faces":plan.faces().len(),"proven_empty":plan.is_proven_empty()},
+                        "marks":[],"refusal":null,"step":null})
+                        }
+                        Err(error) => refused(error.code, error.detail),
+                    },
+                );
+            }
             if request.source == "compare" {
                 let controller = catallax_compare::Controller::default();
                 controller
@@ -161,7 +247,11 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 }
                 Err(error) => return Ok(refused("cli.invalid-recipe", error)),
             };
-            let summary = match crate::result_summary(&built.model, built.result, &mut dec, true) {
+            let span =
+                catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
+            let summary = crate::result_summary(&built.model, built.result, &mut dec, true);
+            span.finish(&dec, summary.as_ref().err(), None);
+            let summary = match summary {
                 Ok(summary) => summary,
                 Err(error) => return Ok(refused(error.code, error.detail)),
             };
@@ -175,13 +265,21 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 .collect();
             if summary.kind != "empty" {
                 let mut file = fs::File::create(request.out.join("answer.step"))?;
-                match catallax_step::write_step(
+                let span =
+                    catallax_numbers::OperationSpan::begin("brep", &recipe.result, "step", &dec);
+                let exported = catallax_step::write_step(
                     &built.model,
                     &[built.result],
                     &Default::default(),
                     &mut dec,
                     &mut file,
-                ) {
+                );
+                span.finish(
+                    &dec,
+                    exported.as_ref().err(),
+                    exported.as_ref().ok().map(|answer| &answer.marks),
+                );
+                match exported {
                     Ok(answer) => {
                         marks.extend(
                             answer
@@ -202,7 +300,10 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             )
         }
         _ => {
-            let mut value = refused("cli.invalid-source", "use question, recipe, or compare");
+            let mut value = refused(
+                "cli.invalid-source",
+                "use question, recipe, field, or compare",
+            );
             value["status"] = json!("invalid-question");
             Ok(value)
         }

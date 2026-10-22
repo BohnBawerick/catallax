@@ -204,65 +204,73 @@ impl Plan {
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
         for step in &recipe.steps {
-            let node = match &step.op {
-                Operation::Sketch { plane, loops } => {
-                    profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
-                    continue;
-                }
-                Operation::Boolean { kind, target, tool } => {
-                    plan.boolean(*kind, steps[target], steps[tool])
-                }
-                Operation::Extrude {
-                    profile,
-                    distance,
-                    direction,
-                } => {
-                    let built = features::Feature::extrude(
-                        &profiles[profile],
-                        &step.id,
-                        Some(distance.value()),
-                        direction.as_ref(),
-                        false,
-                        dec,
-                    )?;
-                    plan.feature(built, dec)?
-                }
-                Operation::ExtrudeThrough {
-                    target,
-                    profile,
-                    direction,
-                } => {
-                    let built = features::Feature::extrude(
-                        &profiles[profile],
-                        &step.id,
-                        None,
-                        direction.as_ref(),
-                        steps[target] == 0,
-                        dec,
-                    )?;
-                    let tool = plan.feature(built, dec)?;
-                    plan.boolean(BooleanKind::Subtract, steps[target], tool)
-                }
-                Operation::Revolve {
-                    profile,
-                    axis,
-                    angle,
-                } => {
-                    let built = features::Feature::revolve(
-                        &profiles[profile],
-                        &step.id,
+            let span =
+                catallax_numbers::OperationSpan::begin("field", &step.id, step.op.name(), dec);
+            let result = (|| -> Result<Option<usize>, Refusal> {
+                let node = match &step.op {
+                    Operation::Sketch { plane, loops } => {
+                        profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
+                        return Ok(None);
+                    }
+                    Operation::Boolean { kind, target, tool } => {
+                        plan.boolean(*kind, steps[target], steps[tool])
+                    }
+                    Operation::Extrude {
+                        profile,
+                        distance,
+                        direction,
+                    } => {
+                        let built = features::Feature::extrude(
+                            &profiles[profile],
+                            &step.id,
+                            Some(distance.value()),
+                            direction.as_ref(),
+                            false,
+                            dec,
+                        )?;
+                        plan.feature(built, dec)?
+                    }
+                    Operation::ExtrudeThrough {
+                        target,
+                        profile,
+                        direction,
+                    } => {
+                        let built = features::Feature::extrude(
+                            &profiles[profile],
+                            &step.id,
+                            None,
+                            direction.as_ref(),
+                            steps[target] == 0,
+                            dec,
+                        )?;
+                        let tool = plan.feature(built, dec)?;
+                        plan.boolean(BooleanKind::Subtract, steps[target], tool)
+                    }
+                    Operation::Revolve {
+                        profile,
                         axis,
-                        angle.value(),
-                        dec,
-                    )?;
-                    plan.feature(built, dec)?
-                }
-                _ => {
-                    let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
-                    plan.leaf(leaf, faces, dec)?
-                }
-            };
-            steps.insert(step.id.clone(), node);
+                        angle,
+                    } => {
+                        let built = features::Feature::revolve(
+                            &profiles[profile],
+                            &step.id,
+                            axis,
+                            angle.value(),
+                            dec,
+                        )?;
+                        plan.feature(built, dec)?
+                    }
+                    _ => {
+                        let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
+                        plan.leaf(leaf, faces, dec)?
+                    }
+                };
+                Ok(Some(node))
+            })();
+            span.finish(dec, result.as_ref().err(), None);
+            if let Some(node) = result? {
+                steps.insert(step.id.clone(), node);
+            }
         }
         plan.root = steps[&recipe.result];
         plan.compact();

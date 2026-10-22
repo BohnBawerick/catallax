@@ -1,0 +1,44 @@
+name: target parts
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+
+jobs:
+  scoreboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p catallax-cli --bin catallax-verify
+      - name: OpenCASCADE scratch environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/occt"
+          "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
+      - name: Build, compare and import target parts
+        run: |
+          python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py parts parts \
+            --binary target/release/catallax-verify --out "$RUNNER_TEMP/parts" \
+            --max-work 1000000 --occt-python "$RUNNER_TEMP/occt/bin/python" --json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: target-parts
+          path: ${{ runner.temp }}/parts
+          if-no-files-found: error

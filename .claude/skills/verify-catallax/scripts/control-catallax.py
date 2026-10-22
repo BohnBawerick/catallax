@@ -27,7 +27,7 @@ signal.signal(signal.SIGINT, interrupt)
 signal.signal(signal.SIGTERM, interrupt)
 
 CONTRACT = 'catallax-request/1'
-TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'compare': 2000}
+TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'field': 1000, 'compare': 2000}
 
 
 def canonical(value):
@@ -75,6 +75,14 @@ def load(paths, source, adapter=None):
                     problems.append({'source': 'question', 'problem': value})
                 elif fmt == 'catallax-recipe/3':
                     problems.append({'source': 'compare' if source == 'compare' else 'recipe', 'problem': value})
+                elif fmt == 'catallax-question/1':
+                    if set(value) != {'format', 'source', 'problem', 'max_work'}:
+                        raise ValueError(f'{file}: invalid exported question fields')
+                    if value['source'] not in ('question', 'recipe', 'field', 'compare'):
+                        raise ValueError(f'{file}: unknown exported question source')
+                    if type(value['max_work']) is not int or not 0 <= value['max_work'] <= 2**64 - 1:
+                        raise ValueError(f'{file}: exported max_work must be an unsigned 64-bit integer')
+                    problems.append({k: value[k] for k in ('source', 'problem', 'max_work')})
                 elif not path.is_dir():
                     raise ValueError(f'{file}: unsupported format {fmt!r}; use --adapter for another source')
     if not problems:
@@ -180,7 +188,7 @@ def run(args):
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     with tempfile.TemporaryDirectory(prefix='.pending-', dir=destination.parent) as scratch:
                         scratch = Path(scratch)
-                        request = {**item, 'format': CONTRACT, 'max_work': args.max_work, 'out': str(scratch)}
+                        request = {'max_work': args.max_work, **item, 'format': CONTRACT, 'out': str(scratch)}
                         atomic(scratch / 'request.json', request)
                         if worker is None:
                             worker = Worker(binary, cores[index % len(cores)] if cores else None, identity)
@@ -314,7 +322,7 @@ def pair(args):
                 for side in ((0, 1) if repeat % 2 == 0 else (1, 0)):
                     dest = out / str(index) / str(repeat) / str(side)
                     dest.mkdir(parents=True, exist_ok=True)
-                    response = workers[side].answer({**item, 'format': CONTRACT, 'max_work': args.max_work, 'out': str(dest)})
+                    response = workers[side].answer({'max_work': args.max_work, **item, 'format': CONTRACT, 'out': str(dest)})
                     atomic(dest / 'response.json', response)
                     row[str(side)] = response['wall_ms']
                     responses[side] = response
@@ -361,6 +369,67 @@ def legacy(args):
     return result
 
 
+def parts(args):
+    root = Path(args.inputs).resolve()
+    files = sorted(root.rglob('*.json'))
+    if not files:
+        raise ValueError('no target recipes found')
+    out = Path(args.out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    identity = file_hash(args.binary)
+    worker = Worker(args.binary, args.core, identity)
+    report = {'format': 'catallax-parts/1', 'binary_sha256': identity,
+              'timing': {'cached': False, 'core': args.core, 'load_average': os.getloadavg(),
+                         'claim': 'shared-machine observations, not quiet-core latency proof'},
+              'max_work': args.max_work, 'cases': []}
+    try:
+        for file in files:
+            problem = json.loads(file.read_text())
+            if problem.get('format') != 'catallax-recipe/3':
+                raise ValueError(f'{file}: target must be catallax-recipe/3')
+            relative = file.relative_to(root).as_posix()
+            case = {'recipe_file': relative, 'sha256': file_hash(file), 'name': problem['name']}
+            for source in ('recipe', 'field', 'compare'):
+                dest = out / 'cases' / relative.removesuffix('.json') / source
+                dest.mkdir(parents=True, exist_ok=True)
+                request = {'format': CONTRACT, 'source': source, 'problem': problem,
+                           'max_work': args.max_work, 'out': str(dest)}
+                atomic(dest / 'request.json', request)
+                response = worker.answer(request)
+                atomic(dest / 'response.json', response)
+                case[source] = response
+            brep = case['recipe']['manifest']
+            step = out / 'cases' / relative.removesuffix('.json') / 'recipe' / 'answer.step'
+            if step.exists() and brep.get('step'):
+                command = [args.occt_python, str(Path(__file__).with_name('check-step.py')),
+                           str(step), str(brep['result']['faces'])]
+                check = subprocess.run(command, capture_output=True, text=True)
+                atomic(step.parent / 'step-check-process.json',
+                       {'exit': check.returncode, 'stdout': check.stdout, 'stderr': check.stderr})
+                if check.returncode:
+                    case['step_check'] = {'status': 'failed', 'code': 'step.check-process'}
+                else:
+                    case['step_check'] = json.loads(check.stdout.splitlines()[-1])
+                case['step_sha256'] = file_hash(step)
+            else:
+                case['step_check'] = {'status': 'not-run', 'code': 'step.no-export',
+                                      'refusal': brep.get('refusal')}
+            # Building in SolidDraft, editing names and volume error transfer are
+            # separate acceptance gates. This report never infers them from samples.
+            case['application_check'] = {'status': 'not-run', 'code': 'parts.application-loop-required'}
+            report['cases'].append(case)
+            atomic(out / 'parts.json', report)
+    finally:
+        worker.close()
+    report['crashes'] = sum(c[s]['manifest'].get('status') in ('internal-error', 'invalid-question')
+                            for c in report['cases'] for s in ('recipe', 'field', 'compare'))
+    report['comparison_disagreements'] = sum(c['compare']['manifest'].get('comparison', {}).get('verdict') == 'disagree'
+                                             for c in report['cases'])
+    report['step_failures'] = sum(c['step_check']['status'] == 'failed' for c in report['cases'])
+    atomic(out / 'parts.json', report)
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, epilog='Examples: doctor --binary target/release/catallax-verify; run INPUT.jsonl --binary target/release/catallax-verify --out /tmp/proof --cache /tmp/cache --cores 2 --json; compare /tmp/main/run.json /tmp/candidate/run.json --json. All private inputs are runtime paths. No network access.')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -394,6 +463,13 @@ def main():
     p = commands.add_parser('cleanup', help='confirm no persistent processes are retained; preserve all evidence')
     p.add_argument('--out', required=True)
     p.add_argument('--dry-run', action='store_true', help='show the cleanup policy without changing anything')
+    p = commands.add_parser('parts', help='build target recipes in both kernels, compare and open STEP in OpenCASCADE')
+    p.add_argument('inputs', help='target recipe directory, normally parts/')
+    p.add_argument('--binary', required=True)
+    p.add_argument('--out', required=True, help='owned report and artifact directory')
+    p.add_argument('--max-work', type=int, default=100_000_000)
+    p.add_argument('--core', type=int, help='one pinned CPU for the worker')
+    p.add_argument('--occt-python', default=sys.executable, help='Python with cadquery-ocp installed; unavailable binding is reported as not run')
     for p in commands.choices.values():
         p.add_argument('--json', action='store_true', help='emit stable machine-readable JSON')
     args = parser.parse_args()
@@ -416,10 +492,12 @@ def main():
             result = pair(args)
         elif args.command == 'legacy':
             result = legacy(args)
+        elif args.command == 'parts':
+            result = parts(args)
         else:
             result = {'policy': 'workers close on command exit; evidence is never removed', 'evidence_exists': Path(args.out).exists(), 'dry_run': args.dry_run}
         print(json.dumps(result, indent=None if args.json else 2, sort_keys=True))
-        return 1 if result.get('equal') is False or result.get('crashes', 0) or result.get('comparison_disagreements', 0) else 0
+        return 1 if result.get('equal') is False or result.get('crashes', 0) or result.get('comparison_disagreements', 0) or result.get('step_failures', 0) else 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(json.dumps({'error': str(error), 'action': 'retain evidence, run doctor, then resume using the same --out'}), file=sys.stderr)
         return 2

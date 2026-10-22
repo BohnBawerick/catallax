@@ -1,0 +1,55 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P0 block and sphere",
+  "description": "mm. Block 10 cubed and radius-6 sphere at (10,5,5).",
+  "steps": [
+    {
+      "id": "block",
+      "op": "block",
+      "size": [
+        "10",
+        "10",
+        "10"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "sphere",
+      "op": "sphere",
+      "radius": "6",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "10",
+          "5",
+          "5"
+        ]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "block",
+      "tool": "sphere"
+    }
+  ],
+  "result": "joined"
+}

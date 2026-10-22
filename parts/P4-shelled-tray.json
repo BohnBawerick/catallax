@@ -1,0 +1,70 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P4 shelled tray",
+  "description": "mm. Centred 40x30x12 block shelled inward 2 with top open. Intersect centred r23 cylinder z=-1..13 to round all four corners.",
+  "steps": [
+    {
+      "id": "blank",
+      "op": "block",
+      "size": [
+        "40",
+        "30",
+        "12"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "-20",
+          "-15",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "tray",
+      "op": "shell",
+      "body": "blank",
+      "open": [
+        {
+          "face": {
+            "step": "blank",
+            "role": "end"
+          }
+        }
+      ],
+      "thickness": "2"
+    },
+    {
+      "id": "rounding",
+      "op": "cylinder",
+      "radius": "23",
+      "height": "14",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "rounded",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "tray",
+      "tool": "rounding"
+    }
+  ],
+  "result": "rounded"
+}

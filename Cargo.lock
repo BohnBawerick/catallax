@@ -38,6 +38,7 @@ dependencies = [
  "catallax-boolean",
  "catallax-compare",
  "catallax-features",
+ "catallax-field",
  "catallax-intersect",
  "catallax-measure",
  "catallax-numbers",

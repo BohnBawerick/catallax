@@ -1,0 +1,53 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P0 general torus",
+  "description": "mm. Major radius 8 minor radius 2. Second translated (1,2,1) and tilted by quaternion (2,1,1,0).",
+  "steps": [
+    {
+      "id": "a",
+      "op": "torus",
+      "major": "8",
+      "minor": "2",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "b",
+      "op": "torus",
+      "major": "8",
+      "minor": "2",
+      "pose": {
+        "rotation": [
+          "2",
+          "1",
+          "1",
+          "0"
+        ],
+        "translation": [
+          "1",
+          "2",
+          "1"
+        ]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "a",
+      "tool": "b"
+    }
+  ],
+  "result": "joined"
+}

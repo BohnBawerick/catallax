@@ -52,6 +52,11 @@ fn stream_ignores_wall_limit_and_resets_operation_budget() {
         rows[1]["manifest"]["refusal"]["code"],
         "numbers.operation-budget"
     );
+    assert_eq!(rows[1]["operation_log"]["operations"][0]["id"], "a");
+    assert_eq!(
+        rows[1]["operation_log"]["operations"][0]["refusal"]["code"],
+        "numbers.operation-budget"
+    );
     assert!(!dir.join("1/answer.step").exists());
     assert_eq!(rows[0]["work"], rows[2]["work"]);
     let mut a = rows[0]["manifest"].clone();
@@ -108,4 +113,87 @@ fn request_does_not_inherit_callers_numeric_thread_state() {
     assert_eq!(outer.used, 0);
     assert!(!outer.exhausted);
     fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn exported_recipe_replays_geometry_work_and_operation_outcomes() {
+    use catallax_cli::verification::{Request, answer};
+    let root = std::env::temp_dir().join(format!(
+        "catallax-export-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let recipe = json!({"format":"catallax-recipe/3","name":"exported",
+        "steps":[{"id":"base","op":"block","size":["4","5","6"],
+        "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],
+        "result":"base"});
+    for unsupported in [false, true] {
+        let mut problem = recipe.clone();
+        if unsupported {
+            problem["steps"].as_array_mut().unwrap().extend([
+                json!({"id":"offset","op":"offset","body":"base","distance":"1"}),
+                json!({"id":"later","op":"offset","body":"offset","distance":"1"}),
+            ]);
+            problem["result"] = json!("later");
+        }
+        let directory = root.join(unsupported.to_string());
+        let original = answer(&Request {
+            format: "catallax-request/1".into(),
+            source: "recipe".into(),
+            problem,
+            out: directory.clone(),
+            max_work: 12_345_678,
+        })
+        .unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+            .args([
+                "replay",
+                directory.join("question.json").to_str().unwrap(),
+                "--out",
+                directory.join("replay").to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let replay: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(original["manifest"], replay["manifest"]);
+        assert_eq!(original["work"], replay["work"]);
+        let mut logs = [
+            original["operation_log"].clone(),
+            replay["operation_log"].clone(),
+        ];
+        for log in &mut logs {
+            for operation in log["operations"].as_array_mut().unwrap() {
+                operation.as_object_mut().unwrap().remove("wall_ms");
+            }
+        }
+        assert_eq!(logs[0], logs[1]);
+        let operations = logs[0]["operations"].as_array().unwrap();
+        assert_eq!(operations[0]["id"], "base");
+        assert_eq!(operations[0]["status"], "answered");
+        if unsupported {
+            assert_eq!(
+                original["manifest"]["refusal"]["code"],
+                "features.unsupported-operation"
+            );
+            assert_eq!(operations[1]["id"], "offset");
+            assert_eq!(
+                operations[1]["refusal"]["code"],
+                "features.unsupported-operation"
+            );
+            assert!(!operations.iter().any(|entry| entry["id"] == "later"));
+            assert!(!directory.join("answer.step").exists());
+        } else {
+            assert_eq!(original["manifest"]["status"], "answered");
+            assert_eq!(
+                fs::read(directory.join("answer.step")).unwrap(),
+                fs::read(directory.join("replay/answer.step")).unwrap()
+            );
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
 }

@@ -366,21 +366,24 @@ mod tests {
     fn line_conic_gcd_keeps_every_carrier_constraint() {
         for reverse in [false, true] {
             let mut model = Model::new();
+            let mut dec = Decider::default();
             let ellipse = model.geom_mut().add_curve(Curve::Ellipse(
                 Ellipse::new(
-                    RPoint3::new(r(1), r(-2), r(3)),
-                    RVector3::new(r(0), r(0), r(1)),
-                    RVector3::new(r(1), r(0), r(0)),
-                    r(5),
-                    r(2),
+                    RPoint3::new(r(1), r(-2), r(3)).into(),
+                    RVector3::new(r(0), r(0), r(1)).into(),
+                    RVector3::new(r(1), r(0), r(0)).into(),
+                    r(5).into(),
+                    r(2).into(),
+                    &mut dec,
                 )
                 .unwrap(),
             ));
             for z in [3, 4] {
                 let line = model.geom_mut().add_curve(Curve::Line(
                     Line::new(
-                        RPoint3::new(r(0), r(-1), r(z)),
-                        RVector3::new(r(1), r(0), r(0)),
+                        RPoint3::new(r(0), r(-1), r(z)).into(),
+                        RVector3::new(r(1), r(0), r(0)).into(),
+                        &mut dec,
                     )
                     .unwrap(),
                 ));
@@ -415,6 +418,7 @@ mod tests {
     #[test]
     fn algebraic_line_candidates_keep_every_carrier_equation() {
         let mut model = Model::new();
+        let mut dec = Decider::default();
         let z = Vector3::new(Real::zero(), Real::zero(), Real::one());
         let circle = model.geom_mut().add_curve(Curve::Circle(
             Circle::new(
@@ -422,6 +426,7 @@ mod tests {
                 z.clone(),
                 Real::one(),
                 Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                &mut dec,
             )
             .unwrap(),
         ));
@@ -429,6 +434,7 @@ mod tests {
             Line::new(
                 Point3::new(Real::zero(), Real::zero(), Real::zero()),
                 z,
+                &mut dec,
             )
             .unwrap(),
         ));
@@ -438,15 +444,17 @@ mod tests {
     #[test]
     fn conic_candidates_reject_extraneous_resultant_roots() {
         let mut model = Model::new();
+        let mut dec = Decider::default();
         let mut circles = Vec::new();
         for x in [0, 1] {
             circles.push(
                 model.geom_mut().add_curve(Curve::Circle(
                     Circle::new(
-                        RPoint3::new(r(x), r(x), r(0)),
-                        RVector3::new(r(0), r(0), r(1)),
-                        r(1),
-                        RVector3::new(r(1), r(0), r(0)),
+                        RPoint3::new(r(x), r(x), r(0)).into(),
+                        RVector3::new(r(0), r(0), r(1)).into(),
+                        r(1).into(),
+                        RVector3::new(r(1), r(0), r(0)).into(),
+                        &mut dec,
                     )
                     .unwrap(),
                 )),
@@ -454,7 +462,6 @@ mod tests {
         }
         let found = points(&mut model, circles[0], circles[1]);
         assert_eq!(found.len(), 2);
-        let mut dec = Decider::default();
         let mut x_zeroes = 0;
         for p in found {
             assert!(dec.sign(&(&p.x + &p.y - Real::one())).is_coincident());
@@ -469,19 +476,19 @@ mod tests {
     fn finite_support_meetings_still_check_the_other_support_and_branch() {
         for reverse in [false, true] {
             let mut model = Model::new();
-            let origin = RPoint3::new(r(0), r(0), r(0));
-            let x = RVector3::new(r(1), r(0), r(0));
-            let z = RVector3::new(r(0), r(0), r(1));
+            let mut dec = Decider::default();
+            let origin: Point3 = RPoint3::new(r(0), r(0), r(0)).into();
+            let x: Vector3 = RVector3::new(r(1), r(0), r(0)).into();
+            let z: Vector3 = RVector3::new(r(0), r(0), r(1)).into();
             let cylinder = model.geom_mut().add_surface(Surface::Cylinder(
-                Cylinder::new(origin.clone(), z.clone(), r(1), x.clone()).unwrap(),
+                Cylinder::new(origin.clone(), z.clone(), r(1).into(), x.clone(), &mut dec).unwrap(),
             ));
             let plane = model.geom_mut().add_surface(Surface::Plane(
-                Plane::new(origin.clone(), x.clone(), z.clone()).unwrap(),
+                Plane::new(origin.clone(), x.clone(), z.clone(), &mut dec).unwrap(),
             ));
-            let witness =
-                model
-                    .geom_mut()
-                    .add_point(PointDef::Explicit(RPoint3::new(r(0), r(1), r(0)).into()));
+            let witness = model
+                .geom_mut()
+                .add_point(PointDef::Explicit(RPoint3::new(r(0), r(1), r(0)).into()));
             let surfaces = if reverse {
                 [plane, cylinder]
             } else {
@@ -490,11 +497,12 @@ mod tests {
             let branch = model
                 .geom_mut()
                 .add_curve(Curve::Intersection(IntersectionCurve { surfaces, witness }));
-            for (center, radius_sq, expected) in
-                [(origin, r(1), 1), (RPoint3::new(r(1), r(0), r(0)), r(4), 0)]
-            {
+            for (center, radius_sq, expected) in [
+                (origin, r(1), 1),
+                (RPoint3::new(r(1), r(0), r(0)).into(), r(4), 0),
+            ] {
                 let circle = model.geom_mut().add_curve(Curve::Circle(
-                    Circle::new(center, z.clone(), radius_sq, x.clone()).unwrap(),
+                    Circle::new(center, z.clone(), radius_sq.into(), x.clone(), &mut dec).unwrap(),
                 ));
                 let found = points(&mut model, circle, branch);
                 assert_eq!(found.len(), expected);

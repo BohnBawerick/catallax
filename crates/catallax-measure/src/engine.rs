@@ -7,7 +7,7 @@ use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{HashMap, hash_map::Entry};
 
 use crate::integrate::{Stop, Work};
-use crate::planar::{self, Planar};
+use crate::planar;
 use crate::surface::{self, Compiled, Property};
 use crate::{Accuracy, Enclosure};
 
@@ -33,12 +33,15 @@ struct Curved<'a> {
     sense: Sense,
     boundaries: Vec<Vec<Arc<'a>>>,
     compiled: Vec<Compiled>,
-    torus: Option<crate::torus::Programs>,
+    torus: Option<Box<crate::torus::Programs>>,
 }
 
 enum Prepared<'a> {
     Curved(Curved<'a>),
-    PlanarArea(Planar),
+    PlanarArea {
+        area_numerator: Rational,
+        normal_squared: Rational,
+    },
 }
 
 pub(crate) fn anchor(model: &Model, faces: &[FaceId]) -> RPoint3 {
@@ -121,14 +124,19 @@ pub(crate) fn measure(
     let mut prepared = Vec::new();
     for (id, planar) in pending {
         if let Some(planar) = planar {
-            prepared.push(Prepared::PlanarArea(planar));
+            prepared.push(Prepared::PlanarArea {
+                area_numerator: planar.area_numerator,
+                normal_squared: planar.normal_squared,
+            });
             continue;
         }
         let face = model.face(id);
         let surface = model.geom().surface(face.surface);
         let closed = face.loops.is_empty();
         let torus = match surface {
-            Surface::Torus(t) if !closed => Some(crate::torus::compile(t, anchor, property)),
+            Surface::Torus(t) if !closed => {
+                Some(Box::new(crate::torus::compile(t, anchor, property)))
+            }
             _ => None,
         };
         let compiled = surface::compile(
@@ -414,9 +422,12 @@ fn evaluate(
         .collect::<Result<_, _>>()?;
     for face in prepared {
         let values = match face {
-            Prepared::PlanarArea(p) => {
-                let numerator = work.rational(&p.area_numerator)?;
-                let square = work.rational(&p.normal_squared)?;
+            Prepared::PlanarArea {
+                area_numerator,
+                normal_squared,
+            } => {
+                let numerator = work.rational(area_numerator)?;
+                let square = work.rational(normal_squared)?;
                 let norm = work.sqrt(&square)?;
                 vec![work.div(&numerator, &norm)?]
             }

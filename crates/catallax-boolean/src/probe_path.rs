@@ -484,7 +484,9 @@ pub(crate) fn adjacent(
                 .enumerate()
                 .map(|(index, e)| -> Result<P, Refusal> {
                     let contact = edge.curve == source_curve
-                        || source_equations.iter().any(|source| source.same_definition(e))
+                        || source_equations
+                            .iter()
+                            .any(|source| source.same_definition(e))
                         || match curve {
                             Curve::Intersection(branch) => {
                                 let surface = GeomKey::Surface(branch.surfaces[index]);
@@ -500,20 +502,19 @@ pub(crate) fn adjacent(
                         };
                     // Every path parametrises this carrier, so its defining
                     // equation is identically zero without reconstruction.
-                    let mut polynomial = if e.same_definition(&carrier)
-                        || e.same_definition(&opposite_carrier)
-                    {
-                        P::constant(Real::zero())
-                    } else if straight && contact {
-                        let degree = e.total_degree(dec)?.unwrap_or(0);
-                        if degree <= 2 {
-                            straight_contact(e, p, q, degree)
+                    let mut polynomial =
+                        if e.same_definition(&carrier) || e.same_definition(&opposite_carrier) {
+                            P::constant(Real::zero())
+                        } else if straight && contact {
+                            let degree = e.total_degree(dec)?.unwrap_or(0);
+                            if degree <= 2 {
+                                straight_contact(e, p, q, degree)
+                            } else {
+                                numerator(e, &path, dec)?
+                            }
                         } else {
                             numerator(e, &path, dec)?
-                        }
-                    } else {
-                        numerator(e, &path, dec)?
-                    };
+                        };
                     if contact {
                         // An exact arc probe also lies on every construction-
                         // proven support of its source curve. Preserve that
@@ -676,5 +677,39 @@ mod tests {
             }
             assert_eq!(polynomial.excludes_zero(&mut dec).unwrap(), separates);
         }
+    }
+
+    #[test]
+    fn algebraic_quadric_coefficients_keep_contact_and_interior_roots() {
+        let root = Real::from_i64(2).sqrt();
+        let equation = RealPoly::from_terms(
+            3,
+            vec![
+                (vec![2, 0, 0], Real::one()),
+                (vec![0, 2, 0], root.clone()),
+                (vec![0, 0, 0], -(&Real::one() + &root)),
+            ],
+        );
+        let p = Point3::new(Real::one(), Real::one(), Real::zero());
+        let q = Point3::new(Real::from_i64(2), Real::zero(), Real::zero());
+        let mut dec = Decider::default();
+        assert!(
+            dec.sign(&equation.eval_real(&[p.x.clone(), p.y.clone(), p.z.clone()]))
+                .is_coincident()
+        );
+        let degree = equation.total_degree(&mut dec).unwrap().unwrap();
+        let polynomial = straight_contact(&equation, &p, &q, degree);
+        let expected = [
+            Real::zero(),
+            Real::from_i64(2) - &Real::from_i64(2) * &root,
+            Real::one() + root,
+        ];
+        for (i, expected) in expected.iter().enumerate() {
+            assert!(
+                dec.sign(&(&polynomial.coefficient(i) - expected))
+                    .is_coincident()
+            );
+        }
+        assert!(!polynomial.excludes_zero(&mut dec).unwrap());
     }
 }

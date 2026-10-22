@@ -590,7 +590,8 @@ fn cyclic_system_keeps_both_roots_under_every_generator_order() {
     let y = MPoly::var(3, 1);
     let z = MPoly::var(3, 2);
     let one = MPoly::constant(3, r(1));
-    let equations = [&(&x * &y) - &one, &(&y * &z) - &one, &(&z * &x) - &one];
+    let equations = [&(&x * &y) - &one, &(&y * &z) - &one, &(&z * &x) - &one]
+        .map(catallax_numbers::RealPoly::from);
     for order in [
         [0, 1, 2],
         [0, 2, 1],

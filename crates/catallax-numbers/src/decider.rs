@@ -255,7 +255,12 @@ impl Decider {
                 return Ok(Some(value.clone()));
             }
             if !x.node.fast_defined {
-                match evaluate(x, 64u32.min(self.policy.max_precision_bits), &mut work) {
+                match evaluate(
+                    x,
+                    64u32.min(self.policy.max_precision_bits),
+                    &mut work,
+                    false,
+                ) {
                     Ok(_) => {}
                     Err(EvalError::Pending(_)) => return Ok(None),
                     Err(EvalError::Domain(error)) => return Err(error),
@@ -459,13 +464,9 @@ impl Decider {
                     "requested working precision exceeds the caller's policy",
                 ));
             }
-            evaluate_cached(x, precision, &mut work, &mut HashMap::new(), true).map_err(|error| {
-                match error {
-                    EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
-                    EvalError::Limit(code) => {
-                        Refusal::new(code, "working-precision enclosure stopped")
-                    }
-                }
+            evaluate(x, precision, &mut work, true).map_err(|error| match error {
+                EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
+                EvalError::Limit(code) => Refusal::new(code, "working-precision enclosure stopped"),
             })
         })();
         self.account(&work);

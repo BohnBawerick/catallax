@@ -244,7 +244,7 @@ def summarize(report):
         groups[cause] = groups.get(cause, 0) + 1
         if response['wall_ms'] > case['target_ms']:
             boolean_ms = sum(step.get('wall_ms', 0) for step in manifest.get('stats', {}).get('per_step', []))
-            phase = 'boolean' if boolean_ms >= response['wall_ms'] / 2 else 'outside-boolean'
+            phase = ('boolean' if boolean_ms >= response['wall_ms'] / 2 else 'outside-boolean') if 'per_step' in manifest.get('stats', {}) else 'unmeasured-phase'
             slow.append({k: case[k] for k in ['id', 'key', 'group', 'target_ms']} | {'wall_ms': response['wall_ms'], 'work': response['work'], 'cause': cause, 'phase': phase, 'boolean_ms': boolean_ms, 'outside_boolean_ms': max(0, response['wall_ms'] - boolean_ms), 'cached_timing': case['cache_hit']})
     performance = {}
     for case in slow:

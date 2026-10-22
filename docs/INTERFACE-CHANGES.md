@@ -402,3 +402,10 @@ Builds retain an immutable recipe snapshot so operation definitions remain avail
 Why: recipes need actual B-rep features and persistent operation names. Rational analytic representations are an explicit intermediate implementation boundary, not new impossible-input rules. RECIPE.md section 7.14 lists the remaining legal-input bugs and their specific unsupported-geometry codes.
 
 Migration: explicitly relabel reviewed version 1 or 2 recipes as version 3, then parse/check/write. Earlier operation meanings are unchanged. Match the new operation variant; field evaluation of sketch features and through-all remains unsupported. Use `catallax_features::evaluate` for named B-rep recipe builds, then the existing measurement and STEP APIs on its returned model and body. No command, question format, manifest format, legacy unnamed geometry or STEP format changes.
+
+## 2026-10-22: field profile sweeps and through-all cuts
+
+Pieces: field, features, recipe
+Change: `catallax_field::Plan::compile` accepts sketch profiles, signed `extrude`, two-sided `extrude_through` and rational-frame full/partial `revolve`. Sketch validation uses `catallax_features::Profile::new`; feature supports and trims are evaluated without calling a B-rep builder. Source face candidates retain segment aliases, split domains, reversed cut orientations and 180-degree merged-cap names.
+Why: both recipe evaluators must build the same feature definitions and report their creating origins.
+Migration: no Rust signature, recipe format or command-line protocol changes. Sweep values use `Value::Residual` and `Approximate::true_distance_formula = false`; unsigned distance upper bounds remain unbounded off the certified boundary. Callers must not treat a sweep residual as true Euclidean distance. The specific unfinished `features.unsupported-*` codes from RECIPE.md section 7.14 now apply to field compilation as well.

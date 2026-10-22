@@ -1,12 +1,12 @@
 # Analytic field kernel
 
-`catallax-field` compiles `catallax-recipe/3` blocks, capped cylinders, spheres, capped cone frusta, ring tori and regularised union, subtraction and intersection. It calls no B-rep builder. Every parameter and rigid placement retains its exact rational definition from [RECIPE.md](RECIPE.md). The new through-all operation and the sketch-based features still report `field.unsupported-operation`; a schema version does not imply every evaluator implements every operation.
+`catallax-field` compiles `catallax-recipe/3` stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided through-all cuts, full and rational-frame partial revolutions, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`, so both kernels use the same intersection, tangency and nesting rules and refusal codes. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
 
 This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Regional pruning, meshing, fillets, field-only features, FEA and application integration are not implemented.
 
 ## Approved shared-definition migration
 
-The 2026-10-22 architecture decision requires field to migrate with the algebraic foundation, before either kernel claims widened recipe coverage. The rest of this document describes the current rational stock-solid evaluator. Its public distance/result distinctions continue to apply.
+The 2026-10-22 architecture decision requires field to migrate with the algebraic foundation, before either kernel claims widened recipe coverage. This document describes the current rational support definitions and shared exact algebraic decisions for profile trims. Its public distance/result distinctions continue to apply.
 
 Store the same exact `Surface`, `RealPoly`, frame and dimension definitions as B-rep. Widen polynomial constraints, gradients and cached ray coefficients together. Keep the rational sign path for rational coefficients; use the shared decider for algebraic signs, zero coefficients and support comparisons. Normalising a polynomial by its first syntactic coefficient is invalid if that expression might be zero. Certify the first nonzero coefficient before division. Equal support equations do not remove nappe or trim constraints. Definition keys may permit safe work sharing, but unequal expression keys cannot prove different sets.
 
@@ -24,9 +24,9 @@ Add cross-kernel fixtures for 45-degree revolve, extrusion along `[1,0,1]`, obli
 | `Plan::fast` | Tentative scalar display/filter value. `true_distance_formula` identifies the underlying analytic formula, not a floating-point accuracy certificate. |
 | `Plan::proven` | Exact rational predicates, outward-rounded binary-ball evaluation and explicit result semantics. Input coordinates are exact `RPoint3` values in millimetres. |
 | `Value::TrueDistance` | Enclosure of true signed Euclidean distance to a primitive boundary. Negative inside. |
-| `Value::Residual` | Enclosure of the min/max Boolean expression. It is not Euclidean distance. |
+| `Value::Residual` | Enclosure of a sweep support residual or min/max Boolean expression. It is not Euclidean distance. |
 | `DistanceBound` | Bounds on unsigned geometric distance to the result boundary, separate from the field value. Infinity means unbounded, not a measured tolerance. |
-| `Location` | Proven interior, exterior or boundary; `Indeterminate` when a degenerate Boolean zero cannot be settled by the fixed local proof. |
+| `Location` | Proven interior, exterior or boundary; `Indeterminate` when an exact trim or the local Boolean proof cannot settle the query. |
 | `Direction` | Componentwise enclosure of a unique outward unit normal at a certified boundary point, `Ambiguous` at a sharp or unresolved configuration, `Undefined` elsewhere. |
 
 The empty solid has no boundary. Its unsigned distance is positive infinity and its location is `Outside`. A Boolean zero is not automatically a boundary. In particular, two blocks meeting only on a plane have an empty regularised intersection, even though their max residual is zero on the contact plane. This implementation reports `Indeterminate` at that degenerate zero unless an exact plan identity already establishes emptiness. It never certifies the contact plane as a face of that empty result.
@@ -47,11 +47,21 @@ For an enclosed residual `[lo, hi]`, the lower distance bound is zero if the enc
 
 These lower bounds support certified exclusion and filtering. They do not certify proximity, clearance below a threshold, offsets, or a 1 nm hand-off. Such uses need finite upper bounds from certified closest points on surviving trimmed faces. There is no claim that a small residual proves closeness.
 
+### Profile sweep certificates
+
+Sweeps use conservative residuals, even when a particular profile could reduce to a stock solid. Each supporting plane, cylinder, sphere or torus contributes its unsigned distance to the untrimmed surface. A cone contributes `abs(rho - slope * abs(z)) / sqrt(1 + slope²)` in its unit-axis frame. This is a 1-Lipschitz lower bound to the double-cone support; it does not select a nappe or replace the profile trim. Take the minimum over all supports and give it the exact solid-membership sign. Every genuine sweep boundary belongs to at least one support, so this signed residual is continuous and 1-Lipschitz, including across a change of membership. It can vanish on inactive supports inside or outside the solid. Its absolute value is a certified distance lower bound, never evidence of proximity. The upper distance bound is infinity except at a certified boundary point.
+
+Extrusion projects a query along its defining vector back into the sketch plane, then tests exact odd-loop membership and the signed blind interval. Through-all omits both interval caps and subtracts that infinite tool from the target. It has no construction caps or arbitrary extent. Revolution projects to the meridian using the exact square root of squared radial distance, tests both radial sides of the profile, and applies the cardinal angular sector for partial turns. Profile boundary predicates retain circular arcs rather than replacing them with chords. Shared `Decider` signs settle algebraic meridian and ray-crossing expressions; an exhausted exact decision produces `Indeterminate`, not a guessed sign.
+
+Full turns omit cap names and axis segments that sweep no area. At 180 degrees, caps connected along an axis segment expose both `start` and `end` names over the merged domain. Consecutive collinear or cocircular segments expose every merged segment origin over the maximal side domain. Face queries check that domain as well as the supporting equation, including the correct branch of a revolved surface.
+
+The supported rational subset and `features.unsupported-*` refusals match [RECIPE.md section 7.14](RECIPE.md#714-b-rep-feature-geometry-bugs). Legal algebraic placements, non-cardinal cap frames, elliptic cylinders and generated irrational surface radii remain explicit unfinished geometry, not impossible inputs.
+
 ## Exact signs and surface directions
 
 Each primitive is an intersection of the exact polynomial inequalities of its supporting surfaces and caps. Tori use the ring-torus quartic, not a squared equation interpreted without its ring-radius restriction. A cone's cap inequalities select the intended nappe. Rational evaluation settles primitive signs, including exact boundary points, without a numerical tolerance.
 
-For a Boolean point on a source boundary, strict interior/exterior logic settles unambiguous cases. Remaining cases use exact polynomial ray germs. Substituting `p + epsilon*d` into each polynomial yields degree at most four. The first nonzero coefficient gives its sign for every sufficiently small positive epsilon. No finite displacement or sampled tolerance is substituted for that proof. A ray confined to a supporting surface remains unresolved rather than being counted as interior.
+For a Boolean point on a source boundary, strict interior/exterior logic settles unambiguous cases. Remaining cases use exact polynomial ray germs. Substituting `p + epsilon*d` into each support polynomial yields degree at most four. The first nonzero coefficient gives its sign for every sufficiently small positive epsilon. Stock-solid predicates use that coefficient directly. Sweep trims evaluate at an exact rational displacement proved to stay in every support polynomial's initial sign cell: if `c_k` is the first nonzero coefficient, choose `0 < epsilon <= min(1, abs(c_k)/(abs(c_k) + sum_{j>k} abs(c_j) + 1))` across supports. The leading term then strictly dominates the tail throughout that interval. This displacement is a certified germ, not a sampled geometric tolerance. A ray confined to a true boundary is not counted as interior.
 
 A fixed order of active face normals and 26 rational coordinate directions searches for both an interior and exterior germ. Finding both proves the point is a genuine boundary point. Failure to find both proves nothing and returns `Indeterminate`.
 
@@ -69,7 +79,7 @@ A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this
 
 Compilation follows recipe order. Equivalent leaves and elementary Boolean identities are folded deterministically. Unreachable instructions are removed while the face registry remains intact. Evaluation follows the resulting topological tape order. No hash iteration, point reduction, scheduling decision, random seed or deadline affects an answer.
 
-The proven evaluator uses exact rational arithmetic and `catallax-numbers::Ball` at a fixed 192-bit precision. Endpoints pass through `Interval::from_rational` for outward rounding. It calls no platform square root or transcendental function. Enclosures can widen at extreme scales; there is no hidden 1 nm assertion. Exact predicates still distinguish features smaller than a double's spacing.
+The proven evaluator uses exact rational support arithmetic, shared `Real`/`Decider` trim predicates and `catallax-numbers::Ball` at a fixed 192-bit enclosure precision. Endpoints pass through `Interval::from_rational` for outward rounding. It calls no platform square root or transcendental function. Enclosures can widen at extreme scales; there is no hidden 1 nm assertion. Exact predicates still distinguish features smaller than a double's spacing.
 
 The fast evaluator uses fixed scalar arithmetic and a bit-seeded, fixed-iteration software square root. It has no JIT, SIMD-dependent path, fused operation or platform maths call. NaN and infinite inputs are rejected. Arithmetic outside its finite range reports `field.fast-range`; callers can use the proven path. Returned zeros and interval endpoint zeros are canonical positive zero.
 
@@ -86,4 +96,4 @@ cargo test -p catallax-field -p catallax-recipe
 
 The example reads a real recipe, prints tentative and proven answers, resolves named faces and checks scalar/batch agreement. Exact coordinate arguments accept the recipe number grammar.
 
-Acceptance tests cover every primitive against independent exact `catallax-shapes` surface definitions, known rational and irrational distances, capped and expanding frusta, rigid placements, all booleans, surviving and removed names, reversed tool normals, sharp edges and apex ambiguity, degenerate regularisation, large-coordinate cancellation, and complete query-bit equality across one, two and four threads. Cross-architecture execution and representative end-to-end performance have not been measured here. There are no throughput or interactive-budget claims.
+Acceptance tests cover every stock solid against independent exact `catallax-shapes` surface definitions, known rational and irrational distances, capped and expanding frusta, rigid placements, all booleans, surviving and removed names, reversed tool normals, sharp edges and apex ambiguity, degenerate regularisation and large-coordinate cancellation. Sweep tests cover rectangles, circles, slots, holes and islands, oblique line extrusions, revolved hollow rings and cones, 90/180/270-degree turns, cap merging, infinite through-all cuts, B-rep origin availability and specific shared refusals. Both proven queries and tentative sweep values have complete result-bit equality across one, two and four threads. Cross-architecture execution and representative end-to-end performance have not been measured here. There are no throughput or interactive-budget claims.

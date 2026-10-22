@@ -64,9 +64,12 @@ dependencies = [
 name = "catallax-field"
 version = "0.0.0"
 dependencies = [
+ "catallax-features",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",
+ "catallax-topology",
+ "serde_json",
 ]
 
 [[package]]

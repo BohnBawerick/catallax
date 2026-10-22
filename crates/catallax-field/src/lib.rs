@@ -2,14 +2,17 @@
 //!
 //! [`Plan`] owns a fixed-order evaluation tape and a separate named [`Face`]
 //! registry. [`Plan::fast`] is tentative display work. [`Plan::proven`] uses
-//! exact rational predicates and outward-rounded binary balls, with no platform
-//! math library. A Boolean residual is never advertised as Euclidean distance.
+//! exact support and profile predicates and outward-rounded binary balls, with
+//! no platform math library. Sweep and Boolean residuals are not true distance.
 //! See `docs/FIELD.md` for the distance proof and unresolved-boundary contract.
 
 #![forbid(unsafe_code)]
 
+mod features;
 mod geometry;
 mod metric;
+mod profile;
+mod support;
 
 use std::collections::BTreeMap;
 
@@ -29,7 +32,7 @@ pub enum Location {
     Outside,
     /// On the solid's boundary, not merely a residual's zero set.
     Boundary,
-    /// The deterministic local proof did not settle a degenerate Boolean zero.
+    /// The exact trim or deterministic local boundary proof did not settle.
     Indeterminate,
 }
 
@@ -39,7 +42,7 @@ pub enum Location {
 pub enum Value {
     /// Enclosure of true signed Euclidean distance, negative inside, in millimetres.
     TrueDistance(Interval),
-    /// Enclosure of a Boolean min/max residual in millimetres. Not true distance.
+    /// Enclosure of a sweep or Boolean residual in millimetres. Not true distance.
     Residual(Interval),
 }
 
@@ -177,9 +180,9 @@ pub struct Plan {
 }
 
 impl Plan {
-    /// Compiles primitives and regularised booleans. Unsupported operations and
-    /// impossible dimensions report a stable refusal before a plan is exposed.
-    /// No B-rep operation is called.
+    /// Compiles stock solids, sketch sweeps and regularised booleans.
+    /// Unsupported operations and impossible dimensions report a stable refusal.
+    /// Sketch validation is shared with features; no B-rep builder is called.
     pub fn compile(recipe: &Recipe) -> Result<Self, Refusal> {
         recipe
             .check()
@@ -192,33 +195,61 @@ impl Plan {
             leaf_registers: vec![],
         };
         let mut steps = BTreeMap::new();
+        let mut profiles = BTreeMap::new();
         for step in &recipe.steps {
-            let node = if let Operation::Boolean { kind, target, tool } = &step.op {
-                plan.boolean(*kind, steps[target], steps[tool])
-            } else {
-                let (leaf, mut faces) = geometry::compile(&step.op, &step.id)?;
-                let leaf_id = plan
-                    .leaves
-                    .iter()
-                    .position(|l| l.same_geometry(&leaf))
-                    .unwrap_or_else(|| {
-                        let id = plan.leaves.len();
-                        plan.leaves.push(leaf);
-                        id
-                    });
-                for face in &mut faces {
-                    face.leaf = leaf_id;
+            let node = match &step.op {
+                Operation::Sketch { plane, loops } => {
+                    profiles.insert(step.id.clone(), profile::Profile::new(plane, loops)?);
+                    continue;
                 }
-                plan.faces.extend(faces);
-                if let Some(id) = plan
-                    .instructions
-                    .iter()
-                    .position(|n| matches!(n, Instruction::Leaf(i) if *i == leaf_id))
-                {
-                    id
-                } else {
-                    plan.instructions.push(Instruction::Leaf(leaf_id));
-                    plan.instructions.len() - 1
+                Operation::Boolean { kind, target, tool } => {
+                    plan.boolean(*kind, steps[target], steps[tool])
+                }
+                Operation::Extrude {
+                    profile,
+                    distance,
+                    direction,
+                } => {
+                    let built = features::Feature::extrude(
+                        &profiles[profile],
+                        &step.id,
+                        Some(distance.value()),
+                        direction.as_ref(),
+                        false,
+                    )?;
+                    plan.feature(built)
+                }
+                Operation::ExtrudeThrough {
+                    target,
+                    profile,
+                    direction,
+                } => {
+                    let built = features::Feature::extrude(
+                        &profiles[profile],
+                        &step.id,
+                        None,
+                        direction.as_ref(),
+                        steps[target] == 0,
+                    )?;
+                    let tool = plan.feature(built);
+                    plan.boolean(BooleanKind::Subtract, steps[target], tool)
+                }
+                Operation::Revolve {
+                    profile,
+                    axis,
+                    angle,
+                } => {
+                    let built = features::Feature::revolve(
+                        &profiles[profile],
+                        &step.id,
+                        axis,
+                        angle.value(),
+                    )?;
+                    plan.feature(built)
+                }
+                _ => {
+                    let (leaf, faces) = geometry::compile(&step.op, &step.id)?;
+                    plan.leaf(leaf, faces)
                 }
             };
             steps.insert(step.id.clone(), node);
@@ -226,6 +257,38 @@ impl Plan {
         plan.root = steps[&recipe.result];
         plan.compact();
         Ok(plan)
+    }
+
+    fn feature(&mut self, built: Option<(features::Feature, Vec<Face>)>) -> usize {
+        built.map_or(0, |(feature, faces)| {
+            self.leaf(geometry::Leaf::Feature(feature), faces)
+        })
+    }
+
+    fn leaf(&mut self, leaf: geometry::Leaf, mut faces: Vec<Face>) -> usize {
+        let leaf_id = self
+            .leaves
+            .iter()
+            .position(|l| l.same_geometry(&leaf))
+            .unwrap_or_else(|| {
+                let id = self.leaves.len();
+                self.leaves.push(leaf);
+                id
+            });
+        for face in &mut faces {
+            face.leaf = leaf_id;
+        }
+        self.faces.extend(faces);
+        if let Some(id) = self
+            .instructions
+            .iter()
+            .position(|n| matches!(n, Instruction::Leaf(i) if *i == leaf_id))
+        {
+            id
+        } else {
+            self.instructions.push(Instruction::Leaf(leaf_id));
+            self.instructions.len() - 1
+        }
     }
 
     fn boolean(&mut self, kind: BooleanKind, a: usize, b: usize) -> usize {
@@ -329,7 +392,7 @@ impl Plan {
         }
         Ok(Approximate {
             value: storage.fast[self.root],
-            true_distance_formula: matches!(self.instructions[self.root], Instruction::Leaf(_)),
+            true_distance_formula: matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance()),
         })
     }
 
@@ -375,13 +438,14 @@ impl Plan {
             storage.values.push(value);
             storage.locations.push(location);
         }
-        let primitive = matches!(self.instructions[self.root], Instruction::Leaf(_));
+        let primitive = matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance());
         let mut location = storage.locations[self.root];
         storage.active.clear();
         for (id, face) in self.faces.iter().enumerate() {
             if self.leaf_registers[face.leaf]
                 .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
                 && face.polynomial.eval(&coordinates).is_zero()
+                && self.leaves[face.leaf].on_face(&face.origin.role, &coordinates) != Some(false)
             {
                 storage.active.push(id);
             }
@@ -423,7 +487,7 @@ impl Plan {
         for instruction in &self.instructions {
             let location = match *instruction {
                 Instruction::Empty => Location::Outside,
-                Instruction::Leaf(i) => geometry::ray_location(&self.leaves[i], p, &direction),
+                Instruction::Leaf(i) => self.leaves[i].ray(p, &direction),
                 Instruction::Boolean { kind, a, b } => combine(kind, storage[a], storage[b]),
             };
             storage.push(location);
@@ -524,10 +588,28 @@ impl Plan {
         if self.leaf_registers[face.leaf].is_none() {
             return Ok(absent);
         }
-        if !face.polynomial.eval(&p).is_zero()
-            || self.leaves[face.leaf].location(&p) != Location::Boundary
-        {
+        if !face.polynomial.eval(&p).is_zero() {
             return Ok(absent);
+        }
+        match self.leaves[face.leaf].location(&p) {
+            Location::Inside | Location::Outside => return Ok(absent),
+            Location::Indeterminate => {
+                return Ok(FaceQuery {
+                    state: FaceState::Indeterminate,
+                    direction: Direction::Ambiguous,
+                });
+            }
+            Location::Boundary => (),
+        }
+        match self.leaves[face.leaf].on_face(&face.origin.role, &p) {
+            Some(false) => return Ok(absent),
+            None => {
+                return Ok(FaceQuery {
+                    state: FaceState::Indeterminate,
+                    direction: Direction::Ambiguous,
+                });
+            }
+            Some(true) => (),
         }
         let query = self.proven(point, storage);
         if matches!(query.location, Location::Inside | Location::Outside) {

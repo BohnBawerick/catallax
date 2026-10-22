@@ -187,6 +187,22 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
 .manifesto__text em { color: var(--oxide); }
 .manifesto__sig { display: flex; align-items: center; gap: 16px; margin-top: 56px; }
 .manifesto__sig p { margin: 0; font-size: 15px; }
+.direction__note { max-width: 72ch; margin: 32px 0 0; }
+
+/* SolidDraft: the application output stays unaltered. */
+.application { border-top: 1px solid var(--steel); scroll-margin-top: 80px; }
+.application__head { max-width: 960px; }
+.application__lede { max-width: 65ch; margin-top: 32px; font-size: clamp(18px, 1.6vw, 23px); }
+.application__drawing { margin: clamp(36px, 5vw, 72px) 0; }
+.application__drawing img { width: 100%; height: auto; }
+.application__drawing figcaption { max-width: 75ch; margin-top: 16px; color: var(--slate); font-size: 14px; }
+.application__status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(32px, 5vw, 96px); }
+.application__status h3 { margin: 0 0 20px; color: var(--bone); font-size: 26px; font-weight: 560; letter-spacing: -0.02em; }
+.application__status h3 .status-chip { margin-top: 8px; }
+.application__status p, .application__list { max-width: 65ch; }
+.application__list { padding-left: 20px; }
+.application__list li + li { margin-top: 12px; }
+.application__support { margin: 40px 0 0; padding-top: 24px; border-top: 1px solid var(--steel); }
 .manifesto__sig img { border-radius: 8px; }
 
 /* Kernel anatomy (pinned) ------------------------------------------------ */
@@ -337,7 +353,7 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
   .hud--br { display: none; }
 }
 @media (max-width: 900px) {
-  .lineage__grid, .support__grid { grid-template-columns: 1fr; }
+  .lineage__grid, .support__grid, .application__status { grid-template-columns: 1fr; }
   .lineage__list li { grid-template-columns: 1fr; gap: 6px; }
   .hero__copy { bottom: 48px; }
   .hud--tr { top: 96px; }

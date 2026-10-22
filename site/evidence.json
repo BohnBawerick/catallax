@@ -36,5 +36,16 @@
     },
     "previously_answered_output_changes": 0,
     "speed_comparisons": "Not measured. No cross-kernel speed comparison is claimed."
+  },
+  "soliddraft_drawing": {
+    "asset": "media/soliddraft-bracket-a3.svg",
+    "sha256": "92e3311548816dcabda02a1d174b806a97640676f74be5c6f4919ab70de81420",
+    "source_revision": "802908216cdda052115a34c92911507f182d317c",
+    "source_path": "recipes/golden/bracket-a3.svg",
+    "producer": "SolidDraft CLI draw command, current SMLib backend",
+    "command": "SOURCE_DATE_EPOCH=1791936000 soliddraft draw bracket.json --template iso-a3",
+    "verification_source": "crates/soliddraft-cli/tests/draw_exit_test.rs::bracket_drawing_exports_and_follows_the_part",
+    "scope": "Unmodified committed CLI drawing fixture, not regenerated for this site. Its source test compares the CLI SVG byte for byte. This is real application output, not a mockup, and is not evidence of Catallax integration.",
+    "licence": "MIT, SolidDraft started by Pedro De Paiva"
   }
 }

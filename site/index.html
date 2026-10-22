@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Catallax · Exact geometry, explicit and implicit</title>
-<meta name="description" content="Catallax by Pedro De Paiva. A free geometry kernel in safe Rust, bridging exact B-rep and signed distance fields from one recipe. Field kernel in design.">
+<title>Catallax + SolidDraft · Two kernels, one recipe</title>
+<meta name="description" content="Catallax is SolidDraft's geometry kernel in safe Rust. Exact by definition, approximate on purpose. One project, two repositories. See what works today and what is in design.">
 <meta name="theme-color" content="#0b0c0d">
 <link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/">
 <link rel="icon" href="brand/mark.svg" type="image/svg+xml">
@@ -26,8 +26,8 @@
   <nav class="nav__links" aria-label="Sections">
     <a href="#lineage">Fornjot</a>
     <a href="#kernel">Kernel</a>
-    <a href="#code">Code</a>
-    <a href="#work">Work</a>
+    <a href="#work">Recipe</a>
+    <a href="#soliddraft">SolidDraft</a>
     <a href="#bench">Benchmarks</a>
     <a href="#support">Support</a>
     <a href="#contact">Contact</a>
@@ -43,16 +43,16 @@
   <div class="hero__frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 
   <div class="hero__copy">
-    <p class="label hero__kicker"><span>Catallax · by Pedro De Paiva</span><span>Perth, AU</span></p>
+    <p class="label hero__kicker"><span>Catallax + SolidDraft · by Pedro De Paiva</span><span>Perth, AU</span></p>
     <h1 class="hero__title">
-      <span class="line">Exact geometry,</span>
-      <span class="line">written in Rust,</span>
-      <span class="line">by <em>definition</em>.</span>
+      <span class="line">Exact by definition.</span>
+      <span class="line">Approximate</span>
+      <span class="line">on <em>purpose</em>.</span>
     </h1>
-    <p class="hero__lede"><strong>Bridging explicit and implicit kernels.</strong> Exact B-rep × signed distance fields. One recipe. The best of both. <span class="status-chip">Field kernel · in design</span></p>
+    <p class="hero__lede"><strong>Two kernels, one recipe.</strong> Exact B-rep × signed distance fields. Catallax is the kernel. SolidDraft is the CAD application it is built for. One project, two repositories.</p>
     <div class="hero__ctas">
-      <a class="btn btn--solid magnetic" href="#kernel"><span>See the kernel</span></a>
-      <a class="btn magnetic" href="#support"><span>Support the free kernel</span></a>
+      <a class="btn btn--solid magnetic" href="#support"><span>See what works today</span></a>
+      <a class="btn magnetic" href="#soliddraft"><span>Meet SolidDraft</span></a>
     </div>
   </div>
 
@@ -95,9 +95,10 @@
       <ul class="lineage__list">
         <li><span>Early progress does not extrapolate</span><b>Measure the hard cases, tangent, coincident and equal radii, and publish the numbers.</b></li>
         <li><span>Do not sell a dream</span><b>A works-today list beside every sponsorship ask, including the one further down this page.</b></li>
-        <li><span>Incremental change cannot fix an architecture</span><b>Prototype, measure, merge only the winners.</b></li>
-        <li><span>Half-measures sink a project</span><b>Dated checkpoints. Each one commits or parks.</b></li>
-        <li><span>A generic kernel blurs the vision</span><b>One application, SolidDraft, and a handful of real parts rebuilding at click speed.</b></li>
+        <li><span>Incremental change cannot fix an architecture</span><b>Prototype unknowns with a decision rule. Rebuild only what proves itself.</b></li>
+        <li><span>Half-measures sink a project</span><b>In design: SolidDraft runs only on Catallax. Remove its current kernel, with no fallback.</b></li>
+        <li><span>A generic kernel blurs the vision</span><b>In design: build toward SolidDraft's intended features. Target parts rebuilding at click speed are the scoreboard, not the finish line.</b></li>
+        <li><span>Do not leave a redesign half-landed</span><b>One representation-wide redesign at a time. Commit or park at each checkpoint.</b></li>
       </ul>
     </div>
   </div>
@@ -106,7 +107,9 @@
 <!-- MANIFESTO ------------------------------------------------------------>
 <section class="manifesto section" id="about">
   <p class="label section__label"><span>02</span>Built for what comes next <span class="status-chip">Vision · in design</span></p>
-  <p class="manifesto__text" data-words>Topology optimisation. Instant FEA without meshing. Wild patterns, driven by code. One recipe builds exact faces and distance fields. <em>Precision meets possibility.</em> From drawings and STEP to the machine shop. Next stop: meshes for Blender and the printer.</p>
+  <p class="manifesto__text" data-words>Parametric parts, drawings and assemblies. Lattices, field-driven thickness and simulation-led shapes. SolidDraft grows toward both. The B-rep carries exact faces; the field carries implicit features and checks the B-rep. <em>One definition is the truth.</em></p>
+  <p class="direction__note">In design: one modelling tolerance chosen before building, separate from display and export accuracy. Approximate only a proven near-contact or a shape the B-rep cannot carry exactly. Record each decision once, merge what is declared the same, carry visible local tolerances and check topology before publishing. Later operations measure against the definition, so tolerances do not accumulate.</p>
+  <p class="direction__note">In design: the field measures approximated pieces against their own definitions. Where it cannot build a step yet, it takes over that B-rep result and checks later steps independently, reporting the coverage. Field-only features need not become B-rep. <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">Read the build order</a>.</p>
   <div class="manifesto__sig">
     <img src="brand/mark.svg" alt="" width="40" height="40">
     <p><strong>Pedro De Paiva · Perth</strong><br>Mechanical engineer, 8+ years. Founder of <a href="https://zigrawbohnbawerick.org/">Zigrawbohnbawerick Pty Ltd</a>.<br><a href="https://pedro.zigrawbohnbawerick.org/">The engineer behind the kernel</a></p>
@@ -141,16 +144,16 @@
           <ul class="step__specs label"><li>early code</li><li>known gaps</li></ul>
         </article>
         <article class="step" data-step="3">
-          <p class="label step__tag">Layer 04 · In design</p>
-          <h2 class="step__title">Field kernel</h2>
-          <p class="step__text"><strong>Lattices. Instant FEA. Booleans that never fail.</strong></p>
-          <ul class="step__specs label"><li>in design</li><li>the implicit half</li></ul>
+          <p class="label step__tag">Layer 04 · Field</p>
+          <h2 class="step__title">Same recipe</h2>
+          <p class="step__text"><strong>Stock solids, sketches and booleans today. Lattices and field-driven design are in design.</strong></p>
+          <ul class="step__specs label"><li>bounded queries</li><li>sampled comparison</li></ul>
         </article>
       </div>
       <div class="anatomy__stage">
         <canvas class="anatomy__canvas" role="img" aria-label="Illustrative wireframe for the current kernel layer, not kernel output"></canvas>
         <div class="anatomy__rail" aria-hidden="true"><i></i></div>
-        <ol class="anatomy__index label" aria-hidden="true"><li>B-rep</li><li>Definitions</li><li>Booleans</li><li>Field · in design</li></ol>
+        <ol class="anatomy__index label" aria-hidden="true"><li>B-rep</li><li>Definitions</li><li>Booleans</li><li>Field</li></ol>
       </div>
     </div>
   </div>
@@ -171,14 +174,14 @@
 </section>
 
 <!-- NUMBERS -------------------------------------------------------------->
-<section class="numbers section" aria-label="Catallax repository in numbers">
+<section class="numbers section" aria-label="Historical Catallax repository snapshot">
   <div class="numbers__grid">
     <div class="stat"><p class="stat__n"><span data-count="54668" data-metric="rust_lines">54,668</span></p><p class="label">physical lines of Rust</p></div>
     <div class="stat"><p class="stat__n"><span data-count="0" data-metric="cpp_lines">0</span></p><p class="label">lines of C or C++</p></div>
     <div class="stat"><p class="stat__n"><span data-count="409" data-metric="tests">409</span></p><p class="label">enabled Rust tests</p></div>
     <div class="stat"><p class="stat__n"><span data-count="0" data-metric="unsafe_blocks">0</span></p><p class="label">unsafe blocks</p></div>
   </div>
-  <p class="numbers__note label"><a href="evidence.json">Repository snapshot and counting method</a> · includes tests and comments in Rust line count · ignored tests excluded</p>
+  <p class="numbers__note label">Historical snapshot, not current main · <a href="evidence.json">Pinned revision and counting method</a> · Rust count includes tests and comments · ignored tests excluded</p>
 </section>
 
 <!-- CODE ----------------------------------------------------------------->
@@ -252,8 +255,8 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 <!-- WORK ----------------------------------------------------------------->
 <section class="work section" id="work">
   <div class="work__head">
-    <p class="label section__label"><span>06</span>Selected work</p>
-    <h2 class="display" data-lines>One recipe. A <em>family</em> of tools.</h2>
+    <p class="label section__label"><span>06</span>Two kernels, one recipe</p>
+    <h2 class="display" data-lines>Write the part. Keep its <em>definition</em>.</h2>
   </div>
   <div class="work__grid">
     <a class="card" href="https://github.com/BohnBawerick/catallax" data-tilt>
@@ -270,38 +273,56 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
     </a>
     <article class="card" data-tilt>
       <div class="card__glare" aria-hidden="true"></div>
-      <div class="card__top label"><span>02</span><span>In design</span></div>
+      <div class="card__top label"><span>02</span><span>Public · early code</span></div>
       <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
         <g class="a"><rect x="40" y="30" width="20" height="20"/><rect x="60" y="30" width="20" height="20"/><rect x="80" y="30" width="20" height="20"/><rect x="60" y="50" width="20" height="20"/><rect x="80" y="50" width="20" height="20"/><rect x="100" y="50" width="20" height="20"/><rect x="80" y="70" width="20" height="20"/><rect x="100" y="70" width="20" height="20"/><rect x="120" y="70" width="20" height="20"/></g>
         <path d="M30 95C70 95 70 20 110 25s40 70 70 60" class="o-line"/>
       </svg>
       <h3 class="card__title">Field kernel</h3>
-      <p class="card__text">Topology optimisation enabler. Instant FEA enabler. The freedom of fields, with exact geometry in the same recipe.</p>
-      <p class="card__meta label"><span>in design</span><span>signed distance fields</span></p>
-    </article>
-    <article class="card" data-tilt>
-      <div class="card__glare" aria-hidden="true"></div>
-      <div class="card__top label"><span>03</span><span>In progress</span></div>
-      <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
-        <path d="M40 90 70 30l30 60Zm30-60 50 10-20 50m20-50 40 40-60 10" class="a"/><path d="M100 90 160 80 120 40Z" class="d"/>
-        <path d="M40 90h120" class="o-line"/>
-      </svg>
-      <h3 class="card__title">Recipe language</h3>
-      <p class="card__text">Write the idea once. Grow a pattern. Rebuild the part. Code-driven geometry that speaks both kernels.</p>
-      <p class="card__meta label"><span>in progress</span><span>not yet in the public tree</span></p>
-    </article>
-    <article class="card" data-tilt>
-      <div class="card__glare" aria-hidden="true"></div>
-      <div class="card__top label"><span>04</span><span>Open source soon</span></div>
-      <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
-        <circle cx="70" cy="60" r="28" class="a"/><path d="M70 60h70l-20 34H50" class="a"/><path d="M70 60 92 42" class="d"/>
-        <circle cx="70" cy="60" r="3.5" class="o"/><circle cx="140" cy="60" r="3.5" class="o"/>
-      </svg>
-      <h3 class="card__title">SolidDraft</h3>
-      <p class="card__text">The Rust CAD workshop built on Catallax. A SolidWorks-style home for the things you want to make.</p>
-      <p class="card__meta label"><span>by Pedro De Paiva</span><span>CAD application</span></p>
+      <p class="card__text">Stock solids, exact sketch profiles, extrusions, rational-frame revolutions and booleans from the recipe. Proven distance bounds and a two-way sampled B-rep check, not a whole-model proof.</p>
+      <p class="card__meta label"><span>in design: lattices + optimisation</span><span>signed distance fields</span></p>
     </article>
   </div>
+  <p class="direction__note">The public <code>catallax-recipe/3</code> format reads, checks and writes the feature tree. Named B-rep builds and the field evaluator consume it today. In design: the rest of the feature language, from chamfers and shells to fillets, sweeps and lofts.</p>
+</section>
+
+<section class="application section" id="soliddraft">
+  <div class="application__head">
+    <h2 class="display" data-lines>SolidDraft. A place to <em>make things</em>.</h2>
+    <p class="application__lede">A parametric CAD application in Rust, with a feature tree, sketch tools, a ribbon, a 3D viewport and an AI assistant. Catallax and SolidDraft are one project in two repositories.</p>
+    <p><span class="status-chip">Opening soon</span> The application repository is still private.</p>
+  </div>
+  <figure class="application__drawing">
+    <a href="media/soliddraft-bracket-a3.svg" aria-label="Open SolidDraft's full-size bracket drawing">
+      <img src="media/soliddraft-bracket-a3.svg" alt="SolidDraft's exported A3 bracket drawing, with front, top, right and isometric views, hidden lines and dimensions." width="1260" height="891" loading="lazy">
+    </a>
+    <figcaption>Real SolidDraft output, not a mockup. The committed CLI drawing fixture, made with its current SMLib backend, not Catallax. <a href="media/soliddraft-bracket-a3.svg">Open the SVG</a> · <a href="evidence.json">Provenance</a>.</figcaption>
+  </figure>
+  <div class="application__status">
+    <div>
+      <h3>What works today</h3>
+      <p>SolidDraft currently runs on SMLib, not Catallax. This is what the existing application does, not a claim about Catallax integration.</p>
+      <ul class="application__list">
+        <li>Plane and face sketches with lines, rectangles, circles, arcs, slots, relations and dimensions.</li>
+        <li>Extrude, cut, fillet and chamfer. Feature editing, part files, undo and redo, with reference repair when needed.</li>
+        <li>ISO and ANSI drawings with sections, details, dimensions and GD&amp;T, exported as SVG, PDF and DXF.</li>
+        <li>A Claude-connected assistant and MCP commands. A headless CLI for recipe replay, part rebuilds, hidden-line views and drawings. A browser build.</li>
+      </ul>
+      <p class="works__not">Not yet: STEP, IGES or mesh import/export, surfacing and sheet metal. Assemblies are in progress. Nothing leaves the application today except drawings.</p>
+    </div>
+    <div>
+      <h3>What waits on Catallax <span class="status-chip">In design</span></h3>
+      <p>SolidDraft will run only on Catallax. The first target part triggers removal of SMLib, not a choice of backends.</p>
+      <ul class="application__list">
+        <li>Stage 1: sketches, extrudes, cuts, revolves and booleans through Catallax, plus the headless application verification loop.</li>
+        <li>Drawings move to polygon-mode hidden-line removal at the cutover. STEP and mesh export follow through Catallax.</li>
+        <li>Stage 3: holes, chamfers, patterns, mirror, shell, offset and thicken. Stage 4: fillets and draft.</li>
+        <li>Stage 5: sweeps, lofts and spline profiles. Stage 6: STEP import. Field-driven features follow the per-face distance work.</li>
+      </ul>
+      <p class="works__not">In design: commands waiting for a kernel operation stay visible but disabled, with the stage named. Existing parts report a rebuild error at a waiting feature.</p>
+    </div>
+  </div>
+  <p class="application__support">Same project, same sponsorship. <a href="#support">See Catallax's works-today list and support both projects</a>.</p>
 </section>
 
 <!-- BENCHMARKS ----------------------------------------------------------->
@@ -309,14 +330,14 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
   <div class="bench__head">
     <p class="label section__label"><span>07</span>Benchmarks</p>
     <h2 class="display" data-lines>Measured, not <em>marketed</em>.</h2>
-    <p class="bench__lede">Hard cases. Real answers. The latest kernel, matched against our own hard-test corpus.</p>
+    <p class="bench__lede">Hard cases. Real answers. Historical source-run figures, not a measurement of current main.</p>
   </div>
   <div class="bench__table" role="table" aria-label="Reported kernel robustness results">
     <div class="bench__row bench__row--head label" role="row">
       <span role="columnheader">Corpus</span><span role="columnheader">Answered</span><span role="columnheader">Other outcomes</span><span role="columnheader">Total</span>
     </div>
     <div class="bench__row" role="row">
-      <span role="cell">Hard-test requests<small>Matched run · latest kernel</small></span>
+      <span role="cell">Hard-test requests<small>Historical matched source run</small></span>
       <span role="cell" class="is-us" data-v="363"><b>363</b></span><span role="cell" data-v="16"><b>16 refused</b></span><span role="cell" data-v="379"><b>379</b></span>
     </div>
     <div class="bench__row" role="row">
@@ -334,7 +355,7 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
     <p class="label section__label"><span>08</span>Release discipline</p>
     <h2 class="display" data-lines>Proof before <em>promise</em>.</h2>
     <p>Every pull request faces format, clippy and the full enabled release test suite. Exact maths keeps us honest. OpenCASCADE checks our STEP.</p>
-    <p>Our rule: the same answer on every machine. Still to fix: the 50-second deadline can make an answer depend on load.</p>
+    <p>Our rule: the same question gives the same answer on every machine and at every thread count. The deterministic <code>catallax-verify</code> exchange uses work budgets to choose outcomes and reports wall time separately. The legacy CLI still has its 50-second deadline.</p>
     <ul class="ci__list label">
       <li><span>Format</span><b>cargo fmt --all --check</b></li>
       <li><span>Lint</span><b>clippy · deny warnings</b></li>
@@ -352,25 +373,27 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 <section class="support section" id="support">
   <div class="support__grid">
     <div class="support__copy">
-      <p class="label section__label"><span>09</span>Sponsor the free kernel</p>
+      <p class="label section__label"><span>09</span>Support Catallax + SolidDraft</p>
       <h2 class="display" data-lines>Geometry belongs to <em>everyone</em>.</h2>
-      <p class="contact__lede">Keep geometry free. Help me chase the hard cases and build the bridge between explicit and implicit. MIT today. MIT tomorrow. Yours to build on.</p>
+      <p class="contact__lede">One project, a kernel and its application. Help me chase the hard cases and build the tools to use them. Catallax is MIT today. SolidDraft is opening soon under MIT.</p>
+      <p>Support funds development, not a finished CAD system. Catallax's shipped list is beside this ask; <a href="#soliddraft">SolidDraft's current capabilities and waiting features</a> are above.</p>
       <div class="contact__ctas">
         <a class="btn btn--solid magnetic" href="https://github.com/sponsors/BohnBawerick"><span>GitHub Sponsors</span></a>
         <a class="btn magnetic" href="https://ko-fi.com/pedropaiva56920"><span>Support on Ko-fi</span></a>
       </div>
     </div>
     <div class="support__works">
-      <p class="label">Works today · the code on main</p>
+      <p class="label">Catallax works today · the code on main</p>
       <ul class="works__list label">
         <li><span>Solids</span><b>Blocks, cylinders, spheres, cones and tori. Exact, by definition.</b></li>
         <li><span>Booleans</span><b>Unite, subtract and intersect on plane, cylinder and sphere pairs, plus closed-form cone and torus cases.</b></li>
-        <li><span>Sketches</span><b>Lines, arcs and circles, extruded or revolved. Faces named by the operation that made them.</b></li>
+        <li><span>Sketches</span><b>Exact line, arc and circle profiles with holes, signed extrusions, rational-frame revolutions and through-all cuts. Operation-derived face and edge names.</b></li>
         <li><span>Measure</span><b>Volume, area and centroid with proven bounds.</b></li>
         <li><span>Output</span><b>STEP AP242 with a proven deviation report. Display meshes with proven chord error.</b></li>
-        <li><span>Field</span><b>A signed distance evaluator for the same solids, and a sampled two-way check between the kernels.</b></li>
+        <li><span>Field</span><b>Recipe solids, sketches, extrusions, rational-frame revolutions and booleans. Certified distance bounds and a sampled two-way B-rep check, not a whole-model proof.</b></li>
       </ul>
-      <p class="works__not">Not yet: fillets, chamfers, shell, offset, draft, sweep, loft, patterns, STEP import. Some valid cone, torus and near-tangent cases still refuse or time out. Nothing runs at click speed yet. <a href="https://github.com/BohnBawerick/catallax#what-works-today">The full list, with caveats</a>.</p>
+      <p class="works__not">Not yet: fillets, chamfers, shell, offset, draft, sweep, loft, patterns, mirror, STEP import or SolidDraft integration. General algebraic frames and some valid cone, torus and near-tangent cases still refuse. Some operations take seconds; click-speed rebuilds remain in design. <a href="https://github.com/BohnBawerick/catallax#what-works-today">The full list, with caveats</a>.</p>
+      <p class="works__not">Kept rules: no unsafe code; derived geometry stored by definition; a proven answer is never wrong. Only impossible geometry is an acceptable final refusal. Refusals of possible geometry are unfinished work, not exclusions from the goal.</p>
     </div>
   </div>
 </section>
@@ -390,7 +413,7 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 </main>
 
 <footer class="footer label">
-  <span>© 2026 Pedro De Paiva · Catallax</span>
+  <span>© 2026 Pedro De Paiva · Catallax + SolidDraft</span>
   <span>Hand-built wireframe art · <a href="THIRD-PARTY.txt">Third-party licences</a></span>
   <span>Perth 31.95°S 115.86°E · <time data-clock>--:--</time> AWST</span>
 </footer>

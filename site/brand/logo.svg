@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 40" fill="none" stroke-linejoin="round">
+  <title>Catallax</title>
+  <g transform="translate(4 4)">
+    <path d="M29 8 16 1 3 8v16l13 8 13-8" stroke="#ede7da" stroke-width="1.8"/>
+    <path d="M3 8l13 8 13-8M16 16v16" stroke="#ede7da" stroke-width="1.8"/>
+    <path d="M29 8v16L16 16" stroke="#737b83" stroke-width="1.2" stroke-dasharray="2 2"/>
+    <circle cx="16" cy="16" r="3" fill="#ff5b1f"/>
+  </g>
+  <text x="48" y="28" fill="#ede7da" font-family="Bricolage Grotesque, sans-serif" font-size="26" font-weight="600" letter-spacing="-0.5">catallax</text>
+</svg>

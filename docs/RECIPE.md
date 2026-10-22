@@ -854,7 +854,7 @@ A small recipe in canonical text:
 
 **Versions.** The format name carries the version. Any change of meaning or schema makes a new version and an entry in [INTERFACE-CHANGES.md](INTERFACE-CHANGES.md). A reader reads only the versions it knows, and older ones go through an explicit conversion.
 
-Version 2 added the five stock-solid operations and singleton singular-vertex names. Version 3 adds `extrude_through`; older operation meanings do not change. Reviewed version 1 or 2 files migrate by explicitly changing `format` to `catallax-recipe/3`, then parsing, checking and writing canonical text. The reader does not silently relabel older files or accept a version alias. The field evaluator accepts the current schema but still refuses sketches and feature operations with `field.unsupported-operation`.
+Version 2 added the five stock-solid operations and singleton singular-vertex names. Version 3 adds `extrude_through`; older operation meanings do not change. Reviewed version 1 or 2 files migrate by explicitly changing `format` to `catallax-recipe/3`, then parsing, checking and writing canonical text. The reader does not silently relabel older files or accept a version alias. Both kernels evaluate sketch profiles, signed extrusions, through-all cuts and full or rational-frame partial revolutions. Section 7.14 lists the specific unfinished algebraic feature cases.
 
 
 Choices:

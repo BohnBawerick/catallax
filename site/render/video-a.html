@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Video A: kernel assembly (render page)</title>
+<link rel="stylesheet" href="../brand/tokens.css">
+<style>html,body{margin:0;background:var(--ink)}canvas{display:block;width:1280px;height:720px}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="../js/wire.js"></script>
+<script>
+// Deterministic 10 s loop at 30 fps. renderFrame(i) draws frame i; capture.mjs grabs it.
+const { mat, gen, Renderer, palette } = Wire;
+const FPS = 30, SECONDS = 10;
+const canvas = document.getElementById('c');
+const r = new Renderer(canvas, { fov: 0.62, maxDpr: 1 });
+r.resize(1280, 720);
+const P = palette();
+
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const span = (t, a, b) => clamp01((t - a) / (b - a));
+const inOut = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const expoOut = x => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x);
+const powIn = x => x * x * x;
+
+// Scene parts. Gears share a module so the teeth mesh: pitch radius ratio = 18:12.
+const grid = new Wire.Mesh();
+for (let k = -6; k <= 6; k++) {
+  grid.loop([[k * 0.5, 0, -3], [k * 0.5, 0, 3]], k === 0 ? 1 : 0, false);
+  grid.loop([[-3, 0, k * 0.5], [3, 0, k * 0.5]], k === 0 ? 1 : 0, false);
+}
+const plate = gen.merge(
+  gen.box(1.3, 0.05, 0.8),
+  ...[[-1.12, -0.62], [1.12, -0.62], [-1.12, 0.62], [1.12, 0.62]].map(([x, z]) => {
+    const c = gen.cylinder({ r: 0.07, y0: -0.05, y1: 0.05, seg: 20, rails: 4, tag: 1 });
+    for (let i = 0; i < c.v.length; i += 3) { c.v[i] += x; c.v[i + 2] += z; }
+    return c;
+  })
+);
+const shaft = () => gen.cylinder({ r: 0.09, y0: 0.06, y1: 1.15, seg: 28, rails: 7, tag: 0, railTag: 1 });
+const shaftA = shaft(), shaftB = shaft();
+const gearA = gen.gear({ teeth: 18, bore: 0.14, hub: 0.36 });
+const gearB = gen.gear({ teeth: 12, bore: 0.2, hub: 0.44, holes: 4 });
+const RA = 0.6, RB = RA * 12 / 18, XA = -0.52, XB = XA + (RA + RB) * 0.92;
+const scanRect = new Wire.Mesh();
+scanRect.loop([[-1.6, 0, -1.05], [1.6, 0, -1.05], [1.6, 0, 1.05], [-1.6, 0, 1.05]], 2);
+
+const solid = [
+  { color: P.bone, width: 1.1, alpha: 0.95 },
+  { color: P.slate, width: 1, alpha: 0.75 },
+  { color: P.oxide, width: 1.6, alpha: 1 },
+  { color: P.slate, width: 1, alpha: 0.5, dash: [3, 4] },
+];
+const gridStyle = [{ color: P.steel, width: 1, alpha: 1 }, { color: P.slate, width: 1, alpha: 0.5 }];
+
+function hud(t, bodies) {
+  const c = r.ctx;
+  c.globalAlpha = 1;
+  c.font = '500 13px "JetBrains Mono"';
+  c.fillStyle = P.slate;
+  c.fillText('CATALLAX / ASSEMBLY ILLUSTRATION', 40, 48);
+  c.fillText(`t = ${t.toFixed(2).padStart(5, '0')} s`, 40, 690);
+  c.fillText(`illustrated parts ${bodies}/5`, 180, 690);
+  c.textAlign = 'right';
+  c.fillText(`frame ${String(Math.round(t * FPS)).padStart(3, '0')}`, 1240, 690);
+  c.fillText('PERSPECTIVE 36°', 1240, 48);
+  c.textAlign = 'left';
+}
+
+window.renderFrame = function (i) {
+  const t = i / FPS, ctx = r.ctx;
+  r.clear();
+  ctx.fillStyle = P.ink;
+  ctx.fillRect(0, 0, 1280, 720);
+  const phase = t / SECONDS * Math.PI * 2;
+  r.view = mat.chain(mat.translate(0, 0.05, -5.1), mat.rotateX(0.52 + 0.05 * Math.cos(phase)), mat.rotateY(0.45 + 0.32 * Math.sin(phase)));
+  const base = mat.translate(0, -0.45, 0);
+  const out = x => 1 - powIn(x);          // un-draw at the end of the loop
+  r.draw(grid, mat.chain(base, mat.translate(0, -0.07, 0)), { styles: gridStyle, fog: 0.9 });
+
+  const parts = [
+    { mesh: plate, a: 0.3, b: 1.8, drop: 0, x: 0, spin: 0, dots: true, k0: 9.0 },
+    { mesh: shaftA, a: 1.2, b: 2.4, drop: 1.2, x: XA, spin: 0, k0: 8.6 },
+    { mesh: shaftB, a: 1.6, b: 2.8, drop: 1.2, x: XB, spin: 0, k0: 8.6 },
+    { mesh: gearA, a: 2.4, b: 4.4, drop: 0.9, x: XA, gear: RA, spin: 1, k0: 7.8 },
+    { mesh: gearB, a: 3.0, b: 5.0, drop: 0.9, x: XB, gear: RB, spin: -18 / 12, k0: 7.8 },
+  ];
+  let bodies = 0;
+  for (const p of parts) {
+    const build = inOut(span(t, p.a, p.b)), unbuild = out(span(t, p.k0, p.k0 + 1.4));
+    const progress = Math.min(build, unbuild);
+    if (build >= 1 && unbuild >= 1) bodies++;
+    const y = p.drop * (1 - expoOut(span(t, p.a, p.b + 0.4))) + 0.25 * (1 - unbuild);
+    let model = mat.chain(base, mat.translate(p.x, y, 0));
+    if (p.gear) {
+      const ang = 0.55 * t * p.spin + (p.spin < 0 ? Math.PI / 12 : 0);
+      model = mat.chain(model, mat.translate(0, 0.62, 0), mat.rotateY(ang), mat.rotateX(Math.PI / 2), mat.scale(p.gear));
+    }
+    r.draw(p.mesh, model, { progress, styles: solid, head: P.oxide, dots: p.dots ? P.oxide : null, fog: 0.7 });
+  }
+
+  // Illustrative section plane, not a kernel interference check.
+  const sweep = span(t, 5.6, 7.4);
+  if (sweep > 0 && sweep < 1) {
+    const a = Math.sin(sweep * Math.PI);
+    r.draw(scanRect, mat.chain(base, mat.translate(0, -0.05 + inOut(sweep) * 1.35, 0)), { styles: solid, alpha: a * 0.9 });
+    ctx.globalAlpha = a;
+    ctx.font = '500 13px "JetBrains Mono"';
+    ctx.fillStyle = P.oxide;
+    ctx.fillText('SECTION SWEEP / ILLUSTRATION', 40, 660);
+    ctx.globalAlpha = 1;
+  }
+  hud(t, bodies);
+};
+
+window.__frames = FPS * SECONDS;
+window.__ready = document.fonts.load('500 13px "JetBrains Mono"').then(() => document.fonts.ready);
+window.__ready.then(() => { if (!navigator.webdriver) { let i = 0; (function loop() { renderFrame(i = (i + 1) % __frames); setTimeout(loop, 1000 / FPS); })(); } });
+</script>
+</body>
+</html>

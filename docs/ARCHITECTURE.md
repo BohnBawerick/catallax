@@ -2,7 +2,7 @@
 
 Catallax's master model is one recipe evaluated by an exact B-rep kernel and a signed distance field kernel. Each operation shares one mathematical definition. [PRD.md](PRD.md) defines that direction; [DESIGN.md](DESIGN.md) governs the B-rep implementation.
 
-The seven pieces below implement the B-rep half, exported without source history into this public repository. [RECIPE.md](RECIPE.md) defines the shared recipe language. `catallax-recipe` holds its data model, and `catallax-field` evaluates stock solids and booleans with separate named face records. Cross-kernel checks and conversions are not implemented. [FIELD.md](FIELD.md) defines the field query boundary; [PLAN.md](PLAN.md) orders the remaining work.
+The seven pieces below implement the B-rep half, exported without source history into this public repository. [RECIPE.md](RECIPE.md) defines the shared recipe language. `catallax-recipe` holds its data model, and `catallax-field` evaluates stock solids and booleans with separate named face records. `catallax-compare` checks their sampled display boundaries in both directions; conversions and the finer pre-export check remain unimplemented. [FIELD.md](FIELD.md) defines the field query boundary; [PLAN.md](PLAN.md) orders the remaining work.
 
 The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels. The former 1-in-10,000 programme and grid-cell product gates are retired. Mathematical regression tests remain; speed per click matters for the interactive CAD tool.
 
@@ -60,9 +60,9 @@ A front-end crate, `catallax-cli`, builds both `catallax` and `exact-brep` from 
 Build order: pieces 1, 2 and 3 in that order; then 4 and 5; with 6 and 7 alongside them.
 Piece 4 needs only 1 and 2, so its work can start as soon as piece 2's interface is stable.
 
-`catallax-recipe` is not a piece of the B-rep half. It depends only on piece 1 for exact numbers. Its public types implement serde's `Serialize` and `Deserialize`, and no serde type appears in its function signatures. Its errors are recipe errors with codes `recipe.<reason>`, not refusals. `catallax-field` depends on this data model and pieces 1 and 2, never on B-rep topology, booleans or export.
+`catallax-recipe` is not a piece of the B-rep half. It depends only on piece 1 for exact numbers. Its public types implement serde's `Serialize` and `Deserialize`, and no serde type appears in its function signatures. Its errors are recipe errors with codes `recipe.<reason>`, not refusals. `catallax-field` uses the shared sketch validator from `catallax-features`, but never calls a B-rep builder, body containment or export.
 
-B-rep recipe evaluation will call the existing B-rep operations; field recipe evaluation already compiles the stock solids and booleans independently. The two kernels do not convert results after each operation. Conversions happen only when a feature or output needs them.
+`catallax-features` evaluates B-rep recipes through the existing operations; field recipe evaluation compiles stock solids, profile sweeps and booleans independently. The two kernels do not convert results after each operation. Conversions happen only when a feature or output needs them.
 
 `catallax-mesh` is a display-only consumer of pieces 1 to 4. It samples each
 B-rep edge once, triangulates periodic analytic face charts, and returns shared
@@ -70,6 +70,13 @@ positions, face-tagged triangles and proven chord bounds. Its OBJ writer groups
 triangles by input face ID. It does not change the body, STEP export or the
 question/manifest exchange. Display accuracy is not the PRD's 1 nm agreement
 guarantee.
+
+`catallax-compare` consumes both recipe evaluators and the display mesh. It uses
+field distance certificates, independent rational boundary samples and exact
+trimmed-face projections. It never calls B-rep body containment for comparison.
+Its revision controller atomically publishes only complete, current reports.
+Regional agreement is limited to the requested box; sampled display agreement
+does not certify whole-boundary Hausdorff distance or 1 nm accuracy.
 
 Dependencies point one way only. A piece never depends on a piece below it in the table, except as listed.
 Crates outside this list (third-party) may be used inside a piece, but no third-party type appears in any public signature.
@@ -88,6 +95,8 @@ crates/catallax-step/            piece 7
 crates/catallax-mesh/            display meshes and OBJ export, beside the pieces
 crates/catallax-recipe/          recipe language data model, beside the pieces
 crates/catallax-field/           independent analytic fields and certified named queries
+crates/catallax-features/        named B-rep recipe builds and sketch-based features
+crates/catallax-compare/         two-way sampled display comparison and revision cancellation
 crates/catallax-cli/             front end, binaries `catallax` and `exact-brep`
 docs/                      this file, DESIGN.md, JUDGE-INTERFACE.md, RECIPE.md, INTERFACE-CHANGES.md, pieces/
 ```

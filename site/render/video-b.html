@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Catallax release evidence, edited for time</title>
+<link rel="stylesheet" href="../brand/tokens.css">
+<style>html,body{margin:0;background:var(--graphite)}canvas{display:block;width:1280px;height:720px}</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Real command output, selected and re-timed for a legible 14-second loop.
+const FPS = 30, SECONDS = 14, W = 1280, H = 720;
+const cs = getComputedStyle(document.documentElement), tok = n => cs.getPropertyValue(n).trim();
+const C = { bg: tok('--graphite'), ink: tok('--ink'), steel: tok('--steel'), slate: tok('--slate'), fog: tok('--fog'), bone: tok('--bone'), oxide: tok('--oxide'), signal: tok('--signal') };
+const ctx = document.getElementById('c').getContext('2d');
+const FONT = 18, LH = 31, X0 = 40, Y0 = 128;
+let script = [];
+window.renderFrame = function(i) {
+  const t = i / FPS;
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C.ink; ctx.fillRect(0, 0, W, 56);
+  ctx.fillStyle = C.steel; ctx.fillRect(0, 56, W, 1);
+  [C.oxide, C.steel, C.steel].forEach((c, k) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(36 + k * 24, 28, 6.5, 0, Math.PI * 2); ctx.fill(); });
+  ctx.font = '500 15px "JetBrains Mono"'; ctx.fillStyle = C.fog; ctx.textAlign = 'center';
+  ctx.fillText('CATALLAX / ACTUAL OUTPUT / EDITED FOR TIME', W / 2, 33); ctx.textAlign = 'left';
+  ctx.fillStyle = C.slate; ctx.font = '400 14px "JetBrains Mono"';
+  ctx.fillText('Workspace release build + numbers library tests. Not a full-suite recording.', X0, 88);
+  const visible = script.filter(line => t >= line.at);
+  visible.forEach((line, row) => {
+    ctx.font = `${line.command ? 700 : 400} ${FONT}px "JetBrains Mono"`;
+    ctx.fillStyle = line.command ? C.bone : line.text.includes('test result:') || line.text.includes('Finished') ? C.signal : C.fog;
+    const text = line.command ? line.text.slice(0, Math.floor((t - line.at) * 75)) : line.text;
+    ctx.fillText(text, X0, Y0 + row * LH, W - X0 * 2);
+  });
+  if (t > 11) { ctx.fillStyle = C.oxide; ctx.font = '500 14px "JetBrains Mono"'; ctx.fillText('Full transcript: render/terminal-output.json', X0, 682); }
+};
+window.__frames = FPS * SECONDS;
+window.__ready = Promise.all([
+  document.fonts.load('400 18px "JetBrains Mono"'),
+  document.fonts.load('700 18px "JetBrains Mono"'),
+  fetch('terminal-output.json').then(response => { if (!response.ok) throw new Error('Missing real command transcript'); return response.json(); }),
+]).then(async ([, , transcript]) => {
+  const [build, test] = transcript.commands;
+  const buildLines = build.output.split('\n').filter(line => /Compiling catallax|Finished/.test(line));
+  const testLines = test.output.split('\n');
+  const selected = [
+    { text: '$ ' + build.command, command: true },
+    ...buildLines.map(text => ({text})),
+    { text: '$ ' + test.command, command: true },
+    ...testLines.filter(line => /^running \d+ tests$/.test(line)).map(text => ({text})),
+    ...testLines.filter(line => /^test .* \.\.\. ok$/.test(line)).slice(0, 2).map(text => ({text})),
+    { text: '[... individual test output omitted ...]' },
+    ...testLines.filter(line => /^test result:/.test(line)).map(text => ({text})),
+  ];
+  if (!selected.some(line => line.text.startsWith('test result: ok.'))) throw new Error('Transcript has no successful test result');
+  script = selected.map((line, i) => ({ ...line, at: 0.2 + i * 0.58 }));
+  await document.fonts.ready;
+  renderFrame(0);
+});
+</script>
+</body>
+</html>

@@ -47,6 +47,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "catallax-compare"
+version = "0.0.0"
+dependencies = [
+ "catallax-boolean",
+ "catallax-features",
+ "catallax-field",
+ "catallax-mesh",
+ "catallax-numbers",
+ "catallax-recipe",
+ "catallax-shapes",
+ "catallax-topology",
+ "serde_json",
+]
+
+[[package]]
 name = "catallax-features"
 version = "0.0.0"
 dependencies = [
@@ -64,9 +79,12 @@ dependencies = [
 name = "catallax-field"
 version = "0.0.0"
 dependencies = [
+ "catallax-features",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",
+ "catallax-topology",
+ "serde_json",
 ]
 
 [[package]]

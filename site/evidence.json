@@ -1,0 +1,40 @@
+{
+  "revision": "190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df",
+  "counts": {
+    "rust_lines": 54668,
+    "cpp_lines": 0,
+    "unsafe_blocks": 0,
+    "tests": 409,
+    "ignored_tests": 12
+  },
+  "method": {
+    "files": "git ls-files -z -- crates. Only tracked workspace sources; dependencies and generated artifacts excluded.",
+    "rust_lines": "Physical lines in .rs files, including comments, blanks and tests. Final newline does not add an extra line.",
+    "cpp_lines": "Physical lines in .c, .cc, .cpp, .cxx, .h, .hh, .hpp and .hxx files.",
+    "unsafe_blocks": "Matches of the Rust unsafe keyword followed by an opening brace in those .rs files. Zero matches; the workspace forbids unsafe code.",
+    "tests": "cargo nextest list --workspace --release --locked --build-jobs 2 --message-format json; testcases with ignored=false. Includes each compiled binary target; excludes doctests."
+  },
+  "sources": {
+    "current_implementation": "https://github.com/BohnBawerick/catallax/blob/190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df/README.md",
+    "direction": "https://github.com/BohnBawerick/catallax/blob/190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df/docs/PRD.md",
+    "ci": "https://github.com/BohnBawerick/catallax/blob/190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df/.github/workflows/check.yml",
+    "bio": "https://pedro.zigrawbohnbawerick.org/"
+  },
+  "historical_robustness": {
+    "source": "Project-owner supplied report of the latest kernel, matched against our own hard-test corpus.",
+    "scope": "Historical source-run figures, not a measurement of this public revision. The measured source changes are not in the public starting tree. Raw source-run artifacts are not included here; these totals are owner-reported, not independently reproduced by this site capture.",
+    "requests": {
+      "total": 379,
+      "answered": 363,
+      "refused": 16,
+      "impossible_geometry": 6,
+      "timeouts": 10
+    },
+    "failure_packs": {
+      "total": 98,
+      "answered": 94
+    },
+    "previously_answered_output_changes": 0,
+    "speed_comparisons": "Not measured. No cross-kernel speed comparison is claimed."
+  }
+}

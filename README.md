@@ -2,6 +2,8 @@
 
 Geometry should not require a vendor's permission. Catallax is a geometry kernel in safe Rust, free for everyone, for ever.
 
+Kernel site: [kernel.zigrawbohnbawerick.org](https://kernel.zigrawbohnbawerick.org/).
+
 ## Why this is free
 
 Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.
@@ -26,7 +28,7 @@ One recipe, the feature tree, is the master. An exact B-rep kernel and a signed 
 
 The kernels must agree exactly where mathematics allows, and within 1 nm only where necessity forces a tolerance. Impossible geometry is the only acceptable final refusal. Every other refusal is unfinished work. The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels, not a claim to beat them.
 
-[The PRD](docs/PRD.md) sets that direction. The B-rep starting code remains intact. [RECIPE.md](docs/RECIPE.md) defines the shared language, and `catallax-field` now evaluates its stock solids and booleans with exact predicates, bounded distances and named face queries. [FIELD.md](docs/FIELD.md) states the query guarantees and unresolved cases. Cross-kernel agreement checks are not built. The inherited B-rep mark APIs do not yet enforce the new 1 nm geometric limit, and its 50-second deadline conflicts with the same-answer rule. These gaps remain explicit in [the plan](docs/PLAN.md).
+[The PRD](docs/PRD.md) sets that direction. The B-rep starting code remains intact. [RECIPE.md](docs/RECIPE.md) defines the shared language, and `catallax-field` evaluates its stock solids and booleans with exact predicates, bounded distances and named face queries. [FIELD.md](docs/FIELD.md) states the query guarantees and unresolved cases. `catallax-compare` runs a two-way sampled display check with revision-gated publication. It is not the finer 1 nm pre-export check. The inherited B-rep mark APIs do not yet enforce the new 1 nm geometric limit, and its 50-second deadline conflicts with the same-answer rule. These gaps remain explicit in [the plan](docs/PLAN.md).
 
 ## What works today
 
@@ -41,8 +43,9 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.
 - `catallax-mesh` builds shared-edge display meshes of analytic faces and certified intersection traces, with picking IDs, proven chord bounds and OBJ export.
 - `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/3` JSON form. It evaluates no geometry.
-- `catallax-field` compiles recipe stock solids and booleans into a fixed-order tape, keeps names outside that tape, and supplies tentative and proven scalar/batch queries. Boolean residuals carry conservative distance bounds, not a true-distance claim.
+- `catallax-field` compiles recipe stock solids, exact sketch profiles, signed extrusions, infinite through-all cuts, rational-frame full/partial revolutions and booleans into a fixed-order tape. It keeps names outside that tape and supplies tentative and proven scalar/batch queries. Sweep and Boolean residuals carry conservative distance bounds, not a true-distance claim.
 - `catallax-features::evaluate` builds named B-rep stock solids, exact line/circle/arc profiles with holes, signed extrusions, rationally represented full and partial revolutions, explicit booleans and target-bounded through-all cuts. `Built` retains an immutable recipe definition and returns the model, result and intermediate body handles; `Model::face_origins`, `edge_name` and `vertex_name` expose the names. Split faces keep their origins and merged faces take their union.
+- `catallax-compare` checks every selected display mesh vertex against certified field distance bounds, projects independent field boundary samples onto exact trimmed B-rep faces, and compares origin sets and outward directions. Reports distinguish agreement, proven disagreement and unresolved work. Edit regions and cooperative cancellation do not require app integration.
 - `catallax-cli` builds `catallax` and the legacy `exact-brep` program from the same main. They read a question, build and operate, measure, and write a manifest and optional STEP file.
 
 General algebraic feature frames, oblique circular sweeps and some generated radii remain unsupported legal geometry, listed with specific refusal codes in [RECIPE.md section 7.14](docs/RECIPE.md#714-b-rep-feature-geometry-bugs). Fillets, chamfers, shell, offset, draft, sweep, loft and STEP import remain missing. The kernel does not yet implement the whole PRD. Existing ignored regressions remain visible.
@@ -137,4 +140,4 @@ Agent-written code is welcome. Say how it was produced and stay accountable for 
 
 ## Sponsorship
 
-Sponsors can help pay for work on Catallax. If you want to sponsor the project, open a GitHub issue to get in touch. There is no sponsor page yet.
+Support the free kernel through [GitHub Sponsors](https://github.com/sponsors/BohnBawerick) or [Ko-fi](https://ko-fi.com/pedropaiva56920).

@@ -1,0 +1,152 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P3 filleted boss",
+  "description": "mm. Block 40x30x10; boss r8 h12 at (20,15,10). Concave junction fillet r2, four convex block top edges r1.",
+  "steps": [
+    {
+      "id": "block",
+      "op": "block",
+      "size": [
+        "40",
+        "30",
+        "10"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "boss",
+      "op": "cylinder",
+      "radius": "8",
+      "height": "12",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "20",
+          "15",
+          "10"
+        ]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "block",
+      "tool": "boss"
+    },
+    {
+      "id": "junction",
+      "op": "fillet",
+      "body": "joined",
+      "radius": "2",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "block",
+              "role": "end"
+            },
+            {
+              "step": "boss",
+              "role": {
+                "side": {
+                  "segment": "wall"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rounded",
+      "op": "fillet",
+      "body": "junction",
+      "radius": "1",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "block",
+              "role": "end"
+            },
+            {
+              "step": "block",
+              "role": {
+                "side": {
+                  "segment": "x_min"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "block",
+              "role": "end"
+            },
+            {
+              "step": "block",
+              "role": {
+                "side": {
+                  "segment": "x_max"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "block",
+              "role": "end"
+            },
+            {
+              "step": "block",
+              "role": {
+                "side": {
+                  "segment": "y_min"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "between": [
+            {
+              "step": "block",
+              "role": "end"
+            },
+            {
+              "step": "block",
+              "role": {
+                "side": {
+                  "segment": "y_max"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "result": "rounded"
+}

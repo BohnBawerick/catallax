@@ -10,9 +10,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "{}",
                 json!({"name":"catallax-verify","request":"catallax-request/1",
                 "response":"catallax-response/1","manifest":"catallax-manifest/3",
-                "sources":["question","recipe","compare"],"default_work":catallax_cli::verification::DEFAULT_WORK,
+                "operation_log":"catallax-operation-log/1","question":"catallax-question/1",
+                "sources":["question","recipe","field","compare"],"default_work":catallax_cli::verification::DEFAULT_WORK,
                 "kernel":catallax_cli::about()})
             );
+        }
+        [command, file, flag, out] if command == "replay" && flag == "--out" => {
+            let question: catallax_cli::verification::ExportedQuestion =
+                serde_json::from_slice(&std::fs::read(file)?)?;
+            let request = question.request(out.into())?;
+            println!("{}", catallax_cli::verification::answer(&request)?);
         }
         [command] if command == "stream" => {
             let stdin = io::stdin();
@@ -33,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: catallax-verify stream | about\nstream: one catallax-request/1 JSON object per line; one catallax-response/1 per line\nUse control-catallax.py --help for batch, cache, compare and timing commands."
+                "usage: catallax-verify stream | about | replay QUESTION --out DIR\nstream: one catallax-request/1 JSON object per line; one catallax-response/1 per line\nreplay: one portable catallax-question/1, preserving its work allowance\nUse control-catallax.py --help for parts, batch, cache, compare and timing commands."
             );
             if args != ["--help"] {
                 std::process::exit(64);

@@ -148,6 +148,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
     let mut profiles = BTreeMap::new();
     let mut bodies: BTreeMap<StepId, BodyValue> = BTreeMap::new();
     for step in &recipe.steps {
+        let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
         let build = |model: &mut Model, dec: &mut Decider| -> Result<Option<BodyValue>, Refusal> {
             if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id, dec)? {
                 return Ok(Some(BodyValue { body, radius }));
@@ -252,22 +253,31 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                 }
             }))
         };
-        if let Operation::Sketch { plane, loops } = &step.op {
-            let profile =
-                Profile::new(plane, loops, dec).map_err(|refusal| BuildError::Geometry {
-                    step: step.id.clone(),
-                    refusal,
-                })?;
-            profiles.insert(step.id.clone(), profile);
+        let result = if let Operation::Sketch { plane, loops } = &step.op {
+            Profile::new(plane, loops, dec).map(|profile| {
+                profiles.insert(step.id.clone(), profile);
+                None
+            })
         } else {
-            let body = build(&mut model, dec)
-                .map_err(|refusal| BuildError::Geometry {
-                    step: step.id.clone(),
-                    refusal,
-                })?
-                .expect("body-producing operation");
-            bodies.insert(step.id.clone(), body);
-        }
+            build(&mut model, dec).map(|body| {
+                let body = body.expect("body-producing operation");
+                let id = body.body;
+                bodies.insert(step.id.clone(), body);
+                Some(id)
+            })
+        };
+        span.finish(
+            dec,
+            result.as_ref().err(),
+            result
+                .as_ref()
+                .ok()
+                .and_then(|body| body.map(|id| &model.body(id).marks)),
+        );
+        result.map_err(|refusal| BuildError::Geometry {
+            step: step.id.clone(),
+            refusal,
+        })?;
     }
     let result = bodies[&recipe.result].body;
     Ok(Built {

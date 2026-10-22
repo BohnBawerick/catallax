@@ -74,3 +74,7 @@ pub(crate) fn charge(units: u64) -> bool {
 pub(crate) fn exhausted() -> bool {
     ACTIVE.with(|slot| slot.get().is_some_and(|state| state.exhausted))
 }
+
+pub(crate) fn used() -> u64 {
+    ACTIVE.with(|slot| slot.get().map_or(0, |state| state.used))
+}

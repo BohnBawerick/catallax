@@ -1,0 +1,52 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P0 equal cylinder and sphere",
+  "description": "mm. Cylinder radius 5 height 20 centred on sphere radius 5.",
+  "steps": [
+    {
+      "id": "cylinder",
+      "op": "cylinder",
+      "radius": "5",
+      "height": "20",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "-10"
+        ]
+      }
+    },
+    {
+      "id": "sphere",
+      "op": "sphere",
+      "radius": "5",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "cylinder",
+      "tool": "sphere"
+    }
+  ],
+  "result": "joined"
+}

@@ -30,6 +30,8 @@ mod real_poly;
 mod real_poly_roots;
 mod system;
 mod tower;
+mod trace;
+pub use trace::{OperationEntry, OperationSpan, with_operation_log};
 
 #[cfg(test)]
 mod tests;

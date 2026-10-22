@@ -22,6 +22,25 @@ Sources:
 
 A new source implements one evaluation adapter returning a manifest. External corpus adapters export Python `load(Path)` and yield `{"source":...,"problem":...}` records. These adapters are trusted executable code selected explicitly with `--adapter`. Data files cannot select executable adapters.
 
+### Building without measurement
+
+Library callers use `catallax_cli::build_question(&question, &mut decider)` for
+question inputs, or `catallax_features::evaluate(&recipe, &mut decider)` for
+application recipes. Both return the body and its owning model without computing
+proven volume, area or centroid. Neither writes output files.
+
+Request properties later through `catallax_measure::volume`, `area` or
+`mass_properties`, passing that model and body with the requested `Accuracy`.
+Measurement borrows the model, so a measurement refusal does not discard the
+built body or change its construction marks. `build_question` uses the caller's
+decider policy, not the question's legacy deadline or output settings.
+
+The question adapter retains its existing measurement defaults. To build through
+the verification CLI without measurement, set `"measure":{"properties":[]}` in
+the question. Requested measurements use the same enclosure algorithms as the
+legacy command. The legacy command and `answer`, `answer_since` and
+`answer_deterministic` retain their existing requested-property behavior.
+
 ## Response and geometric manifest
 
 A `catallax-response/1` object has `manifest`, `work` and `wall_ms`. `work` contains `used`, `limit` and `exhausted`. `wall_ms` is measured elapsed time and never changes an outcome. Work counts are deterministic for the same kernel build, input and allowance. They may change when the implementation changes.

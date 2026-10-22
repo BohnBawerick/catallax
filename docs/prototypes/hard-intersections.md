@@ -1,6 +1,6 @@
 # Hard intersections
 
-Protocol recorded before prototype code. Decision due at C2, 19 November 2026. Time box: one checkpoint. This is an experiment, not a change to the kernel's representation.
+Protocol recorded before prototype code. Work bound: one measured round of both candidates against the baseline, with at most one repeat and only if the measurement itself was wrong. The verdict lands before the hard-intersection repair work it informs starts. This is an experiment, not a change to the kernel's representation.
 
 ## Question and candidates
 

@@ -107,11 +107,9 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Boolean {target,tool,..} if target==tool =>
                 "B-rep recipe evaluation asserts distinct bodies when both operands name the same step",
             Operation::Block{..}|Operation::Cylinder{..}|Operation::Sphere{..}|
-            Operation::Cone{..}|Operation::Torus{..}|Operation::Boolean{..}=>return None,
-            Operation::Sketch{..}=>"field has no solved-profile evaluator",
-            Operation::Extrude{..}=>"field has no profile extrusion evaluator",
-            Operation::ExtrudeThrough{..}=>"field has no through-all cut evaluator",
-            Operation::Revolve{..}=>"field has no profile revolution evaluator",
+            Operation::Cone{..}|Operation::Torus{..}|Operation::Boolean{..}|
+            Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
+            Operation::Revolve{..}=>return None,
             Operation::Path{..}=>"neither kernel evaluates recipe paths",
             Operation::Hole{..}=>"neither kernel evaluates recipe holes",
             Operation::Fillet{..}=>"neither kernel evaluates recipe fillets",
@@ -349,6 +347,17 @@ pub(crate) fn run(
             sample_points[face].get_or_insert_with(|| p.clone());
         }
         let query = field.proven(&p, &mut storage);
+        if incident[i].is_empty() {
+            unresolved(
+                &mut report,
+                Pass::Forward,
+                &p,
+                vec![],
+                vec![],
+                "mesh vertex has no incident face deviation certificate",
+            );
+            continue;
+        }
         let d = query.distance.millimetres;
         let upper = Rational::from_f64_exact(d.hi()).map(|h| &h + &error);
         if query.location != Location::Indeterminate
@@ -423,7 +432,7 @@ pub(crate) fn run(
     let width = options.accuracy.mul_pow2(-20);
     let mut observed: BTreeMap<usize, BTreeSet<Origin>> = BTreeMap::new();
     let mut oriented = BTreeSet::new();
-    crate::sample::visit(recipe, options.divisions, revision, |p, origin| {
+    let mut check_sample = |p: RPoint3, origin: &Origin| {
         if options
             .region
             .as_ref()
@@ -628,7 +637,21 @@ pub(crate) fn run(
                 "surface direction is not unique and certified",
             );
         }
+    };
+    crate::sample::visit(recipe, options.divisions, revision, &mut check_sample);
+    let feature_sampling = field.visit_feature_candidates(options.divisions, |p, origin| {
+        if revision.is_cancelled() {
+            return false;
+        }
+        check_sample(p, origin);
+        !revision.is_cancelled()
     });
+    if let Err(error) = feature_sampling {
+        whole_failure(
+            &mut report,
+            format!("field boundary sampling {}: {}", error.code, error.detail),
+        );
+    }
     if revision.is_cancelled() {
         return Completion::Cancelled;
     }

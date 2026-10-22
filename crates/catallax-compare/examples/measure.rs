@@ -15,6 +15,18 @@ fn recipe(name: &str, steps: Vec<Value>) -> Recipe {
     )
     .unwrap()
 }
+fn rectangle(id: &str, x: &str, y: &str, width: &str, height: &str) -> Value {
+    let x = catallax_numbers::Rational::parse(x).unwrap();
+    let y = catallax_numbers::Rational::parse(y).unwrap();
+    let right = &x + &catallax_numbers::Rational::parse(width).unwrap();
+    let top = &y + &catallax_numbers::Rational::parse(height).unwrap();
+    json!({"id":id,"op":"sketch","plane":pose("0","0","0"),"loops":[[
+        {"kind":"line","id":"bottom","to":[right.to_string(),y.to_string()]},
+        {"kind":"line","id":"right","to":[right.to_string(),top.to_string()]},
+        {"kind":"line","id":"top","to":[x.to_string(),top.to_string()]},
+        {"kind":"line","id":"left","to":[x.to_string(),y.to_string()]}
+    ]]})
+}
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let runs: usize = args.first().map(|s| s.parse()).transpose()?.unwrap_or(3);
@@ -66,6 +78,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 json!({"id":"stock","op":"sphere","radius":"2","pose":pose("0","0","0")}),
                 json!({"id":"tool","op":"sphere","radius":"2","pose":pose("2","0","0")}),
                 json!({"id":"result","op":"boolean","kind":"intersect","target":"stock","tool":"tool"}),
+            ],
+        ),
+        recipe(
+            "profile_extrude",
+            vec![
+                rectangle("profile", "0", "0", "4", "3"),
+                json!({"id":"feature","op":"extrude","profile":"profile","distance":"2"}),
+            ],
+        ),
+        recipe(
+            "profile_through_slot",
+            vec![
+                block(),
+                rectangle("profile", "2", "2", "4", "2"),
+                json!({"id":"feature","op":"extrude_through","target":"stock","profile":"profile"}),
+            ],
+        ),
+        recipe(
+            "profile_quarter_revolve",
+            vec![
+                rectangle("profile", "1", "0", "1", "3"),
+                json!({"id":"feature","op":"revolve","profile":"profile","axis":{"point":["0","0","0"],"direction":["0","1","0"]},"angle":"90"}),
             ],
         ),
     ];

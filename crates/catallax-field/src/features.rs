@@ -915,3 +915,263 @@ impl FastProfile {
         crossings % 2 == 1
     }
 }
+
+impl Feature {
+    fn sample_profile_bounds(&self) -> [[Rational; 2]; 2] {
+        let first = self
+            .loops
+            .iter()
+            .flatten()
+            .next()
+            .expect("nonempty compiled feature");
+        let mut bounds = first.start.each_ref().map(|x| [x.clone(), x.clone()]);
+        for edge in self.loops.iter().flatten() {
+            let limits = if let Some((center, radius, _)) = &edge.circle {
+                let radius = Ball::from_rational(radius, 192).sqrt().unwrap().hi();
+                center.each_ref().map(|x| [x - &radius, x + &radius])
+            } else {
+                std::array::from_fn(|i| {
+                    [
+                        edge.start[i].clone().min(edge.end[i].clone()),
+                        edge.start[i].clone().max(edge.end[i].clone()),
+                    ]
+                })
+            };
+            for i in 0..2 {
+                bounds[i][0] = bounds[i][0].clone().min(limits[i][0].clone());
+                bounds[i][1] = bounds[i][1].clone().max(limits[i][1].clone());
+            }
+        }
+        bounds
+    }
+
+    pub(crate) fn sample_bounds(&self) -> Option<crate::samples::Bounds> {
+        let profile = self.sample_profile_bounds();
+        let zero = Rational::zero();
+        let local = match &self.sweep {
+            Sweep::Extrude { vector, through } => {
+                if *through {
+                    return None;
+                }
+                let [x, y] = std::array::from_fn(|i| {
+                    let v = [&vector.x, &vector.y][i];
+                    [
+                        &profile[i][0] + &zero.clone().min(v.clone()),
+                        &profile[i][1] + &zero.clone().max(v.clone()),
+                    ]
+                });
+                [
+                    x,
+                    y,
+                    [
+                        zero.clone().min(vector.z.clone()),
+                        zero.max(vector.z.clone()),
+                    ],
+                ]
+            }
+            Sweep::Revolve { origin, .. } => {
+                let radius = profile
+                    .iter()
+                    .map(|b| b[0].abs().max(b[1].abs()))
+                    .fold(zero, |a, b| a + b)
+                    + origin.x.abs()
+                    + origin.y.abs()
+                    + origin.z.abs();
+                [&origin.x, &origin.y, &origin.z].map(|x| [x - &radius, x + &radius])
+            }
+        };
+        Some(crate::samples::transform(&local, &self.inverse.inverse()))
+    }
+
+    pub(crate) fn sample_candidates(
+        &self,
+        role: &Role,
+        n: u32,
+        result: &crate::samples::Bounds,
+        visit: &mut impl FnMut(RPoint3) -> bool,
+    ) -> Result<bool, Refusal> {
+        use crate::samples::{circle, fraction};
+        let pose = self.inverse.inverse();
+        let mut emit = |p: RPoint3| visit(pose.apply_point(&p));
+        if matches!(role, Role::Start | Role::End) {
+            let bounds = self.sample_profile_bounds();
+            for i in 0..n {
+                for j in 0..n {
+                    let [x, y] = std::array::from_fn(|k| {
+                        let f = fraction([i, j][k], n);
+                        &bounds[k][0] + &((&bounds[k][1] - &bounds[k][0]) * f)
+                    });
+                    let p = RPoint3::new(x, y, Rational::zero());
+                    let p = match &self.sweep {
+                        Sweep::Extrude { vector, through } => {
+                            if *through {
+                                return Err(Refusal::new(
+                                    "field.sample-role",
+                                    "through-all tools have no cap faces",
+                                ));
+                            }
+                            if matches!(role, Role::End) {
+                                p.plus(vector)
+                            } else {
+                                p
+                            }
+                        }
+                        Sweep::Revolve {
+                            origin,
+                            axis,
+                            angle,
+                        } => {
+                            if matches!(role, Role::Start) {
+                                p
+                            } else {
+                                let (cosine, sine) = match angle {
+                                    90 => (
+                                        Rational::zero(),
+                                        profile::sqrt(&axis.norm_squared())
+                                            .unwrap()
+                                            .recip()
+                                            .unwrap(),
+                                    ),
+                                    180 => (Rational::from_i64(-1), Rational::zero()),
+                                    270 => (
+                                        Rational::zero(),
+                                        -profile::sqrt(&axis.norm_squared())
+                                            .unwrap()
+                                            .recip()
+                                            .unwrap(),
+                                    ),
+                                    _ => {
+                                        return Err(Refusal::new(
+                                            "field.sample-role",
+                                            "whole revolutions have no end cap",
+                                        ));
+                                    }
+                                };
+                                sample_rotate(&p, origin, axis, &cosine, &sine)
+                            }
+                        }
+                    };
+                    if !emit(p) {
+                        return Ok(false);
+                    }
+                }
+            }
+            return Ok(true);
+        }
+        let Role::Side { segment, .. } = role else {
+            return Err(Refusal::new(
+                "field.sample-role",
+                "feature face role has no sampling definition",
+            ));
+        };
+        let mut dec = Decider::default();
+        for edge in self
+            .loops
+            .iter()
+            .flatten()
+            .filter(|e| e.ids.contains(segment))
+        {
+            let mut points = Vec::new();
+            if let Some((center, radius, _)) = &edge.circle {
+                let radius = profile::sqrt(radius).ok_or_else(|| {
+                    Refusal::new(
+                        "field.sample-algebraic-radius",
+                        "no rational circle sampling frame",
+                    )
+                })?;
+                for [x, y] in circle(n) {
+                    let q = [&center[0] + &(&radius * &x), &center[1] + &(&radius * &y)];
+                    if edge.contains(&profile::real(&q), &mut dec)? {
+                        points.push(q);
+                    }
+                }
+            } else {
+                for i in 0..n {
+                    let f = fraction(i, n);
+                    points.push(std::array::from_fn(|k| {
+                        &edge.start[k] + &((&edge.end[k] - &edge.start[k]) * f.clone())
+                    }));
+                }
+            }
+            match &self.sweep {
+                Sweep::Extrude { vector, through } => {
+                    let parameters = if *through {
+                        let local = crate::samples::transform(result, &self.inverse);
+                        let mut range = local[2].each_ref().map(|x| x / &vector.z);
+                        range.sort();
+                        range
+                    } else {
+                        [Rational::zero(), Rational::one()]
+                    };
+                    for q in points {
+                        let p = point(&q);
+                        for i in 0..n {
+                            let t = &parameters[0]
+                                + &((&parameters[1] - &parameters[0]) * fraction(i, n));
+                            if !emit(p.plus(&vector.scaled(&t))) {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                }
+                Sweep::Revolve { origin, axis, .. } => {
+                    // Rational circle parametrisation works even when the axis
+                    // length is irrational. Face queries apply the angular trim.
+                    let norm = axis.norm_squared();
+                    let scale = Ball::from_rational(&norm, 192)
+                        .sqrt()
+                        .unwrap()
+                        .recip()
+                        .unwrap()
+                        .hi();
+                    let mut rotations = Vec::with_capacity((4 * n) as usize);
+                    for sign in [1, -1] {
+                        for i in 0..2 * n {
+                            let t = &(Rational::from_i64(2) * fraction(i, 2 * n) - Rational::one())
+                                * &scale;
+                            let squared = &norm * &(&t * &t);
+                            let denominator = &Rational::one() + &squared;
+                            let cosine = &(Rational::one() - squared) / &denominator
+                                * Rational::from_i64(sign);
+                            let sine =
+                                Rational::from_i64(2) * t / denominator * Rational::from_i64(sign);
+                            rotations.push((cosine, sine));
+                        }
+                    }
+                    for q in points {
+                        let p = point(&q);
+                        let height = &p.minus(origin).dot(axis) / &norm;
+                        let projection = origin.plus(&axis.scaled(&height));
+                        let radial = p.minus(&projection);
+                        let tangent = axis.cross(&radial);
+                        for (cosine, sine) in &rotations {
+                            if !emit(
+                                projection
+                                    .plus(&radial.scaled(cosine))
+                                    .plus(&tangent.scaled(sine)),
+                            ) {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(true)
+    }
+}
+
+fn sample_rotate(
+    p: &RPoint3,
+    origin: &RPoint3,
+    axis: &RVector3,
+    cosine: &Rational,
+    sine_over_axis_length: &Rational,
+) -> RPoint3 {
+    let height = p.minus(origin).dot(axis) / axis.norm_squared();
+    let projection = origin.plus(&axis.scaled(&height));
+    let radial = p.minus(&projection);
+    projection
+        .plus(&radial.scaled(cosine))
+        .plus(&axis.cross(&radial).scaled(sine_over_axis_length))
+}

@@ -224,21 +224,29 @@ fn unsupported_operations_are_all_reported() {
 }
 #[test]
 fn complete_reports_are_identical_across_one_two_and_four_workers() {
-    let recipe = recipe(vec![
-        block("a", "2", "0"),
-        block("b", "2", "1"),
-        json!({"id":"result","op":"boolean","kind":"subtract","target":"a","tool":"b"}),
-    ]);
-    let expected = check(&recipe);
-    for workers in [1, 2, 4] {
-        std::thread::scope(|scope| {
-            let jobs: Vec<_> = (0..workers)
-                .map(|_| scope.spawn(|| check(&recipe)))
-                .collect();
-            for job in jobs {
-                assert_eq!(job.join().unwrap(), expected);
-            }
-        });
+    let parts = [
+        recipe(vec![
+            block("a", "2", "0"),
+            block("b", "2", "1"),
+            json!({"id":"result","op":"boolean","kind":"subtract","target":"a","tool":"b"}),
+        ]),
+        recipe(vec![
+            sketch_rectangle("profile", "0", "0", "4", "3"),
+            json!({"id":"feature","op":"extrude","profile":"profile","distance":"5","direction":["3","0","4"]}),
+        ]),
+    ];
+    for recipe in parts {
+        let expected = check(&recipe);
+        for workers in [1, 2, 4] {
+            std::thread::scope(|scope| {
+                let jobs: Vec<_> = (0..workers)
+                    .map(|_| scope.spawn(|| check(&recipe)))
+                    .collect();
+                for job in jobs {
+                    assert_eq!(job.join().unwrap(), expected);
+                }
+            });
+        }
     }
 }
 #[test]
@@ -464,6 +472,141 @@ fn round_boolean_checks_keep_unbounded_vertex_distances_unresolved() {
                         .flatten()
                         .any(|o| o.step.as_str() == "a")),
                 "{op} {kind}: {report:?}"
+            );
+        }
+    }
+}
+
+fn sketch_rectangle(id: &str, x: &str, y: &str, width: &str, height: &str) -> Value {
+    let x = Rational::parse(x).unwrap();
+    let y = Rational::parse(y).unwrap();
+    let right = &x + &Rational::parse(width).unwrap();
+    let top = &y + &Rational::parse(height).unwrap();
+    json!({"id":id,"op":"sketch","plane":pose("0"),"loops":[[
+        {"kind":"line","id":"bottom","to":[right.to_string(),y.to_string()]},
+        {"kind":"line","id":"right","to":[right.to_string(),top.to_string()]},
+        {"kind":"line","id":"top","to":[x.to_string(),top.to_string()]},
+        {"kind":"line","id":"left","to":[x.to_string(),y.to_string()]}
+    ]]})
+}
+
+#[test]
+fn feature_extrusions_compare_signed_and_oblique_sweeps() {
+    for distance in ["2", "-2"] {
+        let part = recipe(vec![
+            sketch_rectangle("profile", "0", "0", "4", "3"),
+            json!({"id":"feature","op":"extrude","profile":"profile","distance":distance}),
+        ]);
+        assert_eq!(check(&part).verdict, Verdict::Agree);
+    }
+    let part = recipe(vec![
+        sketch_rectangle("profile", "0", "0", "4", "3"),
+        json!({"id":"feature","op":"extrude","profile":"profile","distance":"5","direction":["3","0","4"]}),
+    ]);
+    let report = check(&part);
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+}
+
+#[test]
+fn feature_through_slot_uses_the_field_target_bound() {
+    let part = recipe(vec![
+        block("stock", "4", "0"),
+        sketch_rectangle("profile", "1", "1", "2", "2"),
+        json!({"id":"cut","op":"extrude_through","target":"stock","profile":"profile"}),
+    ]);
+    let controller = Controller::default();
+    let options = Options {
+        divisions: 3,
+        ..options()
+    };
+    controller.begin().check(&part, &options);
+    let report = controller.latest().unwrap();
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+}
+
+#[test]
+fn feature_reverse_check_catches_an_extended_extrusion() {
+    let part = |height: &str| {
+        recipe(vec![
+            sketch_rectangle("profile", "0", "0", "4", "3"),
+            json!({"id":"feature","op":"extrude","profile":"profile","distance":height}),
+        ])
+    };
+    let report = compare(&part("2"), &part("3"), &options());
+    assert_eq!(report.verdict, Verdict::Disagree, "{report:?}");
+    assert!(
+        report.findings.iter().any(|f| f.pass == Pass::Reverse
+            && f.reason == Reason::Gap
+            && f.gap.unwrap().lo() > 0.01)
+    );
+}
+
+#[test]
+fn feature_curved_extrusions_and_full_partial_revolutions_keep_unbounded_uppers() {
+    let extrusion = recipe(vec![
+        json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"1/5"}]]}),
+        json!({"id":"feature","op":"extrude","profile":"profile","distance":"2/5"}),
+    ]);
+    let mut parts = vec![extrusion];
+    for angle in ["90", "180", "270", "360"] {
+        parts.push(recipe(vec![
+            sketch_rectangle("profile","1/5","0","1/5","2/5"),
+            json!({"id":"feature","op":"revolve","profile":"profile","axis":{"point":["0","0","0"],"direction":["0","1","0"]},"angle":angle}),
+        ]));
+    }
+    for part in parts {
+        let report = check(&part);
+        assert_eq!(report.verdict, Verdict::Unresolved, "{report:?}");
+        assert!(
+            report.findings.iter().any(|f| f.pass == Pass::Forward
+                && matches!(f.reason, Reason::Unresolved(_))
+                && f.brep_faces
+                    .iter()
+                    .flatten()
+                    .any(|o| o.step.as_str() == "feature")),
+            "{report:?}"
+        );
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| matches!(f.reason, Reason::Gap | Reason::Origins | Reason::Direction)),
+            "{report:?}"
+        );
+    }
+}
+
+#[test]
+fn feature_empty_profile_is_proven_empty_without_samples() {
+    let part = recipe(vec![
+        json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[]}),
+        json!({"id":"feature","op":"extrude","profile":"profile","distance":"2"}),
+    ]);
+    assert_eq!(check(&part).verdict, Verdict::Agree);
+}
+
+#[test]
+fn feature_planar_agreement_across_dyadic_poses_and_scales() {
+    for scale in ["1/2", "2", "8"] {
+        let scale = Rational::parse(scale).unwrap();
+        for rotation in [["1", "0", "0", "0"], ["1", "0", "1", "0"]] {
+            let mut profile = sketch_rectangle(
+                "profile",
+                "0",
+                "0",
+                &(&scale * &4.into()).to_string(),
+                &(&scale * &3.into()).to_string(),
+            );
+            profile["plane"] = json!({"rotation":rotation,"translation":["7/2","-3/4","1/2"]});
+            let part = recipe(vec![
+                profile,
+                json!({"id":"feature","op":"extrude","profile":"profile","distance":(&scale*&2.into()).to_string()}),
+            ]);
+            let report = check(&part);
+            assert_eq!(
+                report.verdict,
+                Verdict::Agree,
+                "scale={scale} rotation={rotation:?}: {report:?}"
             );
         }
     }

@@ -12,6 +12,7 @@ mod features;
 mod geometry;
 mod metric;
 mod profile;
+mod samples;
 mod support;
 
 use std::collections::BTreeMap;

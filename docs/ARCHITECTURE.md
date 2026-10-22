@@ -60,9 +60,9 @@ A front-end crate, `catallax-cli`, builds both `catallax` and `exact-brep` from 
 Build order: pieces 1, 2 and 3 in that order; then 4 and 5; with 6 and 7 alongside them.
 Piece 4 needs only 1 and 2, so its work can start as soon as piece 2's interface is stable.
 
-`catallax-recipe` is not a piece of the B-rep half. It depends only on piece 1 for exact numbers. Its public types implement serde's `Serialize` and `Deserialize`, and no serde type appears in its function signatures. Its errors are recipe errors with codes `recipe.<reason>`, not refusals. `catallax-field` depends on this data model and pieces 1 and 2, never on B-rep topology, booleans or export.
+`catallax-recipe` is not a piece of the B-rep half. It depends only on piece 1 for exact numbers. Its public types implement serde's `Serialize` and `Deserialize`, and no serde type appears in its function signatures. Its errors are recipe errors with codes `recipe.<reason>`, not refusals. `catallax-field` uses the shared sketch validator from `catallax-features`, but never calls a B-rep builder, body containment or export.
 
-`catallax-features` evaluates B-rep recipes through the existing operations; field recipe evaluation compiles stock solids and booleans independently. The two kernels do not convert results after each operation. Conversions happen only when a feature or output needs them.
+`catallax-features` evaluates B-rep recipes through the existing operations; field recipe evaluation compiles stock solids, profile sweeps and booleans independently. The two kernels do not convert results after each operation. Conversions happen only when a feature or output needs them.
 
 `catallax-mesh` is a display-only consumer of pieces 1 to 4. It samples each
 B-rep edge once, triangulates periodic analytic face charts, and returns shared

@@ -123,6 +123,9 @@ pub(crate) fn line(
         // radial-unit-vector factors at the apex would introduce a removable 0/0.
         return Some(std::array::from_fn(|_| Rational::zero()));
     }
+    if matches!(property, crate::surface::Property::SecondMoment(_, _)) {
+        return None;
+    }
     let Surface::Plane(plane) = surface else {
         return None;
     };
@@ -233,6 +236,18 @@ impl Planar {
                 self.moments[i] =
                     &self.moments[i] + &(area[i] * &square_integral / Rational::from_i64(24));
             }
+        }
+        if let crate::surface::Property::SecondMoment(i, j) = property {
+            let area_vector = a.minus(origin).cross(&b.minus(origin));
+            let o = direction(origin);
+            let aa = direction(a);
+            let bb = direction(b);
+            let integral = (&(o[i] + aa[i]) + bb[i]) * (&(o[j] + aa[j]) + bb[j])
+                + o[i] * o[j]
+                + aa[i] * aa[j]
+                + bb[i] * bb[j];
+            self.moments[0] =
+                &self.moments[0] + &(origin.dot(&area_vector) * integral / Rational::from_i64(120));
         }
         if property == crate::surface::Property::Area {
             self.area_numerator = &self.area_numerator + &normal.dot(&cross);

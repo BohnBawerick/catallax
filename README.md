@@ -53,7 +53,7 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-topology` builds blocks, cylinders, spheres, cones and tori in append-only curved topology and checks structural faults.
 - `catallax-intersect` handles plane, cylinder and sphere pairs, closed-form cone/torus configurations, branch-aware curve queries and certified finite conic traces. General noncoaxial cone and torus branch tracing remains unfinished.
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Ambiguous and unsupported cases remain unfinished work.
-- `catallax-measure` computes volume, area and centroid with proven bounds for the body actually built.
+- `catallax-measure` computes volume, area, centroid and unit-density centroidal inertia with proven bounds for the body actually built.
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.
 - `catallax-mesh` builds shared-edge display meshes of analytic faces and certified intersection traces, with picking IDs, proven chord bounds and OBJ export.
 - `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/3` JSON form. It evaluates no geometry.
@@ -179,7 +179,7 @@ Works today:
 - Unite, subtract and intersect on plane, cylinder and sphere pairs, plus closed-form cone and torus cases, not arbitrary poses.
 - Exact algebraic placements and dimensions, rational-degree rotation construction and elliptic-cylinder definitions. Complete feature and display coverage does not follow from those definitions.
 - Sketch profiles of lines, arcs and circles, extruded or revolved in the supported rational subset, with faces named by the operation that made them.
-- Volume, area and centroid with proven bounds.
+- Volume, area, centroid and unit-density centroidal inertia with proven bounds.
 - STEP AP242 export with a proven deviation report, and display meshes with proven chord error.
 - A signed distance field evaluator for the same solids, sketches and booleans, and a sampled two-way check between the two kernels.
 - A deterministic verification CLI for questions, recipes and sampled comparisons, with replay and strict STEP checks.

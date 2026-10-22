@@ -24,7 +24,9 @@ The inclusive command still exposes the out-of-scope piece 5 prerequisite refusa
 
 Never use debug mode for the full workspace suite. Piece 1 is expensive in debug mode.
 
-Measurement shares each edge's trace across incident faces, and `mass_properties` shares those traces across its volume, area and centroid computations. The property work budgets remain independent. Cached Taylor enclosures are mathematical inputs, not cached measurement answers; the existing standalone-versus-mass-property consistency and deterministic enclosure checks still apply.
+Measurement shares each edge's trace across incident faces, and `mass_properties` shares those traces across volume, area, centroid and second moments. The property work budgets remain independent; the six second-moment components divide the inertia allowance equally. Cached Taylor enclosures are mathematical inputs, not cached measurement answers; standalone-versus-grouped consistency and deterministic enclosure checks still apply.
+
+The inertia checks cover cylinder, sphere, cone, frustum and torus closed forms, exact rotated and translated blocks with signed products of inertia, and a disjoint boolean union against the sum of both blocks with parallel-axis shifts. Empty bodies have no tensor. The limited-precision regression checks the tensor's maximum entry width as the fourth property mark. Trigonometric antiderivatives now cover all monomials through degree six for trimmed torus second moments.
 
 Compiled Taylor programs skip exact-zero convolution products, reuse each coefficient denominator's reciprocal across its jet, and clone inputs without first allocating zero jets. Symmetric products are computed once, but every addition/subtraction retains its original order so rounded endpoints stay unchanged. The polynomial-jet regression checks squares and positive square roots with zero coefficients between nonzero terms. Panel order, requested accuracy and budget defaults are unchanged.
 
@@ -91,7 +93,7 @@ CATALLAX_MEASURE_RUN_BENCH=1 CATALLAX_MEASURE_BOOLEAN_BENCH=1 cargo bench -p cat
 
 The independent benchmark is named `blind` to preserve the creator's existing `speed` benchmark unchanged.
 
-The benchmark requests each primitive and hand-built body at relative accuracies 10^-6, 10^-12, 10^-18, 10^-24 and 10^-30. The boolean-enabled command requests all nine cross-check rows, but stops if a fixture prerequisite fails. Output records wall-clock nanoseconds, all Decider statistics, reached widths, marks and refusal codes for volume, area, mass properties and each face. Centroid time is included in `mass_properties`, since no standalone centroid API exists. Body construction and oracle evaluation are outside measurement timers. The comparison report distinguishes completed cells, timed-out observations and shared boolean fixture failures.
+The benchmark requests each primitive and hand-built body at relative accuracies 10^-6, 10^-12, 10^-18, 10^-24 and 10^-30. The boolean-enabled command requests all nine cross-check rows, but stops if a fixture prerequisite fails. Output records wall-clock nanoseconds, all Decider statistics, reached widths, marks and refusal codes for volume, area, mass properties and each face. Centroid and inertia time are included in `mass_properties`; the reported widths include the six independent tensor entries. Body construction and oracle evaluation are outside measurement timers. The comparison report distinguishes completed cells, timed-out observations and shared boolean fixture failures.
 
 Measurement's own Ball work and maximum precision are unavailable until an observation API exists; the reported counters are Decider-only.
 

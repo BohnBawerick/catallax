@@ -74,6 +74,7 @@ pub(crate) fn measure(
         Property::Area => vec![0],
         Property::Volume => vec![1],
         Property::Centroid => vec![1, 2, 3, 4],
+        Property::SecondMoment(_, _) => vec![2],
     };
     if let Some(values) = planar::body(model, faces, anchor, property) {
         let result = indices
@@ -101,6 +102,9 @@ pub(crate) fn measure(
                             *sum = &*sum + &moment;
                         }
                     }
+                }
+                Property::SecondMoment(_, _) => {
+                    exact[2] = &exact[2] + &planar.moments[0];
                 }
             }
         } else {
@@ -189,7 +193,13 @@ pub(crate) fn measure(
                         // A whole analytic circle has no endpoint-location
                         // question. Its carrier integral is evaluated directly.
                         let analytic = circle.and_then(|circle| {
-                            crate::ring::compile(surface, circle, anchor, &compiled.indices)
+                            crate::ring::compile(
+                                surface,
+                                circle,
+                                anchor,
+                                &compiled.indices,
+                                property,
+                            )
                         });
                         let meridian = if coedges.len() == 1 {
                             circle.and_then(|circle| torus_meridian(surface, circle))
@@ -265,7 +275,12 @@ pub(crate) fn measure(
         }));
     }
     let mut best = None;
-    let mut remaining = policy.max_work;
+    // Six independent scalar refinements share the tensor's arithmetic allowance.
+    let mut remaining = if matches!(property, Property::SecondMoment(_, _)) {
+        policy.max_work / 6
+    } else {
+        policy.max_work
+    };
     let mut depth = 0u32;
     let mut rectangle = true;
     let mut working_precision = 128u32.min(policy.max_precision_bits);

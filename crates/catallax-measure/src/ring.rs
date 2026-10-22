@@ -33,7 +33,11 @@ pub(crate) fn compile(
     circle: &Circle,
     anchor: &RPoint3,
     indices: &[usize],
+    property: crate::surface::Property,
 ) -> Option<Program> {
+    if let crate::surface::Property::SecondMoment(i, j) = property {
+        return second_moment(surface, circle, anchor, indices, i, j);
+    }
     let anchor = &anchor.to_real();
     let b = Builder::default();
     let pi = b.input(6);
@@ -153,4 +157,158 @@ pub(crate) fn compile(
         _ => return None,
     };
     Some(b.finish(&indices.iter().map(|i| expressions[*i]).collect::<Vec<_>>()))
+}
+
+fn second_moment(
+    surface: &Surface,
+    circle: &Circle,
+    anchor: &RPoint3,
+    indices: &[usize],
+    i: usize,
+    j: usize,
+) -> Option<Program> {
+    let b = Builder::default();
+    let pi = b.input(6);
+    let axis_vector = match surface {
+        Surface::Plane(p) => &p.normal,
+        Surface::Cylinder(c) => &c.axis,
+        Surface::Cone(c) => &c.axis,
+        Surface::Sphere(_) => &circle.normal,
+        _ => return None,
+    };
+    if !parallel(axis_vector, &circle.normal)? {
+        return None;
+    }
+    let axis = unit(&b, axis_vector);
+    let delta = |a, c| b.k(if a == c { 1 } else { 0 });
+    let perpendicular = |a: usize, c: usize| delta(a, c) - axis[a] * axis[c];
+    let anchor = anchor.to_real();
+    let radius2 = b.exact(&circle.radius_sq);
+    let moment = match surface {
+        Surface::Plane(p) => {
+            let center = offset(&b, &circle.center, &anchor);
+            let area = orientation(&b, &circle.normal, &p.normal)? * pi * radius2;
+            dot(center, axis)
+                * area
+                * (center[i] * center[j] + radius2 * perpendicular(i, j) / b.k(4))
+                / b.k(5)
+        }
+        Surface::Cylinder(c) => {
+            if !circle
+                .center
+                .minus(&c.origin)
+                .cross(&c.axis)
+                .norm_squared()
+                .as_rational()?
+                .is_zero()
+                || !(&circle.radius_sq - &c.radius.square())
+                    .as_rational()?
+                    .is_zero()
+            {
+                return None;
+            }
+            let z = dot(offset(&b, &circle.center, &c.origin), axis);
+            let o = offset(&b, &c.origin, &anchor);
+            let r = b.exact(&c.radius);
+            let axial = dot(o, axis);
+            let po: [Expr<'_>; 3] = std::array::from_fn(|a| o[a] - axial * axis[a]);
+            let second = r * o[i] * o[j]
+                + r * r.square() * perpendicular(i, j) / b.k(2)
+                + r * (o[i] * po[j] + o[j] * po[i]) / b.k(2);
+            let first = |a: usize| r * o[a] + r * po[a] / b.k(2);
+            -b.k(2)
+                * orientation(&b, &circle.normal, &c.axis)?
+                * pi
+                * r
+                * (second * z
+                    + (axis[j] * first(i) + axis[i] * first(j)) * z.square() / b.k(2)
+                    + axis[i] * axis[j] * r * z.square() * z / b.k(3))
+                / b.k(5)
+        }
+        Surface::Cone(c) => {
+            if !circle
+                .center
+                .minus(&c.apex)
+                .cross(&c.axis)
+                .norm_squared()
+                .as_rational()?
+                .is_zero()
+            {
+                return None;
+            }
+            let z = dot(offset(&b, &circle.center, &c.apex), axis);
+            let o = offset(&b, &c.apex, &anchor);
+            let slope = b.exact(&c.slope);
+            let axial = dot(o, axis);
+            let po: [Expr<'_>; 3] = std::array::from_fn(|a| o[a] - axial * axis[a]);
+            let zero = -slope * axial;
+            let first = |a: usize| slope * po[a] / b.k(2) - slope * axial * axis[a];
+            let second = slope * (po[i] * axis[j] + po[j] * axis[i]) / b.k(2)
+                - slope
+                    * axial
+                    * (slope.square() * perpendicular(i, j) / b.k(2) + axis[i] * axis[j]);
+            -b.k(2)
+                * orientation(&b, &circle.normal, &c.axis)?
+                * pi
+                * slope
+                * z.square()
+                * (zero * o[i] * o[j] / b.k(2)
+                    + (o[i] * first(j) + o[j] * first(i)) * z / b.k(3)
+                    + second * z.square() / b.k(4))
+                / b.k(5)
+        }
+        Surface::Sphere(s) => {
+            let d = dot(offset(&b, &circle.center, &s.center), axis);
+            let r = b.exact(&s.radius);
+            let o = offset(&b, &s.center, &anchor);
+            let area = b.k(2) * pi * r * (r - d);
+            let t2 = (r.square() * r - d.square() * d) / b.k(3);
+            let t3 = (r.square().square() - d.square().square()) / b.k(4);
+            let first = |a: usize| pi * r * radius2 * axis[a];
+            let second = |a: usize, c: usize| {
+                b.k(2)
+                    * pi
+                    * r
+                    * (axis[a] * axis[c] * t2
+                        + perpendicular(a, c) * (r.square() * (r - d) - t2) / b.k(2))
+            };
+            let third = |a: usize, c: usize, e: usize| {
+                b.k(2)
+                    * pi
+                    * r
+                    * (axis[a] * axis[c] * axis[e] * t3
+                        + (axis[a] * perpendicular(c, e)
+                            + axis[c] * perpendicular(a, e)
+                            + axis[e] * perpendicular(a, c))
+                            * (r.square() * (r.square() - d.square()) / b.k(2) - t3)
+                            / b.k(2))
+            };
+            let mut value = r.square()
+                * (o[i] * o[j] * area + o[i] * first(j) + o[j] * first(i) + second(i, j));
+            for a in 0..3 {
+                value = value
+                    + o[a]
+                        * (o[i] * o[j] * first(a)
+                            + o[i] * second(a, j)
+                            + o[j] * second(a, i)
+                            + third(a, i, j));
+            }
+            return Some(
+                b.finish(
+                    &indices
+                        .iter()
+                        .map(|index| {
+                            if *index == 0 {
+                                area
+                            } else {
+                                value / (b.k(5) * r)
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+            );
+        }
+        _ => return None,
+    };
+    Some(b.finish(&[moment]))
 }

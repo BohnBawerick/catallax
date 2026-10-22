@@ -11,6 +11,7 @@ Build exact geometry or compare the two recipe evaluators without a wall-clock c
 - `answer.log`: each completed response records executed operations with decision settlement counts, marks, work, refusal codes and diagnostic timings.
 - `answer.export`: portable question/1 replays the original source and work allowance.
 - `answer.parts`: P0–P5 builds, independent field compilation, sampled comparison and STEP import report.
+- `answer.face-definitions`: opt-in recipe face checks report whole-face two-sided deviation, local tolerances, first-mesh timing and origins after a scalar edit.
 
 ## How to get to it (user POV)
 
@@ -26,6 +27,7 @@ Preconditions: release build, doctor passed, `PROOF` names an external directory
 - Budget: repeat the question command with `--max-work 0` and a separate directory. Require `numbers.operation-budget` and no STEP.
 - Export: locate the recipe run's `question.json`, then run `target/release/catallax-verify replay QUESTION --out "$PROOF/replayed"`. Require the same manifest, work and STEP bytes. Compare executed operation entries after removing only `wall_ms`.
 - Scoreboard: run `control-catallax.py parts parts --binary target/release/catallax-verify --out "$PROOF/parts" --max-work 1000000 --occt-python /tmp/occt/bin/python --json`. Require every recipe in `parts.json`, including typed refusals from both implementations. Check `step_check` for actual OpenCASCADE import status and coverage limits.
+- Face definitions: save the portable cylinder example from `docs/VERIFY-INTERFACE.md` under an external proof directory and run it through `control-catallax.py run FILE --binary target/release/catallax-verify --out "$PROOF/faces" --json`. Require zero lower and upper deviation for the declared rolling cylinder, a non-null `face_measure.local_tolerances` entry, actual first-mesh timing, resolved wall origins after the radius edit and an `answer.step` artifact. For refinement, translate a torus relative to its declared circle path and increase `options.max_cells`; require an enclosing interval that tightens, not a sample maximum. Deterministic comparisons exclude only the diagnostic first-mesh clock in addition to existing stats and build identity.
 
 ## Gotchas
 

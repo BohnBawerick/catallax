@@ -68,12 +68,12 @@ The surface vocabulary is `plane`, `cylinder`, `elliptic-cylinder`, `cone`, `sph
 | `sequence` | Zero-based position in execution order. |
 | `kernel` | `brep` or `field`, the implementation that executed the step. |
 | `id` | Original operand or recipe step ID. Publication stages reuse the result ID. |
-| `operation` | Recipe operation name, question shape or boolean kind, or `measure`, `summarize`, `step`. |
+| `operation` | Recipe operation name, question shape or boolean kind, or `measure`, `summarize`, `step`, `face_measure`. |
 | `status` | `answered`, `refused`, or `interrupted` when unwinding prevented completion. |
 | `decisions` | Counts from that operation's executing decider, or null for interruption. `total`, `filter`, `refined`, `exact`, `coincident_exact`, `coincident_separation`, `coincident_fact`, `not_exact`, `refused` retain the numeric library's meanings. `max_bits_high_water` is that decider's cumulative precision high-water mark, not a local maximum. |
 | `work` | Complete-request counters `before`, `after` and their difference `used`. Observing them charges no work. |
 | `marks` | Result marks, including inherited marks, using the manifest mark schema. An empty array is not a local-tolerance certificate. Publication marks also appear at the log root. |
-| `local_tolerances` | Null in this version. The kernel does not yet store entity-local tolerances. Marks and STEP deviation are not relabelled as local tolerances. |
+| `local_tolerances` | Null unless this is an opt-in `face_measure` operation. That operation carries an array containing its face's definition-deviation certificate, as described below. Marks and STEP deviation are not relabelled as local tolerances. |
 | `refusal` | Null or an object with stable `code` and diagnostic `detail`. |
 | `wall_ms` | Observed operation time. Exclude it when comparing deterministic logs. |
 
@@ -82,6 +82,124 @@ Instrumentation covers each executed B-rep recipe step, each field compilation s
 The log records decision settlement counts, not expressions or proof certificates for individual numeric calls. It does not recompute decisions to obtain diagnostics. Recording is disabled outside the verification exchange and adds no work charges. No numeric precision, geometry, outcome or STEP export option changes.
 
 A budget refusal discards published geometry and marks as before. The log keeps its executed prefix for diagnosis, with the final `numbers.operation-budget` refusal at its root. Prefix marks do not authorize publishing a partial body. A panic remains `internal-error` even when interrupted operations were recorded.
+
+## Whole-face local tolerances
+
+The `recipe` adapter also accepts a `catallax-face-check/1` problem. It wraps an
+unchanged recipe with typed per-face definitions and an optional scalar
+parameter edit. Requests without this wrapper keep their existing fields,
+work, geometry and STEP bytes. Neither the legacy exchange nor recipe/3 changes.
+
+This portable question exercises a cylinder side as the rolling surface between
+two perpendicular planes whose outward unit offsets meet on the z axis:
+
+```json
+{
+  "format": "catallax-question/1",
+  "source": "recipe",
+  "max_work": 100000000,
+  "problem": {
+    "format": "catallax-face-check/1",
+    "recipe": {
+      "format": "catallax-recipe/3", "name": "rolling-cylinder",
+      "steps": [{
+        "id": "tube", "op": "cylinder", "radius": "1", "height": "3",
+        "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}
+      }],
+      "result": "tube"
+    },
+    "definitions": [{
+      "face": {"step": "tube", "role": {"side": {"segment": "wall"}}},
+      "definition": {
+        "kind": "fillet", "radius": "1",
+        "path": {"kind": "line", "origin": ["0", "0", "0"], "direction": ["0", "0", "1"]}
+      }
+    }],
+    "options": {"width": "0.0000001", "max_cells": 4096, "path_segments": 64},
+    "edit": {"step": "tube", "parameter": "radius", "value": "1.1"}
+  }
+}
+```
+
+Save it outside the repository and use `catallax-verify replay FILE --out DIR`
+or the driver's `run` command. The initial face has zero deviation, not a null
+tolerance. The edit rebuilds the recipe and resolves the same origin references
+on the edited result. It reports names after the edit, not a second measurement
+with an implicitly changed definition.
+
+`definitions` must be nonempty. Each `face` is a recipe `OriginPattern`; every
+matching result face receives that definition. Empty selections and duplicate
+definitions of one face refuse with `cli.face-definition`. Exact faces need no
+record. Definitions are:
+
+| `kind` | Fields and checked definition |
+| --- | --- |
+| `fillet` | `path`, positive `radius`. Check `abs(distance(point, path) - radius)` over the whole face. The path is the ball-centre path, not either original rolling support. |
+| `offset` | `original`, non-negative `distance`. Check `abs(distance(point, original) - distance)` against the original analytic support, not the whole solid's boundary or Boolean residual. |
+
+Path records use these exact fields:
+
+| `path.kind` | Fields |
+| --- | --- |
+| `line` | `origin`, nonzero `direction`. The whole line. |
+| `circle` | `center`, `normal`, positive `radius`, perpendicular `reference`. The whole circle. |
+| `ellipse` | `center`, `normal`, perpendicular `major_direction`, `major`, `minor`, with `0 < minor < major`. The whole ellipse. |
+| `edge` | `between`, two origin patterns resolving exactly one edge in the result. Uses its exact carrier, selected branch and arc endpoints. |
+| `intersection` | `surfaces`, two exact supporting-surface records already at the outward offset; `component`, the zero-based curve component in deterministic intersection order; optional exact `from` and `to` points. Absent endpoints select the whole closed curve, or the complete line for a line component. Non-closed arcs otherwise require their endpoints. |
+
+Supporting-surface records use `kind` with these fields:
+
+| `original.kind` or `surfaces[].kind` | Fields |
+| --- | --- |
+| `plane` | `origin`, `normal`, perpendicular `reference` |
+| `cylinder` | `origin`, `axis`, positive `radius`, perpendicular `reference` |
+| `cone` | `apex`, `axis`, positive `slope`, perpendicular `reference` |
+| `sphere` | `center`, positive `radius`, `axis`, perpendicular `reference` |
+| `torus` | `center`, `axis`, `major`, `minor`, perpendicular `reference`, with `0 < minor < major` |
+| `elliptic_cylinder` | `origin`, `axis`, perpendicular `major_direction`, `major`, `minor`, with `0 < minor < major` |
+
+Points and directions are arrays of three recipe-number strings. All dimensions
+and controls use exact recipe numbers; limits are positive integer counts.
+Unknown fields refuse. The wrapper is available only through `source=recipe`;
+the B-rep builder still refuses unimplemented fillet and offset operations.
+Declaring a definition measures a constructed face and does not construct a
+new feature.
+
+The successful manifest adds `face_measurements`, format
+`catallax-face-measurements/1`:
+
+- `faces` lists each measured topology-local `face`, its complete resolved
+  `origins`, definition `kind`, `deviation_mm.lower` and `deviation_mm.upper`,
+  `local_tolerance_mm`, `converged`, covering `cells`, exact `witnesses` and
+  diagnostic `coverage`. Bound endpoints and the local tolerance are exact
+  rational strings in millimetres. `local_tolerance_mm` is the upper endpoint.
+- `display` reports observed `first_mesh_ms` from request recipe processing
+  through the first complete B-rep display mesh, plus `vertices`, `triangles`
+  and `chord_tolerance_mm`. It excludes definition checking, the edit rebuild,
+  summary, STEP export, transport and UI presentation. Display chord tolerance
+  is not the definition tolerance.
+- `edit` is null or contains `step`, `parameter`, canonical `value` and a
+  `resolved` entry per declared reference. Each entry has `reference`, `status`
+  of `resolved` or `missing`, and all matching edited `faces` with their
+  complete origins. The edit must name an existing scalar step parameter.
+  Geometry is rebuilt through the normal recipe evaluator.
+
+`options` is optional and defaults to the values in the example. `width` is the
+requested width of the worst-deviation enclosure, not a geometric acceptance
+threshold. A cell limit returns a valid bound with `converged=false`. Upper
+certificates cover complete supporting chart rectangles, which may include
+trimmed-away regions. Lower bounds use exact witnesses on the actual trimmed
+face. See [FIELD.md](FIELD.md#whole-face-definition-measurements) for the
+derivative-cover and closest-path proofs and propagated refusal limits.
+
+Each measured face adds an executing field `face_measure` operation whose
+`local_tolerances` contains that face's certificate. Unrelated operations retain
+null. The measurement is not a tolerance-core cap or merge decision, and it does
+not turn sampled cross-kernel agreement into a whole-part distance certificate.
+
+`first_mesh_ms` is an observation. Exclude it, operation `wall_ms`, manifest
+`stats` and build identity when comparing deterministic runs. Retain every
+geometric certificate, origin, work count and strict STEP byte.
 
 ## Application-exported questions
 
@@ -110,7 +228,7 @@ The executable `.claude/skills/verify-catallax/scripts/control-catallax.py` docu
 
 Cache keys include executable SHA-256, source, canonical problem, allowance and request version. Entries contain input, response, manifest, optional STEP and file hashes. Hash validation precedes reuse. Completed entries are checkpoints; an interrupted request is recomputed. Runs preserve input order and duplicate occurrences. `--fresh` bypasses reuse for independence and load tests. Cached wall times are labeled and must not be treated as fresh measurements.
 
-`compare` checks identical ordered inputs, geometric manifests excluding only `stats` and build identity, and exact STEP bytes. Refusals remain visible by stable code. `report` separates outcome counts from slow cases grouped by operation, operand kinds and outcome cause. These groups identify follow-up profiling work; they are not measured call-stack attribution.
+`compare` checks identical ordered inputs, geometric manifests excluding `stats`, build identity and opt-in `face_measurements.display.first_mesh_ms`, and exact STEP bytes. Refusals remain visible by stable code. `report` separates outcome counts from slow cases grouped by operation, operand kinds and outcome cause. These groups identify follow-up profiling work; they are not measured call-stack attribution.
 
 `pair` keeps both binaries alive, pins them to the same core, alternates AB and BA, records one warmup then repeated uncached pairs, and retains every response. `legacy` measures the original process-per-question path. Record affinity, build hashes, machine contention and full elapsed run time alongside results. Compare correctness before interpreting timing deltas.
 

@@ -4,6 +4,7 @@
 //! manifest and STEP file defined in `docs/JUDGE-INTERFACE.md`. This crate is
 //! not a piece; it holds no geometry of its own.
 
+mod face_checks;
 mod manifest;
 mod question;
 pub mod verification;

@@ -27,4 +27,48 @@ Promote the candidate answering the most fixed cases inside the click budget wit
 
 ## Results
 
-Not measured yet. The baseline revision and protocol above precede all prototype code. The result update will name both candidate revisions and executable hashes, give P0 time/refusal/topology/deviation counts against the baseline, identify unchanged-answer evidence and unavailable checks, and record the verdict. Prototype code stays on `prototype/hard-intersections`, is never merged and never opened as a pull request.
+**Verdict: park both.** Neither candidate established an inside-budget improvement with complete earlier-answer preservation. The implicit tie-breaker cannot waive those conditions. No repeat is requested; censored requests are recorded below, not mistaken for geometric refusals.
+
+Both modes were built at `prototype/hard-intersections` head `6e4b7ab628cfcea71265ef075a78e27acdab7922`, using compile-time `CATALLAX_HARD_INTERSECTIONS=implicit` or `certified`. That branch is local-only, never merged and never proposed for merge. The verification CLI and driver are unchanged from the named baseline in both executables.
+
+The implicit implementation evaluates plane/conic meetings directly in their exact frame instead of expanding a three-variable elimination polynomial. The certified implementation retains each regular closed chart beside chord tubes with a proven same-parameter error bound of at most 100 nm; it uses those tubes only to prove exclusion. Ambiguous tubes and singular branch charts use the existing exact solver. Neither implementation publishes approximated model geometry or establishes coverage for general singular meeting curves.
+
+### P0 round
+
+The frozen set contains 24 canonical cases across the four families above, all three booleans and both operand orders, plus 32 survey requests. Input SHA-256: `da26463e327095d94c695055db2bf1731c85a0077090d23b581adcf1eddd9530`. Runs used the default 100,000,000 work allowance, nice 10 and pinned cores on a shared Linux x86-64 host. External guards were 30 seconds per P0 request and 5 seconds per earlier-answer request. A guard expiration means incomplete, never refused.
+
+| P0 metric | Baseline | Implicit | Certified |
+| --- | ---: | ---: | ---: |
+| Answered | 15 | 10 | 7 |
+| Typed refusals | 3 | 2 | 0 |
+| Incomplete at external guard | 38 | 44 | 49 |
+| Answered latency median, ms | 969.493 | 857.719 | 11,126.962 |
+| Answered latency maximum, ms | 24,533.600 | 25,896.379 | 24,960.966 |
+| Typed refusal latency range, ms | 2,462.041 to 21,975.707 | 14,056.954 to 24,968.027 | Not returned |
+| Valid exported STEP / returned STEP | 13 / 13 | 8 / 8 | 5 / 5 |
+| Published model deviation, nm | 0 | 0 | 0 |
+| Maximum reported STEP deviation, nm | 0.07484 | 0.01624 | 8.34e-9 |
+
+Baseline refusals were `numbers.operation-budget` and `boolean.self-touching-shell`; implicit returned only the latter. Fewer returned refusals did not establish better coverage because incomplete requests increased. Empty answers correctly had no STEP. Every returned STEP passed OpenCASCADE validity and matched the manifest's face count. This checks exported topology, not unobserved native-body invariants. All returned models remained exact; the export bounds concern different completed subsets and are not an accuracy ranking.
+
+Single-pass latency medians exclude incomplete requests and do not establish relative speed. The following pinned AB/BA pairs each had one warmup and three measured repetitions. One-minute host load ranged from 17.32 to 20.12 during these pairs.
+
+| Matched P0 evidence | Implicit | Certified |
+| --- | ---: | ---: |
+| Fully paired cases with identical manifest and STEP | 11 | 7 |
+| Median of per-case paired latency deltas, candidate minus baseline, ms | -90.046 | +13,558.748 |
+| Candidate cases with paired median at most 500 ms | 0 | 0 |
+
+The implicit mode completed one additional equal-radius cylinder/sphere subtraction during its single pass. Its separate pair attempt retained a warmup and two measured pairs with identical answers and STEP, but hit the 300-second external guard before the third pair completed. Both measured answers took over 39 seconds. It supplies no click-budget win or complete timing comparison.
+
+### Earlier answers and limits
+
+The earlier corpus and failure packs contributed 477 baseline attempts: 177 answered, 52 refused and 248 incomplete. All 229 baseline-complete cases were selected before candidate replay. Implicit preserved the complete manifest and strict STEP of 148 earlier answers, with 29 incomplete; certified preserved 70, with 107 incomplete. No completed earlier answer differed. This is not a complete no-regression proof. On 12 independent replay probes, each mode produced identical manifests, strict STEP and deterministic work at one, two and four workers.
+
+The application loop was not exercised. The general and singular-branch cases still need a different construction or certificate before either idea can be promoted. Keep these implementations parked; any promoted replacement must first close the incomplete-answer and topology evidence gaps.
+
+Executable SHA-256 values, with full inputs, commands, responses, pair samples and STEP artifacts retained outside the repository:
+
+- Baseline: `ba5e92f873dedab5276bab82b1d0eb44db9f0cd36ac142711247e9d67e0cb136`.
+- Implicit: `2a5e1a1b119d0285c1acdc54df9c84030715b39d1e66ea5d812df1008599aace`.
+- Certified: `1550d72bfae8ed7e1430b48a38a08c5783fc1100ecec0588ee2ad000346eed32`.

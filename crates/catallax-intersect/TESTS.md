@@ -49,6 +49,8 @@ Surface-pair plans and rational Groebner bases have separate 32-entry thread-loc
 
 Cache hits share immutable plans and basis slices instead of copying their vectors and arbitrary-precision coefficients. Constructing new store entities still copies the definitions those entities own.
 
+Critical pairs are selected by increasing leading-monomial LCM degree with deterministic ties. The chain criterion skips a pair only after both supporting pairs have standard representations in the current basis. The cyclic-system regression independently derives the two real solutions of `xy = yz = zx = 1`, checks every coordinate exactly against `-1` or `1`, and repeats all six generator orders. The complete curve/surface scale and placement family remains enabled.
+
 ## Resolved specification correction
 
 Case 27's original description reversed the inner-tangency near misses. For cylinder radius 3, sphere radius 2 and centre `(d, 0, 0)`,

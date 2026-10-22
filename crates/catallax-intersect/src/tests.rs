@@ -578,3 +578,51 @@ fn irrational_conic_dimensions_preserve_exact_points_and_taylor_bounds() {
         }
     }
 }
+
+#[test]
+fn cyclic_system_keeps_both_roots_under_every_generator_order() {
+    use crate::solve::{Solutions, intersections};
+    use catallax_numbers::MPoly;
+
+    // xy = yz = zx = 1 forces x = y = z = +/-1. This cyclic ideal
+    // needs critical pairs whose necessity depends on previously resolved pairs.
+    let x = MPoly::var(3, 0);
+    let y = MPoly::var(3, 1);
+    let z = MPoly::var(3, 2);
+    let one = MPoly::constant(3, r(1));
+    let equations = [&(&x * &y) - &one, &(&y * &z) - &one, &(&z * &x) - &one];
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let mut dec = dec();
+        let Solutions::Points(points) = intersections(
+            &[equations[order[0]].clone(), equations[order[1]].clone()],
+            &equations[order[2]],
+            &mut dec,
+        )
+        .unwrap() else {
+            panic!("the cyclic system has exactly two isolated real solutions");
+        };
+        let mut counts = [0, 0];
+        for point in points {
+            let (index, expected) = match dec.sign(&point.x) {
+                Outcome::Proven(StrictSign::Negative) => (0, Real::from_i64(-1)),
+                Outcome::Proven(StrictSign::Positive) => (1, Real::one()),
+                other => panic!("nonzero cyclic coordinate: {other:?}"),
+            };
+            counts[index] += 1;
+            for coordinate in [point.x, point.y, point.z] {
+                assert!(matches!(
+                    dec.sign(&(&coordinate - &expected)),
+                    Outcome::ProvenCoincident(_)
+                ));
+            }
+        }
+        assert_eq!(counts, [1, 1]);
+    }
+}

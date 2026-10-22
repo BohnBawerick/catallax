@@ -27,7 +27,7 @@ impl Ball {
         let mid = numerator.div_rounded(&denominator, p, false);
         // |r - mid| = |n - mid*d| / d. Keep that residual dyadic;
         // normalizing a new rational would only add redundant GCDs.
-        let error = (&numerator - &(&mid * &denominator)).abs();
+        let error = (&numerator - &(&mid * &denominator)).into_abs();
         let rad = error.div_rounded(&denominator, p, true);
         Self {
             mid,
@@ -150,7 +150,7 @@ impl Ball {
         }
         let denominator = &(&self.mid * &self.mid) - &(&self.rad * &self.rad);
         let mid = self.mid.div_rounded(&denominator, self.precision, false);
-        let error = (&self.mid - &(&mid * &denominator)).abs();
+        let error = (&self.mid - &(&mid * &denominator)).into_abs();
         let rad = (&self.rad + &error).div_rounded(&denominator, self.precision, true);
         Some(Self {
             mid,
@@ -296,7 +296,7 @@ impl Ball {
         let rad = if &mid == center {
             radius.rounded(p, true)
         } else {
-            let error = (center - &mid).abs();
+            let error = (center - &mid).into_abs();
             (radius + &error).rounded(p, true)
         };
         Self {
@@ -333,14 +333,14 @@ impl Ball {
         if self.rad.is_zero() {
             return Self::centered(
                 &(&self.mid * &rhs.mid),
-                &(&self.mid.abs() * &rhs.rad),
+                &self.mid.abs_product(&rhs.rad),
                 precision,
             );
         }
         if rhs.rad.is_zero() {
             return Self::centered(
                 &(&self.mid * &rhs.mid),
-                &(&rhs.mid.abs() * &self.rad),
+                &rhs.mid.abs_product(&self.rad),
                 precision,
             );
         }
@@ -358,7 +358,7 @@ impl Ball {
                 } else {
                     &product - &cross
                 };
-                let radius = &(&self.mid.abs() * &rhs.rad) + &(&rhs.mid.abs() * &self.rad);
+                let radius = &self.mid.abs_product(&rhs.rad) + &rhs.mid.abs_product(&self.rad);
                 Self::centered(&center, &radius, precision)
             }
             (true, false) | (false, true) => {
@@ -374,7 +374,7 @@ impl Ball {
                 };
                 Self::centered(
                     &(&far * &crossing.mid),
-                    &(&far.abs() * &crossing.rad),
+                    &far.abs_product(&crossing.rad),
                     precision,
                 )
             }

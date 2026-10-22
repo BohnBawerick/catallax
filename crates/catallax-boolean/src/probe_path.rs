@@ -2,22 +2,33 @@
 //! is certified free of other boundary arcs; displacement alone proves nothing.
 
 use crate::geometry::{natural_ends, on_arc, r, sign, unit};
-use catallax_numbers::{Decider, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
-use catallax_shapes::{CurveId, Point3, PointId, Rotation, Surface, Vector3};
+use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
+use catallax_shapes::{Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, Vector3};
 use catallax_topology::{EdgeId, Model};
 
 fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     if x.as_rational().is_none() && x.approx().sign().is_none() {
-        // Try a modest enclosure before an algebraic zero proof. Near-contact
-        // coefficients often need more than the sign filter's first 64 bits,
-        // but do not need elimination. Only a zero-excluding ball decides.
+        // Try the cached interval's width first: a modest enclosure often
+        // separates a sign before the finer pre-elimination target is needed.
+        // Both stages are filters; a ball containing zero proves nothing.
+        let coarse_width = Rational::from_f64_exact(x.approx().width());
         let bits = dec.policy().max_precision_bits.min(256);
-        let width = Rational::one().mul_pow2(-i64::from(bits));
-        if let Some(value) = dec.enclose(x, &width)?.sign() {
-            return Ok(match value {
-                StrictSign::Negative => Sign::Negative,
-                StrictSign::Positive => Sign::Positive,
-            });
+        let mut width = Rational::one().mul_pow2(-i64::from(bits));
+        if let Some(coarse_width) = &coarse_width {
+            width = width.max(coarse_width.mul_pow2(-i64::from(bits.saturating_sub(64))));
+        }
+        let initial = coarse_width.as_ref().filter(|coarse| *coarse > &width);
+        for width in initial.into_iter().chain(std::iter::once(&width)) {
+            let enclosure = dec.enclose(x, width)?;
+            if let Some(value) = enclosure.sign() {
+                return Ok(match value {
+                    StrictSign::Negative => Sign::Negative,
+                    StrictSign::Positive => Sign::Positive,
+                });
+            }
+            if enclosure.is_exact_zero() {
+                break;
+            }
         }
     }
     sign(x, dec, "boolean.imprint-ambiguous")
@@ -411,6 +422,8 @@ pub(crate) fn adjacent(
 ) -> Result<bool, Refusal> {
     let (source, p, source_curve) = source;
     let carrier = surface.implicit();
+    let opposite_carrier = -&carrier;
+    let source_equations = model.geom().curve(source_curve).equations(model.geom());
     for path in paths(surface, p, q, dec)? {
         let d0 = path.denominator.coefficient(0);
         let d1 = path.denominator.coefficient(1);
@@ -430,29 +443,49 @@ pub(crate) fn adjacent(
         let mut clear = true;
         for &edge_id in barriers {
             let edge = model.edge(edge_id);
-            let equations: Vec<_> = model
-                .geom()
-                .curve(edge.curve)
+            let curve = model.geom().curve(edge.curve);
+            let mut equations: Vec<_> = curve
                 .equations(model.geom())
                 .iter()
-                .map(|e| -> Result<P, Refusal> {
+                .enumerate()
+                .map(|(index, e)| -> Result<P, Refusal> {
                     // Every path is a parametrisation of this surface.
                     // Re-expanding its defining zero as algebraic Real
                     // coefficients would discard that construction proof.
-                    let mut polynomial = if e.same_definition(&carrier) {
+                    let mut polynomial = if e.same_definition(&carrier)
+                        || e.same_definition(&opposite_carrier)
+                    {
                         P::constant(Real::zero())
                     } else {
                         numerator(e, &path, dec)?
                     };
-                    if edge.curve == source_curve {
-                        // The exact arc probe is on this carrier, and path(0)=p.
-                        // Re-expanding that known zero loses shared-root
-                        // information and can trigger needless elimination.
+                    if edge.curve == source_curve
+                        || source_equations.iter().any(|source| source.same_definition(e))
+                        || match curve {
+                            Curve::Intersection(branch) => {
+                                let surface = GeomKey::Surface(branch.surfaces[index]);
+                                let facts = model.geom().facts();
+                                facts.holds(FactKind::Incident, GeomKey::Point(source), surface)
+                                    || facts.holds(
+                                        FactKind::Incident,
+                                        GeomKey::Curve(source_curve),
+                                        surface,
+                                    )
+                            }
+                            _ => false,
+                        }
+                    {
+                        // An exact arc probe also lies on every construction-
+                        // proven support of its source curve. Preserve that
+                        // zero without inferring another branch's membership.
                         polynomial.0[0] = Real::zero();
                     }
                     Ok(polynomial)
                 })
                 .collect::<Result<_, _>>()?;
+            // Separation is existential. Try coefficients whose cached bounds
+            // already exclude zero before asking for exact contact proofs.
+            equations.sort_by_key(|p| p.0.iter().all(|c| c.approx().sign().is_none()));
             let mut separated = false;
             for equation in &equations {
                 if equation.excludes_zero(dec)? {
@@ -487,9 +520,15 @@ pub(crate) fn adjacent(
                 let mut avoids_ends = true;
                 for endpoint in [from, to].into_iter().flatten() {
                     let position = model.geom().position(endpoint);
-                    let coordinates = [position.x, position.y, position.z];
+                    let mut coordinates = [(0, position.x), (1, position.y), (2, position.z)];
                     let mut avoids = false;
-                    for (axis, coordinate) in coordinates.into_iter().enumerate() {
+                    let starts = [&p.x, &p.y, &p.z];
+                    coordinates.sort_by_key(|(axis, coordinate)| {
+                        let a = starts[*axis].approx();
+                        let b = coordinate.approx();
+                        !(a.hi() < b.lo() || b.hi() < a.lo())
+                    });
+                    for (axis, coordinate) in coordinates {
                         if path.numerators[axis]
                             .sub(&path.denominator.scale(coordinate))
                             .excludes_zero(dec)?

@@ -11,6 +11,7 @@ use crate::{
 };
 use std::{
     collections::{HashMap, VecDeque},
+    rc::Rc,
     sync::Arc,
     time::Instant,
 };
@@ -374,7 +375,7 @@ impl Decider {
             if p == 0 {
                 break;
             }
-            match evaluate(x, p, &mut work) {
+            match evaluate(x, p, &mut work, false) {
                 Ok(b) => {
                     defined = true;
                     best = Some(tighter(best, b));
@@ -432,15 +433,10 @@ impl Decider {
             max_work: u64::MAX,
         };
         let mut work = Work::new(policy, self.deadline);
-        let result =
-            evaluate_cached(x, precision, &mut work, &mut HashMap::new(), true).map_err(|error| {
-                match error {
-                    EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
-                    EvalError::Limit(code) => {
-                        Refusal::new(code, "working-precision enclosure stopped")
-                    }
-                }
-            });
+        let result = evaluate(x, precision, &mut work, true).map_err(|error| match error {
+            EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
+            EvalError::Limit(code) => Refusal::new(code, "working-precision enclosure stopped"),
+        });
         self.check_deadline()?;
         result
     }
@@ -659,6 +655,14 @@ impl Decider {
                 stopped = Some("numbers.budget-exhausted");
             }
         }
+        // A singleton certificate is sufficient once its entire definition
+        // is known valid; an undefined factor must never disappear into zero.
+        if stopped.is_none()
+            && x.node.fast_defined
+            && x.node.coarse.as_ref().is_some_and(Ball::is_exact_zero)
+        {
+            return coincident(ZeroProof::Algebraic);
+        }
         let mut best = x.node.coarse.clone();
         let mut defined = x.node.fast_defined;
         let mut pending = None;
@@ -671,11 +675,14 @@ impl Decider {
                 stopped = Some("numbers.precision-limit");
                 break;
             }
-            match evaluate(x, p, work) {
+            match evaluate(x, p, work, false) {
                 Ok(b) => {
                     defined = true;
                     best = Some(tighter(best, b.clone()));
                     pending = None;
+                    if best.as_ref().is_some_and(Ball::is_exact_zero) {
+                        return coincident(ZeroProof::Algebraic);
+                    }
                     if let Some(s) = b.sign() {
                         self.stats.refined += 1;
                         return Outcome::Proven(s);
@@ -933,21 +940,25 @@ impl From<&'static str> for EvalError {
         Self::Limit(code)
     }
 }
-fn evaluate(x: &Real, p: u32, w: &mut Work) -> Result<Ball, EvalError> {
-    evaluate_cached(x, p, w, &mut HashMap::new(), false)
+fn evaluate(x: &Real, p: u32, w: &mut Work, known_defined: bool) -> Result<Ball, EvalError> {
+    let mut cache = HashMap::new();
+    let value = evaluate_cached(x, p, w, &mut cache, known_defined)?;
+    // No cached alias survives this evaluation; reclaim the root without copying it.
+    drop(cache);
+    Ok(Rc::unwrap_or_clone(value))
 }
 fn evaluate_cached(
     x: &Real,
     p: u32,
     w: &mut Work,
-    cache: &mut HashMap<*const crate::real::Node, Ball>,
+    cache: &mut HashMap<*const crate::real::Node, Rc<Ball>>,
     known_defined: bool,
-) -> Result<Ball, EvalError> {
+) -> Result<Rc<Ball>, EvalError> {
     let key = Arc::as_ptr(&x.node);
     if let Some(b) = cache.get(&key) {
         return Ok(b.clone());
     }
-    let b = evaluate_uncached(x, p, w, cache, known_defined)?;
+    let b = Rc::new(evaluate_uncached(x, p, w, cache, known_defined)?);
     cache.insert(key, b.clone());
     Ok(b)
 }
@@ -955,7 +966,7 @@ fn evaluate_uncached(
     x: &Real,
     p: u32,
     w: &mut Work,
-    cache: &mut HashMap<*const crate::real::Node, Ball>,
+    cache: &mut HashMap<*const crate::real::Node, Rc<Ball>>,
     known_defined: bool,
 ) -> Result<Ball, EvalError> {
     if x.node.fast_defined
@@ -978,7 +989,7 @@ fn evaluate_uncached(
         Expr::Neg(a) => {
             let b = evaluate_cached(a, p, w, cache, known_defined)?;
             w.ball(p, false)?;
-            Ok(-b)
+            Ok(-b.as_ref())
         }
         Expr::Square(a) => {
             let b = evaluate_cached(a, p, w, cache, known_defined)?;
@@ -1008,11 +1019,11 @@ fn evaluate_uncached(
                 && !b.rad().is_zero()
                 && crate::tower::sign(a, w)? == Some(Sign::Zero)
             {
-                b = Ball::from_rational(&Rational::zero(), p);
+                b = Rc::new(Ball::from_rational(&Rational::zero(), p));
             }
             if !known_defined && b.lo().sign() == Sign::Negative {
                 if zero_proof(a, &b, w)? {
-                    b = Ball::from_rational(&Rational::zero(), p);
+                    b = Rc::new(Ball::from_rational(&Rational::zero(), p));
                 } else {
                     return Err(EvalError::Pending(Refusal::new(
                         "numbers.sqrt-not-separated",
@@ -1040,9 +1051,9 @@ fn evaluate_uncached(
             }
             w.ball(p, matches!(&x.node.expr, Expr::Mul(..) | Expr::Div(..)))?;
             Ok(match &x.node.expr {
-                Expr::Add(..) => &lhs + &rhs,
-                Expr::Sub(..) => &lhs - &rhs,
-                Expr::Mul(..) => &lhs * &rhs,
+                Expr::Add(..) => lhs.as_ref() + rhs.as_ref(),
+                Expr::Sub(..) => lhs.as_ref() - rhs.as_ref(),
+                Expr::Mul(..) => lhs.as_ref() * rhs.as_ref(),
                 Expr::Div(..) => lhs.checked_div(&rhs).unwrap(),
                 _ => unreachable!(),
             })

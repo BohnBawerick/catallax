@@ -1216,3 +1216,43 @@ fn filtered_bisection_prefixes_preserve_cold_work_at_budget_boundaries() {
         assert_eq!(cold.stats(), warm.stats());
     }
 }
+
+#[test]
+fn singleton_zero_certificates_do_not_require_elimination() {
+    let zero = Real::zero() * real("2").sqrt();
+    let policy = |max_work| BudgetPolicy {
+        max_precision_bits: 64,
+        max_work,
+    };
+    match Decider::new(policy(0)).sign(&zero) {
+        Outcome::NotExact(n) => assert!(n.bound.is_zero()),
+        other => panic!("an empty allowance must still stop: {other:?}"),
+    }
+    assert!(matches!(
+        Decider::new(policy(1)).sign(&zero),
+        Outcome::ProvenCoincident(_)
+    ));
+
+    let tiny = real("1e-1000") * real("2").sqrt();
+    match Decider::new(policy(1)).sign(&tiny) {
+        Outcome::Proven(StrictSign::Positive) => {}
+        Outcome::NotExact(n) => assert!(n.bound.sign() == Sign::Positive),
+        other => panic!("a nonzero enclosure cannot prove coincidence: {other:?}"),
+    }
+    let gap = real("2").sqrt() - real("1.414213562373095048801688724209698");
+    let delayed = Real::zero() * (Real::one() / gap);
+    assert!(matches!(
+        Decider::default().sign(&delayed),
+        Outcome::ProvenCoincident(_)
+    ));
+    // The outer zero has a singleton coarse ball, but its hidden divisor is
+    // undefined. Definedness must precede every enclosure-based zero proof.
+    let undefined = &zero * &(Real::one() / Real::zero()).pow_u32(0);
+    assert!(matches!(
+        Decider::default().sign(&undefined),
+        Outcome::Refused(Refusal {
+            code: "numbers.division-by-zero",
+            ..
+        })
+    ));
+}

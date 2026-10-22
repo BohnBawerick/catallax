@@ -122,7 +122,13 @@ The content-normalization smoke probe uses a degree-16 monic polynomial with 65,
 
 `gcd_preserves_rational_factors_at_large_integer_scales` checks exact common factors when a finite-field image loses degree or cannot invert a rational denominator. A coprime pair with identical modular images must still have rational GCD one. These cases constrain the one-sided coprimality certificate without accepting a finite-field factor as a rational answer.
 
+`singleton_zero_certificates_do_not_require_elimination` reproduces a discarded certificate using `0 * sqrt(2)`. One work unit must prove the known-defined zero, while an empty allowance still stops. A tiny nonzero product may be positive or unresolved, never coincident. A zero with an initially unresolved valid divisor must become provable after definedness is established; a hidden division by zero must still refuse despite its outer zero singleton.
+
 Reciprocal balls use the exact center `m/(m^2-r^2)` and radius `r/(m^2-r^2)`, then the same nearest-midpoint and outward-radius rules, including midpoint rounding error. Integer quotient rounding avoids rational GCDs. The before/after smoke workload covers 4,806 signed, scaled and low-precision hull cases, including zero-crossing divisors and very small radii; all 40,000 results retain the same midpoint/radius fingerprint. The GMP/MPFR enclosure tests check containment independently.
+
+Consuming temporary dyadic magnitudes leaves all arithmetic and rounding unchanged. The complete numbers suite covers signed products, reciprocal residuals and midpoint-rounding errors; a separate public jet smoke comparison checks 57,456 exact midpoint/radius/precision triples across orders 0, 1, 4, 8 and 20 at 8, 64, 128 and 256 bits.
+
+The per-evaluation enclosure memo shares immutable balls internally and returns an owned root after releasing the memo. Existing clipping, undefined-node, nested-radical, root-cache budget-boundary and independent-oracle checks exercise local replacement without modifying another cached value. No shared reference escapes a numerical entry point.
 
 ### Pinned system coordinates
 

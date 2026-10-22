@@ -67,7 +67,7 @@ The parameter liveness family cancels both circle and quaternion denominators wh
 
 Tests prescribe a zero-proof kind only where the contract does: construction facts and exact-rational `same_surface`. A valid distance bound need not equal one chosen conversion formula. Undefined angular parameters may return `None`; seam tests constrain only defined values when `Some` is returned. No test compares approximate coordinates with an epsilon.
 
-Point equality schedules cheap nonzero rational values and cached conservative interval signs first. When these do not separate, it requests metered enclosures at the existing interval widths before exact-zero comparisons. The chosen coordinate is still certified by the decider; an interval containing zero proves nothing. Existing late-coordinate separation, near-coincidence, zero-work distance-bound, undefined-coordinate and deadline cases remain. Tests do not prescribe the number of coordinate queries before a separation witness.
+Point equality and curve membership schedule cheap nonzero rational values and cached conservative interval signs first. When these do not separate, they request metered enclosures at the existing interval widths before exact-zero comparisons. The chosen value is still certified by the decider; an interval containing zero proves nothing. Original equation indices are retained for curve-distance conversions, whose equations can have different units. Existing late-coordinate separation, near-coincidence, zero-work distance-bound, undefined-coordinate and deadline cases remain. Tests do not prescribe the number of queries before a separation witness.
 
 ## Speed measurements
 

@@ -68,6 +68,22 @@ impl Binary {
         }
     }
 
+    pub(super) fn into_abs(self) -> Self {
+        let mantissa = if self.mantissa.sign() == Sign::Negative {
+            Integer(-self.mantissa.0)
+        } else {
+            self.mantissa
+        };
+        Self {
+            mantissa,
+            exponent: self.exponent,
+        }
+    }
+
+    pub(super) fn abs_product(&self, other: &Self) -> Self {
+        (self * other).into_abs()
+    }
+
     pub(super) fn binary_exponent(&self) -> i64 {
         assert!(!self.is_zero());
         self.exponent + self.mantissa.bit_length() as i64 - 1

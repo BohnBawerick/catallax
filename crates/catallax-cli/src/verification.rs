@@ -213,16 +213,40 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             };
             if request.source == "field" {
                 let mut dec = Decider::default();
-                return Ok(
-                    match catallax_field::Plan::compile_checked(&recipe, &mut dec) {
-                        Ok(plan) => {
-                            json!({"format":"catallax-manifest/3","status":"answered","exact":true,
-                        "field":{"faces":plan.faces().len(),"proven_empty":plan.is_proven_empty()},
-                        "marks":[],"refusal":null,"step":null})
-                        }
-                        Err(error) => refused(error.code, error.detail),
-                    },
+                let plan = match catallax_field::Plan::compile_checked(&recipe, &mut dec) {
+                    Ok(plan) => plan,
+                    Err(error) => return Ok(refused(error.code, error.detail)),
+                };
+                let options = catallax_field::display::Options::default();
+                let span = catallax_numbers::OperationSpan::begin(
+                    "field",
+                    &recipe.result,
+                    "display",
+                    &dec,
                 );
+                let mesh = catallax_field::display::mesh_plan(&plan, &options, &mut dec);
+                span.finish(&dec, mesh.as_ref().err(), None);
+                let mesh = match mesh {
+                    Ok(mesh) => mesh,
+                    Err(error) => return Ok(refused(error.code, error.detail)),
+                };
+                let first_mesh_ms = display_started.elapsed().as_secs_f64() * 1000.0;
+                let mut file = fs::File::create(request.out.join("display.obj"))?;
+                mesh.write_obj(&mut file)?;
+                return Ok(json!({
+                    "format":"catallax-manifest/3","status":"answered","exact":true,
+                    "field":{"faces":plan.faces().len(),"proven_empty":plan.is_proven_empty()},
+                    "face_measurements":{
+                        "format":"catallax-face-measurements/1","faces":[],"edit":null,
+                        "display":{"first_mesh_ms":first_mesh_ms,"file":"display.obj",
+                            "vertices":mesh.positions.len(),"triangles":mesh.triangles.len(),
+                            "chord_tolerance_mm":options.tolerance.to_string(),
+                            "deviation_bound_mm":mesh.max_deviation.to_string(),
+                            "coverage":"two-sided distance to the defined result boundary",
+                            "cells":mesh.cells}
+                    },
+                    "marks":[],"refusal":null,"step":null
+                }));
             }
             if request.source == "compare" {
                 let controller = catallax_compare::Controller::default();

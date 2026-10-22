@@ -69,6 +69,36 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
+        let mut radius = Rational::zero();
+        for edge in self.loops.iter().flatten() {
+            for p in [&edge.start, &edge.end] {
+                radius = radius.max(p[0].abs() + p[1].abs());
+            }
+            if let Some((c, r, _)) = &edge.circle {
+                let r = catallax_numbers::Ball::from_rational(r, 128)
+                    .sqrt()
+                    .expect("positive profile radius")
+                    .hi();
+                radius = radius.max(c[0].abs() + c[1].abs() + r);
+            }
+        }
+        radius = match &self.sweep {
+            Sweep::Extrude { through: true, .. } => return Ok(None),
+            Sweep::Extrude { vector, .. } => {
+                radius + vector.x.abs() + vector.y.abs() + vector.z.abs()
+            }
+            Sweep::Revolve { origin, .. } => {
+                radius + Rational::from_i64(2) * (origin.x.abs() + origin.y.abs() + origin.z.abs())
+            }
+        };
+        let translation = self.inverse.inverse().translation;
+        for x in [&translation.x, &translation.y, &translation.z] {
+            let b = geometry::enclose(x, 128, dec)?;
+            radius = radius + b.lo().abs().max(b.hi().abs());
+        }
+        Ok(Some(radius))
+    }
     pub fn extrude(
         profile: &Profile,
         step: &StepId,

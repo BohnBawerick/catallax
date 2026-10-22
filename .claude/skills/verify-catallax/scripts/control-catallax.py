@@ -74,7 +74,7 @@ def load(paths, source, adapter=None):
                 elif fmt == 'exact-brep-question/2':
                     problems.append({'source': 'question', 'problem': value})
                 elif fmt == 'catallax-recipe/3':
-                    problems.append({'source': 'compare' if source == 'compare' else 'recipe', 'problem': value})
+                    problems.append({'source': source if source in ('compare', 'field') else 'recipe', 'problem': value})
                 elif fmt == 'catallax-question/1':
                     if set(value) != {'format', 'source', 'problem', 'max_work'}:
                         raise ValueError(f'{file}: invalid exported question fields')
@@ -296,6 +296,11 @@ def compare(left, right):
             sx, sy = [(Path(c['path']) / 'answer.step') for c in (x, y)]
             if sx.exists() != sy.exists() or (sx.exists() and sx.read_bytes() != sy.read_bytes()):
                 cause = 'step-bytes'
+            elif (Path(x['path']) / 'display.obj').exists() != (Path(y['path']) / 'display.obj').exists() or (
+                (Path(x['path']) / 'display.obj').exists()
+                and (Path(x['path']) / 'display.obj').read_bytes() != (Path(y['path']) / 'display.obj').read_bytes()
+            ):
+                cause = 'display-bytes'
         if cause:
             failures.append({'index': i, 'id': x['id'], 'cause': cause, 'left': x['path'], 'right': y['path']})
     return {'equal': not failures, 'cases': len(a['cases']), 'failures': failures}
@@ -454,7 +459,7 @@ def main():
             p.add_argument('--binary', required=True)
         if name != 'legacy':
             p.add_argument('--max-work', type=int, default=100_000_000)
-            p.add_argument('--source', choices=['auto', 'recipe', 'compare'], default='auto')
+            p.add_argument('--source', choices=['auto', 'recipe', 'field', 'compare'], default='auto')
             p.add_argument('--adapter', help='trusted Python file exporting load(Path) -> source/problem records')
         if name == 'run':
             p.add_argument('--workers', type=int, choices=range(1, 65), default=1)

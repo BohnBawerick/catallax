@@ -109,7 +109,7 @@ impl Constraint {
         *self = constraint(self.surface.transformed(pose));
     }
 }
-fn support_geometry(
+pub(crate) fn support_geometry(
     polynomial: &RealPoly,
     dec: &mut Decider,
 ) -> Result<(RealPoly, [RealPoly; 3]), Refusal> {
@@ -503,6 +503,37 @@ pub(crate) enum Leaf {
     Feature(crate::features::Feature),
 }
 impl Leaf {
+    pub(crate) fn constraints(&self) -> &[Constraint] {
+        match self {
+            Self::Primitive(a) => &a.constraints,
+            Self::Feature(a) => &a.constraints,
+        }
+    }
+
+    pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
+        let Self::Primitive(a) = self else {
+            let Self::Feature(a) = self else {
+                unreachable!()
+            };
+            return a.display_radius(dec);
+        };
+        let local = match a.kind {
+            Kind::Block | Kind::Round => a
+                .parameters
+                .iter()
+                .fold(Rational::zero(), |sum, x| &sum + x),
+            Kind::Sphere => a.parameters[0].clone(),
+            Kind::Torus => &a.parameters[0] + &a.parameters[1],
+        };
+        let translation = a.inverse.inverse().translation;
+        let shift = [&translation.x, &translation.y, &translation.z]
+            .into_iter()
+            .try_fold(Rational::zero(), |sum, x| {
+                let b = enclose(x, 128, dec)?;
+                Ok::<_, Refusal>(sum + b.lo().abs().max(b.hi().abs()))
+            })?;
+        Ok(Some(local + shift))
+    }
     pub fn same_geometry(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
         match (self, other) {
             (Self::Primitive(a), Self::Primitive(b)) => a.same_geometry(b, dec),

@@ -38,6 +38,9 @@ pub(crate) fn compile(
     if let crate::surface::Property::SecondMoment(i, j) = property {
         return second_moment(surface, circle, anchor, indices, i, j);
     }
+    if property == crate::surface::Property::FaceCentroid {
+        return face_centroid(surface, circle, anchor, indices);
+    }
     let anchor = &anchor.to_real();
     let b = Builder::default();
     let pi = b.input(6);
@@ -311,4 +314,91 @@ fn second_moment(
         _ => return None,
     };
     Some(b.finish(&[moment]))
+}
+
+fn face_centroid(
+    surface: &Surface,
+    circle: &Circle,
+    anchor: &RPoint3,
+    indices: &[usize],
+) -> Option<Program> {
+    let b = Builder::default();
+    let pi = b.input(6);
+    let anchor = anchor.to_real();
+    let radius2 = b.exact(&circle.radius_sq);
+    let (area, moments) = match surface {
+        Surface::Plane(p) => {
+            if !parallel(&p.normal, &circle.normal)? {
+                return None;
+            }
+            let area = orientation(&b, &circle.normal, &p.normal)? * pi * radius2;
+            let center = offset(&b, &circle.center, &anchor);
+            (area, center.map(|x| area * x))
+        }
+        Surface::Cylinder(c) => {
+            if !parallel(&c.axis, &circle.normal)?
+                || !circle
+                    .center
+                    .minus(&c.origin)
+                    .cross(&c.axis)
+                    .norm_squared()
+                    .as_rational()?
+                    .is_zero()
+                || !(&circle.radius_sq - &c.radius.square())
+                    .as_rational()?
+                    .is_zero()
+            {
+                return None;
+            }
+            let axis = unit(&b, &c.axis);
+            let z = dot(offset(&b, &circle.center, &c.origin), axis);
+            let origin = offset(&b, &c.origin, &anchor);
+            let density =
+                -b.k(2) * orientation(&b, &circle.normal, &c.axis)? * pi * b.exact(&c.radius);
+            (
+                density * z,
+                std::array::from_fn(|i| density * (origin[i] * z + axis[i] * z.square() / b.k(2))),
+            )
+        }
+        Surface::Cone(c) => {
+            if !parallel(&c.axis, &circle.normal)?
+                || !circle
+                    .center
+                    .minus(&c.apex)
+                    .cross(&c.axis)
+                    .norm_squared()
+                    .as_rational()?
+                    .is_zero()
+            {
+                return None;
+            }
+            let axis = unit(&b, &c.axis);
+            let z = dot(offset(&b, &circle.center, &c.apex), axis);
+            let origin = offset(&b, &c.apex, &anchor);
+            let slope = b.exact(&c.slope);
+            let area = -orientation(&b, &circle.normal, &c.axis)?
+                * pi
+                * slope
+                * (b.k(1) + slope.square()).sqrt()
+                * z.square();
+            (
+                area,
+                std::array::from_fn(|i| area * (origin[i] + b.k(2) * axis[i] * z / b.k(3))),
+            )
+        }
+        Surface::Sphere(s) => {
+            let axis = unit(&b, &circle.normal);
+            let d = dot(offset(&b, &circle.center, &s.center), axis);
+            let radius = b.exact(&s.radius);
+            let area = b.k(2) * pi * radius * (radius - d);
+            let origin = offset(&b, &s.center, &anchor);
+            (
+                area,
+                std::array::from_fn(|i| area * origin[i] + pi * radius * radius2 * axis[i]),
+            )
+        }
+        _ => return None,
+    };
+    let values = [area, area, moments[0], moments[1], moments[2]];
+    Some(b.finish(&indices.iter().map(|i| values[*i]).collect::<Vec<_>>()))
 }

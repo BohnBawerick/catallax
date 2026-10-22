@@ -82,12 +82,28 @@ impl Sampler<'_> {
                 .evaluate(&Ball::from_rational(&mid, BITS), self.dec)?,
         )?;
         let mut small = bound <= self.options.chord_tolerance.mul_pow2(-3);
+        if let Some(limit) = &self.options.max_edge_length {
+            small &= crate::controls::length_squared(self.positions[first], self.positions[last])
+                <= limit * limit;
+        }
         for chart in self.charts {
             let a = chart.project(self.positions[first]);
             let b = align(chart.project(self.positions[last]), a, chart.periodic);
             let m = align(chart.project(middle), a, chart.periodic);
             let hessian = chart.hessian(a[1].abs().max(b[1].abs()).max(m[1].abs()), self.dec)?;
             small &= (0..2).all(|i| !chart.periodic[i] || (b[i] - a[i]).abs() <= 0.125);
+            if let Some(angle) = &self.options.angular_deviation {
+                let mut span = (crate::chart::q(b[0]) - crate::chart::q(a[0])).abs();
+                if matches!(
+                    chart.surface,
+                    catallax_shapes::Surface::Sphere(_) | catallax_shapes::Surface::Torus(_)
+                ) {
+                    span = span + (crate::chart::q(b[1]) - crate::chart::q(a[1])).abs();
+                }
+                if !matches!(chart.surface, catallax_shapes::Surface::Plane(_)) {
+                    small &= span * Rational::from_i64(16) <= *angle;
+                }
+            }
             small &= chord_bound(&[a, b, m], &hessian) <= self.options.chord_tolerance.mul_pow2(-3);
         }
         if small {

@@ -285,13 +285,19 @@ impl FaceBuilder<'_> {
         face: FaceId,
         sense: Sense,
         dec: &Decider,
-    ) -> Result<(Vec<Triangle>, Rational), Refusal> {
+    ) -> Result<(Vec<Triangle>, Rational, Rational, Option<Rational>), Refusal> {
         for _ in 0..48 {
             dec.check_deadline()?;
             let labels = self.labels()?;
             let mut pending = BTreeMap::new();
             let mut triangles = Vec::new();
             let mut maximum = Rational::zero();
+            let mut aspect = Rational::zero();
+            let mut angular = self
+                .options
+                .angular_deviation
+                .as_ref()
+                .map(|_| Rational::zero());
             for f in self.cdt.inner_faces() {
                 if !labels[f.index()] {
                     continue;
@@ -311,6 +317,23 @@ impl FaceBuilder<'_> {
                 }
                 let residual = nodes.iter().map(|n| &self.errors[n.error]).max().unwrap();
                 let error = &chord_bound(&uvs, &self.hessian) + residual;
+                if let Some(limit) = &self.options.max_edge_length {
+                    let lengths = std::array::from_fn::<_, 3, _>(|i| {
+                        crate::controls::length_squared(
+                            self.positions[vertices[i]],
+                            self.positions[vertices[(i + 1) % 3]],
+                        )
+                    });
+                    let longest = (0..3).max_by_key(|&i| &lengths[i]).unwrap();
+                    if lengths[longest] > limit * limit {
+                        let next = (longest + 1) % 3;
+                        let midpoint = self.chart.canonical(std::array::from_fn(|i| {
+                            (uvs[longest][i] + uvs[next][i]) * 0.5
+                        }));
+                        pending.insert(key(midpoint), midpoint);
+                        continue;
+                    }
+                }
                 if error > self.options.chord_tolerance {
                     let mut center = self.chart.canonical(center);
                     for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
@@ -322,6 +345,32 @@ impl FaceBuilder<'_> {
                     pending.insert(key(center), center);
                     continue;
                 }
+                let (ratio, angle) = crate::controls::quality(
+                    self.chart,
+                    &uvs,
+                    vertices.map(|i| self.positions[i]),
+                    self.options.angular_deviation.is_some(),
+                    dec,
+                )?;
+                if angle
+                    .as_ref()
+                    .zip(self.options.angular_deviation.as_ref())
+                    .is_some_and(|(actual, requested)| actual > requested)
+                {
+                    let mut center = self.chart.canonical(center);
+                    for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
+                        if periodic {
+                            *value =
+                                libm::round(*value * 281_474_976_710_656.0) / 281_474_976_710_656.0;
+                        }
+                    }
+                    pending.insert(key(center), center);
+                    continue;
+                }
+                aspect = aspect.max(ratio);
+                if let (Some(maximum), Some(angle)) = (&mut angular, angle) {
+                    *maximum = maximum.clone().max(angle);
+                }
                 maximum = maximum.max(error);
                 if sense == Sense::Reversed {
                     vertices.swap(1, 2);
@@ -332,7 +381,7 @@ impl FaceBuilder<'_> {
             }
             if pending.is_empty() {
                 triangles.sort_unstable_by_key(|t| t.vertices);
-                return Ok((triangles, maximum));
+                return Ok((triangles, maximum, aspect, angular));
             }
             let mut added = false;
             for center in pending.into_values() {
@@ -428,15 +477,31 @@ fn face_mesh(
     };
     builder.boundary(&segments, face.sense)?;
     builder.grid()?;
-    let (triangles, max_chord_error) = builder
+    let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) = builder
         .finish(face_id, face.sense, dec)
         .map_err(|e| Refusal::new(e.code, format!("face {}: {}", face_id.index(), e.detail)))?;
     let start = boundaries.mesh.triangles.len();
     boundaries.mesh.triangles.extend(triangles);
+    if options
+        .max_aspect_ratio
+        .as_ref()
+        .is_some_and(|limit| max_aspect_ratio > *limit)
+    {
+        boundaries
+            .mesh
+            .unavailable_controls
+            .push(crate::UnavailableControl {
+                face: face_id,
+                control: crate::MeshControl::AspectRatio,
+                reason: "boundary-constrained triangulation exceeds the requested aspect ratio",
+            });
+    }
     boundaries.mesh.faces.push(FaceMesh {
         face: face_id,
         triangles: start..boundaries.mesh.triangles.len(),
         max_chord_error,
+        max_aspect_ratio,
+        max_angular_deviation,
     });
     Ok(())
 }

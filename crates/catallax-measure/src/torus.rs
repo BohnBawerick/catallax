@@ -254,10 +254,17 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
             .times(&position[j])
             .scaled(b.k(1) / b.k(5));
     }
+    if property == Property::FaceCentroid {
+        polynomials[1] = polynomials[0].clone();
+        for i in 0..3 {
+            polynomials[i + 2] = polynomials[0].times(&position[i]);
+        }
+    }
     let indices = match property {
         Property::Area => vec![0],
         Property::Volume => vec![0, 1],
         Property::Centroid => vec![0, 1, 2, 3, 4],
+        Property::FaceCentroid => vec![0, 1, 2, 3, 4],
         Property::SecondMoment(_, _) => vec![0, 2],
     };
     let mut forms = Vec::new();
@@ -308,6 +315,12 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
             * (origin[i] * origin[j]
                 + transverse * (b.k(if i == j { 1 } else { 0 }) - axis[i] * axis[j])
                 + minor.square() * axis[i] * axis[j] / b.k(4));
+    }
+    if property == Property::FaceCentroid {
+        full[1] = whole_area;
+        for i in 0..3 {
+            full[i + 2] = whole_area * origin[i];
+        }
     }
     Programs {
         boundary: b.finish(&forms),

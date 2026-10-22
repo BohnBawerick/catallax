@@ -14,8 +14,8 @@ use catallax_topology::{self as topology, Model};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
-    if !(2..=3).contains(&args.len()) {
-        return Err("usage: obj <block|cylinder|cone|frustum|sphere|torus|drill|lens|cross> <file.obj> [chord-mm]".into());
+    if !(2..=6).contains(&args.len()) {
+        return Err("usage: obj <block|cylinder|cone|frustum|sphere|torus|drill|lens|cross> <file.obj> [chord-mm] [angle-radians] [max-edge-mm] [max-aspect-ratio]".into());
     }
     let mut model = Model::new();
     let mut dec = Decider::default();
@@ -80,6 +80,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|s| Rational::parse(s))
             .transpose()?
             .unwrap_or_else(|| MeshOptions::default().chord_tolerance),
+        angular_deviation: args.get(3).map(|s| Rational::parse(s)).transpose()?,
+        max_edge_length: args.get(4).map(|s| Rational::parse(s)).transpose()?,
+        max_aspect_ratio: args.get(5).map(|s| Rational::parse(s)).transpose()?,
         ..MeshOptions::default()
     };
     let answer = mesh_body(&model, body, &options, &mut dec)?;
@@ -98,6 +101,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "face {}: proven chord error <= {} mm",
             face.face.index(),
             face.max_chord_error.to_f64_nearest()
+        );
+        println!(
+            "  aspect <= {}, angle <= {:?}",
+            face.max_aspect_ratio.to_f64_nearest(),
+            face.max_angular_deviation
+                .as_ref()
+                .map(Rational::to_f64_nearest)
+        );
+    }
+    for unavailable in &answer.value.unavailable_controls {
+        println!(
+            "face {}: {:?} unavailable: {}",
+            unavailable.face.index(),
+            unavailable.control,
+            unavailable.reason
         );
     }
     Ok(())

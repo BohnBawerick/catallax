@@ -108,9 +108,23 @@ The [verification skill](.claude/skills/verify-catallax/SKILL.md) covers corpus 
 millimetres. `max_vertices` limits deterministic refinement, including temporary
 periodic chart copies. The default is 0.01 mm and one million vertices.
 
+Optional `angular_deviation` bounds the angle in radians between each facet normal
+and every analytic normal over its parameter triangle. `max_edge_length` bounds
+every triangle edge and boundary-polyline segment in millimetres. Both bounds
+include the returned binary64 coordinates. Nonpositive optional controls return
+`mesh.invalid-options`.
+
+Each face reports `max_aspect_ratio`, an upper bound on longest edge divided by
+shortest altitude. `max_aspect_ratio` in the options requests a ratio but does not
+force quality refinement across fixed boundaries. Faces that exceed it appear in
+`Mesh::unavailable_controls`, with the control and reason. A requested control
+must either be certified or appear there; a resource or precision failure still
+refuses the mesh. No option changes exact geometry or STEP output.
+
 `Mesh::positions` is shared across faces. Each `Triangle` carries its input
 `FaceId`; each `FaceMesh` identifies a contiguous triangle range and its proven
-maximum chord error. `EdgeMesh` records the one polyline used by both incident
+maximum chord error, aspect-ratio bound and optional angular bound. `EdgeMesh`
+records the one polyline used by both incident
 faces, including its proven curve-to-polyline error. Face IDs belong to the
 input model, not to rebuild-stable recipe names.
 

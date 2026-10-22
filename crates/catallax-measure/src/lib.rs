@@ -34,7 +34,10 @@ use catallax_numbers::{
 };
 use catallax_topology::{BodyId, BodyKind, FaceId, Model};
 
+mod bounds;
+mod edge;
 mod engine;
+pub use bounds::BoundingBox;
 mod integrate;
 mod planar;
 mod ring;
@@ -493,6 +496,74 @@ pub fn face_area(
     let enclosure = answer.value.remove(0);
     accuracy.mark(&mut answer.marks, &[&enclosure], "face area");
     Ok(Answer::with_marks(enclosure, answer.marks))
+}
+
+/// Area-weighted centre of one trimmed face, independent of face orientation.
+/// Returns no display-derived quantities. A zero-area face has no centre.
+pub fn face_centroid(
+    model: &Model,
+    face: FaceId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<[Enclosure; 3]> {
+    accuracy.validate();
+    let anchor = engine::anchor(model, &[face]);
+    let answer = engine::measure(
+        model,
+        &[face],
+        &anchor,
+        accuracy,
+        surface::Property::FaceCentroid,
+        &mut engine::TraceCache::new(),
+        dec,
+    )?;
+    let values: [Enclosure; 3] = answer.value.try_into().unwrap();
+    let mut marks = answer.marks;
+    accuracy.mark(&mut marks, &values.each_ref(), "face centroid");
+    Ok(Answer::with_marks(values, marks))
+}
+
+/// Length along the exact trimmed edge.
+pub fn edge_length(
+    model: &Model,
+    edge: catallax_topology::EdgeId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<Enclosure> {
+    let answer = edge::measure(model, edge, accuracy, false, dec)?;
+    Ok(Answer::with_marks(answer.value.0, answer.marks))
+}
+
+/// Point halfway along the edge's arc length, not the mean of its endpoints.
+/// A closed edge starts at its vertex, or at the carrier seam when vertexless.
+pub fn edge_midpoint(
+    model: &Model,
+    edge: catallax_topology::EdgeId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<[Enclosure; 3]> {
+    edge::midpoint(model, edge, accuracy, dec)
+}
+
+/// Proven enclosing box of a body. An empty body has no box.
+pub fn bounding_box(
+    model: &Model,
+    body: BodyId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<Option<BoundingBox>> {
+    bounds::body(model, body, accuracy, dec)
+}
+
+/// Proven enclosing box of a face, independent of the display mesh.
+/// Sphere and torus trims use the whole compact carrier's support box.
+pub fn face_bounding_box(
+    model: &Model,
+    face: FaceId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<BoundingBox> {
+    bounds::face(model, face, accuracy, dec)
 }
 
 fn solid_faces(model: &Model, body: BodyId) -> Result<Vec<FaceId>, Refusal> {

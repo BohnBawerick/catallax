@@ -743,3 +743,247 @@ fn grouped_properties_reuse_failed_sphere_gauges_before_centroid() {
     assert!(project([r(2) / r(15), -r(1) / r(3), r(14) / r(15)]).contains(&r(0)));
     assert!(project([r(11) / r(15), r(2) / r(3), r(2) / r(15)]).contains(&r(8)));
 }
+
+#[test]
+fn face_centroids_match_analytic_primitives() {
+    let accuracy = Accuracy {
+        relative: r(0),
+        absolute: Rational::parse("1e-10").unwrap(),
+    };
+    for kind in 0..5 {
+        let mut model = Model::new();
+        let body = match kind {
+            0 => catallax_topology::block(&mut model, [r(2), r(4), r(6)], &Pose::identity()),
+            1 => catallax_topology::cylinder(&mut model, r(2), r(6), &Pose::identity()),
+            2 => catallax_topology::cone(&mut model, r(3), r(0), r(6), &Pose::identity()),
+            3 => catallax_topology::sphere(&mut model, r(2), &Pose::identity()),
+            _ => catallax_topology::torus(&mut model, r(3), r(1), &Pose::identity()),
+        }
+        .unwrap();
+        for face in model.faces_of_body(body) {
+            let result = face_centroid(&model, face, &accuracy, &mut Decider::default()).unwrap();
+            assert!(result.marks.is_empty(), "{kind}: {:?}", result.marks);
+            let expected = match model.geom().surface(model.face(face).surface) {
+                catallax_shapes::Surface::Plane(p) => {
+                    let n = [&p.normal.x, &p.normal.y, &p.normal.z];
+                    let o = [&p.origin.x, &p.origin.y, &p.origin.z];
+                    std::array::from_fn(|i| {
+                        if kind == 0 {
+                            if n[i].as_rational().unwrap().is_zero() {
+                                r(i as i64 + 1)
+                            } else {
+                                o[i].as_rational().unwrap()
+                            }
+                        } else {
+                            o[i].as_rational().unwrap()
+                        }
+                    })
+                }
+                catallax_shapes::Surface::Cylinder(_) => [r(0), r(0), r(3)],
+                catallax_shapes::Surface::Cone(_) => [r(0), r(0), r(2)],
+                _ => [r(0), r(0), r(0)],
+            };
+            for (value, expected) in result.value.iter().zip(expected) {
+                assert!(
+                    value.contains(&expected),
+                    "{kind}: {value:?} excludes {expected}"
+                );
+                assert!(accuracy.reached(value));
+            }
+        }
+    }
+}
+
+#[test]
+fn edge_queries_and_boxes_use_exact_carriers() {
+    let accuracy = Accuracy {
+        relative: r(0),
+        absolute: Rational::parse("1e-8").unwrap(),
+    };
+    for kind in 0..5 {
+        let mut model = Model::new();
+        let (body, expected_min, expected_max) = match kind {
+            0 => (
+                catallax_topology::block(&mut model, [r(2), r(4), r(6)], &Pose::identity())
+                    .unwrap(),
+                [r(0), r(0), r(0)],
+                [r(2), r(4), r(6)],
+            ),
+            1 => (
+                catallax_topology::cylinder(&mut model, r(2), r(6), &Pose::identity()).unwrap(),
+                [r(-2), r(-2), r(0)],
+                [r(2), r(2), r(6)],
+            ),
+            2 => (
+                catallax_topology::cone(&mut model, r(3), r(0), r(6), &Pose::identity()).unwrap(),
+                [r(-3), r(-3), r(0)],
+                [r(3), r(3), r(6)],
+            ),
+            3 => (
+                catallax_topology::sphere(&mut model, r(2), &Pose::identity()).unwrap(),
+                [r(-2), r(-2), r(-2)],
+                [r(2), r(2), r(2)],
+            ),
+            _ => (
+                catallax_topology::torus(&mut model, r(3), r(1), &Pose::identity()).unwrap(),
+                [r(-4), r(-4), r(-1)],
+                [r(4), r(4), r(1)],
+            ),
+        };
+        let bounds = bounding_box(&model, body, &accuracy, &mut Decider::default()).unwrap();
+        assert!(bounds.marks.is_empty(), "{kind}: {:?}", bounds.marks);
+        let bounds = bounds.value.unwrap();
+        for i in 0..3 {
+            assert!(
+                bounds.min[i] <= expected_min[i]
+                    && &expected_min[i] - &bounds.min[i] <= accuracy.absolute
+            );
+            assert!(
+                bounds.max[i] >= expected_max[i]
+                    && &bounds.max[i] - &expected_max[i] <= accuracy.absolute
+            );
+        }
+        for edge in model.edges_of_body(body) {
+            let length = edge_length(&model, edge, &accuracy, &mut Decider::default()).unwrap();
+            let midpoint = edge_midpoint(&model, edge, &accuracy, &mut Decider::default()).unwrap();
+            assert!(length.marks.is_empty());
+            assert!(midpoint.marks.is_empty());
+            let e = model.edge(edge);
+            match model.geom().curve(e.curve) {
+                catallax_shapes::Curve::Line(_) => {
+                    let a = model.geom().position(model.vertex(e.start.unwrap()).point);
+                    let b = model.geom().position(model.vertex(e.end.unwrap()).point);
+                    let expected = Ball::from_rational(
+                        &a.minus(&b).norm_squared().as_rational().unwrap(),
+                        512,
+                    )
+                    .sqrt()
+                    .unwrap();
+                    assert!(length.value.lo <= expected.lo() && length.value.hi >= expected.hi());
+                    for (value, (a, b)) in midpoint
+                        .value
+                        .iter()
+                        .zip([&a.x, &a.y, &a.z].into_iter().zip([&b.x, &b.y, &b.z]))
+                    {
+                        assert!(value.contains(&((a + b).as_rational().unwrap() / r(2))));
+                    }
+                }
+                catallax_shapes::Curve::Circle(c) => {
+                    let radius = Ball::from_rational(&c.radius_sq.as_rational().unwrap(), 512)
+                        .sqrt()
+                        .unwrap();
+                    let expected = &(&Ball::pi(512) * &radius) * &Ball::from_rational(&r(2), 512);
+                    assert!(length.value.lo <= expected.lo() && length.value.hi >= expected.hi());
+                    let start = if let Some(v) = e.start {
+                        model.geom().position(model.vertex(v).point)
+                    } else {
+                        c.center.plus(
+                            &c.ref_dir
+                                .scaled(&(&c.radius_sq / &c.ref_dir.norm_squared()).sqrt()),
+                        )
+                    };
+                    for (value, (center, start)) in midpoint.value.iter().zip(
+                        [&c.center.x, &c.center.y, &c.center.z]
+                            .into_iter()
+                            .zip([&start.x, &start.y, &start.z]),
+                    ) {
+                        let expected = &(center * &catallax_numbers::Real::from(2)) - start;
+                        assert!(value.contains(&expected.as_rational().unwrap()));
+                    }
+                }
+                _ => panic!("unexpected primitive boundary"),
+            }
+        }
+    }
+    let mut model = Model::new();
+    let empty = catallax_topology::empty(&mut model);
+    assert_eq!(
+        bounding_box(&model, empty, &accuracy, &mut Decider::default())
+            .unwrap()
+            .value,
+        None
+    );
+}
+
+#[test]
+fn trimmed_face_centroids_and_arc_midpoints_follow_area_and_arc_length() {
+    let accuracy = Accuracy {
+        relative: r(0),
+        absolute: Rational::parse("1e-7").unwrap(),
+    };
+    let (model, body) = crate::fixtures::octant(&Pose::identity());
+    let pi = Ball::pi(512);
+    for face in model.faces_of_body(body) {
+        let answer = face_centroid(&model, face, &accuracy, &mut Decider::default()).unwrap();
+        assert!(answer.marks.is_empty());
+        let expected = match model.geom().surface(model.face(face).surface) {
+            catallax_shapes::Surface::Sphere(_) => std::array::from_fn(|_| {
+                Ball::from_rational(&Rational::from_ratio(3, 2).unwrap(), 512)
+            }),
+            catallax_shapes::Surface::Plane(p) => {
+                let radial = Ball::from_rational(&r(4), 512).checked_div(&pi).unwrap();
+                [&p.normal.x, &p.normal.y, &p.normal.z].map(|n| {
+                    if n.as_rational().unwrap().is_zero() {
+                        radial.clone()
+                    } else {
+                        Ball::from_rational(&r(0), 512)
+                    }
+                })
+            }
+            _ => unreachable!(),
+        };
+        for (actual, expected) in answer.value.iter().zip(expected) {
+            assert!(
+                actual.lo <= expected.lo() && actual.hi >= expected.hi(),
+                "{actual:?} excludes {expected:?}"
+            );
+        }
+    }
+    for edge in model.edges_of_body(body) {
+        let catallax_shapes::Curve::Circle(c) = model.geom().curve(model.edge(edge).curve) else {
+            continue;
+        };
+        let length = edge_length(&model, edge, &accuracy, &mut Decider::default()).unwrap();
+        let expected_length = &pi * &Ball::from_rational(&Rational::from_ratio(3, 2).unwrap(), 512);
+        assert!(length.marks.is_empty());
+        assert!(length.value.lo <= expected_length.lo() && length.value.hi >= expected_length.hi());
+        let midpoint = edge_midpoint(&model, edge, &accuracy, &mut Decider::default()).unwrap();
+        assert!(midpoint.marks.is_empty(), "{:?}", midpoint.marks);
+        let radial = Ball::from_rational(&Rational::from_ratio(9, 2).unwrap(), 512)
+            .sqrt()
+            .unwrap();
+        for (actual, normal) in midpoint
+            .value
+            .iter()
+            .zip([&c.normal.x, &c.normal.y, &c.normal.z])
+        {
+            let expected = if normal.as_rational().unwrap().is_zero() {
+                radial.clone()
+            } else {
+                Ball::from_rational(&r(0), 512)
+            };
+            assert!(
+                actual.lo <= expected.lo() && actual.hi >= expected.hi(),
+                "{actual:?} excludes {expected:?}"
+            );
+        }
+    }
+    let (model, body) = crate::fixtures::half_torus();
+    let face = model
+        .faces_of_body(body)
+        .into_iter()
+        .find(|face| {
+            matches!(
+                model.geom().surface(model.face(*face).surface),
+                catallax_shapes::Surface::Torus(_)
+            )
+        })
+        .unwrap();
+    let answer = face_centroid(&model, face, &accuracy, &mut Decider::default()).unwrap();
+    let y = Ball::from_rational(&Rational::from_ratio(19, 3).unwrap(), 512)
+        .checked_div(&pi)
+        .unwrap();
+    assert!(answer.marks.is_empty());
+    assert!(answer.value[0].contains(&r(0)) && answer.value[2].contains(&r(0)));
+    assert!(answer.value[1].lo <= y.lo() && answer.value[1].hi >= y.hi());
+}

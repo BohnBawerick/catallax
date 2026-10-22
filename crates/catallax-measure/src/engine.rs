@@ -104,7 +104,7 @@ pub(crate) fn measure(
     let indices = match property {
         Property::Area => vec![0],
         Property::Volume => vec![1],
-        Property::Centroid => vec![1, 2, 3, 4],
+        Property::Centroid | Property::FaceCentroid => vec![1, 2, 3, 4],
         Property::SecondMoment(_, _) => vec![2],
     };
     if let Some(values) = planar::body(model, faces, anchor, property) {
@@ -136,6 +136,13 @@ pub(crate) fn measure(
                 }
                 Property::SecondMoment(_, _) => {
                     exact[2] = &exact[2] + &planar.moments[0];
+                }
+                Property::FaceCentroid => {
+                    exact[1] = &exact[1] + &planar.area_numerator;
+                    let sense = planar::sign(model.face(*id).sense);
+                    for (sum, moment) in exact[2..].iter_mut().zip(planar.moments) {
+                        *sum = &*sum + &(&moment * &sense);
+                    }
                 }
             }
         } else {
@@ -404,10 +411,16 @@ pub(crate) fn measure(
         }
     }
     best.ok_or_else(|| {
-        if property == Property::Centroid && volume_enclosure_reached {
+        if matches!(property, Property::Centroid | Property::FaceCentroid)
+            && volume_enclosure_reached
+        {
             Refusal::new(
                 "measure.centroid-not-separated",
-                "volume could not be separated from zero",
+                if property == Property::FaceCentroid {
+                    "area could not be separated from zero"
+                } else {
+                    "volume could not be separated from zero"
+                },
             )
         } else {
             budget()
@@ -420,14 +433,18 @@ fn finish(
     anchor: &RPoint3,
     property: Property,
 ) -> Answered<Vec<Enclosure>> {
-    if property != Property::Centroid {
+    if !matches!(property, Property::Centroid | Property::FaceCentroid) {
         return Ok(Answer::exact(result));
     }
     let volume = &result[0];
     if volume.lo <= Rational::zero() && volume.hi >= Rational::zero() {
         return Err(Refusal::new(
             "measure.centroid-not-separated",
-            "volume enclosure includes zero",
+            if property == Property::FaceCentroid {
+                "area enclosure includes zero"
+            } else {
+                "volume enclosure includes zero"
+            },
         ));
     }
     let coordinates = planar::components(anchor);

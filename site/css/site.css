@@ -160,6 +160,18 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
 .hero__lede .status-chip { margin-top: 10px; }
 .manifesto .section__label { flex-wrap: wrap; }
 
+/* Lineage ---------------------------------------------------------------- */
+.lineage__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: clamp(32px, 5vw, 96px); align-items: start; margin-top: clamp(36px, 5vw, 72px); }
+.lineage__copy p:not(.label) { max-width: 32rem; margin: 0; }
+.lineage__copy p + p { margin-top: 20px; }
+.lineage__lede { color: var(--bone); font-size: clamp(1.15rem, 1.6vw, 1.45rem); line-height: 1.35; letter-spacing: -0.015em; }
+.lineage__plain { color: var(--slate); font-size: 15px; }
+.lineage__copy .btn { margin-top: 36px; }
+.lineage__list { list-style: none; padding: 0; margin: 18px 0 0; border-top: 1px solid var(--steel); }
+.lineage__list li { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--steel); }
+.lineage__list span { color: var(--oxide); font: 500 11.5px/1.6 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.lineage__list b { color: var(--bone); font-weight: 500; font-size: 15px; line-height: 1.5; }
+
 /* Marquee ---------------------------------------------------------------- */
 .marquee { border-block: 1px solid var(--steel); overflow: hidden; padding: 22px 0; }
 .marquee__track { display: flex; align-items: center; gap: 36px; width: max-content; animation: marquee 48s linear infinite; }
@@ -300,6 +312,15 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
 .ci__term video { width: 100%; aspect-ratio: 16 / 9; background: var(--graphite); }
 .ci__term figcaption { padding: 16px; margin: 0; line-height: 1.7; }
 
+/* Support ---------------------------------------------------------------- */
+.support__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: clamp(32px, 5vw, 96px); align-items: start; }
+.support__works { padding-top: 6px; }
+.works__list { list-style: none; padding: 0; margin: 18px 0 0; border-top: 1px solid var(--steel); }
+.works__list li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--steel); }
+.works__list span { color: var(--oxide); }
+.works__list b { color: var(--fog); font: 400 15px/1.5 var(--font-display); letter-spacing: 0; text-transform: none; }
+.works__not { margin: 20px 0 0; max-width: 36rem; font-size: 14px; color: var(--slate); }
+
 /* Contact + footer ------------------------------------------------------- */
 .contact { padding-bottom: clamp(80px, 10vw, 140px); }
 .contact__title { margin: 0; max-width: 14ch; color: var(--bone); font-size: clamp(3rem, 9vw, 10rem); font-weight: 560; letter-spacing: -0.055em; line-height: 0.92; }
@@ -316,6 +337,8 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
   .hud--br { display: none; }
 }
 @media (max-width: 900px) {
+  .lineage__grid, .support__grid { grid-template-columns: 1fr; }
+  .lineage__list li { grid-template-columns: 1fr; gap: 6px; }
   .hero__copy { bottom: 48px; }
   .hud--tr { top: 96px; }
   .hud--bl { bottom: auto; top: 84px; right: 50%; transform: translateX(50%); justify-items: center; }
@@ -338,6 +361,7 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
   .bench__row--head > span:first-child { display: none; }
 }
 @media (max-width: 560px) {
+  .works__list li { grid-template-columns: 1fr; gap: 4px; }
   .nav__status { display: none; }
   .hud--tr { display: none; }
   .hero__kicker { flex-direction: column; gap: 4px; }

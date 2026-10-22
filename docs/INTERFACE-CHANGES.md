@@ -584,9 +584,9 @@ Migration: requested coefficient arithmetic keeps its order and outward rounding
 ## 2026-10-22: consume temporary dyadic magnitudes
 
 Piece: 1
-Change: ball products and midpoint-rounding residuals consume fresh dyadic values when taking absolute values, instead of copying their integer mantissas.
-Why: radius formulas copied temporary signed products before immediately discarding them.
-Migration: arithmetic, rounding and work charges are unchanged. The complete numbers suite passes, including independent GMP/MPFR bounds. A 57,456-coefficient public jet workload retains identical midpoints, radii and precisions before and after the change.
+Change: ball products and midpoint-rounding residuals consume fresh dyadic values when taking absolute values. Midpoint/radius normalization also retains owned, already-precision-sized results instead of copying their integer mantissas. Precision reduction of borrowed balls keeps a borrowed path.
+Why: radius formulas and interval normalization copied temporary results before immediately discarding them. An odd normalized mantissa changes whenever significant bits are discarded, so the representable-center case needs no rounded copy or error subtraction.
+Migration: public signatures, arithmetic, rounding and work charges are unchanged. A 57,456-coefficient public jet workload retains identical midpoints, radii and precisions; independent GMP/MPFR tests check containment.
 
 ## 2026-10-22: share immutable evaluation-memo enclosures
 
@@ -608,4 +608,11 @@ Piece: 5
 Change: a verified straight planar probe with proven source contact uses `f(t) = t*c1 + t²*(f(q)-c1)`, where `c1 = grad(f)(q)·p + 2*f(q) - grad(f)(q)·q`. The coefficients are affine in the algebraic source point.
 Why: expanding quadratic source-coordinate products reconstructed a zero already supplied by the contact proof.
 Migration: only exact carrier checks and existing incidence proofs enable the reduction. Other paths retain their original expansion, and whole-path separation and component checks remain mandatory. Regressions independently derive simple, double and contained contacts. A standalone smoke checks nine coefficients and fifteen exact path values.
+
+## 2026-10-22: retain owned multivariate accumulators
+
+Piece: 1
+Change: owned polynomial addition retains its left term tree and moves the right terms into it. Entry-based accumulation moves vacant coefficients directly, computes occupied sums once, and removes exact cancellations.
+Why: curve substitution repeatedly cloned growing term trees and copied incoming arbitrary-precision coefficients before discarding them.
+Migration: operator signatures, coefficient domains, term order and normalized results are unchanged. Borrowed addition retains its independent result. Targeted independent polynomial tests cover substitution, cancellation, derivatives, resultants and certified systems; no precision or work-policy changes.
 

@@ -4,6 +4,7 @@
 //! Every truncation includes an explicit Taylor or geometric tail bound.
 
 use crate::{Decider, Integer, Interval, Rational, Refusal, Sign, StrictSign};
+use std::borrow::Cow;
 
 mod binary;
 use binary::Binary;
@@ -37,7 +38,7 @@ impl Ball {
     }
     /// Contains an integer at the requested precision.
     pub fn from_integer(n: &Integer, precision: u32) -> Self {
-        Self::centered(&Binary::from_integer(n.clone()), &Binary::zero(), precision)
+        Self::centered(Binary::from_integer(n.clone()), Binary::zero(), precision)
     }
     /// Working precision.
     pub fn precision(&self) -> u32 {
@@ -51,7 +52,7 @@ impl Ball {
             b.precision = p;
             b
         } else {
-            Self::centered(&self.mid, &self.rad, p)
+            Self::round_center_radius(Cow::Borrowed(&self.mid), Cow::Borrowed(&self.rad), p)
         }
     }
     /// Exact binary midpoint.
@@ -283,21 +284,33 @@ impl Ball {
     fn bounds_binary(lo: Binary, hi: Binary, precision: u32) -> Self {
         debug_assert!(lo <= hi);
         Self::centered(
-            &(&lo + &hi).mul_pow2(-1),
-            &(&hi - &lo).mul_pow2(-1),
+            (&lo + &hi).mul_pow2(-1),
+            (&hi - &lo).mul_pow2(-1),
             precision,
         )
     }
-    fn centered(center: &Binary, radius: &Binary, precision: u32) -> Self {
+    fn centered(center: Binary, radius: Binary, precision: u32) -> Self {
+        Self::round_center_radius(Cow::Owned(center), Cow::Owned(radius), precision)
+    }
+    fn round_center_radius(
+        center: Cow<'_, Binary>,
+        radius: Cow<'_, Binary>,
+        precision: u32,
+    ) -> Self {
         let p = precision.max(1);
-        let mid = center.rounded(p, false);
-        // max(|mid-lo|, |hi-mid|) = radius + |mid-center| exactly.
-        // An unchanged midpoint needs no subtraction to certify zero error.
-        let rad = if &mid == center {
-            radius.rounded(p, true)
+        // An odd normalized mantissa changes whenever significant bits are
+        // discarded. Otherwise retain the owned center without cloning it.
+        let (mid, radius) = if center.fits_precision(p) {
+            (center.into_owned(), radius)
         } else {
-            let error = (center - &mid).into_abs();
-            (radius + &error).rounded(p, true)
+            let mid = center.rounded(p, false);
+            let error = (&*center - &mid).into_abs();
+            (mid, Cow::Owned(&*radius + &error))
+        };
+        let rad = if radius.fits_precision(p) {
+            radius.into_owned()
+        } else {
+            radius.rounded(p, true)
         };
         Self {
             mid,
@@ -313,34 +326,34 @@ impl Ball {
     }
     fn add(&self, rhs: &Self) -> Self {
         Self::centered(
-            &(&self.mid + &rhs.mid),
-            &(&self.rad + &rhs.rad),
+            &self.mid + &rhs.mid,
+            &self.rad + &rhs.rad,
             self.precision.max(rhs.precision),
         )
     }
     fn sub(&self, rhs: &Self) -> Self {
         Self::centered(
-            &(&self.mid - &rhs.mid),
-            &(&self.rad + &rhs.rad),
+            &self.mid - &rhs.mid,
+            &self.rad + &rhs.rad,
             self.precision.max(rhs.precision),
         )
     }
     fn mul(&self, rhs: &Self) -> Self {
         let precision = self.precision.max(rhs.precision);
         if self.rad.is_zero() && rhs.rad.is_zero() {
-            return Self::centered(&(&self.mid * &rhs.mid), &Binary::zero(), precision);
+            return Self::centered(&self.mid * &rhs.mid, Binary::zero(), precision);
         }
         if self.rad.is_zero() {
             return Self::centered(
-                &(&self.mid * &rhs.mid),
-                &self.mid.abs_product(&rhs.rad),
+                &self.mid * &rhs.mid,
+                self.mid.abs_product(&rhs.rad),
                 precision,
             );
         }
         if rhs.rad.is_zero() {
             return Self::centered(
-                &(&self.mid * &rhs.mid),
-                &rhs.mid.abs_product(&self.rad),
+                &self.mid * &rhs.mid,
+                rhs.mid.abs_product(&self.rad),
                 precision,
             );
         }
@@ -359,7 +372,7 @@ impl Ball {
                     &product - &cross
                 };
                 let radius = &self.mid.abs_product(&rhs.rad) + &rhs.mid.abs_product(&self.rad);
-                Self::centered(&center, &radius, precision)
+                Self::centered(center, radius, precision)
             }
             (true, false) | (false, true) => {
                 let (stable, crossing) = if left_stable {
@@ -373,8 +386,8 @@ impl Ball {
                     stable.upper()
                 };
                 Self::centered(
-                    &(&far * &crossing.mid),
-                    &far.abs_product(&crossing.rad),
+                    &far * &crossing.mid,
+                    far.abs_product(&crossing.rad),
                     precision,
                 )
             }

@@ -3,7 +3,10 @@
 // do not charge work; callers keep their existing deterministic reservations.
 
 use crate::{Ball, Integer, Interval, Rational, Real, Sign};
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, btree_map::Entry},
+};
 
 /// Univariate polynomial, lowest degree first, with trailing zeros removed.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
@@ -738,11 +741,18 @@ impl MPoly {
         if c.is_zero() {
             return;
         }
-        let value = self.terms.get(&m).map_or(c.clone(), |a| a + &c);
-        if value.is_zero() {
-            self.terms.remove(&m);
-        } else {
-            self.terms.insert(m, value);
+        match self.terms.entry(m) {
+            Entry::Vacant(entry) => {
+                entry.insert(c);
+            }
+            Entry::Occupied(mut entry) => {
+                let value = entry.get() + &c;
+                if value.is_zero() {
+                    entry.remove();
+                } else {
+                    *entry.get_mut() = value;
+                }
+            }
         }
     }
     fn add(&self, rhs: &Self) -> Self {
@@ -815,5 +825,22 @@ fn pow_interval(x: Interval, mut e: u32) -> Interval {
 }
 binops!(UPoly; Add::add, Sub::sub, Mul::mul);
 negop!(UPoly);
-binops!(MPoly; Add::add, Sub::sub, Mul::mul);
+// Owned sums retain their accumulated term tree; borrowed sums must copy it.
+impl std::ops::Add for MPoly {
+    type Output = Self;
+    fn add(mut self, rhs: Self) -> Self {
+        assert_eq!(self.nvars, rhs.nvars);
+        for (monomial, coefficient) in rhs.terms {
+            self.accumulate(monomial, coefficient);
+        }
+        self
+    }
+}
+impl std::ops::Add for &MPoly {
+    type Output = MPoly;
+    fn add(self, rhs: Self) -> MPoly {
+        MPoly::add(self, rhs)
+    }
+}
+binops!(MPoly; Sub::sub, Mul::mul);
 negop!(MPoly);

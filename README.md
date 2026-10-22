@@ -123,6 +123,7 @@ library decider has no deadline.
 - [PRD](docs/PRD.md), [plan](docs/PLAN.md) and [research](docs/research/) explain the direction.
 - [Recipe language](docs/RECIPE.md) defines operations, names and the recipe file.
 - [Field queries](docs/FIELD.md) defines distance semantics, proof limits, selection and batch storage.
+- [Comparison](docs/COMPARE.md) documents the two-way display check between the kernels and its measurements.
 - [Design](docs/DESIGN.md) sets the rules; [architecture](docs/ARCHITECTURE.md) connects the B-rep crates.
 - [Piece contracts](docs/pieces/) describe the current interfaces and mathematical tests.
 - [Interface changes](docs/INTERFACE-CHANGES.md) records migrations.

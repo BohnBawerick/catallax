@@ -80,7 +80,7 @@ For a vector `v`, `|v|` means `sqrt(v . v)` as a `Real`, and `v^` means `v / |v|
 
 Unimplemented intersecting poses return `intersect.traced-pair-required`; definitions needing an irrational stored direction return `intersect.algebraic-direction-required` until the common algebraic foundation lands. Neither means impossible geometry.
 
-Curve queries include closed conics from these pairs and finite open-conic arcs. Membership retains the cone nappe, generator-ray and component selectors. A polynomial carrier alone does not establish membership.
+Curve queries include closed conics from these pairs and finite open-conic arcs. Membership retains the cone nappe, generator-ray and component selectors. A polynomial carrier alone does not establish membership. An unresolved cone nappe or new conic divider makes hit construction refuse with the originating numeric code; it cannot retain the other component with a mark. Legacy bounded divider marks are unchanged.
 
 ## Where two surfaces meet
 

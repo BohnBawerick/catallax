@@ -111,27 +111,15 @@ fn keep_branch(
         Curve::Intersection(i) => &i.surfaces,
         _ => &[],
     };
-    let mut uncertain_domain = false;
     for surface in std::iter::once(s).chain(supports.iter().copied()) {
         match query::surface_domain(geom.surface(surface), p, dec) {
             Ok(true) => {}
             Ok(false) => return Ok(None),
-            Err(Failure::Refused(e)) => return Err(e),
-            Err(Failure::Uncertain(n)) => {
-                let bound = n.bound.clone();
-                mark(
-                    marks,
-                    n,
-                    BoundKind::Distance,
-                    bound,
-                    "unresolved cone nappe",
-                );
-                uncertain_domain = true;
-            }
+            Err(e) => return Err(Refusal::from(e)),
         }
     }
     let Some(d) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
-        return Ok(Some(uncertain_domain));
+        return Ok(Some(false));
     };
     let Curve::Intersection(i) = geom.curve(c) else {
         unreachable!()
@@ -140,8 +128,12 @@ fn keep_branch(
     let value = d.value(p);
     let ps = match dec.sign(&value) {
         Outcome::Proven(s) => Some(s),
-        Outcome::ProvenCoincident(_) => return Ok(Some(uncertain_domain)),
+        Outcome::ProvenCoincident(_) => return Ok(Some(false)),
         Outcome::Refused(e) => return Err(e),
+        // Only legacy divider plans permit bounded, marked component choices.
+        Outcome::NotExact(n) if !d.canonical_direction => {
+            return Err(Refusal::from(Failure::Uncertain(n)));
+        }
         Outcome::NotExact(n) => {
             let bound = &n.bound / &d.length_lower;
             mark(
@@ -155,9 +147,10 @@ fn keep_branch(
         }
     };
     match dec.sign(&witness) {
-        Outcome::Proven(s) => Ok((Some(s) == ps).then_some(uncertain_domain)),
+        Outcome::Proven(s) => Ok((Some(s) == ps).then_some(false)),
         Outcome::ProvenCoincident(_) => panic!("regular witness on divider"),
         Outcome::Refused(e) => Err(e),
+        Outcome::NotExact(n) if !d.canonical_direction => Err(Refusal::from(Failure::Uncertain(n))),
         Outcome::NotExact(n) => {
             let b = dec.enclose(&value, &r(1))?;
             let bound = &b.lo().abs().max(b.hi().abs()) / &d.length_lower;
@@ -219,7 +212,7 @@ fn local_sign(
             });
         }
     }
-    panic!("a non-contained quadric has finite contact order at most eight")
+    panic!("a non-contained quartic on a conic has contact order at most eight")
 }
 fn contact(
     charts: &[Chart],
@@ -481,4 +474,87 @@ pub(super) fn intersect(
         })
         .collect();
     Ok(Answer::with_marks(CurveSurface::Meets(hits), marks))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::BudgetPolicy;
+    use catallax_shapes::{Cone, RPoint3, RVector3, Surface, Torus};
+
+    fn point(x: i64, y: i64, z: i64) -> RPoint3 {
+        RPoint3::new(r(x), r(y), r(z))
+    }
+    fn vector(x: i64, y: i64, z: i64) -> RVector3 {
+        RVector3::new(r(x), r(y), r(z))
+    }
+    fn assert_never_kept(geom: &GeomStore, curve: CurveId, surface: SurfaceId, position: Point3) {
+        let plan = query::validate(geom, curve).unwrap();
+        for (mut decider, limited) in [
+            (Decider::default(), false),
+            (
+                Decider::new(BudgetPolicy {
+                    max_precision_bits: 64,
+                    max_work: 0,
+                }),
+                true,
+            ),
+        ] {
+            let answer = keep_branch(
+                geom,
+                curve,
+                surface,
+                &position,
+                &plan,
+                &mut decider,
+                &mut MarkLog::new(),
+            );
+            assert!(
+                matches!(&answer, Ok(None)) || (limited && answer.is_err()),
+                "a budget cannot select a candidate on the wrong component: {answer:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn uncertain_nappe_cannot_keep_a_negative_cone_hit() {
+        let mut geom = GeomStore::new();
+        let curve = geom.add_curve(Curve::Line(
+            Line::new(point(1, 0, 0), vector(0, 0, 1)).unwrap(),
+        ));
+        let surface = geom.add_surface(Surface::Cone(
+            Cone::new(point(0, 0, 0), vector(0, 0, 1), r(1), vector(1, 0, 0)).unwrap(),
+        ));
+        assert_never_kept(&geom, curve, surface, point(1, 0, -1).to_real());
+    }
+
+    #[test]
+    fn uncertain_radius_cannot_keep_a_hit_on_the_other_torus_circle() {
+        let mut geom = GeomStore::new();
+        let plane = geom.add_surface(Surface::Plane(
+            catallax_shapes::Plane::new(
+                RPoint3::new(r(0), r(0), &r(1) / &r(2)),
+                vector(0, 0, 1),
+                vector(1, 0, 0),
+            )
+            .unwrap(),
+        ));
+        let torus = geom.add_surface(Surface::Torus(
+            Torus::new(point(0, 0, 0), vector(0, 0, 1), r(3), r(1), vector(1, 0, 0)).unwrap(),
+        ));
+        let answer =
+            crate::intersect_surfaces(&mut geom, plane, torus, &mut Decider::default()).unwrap();
+        let crate::SurfacePair::Meets(components) = answer.value else {
+            panic!("expected two circular sections")
+        };
+        let [
+            crate::Component::Curve { curve: first, .. },
+            crate::Component::Curve { curve: other, .. },
+        ] = components.as_slice()
+        else {
+            panic!("expected two circular sections")
+        };
+        let position = geom.curve(*other).parameter_origin(&geom);
+        assert_never_kept(&geom, *first, plane, position);
+    }
 }

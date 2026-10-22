@@ -442,15 +442,51 @@ fn family_operands(family: Family, model: &mut Model, pose: &Pose) -> (BodyId, B
         ),
     }
 }
-fn family_volumes(family: Family) -> [Ball; 2] {
+fn family_volumes(family: Family) -> [Ball; 3] {
     let pi = Ball::pi(BITS);
-    let t = &b(6) * &pi.square();
+    // Independent meridian-disk and washer integrals. Conservation alone
+    // cannot detect a consistently selected complementary region.
     match family {
-        Family::ConeSphere => [&fraction(8, 3) * &pi, &fraction(9, 16) * &pi],
-        Family::ConeCone => [&fraction(52, 3) * &pi, &fraction(52, 3) * &pi],
-        Family::ConeTorus => [&fraction(124, 3) * &pi, t],
-        Family::CylinderTorus | Family::SphereTorus => [&b(36) * &pi, t],
-        Family::TorusTorus => [t.clone(), t],
+        Family::ConeSphere => {
+            let removed = &fraction(1, 96) * &b(2).sqrt().unwrap();
+            [
+                &fraction(8, 3) * &pi,
+                &fraction(9, 16) * &pi,
+                &(&fraction(9, 16) - &removed) * &pi,
+            ]
+        }
+        Family::ConeCone => {
+            let volume = &fraction(52, 3) * &pi;
+            [volume.clone(), volume, &fraction(28, 3) * &pi]
+        }
+        Family::ConeTorus => {
+            let pi2 = pi.square();
+            let correction = &(&fraction(2, 3) * &b(2).sqrt().unwrap()) * &pi;
+            [
+                &fraction(124, 3) * &pi,
+                &b(6) * &pi2,
+                &(&b(3) * &pi2) - &correction,
+            ]
+        }
+        Family::CylinderTorus => {
+            let pi2 = pi.square();
+            [
+                &b(36) * &pi,
+                &b(6) * &pi2,
+                &(&b(3) * &pi2) - &(&fraction(4, 3) * &pi),
+            ]
+        }
+        Family::SphereTorus => {
+            let root = b(35).sqrt().unwrap();
+            let lens = &(&b(6) * &root.atan()) - &(&fraction(1, 6) * &root);
+            [&b(36) * &pi, &b(6) * &pi.square(), &pi * &lens]
+        }
+        Family::TorusTorus => {
+            let pi2 = pi.square();
+            let volume = &b(6) * &pi2;
+            let correction = &(&b(3) * &b(3).sqrt().unwrap()) * &pi;
+            [volume.clone(), volume, &(&b(4) * &pi2) - &correction]
+        }
     }
 }
 fn family_chi(family: Family, op: BoolOp) -> &'static [i64] {
@@ -464,7 +500,7 @@ fn family_chi(family: Family, op: BoolOp) -> &'static [i64] {
     }
 }
 #[test]
-fn coaxial_pair_families_conserve_volume_in_generated_poses() {
+fn coaxial_pairs_match_exact_volumes_and_conserve_them_in_generated_poses() {
     for pose in poses().into_iter().take(2) {
         for family in [
             Family::ConeSphere,
@@ -483,7 +519,11 @@ fn coaxial_pair_families_conserve_volume_in_generated_poses() {
                 assert!(answer.marks.is_empty());
                 measured(&model, answer.body, family_chi(family, op), &mut dec)
             });
-            let [va, vb] = family_volumes(family);
+            let [va, vb, vi] = family_volumes(family);
+            let expected = [&(&va + &vb) - &vi, &va - &vi, vi];
+            for (actual, expected) in properties.iter().zip(expected) {
+                agrees(&actual.volume, &expected);
+            }
             let sum = Enclosure {
                 lo: &properties[0].volume.lo + &properties[2].volume.lo,
                 hi: &properties[0].volume.hi + &properties[2].volume.hi,

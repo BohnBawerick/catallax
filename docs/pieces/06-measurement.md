@@ -73,6 +73,8 @@ Two traps decide whether such a method is right:
 
 "Along the seam" regression poses test exactly these traps: faces whose edges lie on a seam, or cross it, or pass through a pole.
 
+Complete torus parallel circles use the exact Fourier mean of the boundary form over the azimuth, rather than traced quadrature around a full period. On a certified cone generator through the apex, `q × dq = 0` makes all five boundary forms identically zero; that proof removes the apparent `1/z` endpoint singularity. Neither path substitutes a sampled integral or drops a nonzero boundary term.
+
 ## How this piece uses the earlier pieces
 
 - **Outcomes.** Every function returns `Answered`. A refusal of pieces 1, 2 or 4 is returned unchanged.

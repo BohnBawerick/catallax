@@ -46,7 +46,7 @@ Examples from exact-brep today:
 
 | Code | What triggers it |
 |---|---|
-| `intersect.unsupported-pair` | Any boolean with a cone or torus, such as a countersunk hole |
+| `intersect.traced-pair-required` | A general intersecting cone or torus pose outside the current closed-form paths |
 | `boolean.imprint-ambiguous` | Two pipes of the same diameter crossing at right angles |
 | `numbers.deadline` | A whole operation running past 50 seconds, such as the near-miss cases |
 | `measure.accuracy-not-reached` | A volume or centroid that could not be proven to the requested accuracy |
@@ -118,7 +118,7 @@ Rust's safe threads run rebuilds and checks in the background, so the user is ne
 | Feature | B-rep kernel | Field kernel |
 |---|---|---|
 | Sketch, extrude, revolve | Exact | Exact, from a formula |
-| Hole, countersink | Exact. Needs cones in booleans, which exact-brep lacks today | Exact |
+| Hole, countersink | Exact. Coaxial cylindrical countersinks now work through booleans; general poses and the named hole feature remain unfinished | Exact |
 | Boolean | Exact. This is exact-brep's core | Exact, never fails |
 | Fillet or chamfer on an edge between faces the recipe defines | Exact for flat to flat and for a flat face meeting a perpendicular hole. A fillet between two curved faces is held exactly by its definition and becomes a spline only in the STEP file | Exact rolling ball, because the recipe names both faces. Slower between two curved faces |
 | Shell, offset, thicken | Exact for planes, cylinders, spheres and tori | Simple only where the field is a true distance. After booleans it is not, so the field measures distance from the faces themselves |
@@ -198,7 +198,7 @@ What changes in exact-brep's design documents (`docs/DESIGN.md`, `docs/ARCHITECT
 
 What the B-rep half still lacks:
 
-- cones and tori in booleans;
+- general cones and tori in booleans beyond the closed-form and coaxial paths;
 - sketch-based features: profile, extrude, revolve;
 - fillets and chamfers;
 - shell, offset and draft;

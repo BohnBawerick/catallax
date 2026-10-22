@@ -170,9 +170,12 @@ pub(crate) fn signature(
             }
             Ok(Some(value))
         }
-        Surface::Sphere(_) | Surface::Cylinder(_) => {
+        Surface::Sphere(_) | Surface::Cylinder(_) | Surface::Cone(_) => {
             if loops.len() != 1 {
                 return Ok(None);
+            }
+            if matches!(model.loop_(loops[0]), Loop::Vertex(_)) {
+                return Ok(Some(0));
             }
             let Some((side, _)) = ring_side(model, loops[0], point, dec)? else {
                 return Ok(None);
@@ -219,9 +222,33 @@ pub(crate) fn locate(
                 )),
             }
         }
-        Surface::Sphere(_) | Surface::Cylinder(_) => {
+        Surface::Sphere(_) | Surface::Cylinder(_) | Surface::Cone(_) => {
+            if let Surface::Cone(cone) = surface
+                && sign(
+                    &model
+                        .geom()
+                        .position(point)
+                        .minus(&cone.apex.to_real())
+                        .dot(&cone.axis.to_real()),
+                    dec,
+                    "boolean.classify-ambiguous",
+                )? == Sign::Negative
+            {
+                return Ok(Some(Location::Outside));
+            }
             let mut boundary = false;
             for &l in &f.loops {
+                if let Loop::Vertex(vertex) = model.loop_(l) {
+                    if crate::geometry::coincident(
+                        model
+                            .geom()
+                            .same_point(model.vertex(*vertex).point, point, dec),
+                        "boolean.classify-ambiguous",
+                    )? {
+                        return Ok(Some(Location::Boundary));
+                    }
+                    continue;
+                }
                 let Some((side, travel)) = ring_side(model, l, point, dec)? else {
                     return Ok(None);
                 };

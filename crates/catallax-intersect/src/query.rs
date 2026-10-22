@@ -85,6 +85,13 @@ fn carrier(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<CurveForm,
     if plan.frame.is_some() {
         return Ok(CurveForm::Branch);
     }
+    if plan
+        .divider
+        .as_ref()
+        .is_some_and(|d| !d.canonical_direction)
+    {
+        return form(geom, c, dec);
+    }
     let Curve::Intersection(i) = geom.curve(c) else {
         unreachable!()
     };
@@ -119,11 +126,55 @@ fn orientation(geom: &GeomStore, c: CurveId) -> Result<Real, Refusal> {
     let Some(divider) = &plan.divider else {
         return Ok(Real::one());
     };
+    if !divider.canonical_direction {
+        return Ok(Real::one());
+    }
     let Curve::Intersection(i) = geom.curve(c) else {
         unreachable!()
     };
     let value = divider.value(&geom.position(i.witness));
     Ok(&value / &value.square().sqrt())
+}
+pub(super) fn surface_domain(
+    surface: &Surface,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<bool, Failure> {
+    let Surface::Cone(cone) = surface else {
+        return Ok(true);
+    };
+    match sign(
+        &point.minus(&cone.apex.to_real()).dot(&cone.axis.to_real()),
+        dec,
+    ) {
+        Ok(value) => Ok(value != Sign::Negative),
+        Err(Failure::Uncertain(mut n)) => {
+            let lower = cone
+                .axis
+                .x
+                .abs()
+                .max(cone.axis.y.abs())
+                .max(cone.axis.z.abs());
+            n.bound = n.bound / lower;
+            Err(Failure::Uncertain(n))
+        }
+        Err(e) => Err(e),
+    }
+}
+pub(super) fn curve_domain(
+    geom: &GeomStore,
+    curve: CurveId,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<bool, Failure> {
+    if let Curve::Intersection(i) = geom.curve(curve) {
+        for &surface in &i.surfaces {
+            if !surface_domain(geom.surface(surface), point, dec)? {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) -> Outcome<Apart> {
     let plan = match validate(geom, c) {
@@ -140,6 +191,13 @@ pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) ->
     let Outcome::ProvenCoincident(proof) = carrier else {
         return carrier;
     };
+    if cone_support(geom, c).is_some() {
+        match curve_domain(geom, c, &geom.position(p), dec) {
+            Ok(true) => {}
+            Ok(false) => return Outcome::Proven(Apart),
+            Err(e) => return e.outcome(),
+        }
+    }
     let Some(divider) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
         return Outcome::ProvenCoincident(proof);
     };
@@ -216,6 +274,15 @@ fn equal_lines(
         other => other,
     }
 }
+fn cone_support(geom: &GeomStore, curve: CurveId) -> Option<&catallax_shapes::Cone> {
+    let Curve::Intersection(i) = geom.curve(curve) else {
+        return None;
+    };
+    i.surfaces.iter().find_map(|s| match geom.surface(*s) {
+        Surface::Cone(cone) => Some(cone),
+        _ => None,
+    })
+}
 pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) -> Outcome<Apart> {
     if let Err(e) = validate(geom, a).and_then(|_| validate(geom, b)) {
         return Outcome::Refused(e);
@@ -258,11 +325,28 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         Err(e) => return Outcome::Refused(e),
     };
     match (fa, fb) {
-        (CurveForm::Line { origin: a, dir: da }, CurveForm::Line { origin: b, dir: db }) => {
-            if da.cross(&db).is_zero() {
-                equal_lines(&a, &b, &da, dec)
-            } else {
-                Outcome::Proven(Apart)
+        (
+            CurveForm::Line {
+                origin: pa,
+                dir: da,
+            },
+            CurveForm::Line {
+                origin: pb,
+                dir: db,
+            },
+        ) => {
+            if !da.cross(&db).is_zero() {
+                return Outcome::Proven(Apart);
+            }
+            match (cone_support(geom, a), cone_support(geom, b)) {
+                (None, None) => equal_lines(&pa, &pb, &da, dec),
+                (Some(ca), Some(cb)) if da.dot(&ca.axis).sign() == da.dot(&cb.axis).sign() => {
+                    match equal_points(&ca.apex.to_real(), &cb.apex.to_real(), dec) {
+                        Outcome::ProvenCoincident(_) => equal_lines(&pa, &pb, &da, dec),
+                        other => other,
+                    }
+                }
+                _ => Outcome::Proven(Apart),
             }
         }
         (
@@ -314,6 +398,63 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             }
             equal_points(&a, &b, dec)
         }
+        (
+            CurveForm::Parabola {
+                vertex: a,
+                normal: na,
+                axis_dir: da,
+                focal: fa,
+            },
+            CurveForm::Parabola {
+                vertex: b,
+                normal: nb,
+                axis_dir: db,
+                focal: fb,
+            },
+        ) => {
+            if !na.cross(&nb).is_zero()
+                || !da.cross(&db).is_zero()
+                || da.dot(&db).sign() != Sign::Positive
+            {
+                return Outcome::Proven(Apart);
+            }
+            match dec.sign(&(&fa - &fb)).map(|_| Apart) {
+                Outcome::ProvenCoincident(_) => equal_points(&a, &b, dec),
+                other => other,
+            }
+        }
+        (
+            CurveForm::Hyperbola {
+                center: a,
+                normal: na,
+                axis_dir: da,
+                transverse_sq: ta,
+                conjugate_sq: ca,
+                branch: ba,
+            },
+            CurveForm::Hyperbola {
+                center: b,
+                normal: nb,
+                axis_dir: db,
+                transverse_sq: tb,
+                conjugate_sq: cb,
+                branch: bb,
+            },
+        ) => {
+            if !na.cross(&nb).is_zero()
+                || !da.cross(&db).is_zero()
+                || (da.dot(&db).sign() == Sign::Positive) != (ba == bb)
+            {
+                return Outcome::Proven(Apart);
+            }
+            for (a, b) in [(&ta, &tb), (&ca, &cb)] {
+                match equal_dimensions(a, b, dec) {
+                    Outcome::ProvenCoincident(_) => {}
+                    other => return other,
+                }
+            }
+            equal_points(&a, &b, dec)
+        }
         (CurveForm::Branch, CurveForm::Branch) => {
             let (Curve::Intersection(ia), Curve::Intersection(ib)) = (geom.curve(a), geom.curve(b))
             else {
@@ -350,7 +491,15 @@ pub(super) fn order(
 ) -> Outcome<StrictOrder> {
     let dir = match carrier(geom, c, dec) {
         Ok(CurveForm::Line { dir, .. }) => dir,
-        Ok(_) => panic!("order requires line"),
+        Ok(
+            CurveForm::Parabola {
+                normal, axis_dir, ..
+            }
+            | CurveForm::Hyperbola {
+                normal, axis_dir, ..
+            },
+        ) => normal.cross(&axis_dir),
+        Ok(_) => panic!("order requires an open curve"),
         Err(e) => return Outcome::Refused(e),
     };
     let sense = match orientation(geom, c) {
@@ -478,6 +627,11 @@ pub(super) fn tangent(
         if regular {
             return Ok([cross.clone(), cross]);
         }
+        let closed_form = form(geom, c, dec)?;
+        if !matches!(closed_form, CurveForm::Branch) {
+            let t = analytic_tangent(closed_form, &position);
+            return Ok([t.clone(), t]);
+        }
         let charts = charts(geom, c, dec)?;
         let mut arriving = None;
         let mut leaving = None;
@@ -500,7 +654,11 @@ pub(super) fn tangent(
             leaving.expect("singular start of branch"),
         ]);
     }
-    let t = match form(geom, c, dec)? {
+    let t = analytic_tangent(form(geom, c, dec)?, &position);
+    Ok([t.clone(), t])
+}
+fn analytic_tangent(form: CurveForm, position: &Point3) -> Vector3 {
+    match form {
         CurveForm::Line { dir, .. } => dir.to_real(),
         CurveForm::Circle { center, normal, .. } => {
             normal.to_real().cross(&position.minus(&center))
@@ -522,9 +680,31 @@ pub(super) fn tangent(
                 .scaled(&(d.dot(&v.to_real()) / (real(&v.norm_squared()) * minor_sq)));
             normal.to_real().cross(&u.plus(&v))
         }
-        CurveForm::Branch | CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. } => {
-            unreachable!("non-analytic forms are stored as intersection curves")
+        CurveForm::Parabola {
+            vertex,
+            normal,
+            axis_dir,
+            focal,
+        } => {
+            let u = unit(&axis_dir);
+            let v = unit(&normal.cross(&axis_dir));
+            let y = position.minus(&vertex).dot(&v);
+            u.scaled(&(y / (Real::from_i64(2) * focal))).plus(&v)
         }
-    };
-    Ok([t.clone(), t])
+        CurveForm::Hyperbola {
+            center,
+            normal,
+            axis_dir,
+            transverse_sq,
+            conjugate_sq,
+            ..
+        } => {
+            let u = unit(&axis_dir);
+            let v = unit(&normal.cross(&axis_dir));
+            let d = position.minus(&center);
+            let derivative = transverse_sq * d.dot(&v) / (conjugate_sq * d.dot(&u));
+            u.scaled(&derivative).plus(&v)
+        }
+        CurveForm::Branch => unreachable!("traced branch tangent"),
+    }
 }

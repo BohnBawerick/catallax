@@ -451,64 +451,15 @@ blind_test!(
     }
 );
 
-blind_test!(coverage_matrix_and_all_unsupported_curve_entry_points, {
-    let kinds = [
-        SurfaceKind::Plane,
-        SurfaceKind::Cylinder,
-        SurfaceKind::Sphere,
-        SurfaceKind::Cone,
-        SurfaceKind::Torus,
-    ];
-    for (i, a) in kinds.iter().enumerate() {
-        for (j, b) in kinds.iter().enumerate() {
-            assert_eq!(supports(*a, *b), i < 3 && j < 3);
-        }
-    }
-    let cone = Surface::Cone(Cone::new(pi([0, 0, 0]), vi([0, 0, 1]), n(1), vi([1, 0, 0])).unwrap());
-    let torus = Surface::Torus(
-        Torus::new(pi([0, 0, 0]), vi([0, 0, 1]), n(3), n(1), vi([1, 0, 0])).unwrap(),
-    );
-    for bad in [&cone, &torus] {
-        for good in [
-            axis_plane(2, n(0)),
-            zc(5),
-            sphere(pi([0, 0, 0]), n(5)),
-            cone.clone(),
-            torus.clone(),
-        ] {
-            for (a, b) in [(bad.clone(), good.clone()), (good, bad.clone())] {
-                let mut g = GeomStore::new();
-                let a = g.add_surface(a);
-                let b = g.add_surface(b);
-                let before = fingerprint(&g);
-                assert_eq!(
-                    intersect_surfaces(&mut g, a, b, &mut expired())
-                        .unwrap_err()
-                        .code,
-                    "intersect.unsupported-pair"
-                );
-                assert_eq!(fingerprint(&g), before);
-            }
-        }
-    }
-    let cc6 = Carrier::Branch {
-        a: zc(1),
-        b: Box::new(cyl(pi([0, 0, 0]), vi([1, 0, 0]), n(1))),
-        witness: Point3::new(root(&r("1/2")), root(&r("1/2")), root(&r("1/2"))),
-    };
-    for carrier in [
-        Carrier::Branch {
-            a: cone.clone(),
-            b: Box::new(axis_plane(2, n(1))),
-            witness: pi([1, 0, 1]).to_real(),
-        },
-        Carrier::Branch {
-            a: torus.clone(),
-            b: Box::new(axis_plane(2, n(0))),
-            witness: pi([4, 0, 0]).to_real(),
-        },
-        cc6,
-    ] {
+blind_test!(
+    unsupported_intersection_definition_leaves_the_store_unchanged,
+    {
+        let cc6 = Carrier::Branch {
+            a: zc(1),
+            b: Box::new(cyl(pi([0, 0, 0]), vi([1, 0, 0]), n(1))),
+            witness: Point3::new(root(&r("1/2")), root(&r("1/2")), root(&r("1/2"))),
+        };
+        let carrier = cc6;
         let mut g = GeomStore::new();
         let c = carrier.add(&mut g);
         let Curve::Intersection(b) = g.curve(c) else {
@@ -520,6 +471,10 @@ blind_test!(coverage_matrix_and_all_unsupported_curve_entry_points, {
         let before = fingerprint(&g);
         assert_eq!(
             curve_form(&g, c, &mut expired()).unwrap_err().code,
+            "intersect.unsupported-curve"
+        );
+        assert_eq!(
+            curve_is_closed(&g, c, &mut expired()).unwrap_err().code,
             "intersect.unsupported-curve"
         );
         for out in [
@@ -564,22 +519,5 @@ blind_test!(coverage_matrix_and_all_unsupported_curve_entry_points, {
             "intersect.unsupported-curve"
         );
         assert_eq!(fingerprint(&g), before);
-        for bad in [cone.clone(), torus.clone()] {
-            let s = g.add_surface(bad);
-            let before = fingerprint(&g);
-            assert_eq!(
-                intersect_curve_surface(&mut g, c, s, &mut expired())
-                    .unwrap_err()
-                    .code,
-                "intersect.unsupported-pair"
-            );
-            assert_eq!(
-                intersect_curve_surface(&mut g, good, s, &mut expired())
-                    .unwrap_err()
-                    .code,
-                "intersect.unsupported-pair"
-            );
-            assert_eq!(fingerprint(&g), before);
-        }
     }
-});
+);

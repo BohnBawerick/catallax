@@ -12,7 +12,7 @@ use catallax_intersect::{curve_is_closed, same_curve, tangent_at};
 use catallax_numbers::{
     Answer, Answered, Decider, Fact, FactKind, FactOrigin, Refusal, Sign, ZeroProof,
 };
-use catallax_shapes::{CurveId, GeomKey, PointId};
+use catallax_shapes::{CurveId, GeomKey, PointId, Surface};
 use catallax_topology::{
     Coedge, Edge, EdgeId, Face, FaceId, Loop, LoopId, Model, Sense, Vertex, VertexId,
 };
@@ -176,7 +176,27 @@ fn walks(
             continue;
         };
         let point = model.vertex(end).point;
-        let normal = oriented(&model.geom().normal(f.surface, point), f.sense);
+        let cone_axis = if let Surface::Cone(cone) = model.geom().surface(f.surface) {
+            let displacement = model.geom().position(point).minus(&cone.apex.to_real());
+            if sign(
+                &displacement.norm_squared(),
+                dec,
+                "boolean.imprint-ambiguous",
+            )? == Sign::Zero
+            {
+                Some(cone.axis.to_real())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let normal = if let Some(axis) = &cone_axis {
+            // The apex link is the radial disk, oriented opposite the axis.
+            oriented(&axis.scaled(&catallax_numbers::Real::from_i64(-1)), f.sense)
+        } else {
+            oriented(&model.geom().normal(f.surface, point), f.sense)
+        };
         let candidates = outgoing.get(&end).ok_or_else(|| {
             refusal(
                 "boolean.imprint-ambiguous",
@@ -215,6 +235,17 @@ fn walks(
             )?);
             key
         };
+        if let Some(axis) = &cone_axis {
+            let inverse = catallax_numbers::Real::one() / axis.norm_squared();
+            for germ in &mut germs {
+                germ.tangent = germ
+                    .tangent
+                    .minus(&axis.scaled(&(&germ.tangent.dot(axis) * &inverse)));
+                germ.curvature = germ
+                    .curvature
+                    .minus(&axis.scaled(&(&germ.curvature.dot(axis) * &inverse)));
+            }
+        }
         crate::germ::sort(model, &mut germs, &normal, dec, "boolean.imprint-ambiguous")?;
         let at = germs
             .iter()
@@ -265,6 +296,7 @@ fn pieces(
 ) -> Result<Vec<FaceId>, Refusal> {
     let f = model.face(face).clone();
     let mut halfedges = Vec::new();
+    let mut vertex_loops = Vec::new();
     for &l in &f.loops {
         match model.loop_(l) {
             Loop::Coedges(cs) => {
@@ -280,12 +312,7 @@ fn pieces(
                     halfedges.extend(split);
                 }
             }
-            Loop::Vertex(_) => {
-                return Err(refusal(
-                    "boolean.imprint-ambiguous",
-                    "point-only face boundary is outside the supported solid surfaces",
-                ));
-            }
+            Loop::Vertex(_) => vertex_loops.push(l),
         }
     }
     let boundary_edges: BTreeSet<_> = halfedges.iter().map(|x| x.0).collect();
@@ -335,16 +362,31 @@ fn pieces(
             cells.entry(signature).or_default().push(l);
         }
     }
-    let result = cells
-        .into_values()
-        .map(|loops| {
-            model.add_face(Face {
+    let mut result = Vec::with_capacity(cells.len());
+    for mut loops in cells.into_values() {
+        if !vertex_loops.is_empty() {
+            let provisional = model.add_face(Face {
                 surface: f.surface,
                 sense: f.sense,
-                loops,
-            })
-        })
-        .collect::<Vec<_>>();
+                loops: loops.clone(),
+            });
+            for &l in &vertex_loops {
+                let Loop::Vertex(vertex) = model.loop_(l) else {
+                    unreachable!("point-only boundary")
+                };
+                let point = model.vertex(*vertex).point;
+                if locate(model, provisional, point, dec)? == Location::Inside {
+                    loops.push(l);
+                }
+                // A boundary hit is already represented by an incident edge.
+            }
+        }
+        result.push(model.add_face(Face {
+            surface: f.surface,
+            sense: f.sense,
+            loops,
+        }));
+    }
     if result.is_empty() {
         return Err(refusal(
             "boolean.imprint-ambiguous",

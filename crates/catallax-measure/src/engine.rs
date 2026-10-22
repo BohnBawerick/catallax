@@ -1,7 +1,7 @@
 //! Deterministic per-property refinement and orientation handling.
 
 use catallax_intersect::{CurveTrace, trace};
-use catallax_numbers::{Answer, Answered, Ball, Decider, Rational, Refusal};
+use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal, Sign};
 use catallax_shapes::{RPoint3, RVector3, Surface};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{HashMap, hash_map::Entry};
@@ -20,6 +20,12 @@ struct Arc<'a> {
     integral: Option<crate::integrate::Analytic>,
     exact: Option<[Rational; 5]>,
     meridian: Option<(&'a RPoint3, i64)>,
+    parallel: Option<Parallel>,
+}
+struct Parallel {
+    cosine: Real,
+    sine: Real,
+    orientation: i64,
 }
 
 struct Curved<'a> {
@@ -167,6 +173,11 @@ pub(crate) fn measure(
                         } else {
                             None
                         };
+                        let exact = if exact.is_none() {
+                            cone_generator(surface, model, edge.curve, dec)?
+                        } else {
+                            exact
+                        };
                         let circle = match model.geom().curve(edge.curve) {
                             catallax_shapes::Curve::Circle(circle) if edge.start == edge.end => {
                                 Some(circle)
@@ -183,6 +194,12 @@ pub(crate) fn measure(
                         } else {
                             None
                         };
+                        let parallel =
+                            if torus.is_some() && coedges.len() == 1 && edge.start == edge.end {
+                                torus_parallel(surface, model, edge.curve, dec)?
+                            } else {
+                                None
+                            };
                         let integral = if torus.is_none() && exact.is_none() && analytic.is_none() {
                             from.zip(to).and_then(|(from, to)| {
                                 match (model.geom().point(from), model.geom().point(to)) {
@@ -203,6 +220,7 @@ pub(crate) fn measure(
                         let trace = if exact.is_none()
                             && analytic.is_none()
                             && meridian.is_none()
+                            && parallel.is_none()
                             && (integral.is_none() || matches!(surface, Surface::Sphere(_)))
                         {
                             let traced = match traces.entry(c.edge) {
@@ -223,6 +241,7 @@ pub(crate) fn measure(
                             integral,
                             exact,
                             meridian,
+                            parallel,
                         });
                     }
                 }
@@ -612,6 +631,30 @@ fn integrate_torus(
     let count = 1u64.checked_shl(depth).ok_or(Stop::Budget)?;
     for boundary in &face.boundaries {
         let first = &boundary[0];
+        if let Some(parallel) = &first.parallel {
+            // A full parallel has constant tube angle and makes one exact
+            // azimuthal turn. Integrate its Fourier mean, not a traced curve.
+            let cosine = work.real(&parallel.cosine)?;
+            let sine = work.real(&parallel.sine)?;
+            let angle = crate::integrate::angle(&cosine, &sine, work)?;
+            let pi = work.pi()?;
+            let values = programs.parallel.point(
+                &[zero.clone(), zero.clone(), zero.clone()],
+                &[angle, cosine, sine, pi],
+                work,
+            )?;
+            let orientation = if first.reversed {
+                -parallel.orientation
+            } else {
+                parallel.orientation
+            };
+            let orientation = work.rational(&Rational::from_i64(orientation))?;
+            for (sum, value) in sums.iter_mut().zip(values) {
+                let value = work.mul(&value, &orientation)?;
+                *sum = work.add(sum, &value)?;
+            }
+            continue;
+        }
         if let Some((core, orientation)) = first.meridian {
             // Along a meridian du is identically zero. Its lifted tube angle
             // makes exactly one turn, so only the holonomy term remains.
@@ -756,4 +799,85 @@ fn torus_meridian<'a>(
         -1
     };
     Some((&circle.center, orientation))
+}
+
+fn torus_parallel(
+    surface: &Surface,
+    model: &Model,
+    curve: catallax_shapes::CurveId,
+    dec: &mut Decider,
+) -> Result<Option<Parallel>, Refusal> {
+    let Surface::Torus(torus) = surface else {
+        return Ok(None);
+    };
+    let catallax_intersect::CurveForm::Circle {
+        center,
+        normal,
+        radius_sq,
+        ..
+    } = catallax_intersect::curve_form(model.geom(), curve, dec)?
+    else {
+        return Ok(None);
+    };
+    if !normal.cross(&torus.axis).is_zero() {
+        return Ok(None);
+    }
+    let axis = torus.axis.to_real();
+    let offset = center.minus(&torus.center.to_real());
+    match dec.sign(&offset.cross(&axis).norm_squared()) {
+        Outcome::ProvenCoincident(_) => {}
+        Outcome::Proven(_) => return Ok(None),
+        Outcome::Refused(e) => return Err(e),
+        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+    }
+    let minor = Real::from(torus.minor.clone());
+    let cosine = &(&radius_sq.sqrt() - &Real::from(torus.major.clone())) / &minor;
+    let sine = offset.dot(&axis) / (minor * Real::from(torus.axis.norm_squared()).sqrt());
+    let orientation = if normal.dot(&torus.axis).sign() == Sign::Positive {
+        1
+    } else {
+        -1
+    };
+    Ok(Some(Parallel {
+        cosine,
+        sine,
+        orientation,
+    }))
+}
+
+fn cone_generator(
+    surface: &Surface,
+    model: &Model,
+    curve: catallax_shapes::CurveId,
+    dec: &mut Decider,
+) -> Result<Option<[Rational; 5]>, Refusal> {
+    let Surface::Cone(cone) = surface else {
+        return Ok(None);
+    };
+    if !matches!(
+        model.geom().curve(curve),
+        catallax_shapes::Curve::Line(_) | catallax_shapes::Curve::Intersection(_)
+    ) {
+        return Ok(None);
+    }
+    let catallax_intersect::CurveForm::Line { origin, dir } =
+        catallax_intersect::curve_form(model.geom(), curve, dec)?
+    else {
+        return Ok(None);
+    };
+    let dot = dir.dot(&cone.axis);
+    if dir.cross(&cone.axis).norm_squared() != (&cone.slope * &cone.slope) * (&dot * &dot) {
+        return Ok(None);
+    }
+    let cross = origin.minus(&cone.apex.to_real()).cross(&dir.to_real());
+    match dec.sign(&cross.norm_squared()) {
+        Outcome::ProvenCoincident(_) => {}
+        Outcome::Proven(_) => return Ok(None),
+        Outcome::Refused(e) => return Err(e),
+        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+    }
+    // Along a generator q x dq = 0. Every cone boundary form has that
+    // factor, so its integral is exactly zero, including an apex endpoint.
+    // Evaluating the removable 1/z coordinate singularity loses this proof.
+    Ok(Some(std::array::from_fn(|_| Rational::zero())))
 }

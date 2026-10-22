@@ -46,6 +46,7 @@ struct FaceData {
     sense: Sense,
     original: usize,
     loops: Vec<Vec<(usize, Sense)>>,
+    points: Vec<PointId>,
 }
 #[derive(Clone)]
 struct Use {
@@ -78,7 +79,7 @@ type FaceUses = (
 );
 type MergedFaces = (Vec<FaceData>, Vec<bool>, Vec<usize>, Groups);
 
-fn read(model: &Model, selection: &Selection) -> Result<FaceUses, Refusal> {
+fn read(model: &Model, selection: &Selection) -> FaceUses {
     let mut faces = Vec::new();
     let mut uses = Vec::new();
     let mut by_edge: BTreeMap<_, Vec<_>> = BTreeMap::new();
@@ -86,12 +87,14 @@ fn read(model: &Model, selection: &Selection) -> Result<FaceUses, Refusal> {
         let face = model.face(face_id);
         let face_index = faces.len();
         let mut loops = Vec::new();
+        let mut points = Vec::new();
         for &l in &face.loops {
-            let Loop::Coedges(cs) = model.loop_(l) else {
-                return Err(refusal(
-                    "boolean.merge-ambiguous",
-                    "point-only face loop is outside the supported surfaces",
-                ));
+            let cs = match model.loop_(l) {
+                Loop::Coedges(cs) => cs,
+                Loop::Vertex(vertex) => {
+                    points.push(model.vertex(*vertex).point);
+                    continue;
+                }
             };
             let mut coedges: Vec<_> = cs.iter().map(|&c| model.coedge(c).clone()).collect();
             if selected_sense == Sense::Reversed {
@@ -121,9 +124,10 @@ fn read(model: &Model, selection: &Selection) -> Result<FaceUses, Refusal> {
             sense: product(face.sense, selected_sense),
             original: face_index,
             loops,
+            points,
         });
     }
-    Ok((faces, uses, by_edge))
+    (faces, uses, by_edge)
 }
 
 fn pair(
@@ -279,7 +283,26 @@ fn merge_faces(
                 sense: face.sense,
                 original: i,
                 loops: Vec::new(),
+                points: Vec::new(),
             });
+        }
+    }
+    for (i, face) in faces.iter().enumerate() {
+        let target = mapping[&merged.root(i)];
+        for &point in &face.points {
+            let mut present = false;
+            for &old in &result[target].points {
+                if coincident(
+                    model.geom().same_point(point, old, dec),
+                    "boolean.merge-ambiguous",
+                )? {
+                    present = true;
+                    break;
+                }
+            }
+            if !present {
+                result[target].points.push(point);
+            }
         }
     }
     let mut visited = BTreeSet::new();
@@ -537,7 +560,7 @@ pub(crate) fn sew(
             marks,
         })));
     }
-    let (original, uses, by_edge) = read(model, selection)?;
+    let (original, uses, by_edge) = read(model, selection);
     let twins = pair(model, &original, &uses, &by_edge, dec)?;
     let (mut faces, removed, next, mut components) =
         merge_faces(model, &original, &uses, &twins, dec)?;
@@ -695,6 +718,11 @@ pub(crate) fn sew(
             if !cs.is_empty() {
                 loops.push(model.add_loop(Loop::Coedges(cs)));
             }
+        }
+        for &point in &face.points {
+            record_incident(model, GeomKey::Point(point), GeomKey::Surface(face.surface));
+            let vertex = model.add_vertex(Vertex { point });
+            loops.push(model.add_loop(Loop::Vertex(vertex)));
         }
         stored_faces.push(model.add_face(Face {
             surface: face.surface,

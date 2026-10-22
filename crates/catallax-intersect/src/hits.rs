@@ -101,13 +101,37 @@ fn carrier_equations(geom: &GeomStore, c: CurveId, f: &CurveForm) -> Vec<MPoly> 
 fn keep_branch(
     geom: &GeomStore,
     c: CurveId,
+    s: SurfaceId,
     p: &Point3,
     plan: &Option<Arc<Plan>>,
     dec: &mut Decider,
     marks: &mut MarkLog,
 ) -> Result<Option<bool>, Refusal> {
+    let supports: &[SurfaceId] = match geom.curve(c) {
+        Curve::Intersection(i) => &i.surfaces,
+        _ => &[],
+    };
+    let mut uncertain_domain = false;
+    for surface in std::iter::once(s).chain(supports.iter().copied()) {
+        match query::surface_domain(geom.surface(surface), p, dec) {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(Failure::Refused(e)) => return Err(e),
+            Err(Failure::Uncertain(n)) => {
+                let bound = n.bound.clone();
+                mark(
+                    marks,
+                    n,
+                    BoundKind::Distance,
+                    bound,
+                    "unresolved cone nappe",
+                );
+                uncertain_domain = true;
+            }
+        }
+    }
     let Some(d) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
-        return Ok(Some(false));
+        return Ok(Some(uncertain_domain));
     };
     let Curve::Intersection(i) = geom.curve(c) else {
         unreachable!()
@@ -116,7 +140,7 @@ fn keep_branch(
     let value = d.value(p);
     let ps = match dec.sign(&value) {
         Outcome::Proven(s) => Some(s),
-        Outcome::ProvenCoincident(_) => return Ok(Some(false)),
+        Outcome::ProvenCoincident(_) => return Ok(Some(uncertain_domain)),
         Outcome::Refused(e) => return Err(e),
         Outcome::NotExact(n) => {
             let bound = &n.bound / &d.length_lower;
@@ -131,7 +155,7 @@ fn keep_branch(
         }
     };
     match dec.sign(&witness) {
-        Outcome::Proven(s) => Ok((Some(s) == ps).then_some(false)),
+        Outcome::Proven(s) => Ok((Some(s) == ps).then_some(uncertain_domain)),
         Outcome::ProvenCoincident(_) => panic!("regular witness on divider"),
         Outcome::Refused(e) => Err(e),
         Outcome::NotExact(n) => {
@@ -257,6 +281,26 @@ fn compare(
             },
         );
     }
+    if let CurveForm::Parabola {
+        normal, axis_dir, ..
+    }
+    | CurveForm::Hyperbola {
+        normal, axis_dir, ..
+    } = form
+    {
+        return Ok(
+            match sign(
+                &a.position
+                    .minus(&b.position)
+                    .dot(&normal.cross(axis_dir).to_real()),
+                dec,
+            )? {
+                Sign::Negative => std::cmp::Ordering::Less,
+                Sign::Positive => std::cmp::Ordering::Greater,
+                Sign::Zero => std::cmp::Ordering::Equal,
+            },
+        );
+    }
     let la = chart::locate(charts, &a.position, dec)?;
     let lb = chart::locate(charts, &b.position, dec)?;
     let o = origin.as_ref().unwrap();
@@ -294,7 +338,8 @@ pub(super) fn intersect(
     let mut marks = MarkLog::new();
     let mut candidates = vec![];
     for position in points {
-        if let Some(uncertain_branch) = keep_branch(geom, c, &position, &plan, dec, &mut marks)? {
+        if let Some(uncertain_branch) = keep_branch(geom, c, s, &position, &plan, dec, &mut marks)?
+        {
             candidates.push(Candidate {
                 position,
                 contact: Contact::Crossing,
@@ -305,7 +350,11 @@ pub(super) fn intersect(
     if candidates.is_empty() {
         return Ok(Answer::with_marks(CurveSurface::Disjoint, marks));
     }
-    let charts = if matches!(form, CurveForm::Line { .. }) {
+    let open_conic = matches!(
+        form,
+        CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. }
+    );
+    let charts = if matches!(form, CurveForm::Line { .. }) || open_conic {
         vec![]
     } else {
         query::charts(geom, c, dec).map_err(Refusal::from)?
@@ -319,9 +368,30 @@ pub(super) fn intersect(
                     .dot(&dir.to_real()),
                 dec,
             ) {
+                Ok(Sign::Zero) if matches!(geom.surface(s), catallax_shapes::Surface::Torus(_)) => {
+                    match chart::line_local(&candidate.position, dir, dec) {
+                        Ok(local) => contact(
+                            std::slice::from_ref(&local),
+                            &candidate.position,
+                            &implicit,
+                            dec,
+                        ),
+                        Err(e) => Err(Failure::Refused(e)),
+                    }
+                }
                 Ok(Sign::Zero) => Ok(Contact::Tangent),
                 Ok(_) => Ok(Contact::Crossing),
                 Err(e) => Err(e),
+            }
+        } else if open_conic {
+            match chart::conic_local(&form, &candidate.position, dec) {
+                Ok(local) => contact(
+                    std::slice::from_ref(&local),
+                    &candidate.position,
+                    &implicit,
+                    dec,
+                ),
+                Err(e) => Err(Failure::Refused(e)),
             }
         } else {
             contact(&charts, &candidate.position, &implicit, dec)
@@ -389,10 +459,9 @@ pub(super) fn intersect(
     let hits = sorted
         .into_iter()
         .map(|candidate| {
-            let of = if candidate.uncertain_branch {
-                let Curve::Intersection(i) = geom.curve(c) else {
-                    unreachable!()
-                };
+            let of = if candidate.uncertain_branch
+                && let Curve::Intersection(i) = geom.curve(c)
+            {
                 let mut surfaces = i.surfaces.to_vec();
                 if !surfaces.contains(&s) {
                     surfaces.push(s);

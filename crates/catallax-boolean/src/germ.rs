@@ -73,10 +73,15 @@ pub(crate) fn curvature(
 ) -> Result<Vector3, Refusal> {
     let line = match model.geom().curve(curve) {
         Curve::Line(_) => true,
-        Curve::Intersection(i) => i
-            .surfaces
-            .iter()
-            .all(|s| matches!(model.geom().surface(*s), Surface::Plane(_))),
+        Curve::Intersection(i) => {
+            i.surfaces
+                .iter()
+                .all(|s| matches!(model.geom().surface(*s), Surface::Plane(_)))
+                || matches!(
+                    catallax_intersect::curve_form(model.geom(), curve, dec)?,
+                    catallax_intersect::CurveForm::Line { .. }
+                )
+        }
         _ => false,
     };
     if line {

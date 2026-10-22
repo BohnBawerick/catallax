@@ -6,7 +6,8 @@ use catallax_numbers::{
     Refusal, Sign,
 };
 use catallax_shapes::{
-    GeomKey, Meet, MeetOf, Point3, PointDef, PointId, Position, RPoint3, Rotation, Surface,
+    GeomKey, Meet, MeetOf, Point3, PointDef, PointId, Position, RPoint3, RVector3, Rotation,
+    Surface, Torus,
 };
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
@@ -32,6 +33,64 @@ fn integer_sqrt(n: &Integer) -> Option<Integer> {
 
 pub(crate) fn sqrt_rational(n: &Rational) -> Option<Rational> {
     Rational::new(integer_sqrt(n.numerator())?, integer_sqrt(n.denominator())?)
+}
+pub(crate) fn rational_frame(axis: &RVector3, reference: &RVector3) -> Option<[RVector3; 3]> {
+    let axis = axis.scaled(&(Rational::one() / sqrt_rational(&axis.norm_squared())?));
+    let u = reference.scaled(&(Rational::one() / sqrt_rational(&reference.norm_squared())?));
+    let v = axis.cross(&u);
+    Some([u, v, axis])
+}
+fn rational_circle(t: &Rational) -> [Rational; 2] {
+    let squared = t * t;
+    let denominator = &r(1) + &squared;
+    [
+        &(&r(1) - &squared) / &denominator,
+        &(&r(2) * t) / &denominator,
+    ]
+}
+pub(crate) fn stereographic(
+    x: &Real,
+    y: &Real,
+    radius: &Real,
+    side: i64,
+    dec: &mut Decider,
+) -> Result<Option<Real>, Refusal> {
+    let denominator = radius + &(&Real::from_i64(side) * x);
+    match dec.sign(&denominator) {
+        Outcome::ProvenCoincident(_) | Outcome::NotExact(_) => Ok(None),
+        Outcome::Refused(e) => Err(e),
+        Outcome::Proven(_) => Ok(Some((&Real::from_i64(side) * y) / denominator)),
+    }
+}
+fn rational_phase(
+    x: &Real,
+    y: &Real,
+    radius: &Real,
+    width: &Rational,
+    dec: &mut Decider,
+) -> Result<Option<[Rational; 2]>, Refusal> {
+    for side in [1, -1] {
+        let Some(t) = stereographic(x, y, radius, side, dec)? else {
+            continue;
+        };
+        let t = dec.enclose(&t, width)?.mid();
+        let [cos, sin] = rational_circle(&t);
+        return Ok(Some(if side > 0 { [cos, sin] } else { [-cos, -sin] }));
+    }
+    Ok(None)
+}
+fn torus_point(
+    torus: &Torus,
+    frame: &[RVector3; 3],
+    u: [Rational; 2],
+    v: [Rational; 2],
+) -> RPoint3 {
+    let radial = frame[0].scaled(&u[0]).plus(&frame[1].scaled(&u[1]));
+    let radius = &torus.major + &(&torus.minor * &v[0]);
+    torus
+        .center
+        .plus(&radial.scaled(&radius))
+        .plus(&frame[2].scaled(&(&torus.minor * &v[1])))
 }
 
 pub(crate) fn curve_sample(
@@ -119,6 +178,53 @@ fn rationalise(
             }
             Ok(None)
         }
+        Surface::Cone(s) => {
+            let Some([u, v, axis]) = rational_frame(&s.axis, &s.ref_dir) else {
+                return Ok(None);
+            };
+            let d = target.minus(&s.apex.to_real());
+            let height = dec.enclose(&d.dot(&axis.to_real()), width)?.mid();
+            if height.sign() != Sign::Positive {
+                return Ok(None);
+            }
+            let radius = &s.slope * &height;
+            let Some([cos, sin]) = rational_phase(
+                &d.dot(&u.to_real()),
+                &d.dot(&v.to_real()),
+                &Real::from(radius.clone()),
+                width,
+                dec,
+            )?
+            else {
+                return Ok(None);
+            };
+            let radial = u.scaled(&cos).plus(&v.scaled(&sin)).scaled(&radius);
+            Ok(Some(s.apex.plus(&axis.scaled(&height)).plus(&radial)))
+        }
+        Surface::Torus(s) => {
+            let Some(frame) = rational_frame(&s.axis, &s.ref_dir) else {
+                return Ok(None);
+            };
+            let d = target.minus(&s.center.to_real());
+            let x = d.dot(&frame[0].to_real());
+            let y = d.dot(&frame[1].to_real());
+            let z = d.dot(&frame[2].to_real());
+            let radius = (x.square() + y.square()).sqrt();
+            let Some(u) = rational_phase(&x, &y, &radius, width, dec)? else {
+                return Ok(None);
+            };
+            let Some(v) = rational_phase(
+                &(&radius - &Real::from(s.major.clone())),
+                &z,
+                &Real::from(s.minor.clone()),
+                width,
+                dec,
+            )?
+            else {
+                return Ok(None);
+            };
+            Ok(Some(torus_point(s, &frame, u, v)))
+        }
         Surface::Sphere(s) => {
             let d = target.minus(&s.center.to_real());
             for choice in 0..3 {
@@ -168,6 +274,31 @@ fn search<T>(
     let f = model.face(face).clone();
     let surface = model.geom().surface(f.surface).clone();
     if f.loops.is_empty() {
+        if let Surface::Torus(torus) = &surface {
+            let frame = rational_frame(&torus.axis, &torus.ref_dir).ok_or_else(|| {
+                refusal(
+                    "boolean.no-rational-point",
+                    "torus frame requires algebraic face probes from the shared foundation",
+                )
+            })?;
+            for k in 0..crate::geometry::DIRECTION_ATTEMPTS {
+                let k = i64::from(k);
+                let p = torus_point(
+                    torus,
+                    &frame,
+                    rational_circle(&r(k)),
+                    rational_circle(&r(k * k + 1)),
+                );
+                let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
+                if let Some(value) = accept(model, point, &p, dec)? {
+                    return Ok(value);
+                }
+            }
+            return Err(refusal(
+                "boolean.no-rational-point",
+                "no whole-torus probe settled the query",
+            ));
+        }
         let Surface::Sphere(s) = surface else {
             return Err(refusal(
                 "boolean.no-rational-point",

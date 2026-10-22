@@ -13,6 +13,7 @@ pub(crate) struct Programs {
     pub(crate) angular_derivative: Program,
     pub(crate) coordinates: Program,
     pub(crate) correction: Program,
+    pub(crate) parallel: Program,
     pub(crate) full: Program,
     pub(crate) indices: Vec<usize>,
 }
@@ -79,34 +80,40 @@ fn power<'a>(b: &'a Builder, base: Expr<'a>, exponent: u8) -> Expr<'a> {
     (0..exponent).fold(b.k(1), |p, _| p * base)
 }
 
+fn mean(a: u8, b: u8) -> Rational {
+    let (numerator, denominator) = match (a, b) {
+        (0, 0) => (1, 1),
+        (2, 0) | (0, 2) => (1, 2),
+        (4, 0) | (0, 4) => (3, 8),
+        (2, 2) => (1, 8),
+        _ if a % 2 == 1 || b % 2 == 1 => (0, 1),
+        _ => unreachable!("torus flux polynomial degree exceeds four"),
+    };
+    Rational::from_ratio(numerator, denominator).unwrap()
+}
 // Integral of cos(t)^a sin(t)^b, anchored at t=0. The first component
 // multiplies t; the remaining terms are a periodic polynomial in cos and sin.
 fn primitive(a: u8, b: u8) -> (Rational, Vec<(u8, u8, Rational)>) {
     let r = |n, d| Rational::from_ratio(n, d).unwrap();
-    let (mean, terms): (_, Vec<(u8, u8, Rational)>) = match (a, b) {
-        (0, 0) => (r(1, 1), vec![]),
-        (1, 0) => (r(0, 1), vec![(0, 1, r(1, 1))]),
-        (0, 1) => (r(0, 1), vec![(1, 0, r(-1, 1))]),
-        (2, 0) => (r(1, 2), vec![(1, 1, r(1, 2))]),
-        (0, 2) => (r(1, 2), vec![(1, 1, r(-1, 2))]),
-        (1, 1) => (r(0, 1), vec![(0, 2, r(1, 2))]),
-        (3, 0) => (r(0, 1), vec![(0, 1, r(1, 1)), (0, 3, r(-1, 3))]),
-        (0, 3) => (r(0, 1), vec![(1, 0, r(-1, 1)), (3, 0, r(1, 3))]),
-        (2, 1) => (r(0, 1), vec![(3, 0, r(-1, 3))]),
-        (1, 2) => (r(0, 1), vec![(0, 3, r(1, 3))]),
-        (4, 0) => (
-            r(3, 8),
-            vec![(1, 1, r(1, 2)), (3, 1, r(1, 8)), (1, 3, r(-1, 8))],
-        ),
-        (0, 4) => (
-            r(3, 8),
-            vec![(1, 1, r(-1, 2)), (3, 1, r(1, 8)), (1, 3, r(-1, 8))],
-        ),
-        (3, 1) => (r(0, 1), vec![(4, 0, r(-1, 4))]),
-        (1, 3) => (r(0, 1), vec![(0, 4, r(1, 4))]),
-        (2, 2) => (r(1, 8), vec![(3, 1, r(-1, 8)), (1, 3, r(1, 8))]),
+    let terms: Vec<(u8, u8, Rational)> = match (a, b) {
+        (0, 0) => vec![],
+        (1, 0) => vec![(0, 1, r(1, 1))],
+        (0, 1) => vec![(1, 0, r(-1, 1))],
+        (2, 0) => vec![(1, 1, r(1, 2))],
+        (0, 2) => vec![(1, 1, r(-1, 2))],
+        (1, 1) => vec![(0, 2, r(1, 2))],
+        (3, 0) => vec![(0, 1, r(1, 1)), (0, 3, r(-1, 3))],
+        (0, 3) => vec![(1, 0, r(-1, 1)), (3, 0, r(1, 3))],
+        (2, 1) => vec![(3, 0, r(-1, 3))],
+        (1, 2) => vec![(0, 3, r(1, 3))],
+        (4, 0) => vec![(1, 1, r(1, 2)), (3, 1, r(1, 8)), (1, 3, r(-1, 8))],
+        (0, 4) => vec![(1, 1, r(-1, 2)), (3, 1, r(1, 8)), (1, 3, r(-1, 8))],
+        (3, 1) => vec![(4, 0, r(-1, 4))],
+        (1, 3) => vec![(0, 4, r(1, 4))],
+        (2, 2) => vec![(3, 1, r(-1, 8)), (1, 3, r(1, 8))],
         _ => unreachable!("torus flux polynomial degree exceeds four"),
     };
+    let mean = mean(a, b);
     let at_zero = terms
         .iter()
         .filter(|(_, s, _)| *s == 0)
@@ -215,22 +222,36 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
     };
     let mut forms = Vec::new();
     let mut corrections = Vec::new();
+    let mut parallels = Vec::with_capacity(indices.len());
     for index in &indices {
         let mut h = b.k(0);
         let mut g = b.k(0);
+        let mut parallel = b.k(0);
         for (powers, coefficient) in &polynomials[*index].terms {
             let u_polynomial = power(&b, cu, powers[0]) * power(&b, su, powers[1]);
             let v_primitive = evaluate_primitive(&b, [powers[2], powers[3]], cv, sv, b.input(6));
             h = h + *coefficient * u_polynomial * v_primitive;
-            let (mean, _) = primitive(powers[2], powers[3]);
-            if !mean.is_zero() {
+            let v_mean = mean(powers[2], powers[3]);
+            if !v_mean.is_zero() {
                 let u_primitive =
                     evaluate_primitive(&b, [powers[0], powers[1]], cu, su, b.input(6));
-                g = g + *coefficient * b.r(mean) * u_primitive;
+                g = g + *coefficient * b.r(v_mean) * u_primitive;
+            }
+            let u_mean = mean(powers[0], powers[1]);
+            if !u_mean.is_zero() {
+                let v_primitive = evaluate_primitive(
+                    &b,
+                    [powers[2], powers[3]],
+                    b.input(7),
+                    b.input(8),
+                    b.input(6),
+                );
+                parallel = parallel + *coefficient * b.r(u_mean) * v_primitive;
             }
         }
         forms.push(-h * du);
         corrections.push(g);
+        parallels.push(-b.k(2) * b.input(9) * parallel);
     }
     let whole_area = b.k(4) * b.input(6).square() * major * minor;
     let whole_volume = b.k(2) * b.input(6).square() * major * minor.square();
@@ -246,7 +267,55 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
         angular_derivative: b.finish(&[dv]),
         coordinates: b.finish(&[cu, su, cv, sv]),
         correction: b.finish(&corrections),
+        parallel: b.finish(&parallels),
         full: b.finish(&indices.iter().map(|i| full[*i]).collect::<Vec<_>>()),
         indices,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trigonometric_primitives_differentiate_to_every_flux_monomial() {
+        // Nine rational circle samples determine the degree-eight numerator
+        // after the stereographic substitution, including all four quadrants.
+        let samples = ["-3", "-2", "-1", "-1/2", "0", "1/2", "1", "2", "3"].map(|t| {
+            let t = Rational::parse(t).unwrap();
+            let square = &t * &t;
+            let denominator = &Rational::one() + &square;
+            [
+                &(&Rational::one() - &square) / &denominator,
+                &(&Rational::from_i64(2) * &t) / &denominator,
+            ]
+        });
+        for a in 0..=4u8 {
+            for b in 0..=4 - a {
+                let (mean, terms) = primitive(a, b);
+                for [cos, sin] in &samples {
+                    let mut derivative = mean.clone();
+                    for (c, s, coefficient) in &terms {
+                        if *c > 0 {
+                            derivative = derivative
+                                - (coefficient * &Rational::from_i64(i64::from(*c)))
+                                    * cos.pow(i32::from(c - 1)).unwrap()
+                                    * sin.pow(i32::from(s + 1)).unwrap();
+                        }
+                        if *s > 0 {
+                            derivative = derivative
+                                + (coefficient * &Rational::from_i64(i64::from(*s)))
+                                    * cos.pow(i32::from(c + 1)).unwrap()
+                                    * sin.pow(i32::from(s - 1)).unwrap();
+                        }
+                    }
+                    assert_eq!(
+                        derivative,
+                        cos.pow(i32::from(a)).unwrap() * sin.pow(i32::from(b)).unwrap(),
+                        "primitive of cos^{a} sin^{b} at ({cos}, {sin})"
+                    );
+                }
+            }
+        }
     }
 }

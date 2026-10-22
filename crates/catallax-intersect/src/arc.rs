@@ -53,20 +53,23 @@ fn segments(
     }
     Ok(pieces)
 }
-fn line_ends(
+fn open_ends(
     geom: &GeomStore,
     c: CurveId,
     from: Option<PointId>,
     to: Option<PointId>,
     dec: &mut Decider,
 ) -> Result<(Point3, Point3), Refusal> {
-    let (a, b) = (from.expect("line needs start"), to.expect("line needs end"));
+    let (a, b) = (
+        from.expect("open curve needs start"),
+        to.expect("open curve needs end"),
+    );
     match query::order(geom, c, a, b, dec) {
         catallax_numbers::Outcome::Proven(catallax_numbers::StrictOrder::Less) => {
             Ok((geom.position(a), geom.position(b)))
         }
         catallax_numbers::Outcome::Proven(_) | catallax_numbers::Outcome::ProvenCoincident(_) => {
-            panic!("line endpoints must be ordered")
+            panic!("open curve endpoints must be ordered")
         }
         catallax_numbers::Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
         catallax_numbers::Outcome::Refused(e) => Err(e),
@@ -79,9 +82,20 @@ pub(super) fn point(
     to: Option<PointId>,
     dec: &mut Decider,
 ) -> Answered<Point3> {
-    if matches!(query::form(geom, c, dec)?, CurveForm::Line { .. }) {
-        let (a, b) = line_ends(geom, c, from, to, dec)?;
+    let form = query::form(geom, c, dec)?;
+    if matches!(form, CurveForm::Line { .. }) {
+        let (a, b) = open_ends(geom, c, from, to, dec)?;
         return Ok(Answer::exact(midpoint(&a, &b)));
+    }
+    if matches!(
+        form,
+        CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. }
+    ) {
+        let (a, b) = open_ends(geom, c, from, to, dec)?;
+        let chart = chart::conic_arc(&form, &a, &b, dec)?;
+        return Ok(Answer::exact(
+            chart.position(&(Real::one() / Real::from_i64(2))),
+        ));
     }
     let charts = query::charts(geom, c, dec).map_err(Refusal::from)?;
     let (a, b) = ends(geom, c, from, to);
@@ -97,10 +111,21 @@ pub(super) fn trace(
     to: Option<PointId>,
     dec: &mut Decider,
 ) -> Answered<CurveTrace> {
-    if matches!(query::form(geom, c, dec)?, CurveForm::Line { .. }) {
-        let (a, b) = line_ends(geom, c, from, to, dec)?;
+    let form = query::form(geom, c, dec)?;
+    if matches!(form, CurveForm::Line { .. }) {
+        let (a, b) = open_ends(geom, c, from, to, dec)?;
         return Ok(Answer::exact(CurveTrace {
             pieces: vec![TracePiece::new(chart::segment(&a, &b, dec)?)],
+        }));
+    }
+    if matches!(
+        form,
+        CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. }
+    ) {
+        let (a, b) = open_ends(geom, c, from, to, dec)?;
+        let chart = chart::conic_arc(&form, &a, &b, dec)?;
+        return Ok(Answer::exact(CurveTrace {
+            pieces: vec![TracePiece::new(chart.coords)],
         }));
     }
     let charts = query::charts(geom, c, dec).map_err(Refusal::from)?;

@@ -197,3 +197,48 @@ fn exported_recipe_replays_geometry_work_and_operation_outcomes() {
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn construction_refusal_retains_boolean_context_after_measurement_split() {
+    use catallax_cli::verification::{Request, answer};
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-construction-refusal-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let response = answer(&Request {
+        format: "catallax-request/1".into(),
+        source: "question".into(),
+        problem: json!({
+            "format":"exact-brep-question/2","id":"crossing-cones",
+            "operands":{
+                "a":{"shape":"cone","base_radius":"5","top_radius":"2","height":"10"},
+                "b":{"shape":"cone","base_radius":"5","top_radius":"2","height":"10",
+                    "pose":{"rotation":["2","1","1","0"],"translation":["2","1","1"]}}
+            },
+            "steps":[{"id":"joined","op":"unite","args":["a","b"]}],
+            "result":"joined","measure":{"properties":[]}
+        }),
+        out: dir.clone(),
+        max_work: 100_000_000,
+    })
+    .unwrap();
+    assert_eq!(response["manifest"]["status"], "refused");
+    assert_eq!(
+        response["manifest"]["refusal"]["code"],
+        "intersect.traced-pair-required"
+    );
+    assert_eq!(response["manifest"]["refusal"]["step"], "joined");
+    assert_eq!(response["manifest"]["refusal"]["stage"], "intersect");
+    let operations = response["operation_log"]["operations"].as_array().unwrap();
+    let failed = operations.last().unwrap();
+    assert_eq!(failed["id"], "joined");
+    assert_eq!(failed["refusal"]["code"], "intersect.traced-pair-required");
+    assert!(
+        !operations
+            .iter()
+            .any(|entry| entry["operation"] == "measure")
+    );
+    assert!(!dir.join("answer.step").exists());
+    fs::remove_dir_all(dir).unwrap();
+}

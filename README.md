@@ -4,6 +4,14 @@ Geometry should not require a vendor's permission. Catallax is a geometry kernel
 
 Kernel site: [kernel.zigrawbohnbawerick.org](https://kernel.zigrawbohnbawerick.org/).
 
+## Picking up where Fornjot left off
+
+Hanno Braun worked on Fornjot, an early-stage B-rep CAD kernel in Rust, from July 2020 until he shut it down in June 2026. His retrospective, ["Shutting Down Fornjot"](https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/), names the mistakes he saw: extrapolating from early success, selling a dream before there was a product, sticking to incremental improvements, half-measures in a crisis, a vision that blurred once the application was cut, and prototyping that came too late.
+
+Catallax picks up where Fornjot left off. The goal is the one he started with: a free B-rep kernel in Rust that a CAD application can stand on. The method is different. AI coding agents write most of the code, and a human directs, questions and checks it. We throw AI horsepower and human curiosity at the problem that wore one person down. We read his retrospective as a checklist and are reshaping our plan around it: measure the hard cases instead of assuming progress, keep a "works today" list beside every sponsorship ask, prototype before committing to an architecture, and aim at one application, SolidDraft, with real parts.
+
+To be plain about what this is and is not: Catallax shares no code with Fornjot. It is not affiliated with Hanno Braun and he has not endorsed it. What we take from Fornjot is its published lessons, with thanks.
+
 ## Why this is free
 
 Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.
@@ -141,3 +149,16 @@ Agent-written code is welcome. Say how it was produced and stay accountable for 
 ## Sponsorship
 
 Support the free kernel through [GitHub Sponsors](https://github.com/sponsors/BohnBawerick) or [Ko-fi](https://ko-fi.com/pedropaiva56920).
+
+Nobody should sponsor a dream. This is what the code on `main` does today, and what it does not. The [full list](#what-works-today) above carries the caveats.
+
+Works today:
+
+- Blocks, cylinders, spheres, cones and tori, built exactly and by definition in safe Rust.
+- Unite, subtract and intersect on plane, cylinder and sphere pairs, plus closed-form cone and torus cases.
+- Sketch profiles of lines, arcs and circles, extruded or revolved, with faces named by the operation that made them.
+- Volume, area and centroid with proven bounds.
+- STEP AP242 export with a proven deviation report, and display meshes with proven chord error.
+- A signed distance field evaluator for the same solids, sketches and booleans, and a sampled two-way check between the two kernels.
+
+Not yet: fillets, chamfers, shell, offset, draft, sweep, loft, patterns, mirror and STEP import. Some valid cone and torus poses, equal-diameter crossing pipes and other near-tangent cases still refuse or run past the 50-second deadline. Several operations take seconds. Nothing runs at click speed yet.

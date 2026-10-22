@@ -24,6 +24,7 @@
     <span>catallax</span>
   </a>
   <nav class="nav__links" aria-label="Sections">
+    <a href="#lineage">Fornjot</a>
     <a href="#kernel">Kernel</a>
     <a href="#code">Code</a>
     <a href="#work">Work</a>
@@ -73,14 +74,38 @@
 
 <div class="marquee" aria-hidden="true">
   <div class="marquee__track">
-    <span>exact by definition</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
-    <span>exact by definition</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
+    <span>exact by definition</span><i></i><span>picking up where Fornjot left off</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
+    <span>exact by definition</span><i></i><span>picking up where Fornjot left off</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
   </div>
 </div>
 
+<!-- LINEAGE --------------------------------------------------------------->
+<section class="lineage section" id="lineage">
+  <p class="label section__label"><span>01</span>Where this starts</p>
+  <h2 class="display" data-lines>Picking up where <em>Fornjot</em> left off.</h2>
+  <div class="lineage__grid">
+    <div class="lineage__copy">
+      <p class="lineage__lede">Hanno Braun spent six years on Fornjot, an early-stage B-rep CAD kernel in Rust. In June 2026 he shut it down and wrote up what went wrong. We read that post as a to-do list.</p>
+      <p>Catallax carries on the same goal, a free B-rep kernel in Rust that a CAD application can stand on, and throws AI horsepower and human curiosity at it. AI coding agents write most of the code. A human directs, questions and checks it.</p>
+      <p class="lineage__plain">Catallax shares no code with Fornjot. It is not affiliated with Hanno Braun and he has not endorsed it. What we take is his published lessons, with thanks.</p>
+      <a class="btn magnetic" href="https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/"><span>Read "Shutting Down Fornjot"</span></a>
+    </div>
+    <div class="lineage__lessons">
+      <p class="label">His lessons · what we do about them</p>
+      <ul class="lineage__list">
+        <li><span>Early progress does not extrapolate</span><b>Measure the hard cases, tangent, coincident and equal radii, and publish the numbers.</b></li>
+        <li><span>Do not sell a dream</span><b>A works-today list beside every sponsorship ask, including the one further down this page.</b></li>
+        <li><span>Incremental change cannot fix an architecture</span><b>Prototype, measure, merge only the winners.</b></li>
+        <li><span>Half-measures sink a project</span><b>Dated checkpoints. Each one commits or parks.</b></li>
+        <li><span>A generic kernel blurs the vision</span><b>One application, SolidDraft, and a handful of real parts rebuilding at click speed.</b></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
 <!-- MANIFESTO ------------------------------------------------------------>
 <section class="manifesto section" id="about">
-  <p class="label section__label"><span>01</span>Built for what comes next <span class="status-chip">Vision · in design</span></p>
+  <p class="label section__label"><span>02</span>Built for what comes next <span class="status-chip">Vision · in design</span></p>
   <p class="manifesto__text" data-words>Topology optimisation. Instant FEA without meshing. Wild patterns, driven by code. One recipe builds exact faces and distance fields. <em>Precision meets possibility.</em> From drawings and STEP to the machine shop. Next stop: meshes for Blender and the printer.</p>
   <div class="manifesto__sig">
     <img src="brand/mark.svg" alt="" width="40" height="40">
@@ -92,7 +117,7 @@
 <section class="anatomy" id="kernel">
   <div class="anatomy__inner">
     <div class="anatomy__head">
-      <p class="label section__label"><span>02</span>Kernel anatomy</p>
+      <p class="label section__label"><span>03</span>Kernel anatomy</p>
       <p class="anatomy__count label"><b data-step-num>01</b> / 04</p>
     </div>
     <div class="anatomy__body">
@@ -139,7 +164,7 @@
     </video>
   </div>
   <div class="assembly__copy">
-    <p class="label section__label"><span>03</span>Assembly illustration</p>
+    <p class="label section__label"><span>04</span>Assembly illustration</p>
     <h2 class="display" data-lines>A solid is a <em>promise</em> about its boundary.</h2>
     <p class="assembly__note label">10 s wireframe illustration · a little mechanical daydream, not kernel output</p>
   </div>
@@ -159,7 +184,7 @@
 <!-- CODE ----------------------------------------------------------------->
 <section class="code section" id="code">
   <div class="code__aside">
-    <p class="label section__label"><span>04</span>Code is the geometry</p>
+    <p class="label section__label"><span>05</span>Code is the geometry</p>
     <h2 class="display" data-lines>Geometry that <em>shows</em> its working.</h2>
     <p class="code__lede">No black box. The geometry, the decisions and the doubts are right here in Rust.</p>
     <ol class="code__notes label">
@@ -227,7 +252,7 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 <!-- WORK ----------------------------------------------------------------->
 <section class="work section" id="work">
   <div class="work__head">
-    <p class="label section__label"><span>05</span>Selected work</p>
+    <p class="label section__label"><span>06</span>Selected work</p>
     <h2 class="display" data-lines>One recipe. A <em>family</em> of tools.</h2>
   </div>
   <div class="work__grid">
@@ -282,7 +307,7 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 <!-- BENCHMARKS ----------------------------------------------------------->
 <section class="bench section" id="bench">
   <div class="bench__head">
-    <p class="label section__label"><span>06</span>Benchmarks</p>
+    <p class="label section__label"><span>07</span>Benchmarks</p>
     <h2 class="display" data-lines>Measured, not <em>marketed</em>.</h2>
     <p class="bench__lede">Hard cases. Real answers. The latest kernel, matched against our own hard-test corpus.</p>
   </div>
@@ -306,7 +331,7 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 <!-- VIDEO B -------------------------------------------------------------->
 <section class="ci section" id="ci">
   <div class="ci__copy">
-    <p class="label section__label"><span>07</span>Release discipline</p>
+    <p class="label section__label"><span>08</span>Release discipline</p>
     <h2 class="display" data-lines>Proof before <em>promise</em>.</h2>
     <p>Every pull request faces format, clippy and the full enabled release test suite. Exact maths keeps us honest. OpenCASCADE checks our STEP.</p>
     <p>Our rule: the same answer on every machine. Still to fix: the 50-second deadline can make an answer depend on load.</p>
@@ -325,18 +350,34 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 </section>
 
 <section class="support section" id="support">
-  <p class="label section__label"><span>08</span>Sponsor the free kernel</p>
-  <h2 class="display" data-lines>Geometry belongs to <em>everyone</em>.</h2>
-  <p class="contact__lede">Keep geometry free. Help me chase the hard cases and build the bridge between explicit and implicit. MIT today. MIT tomorrow. Yours to build on.</p>
-  <div class="contact__ctas">
-    <a class="btn btn--solid magnetic" href="https://github.com/sponsors/BohnBawerick"><span>GitHub Sponsors</span></a>
-    <a class="btn magnetic" href="https://ko-fi.com/pedropaiva56920"><span>Support on Ko-fi</span></a>
+  <div class="support__grid">
+    <div class="support__copy">
+      <p class="label section__label"><span>09</span>Sponsor the free kernel</p>
+      <h2 class="display" data-lines>Geometry belongs to <em>everyone</em>.</h2>
+      <p class="contact__lede">Keep geometry free. Help me chase the hard cases and build the bridge between explicit and implicit. MIT today. MIT tomorrow. Yours to build on.</p>
+      <div class="contact__ctas">
+        <a class="btn btn--solid magnetic" href="https://github.com/sponsors/BohnBawerick"><span>GitHub Sponsors</span></a>
+        <a class="btn magnetic" href="https://ko-fi.com/pedropaiva56920"><span>Support on Ko-fi</span></a>
+      </div>
+    </div>
+    <div class="support__works">
+      <p class="label">Works today · the code on main</p>
+      <ul class="works__list label">
+        <li><span>Solids</span><b>Blocks, cylinders, spheres, cones and tori. Exact, by definition.</b></li>
+        <li><span>Booleans</span><b>Unite, subtract and intersect on plane, cylinder and sphere pairs, plus closed-form cone and torus cases.</b></li>
+        <li><span>Sketches</span><b>Lines, arcs and circles, extruded or revolved. Faces named by the operation that made them.</b></li>
+        <li><span>Measure</span><b>Volume, area and centroid with proven bounds.</b></li>
+        <li><span>Output</span><b>STEP AP242 with a proven deviation report. Display meshes with proven chord error.</b></li>
+        <li><span>Field</span><b>A signed distance evaluator for the same solids, and a sampled two-way check between the kernels.</b></li>
+      </ul>
+      <p class="works__not">Not yet: fillets, chamfers, shell, offset, draft, sweep, loft, patterns, STEP import. Some valid cone, torus and near-tangent cases still refuse or time out. Nothing runs at click speed yet. <a href="https://github.com/BohnBawerick/catallax#what-works-today">The full list, with caveats</a>.</p>
+    </div>
   </div>
 </section>
 
 <!-- CONTACT -------------------------------------------------------------->
 <section class="contact section" id="contact">
-  <p class="label section__label"><span>09</span>Contact</p>
+  <p class="label section__label"><span>10</span>Contact</p>
   <h2 class="contact__title" data-lines>Have geometry that has to be <em>exact</em>?</h2>
   <p class="contact__lede">I'm open to kernel work. Got a stubborn geometry problem? Let's make something of it.</p>
   <div class="contact__ctas">

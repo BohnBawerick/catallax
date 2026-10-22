@@ -304,7 +304,7 @@
     $$('.card__art').forEach(svg => gsap.fromTo(svg, { y: 24 }, { y: -24, ease: 'none', scrollTrigger: { trigger: svg, start: 'top bottom', end: 'bottom top', scrub: true } }));
 
     // Generic entrance: rise 28px, stagger in batches.
-    const rise = '.manifesto__sig, .stat, .code__lede, .code__notes li, .card, .bench__lede, .bench__row, .bench__foot, .ci__copy > p:not(.label), .ci__list li, .ci__term, .contact__lede, .contact__ctas, .assembly__note';
+    const rise = '.lineage__copy > p, .lineage__copy .btn, .lineage__lessons .label, .lineage__list li, .works__list li, .works__not, .support__works > .label, .manifesto__sig, .stat, .code__lede, .code__notes li, .card, .bench__lede, .bench__row, .bench__foot, .ci__copy > p:not(.label), .ci__list li, .ci__term, .contact__lede, .contact__ctas, .assembly__note';
     gsap.set(rise, { y: 28, autoAlpha: 0 });
     ScrollTrigger.batch(rise, { start: 'top 90%', once: true, onEnter: b => gsap.to(b, { y: 0, autoAlpha: 1, stagger: 0.07, duration: 0.9, overwrite: 'auto' }) });
 

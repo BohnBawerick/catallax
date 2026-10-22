@@ -164,19 +164,86 @@ impl From<io::Error> for Failure {
     }
 }
 
+/// A question body, before measurement, topology summary or STEP export.
+/// The model owns its operands and intermediate bodies as well as the result.
+pub struct BuiltQuestion {
+    /// Geometry and topology produced by the question.
+    pub model: Model,
+    /// The requested result in `model`.
+    pub body: BodyId,
+    /// Construction marks only; measurement never changes these.
+    pub marks: Vec<MarkEntry>,
+    /// Boolean work recorded in question order.
+    pub per_step: Vec<StepStats>,
+}
+
+/// A construction refusal, with its boolean step and stage when applicable.
+#[derive(Debug)]
+pub struct BuildError {
+    /// The kernel refusal.
+    pub refusal: Refusal,
+    /// Failing boolean step, or `None` for operand construction.
+    pub step: Option<String>,
+    /// Failing boolean stage, when known.
+    pub stage: Option<String>,
+}
+
+impl std::fmt::Display for BuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(step) = &self.step {
+            write!(f, "step {step}: ")?;
+        }
+        write!(f, "{}: {}", self.refusal.code, self.refusal.detail)
+    }
+}
+
+impl std::error::Error for BuildError {}
+
+impl From<Refusal> for BuildError {
+    fn from(refusal: Refusal) -> Self {
+        Self {
+            refusal,
+            step: None,
+            stage: None,
+        }
+    }
+}
+
+impl From<BuildError> for Failure {
+    fn from(error: BuildError) -> Self {
+        Self::Refusal(error.refusal, error.step, error.stage)
+    }
+}
+
+/// Builds a parsed question without measuring or exporting it.
+///
+/// `question.measure`, `question.export` and `question.limits` are output-command
+/// settings, not construction work. The caller controls `dec` and its deadline.
+/// Request proven properties later with `catallax_measure::mass_properties`,
+/// `volume` or `area`, passing the returned model and body.
+pub fn build_question(question: &Question, dec: &mut Decider) -> Result<BuiltQuestion, BuildError> {
+    let mut model = Model::new();
+    let mut per_step = Vec::new();
+    let built = build_into(question, &mut model, dec, &mut per_step)?;
+    Ok(BuiltQuestion {
+        model,
+        body: built.body,
+        marks: built.marks,
+        per_step,
+    })
+}
+
 struct Built {
     body: BodyId,
     marks: Vec<MarkEntry>,
 }
 
-fn evaluate(
+fn build_into(
     question: &Question,
-    out_dir: &Path,
     model: &mut Model,
     dec: &mut Decider,
-    manifest: &mut Manifest,
-    extended: bool,
-) -> Result<(), Failure> {
+    per_step: &mut Vec<StepStats>,
+) -> Result<Built, BuildError> {
     let mut bodies = BTreeMap::new();
     for (name, operand) in &question.operands {
         dec.check_deadline()?;
@@ -211,8 +278,10 @@ fn evaluate(
         bodies.insert(name.as_str(), Built { body, marks });
     }
     for step in &question.steps {
-        dec.check_deadline().map_err(|refusal| {
-            Failure::Refusal(refusal, Some(step.id.clone()), Some("intersect".into()))
+        dec.check_deadline().map_err(|refusal| BuildError {
+            refusal,
+            step: Some(step.id.clone()),
+            stage: Some("intersect".into()),
         })?;
         let a = &bodies[step.args[0].as_str()];
         let b = &bodies[step.args[1].as_str()];
@@ -227,7 +296,7 @@ fn evaluate(
                 _ => panic!("unknown boolean operation"),
             };
             let marks = a.marks.clone();
-            manifest.stats.per_step.push(StepStats {
+            per_step.push(StepStats {
                 id: step.id.clone(),
                 wall_ms: 0,
                 decisions: 0,
@@ -239,18 +308,16 @@ fn evaluate(
         let before = dec.stats().clone();
         let start = Instant::now();
         let result = catallax_boolean::boolean(model, a.body, b.body, step.op, dec);
-        manifest.stats.per_step.push(StepStats {
+        per_step.push(StepStats {
             id: step.id.clone(),
             wall_ms: milliseconds(start.elapsed()),
             decisions: dec.stats().decisions - before.decisions,
             not_exact: dec.stats().not_exact - before.not_exact,
         });
-        let answer = result.map_err(|error| {
-            Failure::Refusal(
-                error.refusal,
-                Some(step.id.clone()),
-                Some(stage_name(error.stage).into()),
-            )
+        let answer = result.map_err(|error| BuildError {
+            refusal: error.refusal,
+            step: Some(step.id.clone()),
+            stage: Some(stage_name(error.stage).into()),
         })?;
         let added = answer
             .marks
@@ -273,7 +340,20 @@ fn evaluate(
             },
         );
     }
-    let built = &bodies[question.result.as_str()];
+    Ok(bodies
+        .remove(question.result.as_str())
+        .expect("parsed result exists"))
+}
+
+fn evaluate(
+    question: &Question,
+    out_dir: &Path,
+    model: &mut Model,
+    dec: &mut Decider,
+    manifest: &mut Manifest,
+    extended: bool,
+) -> Result<(), Failure> {
+    let built = build_into(question, model, dec, &mut manifest.stats.per_step)?;
     manifest.marks.clone_from(&built.marks);
     let request = &question.measure;
     let mut properties = Properties {

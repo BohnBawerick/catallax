@@ -488,3 +488,10 @@ Pieces: CLI verification and algebraic geometry consumers
 Change: the manifest/3 publisher recognises `elliptic-cylinder` under the preceding deterministic-verification decision. Parabolas and hyperbolas retain their distinct manifest/3 tags. The shared-algebraic-foundation entry's CLI restriction applies to the legacy question/2 and manifest/2 exchange, whose tags and refusals remain unchanged.
 Why: the verification exchange landed while its geometry consumers were being widened; its explicit versioned vocabulary must not inherit the legacy publication restriction.
 Migration: select extended publication only for `catallax-verify`. Keep legacy commands on their existing vocabulary. Request-scoped work accounting also covers the new checked algebraic proofs; neither exchange's numeric limits or default allowance changes.
+
+## 2026-10-22: question construction without measurement
+
+Pieces: CLI library, application callers, measurement
+Change: `catallax_cli::build_question(&Question, &mut Decider)` returns a `BuiltQuestion` with its owning `Model`, result `body`, construction `marks` and boolean `per_step` statistics. It performs no property integration, topology summary or export. `BuildError` retains the refusal and optional boolean step and stage.
+Why: an application needs a usable body before requesting proven volume, area or centroid. A later measurement refusal must not discard that body.
+Migration: library consumers that need a body use `build_question`, then call `catallax_measure::volume`, `area` or `mass_properties` on demand. Recipe applications keep using the already unmeasured `catallax_features::evaluate` path. The legacy commands, answer functions, verification defaults, requested enclosures and STEP contract are unchanged. Verification questions can continue opting out with an empty `measure.properties` list.

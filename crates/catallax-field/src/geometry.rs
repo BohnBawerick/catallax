@@ -598,34 +598,35 @@ fn algebraic_ray_sign(
     direction: &Vector3,
     dec: &mut Decider,
 ) -> Result<Sign, Refusal> {
-    match ray_coefficients(poly, point, direction) {
-        RayCoefficients::Rational(c) => Ok(c
+    if let Some(c) = native_ray_coefficients(poly, point, direction) {
+        return Ok(c
             .into_iter()
             .find(|c| !c.is_zero())
-            .map_or(Sign::Zero, |c| c.sign())),
-        RayCoefficients::Algebraic(c) => {
-            for coefficient in c {
-                let s = sign(&coefficient, dec)?;
-                if s != Sign::Zero {
-                    return Ok(s);
-                }
-            }
-            Ok(Sign::Zero)
+            .map_or(Sign::Zero, |c| c.sign()));
+    }
+    for coefficient in algebraic_ray_coefficients(poly, point, direction) {
+        let s = sign(&coefficient, dec)?;
+        if s != Sign::Zero {
+            return Ok(s);
         }
     }
+    Ok(Sign::Zero)
 }
-pub(crate) enum RayCoefficients {
-    Rational([Rational; 5]),
-    Algebraic([Real; 5]),
-}
-pub(crate) fn ray_coefficients(
+pub(crate) fn native_ray_coefficients(
     poly: &Constraint,
     point: &[Rational; 3],
     direction: &Vector3,
-) -> RayCoefficients {
-    if let (Terms::Rational(terms), Some(d)) = (&poly.terms, direction.rational_components()) {
-        return RayCoefficients::Rational(rational_ray_coefficients(terms, point, d));
-    }
+) -> Option<[Rational; 5]> {
+    let (Terms::Rational(terms), Some(d)) = (&poly.terms, direction.rational_components()) else {
+        return None;
+    };
+    Some(rational_ray_coefficients(terms, point, d))
+}
+pub(crate) fn algebraic_ray_coefficients(
+    poly: &Constraint,
+    point: &[Rational; 3],
+    direction: &Vector3,
+) -> [Real; 5] {
     let point = point.clone().map(Real::from);
     let direction = [&direction.x, &direction.y, &direction.z];
     let mut coefficients: [Real; 5] = std::array::from_fn(|_| Real::zero());
@@ -658,5 +659,5 @@ pub(crate) fn ray_coefficients(
             }
         }
     }
-    RayCoefficients::Algebraic(coefficients)
+    coefficients
 }

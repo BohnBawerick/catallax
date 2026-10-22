@@ -250,7 +250,7 @@ fn isolated_tangent_face_probe_does_not_decide_a_piece_class() {
         r(5),
         &Pose::new(
             Rotation::identity(),
-            (displacement).into(),
+            displacement,
             &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),

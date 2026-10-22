@@ -724,56 +724,52 @@ impl Feature {
         // Stay within every support's initial sign cell; this is not a tolerance.
         let mut epsilon = Rational::one();
         for constraint in &self.constraints {
-            match geometry::ray_coefficients(constraint, p, d) {
-                geometry::RayCoefficients::Rational(coefficients) => {
-                    if let Some((i, c)) =
-                        coefficients.iter().enumerate().find(|(_, c)| !c.is_zero())
-                    {
-                        let tail = coefficients[i + 1..]
-                            .iter()
-                            .fold(Rational::zero(), |a, c| a + c.abs());
-                        let bound = c.abs() / (c.abs() + tail + Rational::one());
-                        epsilon = epsilon.min(bound);
-                    }
+            if let Some(coefficients) = geometry::native_ray_coefficients(constraint, p, d) {
+                if let Some((i, c)) = coefficients.iter().enumerate().find(|(_, c)| !c.is_zero()) {
+                    let tail = coefficients[i + 1..]
+                        .iter()
+                        .fold(Rational::zero(), |a, c| a + c.abs());
+                    let bound = c.abs() / (c.abs() + tail + Rational::one());
+                    epsilon = epsilon.min(bound);
                 }
-                geometry::RayCoefficients::Algebraic(coefficients) => {
-                    for (i, c) in coefficients.iter().enumerate() {
-                        let sign = geometry::sign(c, dec)?;
-                        if sign == Sign::Zero {
-                            continue;
-                        }
-                        let magnitude = if sign == Sign::Negative {
-                            -c
-                        } else {
-                            c.clone()
-                        };
-                        let mut denominator = &magnitude + &Real::one();
-                        for tail in &coefficients[i + 1..] {
-                            // |x| <= x^2 + 1, without a second sign decision.
-                            denominator = denominator
-                                + if let Some(q) = tail.rational_ref() {
-                                    Real::from(q.abs())
-                                } else {
-                                    tail * tail + Real::one()
-                                };
-                        }
-                        let bound = magnitude / denominator;
-                        let mut precision = crate::metric::PRECISION;
-                        let lower = loop {
-                            let lower = geometry::enclose(&bound, precision, dec)?.lo();
-                            if lower.sign() == Sign::Positive {
-                                break lower;
-                            }
-                            precision = precision.checked_mul(2).ok_or_else(|| {
-                                Refusal::new(
-                                    "numbers.refinement-budget",
-                                    "ray-germ separation exceeds the precision index",
-                                )
-                            })?;
-                        };
-                        epsilon = epsilon.min(lower);
-                        break;
+            } else {
+                let coefficients = geometry::algebraic_ray_coefficients(constraint, p, d);
+                for (i, c) in coefficients.iter().enumerate() {
+                    let sign = geometry::sign(c, dec)?;
+                    if sign == Sign::Zero {
+                        continue;
                     }
+                    let magnitude = if sign == Sign::Negative {
+                        -c
+                    } else {
+                        c.clone()
+                    };
+                    let mut denominator = &magnitude + &Real::one();
+                    for tail in &coefficients[i + 1..] {
+                        // |x| <= x^2 + 1, without a second sign decision.
+                        denominator = denominator
+                            + if let Some(q) = tail.rational_ref() {
+                                Real::from(q.abs())
+                            } else {
+                                tail * tail + Real::one()
+                            };
+                    }
+                    let bound = magnitude / denominator;
+                    let mut precision = crate::metric::PRECISION;
+                    let lower = loop {
+                        let lower = geometry::enclose(&bound, precision, dec)?.lo();
+                        if lower.sign() == Sign::Positive {
+                            break lower;
+                        }
+                        precision = precision.checked_mul(2).ok_or_else(|| {
+                            Refusal::new(
+                                "numbers.refinement-budget",
+                                "ray-germ separation exceeds the precision index",
+                            )
+                        })?;
+                    };
+                    epsilon = epsilon.min(lower);
+                    break;
                 }
             }
         }

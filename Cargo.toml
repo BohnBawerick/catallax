@@ -14,6 +14,7 @@ members = [
     "crates/catallax-cli",
     "crates/catallax-features",
     "crates/catallax-compare",
+    "crates/catallax-app",
 ]
 
 [workspace.package]
@@ -36,6 +37,7 @@ catallax-recipe = { path = "crates/catallax-recipe" }
 catallax-field = { path = "crates/catallax-field" }
 catallax-features = { path = "crates/catallax-features" }
 catallax-compare = { path = "crates/catallax-compare" }
+catallax-app = { path = "crates/catallax-app" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

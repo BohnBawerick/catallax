@@ -222,12 +222,24 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                             (BoolOp::Intersect, a.radius.clone().min(b.radius.clone()))
                         }
                     };
-                    BodyValue {
-                        body: boolean(model, a.body, b.body, op, dec)
+                    // Recipes allow repeated operands. Apply exact set identities
+                    // before the two-distinct-operands intersection graph.
+                    let body = if a.body == b.body {
+                        if *kind == BooleanKind::Subtract {
+                            model.add_body(catallax_topology::Body {
+                                kind: BodyKind::Empty,
+                                lumps: Vec::new(),
+                                marks: model.body(a.body).marks.clone(),
+                            })
+                        } else {
+                            a.body
+                        }
+                    } else {
+                        boolean(model, a.body, b.body, op, dec)
                             .map_err(|e| e.refusal)?
-                            .body,
-                        radius,
-                    }
+                            .body
+                    };
+                    BodyValue { body, radius }
                 }
                 _ => {
                     return Err(Refusal::new(

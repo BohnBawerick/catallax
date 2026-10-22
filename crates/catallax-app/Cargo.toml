@@ -1,0 +1,21 @@
+[package]
+name = "catallax-app"
+description = "SolidDraft recipe conversion and named B-rep display builds."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+catallax-features.workspace = true
+catallax-mesh.workspace = true
+catallax-numbers.workspace = true
+catallax-recipe.workspace = true
+catallax-topology.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libm = "0.2"
+
+[lints]
+workspace = true

@@ -1102,6 +1102,28 @@ The application's recipe is an ordered list of these calls, each with an id. Cal
 
 The slot's digest compares two builds by rounded geometry. Catallax compares builds by agreement on point sets and names (section 1.4) and needs no digest in the recipe.
 
+### 6.3 Application entry
+
+`catallax-app` owns the converter and the B-rep application entry. It has no build-time dependency on a SolidDraft checkout. The SolidDraft backend belongs in SolidDraft's repository.
+
+- `soliddraft::convert(json)` reads `soliddraft-recipe/1` and returns a checked `catallax-recipe/3` plus an original-tag to step-id table. It retains the description, normalises tags without collisions, uses shortest round-trip decimal numbers, and gives profile segments their `l{i}s{j}` names. Rectangle arithmetic happens after conversion to exact numbers.
+- Named and offset XY, YZ and ZX planes convert exactly. Full frames convert to rational quaternions, with exact checks that their axes stay within the source frame tolerance of `1e-9`. Loop joins use SolidDraft's `1e-7` mm tolerance before making shared endpoints exact. Arcs use rational stereographic projection onto their circles, with an exact endpoint displacement check.
+- `build(&recipe, &mesh_options, &mut decider)` returns `ApplicationBody`. Its `built` contains the exact model, result body, intermediate bodies and immutable recipe definition. Its `display` retains the mesh answer's marks. Its `names` maps every result face to its complete origin set and every edge or vertex to its optional persistent name.
+- `build_soliddraft(json, &mesh_options, &mut decider)` converts and builds in one call, returning the body and the tag table. Neither entry computes mass properties or writes STEP as part of rebuilding.
+
+For picking, a display triangle's `face` indexes `names.faces` directly. An `EdgeMesh` identifies its B-rep edge and indexes the shared `Mesh::positions` to form that edge's polyline. Its closed polylines repeat their first index. Handle indices belong only to this returned model. A backend may allocate its own opaque ids, but must retain an explicit correspondence rather than cast indices or guess face order. Persist the recipe origins and edge/vertex names, not handles. Merged faces keep every creating origin, not just the first.
+
+Failures distinguish conversion errors, feature-build errors, invalid topology and display refusals. `Error::code()` exposes their stable codes without parsing prose. A feature-build error retains its failing step and the original kernel refusal. Fillet, chamfer and shell return `ConversionError::NotYet` with `features.unsupported-operation`; their positional selectors are not guessed or discarded. An all-arc loop whose rounded endpoints cannot yet be closed on the same exact circles returns `soliddraft.arc-closure`. Uncertified frame or arc conversion returns a corresponding `soliddraft.*-conversion` not-yet code. These are implementation gaps, not new impossible-input rules. Expected-failure annotations are checked and removed, never treated as instructions to skip an operation or return an earlier body.
+
+The example runs the same library entry and writes face-grouped display OBJ:
+
+```sh
+cargo run --release -p catallax-app --example build -- recipe.json display.obj
+```
+
+The bracket fixture exercises a flush plate/flange union, a boss and bore, four holes and a cross-plane slot. Its tests edit the flange height, pick the resulting faces through their triangles, retain merged origins, and check edge names and certified polylines. The application still needs its backend and UI integration before this repository's entry becomes a SolidDraft editing session.
+
+
 ## 7. Decision record and remaining open items
 
 Items 7.1 to 7.13 are recorded here so their original questions remain traceable. A settled definition is not an implementation-coverage claim. The product choices for blend overflow, draft retention and scans are settled in their operation sections; remaining carrier and schema work is identified separately. Unfinished carriers, algorithms and proofs do not add impossible-input rules.

@@ -262,9 +262,9 @@ A change of kernel direction, meaning a new representation, a new default arithm
 |---|---|
 | M1 | Stage 0 lanes landed or parked. Intent recording and measurement on request merged. The kernel loop's per-operation log. `parts/` with P0 to P5 recipes and a scoreboard report. Both prototype files written and both prototypes started. |
 | M2 | P1 builds in SolidDraft on Catallax inside the interactive targets, with the other kernel removed. Coplanar booleans sound in both kernels. The application loop runs on GitHub's runners. Both prototypes decided. The first tolerance-core piece merged. |
-| M3 | The near-miss class of P0 answers. Holes, end conditions and chamfers in the application; P2 built. STEP and mesh export from SolidDraft through Catallax. |
+| M3 | The near-miss class of P0 answers. Holes, end conditions, exact fillets between planes and cylinders, and chamfers in the application; P2 and P3 built. STEP and mesh export from SolidDraft through Catallax. |
 | M4 | Pattern and mirror. Offset, shell and thicken in both kernels; P4 built. Names survive the parameter edit on P1, P2 and P4. |
-| M5 | Fillets as the prototype decided, with local tolerances measured by the field; P3 and P5 built. Planar and cylindrical draft. P0 republished. The field-only track's first feature started. |
+| M5 | General fillets as the prototype decided, with local tolerances measured by the field; P5 built. Planar and cylindrical draft. P0 republished. The field-only track's first feature started. |
 
 An incomplete must-show list means the milestone has not been reached. Progress and parked work remain visible in the ledger.
 

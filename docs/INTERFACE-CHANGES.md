@@ -481,3 +481,10 @@ Algebraic field coefficient, metric and ray-germ enclosures use `Decider::enclos
 Intersection-plan caches retain input definition nodes. Their keys therefore use `Surface::shares_definition_nodes`; value-equal independent definitions cannot inherit another query's expression-DAG aliases and change charged proof work. `Real::same_node` is a storage-identity query, not a mathematical equality test.
 
 This supersedes the rational-only primitive-storage statement in the preceding conic-dimensions entry. Question/manifest version 2, supported CLI kind tags, numeric limits and deadlines are unchanged. Elliptic cylinders and open conics are not exposed through new or remapped CLI tags.
+
+## 2026-10-22: algebraic definitions in the verification exchange
+
+Pieces: CLI verification and algebraic geometry consumers
+Change: the manifest/3 publisher recognises `elliptic-cylinder` under the preceding deterministic-verification decision. Parabolas and hyperbolas retain their distinct manifest/3 tags. The shared-algebraic-foundation entry's CLI restriction applies to the legacy question/2 and manifest/2 exchange, whose tags and refusals remain unchanged.
+Why: the verification exchange landed while its geometry consumers were being widened; its explicit versioned vocabulary must not inherit the legacy publication restriction.
+Migration: select extended publication only for `catallax-verify`. Keep legacy commands on their existing vocabulary. Request-scoped work accounting also covers the new checked algebraic proofs; neither exchange's numeric limits or default allowance changes.

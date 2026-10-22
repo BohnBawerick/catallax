@@ -170,6 +170,13 @@ impl GeomStore {
 
     /// Adds a surface and records identities guaranteed by its definition.
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId {
+        self.add_surface_with_origin(s, "shapes.definition")
+    }
+
+    /// Adds a surface, retaining the constructing routine's provenance on
+    /// structural facts. Supply this before insertion when provenance also
+    /// distinguishes auxiliary geometry from intrinsic construction inputs.
+    pub fn add_surface_with_origin(&mut self, s: Surface, origin: &'static str) -> SurfaceId {
         self.implicits.push(s.implicit());
         let id = self.surfaces.push(s);
         for index in 0..id.index {
@@ -196,7 +203,7 @@ impl GeomStore {
                 (FactKind::Coaxial, coaxial),
             ] {
                 if holds {
-                    self.construction(kind, GeomKey::Surface(other), GeomKey::Surface(id));
+                    self.construction(kind, GeomKey::Surface(other), GeomKey::Surface(id), origin);
                 }
             }
         }
@@ -208,6 +215,7 @@ impl GeomStore {
                         index: u32::try_from(index).expect("valid point index"),
                         _kind: PhantomData,
                     },
+                    origin,
                 );
             }
         }
@@ -250,7 +258,12 @@ impl GeomStore {
                     (FactKind::Concentric, concentric),
                 ] {
                     if holds {
-                        self.construction(kind, GeomKey::Curve(id), GeomKey::Surface(surface));
+                        self.construction(
+                            kind,
+                            GeomKey::Curve(id),
+                            GeomKey::Surface(surface),
+                            "shapes.definition",
+                        );
                     }
                 }
             }
@@ -324,6 +337,7 @@ impl GeomStore {
                     _kind: PhantomData,
                 },
                 id,
+                "shapes.definition",
             );
         }
         id
@@ -608,7 +622,7 @@ impl GeomStore {
         )
     }
 
-    fn record_plane_incidence(&mut self, surface: SurfaceId, point: PointId) {
+    fn record_plane_incidence(&mut self, surface: SurfaceId, point: PointId, origin: &'static str) {
         let position = match self.point(point) {
             PointDef::Explicit(p) => p,
             PointDef::Meet(crate::Meet {
@@ -620,17 +634,22 @@ impl GeomStore {
         if let Surface::Plane(plane) = self.surface(surface)
             && crate::intent::on_plane(&plane.origin, &plane.normal, position)
         {
-            self.incident(GeomKey::Point(point), GeomKey::Surface(surface));
+            self.construction(
+                FactKind::Incident,
+                GeomKey::Point(point),
+                GeomKey::Surface(surface),
+                origin,
+            );
         }
     }
 
-    fn construction(&mut self, kind: FactKind, a: GeomKey, b: GeomKey) {
+    fn construction(&mut self, kind: FactKind, a: GeomKey, b: GeomKey, origin: &'static str) {
         self.facts.record(Fact {
             kind,
             a,
             b,
             at: None,
-            origin: FactOrigin::Construction("shapes.definition"),
+            origin: FactOrigin::Construction(origin),
         });
     }
 

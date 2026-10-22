@@ -288,7 +288,7 @@ Construction records facts only when immutable definitions make them true:
 - Circular curves record shared axes and centres with existing surfaces. The round-solid builders supply the axis relations guaranteed by their common construction frame.
 - A closed or explicit point is incident on a plane when each coordinate either matches the plane's origin definition or has a structurally zero normal coefficient. This includes flush coordinate-plane contact in either insertion order. General cancellations remain numeric decisions.
 
-These store-generated facts have origin `FactOrigin::Construction("shapes.definition")` and `at: None`. They use expression identity and cached exact rational values, never approximate coordinates, intervals, refinement or near-equality. Different definitions do not prove apartness. Facts are append-only; insertion does not merge handles. The set and order of additional structural facts need not survive a change of coordinate frame, but identical construction sequences produce identical facts.
+These store-generated facts have origin `FactOrigin::Construction("shapes.definition")` and `at: None` by default. `add_surface_with_origin` assigns the caller's construction origin before recording structural facts. Auxiliary builders use it so fact deduplication cannot discard their provenance and feed probe geometry back into later construction inputs. Facts use expression identity and cached exact rational values, never approximate coordinates, intervals, refinement or near-equality. Different definitions do not prove apartness. Insertion does not merge handles. Additional structural facts need not survive a coordinate-frame change, but identical construction sequences produce identical facts.
 
 `record_fact` passes a fact to the fact book and returns what `FactBook::record` returns. Recording a fact that is not true is a programming error of the caller.
 
@@ -593,6 +593,7 @@ pub struct GeomStore;
 impl GeomStore {
     pub fn new() -> Self;
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId;
+    pub fn add_surface_with_origin(&mut self, s: Surface, origin: &'static str) -> SurfaceId;
     pub fn add_curve(&mut self, c: Curve) -> CurveId;
     pub fn add_point(&mut self, p: PointDef) -> PointId;
     pub fn surface(&self, id: SurfaceId) -> &Surface;

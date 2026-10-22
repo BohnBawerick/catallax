@@ -299,36 +299,6 @@ fn documented_complete_example_and_exact_answer() {
 }
 
 #[test]
-fn documented_refusal() {
-    // The document supplies a refusal manifest, not a question for it.
-    let sandbox = Sandbox::new();
-    let input = json!({
-        "format": "exact-brep-question/2", "id": "q-0c51e2d4",
-        "operands": {
-            "a": {"shape": "cone", "base_radius": "3", "top_radius": "0", "height": "4"},
-            "b": {"shape": "torus", "major": "3", "minor": "1"}
-        },
-        "steps": [{"id": "s1", "op": "intersect", "args": ["a", "b"]}], "result": "s1"
-    });
-    fs::write(sandbox.0.join("question.json"), input.to_string()).unwrap();
-    let checked = sandbox.run(&["check", "question.json"]);
-    assert!(checked.status.success(), "{checked:?}");
-    assert!(checked.stdout.is_empty() && checked.stderr.is_empty());
-    fs::create_dir(sandbox.0.join("out")).unwrap();
-    fs::write(sandbox.0.join("out/answer.step"), "stale").unwrap();
-    let manifest = sandbox.answer(&input);
-    assert_eq!(manifest["question_id"], "q-0c51e2d4");
-    assert_eq!(manifest["status"], "refused");
-    assert_eq!(manifest["exact"], false);
-    assert_eq!(manifest["marks"], json!([]));
-    assert_eq!(manifest["refusal"]["code"], "intersect.unsupported-pair");
-    assert_eq!(manifest["refusal"]["step"], "s1");
-    assert_eq!(manifest["refusal"]["stage"], "intersect");
-    assert_eq!(manifest["stats"]["per_step"][0]["id"], "s1");
-    assert!(!sandbox.0.join("out/answer.step").exists());
-}
-
-#[test]
 fn three_step_chain_covers_all_operations() {
     let sandbox = Sandbox::new();
     let input = json!({

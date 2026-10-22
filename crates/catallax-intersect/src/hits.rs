@@ -101,11 +101,23 @@ fn carrier_equations(geom: &GeomStore, c: CurveId, f: &CurveForm) -> Vec<MPoly> 
 fn keep_branch(
     geom: &GeomStore,
     c: CurveId,
+    s: SurfaceId,
     p: &Point3,
     plan: &Option<Arc<Plan>>,
     dec: &mut Decider,
     marks: &mut MarkLog,
 ) -> Result<Option<bool>, Refusal> {
+    let supports: &[SurfaceId] = match geom.curve(c) {
+        Curve::Intersection(i) => &i.surfaces,
+        _ => &[],
+    };
+    for surface in std::iter::once(s).chain(supports.iter().copied()) {
+        match query::surface_domain(geom.surface(surface), p, dec) {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(e) => return Err(Refusal::from(e)),
+        }
+    }
     let Some(d) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
         return Ok(Some(false));
     };
@@ -118,6 +130,10 @@ fn keep_branch(
         Outcome::Proven(s) => Some(s),
         Outcome::ProvenCoincident(_) => return Ok(Some(false)),
         Outcome::Refused(e) => return Err(e),
+        // Only legacy divider plans permit bounded, marked component choices.
+        Outcome::NotExact(n) if !d.canonical_direction => {
+            return Err(Refusal::from(Failure::Uncertain(n)));
+        }
         Outcome::NotExact(n) => {
             let bound = &n.bound / &d.length_lower;
             mark(
@@ -134,6 +150,7 @@ fn keep_branch(
         Outcome::Proven(s) => Ok((Some(s) == ps).then_some(false)),
         Outcome::ProvenCoincident(_) => panic!("regular witness on divider"),
         Outcome::Refused(e) => Err(e),
+        Outcome::NotExact(n) if !d.canonical_direction => Err(Refusal::from(Failure::Uncertain(n))),
         Outcome::NotExact(n) => {
             let b = dec.enclose(&value, &r(1))?;
             let bound = &b.lo().abs().max(b.hi().abs()) / &d.length_lower;
@@ -195,7 +212,7 @@ fn local_sign(
             });
         }
     }
-    panic!("a non-contained quadric has finite contact order at most eight")
+    panic!("a non-contained quartic on a conic has contact order at most eight")
 }
 fn contact(
     charts: &[Chart],
@@ -257,6 +274,26 @@ fn compare(
             },
         );
     }
+    if let CurveForm::Parabola {
+        normal, axis_dir, ..
+    }
+    | CurveForm::Hyperbola {
+        normal, axis_dir, ..
+    } = form
+    {
+        return Ok(
+            match sign(
+                &a.position
+                    .minus(&b.position)
+                    .dot(&normal.cross(axis_dir).to_real()),
+                dec,
+            )? {
+                Sign::Negative => std::cmp::Ordering::Less,
+                Sign::Positive => std::cmp::Ordering::Greater,
+                Sign::Zero => std::cmp::Ordering::Equal,
+            },
+        );
+    }
     let la = chart::locate(charts, &a.position, dec)?;
     let lb = chart::locate(charts, &b.position, dec)?;
     let o = origin.as_ref().unwrap();
@@ -294,7 +331,8 @@ pub(super) fn intersect(
     let mut marks = MarkLog::new();
     let mut candidates = vec![];
     for position in points {
-        if let Some(uncertain_branch) = keep_branch(geom, c, &position, &plan, dec, &mut marks)? {
+        if let Some(uncertain_branch) = keep_branch(geom, c, s, &position, &plan, dec, &mut marks)?
+        {
             candidates.push(Candidate {
                 position,
                 contact: Contact::Crossing,
@@ -305,7 +343,11 @@ pub(super) fn intersect(
     if candidates.is_empty() {
         return Ok(Answer::with_marks(CurveSurface::Disjoint, marks));
     }
-    let charts = if matches!(form, CurveForm::Line { .. }) {
+    let open_conic = matches!(
+        form,
+        CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. }
+    );
+    let charts = if matches!(form, CurveForm::Line { .. }) || open_conic {
         vec![]
     } else {
         query::charts(geom, c, dec).map_err(Refusal::from)?
@@ -319,9 +361,30 @@ pub(super) fn intersect(
                     .dot(&dir.to_real()),
                 dec,
             ) {
+                Ok(Sign::Zero) if matches!(geom.surface(s), catallax_shapes::Surface::Torus(_)) => {
+                    match chart::line_local(&candidate.position, dir, dec) {
+                        Ok(local) => contact(
+                            std::slice::from_ref(&local),
+                            &candidate.position,
+                            &implicit,
+                            dec,
+                        ),
+                        Err(e) => Err(Failure::Refused(e)),
+                    }
+                }
                 Ok(Sign::Zero) => Ok(Contact::Tangent),
                 Ok(_) => Ok(Contact::Crossing),
                 Err(e) => Err(e),
+            }
+        } else if open_conic {
+            match chart::conic_local(&form, &candidate.position, dec) {
+                Ok(local) => contact(
+                    std::slice::from_ref(&local),
+                    &candidate.position,
+                    &implicit,
+                    dec,
+                ),
+                Err(e) => Err(Failure::Refused(e)),
             }
         } else {
             contact(&charts, &candidate.position, &implicit, dec)
@@ -389,10 +452,9 @@ pub(super) fn intersect(
     let hits = sorted
         .into_iter()
         .map(|candidate| {
-            let of = if candidate.uncertain_branch {
-                let Curve::Intersection(i) = geom.curve(c) else {
-                    unreachable!()
-                };
+            let of = if candidate.uncertain_branch
+                && let Curve::Intersection(i) = geom.curve(c)
+            {
                 let mut surfaces = i.surfaces.to_vec();
                 if !surfaces.contains(&s) {
                     surfaces.push(s);
@@ -412,4 +474,87 @@ pub(super) fn intersect(
         })
         .collect();
     Ok(Answer::with_marks(CurveSurface::Meets(hits), marks))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::BudgetPolicy;
+    use catallax_shapes::{Cone, RPoint3, RVector3, Surface, Torus};
+
+    fn point(x: i64, y: i64, z: i64) -> RPoint3 {
+        RPoint3::new(r(x), r(y), r(z))
+    }
+    fn vector(x: i64, y: i64, z: i64) -> RVector3 {
+        RVector3::new(r(x), r(y), r(z))
+    }
+    fn assert_never_kept(geom: &GeomStore, curve: CurveId, surface: SurfaceId, position: Point3) {
+        let plan = query::validate(geom, curve).unwrap();
+        for (mut decider, limited) in [
+            (Decider::default(), false),
+            (
+                Decider::new(BudgetPolicy {
+                    max_precision_bits: 64,
+                    max_work: 0,
+                }),
+                true,
+            ),
+        ] {
+            let answer = keep_branch(
+                geom,
+                curve,
+                surface,
+                &position,
+                &plan,
+                &mut decider,
+                &mut MarkLog::new(),
+            );
+            assert!(
+                matches!(&answer, Ok(None)) || (limited && answer.is_err()),
+                "a budget cannot select a candidate on the wrong component: {answer:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn uncertain_nappe_cannot_keep_a_negative_cone_hit() {
+        let mut geom = GeomStore::new();
+        let curve = geom.add_curve(Curve::Line(
+            Line::new(point(1, 0, 0), vector(0, 0, 1)).unwrap(),
+        ));
+        let surface = geom.add_surface(Surface::Cone(
+            Cone::new(point(0, 0, 0), vector(0, 0, 1), r(1), vector(1, 0, 0)).unwrap(),
+        ));
+        assert_never_kept(&geom, curve, surface, point(1, 0, -1).to_real());
+    }
+
+    #[test]
+    fn uncertain_radius_cannot_keep_a_hit_on_the_other_torus_circle() {
+        let mut geom = GeomStore::new();
+        let plane = geom.add_surface(Surface::Plane(
+            catallax_shapes::Plane::new(
+                RPoint3::new(r(0), r(0), &r(1) / &r(2)),
+                vector(0, 0, 1),
+                vector(1, 0, 0),
+            )
+            .unwrap(),
+        ));
+        let torus = geom.add_surface(Surface::Torus(
+            Torus::new(point(0, 0, 0), vector(0, 0, 1), r(3), r(1), vector(1, 0, 0)).unwrap(),
+        ));
+        let answer =
+            crate::intersect_surfaces(&mut geom, plane, torus, &mut Decider::default()).unwrap();
+        let crate::SurfacePair::Meets(components) = answer.value else {
+            panic!("expected two circular sections")
+        };
+        let [
+            crate::Component::Curve { curve: first, .. },
+            crate::Component::Curve { curve: other, .. },
+        ] = components.as_slice()
+        else {
+            panic!("expected two circular sections")
+        };
+        let position = geom.curve(*other).parameter_origin(&geom);
+        assert_never_kept(&geom, *first, plane, position);
+    }
 }

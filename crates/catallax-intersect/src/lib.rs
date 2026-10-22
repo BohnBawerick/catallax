@@ -1,8 +1,8 @@
 //! Piece 4 of catallax: exact intersections.
 //!
-//! Where plane, cylinder and sphere pairs meet, as curves and vertices stored
-//! by definition; meetings of curves with surfaces; closed forms, membership,
-//! ordering and tangents along curves; certified traces of curve arcs.
+//! Plane/cylinder/sphere intersections and closed-form cone/torus sections,
+//! stored by definition; curve-surface meetings, branch-aware membership,
+//! ordering and tangents; certified finite curve traces.
 //!
 //! The contract is `docs/pieces/04-intersections.md`.
 
@@ -238,14 +238,22 @@ impl CurveTrace {
     }
 }
 
-/// Whether this pair of surface kinds is covered.
+/// Whether these kinds have an intersection path; individual poses can still refuse.
 pub fn supports(a: SurfaceKind, b: SurfaceKind) -> bool {
     matches!(
         a,
-        SurfaceKind::Plane | SurfaceKind::Cylinder | SurfaceKind::Sphere
+        SurfaceKind::Plane
+            | SurfaceKind::Cylinder
+            | SurfaceKind::Cone
+            | SurfaceKind::Sphere
+            | SurfaceKind::Torus
     ) && matches!(
         b,
-        SurfaceKind::Plane | SurfaceKind::Cylinder | SurfaceKind::Sphere
+        SurfaceKind::Plane
+            | SurfaceKind::Cylinder
+            | SurfaceKind::Cone
+            | SurfaceKind::Sphere
+            | SurfaceKind::Torus
     )
 }
 

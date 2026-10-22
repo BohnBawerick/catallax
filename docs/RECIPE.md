@@ -421,7 +421,7 @@ Choices:
 - **Placements are points and directions, not positions on a named face.** A hole then depends on no face's frame, and moving the face does not move the hole by surprise. The alternative is a face reference plus 2D coordinates. The hole would follow its face, but the language would need a rule for each face's 2D frame.
 - **One step holds several placements, each with an id.** A bolt circle is one feature, and deleting one hole keeps the others' names. The alternative is one step per hole. That is simpler, but a bolt circle of twelve holes becomes twelve steps.
 
-The B-rep half needs cones in booleans before it can build countersinks and point tips (PRD section 4).
+The B-rep boolean path now builds coaxial cylindrical countersinks and apex-cut cone cases. This does not yet implement the named hole operation or its full placement and origin-set rules; general cone/torus poses remain unfinished.
 
 ### 4.4 Boolean
 

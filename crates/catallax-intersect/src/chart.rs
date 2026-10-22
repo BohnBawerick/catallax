@@ -310,6 +310,7 @@ impl Linear {
 enum Inverse {
     Circle { cos: Linear, sin: Linear },
     Squared { value: Linear, lo: Real, span: Real },
+    Affine { value: Linear, lo: Real, span: Real },
 }
 #[derive(Clone, Debug)]
 pub(super) struct Chart {
@@ -346,6 +347,7 @@ impl Chart {
                 let u = (&value.at(p) - lo) / span.clone();
                 u.sqrt() / (Real::one() + (Real::one() - u).sqrt())
             }
+            Inverse::Affine { value, lo, span } => (&value.at(p) - lo) / span.clone(),
         };
         Ok(Some(if self.reverse { Real::one() - t } else { t }))
     }
@@ -753,6 +755,118 @@ pub(super) fn segment(from: &Point3, to: &Point3, dec: &mut Decider) -> Result<[
         std::array::from_fn(|i| E::constant(a[i].clone()) + E::constant(b[i] - a[i]) * E::t());
     dec.check_deadline()?;
     Ok(coords)
+}
+pub(super) fn conic_arc(
+    form: &CurveForm,
+    from: &Point3,
+    to: &Point3,
+    dec: &mut Decider,
+) -> Result<Chart, Refusal> {
+    let (origin, normal, axis) = match form {
+        CurveForm::Parabola {
+            vertex,
+            normal,
+            axis_dir,
+            ..
+        } => (vertex, normal, axis_dir),
+        CurveForm::Hyperbola {
+            center,
+            normal,
+            axis_dir,
+            ..
+        } => (center, normal, axis_dir),
+        _ => unreachable!("open conic"),
+    };
+    let u = unit(axis);
+    let v = unit(&normal.cross(axis));
+    let lo = from.minus(origin).dot(&v);
+    let span = to.minus(from).dot(&v);
+    let y = E::constant(lo.clone()) + E::constant(span.clone()) * E::t();
+    let x = match form {
+        CurveForm::Parabola { focal, .. } => {
+            y.clone().square() / E::constant(&Real::from_i64(4) * focal)
+        }
+        CurveForm::Hyperbola {
+            transverse_sq,
+            conjugate_sq,
+            branch,
+            ..
+        } => {
+            let x = (E::constant(transverse_sq.clone())
+                * (E::integer(1) + y.clone().square() / E::constant(conjugate_sq.clone())))
+            .sqrt();
+            if *branch == catallax_numbers::StrictSign::Positive {
+                x
+            } else {
+                -x
+            }
+        }
+        _ => unreachable!("open conic"),
+    };
+    let o = [&origin.x, &origin.y, &origin.z];
+    let a = [&u.x, &u.y, &u.z];
+    let b = [&v.x, &v.y, &v.z];
+    let coords = std::array::from_fn(|i| {
+        E::constant(o[i].clone())
+            + E::constant(a[i].clone()) * x.clone()
+            + E::constant(b[i].clone()) * y.clone()
+    });
+    dec.check_deadline()?;
+    Ok(Chart {
+        coords,
+        inverse: Inverse::Affine {
+            value: lin(origin, &v),
+            lo,
+            span,
+        },
+        checks: vec![],
+        reverse: false,
+    })
+}
+pub(super) fn conic_local(
+    form: &CurveForm,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<Chart, Refusal> {
+    let (normal, axis) = match form {
+        CurveForm::Parabola {
+            normal, axis_dir, ..
+        }
+        | CurveForm::Hyperbola {
+            normal, axis_dir, ..
+        } => (normal, axis_dir),
+        _ => unreachable!("open conic"),
+    };
+    let v = unit(&normal.cross(axis));
+    conic_arc(
+        form,
+        &point.plus(&v.scaled(&Real::from_i64(-1))),
+        &point.plus(&v),
+        dec,
+    )
+}
+pub(super) fn line_local(
+    origin: &Point3,
+    direction: &catallax_shapes::RVector3,
+    dec: &mut Decider,
+) -> Result<Chart, Refusal> {
+    let v = direction.to_real();
+    let from = origin.plus(&v.scaled(&Real::from_i64(-1)));
+    let to = origin.plus(&v);
+    let inverse = lin(
+        origin,
+        &v.scaled(&(Real::one() / real(&direction.norm_squared()))),
+    );
+    Ok(Chart {
+        coords: segment(&from, &to, dec)?,
+        inverse: Inverse::Affine {
+            value: inverse,
+            lo: Real::from_i64(-1),
+            span: Real::from_i64(2),
+        },
+        checks: vec![],
+        reverse: false,
+    })
 }
 
 #[cfg(test)]

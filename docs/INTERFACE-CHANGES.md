@@ -403,6 +403,14 @@ Why: recipes need actual B-rep features and persistent operation names. Rational
 
 Migration: explicitly relabel reviewed version 1 or 2 recipes as version 3, then parse/check/write. Earlier operation meanings are unchanged. Match the new operation variant; field evaluation of sketch features and through-all remains unsupported. Use `catallax_features::evaluate` for named B-rep recipe builds, then the existing measurement and STEP APIs on its returned model and body. No command, question format, manifest format, legacy unnamed geometry or STEP format changes.
 
+## 2026-10-22: rational closed-form cone and torus boolean paths
+
+Pieces: 4, 5, 6, 7; the exchange contract is unchanged
+Change: add plane–cone conics and generator rays, circular plane–torus sections, coaxial conic pairs and certified sphere/tube separation. `supports` now reports an implemented path for all five current surface kinds; it does not promise every pose. Curve membership and equality retain nappes and ray/branch domains, open conics have finite traces, and odd higher-order torus contacts remain crossings. Boolean charts and probes handle conical faces, apex loops and complete circular torus regions. Measurement integrates torus parallels by their exact Fourier mean and cone generators by their proven zero boundary form.
+Why: countersinks, apex cuts and circular torus cuts need complete intersect/imprint/classify/keep/sew/measure/STEP paths, not blanket kind refusals or quadrature of removable singularities.
+Migration: signatures, stored rational frames, CLI kind tags, budgets and STEP schema are unchanged. Missing general traces return `intersect.traced-pair-required`; irrational direction storage returns `intersect.algebraic-direction-required`; unimplemented noncircular torus charts return `boolean.torus-chart-required`. These are temporary implementation gaps. Open conics are not relabelled as `intersection` in the legacy manifest; their exchange exposure still requires the separately versioned contract decision. Rebase onto the coordinated algebraic foundation before widening these definitions.
+Unresolved nappe and new conic component selectors refuse hit construction with the originating numeric code, rather than retaining the wrong component with a mark. The existing bounded branch marks for legacy plans remain unchanged.
+
 ## 2026-10-22: field profile sweeps and through-all cuts
 
 Pieces: field, features, recipe

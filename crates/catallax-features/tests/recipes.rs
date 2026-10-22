@@ -1,8 +1,8 @@
 //! End-to-end recipe construction, through-all bounds and boolean provenance.
 
 use catallax_features::{Built, evaluate};
-use catallax_numbers::{Ball, Decider, Rational};
-use catallax_recipe::{Recipe, Role};
+use catallax_numbers::{Ball, Decider, Outcome, Rational};
+use catallax_recipe::{ElementId, Origin, Recipe, Role, StepId, VertexName};
 use serde_json::{Value, json};
 
 fn rectangle(id: &str, x: i64, y: i64, width: i64, height: i64, z: i64) -> Value {
@@ -296,5 +296,84 @@ fn existing_stock_body_intersects_a_named_extrusion() {
     }
     for face in built.model.faces_of_body(built.result) {
         assert!(!built.model.face_origins(face).is_empty());
+    }
+}
+
+#[test]
+fn cone_apex_names_survive_singular_loops_and_split_edge_fans() {
+    let origin = |step: &str, role| Origin {
+        step: StepId::new(step).unwrap(),
+        role,
+    };
+    let side = |name: &str| Role::Side {
+        segment: ElementId::new(name).unwrap(),
+        path: None,
+    };
+    for (tool, tool_side, split_apex) in [
+        (
+            json!({"id":"tool", "op":"cylinder", "radius":"1", "height":"4", "pose":{"rotation":["1","0","0","0"], "translation":["0","0","-1"]}}),
+            "wall",
+            false,
+        ),
+        (
+            json!({"id":"tool", "op":"block", "size":["4","6","4"], "pose":{"rotation":["1","0","0","0"], "translation":["0","-3","-1"]}}),
+            "x_min",
+            true,
+        ),
+    ] {
+        let built = build(
+            vec![
+                json!({"id":"cone", "op":"cone", "base_radius":"2", "top_radius":"0", "height":"2", "pose":{"rotation":["1","0","0","0"], "translation":["0","0","0"]}}),
+                tool,
+                json!({"id":"result", "op":"boolean", "kind":"intersect", "target":"cone", "tool":"tool"}),
+            ],
+            "result",
+        );
+        let source = built.bodies[&StepId::new("cone").unwrap()];
+        let source_apex = built.model.vertices_of_body(source)[0];
+        let point = built.model.vertex(source_apex).point;
+        let mut dec = Decider::default();
+        let apex = built
+            .model
+            .vertices_of_body(built.result)
+            .into_iter()
+            .find(|vertex| {
+                matches!(
+                    built.model.geom().same_point(
+                        point,
+                        built.model.vertex(*vertex).point,
+                        &mut dec,
+                    ),
+                    Outcome::ProvenCoincident(_)
+                )
+            })
+            .unwrap();
+        let wall = origin("cone", side("wall"));
+        let cut = origin("tool", side(tool_side));
+        let mut incident = vec![wall.clone()];
+        if split_apex {
+            incident.push(cut.clone());
+        }
+        assert_eq!(
+            built.model.vertex_name(built.result, apex),
+            Some(VertexName::new(incident).unwrap())
+        );
+        let actual = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .flat_map(|face| {
+                let origins = built.model.face_origins(face);
+                assert_eq!(origins.len(), 1);
+                origins.iter().cloned()
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = [origin("cone", Role::Start), wall, cut]
+            .into_iter()
+            .collect();
+        assert_eq!(actual, expected);
+        let volume = Ball::from_rational(&Rational::parse("4/3").unwrap(), 192) * Ball::pi(192);
+        let properties = mass(&built);
+        assert!(properties.volume.lo <= volume.lo() && properties.volume.hi >= volume.hi());
     }
 }

@@ -31,6 +31,7 @@ mod project;
 mod region;
 mod sewing;
 mod stages;
+mod torus_region;
 
 #[cfg(test)]
 mod tests;

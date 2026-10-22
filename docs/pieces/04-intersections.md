@@ -34,7 +34,7 @@ Keep every existing successful rational answer byte-identical through this prepa
 
 After conic preparation, widen every `CurveForm` direction to `Vector3`, including the new forms. Positions remain `Point3`; all dimensions are `Real`. Stored analytic curves follow piece 2's matching field changes. Configuration quantities become `Real`; use rational fast paths when available, otherwise the decider. `Branch` now means a certified intersection component without a recognised analytic form, not only a quartic curve. Its coefficients and equations use `RealPoly` and piece 1's certified algebraic solver path. Never clear an algebraic coefficient by replacing it with a decimal or by accepting all conjugate roots.
 
-The required new coverage includes cone/plane open conics, torus/plane circles with irrational squared radii, and elliptic-cylinder/plane sections. General cone, torus and elliptic-cylinder pairs still require component isolation, singular handling, membership, ordering and certified traces before `supports` may advertise them. A surface enum variant alone is not coverage. Existing unsupported codes stay temporary failures for cases not yet implemented; the first code change that removes a restriction must update the affected baseline table and tests.
+The required new coverage includes cone/plane open conics, torus/plane circles with irrational squared radii, and elliptic-cylinder/plane sections. `supports` identifies kind pairs with an implemented path, not a guarantee for every pose. General cone, torus and elliptic-cylinder coverage still requires component isolation, singular handling, membership, ordering and certified traces. A surface enum variant alone is not coverage. Missing paths retain specific temporary failures; every coverage change updates the affected baseline table and tests.
 
 Preserve nappe selectors, shared root correlations and construction incidences through all operations. Surface-pair and hit ordering must use exact comparisons in the documented order. Pair reversal changes orientation as specified, never the selected point sets. Traces enclose coefficient uncertainty and chart derivatives at the caller's precision and retain finite trims on open curves.
 
@@ -68,11 +68,19 @@ For a vector `v`, `|v|` means `sqrt(v . v)` as a `Real`, and `v^` means `v / |v|
 
 ## Coverage
 
-`supports(a, b)` is true exactly when both kinds are `Plane`, `Cylinder` or `Sphere`.
-Every function of this piece except `supports` refuses a cone or a torus. `intersect_surfaces` refuses with `intersect.unsupported-pair`. `intersect_curve_surface` refuses with `intersect.unsupported-pair` when `s` is a cone or torus, checked before the curve. Every function that takes a curve refuses with `intersect.unsupported-curve` a curve whose definition names a cone or torus.
-Cones come next, then tori (DESIGN.md, first milestone).
+`supports(a, b)` is true when both kinds are among `Plane`, `Cylinder`, `Cone`, `Sphere` and `Torus`. Plane/cylinder/sphere paths retain their existing coverage. Cone/torus paths currently cover the closed-form configurations below, not arbitrary intersecting poses.
 
-The curves this piece handles are lines, circles and ellipses with any valid piece 2 data, and intersection curves whose two surfaces are planes, cylinders or spheres.
+| Pair | Current cone/torus coverage |
+| --- | --- |
+| Plane–cone | Circles, ellipses, parabolas, the selected positive-nappe hyperbola branch, apex points and rational-direction generator rays |
+| Cone–cylinder, cone–sphere, cone–cone | Coaxial circles, tangent circles, isolated apex points, coincidence and separation |
+| Plane–torus | Perpendicular circular sections, meridian circles through the axis, supporting-plane separation and isolated supporting tangency |
+| Cylinder–torus, sphere–torus, cone–torus, torus–torus | Coaxial circles, tangencies and separation |
+| Sphere–torus off axis | Certified containment/separation bounds, including a sphere inside the tube, and the meridian tangency circle of a sphere centred on the core |
+
+Unimplemented intersecting poses return `intersect.traced-pair-required`; definitions needing an irrational stored direction return `intersect.algebraic-direction-required` until the common algebraic foundation lands. Neither means impossible geometry.
+
+Curve queries include closed conics from these pairs and finite open-conic arcs. Membership retains the cone nappe, generator-ray and component selectors. A polynomial carrier alone does not establish membership. An unresolved cone nappe or new conic divider makes hit construction refuse with the originating numeric code; it cannot retain the other component with a mark. Legacy bounded divider marks are unchanged.
 
 ## Where two surfaces meet
 
@@ -91,7 +99,7 @@ A component is either `Component::Curve { curve, contact, singular }` or `Compon
 
 ### Rules shared by every configuration
 
-**Exact configuration.** Every boundary between configurations is a zero of a rational quantity of the two definitions. This function decides all of them with exact rational arithmetic. It makes no `Decider` call, adds nothing to the statistics, never returns a mark, and answers even after the deadline. For a supported pair it never refuses, with one exception: the equal-radius pair of cylinders with crossing axes whose axis lengths have an irrational ratio (configuration CC6 below) is refused with `intersect.unsupported-pair`, and nothing is added to the store. Question operands never meet that exception, because their axes are rational unit vectors.
+**Exact configuration.** The plane/cylinder/sphere tables decide configuration boundaries with exact rational arithmetic, without a `Decider` call, statistics or marks, even after the deadline. Their existing exception remains the CC6 equal-radius crossing-cylinder pair with an irrational axis-length ratio: it refuses with `intersect.unsupported-pair` before adding geometry. Question operands do not meet that exception because their axes are rational unit vectors. New cone/torus paths use the caller's decider where an algebraic sign is needed; a refused pair adds no partial components and returns no marks.
 
 **When there is a rational closed form.** A curve component that is a line, circle or ellipse whose fields, as given by the tables, are all rational is added as that analytic curve. Otherwise it is added as an intersection curve `Curve::Intersection { surfaces: [a, b], witness }` with the witness the tables give, and `curve_form` returns its closed form. A table says when a field can be irrational: a line origin `F + sqrt(h2) v` is rational exactly when the rational `h2` is the square of a rational, and similarly for the other square roots. Tangent curves always have rational fields.
 
@@ -239,7 +247,7 @@ The upper branch is the one on the side `(p - F) . w > 0`. In CS7, `d = R - r` i
 - `Hyperbola { center, normal, axis_dir, transverse_sq, conjugate_sq, branch }`: one branch of `x²/transverse_sq - y²/conjugate_sq = 1`, with positive exact `Real` squared dimensions and `sign(x) = branch`. The unit `x` direction is `axis_dir`, the unit `y` direction is `normal x axis_dir`, and the origin is `center`. Opposite `StrictSign` selectors name different components;
 - `Branch`: an intersection branch with no conic closed form.
 
-For both open conics, the two defining directions are nonzero and perpendicular. Increasing `y` fixes the natural direction. These forms extend the public type only; the supported surface-pair set remains plane, cylinder and sphere. No cone or torus pair is added by this interface cutover.
+For both open conics, the two defining directions are nonzero and perpendicular. Increasing `y` fixes the natural direction. Plane–cone sections now return these forms for their selected positive-nappe component; finite trims remain part of every open-arc query.
 
 For a line, circle or ellipse it returns that curve's own fields and makes no decision. For an intersection curve on surfaces `[s0, s1]` with witness `p` it returns the form of the component of the tables that contains `p`. The configuration is exact rational arithmetic; which component holds `p` (and so the sign of a line's `dir` or a circle's `normal`) is one `Decider::sign` decision on the dividing quantity named below. When that decision ends `NotExact`, `curve_form` refuses with the `NotExact`'s code; a `Refused` is returned unchanged:
 
@@ -254,8 +262,7 @@ For a line, circle or ellipse it returns that curve's own fields and makes no de
 | cylinder and sphere, centre on the axis | `Circle { center: c + z w, normal, radius_sq: r^2, ref_dir }`, with `z = ((p - c) . w) / \|w\|^2`, the cylinder's `ref_dir`, and `normal` as CS1 gives it for the sign of `(p - c) . w` |
 | cylinder and sphere, centre off the axis | `Branch` |
 
-An intersection curve made by this piece with a `Line` or `Circle` form is the whole of that line or circle. An intersection curve built by hand on a CC6 pair would be an open arc of an ellipse between the singular points, with a direction the CC6 normals do not fix. Every function of this piece refuses such a curve with `intersect.unsupported-curve`. `intersect_surfaces` never makes one: it adds the CC6 ellipses as ellipses.
-A curve on a cone or a torus is refused with `intersect.unsupported-curve`.
+An intersection curve with a `Circle` form is the whole circle. A `Line` form is a carrier: cone generators remain rays from the apex, and `on_curve` checks the ray domain. Such a ray is not globally the same curve as the whole line. Parabolas and hyperbola branches likewise retain their selected domain. An intersection curve built by hand on a CC6 pair would be an open arc of an ellipse between singular points, with a direction the CC6 normals do not fix; it still refuses with `intersect.unsupported-curve`. `intersect_surfaces` stores those CC6 ellipses analytically instead.
 
 The front end counts edges by `curve_form`, so an intersection curve with a line form counts as a line in the manifest's `edges_by_kind`, and piece 7 writes it as a `LINE` (`JUDGE-INTERFACE.md`).
 
@@ -368,8 +375,10 @@ A trace piece encloses its non-rational constants when a call needs them, at tha
 
 | Code | When |
 | --- | --- |
-| `intersect.unsupported-pair` | a cone or torus surface, or the CC6 pair whose axis lengths have an irrational ratio |
-| `intersect.unsupported-curve` | a curve whose definition names a cone or a torus, or an intersection curve built by hand on a CC6 pair |
+| `intersect.unsupported-pair` | the CC6 pair whose axis lengths have an irrational ratio, or an unknown surface kind |
+| `intersect.unsupported-curve` | an unsupported manually defined intersection, including the CC6 definition described above |
+| `intersect.traced-pair-required` | a valid cone/torus pose needs the general certified branch tracer |
+| `intersect.algebraic-direction-required` | a valid closed form needs an irrational direction that the current rational frame cannot store |
 
 `numbers.*` refusals pass through. This piece adds no `NotExact` code.
 

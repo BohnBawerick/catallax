@@ -39,8 +39,9 @@ This piece adds no number type and holds no tolerance.
 
 ## The bodies it works on
 
-An operand is a `Solid` or `Empty` body (piece 3) that passes `Model::check`, whose faces lie on planes, cylinders and spheres, and whose edges lie on curves piece 4 supports. Its faces and edges need not be maximal, and it may have several lumps and voids.
-An operand of another kind is refused with `boolean.not-solid`. An operand with a face on a cone or a torus is refused by piece 4 with `intersect.unsupported-pair`, in the intersect stage.
+An operand is a `Solid` or `Empty` body (piece 3) that passes `Model::check`, with faces and boundary curves covered by piece 4. Its faces and edges need not be maximal, and it may have several lumps and voids. An operand of another body kind is refused with `boolean.not-solid`.
+
+Cone faces use an apex-safe radial chart and exact rational probes with certified chart paths. Point loops survive imprint and sew when they remain isolated apex boundaries. Torus regions bounded by complete parallel or meridian circles use exact two-angle component labels, independent of arbitrary parameter seams. General noncircular torus boundaries still require a certified periodic chart. Missing intersection and chart paths are temporary coverage failures, not invalid operands.
 
 The result is a `Solid` or `Empty` body that:
 
@@ -201,6 +202,7 @@ The point may also lie on another face, including at an isolated touching point 
 | `boolean.imprint-ambiguous` | intersect or imprint | edges meeting at a vertex could not be ordered around it, or a decision ended `NotExact` where the degenerate branch would need a fact no proof gives |
 | `boolean.merge-ambiguous` | sew | a decision behind a merge of faces, edges or vertices ended `NotExact` |
 | `boolean.no-rational-point` | where `face_point` was called (usually classify) | no rational point was found on a face's surface where one is needed |
+| `boolean.torus-chart-required` | where face membership or projection was called | a torus boundary is not covered by the complete-circle periodic region path |
 
 Refusals of pieces 1, 2 and 4 keep their codes. The stage of a refusal from `classify_point` or `face_point` called inside a stage is that stage. Called directly, they return the code alone.
 
@@ -410,7 +412,7 @@ In cases 17 to 21, `A = block([10, 10, 10], 0)`.
 ### Edge cases
 
 45. Empty operands: with `E` from `empty(model)` and `A` any operand above, `A ∪ E` and `E ∪ A` have `A`'s counts, `A ∩ E`, `E ∩ A` and `E − A` are `Empty`, `A − E` has `A`'s counts, and `E ∪ E` is `Empty`.
-46. A body of another kind would be refused with `boolean.not-solid`, stage `intersect`; piece 3 has no such kind yet, so no test builds one. A cone operand (piece 3's `cone(2, 1, 2, identity)`) with a block that meets it is refused with `intersect.unsupported-pair`, stage `intersect`. A cone and a block far apart: the answer may be refused the same way or answered; it is never wrong.
+46. A body of another kind would be refused with `boolean.not-solid`, stage `intersect`; piece 3 has no such kind yet, so no test builds one. Valid cone and torus cases are checked against exact mass references, closed-shell incidence, Euler characteristic and STEP export, rather than an expectation that their kind is unsupported.
 47. A connected piece touching itself along a curve: `A = block([10, 10, 10], 0)`, `B = cyl(5, 6, (5, 5, 2))`. `A − B` is the block minus an inscribed cylinder that stops short of the top and bottom faces; the corner regions are joined through the slabs `z < 2` and `z > 8` and touch each other along four segments. Refused with `boolean.self-touching-shell`, stage `sew`.
 
 ### Stages
@@ -462,7 +464,6 @@ The numbers are written to the benchmark output so later runs can be compared.
 
 ## Out of scope for this piece
 
-- Cones and tori (they come with piece 4's next coverage).
 - Fillet, shell and offset, which reuse these stages later.
 - Sheets, wires, meshes and lattices.
 - Any tolerance. This piece has none.

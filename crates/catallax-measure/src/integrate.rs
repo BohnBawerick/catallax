@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use catallax_intersect::TracePiece;
-use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Refusal};
+use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
 
 mod analytic;
 pub(crate) use analytic::Analytic;
@@ -75,6 +75,10 @@ impl<'a> Work<'a> {
         }
         self.charge()?;
         Ok(Ball::from_rational(r, self.precision))
+    }
+    pub(crate) fn real(&mut self, value: &Real) -> Checked<Ball> {
+        self.charge()?;
+        Ok(self.dec.enclose_at(value, self.precision)?)
     }
 
     pub(crate) fn pi(&mut self) -> Checked<Ball> {

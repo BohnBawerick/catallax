@@ -37,7 +37,7 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-numbers` supplies exact arithmetic, certified enclosures and decisions, polynomial roots, construction facts and marks.
 - `catallax-shapes` stores exact rational poses, analytic geometry and derived points by definition, with proven parameter enclosures.
 - `catallax-topology` builds blocks, cylinders, spheres, cones and tori in append-only curved topology and checks structural faults.
-- `catallax-intersect` handles plane, cylinder and sphere pairs, curve-surface meetings, branch-aware queries and certified traces. General cone and torus boolean coverage is missing.
+- `catallax-intersect` handles plane, cylinder and sphere pairs, closed-form cone/torus configurations, branch-aware curve queries and certified finite conic traces. General noncoaxial cone and torus branch tracing remains unfinished.
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Ambiguous and unsupported cases remain unfinished work.
 - `catallax-measure` computes volume, area and centroid with proven bounds for the body actually built.
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.

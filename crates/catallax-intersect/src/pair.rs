@@ -9,23 +9,83 @@ use catallax_shapes::{
 };
 use std::{cell::RefCell, collections::VecDeque, sync::Arc};
 
+mod conics;
+
+#[derive(Clone, Debug)]
+enum DividerValue {
+    Plane {
+        origin: Point3,
+        vector: Vector3,
+    },
+    Radius {
+        origin: Point3,
+        axis: Vector3,
+        inverse_norm_sq: Real,
+        radius_sq: Real,
+    },
+}
 #[derive(Clone, Debug)]
 pub(super) struct Divider {
-    pub origin: Point3,
-    pub vector: Vector3,
+    value: DividerValue,
     pub length_lower: Rational,
+    // The older quartic plans store a canonical direction and reverse it
+    // across the divider. Conic plans store each component's own direction.
+    pub canonical_direction: bool,
 }
 impl Divider {
     fn rational(origin: RPoint3, vector: RVector3) -> Self {
         let lower = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+        Self::linear(origin.to_real(), vector.to_real(), lower, true)
+    }
+    fn linear(
+        origin: Point3,
+        vector: Vector3,
+        length_lower: Rational,
+        canonical_direction: bool,
+    ) -> Self {
         Self {
-            origin: origin.to_real(),
-            vector: vector.to_real(),
-            length_lower: lower,
+            value: DividerValue::Plane { origin, vector },
+            length_lower,
+            canonical_direction,
+        }
+    }
+    fn conic(origin: RPoint3, vector: RVector3) -> Self {
+        let mut divider = Self::rational(origin, vector);
+        divider.canonical_direction = false;
+        divider
+    }
+    fn radial(
+        origin: RPoint3,
+        axis: RVector3,
+        radius_sq: Rational,
+        radius_lower: Rational,
+    ) -> Self {
+        let inverse_norm_sq = real(&(&Rational::from_i64(1) / &axis.norm_squared()));
+        Self {
+            value: DividerValue::Radius {
+                origin: origin.to_real(),
+                axis: axis.to_real(),
+                inverse_norm_sq,
+                radius_sq: real(&radius_sq),
+            },
+            length_lower: radius_lower,
+            canonical_direction: false,
         }
     }
     pub fn value(&self, p: &Point3) -> Real {
-        p.minus(&self.origin).dot(&self.vector)
+        match &self.value {
+            DividerValue::Plane { origin, vector } => p.minus(origin).dot(vector),
+            DividerValue::Radius {
+                origin,
+                axis,
+                inverse_norm_sq,
+                radius_sq,
+            } => {
+                let d = p.minus(origin);
+                let radial = d.norm_squared() - &d.dot(axis).square() * inverse_norm_sq;
+                &radial - radius_sq
+            }
+        }
     }
 }
 #[derive(Clone, Debug)]
@@ -472,11 +532,7 @@ fn cylinders(a: &Cylinder, b: &Cylinder) -> Result<Plan, Refusal> {
     Ok(Plan::branches(
         vec![wplus, wminus],
         node,
-        Some(Divider {
-            origin: fb.to_real(),
-            vector: e1,
-            length_lower: r(1),
-        }),
+        Some(Divider::linear(fb.to_real(), e1, r(1), true)),
         frame,
     ))
 }
@@ -632,6 +688,22 @@ fn uncached_plan(a: &Surface, b: &Surface) -> Result<Plan, Refusal> {
         (Surface::Cylinder(a), Surface::Cylinder(b)) => return cylinders(a, b),
         (Surface::Cylinder(c), Surface::Sphere(s)) => cylinder_sphere(c, s, r(1)),
         (Surface::Sphere(s), Surface::Cylinder(c)) => cylinder_sphere(c, s, r(-1)),
+        (Surface::Plane(p), Surface::Cone(c)) => return conics::plane_cone(p, c, r(1)),
+        (Surface::Cone(c), Surface::Plane(p)) => return conics::plane_cone(p, c, r(-1)),
+        (Surface::Cone(c), Surface::Cylinder(y)) => return conics::cone_cylinder(c, y, r(1)),
+        (Surface::Cylinder(y), Surface::Cone(c)) => return conics::cone_cylinder(c, y, r(-1)),
+        (Surface::Cone(c), Surface::Sphere(s)) => return conics::cone_sphere(c, s, r(1)),
+        (Surface::Sphere(s), Surface::Cone(c)) => return conics::cone_sphere(c, s, r(-1)),
+        (Surface::Cone(a), Surface::Cone(b)) => return conics::cones(a, b),
+        (Surface::Plane(p), Surface::Torus(t)) => return conics::plane_torus(p, t, r(1)),
+        (Surface::Torus(t), Surface::Plane(p)) => return conics::plane_torus(p, t, r(-1)),
+        (Surface::Cylinder(c), Surface::Torus(t)) => return conics::cylinder_torus(c, t, r(1)),
+        (Surface::Torus(t), Surface::Cylinder(c)) => return conics::cylinder_torus(c, t, r(-1)),
+        (Surface::Sphere(s), Surface::Torus(t)) => return conics::sphere_torus(s, t, r(1)),
+        (Surface::Torus(t), Surface::Sphere(s)) => return conics::sphere_torus(s, t, r(-1)),
+        (Surface::Cone(c), Surface::Torus(t)) => return conics::cone_torus(c, t, r(1)),
+        (Surface::Torus(t), Surface::Cone(c)) => return conics::cone_torus(c, t, r(-1)),
+        (Surface::Torus(a), Surface::Torus(b)) => return conics::tori(a, b),
         _ => return Err(refused_pair()),
     })
 }
@@ -678,6 +750,22 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
             components.push(Component::Point { point });
         }
     } else {
+        for (index, &point) in points.iter().enumerate() {
+            if !plan
+                .curves
+                .iter()
+                .any(|spec| spec.singular.contains(&index))
+            {
+                record(
+                    geom,
+                    FactKind::Tangent,
+                    GeomKey::Surface(a),
+                    GeomKey::Surface(b),
+                    Some(GeomKey::Point(point)),
+                );
+                components.push(Component::Point { point });
+            }
+        }
         for spec in &plan.curves {
             let witness = spec
                 .witness

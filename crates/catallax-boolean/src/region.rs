@@ -1,6 +1,7 @@
 //! Face membership by certified boundary homotopies in rational charts.
 //! Spherical winding is relative to a fixed rational reference point, so
 //! changing a projection pole cannot change a cell's winding signature.
+//! Circular torus cuts use seam-independent cells of the two angular circles.
 
 use crate::geometry::{natural_ends, on_arc, product, refusal, sign};
 use crate::project::{
@@ -303,6 +304,12 @@ pub(crate) fn signatures(
     point: PointId,
     dec: &mut Decider,
 ) -> Result<Vec<i64>, Refusal> {
+    if let Surface::Torus(torus) = surface
+        && let Some(signature) =
+            crate::torus_region::signature(model, torus, loop_groups, point, dec)?
+    {
+        return Ok(signature);
+    }
     let mut direct = Vec::with_capacity(loop_groups.len());
     for group in loop_groups {
         if let Some(value) = crate::fast_region::signature(model, surface, group, point, dec)? {
@@ -426,13 +433,15 @@ pub(crate) fn locate(
             }
         }
     }
-    if let Some(location) = crate::probed_region::locate(model, face, point, dec)? {
+    if !matches!(model.geom().surface(f.surface), Surface::Torus(_))
+        && let Some(location) = crate::probed_region::locate(model, face, point, dec)?
+    {
         return Ok(location);
     }
     let surface = model.geom().surface(f.surface).clone();
     let groups = vec![f.loops.clone()];
-    let value = signatures(model, &surface, &groups, point, dec)?[0];
-    if matches!(surface, Surface::Sphere(_)) {
+    let value = signatures(model, &surface, &groups, point, dec)?;
+    if matches!(surface, Surface::Sphere(_) | Surface::Torus(_)) {
         let barriers: Vec<EdgeId> = f
             .loops
             .iter()
@@ -442,19 +451,19 @@ pub(crate) fn locate(
             })
             .collect();
         let target = crate::points::left_probe(model, face, &barriers, dec, |model, p, _, dec| {
-            Ok(Some(signatures(model, &surface, &groups, p, dec)?[0]))
+            Ok(Some(signatures(model, &surface, &groups, p, dec)?))
         })?;
         if value == target {
             return Ok(Location::Inside);
         }
-        if (value - target).abs() == 1 {
+        if matches!(surface, Surface::Torus(_)) || (value[0] - target[0]).abs() == 1 {
             return Ok(Location::Outside);
         }
     } else {
         let value = if f.sense == Sense::Same {
-            value
+            value[0]
         } else {
-            -value
+            -value[0]
         };
         if value == 1 {
             return Ok(Location::Inside);

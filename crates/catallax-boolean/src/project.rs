@@ -103,6 +103,13 @@ impl Projection {
                 v: s.axis.cross(&s.ref_dir),
                 axis: s.axis.clone(),
             },
+            // Radial projection is a global cone chart, including the apex.
+            // Its disk orientation is opposite the nappe's axis.
+            Surface::Cone(s) => Self::Plane {
+                origin: s.apex.clone(),
+                u: s.ref_dir.clone(),
+                v: s.ref_dir.cross(&s.axis),
+            },
             Surface::Sphere(s) => {
                 let k = r(choice);
                 let rotation = Rotation::from_quaternion(
@@ -118,6 +125,12 @@ impl Projection {
                     v: rotation.apply(&unit(1)),
                     pole: rotation.apply(&unit(2)),
                 }
+            }
+            Surface::Torus(_) => {
+                return Err(refusal(
+                    "boolean.torus-chart-required",
+                    "non-circular torus boundaries require a certified periodic chart",
+                ));
             }
             _ => {
                 return Err(refusal(

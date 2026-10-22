@@ -616,3 +616,10 @@ Change: owned polynomial addition retains its left term tree and moves the right
 Why: curve substitution repeatedly cloned growing term trees and copied incoming arbitrary-precision coefficients before discarding them.
 Migration: operator signatures, coefficient domains, term order and normalized results are unchanged. Borrowed addition retains its independent result. Targeted independent polynomial tests cover substitution, cancellation, derivatives, resultants and certified systems; no precision or work-policy changes.
 
+## 2026-10-22: retain connected-exterior intersection proofs
+
+Piece: 5
+Change: an exact, nonsingular intersection of bounded operands without void shells retains the proof that every result shell is outer. Each operand has a connected exterior; those exteriors meet outside the operands' bounds, so their union is connected too. Sewing no longer reconstructs that fact through rational region sampling and ray-root isolation.
+Why: tiny, rigidly placed cylinder/sphere intersections exhausted root-isolation work while rediscovering a shell role already implied by the operation and input topology.
+Migration: selected face senses and topology construction are unchanged. Marked classifications, singular contacts and void-bearing operands retain geometric shell certification. No public signature, coefficient domain, default allowance or deadline changes. The complete 456-Boolean default scale/placement family passes with all original topology and material witnesses, and runs normally again.
+

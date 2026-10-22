@@ -401,41 +401,37 @@ fn placed_family(scale: &Rational, pose: &Pose) -> usize {
     operations
 }
 
-blind_test!(
-    #[ignore = "deferred placement family: Imprint numbers.divisor-not-separated (case23-seeded-imprint-divisor-refusal.json, case29-scaled-divisor-after-quartic.json); Sew numbers.budget-exhausted (case23-seeded-intersection-sew-budget-refusal.json); full expectations retained"]
-    case_57_default_scale_and_placement_variants,
-    {
-        let poses = placement_poses();
-        let identity = Pose::identity();
-        let small = q("1e-30");
-        let large = q("1e30");
-        let mut rng = Rng(0x570057);
-        let mut operations = 0;
-        for &id in IDS {
-            let c = case(id);
-            for (op, reverse, expected) in expectations(id) {
-                for scale in [&small, &large] {
-                    placed_pair(&c, op, reverse, &expected, scale, &identity);
-                }
-                let k = (rng.next() % 59) as i32 - 29;
-                let scale = q(&format!("1e{k}"));
-                let pose = &poses[operations % poses.len()];
-                placed_pair(&c, op, reverse, &expected, &scale, pose);
-                operations += 1;
-            }
-        }
-        for number in 41..=44 {
+blind_test!(case_57_default_scale_and_placement_variants, {
+    let poses = placement_poses();
+    let identity = Pose::identity();
+    let small = q("1e-30");
+    let large = q("1e30");
+    let mut rng = Rng(0x570057);
+    let mut operations = 0;
+    for &id in IDS {
+        let c = case(id);
+        for (op, reverse, expected) in expectations(id) {
             for scale in [&small, &large] {
-                run_chain(number, scale, &identity);
+                placed_pair(&c, op, reverse, &expected, scale, &identity);
             }
             let k = (rng.next() % 59) as i32 - 29;
             let scale = q(&format!("1e{k}"));
-            let (_, _, steps, _) = run_chain(number, &scale, &poses[operations % poses.len()]);
-            operations += steps.len();
+            let pose = &poses[operations % poses.len()];
+            placed_pair(&c, op, reverse, &expected, &scale, pose);
+            operations += 1;
         }
-        eprintln!("case 57 default: {} booleans", operations * 3);
     }
-);
+    for number in 41..=44 {
+        for scale in [&small, &large] {
+            run_chain(number, scale, &identity);
+        }
+        let k = (rng.next() % 59) as i32 - 29;
+        let scale = q(&format!("1e{k}"));
+        let (_, _, steps, _) = run_chain(number, &scale, &poses[operations % poses.len()]);
+        operations += steps.len();
+    }
+    eprintln!("case 57 default: {} booleans", operations * 3);
+});
 
 blind_test!(
     #[ignore = "long-run qualification: 18,392 booleans; run on demand"]

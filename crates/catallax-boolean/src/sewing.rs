@@ -546,10 +546,19 @@ pub(crate) fn make_maximal(model: &mut Model, body: BodyId, dec: &mut Decider) -
             .map(|f| (f, Sense::Same))
             .collect(),
         coincident: BTreeMap::new(),
+        intersection: false,
         marks: MarkLog::new(),
     };
     let marks = model.body(body).marks.clone();
-    rebuild(model, &BTreeSet::new(), &selection, marks, Some(body), dec)
+    rebuild(
+        model,
+        &BTreeSet::new(),
+        &selection,
+        marks,
+        Some(body),
+        false,
+        dec,
+    )
 }
 
 pub(crate) fn sew(
@@ -561,7 +570,29 @@ pub(crate) fn sew(
     let mut marks = selection.marks.clone();
     marks.extend(&model.body(imprinted.a).marks);
     marks.extend(&model.body(imprinted.b).marks);
-    rebuild(model, &imprinted.singular, selection, marks, None, dec)
+    // These bounded operands have connected exteriors, which meet outside
+    // their bounds. The intersection's exterior is their union, hence is
+    // connected too: no result shell can bound an enclosed void. Singular
+    // contacts and marked classifications retain full geometric validation.
+    let outer_shells_proven = selection.intersection
+        && imprinted.singular.is_empty()
+        && marks.is_empty()
+        && [imprinted.a, imprinted.b].into_iter().all(|body| {
+            model
+                .body(body)
+                .lumps
+                .iter()
+                .all(|lump| model.lump(*lump).shells.len() == 1)
+        });
+    rebuild(
+        model,
+        &imprinted.singular,
+        selection,
+        marks,
+        None,
+        outer_shells_proven,
+        dec,
+    )
 }
 
 fn rebuild(
@@ -570,6 +601,7 @@ fn rebuild(
     selection: &Selection,
     marks: MarkLog,
     source: Option<BodyId>,
+    outer_shells_proven: bool,
     dec: &mut Decider,
 ) -> Answered<BodyId> {
     if selection.faces.is_empty() {
@@ -802,7 +834,7 @@ fn rebuild(
     let mut outer = Vec::new();
     let mut voids = Vec::new();
     for (i, (_, fs)) in shell_faces.iter().enumerate() {
-        if orient_shell(model, fs, dec)? {
+        if outer_shells_proven || orient_shell(model, fs, dec)? {
             outer.push(i);
         } else {
             voids.push(i);

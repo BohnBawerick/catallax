@@ -107,6 +107,45 @@ fn rectangle_signed_distance_keeps_start_names_and_exact_properties() {
 }
 
 #[test]
+fn circular_sweep_boundaries_keep_their_axis_under_pose() {
+    for rotation in [[1i64, 0, 0, 0], [1, 2, 3, 4]] {
+        let pose = Pose {
+            rotation: rotation.map(Into::into),
+            translation: catallax_recipe::Vector3([5.into(), 6.into(), 7.into()]),
+        };
+        let profile =
+            Profile::new(&pose, &[circle("outer", 0, 0, 3)], &mut Decider::default()).unwrap();
+        let mut model = Model::new();
+        let body = extrude(
+            &mut model,
+            &profile,
+            &StepId::new("sweep").unwrap(),
+            &r(2),
+            None,
+        )
+        .unwrap();
+        let surface = model
+            .faces_of_body(body)
+            .into_iter()
+            .map(|face| model.face(face).surface)
+            .find(|surface| {
+                matches!(
+                    model.geom().surface(*surface),
+                    catallax_shapes::Surface::Cylinder(_)
+                )
+            })
+            .unwrap();
+        for edge in model.edges_of_body(body) {
+            assert!(model.geom().facts().holds(
+                catallax_numbers::FactKind::Coaxial,
+                catallax_shapes::GeomKey::Curve(model.edge(edge).curve),
+                catallax_shapes::GeomKey::Surface(surface)
+            ));
+        }
+    }
+}
+
+#[test]
 fn circle_and_ring_have_closed_form_mass_properties() {
     let (model, body) = build(&[circle("outer", 0, 0, 3)], 2);
     let mass = measure(&model, body);

@@ -378,9 +378,43 @@ impl GeomStore {
         &self.facts
     }
 
-    /// Records a fact; `false` if already present.
+    /// Records a fact and circular-carrier relations it guarantees; `false`
+    /// when the supplied fact is already present.
     pub fn record_fact(&mut self, fact: Fact<GeomKey>) -> bool {
-        self.facts.record(fact)
+        let recorded = self.facts.record(fact);
+        if fact.kind == FactKind::Incident
+            && fact.at.is_none()
+            && let (GeomKey::Curve(curve), GeomKey::Surface(surface)) = (fact.a, fact.b)
+            && let Curve::Circle(circle) = self.curve(curve)
+        {
+            let surface = self.surface(surface);
+            // Full incidence plus a perpendicular section plane proves that
+            // the circle's centre lies on the rotational carrier's axis.
+            let coaxial = match surface {
+                Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_) => {
+                    crate::intent::axis(surface)
+                        .is_some_and(|(_, axis)| crate::intent::parallel(&circle.normal, axis))
+                }
+                _ => false,
+            };
+            let concentric = crate::intent::center(surface)
+                .is_some_and(|center| crate::intent::same_point(center, &circle.center));
+            for (kind, holds) in [
+                (FactKind::Coaxial, coaxial),
+                (FactKind::Concentric, concentric),
+            ] {
+                if holds {
+                    self.facts.record(Fact {
+                        kind,
+                        a: fact.a,
+                        b: fact.b,
+                        at: None,
+                        origin: fact.origin,
+                    });
+                }
+            }
+        }
+        recorded
     }
 
     /// Implicit polynomial of a surface (cached).
@@ -567,7 +601,8 @@ impl GeomStore {
                 (Surface::Cone(a), Surface::Cone(b)) => {
                     zero(a.apex.minus(&b.apex).norm_squared(), dec)?
                         && zero(&a.slope - &b.slope, dec)?
-                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                        && (known(FactKind::Parallel, dec)
+                            || zero(a.axis.cross(&b.axis).norm_squared(), dec)?)
                         && math::sign(&a.axis.dot(&b.axis), dec)? == Sign::Positive
                 }
                 (Surface::Sphere(a), Surface::Sphere(b)) => {

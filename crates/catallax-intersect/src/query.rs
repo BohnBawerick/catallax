@@ -324,6 +324,15 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         Ok(f) => f,
         Err(e) => return Outcome::Refused(e),
     };
+    let known = |kind, dec: &mut Decider| {
+        let holds = geom
+            .facts()
+            .holds(kind, GeomKey::Curve(a), GeomKey::Curve(b));
+        if holds {
+            dec.note_fact_decision();
+        }
+        holds
+    };
     match (fa, fb) {
         (
             CurveForm::Line {
@@ -376,12 +385,15 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 ..
             },
         ) => {
-            match sign(&na.cross(&nb).norm_squared(), dec) {
-                Ok(Sign::Zero) => {}
-                Ok(_) => return Outcome::Proven(Apart),
-                Err(error) => return error.outcome(),
+            if !known(FactKind::Coaxial, dec) {
+                match sign(&na.cross(&nb).norm_squared(), dec) {
+                    Ok(Sign::Zero) => {}
+                    Ok(_) => return Outcome::Proven(Apart),
+                    Err(error) => return error.outcome(),
+                }
             }
             match equal_dimensions(&ra, &rb, dec) {
+                Outcome::ProvenCoincident(_) if known(FactKind::Concentric, dec) => zero(),
                 Outcome::ProvenCoincident(_) => equal_points(&a, &b, dec),
                 other => other,
             }

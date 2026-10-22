@@ -122,6 +122,63 @@ fn constructed_tangent_locus_skips_gradient_zero_proofs() {
         );
     }
 }
+
+#[test]
+fn coaxial_sections_keep_distinct_centres_without_reproving_parallelism() {
+    let mut g = GeomStore::new();
+    let cylinder = cyl(&mut g, p(0, 0, 0), v(0, 0, 1), 3, v(1, 0, 0));
+    let bottom = plane(&mut g, p(0, 0, 0), v(0, 0, 1), v(1, 0, 0));
+    let top = plane(&mut g, p(0, 0, 2), v(0, 0, 1), v(1, 0, 0));
+    let a = curve(&components(&mut g, cylinder, bottom, &mut dec())[0]);
+    let b = curve(&components(&mut g, cylinder, top, &mut dec())[0]);
+    let mut d = dec();
+    assert_eq!(
+        same_curve(&g, a, b, &mut d),
+        Outcome::Proven(catallax_shapes::Apart)
+    );
+    assert_eq!(d.stats().coincident_fact, 1);
+    assert_eq!(d.stats().coincident_exact, 0);
+}
+
+#[test]
+fn curve_surface_tangent_facts_are_local_and_reused() {
+    let mut g = GeomStore::new();
+    let torus = g.add_surface(Surface::Torus(catallax_shapes::Torus {
+        center: p(0, 0, 0).to_real(),
+        axis: v(0, 0, 1).to_real(),
+        major: r(2).into(),
+        minor: r(1).into(),
+        ref_dir: v(1, 0, 0).to_real(),
+    }));
+    let line = g.add_curve(Curve::Line(Line {
+        origin: p(1, 0, 0).to_real(),
+        dir: v(0, 1, 0).to_real(),
+    }));
+    let mut first_dec = dec();
+    let CurveSurface::Meets(first) = intersect_curve_surface(&mut g, line, torus, &mut first_dec)
+        .unwrap()
+        .value
+    else {
+        panic!("the inner tangent and two transverse crossings must meet");
+    };
+    let mut second_dec = dec();
+    let CurveSurface::Meets(second) = intersect_curve_surface(&mut g, line, torus, &mut second_dec)
+        .unwrap()
+        .value
+    else {
+        panic!("repeated intersection must preserve the meeting set");
+    };
+    for hits in [&first, &second] {
+        assert_eq!(
+            hits.iter().map(|hit| hit.contact).collect::<Vec<_>>(),
+            [Contact::Crossing, Contact::Tangent, Contact::Crossing]
+        );
+    }
+    for (a, b) in first.iter().zip(&second) {
+        point_equal(&g.position(a.point), &g.position(b.point), &mut dec());
+    }
+    assert_eq!(second_dec.stats().coincident_fact, 1);
+}
 #[test]
 fn rational_configuration_fields_and_no_decisions() {
     let mut g = GeomStore::new();

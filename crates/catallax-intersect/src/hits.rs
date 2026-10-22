@@ -7,8 +7,8 @@ use crate::{
     solve::{self, Solutions},
 };
 use catallax_numbers::{
-    Answer, Answered, BoundKind, Decider, FactKind, Mark, MarkLog, Outcome, Rational, Real,
-    RealPoly, Refusal, Sign,
+    Answer, Answered, BoundKind, Decider, Fact, FactKind, FactOrigin, Mark, MarkLog, Outcome,
+    Rational, Real, RealPoly, Refusal, Sign,
 };
 use catallax_shapes::{
     Circle, Curve, CurveId, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3, PointDef,
@@ -21,6 +21,32 @@ struct Candidate {
     position: Point3,
     contact: Contact,
     uncertain_branch: bool,
+    proven_tangent: bool,
+}
+fn known_tangent(geom: &GeomStore, c: CurveId, s: SurfaceId, position: &Point3) -> bool {
+    let a = GeomKey::Curve(c);
+    let b = GeomKey::Surface(s);
+    geom.facts().iter().any(|fact| {
+        if fact.kind != FactKind::Tangent
+            || !((fact.a == a && fact.b == b) || (fact.a == b && fact.b == a))
+        {
+            return false;
+        }
+        let Some(GeomKey::Point(at)) = fact.at else {
+            return false;
+        };
+        let point = match geom.point(at) {
+            PointDef::Explicit(point)
+            | PointDef::Meet(Meet {
+                position: Position::Closed(point),
+                ..
+            }) => point,
+            _ => return false,
+        };
+        point.x.same_definition(&position.x)
+            && point.y.same_definition(&position.y)
+            && point.z.same_definition(&position.z)
+    })
 }
 fn distance(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<Rational, Refusal> {
     let d = a.minus(b);
@@ -341,6 +367,7 @@ pub(super) fn intersect(
                 position,
                 contact: Contact::Crossing,
                 uncertain_branch,
+                proven_tangent: false,
             });
         }
     }
@@ -356,7 +383,16 @@ pub(super) fn intersect(
     } else {
         query::charts(geom, c, dec).map_err(Refusal::from)?
     };
+    let recorded_contact =
+        geom.facts()
+            .holds(FactKind::Tangent, GeomKey::Curve(c), GeomKey::Surface(s));
     for candidate in &mut candidates {
+        if recorded_contact && known_tangent(geom, c, s, &candidate.position) {
+            dec.note_fact_decision();
+            candidate.contact = Contact::Tangent;
+            candidate.proven_tangent = true;
+            continue;
+        }
         let answer = if let CurveForm::Line { dir, .. } = &form {
             match sign(&geom.surface(s).gradient(&candidate.position).dot(dir), dec) {
                 Ok(Sign::Zero) if matches!(geom.surface(s), catallax_shapes::Surface::Torus(_)) => {
@@ -387,6 +423,7 @@ pub(super) fn intersect(
         } else {
             contact(&charts, &candidate.position, &implicit, dec)
         };
+        candidate.proven_tangent = matches!(&answer, Ok(Contact::Tangent));
         candidate.contact = match answer {
             Ok(c) => c,
             Err(Failure::Refused(e)) => return Err(e),
@@ -428,6 +465,7 @@ pub(super) fn intersect(
                 Ok(std::cmp::Ordering::Equal) => {
                     sorted[i].contact = Contact::Tangent;
                     sorted[i].uncertain_branch |= candidate.uncertain_branch;
+                    sorted[i].proven_tangent &= candidate.proven_tangent;
                     break;
                 }
                 Err(Failure::Refused(e)) => return Err(e),
@@ -441,6 +479,7 @@ pub(super) fn intersect(
                         "merged hits with unresolved order",
                     );
                     candidate.contact = Contact::Tangent;
+                    candidate.proven_tangent = false;
                     candidate.uncertain_branch |= sorted[i].uncertain_branch;
                     sorted.remove(i);
                 }
@@ -465,6 +504,15 @@ pub(super) fn intersect(
                 of,
                 position: Position::Closed(candidate.position),
             }));
+            if candidate.proven_tangent && !candidate.uncertain_branch {
+                geom.record_fact(Fact {
+                    kind: FactKind::Tangent,
+                    a: GeomKey::Curve(c),
+                    b: GeomKey::Surface(s),
+                    at: Some(GeomKey::Point(point)),
+                    origin: FactOrigin::Construction("intersect.curve-surface"),
+                });
+            }
             CurveHit {
                 point,
                 contact: candidate.contact,

@@ -345,6 +345,12 @@ impl Plan {
         self.instructions = tape;
     }
 
+    /// Whether exact expression identities proved that the result is empty.
+    /// `false` makes no non-emptiness claim for general Boolean expressions.
+    pub fn is_proven_empty(&self) -> bool {
+        self.root == 0
+    }
+
     /// All source faces, including candidates later trimmed away. Call
     /// [`Self::face_query`] to establish membership in the selected result.
     pub fn faces(&self) -> &[Face] {

@@ -62,7 +62,7 @@ pub(crate) fn curve_sample(
     })))
 }
 
-fn rationalise(
+pub(crate) fn rationalise(
     surface: &Surface,
     target: &Point3,
     width: &Rational,
@@ -156,6 +156,97 @@ fn rationalise(
         }
         _ => Ok(None),
     }
+}
+
+pub(crate) fn comparison_witness(
+    surface: &Surface,
+    target: &Point3,
+    width: &Rational,
+    dec: &mut Decider,
+) -> Result<Option<RPoint3>, Refusal> {
+    match surface {
+        Surface::Cone(s) => {
+            let Some(axis_length) = sqrt_rational(&s.axis.norm_squared()) else {
+                return Ok(None);
+            };
+            let axis = s.axis.scaled(&axis_length.recip().unwrap());
+            let Some(radial) = circle_direction(
+                &s.axis,
+                &s.ref_dir,
+                &target.minus(&s.apex.to_real()),
+                width,
+                dec,
+            )?
+            else {
+                return Ok(None);
+            };
+            let height = target.minus(&s.apex.to_real()).dot(&axis.to_real());
+            let height = dec.enclose(&height, width)?.mid().max(Rational::zero());
+            Ok(Some(
+                s.apex
+                    .plus(&axis.scaled(&height))
+                    .plus(&radial.scaled(&(&s.slope * &height))),
+            ))
+        }
+        Surface::Torus(s) => {
+            let Some(axis_length) = sqrt_rational(&s.axis.norm_squared()) else {
+                return Ok(None);
+            };
+            let axis = s.axis.scaled(&axis_length.recip().unwrap());
+            let d = target.minus(&s.center.to_real());
+            let Some(radial) = circle_direction(&s.axis, &s.ref_dir, &d, width, dec)? else {
+                return Ok(None);
+            };
+            let height = d.dot(&axis.to_real());
+            let planar = d.minus(&axis.to_real().scaled(&height));
+            let x = planar.norm_squared().sqrt() - Real::from(s.major.clone());
+            let tube = catallax_shapes::Vector3::new(x, height, Real::zero());
+            let Some(tube) = circle_direction(&unit(2), &unit(0), &tube, width, dec)? else {
+                return Ok(None);
+            };
+            Ok(Some(
+                s.center
+                    .plus(&radial.scaled(&(&s.major + &(&s.minor * &tube.x))))
+                    .plus(&axis.scaled(&(&s.minor * &tube.y))),
+            ))
+        }
+        _ => rationalise(surface, target, width, dec),
+    }
+}
+
+fn circle_direction(
+    axis: &catallax_shapes::RVector3,
+    reference: &catallax_shapes::RVector3,
+    target: &catallax_shapes::Vector3,
+    width: &Rational,
+    dec: &mut Decider,
+) -> Result<Option<catallax_shapes::RVector3>, Refusal> {
+    let Some(a) = sqrt_rational(&axis.norm_squared()) else {
+        return Ok(None);
+    };
+    let Some(b) = sqrt_rational(&reference.norm_squared()) else {
+        return Ok(None);
+    };
+    let axis = axis.scaled(&a.recip().unwrap());
+    let u = reference.scaled(&b.recip().unwrap());
+    let v = axis.cross(&u);
+    let x = target.dot(&u.to_real());
+    let y = target.dot(&v.to_real());
+    let length = (&x.square() + &y.square()).sqrt();
+    for sign in [1, -1] {
+        let denominator = &length + &(&x * &Real::from_i64(sign));
+        if !matches!(dec.sign(&denominator), Outcome::Proven(_)) {
+            continue;
+        }
+        let t = dec.enclose(&(&y / &denominator), width)?.mid();
+        let squared = &t * &t;
+        let denominator = &Rational::one() + &squared;
+        let numerator = Rational::one() - squared;
+        let cosine = (&numerator / &denominator) * r(sign);
+        let sine = r(2) * t / denominator;
+        return Ok(Some(u.scaled(&cosine).plus(&v.scaled(&sine))));
+    }
+    Ok(None)
 }
 
 fn search<T>(

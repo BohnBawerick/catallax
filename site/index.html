@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catallax · Exact geometry, explicit and implicit</title>
+<meta name="description" content="Catallax by Pedro De Paiva. A free geometry kernel in safe Rust, bridging exact B-rep and signed distance fields from one recipe. Field kernel in design.">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/">
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml">
+<link rel="preload" href="brand/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="brand/fonts/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" aria-hidden="true"></div>
+<div class="cursor" aria-hidden="true"><span class="cursor__x"></span><span class="cursor__y"></span><span class="cursor__label">0000 · 0000</span></div>
+
+<header class="nav">
+  <a class="nav__brand" href="#top" aria-label="Catallax, home">
+    <img src="brand/mark.svg" alt="" width="28" height="28">
+    <span>catallax</span>
+  </a>
+  <nav class="nav__links" aria-label="Sections">
+    <a href="#kernel">Kernel</a>
+    <a href="#code">Code</a>
+    <a href="#work">Work</a>
+    <a href="#bench">Benchmarks</a>
+    <a href="#support">Support</a>
+    <a href="#contact">Contact</a>
+  </nav>
+  <p class="nav__status"><span class="dot"></span>Open to kernel work</p>
+</header>
+
+<main id="main">
+
+<!-- HERO ---------------------------------------------------------------->
+<section class="hero" id="top">
+  <canvas class="hero__canvas" aria-label="Rotating wireframe of a spur gear. Drag to orbit." role="img"></canvas>
+  <div class="hero__frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+  <div class="hero__copy">
+    <p class="label hero__kicker"><span>Catallax · by Pedro De Paiva</span><span>Perth, AU</span></p>
+    <h1 class="hero__title">
+      <span class="line">Exact geometry,</span>
+      <span class="line">written in Rust,</span>
+      <span class="line">by <em>definition</em>.</span>
+    </h1>
+    <p class="hero__lede"><strong>Bridging explicit and implicit kernels.</strong> Exact B-rep × signed distance fields. One recipe. The best of both. <span class="status-chip">Field kernel · in design</span></p>
+    <div class="hero__ctas">
+      <a class="btn btn--solid magnetic" href="#kernel"><span>See the kernel</span></a>
+      <a class="btn magnetic" href="#support"><span>Support the free kernel</span></a>
+    </div>
+  </div>
+
+  <div class="hud hud--tr label" aria-hidden="true">
+    <span>View / perspective 41°</span>
+    <span>yaw <b data-hud="yaw">000.0</b>° · pitch <b data-hud="pitch">00.0</b>°</span>
+    <span><b data-hud="v">0</b> verts · <b data-hud="e">0</b> edges · <b data-hud="fps">60</b> fps</span>
+  </div>
+  <pre class="hud hud--br label" aria-hidden="true" data-hud="matrix"></pre>
+  <div class="hud hud--bl">
+    <div class="shapes" role="group" aria-label="Choose a solid">
+      <button class="shape is-active" data-shape="gear" aria-pressed="true">Gear</button>
+      <button class="shape" data-shape="torus" aria-pressed="false">Torus</button>
+      <button class="shape" data-shape="lattice" aria-pressed="false">Cube</button>
+    </div>
+    <p class="label hint">Drag to orbit · hand-built wireframe illustration</p>
+  </div>
+</section>
+
+<div class="marquee" aria-hidden="true">
+  <div class="marquee__track">
+    <span>exact by definition</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
+    <span>exact by definition</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
+  </div>
+</div>
+
+<!-- MANIFESTO ------------------------------------------------------------>
+<section class="manifesto section" id="about">
+  <p class="label section__label"><span>01</span>Built for what comes next <span class="status-chip">Vision · in design</span></p>
+  <p class="manifesto__text" data-words>Topology optimisation. Instant FEA without meshing. Wild patterns, driven by code. One recipe builds exact faces and distance fields. <em>Precision meets possibility.</em> From drawings and STEP to the machine shop. Next stop: meshes for Blender and the printer.</p>
+  <div class="manifesto__sig">
+    <img src="brand/mark.svg" alt="" width="40" height="40">
+    <p><strong>Pedro De Paiva · Perth</strong><br>Mechanical engineer, 8+ years. Founder of <a href="https://zigrawbohnbawerick.org/">Zigrawbohnbawerick Pty Ltd</a>.<br><a href="https://pedro.zigrawbohnbawerick.org/">The engineer behind the kernel</a></p>
+  </div>
+</section>
+
+<!-- KERNEL ANATOMY (pinned) ---------------------------------------------->
+<section class="anatomy" id="kernel">
+  <div class="anatomy__inner">
+    <div class="anatomy__head">
+      <p class="label section__label"><span>02</span>Kernel anatomy</p>
+      <p class="anatomy__count label"><b data-step-num>01</b> / 04</p>
+    </div>
+    <div class="anatomy__body">
+      <div class="anatomy__steps">
+        <article class="step is-active" data-step="0">
+          <p class="label step__tag">Layer 01 · Topology</p>
+          <h2 class="step__title">B-rep</h2>
+          <p class="step__text"><strong>From an idea to the machine shop.</strong></p>
+          <ul class="step__specs label"><li>public · MIT</li><li>STEP export</li></ul>
+        </article>
+        <article class="step" data-step="1">
+          <p class="label step__tag">Layer 02 · Geometry</p>
+          <h2 class="step__title">Exact definitions</h2>
+          <p class="step__text"><strong>Geometry with its receipts.</strong></p>
+          <ul class="step__specs label"><li>proof-carrying geometry</li></ul>
+        </article>
+        <article class="step" data-step="2">
+          <p class="label step__tag">Layer 03 · Operations</p>
+          <h2 class="step__title">Booleans</h2>
+          <p class="step__text"><strong>Cut. Unite. Intersect. Never quietly guess.</strong></p>
+          <ul class="step__specs label"><li>early code</li><li>known gaps</li></ul>
+        </article>
+        <article class="step" data-step="3">
+          <p class="label step__tag">Layer 04 · In design</p>
+          <h2 class="step__title">Field kernel</h2>
+          <p class="step__text"><strong>Lattices. Instant FEA. Booleans that never fail.</strong></p>
+          <ul class="step__specs label"><li>in design</li><li>the implicit half</li></ul>
+        </article>
+      </div>
+      <div class="anatomy__stage">
+        <canvas class="anatomy__canvas" role="img" aria-label="Illustrative wireframe for the current kernel layer, not kernel output"></canvas>
+        <div class="anatomy__rail" aria-hidden="true"><i></i></div>
+        <ol class="anatomy__index label" aria-hidden="true"><li>B-rep</li><li>Definitions</li><li>Booleans</li><li>Field · in design</li></ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VIDEO A -------------------------------------------------------------->
+<section class="assembly" id="assembly">
+  <div class="assembly__media">
+    <video autoplay muted loop playsinline preload="metadata" poster="media/kernel-assembly-poster.jpg" aria-label="Illustration: wireframe gearbox assembling itself, not Catallax output">
+      <source src="media/kernel-assembly.mp4" type="video/mp4">
+    </video>
+  </div>
+  <div class="assembly__copy">
+    <p class="label section__label"><span>03</span>Assembly illustration</p>
+    <h2 class="display" data-lines>A solid is a <em>promise</em> about its boundary.</h2>
+    <p class="assembly__note label">10 s wireframe illustration · a little mechanical daydream, not kernel output</p>
+  </div>
+</section>
+
+<!-- NUMBERS -------------------------------------------------------------->
+<section class="numbers section" aria-label="Catallax repository in numbers">
+  <div class="numbers__grid">
+    <div class="stat"><p class="stat__n"><span data-count="54668" data-metric="rust_lines">54,668</span></p><p class="label">physical lines of Rust</p></div>
+    <div class="stat"><p class="stat__n"><span data-count="0" data-metric="cpp_lines">0</span></p><p class="label">lines of C or C++</p></div>
+    <div class="stat"><p class="stat__n"><span data-count="409" data-metric="tests">409</span></p><p class="label">enabled Rust tests</p></div>
+    <div class="stat"><p class="stat__n"><span data-count="0" data-metric="unsafe_blocks">0</span></p><p class="label">unsafe blocks</p></div>
+  </div>
+  <p class="numbers__note label"><a href="evidence.json">Repository snapshot and counting method</a> · includes tests and comments in Rust line count · ignored tests excluded</p>
+</section>
+
+<!-- CODE ----------------------------------------------------------------->
+<section class="code section" id="code">
+  <div class="code__aside">
+    <p class="label section__label"><span>04</span>Code is the geometry</p>
+    <h2 class="display" data-lines>Geometry that <em>shows</em> its working.</h2>
+    <p class="code__lede">No black box. The geometry, the decisions and the doubts are right here in Rust.</p>
+    <ol class="code__notes label">
+      <li>Read it</li>
+      <li>Question it</li>
+      <li>Build on it</li>
+    </ol>
+  </div>
+  <div class="code__stack">
+    <figure class="window">
+      <figcaption class="window__bar"><i></i><i></i><i></i><span>catallax-topology / entity.rs</span></figcaption>
+<pre class="window__code"><code data-rust>/// A vertex: a point stored by definition.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Vertex {
+    /// The point.
+    pub point: PointId,
+}
+
+/// An edge on a curve. Both ends `None` is a ring edge over a whole closed curve.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Edge {
+    /// The curve.
+    pub curve: CurveId,
+    /// Edge direction relative to the curve's natural direction.
+    pub sense: Sense,
+    /// Start vertex along the edge direction.
+    pub start: Option&lt;VertexId&gt;,
+    /// End vertex along the edge direction.
+    pub end: Option&lt;VertexId&gt;,
+}</code></pre>
+    </figure>
+    <figure class="window">
+      <figcaption class="window__bar"><i></i><i></i><i></i><span>catallax-numbers / outcome.rs</span></figcaption>
+<pre class="window__code"><code data-rust>/// The result of one decision. See `docs/ARCHITECTURE.md`.
+#[must_use]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Outcome&lt;T&gt; {
+    /// The strict answer is certified; the quantity is proven non-zero.
+    Proven(T),
+    /// The quantity is proven exactly zero.
+    ProvenCoincident(Coincidence),
+    /// The budget ran out; the quantity is proven to lie within the bound.
+    NotExact(NotExact),
+    /// The decision cannot be answered.
+    Refused(Refusal),
+}</code></pre>
+    </figure>
+    <figure class="window">
+      <figcaption class="window__bar"><i></i><i></i><i></i><span>catallax-boolean / lib.rs · excerpt</span></figcaption>
+<pre class="window__code"><code data-rust>let graph = run!(Stage::Intersect, intersect(model, a, b, dec));
+let imprinted = run!(Stage::Imprint, imprint(model, &amp;graph, dec));
+let classes = run!(Stage::Classify, classify(model, &amp;imprinted, dec));
+let before = dec.stats().clone();
+let selection = keep(&amp;classes, &amp;imprinted, op);
+report.stages.push(StageRecord {
+    stage: Stage::Keep,
+    stats: statistics_delta(&amp;before, dec.stats()),
+    marks: 0,
+});
+let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</code></pre>
+    </figure>
+  </div>
+</section>
+
+<!-- WORK ----------------------------------------------------------------->
+<section class="work section" id="work">
+  <div class="work__head">
+    <p class="label section__label"><span>05</span>Selected work</p>
+    <h2 class="display" data-lines>One recipe. A <em>family</em> of tools.</h2>
+  </div>
+  <div class="work__grid">
+    <a class="card" href="https://github.com/BohnBawerick/catallax" data-tilt>
+      <div class="card__glare" aria-hidden="true"></div>
+      <div class="card__top label"><span>01</span><span>Public · MIT</span></div>
+      <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
+        <path d="M60 30 100 10l40 20v50l-40 20-40-20Z" class="a"/><path d="M60 30l40 20 40-20M100 50v50" class="a"/>
+        <path d="M60 80 100 60l40 20" class="d"/><path d="M100 10v50" class="d"/>
+        <circle cx="100" cy="50" r="3.5" class="o"/>
+      </svg>
+      <h3 class="card__title">Catallax B-rep</h3>
+      <p class="card__text">Exact geometry, out in the open. Safe Rust, curved topology and STEP for the machine shop. Take it apart. Make something with it.</p>
+      <p class="card__meta label"><span>safe Rust</span><span>source on GitHub</span></p>
+    </a>
+    <article class="card" data-tilt>
+      <div class="card__glare" aria-hidden="true"></div>
+      <div class="card__top label"><span>02</span><span>In design</span></div>
+      <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
+        <g class="a"><rect x="40" y="30" width="20" height="20"/><rect x="60" y="30" width="20" height="20"/><rect x="80" y="30" width="20" height="20"/><rect x="60" y="50" width="20" height="20"/><rect x="80" y="50" width="20" height="20"/><rect x="100" y="50" width="20" height="20"/><rect x="80" y="70" width="20" height="20"/><rect x="100" y="70" width="20" height="20"/><rect x="120" y="70" width="20" height="20"/></g>
+        <path d="M30 95C70 95 70 20 110 25s40 70 70 60" class="o-line"/>
+      </svg>
+      <h3 class="card__title">Field kernel</h3>
+      <p class="card__text">Topology optimisation enabler. Instant FEA enabler. The freedom of fields, with exact geometry in the same recipe.</p>
+      <p class="card__meta label"><span>in design</span><span>signed distance fields</span></p>
+    </article>
+    <article class="card" data-tilt>
+      <div class="card__glare" aria-hidden="true"></div>
+      <div class="card__top label"><span>03</span><span>In progress</span></div>
+      <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
+        <path d="M40 90 70 30l30 60Zm30-60 50 10-20 50m20-50 40 40-60 10" class="a"/><path d="M100 90 160 80 120 40Z" class="d"/>
+        <path d="M40 90h120" class="o-line"/>
+      </svg>
+      <h3 class="card__title">Recipe language</h3>
+      <p class="card__text">Write the idea once. Grow a pattern. Rebuild the part. Code-driven geometry that speaks both kernels.</p>
+      <p class="card__meta label"><span>in progress</span><span>not yet in the public tree</span></p>
+    </article>
+    <article class="card" data-tilt>
+      <div class="card__glare" aria-hidden="true"></div>
+      <div class="card__top label"><span>04</span><span>Open source soon</span></div>
+      <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
+        <circle cx="70" cy="60" r="28" class="a"/><path d="M70 60h70l-20 34H50" class="a"/><path d="M70 60 92 42" class="d"/>
+        <circle cx="70" cy="60" r="3.5" class="o"/><circle cx="140" cy="60" r="3.5" class="o"/>
+      </svg>
+      <h3 class="card__title">SolidDraft</h3>
+      <p class="card__text">The Rust CAD workshop built on Catallax. A SolidWorks-style home for the things you want to make.</p>
+      <p class="card__meta label"><span>by Pedro De Paiva</span><span>CAD application</span></p>
+    </article>
+  </div>
+</section>
+
+<!-- BENCHMARKS ----------------------------------------------------------->
+<section class="bench section" id="bench">
+  <div class="bench__head">
+    <p class="label section__label"><span>06</span>Benchmarks</p>
+    <h2 class="display" data-lines>Measured, not <em>marketed</em>.</h2>
+    <p class="bench__lede">Hard cases. Real answers. The latest kernel, matched against our own hard-test corpus.</p>
+  </div>
+  <div class="bench__table" role="table" aria-label="Reported kernel robustness results">
+    <div class="bench__row bench__row--head label" role="row">
+      <span role="columnheader">Corpus</span><span role="columnheader">Answered</span><span role="columnheader">Other outcomes</span><span role="columnheader">Total</span>
+    </div>
+    <div class="bench__row" role="row">
+      <span role="cell">Hard-test requests<small>Matched run · latest kernel</small></span>
+      <span role="cell" class="is-us" data-v="363"><b>363</b></span><span role="cell" data-v="16"><b>16 refused</b></span><span role="cell" data-v="379"><b>379</b></span>
+    </div>
+    <div class="bench__row" role="row">
+      <span role="cell">Recorded failure packs<small>Answered in the same source run</small></span>
+      <span role="cell" class="is-us" data-v="94"><b>94</b></span><span role="cell" data-v="4"><b>4 unanswered</b></span><span role="cell" data-v="98"><b>98</b></span>
+    </div>
+  </div>
+  <p class="bench__foot">16 refusals: 6 impossible geometries, rejected by design. 10 timeouts, still on the bug list. No previously answered output changed. Source-run results, not a replay of this public revision. <a href="evidence.json">Counts, provenance &amp; scope</a>.</p>
+  <p class="bench__foot">Speed comparisons with OpenCASCADE and other kernels? When we've measured them. <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">What's still to build</a>.</p>
+</section>
+
+<!-- VIDEO B -------------------------------------------------------------->
+<section class="ci section" id="ci">
+  <div class="ci__copy">
+    <p class="label section__label"><span>07</span>Release discipline</p>
+    <h2 class="display" data-lines>Proof before <em>promise</em>.</h2>
+    <p>Every pull request faces format, clippy and the full enabled release test suite. Exact maths keeps us honest. OpenCASCADE checks our STEP.</p>
+    <p>Our rule: the same answer on every machine. Still to fix: the 50-second deadline can make an answer depend on load.</p>
+    <ul class="ci__list label">
+      <li><span>Format</span><b>cargo fmt --all --check</b></li>
+      <li><span>Lint</span><b>clippy · deny warnings</b></li>
+      <li><span>Tests</span><b>release · all enabled + docs</b></li>
+    </ul>
+  </div>
+  <figure class="ci__term">
+    <video autoplay muted loop playsinline preload="metadata" poster="media/release-build-poster.jpg" aria-label="Real Catallax workspace release build and numbers library test output, edited for time">
+      <source src="media/release-build.mp4" type="video/mp4">
+    </video>
+    <figcaption class="label"><a href="render/terminal-output.json">Actual command transcript</a> · edited for time, not a full-suite recording</figcaption>
+  </figure>
+</section>
+
+<section class="support section" id="support">
+  <p class="label section__label"><span>08</span>Sponsor the free kernel</p>
+  <h2 class="display" data-lines>Geometry belongs to <em>everyone</em>.</h2>
+  <p class="contact__lede">Keep geometry free. Help me chase the hard cases and build the bridge between explicit and implicit. MIT today. MIT tomorrow. Yours to build on.</p>
+  <div class="contact__ctas">
+    <a class="btn btn--solid magnetic" href="https://github.com/sponsors/BohnBawerick"><span>GitHub Sponsors</span></a>
+    <a class="btn magnetic" href="https://ko-fi.com/pedropaiva56920"><span>Support on Ko-fi</span></a>
+  </div>
+</section>
+
+<!-- CONTACT -------------------------------------------------------------->
+<section class="contact section" id="contact">
+  <p class="label section__label"><span>09</span>Contact</p>
+  <h2 class="contact__title" data-lines>Have geometry that has to be <em>exact</em>?</h2>
+  <p class="contact__lede">I'm open to kernel work. Got a stubborn geometry problem? Let's make something of it.</p>
+  <div class="contact__ctas">
+    <a class="btn btn--solid btn--big magnetic" href="mailto:support@zigrawbohnbawerick.org"><span>support@zigrawbohnbawerick.org</span></a>
+    <a class="btn magnetic" href="https://github.com/BohnBawerick/catallax"><span>Catallax on GitHub</span></a>
+    <a class="btn magnetic" href="https://pedro.zigrawbohnbawerick.org/"><span>About Pedro</span></a>
+    <a class="btn magnetic" href="https://zigrawbohnbawerick.org/"><span>Zigrawbohnbawerick</span></a>
+  </div>
+</section>
+</main>
+
+<footer class="footer label">
+  <span>© 2026 Pedro De Paiva · Catallax</span>
+  <span>Hand-built wireframe art · <a href="THIRD-PARTY.txt">Third-party licences</a></span>
+  <span>Perth 31.95°S 115.86°E · <time data-clock>--:--</time> AWST</span>
+</footer>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script src="vendor/SplitText.min.js"></script>
+<script src="js/wire.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

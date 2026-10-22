@@ -2,6 +2,8 @@
 
 Geometry should not require a vendor's permission. Catallax is a geometry kernel in safe Rust, free for everyone, for ever.
 
+Kernel site: [kernel.zigrawbohnbawerick.org](https://kernel.zigrawbohnbawerick.org/).
+
 ## Why this is free
 
 Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.
@@ -137,4 +139,4 @@ Agent-written code is welcome. Say how it was produced and stay accountable for 
 
 ## Sponsorship
 
-Sponsors can help pay for work on Catallax. If you want to sponsor the project, open a GitHub issue to get in touch. There is no sponsor page yet.
+Support the free kernel through [GitHub Sponsors](https://github.com/sponsors/BohnBawerick) or [Ko-fi](https://ko-fi.com/pedropaiva56920).

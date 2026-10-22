@@ -10,10 +10,9 @@ use crate::metric::{Kind, PRECISION, distance};
 use crate::{Face, Location};
 
 #[derive(Clone, Debug)]
-pub(crate) struct Leaf {
+pub(crate) struct Primitive {
     pub kind: Kind,
-    pub parameters: [Rational; 5],
-    pub pose: Pose,
+    pub parameters: [Rational; 3],
     inverse: Pose,
     fast_matrix: [[f64; 3]; 3],
     fast_translation: [f64; 3],
@@ -23,8 +22,8 @@ pub(crate) struct Leaf {
 }
 
 #[derive(Clone, Debug)]
-struct Constraint {
-    polynomial: MPoly,
+pub(crate) struct Constraint {
+    pub polynomial: MPoly,
     terms: Vec<([u32; 3], Rational)>,
 }
 
@@ -237,7 +236,7 @@ pub(crate) fn compile(op: &Operation, step: &StepId) -> Result<(Leaf, Vec<Face>)
         ),
     }
     Ok((
-        Leaf {
+        Leaf::Primitive(Primitive {
             kind,
             fast_matrix: std::array::from_fn(|i| {
                 std::array::from_fn(|j| inverse.rotation.matrix()[i][j].to_f64_nearest())
@@ -250,19 +249,18 @@ pub(crate) fn compile(op: &Operation, step: &StepId) -> Result<(Leaf, Vec<Face>)
             .map(Rational::to_f64_nearest),
             fast_parameters: std::array::from_fn(|i| parameters[i].to_f64_nearest()),
             balls: std::array::from_fn(|i| Ball::from_rational(&parameters[i], PRECISION)),
-            parameters,
-            pose,
+            parameters: {
+                let [a, b, c, _, _] = parameters;
+                [a, b, c]
+            },
             inverse,
             constraints,
-        },
+        }),
         faces,
     ))
 }
 
-impl Leaf {
-    pub fn same_geometry(&self, other: &Self) -> bool {
-        self.kind == other.kind && self.parameters == other.parameters && self.pose == other.pose
-    }
+impl Primitive {
     pub fn location(&self, point: &[Rational; 3]) -> Location {
         let mut boundary = false;
         for poly in &self.constraints {
@@ -324,7 +322,7 @@ impl Leaf {
 /// epsilon. Each constraint is a polynomial, so its first nonzero coefficient
 /// settles the ray without choosing a tolerance or sampling a finite distance.
 pub(crate) fn ray_location(
-    leaf: &Leaf,
+    leaf: &Primitive,
     point: &[Rational; 3],
     direction: &[Rational; 3],
 ) -> Location {
@@ -344,6 +342,17 @@ pub(crate) fn ray_location(
 }
 
 fn ray_sign(poly: &Constraint, point: &[Rational; 3], direction: &[Rational; 3]) -> Sign {
+    ray_coefficients(poly, point, direction)
+        .iter()
+        .find(|c| !c.is_zero())
+        .map_or(Sign::Zero, Rational::sign)
+}
+
+pub(crate) fn ray_coefficients(
+    poly: &Constraint,
+    point: &[Rational; 3],
+    direction: &[Rational; 3],
+) -> [Rational; 5] {
     let mut coefficients: [Rational; 5] = std::array::from_fn(|_| Rational::zero());
     for (exponents, coefficient) in &poly.terms {
         let mut term: [Rational; 5] = std::array::from_fn(|_| Rational::zero());
@@ -363,7 +372,84 @@ fn ray_sign(poly: &Constraint, point: &[Rational; 3], direction: &[Rational; 3])
         }
     }
     coefficients
-        .iter()
-        .find(|c| !c.is_zero())
-        .map_or(Sign::Zero, Rational::sign)
+}
+
+impl Constraint {
+    pub fn new(polynomial: MPoly) -> Self {
+        let terms = polynomial
+            .terms()
+            .into_iter()
+            .map(|(m, c)| (m.exponents().try_into().expect("three coordinates"), c))
+            .collect();
+        Self { polynomial, terms }
+    }
+}
+
+pub(crate) fn face(surface: Surface, origin: Origin) -> Face {
+    let polynomial = surface.implicit();
+    let gradient = std::array::from_fn(|i| polynomial.partial(i));
+    let coefficient = polynomial
+        .terms()
+        .into_iter()
+        .next()
+        .expect("surface polynomial")
+        .1;
+    let support = polynomial.scale(&coefficient.recip().expect("nonzero coefficient"));
+    Face {
+        origin,
+        surface,
+        polynomial,
+        support,
+        gradient,
+        leaf: 0,
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum Leaf {
+    Primitive(Primitive),
+    Feature(crate::features::Feature),
+}
+impl Leaf {
+    pub fn same_geometry(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Primitive(a), Self::Primitive(b)) => {
+                a.kind == b.kind && a.parameters == b.parameters && a.inverse == b.inverse
+            }
+            _ => false,
+        }
+    }
+    pub fn true_distance(&self) -> bool {
+        matches!(self, Self::Primitive(_))
+    }
+    pub fn location(&self, p: &[Rational; 3]) -> Location {
+        match self {
+            Self::Primitive(a) => a.location(p),
+            Self::Feature(a) => a.location(p),
+        }
+    }
+    pub fn proven_distance(&self, p: &RPoint3, l: Location) -> Ball {
+        match self {
+            Self::Primitive(a) => a.proven_distance(p, l),
+            Self::Feature(a) => a.proven_distance(p, l),
+        }
+    }
+    pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
+        match self {
+            Self::Primitive(a) => a.fast_distance(p),
+            Self::Feature(a) => a.fast_distance(p),
+        }
+    }
+    pub fn ray(&self, p: &[Rational; 3], d: &[Rational; 3]) -> Location {
+        match self {
+            Self::Primitive(a) => ray_location(a, p, d),
+            Self::Feature(a) => a.ray(p, d),
+        }
+    }
+    pub fn on_face(&self, role: &Role, p: &[Rational; 3]) -> Option<bool> {
+        match self {
+            Self::Primitive(_) => Some(true),
+            Self::Feature(a) => a.on_face(role, p),
+        }
+    }
 }

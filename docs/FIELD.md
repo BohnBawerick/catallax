@@ -107,6 +107,12 @@ unsigned offset distance. A missing record declares an exact face and returns
 `[0, 0]`. Callers retain these records alongside their named faces; the checker
 does not infer a feature definition from the finished B-rep.
 
+`FaceDefinition::from(&elliptic_offset_record)` converts a validated
+`EllipticOffsetDefinition` into the offset checker's original support and
+nonnegative distance. It borrows the record, so the producer retains its
+inward/outward branch. The unsigned deviation check does not verify that branch,
+the construction's finite domain or the validity of an eventual fitted carrier.
+
 For a fillet, the checked function is `abs(distance(p, centre_path) - radius)`.
 The two outward-offset rolling supports define the centre path. Points on the
 fillet face are not themselves at the rolling radius from both supports.

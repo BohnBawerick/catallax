@@ -6,8 +6,8 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
 use catallax_numbers::{
-    Ball, Coincidence, Decider, Fact, FactBook, FactKind, FactOrigin, MPoly, NotExact, Outcome,
-    Rational, Real, Refusal, Sign, StrictSign, ZeroProof,
+    Ball, Coincidence, Decider, Fact, FactBook, FactKind, FactOrigin, NotExact, Outcome, Rational,
+    Real, RealPoly, Refusal, Sign, StrictSign, ZeroProof,
 };
 
 use crate::math;
@@ -158,7 +158,7 @@ pub struct GeomStore {
     curves: Arena<Curve>,
     points: Arena<PointDef>,
     facts: FactBook<GeomKey>,
-    implicits: Vec<MPoly>,
+    implicits: Vec<RealPoly>,
     approximate_points: Vec<[f64; 3]>,
 }
 
@@ -217,7 +217,7 @@ impl GeomStore {
         }
         let id = self.points.push(p);
         let approximate = match self.points.get(id) {
-            PointDef::Explicit(p) => [&p.x, &p.y, &p.z].map(Rational::to_f64_nearest),
+            PointDef::Explicit(p) => [&p.x, &p.y, &p.z].map(Real::to_f64),
             PointDef::Meet(_) => {
                 let p = self.position(id);
                 [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()]
@@ -295,14 +295,14 @@ impl GeomStore {
     }
 
     /// Implicit polynomial of a surface (cached).
-    pub fn implicit(&self, s: SurfaceId) -> MPoly {
+    pub fn implicit(&self, s: SurfaceId) -> RealPoly {
         self.implicits[s.index as usize].clone()
     }
 
     /// Exact position of a point.
     pub fn position(&self, p: PointId) -> Point3 {
         match self.point(p) {
-            PointDef::Explicit(p) => p.to_real(),
+            PointDef::Explicit(p) => p.clone(),
             PointDef::Meet(m) => match &m.position {
                 Position::Closed(p) => p.clone(),
                 Position::Isolated(root) => {
@@ -357,10 +357,13 @@ impl GeomStore {
             StrictSign::Positive => Side::Front,
             StrictSign::Negative => Side::Back,
         }) {
-            Outcome::NotExact(mut n) => {
-                n.bound = surface.distance_bound(&n.bound);
-                Outcome::NotExact(n)
-            }
+            Outcome::NotExact(mut n) => match surface.distance_bound(&n.bound, dec) {
+                Ok(bound) => {
+                    n.bound = bound;
+                    Outcome::NotExact(n)
+                }
+                Err(refusal) => Outcome::Refused(refusal),
+            },
             other => other,
         }
     }
@@ -389,22 +392,33 @@ impl GeomStore {
         decide_zeroes(
             equations.iter().map(|e| e.eval_real(&coordinates)),
             dec,
-            |bounds| match curve {
-                Curve::Line(c) => {
-                    math::sqrt_upper(&sum_squares(bounds)) * math::inverse_length_upper(&c.dir)
-                }
+            |bounds, dec| match curve {
+                Curve::Line(c) => Ok(math::sqrt_upper(&sum_squares(bounds))
+                    * math::inverse_length_upper(&c.dir, dec)?),
                 Curve::Circle(c) => {
-                    let h_squared = &bounds[0] * &bounds[0] / c.normal.norm_squared();
-                    math::sqrt_upper(&(&bounds[1] + &(Rational::from_i64(2) * h_squared)))
+                    let h_squared = &Real::from(&bounds[0] * &bounds[0]) / &c.normal.norm_squared();
+                    let value = &Real::from(bounds[1].clone()) + &(&Real::from_i64(2) * &h_squared);
+                    if let Some(value) = value.as_rational() {
+                        return Ok(math::sqrt_upper(&value));
+                    }
+                    Ok(dec.enclose_at(&value.sqrt(), 64)?.hi())
                 }
                 Curve::Ellipse(c) => {
-                    &math::sqrt_upper(&c.major_sq) * &bounds[1]
-                        + &bounds[0] * &math::inverse_length_upper(&c.normal)
+                    let major = if let Some(value) = c.major_sq.as_rational() {
+                        math::sqrt_upper(&value)
+                    } else {
+                        dec.enclose_at(&c.major_sq.sqrt(), 64)?.hi()
+                    };
+                    Ok(&major * &bounds[1]
+                        + &bounds[0] * &math::inverse_length_upper(&c.normal, dec)?)
                 }
-                Curve::Intersection(c) => self
+                Curve::Intersection(c) => Ok(self
                     .surface(c.surfaces[0])
-                    .distance_bound(&bounds[0])
-                    .max(self.surface(c.surfaces[1]).distance_bound(&bounds[1])),
+                    .distance_bound(&bounds[0], dec)?
+                    .max(
+                        self.surface(c.surfaces[1])
+                            .distance_bound(&bounds[1], dec)?,
+                    )),
             },
         )
     }
@@ -419,13 +433,13 @@ impl GeomStore {
             return fact_decision(dec);
         }
         let d = self.position(a).minus(&self.position(b));
-        decide_zeroes([d.x, d.y, d.z], dec, |bounds| {
-            math::sqrt_upper(&sum_squares(bounds))
+        decide_zeroes([d.x, d.y, d.z], dec, |bounds, _| {
+            Ok(math::sqrt_upper(&sum_squares(bounds)))
         })
     }
 
-    /// Whether two surfaces are the same point set. Facts first, then exact
-    /// rational arithmetic on the definitions; never not exact or refused.
+    /// Whether two surfaces define the same point set. Facts and rational
+    /// arithmetic retain their fast paths; algebraic comparisons require proofs.
     pub fn same_surface(&self, a: SurfaceId, b: SurfaceId, dec: &mut Decider) -> Outcome<Apart> {
         if self.facts.holds(
             FactKind::Coincident,
@@ -434,39 +448,53 @@ impl GeomStore {
         ) {
             return fact_decision(dec);
         }
-        let equal = match (self.surface(a), self.surface(b)) {
-            (Surface::Plane(a), Surface::Plane(b)) => {
-                a.normal.cross(&b.normal).is_zero()
-                    && b.origin.minus(&a.origin).dot(&a.normal).is_zero()
-            }
-            (Surface::Cylinder(a), Surface::Cylinder(b)) => {
-                a.radius == b.radius
-                    && a.axis.cross(&b.axis).is_zero()
-                    && b.origin.minus(&a.origin).cross(&a.axis).is_zero()
-            }
-            (Surface::Cone(a), Surface::Cone(b)) => {
-                a.apex == b.apex
-                    && a.slope == b.slope
-                    && a.axis.cross(&b.axis).is_zero()
-                    && a.axis.dot(&b.axis).sign() == Sign::Positive
-            }
-            (Surface::Sphere(a), Surface::Sphere(b)) => {
-                a.center == b.center && a.radius == b.radius
-            }
-            (Surface::Torus(a), Surface::Torus(b)) => {
-                a.center == b.center
-                    && a.major == b.major
-                    && a.minor == b.minor
-                    && a.axis.cross(&b.axis).is_zero()
-            }
-            _ => false,
-        };
-        if equal {
-            Outcome::ProvenCoincident(Coincidence {
-                proof: ZeroProof::ExactArithmetic,
+        let zero =
+            |value: Real, dec: &mut Decider| math::sign(&value, dec).map(|s| s == Sign::Zero);
+        let equal = (|| -> Result<bool, Refusal> {
+            Ok(match (self.surface(a), self.surface(b)) {
+                (Surface::Plane(a), Surface::Plane(b)) => {
+                    zero(a.normal.cross(&b.normal).norm_squared(), dec)?
+                        && zero(b.origin.minus(&a.origin).dot(&a.normal), dec)?
+                }
+                (Surface::Cylinder(a), Surface::Cylinder(b)) => {
+                    zero(&a.radius - &b.radius, dec)?
+                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                        && zero(b.origin.minus(&a.origin).cross(&a.axis).norm_squared(), dec)?
+                }
+                (Surface::Cone(a), Surface::Cone(b)) => {
+                    zero(a.apex.minus(&b.apex).norm_squared(), dec)?
+                        && zero(&a.slope - &b.slope, dec)?
+                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                        && math::sign(&a.axis.dot(&b.axis), dec)? == Sign::Positive
+                }
+                (Surface::Sphere(a), Surface::Sphere(b)) => {
+                    zero(a.center.minus(&b.center).norm_squared(), dec)?
+                        && zero(&a.radius - &b.radius, dec)?
+                }
+                (Surface::Torus(a), Surface::Torus(b)) => {
+                    zero(a.center.minus(&b.center).norm_squared(), dec)?
+                        && zero(&a.major - &b.major, dec)?
+                        && zero(&a.minor - &b.minor, dec)?
+                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                }
+                (Surface::EllipticCylinder(_), Surface::EllipticCylinder(_)) => self.implicits
+                    [a.index as usize]
+                    .equals(&self.implicits[b.index as usize], dec)?,
+                _ => false,
             })
-        } else {
-            Outcome::Proven(Apart)
+        })();
+        match equal {
+            Ok(true) => Outcome::ProvenCoincident(Coincidence {
+                proof: if self.surface(a).has_rational_definition()
+                    && self.surface(b).has_rational_definition()
+                {
+                    ZeroProof::ExactArithmetic
+                } else {
+                    ZeroProof::Algebraic
+                },
+            }),
+            Ok(false) => Outcome::Proven(Apart),
+            Err(refusal) => Outcome::Refused(refusal),
         }
     }
 
@@ -513,7 +541,7 @@ fn sum_squares(bounds: &[Rational]) -> Rational {
 fn decide_zeroes(
     values: impl IntoIterator<Item = Real>,
     dec: &mut Decider,
-    distance_bound: impl FnOnce(&[Rational]) -> Rational,
+    distance_bound: impl FnOnce(&[Rational], &Decider) -> Result<Rational, Refusal>,
 ) -> Outcome<Apart> {
     let mut bounds = std::array::from_fn::<_, 3, _>(|_| Rational::zero());
     let mut count = 0;
@@ -534,8 +562,13 @@ fn decide_zeroes(
         }
     }
     if let Some(mut n) = first_uncertain {
-        n.bound = distance_bound(&bounds[..count]);
-        Outcome::NotExact(n)
+        match distance_bound(&bounds[..count], dec) {
+            Ok(bound) => {
+                n.bound = bound;
+                Outcome::NotExact(n)
+            }
+            Err(refusal) => Outcome::Refused(refusal),
+        }
     } else {
         Outcome::ProvenCoincident(coincidence.expect("at least one equation"))
     }

@@ -52,7 +52,7 @@ fn stage_benchmark(c: &Case, pose: &Pose, pose_name: &str, op: BoolOp) {
     report(&label, "keep", start, &stats_delta(&before, dec.stats()), 0);
     let body = stage!("sew", sew(&mut m, &imprinted, &selection, &mut dec));
     let faces = m.counts(body).faces;
-    let point = pose.apply_point(&p("1/7", "2/7", "3/7"));
+    let point = pose.apply_point(&p("1/7", "2/7", "3/7").into());
     let mut outcomes = [0usize; 4];
     let before = dec.stats().clone();
     let start = Instant::now();
@@ -88,23 +88,21 @@ impl Size {
             .largest_denominator_bits
             .max(q.denominator().bit_length());
     }
-    fn point(&mut self, p: &RPoint3) {
-        for q in [&p.x, &p.y, &p.z] {
-            self.rational(q);
+    fn real(&mut self, value: &Real) {
+        if let Some(value) = value.rational_ref() {
+            self.rational(value);
+        } else {
+            self.opaque_reals += 1;
         }
     }
-    fn vector(&mut self, p: &RVector3) {
-        for q in [&p.x, &p.y, &p.z] {
-            self.rational(q);
+    fn point(&mut self, p: &Point3) {
+        for value in [&p.x, &p.y, &p.z] {
+            self.real(value);
         }
     }
-    fn real_point(&mut self, p: &Point3) {
-        for x in [&p.x, &p.y, &p.z] {
-            if let Some(q) = x.as_rational() {
-                self.rational(&q);
-            } else {
-                self.opaque_reals += 1;
-            }
+    fn vector(&mut self, p: &Vector3) {
+        for value in [&p.x, &p.y, &p.z] {
+            self.real(value);
         }
     }
     fn surface(&mut self, m: &Model, id: SurfaceId) {
@@ -121,18 +119,18 @@ impl Size {
                 self.point(&s.origin);
                 self.vector(&s.axis);
                 self.vector(&s.ref_dir);
-                self.rational(&s.radius);
+                self.real(&s.radius);
             }
             Surface::Sphere(s) => {
                 self.point(&s.center);
                 self.vector(&s.axis);
                 self.vector(&s.ref_dir);
-                self.rational(&s.radius);
+                self.real(&s.radius);
             }
             _ => panic!("benchmark uses only supported surfaces"),
         }
         for (_, q) in m.geom().implicit(id).terms() {
-            self.rational(&q);
+            self.real(&q);
         }
     }
     fn curve(&mut self, m: &Model, id: CurveId) {
@@ -148,14 +146,14 @@ impl Size {
                 self.point(&c.center);
                 self.vector(&c.normal);
                 self.vector(&c.ref_dir);
-                self.rational(&c.radius_sq);
+                self.real(&c.radius_sq);
             }
             Curve::Ellipse(c) => {
                 self.point(&c.center);
                 self.vector(&c.normal);
                 self.vector(&c.major_dir);
-                self.rational(&c.major_sq);
-                self.rational(&c.minor_sq);
+                self.real(&c.major_sq);
+                self.real(&c.minor_sq);
             }
             Curve::Intersection(c) => {
                 for &s in &c.surfaces {
@@ -167,7 +165,7 @@ impl Size {
         }
         for equation in m.geom().curve(id).equations(m.geom()) {
             for (_, q) in equation.terms() {
-                self.rational(&q);
+                self.real(&q);
             }
         }
     }
@@ -194,7 +192,7 @@ impl Size {
                     }
                 }
                 match &meet.position {
-                    Position::Closed(p) => self.real_point(p),
+                    Position::Closed(p) => self.point(p),
                     Position::Isolated(root) => {
                         for q in root.root_box().lo().iter().chain(root.root_box().hi()) {
                             self.rational(q);
@@ -263,7 +261,7 @@ fn chains() {
         // Small translations keep the mixed operands in the same neighbourhood;
         // quaternion components are the same fixed-seed rational pose family.
         let mut pose = rng.pose();
-        pose.translation = pose.translation.scaled(&q("1e-6"));
+        pose.translation = pose.translation.scaled(&Real::from(q("1e-6")));
         let primitive = match step % 3 {
             0 => cyl_at(3, 12, [5, 5, -1], false),
             1 => ball_at(4, [5; 3]),

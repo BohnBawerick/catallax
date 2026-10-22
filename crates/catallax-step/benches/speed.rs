@@ -36,16 +36,26 @@ fn cylinder_surface(radius: i64, offset: i64, crossing: bool) -> Surface {
     } else {
         (RPoint3::origin(), vector(0, 0, 1), vector(1, 0, 0))
     };
-    Surface::Cylinder(Cylinder::new(origin, axis, radius.into(), reference).unwrap())
+    Surface::Cylinder(
+        Cylinder::new(
+            (origin).into(),
+            (axis).into(),
+            radius.into(),
+            (reference).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 
 fn sphere_surface(x: i64, radius: i64) -> Surface {
     Surface::Sphere(
         Sphere::new(
-            point(x, 0, 0),
+            (point(x, 0, 0)).into(),
             radius.into(),
-            vector(0, 0, 1),
-            vector(1, 0, 0),
+            (vector(0, 0, 1)).into(),
+            (vector(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     )
@@ -123,14 +133,16 @@ fn branches() {
             // variant supplies the branch that this fitting benchmark needs.
             Surface::Cylinder(
                 Cylinder::new(
-                    RPoint3::new(
+                    (RPoint3::new(
                         0.into(),
                         Rational::from_i64(3) - Rational::parse("1e-30").unwrap(),
                         0.into(),
-                    ),
-                    vector(1, 0, 0),
+                    ))
+                    .into(),
+                    (vector(1, 0, 0)).into(),
                     1.into(),
-                    vector(0, 0, 1),
+                    (vector(0, 0, 1)).into(),
+                    &mut catallax_numbers::Decider::default(),
                 )
                 .unwrap(),
             ),
@@ -145,10 +157,11 @@ fn branches() {
             cylinder_surface(1, 0, false),
             Surface::Cylinder(
                 Cylinder::new(
-                    RPoint3::origin(),
-                    vector(3, 0, 4),
+                    (RPoint3::origin()).into(),
+                    (vector(3, 0, 4)).into(),
                     1.into(),
-                    vector(0, 1, 0),
+                    (vector(0, 1, 0)).into(),
+                    &mut catallax_numbers::Decider::default(),
                 )
                 .unwrap(),
             ),
@@ -157,7 +170,14 @@ fn branches() {
             23,
             cylinder_surface(5, 0, false),
             Surface::Sphere(
-                Sphere::new(point(0, 0, 1), 6.into(), vector(0, 0, 1), vector(1, 0, 0)).unwrap(),
+                Sphere::new(
+                    (point(0, 0, 1)).into(),
+                    6.into(),
+                    (vector(0, 0, 1)).into(),
+                    (vector(1, 0, 0)).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ),
         ),
         (24, cylinder_surface(1, 0, false), sphere_surface(1, 2)),

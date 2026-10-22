@@ -8,8 +8,8 @@ use crate::project::{
     Box2, Point2, Projection, align, ball, common_point, separated, shift, winding,
 };
 use catallax_intersect::{CurveTrace, TracePiece, trace};
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
-use catallax_shapes::{PointId, RPoint3, Surface};
+use catallax_numbers::{Ball, Decider, Rational, Refusal, Sign};
+use catallax_shapes::{Point3, PointId, Surface};
 use catallax_topology::{EdgeId, FaceId, Loop, LoopId, Model, Sense};
 use std::collections::{HashMap, hash_map::Entry};
 
@@ -244,7 +244,7 @@ fn build(
 fn off_carriers(
     model: &Model,
     loops: &[LoopId],
-    point: &RPoint3,
+    point: &Point3,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let coordinates = [point.x.clone(), point.y.clone(), point.z.clone()];
@@ -255,7 +255,7 @@ fn off_carriers(
                 let mut apart = false;
                 for equation in model.geom().curve(curve).equations(model.geom()) {
                     if sign(
-                        &Real::from(equation.eval(&coordinates)),
+                        &equation.eval_real(&coordinates),
                         dec,
                         "boolean.classify-ambiguous",
                     )? != Sign::Zero
@@ -278,7 +278,7 @@ fn reference(
     surface: &Surface,
     loops: &[LoopId],
     dec: &mut Decider,
-) -> Result<Option<RPoint3>, Refusal> {
+) -> Result<Option<Point3>, Refusal> {
     if !matches!(surface, Surface::Sphere(_)) {
         return Ok(None);
     }
@@ -346,7 +346,11 @@ pub(crate) fn signatures(
             };
             let mut queries = vec![query];
             if let Some(p) = &reference {
-                let coordinates = [&p.x, &p.y, &p.z].map(|x| Ball::from_rational(x, bits));
+                let coordinates = [
+                    dec.enclose_at(&p.x, bits)?,
+                    dec.enclose_at(&p.y, bits)?,
+                    dec.enclose_at(&p.z, bits)?,
+                ];
                 let Some(projected) = projection.project_certified(&coordinates, dec)? else {
                     continue;
                 };

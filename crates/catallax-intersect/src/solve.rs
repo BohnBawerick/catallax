@@ -1,5 +1,5 @@
 use crate::math::*;
-use catallax_numbers::{Decider, MPoly, Outcome, Rational, Real, Refusal, UPoly};
+use catallax_numbers::{Decider, MPoly, Outcome, Rational, Real, RealPoly, Refusal, UPoly};
 use catallax_shapes::Point3;
 use std::{
     cell::RefCell,
@@ -222,7 +222,20 @@ pub(super) enum Solutions {
     Points(Vec<Point3>),
 }
 pub(super) fn intersections(
-    equations: &[MPoly],
+    equations: &[RealPoly],
+    surface: &RealPoly,
+    dec: &mut Decider,
+) -> Result<Solutions, Refusal> {
+    if let Some(surface) = surface.rational()
+        && equations.iter().all(|p| p.rational().is_some())
+    {
+        return rational_intersections(equations, surface, dec);
+    }
+    crate::algebraic_solve::intersections(equations, surface, dec)
+}
+
+fn rational_intersections(
+    equations: &[RealPoly],
     surface: &MPoly,
     dec: &mut Decider,
 ) -> Result<Solutions, Refusal> {
@@ -230,7 +243,10 @@ pub(super) fn intersections(
     loop {
         let a = r(shear);
         let b = r(shear).pow(2).unwrap();
-        let curve: Vec<_> = equations.iter().map(|p| P::from_mpoly(p, &a, &b)).collect();
+        let curve: Vec<_> = equations
+            .iter()
+            .map(|p| P::from_mpoly(p.rational().expect("rational solver dispatch"), &a, &b))
+            .collect();
         let basis = groebner(curve.clone());
         let surface = P::from_mpoly(surface, &a, &b);
         if reduce(surface.clone(), &basis).0.is_empty() {

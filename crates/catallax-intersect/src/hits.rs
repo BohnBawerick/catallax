@@ -7,8 +7,8 @@ use crate::{
     solve::{self, Solutions},
 };
 use catallax_numbers::{
-    Answer, Answered, BoundKind, Decider, FactKind, MPoly, Mark, MarkLog, Outcome, Rational, Real,
-    Refusal, Sign,
+    Answer, Answered, BoundKind, Decider, FactKind, Mark, MarkLog, Outcome, Rational, Real,
+    RealPoly, Refusal, Sign,
 };
 use catallax_shapes::{
     Circle, Curve, CurveId, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3, PointDef,
@@ -41,22 +41,35 @@ fn mark(
 ) {
     marks.push(Mark::from_not_exact(&n, kind, bound, detail));
 }
-fn carrier_equations(geom: &GeomStore, c: CurveId, f: &CurveForm) -> Vec<MPoly> {
+fn carrier_equations(
+    geom: &GeomStore,
+    c: CurveId,
+    f: &CurveForm,
+    dec: &mut Decider,
+) -> Result<Vec<RealPoly>, Refusal> {
     let curve = match f {
         CurveForm::Line { origin, dir } => {
-            let origin = point_rational(origin).or_else(|| {
-                let plan = query::validate(geom, c).ok().flatten()?;
-                plan.curves.iter().find_map(|spec| match &spec.form {
-                    CurveForm::Line {
+            let mut rational_origin = origin.as_rational();
+            if rational_origin.is_none()
+                && let Some(plan) = query::validate(geom, c, dec)?
+            {
+                for spec in &plan.curves {
+                    if let CurveForm::Line {
                         origin,
                         dir: canonical,
-                    } if canonical.dot(dir).sign() == Sign::Positive => point_rational(origin),
-                    _ => None,
-                })
-            });
-            origin.map(|origin| {
+                    } = &spec.form
+                        && sign(&canonical.dot(dir), dec)? == Sign::Positive
+                    {
+                        rational_origin = origin.as_rational();
+                        if rational_origin.is_some() {
+                            break;
+                        }
+                    }
+                }
+            }
+            rational_origin.map(|origin| {
                 Curve::Line(Line {
-                    origin,
+                    origin: origin.to_real(),
                     dir: dir.clone(),
                 })
             })
@@ -66,37 +79,35 @@ fn carrier_equations(geom: &GeomStore, c: CurveId, f: &CurveForm) -> Vec<MPoly> 
             normal,
             radius_sq,
             ref_dir,
-        } => point_rational(center)
-            .zip(radius_sq.as_rational())
-            .map(|(center, radius_sq)| {
-                Curve::Circle(Circle {
-                    center,
-                    normal: normal.clone(),
-                    radius_sq,
-                    ref_dir: ref_dir.clone(),
-                })
-            }),
+        } if center.as_rational().is_some() && radius_sq.rational_ref().is_some() => {
+            Some(Curve::Circle(Circle {
+                center: center.clone(),
+                normal: normal.clone(),
+                radius_sq: radius_sq.clone(),
+                ref_dir: ref_dir.clone(),
+            }))
+        }
         CurveForm::Ellipse {
             center,
             normal,
             major_dir,
             major_sq,
             minor_sq,
-        } => point_rational(center)
-            .zip(major_sq.as_rational())
-            .zip(minor_sq.as_rational())
-            .map(|((center, major_sq), minor_sq)| {
-                Curve::Ellipse(Ellipse {
-                    center,
-                    normal: normal.clone(),
-                    major_dir: major_dir.clone(),
-                    major_sq,
-                    minor_sq,
-                })
-            }),
-        CurveForm::Branch | CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. } => None,
+        } if center.as_rational().is_some()
+            && major_sq.rational_ref().is_some()
+            && minor_sq.rational_ref().is_some() =>
+        {
+            Some(Curve::Ellipse(Ellipse {
+                center: center.clone(),
+                normal: normal.clone(),
+                major_dir: major_dir.clone(),
+                major_sq: major_sq.clone(),
+                minor_sq: minor_sq.clone(),
+            }))
+        }
+        _ => None,
     };
-    curve.as_ref().unwrap_or(geom.curve(c)).equations(geom)
+    Ok(curve.as_ref().unwrap_or(geom.curve(c)).equations(geom))
 }
 fn keep_branch(
     geom: &GeomStore,
@@ -170,7 +181,7 @@ fn convolution(a: &[Real], b: &[Real], n: usize) -> Vec<Real> {
         .map(|k| (0..=k).fold(Real::zero(), |v, i| v + &a[i] * &b[k - i]))
         .collect()
 }
-fn polynomial_jet(poly: &MPoly, values: &[[Real; 3]], n: usize) -> Vec<Real> {
+fn polynomial_jet(poly: &RealPoly, values: &[[Real; 3]], n: usize) -> Vec<Real> {
     let mut out = vec![Real::zero(); n + 1];
     for (m, c) in poly.terms() {
         let mut term = vec![Real::zero(); n + 1];
@@ -191,7 +202,7 @@ fn local_sign(
     ch: &Chart,
     t: &Real,
     incoming: bool,
-    poly: &MPoly,
+    poly: &RealPoly,
     dec: &mut Decider,
 ) -> Result<Sign, Failure> {
     // Higher Taylor coefficients cannot affect the first nonzero one. Most
@@ -217,7 +228,7 @@ fn local_sign(
 fn contact(
     charts: &[Chart],
     p: &Point3,
-    poly: &MPoly,
+    poly: &RealPoly,
     dec: &mut Decider,
 ) -> Result<Contact, Failure> {
     let mut incoming = None;
@@ -266,13 +277,11 @@ fn compare(
     dec: &mut Decider,
 ) -> Result<std::cmp::Ordering, Failure> {
     if let CurveForm::Line { dir, .. } = form {
-        return Ok(
-            match sign(&a.position.minus(&b.position).dot(&dir.to_real()), dec)? {
-                Sign::Negative => std::cmp::Ordering::Less,
-                Sign::Positive => std::cmp::Ordering::Greater,
-                Sign::Zero => std::cmp::Ordering::Equal,
-            },
-        );
+        return Ok(match sign(&a.position.minus(&b.position).dot(dir), dec)? {
+            Sign::Negative => std::cmp::Ordering::Less,
+            Sign::Positive => std::cmp::Ordering::Greater,
+            Sign::Zero => std::cmp::Ordering::Equal,
+        });
     }
     if let CurveForm::Parabola {
         normal, axis_dir, ..
@@ -310,10 +319,16 @@ pub(super) fn intersect(
     s: SurfaceId,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
-    if !crate::supports(geom.surface(s).kind(), geom.surface(s).kind()) {
+    if !matches!(
+        geom.surface(s).kind(),
+        catallax_shapes::SurfaceKind::Plane
+            | catallax_shapes::SurfaceKind::Cylinder
+            | catallax_shapes::SurfaceKind::Sphere
+            | catallax_shapes::SurfaceKind::EllipticCylinder
+    ) {
         return Err(refused_pair());
     }
-    let plan = query::validate(geom, c)?;
+    let plan = query::validate(geom, c, dec)?;
     if geom
         .facts()
         .holds(FactKind::Incident, GeomKey::Curve(c), GeomKey::Surface(s))
@@ -322,7 +337,7 @@ pub(super) fn intersect(
         return Ok(Answer::exact(CurveSurface::Contained));
     }
     let form = query::form(geom, c, dec)?;
-    let equations = carrier_equations(geom, c, &form);
+    let equations = carrier_equations(geom, c, &form, dec)?;
     let implicit = geom.implicit(s);
     let solutions = solve::intersections(&equations, &implicit, dec)?;
     let Solutions::Points(points) = solutions else {
@@ -358,7 +373,7 @@ pub(super) fn intersect(
                 &geom
                     .surface(s)
                     .gradient(&candidate.position)
-                    .dot(&dir.to_real()),
+                    .dot(dir),
                 dec,
             ) {
                 Ok(Sign::Zero) if matches!(geom.surface(s), catallax_shapes::Surface::Torus(_)) => {

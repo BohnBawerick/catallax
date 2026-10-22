@@ -17,9 +17,9 @@ mod support;
 
 use std::collections::BTreeMap;
 
-use catallax_numbers::{Ball, Interval, MPoly, Rational, Refusal, Sign};
+use catallax_numbers::{Ball, Decider, Interval, Rational, Real, RealPoly, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Operation, Origin, Recipe};
-use catallax_shapes::{RPoint3, RVector3, Surface};
+use catallax_shapes::{Pose, RPoint3, RVector3, Surface, Vector3};
 
 use metric::{PRECISION, Scalar};
 
@@ -108,9 +108,9 @@ pub struct Face {
     pub origin: Origin,
     /// Exact world-space supporting surface, independent of the evaluation tape.
     pub surface: Surface,
-    polynomial: MPoly,
-    support: MPoly,
-    gradient: [MPoly; 3],
+    polynomial: RealPoly,
+    support: RealPoly,
+    gradient: [RealPoly; 3],
     leaf: usize,
 }
 
@@ -185,6 +185,12 @@ impl Plan {
     /// Unsupported operations and impossible dimensions report a stable refusal.
     /// Sketch validation is shared with features; no B-rep builder is called.
     pub fn compile(recipe: &Recipe) -> Result<Self, Refusal> {
+        Self::compile_checked(recipe, &mut Decider::default())
+    }
+
+    /// Compiles under the shared deterministic proof policy. Defining domains
+    /// and support-normalisation divisors are proved before publishing a plan.
+    pub fn compile_checked(recipe: &Recipe, dec: &mut Decider) -> Result<Self, Refusal> {
         recipe
             .check()
             .map_err(|e| Refusal::new("field.recipe", e.to_string()))?;
@@ -200,7 +206,7 @@ impl Plan {
         for step in &recipe.steps {
             let node = match &step.op {
                 Operation::Sketch { plane, loops } => {
-                    profiles.insert(step.id.clone(), profile::Profile::new(plane, loops)?);
+                    profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
                     continue;
                 }
                 Operation::Boolean { kind, target, tool } => {
@@ -217,8 +223,9 @@ impl Plan {
                         Some(distance.value()),
                         direction.as_ref(),
                         false,
+                        dec,
                     )?;
-                    plan.feature(built)
+                    plan.feature(built, dec)?
                 }
                 Operation::ExtrudeThrough {
                     target,
@@ -231,8 +238,9 @@ impl Plan {
                         None,
                         direction.as_ref(),
                         steps[target] == 0,
+                        dec,
                     )?;
-                    let tool = plan.feature(built);
+                    let tool = plan.feature(built, dec)?;
                     plan.boolean(BooleanKind::Subtract, steps[target], tool)
                 }
                 Operation::Revolve {
@@ -245,12 +253,13 @@ impl Plan {
                         &step.id,
                         axis,
                         angle.value(),
+                        dec,
                     )?;
-                    plan.feature(built)
+                    plan.feature(built, dec)?
                 }
                 _ => {
-                    let (leaf, faces) = geometry::compile(&step.op, &step.id)?;
-                    plan.leaf(leaf, faces)
+                    let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
+                    plan.leaf(leaf, faces, dec)?
                 }
             };
             steps.insert(step.id.clone(), node);
@@ -260,22 +269,35 @@ impl Plan {
         Ok(plan)
     }
 
-    fn feature(&mut self, built: Option<(features::Feature, Vec<Face>)>) -> usize {
-        built.map_or(0, |(feature, faces)| {
-            self.leaf(geometry::Leaf::Feature(feature), faces)
-        })
+    fn feature(
+        &mut self,
+        built: Option<(features::Feature, Vec<Face>)>,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        match built {
+            Some((feature, faces)) => self.leaf(geometry::Leaf::Feature(feature), faces, dec),
+            None => Ok(0),
+        }
     }
 
-    fn leaf(&mut self, leaf: geometry::Leaf, mut faces: Vec<Face>) -> usize {
-        let leaf_id = self
-            .leaves
-            .iter()
-            .position(|l| l.same_geometry(&leaf))
-            .unwrap_or_else(|| {
-                let id = self.leaves.len();
-                self.leaves.push(leaf);
-                id
-            });
+    fn leaf(
+        &mut self,
+        leaf: geometry::Leaf,
+        mut faces: Vec<Face>,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let mut found = None;
+        for (id, previous) in self.leaves.iter().enumerate() {
+            if previous.same_geometry(&leaf, dec)? {
+                found = Some(id);
+                break;
+            }
+        }
+        let leaf_id = found.unwrap_or_else(|| {
+            let id = self.leaves.len();
+            self.leaves.push(leaf);
+            id
+        });
         for face in &mut faces {
             face.leaf = leaf_id;
         }
@@ -285,11 +307,24 @@ impl Plan {
             .iter()
             .position(|n| matches!(n, Instruction::Leaf(i) if *i == leaf_id))
         {
-            id
+            Ok(id)
         } else {
             self.instructions.push(Instruction::Leaf(leaf_id));
-            self.instructions.len() - 1
+            Ok(self.instructions.len() - 1)
         }
+    }
+
+    /// Applies an exact rigid motion without changing the recipe or metric.
+    pub fn transformed(&self, pose: &Pose, dec: &mut Decider) -> Result<Self, Refusal> {
+        let pose = Pose::new(pose.rotation.clone(), pose.translation.clone(), dec)?;
+        let mut result = self.clone();
+        for leaf in &mut result.leaves {
+            leaf.transform(&pose);
+        }
+        for face in &mut result.faces {
+            geometry::face_geometry(face, face.surface.transformed(&pose), dec)?;
+        }
+        Ok(result)
     }
 
     fn boolean(&mut self, kind: BooleanKind, a: usize, b: usize) -> usize {
@@ -407,16 +442,27 @@ impl Plan {
     /// witness order are fixed, with no deadline or schedule-dependent refinement.
     /// Difficult Boolean zero sets return `Indeterminate`, never a false proof.
     pub fn proven(&self, point: &RPoint3, storage: &mut Workspace) -> Query {
+        self.proven_checked(point, storage, &mut Decider::default())
+            .unwrap_or_else(|_| unresolved_query())
+    }
+
+    /// Authoritative query under the shared policy, preserving numeric failures.
+    pub fn proven_checked(
+        &self,
+        point: &RPoint3,
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<Query, Refusal> {
         if self.root == 0 {
             let infinity = Interval::point(f64::INFINITY).unwrap();
-            return Query {
+            return Ok(Query {
                 location: Location::Outside,
                 value: Value::Residual(infinity),
                 distance: DistanceBound {
                     millimetres: infinity,
                 },
                 direction: Direction::Undefined,
-            };
+            });
         }
         let coordinates = [point.x.clone(), point.y.clone(), point.z.clone()];
         storage.values.clear();
@@ -427,8 +473,11 @@ impl Plan {
                 // numeric register is unused and needs no infinite binary ball.
                 Instruction::Empty => (Ball::integer(0), Location::Outside),
                 Instruction::Leaf(i) => {
-                    let location = self.leaves[i].location(&coordinates);
-                    (self.leaves[i].proven_distance(point, location), location)
+                    let location = self.leaves[i].location(&coordinates, dec)?;
+                    (
+                        self.leaves[i].proven_distance(point, location, dec)?,
+                        location,
+                    )
                 }
                 Instruction::Boolean { kind, a, b } => {
                     let value = match kind {
@@ -451,17 +500,20 @@ impl Plan {
         for (id, face) in self.faces.iter().enumerate() {
             if self.leaf_registers[face.leaf]
                 .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
-                && face.polynomial.eval(&coordinates).is_zero()
-                && self.leaves[face.leaf].on_face(&face.origin.role, &coordinates) != Some(false)
+                && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
+                && self.leaves[face.leaf].on_face(&face.origin.role, &coordinates, dec)?
+                    != Some(false)
             {
                 storage.active.push(id);
             }
         }
-        if location == Location::Indeterminate && self.boundary_witness(&coordinates, storage) {
+        if location == Location::Indeterminate
+            && self.boundary_witness(&coordinates, storage, dec)?
+        {
             location = Location::Boundary;
         }
         let direction = if location == Location::Boundary {
-            self.direction(&coordinates, storage)
+            self.direction(&coordinates, storage, dec)?
         } else {
             Direction::Undefined
         };
@@ -474,7 +526,7 @@ impl Plan {
         } else {
             Interval::new(absolute.lo(), f64::INFINITY).unwrap()
         };
-        Query {
+        Ok(Query {
             location,
             value: if primitive {
                 Value::TrueDistance(enclosure)
@@ -485,38 +537,48 @@ impl Plan {
                 millimetres: distance,
             },
             direction,
-        }
+        })
     }
 
-    fn ray(&self, p: &[Rational; 3], d: &RVector3, storage: &mut Vec<Location>) -> Location {
+    fn ray(
+        &self,
+        p: &[Rational; 3],
+        d: &Vector3,
+        storage: &mut Vec<Location>,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
         storage.clear();
-        let direction = [d.x.clone(), d.y.clone(), d.z.clone()];
         for instruction in &self.instructions {
             let location = match *instruction {
                 Instruction::Empty => Location::Outside,
-                Instruction::Leaf(i) => self.leaves[i].ray(p, &direction),
+                Instruction::Leaf(i) => self.leaves[i].ray(p, d, dec)?,
                 Instruction::Boolean { kind, a, b } => combine(kind, storage[a], storage[b]),
             };
             storage.push(location);
         }
-        storage[self.root]
+        Ok(storage[self.root])
     }
 
-    fn boundary_witness(&self, p: &[Rational; 3], storage: &mut Workspace) -> bool {
+    fn boundary_witness(
+        &self,
+        p: &[Rational; 3],
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
         let mut inside = false;
         let mut outside = false;
         for &id in &storage.active {
             let n = normal(&self.faces[id], p);
-            if n.is_zero() {
+            if geometry::sign(&n.norm_squared(), dec)? == Sign::Zero {
                 continue;
             }
-            for n in [n.clone(), n.scaled(&Rational::from_i64(-1))] {
-                let loc = self.ray(p, &n, &mut storage.rays);
+            for n in [n.clone(), n.scaled(&Real::from_i64(-1))] {
+                let loc = self.ray(p, &n, &mut storage.rays, dec)?;
                 inside |= loc == Location::Inside;
                 outside |= loc == Location::Outside;
             }
             if inside && outside {
-                return true;
+                return Ok(true);
             }
         }
         // A fixed rational corpus also reaches box corners and transverse edges.
@@ -526,17 +588,17 @@ impl Plan {
                     if x == 0 && y == 0 && z == 0 {
                         continue;
                     }
-                    let n = RVector3::new(x.into(), y.into(), z.into());
-                    let loc = self.ray(p, &n, &mut storage.rays);
+                    let n = RVector3::new(x.into(), y.into(), z.into()).to_real();
+                    let loc = self.ray(p, &n, &mut storage.rays, dec)?;
                     inside |= loc == Location::Inside;
                     outside |= loc == Location::Outside;
                     if inside && outside {
-                        return true;
+                        return Ok(true);
                     }
                 }
             }
         }
-        false
+        Ok(false)
     }
 
     fn oriented_normal(
@@ -544,35 +606,43 @@ impl Plan {
         face: &Face,
         p: &[Rational; 3],
         storage: &mut Vec<Location>,
-    ) -> Option<RVector3> {
+        dec: &mut Decider,
+    ) -> Result<Option<Vector3>, Refusal> {
         let n = normal(face, p);
-        if n.is_zero() {
-            return None;
+        if geometry::sign(&n.norm_squared(), dec)? == Sign::Zero {
+            return Ok(None);
         }
-        let plus = self.ray(p, &n, storage);
-        let minus = self.ray(p, &n.scaled(&Rational::from_i64(-1)), storage);
-        match (plus, minus) {
+        let plus = self.ray(p, &n, storage, dec)?;
+        let minus = self.ray(p, &n.scaled(&Real::from_i64(-1)), storage, dec)?;
+        Ok(match (plus, minus) {
             (Location::Outside, Location::Inside) => Some(n),
-            (Location::Inside, Location::Outside) => Some(n.scaled(&Rational::from_i64(-1))),
+            (Location::Inside, Location::Outside) => Some(n.scaled(&Real::from_i64(-1))),
             _ => None,
-        }
+        })
     }
 
-    fn direction(&self, p: &[Rational; 3], storage: &mut Workspace) -> Direction {
-        let mut result: Option<RVector3> = None;
+    fn direction(
+        &self,
+        p: &[Rational; 3],
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<Direction, Refusal> {
+        let mut result: Option<Vector3> = None;
         for &id in &storage.active {
-            let Some(n) = self.oriented_normal(&self.faces[id], p, &mut storage.rays) else {
-                return Direction::Ambiguous;
+            let Some(n) = self.oriented_normal(&self.faces[id], p, &mut storage.rays, dec)? else {
+                return Ok(Direction::Ambiguous);
             };
             if let Some(previous) = &result {
-                if !n.cross(previous).is_zero() || n.dot(previous).sign() != Sign::Positive {
-                    return Direction::Ambiguous;
+                if geometry::sign(&n.cross(previous).norm_squared(), dec)? != Sign::Zero
+                    || geometry::sign(&n.dot(previous), dec)? != Sign::Positive
+                {
+                    return Ok(Direction::Ambiguous);
                 }
             } else {
                 result = Some(n);
             }
         }
-        result.map_or(Direction::Ambiguous, unit_direction)
+        result.map_or(Ok(Direction::Ambiguous), |n| unit_direction(n, dec))
     }
 
     /// Tests a selected face's actual domain. Invalid handles return a refusal;
@@ -582,6 +652,17 @@ impl Plan {
         id: FaceId,
         point: &RPoint3,
         storage: &mut Workspace,
+    ) -> Result<FaceQuery, Refusal> {
+        self.face_query_checked(id, point, storage, &mut Decider::default())
+    }
+
+    /// Named-face query with an explicit shared proof policy.
+    pub fn face_query_checked(
+        &self,
+        id: FaceId,
+        point: &RPoint3,
+        storage: &mut Workspace,
+        dec: &mut Decider,
     ) -> Result<FaceQuery, Refusal> {
         let face = self
             .faces
@@ -595,10 +676,10 @@ impl Plan {
         if self.leaf_registers[face.leaf].is_none() {
             return Ok(absent);
         }
-        if !face.polynomial.eval(&p).is_zero() {
+        if polynomial_sign(&face.polynomial, &p, dec)? != Sign::Zero {
             return Ok(absent);
         }
-        match self.leaves[face.leaf].location(&p) {
+        match self.leaves[face.leaf].location(&p, dec)? {
             Location::Inside | Location::Outside => return Ok(absent),
             Location::Indeterminate => {
                 return Ok(FaceQuery {
@@ -608,7 +689,7 @@ impl Plan {
             }
             Location::Boundary => (),
         }
-        match self.leaves[face.leaf].on_face(&face.origin.role, &p) {
+        match self.leaves[face.leaf].on_face(&face.origin.role, &p, dec)? {
             Some(false) => return Ok(absent),
             None => {
                 return Ok(FaceQuery {
@@ -618,25 +699,24 @@ impl Plan {
             }
             Some(true) => (),
         }
-        let query = self.proven(point, storage);
+        let query = self.proven_checked(point, storage, dec)?;
         if matches!(query.location, Location::Inside | Location::Outside) {
             return Ok(absent);
         }
-        if !matches!(self.instructions[self.root], Instruction::Leaf(_))
-            && storage
-                .active
-                .iter()
-                .any(|&other| !same_support(face, &self.faces[other]))
-        {
-            return Ok(FaceQuery {
-                state: FaceState::Indeterminate,
-                direction: Direction::Ambiguous,
-            });
+        if !matches!(self.instructions[self.root], Instruction::Leaf(_)) {
+            for &other in &storage.active {
+                if !same_support(face, &self.faces[other], dec)? {
+                    return Ok(FaceQuery {
+                        state: FaceState::Indeterminate,
+                        direction: Direction::Ambiguous,
+                    });
+                }
+            }
         }
-        if let Some(n) = self.oriented_normal(face, &p, &mut storage.rays) {
+        if let Some(n) = self.oriented_normal(face, &p, &mut storage.rays, dec)? {
             return Ok(FaceQuery {
                 state: FaceState::OnFace,
-                direction: unit_direction(n),
+                direction: unit_direction(n, dec)?,
             });
         }
         if matches!(self.instructions[self.root], Instruction::Leaf(i) if i == face.leaf) {
@@ -726,26 +806,50 @@ fn unsigned(value: Interval) -> Interval {
     )
     .unwrap()
 }
-fn normal(face: &Face, p: &[Rational; 3]) -> RVector3 {
-    RVector3::new(
-        face.gradient[0].eval(p),
-        face.gradient[1].eval(p),
-        face.gradient[2].eval(p),
+fn polynomial_sign(poly: &RealPoly, p: &[Rational; 3], dec: &mut Decider) -> Result<Sign, Refusal> {
+    if let Some(poly) = poly.rational() {
+        return Ok(poly.eval(p).sign());
+    }
+    geometry::sign(&poly.eval_real(&p.clone().map(Real::from)), dec)
+}
+fn normal(face: &Face, p: &[Rational; 3]) -> Vector3 {
+    let values = p.clone().map(Real::from);
+    Vector3::new(
+        face.gradient[0].eval_real(&values),
+        face.gradient[1].eval_real(&values),
+        face.gradient[2].eval_real(&values),
     )
 }
-fn unit_direction(n: RVector3) -> Direction {
-    let norm = Ball::from_rational(&n.norm_squared(), PRECISION)
-        .sqrt()
-        .expect("nonzero rational norm");
-    let components = [n.x, n.y, n.z].map(|r| {
-        Ball::from_rational(&r, PRECISION)
-            .checked_div(&norm)
-            .expect("positive norm")
-            .to_interval()
-    });
-    Direction::Unique(components)
+fn unit_direction(n: Vector3, dec: &mut Decider) -> Result<Direction, Refusal> {
+    if let Some(n) = n.as_rational() {
+        let norm = Ball::from_rational(&n.norm_squared(), PRECISION)
+            .sqrt()
+            .expect("nonzero rational norm");
+        let components = [n.x, n.y, n.z].map(|r| {
+            Ball::from_rational(&r, PRECISION)
+                .checked_div(&norm)
+                .expect("positive norm")
+                .to_interval()
+        });
+        return Ok(Direction::Unique(components));
+    }
+    let length = n.norm_squared().sqrt();
+    Ok(Direction::Unique([
+        geometry::enclose(&(&n.x / &length), PRECISION, dec)?.to_interval(),
+        geometry::enclose(&(&n.y / &length), PRECISION, dec)?.to_interval(),
+        geometry::enclose(&(&n.z / &length), PRECISION, dec)?.to_interval(),
+    ]))
 }
-
-fn same_support(a: &Face, b: &Face) -> bool {
-    a.support == b.support
+fn same_support(a: &Face, b: &Face, dec: &mut Decider) -> Result<bool, Refusal> {
+    a.support.equals(&b.support, dec)
+}
+fn unresolved_query() -> Query {
+    Query {
+        location: Location::Indeterminate,
+        value: Value::Residual(Interval::entire()),
+        distance: DistanceBound {
+            millimetres: Interval::new(0.0, f64::INFINITY).unwrap(),
+        },
+        direction: Direction::Ambiguous,
+    }
 }

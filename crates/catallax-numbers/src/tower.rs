@@ -583,3 +583,31 @@ pub(crate) fn sign(x: &Real, work: &mut Work) -> Result<Option<Sign>, &'static s
         other => other,
     }
 }
+
+/// Optional rational projection of a defined expression, not a nonrationality test.
+pub(crate) fn rational(x: &Real, work: &mut Work) -> Result<Option<Rational>, &'static str> {
+    let decision_limit = work.policy.max_work;
+    let allowance = MAX_WORK.min(decision_limit.saturating_sub(work.used) / 8);
+    work.policy.max_work = work.used + allowance;
+    let mut cost = Cost { work, steps: 0 };
+    let mut tower = Tower {
+        radicands: Vec::new(),
+        zero: Element::Rational(Rational::zero()),
+    };
+    let attempt = (|| {
+        if has_quartic(x, &mut cost)?
+            && let Some(value) = crate::generator::rational(x, cost.work)?
+        {
+            return Ok(Some(value));
+        }
+        Ok(match tower.visit(x, &mut cost, &mut HashMap::new())? {
+            Some(Element::Rational(value)) => Some(value),
+            _ => None,
+        })
+    })();
+    work.policy.max_work = decision_limit;
+    match attempt {
+        Err(LIMIT | "numbers.budget-exhausted") => Ok(None),
+        other => other,
+    }
+}

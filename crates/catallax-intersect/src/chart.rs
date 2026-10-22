@@ -174,8 +174,8 @@ impl Scalar for Ball {
             return Ok(Ball::from_rational(&r, p));
         }
         let mut cached = cache.lock().expect("trace constant enclosure lock");
-        if let Some((_, ball)) = cached.range(p..).next() {
-            return Ok(ball.with_precision(p));
+        if let Some(ball) = cached.get(&p) {
+            return Ok(ball.clone());
         }
         let ball = dec
             .expect("interval jets have a decider")
@@ -470,9 +470,9 @@ pub(super) fn form_charts(form: &CurveForm) -> Vec<Chart> {
             ref_dir,
         } => {
             let u = ref_dir
-                .to_real()
+                .clone()
                 .scaled(&root_real(&(radius_sq / &real(&ref_dir.norm_squared()))));
-            let v = normal.cross(ref_dir).to_real().scaled(&root_real(
+            let v = normal.cross(ref_dir).scaled(&root_real(
                 &(radius_sq / &real(&normal.cross(ref_dir).norm_squared())),
             ));
             analytic(center.clone(), u, v)
@@ -485,11 +485,11 @@ pub(super) fn form_charts(form: &CurveForm) -> Vec<Chart> {
             minor_sq,
         } => {
             let u = major_dir
-                .to_real()
+                .clone()
                 .scaled(&root_real(&(major_sq / &real(&major_dir.norm_squared()))));
             let cross = normal.cross(major_dir);
             let v = cross
-                .to_real()
+                .clone()
                 .scaled(&root_real(&(minor_sq / &real(&cross.norm_squared()))));
             analytic(center.clone(), u, v)
         }
@@ -548,7 +548,7 @@ pub(super) fn branch_charts(
                 8 => -*sense * branch,
                 _ => unreachable!("CS branch configuration"),
             };
-            let origin = origin.to_real();
+            let origin = origin.clone();
             let xcoord = lin(&origin, e1);
             let ycoord = lin(&origin, e2);
             let zcoord = lin(&origin, e3);
@@ -628,7 +628,7 @@ pub(super) fn branch_charts(
             sense,
         } => {
             forward = *sense * if *mode == 3 { 1 } else { branch };
-            let origin = origin.to_real();
+            let origin = origin.clone();
             let xcoord = lin(&origin, e1);
             let ycoord = lin(&origin, e2);
             let residual = Linear {
@@ -641,7 +641,7 @@ pub(super) fn branch_charts(
                     let (c, s) = rotated(c, s, q);
                     let y = E::constant(delta.clone()) + E::constant(real(small)) * s;
                     let x = E::integer(branch)
-                        * (E::constant(real(&sq(big))) - y.clone().square()).sqrt();
+                        * (E::constant(big.square()) - y.clone().square()).sqrt();
                     let z = (E::constant(gamma.clone()) * x.clone() + E::constant(real(small)) * c)
                         / E::constant(alpha.clone());
                     let shifted = origin.plus(&e2.scaled(delta));
@@ -875,75 +875,57 @@ mod tests {
     use crate::TracePiece;
 
     #[test]
-    fn trace_constants_use_only_requested_working_precision() {
+    fn algebraic_segment_taylor_matches_its_exact_line() {
         let mut dec = Decider::default();
         let root = Real::from_i64(2).sqrt();
         let start = Point3::new(root.clone(), Real::zero(), Real::zero());
         let end = Point3::new(root, Real::one(), Real::zero());
         let piece = TracePiece::new(segment(&start, &end, &mut dec).unwrap());
 
-        fn precisions(e: &E, out: &mut Vec<u32>) {
-            match e.0.as_ref() {
-                Node::Constant(_, cache) => out.extend(cache.lock().unwrap().keys().copied()),
-                Node::Add(a, b) | Node::Mul(a, b) | Node::Div(a, b) => {
-                    precisions(a, out);
-                    precisions(b, out);
-                }
-                Node::Neg(a) | Node::Sqrt(a) => precisions(a, out),
-                Node::T => {}
-            }
-        }
-        let cached_precisions = || {
-            let mut out = vec![];
-            for e in &piece.coords {
-                precisions(e, &mut out);
-            }
-            out
-        };
-        assert!(cached_precisions().is_empty());
         for p in [64, 256] {
             let t = Ball::from_rational(&Rational::from_ratio(1, 2).unwrap(), p);
             let jets = piece.taylor(&t, 1, &dec).unwrap();
             assert!(jets[0][0].square().contains(&r(2)));
             assert!(jets[0][1].contains(&Rational::from_ratio(1, 2).unwrap()));
             assert!(jets[1][1].contains(&r(1)));
-            assert!(cached_precisions().iter().all(|bits| *bits <= p + 64));
-            assert!(
-                cached_precisions()
-                    .iter()
-                    .all(|bits| *bits < dec.policy().max_precision_bits)
-            );
         }
     }
 
     #[test]
-    fn trace_reuses_separated_constants_at_lower_precision() {
+    fn trace_enclosures_and_failures_are_independent_of_cache_warmth() {
+        fn piece() -> TracePiece {
+            let root = Real::from_i64(2).sqrt();
+            let epsilon = Real::from_rational(Rational::parse("1e-100").unwrap());
+            let divisor = &(&root + &epsilon) - &root;
+            TracePiece::new([E::constant(Real::one() / divisor), E::t(), E::integer(0)])
+        }
         let dec = Decider::default();
-        let root = Real::from_i64(2).sqrt();
-        let epsilon = Real::from_rational(Rational::parse("1e-100").unwrap());
-        let divisor = &(&root + &epsilon) - &root;
-        let constant = E::constant(Real::one() / divisor);
-        let piece = TracePiece::new([constant, E::t(), E::integer(0)]);
-        let low = Ball::from_rational(&r(0), 64);
-        assert_eq!(
-            piece.evaluate(&low, &dec).unwrap_err().code,
-            "numbers.divisor-not-separated"
-        );
-        let high = low.with_precision(512);
+        let warm = piece();
         let value = Rational::parse("1e100").unwrap();
-        assert!(piece.evaluate(&high, &dec).unwrap()[0].contains(&value));
-        for precision in [512, 256, 64] {
-            let point = piece
-                .evaluate(&low.with_precision(precision), &dec)
-                .unwrap();
-            assert!(point[0].contains(&value));
-            assert_eq!(point[0].precision(), precision);
-            assert!(point[1].contains(&r(0)));
+        let high = Ball::from_rational(&r(0), 512);
+        assert!(warm.evaluate(&high, &dec).unwrap()[0].contains(&value));
+        for precision in [64, 256, 512] {
+            let point = high.with_precision(precision);
+            match (piece().evaluate(&point, &dec), warm.evaluate(&point, &dec)) {
+                (Ok(cold), Ok(warm)) => {
+                    for (a, b) in cold.iter().zip(&warm) {
+                        assert_eq!((a.lo(), a.hi()), (b.lo(), b.hi()));
+                    }
+                    assert!(warm[0].contains(&value));
+                    assert!(warm[1].contains(&r(0)));
+                    assert!(warm[2].contains(&r(0)));
+                }
+                (Err(cold), Err(warm)) => {
+                    assert_eq!(cold.code, "numbers.divisor-not-separated");
+                    assert_eq!(warm.code, cold.code);
+                }
+                outcome => panic!("cache warmth changed the same trace query: {outcome:?}"),
+            }
         }
         let mut expired = Decider::default();
         expired.set_deadline(Some(std::time::Instant::now()));
         assert_eq!(
-            piece.evaluate(&low, &expired).unwrap_err().code,
+            warm.evaluate(&high, &expired).unwrap_err().code,
             "numbers.deadline"
         );
     }

@@ -237,6 +237,126 @@ impl Decider {
             StrictSign::Positive => StrictOrder::Greater,
         })
     }
+    /// Attempts an exact rational coefficient reduction. `None` is inconclusive,
+    /// not a proof of irrationality or definedness. Domain and resource failures
+    /// retain their numeric reasons; original expression definitions are unchanged.
+    pub fn rational_value(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
+        self.stats.decisions += 1;
+        if self.expired() {
+            self.stats.refused += 1;
+            return Err(deadline());
+        }
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = (|| {
+            if let Some(value) = x.rational_ref() {
+                work.exact(value, value, false)
+                    .map_err(|code| Refusal::new(code, "rational coefficient reduction stopped"))?;
+                return Ok(Some(value.clone()));
+            }
+            if !x.node.fast_defined {
+                match evaluate(x, 64u32.min(self.policy.max_precision_bits), &mut work) {
+                    Ok(_) => {}
+                    Err(EvalError::Pending(_)) => return Ok(None),
+                    Err(EvalError::Domain(error)) => return Err(error),
+                    Err(EvalError::Limit(code)) => {
+                        return Err(Refusal::new(
+                            code,
+                            "rational coefficient domain proof stopped",
+                        ));
+                    }
+                }
+            }
+            let reduction = crate::tower::rational(x, &mut work).and_then(|value| match value {
+                Some(value) => Ok(Some(value)),
+                None => crate::generator::rational(x, &mut work),
+            });
+            reduction.map_err(|code| Refusal::new(code, "rational coefficient reduction stopped"))
+        })();
+        self.account(&work);
+        if self.expired() {
+            self.stats.refused += 1;
+            return Err(deadline());
+        }
+        match result {
+            Ok(Some(value)) => {
+                self.stats.exact += 1;
+                Ok(Some(value))
+            }
+            Ok(None) => Ok(None),
+            Err(error) => {
+                self.stats.refused += 1;
+                Err(error)
+            }
+        }
+    }
+    pub(crate) fn angle_degrees(&mut self, angle: &Rational) -> Result<[Real; 2], Refusal> {
+        self.stats.decisions += 1;
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = crate::angle::construct(angle, &mut work);
+        self.account(&work);
+        self.check_deadline()?;
+        match result {
+            Ok(values) => {
+                self.stats.exact += 1;
+                Ok(values)
+            }
+            Err(code) => {
+                self.stats.refused += 1;
+                Err(Refusal::new(
+                    code,
+                    "rational-degree angle construction stopped",
+                ))
+            }
+        }
+    }
+    pub(crate) fn real_poly_eliminant(
+        &mut self,
+        polynomial: &crate::RealPoly,
+    ) -> Result<UPoly, Refusal> {
+        self.stats.decisions += 1;
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = crate::real_poly_roots::eliminant(polynomial, &mut work);
+        self.account(&work);
+        self.check_deadline()?;
+        match result {
+            Ok(polynomial) => {
+                self.stats.exact += 1;
+                Ok(polynomial)
+            }
+            Err(code) => {
+                self.stats.refused += 1;
+                Err(Refusal::new(
+                    code,
+                    "algebraic coefficient elimination stopped",
+                ))
+            }
+        }
+    }
+    pub(crate) fn real_poly_resultant(
+        &mut self,
+        left: &crate::RealPoly,
+        right: &crate::RealPoly,
+        var: usize,
+    ) -> Result<crate::RealPoly, Refusal> {
+        self.stats.decisions += 1;
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = crate::real_poly_roots::resultant(left, right, var, &mut work);
+        self.account(&work);
+        self.check_deadline()?;
+        match result {
+            Ok(polynomial) => {
+                self.stats.exact += 1;
+                Ok(polynomial)
+            }
+            Err(code) => {
+                self.stats.refused += 1;
+                Err(Refusal::new(
+                    code,
+                    "algebraic resultant construction stopped",
+                ))
+            }
+        }
+    }
     /// Refines to the requested width, or returns the tightest attained ball.
     pub fn enclose(&mut self, x: &Real, max_width: &Rational) -> Result<Ball, Refusal> {
         assert!(max_width.sign() == Sign::Positive);
@@ -323,6 +443,50 @@ impl Decider {
             });
         self.check_deadline()?;
         result
+    }
+    /// Encloses a known-defined value under the caller's numeric limits.
+    /// Unlike `enclose_at`, this charges proof work and rejects a requested
+    /// working precision above the caller's policy. It creates no default policy.
+    pub fn enclose_budgeted_at(&mut self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
+        self.stats.decisions += 1;
+        let precision = precision.max(1);
+        let policy = BudgetPolicy {
+            max_precision_bits: precision.min(self.policy.max_precision_bits),
+            max_work: self.policy.max_work,
+        };
+        let mut work = Work::new(policy, self.deadline);
+        let result = (|| {
+            self.check_deadline()?;
+            if precision > self.policy.max_precision_bits {
+                return Err(Refusal::new(
+                    "numbers.precision-limit",
+                    "requested working precision exceeds the caller's policy",
+                ));
+            }
+            evaluate_cached(x, precision, &mut work, &mut HashMap::new(), true).map_err(|error| {
+                match error {
+                    EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
+                    EvalError::Limit(code) => {
+                        Refusal::new(code, "working-precision enclosure stopped")
+                    }
+                }
+            })
+        })();
+        self.account(&work);
+        if self.expired() {
+            self.stats.refused += 1;
+            return Err(deadline());
+        }
+        match result {
+            Ok(ball) => {
+                self.stats.refined += 1;
+                Ok(ball)
+            }
+            Err(error) => {
+                self.stats.refused += 1;
+                Err(error)
+            }
+        }
     }
     /// All real roots in increasing order, with exact rational roots and multiplicities.
     pub fn real_roots(&mut self, p: &UPoly) -> Outcome<Vec<RealRoot>> {

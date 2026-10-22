@@ -2,8 +2,8 @@
 //! is certified free of other boundary arcs; displacement alone proves nothing.
 
 use crate::geometry::{natural_ends, on_arc, r, sign, unit};
-use catallax_numbers::{Decider, MPoly, Rational, Real, Refusal, Sign, StrictSign};
-use catallax_shapes::{CurveId, Point3, PointId, RPoint3, RVector3, Rotation, Surface, Vector3};
+use catallax_numbers::{Decider, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
+use catallax_shapes::{CurveId, Point3, PointId, Rotation, Surface, Vector3};
 use catallax_topology::{EdgeId, Model};
 
 fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
@@ -111,19 +111,19 @@ struct Path {
     numerators: [P; 3],
     denominator: P,
 }
-fn vector(v: &RVector3) -> [Rational; 3] {
-    [v.x.clone(), v.y.clone(), v.z.clone()]
+fn vector(v: &Vector3) -> [&Real; 3] {
+    [&v.x, &v.y, &v.z]
 }
-fn point(p: &RPoint3) -> [Rational; 3] {
-    [p.x.clone(), p.y.clone(), p.z.clone()]
+fn point(p: &Point3) -> [&Real; 3] {
+    [&p.x, &p.y, &p.z]
 }
-fn linear_map(origin: &RPoint3, terms: &[(&RVector3, P)], denominator: P) -> Path {
+fn linear_map(origin: &Point3, terms: &[(&Vector3, P)], denominator: P) -> Path {
     let o = point(origin);
     let numerators = std::array::from_fn(|i| {
         terms
             .iter()
-            .fold(denominator.scale(Real::from(o[i].clone())), |p, (v, t)| {
-                p.add(&t.scale(Real::from(vector(v)[i].clone())))
+            .fold(denominator.scale(o[i].clone()), |p, (v, t)| {
+                p.add(&t.scale(vector(v)[i].clone()))
             })
     });
     Path {
@@ -131,14 +131,14 @@ fn linear_map(origin: &RPoint3, terms: &[(&RVector3, P)], denominator: P) -> Pat
         denominator,
     }
 }
-fn parameter(point: &Point3, origin: &RPoint3, direction: &RVector3) -> Real {
-    point.minus(&origin.to_real()).dot(&direction.to_real()) / Real::from(direction.norm_squared())
+fn parameter(point: &Point3, origin: &Point3, direction: &Vector3) -> Real {
+    point.minus(origin).dot(direction) / direction.norm_squared()
 }
 
 fn paths(
     surface: &Surface,
     p: &Point3,
-    q: &RPoint3,
+    q: &Point3,
     dec: &mut Decider,
 ) -> Result<Vec<Path>, Refusal> {
     let one = P::constant(Real::one());
@@ -146,14 +146,8 @@ fn paths(
         Surface::Plane(s) => {
             let u = s.ref_dir.clone();
             let v = s.normal.cross(&u);
-            let a = P::line(
-                parameter(p, &s.origin, &u),
-                parameter(&q.to_real(), &s.origin, &u),
-            );
-            let b = P::line(
-                parameter(p, &s.origin, &v),
-                parameter(&q.to_real(), &s.origin, &v),
-            );
+            let a = P::line(parameter(p, &s.origin, &u), parameter(q, &s.origin, &u));
+            let b = P::line(parameter(p, &s.origin, &v), parameter(q, &s.origin, &v));
             vec![linear_map(&s.origin, &[(&u, a), (&v, b)], one)]
         }
         Surface::Sphere(s) => {
@@ -165,18 +159,14 @@ fn paths(
                 let pole = rotation.apply(&unit(2));
                 let coordinates =
                     |point: &Point3, dec: &mut Decider| -> Result<Option<(Real, Real)>, Refusal> {
-                        let d = point.minus(&s.center.to_real());
-                        let denominator = Real::from(s.radius.clone()) - d.dot(&pole.to_real());
+                        let d = point.minus(&s.center);
+                        let denominator = &s.radius - &d.dot(&pole);
                         if sign(&denominator, dec, "boolean.imprint-ambiguous")? == Sign::Zero {
                             return Ok(None);
                         }
-                        Ok(Some((
-                            &d.dot(&u.to_real()) / &denominator,
-                            &d.dot(&v.to_real()) / &denominator,
-                        )))
+                        Ok(Some((&d.dot(&u) / &denominator, &d.dot(&v) / &denominator)))
                     };
-                let (Some((a, b)), Some((c, d))) =
-                    (coordinates(p, dec)?, coordinates(&q.to_real(), dec)?)
+                let (Some((a, b)), Some((c, d))) = (coordinates(p, dec)?, coordinates(q, dec)?)
                 else {
                     continue;
                 };
@@ -184,7 +174,7 @@ fn paths(
                 let b = P::line(b, d);
                 let norm = a.mul(&a).add(&b.mul(&b));
                 let denominator = one.add(&norm);
-                let rr = Real::from(s.radius.clone());
+                let rr = s.radius.clone();
                 result.push(linear_map(
                     &s.center,
                     &[
@@ -198,38 +188,35 @@ fn paths(
             result
         }
         Surface::Cylinder(s) => {
-            let Some(length) = crate::points::sqrt_rational(&s.ref_dir.norm_squared()) else {
-                return Ok(Vec::new());
-            };
+            let length = crate::points::root(&s.ref_dir.norm_squared());
             let base = s.ref_dir.scaled(&(&s.radius / &length));
             let mut result = Vec::new();
-            for b in [base.clone(), base.scaled(&r(-1))] {
+            for b in [base.clone(), base.scaled(&Real::from_i64(-1))] {
                 let v = s.axis.cross(&b);
                 let rr = b.norm_squared();
                 let vv = v.norm_squared();
                 let coordinates =
                     |point: &Point3, dec: &mut Decider| -> Result<Option<(Real, Real)>, Refusal> {
-                        let d = point.minus(&s.origin.to_real());
-                        let denominator = Real::from(rr.clone()) + d.dot(&b.to_real());
+                        let d = point.minus(&s.origin);
+                        let denominator = &rr + &d.dot(&b);
                         if sign(&denominator, dec, "boolean.imprint-ambiguous")? == Sign::Zero {
                             return Ok(None);
                         }
                         Ok(Some((
-                            &d.dot(&v.to_real()) / &denominator * Real::from(&rr / &vv),
+                            &d.dot(&v) / &denominator * (&rr / &vv),
                             parameter(point, &s.origin, &s.axis),
                         )))
                     };
-                let (Some((a, h)), Some((c, j))) =
-                    (coordinates(p, dec)?, coordinates(&q.to_real(), dec)?)
+                let (Some((a, h)), Some((c, j))) = (coordinates(p, dec)?, coordinates(q, dec)?)
                 else {
                     continue;
                 };
                 let a = P::line(a, c);
                 let h = P::line(h, j);
-                let square = a.mul(&a).scale(Real::from(vv));
-                let denominator = P::constant(Real::from(rr.clone())).add(&square);
-                let radial = P::constant(Real::from(rr.clone())).sub(&square);
-                let cross = a.scale(Real::from(rr) * Real::from_i64(2));
+                let square = a.mul(&a).scale(vv);
+                let denominator = P::constant(rr.clone()).add(&square);
+                let radial = P::constant(rr.clone()).sub(&square);
+                let cross = a.scale(rr * Real::from_i64(2));
                 result.push(linear_map(
                     &s.origin,
                     &[(&b, radial), (&v, cross), (&s.axis, h.mul(&denominator))],
@@ -279,6 +266,52 @@ fn paths(
                         (&u.scaled(&r(side)), radial),
                         (&v.scaled(&r(side)), cross),
                         (&axis, h.mul(&denominator)),
+                    ],
+                    denominator,
+                ));
+            }
+            result
+        }
+        Surface::EllipticCylinder(s) => {
+            let first = s
+                .major_dir
+                .scaled(&(&Real::one() / &crate::points::root(&s.major_dir.norm_squared())));
+            let axis = s
+                .axis
+                .scaled(&(&Real::one() / &crate::points::root(&s.axis.norm_squared())));
+            let second = axis.cross(&first);
+            let major = crate::points::root(&s.major_sq);
+            let minor = crate::points::root(&s.minor_sq);
+            let mut result = Vec::new();
+            for sense in [1, -1] {
+                let first = first.scaled(&Real::from_i64(sense));
+                let second = second.scaled(&Real::from_i64(sense));
+                let coordinates =
+                    |point: &Point3, dec: &mut Decider| -> Result<Option<(Real, Real)>, Refusal> {
+                        let d = point.minus(&s.origin);
+                        let denominator = &Real::one() + &(&d.dot(&first) / &major);
+                        if sign(&denominator, dec, "boolean.imprint-ambiguous")? == Sign::Zero {
+                            return Ok(None);
+                        }
+                        Ok(Some((
+                            (&d.dot(&second) / &minor) / denominator,
+                            parameter(point, &s.origin, &s.axis),
+                        )))
+                    };
+                let (Some((a, h)), Some((c, j))) = (coordinates(p, dec)?, coordinates(q, dec)?)
+                else {
+                    continue;
+                };
+                let t = P::line(a, c);
+                let h = P::line(h, j);
+                let square = t.mul(&t);
+                let denominator = one.add(&square);
+                result.push(linear_map(
+                    &s.origin,
+                    &[
+                        (&first, one.sub(&square).scale(major.clone())),
+                        (&second, t.scale(Real::from_i64(2) * minor.clone())),
+                        (&s.axis, h.mul(&denominator)),
                     ],
                     denominator,
                 ));
@@ -348,19 +381,26 @@ fn paths(
     Ok(result)
 }
 
-fn numerator(equation: &MPoly, path: &Path) -> P {
-    let degree = equation.total_degree().unwrap_or(0);
-    equation
-        .terms()
-        .into_iter()
-        .fold(P::constant(Real::zero()), |sum, (monomial, k)| {
-            let mut term = P::constant(Real::from(k));
-            for (i, &power) in monomial.exponents().iter().enumerate() {
-                term = term.mul(&path.numerators[i].pow(power));
-            }
-            term = term.mul(&path.denominator.pow(degree - monomial.degree()));
-            sum.add(&term)
-        })
+fn numerator(equation: &RealPoly, path: &Path, dec: &mut Decider) -> Result<P, Refusal> {
+    let degree = equation.total_degree(dec)?.unwrap_or(0);
+    let mut sum = P::constant(Real::zero());
+    for (monomial, coefficient) in equation.terms() {
+        let zero = if let Some(value) = coefficient.rational_ref() {
+            value.is_zero()
+        } else {
+            coefficient_sign(&coefficient, dec)? == Sign::Zero
+        };
+        if zero {
+            continue;
+        }
+        let mut term = P::constant(coefficient);
+        for (i, &power) in monomial.exponents().iter().enumerate() {
+            term = term.mul(&path.numerators[i].pow(power));
+        }
+        term = term.mul(&path.denominator.pow(degree - monomial.degree()));
+        sum = sum.add(&term);
+    }
+    Ok(sum)
 }
 
 /// The source position is an exact arc probe on the supplied source curve.
@@ -368,7 +408,7 @@ pub(crate) fn adjacent(
     model: &Model,
     surface: &Surface,
     source: (PointId, &Point3, CurveId),
-    q: &RPoint3,
+    q: &Point3,
     left: &Vector3,
     barriers: &[EdgeId],
     dec: &mut Decider,
@@ -399,14 +439,14 @@ pub(crate) fn adjacent(
                 .curve(edge.curve)
                 .equations(model.geom())
                 .iter()
-                .map(|e| {
+                .map(|e| -> Result<P, Refusal> {
                     // Every path is a parametrisation of this surface.
                     // Re-expanding its defining zero as algebraic Real
                     // coefficients would discard that construction proof.
-                    let mut polynomial = if *e == carrier {
+                    let mut polynomial = if e.same_definition(&carrier) {
                         P::constant(Real::zero())
                     } else {
-                        numerator(e, &path)
+                        numerator(e, &path, dec)?
                     };
                     if edge.curve == source_curve {
                         // The exact arc probe is on this carrier, and path(0)=p.
@@ -414,9 +454,9 @@ pub(crate) fn adjacent(
                         // information and can trigger needless elimination.
                         polynomial.0[0] = Real::zero();
                     }
-                    polynomial
+                    Ok(polynomial)
                 })
-                .collect();
+                .collect::<Result<_, _>>()?;
             let mut separated = false;
             for equation in &equations {
                 if equation.excludes_zero(dec)? {

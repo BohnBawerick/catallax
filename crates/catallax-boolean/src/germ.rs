@@ -3,7 +3,7 @@
 
 use crate::geometry::{oriented, product, refusal, sign};
 use catallax_intersect::tangent_at;
-use catallax_numbers::{Decider, MPoly, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Real, RealPoly, Refusal, Sign};
 use catallax_shapes::{Curve, CurveId, Point3, PointId, Surface, SurfaceId, Vector3};
 use catallax_topology::{EdgeId, Model, Sense};
 use std::cmp::Ordering;
@@ -23,7 +23,7 @@ enum Source {
     Surface(SurfaceId),
 }
 
-fn gradient(p: &MPoly, point: &Point3) -> Vector3 {
+fn gradient(p: &RealPoly, point: &Point3) -> Vector3 {
     let x = [point.x.clone(), point.y.clone(), point.z.clone()];
     Vector3::new(
         p.partial(0).eval_real(&x),
@@ -31,7 +31,7 @@ fn gradient(p: &MPoly, point: &Point3) -> Vector3 {
         p.partial(2).eval_real(&x),
     )
 }
-fn hessian(p: &MPoly, point: &Point3, v: &Vector3) -> Vector3 {
+fn hessian(p: &RealPoly, point: &Point3, v: &Vector3) -> Vector3 {
     let x = [point.x.clone(), point.y.clone(), point.z.clone()];
     let t = [&v.x, &v.y, &v.z];
     let components: [Real; 3] = std::array::from_fn(|i| {
@@ -437,32 +437,31 @@ mod tests {
         let mut model = Model::new();
         let normal = RVector3::new(q("0"), q("0"), q("1"));
         let circle = model.geom_mut().add_curve(Curve::Circle(Circle {
-            center: RPoint3::new(q("0"), q("1"), q("0")),
-            normal: normal.clone(),
-            radius_sq: q("1"),
-            ref_dir: RVector3::new(q("1"), q("0"), q("0")),
+            center: RPoint3::new(q("0"), q("1"), q("0")).into(),
+            normal: normal.clone().into(),
+            radius_sq: q("1").into(),
+            ref_dir: RVector3::new(q("1"), q("0"), q("0")).into(),
         }));
         // x² + 3xy/2 + y² - 2y = 0 gives y = x²/2 + 3x³/8 + O(x⁴).
         let tilted = model.geom_mut().add_curve(Curve::Ellipse(Ellipse {
-            center: RPoint3::new(q("-12/7"), q("16/7"), q("0")),
-            normal: normal.clone(),
-            major_dir: RVector3::new(q("1"), q("-1"), q("0")),
-            major_sq: q("64/7"),
-            minor_sq: q("64/49"),
+            center: RPoint3::new(q("-12/7"), q("16/7"), q("0")).into(),
+            normal: normal.clone().into(),
+            major_dir: RVector3::new(q("1"), q("-1"), q("0")).into(),
+            major_sq: q("64/7").into(),
+            minor_sq: q("64/49").into(),
         }));
         // The upright ellipse gives y = x²/2 + x⁴/16 + O(x⁶);
         // the circle gives y = x²/2 + x⁴/8 + O(x⁶).
         let upright = model.geom_mut().add_curve(Curve::Ellipse(Ellipse {
-            center: RPoint3::new(q("0"), q("2"), q("0")),
-            normal: normal.clone(),
-            major_dir: RVector3::new(q("0"), q("1"), q("0")),
-            major_sq: q("4"),
-            minor_sq: q("2"),
+            center: RPoint3::new(q("0"), q("2"), q("0")).into(),
+            normal: normal.clone().into(),
+            major_dir: RVector3::new(q("0"), q("1"), q("0")).into(),
+            major_sq: q("4").into(),
+            minor_sq: q("2").into(),
         }));
-        let point =
-            model
-                .geom_mut()
-                .add_point(PointDef::Explicit(RPoint3::new(q("0"), q("0"), q("0"))));
+        let point = model.geom_mut().add_point(PointDef::Explicit(
+            (RPoint3::new(q("0"), q("0"), q("0"))).into(),
+        ));
         let normal = normal.to_real();
         let a = germ(&model, circle, point, 0, 2);
         for (curve, want) in [(tilted, Ordering::Less), (upright, Ordering::Greater)] {

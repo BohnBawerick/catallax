@@ -4,7 +4,6 @@ use catallax_numbers::{
     PolySystem, Rational, Real, RootBox, Sign, StrictSign, ZeroProof,
 };
 use std::{
-    hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -27,15 +26,60 @@ fn quaternion(q: [i64; 4]) -> Rotation {
 }
 fn shapes() -> [Surface; 5] {
     [
-        Surface::Plane(Plane::new(p(0, 0, 1), v(0, 0, 2), v(1, 0, 0)).unwrap()),
-        Surface::Cylinder(Cylinder::new(p(0, 0, 0), v(0, 0, 2), 5.into(), v(3, 0, 0)).unwrap()),
-        Surface::Cone(Cone::new(p(0, 0, 0), v(0, 0, 1), r("1/2"), v(1, 0, 0)).unwrap()),
-        Surface::Sphere(Sphere::new(p(0, 0, 0), 3.into(), v(0, 0, 1), v(1, 0, 0)).unwrap()),
-        Surface::Torus(Torus::new(p(0, 0, 0), v(0, 0, 1), 3.into(), 1.into(), v(1, 0, 0)).unwrap()),
+        Surface::Plane(
+            Plane::new(
+                (p(0, 0, 1)).into(),
+                (v(0, 0, 2)).into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
+        Surface::Cylinder(
+            Cylinder::new(
+                (p(0, 0, 0)).into(),
+                (v(0, 0, 2)).into(),
+                5.into(),
+                (v(3, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
+        Surface::Cone(
+            Cone::new(
+                (p(0, 0, 0)).into(),
+                (v(0, 0, 1)).into(),
+                (r("1/2")).into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
+        Surface::Sphere(
+            Sphere::new(
+                (p(0, 0, 0)).into(),
+                3.into(),
+                (v(0, 0, 1)).into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
+        Surface::Torus(
+            Torus::new(
+                (p(0, 0, 0)).into(),
+                (v(0, 0, 1)).into(),
+                3.into(),
+                1.into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
     ]
 }
 fn explicit(store: &mut GeomStore, point: RPoint3) -> PointId {
-    store.add_point(PointDef::Explicit(point))
+    store.add_point(PointDef::Explicit((point).into()))
 }
 fn contains(actual: &[Ball; 3], expected: &RPoint3) {
     for (a, e) in actual.iter().zip([&expected.x, &expected.y, &expected.z]) {
@@ -48,46 +92,78 @@ fn coincident<T: std::fmt::Debug>(outcome: Outcome<T>) {
 
 #[test]
 fn quaternion_matrix_composition_and_pose_order() {
+    let mut dec = Decider::default();
     for n in [1, 2, -3] {
-        assert_eq!(quaternion([n, 0, 0, 0]), Rotation::identity());
+        assert!(
+            quaternion([n, 0, 0, 0])
+                .same_rotation(&Rotation::identity(), &mut dec)
+                .unwrap()
+        );
     }
     let turn = quaternion([1, 0, 0, 1]);
-    assert_eq!(turn.apply(&v(1, 0, 0)), v(0, 1, 0));
-    assert_eq!(quaternion([1, 1, 1, 1]).apply(&v(0, 1, 0)), v(0, 0, 1));
+    assert_eq!(
+        turn.apply(&v(1, 0, 0).into()).as_rational(),
+        Some(v(0, 1, 0))
+    );
+    assert_eq!(
+        quaternion([1, 1, 1, 1])
+            .apply(&v(0, 1, 0).into())
+            .as_rational(),
+        Some(v(0, 0, 1))
+    );
     let q = quaternion([1, 2, 3, 4]);
     assert_eq!(
-        q.matrix(),
-        &[
-            [r("-2/3"), r("2/15"), r("11/15")],
-            [r("2/3"), r("-1/3"), r("2/3")],
-            [r("1/3"), r("14/15"), r("2/15")]
-        ]
+        q.rational_matrix(),
+        Some([
+            [&r("-2/3"), &r("2/15"), &r("11/15")],
+            [&r("2/3"), &r("-1/3"), &r("2/3")],
+            [&r("1/3"), &r("14/15"), &r("2/15")]
+        ])
     );
-    assert_eq!(
-        q.then(&quaternion([2, -1, 0, 5])),
-        quaternion([-16, -12, 20, 10])
+    assert!(
+        q.then(&quaternion([2, -1, 0, 5]))
+            .same_rotation(&quaternion([-16, -12, 20, 10]), &mut dec)
+            .unwrap()
     );
-    let hash = |a: &Rotation| {
-        let mut h = DefaultHasher::new();
-        a.hash(&mut h);
-        h.finish()
-    };
     for scale in [r("-1"), r("5"), r("1/7")] {
         let [w, x, y, z] = [1, 2, 3, 4].map(|x| Rational::from_i64(x) * scale.clone());
         let scaled = Rotation::from_quaternion(w, x, y, z).unwrap();
-        assert_eq!(scaled, q);
-        assert_eq!(hash(&scaled), hash(&q));
+        assert!(scaled.same_rotation(&q, &mut dec).unwrap());
     }
-    let a = Pose::new(turn, v(1, 2, 3));
-    let next = Pose::new(quaternion([2, 1, 0, 0]), v(-7, 2, 4));
-    assert_eq!(a.apply_point(&p(1, 0, 0)), p(1, 3, 3));
-    assert_eq!(a.inverse().apply_point(&p(1, 3, 3)), p(1, 0, 0));
+    let a = Pose::new(
+        turn,
+        (v(1, 2, 3)).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
+    let next = Pose::new(
+        quaternion([2, 1, 0, 0]),
+        (v(-7, 2, 4)).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     assert_eq!(
-        a.then(&next).apply_point(&p(2, 5, 7)),
-        next.apply_point(&a.apply_point(&p(2, 5, 7)))
+        a.apply_point(&p(1, 0, 0).into()).as_rational(),
+        Some(p(1, 3, 3))
     );
-    assert_eq!(a.then(&a.inverse()), Pose::identity());
-    assert_eq!(a.apply_vector(&v(1, 0, 0)), v(0, 1, 0));
+    assert_eq!(
+        a.inverse().apply_point(&p(1, 3, 3).into()).as_rational(),
+        Some(p(1, 0, 0))
+    );
+    assert_eq!(
+        a.then(&next).apply_point(&p(2, 5, 7).into()).as_rational(),
+        next.apply_point(&a.apply_point(&p(2, 5, 7).into()))
+            .as_rational()
+    );
+    assert!(
+        a.then(&a.inverse())
+            .same_motion(&Pose::identity(), &mut dec)
+            .unwrap()
+    );
+    assert_eq!(
+        a.apply_vector(&v(1, 0, 0).into()).as_rational(),
+        Some(v(0, 1, 0))
+    );
     assert_eq!(
         Rotation::from_quaternion(0.into(), 0.into(), 0.into(), 0.into())
             .unwrap_err()
@@ -96,83 +172,155 @@ fn quaternion_matrix_composition_and_pose_order() {
     );
     for i in 1..=100 {
         let rotation = quaternion([i, i - 3, 2 * i, 7 - i]);
-        assert_eq!(rotation.then(&rotation.inverse()), Rotation::identity());
-        let x = rotation.apply(&v(1, 0, 0));
-        let y = rotation.apply(&v(0, 1, 0));
-        let z = rotation.apply(&v(0, 0, 1));
-        assert_eq!(x.dot(&y.cross(&z)), Rational::one());
+        assert!(
+            rotation
+                .then(&rotation.inverse())
+                .same_rotation(&Rotation::identity(), &mut dec)
+                .unwrap()
+        );
+        let x = rotation.apply(&v(1, 0, 0).into());
+        let y = rotation.apply(&v(0, 1, 0).into());
+        let z = rotation.apply(&v(0, 0, 1).into());
+        assert_eq!(x.dot(&y.cross(&z)).as_rational(), Some(Rational::one()));
     }
 }
 
 #[test]
 fn constructor_refusal_precedence() {
     assert_eq!(
-        Plane::new(p(0, 0, 0), v(0, 0, 0), v(1, 0, 1))
-            .unwrap_err()
-            .code,
+        Plane::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 0).into(),
+            v(1, 0, 1).into(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
         "shapes.zero-vector"
     );
     assert_eq!(
-        Plane::new(p(0, 0, 0), v(0, 0, 1), v(1, 0, 1))
-            .unwrap_err()
-            .code,
+        Plane::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 1).into(),
+            v(1, 0, 1).into(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
         "shapes.not-perpendicular"
     );
     assert_eq!(
-        Cylinder::new(p(0, 0, 0), v(0, 0, 0), (-1).into(), v(1, 0, 1))
-            .unwrap_err()
-            .code,
+        Cylinder::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 0).into(),
+            (-1).into(),
+            v(1, 0, 1).into(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
         "shapes.zero-vector"
     );
     for radius in [0, -1] {
         assert_eq!(
-            Cylinder::new(p(0, 0, 0), v(0, 0, 1), radius.into(), v(1, 0, 1))
-                .unwrap_err()
-                .code,
+            Cylinder::new(
+                p(0, 0, 0).into(),
+                v(0, 0, 1).into(),
+                radius.into(),
+                v(1, 0, 1).into(),
+                &mut Decider::default()
+            )
+            .unwrap_err()
+            .code,
             "shapes.non-positive-radius"
         );
     }
     assert_eq!(
-        Cone::new(p(0, 0, 0), v(0, 0, 1), 0.into(), v(1, 0, 0))
-            .unwrap_err()
-            .code,
+        Cone::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 1).into(),
+            0.into(),
+            v(1, 0, 0).into(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
         "shapes.non-positive-slope"
     );
     assert_eq!(
-        Sphere::new(p(0, 0, 0), 0.into(), v(0, 0, 1), v(1, 0, 0))
-            .unwrap_err()
-            .code,
+        Sphere::new(
+            p(0, 0, 0).into(),
+            0.into(),
+            v(0, 0, 1).into(),
+            v(1, 0, 0).into(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
         "shapes.non-positive-radius"
     );
     assert_eq!(
-        Torus::new(p(0, 0, 0), v(0, 0, 1), 0.into(), 1.into(), v(1, 0, 0))
-            .unwrap_err()
-            .code,
+        Torus::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 1).into(),
+            0.into(),
+            1.into(),
+            v(1, 0, 0).into(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
         "shapes.non-positive-radius"
     );
     for minor in [3, 4] {
         assert_eq!(
-            Torus::new(p(0, 0, 0), v(0, 0, 1), 3.into(), minor.into(), v(1, 0, 1))
-                .unwrap_err()
-                .code,
+            Torus::new(
+                p(0, 0, 0).into(),
+                v(0, 0, 1).into(),
+                3.into(),
+                minor.into(),
+                v(1, 0, 1).into(),
+                &mut Decider::default()
+            )
+            .unwrap_err()
+            .code,
             "shapes.torus-self-intersecting"
         );
     }
     assert_eq!(
-        Line::new(p(0, 0, 0), v(0, 0, 0)).unwrap_err().code,
+        Line::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 0).into(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
         "shapes.zero-vector"
     );
     assert_eq!(
-        Circle::new(p(0, 0, 0), v(0, 0, 1), 0.into(), v(1, 0, 0))
-            .unwrap_err()
-            .code,
+        Circle::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 1).into(),
+            0.into(),
+            v(1, 0, 0).into(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
         "shapes.non-positive-radius"
     );
     for minor in [0, 25, 26] {
         assert_eq!(
-            Ellipse::new(p(0, 0, 0), v(0, 0, 1), v(2, 0, 0), 25.into(), minor.into())
-                .unwrap_err()
-                .code,
+            Ellipse::new(
+                p(0, 0, 0).into(),
+                v(0, 0, 1).into(),
+                v(2, 0, 0).into(),
+                25.into(),
+                minor.into(),
+                &mut Decider::default()
+            )
+            .unwrap_err()
+            .code,
             "shapes.ellipse-axes"
         );
     }
@@ -184,41 +332,66 @@ fn exact_polynomials_and_gradients_under_poses() {
     let points = [p(5, 7, 1), p(3, 4, 7), p(3, 4, -10), p(1, 2, 2), p(4, 0, 0)];
     for (surface, point) in surfaces.iter().zip(points.iter()) {
         assert_eq!(
-            surface
-                .implicit()
-                .eval(&[point.x.clone(), point.y.clone(), point.z.clone()]),
+            surface.implicit().rational().unwrap().eval(&[
+                point.x.clone(),
+                point.y.clone(),
+                point.z.clone()
+            ]),
             Rational::zero()
         );
     }
     assert_eq!(
-        surfaces[1].implicit().eval(&[1.into(), 1.into(), 1.into()]),
+        surfaces[1]
+            .implicit()
+            .rational()
+            .unwrap()
+            .eval(&[1.into(), 1.into(), 1.into()]),
         Rational::from_i64(-92)
     );
     assert_eq!(
-        surfaces[4].implicit().eval(&[0.into(), 0.into(), 0.into()]),
+        surfaces[4]
+            .implicit()
+            .rational()
+            .unwrap()
+            .eval(&[0.into(), 0.into(), 0.into()]),
         Rational::from_i64(64)
     );
     assert_eq!(
-        surfaces[4].implicit().eval(&[3.into(), 0.into(), 0.into()]),
+        surfaces[4]
+            .implicit()
+            .rational()
+            .unwrap()
+            .eval(&[3.into(), 0.into(), 0.into()]),
         Rational::from_i64(-35)
     );
     for i in 1..=20 {
-        let pose = Pose::new(quaternion([i, 2, 3, 4]), v(1_000_000, -7, i));
+        let pose = Pose::new(
+            quaternion([i, 2, 3, 4]),
+            (v(1_000_000, -7, i)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap();
         let point = p(i - 5, 2 * i - 7, 3 - i);
         for surface in &surfaces {
             let moved = surface.transformed(&pose);
-            let image = pose.apply_point(&point);
+            let image = pose.apply_point(&point.to_real()).as_rational().unwrap();
             assert_eq!(
-                moved.implicit().eval(&[image.x, image.y, image.z]),
-                surface
+                moved
                     .implicit()
-                    .eval(&[point.x.clone(), point.y.clone(), point.z.clone()])
+                    .rational()
+                    .unwrap()
+                    .eval(&[image.x, image.y, image.z]),
+                surface.implicit().rational().unwrap().eval(&[
+                    point.x.clone(),
+                    point.y.clone(),
+                    point.z.clone()
+                ])
             );
             let gradient = surface.gradient(&point.to_real());
             for (axis, coordinate) in [gradient.x, gradient.y, gradient.z].into_iter().enumerate() {
                 assert_eq!(
                     coordinate.as_rational().unwrap(),
-                    surface.implicit().partial(axis).eval(&[
+                    surface.implicit().partial(axis).rational().unwrap().eval(&[
                         point.x.clone(),
                         point.y.clone(),
                         point.z.clone()
@@ -253,25 +426,29 @@ fn sides_near_carriers_and_scaled_placed_families() {
     // A fixed rational family covers 30,000 exact signs, including scale and placement.
     for i in 0..6000_i64 {
         let scale = r(&format!("1e{}", i % 61 - 30));
+        let real_scale = Real::from(scale.clone());
         let e = r(if i % 2 == 0 { "1e-30" } else { "-1e-30" });
         let pose = Pose::new(
             quaternion([1 + i % 11, 2, 3, 4]),
-            v(i % 17, -i % 19, i % 23),
-        );
+            (v(i % 17, -i % 19, i % 23)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap();
         for (kind, surface) in surfaces.iter().enumerate() {
             let mut surface = surface.clone();
             match &mut surface {
                 Surface::Plane(s) => {
-                    s.origin =
-                        RPoint3::origin().plus(&s.origin.minus(&RPoint3::origin()).scaled(&scale))
+                    s.origin = Point3::origin()
+                        .plus(&s.origin.minus(&Point3::origin()).scaled(&real_scale))
                 }
-                Surface::Cylinder(s) => s.radius = &s.radius * &scale,
+                Surface::Cylinder(s) => s.radius = &s.radius * &real_scale,
                 Surface::Cone(_) => {}
-                Surface::Sphere(s) => s.radius = &s.radius * &scale,
+                Surface::Sphere(s) => s.radius = &s.radius * &real_scale,
                 Surface::Torus(s) => {
-                    s.major = &s.major * &scale;
-                    s.minor = &s.minor * &scale;
+                    s.major = &s.major * &real_scale;
+                    s.minor = &s.minor * &real_scale;
                 }
+                Surface::EllipticCylinder(_) => unreachable!("stock-family fixtures"),
             }
             let local = match kind {
                 0 => RPoint3::new(5.into(), 7.into(), Rational::one() + e.clone()),
@@ -305,7 +482,7 @@ fn sides_near_carriers_and_scaled_placed_families() {
                 Side::Back
             };
             assert_eq!(
-                temporary.side_of(s, &pose.apply_point(&point).to_real(), &mut dec),
+                temporary.side_of(s, &pose.apply_point(&point.to_real()), &mut dec),
                 Outcome::Proven(expected),
                 "family {i} kind {kind}"
             );
@@ -316,12 +493,22 @@ fn sides_near_carriers_and_scaled_placed_families() {
 #[test]
 fn curve_equations_origins_and_membership() {
     let mut store = GeomStore::new();
-    let line = Curve::Line(Line::new(p(1, 2, 3), v(2, -1, 0)).unwrap());
+    let line = Curve::Line(
+        Line::new(
+            (p(1, 2, 3)).into(),
+            (v(2, -1, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     let x = MPoly::var(3, 0);
     let y = MPoly::var(3, 1);
     let z = MPoly::var(3, 2);
     assert_eq!(
-        line.equations(&store),
+        line.equations(&store)
+            .into_iter()
+            .map(|p| p.into_rational().unwrap())
+            .collect::<Vec<_>>(),
         vec![
             &z - &MPoly::constant(3, 3.into()),
             z.scale(&2.into()) - MPoly::constant(3, 6.into()),
@@ -330,9 +517,26 @@ fn curve_equations_origins_and_membership() {
     );
     let curves = [
         line,
-        Curve::Circle(Circle::new(p(0, 0, 0), v(0, 0, 1), 25.into(), v(1, 0, 0)).unwrap()),
+        Curve::Circle(
+            Circle::new(
+                (p(0, 0, 0)).into(),
+                (v(0, 0, 1)).into(),
+                25.into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
         Curve::Ellipse(
-            Ellipse::new(p(0, 0, 0), v(0, 0, 1), v(2, 0, 0), 25.into(), 9.into()).unwrap(),
+            Ellipse::new(
+                (p(0, 0, 0)).into(),
+                (v(0, 0, 1)).into(),
+                (v(2, 0, 0)).into(),
+                25.into(),
+                9.into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ),
     ];
     let on = [
@@ -346,9 +550,10 @@ fn curve_equations_origins_and_membership() {
         let c = store.add_curve(curve);
         let plane = store.add_surface(Surface::Plane(
             Plane::new(
-                RPoint3::new(0.into(), 0.into(), point.z.clone()),
-                v(0, 0, 1),
-                v(1, 0, 0),
+                (RPoint3::new(0.into(), 0.into(), point.z.clone())).into(),
+                (v(0, 0, 1)).into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ));
@@ -375,19 +580,40 @@ fn curve_equations_origins_and_membership() {
 fn closed_and_isolated_positions_and_refusal_propagation() {
     let mut store = GeomStore::new();
     let s = store.add_surface(Surface::Sphere(
-        Sphere::new(p(0, 0, 0), 5.into(), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Sphere::new(
+            (p(0, 0, 0)).into(),
+            5.into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let s1 = store.add_surface(Surface::Sphere(
-        Sphere::new(p(6, 0, 0), 5.into(), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Sphere::new(
+            (p(6, 0, 0)).into(),
+            5.into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let s2 = store.add_surface(Surface::Sphere(
-        Sphere::new(p(0, 6, 0), 5.into(), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Sphere::new(
+            (p(0, 6, 0)).into(),
+            5.into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let system = Arc::new(
         PolySystem::new(vec![
-            store.implicit(s),
-            store.implicit(s1),
-            store.implicit(s2),
+            store.implicit(s).into_rational().unwrap(),
+            store.implicit(s1).into_rational().unwrap(),
+            store.implicit(s2).into_rational().unwrap(),
         ])
         .unwrap(),
     );
@@ -424,7 +650,14 @@ fn closed_and_isolated_positions_and_refusal_propagation() {
     }));
     coincident(store.same_point(q, closed, &mut dec));
     let cylinder = store.add_surface(Surface::Cylinder(
-        Cylinder::new(p(0, 0, 0), v(0, 0, 1), 1.into(), v(1, 0, 0)).unwrap(),
+        Cylinder::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            1.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let root = Real::from(r("1/2")).sqrt();
     coincident(store.side_of(
@@ -453,7 +686,13 @@ fn fact_closure_deadlines_and_numeric_short_circuit() {
     let mut store = GeomStore::new();
     let s = store.add_surface(shapes()[3].clone());
     let plane = store.add_surface(Surface::Plane(
-        Plane::new(p(0, 0, 2), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Plane::new(
+            (p(0, 0, 2)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let witness = explicit(&mut store, p(1, 2, 2));
     let c = store.add_curve(Curve::Intersection(IntersectionCurve {
@@ -520,10 +759,22 @@ fn equality_is_geometric_but_cones_keep_the_nappe() {
     let mut store = GeomStore::new();
     let mut dec = Decider::default();
     let a = store.add_surface(Surface::Plane(
-        Plane::new(p(0, 0, 1), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Plane::new(
+            (p(0, 0, 1)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let b = store.add_surface(Surface::Plane(
-        Plane::new(p(5, 7, 1), v(0, 0, -4), v(0, 1, 0)).unwrap(),
+        Plane::new(
+            (p(5, 7, 1)).into(),
+            (v(0, 0, -4)).into(),
+            (v(0, 1, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     coincident(store.same_surface(a, b, &mut dec));
     assert_eq!(dec.stats().decisions, 0);
@@ -534,7 +785,14 @@ fn equality_is_geometric_but_cones_keep_the_nappe() {
     );
     let cone = store.add_surface(shapes()[2].clone());
     let opposite = store.add_surface(Surface::Cone(
-        Cone::new(p(0, 0, 0), v(0, 0, -1), r("1/2"), v(1, 0, 0)).unwrap(),
+        Cone::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, -1)).into(),
+            (r("1/2")).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     assert_eq!(
         store.same_surface(cone, opposite, &mut dec),
@@ -550,15 +808,46 @@ fn enclosures_derivatives_and_inverse_angles() {
     for precision in [1, 64, 1000] {
         let zero = b(0, precision);
         let half_pi = Ball::pi(precision) * Ball::from_rational(&r("1/2"), precision);
-        contains(&surfaces[1].evaluate(&zero, &b(3, precision)), &p(5, 0, 3));
         contains(
-            &surfaces[1].evaluate(&half_pi, &b(3, precision)),
+            &surfaces[1]
+                .evaluate(
+                    &zero,
+                    &b(3, precision),
+                    &catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
+            &p(5, 0, 3),
+        );
+        contains(
+            &surfaces[1]
+                .evaluate(
+                    &half_pi,
+                    &b(3, precision),
+                    &catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             &p(0, 5, 3),
         );
-        contains(&surfaces[3].evaluate(&zero, &half_pi), &p(0, 0, 3));
-        contains(&surfaces[4].evaluate(&zero, &zero), &p(4, 0, 0));
         contains(
-            &surfaces[2].evaluate(&zero, &b(-10, precision)),
+            &surfaces[3]
+                .evaluate(&zero, &half_pi, &catallax_numbers::Decider::default())
+                .unwrap(),
+            &p(0, 0, 3),
+        );
+        contains(
+            &surfaces[4]
+                .evaluate(&zero, &zero, &catallax_numbers::Decider::default())
+                .unwrap(),
+            &p(4, 0, 0),
+        );
+        contains(
+            &surfaces[2]
+                .evaluate(
+                    &zero,
+                    &b(-10, precision),
+                    &catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             &p(-5, 0, -10),
         );
         let expected = [
@@ -569,7 +858,9 @@ fn enclosures_derivatives_and_inverse_angles() {
             [p(0, 4, 0), p(0, 0, 1)],
         ];
         for (s, derivatives) in surfaces.iter().zip(expected) {
-            let result = s.derivatives(&zero, &zero);
+            let result = s
+                .derivatives(&zero, &zero, &catallax_numbers::Decider::default())
+                .unwrap();
             contains(&result[0], &derivatives[0]);
             contains(&result[1], &derivatives[1]);
         }
@@ -577,47 +868,124 @@ fn enclosures_derivatives_and_inverse_angles() {
     let precision = 128;
     for (x, y) in [(3, 4), (-5, 0), (-3, -4), (3, -4)] {
         let parameters = surfaces[1]
-            .parameters_of(&[b(x, precision), b(y, precision), b(7, precision)])
+            .parameters_of(
+                &[b(x, precision), b(y, precision), b(7, precision)],
+                &catallax_numbers::Decider::default(),
+            )
+            .unwrap()
             .unwrap();
         assert!(parameters[1].contains(&7.into()));
         contains(
-            &surfaces[1].evaluate(&parameters[0], &parameters[1]),
+            &surfaces[1]
+                .evaluate(
+                    &parameters[0],
+                    &parameters[1],
+                    &catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             &p(x, y, 7),
         );
     }
     let uv = surfaces[4]
-        .parameters_of(&[b(0, precision), b(2, precision), b(0, precision)])
+        .parameters_of(
+            &[b(0, precision), b(2, precision), b(0, precision)],
+            &catallax_numbers::Decider::default(),
+        )
+        .unwrap()
         .unwrap();
-    contains(&surfaces[4].evaluate(&uv[0], &uv[1]), &p(0, 2, 0));
-    let plane = Surface::Plane(Plane::new(p(1, 1, 1), v(0, 0, 1), v(0, 2, 0)).unwrap());
     contains(
-        &plane.evaluate(&b(1, precision), &b(1, precision)),
+        &surfaces[4]
+            .evaluate(&uv[0], &uv[1], &catallax_numbers::Decider::default())
+            .unwrap(),
+        &p(0, 2, 0),
+    );
+    let plane = Surface::Plane(
+        Plane::new(
+            (p(1, 1, 1)).into(),
+            (v(0, 0, 1)).into(),
+            (v(0, 2, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
+    contains(
+        &plane
+            .evaluate(
+                &b(1, precision),
+                &b(1, precision),
+                &catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         &p(0, 2, 1),
     );
     assert!(
         plane
-            .parameters_of(&[b(1, precision), b(1, precision), b(1, precision)])
+            .parameters_of(
+                &[b(1, precision), b(1, precision), b(1, precision)],
+                &catallax_numbers::Decider::default()
+            )
+            .unwrap()
             .is_some()
     );
-    let circle = Curve::Circle(Circle::new(p(0, 0, 0), v(0, 0, 1), 4.into(), v(0, 2, 0)).unwrap());
-    contains(&circle.evaluate(&b(0, precision)).unwrap(), &p(0, 2, 0));
+    let circle = Curve::Circle(
+        Circle::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            4.into(),
+            (v(0, 2, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     contains(
         &circle
-            .evaluate(&(Ball::pi(precision) * Ball::from_rational(&r("1/2"), precision)))
+            .evaluate(&b(0, precision), &catallax_numbers::Decider::default())
+            .unwrap()
+            .unwrap(),
+        &p(0, 2, 0),
+    );
+    contains(
+        &circle
+            .evaluate(
+                &(Ball::pi(precision) * Ball::from_rational(&r("1/2"), precision)),
+                &catallax_numbers::Decider::default(),
+            )
+            .unwrap()
             .unwrap(),
         &p(-2, 0, 0),
     );
     let ellipse = Curve::Ellipse(
-        Ellipse::new(p(0, 0, 0), v(0, 0, 1), v(2, 0, 0), 25.into(), 9.into()).unwrap(),
+        Ellipse::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            (v(2, 0, 0)).into(),
+            25.into(),
+            9.into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     );
-    contains(&ellipse.evaluate(&b(0, precision)).unwrap(), &p(5, 0, 0));
+    contains(
+        &ellipse
+            .evaluate(&b(0, precision), &catallax_numbers::Decider::default())
+            .unwrap()
+            .unwrap(),
+        &p(5, 0, 0),
+    );
 }
 
 #[test]
 fn bounded_uncertainty_is_in_model_units() {
     let mut store = GeomStore::new();
     let cylinder = store.add_surface(Surface::Cylinder(
-        Cylinder::new(p(0, 0, 0), v(0, 0, 2), 5.into(), v(1, 0, 0)).unwrap(),
+        Cylinder::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 2)).into(),
+            5.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let mut dec = Decider::new(BudgetPolicy {
         max_precision_bits: 64,
@@ -637,7 +1005,14 @@ fn bounded_uncertainty_is_in_model_units() {
     // Exercise uncertainty with an algebraic zero hidden from the rational path.
     let half = Real::from(r("1/2")).sqrt();
     let unit = store.add_surface(Surface::Cylinder(
-        Cylinder::new(p(0, 0, 0), v(0, 0, 1), 1.into(), v(1, 0, 0)).unwrap(),
+        Cylinder::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            1.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let point = Point3::new(&half + &Real::from(r("1e-30")), half, Real::zero());
     match store.side_of(unit, &point, &mut dec) {
@@ -665,10 +1040,34 @@ fn zero_work_distance_bounds_cover_each_object() {
         }
     }
     let curves = [
-        Curve::Line(Line::new(p(0, 0, 0), v(2, 0, 0)).unwrap()),
-        Curve::Circle(Circle::new(p(0, 0, 0), v(0, 0, 2), 25.into(), v(1, 0, 0)).unwrap()),
+        Curve::Line(
+            Line::new(
+                (p(0, 0, 0)).into(),
+                (v(2, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
+        Curve::Circle(
+            Circle::new(
+                (p(0, 0, 0)).into(),
+                (v(0, 0, 2)).into(),
+                25.into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
         Curve::Ellipse(
-            Ellipse::new(p(0, 0, 0), v(0, 0, 2), v(2, 0, 0), 25.into(), 9.into()).unwrap(),
+            Ellipse::new(
+                (p(0, 0, 0)).into(),
+                (v(0, 0, 2)).into(),
+                (v(2, 0, 0)).into(),
+                25.into(),
+                9.into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ),
     ]
     .map(|c| store.add_curve(c));
@@ -743,7 +1142,10 @@ fn inverse_parameters_enclose_boxes_across_both_angle_cuts() {
     let between = |a: i64, z: i64| b(a, precision).hull(&b(z, precision));
     for x in [-5, 5] {
         let input = [b(x, precision), between(-1, 2), b(7, precision)];
-        let uv = cylinder.parameters_of(&input).unwrap();
+        let uv = cylinder
+            .parameters_of(&input, &catallax_numbers::Decider::default())
+            .unwrap()
+            .unwrap();
         for y in [-1, 0, 1, 2] {
             let expected = Ball::atan2(&b(y, precision), &b(x, precision)).unwrap();
             let expected = if y < 0 {
@@ -756,10 +1158,21 @@ fn inverse_parameters_enclose_boxes_across_both_angle_cuts() {
     }
     // Exact local subtraction must survive cancellation of an enormous translation.
     let origin = RPoint3::new(r("1e1000"), r("-1e1000"), r("1e1000"));
-    let translated =
-        Surface::Cylinder(Cylinder::new(origin.clone(), v(0, 0, 1), 5.into(), v(1, 0, 0)).unwrap());
+    let translated = Surface::Cylinder(
+        Cylinder::new(
+            (origin.clone()).into(),
+            (v(0, 0, 1)).into(),
+            5.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     let point = origin.plus(&v(3, 4, 7));
     let coordinates = [point.x, point.y, point.z].map(|x| Ball::from_rational(&x, 4096));
-    let uv = translated.parameters_of(&coordinates).unwrap();
+    let uv = translated
+        .parameters_of(&coordinates, &catallax_numbers::Decider::default())
+        .unwrap()
+        .unwrap();
     assert!(uv[1].contains(&7.into()));
 }

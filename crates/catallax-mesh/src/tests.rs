@@ -18,8 +18,10 @@ fn options() -> MeshOptions {
 fn pose(x: i64, y: i64, z: i64) -> Pose {
     Pose::new(
         Rotation::identity(),
-        RVector3::new(x.into(), y.into(), z.into()),
+        (RVector3::new(x.into(), y.into(), z.into())).into(),
+        &mut catallax_numbers::Decider::default(),
     )
+    .unwrap()
 }
 fn mesh(model: &Model, body: BodyId) -> Mesh {
     mesh_body(model, body, &options(), &mut Decider::default())
@@ -85,25 +87,22 @@ fn surface_distance(surface: &Surface, p: [f64; 3]) -> f64 {
         Surface::Torus(s) => (&s.center, &s.axis),
         _ => unreachable!(),
     };
-    let d: [f64; 3] =
-        std::array::from_fn(|i| p[i] - [&origin.x, &origin.y, &origin.z][i].to_f64_nearest());
-    let a = [&axis.x, &axis.y, &axis.z].map(Rational::to_f64_nearest);
+    let d: [f64; 3] = std::array::from_fn(|i| p[i] - [&origin.x, &origin.y, &origin.z][i].to_f64());
+    let a = [&axis.x, &axis.y, &axis.z].map(|r| r.to_f64());
     let norm = libm::sqrt(a.iter().map(|x| x * x).sum());
     let z = (0..3).map(|i| d[i] * a[i] / norm).sum::<f64>();
     let radial = libm::sqrt((d.iter().map(|x| x * x).sum::<f64>() - z * z).max(0.0));
     match surface {
         Surface::Plane(_) => z.abs(),
-        Surface::Cylinder(s) => (radial - s.radius.to_f64_nearest()).abs(),
+        Surface::Cylinder(s) => (radial - s.radius.to_f64()).abs(),
         Surface::Cone(s) => {
-            let k = s.slope.to_f64_nearest();
+            let k = s.slope.to_f64();
             (radial - k * z).abs() / libm::sqrt(1.0 + k * k)
         }
-        Surface::Sphere(s) => {
-            (libm::sqrt(d.iter().map(|x| x * x).sum()) - s.radius.to_f64_nearest()).abs()
-        }
+        Surface::Sphere(s) => (libm::sqrt(d.iter().map(|x| x * x).sum()) - s.radius.to_f64()).abs(),
         Surface::Torus(s) => {
-            let x = radial - s.major.to_f64_nearest();
-            (libm::sqrt(x * x + z * z) - s.minor.to_f64_nearest()).abs()
+            let x = radial - s.major.to_f64();
+            (libm::sqrt(x * x + z * z) - s.minor.to_f64()).abs()
         }
         _ => unreachable!(),
     }
@@ -146,7 +145,12 @@ fn primitives_close_at_seams_poles_and_apices_with_bounded_chords() {
     let mut model = Model::new();
     let identity = Pose::identity();
     let rotation = Rotation::from_quaternion(1.into(), 2.into(), 3.into(), 4.into()).unwrap();
-    let transformed = Pose::new(rotation, RVector3::new(7.into(), (-2).into(), 3.into()));
+    let transformed = Pose::new(
+        rotation,
+        (RVector3::new(7.into(), (-2).into(), 3.into())).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let block = topology::block(&mut model, [2.into(), 3.into(), 5.into()], &transformed).unwrap();
     let cylinder = topology::cylinder(&mut model, 2.into(), 5.into(), &transformed).unwrap();
     let sphere = topology::sphere(&mut model, 2.into(), &identity).unwrap();
@@ -266,10 +270,11 @@ fn split_torus_closes_both_periodic_dimensions_across_shared_rings() {
         .map(|r| {
             let curve = model.geom_mut().add_curve(Curve::Circle(
                 Circle::new(
-                    RPoint3::origin(),
-                    RVector3::new(0.into(), 0.into(), 1.into()),
+                    (RPoint3::origin()).into(),
+                    (RVector3::new(0.into(), 0.into(), 1.into())).into(),
                     (r * r).into(),
-                    RVector3::new(1.into(), 0.into(), 0.into()),
+                    (RVector3::new(1.into(), 0.into(), 0.into())).into(),
+                    &mut catallax_numbers::Decider::default(),
                 )
                 .unwrap(),
             ));
@@ -381,10 +386,11 @@ fn a_sphere_boundary_through_definition_poles_uses_a_regular_chart() {
     let surface = model.face(model.faces_of_body(original)[0]).surface;
     let curve = model.geom_mut().add_curve(Curve::Circle(
         Circle::new(
-            RPoint3::origin(),
-            RVector3::new(1.into(), 0.into(), 0.into()),
+            (RPoint3::origin()).into(),
+            (RVector3::new(1.into(), 0.into(), 0.into())).into(),
             4.into(),
-            RVector3::new(0.into(), 1.into(), 0.into()),
+            (RVector3::new(0.into(), 1.into(), 0.into())).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     ));

@@ -10,6 +10,7 @@
 mod macros;
 
 mod algebraic;
+mod angle;
 mod ball;
 mod decider;
 mod facts;
@@ -25,6 +26,8 @@ mod poly;
 mod quadratic;
 mod rational;
 mod real;
+mod real_poly;
+mod real_poly_roots;
 mod system;
 mod tower;
 
@@ -32,6 +35,7 @@ mod tower;
 mod tests;
 
 pub use algebraic::{Algebraic, RealRoot};
+pub use angle::sin_cos_degrees;
 pub use ball::Ball;
 pub use decider::{BudgetPolicy, Decider, DecisionStats};
 pub use facts::{Fact, FactBook, FactKind, FactOrigin};
@@ -44,4 +48,5 @@ pub use outcome::{
 pub use poly::{MPoly, Monomial, UPoly};
 pub use rational::Rational;
 pub use real::Real;
+pub use real_poly::RealPoly;
 pub use system::{BoxRoots, IsolatedRoot, PolySystem, RootBox};

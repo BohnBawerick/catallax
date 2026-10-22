@@ -128,7 +128,7 @@ pub fn case(id: &'static str) -> Case {
         40 => (ball_at(5, [0; 3]), ball_at(5, [0; 3])),
         _ => panic!("unknown case"),
     };
-    let delta = q("1e-30");
+    let delta = catallax_numbers::Real::from(q("1e-30"));
     match id {
         "09" => b.pose.translation.x = &b.pose.translation.x + &delta,
         "09-overlap" | "37-bite" => b.pose.translation.x = &b.pose.translation.x - &delta,

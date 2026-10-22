@@ -19,6 +19,13 @@ pub(crate) fn direction(v: &RVector3) -> [&Rational; 3] {
     [&v.x, &v.y, &v.z]
 }
 
+pub(crate) fn real_components(p: &catallax_shapes::Point3) -> [&catallax_numbers::Real; 3] {
+    [&p.x, &p.y, &p.z]
+}
+pub(crate) fn real_direction(v: &catallax_shapes::Vector3) -> [&catallax_numbers::Real; 3] {
+    [&v.x, &v.y, &v.z]
+}
+
 pub(crate) fn sign(sense: Sense) -> Rational {
     Rational::from_i64(if sense == Sense::Same { 1 } else { -1 })
 }
@@ -33,9 +40,10 @@ pub(crate) fn face(
     let Surface::Plane(plane) = model.geom().surface(face.surface) else {
         return None;
     };
-    let origin = plane.origin.minus(anchor);
+    let normal = plane.normal.as_rational()?;
+    let origin = plane.origin.as_rational()?.minus(anchor);
     let mut result = Planar::new(if property == crate::surface::Property::Area {
-        plane.normal.norm_squared()
+        normal.norm_squared()
     } else {
         Rational::one()
     });
@@ -61,9 +69,9 @@ pub(crate) fn face(
             } else {
                 (b, a)
             };
-            let a = a.minus(anchor);
-            let b = b.minus(anchor);
-            result.segment(&origin, &a, &b, &plane.normal, property);
+            let a = a.as_rational()?.minus(anchor);
+            let b = b.as_rational()?.minus(anchor);
+            result.segment(&origin, &a, &b, &normal, property);
         }
     }
     result.area_numerator = result.area_numerator * sign(face.sense) / Rational::from_i64(2);
@@ -103,7 +111,12 @@ pub(crate) fn line(
         return None;
     };
     if let Surface::Cone(cone) = surface
-        && (from == &cone.apex || to == &cone.apex)
+        && [from, to].into_iter().any(|p| {
+            [&p.x, &p.y, &p.z]
+                .into_iter()
+                .zip([&cone.apex.x, &cone.apex.y, &cone.apex.z])
+                .all(|(a, b)| a.same_definition(b))
+        })
     {
         // Along a straight generator, axis . (q x dq) is identically zero.
         // Every cone boundary form therefore has zero integral. Evaluating its
@@ -113,35 +126,37 @@ pub(crate) fn line(
     let Surface::Plane(plane) = surface else {
         return None;
     };
-    let reference_squared = plane.ref_dir.norm_squared();
-    let second = plane.normal.cross(&plane.ref_dir);
-    let a = from.minus(&plane.origin);
-    let d = to.minus(from);
-    let u0 = a.dot(&plane.ref_dir) / reference_squared.clone();
-    let du = d.dot(&plane.ref_dir) / reference_squared.clone();
+    let origin = plane.origin.as_rational()?;
+    let normal = plane.normal.as_rational()?;
+    let reference = plane.ref_dir.as_rational()?;
+    let from = from.as_rational()?;
+    let to = to.as_rational()?;
+    let reference_squared = reference.norm_squared();
+    let second = normal.cross(&reference);
+    let a = from.minus(&origin);
+    let d = to.minus(&from);
+    let u0 = a.dot(&reference) / reference_squared.clone();
+    let du = d.dot(&reference) / reference_squared.clone();
     let v0 = a.dot(&second) / second.norm_squared();
     let dv = d.dot(&second) / second.norm_squared();
     let vv = [v0, dv, Rational::zero(), Rational::zero()];
-    let origin = plane.origin.minus(anchor);
+    let origin = origin.minus(anchor);
     let average_v = &vv[0] + &(&vv[1] / &Rational::from_i64(2));
     let area = if property == crate::surface::Property::Area {
-        -sqrt(&plane.normal.norm_squared())?
-            * reference_squared.clone()
-            * du.clone()
-            * average_v.clone()
+        -sqrt(&normal.norm_squared())? * reference_squared.clone() * du.clone() * average_v.clone()
     } else {
         Rational::zero()
     };
     let volume = if property != crate::surface::Property::Area {
-        -reference_squared.clone() * plane.normal.dot(&origin) * du.clone() * average_v
+        -reference_squared.clone() * normal.dot(&origin) * du.clone() * average_v
             / Rational::from_i64(3)
     } else {
         Rational::zero()
     };
     let moments = if property == crate::surface::Property::Centroid {
-        let first = direction(&plane.ref_dir);
+        let first = direction(&reference);
         let second = direction(&second);
-        let normal = direction(&plane.normal);
+        let normal = direction(&normal);
         let origin = direction(&origin);
         let moments: [Rational; 3] = std::array::from_fn(|i| {
             let base = [
@@ -251,14 +266,14 @@ pub(crate) fn body(
         let Surface::Plane(plane) = model.geom().surface(face.surface) else {
             return None;
         };
-        let coefficient = direction(&plane.normal)
+        let normal = plane.normal.as_rational()?;
+        let origin = plane.origin.as_rational()?;
+        let coefficient = direction(&normal)
             .into_iter()
             .find(|r| !r.is_zero())
             .unwrap();
-        let canonical = plane.normal.scaled(&coefficient.recip()?);
-        let offset = &canonical.x * &plane.origin.x
-            + &canonical.y * &plane.origin.y
-            + &canonical.z * &plane.origin.z;
+        let canonical = normal.scaled(&coefficient.recip()?);
+        let offset = &canonical.x * &origin.x + &canonical.y * &origin.y + &canonical.z * &origin.z;
         let positive =
             (coefficient.sign() == catallax_numbers::Sign::Positive) == (face.sense == Sense::Same);
         let key = ([canonical.x, canonical.y, canonical.z, offset], positive);
@@ -314,12 +329,13 @@ pub(crate) fn body(
     }
     let mut sums: [Rational; 5] = std::array::from_fn(|_| Rational::zero());
     for group in groups.into_values() {
+        let normal = group.plane.normal.as_rational()?;
         let mut integral = Planar::new(if property == crate::surface::Property::Area {
-            group.plane.normal.norm_squared()
+            normal.norm_squared()
         } else {
             Rational::one()
         });
-        let origin = group.plane.origin.minus(anchor);
+        let origin = group.plane.origin.as_rational()?.minus(anchor);
         for (id, count) in group.edges {
             if count == 0 {
                 continue;
@@ -334,6 +350,7 @@ pub(crate) fn body(
                     .normal
                     .cross(&usage.second?.normal)
                     .norm_squared()
+                    .as_rational()?
                     .is_zero()
                 {
                     return None;
@@ -348,9 +365,9 @@ pub(crate) fn body(
             let (a, b) = if count > 0 { (a, b) } else { (b, a) };
             integral.segment(
                 &origin,
-                &a.minus(anchor),
-                &b.minus(anchor),
-                &group.plane.normal,
+                &a.as_rational()?.minus(anchor),
+                &b.as_rational()?.minus(anchor),
+                &normal,
                 property,
             );
         }

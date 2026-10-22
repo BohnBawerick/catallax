@@ -98,11 +98,10 @@ fn through(
     direction: Option<&catallax_recipe::Vector3>,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
-    let normal = profile.pose.apply_vector(&RVector3::new(
-        Rational::zero(),
-        Rational::zero(),
-        Rational::one(),
-    ));
+    let normal = crate::profile::rational_vector(
+        &profile.pose,
+        &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+    );
     let direction = direction.map(vector).unwrap_or_else(|| normal.clone());
     if direction.is_zero() {
         return Err(Refusal::new(
@@ -120,7 +119,7 @@ fn through(
     if model.body(target.body).kind == BodyKind::Empty || profile.is_empty() {
         return Ok(target.body);
     }
-    let origin = profile.pose.apply_point(&RPoint3::origin());
+    let origin = crate::profile::rational_point(&profile.pose, &RPoint3::origin());
     let normal_l1 = normal.x.abs() + normal.y.abs() + normal.z.abs();
     // For every target point p, |(p-o).n| <= (radius + |o|_1)|n|_1.
     // The strict extra unit leaves both construction caps outside the target.
@@ -129,7 +128,7 @@ fn through(
         ((&target.radius + &norm_upper(&origin)) * normal_l1) / dot.abs() + Rational::one();
     let offset = direction.scaled(&extent);
     let mut shifted = profile.clone();
-    shifted.pose.translation = shifted.pose.translation.minus(&offset);
+    shifted.pose.translation = shifted.pose.translation.minus(&offset.to_real());
     let tool = crate::extrude::extrude_vector(
         model,
         &shifted,
@@ -150,7 +149,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
     let mut bodies: BTreeMap<StepId, BodyValue> = BTreeMap::new();
     for step in &recipe.steps {
         let build = |model: &mut Model, dec: &mut Decider| -> Result<Option<BodyValue>, Refusal> {
-            if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id)? {
+            if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id, dec)? {
                 return Ok(Some(BodyValue { body, radius }));
             }
             Ok(Some(match &step.op {

@@ -8,7 +8,9 @@ use crate::{
 };
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Axis, Origin, Role, StepId};
-use catallax_shapes::{Cone, Cylinder, Plane, Pose, RPoint3, RVector3, Sphere, Surface, Torus};
+use catallax_shapes::{
+    Cone, Cylinder, Plane, Point3, Pose, RPoint3, RVector3, Sphere, Surface, Torus, Vector3,
+};
 
 #[derive(Clone, Debug)]
 enum Sweep {
@@ -49,13 +51,14 @@ fn point(p: &P) -> RPoint3 {
 fn z() -> RVector3 {
     RVector3::new(Rational::zero(), Rational::zero(), Rational::one())
 }
-fn face(surface: Surface, step: &StepId, role: Role) -> Face {
+fn face(surface: Surface, step: &StepId, role: Role, dec: &mut Decider) -> Result<Face, Refusal> {
     geometry::face(
         surface,
         Origin {
             step: step.clone(),
             role,
         },
+        dec,
     )
 }
 fn side(segment: &catallax_recipe::ElementId) -> Role {
@@ -72,11 +75,12 @@ impl Feature {
         distance: Option<&Rational>,
         direction: Option<&catallax_recipe::Vector3>,
         empty_target: bool,
+        dec: &mut Decider,
     ) -> Result<Option<(Self, Vec<Face>)>, Refusal> {
         if distance.is_some_and(Rational::is_zero) {
             return Err(bad("extrude.zero-distance"));
         }
-        let normal = profile.pose.apply_vector(&z());
+        let normal = profile::rational_vector(&profile.pose, &z());
         let direction = direction.map(vector).unwrap_or(normal.clone());
         if direction.is_zero() {
             return Err(bad("extrude.zero-direction"));
@@ -95,7 +99,7 @@ impl Feature {
         } else {
             direction
         };
-        let local = profile.pose.inverse().apply_vector(&v);
+        let local = profile::rational_vector(&profile.pose.inverse(), &v);
         let mut faces = Vec::new();
         for edge in profile.loops.iter().flatten() {
             let surface = if let Some((c, r, _)) = &edge.circle {
@@ -103,43 +107,45 @@ impl Feature {
                     return Err(bad("features.unsupported-elliptic-cylinder"));
                 }
                 Surface::Cylinder(Cylinder {
-                    origin: profile.world(c),
-                    axis: normal.clone(),
+                    origin: profile.world(c).into(),
+                    axis: normal.clone().into(),
                     radius: profile::sqrt(r)
-                        .ok_or_else(|| bad("features.unsupported-algebraic-cylinder-radius"))?,
-                    ref_dir: profile.world(&edge.start).minus(&profile.world(c)),
+                        .ok_or_else(|| bad("features.unsupported-algebraic-cylinder-radius"))?
+                        .into(),
+                    ref_dir: profile.world(&edge.start).minus(&profile.world(c)).into(),
                 })
             } else {
                 Surface::Plane(Plane {
-                    origin: profile.world(&edge.start),
+                    origin: profile.world(&edge.start).into(),
                     normal: profile
                         .world(&edge.end)
                         .minus(&profile.world(&edge.start))
-                        .cross(&v),
-                    ref_dir: v.clone(),
+                        .cross(&v)
+                        .into(),
+                    ref_dir: v.clone().into(),
                 })
             };
             for id in &edge.ids {
-                faces.push(face(surface.clone(), step, side(id)));
+                faces.push(face(surface.clone(), step, side(id), dec)?);
             }
         }
         if !through {
-            let origin = profile.pose.apply_point(&RPoint3::origin());
-            let reference = profile.pose.apply_vector(&RVector3::new(
-                Rational::one(),
-                Rational::zero(),
-                Rational::zero(),
-            ));
+            let origin = profile::rational_point(&profile.pose, &RPoint3::origin());
+            let reference = profile::rational_vector(
+                &profile.pose,
+                &RVector3::new(Rational::one(), Rational::zero(), Rational::zero()),
+            );
             for (origin, role) in [(origin.clone(), Role::Start), (origin.plus(&v), Role::End)] {
                 faces.push(face(
                     Surface::Plane(Plane {
-                        origin,
-                        normal: normal.clone(),
-                        ref_dir: reference.clone(),
+                        origin: origin.into(),
+                        normal: normal.clone().into(),
+                        ref_dir: reference.clone().into(),
                     }),
                     step,
                     role,
-                ));
+                    dec,
+                )?);
             }
         }
         let sweep = Sweep::Extrude {
@@ -156,6 +162,7 @@ impl Feature {
         step: &StepId,
         axis: &Axis,
         angle: &Rational,
+        dec: &mut Decider,
     ) -> Result<Option<(Self, Vec<Face>)>, Refusal> {
         if angle.sign() != Sign::Positive || *angle > Rational::from_i64(360) {
             return Err(bad("revolve.angle"));
@@ -165,12 +172,15 @@ impl Feature {
             return Err(bad("revolve.zero-axis"));
         }
         let inverse = profile.pose.inverse();
-        let origin = inverse.apply_point(&RPoint3::new(
-            axis.point.0[0].value().clone(),
-            axis.point.0[1].value().clone(),
-            axis.point.0[2].value().clone(),
-        ));
-        let axis = inverse.apply_vector(&world_axis);
+        let origin = profile::rational_point(
+            &inverse,
+            &RPoint3::new(
+                axis.point.0[0].value().clone(),
+                axis.point.0[1].value().clone(),
+                axis.point.0[2].value().clone(),
+            ),
+        );
+        let axis = profile::rational_vector(&inverse, &world_axis);
         if !origin.z.is_zero() || !axis.z.is_zero() {
             return Err(bad("revolve.axis-plane"));
         }
@@ -181,13 +191,12 @@ impl Feature {
         let project =
             |p: &RPoint3| origin.plus(&axis.scaled(&(p.minus(&origin).dot(&axis) / norm.clone())));
         let signed = |p: &RPoint3| axis.cross(&p.minus(&origin)).z;
-        let mut dec = Decider::default();
         let mut depths = Vec::new();
         for (i, edges) in profile.loops.iter().enumerate() {
             let mut depth = 0;
             for (j, other) in profile.loops.iter().enumerate() {
                 if i != j
-                    && profile::loop_location(other, &profile::real(&edges[0].start), &mut dec)?
+                    && profile::loop_location(other, &profile::real(&edges[0].start), dec)?
                         == Location::Inside
                 {
                     depth += 1;
@@ -215,14 +224,14 @@ impl Feature {
                     Real::from(signed(&point(&e.end))),
                 ];
                 if let Some((c, r, _)) = &e.circle {
-                    let scale = profile::positive_sqrt(&(r / &norm), &mut dec)?;
+                    let scale = profile::positive_sqrt(&(r / &norm), dec)?;
                     for flip in [-1, 1] {
                         let scale = &Real::from_i64(flip) * &scale;
                         let p = [
                             Real::from(c[0].clone()) - &Real::from(axis.y.clone()) * &scale,
                             Real::from(c[1].clone()) + &Real::from(axis.x.clone()) * &scale,
                         ];
-                        if e.contains(&p, &mut dec)? {
+                        if e.contains(&p, dec)? {
                             values.push(
                                 &Real::from(axis.x.clone())
                                     * &(&p[1] - &Real::from(origin.y.clone()))
@@ -236,11 +245,11 @@ impl Feature {
                         let touch = project(&point(c));
                         let p = [touch.x, touch.y];
                         pinches_axis |= (e.full || (p != e.start && p != e.end))
-                            && e.contains(&profile::real(&p), &mut dec)?;
+                            && e.contains(&profile::real(&p), dec)?;
                     }
                 }
                 for value in values {
-                    match profile::sign(&value, &mut dec)? {
+                    match profile::sign(&value, dec)? {
                         Sign::Positive => positive = true,
                         Sign::Negative => negative = true,
                         _ => (),
@@ -298,10 +307,10 @@ impl Feature {
                     })?;
                     if offset.is_zero() {
                         Surface::Sphere(Sphere {
-                            center: centre,
-                            radius,
-                            axis: axis.clone(),
-                            ref_dir: axis.cross(&z()),
+                            center: centre.into(),
+                            radius: radius.into(),
+                            axis: axis.clone().into(),
+                            ref_dir: axis.cross(&z()).into(),
                         })
                     } else {
                         let major = profile::sqrt(&offset.norm_squared())
@@ -310,11 +319,11 @@ impl Feature {
                             return Err(bad("features.unsupported-spindle-torus"));
                         }
                         Surface::Torus(Torus {
-                            center: projection,
-                            axis: axis.clone(),
-                            major,
-                            minor: radius,
-                            ref_dir: offset,
+                            center: projection.into(),
+                            axis: axis.clone().into(),
+                            major: major.into(),
+                            minor: radius.into(),
+                            ref_dir: offset.into(),
                         })
                     }
                 } else {
@@ -328,22 +337,24 @@ impl Feature {
                     let axial = tangent.dot(&axis);
                     if axial.is_zero() {
                         Surface::Plane(Plane {
-                            origin: project(&start),
-                            normal: axis.clone(),
+                            origin: project(&start).into(),
+                            normal: axis.clone().into(),
                             ref_dir: if radial.is_zero() {
-                                end.minus(&project(&end))
+                                end.minus(&project(&end)).into()
                             } else {
-                                radial
+                                radial.into()
                             },
                         })
                     } else if tangent.cross(&axis).is_zero() {
                         Surface::Cylinder(Cylinder {
-                            origin: project(&start),
-                            axis: axis.clone(),
-                            radius: profile::sqrt(&radial.norm_squared()).ok_or_else(|| {
-                                bad("features.unsupported-algebraic-cylinder-radius")
-                            })?,
-                            ref_dir: radial,
+                            origin: project(&start).into(),
+                            axis: axis.clone().into(),
+                            radius: profile::sqrt(&radial.norm_squared())
+                                .ok_or_else(|| {
+                                    bad("features.unsupported-algebraic-cylinder-radius")
+                                })?
+                                .into(),
+                            ref_dir: radial.into(),
                         })
                     } else {
                         let change = axis.cross(&tangent).z;
@@ -357,25 +368,25 @@ impl Feature {
                             axis.scaled(&Rational::from_i64(-1))
                         };
                         Surface::Cone(Cone {
-                            apex,
-                            axis: direction,
-                            slope: (change / axial).abs(),
+                            apex: apex.into(),
+                            axis: direction.into(),
+                            slope: (change / axial).abs().into(),
                             ref_dir: if radial.is_zero() {
-                                end.minus(&project(&end))
+                                end.minus(&project(&end)).into()
                             } else {
-                                radial
+                                radial.into()
                             },
                         })
                     }
                 };
                 let surface = surface.transformed(&profile.pose);
                 for id in &edge.ids {
-                    faces.push(face(surface.clone(), step, side(id)));
+                    faces.push(face(surface.clone(), step, side(id), dec)?);
                 }
             }
         }
         if !full {
-            let normal = profile.pose.apply_vector(&z());
+            let normal = profile::rational_vector(&profile.pose, &z());
             let local_end_normal = match angle {
                 90 => axis
                     .cross(&z())
@@ -386,27 +397,29 @@ impl Feature {
                     .scaled(&(-length.as_ref().unwrap().recip().unwrap())),
                 _ => unreachable!(),
             };
-            let end_normal = profile.pose.apply_vector(&local_end_normal);
+            let end_normal = profile::rational_vector(&profile.pose, &local_end_normal);
             let reference = world_axis.clone();
-            let world_origin = profile.pose.apply_point(&origin);
+            let world_origin = profile::rational_point(&profile.pose, &origin);
             faces.push(face(
                 Surface::Plane(Plane {
-                    origin: world_origin.clone(),
-                    normal,
-                    ref_dir: reference.clone(),
+                    origin: world_origin.clone().into(),
+                    normal: normal.into(),
+                    ref_dir: reference.clone().into(),
                 }),
                 step,
                 Role::Start,
-            ));
+                dec,
+            )?);
             faces.push(face(
                 Surface::Plane(Plane {
-                    origin: world_origin,
-                    normal: end_normal,
-                    ref_dir: reference,
+                    origin: world_origin.into(),
+                    normal: end_normal.into(),
+                    ref_dir: reference.into(),
                 }),
                 step,
                 Role::End,
-            ));
+                dec,
+            )?);
         }
         let sweep = Sweep::Revolve {
             origin,
@@ -430,9 +443,9 @@ impl Feature {
         for face in faces {
             if !constraints
                 .iter()
-                .any(|c: &geometry::Constraint| c.polynomial == face.polynomial)
+                .any(|c: &geometry::Constraint| c.polynomial.same_definition(&face.polynomial))
             {
-                constraints.push(geometry::Constraint::new(face.polynomial.clone()));
+                constraints.push(geometry::constraint(face.surface.clone()));
                 supports.push(Support::new(&face.surface));
             }
         }
@@ -447,52 +460,81 @@ impl Feature {
             supports,
         }
     }
-    pub fn location(&self, p: &[Rational; 3]) -> Location {
-        self.classify(p, &mut Decider::default())
-            .unwrap_or(Location::Indeterminate)
+    pub fn transform(&mut self, pose: &Pose) {
+        self.inverse = pose.inverse().then(&self.inverse);
+        self.fast.matrix = geometry::fast_matrix(&self.inverse);
+        self.fast.translation = geometry::fast_translation(&self.inverse);
+        self.fast.valid = self.fast.finite();
+        for support in &mut self.supports {
+            support.transform(pose);
+        }
+        for constraint in &mut self.constraints {
+            constraint.transform(pose);
+        }
     }
-    fn classify(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
-        let local =
-            self.inverse
-                .apply_point(&RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone()));
-        let norm = &self.axis_norm;
+    pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
+        self.classify(
+            &Point3::new(
+                p[0].clone().into(),
+                p[1].clone().into(),
+                p[2].clone().into(),
+            ),
+            dec,
+        )
+    }
+    fn classify(&self, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
+        let local = self.inverse.apply_point(p);
         match &self.sweep {
             Sweep::Extrude { vector, through } => {
-                let t = &local.z / &vector.z;
-                if !through && (t.sign() == Sign::Negative || t > Rational::one()) {
-                    return Ok(Location::Outside);
-                }
-                let q = [&local.x - &(&t * &vector.x), &local.y - &(&t * &vector.y)];
-                let loc = profile::location(&self.loops, &profile::real(&q), dec)?;
-                Ok(
-                    if !through && loc == Location::Inside && (t.is_zero() || t == Rational::one())
-                    {
-                        Location::Boundary
-                    } else {
-                        loc
-                    },
-                )
+                let t = &local.z / &Real::from(vector.z.clone());
+                let cap_boundary = if *through {
+                    false
+                } else {
+                    let start = geometry::sign(&t, dec)?;
+                    if start == Sign::Negative {
+                        return Ok(Location::Outside);
+                    }
+                    let end = geometry::sign(&(&t - &Real::one()), dec)?;
+                    if end == Sign::Positive {
+                        return Ok(Location::Outside);
+                    }
+                    start == Sign::Zero || end == Sign::Zero
+                };
+                let q = [
+                    &local.x - &(&t * &Real::from(vector.x.clone())),
+                    &local.y - &(&t * &Real::from(vector.y.clone())),
+                ];
+                let loc = profile::location(&self.loops, &q, dec)?;
+                Ok(if loc == Location::Inside && cap_boundary {
+                    Location::Boundary
+                } else {
+                    loc
+                })
             }
             Sweep::Revolve {
                 origin,
                 axis,
                 angle,
-                ..
             } => {
-                let v = local.minus(origin);
-                let t = v.dot(axis) / norm.clone();
-                let b = axis.cross(&v).z / norm.clone();
-                let k = profile::positive_sqrt(&(&b * &b + (&v.z * &v.z) / norm.clone()), dec)?;
+                let axis_real = axis.to_real();
+                let origin_real = origin.to_real();
+                let norm = Real::from(self.axis_norm.clone());
+                let v = local.minus(&origin_real);
+                let t = &v.dot(&axis_real) / &norm;
+                let b = &axis_real.cross(&v).z / &norm;
+                let k = sqrt_real(&(&b * &b + &(&v.z * &v.z) / &norm), dec)?;
+                let b_sign = geometry::sign(&b, dec)?;
+                let z_sign = geometry::sign(&v.z, dec)?;
                 let mut boundary = false;
                 for flip in [-1, 1] {
-                    let angular = angular(*angle, flip, b.sign(), v.z.sign());
+                    let angular = angular(*angle, flip, b_sign, z_sign);
                     if angular == Location::Outside {
                         continue;
                     }
                     let k = &Real::from_i64(flip) * &k;
                     let q = [
-                        Real::from(&origin.x + &(&axis.x * &t)) - &Real::from(axis.y.clone()) * &k,
-                        Real::from(&origin.y + &(&axis.y * &t)) + &Real::from(axis.x.clone()) * &k,
+                        &origin_real.x + &(&axis_real.x * &t) - &axis_real.y * &k,
+                        &origin_real.y + &(&axis_real.y * &t) + &axis_real.x * &k,
                     ];
                     let loc = profile::location(&self.loops, &q, dec)?;
                     if loc == Location::Inside && angular == Location::Inside {
@@ -500,14 +542,14 @@ impl Feature {
                     }
                     boundary |= loc != Location::Outside;
                 }
-                if boundary && *angle == 360 && b.is_zero() && v.z.is_zero() {
-                    let q = [&local.x, &local.y].map(|q| q.clone());
+                if boundary && *angle == 360 && b_sign == Sign::Zero && z_sign == Sign::Zero {
+                    let q = [local.x, local.y];
                     for edge in self.loops.iter().flatten().filter(|e| e.circle.is_none()) {
                         if axis.cross(&point(&edge.start).minus(origin)).z.is_zero()
                             && axis.cross(&point(&edge.end).minus(origin)).z.is_zero()
-                            && q != edge.start
-                            && q != edge.end
-                            && edge.contains(&profile::real(&q), dec)?
+                            && !same_profile_point(&q, &edge.start, dec)?
+                            && !same_profile_point(&q, &edge.end, dec)?
+                            && edge.contains(&q, dec)?
                         {
                             return Ok(Location::Inside);
                         }
@@ -521,28 +563,32 @@ impl Feature {
             }
         }
     }
-    pub fn on_face(&self, role: &Role, p: &[Rational; 3]) -> Option<bool> {
-        self.face_contains(role, p, &mut Decider::default()).ok()
-    }
-    fn face_contains(
+    pub fn on_face(
         &self,
         role: &Role,
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
-        let local =
-            self.inverse
-                .apply_point(&RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone()));
+        let local = self.inverse.apply_point(&Point3::new(
+            p[0].clone().into(),
+            p[1].clone().into(),
+            p[2].clone().into(),
+        ));
         let norm = &self.axis_norm;
         let merge_caps = &self.merge_caps;
         match &self.sweep {
             Sweep::Extrude { vector, through } => {
-                let t = &local.z / &vector.z;
-                if !through && (t.sign() == Sign::Negative || t > Rational::one()) {
+                let t = &local.z / &Real::from(vector.z.clone());
+                if !through
+                    && (geometry::sign(&t, dec)? == Sign::Negative
+                        || geometry::sign(&(&t - &Real::one()), dec)? == Sign::Positive)
+                {
                     return Ok(false);
                 }
-                let q =
-                    profile::real(&[&local.x - &(&t * &vector.x), &local.y - &(&t * &vector.y)]);
+                let q = [
+                    &local.x - &(&t * &Real::from(vector.x.clone())),
+                    &local.y - &(&t * &Real::from(vector.y.clone())),
+                ];
                 match role {
                     Role::Side { segment, .. } => {
                         for e in self
@@ -568,21 +614,24 @@ impl Feature {
                 axis,
                 angle,
             } => {
-                let v = local.minus(origin);
-                let t = v.dot(axis) / norm.clone();
-                let b = axis.cross(&v).z / norm.clone();
+                let origin = origin.to_real();
+                let axis = axis.to_real();
+                let norm_real = Real::from(norm.clone());
+                let v = local.minus(&origin);
+                let t = &v.dot(&axis) / &norm_real;
+                let b = &axis.cross(&v).z / &norm_real;
                 if let Role::Side { segment, .. } = role {
-                    let k = profile::positive_sqrt(&(&b * &b + (&v.z * &v.z) / norm.clone()), dec)?;
+                    let k = sqrt_real(&(&b * &b + &(&v.z * &v.z) / &norm_real), dec)?;
+                    let b_sign = geometry::sign(&b, dec)?;
+                    let z_sign = geometry::sign(&v.z, dec)?;
                     for flip in [-1, 1] {
-                        if angular(*angle, flip, b.sign(), v.z.sign()) == Location::Outside {
+                        if angular(*angle, flip, b_sign, z_sign) == Location::Outside {
                             continue;
                         }
                         let k = &Real::from_i64(flip) * &k;
                         let q = [
-                            Real::from(&origin.x + &(&axis.x * &t))
-                                - &Real::from(axis.y.clone()) * &k,
-                            Real::from(&origin.y + &(&axis.y * &t))
-                                + &Real::from(axis.x.clone()) * &k,
+                            &origin.x + &(&axis.x * &t) - &axis.y * &k,
+                            &origin.y + &(&axis.y * &t) + &axis.x * &k,
                         ];
                         for e in self
                             .loops
@@ -609,24 +658,25 @@ impl Feature {
                 };
                 let radial = v.minus(&axis.scaled(&t));
                 let rotated = if sine == 0 {
-                    radial.scaled(&Rational::from_i64(cosine))
+                    radial.scaled(&Real::from_i64(cosine))
                 } else {
-                    axis.cross(&radial)
-                        .scaled(&(Rational::from_i64(-sine) / profile::sqrt(norm).unwrap()))
+                    axis.cross(&radial).scaled(&Real::from(
+                        Rational::from_i64(-sine) / profile::sqrt(norm).unwrap(),
+                    ))
                 };
-                if !rotated.z.is_zero() {
+                if geometry::sign(&rotated.z, dec)? != Sign::Zero {
                     return Ok(false);
                 }
                 let q = origin.plus(&axis.scaled(&t)).plus(&rotated);
                 let q = [q.x, q.y];
-                if profile::location(&self.loops, &profile::real(&q), dec)? != Location::Outside {
+                if profile::location(&self.loops, &q, dec)? != Location::Outside {
                     return Ok(true);
                 }
                 if *angle == 180 {
                     let reflected = origin
                         .plus(&axis.scaled(&t))
-                        .plus(&rotated.scaled(&Rational::from_i64(-1)));
-                    let reflected = profile::real(&[reflected.x, reflected.y]);
+                        .plus(&rotated.scaled(&Real::from_i64(-1)));
+                    let reflected = [reflected.x, reflected.y];
                     if profile::location(&self.loops, &reflected, dec)? != Location::Outside {
                         for &i in merge_caps {
                             if profile::loop_location(&self.loops[i], &reflected, dec)?
@@ -641,38 +691,98 @@ impl Feature {
             }
         }
     }
-    pub fn proven_distance(&self, p: &RPoint3, location: Location) -> Ball {
+    pub fn proven_distance(
+        &self,
+        p: &RPoint3,
+        location: Location,
+        dec: &mut Decider,
+    ) -> Result<Ball, Refusal> {
         if location == Location::Boundary {
-            return Ball::integer(0);
+            return Ok(Ball::integer(0));
         }
+        let p = [&p.x, &p.y, &p.z].map(|q| Ball::from_rational(q, crate::metric::PRECISION));
         let mut supports = self.supports.iter();
-        let mut residual = supports.next().expect("nonempty sweep supports").proven(p);
+        let mut residual = supports
+            .next()
+            .expect("nonempty sweep supports")
+            .proven(&p, dec)?;
         for support in supports {
-            residual = residual.min(&support.proven(p));
+            residual = residual.min(&support.proven(&p, dec)?);
         }
-        match location {
+        Ok(match location {
             Location::Inside => -residual,
             Location::Indeterminate => residual.hull(&(-&residual)),
             _ => residual,
-        }
+        })
     }
-    pub fn ray(&self, p: &[Rational; 3], d: &[Rational; 3]) -> Location {
-        // Pick an exact displacement within every support polynomial's initial
-        // sign cell. This is a certified germ, not a geometric tolerance.
+    pub fn ray(
+        &self,
+        p: &[Rational; 3],
+        d: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        // Stay within every support's initial sign cell; this is not a tolerance.
         let mut epsilon = Rational::one();
         for constraint in &self.constraints {
-            let coefficients = geometry::ray_coefficients(constraint, p, d);
-            if let Some((i, c)) = coefficients.iter().enumerate().find(|(_, c)| !c.is_zero()) {
-                let tail = coefficients[i + 1..]
-                    .iter()
-                    .fold(Rational::zero(), |a, c| a + c.abs());
-                let bound = c.abs() / (c.abs() + tail + Rational::one());
-                epsilon = epsilon.min(bound);
+            match geometry::ray_coefficients(constraint, p, d) {
+                geometry::RayCoefficients::Rational(coefficients) => {
+                    if let Some((i, c)) =
+                        coefficients.iter().enumerate().find(|(_, c)| !c.is_zero())
+                    {
+                        let tail = coefficients[i + 1..]
+                            .iter()
+                            .fold(Rational::zero(), |a, c| a + c.abs());
+                        let bound = c.abs() / (c.abs() + tail + Rational::one());
+                        epsilon = epsilon.min(bound);
+                    }
+                }
+                geometry::RayCoefficients::Algebraic(coefficients) => {
+                    for (i, c) in coefficients.iter().enumerate() {
+                        let sign = geometry::sign(c, dec)?;
+                        if sign == Sign::Zero {
+                            continue;
+                        }
+                        let magnitude = if sign == Sign::Negative {
+                            -c
+                        } else {
+                            c.clone()
+                        };
+                        let mut denominator = &magnitude + &Real::one();
+                        for tail in &coefficients[i + 1..] {
+                            // |x| <= x^2 + 1, without a second sign decision.
+                            denominator = denominator
+                                + if let Some(q) = tail.rational_ref() {
+                                    Real::from(q.abs())
+                                } else {
+                                    tail * tail + Real::one()
+                                };
+                        }
+                        let bound = magnitude / denominator;
+                        let mut precision = crate::metric::PRECISION;
+                        let lower = loop {
+                            let lower = geometry::enclose(&bound, precision, dec)?.lo();
+                            if lower.sign() == Sign::Positive {
+                                break lower;
+                            }
+                            precision = precision.checked_mul(2).ok_or_else(|| {
+                                Refusal::new(
+                                    "numbers.refinement-budget",
+                                    "ray-germ separation exceeds the precision index",
+                                )
+                            })?;
+                        };
+                        epsilon = epsilon.min(lower);
+                        break;
+                    }
+                }
             }
         }
-        let sample = std::array::from_fn(|i| &p[i] + &(&epsilon * &d[i]));
-        // A ray identically on a true boundary remains a boundary, never an interior witness.
-        self.location(&sample)
+        let p = Point3::new(
+            p[0].clone().into(),
+            p[1].clone().into(),
+            p[2].clone().into(),
+        );
+        self.classify(&p.plus(&d.scaled(&Real::from(epsilon))), dec)
     }
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
         if !self.fast.valid {
@@ -689,6 +799,21 @@ impl Feature {
         }
         if inside { -residual } else { residual }
     }
+}
+
+fn sqrt_real(n: &Real, dec: &mut Decider) -> Result<Real, Refusal> {
+    if let Some(q) = n.rational_ref() {
+        profile::positive_sqrt(q, dec)
+    } else {
+        Ok(n.sqrt())
+    }
+}
+
+fn same_profile_point(a: &[Real; 2], b: &P, dec: &mut Decider) -> Result<bool, Refusal> {
+    Ok(
+        geometry::sign(&(&a[0] - &Real::from(b[0].clone())), dec)? == Sign::Zero
+            && geometry::sign(&(&a[1] - &Real::from(b[1].clone())), dec)? == Sign::Zero,
+    )
 }
 
 fn angular(angle: u16, flip: i64, b: Sign, z: Sign) -> Location {
@@ -751,14 +876,14 @@ impl FastProfile {
     fn new(profile: &Profile, sweep: &Sweep, norm: &Rational) -> Self {
         let inverse = profile.pose.inverse();
         let matrix = std::array::from_fn(|i| {
-            std::array::from_fn(|j| inverse.rotation.matrix()[i][j].to_f64_nearest())
+            std::array::from_fn(|j| inverse.rotation.matrix()[i][j].to_f64())
         });
         let translation = [
             &inverse.translation.x,
             &inverse.translation.y,
             &inverse.translation.z,
         ]
-        .map(Rational::to_f64_nearest);
+        .map(Real::to_f64);
         let edges = profile
             .loops
             .iter()
@@ -803,27 +928,31 @@ impl FastProfile {
                 *angle,
             ),
         };
-        let valid = matrix
-            .iter()
-            .flatten()
-            .chain(translation.iter())
-            .chain(parameters.iter())
-            .all(|v| v.is_finite())
-            && edges.iter().all(|e| {
-                e.start.iter().chain(e.end.iter()).all(|v| v.is_finite())
-                    && e.circle
-                        .as_ref()
-                        .is_none_or(|(c, r, _)| c.iter().all(|v| v.is_finite()) && r.is_finite())
-            });
-        Self {
+        let mut result = Self {
             matrix,
             translation,
             edges,
             sweep: parameters,
             angle,
             through: matches!(sweep, Sweep::Extrude { through: true, .. }),
-            valid,
-        }
+            valid: false,
+        };
+        result.valid = result.finite();
+        result
+    }
+    fn finite(&self) -> bool {
+        self.matrix
+            .iter()
+            .flatten()
+            .chain(self.translation.iter())
+            .chain(self.sweep.iter())
+            .all(|v| v.is_finite())
+            && self.edges.iter().all(|e| {
+                e.start.iter().chain(e.end.iter()).all(|v| v.is_finite())
+                    && e.circle
+                        .as_ref()
+                        .is_none_or(|(c, r, _)| c.iter().all(|v| v.is_finite()) && r.is_finite())
+            })
     }
     fn inside(&self, p: [f64; 3]) -> bool {
         if !self.valid {
@@ -945,13 +1074,13 @@ impl Feature {
         bounds
     }
 
-    pub(crate) fn sample_bounds(&self) -> Option<crate::samples::Bounds> {
+    pub(crate) fn sample_bounds(&self) -> Result<Option<crate::samples::Bounds>, Refusal> {
         let profile = self.sample_profile_bounds();
         let zero = Rational::zero();
         let local = match &self.sweep {
             Sweep::Extrude { vector, through } => {
                 if *through {
-                    return None;
+                    return Ok(None);
                 }
                 let [x, y] = std::array::from_fn(|i| {
                     let v = [&vector.x, &vector.y][i];
@@ -980,7 +1109,10 @@ impl Feature {
                 [&origin.x, &origin.y, &origin.z].map(|x| [x - &radius, x + &radius])
             }
         };
-        Some(crate::samples::transform(&local, &self.inverse.inverse()))
+        Ok(Some(crate::samples::transform(
+            &local,
+            &self.inverse.inverse(),
+        )?))
     }
 
     pub(crate) fn sample_candidates(
@@ -992,7 +1124,17 @@ impl Feature {
     ) -> Result<bool, Refusal> {
         use crate::samples::{circle, fraction};
         let pose = self.inverse.inverse();
-        let mut emit = |p: RPoint3| visit(pose.apply_point(&p));
+        if pose.rotation.rational_matrix().is_none()
+            || pose.translation.rational_components().is_none()
+        {
+            return Err(crate::samples::placement_error());
+        }
+        let mut emit = |p: RPoint3| {
+            visit(
+                pose.apply_rational_point(&p)
+                    .expect("the native rational sampling frame was checked"),
+            )
+        };
         if matches!(role, Role::Start | Role::End) {
             let bounds = self.sample_profile_bounds();
             for i in 0..n {
@@ -1096,7 +1238,7 @@ impl Feature {
             match &self.sweep {
                 Sweep::Extrude { vector, through } => {
                     let parameters = if *through {
-                        let local = crate::samples::transform(result, &self.inverse);
+                        let local = crate::samples::transform(result, &self.inverse)?;
                         let mut range = local[2].each_ref().map(|x| x / &vector.z);
                         range.sort();
                         range

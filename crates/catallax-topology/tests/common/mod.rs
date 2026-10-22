@@ -33,34 +33,34 @@ pub fn flip(s: Sense) -> Sense {
 }
 pub fn plane(origin: RPoint3, normal: RVector3, ref_dir: RVector3) -> Surface {
     Surface::Plane(Plane {
-        origin,
-        normal,
-        ref_dir,
+        origin: origin.into(),
+        normal: normal.into(),
+        ref_dir: ref_dir.into(),
     })
 }
 pub fn circle(center: RPoint3, radius: Rational) -> Curve {
     Curve::Circle(Circle {
-        center,
-        normal: v(0, 0, 1),
-        radius_sq: &radius * &radius,
-        ref_dir: v(1, 0, 0),
+        center: center.into(),
+        normal: v(0, 0, 1).into(),
+        radius_sq: (&radius * &radius).into(),
+        ref_dir: v(1, 0, 0).into(),
     })
 }
 pub fn sphere_surface(radius: Rational) -> Surface {
     Surface::Sphere(Sphere {
-        center: p(0, 0, 0),
-        radius,
-        axis: v(0, 0, 1),
-        ref_dir: v(1, 0, 0),
+        center: p(0, 0, 0).into(),
+        radius: radius.into(),
+        axis: v(0, 0, 1).into(),
+        ref_dir: v(1, 0, 0).into(),
     })
 }
 pub fn torus_surface() -> Surface {
     Surface::Torus(Torus {
-        center: p(0, 0, 0),
-        major: r(3),
-        minor: r(1),
-        axis: v(0, 0, 1),
-        ref_dir: v(1, 0, 0),
+        center: p(0, 0, 0).into(),
+        major: r(3).into(),
+        minor: r(1).into(),
+        axis: v(0, 0, 1).into(),
+        ref_dir: v(1, 0, 0).into(),
     })
 }
 
@@ -160,8 +160,8 @@ pub fn expected(shape: &Primitive, pose: &Pose) -> Expected {
                     if i & bit == 0 {
                         out.edges.push((
                             Curve::Line(Line {
-                                origin: out.points[i].clone(),
-                                dir,
+                                origin: out.points[i].clone().into(),
+                                dir: dir.into(),
                             }),
                             Some(i),
                             Some(i | bit),
@@ -242,18 +242,18 @@ pub fn expected(shape: &Primitive, pose: &Pose) -> Expected {
             }
             let side = if matches!(shape, Primitive::Cylinder(..)) {
                 Surface::Cylinder(Cylinder {
-                    origin: p(0, 0, 0),
-                    axis: v(0, 0, 1),
-                    radius: radius.clone(),
-                    ref_dir: v(1, 0, 0),
+                    origin: p(0, 0, 0).into(),
+                    axis: v(0, 0, 1).into(),
+                    radius: radius.clone().into(),
+                    ref_dir: v(1, 0, 0).into(),
                 })
             } else {
                 // r(z)=base+(top-base)z/h vanishes at h*base/(base-top).
                 Surface::Cone(Cone {
-                    apex: RPoint3::new(r(0), r(0), height * radius / (radius - &top)),
-                    axis: v(0, 0, if top < *radius { -1 } else { 1 }),
-                    slope: &(radius - &top).abs() / height,
-                    ref_dir: v(1, 0, 0),
+                    apex: RPoint3::new(r(0), r(0), height * radius / (radius - &top)).into(),
+                    axis: v(0, 0, if top < *radius { -1 } else { 1 }).into(),
+                    slope: (&(radius - &top).abs() / height).into(),
+                    ref_dir: v(1, 0, 0).into(),
                 })
             };
             out.faces.push((side, Sense::Same, side_loops));
@@ -266,11 +266,11 @@ pub fn expected(shape: &Primitive, pose: &Pose) -> Expected {
         Primitive::Torus(major, minor) => {
             out.faces.push((
                 Surface::Torus(Torus {
-                    center: p(0, 0, 0),
-                    axis: v(0, 0, 1),
-                    major: major.clone(),
-                    minor: minor.clone(),
-                    ref_dir: v(1, 0, 0),
+                    center: p(0, 0, 0).into(),
+                    axis: v(0, 0, 1).into(),
+                    major: major.clone().into(),
+                    minor: minor.clone().into(),
+                    ref_dir: v(1, 0, 0).into(),
                 }),
                 Sense::Same,
                 vec![],
@@ -280,7 +280,10 @@ pub fn expected(shape: &Primitive, pose: &Pose) -> Expected {
         }
     }
     for point in &mut out.points {
-        *point = pose.apply_point(point);
+        *point = pose
+            .apply_point(&point.to_real())
+            .as_rational()
+            .expect("rational topology fixture");
     }
     for (curve, _, _) in &mut out.edges {
         *curve = curve.transformed(pose).unwrap();
@@ -288,7 +291,10 @@ pub fn expected(shape: &Primitive, pose: &Pose) -> Expected {
     for (surface, _, _) in &mut out.faces {
         *surface = surface.transformed(pose);
     }
-    out.interior = pose.apply_point(&out.interior);
+    out.interior = pose
+        .apply_point(&out.interior.to_real())
+        .as_rational()
+        .expect("rational topology fixture");
     out
 }
 
@@ -302,7 +308,7 @@ pub fn record(m: &mut Model, kind: FactKind, a: GeomKey, b: GeomKey) {
     });
 }
 pub fn vertex(m: &mut Model, point: RPoint3) -> VertexId {
-    let point = m.geom_mut().add_point(PointDef::Explicit(point));
+    let point = m.geom_mut().add_point(PointDef::Explicit((point).into()));
     m.add_vertex(Vertex { point })
 }
 pub fn edge(m: &mut Model, curve: Curve, start: Option<VertexId>, end: Option<VertexId>) -> EdgeId {
@@ -405,9 +411,9 @@ pub fn assemble(m: &mut Model, e: &Expected) -> BodyId {
     }
     body_from_faces(m, fs)
 }
-pub fn explicit(m: &Model, id: VertexId) -> &RPoint3 {
+pub fn explicit(m: &Model, id: VertexId) -> RPoint3 {
     match m.geom().point(m.vertex(id).point) {
-        PointDef::Explicit(p) => p,
+        PointDef::Explicit(p) => p.as_rational().expect("rational topology fixture"),
         _ => panic!("builder must store an explicit point"),
     }
 }
@@ -440,7 +446,9 @@ pub fn lengths(m: &Model) -> [usize; 12] {
     let mut probe = m.clone();
     let s = probe.geom_mut().add_surface(sphere_surface(r(1)));
     let c = probe.geom_mut().add_curve(circle(p(0, 0, 0), r(1)));
-    let p = probe.geom_mut().add_point(PointDef::Explicit(p(0, 0, 0)));
+    let p = probe
+        .geom_mut()
+        .add_point(PointDef::Explicit((p(0, 0, 0)).into()));
     let v = probe.add_vertex(Vertex { point: p });
     let e = probe.add_edge(Edge {
         curve: c,
@@ -559,22 +567,31 @@ pub fn euler(m: &Model, s: ShellId) -> i64 {
 pub fn implicit(s: &Surface, p: &RPoint3) -> Rational {
     let sq = |x: &Rational| x * x;
     match s {
-        Surface::Plane(s) => p.minus(&s.origin).dot(&s.normal),
+        Surface::Plane(s) => p
+            .minus(&s.origin.as_rational().unwrap())
+            .dot(&s.normal.as_rational().unwrap()),
         Surface::Cylinder(s) => {
-            let d = p.minus(&s.origin);
-            d.cross(&s.axis).norm_squared() - sq(&s.radius) * s.axis.norm_squared()
+            let d = p.minus(&s.origin.as_rational().unwrap());
+            let axis = s.axis.as_rational().unwrap();
+            d.cross(&axis).norm_squared()
+                - sq(&s.radius.as_rational().unwrap()) * axis.norm_squared()
         }
         Surface::Cone(s) => {
-            let d = p.minus(&s.apex);
-            d.cross(&s.axis).norm_squared() - sq(&s.slope) * sq(&d.dot(&s.axis))
+            let d = p.minus(&s.apex.as_rational().unwrap());
+            let axis = s.axis.as_rational().unwrap();
+            d.cross(&axis).norm_squared() - sq(&s.slope.as_rational().unwrap()) * sq(&d.dot(&axis))
         }
-        Surface::Sphere(s) => p.minus(&s.center).norm_squared() - sq(&s.radius),
+        Surface::Sphere(s) => {
+            p.minus(&s.center.as_rational().unwrap()).norm_squared()
+                - sq(&s.radius.as_rational().unwrap())
+        }
         Surface::Torus(s) => {
-            let d = p.minus(&s.center);
+            let d = p.minus(&s.center.as_rational().unwrap());
+            let axis = s.axis.as_rational().unwrap();
             let norm = d.norm_squared();
-            let major = sq(&s.major);
-            sq(&(&norm + &major - sq(&s.minor)))
-                - r(4) * major * (norm - sq(&d.dot(&s.axis)) / s.axis.norm_squared())
+            let major = sq(&s.major.as_rational().unwrap());
+            sq(&(&norm + &major - sq(&s.minor.as_rational().unwrap())))
+                - r(4) * major * (norm - sq(&d.dot(&axis)) / axis.norm_squared())
         }
         _ => panic!("new surface requires an oracle"),
     }
@@ -598,7 +615,9 @@ impl Rng {
         Pose::new(
             Rotation::from_quaternion(w, self.rational(), self.rational(), self.rational())
                 .unwrap(),
-            RVector3::new(self.rational(), self.rational(), self.rational()),
+            (RVector3::new(self.rational(), self.rational(), self.rational())).into(),
+            &mut catallax_numbers::Decider::default(),
         )
+        .unwrap()
     }
 }

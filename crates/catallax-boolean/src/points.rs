@@ -103,10 +103,14 @@ pub(crate) fn curve_sample(
     if from.is_none()
         && to.is_none()
         && let catallax_shapes::Curve::Circle(circle) = model.geom().curve(curve)
-        && let Some(scale) = sqrt_rational(&(&circle.radius_sq / &circle.ref_dir.norm_squared()))
     {
-        let point = circle.center.plus(&circle.ref_dir.scaled(&scale));
-        return Ok(model.geom_mut().add_point(PointDef::Explicit(point)));
+        let square = &circle.radius_sq / &circle.ref_dir.norm_squared();
+        if let Some(scale) = square.as_rational().and_then(|q| sqrt_rational(&q)) {
+            let point = circle
+                .center
+                .plus(&circle.ref_dir.scaled(&Real::from(scale)));
+            return Ok(model.geom_mut().add_point(PointDef::Explicit(point)));
+        }
     }
     let answer = arc_point(model.geom(), curve, from, to, dec)?;
     if !answer.marks.is_empty() {
@@ -121,59 +125,61 @@ pub(crate) fn curve_sample(
     })))
 }
 
-pub(crate) fn rationalise(
+pub(crate) fn root(value: &Real) -> Real {
+    value
+        .as_rational()
+        .and_then(|q| sqrt_rational(&q))
+        .map_or_else(|| value.sqrt(), Real::from)
+}
+
+fn exact_probe(
     surface: &Surface,
     target: &Point3,
     width: &Rational,
     dec: &mut Decider,
-) -> Result<Option<RPoint3>, Refusal> {
-    let approximate = |p: &Point3, dec: &mut Decider| -> Result<RPoint3, Refusal> {
-        Ok(RPoint3::new(
-            dec.enclose(&p.x, width)?.mid(),
-            dec.enclose(&p.y, width)?.mid(),
-            dec.enclose(&p.z, width)?.mid(),
-        ))
-    };
+) -> Result<Option<Point3>, Refusal> {
     match surface {
         Surface::Plane(s) => {
-            let p = approximate(target, dec)?;
+            let p = RPoint3::new(
+                dec.enclose(&target.x, width)?.mid(),
+                dec.enclose(&target.y, width)?.mid(),
+                dec.enclose(&target.z, width)?.mid(),
+            )
+            .to_real();
             let displacement = p.minus(&s.origin);
             Ok(Some(p.plus(&s.normal.scaled(
                 &(-displacement.dot(&s.normal) / s.normal.norm_squared()),
             ))))
         }
         Surface::Cylinder(s) => {
-            let Some(length) = sqrt_rational(&s.ref_dir.norm_squared()) else {
-                return Ok(None);
-            };
+            let length = root(&s.ref_dir.norm_squared());
             let base = s.ref_dir.scaled(&(&s.radius / &length));
             let tangent = s.axis.cross(&base);
             let squared = base.norm_squared();
             let tangent_squared = tangent.norm_squared();
-            let d = target.minus(&s.origin.to_real());
-            let h = d.dot(&s.axis.to_real()) / Real::from(s.axis.norm_squared());
+            let d = target.minus(&s.origin);
+            let h = d.dot(&s.axis) / s.axis.norm_squared();
             for sense in [Sense::Same, Sense::Reversed] {
                 let b = if sense == Sense::Same {
                     base.clone()
                 } else {
-                    base.scaled(&r(-1))
+                    base.scaled(&Real::from_i64(-1))
                 };
                 let v = s.axis.cross(&b);
-                let denominator = Real::from(squared.clone()) + d.dot(&b.to_real());
+                let denominator = &squared + &d.dot(&b);
                 match dec.sign(&denominator) {
                     Outcome::ProvenCoincident(_) | Outcome::NotExact(_) => continue,
                     Outcome::Refused(e) => return Err(e),
                     Outcome::Proven(_) => {}
                 }
-                let t =
-                    (d.dot(&v.to_real()) / denominator) * Real::from(&squared / &tangent_squared);
-                let t = dec.enclose(&t, width)?.mid();
-                let h = dec.enclose(&h, width)?.mid();
-                let z = &tangent_squared * &(&t * &t);
+                let t = (d.dot(&v) / denominator) * (&squared / &tangent_squared);
+                let t = Real::from(dec.enclose(&t, width)?.mid());
+                let h = Real::from(dec.enclose(&h, width)?.mid());
+                let z = &tangent_squared * &t.square();
                 let denominator = &squared + &z;
                 let radial = b
                     .scaled(&(&(&squared - &z) / &denominator))
-                    .plus(&v.scaled(&((&squared * &t) * r(2) / denominator)));
+                    .plus(&v.scaled(&((&squared * &t) * Real::from_i64(2) / denominator)));
                 return Ok(Some(s.origin.plus(&radial).plus(&s.axis.scaled(&h))));
             }
             Ok(None)
@@ -226,7 +232,7 @@ pub(crate) fn rationalise(
             Ok(Some(torus_point(s, &frame, u, v)))
         }
         Surface::Sphere(s) => {
-            let d = target.minus(&s.center.to_real());
+            let d = target.minus(&s.center);
             for choice in 0..3 {
                 let rotation = Rotation::from_quaternion(
                     r(1),
@@ -237,26 +243,55 @@ pub(crate) fn rationalise(
                 let u = rotation.apply(&unit(0));
                 let v = rotation.apply(&unit(1));
                 let pole = rotation.apply(&unit(2));
-                let denominator = Real::from(s.radius.clone()) - d.dot(&pole.to_real());
+                let denominator = &s.radius - &d.dot(&pole);
                 match dec.sign(&denominator) {
-                    Outcome::ProvenCoincident(_) => continue,
+                    Outcome::ProvenCoincident(_) | Outcome::NotExact(_) => continue,
                     Outcome::Refused(e) => return Err(e),
-                    Outcome::NotExact(_) => continue,
                     Outcome::Proven(_) => {}
                 }
-                let x = dec
-                    .enclose(&(&d.dot(&u.to_real()) / &denominator), width)?
-                    .mid();
-                let y = dec
-                    .enclose(&(&d.dot(&v.to_real()) / &denominator), width)?
-                    .mid();
+                let x = dec.enclose(&(&d.dot(&u) / &denominator), width)?.mid();
+                let y = dec.enclose(&(&d.dot(&v) / &denominator), width)?.mid();
                 let norm = &x * &x + &y * &y;
-                let factor = &s.radius / &(Rational::one() + norm.clone());
+                let factor = &s.radius / &Real::from(Rational::one() + norm.clone());
                 let radial = u
-                    .scaled(&(r(2) * x))
-                    .plus(&v.scaled(&(r(2) * y)))
-                    .plus(&pole.scaled(&(norm - Rational::one())));
+                    .scaled(&Real::from(r(2) * x))
+                    .plus(&v.scaled(&Real::from(r(2) * y)))
+                    .plus(&pole.scaled(&Real::from(norm - Rational::one())));
                 return Ok(Some(s.center.plus(&radial.scaled(&factor))));
+            }
+            Ok(None)
+        }
+        Surface::EllipticCylinder(s) => {
+            let first = s
+                .major_dir
+                .scaled(&(&Real::one() / &root(&s.major_dir.norm_squared())));
+            let axis = s
+                .axis
+                .scaled(&(&Real::one() / &root(&s.axis.norm_squared())));
+            let second = axis.cross(&first);
+            let major = root(&s.major_sq);
+            let minor = root(&s.minor_sq);
+            let d = target.minus(&s.origin);
+            let height = d.dot(&s.axis) / s.axis.norm_squared();
+            for sense in [1, -1] {
+                let cosine = &(&d.dot(&first) / &major) * &Real::from_i64(sense);
+                let sine = &(&d.dot(&second) / &minor) * &Real::from_i64(sense);
+                let denominator = &Real::one() + &cosine;
+                if crate::geometry::sign(&denominator, dec, "boolean.imprint-ambiguous")?
+                    == Sign::Zero
+                {
+                    continue;
+                }
+                let t = Real::from(dec.enclose(&(&sine / &denominator), width)?.mid());
+                let height = Real::from(dec.enclose(&height, width)?.mid());
+                let denominator = &Real::one() + &t.square();
+                let cosine = (&Real::one() - &t.square()) / denominator.clone();
+                let sine = (Real::from_i64(2) * t) / denominator;
+                let radial = first
+                    .scaled(&(&major * &cosine))
+                    .plus(&second.scaled(&(&minor * &sine)))
+                    .scaled(&Real::from_i64(sense));
+                return Ok(Some(s.origin.plus(&radial).plus(&s.axis.scaled(&height))));
             }
             Ok(None)
         }
@@ -272,51 +307,69 @@ pub(crate) fn comparison_witness(
 ) -> Result<Option<RPoint3>, Refusal> {
     match surface {
         Surface::Cone(s) => {
-            let Some(axis_length) = sqrt_rational(&s.axis.norm_squared()) else {
+            let (Some(apex), Some(axis), Some(reference), Some(slope)) = (
+                s.apex.as_rational(),
+                s.axis.as_rational(),
+                s.ref_dir.as_rational(),
+                s.slope.as_rational(),
+            ) else {
                 return Ok(None);
             };
-            let axis = s.axis.scaled(&axis_length.recip().unwrap());
+            let Some(axis_length) = sqrt_rational(&axis.norm_squared()) else {
+                return Ok(None);
+            };
+            let axis = axis.scaled(&axis_length.recip().unwrap());
             let Some(radial) = circle_direction(
-                &s.axis,
-                &s.ref_dir,
-                &target.minus(&s.apex.to_real()),
+                &axis,
+                &reference,
+                &target.minus(&apex.to_real()),
                 width,
                 dec,
             )?
             else {
                 return Ok(None);
             };
-            let height = target.minus(&s.apex.to_real()).dot(&axis.to_real());
+            let height = target.minus(&apex.to_real()).dot(&axis.to_real());
             let height = dec.enclose(&height, width)?.mid().max(Rational::zero());
             Ok(Some(
-                s.apex
-                    .plus(&axis.scaled(&height))
-                    .plus(&radial.scaled(&(&s.slope * &height))),
+                apex.plus(&axis.scaled(&height))
+                    .plus(&radial.scaled(&(&slope * &height))),
             ))
         }
         Surface::Torus(s) => {
-            let Some(axis_length) = sqrt_rational(&s.axis.norm_squared()) else {
+            let (Some(center), Some(axis), Some(reference), Some(major), Some(minor)) = (
+                s.center.as_rational(),
+                s.axis.as_rational(),
+                s.ref_dir.as_rational(),
+                s.major.as_rational(),
+                s.minor.as_rational(),
+            ) else {
                 return Ok(None);
             };
-            let axis = s.axis.scaled(&axis_length.recip().unwrap());
-            let d = target.minus(&s.center.to_real());
-            let Some(radial) = circle_direction(&s.axis, &s.ref_dir, &d, width, dec)? else {
+            let Some(axis_length) = sqrt_rational(&axis.norm_squared()) else {
+                return Ok(None);
+            };
+            let axis = axis.scaled(&axis_length.recip().unwrap());
+            let d = target.minus(&center.to_real());
+            let Some(radial) = circle_direction(&axis, &reference, &d, width, dec)? else {
                 return Ok(None);
             };
             let height = d.dot(&axis.to_real());
             let planar = d.minus(&axis.to_real().scaled(&height));
-            let x = planar.norm_squared().sqrt() - Real::from(s.major.clone());
+            let x = planar.norm_squared().sqrt() - Real::from(major.clone());
             let tube = catallax_shapes::Vector3::new(x, height, Real::zero());
-            let Some(tube) = circle_direction(&unit(2), &unit(0), &tube, width, dec)? else {
+            let z = catallax_shapes::RVector3::new(r(0), r(0), r(1));
+            let x = catallax_shapes::RVector3::new(r(1), r(0), r(0));
+            let Some(tube) = circle_direction(&z, &x, &tube, width, dec)? else {
                 return Ok(None);
             };
             Ok(Some(
-                s.center
-                    .plus(&radial.scaled(&(&s.major + &(&s.minor * &tube.x))))
-                    .plus(&axis.scaled(&(&s.minor * &tube.y))),
+                center
+                    .plus(&radial.scaled(&(&major + &(&minor * &tube.x))))
+                    .plus(&axis.scaled(&(&minor * &tube.y))),
             ))
         }
-        _ => rationalise(surface, target, width, dec),
+        _ => Ok(exact_probe(surface, target, width, dec)?.and_then(|point| point.as_rational())),
     }
 }
 
@@ -355,12 +408,19 @@ fn circle_direction(
     Ok(None)
 }
 
+fn size_upper(value: &Real, dec: &mut Decider) -> Result<Rational, Refusal> {
+    if let Some(value) = value.rational_ref() {
+        return Ok(value.clone());
+    }
+    Ok(dec.enclose(value, &Rational::one())?.hi())
+}
+
 fn search<T>(
     model: &mut Model,
     face: FaceId,
     dec: &mut Decider,
     barriers: &[catallax_topology::EdgeId],
-    mut accept: impl FnMut(&mut Model, PointId, &RPoint3, &mut Decider) -> Result<Option<T>, Refusal>,
+    mut accept: impl FnMut(&mut Model, PointId, &Point3, &mut Decider) -> Result<Option<T>, Refusal>,
 ) -> Result<T, Refusal> {
     let f = model.face(face).clone();
     let surface = model.geom().surface(f.surface).clone();
@@ -423,8 +483,9 @@ fn search<T>(
             let tangent = oriented(&tangent, product(edge.sense, coedge.sense));
             let inward = oriented(&surface.gradient(&p), f.sense).cross(&tangent);
             let scale = match &surface {
-                Surface::Cylinder(s) => s.radius.clone(),
-                Surface::Sphere(s) => s.radius.clone(),
+                Surface::Cylinder(s) => size_upper(&s.radius, dec)?,
+                Surface::Sphere(s) => size_upper(&s.radius, dec)?,
+                Surface::EllipticCylinder(s) => size_upper(&root(&s.minor_sq), dec)?,
                 _ => {
                     if let (Some(a), Some(b)) = (from, to) {
                         let delta = model.geom().position(a).minus(&model.geom().position(b));
@@ -457,7 +518,7 @@ fn search<T>(
                 let step = scale.mul_pow2(-i64::from(depth));
                 let target = p.plus(&inward.scaled(&Real::from(&step / &upper)));
                 let width = step.mul_pow2(-8);
-                let Some(candidate) = rationalise(&surface, &target, &width, dec)? else {
+                let Some(candidate) = exact_probe(&surface, &target, &width, dec)? else {
                     continue;
                 };
                 let query = model
@@ -511,7 +572,7 @@ pub(crate) fn find<T>(
     model: &mut Model,
     face: FaceId,
     dec: &mut Decider,
-    accept: impl FnMut(&mut Model, PointId, &RPoint3, &mut Decider) -> Result<Option<T>, Refusal>,
+    accept: impl FnMut(&mut Model, PointId, &Point3, &mut Decider) -> Result<Option<T>, Refusal>,
 ) -> Result<T, Refusal> {
     let mut barriers = Vec::new();
     for &loop_id in &model.face(face).loops {
@@ -532,11 +593,11 @@ pub(crate) fn left_probe<T>(
     face: FaceId,
     barriers: &[catallax_topology::EdgeId],
     dec: &mut Decider,
-    accept: impl FnMut(&mut Model, PointId, &RPoint3, &mut Decider) -> Result<Option<T>, Refusal>,
+    accept: impl FnMut(&mut Model, PointId, &Point3, &mut Decider) -> Result<Option<T>, Refusal>,
 ) -> Result<T, Refusal> {
     search(model, face, dec, barriers, accept)
 }
 
-pub(crate) fn face_point(model: &mut Model, face: FaceId, dec: &mut Decider) -> Answered<RPoint3> {
+pub(crate) fn face_point(model: &mut Model, face: FaceId, dec: &mut Decider) -> Answered<Point3> {
     find(model, face, dec, |_, _, p, _| Ok(Some(p.clone()))).map(Answer::exact)
 }

@@ -33,13 +33,20 @@ pub struct BooleanFixture {
     pub mass: Option<Expected>,
 }
 fn translation(x: i64, y: i64, z: i64) -> Pose {
-    Pose::new(Rotation::identity(), v(x, y, z))
+    Pose::new(
+        Rotation::identity(),
+        (v(x, y, z)).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap()
 }
 fn xpose(x: i64, y: i64, z: i64) -> Pose {
     Pose::new(
         Rotation::from_quaternion(r(1), r(0), r(1), r(0)).unwrap(),
-        v(x, y, z),
+        (v(x, y, z)).into(),
+        &mut catallax_numbers::Decider::default(),
     )
+    .unwrap()
 }
 pub fn build_boolean(case: BooleanCase) -> BooleanFixture {
     use BooleanCase::*;

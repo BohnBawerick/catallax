@@ -5,30 +5,35 @@ use super::*;
 fn carrier_candidate(surface: &Surface, p: &RPoint3, t: &Rational, alternate: bool) -> RPoint3 {
     match surface {
         Surface::Plane(s) => {
+            let reference = s.ref_dir.as_rational().unwrap();
             let direction = if alternate {
-                s.normal.cross(&s.ref_dir)
+                s.normal.as_rational().unwrap().cross(&reference)
             } else {
-                s.ref_dir.clone()
+                reference
             };
             p.plus(&direction.scaled(t))
         }
         Surface::Cylinder(s) => {
-            let d = p.minus(&s.origin);
+            let origin = s.origin.as_rational().unwrap();
+            let axis = s.axis.as_rational().unwrap();
+            let d = p.minus(&origin);
             let rotation =
-                Rotation::from_quaternion(r(1), &s.axis.x * t, &s.axis.y * t, &s.axis.z * t)
-                    .unwrap();
-            s.origin.plus(&rotation.apply(&d))
+                Rotation::from_quaternion(r(1), &axis.x * t, &axis.y * t, &axis.z * t).unwrap();
+            origin.plus(&rotation.apply(&d.to_real()).as_rational().unwrap())
         }
         Surface::Sphere(s) => {
-            let d = p.minus(&s.center);
-            let axis = if d.cross(&s.axis).is_zero() {
-                &s.ref_dir
+            let center = s.center.as_rational().unwrap();
+            let axis = s.axis.as_rational().unwrap();
+            let reference = s.ref_dir.as_rational().unwrap();
+            let d = p.minus(&center);
+            let axis = if d.cross(&axis).is_zero() {
+                &reference
             } else {
-                &s.axis
+                &axis
             };
             let rotation =
                 Rotation::from_quaternion(r(1), &axis.x * t, &axis.y * t, &axis.z * t).unwrap();
-            s.center.plus(&rotation.apply(&d))
+            center.plus(&rotation.apply(&d.to_real()).as_rational().unwrap())
         }
         _ => panic!("unsupported contact carrier"),
     }

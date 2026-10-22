@@ -8,13 +8,14 @@
 
 use catallax_numbers::{Answered, Ball, Decider, Outcome, Rational, Refusal, StrictOrder};
 use catallax_shapes::{
-    Apart, CurveId, GeomStore, Point3, PointId, RVector3, SurfaceId, SurfaceKind, Vector3,
+    Apart, CurveId, GeomStore, Point3, PointId, SurfaceId, SurfaceKind, Vector3,
 };
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
 };
 
+mod algebraic_solve;
 mod arc;
 mod chart;
 mod hits;
@@ -103,27 +104,27 @@ pub enum CurveForm {
         /// A point of the line.
         origin: Point3,
         /// Its natural direction.
-        dir: RVector3,
+        dir: Vector3,
     },
     /// A circle, counter-clockwise seen from the tip of `normal`.
     Circle {
         /// Centre.
         center: Point3,
         /// Normal of its plane.
-        normal: RVector3,
+        normal: Vector3,
         /// Positive squared radius.
         radius_sq: catallax_numbers::Real,
         /// Direction of the point at `t = 0`.
-        ref_dir: RVector3,
+        ref_dir: Vector3,
     },
     /// An ellipse, counter-clockwise seen from the tip of `normal`.
     Ellipse {
         /// Centre.
         center: Point3,
         /// Normal of its plane.
-        normal: RVector3,
+        normal: Vector3,
         /// Direction of the major axis and of the point at `t = 0`.
-        major_dir: RVector3,
+        major_dir: Vector3,
         /// Positive squared semi-major axis.
         major_sq: catallax_numbers::Real,
         /// Positive squared semi-minor axis.
@@ -134,9 +135,9 @@ pub enum CurveForm {
         /// Vertex.
         vertex: Point3,
         /// Plane normal; fixes the natural direction at the vertex.
-        normal: RVector3,
+        normal: Vector3,
         /// Direction from the vertex towards the focus.
-        axis_dir: RVector3,
+        axis_dir: Vector3,
         /// Positive distance from the vertex to the focus.
         focal: catallax_numbers::Real,
     },
@@ -145,9 +146,9 @@ pub enum CurveForm {
         /// Centre of the two-branch carrier.
         center: Point3,
         /// Plane normal; fixes the natural direction at the vertex.
-        normal: RVector3,
+        normal: Vector3,
         /// Direction of the transverse axis.
-        axis_dir: RVector3,
+        axis_dir: Vector3,
         /// Positive squared transverse semi-axis.
         transverse_sq: catallax_numbers::Real,
         /// Positive squared conjugate semi-axis.
@@ -240,7 +241,7 @@ impl CurveTrace {
 
 /// Whether these kinds have an intersection path; individual poses can still refuse.
 pub fn supports(a: SurfaceKind, b: SurfaceKind) -> bool {
-    matches!(
+    (matches!(
         a,
         SurfaceKind::Plane
             | SurfaceKind::Cylinder
@@ -254,6 +255,10 @@ pub fn supports(a: SurfaceKind, b: SurfaceKind) -> bool {
             | SurfaceKind::Cone
             | SurfaceKind::Sphere
             | SurfaceKind::Torus
+    )) || matches!(
+        (a, b),
+        (SurfaceKind::Plane, SurfaceKind::EllipticCylinder)
+            | (SurfaceKind::EllipticCylinder, SurfaceKind::Plane)
     )
 }
 
@@ -264,8 +269,7 @@ pub fn intersect_surfaces(
     b: SurfaceId,
     dec: &mut Decider,
 ) -> Answered<SurfacePair> {
-    let _ = dec;
-    pair::construct(geom, a, b)
+    pair::construct(geom, a, b, dec)
 }
 
 /// Where a curve meets a surface; new points are added to `geom`.
@@ -298,7 +302,7 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
         }
         CurveForm::Circle { .. } | CurveForm::Ellipse { .. } => Ok(true),
         CurveForm::Branch => {
-            let plan = query::validate(geom, c)?.expect("intersection branch");
+            let plan = query::validate(geom, c, dec)?.expect("intersection branch");
             match &plan.frame {
                 Some(pair::Frame::CylinderSphere { .. } | pair::Frame::Cylinders { .. }) => {
                     Ok(true)

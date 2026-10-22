@@ -2,29 +2,29 @@
 //! not an angle or a transcendental parameter.
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
-use catallax_shapes::{RPoint3, RVector3, Rotation, Surface};
+use catallax_shapes::{Point3, Rotation, Surface, Vector3};
 
 use crate::geometry::{r, refusal, sign, unit};
 
 #[derive(Clone)]
 pub(crate) enum Projection {
     Plane {
-        origin: RPoint3,
-        u: RVector3,
-        v: RVector3,
+        origin: Point3,
+        u: Vector3,
+        v: Vector3,
     },
     Cylinder {
-        origin: RPoint3,
-        u: RVector3,
-        v: RVector3,
-        axis: RVector3,
+        origin: Point3,
+        u: Vector3,
+        v: Vector3,
+        axis: Vector3,
     },
     Sphere {
-        origin: RPoint3,
-        radius: Rational,
-        u: RVector3,
-        v: RVector3,
-        pole: RVector3,
+        origin: Point3,
+        radius: Real,
+        u: Vector3,
+        v: Vector3,
+        pole: Vector3,
     },
 }
 
@@ -32,16 +32,19 @@ pub(crate) fn ball(lo: &Rational, hi: &Rational, bits: u32) -> Ball {
     Ball::from_rational(lo, bits).hull(&Ball::from_rational(hi, bits))
 }
 
-fn dot(a: &[Ball; 3], b: &RVector3) -> Ball {
+fn dot(a: &[Ball; 3], b: &Vector3, dec: &Decider) -> Result<Ball, Refusal> {
     let p = a[0].precision();
-    &(&a[0] * &Ball::from_rational(&b.x, p))
-        + &(&(&a[1] * &Ball::from_rational(&b.y, p)) + &(&a[2] * &Ball::from_rational(&b.z, p)))
+    Ok(&(&a[0] * &dec.enclose_at(&b.x, p)?)
+        + &(&(&a[1] * &dec.enclose_at(&b.y, p)?) + &(&a[2] * &dec.enclose_at(&b.z, p)?)))
 }
 
-fn displacement(p: &[Ball; 3], origin: &RPoint3) -> [Ball; 3] {
+fn displacement(p: &[Ball; 3], origin: &Point3, dec: &Decider) -> Result<[Ball; 3], Refusal> {
     let bits = p[0].precision();
-    let c = [&origin.x, &origin.y, &origin.z];
-    std::array::from_fn(|i| &p[i] - &Ball::from_rational(c[i], bits))
+    Ok([
+        &p[0] - &dec.enclose_at(&origin.x, bits)?,
+        &p[1] - &dec.enclose_at(&origin.y, bits)?,
+        &p[2] - &dec.enclose_at(&origin.z, bits)?,
+    ])
 }
 
 fn phase(x: &Rational, y: &Rational) -> Rational {
@@ -110,6 +113,12 @@ impl Projection {
                 u: s.ref_dir.clone(),
                 v: s.ref_dir.cross(&s.axis),
             },
+            Surface::EllipticCylinder(s) => Self::Cylinder {
+                origin: s.origin.clone(),
+                u: s.major_dir.clone(),
+                v: s.axis.cross(&s.major_dir),
+                axis: s.axis.clone(),
+            },
             Surface::Sphere(s) => {
                 let k = r(choice);
                 let rotation = Rotation::from_quaternion(
@@ -144,7 +153,7 @@ impl Projection {
     pub(crate) fn periodic(&self) -> bool {
         matches!(self, Self::Cylinder { .. })
     }
-    pub(crate) fn pole_point(&self) -> Option<RPoint3> {
+    pub(crate) fn pole_point(&self) -> Option<Point3> {
         match self {
             Self::Sphere {
                 origin,
@@ -169,20 +178,20 @@ impl Projection {
         };
         Ok(match self {
             Self::Plane { origin, u, v } => {
-                let d = displacement(p, origin);
-                Some([dot(&d, u), dot(&d, v)])
+                let d = displacement(p, origin, dec)?;
+                Some([dot(&d, u, dec)?, dot(&d, v, dec)?])
             }
             Self::Cylinder { origin, u, v, axis } => {
-                let d = displacement(p, origin);
-                let x = dot(&d, u);
-                let y = dot(&d, v);
+                let d = displacement(p, origin, dec)?;
+                let x = dot(&d, u, dec)?;
+                let y = dot(&d, v, dec)?;
                 if !excludes_zero(&x, dec)? && !excludes_zero(&y, dec)? {
                     return Ok(None);
                 }
                 let Some(phase) = phase_box(&x, &y) else {
                     return Ok(None);
                 };
-                Some([phase, dot(&d, axis)])
+                Some([phase, dot(&d, axis, dec)?])
             }
             Self::Sphere {
                 origin,
@@ -191,14 +200,14 @@ impl Projection {
                 v,
                 pole,
             } => {
-                let d = displacement(p, origin);
-                let denominator = Ball::from_rational(radius, p[0].precision()) - dot(&d, pole);
+                let d = displacement(p, origin, dec)?;
+                let denominator = dec.enclose_at(radius, p[0].precision())? - dot(&d, pole, dec)?;
                 if !excludes_zero(&denominator, dec)? {
                     return Ok(None);
                 }
                 let (Some(x), Some(y)) = (
-                    dot(&d, u).checked_div(&denominator),
-                    (-dot(&d, v)).checked_div(&denominator),
+                    dot(&d, u, dec)?.checked_div(&denominator),
+                    (-dot(&d, v, dec)?).checked_div(&denominator),
                 ) else {
                     return Ok(None);
                 };

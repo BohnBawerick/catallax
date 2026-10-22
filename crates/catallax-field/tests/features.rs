@@ -619,3 +619,109 @@ fn generated_algebraic_radii_and_spindle_sheets_keep_the_shared_refusals() {
         assert_eq!(refusal.code, code);
     }
 }
+
+#[test]
+fn algebraic_rigid_frames_preserve_sweep_trims_germs_and_complete_answers() {
+    use catallax_numbers::{Real, sin_cos_degrees};
+    use catallax_shapes::{Pose, Rotation, Vector3};
+    let mut dec = Decider::default();
+    let [sine, cosine] = sin_cos_degrees(&Rational::from_ratio(45, 2).unwrap(), &mut dec).unwrap();
+    let y = Pose::new(
+        Rotation::from_real_quaternion(
+            cosine.clone(),
+            Real::zero(),
+            sine.clone(),
+            Real::zero(),
+            &mut dec,
+        )
+        .unwrap(),
+        Vector3::zero(),
+        &mut dec,
+    )
+    .unwrap();
+    let z = Pose::new(
+        Rotation::from_real_quaternion(cosine, Real::zero(), Real::zero(), sine, &mut dec).unwrap(),
+        Vector3::zero(),
+        &mut dec,
+    )
+    .unwrap();
+    let fixtures = [
+        (
+            extrude(rectangle(), "2"),
+            y,
+            vec![
+                (["2", "1", "0"], Location::Inside),
+                (["1", "1", "1"], Location::Boundary),
+                (["0", "4", "0"], Location::Outside),
+            ],
+        ),
+        (
+            revolve(rectangle(), "360"),
+            z,
+            vec![
+                (["-1", "1", "0"], Location::Inside),
+                (["-1", "1", "4"], Location::Boundary),
+                (["-3", "3", "0"], Location::Outside),
+                (["0", "0", "1"], Location::Boundary),
+            ],
+        ),
+    ];
+    for (index, (recipe, pose, cases)) in fixtures.into_iter().enumerate() {
+        let plan = Plan::compile_checked(&recipe, &mut dec)
+            .unwrap()
+            .transformed(&pose, &mut dec)
+            .unwrap();
+        check(&plan, &cases);
+        let refusal = plan.visit_feature_candidates(2, |_, _| true).unwrap_err();
+        assert_eq!(refusal.code, "field.sample-algebraic-placement");
+        if index == 0 {
+            assert_eq!(
+                role_names(&origins(&plan, ["1", "1", "1"])),
+                BTreeSet::from(["left".to_string()]),
+            );
+            let Direction::Unique(n) = query(&plan, ["1", "1", "1"]).direction else {
+                panic!("the interior of the rotated extrusion wall has a unique normal");
+            };
+            let s = std::f64::consts::FRAC_1_SQRT_2;
+            for (component, expected) in n.into_iter().zip([-s, 0.0, s]) {
+                assert!(
+                    component.contains(expected),
+                    "{component:?} excludes {expected}"
+                );
+            }
+        } else {
+            normal(query(&plan, ["-1", "1", "4"]).direction, [0, 0, 1]);
+            assert_eq!(
+                role_names(&origins(&plan, ["0", "0", "1"])),
+                BTreeSet::from(["bottom".to_string()]),
+            );
+        }
+        let points: Vec<_> = cases.iter().map(|(p, _)| point(*p)).collect();
+        let expected: Vec<_> = points
+            .iter()
+            .map(|p| bits(&plan, p, &mut Workspace::default()))
+            .collect();
+        for threads in [1, 2, 4] {
+            let actual = std::thread::scope(|scope| {
+                let handles: Vec<_> = points
+                    .chunks(points.len().div_ceil(threads))
+                    .map(|chunk| {
+                        let plan = &plan;
+                        scope.spawn(move || {
+                            let mut workspace = Workspace::default();
+                            chunk
+                                .iter()
+                                .map(|p| bits(plan, p, &mut workspace))
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .flat_map(|h| h.join().unwrap())
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(actual, expected);
+        }
+    }
+}

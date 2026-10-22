@@ -1,7 +1,7 @@
 use super::*;
 use catallax_numbers::{BudgetPolicy, Real, StrictSign};
 use catallax_shapes::{
-    Circle, Curve, Cylinder, GeomKey, Line, Plane, PointDef, RPoint3, Sphere, Surface,
+    Circle, Curve, Cylinder, GeomKey, Line, Plane, PointDef, RPoint3, RVector3, Sphere, Surface,
 };
 fn r(x: i64) -> Rational {
     Rational::from_i64(x)
@@ -17,7 +17,13 @@ fn dec() -> Decider {
 }
 fn plane(g: &mut GeomStore, origin: RPoint3, normal: RVector3, reference: RVector3) -> SurfaceId {
     g.add_surface(Surface::Plane(
-        Plane::new(origin, normal, reference).unwrap(),
+        Plane::new(
+            (origin).into(),
+            (normal).into(),
+            (reference).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ))
 }
 fn cyl(
@@ -28,12 +34,26 @@ fn cyl(
     reference: RVector3,
 ) -> SurfaceId {
     g.add_surface(Surface::Cylinder(
-        Cylinder::new(origin, axis, r(radius), reference).unwrap(),
+        Cylinder::new(
+            (origin).into(),
+            (axis).into(),
+            (r(radius)).into(),
+            (reference).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ))
 }
 fn sphere(g: &mut GeomStore, center: RPoint3, radius: i64) -> SurfaceId {
     g.add_surface(Surface::Sphere(
-        Sphere::new(center, r(radius), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Sphere::new(
+            (center).into(),
+            (r(radius)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ))
 }
 fn components(g: &mut GeomStore, a: SurfaceId, b: SurfaceId, d: &mut Decider) -> Vec<Component> {
@@ -75,7 +95,9 @@ fn rational_configuration_fields_and_no_decisions() {
     let b = plane(&mut g, p(3, 0, 0), v(1, 0, 0), v(0, 1, 0));
     let c = curve(&components(&mut g, a, b, &mut d)[0]);
     assert_eq!(d.stats().decisions, 0);
-    assert!(matches!(g.curve(c),Curve::Line(l) if l.origin==p(3,0,1)&&l.dir==v(0,2,0)));
+    assert!(
+        matches!(g.curve(c),Curve::Line(l) if l.origin.as_rational().unwrap()==p(3,0,1)&&l.dir.as_rational().unwrap()==v(0,2,0))
+    );
     assert!(g.facts().holds(
         catallax_numbers::FactKind::Incident,
         GeomKey::Curve(c),
@@ -85,7 +107,7 @@ fn rational_configuration_fields_and_no_decisions() {
     let tilted = plane(&mut g, p(0, 0, 0), v(0, 3, 4), v(1, 0, 0));
     let c = curve(&components(&mut g, tilted, z, &mut d)[0]);
     assert!(
-        matches!(g.curve(c),Curve::Ellipse(e) if e.major_sq==Rational::from_ratio(625,16).unwrap()&&e.minor_sq==r(25))
+        matches!(g.curve(c),Curve::Ellipse(e) if e.major_sq.rational_ref()==Some(&Rational::from_ratio(625,16).unwrap())&&e.minor_sq.rational_ref()==Some(&r(25)))
     );
     let vertex = Point3::new(
         Real::zero(),
@@ -110,10 +132,13 @@ fn surface_definitions_and_argument_order_survive_repeated_queries() {
             let Curve::Circle(circle) = g.curve(c) else {
                 panic!("sphere section must be a rational circle");
             };
-            assert_eq!(circle.center, p(offset + 3, 0, 0));
-            assert_eq!(circle.radius_sq, r(radius * radius - 9));
-            assert_eq!(circle.normal, v(direction, 0, 0));
-            assert_eq!(circle.ref_dir, v(0, 0, direction));
+            assert_eq!(circle.center.as_rational().unwrap(), p(offset + 3, 0, 0));
+            assert_eq!(
+                circle.radius_sq.rational_ref(),
+                Some(&r(radius * radius - 9))
+            );
+            assert_eq!(circle.normal.as_rational().unwrap(), v(direction, 0, 0));
+            assert_eq!(circle.ref_dir.as_rational().unwrap(), v(0, 0, direction));
         }
     }
 }
@@ -135,7 +160,7 @@ fn irrational_lines_and_circles_keep_exact_definitions() {
         assert!(g.side_of(x, &point, &mut d).is_coincident());
         assert!(g.side_of(z, &point, &mut d).is_coincident());
         assert!(
-            matches!(curve_form(&g,c,&mut d).unwrap(),CurveForm::Line{dir,..} if dir==expected_dir)
+            matches!(curve_form(&g,c,&mut d).unwrap(),CurveForm::Line{dir,..} if dir.as_rational().unwrap()==expected_dir)
         );
     }
     assert!(same_curve(&g, curve(&cs[0]), curve(&cs[1]), &mut d).is_proven());
@@ -198,14 +223,28 @@ fn line_meetings_sort_and_classify_multiplicity() {
     let mut g = GeomStore::new();
     let mut d = dec();
     let s = sphere(&mut g, p(0, 0, 0), 5);
-    let c = g.add_curve(Curve::Line(Line::new(p(-10, 0, 0), v(1, 0, 0)).unwrap()));
+    let c = g.add_curve(Curve::Line(
+        Line::new(
+            (p(-10, 0, 0)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    ));
     let hits = hit_positions(&mut g, c, s, &mut d);
     assert_eq!(hits.len(), 2);
     for ((point, contact), x) in hits.iter().zip([-5, 5]) {
         point_equal(point, &p(x, 0, 0).to_real(), &mut d);
         assert_eq!(*contact, Contact::Crossing);
     }
-    let c = g.add_curve(Curve::Line(Line::new(p(-10, 5, 0), v(1, 0, 0)).unwrap()));
+    let c = g.add_curve(Curve::Line(
+        Line::new(
+            (p(-10, 5, 0)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    ));
     let hits = hit_positions(&mut g, c, s, &mut d);
     assert_eq!(hits.len(), 1);
     point_equal(&hits[0].0, &p(0, 5, 0).to_real(), &mut d);
@@ -216,7 +255,14 @@ fn circle_quadratic_meetings_and_containment() {
     let mut g = GeomStore::new();
     let mut d = dec();
     let c = g.add_curve(Curve::Circle(
-        Circle::new(p(0, 0, 0), v(0, 0, 1), r(25), v(1, 0, 0)).unwrap(),
+        Circle::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            (r(25)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let s = cyl(&mut g, p(0, 0, 0), v(1, 0, 0), 3, v(0, 0, 1));
     let hits = hit_positions(&mut g, c, s, &mut d);
@@ -285,10 +331,17 @@ fn circle_trace_taylor_coefficients_and_arc_point() {
     let mut g = GeomStore::new();
     let mut d = dec();
     let c = g.add_curve(Curve::Circle(
-        Circle::new(p(0, 0, 0), v(0, 0, 1), r(25), v(1, 0, 0)).unwrap(),
+        Circle::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            (r(25)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
-    let a = g.add_point(PointDef::Explicit(p(5, 0, 0)));
-    let b = g.add_point(PointDef::Explicit(p(0, 5, 0)));
+    let a = g.add_point(PointDef::Explicit((p(5, 0, 0)).into()));
+    let b = g.add_point(PointDef::Explicit((p(0, 5, 0)).into()));
     let trace = trace(&g, c, Some(a), Some(b), &mut d).unwrap().value;
     assert_eq!(trace.pieces().len(), 1);
     let t = Ball::from_rational(&r(0), 128);
@@ -341,8 +394,18 @@ fn nodal_trace_is_regular_at_both_ends() {
             for i in 0..3 {
                 assert!(j[0][i].lo() <= p[i].hi() && p[i].lo() <= j[0][i].hi());
             }
-            assert!(g.implicit(c).eval_ball(&p).contains_zero());
-            assert!(g.implicit(s).eval_ball(&p).contains_zero());
+            assert!(
+                g.implicit(c)
+                    .eval_ball(&p, &catallax_numbers::Decider::default())
+                    .unwrap()
+                    .contains_zero()
+            );
+            assert!(
+                g.implicit(s)
+                    .eval_ball(&p, &catallax_numbers::Decider::default())
+                    .unwrap()
+                    .contains_zero()
+            );
             let derivative = piece.derivative(&t, &Decider::default()).unwrap();
             assert!(derivative.iter().any(|v| v.sign().is_some()));
         }
@@ -464,9 +527,9 @@ fn irrational_conic_dimensions_preserve_exact_points_and_taylor_bounds() {
         (
             CurveForm::Circle {
                 center: p(0, 0, 0).to_real(),
-                normal: v(0, 0, 2),
+                normal: v(0, 0, 2).into(),
                 radius_sq: radius.square(),
-                ref_dir: v(3, 0, 0),
+                ref_dir: v(3, 0, 0).into(),
             },
             radius.clone(),
             radius,
@@ -474,8 +537,8 @@ fn irrational_conic_dimensions_preserve_exact_points_and_taylor_bounds() {
         (
             CurveForm::Ellipse {
                 center: p(0, 0, 0).to_real(),
-                normal: v(0, 0, 2),
-                major_dir: v(3, 0, 0),
+                normal: v(0, 0, 2).into(),
+                major_dir: v(3, 0, 0).into(),
                 major_sq: major.square(),
                 minor_sq: Real::from_i64(2),
             },

@@ -38,6 +38,16 @@ pub fn xyz(p: &RPoint3) -> [Rational; 3] {
 pub fn vec_xyz(p: &RVector3) -> [Rational; 3] {
     [p.x.clone(), p.y.clone(), p.z.clone()]
 }
+pub fn real_xyz(p: &Point3) -> [Rational; 3] {
+    p.rational_components()
+        .expect("rational STEP fixture")
+        .map(Clone::clone)
+}
+pub fn real_vec_xyz(p: &Vector3) -> [Rational; 3] {
+    p.rational_components()
+        .expect("rational STEP fixture")
+        .map(Clone::clone)
+}
 pub fn point(p: [Rational; 3]) -> RPoint3 {
     let [x, y, z] = p;
     RPoint3::new(x, y, z)
@@ -283,8 +293,10 @@ impl Rng {
         (
             Pose::new(
                 Rotation::from_quaternion(w, x, y, z).unwrap(),
-                RVector3::new(t[0].clone(), t[1].clone(), t[2].clone()),
-            ),
+                (RVector3::new(t[0].clone(), t[1].clone(), t[2].clone())).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
             rotation_oracle(q),
             t,
         )

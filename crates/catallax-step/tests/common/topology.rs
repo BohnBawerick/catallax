@@ -12,8 +12,8 @@ fn coords(s: &Step, id: usize, p: &[Rational; 3], digits: u32) {
         rounded(text, exact, digits);
     }
 }
-fn direction(s: &Step, id: usize, v: &RVector3, digits: u32) {
-    let a = vec_xyz(v);
+fn direction(s: &Step, id: usize, v: &Vector3, digits: u32) {
+    let a = real_vec_xyz(v);
     let norm2 = dot(&a, &a);
     let texts = list(&s.e(id, "DIRECTION").args[1]);
     if norm2 == n(1) {
@@ -37,13 +37,13 @@ fn direction(s: &Step, id: usize, v: &RVector3, digits: u32) {
 fn placement(
     s: &Step,
     id: usize,
-    p: &RPoint3,
-    axis: &RVector3,
-    reference_dir: &RVector3,
+    p: &Point3,
+    axis: &Vector3,
+    reference_dir: &Vector3,
     digits: u32,
 ) {
     let a = &s.e(id, "AXIS2_PLACEMENT_3D").args;
-    coords(s, reference(&a[1]), &xyz(p), digits);
+    coords(s, reference(&a[1]), &real_xyz(p), digits);
     direction(s, reference(&a[2]), axis, digits);
     direction(s, reference(&a[3]), reference_dir, digits);
 }
@@ -58,24 +58,24 @@ fn surface(s: &Step, id: usize, def: &Surface, digits: u32) {
         Surface::Cylinder(p) => {
             s.e(id, "CYLINDRICAL_SURFACE");
             placement(s, a, &p.origin, &p.axis, &p.ref_dir, digits);
-            rounded(&e.args[2], &p.radius, digits);
+            rounded(&e.args[2], p.radius.rational_ref().unwrap(), digits);
         }
         Surface::Sphere(p) => {
             s.e(id, "SPHERICAL_SURFACE");
             placement(s, a, &p.center, &p.axis, &p.ref_dir, digits);
-            rounded(&e.args[2], &p.radius, digits);
+            rounded(&e.args[2], p.radius.rational_ref().unwrap(), digits);
         }
         Surface::Torus(p) => {
             s.e(id, "TOROIDAL_SURFACE");
             placement(s, a, &p.center, &p.axis, &p.ref_dir, digits);
-            rounded(&e.args[2], &p.major, digits);
-            rounded(&e.args[3], &p.minor, digits);
+            rounded(&e.args[2], p.major.rational_ref().unwrap(), digits);
+            rounded(&e.args[3], p.minor.rational_ref().unwrap(), digits);
         }
         Surface::Cone(p) => {
             s.e(id, "CONICAL_SURFACE");
             placement(s, a, &p.apex, &p.axis, &p.ref_dir, digits);
             assert_eq!(e.args[2], "0.");
-            let angle = Ball::from_rational(&p.slope, 512).atan();
+            let angle = Ball::from_rational(p.slope.rational_ref().unwrap(), 512).atan();
             let lo = number(&decimal(&angle.lo(), digits, false));
             let hi = number(&decimal(&angle.hi(), digits, true));
             let written = number(&e.args[3]);
@@ -89,7 +89,7 @@ fn curve(s: &Step, id: usize, def: &Curve, digits: u32) {
     match def {
         Curve::Line(p) => {
             s.e(id, "LINE");
-            coords(s, reference(&e.args[1]), &xyz(&p.origin), digits);
+            coords(s, reference(&e.args[1]), &real_xyz(&p.origin), digits);
             let v = &s.e(reference(&e.args[2]), "VECTOR").args;
             assert_eq!(v[2], "1.");
             direction(s, reference(&v[1]), &p.dir, digits);
@@ -104,7 +104,9 @@ fn curve(s: &Step, id: usize, def: &Curve, digits: u32) {
                 &p.ref_dir,
                 digits,
             );
-            let root = Ball::from_rational(&p.radius_sq, 512).sqrt().unwrap();
+            let root = Ball::from_rational(p.radius_sq.rational_ref().unwrap(), 512)
+                .sqrt()
+                .unwrap();
             let q = number(&e.args[2]);
             assert!(
                 q >= number(&decimal(&root.lo(), digits, false))
@@ -122,7 +124,9 @@ fn curve(s: &Step, id: usize, def: &Curve, digits: u32) {
                 digits,
             );
             for (text, square) in [(&e.args[2], &p.major_sq), (&e.args[3], &p.minor_sq)] {
-                let root = Ball::from_rational(square, 512).sqrt().unwrap();
+                let root = Ball::from_rational(square.rational_ref().unwrap(), 512)
+                    .sqrt()
+                    .unwrap();
                 let q = number(text);
                 assert!(
                     q >= number(&decimal(&root.lo(), digits, false))
@@ -153,9 +157,9 @@ fn vertex(
     bind(&mut maps.vertices, model, written);
     let id = s.vertex(written);
     if let PointDef::Explicit(p) = m.geom().point(m.vertex(model).point) {
-        coords(s, id, &xyz(p), o.significant_digits);
+        coords(s, id, &real_xyz(p), o.significant_digits);
         assert!(
-            distance_sq(&s.xyz(id), &xyz(p)) <= sq(d),
+            distance_sq(&s.xyz(id), &real_xyz(p)) <= sq(d),
             "underreported vertex error"
         );
     } else {
@@ -213,9 +217,9 @@ fn loopless_seams(
         _ => panic!("unexpected loopless fixture"),
     };
     // Primitive fixtures use unit frame vectors, including after rational poses.
-    assert_eq!(e3.norm_squared(), n(1));
-    assert_eq!(e1.norm_squared(), n(1));
-    let minus_e2 = e3.cross(e1).scaled(&n(-1));
+    assert_eq!(e3.norm_squared().rational_ref(), Some(&n(1)));
+    assert_eq!(e1.norm_squared().rational_ref(), Some(&n(1)));
+    let minus_e2 = e3.cross(e1).scaled(&catallax_numbers::Real::from_i64(-1));
     let mut edges = Vec::new();
     for (i, radius) in radii.iter().enumerate() {
         let edge_id = uses[i].0;
@@ -250,15 +254,15 @@ fn loopless_seams(
                 center: origin,
                 normal: axis,
                 ref_dir: e1.clone(),
-                radius_sq: sq(radius),
+                radius_sq: radius * radius,
             }),
             o.significant_digits,
         );
         for (vertex, point) in [(&edge.args[1], start), (&edge.args[2], end)] {
             let id = s.vertex(reference(vertex));
-            coords(s, id, &xyz(&point), o.significant_digits);
-            assert!(distance_sq(&s.xyz(id), &xyz(&point)) <= sq(d));
-            on_written_surface(s, surface_id, &xyz(&point), d);
+            coords(s, id, &real_xyz(&point), o.significant_digits);
+            assert!(distance_sq(&s.xyz(id), &real_xyz(&point)) <= sq(d));
+            on_written_surface(s, surface_id, &real_xyz(&point), d);
         }
         edges.push(edge_id);
     }
@@ -341,7 +345,7 @@ pub fn assert_topology(m: &Model, bs: &[BodyId], s: &Step, o: &StepOptions, d: &
                                 let lv = reference(&s.e(loop_id, "VERTEX_LOOP").args[1]);
                                 vertex(m, s, *v, lv, o, d, &mut maps);
                                 if let PointDef::Explicit(p) = m.geom().point(m.vertex(*v).point) {
-                                    on_written_surface(s, surface_id, &xyz(p), d);
+                                    on_written_surface(s, surface_id, &real_xyz(p), d);
                                 }
                             }
                             Loop::Coedges(coedges) => {
@@ -380,7 +384,7 @@ pub fn assert_topology(m: &Model, bs: &[BodyId], s: &Step, o: &StepOptions, d: &
                                             if let PointDef::Explicit(p) =
                                                 m.geom().point(m.vertex(v).point)
                                             {
-                                                on_written_surface(s, surface_id, &xyz(p), d);
+                                                on_written_surface(s, surface_id, &real_xyz(p), d);
                                             }
                                         }
                                     }

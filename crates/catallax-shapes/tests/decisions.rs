@@ -10,7 +10,13 @@ fn supports_z0(store: &mut GeomStore) -> Vec<SurfaceId> {
     (0..2)
         .map(|_| {
             store.add_surface(Surface::Plane(
-                Plane::new(p("0", "0", "0"), v("0", "0", "1"), v("1", "0", "0")).unwrap(),
+                Plane::new(
+                    (p("0", "0", "0")).into(),
+                    (v("0", "0", "1")).into(),
+                    (v("1", "0", "0")).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ))
         })
         .collect()
@@ -26,17 +32,22 @@ fn check_small_side(out: Outcome<Side>, expected: i8, lower: &Rational) {
 }
 
 blind_test!(cases_16_17_18_21_rational_sides_and_tiny_budget, {
-    let translation = Pose::new(Rotation::identity(), v("1000000", "1000000", "1000000"));
+    let translation = Pose::new(
+        Rotation::identity(),
+        v("1000000", "1000000", "1000000").into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     for (s, point, expected) in side_cases() {
         assert_eq!(sign(&implicit_oracle(&s, &point)), expected);
         for pose in [Pose::identity(), translation.clone()] {
             let mut store = GeomStore::new();
             let sid = store.add_surface(s.transformed(&pose));
-            let point = pose.apply_point(&point);
-            let pid = explicit(&mut store, point.clone());
+            let point = pose.apply_point(&point.to_real());
+            let pid = store.add_point(catallax_shapes::PointDef::Explicit(point.clone()));
             side_answer(store.side(sid, pid, &mut Decider::default()), expected);
             side_answer(
-                store.side_of(sid, &point.to_real(), &mut Decider::default()),
+                store.side_of(sid, &point, &mut Decider::default()),
                 expected,
             );
             check_small_side(store.side(sid, pid, &mut tiny()), expected, &r("0"));
@@ -84,8 +95,15 @@ blind_test!(cases_19_20_closed_and_isolated_points, {
         point_eq(&store.position(id), &point);
     }
     let s = store.add_surface(sphere("1"));
-    let support =
-        Surface::Plane(Plane::new(p("0", "0", "0"), v("1", "-1", "0"), v("0", "0", "1")).unwrap());
+    let support = Surface::Plane(
+        Plane::new(
+            p("0", "0", "0").into(),
+            v("1", "-1", "0").into(),
+            v("0", "0", "1").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     let supports = vec![
         store.add_surface(support.clone()),
         store.add_surface(support),
@@ -100,7 +118,14 @@ blind_test!(cases_19_20_closed_and_isolated_points, {
             .into_iter()
             .map(|center| {
                 store.add_surface(Surface::Sphere(
-                    Sphere::new(center, r("5"), v("0", "0", "1"), v("1", "0", "0")).unwrap(),
+                    Sphere::new(
+                        center.into(),
+                        r("5").into(),
+                        v("0", "0", "1").into(),
+                        v("1", "0", "0").into(),
+                        &mut catallax_numbers::Decider::default(),
+                    )
+                    .unwrap(),
                 ))
             })
             .collect();
@@ -115,7 +140,13 @@ blind_test!(cases_19_20_closed_and_isolated_points, {
             check_small_side(store.side_of(sid, &point, &mut tiny()), 0, &r("0"));
         }
         let plane = store.add_surface(Surface::Plane(
-            Plane::new(p("0", "0", "0"), v("0", "0", "1"), v("1", "0", "0")).unwrap(),
+            Plane::new(
+                p("0", "0", "0").into(),
+                v("0", "0", "1").into(),
+                v("1", "0", "0").into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ));
         side_answer(
             store.side_of(plane, &point, &mut Decider::default()),
@@ -127,7 +158,14 @@ blind_test!(cases_19_20_closed_and_isolated_points, {
             &r("0"),
         );
         let s = store.add_surface(Surface::Sphere(
-            Sphere::new(p("3", "3", "0"), r("3"), v("0", "0", "1"), v("1", "0", "0")).unwrap(),
+            Sphere::new(
+                p("3", "3", "0").into(),
+                r("3").into(),
+                v("0", "0", "1").into(),
+                v("1", "0", "0").into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ));
         side_answer(store.side_of(s, &point, &mut Decider::default()), -1);
         check_small_side(store.side_of(s, &point, &mut tiny()), -1, &r("0"));
@@ -203,20 +241,28 @@ blind_test!(case_27_intersection_carrier_not_branch, {
     let mut store = GeomStore::new();
     let s = store.add_surface(sphere("5"));
     let plane = store.add_surface(Surface::Plane(
-        Plane::new(p("0", "0", "3"), v("0", "0", "1"), v("1", "0", "0")).unwrap(),
+        Plane::new(
+            p("0", "0", "3").into(),
+            v("0", "0", "1").into(),
+            v("1", "0", "0").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let witness = explicit(&mut store, p("4", "0", "3"));
     let c = store.add_curve(Curve::Intersection(IntersectionCurve {
         surfaces: [s, plane],
         witness,
     }));
-    assert_eq!(
-        store.curve(c).equations(&store),
-        vec![store.implicit(s), store.implicit(plane)]
-    );
     assert_eq!(store.curve(c).kind(), CurveKind::Intersection);
     assert_eq!(store.curve(c).is_closed(), None);
-    assert!(store.curve(c).evaluate(&ball("0", 64)).is_none());
+    assert!(
+        store
+            .curve(c)
+            .evaluate(&ball("0", 64), &catallax_numbers::Decider::default())
+            .unwrap()
+            .is_none()
+    );
     assert!(store.curve(c).transformed(&Pose::identity()).is_none());
     point_eq(
         &store.curve(c).parameter_origin(&store),
@@ -242,7 +288,13 @@ blind_test!(case_27_intersection_carrier_not_branch, {
     );
     let s = store.add_surface(cylinder("1"));
     let plane = store.add_surface(Surface::Plane(
-        Plane::new(p("1/2", "0", "0"), v("1", "0", "0"), v("0", "1", "0")).unwrap(),
+        Plane::new(
+            p("1/2", "0", "0").into(),
+            v("1", "0", "0").into(),
+            v("0", "1", "0").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let y = real("3").sqrt() / real("2");
     let w = closed_on(
@@ -255,8 +307,15 @@ blind_test!(case_27_intersection_carrier_not_branch, {
         witness: w,
     }));
     // Supports z=5, duplicated, avoid answering this branch test through facts.
-    let support =
-        Surface::Plane(Plane::new(p("0", "0", "5"), v("0", "0", "1"), v("1", "0", "0")).unwrap());
+    let support = Surface::Plane(
+        Plane::new(
+            p("0", "0", "5").into(),
+            v("0", "0", "1").into(),
+            v("1", "0", "0").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     let supports = vec![
         store.add_surface(support.clone()),
         store.add_surface(support),
@@ -294,7 +353,13 @@ blind_test!(cases_28_29_same_point_representations, {
     let root = circle_root();
     let s = store.add_surface(sphere("1"));
     let plane = store.add_surface(Surface::Plane(
-        Plane::new(p("0", "0", "0"), v("1", "-1", "0"), v("0", "0", "1")).unwrap(),
+        Plane::new(
+            p("0", "0", "0").into(),
+            v("1", "-1", "0").into(),
+            v("0", "0", "1").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let a = store.add_point(PointDef::Meet(Meet {
         of: MeetOf::Surfaces(vec![s, plane]),

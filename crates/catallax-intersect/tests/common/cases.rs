@@ -40,7 +40,15 @@ pub fn pairs() -> Vec<PairCase> {
         plane(pi([5, 7, 0]), vi([0, 0, 4])),
     );
     add("03 PC1", axis_plane(2, n(2)), z5());
-    let tilted = Surface::Plane(Plane::new(o(), vi([0, 3, 4]), vi([1, 0, 0])).unwrap());
+    let tilted = Surface::Plane(
+        Plane::new(
+            (o()).into(),
+            (vi([0, 3, 4])).into(),
+            (vi([1, 0, 0])).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     add("04 PC2", tilted, z5());
     add("05 PC3 rational", axis_plane(0, n(3)), z5());
     add("06 PC3 irrational", axis_plane(0, n(1)), z5());

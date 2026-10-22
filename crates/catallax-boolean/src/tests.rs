@@ -13,7 +13,12 @@ fn point(x: i64, y: i64, z: i64) -> RPoint3 {
     RPoint3::new(r(x), r(y), r(z))
 }
 fn pose(x: i64, y: i64, z: i64) -> Pose {
-    Pose::new(Rotation::identity(), RVector3::new(r(x), r(y), r(z)))
+    Pose::new(
+        Rotation::identity(),
+        (RVector3::new(r(x), r(y), r(z))).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap()
 }
 fn counts(model: &Model, body: BodyId) -> (usize, usize, usize, usize, usize, usize) {
     let c = model.counts(body);
@@ -237,11 +242,18 @@ fn isolated_tangent_face_probe_does_not_decide_a_piece_class() {
     let a = sphere(&mut model, r(5), &Pose::identity()).unwrap();
     let face = model.faces_of_body(a)[0];
     let probe = face_point(&mut model, face, &mut dec).unwrap().value;
-    let displacement = probe.minus(&RPoint3::origin()).scaled(&r(2));
+    let displacement = probe
+        .minus(&catallax_shapes::Point3::origin())
+        .scaled(&catallax_numbers::Real::from_i64(2));
     let b = sphere(
         &mut model,
         r(5),
-        &Pose::new(Rotation::identity(), displacement),
+        &Pose::new(
+            Rotation::identity(),
+            (displacement).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     )
     .unwrap();
     let graph = intersect(&mut model, a, b, &mut dec).unwrap().value;

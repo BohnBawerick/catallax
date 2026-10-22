@@ -2,7 +2,7 @@
 //! holonomy of noncontractible loops; the scalar area fixes the whole-torus term.
 
 use crate::integrate::{Builder, Expr, Program};
-use crate::planar::{components, direction};
+use crate::planar::{real_components as components, real_direction as direction};
 use crate::surface::Property;
 use catallax_numbers::Rational;
 use catallax_shapes::{RPoint3, Torus};
@@ -146,12 +146,11 @@ fn dot<'a>(a: [Expr<'a>; 3], b: [Expr<'a>; 3]) -> Expr<'a> {
 
 pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Programs {
     let b = Builder::default();
-    let q =
-        std::array::from_fn::<_, 3, _>(|i| b.input(i) - b.r(components(&torus.center)[i].clone()));
+    let q = std::array::from_fn::<_, 3, _>(|i| b.input(i) - b.exact(components(&torus.center)[i]));
     let dq = std::array::from_fn::<_, 3, _>(|i| b.input(i + 3));
-    let unit = |v: &catallax_shapes::RVector3| {
-        let norm = b.r(v.norm_squared()).sqrt();
-        direction(v).map(|c| b.r(c.clone()) / norm)
+    let unit = |v: &catallax_shapes::Vector3| {
+        let norm = b.exact(&v.norm_squared()).sqrt();
+        direction(v).map(|c| b.exact(c) / norm)
     };
     let axis = unit(&torus.axis);
     let first = unit(&torus.ref_dir);
@@ -167,8 +166,8 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
     let dy = dot(dq, second);
     let dz = dot(dq, axis);
     let rho = (x.square() + y.square()).sqrt();
-    let major = b.r(torus.major.clone());
-    let minor = b.r(torus.minor.clone());
+    let major = b.exact(&torus.major);
+    let minor = b.exact(&torus.minor);
     let cu = x / rho;
     let su = y / rho;
     let cv = (rho - major) / minor;
@@ -190,8 +189,8 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
             .times(&variables[2])
             .plus(&variables[3].scaled(axis[i]))
     });
-    let origin = torus.center.minus(anchor);
-    let origin = direction(&origin).map(|c| b.r(c.clone()));
+    let origin = torus.center.minus(&anchor.to_real());
+    let origin = direction(&origin).map(|c| b.exact(c));
     let position = std::array::from_fn::<_, 3, _>(|i| {
         constant(origin[i])
             .plus(&radial.times(&er[i]))

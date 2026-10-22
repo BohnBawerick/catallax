@@ -53,15 +53,24 @@ impl Primitive {
             shape,
             pose: Pose::new(
                 self.pose.rotation.clone(),
-                self.pose.translation.scaled(scale),
+                self.pose
+                    .translation
+                    .scaled(&catallax_numbers::Real::from(scale.clone())),
+                &mut catallax_numbers::Decider::default(),
             )
+            .unwrap()
             .then(pose),
         }
     }
     // Every constraint is <= 0 in the closed primitive. These formulas are
     // independent of Surface::implicit, side(), and the boolean implementation.
     pub fn constraints(&self, world: &RPoint3) -> Vec<Rational> {
-        let p = self.pose.inverse().apply_point(world);
+        let p = self
+            .pose
+            .inverse()
+            .apply_point(&world.to_real())
+            .as_rational()
+            .expect("rational Boolean fixture");
         match &self.shape {
             Shape::Block(s) => vec![
                 -&p.x,
@@ -89,7 +98,12 @@ impl Primitive {
     }
     pub fn outward(&self, world: &RPoint3) -> RVector3 {
         assert_eq!(self.locate(world), Location::On);
-        let p = self.pose.inverse().apply_point(world);
+        let p = self
+            .pose
+            .inverse()
+            .apply_point(&world.to_real())
+            .as_rational()
+            .expect("rational Boolean fixture");
         let n = match &self.shape {
             Shape::Block(s) => {
                 let c = [&p.x, &p.y, &p.z];
@@ -122,7 +136,10 @@ impl Primitive {
             }
             Shape::Ball(_) => RVector3::new(p.x, p.y, p.z),
         };
-        self.pose.apply_vector(&n)
+        self.pose
+            .apply_vector(&n.to_real())
+            .as_rational()
+            .expect("rational Boolean fixture")
     }
 }
 pub fn block_at(size: [i64; 3], t: [i64; 3]) -> Primitive {
@@ -139,7 +156,12 @@ pub fn cyl_at(radius: i64, height: i64, t: [i64; 3], x: bool) -> Primitive {
     };
     Primitive {
         shape: Shape::Cylinder(r(radius), r(height)),
-        pose: Pose::new(rotation, v(t[0], t[1], t[2])),
+        pose: Pose::new(
+            rotation,
+            (v(t[0], t[1], t[2])).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     }
 }
 pub fn ball_at(radius: i64, t: [i64; 3]) -> Primitive {
@@ -149,10 +171,17 @@ pub fn ball_at(radius: i64, t: [i64; 3]) -> Primitive {
     }
 }
 pub fn translation(t: [i64; 3]) -> Pose {
-    Pose::new(Rotation::identity(), v(t[0], t[1], t[2]))
+    Pose::new(
+        Rotation::identity(),
+        (v(t[0], t[1], t[2])).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap()
 }
 pub fn moved_point(p: &RPoint3, scale: &Rational, pose: &Pose) -> RPoint3 {
-    pose.apply_point(&RPoint3::new(&p.x * scale, &p.y * scale, &p.z * scale))
+    pose.apply_point(&RPoint3::new(&p.x * scale, &p.y * scale, &p.z * scale).to_real())
+        .as_rational()
+        .expect("rational Boolean fixture")
 }
 pub fn set_rule(op: BoolOp, a: Location, b: Location) -> Option<Location> {
     if a == Location::On || b == Location::On {
@@ -202,17 +231,27 @@ pub fn regularized_step(op: BoolOp, a: &Primitive, b: &Primitive, p: &RPoint3) -
 // geometric decision code. The positive side is the definition's normal side.
 pub fn implicit_normal(s: &Surface, p: &RPoint3) -> (Rational, RVector3) {
     match s {
-        Surface::Plane(s) => (p.minus(&s.origin).dot(&s.normal), s.normal.clone()),
+        Surface::Plane(s) => {
+            let normal = s.normal.as_rational().unwrap();
+            (
+                p.minus(&s.origin.as_rational().unwrap()).dot(&normal),
+                normal,
+            )
+        }
         Surface::Sphere(s) => {
-            let d = p.minus(&s.center);
-            (d.norm_squared() - sq(&s.radius), d.scaled(&r(2)))
+            let d = p.minus(&s.center.as_rational().unwrap());
+            (
+                d.norm_squared() - sq(&s.radius.as_rational().unwrap()),
+                d.scaled(&r(2)),
+            )
         }
         Surface::Cylinder(s) => {
-            let d = p.minus(&s.origin);
-            let aa = s.axis.norm_squared();
-            let radial = d.scaled(&aa).minus(&s.axis.scaled(&d.dot(&s.axis)));
+            let d = p.minus(&s.origin.as_rational().unwrap());
+            let axis = s.axis.as_rational().unwrap();
+            let aa = axis.norm_squared();
+            let radial = d.scaled(&aa).minus(&axis.scaled(&d.dot(&axis)));
             (
-                d.cross(&s.axis).norm_squared() - sq(&s.radius) * aa,
+                d.cross(&axis).norm_squared() - sq(&s.radius.as_rational().unwrap()) * aa,
                 radial.scaled(&r(2)),
             )
         }
@@ -276,6 +315,11 @@ impl Rng {
             )
             .unwrap()
         };
-        Pose::new(rotation, RVector3::new(coord(), coord(), coord()))
+        Pose::new(
+            rotation,
+            (RVector3::new(coord(), coord(), coord())).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap()
     }
 }

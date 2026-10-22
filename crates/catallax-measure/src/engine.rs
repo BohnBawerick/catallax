@@ -2,7 +2,7 @@
 
 use catallax_intersect::{CurveTrace, trace};
 use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal, Sign};
-use catallax_shapes::{RPoint3, RVector3, Surface};
+use catallax_shapes::{Point3, RPoint3, RVector3, Surface, Vector3};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{HashMap, hash_map::Entry};
 
@@ -19,7 +19,7 @@ struct Arc<'a> {
     analytic: Option<crate::integrate::Program>,
     integral: Option<crate::integrate::Analytic>,
     exact: Option<[Rational; 5]>,
-    meridian: Option<(&'a RPoint3, i64)>,
+    meridian: Option<(&'a Point3, i64)>,
     parallel: Option<Parallel>,
 }
 struct Parallel {
@@ -42,14 +42,16 @@ enum Prepared<'a> {
 }
 
 pub(crate) fn anchor(model: &Model, faces: &[FaceId]) -> RPoint3 {
-    match model.geom().surface(model.face(faces[0]).surface) {
-        Surface::Plane(p) => p.origin.clone(),
-        Surface::Cylinder(c) => c.origin.clone(),
-        Surface::Cone(c) => c.apex.clone(),
-        Surface::Sphere(s) => s.center.clone(),
-        Surface::Torus(t) => t.center.clone(),
-        _ => RPoint3::origin(),
-    }
+    let point = match model.geom().surface(model.face(faces[0]).surface) {
+        Surface::Plane(p) => &p.origin,
+        Surface::Cylinder(c) => &c.origin,
+        Surface::Cone(c) => &c.apex,
+        Surface::Sphere(s) => &s.center,
+        Surface::Torus(t) => &t.center,
+        Surface::EllipticCylinder(c) => &c.origin,
+        _ => return RPoint3::origin(),
+    };
+    point.as_rational().unwrap_or_else(RPoint3::origin)
 }
 
 fn budget() -> Refusal {
@@ -206,10 +208,14 @@ pub(crate) fn measure(
                                     (
                                         catallax_shapes::PointDef::Explicit(from),
                                         catallax_shapes::PointDef::Explicit(to),
-                                    ) => compiled.boundary.analytic(
-                                        model.geom().curve(edge.curve),
-                                        from,
-                                        to,
+                                    ) => from.as_rational().zip(to.as_rational()).and_then(
+                                        |(from, to)| {
+                                            compiled.boundary.analytic(
+                                                model.geom().curve(edge.curve),
+                                                &from,
+                                                &to,
+                                            )
+                                        },
                                     ),
                                     _ => None,
                                 }
@@ -589,7 +595,7 @@ fn integrate_face(
         .collect()
 }
 
-fn gauge(surface: &Surface, index: usize) -> RVector3 {
+fn gauge(surface: &Surface, index: usize) -> Vector3 {
     if let Surface::Sphere(sphere) = surface {
         let vector = match index % 3 {
             0 => sphere.axis.clone(),
@@ -599,7 +605,7 @@ fn gauge(surface: &Surface, index: usize) -> RVector3 {
         return if index < 3 {
             vector
         } else {
-            RVector3::new(-vector.x, -vector.y, -vector.z)
+            Vector3::new(-vector.x, -vector.y, -vector.z)
         };
     }
     let axes = [
@@ -616,6 +622,7 @@ fn gauge(surface: &Surface, index: usize) -> RVector3 {
         Rational::from_i64(y),
         Rational::from_i64(z),
     )
+    .to_real()
 }
 
 fn integrate_torus(
@@ -659,9 +666,9 @@ fn integrate_torus(
             // Along a meridian du is identically zero. Its lifted tube angle
             // makes exactly one turn, so only the holonomy term remains.
             let position = [
-                work.rational(&core.x)?,
-                work.rational(&core.y)?,
-                work.rational(&core.z)?,
+                work.real(&core.x)?,
+                work.real(&core.y)?,
+                work.real(&core.z)?,
             ];
             let coordinates = programs.coordinates.point(&position, &[], work)?;
             let u = crate::integrate::angle(&coordinates[0], &coordinates[1], work)?;
@@ -780,24 +787,34 @@ fn correct_whole_surface(
 fn torus_meridian<'a>(
     surface: &Surface,
     circle: &'a catallax_shapes::Circle,
-) -> Option<(&'a RPoint3, i64)> {
+) -> Option<(&'a Point3, i64)> {
     let Surface::Torus(torus) = surface else {
         return None;
     };
     let offset = circle.center.minus(&torus.center);
     let normal = offset.cross(&torus.axis);
-    if circle.radius_sq != &torus.minor * &torus.minor
-        || offset.norm_squared() != &torus.major * &torus.major
-        || !offset.dot(&torus.axis).is_zero()
-        || !circle.normal.cross(&normal).norm_squared().is_zero()
+    if !(&circle.radius_sq - &torus.minor.square())
+        .as_rational()?
+        .is_zero()
+        || !(offset.norm_squared() - torus.major.square())
+            .as_rational()?
+            .is_zero()
+        || !offset.dot(&torus.axis).as_rational()?.is_zero()
+        || !circle
+            .normal
+            .cross(&normal)
+            .norm_squared()
+            .as_rational()?
+            .is_zero()
     {
         return None;
     }
-    let orientation = if circle.normal.dot(&normal).sign() == catallax_numbers::Sign::Positive {
-        1
-    } else {
-        -1
-    };
+    let orientation =
+        if circle.normal.dot(&normal).as_rational()?.sign() == catallax_numbers::Sign::Positive {
+            1
+        } else {
+            -1
+        };
     Some((&circle.center, orientation))
 }
 

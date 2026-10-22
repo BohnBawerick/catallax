@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use catallax_numbers::{Fact, FactKind, FactOrigin, MarkLog, Rational, Refusal, Sign};
 use catallax_shapes::{
-    Circle, Cone, Curve, Cylinder, GeomKey, Line, Plane, PointDef, Pose, RPoint3, RVector3, Sphere,
-    Surface, SurfaceId, Torus,
+    Circle, Cone, Curve, Cylinder, GeomKey, Line, Plane, Point3, PointDef, Pose, RPoint3, RVector3,
+    Sphere, Surface, SurfaceId, Torus, Vector3,
 };
 
 use crate::{
@@ -19,7 +19,7 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
         return Err(non_positive());
     }
     let origin = "topology.block";
-    let corners: [RPoint3; 8] = std::array::from_fn(|i| {
+    let corners: [Point3; 8] = std::array::from_fn(|i| {
         let c: [Rational; 3] = std::array::from_fn(|axis| {
             if i & (4 >> axis) == 0 {
                 Rational::zero()
@@ -28,7 +28,7 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
             }
         });
         let [x, y, z] = c;
-        RPoint3::new(x, y, z)
+        RPoint3::new(x, y, z).to_real()
     });
     let vertices: [_; 8] = std::array::from_fn(|i| {
         let point = model
@@ -111,9 +111,9 @@ pub fn cylinder(
         return Err(non_positive());
     }
     let side = Surface::Cylinder(Cylinder {
-        origin: RPoint3::origin(),
+        origin: Point3::origin(),
         axis: unit(2, 1),
-        radius: radius.clone(),
+        radius: radius.clone().into(),
         ref_dir: unit(0, 1),
     });
     Ok(round_solid(
@@ -132,8 +132,8 @@ pub fn sphere(model: &mut Model, radius: Rational, pose: &Pose) -> Result<BodyId
         return Err(non_positive());
     }
     let surface = Surface::Sphere(Sphere {
-        center: RPoint3::origin(),
-        radius,
+        center: Point3::origin(),
+        radius: radius.into(),
         axis: unit(2, 1),
         ref_dir: unit(0, 1),
     });
@@ -179,7 +179,7 @@ pub fn cone(
                 1
             },
         ),
-        slope,
+        slope: slope.into(),
         ref_dir: unit(0, 1),
     });
     Ok(round_solid(
@@ -209,10 +209,10 @@ pub fn torus(
         ));
     }
     let surface = Surface::Torus(Torus {
-        center: RPoint3::origin(),
+        center: Point3::origin(),
         axis: unit(2, 1),
-        major,
-        minor,
+        major: major.into(),
+        minor: minor.into(),
         ref_dir: unit(0, 1),
     });
     Ok(closed_solid(model, surface, pose))
@@ -234,13 +234,13 @@ fn non_positive() -> Refusal {
     )
 }
 
-fn unit(axis: usize, sign: i64) -> RVector3 {
+fn unit(axis: usize, sign: i64) -> Vector3 {
     let [x, y, z] = std::array::from_fn(|i| Rational::from_i64(if i == axis { sign } else { 0 }));
-    RVector3::new(x, y, z)
+    RVector3::new(x, y, z).to_real()
 }
 
-fn at_z(z: Rational) -> RPoint3 {
-    RPoint3::new(Rational::zero(), Rational::zero(), z)
+fn at_z(z: Rational) -> Point3 {
+    RPoint3::new(Rational::zero(), Rational::zero(), z).to_real()
 }
 
 fn solid(model: &mut Model, faces: Vec<FaceId>) -> BodyId {
@@ -327,7 +327,7 @@ fn ring(model: &mut Model, radius: &Rational, z: Rational, pose: &Pose) -> EdgeI
     let curve = Curve::Circle(Circle {
         center: at_z(z),
         normal: unit(2, 1),
-        radius_sq: radius * radius,
+        radius_sq: (radius * radius).into(),
         ref_dir: unit(0, 1),
     });
     let curve = model

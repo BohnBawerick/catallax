@@ -45,7 +45,7 @@ pub enum ShapeSpec {
 }
 
 /// One named operand.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Debug)]
 pub struct Operand {
     /// The shape.
     pub shape: ShapeSpec,
@@ -94,7 +94,7 @@ pub struct Limits {
 }
 
 /// A parsed, valid question.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Debug)]
 pub struct Question {
     /// Question id.
     pub id: String,
@@ -387,7 +387,12 @@ fn parse(text: &str) -> Result<Question, String> {
             let rotation = catallax_shapes::Rotation::from_quaternion(w, x, y, z)
                 .map_err(|error| error.detail)?;
             let [x, y, z] = pose.translation.map(|n| n.0);
-            Pose::new(rotation, catallax_shapes::RVector3::new(x, y, z))
+            Pose::new(
+                rotation,
+                catallax_shapes::RVector3::new(x, y, z).to_real(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .map_err(|error| error.detail)?
         } else {
             Pose::identity()
         };

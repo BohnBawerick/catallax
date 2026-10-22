@@ -6,11 +6,13 @@ This is the only input the test writer and the creator get. Read `docs/DESIGN.md
 
 ## Approved algebraic-definition extension
 
-The 2026-10-22 architecture decision adds the contract below. Implementation is pending; the rest of this document describes the retained rational baseline unless this section overrides it.
+The shared foundation implements the 2026-10-22 architecture decision below. The rest of this document describes the retained rational baseline unless this section overrides it.
 
 `Real` stays the existing lazy algebraic expression type. Do not add transcendental nodes or a second scalar type. A stored geometry definition must have proven-valid domains for division and square roots. Constructing an expression remains infallible; validating a geometry definition is a separate decision.
 
 Add `RealPoly`, a polynomial in a fixed number of variables with `Real` coefficients. Use `Monomial`'s existing order and a deterministic expression order when combining terms. Arithmetic, partial derivatives, substitution and exact evaluation build expressions without making decisions. Expose `nvars`, ordered `terms`, `eval_real`, `partial`, arithmetic and conversion from `MPoly`. `as_rational() -> Option<MPoly>` succeeds only when every coefficient's existing `Real::as_rational` succeeds. It must not round or invoke elimination. The rational conversion feeds existing solvers unchanged.
+
+`rational() -> Option<&MPoly>` borrows the rational backend without copying coefficients; `into_rational() -> Option<MPoly>` consumes it. `total_degree`, `is_zero`, `equals`, `resultant` and `real_roots` accept the caller's mutable decider; `eval_ball` accepts its enclosure context. `Decider::rational_value` can certify a rational value for a correlated algebraic expression. Its `None` result is inconclusive and must not be used as an irrationality or domain certificate.
 
 A syntactic term bound is not the mathematical degree. Algebraically zero coefficients may remain until a decider proves zero. Degree selection, leading-coefficient division, polynomial equality and zero-polynomial tests must therefore be certified operations; no caller may use list length or expression identity as those proofs. `RealPoly` has no mathematical `Eq`, `Ord` or `Hash`. Enclosure evaluation includes coefficient error as well as input error, using the caller's precision and decision policy.
 

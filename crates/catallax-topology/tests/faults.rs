@@ -75,8 +75,8 @@ blind_test!(case_25_invalid_edge_ends, {
         let e = edge(
             &mut m,
             Curve::Line(Line {
-                origin: p(0, 0, 0),
-                dir: v(1, 0, 0),
+                origin: p(0, 0, 0).into(),
+                dir: v(1, 0, 0).into(),
             }),
             a,
             b,
@@ -96,16 +96,16 @@ blind_test!(case_26_unbounded_plane_cylinder_and_cone, {
     let surfaces = [
         plane(p(0, 0, 0), v(0, 0, 1), v(1, 0, 0)),
         Surface::Cylinder(Cylinder {
-            origin: p(0, 0, 0),
-            axis: v(0, 0, 1),
-            radius: r(2),
-            ref_dir: v(1, 0, 0),
+            origin: p(0, 0, 0).into(),
+            axis: v(0, 0, 1).into(),
+            radius: r(2).into(),
+            ref_dir: v(1, 0, 0).into(),
         }),
         Surface::Cone(Cone {
-            apex: p(0, 0, 4),
-            axis: v(0, 0, -1),
-            slope: q(3, 4),
-            ref_dir: v(1, 0, 0),
+            apex: p(0, 0, 4).into(),
+            axis: v(0, 0, -1).into(),
+            slope: q(3, 4).into(),
+            ref_dir: v(1, 0, 0).into(),
         }),
     ];
     for surface in surfaces {
@@ -122,10 +122,10 @@ blind_test!(case_27_vertex_only_boundary_and_repeated_vertex, {
     let f = face(
         &mut m,
         Surface::Cone(Cone {
-            apex: p(0, 0, 4),
-            axis: v(0, 0, -1),
-            slope: q(3, 4),
-            ref_dir: v(1, 0, 0),
+            apex: p(0, 0, 4).into(),
+            axis: v(0, 0, -1).into(),
+            slope: q(3, 4).into(),
+            ref_dir: v(1, 0, 0).into(),
         }),
         Sense::Same,
         vec![l],
@@ -190,7 +190,12 @@ blind_test!(case_30_disconnected_blocks_in_one_shell, {
         &mut m,
         &expected(
             &primitives()[0],
-            &Pose::new(Rotation::identity(), v(20, 0, 0)),
+            &Pose::new(
+                Rotation::identity(),
+                v(20, 0, 0).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ),
     );
     let mut fs = walk(&m, a).0;
@@ -311,7 +316,9 @@ blind_test!(incidence_is_required_for_endpoint_and_vertex_loop, {
         let mut m = Model::new();
         let b = assemble(&mut m, &expected(&primitives()[5], &Pose::identity()));
         let old = m.vertices_of_body(b)[0];
-        let point = m.geom_mut().add_point(PointDef::Explicit(p(0, 0, 4)));
+        let point = m
+            .geom_mut()
+            .add_point(PointDef::Explicit(p(0, 0, 4).into()));
         let replacement = m.add_vertex(Vertex { point });
         if vertex_loop {
             let fs = m.shell(shell_of(&m, b)).faces.clone();

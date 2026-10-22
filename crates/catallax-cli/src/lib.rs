@@ -388,6 +388,12 @@ pub(crate) fn result_summary(
             catallax_shapes::SurfaceKind::Cone => "cone",
             catallax_shapes::SurfaceKind::Sphere => "sphere",
             catallax_shapes::SurfaceKind::Torus => "torus",
+            catallax_shapes::SurfaceKind::EllipticCylinder => {
+                return Err(Refusal::new(
+                    "intersect.unsupported-pair",
+                    "elliptic-cylinder face kinds require a versioned exchange contract",
+                ));
+            }
             _ => panic!("unknown surface kind"),
         };
         faces_by_kind.insert(name.into(), count);

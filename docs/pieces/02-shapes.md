@@ -6,11 +6,11 @@ This is the input the test writer and the creator get, together with `docs/DESIG
 
 ## Approved algebraic-definition contract
 
-This section implements the documentation part of the 2026-10-22 architecture decision. Code migration is pending. It supersedes the rational-only number table, pose/surface/curve signatures, equality guarantees and relevant tests below. The remaining formulas and rational examples remain requirements for the rational fast path. The old signature listing is a baseline, not the target API for this migration.
+The shared foundation implements the 2026-10-22 architecture decision below. This section supersedes the rational-only number table, pose/surface/curve signatures, equality guarantees and relevant tests below. The remaining formulas and rational examples specify the rational fast path; the old signature listing is its historical baseline, not the current API.
 
 ### Definition types and validation
 
-| Definition | Target type |
+| Definition | Stored type |
 | --- | --- |
 | Surface and analytic-curve point fields | `Point3` with `Real` coordinates |
 | Directions, normals, axes, references and translations | `Vector3` with `Real` coordinates |
@@ -34,6 +34,8 @@ Chart evaluation must enclose algebraic constants through piece 1 under the call
 Keep `Rotation::from_quaternion(Rational, Rational, Rational, Rational)` as the checked rational-input convenience constructor. Add `Rotation::from_real_quaternion(Real, Real, Real, Real, &mut Decider) -> Result<Rotation, Refusal>` with the same matrix formula and a proven nonzero norm. `matrix()` returns `&[[Real; 3]; 3]`. The algebraic constructor validates expression domains before division. Composition and inversion preserve certified orthogonality and determinant one by construction; do not re-prove them after every application.
 
 `Pose::translation` uses `Vector3`. The checked constructor is `Pose::new(rotation: Rotation, translation: Vector3, dec: &mut Decider) -> Result<Pose, Refusal>`; it validates the translation expressions. `identity`, `then` and `inverse` remain infallible on validated poses. `Rotation::apply` and `Pose::apply_vector` take `&Vector3` and return `Vector3`; `Pose::apply_point` takes `&Point3` and returns `Point3`. The existing `apply_real` and `apply_real_point` may remain aliases. Rational callers convert once at this boundary. Posing an entity preserves its exact dimensions and construction provenance. Tests compare posed coordinates through exact decisions, not structural `==`.
+
+`Point3::rational_components`, `Vector3::rational_components` and `Rotation::rational_matrix` expose borrowed rational entries when all components are cached exact rationals. They do not eliminate, refine or round algebraic expressions. `same_definition` only proves positive construction identity for reuse; a false result is not a geometric inequality proof.
 
 A recipe angle in rational degrees uses piece 1's certified sine/cosine constructor. A rotation about an algebraic axis can use the half-angle quaternion with the exactly normalised axis. A 45-degree revolve therefore has exact end-cap and edge positions. Normalising `[1, 0, 1]` gives `[1/sqrt(2), 0, 1/sqrt(2)]`; an extrude along it retains that expression rather than refusing or rounding it.
 

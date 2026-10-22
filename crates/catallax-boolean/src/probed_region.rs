@@ -2,7 +2,7 @@
 //! transverse boundary hit. Incidence, arc membership and order all use
 //! the earlier pieces' public predicates.
 
-use crate::geometry::{coincident, natural_ends, on_arc, oriented, product, refusal, sign, unit};
+use crate::geometry::{coincident, natural_ends, on_arc, oriented, product, refusal, sign};
 use crate::region::Location;
 use catallax_intersect::{
     Component, CurveForm, CurveSurface, Cyclic, SurfacePair, curve_form, curve_is_closed,
@@ -13,8 +13,8 @@ use catallax_numbers::{
     Decider, Fact, FactKind, FactOrigin, Outcome, Refusal, Sign, StrictOrder, ZeroProof,
 };
 use catallax_shapes::{
-    Curve, CurveId, GeomKey, MeetOf, Plane, PointDef, PointId, RPoint3, RVector3, Surface,
-    SurfaceId,
+    Curve, CurveId, GeomKey, MeetOf, Plane, Point3, PointDef, PointId, RVector3, Surface,
+    SurfaceId, Vector3,
 };
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,19 +24,17 @@ const PROBE_CONSTRUCTION: &str = "boolean.surface-probe";
 fn plane_through(
     model: &mut Model,
     incident: GeomKey,
-    origin: RPoint3,
-    normal: RVector3,
+    origin: Point3,
+    normal: Vector3,
+    dec: &mut Decider,
 ) -> Result<Option<SurfaceId>, Refusal> {
-    if normal.is_zero() {
+    if sign(&normal.norm_squared(), dec, "boolean.classify-ambiguous")? == Sign::Zero {
         return Ok(None);
     }
-    let reference = (0..3)
-        .map(|i| normal.cross(&unit(i)))
-        .find(|v| !v.is_zero())
-        .expect("nonzero normal has a perpendicular direction");
+    let reference = crate::geometry::perpendicular(&normal, dec, "boolean.classify-ambiguous")?;
     let surface = model
         .geom_mut()
-        .add_surface(Surface::Plane(Plane::new(origin, normal, reference)?));
+        .add_surface(Surface::Plane(Plane::new(origin, normal, reference, dec)?));
     // Every caller constructs the plane through this point or curve exactly.
     model.geom_mut().record_fact(Fact {
         kind: FactKind::Incident,
@@ -399,56 +397,35 @@ pub(crate) fn locate(
         }
     }
     let position = model.geom().position(point);
-    let rational = match (
-        position.x.as_rational(),
-        position.y.as_rational(),
-        position.z.as_rational(),
-    ) {
-        (Some(x), Some(y), Some(z)) => Some(RPoint3::new(x, y, z)),
-        _ => None,
-    };
+    let exact_probe = position.as_rational().is_some()
+        || !model
+            .geom()
+            .surface(model.face(face).surface)
+            .has_rational_definition();
     let attempts = crate::geometry::DIRECTION_ATTEMPTS
         .min((edges.len() as u32).saturating_mul(4).saturating_add(4));
-    if let Some(p) = rational {
-        if let Surface::Cylinder(cylinder) = model.geom().surface(model.face(face).surface).clone()
-        {
-            // A meridian contains two generators, so boundary hits need only
-            // line intersections instead of an oblique conic elimination.
-            let normal = cylinder.axis.cross(&p.minus(&cylinder.origin));
-            if let Some(surface) =
-                plane_through(model, GeomKey::Point(point), cylinder.origin, normal)?
+    if exact_probe {
+        let p = position;
+        let axial = match model.geom().surface(model.face(face).surface) {
+            Surface::Cylinder(c) => Some((c.origin.clone(), c.axis.clone())),
+            Surface::EllipticCylinder(c) => Some((c.origin.clone(), c.axis.clone())),
+            _ => None,
+        };
+        if let Some((origin, axis)) = axial {
+            let normal = axis.cross(&p.minus(&origin));
+            if let Some(surface) = plane_through(model, GeomKey::Point(point), origin, normal, dec)?
                 && let Some(location) = try_surface(model, face, point, surface, &edges, dec)?
             {
                 return Ok(Some(location));
             }
         }
-        let normal = model
-            .geom()
-            .surface(model.face(face).surface)
-            .gradient(&p.to_real());
-        let normal = RVector3::new(
-            normal
-                .x
-                .as_rational()
-                .expect("polynomial rational gradient"),
-            normal
-                .y
-                .as_rational()
-                .expect("polynomial rational gradient"),
-            normal
-                .z
-                .as_rational()
-                .expect("polynomial rational gradient"),
-        );
-        let u = (0..3)
-            .map(|i| normal.cross(&unit(i)))
-            .find(|v| !v.is_zero())
-            .expect("regular supported surface");
+        let normal = model.geom().surface(model.face(face).surface).gradient(&p);
+        let u = crate::geometry::perpendicular(&normal, dec, "boolean.classify-ambiguous")?;
         let v = normal.cross(&u);
         for index in 0..attempts {
             let (a, b) = crate::geometry::probe_parameters(index);
-            let n = u.plus(&v.scaled(&a)).plus(&normal.scaled(&b));
-            if let Some(surface) = plane_through(model, GeomKey::Point(point), p.clone(), n)?
+            let n = u.plus(&v.scaled(&a.into())).plus(&normal.scaled(&b.into()));
+            if let Some(surface) = plane_through(model, GeomKey::Point(point), p.clone(), n, dec)?
                 && let Some(location) = try_surface(model, face, point, surface, &edges, dec)?
             {
                 return Ok(Some(location));
@@ -460,13 +437,14 @@ pub(crate) fn locate(
                 Curve::Line(line) => {
                     for index in 0..attempts {
                         let (a, b) = crate::geometry::probe_parameters(index);
-                        let direction = RVector3::new(crate::geometry::r(1), a, b);
+                        let direction = RVector3::new(crate::geometry::r(1), a, b).to_real();
                         let normal = line.dir.cross(&direction);
                         if let Some(surface) = plane_through(
                             model,
                             GeomKey::Curve(curve),
                             line.origin.clone(),
                             normal,
+                            dec,
                         )? && let Some(location) =
                             try_surface(model, face, point, surface, &edges, dec)?
                         {
@@ -476,7 +454,7 @@ pub(crate) fn locate(
                 }
                 Curve::Circle(c) => {
                     if let Some(surface) =
-                        plane_through(model, GeomKey::Curve(curve), c.center, c.normal)?
+                        plane_through(model, GeomKey::Curve(curve), c.center, c.normal, dec)?
                         && let Some(location) =
                             try_surface(model, face, point, surface, &edges, dec)?
                     {
@@ -485,7 +463,7 @@ pub(crate) fn locate(
                 }
                 Curve::Ellipse(c) => {
                     if let Some(surface) =
-                        plane_through(model, GeomKey::Curve(curve), c.center, c.normal)?
+                        plane_through(model, GeomKey::Curve(curve), c.center, c.normal, dec)?
                         && let Some(location) =
                             try_surface(model, face, point, surface, &edges, dec)?
                     {
@@ -502,8 +480,9 @@ pub(crate) fn locate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::unit;
     use catallax_numbers::{Rational, StrictSign};
-    use catallax_shapes::Pose;
+    use catallax_shapes::{Pose, RPoint3};
 
     #[test]
     fn multi_component_probe_does_not_infer_a_branch() {
@@ -530,7 +509,7 @@ mod tests {
             let position = RPoint3::new(Rational::from_i64(x), Rational::zero(), Rational::one());
             let point = model
                 .geom_mut()
-                .add_point(PointDef::Explicit(position.clone()));
+                .add_point(PointDef::Explicit((position.clone()).into()));
             let mut dec = Decider::default();
             let Outcome::ProvenCoincident(proof) = model.geom().side(carrier, point, &mut dec)
             else {
@@ -546,8 +525,9 @@ mod tests {
             let plane = plane_through(
                 &mut model,
                 GeomKey::Point(point),
-                RPoint3::new(Rational::zero(), Rational::zero(), Rational::zero()),
+                RPoint3::new(Rational::zero(), Rational::zero(), Rational::zero()).into(),
                 unit(1),
+                &mut dec,
             )
             .unwrap()
             .unwrap();
@@ -583,11 +563,7 @@ mod tests {
                 else {
                     panic!("a meridian cuts a cylinder in two generators");
                 };
-                let distance = position
-                    .to_real()
-                    .minus(&origin)
-                    .cross(&dir.to_real())
-                    .norm_squared();
+                let distance = position.to_real().minus(&origin).cross(&dir).norm_squared();
                 let on = match dec.sign(&distance) {
                     Outcome::ProvenCoincident(_) => true,
                     Outcome::Proven(StrictSign::Positive) => false,

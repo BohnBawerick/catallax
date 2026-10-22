@@ -184,7 +184,7 @@ fn primitive_counts_growth_and_construction_facts() {
         GeomKey::Surface(m.face(block_faces[0]).surface),
         GeomKey::Surface(m.face(block_faces[2]).surface)
     ));
-    let zero = m.vertices.handles().into_iter().find(|id| matches!(m.geom.point(m.vertex(*id).point), PointDef::Explicit(pt) if *pt == p(0,0,0))).unwrap();
+    let zero = m.vertices.handles().into_iter().find(|id| matches!(m.geom.point(m.vertex(*id).point), PointDef::Explicit(pt) if pt.as_rational().unwrap() == p(0,0,0))).unwrap();
     assert!(!m.geom.facts().holds(
         FactKind::Incident,
         GeomKey::Point(m.vertex(zero).point),
@@ -209,9 +209,9 @@ fn primitive_counts_growth_and_construction_facts() {
         let Surface::Cone(c) = m.geom.surface(m.face(*faces.last().unwrap()).surface) else {
             panic!("cone side")
         };
-        assert_eq!(c.apex, RPoint3::new(r(0), r(0), z));
-        assert_eq!(c.axis, axis);
-        assert_eq!(c.slope, slope);
+        assert_eq!(c.apex.as_rational().unwrap(), RPoint3::new(r(0), r(0), z));
+        assert_eq!(c.axis.as_rational().unwrap(), axis);
+        assert_eq!(c.slope.rational_ref(), Some(&slope));
     }
 }
 
@@ -261,13 +261,14 @@ fn block_geometry_orientation_walk_and_backlinks() {
     let mut walk_vertices = Vec::new();
     for (f, (origin, normal, ref_dir, corners)) in m.faces_of_body(b).into_iter().zip(expected) {
         let face = m.face(f);
-        assert_eq!(
-            m.geom.surface(face.surface),
-            &Surface::Plane(Plane {
-                origin,
-                normal: normal.clone(),
-                ref_dir
-            })
+        assert!(
+            m.geom
+                .surface(face.surface)
+                .same_definition(&Surface::Plane(Plane {
+                    origin: origin.into(),
+                    normal: normal.clone().into(),
+                    ref_dir: ref_dir.into()
+                }))
         );
         let l = face.loops[0];
         let Loop::Coedges(cs) = m.loop_(l) else {
@@ -282,10 +283,12 @@ fn block_geometry_orientation_walk_and_backlinks() {
                 let PointDef::Explicit(a) = m.geom.point(m.vertex(start).point) else {
                     panic!("explicit")
                 };
+                let a = a.as_rational().expect("rational block fixture");
                 let PointDef::Explicit(z) = m.geom.point(m.vertex(end).point) else {
                     panic!("explicit")
                 };
-                assert!(normal.cross(&z.minus(a)).dot(&p(1, 1, 2).minus(a)) > r(0));
+                let z = z.as_rational().expect("rational block fixture");
+                assert!(normal.cross(&z.minus(&a)).dot(&p(1, 1, 2).minus(&a)) > r(0));
                 assert_eq!(m.owner_of_coedge(*c), Some((l, f)));
                 let edge = m.coedge(*c).edge;
                 if !walk_edges.contains(&edge) {
@@ -296,7 +299,7 @@ fn block_geometry_orientation_walk_and_backlinks() {
                         walk_vertices.push(vertex);
                     }
                 }
-                a.clone()
+                a
             })
             .collect();
         let offset = corners.iter().position(|pt| *pt == points[0]).unwrap();
@@ -388,7 +391,12 @@ fn scaling_poses_and_thread_determinism() {
     }
     for seed in 0..8 {
         let rotation = Rotation::from_quaternion(r(1), r(seed), r(seed + 1), r(2)).unwrap();
-        let pose = Pose::new(rotation, v(10 + seed, -13, 123));
+        let pose = Pose::new(
+            rotation,
+            (v(10 + seed, -13, 123)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap();
         let mut moved = Model::new();
         let bs = solid_builds(&mut moved, &r(1), &pose);
         for (b, original) in bs.into_iter().zip(&ids) {
@@ -397,20 +405,23 @@ fn scaling_poses_and_thread_determinism() {
         }
         for f in local.faces.handles() {
             assert_eq!(moved.face(f), local.face(f));
-            assert_eq!(
-                *moved.geom.surface(moved.face(f).surface),
-                local.geom.surface(local.face(f).surface).transformed(&pose)
+            assert!(
+                moved
+                    .geom
+                    .surface(moved.face(f).surface)
+                    .same_definition(&local.geom.surface(local.face(f).surface).transformed(&pose))
             );
         }
         for e in local.edges.handles() {
             assert_eq!(moved.edge(e), local.edge(e));
-            assert_eq!(
-                *moved.geom.curve(moved.edge(e).curve),
-                local
-                    .geom
-                    .curve(local.edge(e).curve)
-                    .transformed(&pose)
-                    .unwrap()
+            assert!(
+                moved.geom.curve(moved.edge(e).curve).same_definition(
+                    &local
+                        .geom
+                        .curve(local.edge(e).curve)
+                        .transformed(&pose)
+                        .unwrap()
+                )
             );
         }
         for vertex in local.vertices.handles() {
@@ -420,7 +431,10 @@ fn scaling_poses_and_thread_determinism() {
             let PointDef::Explicit(actual) = moved.geom.point(moved.vertex(vertex).point) else {
                 panic!()
             };
-            assert_eq!(*actual, pose.apply_point(pt));
+            assert_eq!(
+                actual.as_rational().unwrap(),
+                pose.apply_point(pt).as_rational().unwrap()
+            );
         }
         assert_eq!(
             moved.geom.facts().iter().collect::<Vec<_>>(),
@@ -481,10 +495,10 @@ fn sound_ring_faces_and_same_face_double_use() {
     let b = sphere(&mut m, r(2), &Pose::identity()).unwrap();
     let surface = m.face(m.faces_of_body(b)[0]).surface;
     let curve = m.geom_mut().add_curve(Curve::Circle(Circle {
-        center: p(0, 0, 0),
-        normal: v(0, 0, 1),
-        radius_sq: r(4),
-        ref_dir: v(1, 0, 0),
+        center: p(0, 0, 0).into(),
+        normal: v(0, 0, 1).into(),
+        radius_sq: r(4).into(),
+        ref_dir: v(1, 0, 0).into(),
     }));
     fact(&mut m, GeomKey::Curve(curve), GeomKey::Surface(surface));
     let edge = m.add_edge(Edge {
@@ -500,10 +514,10 @@ fn sound_ring_faces_and_same_face_double_use() {
     let b = torus(&mut m, r(3), r(1), &Pose::identity()).unwrap();
     let surface = m.face(m.faces_of_body(b)[0]).surface;
     let curve = m.geom_mut().add_curve(Curve::Circle(Circle {
-        center: p(3, 0, 0),
-        normal: v(0, 1, 0),
-        radius_sq: r(1),
-        ref_dir: v(1, 0, 0),
+        center: p(3, 0, 0).into(),
+        normal: v(0, 1, 0).into(),
+        radius_sq: r(1).into(),
+        ref_dir: v(1, 0, 0).into(),
     }));
     fact(&mut m, GeomKey::Curve(curve), GeomKey::Surface(surface));
     let edge = m.add_edge(Edge {
@@ -596,7 +610,9 @@ fn structural_and_incidence_faults() {
     });
     let b = body(&mut m, vec![f]);
     assert_fault(&m, b, "topology.empty-part");
-    let point = m.geom_mut().add_point(PointDef::Explicit(p(0, 0, 0)));
+    let point = m
+        .geom_mut()
+        .add_point(PointDef::Explicit((p(0, 0, 0)).into()));
     let vertex = m.add_vertex(Vertex { point });
     let vertex_loop = m.add_loop(Loop::Vertex(vertex));
     let f = m.add_face(Face {
@@ -608,8 +624,8 @@ fn structural_and_incidence_faults() {
     assert_fault(&m, b, "topology.vertex-loop");
     assert_fault(&m, b, "topology.missing-incidence");
     let line = m.geom_mut().add_curve(Curve::Line(Line {
-        origin: p(0, 0, 0),
-        dir: v(1, 0, 0),
+        origin: p(0, 0, 0).into(),
+        dir: v(1, 0, 0).into(),
     }));
     for (start, end) in [
         (None, None),
@@ -665,7 +681,12 @@ fn multiple_lumps_voids_and_cross_shell_sharing() {
     let b = block(
         &mut m,
         [r(1), r(1), r(1)],
-        &Pose::new(Rotation::identity(), v(1, 1, 0)),
+        &Pose::new(
+            Rotation::identity(),
+            (v(1, 1, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     )
     .unwrap();
     let lumps = vec![m.body(a).lumps[0], m.body(b).lumps[0]];
@@ -703,7 +724,12 @@ fn multiple_lumps_voids_and_cross_shell_sharing() {
     let inner = block(
         &mut m,
         [r(2), r(2), r(2)],
-        &Pose::new(Rotation::identity(), v(4, 4, 4)),
+        &Pose::new(
+            Rotation::identity(),
+            (v(4, 4, 4)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     )
     .unwrap();
     let mut void_faces = Vec::new();
@@ -758,7 +784,12 @@ fn block_with_cylindrical_hole_has_genus_one() {
         &mut m,
         r(1),
         r(4),
-        &Pose::new(Rotation::identity(), v(2, 2, 0)),
+        &Pose::new(
+            Rotation::identity(),
+            (v(2, 2, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     )
     .unwrap();
     let cutter_faces = m.faces_of_body(cutter);
@@ -806,12 +837,14 @@ fn one_vertex_closed_edges_and_repeated_vertex_boundaries() {
     let sphere = sphere(&mut m, r(2), &Pose::identity()).unwrap();
     let surface = m.face(m.faces_of_body(sphere)[0]).surface;
     let curve = m.geom_mut().add_curve(Curve::Circle(Circle {
-        center: p(0, 0, 0),
-        normal: v(0, 0, 1),
-        radius_sq: r(4),
-        ref_dir: v(1, 0, 0),
+        center: p(0, 0, 0).into(),
+        normal: v(0, 0, 1).into(),
+        radius_sq: r(4).into(),
+        ref_dir: v(1, 0, 0).into(),
     }));
-    let point = m.geom_mut().add_point(PointDef::Explicit(p(2, 0, 0)));
+    let point = m
+        .geom_mut()
+        .add_point(PointDef::Explicit((p(2, 0, 0)).into()));
     let vertex = m.add_vertex(Vertex { point });
     fact(&mut m, GeomKey::Curve(curve), GeomKey::Surface(surface));
     fact(&mut m, GeomKey::Point(point), GeomKey::Curve(curve));

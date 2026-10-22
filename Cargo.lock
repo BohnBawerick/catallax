@@ -82,6 +82,7 @@ dependencies = [
 name = "catallax-field"
 version = "0.0.0"
 dependencies = [
+ "catallax-boolean",
  "catallax-features",
  "catallax-numbers",
  "catallax-recipe",
@@ -157,6 +158,7 @@ version = "0.0.0"
 dependencies = [
  "catallax-boolean",
  "catallax-intersect",
+ "catallax-measure",
  "catallax-numbers",
  "catallax-shapes",
  "catallax-topology",

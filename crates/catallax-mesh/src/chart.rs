@@ -1,7 +1,7 @@
 //! Dyadic turns make translated periodic chart copies bit-identical.
 
-use catallax_numbers::{Ball, Rational, Refusal};
-use catallax_shapes::{RVector3, Surface};
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
+use catallax_shapes::{Surface, Vector3};
 
 use crate::failure;
 
@@ -31,12 +31,20 @@ pub(crate) fn residual(p: &[f64; 3], b: &[Ball; 3]) -> Rational {
     })
 }
 
-fn unit(v: &RVector3) -> [f64; 3] {
-    let length = Ball::from_rational(&v.norm_squared(), BITS)
-        .sqrt()
-        .expect("nonzero definition axis");
-    [&v.x, &v.y, &v.z]
-        .map(|x| midpoint(&Ball::from_rational(x, BITS).checked_div(&length).unwrap()))
+fn unit(v: &Vector3, dec: &Decider) -> Result<[f64; 3], Refusal> {
+    if let Some(v) = v.rational_components() {
+        let norm = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+        let length = Ball::from_rational(&norm, BITS)
+            .sqrt()
+            .expect("nonzero definition axis");
+        return Ok(v.map(|x| midpoint(&Ball::from_rational(x, BITS).checked_div(&length).unwrap())));
+    }
+    let length = v.norm_squared().sqrt();
+    Ok([
+        midpoint(&dec.enclose_at(&(&v.x / &length), BITS)?),
+        midpoint(&dec.enclose_at(&(&v.y / &length), BITS)?),
+        midpoint(&dec.enclose_at(&(&v.z / &length), BITS)?),
+    ])
 }
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
@@ -52,16 +60,28 @@ pub(crate) struct Chart {
 }
 
 impl Chart {
-    pub(crate) fn new(surface: &Surface) -> Result<Self, Refusal> {
+    pub(crate) fn new(surface: &Surface, dec: &Decider) -> Result<Self, Refusal> {
         let (origin, axis, reference, periodic) = match surface {
             Surface::Plane(s) => (&s.origin, &s.normal, &s.ref_dir, [false, false]),
             Surface::Cylinder(s) => (&s.origin, &s.axis, &s.ref_dir, [true, false]),
             Surface::Cone(s) => (&s.apex, &s.axis, &s.ref_dir, [true, false]),
             Surface::Sphere(s) => (&s.center, &s.axis, &s.ref_dir, [true, false]),
             Surface::Torus(s) => (&s.center, &s.axis, &s.ref_dir, [true, true]),
+            Surface::EllipticCylinder(_) => {
+                return Err(failure(
+                    "elliptic-cylinder display charts are not implemented",
+                ));
+            }
             _ => return Err(failure("unknown analytic surface definition")),
         };
-        let origin = [&origin.x, &origin.y, &origin.z].map(Rational::to_f64_nearest);
+        let scalar = |value: &Real| -> Result<f64, Refusal> {
+            if let Some(value) = value.rational_ref() {
+                Ok(value.to_f64_nearest())
+            } else {
+                Ok(midpoint(&dec.enclose_at(value, BITS)?))
+            }
+        };
+        let origin = [scalar(&origin.x)?, scalar(&origin.y)?, scalar(&origin.z)?];
         if !origin.iter().all(|v| v.is_finite()) {
             return Err(failure("surface origin exceeds binary64"));
         }
@@ -69,7 +89,11 @@ impl Chart {
             surface: surface.clone(),
             periodic,
             origin,
-            frame: [unit(reference), unit(&axis.cross(reference)), unit(axis)],
+            frame: [
+                unit(reference, dec)?,
+                unit(&axis.cross(reference), dec)?,
+                unit(axis, dec)?,
+            ],
         })
     }
 
@@ -87,7 +111,7 @@ impl Chart {
         let u = angle(y, x);
         let v = match &self.surface {
             Surface::Sphere(_) => angle(z, libm::sqrt(x * x + y * y)),
-            Surface::Torus(s) => angle(z, libm::sqrt(x * x + y * y) - s.major.to_f64_nearest()),
+            Surface::Torus(s) => angle(z, libm::sqrt(x * x + y * y) - s.major.to_f64()),
             _ => z,
         };
         [u, v]
@@ -112,8 +136,8 @@ impl Chart {
         uv
     }
 
-    pub(crate) fn evaluate(&self, uv: Uv) -> [Ball; 3] {
-        let turn = Ball::pi(BITS) * Ball::from_rational(&Rational::from_i64(2), BITS);
+    pub(crate) fn evaluate(&self, uv: Uv, dec: &Decider) -> Result<[Ball; 3], Refusal> {
+        let turn = Ball::pi_checked(BITS, dec)? * Ball::from_rational(&Rational::from_i64(2), BITS);
         let mut parameters = uv.map(|x| Ball::from_rational(&q(x), BITS));
         if !matches!(self.surface, Surface::Plane(_)) {
             parameters[0] = &parameters[0] * &turn;
@@ -121,26 +145,41 @@ impl Chart {
         if matches!(self.surface, Surface::Sphere(_) | Surface::Torus(_)) {
             parameters[1] = &parameters[1] * &turn;
         }
-        self.surface.evaluate(&parameters[0], &parameters[1])
+        self.surface.evaluate(&parameters[0], &parameters[1], dec)
     }
 
     /// Euclidean upper bounds on S_uu, S_uv and S_vv in this chart.
-    pub(crate) fn hessian(&self, vmax: f64) -> [Rational; 3] {
-        let tau = Ball::pi(BITS).hi() * Rational::from_i64(2);
+    pub(crate) fn hessian(&self, vmax: f64, dec: &Decider) -> Result<[Rational; 3], Refusal> {
+        let tau = Ball::pi_checked(BITS, dec)?.hi() * Rational::from_i64(2);
         let tau2 = &tau * &tau;
         let zero = Rational::zero();
-        match &self.surface {
+        let upper = |value: &Real| -> Result<Rational, Refusal> {
+            if let Some(value) = value.rational_ref() {
+                return Ok(value.clone());
+            }
+            Ok(dec.enclose_at(value, BITS)?.hi())
+        };
+        Ok(match &self.surface {
             Surface::Plane(_) => [zero.clone(), zero.clone(), zero],
-            Surface::Cylinder(s) => [&s.radius * &tau2, zero.clone(), zero],
-            Surface::Cone(s) => [&(&s.slope * &q(vmax.abs())) * &tau2, &s.slope * &tau, zero],
-            Surface::Sphere(s) => std::array::from_fn(|_| &s.radius * &tau2),
-            Surface::Torus(s) => [
-                &(&s.major + &s.minor) * &tau2,
-                &s.minor * &tau2,
-                &s.minor * &tau2,
-            ],
+            Surface::Cylinder(s) => [&upper(&s.radius)? * &tau2, zero.clone(), zero],
+            Surface::Cone(s) => {
+                let slope = upper(&s.slope)?;
+                [&(&slope * &q(vmax.abs())) * &tau2, &slope * &tau, zero]
+            }
+            Surface::Sphere(s) => {
+                let radius = upper(&s.radius)?;
+                std::array::from_fn(|_| &radius * &tau2)
+            }
+            Surface::Torus(s) => {
+                let minor = &upper(&s.minor)? * &tau2;
+                [
+                    &upper(&(&s.major + &s.minor))? * &tau2,
+                    minor.clone(),
+                    minor,
+                ]
+            }
             _ => unreachable!(),
-        }
+        })
     }
 }
 

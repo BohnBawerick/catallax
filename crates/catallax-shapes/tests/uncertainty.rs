@@ -32,7 +32,15 @@ fn bounded<T: std::fmt::Debug>(out: Outcome<T>, distance: Real) -> NotExact {
     }
 }
 fn closed_z(store: &mut GeomStore, point: Point3, z: &str) -> PointId {
-    let s = Surface::Plane(Plane::new(p("0", "0", z), v("0", "0", "1"), v("1", "0", "0")).unwrap());
+    let s = Surface::Plane(
+        Plane::new(
+            (p("0", "0", z)).into(),
+            (v("0", "0", "1")).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     let supports = vec![store.add_surface(s.clone()), store.add_surface(s)];
     closed_on(store, point, supports)
 }
@@ -42,7 +50,13 @@ blind_test!(not_exact_side_distance_units_for_every_surface, {
     let cases = [
         (
             Surface::Plane(
-                Plane::new(p("0", "0", "0"), v("2", "0", "0"), v("0", "1", "0")).unwrap(),
+                Plane::new(
+                    p("0", "0", "0").into(),
+                    v("2", "0", "0").into(),
+                    v("0", "1", "0").into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ),
             Point3::new(gap.clone(), real("0"), real("0")),
             gap.clone(),
@@ -92,7 +106,12 @@ blind_test!(not_exact_curve_and_point_distance_bounds, {
     let gap = delta();
     let mut store = GeomStore::new();
     let line = store.add_curve(Curve::Line(
-        Line::new(p("0", "0", "0"), v("0", "2", "0")).unwrap(),
+        Line::new(
+            p("0", "0", "0").into(),
+            v("0", "2", "0").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let point = closed_z(
         &mut store,
@@ -162,13 +181,20 @@ blind_test!(intersection_bound_is_to_both_carriers_not_the_curve, {
     // x=delta, y=0 is delta from the meeting but only epsilon*delta/sqrt(1+epsilon²)
     // from the second carrier. Do not demand a curve-distance bound here.
     let a = store.add_surface(Surface::Plane(
-        Plane::new(p("0", "0", "0"), v("0", "1", "0"), v("1", "0", "0")).unwrap(),
+        Plane::new(
+            p("0", "0", "0").into(),
+            v("0", "1", "0").into(),
+            v("1", "0", "0").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let b = store.add_surface(Surface::Plane(
         Plane::new(
-            p("0", "0", "0"),
-            v("-1e-30", "1", "0"),
-            v("1", "1e-30", "0"),
+            p("0", "0", "0").into(),
+            v("-1e-30", "1", "0").into(),
+            v("1", "1e-30", "0").into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     ));
@@ -193,7 +219,13 @@ blind_test!(
         let mut store = GeomStore::new();
         let a = store.add_surface(sphere("1"));
         let b = store.add_surface(Surface::Plane(
-            Plane::new(p("0", "0", "0"), v("3", "0", "0"), v("0", "1", "0")).unwrap(),
+            Plane::new(
+                p("0", "0", "0").into(),
+                v("3", "0", "0").into(),
+                v("0", "1", "0").into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ));
         let point = closed_z(
             &mut store,

@@ -15,7 +15,15 @@ fn v(x: i64, y: i64, z: i64) -> RVector3 {
     RVector3::new(r(x), r(y), r(z))
 }
 fn plane(z: i64) -> Surface {
-    Surface::Plane(Plane::new(p(0, 0, z), v(0, 0, 1), v(1, 0, 0)).unwrap())
+    Surface::Plane(
+        Plane::new(
+            (p(0, 0, z)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 fn cylinder(x: i64, y: i64, w: RVector3, radius: i64) -> Surface {
     let reference = if w.cross(&v(1, 0, 0)).is_zero() {
@@ -25,10 +33,28 @@ fn cylinder(x: i64, y: i64, w: RVector3, radius: i64) -> Surface {
     } else {
         v(0, 0, 1)
     };
-    Surface::Cylinder(Cylinder::new(p(x, y, 0), w, r(radius), reference).unwrap())
+    Surface::Cylinder(
+        Cylinder::new(
+            (p(x, y, 0)).into(),
+            (w).into(),
+            (r(radius)).into(),
+            (reference).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 fn sphere(x: i64, z: i64, radius: i64) -> Surface {
-    Surface::Sphere(Sphere::new(p(x, 0, z), r(radius), v(0, 0, 1), v(1, 0, 0)).unwrap())
+    Surface::Sphere(
+        Sphere::new(
+            (p(x, 0, z)).into(),
+            (r(radius)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 fn ns(label: &str, elapsed: Duration, n: u32) {
     println!(
@@ -40,14 +66,32 @@ fn surfaces() {
     let mut pairs = vec![];
     let mut add = |name, a, b| pairs.push((name, a, b));
     let z = cylinder(0, 0, v(0, 0, 1), 5);
-    let xplane = |x| Surface::Plane(Plane::new(p(x, 0, 0), v(1, 0, 0), v(0, 1, 0)).unwrap());
+    let xplane = |x| {
+        Surface::Plane(
+            Plane::new(
+                (p(x, 0, 0)).into(),
+                (v(1, 0, 0)).into(),
+                (v(0, 1, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        )
+    };
     add("PP1", plane(0), xplane(1));
     add("PP2", plane(0), plane(1));
     add("PP3", plane(0), plane(0));
     add("PC1", plane(0), z.clone());
     add(
         "PC2",
-        Surface::Plane(Plane::new(p(0, 0, 0), v(0, 3, 4), v(1, 0, 0)).unwrap()),
+        Surface::Plane(
+            Plane::new(
+                (p(0, 0, 0)).into(),
+                (v(0, 3, 4)).into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
         z.clone(),
     );
     for (name, x) in [
@@ -127,7 +171,7 @@ fn surfaces() {
     for _ in 0..8 {
         poses.push(Pose {
             rotation: Rotation::from_quaternion(r(101), r(next()), r(next()), r(next())).unwrap(),
-            translation: v(next() * 10000, next() * 10000, next() * 10000),
+            translation: v(next() * 10000, next() * 10000, next() * 10000).into(),
         });
     }
     for (name, a, b) in pairs {
@@ -158,12 +202,34 @@ fn curves() {
     let plane = geom.add_surface(plane(1));
     let cylinder = geom.add_surface(cylinder(0, 0, v(0, 0, 1), 1));
     let sphere = geom.add_surface(sphere(1, 0, 2));
-    let line = geom.add_curve(Curve::Line(Line::new(p(-5, 0, 0), v(1, 0, 0)).unwrap()));
+    let line = geom.add_curve(Curve::Line(
+        Line::new(
+            (p(-5, 0, 0)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    ));
     let circle = geom.add_curve(Curve::Circle(
-        Circle::new(p(0, 0, 0), v(0, 0, 1), r(25), v(1, 0, 0)).unwrap(),
+        Circle::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            (r(25)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let ellipse = geom.add_curve(Curve::Ellipse(
-        Ellipse::new(p(0, 0, 0), v(0, 0, 1), v(1, 0, 0), r(25), r(9)).unwrap(),
+        Ellipse::new(
+            (p(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            (r(25)).into(),
+            (r(9)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let SurfacePair::Meets(components) = intersect_surfaces(&mut geom, cylinder, sphere, &mut dec)
         .unwrap()
@@ -185,7 +251,7 @@ fn curves() {
         ("ellipse", ellipse, [p(5, 0, 0), p(0, 3, 0), p(-5, 0, 0)]),
         ("branch", branch, [p(1, 0, 2), branch_point, p(-1, 0, 0)]),
     ] {
-        let points = positions.map(|p| geom.add_point(PointDef::Explicit(p)));
+        let points = positions.map(|p| geom.add_point(PointDef::Explicit((p).into())));
         for (surface_name, s) in [("plane", plane), ("cylinder", cylinder), ("sphere", sphere)] {
             let mut elapsed = Duration::ZERO;
             let _ = dec.take_stats();
@@ -255,10 +321,22 @@ fn curves() {
         for sign in [-1, 1] {
             let y = r(5) + gap.clone() * r(sign);
             let line = geom.add_curve(Curve::Line(
-                Line::new(RPoint3::new(r(-10), y, r(0)), v(1, 0, 0)).unwrap(),
+                Line::new(
+                    (RPoint3::new(r(-10), y, r(0))).into(),
+                    (v(1, 0, 0)).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ));
             let s = geom.add_surface(Surface::Sphere(
-                Sphere::new(p(0, 0, 0), r(5), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+                Sphere::new(
+                    (p(0, 0, 0)).into(),
+                    (r(5)).into(),
+                    (v(0, 0, 1)).into(),
+                    (v(1, 0, 0)).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ));
             let mut g = geom.clone();
             let _ = std::hint::black_box(intersect_curve_surface(&mut g, line, s, &mut dec));

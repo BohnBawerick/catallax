@@ -23,8 +23,8 @@ pub fn prism(n: usize) -> Expected {
             let b = layer * n + (i + 1) % n;
             d.edges.push((
                 Curve::Line(Line {
-                    origin: d.points[a].clone(),
-                    dir: d.points[b].minus(&d.points[a]),
+                    origin: d.points[a].clone().into(),
+                    dir: d.points[b].minus(&d.points[a]).into(),
                 }),
                 Some(a),
                 Some(b),
@@ -34,8 +34,8 @@ pub fn prism(n: usize) -> Expected {
     for i in 0..n {
         d.edges.push((
             Curve::Line(Line {
-                origin: d.points[i].clone(),
-                dir: v(0, 0, 1),
+                origin: d.points[i].clone().into(),
+                dir: v(0, 0, 1).into(),
             }),
             Some(i),
             Some(n + i),

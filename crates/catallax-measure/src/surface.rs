@@ -1,10 +1,10 @@
 //! Boundary forms for analytic surfaces. No angle coordinate enters a decision.
 
-use catallax_numbers::Rational;
-use catallax_shapes::{RPoint3, RVector3, Surface};
+use catallax_numbers::Real;
+use catallax_shapes::{Point3, RPoint3, Surface, Vector3};
 
 use crate::integrate::{Builder, Expr, Program};
-use crate::planar::{components, direction};
+use crate::planar::{real_components as components, real_direction as direction};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Property {
@@ -33,18 +33,18 @@ fn cross<'a>(a: Vector<'a>, b: Vector<'a>) -> Vector<'a> {
         a[0] * b[1] - a[1] * b[0],
     ]
 }
-fn constants<'a>(b: &'a Builder, v: [&Rational; 3]) -> Vector<'a> {
-    v.map(|r| b.r(r.clone()))
+fn constants<'a>(b: &'a Builder, v: [&Real; 3]) -> Vector<'a> {
+    v.map(|r| b.exact(r))
 }
-fn unit<'a>(b: &'a Builder, v: &RVector3) -> Vector<'a> {
-    let norm = b.r(v.norm_squared()).sqrt();
+fn unit<'a>(b: &'a Builder, v: &Vector3) -> Vector<'a> {
+    let norm = b.exact(&v.norm_squared()).sqrt();
     constants(b, direction(v)).map(|x| x / norm)
 }
-fn offset<'a>(b: &'a Builder, p: &RPoint3, anchor: &RPoint3) -> Vector<'a> {
-    let p = p.minus(anchor);
+fn offset<'a>(b: &'a Builder, p: &Point3, anchor: &RPoint3) -> Vector<'a> {
+    let p = p.minus(&anchor.to_real());
     constants(b, direction(&p))
 }
-fn displacement<'a>(b: &'a Builder, p: &RPoint3) -> Vector<'a> {
+fn displacement<'a>(b: &'a Builder, p: &Point3) -> Vector<'a> {
     let o = constants(b, components(p));
     std::array::from_fn(|i| b.input(i) - o[i])
 }
@@ -54,7 +54,7 @@ pub(crate) fn compile(
     anchor: &RPoint3,
     property: Property,
     closed: bool,
-    gauge: &RVector3,
+    gauge: &Vector3,
 ) -> Option<Compiled> {
     let b = Builder::default();
     let derivative = std::array::from_fn(|i| b.input(i + 3));
@@ -67,13 +67,13 @@ pub(crate) fn compile(
             let first = constants(&b, direction(&p.ref_dir));
             let second_vector = p.normal.cross(&p.ref_dir);
             let second = constants(&b, direction(&second_vector));
-            let reference_sq = b.r(p.ref_dir.norm_squared());
+            let reference_sq = b.exact(&p.ref_dir.norm_squared());
             let u = dot(q, first) / reference_sq;
-            let v = dot(q, second) / b.r(second_vector.norm_squared());
+            let v = dot(q, second) / b.exact(&second_vector.norm_squared());
             let du = dot(derivative, first) / reference_sq;
             let normal = constants(&b, direction(&p.normal));
             let origin = offset(&b, &p.origin, anchor);
-            let area = -b.r(p.normal.norm_squared()).sqrt() * reference_sq * v * du;
+            let area = -b.exact(&p.normal.norm_squared()).sqrt() * reference_sq * v * du;
             let volume = -reference_sq * dot(normal, origin) * v * du / b.k(3);
             let moments = std::array::from_fn::<_, 3, _>(|i| {
                 let base = origin[i] + u * first[i];
@@ -89,7 +89,7 @@ pub(crate) fn compile(
             let axis = unit(&b, &c.axis);
             let z = dot(q, axis);
             let radial = std::array::from_fn::<_, 3, _>(|i| q[i] - z * axis[i]);
-            let radius = b.r(c.radius.clone());
+            let radius = b.exact(&c.radius);
             let er = radial.map(|x| x / radius);
             let du = dot(axis, cross(q, derivative)) / radius.square();
             let origin = offset(&b, &c.origin, anchor);
@@ -104,11 +104,42 @@ pub(crate) fn compile(
             });
             [area, volume, moments[0], moments[1], moments[2]]
         }
+        Surface::EllipticCylinder(c) => {
+            let q = displacement(&b, &c.origin);
+            let axis = unit(&b, &c.axis);
+            let first = unit(&b, &c.major_dir);
+            let second = cross(axis, first);
+            let major = b.exact(&c.major_sq).sqrt();
+            let minor = b.exact(&c.minor_sq).sqrt();
+            let x = dot(q, first);
+            let y = dot(q, second);
+            let z = dot(q, axis);
+            let cosine = x / major;
+            let sine = y / minor;
+            let du = (x * dot(derivative, second) - y * dot(derivative, first)) / (major * minor);
+            let density =
+                (major.square() * sine.square() + minor.square() * cosine.square()).sqrt();
+            let normal_density = std::array::from_fn::<_, 3, _>(|i| {
+                minor * cosine * first[i] + major * sine * second[i]
+            });
+            let origin = offset(&b, &c.origin, anchor);
+            let radial = std::array::from_fn::<_, 3, _>(|i| x * first[i] + y * second[i]);
+            let area = -z * density * du;
+            let volume = -z * (major * minor + dot(normal_density, origin)) * du / b.k(3);
+            let moments = std::array::from_fn::<_, 3, _>(|i| {
+                let base = origin[i] + radial[i];
+                let primitive = base.square() * z
+                    + base * axis[i] * z.square()
+                    + axis[i].square() * z.square() * z / b.k(3);
+                -normal_density[i] * primitive * du / b.k(2)
+            });
+            [area, volume, moments[0], moments[1], moments[2]]
+        }
         Surface::Cone(c) => {
             let q = displacement(&b, &c.apex);
             let axis = unit(&b, &c.axis);
             let z = dot(q, axis);
-            let slope = b.r(c.slope.clone());
+            let slope = b.exact(&c.slope);
             let radial = std::array::from_fn::<_, 3, _>(|i| q[i] - z * axis[i]);
             let er = radial.map(|x| x / (slope * z));
             let angular = dot(axis, cross(q, derivative));
@@ -130,7 +161,7 @@ pub(crate) fn compile(
         Surface::Sphere(s) => {
             sphere = true;
             let q = displacement(&b, &s.center);
-            let radius = b.r(s.radius.clone());
+            let radius = b.exact(&s.radius);
             let pole = unit(&b, gauge);
             let area = radius * dot(pole, cross(q, derivative)) / (radius + dot(pole, q));
             let origin = offset(&b, &s.center, anchor);
@@ -156,8 +187,8 @@ pub(crate) fn compile(
             [area, volume, moments[0], moments[1], moments[2]]
         }
         Surface::Torus(t) if closed => {
-            let major = b.r(t.major.clone());
-            let minor = b.r(t.minor.clone());
+            let major = b.exact(&t.major);
+            let minor = b.exact(&t.minor);
             let pi2 = b.input(6).square();
             let area = b.k(4) * pi2 * major * minor;
             let volume = b.k(2) * pi2 * major * minor.square();

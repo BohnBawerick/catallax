@@ -54,8 +54,10 @@ blind_test!(case13_named_pose_and_1000_random_rational_poses, {
             (
                 Pose::new(
                     Rotation::from_quaternion(n(2), n(1), n(0), n(0)).unwrap(),
-                    RVector3::new(t[0].clone(), t[1].clone(), t[2].clone()),
-                ),
+                    RVector3::new(t[0].clone(), t[1].clone(), t[2].clone()).into(),
+                    &mut Decider::default(),
+                )
+                .unwrap(),
                 rotation_oracle([2, 1, 0, 0]),
                 t,
             )
@@ -172,7 +174,7 @@ fn check_added(shape: &Primitive, pose: &Pose, s: &Step, d: &Rational) {
     };
     let mut used = BTreeSet::new();
     for p in local {
-        let exact = xyz(&pose.apply_point(&point(p)));
+        let exact = real_xyz(&pose.apply_point(&point(p).into()));
         let candidate = s
             .ids("VERTEX_POINT")
             .into_iter()

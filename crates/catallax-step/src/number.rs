@@ -1,7 +1,7 @@
 //! Decimal rounding and rational error accounting. No platform floating point.
 
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Integer, Outcome, Rational, Real, Refusal};
-use catallax_shapes::{Point3, RVector3, Vector3};
+use catallax_shapes::{Point3, Vector3};
 
 #[derive(Clone)]
 pub(crate) struct Number {
@@ -178,17 +178,11 @@ fn integer_sqrt(value: &Integer) -> Integer {
     }
 }
 
-pub(crate) fn unit(value: &RVector3) -> Vector3 {
-    value
-        .to_real()
-        .scaled(&(Real::one() / sqrt(&value.norm_squared())))
+pub(crate) fn unit(value: &Vector3) -> Vector3 {
+    value.scaled(&(Real::one() / sqrt_real(&value.norm_squared())))
 }
 
-pub(crate) fn direction(
-    value: &RVector3,
-    digits: u32,
-    dec: &mut Decider,
-) -> Result<Point, Refusal> {
+pub(crate) fn direction(value: &Vector3, digits: u32, dec: &mut Decider) -> Result<Point, Refusal> {
     let v = unit(value);
     point(&Point3::new(v.x, v.y, v.z), digits, dec)
 }
@@ -201,8 +195,15 @@ pub(crate) fn magnitude(value: &Ball) -> Rational {
     value.lo().abs().max(value.hi().abs())
 }
 
-pub(crate) fn point_plus(origin: &Point3, vector: &Vector3, amount: &Rational) -> Point3 {
-    origin.plus(&vector.scaled(&Real::from_rational(amount.clone())))
+pub(crate) fn point_plus(origin: &Point3, vector: &Vector3, amount: &Real) -> Point3 {
+    origin.plus(&vector.scaled(amount))
+}
+
+pub(crate) fn upper(value: &Real, dec: &Decider) -> Result<Rational, Refusal> {
+    if let Some(value) = value.rational_ref() {
+        return Ok(value.clone());
+    }
+    Ok(dec.enclose_at(value, 64)?.hi())
 }
 
 pub(crate) fn budget(detail: impl Into<String>) -> Refusal {

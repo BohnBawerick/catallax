@@ -132,6 +132,25 @@ impl Real {
     pub fn as_rational(&self) -> Option<Rational> {
         self.node.rational.clone()
     }
+    /// Borrows a syntactically rational value without cloning or refinement.
+    pub fn rational_ref(&self) -> Option<&Rational> {
+        self.node.rational.as_ref()
+    }
+
+    /// Whether immutable construction definitions agree. Different definitions
+    /// do not prove different values. This does not preserve expression-node sharing.
+    pub fn same_definition(&self, other: &Self) -> bool {
+        if let (Some(a), Some(b)) = (self.rational_ref(), other.rational_ref()) {
+            return a == b;
+        }
+        self.construction_cmp(other).is_eq()
+    }
+    /// Whether two values share the same immutable definition node.
+    /// Use only for caches whose reuse must preserve expression-DAG sharing;
+    /// distinct nodes do not prove distinct mathematical values.
+    pub fn same_node(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.node, &other.node)
+    }
     /// Cached, conservative double enclosure.
     pub fn approx(&self) -> Interval {
         self.node.approx
@@ -142,6 +161,71 @@ impl Real {
             .rational
             .as_ref()
             .map_or_else(|| self.approx().mid(), Rational::to_f64_nearest)
+    }
+
+    /// Orders immutable construction records, not their mathematical values.
+    pub(crate) fn construction_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use crate::algebraic::AlgebraicRepr;
+        use std::cmp::Ordering;
+        if Arc::ptr_eq(&self.node, &other.node) {
+            return Ordering::Equal;
+        }
+        let tag = |e: &Expr| match e {
+            Expr::Rational(_) => 0,
+            Expr::Algebraic(_) => 1,
+            Expr::Coordinate(_, _) => 2,
+            Expr::Add(_, _) => 3,
+            Expr::Sub(_, _) => 4,
+            Expr::Mul(_, _) => 5,
+            Expr::Div(_, _) => 6,
+            Expr::Neg(_) => 7,
+            Expr::Sqrt(_) => 8,
+            Expr::Square(_) => 9,
+            Expr::Pow(_, _) => 10,
+        };
+        tag(&self.node.expr)
+            .cmp(&tag(&other.node.expr))
+            .then_with(|| match (&self.node.expr, &other.node.expr) {
+                (Expr::Rational(a), Expr::Rational(b)) => a.cmp(b),
+                (Expr::Algebraic(a), Expr::Algebraic(b)) => match (&a.repr, &b.repr) {
+                    (AlgebraicRepr::Rational(a), AlgebraicRepr::Rational(b)) => a.cmp(b),
+                    (AlgebraicRepr::Rational(_), AlgebraicRepr::Root(_)) => Ordering::Less,
+                    (AlgebraicRepr::Root(_), AlgebraicRepr::Rational(_)) => Ordering::Greater,
+                    (AlgebraicRepr::Root(a), AlgebraicRepr::Root(b)) => a
+                        .polynomial
+                        .coefficients()
+                        .cmp(b.polynomial.coefficients())
+                        .then_with(|| a.lo.cmp(&b.lo))
+                        .then_with(|| a.hi.cmp(&b.hi)),
+                },
+                (Expr::Coordinate(a, i), Expr::Coordinate(b, j)) => a
+                    .system()
+                    .dimension()
+                    .cmp(&b.system().dimension())
+                    .then_with(|| {
+                        a.system()
+                            .equations()
+                            .iter()
+                            .zip(b.system().equations())
+                            .map(|(a, b)| a.construction_cmp(b))
+                            .find(|o| *o != Ordering::Equal)
+                            .unwrap_or(Ordering::Equal)
+                    })
+                    .then_with(|| a.root_box().lo().cmp(b.root_box().lo()))
+                    .then_with(|| a.root_box().hi().cmp(b.root_box().hi()))
+                    .then_with(|| i.cmp(j)),
+                (Expr::Add(a, b), Expr::Add(c, d))
+                | (Expr::Sub(a, b), Expr::Sub(c, d))
+                | (Expr::Mul(a, b), Expr::Mul(c, d))
+                | (Expr::Div(a, b), Expr::Div(c, d)) => {
+                    a.construction_cmp(c).then_with(|| b.construction_cmp(d))
+                }
+                (Expr::Neg(a), Expr::Neg(b))
+                | (Expr::Sqrt(a), Expr::Sqrt(b))
+                | (Expr::Square(a), Expr::Square(b)) => a.construction_cmp(b),
+                (Expr::Pow(a, n), Expr::Pow(b, m)) => a.construction_cmp(b).then_with(|| n.cmp(m)),
+                _ => unreachable!("matching construction tags"),
+            })
     }
     fn make(
         expr: Expr,

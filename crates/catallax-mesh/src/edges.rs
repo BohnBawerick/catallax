@@ -86,7 +86,7 @@ impl Sampler<'_> {
             let a = chart.project(self.positions[first]);
             let b = align(chart.project(self.positions[last]), a, chart.periodic);
             let m = align(chart.project(middle), a, chart.periodic);
-            let hessian = chart.hessian(a[1].abs().max(b[1].abs()).max(m[1].abs()));
+            let hessian = chart.hessian(a[1].abs().max(b[1].abs()).max(m[1].abs()), self.dec)?;
             small &= (0..2).all(|i| !chart.periodic[i] || (b[i] - a[i]).abs() <= 0.125);
             small &= chord_bound(&[a, b, m], &hessian) <= self.options.chord_tolerance.mul_pow2(-3);
         }

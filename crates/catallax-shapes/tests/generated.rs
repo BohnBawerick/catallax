@@ -7,12 +7,17 @@ use common::*;
 
 fn posed(point: &RPoint3, pose: &Pose) -> RPoint3 {
     let point = qp(point);
-    let t = qv(&pose.translation);
+    let t = pose
+        .translation
+        .rational_components()
+        .expect("rational oracle fixture")
+        .map(oq);
+    let matrix = pose
+        .rotation
+        .rational_matrix()
+        .expect("rational oracle fixture");
     rp(std::array::from_fn(|i| {
-        eq(&((0..3)
-            .map(|j| oq(&pose.rotation.matrix()[i][j]) * &point[j])
-            .sum::<Q>()
-            + &t[i]))
+        eq(&((0..3).map(|j| oq(matrix[i][j]) * &point[j]).sum::<Q>() + &t[i]))
     }))
 }
 fn rational_circle(n: i64) -> (Q, Q, i64) {
@@ -122,7 +127,13 @@ blind_test!(cases_50_51_named_rational_cases_scaled_and_placed, {
         let b = store.add_surface(
             scale_surface(
                 &Surface::Plane(
-                    Plane::new(p("0", "0", "3"), v("0", "0", "1"), v("1", "0", "0")).unwrap(),
+                    Plane::new(
+                        p("0", "0", "3").to_real(),
+                        v("0", "0", "1").to_real(),
+                        v("1", "0", "0").to_real(),
+                        &mut Decider::default(),
+                    )
+                    .unwrap(),
                 ),
                 &scale,
             )
@@ -156,8 +167,10 @@ blind_test!(case_43_generated_liveness_with_exact_dyadic_boxes, {
         let [w, x, y, z] = q.clone().map(|x| eq(&x));
         let pose = Pose::new(
             Rotation::from_quaternion(w, x, y, z).unwrap(),
-            v("1000000", "-777777", "314159"),
-        );
+            v("1000000", "-777777", "314159").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap();
         // Multiplying by d1*d2*|q|² cancels BOTH rational-circle denominators
         // and the rotation denominator. Every posed coordinate is an integer,
         // hence radius-zero Ball inputs really satisfy the liveness premise.
@@ -216,7 +229,8 @@ blind_test!(case_43_generated_liveness_with_exact_dyadic_boxes, {
             // c,s and c2,s2 are positive; each sine >=16/65 and cosine >=15/113.
             // Thus distance to every seam/axis exceeds L/100, including sphere poles.
             let uv = surface
-                .parameters_of(&box_)
+                .parameters_of(&box_, &catallax_numbers::Decider::default())
+                .unwrap()
                 .expect("liveness: exact box separated from seams and axes");
             overlap(&uv[0], &expected_u);
             overlap(&uv[1], &expected_v);

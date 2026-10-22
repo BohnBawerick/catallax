@@ -64,8 +64,12 @@ blind_test!(check_uses_factbook_closure_not_only_direct_records, {
     let mut m = Model::new();
     let s0 = m.geom_mut().add_surface(sphere_surface(r(2)));
     let s1 = m.geom_mut().add_surface(sphere_surface(r(2)));
-    let point0 = m.geom_mut().add_point(PointDef::Explicit(p(2, 0, 0)));
-    let point1 = m.geom_mut().add_point(PointDef::Explicit(p(2, 0, 0)));
+    let point0 = m
+        .geom_mut()
+        .add_point(PointDef::Explicit(p(2, 0, 0).into()));
+    let point1 = m
+        .geom_mut()
+        .add_point(PointDef::Explicit(p(2, 0, 0).into()));
     let curve = m.geom_mut().add_curve(circle(p(0, 0, 0), r(2)));
     record(
         &mut m,

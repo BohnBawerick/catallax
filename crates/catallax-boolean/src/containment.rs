@@ -1,19 +1,17 @@
-//! Rational rays against trimmed faces. Rays through boundary edges are
-//! discarded, so neither vertex multiplicity nor a seam chooses a side.
-
-use catallax_intersect::{Contact, CurveSurface, intersect_curve_surface};
-use catallax_numbers::{Coincidence, Decider, Outcome, Refusal, Sign, ZeroProof};
-use catallax_shapes::{Curve, Line, PointDef, RPoint3, RVector3, Surface};
-use catallax_topology::{BodyId, BodyKind, FaceId, Model};
+//! Exact rays against trimmed faces. Boundary-edge hits never choose a side.
 
 use crate::Containment;
 use crate::geometry::{r, refusal, sign};
 use crate::region::{Location, locate};
+use catallax_intersect::{Contact, CurveSurface, intersect_curve_surface};
+use catallax_numbers::{Coincidence, Decider, Outcome, Refusal, Sign, ZeroProof};
+use catallax_shapes::{Curve, Line, Point3, PointDef, RVector3, Surface, Vector3};
+use catallax_topology::{BodyId, BodyKind, FaceId, Model};
 
 pub(crate) fn faces(
     model: &mut Model,
     faces: &[FaceId],
-    point: &RPoint3,
+    point: &Point3,
     dec: &mut Decider,
 ) -> Outcome<Containment> {
     match classify(model, faces, point, dec) {
@@ -21,14 +19,13 @@ pub(crate) fn faces(
         Ok(None) => Outcome::ProvenCoincident(Coincidence {
             proof: ZeroProof::ExactArithmetic,
         }),
-        Err(e) => Outcome::Refused(e),
+        Err(error) => Outcome::Refused(error),
     }
 }
-
 fn classify(
     model: &mut Model,
     faces: &[FaceId],
-    point: &RPoint3,
+    point: &Point3,
     dec: &mut Decider,
 ) -> Result<Option<Containment>, Refusal> {
     if faces.is_empty() {
@@ -46,11 +43,10 @@ fn classify(
                 }
             }
             Outcome::NotExact(n) => return Err(refusal("boolean.classify-ambiguous", n.detail)),
-            Outcome::Refused(e) => return Err(e),
+            Outcome::Refused(error) => return Err(error),
         }
     }
-    // Start in the body's rational frame. A cap normal is axial for its
-    // cylinder, avoiding an unnecessary high-height quadratic on the side.
+    // An exact cap normal avoids unnecessary high-height side intersections.
     let normal = faces.iter().find_map(|&face| {
         let surface = model.face(face).surface;
         match model.geom().surface(surface) {
@@ -68,14 +64,14 @@ fn classify(
             }));
         }
         let Surface::Plane(plane) = model.geom().surface(surface) else {
-            unreachable!("the selected plane definition does not change");
+            unreachable!("selected plane does not change");
         };
-        // World directions have X=1; only positive multiples repeat this half-ray.
-        if plane.normal.x.sign() == Sign::Positive {
-            rejected_direction = Some((
-                &plane.normal.y / &plane.normal.x,
-                &plane.normal.z / &plane.normal.x,
-            ));
+        // This is duplicate-work suppression, not a geometry predicate. An
+        // algebraic direction with no cheap rational key simply remains eligible.
+        if let Some([x, y, z]) = plane.normal.rational_components()
+            && x.sign() == Sign::Positive
+        {
+            rejected_direction = Some((y / x, z / x));
         }
     }
     for choice in 0..crate::geometry::DIRECTION_ATTEMPTS {
@@ -86,7 +82,7 @@ fn classify(
         {
             continue;
         }
-        let direction = RVector3::new(r(1), a, b);
+        let direction = RVector3::new(r(1), a, b).to_real();
         if let Some(inside) = ray_parity_owned(model, faces, point, direction, dec)? {
             return Ok(Some(if inside {
                 Containment::Inside
@@ -100,27 +96,25 @@ fn classify(
         "no rational ray avoided the face boundaries",
     ))
 }
-
 pub(crate) fn ray_parity(
     model: &mut Model,
     faces: &[FaceId],
-    point: &RPoint3,
-    direction: &RVector3,
+    point: &Point3,
+    direction: &Vector3,
     dec: &mut Decider,
 ) -> Result<Option<bool>, Refusal> {
     ray_parity_owned(model, faces, point, direction.clone(), dec)
 }
-
 fn ray_parity_owned(
     model: &mut Model,
     faces: &[FaceId],
-    point: &RPoint3,
-    direction: RVector3,
+    point: &Point3,
+    direction: Vector3,
     dec: &mut Decider,
 ) -> Result<Option<bool>, Refusal> {
     let curve = model
         .geom_mut()
-        .add_curve(Curve::Line(Line::new(point.clone(), direction)?));
+        .add_curve(Curve::Line(Line::new(point.clone(), direction, dec)?));
     let mut crossings = 0usize;
     let mut ray_frame = None;
     for &face in faces {
@@ -140,9 +134,9 @@ fn ray_parity_owned(
         for hit in hits {
             let (origin, direction) = ray_frame.get_or_insert_with(|| {
                 let Curve::Line(line) = model.geom().curve(curve) else {
-                    unreachable!("a parity ray is inserted as a line");
+                    unreachable!("parity ray is stored as a line");
                 };
-                (line.origin.to_real(), line.dir.to_real())
+                (line.origin.clone(), line.dir.clone())
             });
             let displacement = model.geom().position(hit.point).minus(origin);
             if sign(
@@ -166,11 +160,10 @@ fn ray_parity_owned(
     }
     Ok(Some(crossings % 2 == 1))
 }
-
 pub(crate) fn classify_point(
     model: &mut Model,
     body: BodyId,
-    point: &RPoint3,
+    point: &Point3,
     dec: &mut Decider,
 ) -> Outcome<Containment> {
     match model.body(body).kind {

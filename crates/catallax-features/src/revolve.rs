@@ -91,10 +91,10 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
         )?;
         return Ok(Some(if offset.is_zero() {
             Surface::Sphere(Sphere {
-                center: centre,
-                radius,
-                axis: frame.axis.clone(),
-                ref_dir: frame.axis.cross(&unit_z()),
+                center: centre.into(),
+                radius: radius.into(),
+                axis: frame.axis.clone().into(),
+                ref_dir: frame.axis.cross(&unit_z()).into(),
             })
         } else {
             let major = rational_radius(
@@ -108,11 +108,11 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
                 ));
             }
             Surface::Torus(Torus {
-                center: projection,
-                axis: frame.axis.clone(),
-                major,
-                minor: radius,
-                ref_dir: offset,
+                center: projection.into(),
+                axis: frame.axis.clone().into(),
+                major: major.into(),
+                minor: radius.into(),
+                ref_dir: offset.into(),
             })
         }));
     }
@@ -128,20 +128,21 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
             radial
         };
         return Ok(Some(Surface::Plane(Plane {
-            origin: frame.project(&start),
-            normal: frame.axis.clone(),
-            ref_dir: reference,
+            origin: frame.project(&start).into(),
+            normal: frame.axis.clone().into(),
+            ref_dir: reference.into(),
         })));
     }
     if tangent.cross(&frame.axis).is_zero() {
         return Ok(Some(Surface::Cylinder(Cylinder {
-            origin: frame.project(&start),
-            axis: frame.axis.clone(),
+            origin: frame.project(&start).into(),
+            axis: frame.axis.clone().into(),
             radius: rational_radius(
                 &radial.norm_squared(),
                 "features.unsupported-algebraic-cylinder-radius",
-            )?,
-            ref_dir: radial,
+            )?
+            .into(),
+            ref_dir: radial.into(),
         })));
     }
     let initial = frame.signed(&start);
@@ -155,13 +156,13 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
         frame.axis.scaled(&Rational::from_i64(-1))
     };
     Ok(Some(Surface::Cone(Cone {
-        apex,
-        axis: direction,
-        slope: (change / axial).abs(),
+        apex: apex.into(),
+        axis: direction.into(),
+        slope: (change / axial).abs().into(),
         ref_dir: if radial.is_zero() {
-            end.minus(&frame.project(&end))
+            end.minus(&frame.project(&end)).into()
         } else {
-            radial
+            radial.into()
         },
     })))
 }
@@ -278,12 +279,15 @@ pub fn revolve(
         ));
     }
     let inverse = profile.pose.inverse();
-    let origin = inverse.apply_point(&RPoint3::new(
-        axis.point.0[0].value().clone(),
-        axis.point.0[1].value().clone(),
-        axis.point.0[2].value().clone(),
-    ));
-    let direction = inverse.apply_vector(&world_axis);
+    let origin = crate::profile::rational_point(
+        &inverse,
+        &RPoint3::new(
+            axis.point.0[0].value().clone(),
+            axis.point.0[1].value().clone(),
+            axis.point.0[2].value().clone(),
+        ),
+    );
+    let direction = crate::profile::rational_vector(&inverse, &world_axis);
     if !origin.z.is_zero() || !direction.z.is_zero() {
         return Err(bad(
             "revolve.axis-plane",
@@ -326,7 +330,7 @@ pub fn revolve(
         ));
     };
     let half_turn = !full && sine.is_zero();
-    let normal = profile.pose.apply_vector(&unit_z());
+    let normal = profile.pose.apply_vector(&unit_z().to_real());
     let mut bodies = Vec::new();
     for ((outer, boundary), side) in profile
         .loops
@@ -362,14 +366,16 @@ pub fn revolve(
                 } else {
                     let point = model
                         .geom_mut()
-                        .add_point(PointDef::Explicit(profile.pose.apply_point(&p)));
+                        .add_point(PointDef::Explicit(profile.pose.apply_point(&p.to_real())));
                     Some(model.add_vertex(Vertex { point }))
                 };
                 let second = if s.full || on_axis || full {
                     first
                 } else {
                     let point = model.geom_mut().add_point(PointDef::Explicit(
-                        profile.pose.apply_point(&frame.rotate(&p, &cosine, &sine)?),
+                        profile
+                            .pose
+                            .apply_point(&frame.rotate(&p, &cosine, &sine)?.into()),
                     ));
                     Some(model.add_vertex(Vertex { point }))
                 };
@@ -380,10 +386,10 @@ pub fn revolve(
                     let centre = frame.project(&p);
                     let radial = p.minus(&centre);
                     let curve = model.geom_mut().add_curve(Curve::Circle(Circle {
-                        center: profile.pose.apply_point(&centre),
-                        normal: world_axis.clone(),
-                        radius_sq: radial.norm_squared(),
-                        ref_dir: profile.pose.apply_vector(&radial),
+                        center: profile.pose.apply_point(&centre.to_real()),
+                        normal: world_axis.clone().into(),
+                        radius_sq: radial.norm_squared().into(),
+                        ref_dir: profile.pose.apply_vector(&radial.to_real()),
                     }));
                     Some(model.add_edge(Edge {
                         curve,
@@ -426,10 +432,10 @@ pub fn revolve(
                                     .minus(&frame.origin)
                             };
                             Curve::Circle(Circle {
-                                center: profile.pose.apply_point(&centre),
-                                normal: profile.pose.apply_vector(&rotated_normal),
-                                radius_sq: radius_sq.clone(),
-                                ref_dir: profile.pose.apply_vector(&start.minus(&centre)),
+                                center: profile.pose.apply_point(&centre.to_real()),
+                                normal: profile.pose.apply_vector(&rotated_normal.to_real()),
+                                radius_sq: radius_sq.clone().into(),
+                                ref_dir: profile.pose.apply_vector(&start.minus(&centre).to_real()),
                             })
                         } else {
                             let start = if layer == 0 {
@@ -443,8 +449,8 @@ pub fn revolve(
                                 frame.rotate(&qpoint(&s.end), &cosine, &sine)?
                             };
                             Curve::Line(Line {
-                                origin: profile.pose.apply_point(&start),
-                                dir: profile.pose.apply_vector(&end.minus(&start)),
+                                origin: profile.pose.apply_point(&start.to_real()),
+                                dir: profile.pose.apply_vector(&end.minus(&start).to_real()),
                             })
                         };
                         let curve = model.geom_mut().add_curve(curve);
@@ -480,10 +486,12 @@ pub fn revolve(
                         &radial.scaled(&Real::from_i64(if *turn == Turn::Ccw { 1 } else { -1 })),
                     )
                 } else {
-                    profile
-                        .pose
-                        .apply_vector(&qpoint(&s.end).minus(&qpoint(&s.start)).cross(&unit_z()))
-                        .to_real()
+                    profile.pose.apply_vector(
+                        &qpoint(&s.end)
+                            .minus(&qpoint(&s.start))
+                            .cross(&unit_z())
+                            .to_real(),
+                    )
                 };
                 let sense = match sign(&surface.gradient(&point).dot(&outward), dec)? {
                     Sign::Positive => Sense::Same,
@@ -536,7 +544,14 @@ pub fn revolve(
                     .collect();
                 let apex = if full {
                     if let Surface::Cone(cone) = &local_surface
-                        && (qpoint(&s.start) == cone.apex || qpoint(&s.end) == cone.apex)
+                        && {
+                            let [x, y, z] = cone.apex.rational_components()
+                                .expect("the local meridian is constructed from rational profile coordinates");
+                            z.is_zero()
+                                && [&s.start, &s.end]
+                                    .into_iter()
+                                    .any(|p| x == &p[0] && y == &p[1])
+                        }
                     {
                         let point = model
                             .geom_mut()
@@ -565,8 +580,8 @@ pub fn revolve(
             }
         }
         if !full {
-            let origin = profile.pose.apply_point(&RPoint3::origin());
-            let reference = profile.pose.apply_vector(&frame.axis);
+            let origin = profile.pose.apply_point(&RPoint3::origin().to_real());
+            let reference = profile.pose.apply_vector(&frame.axis.to_real());
             faces.push(face(
                 model,
                 Surface::Plane(Plane {
@@ -582,10 +597,9 @@ pub fn revolve(
                     role: Role::Start,
                 }],
             ));
-            let origin =
-                profile
-                    .pose
-                    .apply_point(&frame.rotate(&RPoint3::origin(), &cosine, &sine)?);
+            let origin = profile
+                .pose
+                .apply_point(&frame.rotate(&RPoint3::origin(), &cosine, &sine)?.into());
             let end_normal = frame
                 .rotate(&frame.origin.plus(&unit_z()), &cosine, &sine)?
                 .minus(&frame.origin);
@@ -593,7 +607,7 @@ pub fn revolve(
                 model,
                 Surface::Plane(Plane {
                     origin,
-                    normal: profile.pose.apply_vector(&end_normal),
+                    normal: profile.pose.apply_vector(&end_normal.to_real()),
                     ref_dir: reference,
                 }),
                 forward,

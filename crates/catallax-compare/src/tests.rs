@@ -19,9 +19,12 @@ fn options() -> Options {
     }
 }
 fn check(recipe: &Recipe) -> Report {
+    check_with_options(recipe, &options())
+}
+fn check_with_options(recipe: &Recipe, options: &Options) -> Report {
     let controller = Controller::default();
     assert_eq!(
-        controller.begin().check(recipe, &options()),
+        controller.begin().check(recipe, options),
         Completion::Published
     );
     controller.latest().unwrap()
@@ -37,6 +40,10 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
 }
 #[test]
 fn agreeing_stock_across_poses_and_scales() {
+    // Periodic chart copies count toward the mesher's work allowance. Keep the
+    // same display accuracy at every scale, with enough work for the largest case.
+    let mut controls = options();
+    controls.mesh.max_vertices = 4_000_000;
     for size in ["1/10", "1", "10"] {
         for rotation in [["1", "0", "0", "0"], ["1", "1", "2", "3"]] {
             for op in ["block", "cylinder", "sphere", "cone", "torus"] {
@@ -57,7 +64,7 @@ fn agreeing_stock_across_poses_and_scales() {
                         json!((Rational::parse(size).unwrap() * Rational::from_i64(3)).to_string());
                 }
                 step["pose"] = json!({"rotation":rotation,"translation":["7/3","-5/7","2"]});
-                let report = check(&recipe(vec![step]));
+                let report = check_with_options(&recipe(vec![step]), &controls);
                 assert_eq!(
                     report.verdict,
                     Verdict::Agree,
@@ -610,4 +617,23 @@ fn feature_planar_agreement_across_dyadic_poses_and_scales() {
             );
         }
     }
+}
+
+#[test]
+fn an_exhausted_mesh_allowance_stays_unresolved_without_partial_queries() {
+    let part = recipe(vec![
+        json!({"id":"stock","op":"sphere","radius":"1/10","pose":pose("0")}),
+    ]);
+    let mut controls = options();
+    controls.mesh.max_vertices = 4;
+    let report = check_with_options(&part, &controls);
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert_eq!(report.forward_vertices, 0);
+    assert_eq!(report.reverse_samples, 0);
+    assert!(
+        report
+            .findings
+            .iter()
+            .all(|f| matches!(f.reason, Reason::Unresolved(_)))
+    );
 }

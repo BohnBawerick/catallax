@@ -42,10 +42,11 @@ Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four ratio
 
 Every unsupported step is returned with its operation-specific reason, not only the first step. Builds, meshes and query proofs that fail stay unresolved. A proven discrepancy takes precedence over unresolved observations, which remain in the report. Exact expression identities can certify agreement of two empty results without boundary samples. General emptiness is not inferred from missing samples.
 
-Two existing kernel limitations were exposed during comparison development and are not repaired here:
+Existing kernel limitations exposed during comparison development remain unrepaired here:
 
 - Coplanar subtraction can return indeterminate field trim queries on removed common supports. Reproducer: two size-2 blocks at translations `[0,0,0]` and `[1,0,0]`, with identity rotations, then subtract the second from the first. Samples such as `[3/2,0,1/2]` remain unresolved, not disagreements or agreement certificates.
 - A Boolean naming the same body step as both operands reaches the B-rep engine's distinct-body assertion. The comparison capability report marks that case not comparable before entering the assertion. Reproducer: block `a` of size `[2,2,2]` at identity placement, then subtract `a` from `a`. Two separately named identical blocks do build and compare as an empty result.
+- The default one-million-vertex meshing allowance is insufficient for a torus with major radius 30 and minor radius 10 at 0.005 mm chord tolerance. The failure is `mesh.precision-or-budget`, not impossible geometry or disagreement. Reproducer: stock torus `stock`, identity rotation and translation `[7/3,-5/7,2]`. Periodic temporary chart copies count toward this allowance. The agreeing scale fixtures request four million vertices without changing the 0.01 mm comparison accuracy or 0.005 mm mesh tolerance; production defaults are unchanged.
 
 The application still owns edit-region calculation, worker scheduling, restart policy, attribution to the edited feature and the kernel bug list. SolidDraft integration, development checks, pre-export checks and command-line exchange changes are outside this library.
 

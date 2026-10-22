@@ -3,6 +3,12 @@ name: target parts
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "parts/**"
+      - "crates/**"
+      - ".claude/skills/verify-catallax/**"
+      - ".github/workflows/parts.yml"
   workflow_dispatch:
 
 permissions:

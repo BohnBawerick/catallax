@@ -847,16 +847,13 @@ pub(super) fn conic_local(
 }
 pub(super) fn line_local(
     origin: &Point3,
-    direction: &catallax_shapes::RVector3,
+    direction: &Vector3,
     dec: &mut Decider,
 ) -> Result<Chart, Refusal> {
-    let v = direction.to_real();
+    let v = direction;
     let from = origin.plus(&v.scaled(&Real::from_i64(-1)));
-    let to = origin.plus(&v);
-    let inverse = lin(
-        origin,
-        &v.scaled(&(Real::one() / real(&direction.norm_squared()))),
-    );
+    let to = origin.plus(v);
+    let inverse = lin(origin, &v.scaled(&(Real::one() / direction.norm_squared())));
     Ok(Chart {
         coords: segment(&from, &to, dec)?,
         inverse: Inverse::Affine {

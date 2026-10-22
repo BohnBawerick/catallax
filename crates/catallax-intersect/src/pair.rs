@@ -59,12 +59,7 @@ impl Divider {
         divider.canonical_direction = false;
         divider
     }
-    fn radial(
-        origin: Point3,
-        axis: Vector3,
-        radius_sq: Real,
-        radius_lower: Rational,
-    ) -> Self {
+    fn radial(origin: Point3, axis: Vector3, radius_sq: Real, radius_lower: Rational) -> Self {
         let inverse_norm_sq = s(1) / axis.norm_squared();
         Self {
             value: DividerValue::Radius {
@@ -817,8 +812,8 @@ fn uncached_plan(
         (Surface::Sphere(sphere), Surface::Cylinder(c)) => cylinder_sphere(c, sphere, s(-1), dec),
         (Surface::Plane(p), Surface::EllipticCylinder(c)) => plane_elliptic(p, c, s(1), dec),
         (Surface::EllipticCylinder(c), Surface::Plane(p)) => plane_elliptic(p, c, s(-1), dec),
-        (Surface::Plane(p), Surface::Cone(c)) => conics::plane_cone(p, c, s(1), dec),
-        (Surface::Cone(c), Surface::Plane(p)) => conics::plane_cone(p, c, s(-1), dec),
+        (Surface::Plane(p), Surface::Cone(c)) => conics::plane_cone(p, c, s(1), rational, dec),
+        (Surface::Cone(c), Surface::Plane(p)) => conics::plane_cone(p, c, s(-1), rational, dec),
         (Surface::Cone(c), Surface::Cylinder(y)) => conics::cone_cylinder(c, y, s(1), dec),
         (Surface::Cylinder(y), Surface::Cone(c)) => conics::cone_cylinder(c, y, s(-1), dec),
         (Surface::Cone(c), Surface::Sphere(sphere)) => conics::cone_sphere(c, sphere, s(1), dec),
@@ -830,8 +825,8 @@ fn uncached_plan(
         (Surface::Torus(t), Surface::Cylinder(c)) => conics::cylinder_torus(c, t, s(-1), dec),
         (Surface::Sphere(sphere), Surface::Torus(t)) => conics::sphere_torus(sphere, t, s(1), dec),
         (Surface::Torus(t), Surface::Sphere(sphere)) => conics::sphere_torus(sphere, t, s(-1), dec),
-        (Surface::Cone(c), Surface::Torus(t)) => conics::cone_torus(c, t, s(1), dec),
-        (Surface::Torus(t), Surface::Cone(c)) => conics::cone_torus(c, t, s(-1), dec),
+        (Surface::Cone(c), Surface::Torus(t)) => conics::cone_torus(c, t, s(1), rational, dec),
+        (Surface::Torus(t), Surface::Cone(c)) => conics::cone_torus(c, t, s(-1), rational, dec),
         (Surface::Torus(a), Surface::Torus(b)) => conics::tori(a, b, dec),
         _ => Err(refused_pair()),
     }

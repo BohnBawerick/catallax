@@ -154,18 +154,16 @@ pub(super) fn surface_domain(
     let Surface::Cone(cone) = surface else {
         return Ok(true);
     };
-    match sign(
-        &point.minus(&cone.apex.to_real()).dot(&cone.axis.to_real()),
-        dec,
-    ) {
+    let normalized;
+    let (axis, lower) = if let Some([x, y, z]) = cone.axis.rational_components() {
+        (&cone.axis, x.abs().max(y.abs()).max(z.abs()))
+    } else {
+        normalized = unit(&cone.axis);
+        (&normalized, r(1))
+    };
+    match sign(&point.minus(&cone.apex).dot(axis), dec) {
         Ok(value) => Ok(value != Sign::Negative),
         Err(Failure::Uncertain(mut n)) => {
-            let lower = cone
-                .axis
-                .x
-                .abs()
-                .max(cone.axis.y.abs())
-                .max(cone.axis.z.abs());
             n.bound = n.bound / lower;
             Err(Failure::Uncertain(n))
         }
@@ -331,7 +329,16 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         Err(e) => return Outcome::Refused(e),
     };
     match (fa, fb) {
-        (CurveForm::Line { origin: pa, dir: da }, CurveForm::Line { origin: pb, dir: db }) => {
+        (
+            CurveForm::Line {
+                origin: pa,
+                dir: da,
+            },
+            CurveForm::Line {
+                origin: pb,
+                dir: db,
+            },
+        ) => {
             match sign(&da.cross(&db).norm_squared(), dec) {
                 Ok(Sign::Zero) => {}
                 Ok(_) => return Outcome::Proven(Apart),
@@ -428,11 +435,17 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 focal: fb,
             },
         ) => {
-            if !na.cross(&nb).is_zero()
-                || !da.cross(&db).is_zero()
-                || da.dot(&db).sign() != Sign::Positive
-            {
-                return Outcome::Proven(Apart);
+            for cross in [na.cross(&nb), da.cross(&db)] {
+                match sign(&cross.norm_squared(), dec) {
+                    Ok(Sign::Zero) => {}
+                    Ok(_) => return Outcome::Proven(Apart),
+                    Err(error) => return error.outcome(),
+                }
+            }
+            match sign(&da.dot(&db), dec) {
+                Ok(Sign::Positive) => {}
+                Ok(_) => return Outcome::Proven(Apart),
+                Err(error) => return error.outcome(),
             }
             match dec.sign(&(&fa - &fb)).map(|_| Apart) {
                 Outcome::ProvenCoincident(_) => equal_points(&a, &b, dec),
@@ -457,11 +470,17 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 branch: bb,
             },
         ) => {
-            if !na.cross(&nb).is_zero()
-                || !da.cross(&db).is_zero()
-                || (da.dot(&db).sign() == Sign::Positive) != (ba == bb)
-            {
-                return Outcome::Proven(Apart);
+            for cross in [na.cross(&nb), da.cross(&db)] {
+                match sign(&cross.norm_squared(), dec) {
+                    Ok(Sign::Zero) => {}
+                    Ok(_) => return Outcome::Proven(Apart),
+                    Err(error) => return error.outcome(),
+                }
+            }
+            match sign(&da.dot(&db), dec) {
+                Ok(value) if (value == Sign::Positive) == (ba == bb) => {}
+                Ok(_) => return Outcome::Proven(Apart),
+                Err(error) => return error.outcome(),
             }
             for (a, b) in [(&ta, &tb), (&ca, &cb)] {
                 match equal_dimensions(a, b, dec) {

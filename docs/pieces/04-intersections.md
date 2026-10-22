@@ -68,17 +68,17 @@ For a vector `v`, `|v|` means `sqrt(v . v)` as a `Real`, and `v^` means `v / |v|
 
 ## Coverage
 
-`supports(a, b)` is true when both kinds are among `Plane`, `Cylinder`, `Cone`, `Sphere` and `Torus`. Plane/cylinder/sphere paths retain their existing coverage. Cone/torus paths currently cover the closed-form configurations below, not arbitrary intersecting poses.
+`supports(a, b)` is true when both kinds are among `Plane`, `Cylinder`, `Cone`, `Sphere` and `Torus`, and for plane/elliptic-cylinder pairs. Plane/cylinder/sphere paths retain their existing coverage. Cone/torus paths cover the closed-form configurations below, not arbitrary intersecting poses.
 
 | Pair | Current cone/torus coverage |
 | --- | --- |
-| Plane–cone | Circles, ellipses, parabolas, the selected positive-nappe hyperbola branch, apex points and rational-direction generator rays |
+| Plane–cone | Circles, ellipses, parabolas, the selected positive-nappe hyperbola branch, apex points and generator rays, subject to the native compatibility boundary below |
 | Cone–cylinder, cone–sphere, cone–cone | Coaxial circles, tangent circles, isolated apex points, coincidence and separation |
 | Plane–torus | Perpendicular circular sections, meridian circles through the axis, supporting-plane separation and isolated supporting tangency |
 | Cylinder–torus, sphere–torus, cone–torus, torus–torus | Coaxial circles, tangencies and separation |
 | Sphere–torus off axis | Certified containment/separation bounds, including a sphere inside the tube, and the meridian tangency circle of a sphere centred on the core |
 
-Unimplemented intersecting poses return `intersect.traced-pair-required`; definitions needing an irrational stored direction return `intersect.algebraic-direction-required` until the common algebraic foundation lands. Neither means impossible geometry.
+Unimplemented intersecting poses return `intersect.traced-pair-required`. The rational fast path retains the established `intersect.algebraic-direction-required` cases so existing native answers stay unchanged. Algebraic definitions use `Real` directions and certified coefficient decisions rather than that rational-only direction restriction. These temporary coverage codes do not mean impossible geometry.
 
 Curve queries include closed conics from these pairs and finite open-conic arcs. Membership retains the cone nappe, generator-ray and component selectors. A polynomial carrier alone does not establish membership. An unresolved cone nappe or new conic divider makes hit construction refuse with the originating numeric code; it cannot retain the other component with a mark. Legacy bounded divider marks are unchanged.
 

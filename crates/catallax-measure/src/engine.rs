@@ -1,7 +1,7 @@
 //! Deterministic per-property refinement and orientation handling.
 
 use catallax_intersect::{CurveTrace, trace};
-use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal};
 use catallax_shapes::{Point3, RPoint3, RVector3, Surface, Vector3};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{HashMap, hash_map::Entry};
@@ -836,24 +836,28 @@ fn torus_parallel(
     else {
         return Ok(None);
     };
-    if !normal.cross(&torus.axis).is_zero() {
-        return Ok(None);
-    }
-    let axis = torus.axis.to_real();
-    let offset = center.minus(&torus.center.to_real());
-    match dec.sign(&offset.cross(&axis).norm_squared()) {
+    match dec.sign(&normal.cross(&torus.axis).norm_squared()) {
         Outcome::ProvenCoincident(_) => {}
         Outcome::Proven(_) => return Ok(None),
         Outcome::Refused(e) => return Err(e),
         Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
     }
-    let minor = Real::from(torus.minor.clone());
-    let cosine = &(&radius_sq.sqrt() - &Real::from(torus.major.clone())) / &minor;
-    let sine = offset.dot(&axis) / (minor * Real::from(torus.axis.norm_squared()).sqrt());
-    let orientation = if normal.dot(&torus.axis).sign() == Sign::Positive {
-        1
-    } else {
-        -1
+    let axis = &torus.axis;
+    let offset = center.minus(&torus.center);
+    match dec.sign(&offset.cross(axis).norm_squared()) {
+        Outcome::ProvenCoincident(_) => {}
+        Outcome::Proven(_) => return Ok(None),
+        Outcome::Refused(e) => return Err(e),
+        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+    }
+    let minor = &torus.minor;
+    let cosine = &(&radius_sq.sqrt() - &torus.major) / minor;
+    let sine = offset.dot(axis) / (minor * &torus.axis.norm_squared().sqrt());
+    let orientation = match dec.sign(&normal.dot(axis)) {
+        Outcome::Proven(catallax_numbers::StrictSign::Positive) => 1,
+        Outcome::Proven(_) | Outcome::ProvenCoincident(_) => -1,
+        Outcome::Refused(e) => return Err(e),
+        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
     };
     Ok(Some(Parallel {
         cosine,
@@ -883,10 +887,15 @@ fn cone_generator(
         return Ok(None);
     };
     let dot = dir.dot(&cone.axis);
-    if dir.cross(&cone.axis).norm_squared() != (&cone.slope * &cone.slope) * (&dot * &dot) {
-        return Ok(None);
+    let equation =
+        dir.cross(&cone.axis).norm_squared() - (&cone.slope * &cone.slope) * (&dot * &dot);
+    match dec.sign(&equation) {
+        Outcome::ProvenCoincident(_) => {}
+        Outcome::Proven(_) => return Ok(None),
+        Outcome::Refused(e) => return Err(e),
+        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
     }
-    let cross = origin.minus(&cone.apex.to_real()).cross(&dir.to_real());
+    let cross = origin.minus(&cone.apex).cross(&dir);
     match dec.sign(&cross.norm_squared()) {
         Outcome::ProvenCoincident(_) => {}
         Outcome::Proven(_) => return Ok(None),

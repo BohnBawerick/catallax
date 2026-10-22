@@ -226,26 +226,22 @@ fn paths(
             result
         }
         Surface::Cone(s) => {
-            let Some([u, v, axis]) = crate::points::rational_frame(&s.axis, &s.ref_dir) else {
+            let Some([u, v, axis]) = crate::points::analytic_frame(&s.axis, &s.ref_dir) else {
                 return Ok(Vec::new());
             };
             let coordinates = |point: &Point3| {
-                let d = point.minus(&s.apex.to_real());
-                [
-                    d.dot(&u.to_real()),
-                    d.dot(&v.to_real()),
-                    d.dot(&axis.to_real()),
-                ]
+                let d = point.minus(&s.apex);
+                [d.dot(&u), d.dot(&v), d.dot(&axis)]
             };
             let a = coordinates(p);
-            let b = coordinates(&q.to_real());
+            let b = coordinates(q);
             if sign(&a[2], dec, "boolean.imprint-ambiguous")? != Sign::Positive
                 || sign(&b[2], dec, "boolean.imprint-ambiguous")? != Sign::Positive
             {
                 return Ok(Vec::new());
             }
-            let radius_a = &Real::from(s.slope.clone()) * &a[2];
-            let radius_b = &Real::from(s.slope.clone()) * &b[2];
+            let radius_a = &s.slope * &a[2];
+            let radius_b = &s.slope * &b[2];
             let h = P::line(a[2].clone(), b[2].clone());
             let mut result = Vec::new();
             for side in [1, -1] {
@@ -258,13 +254,13 @@ fn paths(
                 let angular = P::line(from, to);
                 let square = angular.mul(&angular);
                 let denominator = one.add(&square);
-                let radial = h.mul(&one.sub(&square)).scale(Real::from(s.slope.clone()));
-                let cross = h.mul(&angular).scale(Real::from(r(2) * s.slope.clone()));
+                let radial = h.mul(&one.sub(&square)).scale(s.slope.clone());
+                let cross = h.mul(&angular).scale(&Real::from_i64(2) * &s.slope);
                 result.push(linear_map(
                     &s.apex,
                     &[
-                        (&u.scaled(&r(side)), radial),
-                        (&v.scaled(&r(side)), cross),
+                        (&u.scaled(&Real::from_i64(side)), radial),
+                        (&v.scaled(&Real::from_i64(side)), cross),
                         (&axis, h.mul(&denominator)),
                     ],
                     denominator,
@@ -319,22 +315,22 @@ fn paths(
             result
         }
         Surface::Torus(s) => {
-            let Some([u, v, axis]) = crate::points::rational_frame(&s.axis, &s.ref_dir) else {
+            let Some([u, v, axis]) = crate::points::analytic_frame(&s.axis, &s.ref_dir) else {
                 return Ok(Vec::new());
             };
             let coordinates = |point: &Point3| {
-                let d = point.minus(&s.center.to_real());
-                let x = d.dot(&u.to_real());
-                let y = d.dot(&v.to_real());
+                let d = point.minus(&s.center);
+                let x = d.dot(&u);
+                let y = d.dot(&v);
                 let radius = (x.square() + y.square()).sqrt();
-                [x, y, d.dot(&axis.to_real()), radius]
+                [x, y, d.dot(&axis), radius]
             };
             let a = coordinates(p);
-            let b = coordinates(&q.to_real());
-            let major = Real::from(s.major.clone());
-            let minor = Real::from(s.minor.clone());
-            let tube_a = &a[3] - &major;
-            let tube_b = &b[3] - &major;
+            let b = coordinates(q);
+            let major = &s.major;
+            let minor = &s.minor;
+            let tube_a = &a[3] - major;
+            let tube_b = &b[3] - major;
             let mut result = Vec::new();
             for radial_side in [1, -1] {
                 let (Some(from), Some(to)) = (
@@ -350,15 +346,15 @@ fn paths(
                 let sin_u = angular.scale(Real::from_i64(2));
                 for tube_side in [1, -1] {
                     let (Some(from), Some(to)) = (
-                        crate::points::stereographic(&tube_a, &a[2], &minor, tube_side, dec)?,
-                        crate::points::stereographic(&tube_b, &b[2], &minor, tube_side, dec)?,
+                        crate::points::stereographic(&tube_a, &a[2], minor, tube_side, dec)?,
+                        crate::points::stereographic(&tube_b, &b[2], minor, tube_side, dec)?,
                     ) else {
                         continue;
                     };
                     let tube = P::line(from, to);
                     let square = tube.mul(&tube);
                     let dv = one.add(&square);
-                    let signed_minor = &Real::from_i64(tube_side) * &minor;
+                    let signed_minor = &Real::from_i64(tube_side) * minor;
                     let radius = dv
                         .scale(major.clone())
                         .add(&one.sub(&square).scale(signed_minor.clone()));
@@ -366,8 +362,8 @@ fn paths(
                     result.push(linear_map(
                         &s.center,
                         &[
-                            (&u.scaled(&r(radial_side)), radius.mul(&cos_u)),
-                            (&v.scaled(&r(radial_side)), radius.mul(&sin_u)),
+                            (&u.scaled(&Real::from_i64(radial_side)), radius.mul(&cos_u)),
+                            (&v.scaled(&Real::from_i64(radial_side)), radius.mul(&sin_u)),
                             (&axis, height),
                         ],
                         du.mul(&dv),

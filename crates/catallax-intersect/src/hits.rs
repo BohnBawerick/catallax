@@ -292,9 +292,7 @@ fn compare(
     {
         return Ok(
             match sign(
-                &a.position
-                    .minus(&b.position)
-                    .dot(&normal.cross(axis_dir).to_real()),
+                &a.position.minus(&b.position).dot(&normal.cross(axis_dir)),
                 dec,
             )? {
                 Sign::Negative => std::cmp::Ordering::Less,
@@ -319,15 +317,6 @@ pub(super) fn intersect(
     s: SurfaceId,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
-    if !matches!(
-        geom.surface(s).kind(),
-        catallax_shapes::SurfaceKind::Plane
-            | catallax_shapes::SurfaceKind::Cylinder
-            | catallax_shapes::SurfaceKind::Sphere
-            | catallax_shapes::SurfaceKind::EllipticCylinder
-    ) {
-        return Err(refused_pair());
-    }
     let plan = query::validate(geom, c, dec)?;
     if geom
         .facts()
@@ -369,13 +358,7 @@ pub(super) fn intersect(
     };
     for candidate in &mut candidates {
         let answer = if let CurveForm::Line { dir, .. } = &form {
-            match sign(
-                &geom
-                    .surface(s)
-                    .gradient(&candidate.position)
-                    .dot(dir),
-                dec,
-            ) {
+            match sign(&geom.surface(s).gradient(&candidate.position).dot(dir), dec) {
                 Ok(Sign::Zero) if matches!(geom.surface(s), catallax_shapes::Surface::Torus(_)) => {
                     match chart::line_local(&candidate.position, dir, dec) {
                         Ok(local) => contact(
@@ -504,7 +487,7 @@ mod tests {
         RVector3::new(r(x), r(y), r(z))
     }
     fn assert_never_kept(geom: &GeomStore, curve: CurveId, surface: SurfaceId, position: Point3) {
-        let plan = query::validate(geom, curve).unwrap();
+        let plan = query::validate(geom, curve, &mut Decider::default()).unwrap();
         for (mut decider, limited) in [
             (Decider::default(), false),
             (
@@ -535,10 +518,22 @@ mod tests {
     fn uncertain_nappe_cannot_keep_a_negative_cone_hit() {
         let mut geom = GeomStore::new();
         let curve = geom.add_curve(Curve::Line(
-            Line::new(point(1, 0, 0), vector(0, 0, 1)).unwrap(),
+            Line::new(
+                point(1, 0, 0).into(),
+                vector(0, 0, 1).into(),
+                &mut Decider::default(),
+            )
+            .unwrap(),
         ));
         let surface = geom.add_surface(Surface::Cone(
-            Cone::new(point(0, 0, 0), vector(0, 0, 1), r(1), vector(1, 0, 0)).unwrap(),
+            Cone::new(
+                point(0, 0, 0).into(),
+                vector(0, 0, 1).into(),
+                r(1).into(),
+                vector(1, 0, 0).into(),
+                &mut Decider::default(),
+            )
+            .unwrap(),
         ));
         assert_never_kept(&geom, curve, surface, point(1, 0, -1).to_real());
     }
@@ -548,14 +543,23 @@ mod tests {
         let mut geom = GeomStore::new();
         let plane = geom.add_surface(Surface::Plane(
             catallax_shapes::Plane::new(
-                RPoint3::new(r(0), r(0), &r(1) / &r(2)),
-                vector(0, 0, 1),
-                vector(1, 0, 0),
+                RPoint3::new(r(0), r(0), &r(1) / &r(2)).into(),
+                vector(0, 0, 1).into(),
+                vector(1, 0, 0).into(),
+                &mut Decider::default(),
             )
             .unwrap(),
         ));
         let torus = geom.add_surface(Surface::Torus(
-            Torus::new(point(0, 0, 0), vector(0, 0, 1), r(3), r(1), vector(1, 0, 0)).unwrap(),
+            Torus::new(
+                point(0, 0, 0).into(),
+                vector(0, 0, 1).into(),
+                r(3).into(),
+                r(1).into(),
+                vector(1, 0, 0).into(),
+                &mut Decider::default(),
+            )
+            .unwrap(),
         ));
         let answer =
             crate::intersect_surfaces(&mut geom, plane, torus, &mut Decider::default()).unwrap();

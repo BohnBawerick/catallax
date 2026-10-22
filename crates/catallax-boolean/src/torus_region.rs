@@ -88,13 +88,13 @@ pub(crate) fn signature(
     point: PointId,
     dec: &mut Decider,
 ) -> Result<Option<Vec<i64>>, Refusal> {
-    let axis = torus.axis.to_real();
-    let first = torus.ref_dir.to_real();
-    let second = torus.axis.cross(&torus.ref_dir).to_real();
-    let center = torus.center.to_real();
-    let major = Real::from(torus.major.clone());
-    let major2 = Real::from(&torus.major * &torus.major);
-    let minor2 = Real::from(&torus.minor * &torus.minor);
+    let axis = &torus.axis;
+    let first = &torus.ref_dir;
+    let second = torus.axis.cross(&torus.ref_dir);
+    let center = &torus.center;
+    let major = &torus.major;
+    let major2 = torus.major.square();
+    let minor2 = torus.minor.square();
     let mut azimuth = Vec::new();
     let mut tube = Vec::new();
     let mut seen = BTreeSet::new();
@@ -121,10 +121,15 @@ pub(crate) fn signature(
         else {
             return Ok(None);
         };
-        let offset = circle_center.minus(&center);
-        if normal.cross(&torus.axis).is_zero() {
+        let offset = circle_center.minus(center);
+        if sign(
+            &normal.cross(axis).norm_squared(),
+            dec,
+            "boolean.classify-ambiguous",
+        )? == Sign::Zero
+        {
             if sign(
-                &offset.cross(&axis).norm_squared(),
+                &offset.cross(axis).norm_squared(),
                 dec,
                 "boolean.classify-ambiguous",
             )? != Sign::Zero
@@ -133,13 +138,13 @@ pub(crate) fn signature(
             }
             add_cut(
                 &mut tube,
-                Phase::new(&radius(&radius_sq) - &major, offset.dot(&axis), dec)?,
+                Phase::new(&radius(&radius_sq) - major, offset.dot(axis), dec)?,
                 dec,
             )?;
-        } else if normal.dot(&torus.axis).is_zero() {
+        } else if sign(&normal.dot(axis), dec, "boolean.classify-ambiguous")? == Sign::Zero {
             for zero in [
-                offset.dot(&axis),
-                offset.dot(&normal.to_real()),
+                offset.dot(axis),
+                offset.dot(&normal),
                 offset.norm_squared() - major2.clone(),
                 &radius_sq - &minor2,
             ] {
@@ -149,27 +154,26 @@ pub(crate) fn signature(
             }
             add_cut(
                 &mut azimuth,
-                Phase::new(offset.dot(&first), offset.dot(&second), dec)?,
+                Phase::new(offset.dot(first), offset.dot(&second), dec)?,
                 dec,
             )?;
         } else {
             return Ok(None);
         }
     }
-    let offset = model.geom().position(point).minus(&center);
+    let offset = model.geom().position(point).minus(center);
     let u = if azimuth.is_empty() {
         -1
     } else {
-        let query = Phase::new(offset.dot(&first), offset.dot(&second), dec)?;
+        let query = Phase::new(offset.dot(first), offset.dot(&second), dec)?;
         cell(&azimuth, &query, dec)?
     };
     let v = if tube.is_empty() {
         -1
     } else {
-        let height = offset.dot(&axis);
-        let radial2 =
-            offset.norm_squared() - height.square() / Real::from(torus.axis.norm_squared());
-        let query = Phase::new(&radius(&radial2) - &major, height, dec)?;
+        let height = offset.dot(axis);
+        let radial2 = offset.norm_squared() - height.square() / torus.axis.norm_squared();
+        let query = Phase::new(&radius(&radial2) - major, height, dec)?;
         cell(&tube, &query, dec)?
     };
     Ok(Some(vec![u, v]))

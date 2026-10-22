@@ -25,7 +25,7 @@ fn divide(a: &Ball, b: &Ball) -> Ball {
     a.checked_div(b).unwrap()
 }
 fn shifted(pose: &Pose, xyz: [i64; 3]) -> Pose {
-    Pose::new(
+    Pose::from_rational(
         Rotation::identity(),
         RVector3::new(r(xyz[0]), r(xyz[1]), r(xyz[2])),
     )
@@ -50,7 +50,7 @@ fn poses() -> [Pose; 3] {
             r(next(&mut state)),
         )
         .unwrap();
-        Pose::new(
+        Pose::from_rational(
             rotation,
             RVector3::new(
                 r(next(&mut state)),
@@ -61,13 +61,13 @@ fn poses() -> [Pose; 3] {
     })
 }
 fn world(pose: &Pose, point: &[Ball; 3]) -> [Ball; 3] {
-    let origin = pose.apply_point(&RPoint3::origin());
+    let origin = pose.apply_rational_point(&RPoint3::origin()).unwrap();
     let axes = [
         RVector3::new(r(1), r(0), r(0)),
         RVector3::new(r(0), r(1), r(0)),
         RVector3::new(r(0), r(0), r(1)),
     ]
-    .map(|v| pose.apply_vector(&v));
+    .map(|v| pose.apply_rational_vector(&v).unwrap());
     let translations = [&origin.x, &origin.y, &origin.z];
     std::array::from_fn(|i| {
         let components = axes.each_ref().map(|v| [&v.x, &v.y, &v.z][i]);

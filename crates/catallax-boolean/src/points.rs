@@ -6,8 +6,8 @@ use catallax_numbers::{
     Refusal, Sign,
 };
 use catallax_shapes::{
-    GeomKey, Meet, MeetOf, Point3, PointDef, PointId, Position, RPoint3, RVector3, Rotation,
-    Surface, Torus,
+    GeomKey, Meet, MeetOf, Point3, PointDef, PointId, Position, RPoint3, Rotation, Surface, Torus,
+    Vector3,
 };
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
@@ -34,9 +34,21 @@ fn integer_sqrt(n: &Integer) -> Option<Integer> {
 pub(crate) fn sqrt_rational(n: &Rational) -> Option<Rational> {
     Rational::new(integer_sqrt(n.numerator())?, integer_sqrt(n.denominator())?)
 }
-pub(crate) fn rational_frame(axis: &RVector3, reference: &RVector3) -> Option<[RVector3; 3]> {
-    let axis = axis.scaled(&(Rational::one() / sqrt_rational(&axis.norm_squared())?));
-    let u = reference.scaled(&(Rational::one() / sqrt_rational(&reference.norm_squared())?));
+pub(crate) fn analytic_frame(axis: &Vector3, reference: &Vector3) -> Option<[Vector3; 3]> {
+    let axis_sq = axis.norm_squared();
+    let reference_sq = reference.norm_squared();
+    let (axis_length, reference_length) =
+        if axis.rational_components().is_some() && reference.rational_components().is_some() {
+            // Preserve the native frame boundary; algebraic definitions use exact roots.
+            (
+                Real::from(sqrt_rational(axis_sq.rational_ref()?)?),
+                Real::from(sqrt_rational(reference_sq.rational_ref()?)?),
+            )
+        } else {
+            (root(&axis_sq), root(&reference_sq))
+        };
+    let axis = axis.scaled(&(Real::one() / axis_length));
+    let u = reference.scaled(&(Real::one() / reference_length));
     let v = axis.cross(&u);
     Some([u, v, axis])
 }
@@ -79,12 +91,9 @@ fn rational_phase(
     }
     Ok(None)
 }
-fn torus_point(
-    torus: &Torus,
-    frame: &[RVector3; 3],
-    u: [Rational; 2],
-    v: [Rational; 2],
-) -> RPoint3 {
+fn torus_point(torus: &Torus, frame: &[Vector3; 3], u: [Rational; 2], v: [Rational; 2]) -> Point3 {
+    let u = u.map(Real::from);
+    let v = v.map(Real::from);
     let radial = frame[0].scaled(&u[0]).plus(&frame[1].scaled(&u[1]));
     let radius = &torus.major + &(&torus.minor * &v[0]);
     torus
@@ -185,48 +194,39 @@ fn exact_probe(
             Ok(None)
         }
         Surface::Cone(s) => {
-            let Some([u, v, axis]) = rational_frame(&s.axis, &s.ref_dir) else {
+            let Some([u, v, axis]) = analytic_frame(&s.axis, &s.ref_dir) else {
                 return Ok(None);
             };
-            let d = target.minus(&s.apex.to_real());
-            let height = dec.enclose(&d.dot(&axis.to_real()), width)?.mid();
+            let d = target.minus(&s.apex);
+            let height = dec.enclose(&d.dot(&axis), width)?.mid();
             if height.sign() != Sign::Positive {
                 return Ok(None);
             }
+            let height = Real::from(height);
             let radius = &s.slope * &height;
-            let Some([cos, sin]) = rational_phase(
-                &d.dot(&u.to_real()),
-                &d.dot(&v.to_real()),
-                &Real::from(radius.clone()),
-                width,
-                dec,
-            )?
+            let Some([cos, sin]) = rational_phase(&d.dot(&u), &d.dot(&v), &radius, width, dec)?
             else {
                 return Ok(None);
             };
-            let radial = u.scaled(&cos).plus(&v.scaled(&sin)).scaled(&radius);
+            let radial = u
+                .scaled(&Real::from(cos))
+                .plus(&v.scaled(&Real::from(sin)))
+                .scaled(&radius);
             Ok(Some(s.apex.plus(&axis.scaled(&height)).plus(&radial)))
         }
         Surface::Torus(s) => {
-            let Some(frame) = rational_frame(&s.axis, &s.ref_dir) else {
+            let Some(frame) = analytic_frame(&s.axis, &s.ref_dir) else {
                 return Ok(None);
             };
-            let d = target.minus(&s.center.to_real());
-            let x = d.dot(&frame[0].to_real());
-            let y = d.dot(&frame[1].to_real());
-            let z = d.dot(&frame[2].to_real());
+            let d = target.minus(&s.center);
+            let x = d.dot(&frame[0]);
+            let y = d.dot(&frame[1]);
+            let z = d.dot(&frame[2]);
             let radius = (x.square() + y.square()).sqrt();
             let Some(u) = rational_phase(&x, &y, &radius, width, dec)? else {
                 return Ok(None);
             };
-            let Some(v) = rational_phase(
-                &(&radius - &Real::from(s.major.clone())),
-                &z,
-                &Real::from(s.minor.clone()),
-                width,
-                dec,
-            )?
-            else {
+            let Some(v) = rational_phase(&(&radius - &s.major), &z, &s.minor, width, dec)? else {
                 return Ok(None);
             };
             Ok(Some(torus_point(s, &frame, u, v)))
@@ -426,7 +426,7 @@ fn search<T>(
     let surface = model.geom().surface(f.surface).clone();
     if f.loops.is_empty() {
         if let Surface::Torus(torus) = &surface {
-            let frame = rational_frame(&torus.axis, &torus.ref_dir).ok_or_else(|| {
+            let frame = analytic_frame(&torus.axis, &torus.ref_dir).ok_or_else(|| {
                 refusal(
                     "boolean.no-rational-point",
                     "torus frame requires algebraic face probes from the shared foundation",

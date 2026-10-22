@@ -224,8 +224,8 @@ pub(crate) fn locate(
                     &model
                         .geom()
                         .position(point)
-                        .minus(&cone.apex.to_real())
-                        .dot(&cone.axis.to_real()),
+                        .minus(&cone.apex)
+                        .dot(&cone.axis),
                     dec,
                     "boolean.classify-ambiguous",
                 )? == Sign::Negative

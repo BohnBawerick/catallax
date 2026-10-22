@@ -76,10 +76,6 @@ impl<'a> Work<'a> {
         self.charge()?;
         Ok(Ball::from_rational(r, self.precision))
     }
-    pub(crate) fn real(&mut self, value: &Real) -> Checked<Ball> {
-        self.charge()?;
-        Ok(self.dec.enclose_at(value, self.precision)?)
-    }
 
     pub(crate) fn real(&mut self, value: &Real) -> Checked<Ball> {
         if let Some(value) = value.rational_ref() {

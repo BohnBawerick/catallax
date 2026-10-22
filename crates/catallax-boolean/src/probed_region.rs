@@ -32,10 +32,9 @@ fn plane_through(
         return Ok(None);
     }
     let reference = crate::geometry::perpendicular(&normal, dec, "boolean.classify-ambiguous")?;
-    let surface = model.geom_mut().add_surface_with_origin(
-        Surface::Plane(Plane::new(origin, normal, reference, dec)?),
-        PROBE_CONSTRUCTION,
-    );
+    let surface = model
+        .geom_mut()
+        .add_surface(Surface::Plane(Plane::new(origin, normal, reference, dec)?));
     // Every caller constructs the plane through this point or curve exactly.
     model.geom_mut().record_fact(Fact {
         kind: FactKind::Incident,

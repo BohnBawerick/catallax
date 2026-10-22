@@ -168,58 +168,10 @@ impl GeomStore {
         Self::default()
     }
 
-    /// Adds a surface and records identities guaranteed by its definition.
+    /// Adds a surface without searching unrelated geometry for relations.
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId {
-        self.add_surface_with_origin(s, "shapes.definition")
-    }
-
-    /// Adds a surface, retaining the constructing routine's provenance on
-    /// structural facts. Supply this before insertion when provenance also
-    /// distinguishes auxiliary geometry from intrinsic construction inputs.
-    pub fn add_surface_with_origin(&mut self, s: Surface, origin: &'static str) -> SurfaceId {
         self.implicits.push(s.implicit());
-        let id = self.surfaces.push(s);
-        for index in 0..id.index {
-            let other = Handle {
-                index,
-                _kind: PhantomData,
-            };
-            let a = self.surface(other);
-            let b = self.surface(id);
-            let coincident = crate::intent::coincident(a, b);
-            let concentric = crate::intent::center(a)
-                .zip(crate::intent::center(b))
-                .is_some_and(|(a, b)| crate::intent::same_point(a, b));
-            let parallel = crate::intent::direction(a)
-                .zip(crate::intent::direction(b))
-                .is_some_and(|(a, b)| crate::intent::parallel(a, b));
-            let coaxial = crate::intent::axis(a)
-                .zip(crate::intent::axis(b))
-                .is_some_and(|((a, axis), (b, _))| parallel && crate::intent::on_axis(a, axis, b));
-            for (kind, holds) in [
-                (FactKind::Coincident, coincident),
-                (FactKind::Concentric, concentric),
-                (FactKind::Parallel, parallel),
-                (FactKind::Coaxial, coaxial),
-            ] {
-                if holds {
-                    self.construction(kind, GeomKey::Surface(other), GeomKey::Surface(id), origin);
-                }
-            }
-        }
-        if matches!(self.surface(id), Surface::Plane(_)) {
-            for index in 0..self.points.len() {
-                self.record_plane_incidence(
-                    id,
-                    Handle {
-                        index: u32::try_from(index).expect("valid point index"),
-                        _kind: PhantomData,
-                    },
-                    origin,
-                );
-            }
-        }
-        id
+        self.surfaces.push(s)
     }
 
     /// Adds a curve; an intersection curve also records its incidence facts.
@@ -235,37 +187,6 @@ impl GeomStore {
             let surfaces = i.surfaces;
             for s in surfaces {
                 self.incident(GeomKey::Curve(id), GeomKey::Surface(s));
-            }
-        }
-        if matches!(self.curve(id), Curve::Circle(_)) {
-            for index in 0..self.surfaces.len() {
-                let surface = Handle {
-                    index: u32::try_from(index).expect("valid surface index"),
-                    _kind: PhantomData,
-                };
-                let Curve::Circle(circle) = self.curve(id) else {
-                    unreachable!()
-                };
-                let s = self.surface(surface);
-                let coaxial = crate::intent::axis(s).is_some_and(|(origin, axis)| {
-                    crate::intent::parallel(&circle.normal, axis)
-                        && crate::intent::on_axis(origin, axis, &circle.center)
-                });
-                let concentric = crate::intent::center(s)
-                    .is_some_and(|center| crate::intent::same_point(center, &circle.center));
-                for (kind, holds) in [
-                    (FactKind::Coaxial, coaxial),
-                    (FactKind::Concentric, concentric),
-                ] {
-                    if holds {
-                        self.construction(
-                            kind,
-                            GeomKey::Curve(id),
-                            GeomKey::Surface(surface),
-                            "shapes.definition",
-                        );
-                    }
-                }
             }
         }
         id
@@ -329,16 +250,6 @@ impl GeomStore {
                     record(GeomKey::Curve(*b));
                 }
             }
-        }
-        for index in 0..self.surfaces.len() {
-            self.record_plane_incidence(
-                Handle {
-                    index: u32::try_from(index).expect("valid surface index"),
-                    _kind: PhantomData,
-                },
-                id,
-                "shapes.definition",
-            );
         }
         id
     }
@@ -653,37 +564,6 @@ impl GeomStore {
                 .gradient(&p)
                 .dot(&self.surface(b).gradient(&p)),
         )
-    }
-
-    fn record_plane_incidence(&mut self, surface: SurfaceId, point: PointId, origin: &'static str) {
-        let position = match self.point(point) {
-            PointDef::Explicit(p) => p,
-            PointDef::Meet(crate::Meet {
-                position: Position::Closed(p),
-                ..
-            }) => p,
-            _ => return,
-        };
-        if let Surface::Plane(plane) = self.surface(surface)
-            && crate::intent::on_plane(&plane.origin, &plane.normal, position)
-        {
-            self.construction(
-                FactKind::Incident,
-                GeomKey::Point(point),
-                GeomKey::Surface(surface),
-                origin,
-            );
-        }
-    }
-
-    fn construction(&mut self, kind: FactKind, a: GeomKey, b: GeomKey, origin: &'static str) {
-        self.facts.record(Fact {
-            kind,
-            a,
-            b,
-            at: None,
-            origin: FactOrigin::Construction(origin),
-        });
     }
 
     fn incident(&mut self, a: GeomKey, b: GeomKey) {

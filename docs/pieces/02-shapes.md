@@ -280,15 +280,15 @@ The creator of a `Meet` point (pieces 3 and 4) guarantees that its position lies
 - `GeomStore::implicit(s)` equals `surface(s).implicit()`. It may be cached.
 - `GeomStore::normal(s, p)` is `surface(s).gradient(&position(p))`.
 
-Construction records facts only when immutable definitions make them true:
+Construction events record facts about their named inputs and outputs:
 
 - `add_curve` of an intersection curve records incidence on both defining surfaces.
 - `add_point` of a `Meet` records incidence on every named object.
-- Surface insertion records coincident carriers, shared centres, shared axis lines and parallel defining directions when their construction expressions agree. Opposite normal or axis definitions also prove parallelism. A cone's nappe direction still matters for coincidence.
-- Circular curves record shared axes and centres with existing surfaces. The round-solid builders supply the axis relations guaranteed by their common construction frame.
-- A closed or explicit point is incident on a plane when each coordinate either matches the plane's origin definition or has a structurally zero normal coefficient. This includes flush coordinate-plane contact in either insertion order. General cancellations remain numeric decisions.
+- Face builders record boundary incidence, including flush point/plane contact.
+- Round-solid builders record rim/side and rim/rim axis relations from their common construction frame.
+- Exact intersections record coincidence and tangent loci; uncertain contact classifications do not become facts.
 
-These store-generated facts have origin `FactOrigin::Construction("shapes.definition")` and `at: None` by default. `add_surface_with_origin` assigns the caller's construction origin before recording structural facts. Auxiliary builders use it so fact deduplication cannot discard their provenance and feed probe geometry back into later construction inputs. Facts use expression identity and cached exact rational values, never approximate coordinates, intervals, refinement or near-equality. Different definitions do not prove apartness. Insertion does not merge handles. Additional structural facts need not survive a coordinate-frame change, but identical construction sequences produce identical facts.
+Insertion does not search unrelated surfaces, curves or points for structural matches. Builders retain their own `FactOrigin::Construction` provenance; defining intersections and meetings use `"shapes.definition"`. Construction facts never rely on approximate coordinates, intervals or near-equality. Insertion does not merge handles. Identical construction sequences produce identical facts.
 
 `record_fact` returns whether its input relation was new. Full circle incidence on a circular cylinder or cone also proves `Coaxial`, independent of normal scaling. For a torus, the section normal must additionally have the same or opposite axis definition. This works for posed recipe rims created before their face carriers. Shared centre definitions additionally record `Concentric` where the surface has a centre. Derived relations retain the input fact's provenance. Recording a fact that is not true is a programming error of the caller.
 
@@ -593,7 +593,6 @@ pub struct GeomStore;
 impl GeomStore {
     pub fn new() -> Self;
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId;
-    pub fn add_surface_with_origin(&mut self, s: Surface, origin: &'static str) -> SurfaceId;
     pub fn add_curve(&mut self, c: Curve) -> CurveId;
     pub fn add_point(&mut self, p: PointDef) -> PointId;
     pub fn surface(&self, id: SurfaceId) -> &Surface;
@@ -699,7 +698,7 @@ The `Ball` inputs below are exact rationals or multiples of `Ball::pi`. Tests ch
 ### Store and facts
 
 45. Handles are issued from 0 in order; `len`, `handles` and `get` agree with the order of `push`.
-46. Intersection curves and meeting points record their defining incidences. Analytic surfaces, circular curves and explicit or closed points also record the positive structural identities listed under "The store". Additional facts do not deduplicate entities. Tests exercise zero-work fact decisions and near-miss counterexamples rather than fixing the number or order of incidental records.
+46. Intersection curves and meeting points record their defining incidences. Builders and intersections record the construction-event relations listed under "The store". Insertion never performs global pair discovery. Additional facts do not deduplicate entities. Tests exercise zero-work fact decisions and incorrect-locus counterexamples rather than fixing incidental record counts or ordering.
 47. Fact paths: for a point added as a `Meet` of spheres `a` and `b`, `side(a, p)` is `ProvenCoincident` with `ConstructionFact`, and it adds exactly one `decision`, one `coincident_fact` and no work. After `Incident(p, c)` and `Incident(c, s)` are recorded, `side(s, p)` is settled by fact; after `Coincident(s, s2)` is recorded, `side(s2, p)` is too. `same_surface(a, a)` is settled by fact.
 48. `position` returns the defining coordinates; `approx_point` of explicit `(1/3, 0, 0)` is `[to_f64_nearest(1/3), 0.0, 0.0]`; for meeting points each value lies in the coordinate's `Real::approx()`.
 49. `enclose_point` with `max_width = 2^-100` on the root `(3, 3, sqrt(7))` of case 20, under the default budget: three balls of width at most `2^-100`, containing 3, 3 and `sqrt(7)` (checked against `sqrt(7) = 2.6457513110645905905016157536392604257102...`).

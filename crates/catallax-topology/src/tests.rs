@@ -608,7 +608,7 @@ fn structural_and_incidence_faults() {
     assert_fault(&m, b, "topology.empty-part");
     let point = m
         .geom_mut()
-        .add_point(PointDef::Explicit((p(0, 0, 1)).into()));
+        .add_point(PointDef::Explicit((p(0, 0, 0)).into()));
     let vertex = m.add_vertex(Vertex { point });
     let vertex_loop = m.add_loop(Loop::Vertex(vertex));
     let f = m.add_face(Face {

@@ -1,6 +1,6 @@
-# Kernel site
+# Catallax + SolidDraft site
 
-Static site for https://kernel.zigrawbohnbawerick.org/. The Pages workflow publishes this directory on site changes pushed to `main`; its custom domain is also recorded in `CNAME`. Domain DNS is managed separately.
+One static site for Catallax and SolidDraft at https://kernel.zigrawbohnbawerick.org/. The Pages workflow publishes this directory on site changes pushed to `main`; its custom domain is also recorded in `CNAME`. Domain DNS is managed separately.
 
 ## Preview
 
@@ -12,9 +12,17 @@ nice -n 10 python3 -B -m http.server 8873 --bind 127.0.0.1 --directory site
 
 Open http://127.0.0.1:8873/ in Chromium. No package install or build step is needed to serve the site.
 
+## Publication rules
+
+Keep Catallax's works-today list beside the shared sponsorship links. Name only capabilities on `main`, retain the not-yet line and label aspirations "in design". SolidDraft's section must distinguish its current SMLib backend from the planned Catallax-only cutover. Until the application repository opens, say "opening soon" and do not link to it.
+
+The SolidDraft image is real application output, not interface artwork. `media/soliddraft-bracket-a3.svg` is an unmodified copy of the committed CLI drawing fixture at the revision recorded in `evidence.json`. Its source exit test invokes `soliddraft draw bracket.json --template iso-a3` with a fixed `SOURCE_DATE_EPOCH` and compares the SVG byte for byte. It was not regenerated for the site and is not evidence of Catallax integration. Keep the backend caption, source revision and checksum when replacing it.
+
+Both projects use the same GitHub Sponsors and Ko-fi links. Keep the Fornjot attribution and non-affiliation statement, the open-to-kernel-work contact and the custom domain.
+
 ## Evidence and video capture
 
-`evidence.json` records a pinned kernel revision, counting methods and the scope of historical robustness figures. Counters are a snapshot, not live measurements. Rebuild the evidence when updating them:
+`evidence.json` records a pinned kernel revision, counting methods, the scope of historical robustness figures and the SolidDraft drawing's provenance. Counters and robustness figures are explicitly historical snapshots, not live measurements of `main`. Rebuild the kernel evidence when updating its figures:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/catallax-site-target nice -n 10 node site/render/collect-evidence.mjs

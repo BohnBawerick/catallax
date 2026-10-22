@@ -11,8 +11,8 @@ fn incident(m: &mut Model, a: GeomKey, b: GeomKey) {
         origin: FactOrigin::Construction("blind-test.exact-construction"),
     });
 }
-fn point_vertex(m: &mut Model, p: RPoint3, curve: CurveId) -> VertexId {
-    let point = m.geom_mut().add_point(PointDef::Explicit(p));
+fn point_vertex(m: &mut Model, p: impl Into<catallax_shapes::Point3>, curve: CurveId) -> VertexId {
+    let point = m.geom_mut().add_point(PointDef::Explicit(p.into()));
     incident(m, GeomKey::Point(point), GeomKey::Curve(curve));
     m.add_vertex(Vertex { point })
 }
@@ -39,7 +39,14 @@ fn split_sphere(m: &mut Model, slit: bool) -> BodyId {
     let raw = sphere(m, r(2), &Pose::identity()).unwrap();
     let surface = m.face(m.faces_of_body(raw)[0]).surface;
     let curve = m.geom_mut().add_curve(Curve::Circle(
-        Circle::new(RPoint3::origin(), v(0, 0, 1), r(4), v(1, 0, 0)).unwrap(),
+        Circle::new(
+            (RPoint3::origin()).into(),
+            (v(0, 0, 1)).into(),
+            (r(4)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     incident(m, GeomKey::Curve(curve), GeomKey::Surface(surface));
     let start = point_vertex(m, p("2", "0", "0"), curve);
@@ -169,7 +176,7 @@ blind_test!(
                     let Curve::Circle(circle) = m.geom().curve(edge.curve) else {
                         panic!("rim")
                     };
-                    let point = circle.center.plus(&v(2, 0, 0));
+                    let point = circle.center.plus(&v(2, 0, 0).into());
                     let vertex = point_vertex(&mut m, point, edge.curve);
                     let new = m.add_edge(Edge {
                         start: Some(vertex),
@@ -186,7 +193,7 @@ blind_test!(
                     };
                     let start = explicit(&m, edge.start.unwrap());
                     let end = explicit(&m, edge.end.unwrap());
-                    let midpoint = start.plus(&end.minus(&start).scaled(&q("1/2")));
+                    let midpoint = start.plus(&end.minus(&start).scaled(&Real::from(q("1/2"))));
                     let vertex = point_vertex(&mut m, midpoint, edge.curve);
                     let first = m.add_edge(Edge {
                         end: Some(vertex),

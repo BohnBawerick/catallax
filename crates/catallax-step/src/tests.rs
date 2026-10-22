@@ -280,7 +280,12 @@ fn posed_blocks_bound_written_vertices_and_faces() {
             Rotation::from_quaternion(1.into(), next().into(), next().into(), next().into())
                 .unwrap();
         let translation = RVector3::new((next() * 20000).into(), next().into(), q("1/3"));
-        let pose = Pose::new(rotation, translation);
+        let pose = Pose::new(
+            rotation,
+            (translation).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap();
         let scale = q(&format!("1e{}", case % 61 - 30));
         let size = std::array::from_fn(|_| {
             Rational::from_ratio(next().abs() + 1, next().abs() + 1).unwrap() * scale.clone()
@@ -304,7 +309,10 @@ fn posed_blocks_bound_written_vertices_and_faces() {
                     size[i].clone()
                 }
             });
-            let p = pose.apply_point(&RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone()));
+            let p = pose
+                .apply_point(&RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone()).into())
+                .as_rational()
+                .expect("rational STEP fixture");
             let xyz = [p.x, p.y, p.z];
             let distance_sq = vertices
                 .iter()
@@ -359,7 +367,12 @@ fn voids_multiple_lumps_and_repeated_bodies() {
     let inner = topology::block(
         &mut model,
         [2.into(), 2.into(), 2.into()],
-        &Pose::new(Rotation::identity(), v(4, 4, 4)),
+        &Pose::new(
+            Rotation::identity(),
+            (v(4, 4, 4)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     )
     .unwrap();
     let outer_shell = model.lump(model.body(outer).lumps[0]).shells[0];
@@ -450,7 +463,12 @@ fn voids_multiple_lumps_and_repeated_bodies() {
     let second = topology::block(
         &mut model,
         [2.into(), 2.into(), 2.into()],
-        &Pose::new(Rotation::identity(), v(20, 0, 0)),
+        &Pose::new(
+            Rotation::identity(),
+            (v(20, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     )
     .unwrap();
     let lumps = vec![model.body(outer).lumps[0], model.body(second).lumps[0]];
@@ -480,10 +498,24 @@ fn branch_body() -> (Model, BodyId) {
 fn branch_body_with_sense(source_sense: Sense) -> (Model, BodyId) {
     let mut model = Model::new();
     let cylinder = model.geom_mut().add_surface(Surface::Cylinder(
-        Cylinder::new(point(0, 0, 0), v(0, 0, 1), 1.into(), v(1, 0, 0)).unwrap(),
+        Cylinder::new(
+            (point(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            1.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let sphere = model.geom_mut().add_surface(Surface::Sphere(
-        Sphere::new(point(2, 0, 0), 2.into(), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Sphere::new(
+            (point(2, 0, 0)).into(),
+            2.into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let pair = intersect_surfaces(model.geom_mut(), cylinder, sphere, &mut Decider::default())
         .unwrap()
@@ -672,7 +704,12 @@ fn deterministic_threads_and_expired_deadline_write_nothing() {
 #[test]
 fn terminating_decimal_radii_and_rational_frames_have_zero_deviation() {
     let rotation = Rotation::from_quaternion(2.into(), 1.into(), 0.into(), 0.into()).unwrap();
-    let pose = Pose::new(rotation, RVector3::new(q("0.1"), q("-0.2"), q("2.5")));
+    let pose = Pose::new(
+        rotation,
+        (RVector3::new(q("0.1"), q("-0.2"), q("2.5"))).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let mut model = Model::new();
     let bodies = [
         topology::cylinder(&mut model, q("0.6"), q("2.5"), &pose).unwrap(),
@@ -691,10 +728,24 @@ fn terminating_decimal_radii_and_rational_frames_have_zero_deviation() {
 fn irrational_intersection_circles_remain_analytic() {
     let mut model = Model::new();
     let cylinder = model.geom_mut().add_surface(Surface::Cylinder(
-        Cylinder::new(point(0, 0, 0), v(0, 0, 1), 5.into(), v(1, 0, 0)).unwrap(),
+        Cylinder::new(
+            (point(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            5.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let sphere = model.geom_mut().add_surface(Surface::Sphere(
-        Sphere::new(point(0, 0, 1), 6.into(), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Sphere::new(
+            (point(0, 0, 1)).into(),
+            6.into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let pair = intersect_surfaces(model.geom_mut(), cylinder, sphere, &mut Decider::default())
         .unwrap()
@@ -812,6 +863,7 @@ fn reversed_branch_edge_fits_in_the_edges_direction() {
 }
 
 #[test]
+
 fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
     use catallax_intersect::{CurveSurface, intersect_curve_surface};
     use catallax_numbers::{Fact, FactKind, FactOrigin};
@@ -819,16 +871,41 @@ fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
     use catallax_topology::Vertex;
     let mut model = Model::new();
     let cylinder = model.geom_mut().add_surface(Surface::Cylinder(
-        Cylinder::new(point(0, 0, 0), v(0, 0, 1), 5.into(), v(1, 0, 0)).unwrap(),
+        Cylinder::new(
+            (point(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            5.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let cut = model.geom_mut().add_surface(Surface::Plane(
-        Plane::new(point(1, 0, 0), v(1, 0, 0), v(0, 1, 0)).unwrap(),
+        Plane::new(
+            (point(1, 0, 0)).into(),
+            (v(1, 0, 0)).into(),
+            (v(0, 1, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let bottom = model.geom_mut().add_surface(Surface::Plane(
-        Plane::new(point(0, 0, 0), v(0, 0, -1), v(1, 0, 0)).unwrap(),
+        Plane::new(
+            (point(0, 0, 0)).into(),
+            (v(0, 0, -1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let top = model.geom_mut().add_surface(Surface::Plane(
-        Plane::new(point(0, 0, 2), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Plane::new(
+            (point(0, 0, 2)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let mut intersect = |a, b| {
         let SurfacePair::Meets(components) =
@@ -866,12 +943,22 @@ fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
         }
     }
     let [a, d, b, c] = vertices.try_into().unwrap();
-    let bottom_chord = model
-        .geom_mut()
-        .add_curve(Curve::Line(Line::new(point(1, 0, 0), v(0, 1, 0)).unwrap()));
-    let top_chord = model
-        .geom_mut()
-        .add_curve(Curve::Line(Line::new(point(1, 0, 2), v(0, 1, 0)).unwrap()));
+    let bottom_chord = model.geom_mut().add_curve(Curve::Line(
+        Line::new(
+            (point(1, 0, 0)).into(),
+            (v(0, 1, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    ));
+    let top_chord = model.geom_mut().add_curve(Curve::Line(
+        Line::new(
+            (point(1, 0, 2)).into(),
+            (v(0, 1, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    ));
     let mut edge = |curve, start, end, sense| {
         model.add_edge(Edge {
             curve,
@@ -982,13 +1069,33 @@ fn irrational_radius_cap() -> (Model, BodyId) {
     use catallax_shapes::{Circle, Curve, GeomKey, Plane};
     let mut model = Model::new();
     let sphere = model.geom_mut().add_surface(Surface::Sphere(
-        Sphere::new(point(0, 0, 0), 5.into(), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Sphere::new(
+            (point(0, 0, 0)).into(),
+            5.into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let plane = model.geom_mut().add_surface(Surface::Plane(
-        Plane::new(point(0, 0, 1), v(0, 0, -1), v(1, 0, 0)).unwrap(),
+        Plane::new(
+            (point(0, 0, 1)).into(),
+            (v(0, 0, -1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let curve = model.geom_mut().add_curve(Curve::Circle(
-        Circle::new(point(0, 0, 1), v(0, 0, 1), 24.into(), v(1, 0, 0)).unwrap(),
+        Circle::new(
+            (point(0, 0, 1)).into(),
+            (v(0, 0, 1)).into(),
+            24.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let edge = model.add_edge(Edge {
         curve,
@@ -1166,10 +1273,24 @@ fn steinmetz_ellipse_arcs_stay_analytic_with_a_valid_deviation_bound() {
     use catallax_topology::Vertex;
     let mut model = Model::new();
     let a = model.geom_mut().add_surface(Surface::Cylinder(
-        Cylinder::new(point(0, 0, 0), v(0, 0, 1), 1.into(), v(1, 0, 0)).unwrap(),
+        Cylinder::new(
+            (point(0, 0, 0)).into(),
+            (v(0, 0, 1)).into(),
+            1.into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let b = model.geom_mut().add_surface(Surface::Cylinder(
-        Cylinder::new(point(0, 0, 0), v(1, 0, 0), 1.into(), v(0, 0, 1)).unwrap(),
+        Cylinder::new(
+            (point(0, 0, 0)).into(),
+            (v(1, 0, 0)).into(),
+            1.into(),
+            (v(0, 0, 1)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let SurfacePair::Meets(components) =
         intersect_surfaces(model.geom_mut(), a, b, &mut Decider::default())
@@ -1308,7 +1429,12 @@ fn arithmetic_coordinates_can_cross_input_exponent_limits() {
             Rotation::identity()
         };
         let translation = if reversed { -&huge } else { huge.clone() };
-        let pose = Pose::new(rotation, RVector3::new(translation, 0.into(), 0.into()));
+        let pose = Pose::new(
+            rotation,
+            (RVector3::new(translation, 0.into(), 0.into())).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap();
         let body = topology::block(&mut model, [huge.clone(), 1.into(), 1.into()], &pose).unwrap();
         let mut bytes = Vec::new();
         let answer = write_step(

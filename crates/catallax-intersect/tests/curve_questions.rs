@@ -74,14 +74,22 @@ fn queries(mut dec: impl FnMut() -> Decider, limited: bool) {
         membership(on_curve(&g, c, node, &mut dec()), true, limited, n(0));
     }
     let same = g.add_curve(Curve::Circle(
-        Circle::new(pi([0, 0, 0]), vi([0, 0, -5]), n(25), vi([0, 1, 0])).unwrap(),
+        Circle::new(
+            (pi([0, 0, 0])).into(),
+            (vi([0, 0, -5])).into(),
+            (n(25)).into(),
+            (vi([0, 1, 0])).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let different = g.add_curve(Curve::Circle(
         Circle::new(
-            pi([0, 0, 0]),
-            vi([0, 0, 1]),
-            n(25) + r("1e-30"),
-            vi([1, 0, 0]),
+            (pi([0, 0, 0])).into(),
+            (vi([0, 0, 1])).into(),
+            (n(25) + r("1e-30")).into(),
+            (vi([1, 0, 0])).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     ));
@@ -199,9 +207,9 @@ blind_test!(case_35_closed_forms_and_alternate_witnesses, {
             &center,
             &Point3::new(rr(0), rr(0), rr(1) + (&rr(sign) * &h)),
         );
-        assert_eq!(normal, vi([0, 0, -sign]));
+        assert_eq!(normal.as_rational().unwrap(), vi([0, 0, -sign]));
         real_eq(&radius_sq, &rr(25));
-        assert_eq!(ref_dir, vi([1, 0, 0]));
+        assert_eq!(ref_dir.as_rational().unwrap(), vi([1, 0, 0]));
     }
     let plane = g.add_surface(axis_plane(0, n(1)));
     let mut lines = vec![];
@@ -218,15 +226,20 @@ blind_test!(case_35_closed_forms_and_alternate_witnesses, {
     );
     let first = g.add_curve(line28());
     let same = g.add_curve(Curve::Line(
-        Line::new(pi([7, 0, 0]), vi([-3, 0, 0])).unwrap(),
+        Line::new(
+            pi([7, 0, 0]).into(),
+            vi([-3, 0, 0]).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     coincident(same_curve(&g, first, same, &mut Decider::default()));
     let e = g.add_curve(ellipse4());
     let Curve::Ellipse(mut other) = ellipse4() else {
         unreachable!()
     };
-    other.normal = other.normal.scaled(&n(-3));
-    other.major_dir = other.major_dir.scaled(&n(-7));
+    other.normal = other.normal.scaled(&rr(-3));
+    other.major_dir = other.major_dir.scaled(&rr(-7));
     let same = g.add_curve(Curve::Ellipse(other));
     coincident(same_curve(&g, e, same, &mut Decider::default()));
 });

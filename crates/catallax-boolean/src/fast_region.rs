@@ -37,11 +37,7 @@ fn ring_side(
     else {
         return Ok(None);
     };
-    let value = model
-        .geom()
-        .position(p)
-        .minus(&center)
-        .dot(&normal.to_real());
+    let value = model.geom().position(p).minus(&center).dot(&normal);
     Ok(Some((
         sign(&value, dec, "boolean.classify-ambiguous")?,
         travel,
@@ -78,7 +74,7 @@ fn plane_winding(
             return Ok(Some(0));
         }
         let agree = sign(
-            &surface.normal.to_real().dot(&normal.to_real()),
+            &surface.normal.dot(&normal),
             dec,
             "boolean.classify-ambiguous",
         )? == Sign::Positive;
@@ -91,9 +87,9 @@ fn plane_winding(
     let Loop::Coedges(cs) = model.loop_(l) else {
         return Ok(None);
     };
-    let u = surface.ref_dir.to_real();
-    let v = surface.normal.cross(&surface.ref_dir).to_real();
-    let origin = surface.origin.to_real();
+    let u = surface.ref_dir.clone();
+    let v = surface.normal.cross(&surface.ref_dir);
+    let origin = surface.origin.clone();
     let d = query.minus(&origin);
     let qx = d.dot(&u);
     let qy = d.dot(&v);
@@ -228,8 +224,8 @@ pub(crate) fn locate(
                     &model
                         .geom()
                         .position(point)
-                        .minus(&cone.apex.to_real())
-                        .dot(&cone.axis.to_real()),
+                        .minus(&cone.apex)
+                        .dot(&cone.axis),
                     dec,
                     "boolean.classify-ambiguous",
                 )? == Sign::Negative

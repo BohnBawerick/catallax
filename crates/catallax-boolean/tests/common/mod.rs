@@ -345,7 +345,9 @@ pub fn check_faces(
             )),
             "result introduced a new supporting surface"
         );
-        let point = exact(face_point(m, f, &mut dec));
+        let point = exact(face_point(m, f, &mut dec))
+            .as_rational()
+            .expect("rational Boolean fixture");
         let (implicit, _) = implicit_normal(m.geom().surface(surface), &point);
         assert_eq!(implicit, r(0), "face_point is off its supporting surface");
         let point = orientation_witness(m, b, f, [(a, pa), (other, pb)], point);

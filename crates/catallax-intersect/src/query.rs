@@ -12,7 +12,11 @@ use catallax_shapes::{
 };
 use std::sync::Arc;
 
-pub(super) fn validate(geom: &GeomStore, c: CurveId) -> Result<Option<Arc<Plan>>, Refusal> {
+pub(super) fn validate(
+    geom: &GeomStore,
+    c: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<Arc<Plan>>, Refusal> {
     match geom.curve(c) {
         Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_) => Ok(None),
         Curve::Intersection(i) => {
@@ -22,9 +26,16 @@ pub(super) fn validate(geom: &GeomStore, c: CurveId) -> Result<Option<Arc<Plan>>
             ) {
                 return Err(refused_curve());
             }
-            let p = pair::plan(geom.surface(i.surfaces[0]), geom.surface(i.surfaces[1]))
-                .map_err(|_| refused_curve())?;
-            if matches!((geom.surface(i.surfaces[0]),geom.surface(i.surfaces[1])),(Surface::Cylinder(a),Surface::Cylinder(b)) if !a.axis.cross(&b.axis).is_zero() && a.radius==b.radius && p.frame.is_none())
+            let p = pair::plan(
+                geom.surface(i.surfaces[0]),
+                geom.surface(i.surfaces[1]),
+                dec,
+            )?;
+            if let (Surface::Cylinder(a), Surface::Cylinder(b)) =
+                (geom.surface(i.surfaces[0]), geom.surface(i.surfaces[1]))
+                && p.frame.is_none()
+                && sign(&a.axis.cross(&b.axis).norm_squared(), dec)? != Sign::Zero
+                && sign(&(&a.radius - &b.radius), dec)? == Sign::Zero
             {
                 return Err(refused_curve());
             }
@@ -34,20 +45,20 @@ pub(super) fn validate(geom: &GeomStore, c: CurveId) -> Result<Option<Arc<Plan>>
     }
 }
 pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<CurveForm, Refusal> {
-    let p = validate(geom, c)?;
+    let p = validate(geom, c, dec)?;
     Ok(match geom.curve(c) {
         Curve::Line(l) => CurveForm::Line {
-            origin: l.origin.to_real(),
+            origin: l.origin.clone(),
             dir: l.dir.clone(),
         },
         Curve::Circle(l) => CurveForm::Circle {
-            center: l.center.to_real(),
+            center: l.center.clone(),
             normal: l.normal.clone(),
             radius_sq: real(&l.radius_sq),
             ref_dir: l.ref_dir.clone(),
         },
         Curve::Ellipse(l) => CurveForm::Ellipse {
-            center: l.center.to_real(),
+            center: l.center.clone(),
             normal: l.normal.clone(),
             major_dir: l.major_dir.clone(),
             major_sq: real(&l.major_sq),
@@ -79,7 +90,7 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
 }
 // Comparing point sets does not require choosing a natural orientation.
 fn carrier(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<CurveForm, Refusal> {
-    let Some(plan) = validate(geom, c)? else {
+    let Some(plan) = validate(geom, c, dec)? else {
         return form(geom, c, dec);
     };
     if plan.frame.is_some() {
@@ -111,16 +122,16 @@ fn carrier(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<CurveForm,
                     }
                 })
                 .expect("CS1 sphere");
-            let base = sphere.center.to_real();
-            let z = witness.minus(&base).dot(&normal.to_real()) / real(&normal.norm_squared());
-            *center = base.plus(&normal.to_real().scaled(&z));
+            let base = sphere.center.clone();
+            let z = witness.minus(&base).dot(&normal.clone()) / real(&normal.norm_squared());
+            *center = base.plus(&normal.clone().scaled(&z));
         }
         _ => {}
     }
     Ok(shape)
 }
-fn orientation(geom: &GeomStore, c: CurveId) -> Result<Real, Refusal> {
-    let Some(plan) = validate(geom, c)? else {
+fn orientation(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Real, Refusal> {
+    let Some(plan) = validate(geom, c, dec)? else {
         return Ok(Real::one());
     };
     let Some(divider) = &plan.divider else {
@@ -143,18 +154,16 @@ pub(super) fn surface_domain(
     let Surface::Cone(cone) = surface else {
         return Ok(true);
     };
-    match sign(
-        &point.minus(&cone.apex.to_real()).dot(&cone.axis.to_real()),
-        dec,
-    ) {
+    let normalized;
+    let (axis, lower) = if let Some([x, y, z]) = cone.axis.rational_components() {
+        (&cone.axis, x.abs().max(y.abs()).max(z.abs()))
+    } else {
+        normalized = unit(&cone.axis);
+        (&normalized, r(1))
+    };
+    match sign(&point.minus(&cone.apex).dot(axis), dec) {
         Ok(value) => Ok(value != Sign::Negative),
         Err(Failure::Uncertain(mut n)) => {
-            let lower = cone
-                .axis
-                .x
-                .abs()
-                .max(cone.axis.y.abs())
-                .max(cone.axis.z.abs());
             n.bound = n.bound / lower;
             Err(Failure::Uncertain(n))
         }
@@ -177,7 +186,7 @@ pub(super) fn curve_domain(
     Ok(true)
 }
 pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) -> Outcome<Apart> {
-    let plan = match validate(geom, c) {
+    let plan = match validate(geom, c, dec) {
         Ok(p) => p,
         Err(e) => return Outcome::Refused(e),
     };
@@ -248,6 +257,13 @@ fn equal_dimensions(a: &Real, b: &Real, dec: &mut Decider) -> Outcome<Apart> {
     }
 }
 fn equal_points(a: &Point3, b: &Point3, dec: &mut Decider) -> Outcome<Apart> {
+    if let Some(value) = a.minus(b).norm_squared().as_rational() {
+        return if value.is_zero() {
+            zero()
+        } else {
+            Outcome::Proven(Apart)
+        };
+    }
     match dec.sign(&a.minus(b).norm_squared()).map(|_| Apart) {
         Outcome::NotExact(mut n) => {
             n.bound = sqrt_upper(&n.bound);
@@ -256,20 +272,23 @@ fn equal_points(a: &Point3, b: &Point3, dec: &mut Decider) -> Outcome<Apart> {
         other => other,
     }
 }
-fn equal_lines(
-    a: &Point3,
-    b: &Point3,
-    d: &catallax_shapes::RVector3,
-    dec: &mut Decider,
-) -> Outcome<Apart> {
-    match dec
-        .sign(&a.minus(b).cross(&d.to_real()).norm_squared())
-        .map(|_| Apart)
-    {
+fn equal_lines(a: &Point3, b: &Point3, d: &Vector3, dec: &mut Decider) -> Outcome<Apart> {
+    match dec.sign(&a.minus(b).cross(d).norm_squared()).map(|_| Apart) {
         Outcome::NotExact(mut n) => {
-            let lower = d.x.abs().max(d.y.abs()).max(d.z.abs());
-            n.bound = sqrt_upper(&n.bound) / lower;
-            Outcome::NotExact(n)
+            if let Some(d) = d.as_rational() {
+                let lower = d.x.abs().max(d.y.abs()).max(d.z.abs());
+                n.bound = sqrt_upper(&n.bound) / lower;
+                Outcome::NotExact(n)
+            } else {
+                let value = (&Real::from(n.bound.clone()) / &d.norm_squared()).sqrt();
+                match dec.enclose_at(&value, 64) {
+                    Ok(bound) => {
+                        n.bound = bound.hi();
+                        Outcome::NotExact(n)
+                    }
+                    Err(refusal) => Outcome::Refused(refusal),
+                }
+            }
         }
         other => other,
     }
@@ -284,7 +303,7 @@ fn cone_support(geom: &GeomStore, curve: CurveId) -> Option<&catallax_shapes::Co
     })
 }
 pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) -> Outcome<Apart> {
-    if let Err(e) = validate(geom, a).and_then(|_| validate(geom, b)) {
+    if let Err(e) = validate(geom, a, dec).and_then(|_| validate(geom, b, dec)) {
         return Outcome::Refused(e);
     }
     if geom
@@ -293,28 +312,13 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
     {
         return fact(dec);
     }
-    if !matches!(geom.curve(a), Curve::Intersection(_))
-        && !matches!(geom.curve(b), Curve::Intersection(_))
-    {
-        let same = match (geom.curve(a), geom.curve(b)) {
-            (Curve::Line(a), Curve::Line(b)) => {
-                a.dir.cross(&b.dir).is_zero() && a.origin.minus(&b.origin).cross(&a.dir).is_zero()
-            }
-            (Curve::Circle(a), Curve::Circle(b)) => {
-                a.center == b.center
-                    && a.radius_sq == b.radius_sq
-                    && a.normal.cross(&b.normal).is_zero()
-            }
-            (Curve::Ellipse(a), Curve::Ellipse(b)) => {
-                a.center == b.center
-                    && a.major_sq == b.major_sq
-                    && a.minor_sq == b.minor_sq
-                    && a.normal.cross(&b.normal).is_zero()
-                    && a.major_dir.cross(&b.major_dir).is_zero()
-            }
-            _ => false,
-        };
-        return if same { zero() } else { Outcome::Proven(Apart) };
+    if geom.curve(a).same_definition(geom.curve(b)) {
+        if geom.curve(a).has_rational_definition() {
+            return zero();
+        }
+        return Outcome::ProvenCoincident(catallax_numbers::Coincidence {
+            proof: catallax_numbers::ZeroProof::Algebraic,
+        });
     }
     let fa = match carrier(geom, a, dec) {
         Ok(f) => f,
@@ -335,13 +339,26 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 dir: db,
             },
         ) => {
-            if !da.cross(&db).is_zero() {
-                return Outcome::Proven(Apart);
+            match sign(&da.cross(&db).norm_squared(), dec) {
+                Ok(Sign::Zero) => {}
+                Ok(_) => return Outcome::Proven(Apart),
+                Err(error) => return error.outcome(),
             }
             match (cone_support(geom, a), cone_support(geom, b)) {
                 (None, None) => equal_lines(&pa, &pb, &da, dec),
-                (Some(ca), Some(cb)) if da.dot(&ca.axis).sign() == da.dot(&cb.axis).sign() => {
-                    match equal_points(&ca.apex.to_real(), &cb.apex.to_real(), dec) {
+                (Some(ca), Some(cb)) => {
+                    let first = match sign(&da.dot(&ca.axis), dec) {
+                        Ok(value) => value,
+                        Err(error) => return error.outcome(),
+                    };
+                    let second = match sign(&da.dot(&cb.axis), dec) {
+                        Ok(value) => value,
+                        Err(error) => return error.outcome(),
+                    };
+                    if first != second {
+                        return Outcome::Proven(Apart);
+                    }
+                    match equal_points(&ca.apex, &cb.apex, dec) {
                         Outcome::ProvenCoincident(_) => equal_lines(&pa, &pb, &da, dec),
                         other => other,
                     }
@@ -363,8 +380,10 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 ..
             },
         ) => {
-            if !na.cross(&nb).is_zero() {
-                return Outcome::Proven(Apart);
+            match sign(&na.cross(&nb).norm_squared(), dec) {
+                Ok(Sign::Zero) => {}
+                Ok(_) => return Outcome::Proven(Apart),
+                Err(error) => return error.outcome(),
             }
             match equal_dimensions(&ra, &rb, dec) {
                 Outcome::ProvenCoincident(_) => equal_points(&a, &b, dec),
@@ -387,8 +406,12 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 minor_sq: sb,
             },
         ) => {
-            if !na.cross(&nb).is_zero() || !da.cross(&db).is_zero() {
-                return Outcome::Proven(Apart);
+            for cross in [na.cross(&nb), da.cross(&db)] {
+                match sign(&cross.norm_squared(), dec) {
+                    Ok(Sign::Zero) => {}
+                    Ok(_) => return Outcome::Proven(Apart),
+                    Err(error) => return error.outcome(),
+                }
             }
             for (a, b) in [(&ma, &mb), (&sa, &sb)] {
                 match equal_dimensions(a, b, dec) {
@@ -412,11 +435,17 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 focal: fb,
             },
         ) => {
-            if !na.cross(&nb).is_zero()
-                || !da.cross(&db).is_zero()
-                || da.dot(&db).sign() != Sign::Positive
-            {
-                return Outcome::Proven(Apart);
+            for cross in [na.cross(&nb), da.cross(&db)] {
+                match sign(&cross.norm_squared(), dec) {
+                    Ok(Sign::Zero) => {}
+                    Ok(_) => return Outcome::Proven(Apart),
+                    Err(error) => return error.outcome(),
+                }
+            }
+            match sign(&da.dot(&db), dec) {
+                Ok(Sign::Positive) => {}
+                Ok(_) => return Outcome::Proven(Apart),
+                Err(error) => return error.outcome(),
             }
             match dec.sign(&(&fa - &fb)).map(|_| Apart) {
                 Outcome::ProvenCoincident(_) => equal_points(&a, &b, dec),
@@ -441,11 +470,17 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 branch: bb,
             },
         ) => {
-            if !na.cross(&nb).is_zero()
-                || !da.cross(&db).is_zero()
-                || (da.dot(&db).sign() == Sign::Positive) != (ba == bb)
-            {
-                return Outcome::Proven(Apart);
+            for cross in [na.cross(&nb), da.cross(&db)] {
+                match sign(&cross.norm_squared(), dec) {
+                    Ok(Sign::Zero) => {}
+                    Ok(_) => return Outcome::Proven(Apart),
+                    Err(error) => return error.outcome(),
+                }
+            }
+            match sign(&da.dot(&db), dec) {
+                Ok(value) if (value == Sign::Positive) == (ba == bb) => {}
+                Ok(_) => return Outcome::Proven(Apart),
+                Err(error) => return error.outcome(),
             }
             for (a, b) in [(&ta, &tb), (&ca, &cb)] {
                 match equal_dimensions(a, b, dec) {
@@ -502,31 +537,25 @@ pub(super) fn order(
         Ok(_) => panic!("order requires an open curve"),
         Err(e) => return Outcome::Refused(e),
     };
-    let sense = match orientation(geom, c) {
+    let sense = match orientation(geom, c, dec) {
         Ok(s) => s,
         Err(e) => return Outcome::Refused(e),
     };
-    dec.sign(
-        &(geom
-            .position(q)
-            .minus(&geom.position(p))
-            .dot(&dir.to_real())
-            * sense),
-    )
-    .map(|s| {
-        if s == StrictSign::Positive {
-            StrictOrder::Less
-        } else {
-            StrictOrder::Greater
-        }
-    })
+    dec.sign(&(geom.position(q).minus(&geom.position(p)).dot(&dir.clone()) * sense))
+        .map(|s| {
+            if s == StrictSign::Positive {
+                StrictOrder::Less
+            } else {
+                StrictOrder::Greater
+            }
+        })
 }
 pub(super) fn charts(
     geom: &GeomStore,
     c: CurveId,
     dec: &mut Decider,
 ) -> Result<Vec<Chart>, Failure> {
-    let plan = validate(geom, c)?;
+    let plan = validate(geom, c, dec)?;
     let f = form(geom, c, dec)?;
     if matches!(f, CurveForm::Branch) {
         chart::branch_charts(geom, c, &plan.unwrap(), dec)
@@ -547,11 +576,11 @@ pub(super) fn cyclic(
     let [p, q, rp] = ids.map(|p| geom.position(p));
     match f {
         CurveForm::Circle { normal, .. } | CurveForm::Ellipse { normal, .. } => {
-            let sense = match orientation(geom, c) {
+            let sense = match orientation(geom, c, dec) {
                 Ok(s) => s,
                 Err(e) => return Outcome::Refused(e),
             };
-            dec.sign(&(q.minus(&p).cross(&rp.minus(&p)).dot(&normal.to_real()) * sense))
+            dec.sign(&(q.minus(&p).cross(&rp.minus(&p)).dot(&normal.clone()) * sense))
                 .map(|s| {
                     if s == StrictSign::Positive {
                         Cyclic::Forward
@@ -610,7 +639,7 @@ pub(super) fn tangent(
     p: PointId,
     dec: &mut Decider,
 ) -> Result<[Vector3; 2], Refusal> {
-    validate(geom, c)?;
+    validate(geom, c, dec)?;
     let position = geom.position(p);
     if let Curve::Intersection(i) = geom.curve(c) {
         let cross = geom
@@ -659,10 +688,8 @@ pub(super) fn tangent(
 }
 fn analytic_tangent(form: CurveForm, position: &Point3) -> Vector3 {
     match form {
-        CurveForm::Line { dir, .. } => dir.to_real(),
-        CurveForm::Circle { center, normal, .. } => {
-            normal.to_real().cross(&position.minus(&center))
-        }
+        CurveForm::Line { dir, .. } => dir,
+        CurveForm::Circle { center, normal, .. } => normal.cross(&position.minus(&center)),
         CurveForm::Ellipse {
             center,
             normal,
@@ -672,13 +699,13 @@ fn analytic_tangent(form: CurveForm, position: &Point3) -> Vector3 {
         } => {
             let d = position.minus(&center);
             let v = normal.cross(&major_dir);
-            let u = major_dir.to_real().scaled(
-                &(d.dot(&major_dir.to_real()) / (real(&major_dir.norm_squared()) * major_sq)),
+            let u = major_dir.clone().scaled(
+                &(d.dot(&major_dir.clone()) / (real(&major_dir.norm_squared()) * major_sq)),
             );
             let v = v
-                .to_real()
-                .scaled(&(d.dot(&v.to_real()) / (real(&v.norm_squared()) * minor_sq)));
-            normal.to_real().cross(&u.plus(&v))
+                .clone()
+                .scaled(&(d.dot(&v.clone()) / (real(&v.norm_squared()) * minor_sq)));
+            normal.clone().cross(&u.plus(&v))
         }
         CurveForm::Parabola {
             vertex,

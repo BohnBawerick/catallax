@@ -171,7 +171,14 @@ blind_test!(face_point_refuses_a_carrier_with_no_rational_points, {
     // The left side has odd valuation, the square even: no rational solution.
     let mut m = Model::new();
     let surface = m.geom_mut().add_surface(Surface::Cylinder(
-        Cylinder::new(RPoint3::origin(), v(1, 1, 1), r(1), v(1, -1, 0)).unwrap(),
+        Cylinder::new(
+            RPoint3::origin().into(),
+            v(1, 1, 1).into(),
+            r(1).into(),
+            v(1, -1, 0).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let f = m.add_face(Face {
         surface,

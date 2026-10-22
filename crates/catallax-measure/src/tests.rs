@@ -53,8 +53,10 @@ fn rational_blocks_and_empty_need_no_budget() {
     ] {
         let pose = Pose::new(
             Rotation::from_quaternion(r(2), r(-3), r(5), r(7)).unwrap(),
-            vector(1000000, -2000000, 123),
-        );
+            (vector(1000000, -2000000, 123)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap();
         let mut model = Model::new();
         let body = catallax_topology::block(&mut model, dimensions.clone(), &pose).unwrap();
         let mut dec = Decider::new(BudgetPolicy {
@@ -69,7 +71,10 @@ fn rational_blocks_and_empty_need_no_budget() {
             answer.value.area,
             exact(r(2) * (&a * &b + &b * &c + &c * &a))
         );
-        let expected = pose.apply_point(&RPoint3::new(a / r(2), b / r(2), c / r(2)));
+        let expected = pose
+            .apply_point(&RPoint3::new(a / r(2), b / r(2), c / r(2)).to_real())
+            .as_rational()
+            .expect("rational measurement fixture");
         assert_eq!(
             answer.value.centroid.unwrap(),
             [&expected.x, &expected.y, &expected.z].map(|c| exact(c.clone()))
@@ -216,8 +221,10 @@ fn holes_and_void_shells_are_measured_as_built() {
     let pi = Ball::pi(256);
     let pose = Pose::new(
         Rotation::from_quaternion(r(7), r(-3), r(2), r(5)).unwrap(),
-        vector(1000000, -12345, 987654),
-    );
+        (vector(1000000, -12345, 987654)).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     for scale in ["1", "1/3", "1e-30", "1e30"] {
         let scale = Rational::parse(scale).unwrap();
         for pose in [&Pose::identity(), &pose] {
@@ -233,11 +240,10 @@ fn holes_and_void_shells_are_measured_as_built() {
                 &result.value.area,
                 &((ball(96) + &ball(6) * &pi) * Ball::from_rational(&scale.pow(2).unwrap(), 256)),
             );
-            let center = pose.apply_point(&RPoint3::new(
-                &scale * &r(2),
-                &scale * &r(2),
-                &scale * &r(2),
-            ));
+            let center = pose
+                .apply_point(&RPoint3::new(&scale * &r(2), &scale * &r(2), &scale * &r(2)).into())
+                .as_rational()
+                .expect("rational measurement fixture");
             for (actual, expected) in result
                 .value
                 .centroid
@@ -454,8 +460,10 @@ fn centroid_separation_ignores_the_absolute_floor() {
 fn fresh_deciders_and_threads_produce_identical_enclosures() {
     let pose = Pose::new(
         Rotation::from_quaternion(r(2), r(7), r(-5), r(3)).unwrap(),
-        vector(123456, -987654, 300000),
-    );
+        (vector(123456, -987654, 300000)).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let mut model = Model::new();
     let body = catallax_topology::cone(&mut model, r(2), r(1), r(2), &pose).unwrap();
     let expected = mass_properties(&model, body, &Accuracy::default(), &mut Decider::default())
@@ -502,20 +510,22 @@ fn integer_periodic_lifts_keep_the_whole_surface_in_the_enclosure() {
     let mut model = Model::new();
     let surface = model.geom_mut().add_surface(Surface::Torus(
         Torus::new(
-            RPoint3::origin(),
-            vector(0, 0, 1),
-            r(3),
-            r(1),
-            vector(1, 0, 0),
+            (RPoint3::origin()).into(),
+            (vector(0, 0, 1)).into(),
+            (r(3)).into(),
+            (r(1)).into(),
+            (vector(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     ));
     let curve = model.geom_mut().add_curve(Curve::Circle(
         Circle::new(
-            RPoint3::new(r(3), r(0), r(0)),
-            vector(0, -1, 0),
-            r(1),
-            vector(1, 0, 0),
+            (RPoint3::new(r(3), r(0), r(0))).into(),
+            (vector(0, -1, 0)).into(),
+            (r(1)).into(),
+            (vector(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     ));

@@ -6,11 +6,13 @@ use catallax_shapes::{Pose, RPoint3};
 
 pub(crate) type Bounds = [[Rational; 2]; 3];
 
-pub(crate) fn transform(bounds: &Bounds, pose: &Pose) -> Bounds {
+pub(crate) fn transform(bounds: &Bounds, pose: &Pose) -> Result<Bounds, Refusal> {
     let mut result: Option<Bounds> = None;
     for corner in 0..8 {
         let [x, y, z] = std::array::from_fn(|i| bounds[i][(corner >> i) & 1].clone());
-        let p = pose.apply_point(&RPoint3::new(x, y, z));
+        let p = pose
+            .apply_rational_point(&RPoint3::new(x, y, z))
+            .ok_or_else(placement_error)?;
         let coordinates = [p.x, p.y, p.z];
         if let Some(b) = &mut result {
             for i in 0..3 {
@@ -21,7 +23,13 @@ pub(crate) fn transform(bounds: &Bounds, pose: &Pose) -> Bounds {
             result = Some(coordinates.map(|x| [x.clone(), x]));
         }
     }
-    result.unwrap()
+    Ok(result.unwrap())
+}
+pub(crate) fn placement_error() -> Refusal {
+    Refusal::new(
+        "field.sample-algebraic-placement",
+        "the rational candidate API needs a native rational placement",
+    )
 }
 pub(crate) fn fraction(i: u32, n: u32) -> Rational {
     Rational::from_ratio(i64::from(2 * i + 1), i64::from(2 * n)).unwrap()
@@ -54,6 +62,8 @@ impl Plan {
     /// and returns `Ok(false)`, never a claim that all candidates were visited.
     /// Through-all walls are sampled over a conservative bound on the field
     /// result, not an arbitrary finite replacement for the unbounded tool.
+    /// An algebraic placement without a native rational frame returns
+    /// `field.sample-algebraic-placement`; no candidate coordinates are rounded.
     pub fn visit_feature_candidates(
         &self,
         divisions: u32,
@@ -81,8 +91,8 @@ impl Plan {
                     [Rational::zero(), Rational::zero()]
                 })),
                 Instruction::Leaf(i) => match &self.leaves[i] {
-                    Leaf::Primitive(p) => Some(p.sample_bounds()),
-                    Leaf::Feature(f) => f.sample_bounds(),
+                    Leaf::Primitive(p) => Some(p.sample_bounds()?),
+                    Leaf::Feature(f) => f.sample_bounds()?,
                 },
                 Instruction::Boolean { kind, a, b } => match kind {
                     BooleanKind::Subtract => bounds[a].clone(),

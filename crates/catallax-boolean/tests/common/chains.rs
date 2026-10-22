@@ -203,7 +203,9 @@ fn chain_faces(m: &mut Model, body: BodyId, operands: &[BodyId], spec: &Chain, s
             m.geom().same_surface(surface, s, &mut dec),
             Outcome::ProvenCoincident(_)
         )));
-        let point = exact(face_point(m, f, &mut dec));
+        let point = exact(face_point(m, f, &mut dec))
+            .as_rational()
+            .expect("rational Boolean fixture");
         let (value, normal) = implicit_normal(m.geom().surface(surface), &point);
         assert_eq!(value, r(0));
         let normal = if m.face(f).sense == Sense::Same {

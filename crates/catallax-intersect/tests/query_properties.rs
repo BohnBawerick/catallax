@@ -145,7 +145,7 @@ blind_test!(handmade_plane_pair_and_budgeted_component_form, {
         panic!("line form required")
     };
     point_eq(&origin, &pi([3, 7, 1]).to_real());
-    assert_eq!(dir, vi([0, 1, 0]));
+    assert_eq!(dir.as_rational().unwrap(), vi([0, 1, 0]));
     assert_eq!(d.stats().work, 0);
     let a = g.add_surface(axis_plane(0, n(1)));
     let b = g.add_surface(zc(5));
@@ -160,7 +160,7 @@ blind_test!(handmade_plane_pair_and_budgeted_component_form, {
         panic!("line form required")
     };
     point_eq(&origin, &pos);
-    assert_eq!(dir, vi([0, 0, -1]));
+    assert_eq!(dir.as_rational().unwrap(), vi([0, 0, -1]));
     assert_eq!(d.stats().decisions, 1);
     assert_eq!(
         curve_form(&g, c, &mut starved()).unwrap_err().code,

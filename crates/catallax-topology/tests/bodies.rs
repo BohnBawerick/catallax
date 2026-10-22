@@ -35,7 +35,12 @@ blind_test!(case_13_backlinks_before_ownership_and_first_face_wins, {
 blind_test!(case_14_walk_order_deduplicates_at_first_sight, {
     let mut m = Model::new();
     let a = assemble(&mut m, &expected(&primitives()[0], &Pose::identity()));
-    let pose = Pose::new(Rotation::identity(), v(10, 20, 30));
+    let pose = Pose::new(
+        Rotation::identity(),
+        v(10, 20, 30).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let b = assemble(&mut m, &expected(&primitives()[0], &pose));
     let mut fa = m.shell(shell_of(&m, a)).faces.clone();
     let fb = m.shell(shell_of(&m, b)).faces.clone();
@@ -68,7 +73,7 @@ blind_test!(case_14_walk_order_deduplicates_at_first_sight, {
     let c = cone(&mut m, r(3), r(0), r(4), &Pose::identity()).unwrap();
     let apex = m.vertices_of_body(c);
     assert_eq!(apex.len(), 1);
-    assert_eq!(explicit(&m, apex[0]), &p(0, 0, 4));
+    assert_eq!(explicit(&m, apex[0]), p(0, 0, 4));
 });
 
 blind_test!(case_14_vertex_order_uses_coedge_sense_not_edge_sense, {
@@ -76,8 +81,8 @@ blind_test!(case_14_vertex_order_uses_coedge_sense_not_edge_sense, {
     let a = vertex(&mut m, p(0, 0, 0));
     let b = vertex(&mut m, p(1, 0, 0));
     let curve = m.geom_mut().add_curve(Curve::Line(Line {
-        origin: p(0, 0, 0),
-        dir: v(1, 0, 0),
+        origin: p(0, 0, 0).into(),
+        dir: v(1, 0, 0).into(),
     }));
     let e = m.add_edge(Edge {
         curve,
@@ -101,7 +106,15 @@ blind_test!(cases_15_16_two_lumps_touching_with_distinct_topology, {
     let mut m = Model::new();
     let shape = Primitive::Block([r(1), r(1), r(1)]);
     let a = expected(&shape, &Pose::identity());
-    let b = expected(&shape, &Pose::new(Rotation::identity(), v(1, 1, 0)));
+    let b = expected(
+        &shape,
+        &Pose::new(
+            Rotation::identity(),
+            v(1, 1, 0).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     let ba = assemble(&mut m, &a);
     let bb = assemble(&mut m, &b);
     let la = m.body(ba).lumps[0];
@@ -119,8 +132,8 @@ blind_test!(cases_15_16_two_lumps_touching_with_distinct_topology, {
             .into_iter()
             .find(|&e| {
                 let e = m.edge(e);
-                explicit(m, e.start.unwrap()) == &p(1, 1, 0)
-                    && explicit(m, e.end.unwrap()) == &p(1, 1, 1)
+                explicit(m, e.start.unwrap()) == p(1, 1, 0)
+                    && explicit(m, e.end.unwrap()) == p(1, 1, 1)
             })
             .unwrap()
     };
@@ -128,9 +141,10 @@ blind_test!(cases_15_16_two_lumps_touching_with_distinct_topology, {
     let eb = seam(&m, bb);
     assert_ne!(ea, eb);
     assert_ne!(m.edge(ea).start, m.edge(eb).start);
-    assert_eq!(
-        m.geom().curve(m.edge(ea).curve),
-        m.geom().curve(m.edge(eb).curve)
+    assert!(
+        m.geom()
+            .curve(m.edge(ea).curve)
+            .same_definition(m.geom().curve(m.edge(eb).curve))
     );
     // Also share the actual line handle, not just equal line definitions.
     let shared = m.edge(ea).curve;
@@ -187,7 +201,12 @@ blind_test!(case_17_void_shell_reverses_faces_and_boundary_travel, {
     );
     let mut inner = expected(
         &Primitive::Block([r(2), r(2), r(2)]),
-        &Pose::new(Rotation::identity(), v(4, 4, 4)),
+        &Pose::new(
+            Rotation::identity(),
+            v(4, 4, 4).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     );
     for (_, sense, loops) in &mut inner.faces {
         *sense = Sense::Reversed;
@@ -238,10 +257,10 @@ blind_test!(case_19_torus_cut_along_meridian, {
     let e = edge(
         &mut m,
         Curve::Circle(Circle {
-            center: p(3, 0, 0),
-            normal: v(0, 1, 0),
-            radius_sq: r(1),
-            ref_dir: v(1, 0, 0),
+            center: p(3, 0, 0).into(),
+            normal: v(0, 1, 0).into(),
+            radius_sq: r(1).into(),
+            ref_dir: v(1, 0, 0).into(),
         }),
         None,
         None,
@@ -273,10 +292,10 @@ blind_test!(case_20_block_with_cylindrical_hole, {
         .push(Boundary::Cycle(vec![(top, Sense::Reversed)]));
     d.faces.push((
         Surface::Cylinder(Cylinder {
-            origin: p(2, 2, 0),
-            axis: v(0, 0, 1),
-            radius: r(1),
-            ref_dir: v(1, 0, 0),
+            origin: p(2, 2, 0).into(),
+            axis: v(0, 0, 1).into(),
+            radius: r(1).into(),
+            ref_dir: v(1, 0, 0).into(),
         }),
         Sense::Reversed,
         vec![

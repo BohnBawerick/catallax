@@ -154,15 +154,20 @@ impl Edge {
 }
 
 impl Profile {
-    pub fn new(plane: &catallax_recipe::Pose, loops: &[Loop]) -> Result<Self, Refusal> {
+    pub fn new(
+        plane: &catallax_recipe::Pose,
+        loops: &[Loop],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         // One validator, including tangencies, odd nesting and impossible-input codes.
-        catallax_features::Profile::new(plane, loops, &mut Decider::default())?;
+        catallax_features::Profile::new(plane, loops, dec)?;
         let [w, x, y, z] = plane.rotation.each_ref().map(|n| n.value().clone());
         let [tx, ty, tz] = plane.translation.0.each_ref().map(|n| n.value().clone());
         let pose = Pose::new(
             Rotation::from_quaternion(w, x, y, z)?,
-            RVector3::new(tx, ty, tz),
-        );
+            RVector3::new(tx, ty, tz).into(),
+            dec,
+        )?;
         let mut boundaries = Vec::new();
         for lp in loops.iter().filter(|lp| !lp.0.is_empty()) {
             let mut edges = Vec::new();
@@ -241,9 +246,22 @@ impl Profile {
         })
     }
     pub fn world(&self, p: &P) -> RPoint3 {
-        self.pose
-            .apply_point(&RPoint3::new(p[0].clone(), p[1].clone(), Rational::zero()))
+        rational_point(
+            &self.pose,
+            &RPoint3::new(p[0].clone(), p[1].clone(), Rational::zero()),
+        )
     }
+}
+
+// These adapters are confined to constructors fed by rational recipe poses.
+// Runtime inverse placements and ray samples remain algebraic.
+pub(crate) fn rational_point(pose: &Pose, p: &RPoint3) -> RPoint3 {
+    pose.apply_rational_point(p)
+        .expect("profile frames come from rational recipe quaternions")
+}
+pub(crate) fn rational_vector(pose: &Pose, v: &RVector3) -> RVector3 {
+    pose.apply_rational_vector(v)
+        .expect("profile frames come from rational recipe quaternions")
 }
 
 pub(crate) fn location(loops: &[Vec<Edge>], p: &X, dec: &mut Decider) -> Result<Location, Refusal> {

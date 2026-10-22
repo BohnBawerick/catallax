@@ -208,10 +208,12 @@ impl Program {
         let mut inputs = Vec::with_capacity(6);
         let sweep = match curve {
             Curve::Line(line) => {
+                let origin = line.origin.as_rational()?;
+                let line_direction = line.dir.as_rational()?;
                 if [from, to].iter().any(|point| {
                     !point
-                        .minus(&line.origin)
-                        .cross(&line.dir)
+                        .minus(&origin)
+                        .cross(&line_direction)
                         .norm_squared()
                         .is_zero()
                 }) {
@@ -227,17 +229,18 @@ impl Program {
                 None
             }
             Curve::Circle(circle) => {
+                let center = circle.center.as_rational()?;
+                let normal = circle.normal.as_rational()?;
+                let reference = circle.ref_dir.as_rational()?;
+                let radius_sq = circle.radius_sq.as_rational()?;
                 let u = scale(
-                    &circle.ref_dir,
-                    &sqrt(&(&circle.radius_sq / &circle.ref_dir.norm_squared()))?,
+                    &reference,
+                    &sqrt(&(&radius_sq / &reference.norm_squared()))?,
                 );
-                let second = circle.normal.cross(&circle.ref_dir);
-                let v = scale(
-                    &second,
-                    &sqrt(&(&circle.radius_sq / &second.norm_squared()))?,
-                );
+                let second = normal.cross(&reference);
+                let v = scale(&second, &sqrt(&(&radius_sq / &second.norm_squared()))?);
                 Some(trigonometric_inputs(
-                    &circle.center,
+                    &center,
                     &u,
                     &v,
                     from,
@@ -246,17 +249,16 @@ impl Program {
                 )?)
             }
             Curve::Ellipse(ellipse) => {
-                let u = scale(
-                    &ellipse.major_dir,
-                    &sqrt(&(&ellipse.major_sq / &ellipse.major_dir.norm_squared()))?,
-                );
-                let second = ellipse.normal.cross(&ellipse.major_dir);
-                let v = scale(
-                    &second,
-                    &sqrt(&(&ellipse.minor_sq / &second.norm_squared()))?,
-                );
+                let center = ellipse.center.as_rational()?;
+                let normal = ellipse.normal.as_rational()?;
+                let major_dir = ellipse.major_dir.as_rational()?;
+                let major_sq = ellipse.major_sq.as_rational()?;
+                let minor_sq = ellipse.minor_sq.as_rational()?;
+                let u = scale(&major_dir, &sqrt(&(&major_sq / &major_dir.norm_squared()))?);
+                let second = normal.cross(&major_dir);
+                let v = scale(&second, &sqrt(&(&minor_sq / &second.norm_squared()))?);
                 Some(trigonometric_inputs(
-                    &ellipse.center,
+                    &center,
                     &u,
                     &v,
                     from,
@@ -270,6 +272,7 @@ impl Program {
         for node in &self.nodes {
             let value = match node {
                 Node::Constant(r) => Polynomial::constant(r.clone()),
+                Node::Exact(_) => return None,
                 Node::Input(i) => inputs.get(*i)?.clone(),
                 Node::Add(a, b) => values[*a].add(&values[*b]),
                 Node::Mul(a, b) => values[*a].mul(&values[*b]),
@@ -389,20 +392,34 @@ mod tests {
 
     #[test]
     fn circular_sweeps_preserve_long_arcs_across_reference_seams() {
-        let surface =
-            Surface::Plane(Plane::new(point(0, 0, 0), vector(0, 0, 1), vector(1, 0, 0)).unwrap());
+        let surface = Surface::Plane(
+            Plane::new(
+                (point(0, 0, 0)).into(),
+                (vector(0, 0, 1)).into(),
+                (vector(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        );
         let program = surface::compile(
             &surface,
             &point(0, 0, 0),
             Property::Area,
             false,
-            &vector(0, 0, 1),
+            &vector(0, 0, 1).to_real(),
         )
         .unwrap()
         .boundary;
         for reference in [vector(1, 0, 0), vector(3, 4, 0), vector(-3, -4, 0)] {
             let curve = Curve::Circle(
-                Circle::new(point(0, 0, 0), vector(0, 0, 1), r(4), reference).unwrap(),
+                Circle::new(
+                    (point(0, 0, 0)).into(),
+                    (vector(0, 0, 1)).into(),
+                    (r(4)).into(),
+                    (reference).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             );
             for (from, to, multiple) in [
                 (point(2, 0, 0), point(0, 2, 0), 1),
@@ -423,19 +440,33 @@ mod tests {
     #[test]
     fn zero_meridian_form_never_erases_a_gauge_pole_on_the_arc() {
         let surface = Surface::Sphere(
-            Sphere::new(point(0, 0, 0), r(2), vector(0, 0, 1), vector(1, 0, 0)).unwrap(),
+            Sphere::new(
+                (point(0, 0, 0)).into(),
+                (r(2)).into(),
+                (vector(0, 0, 1)).into(),
+                (vector(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         );
         let program = surface::compile(
             &surface,
             &point(0, 0, 0),
             Property::Area,
             false,
-            &vector(0, 0, 1),
+            &vector(0, 0, 1).to_real(),
         )
         .unwrap()
         .boundary;
         let curve = Curve::Circle(
-            Circle::new(point(0, 0, 0), vector(1, 0, 0), r(4), vector(0, 1, 0)).unwrap(),
+            Circle::new(
+                (point(0, 0, 0)).into(),
+                (vector(1, 0, 0)).into(),
+                (r(4)).into(),
+                (vector(0, 1, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         );
         // +y to +z is a quarter turn away from the south gauge pole.
         let integral = program

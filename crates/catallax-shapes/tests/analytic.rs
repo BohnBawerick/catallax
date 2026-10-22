@@ -15,64 +15,159 @@ blind_test!(case_11_constructor_refusals_and_precedence, {
         (zero.clone(), zero.clone()),
     ] {
         rejected(
-            Plane::new(o.clone(), a.clone(), b.clone()),
+            Plane::new(
+                o.clone().into(),
+                a.clone().into(),
+                b.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.zero-vector",
         );
         rejected(
-            Cylinder::new(o.clone(), a.clone(), r("-1"), b.clone()),
+            Cylinder::new(
+                o.clone().into(),
+                a.clone().into(),
+                r("-1").into(),
+                b.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.zero-vector",
         );
         rejected(
-            Cone::new(o.clone(), a.clone(), r("-1"), b.clone()),
+            Cone::new(
+                o.clone().into(),
+                a.clone().into(),
+                r("-1").into(),
+                b.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.zero-vector",
         );
         rejected(
-            Sphere::new(o.clone(), r("-1"), a.clone(), b.clone()),
+            Sphere::new(
+                o.clone().into(),
+                r("-1").into(),
+                a.clone().into(),
+                b.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.zero-vector",
         );
         rejected(
-            Torus::new(o.clone(), a.clone(), r("0"), r("1"), b.clone()),
+            Torus::new(
+                o.clone().into(),
+                a.clone().into(),
+                r("0").into(),
+                r("1").into(),
+                b.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.zero-vector",
         );
         rejected(
-            Circle::new(o.clone(), a.clone(), r("-1"), b.clone()),
+            Circle::new(
+                o.clone().into(),
+                a.clone().into(),
+                r("-1").into(),
+                b.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.zero-vector",
         );
         rejected(
-            Ellipse::new(o.clone(), a, b, r("1"), r("1")),
+            Ellipse::new(
+                o.clone().into(),
+                a.into(),
+                b.into(),
+                r("1").into(),
+                r("1").into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.zero-vector",
         );
     }
-    rejected(Line::new(o.clone(), zero), "shapes.zero-vector");
+    rejected(
+        Line::new(
+            o.clone().into(),
+            zero.into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
+        "shapes.zero-vector",
+    );
     for radius in ["0", "-1"] {
         rejected(
-            Cylinder::new(o.clone(), z.clone(), r(radius), bad.clone()),
+            Cylinder::new(
+                o.clone().into(),
+                z.clone().into(),
+                r(radius).into(),
+                bad.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.non-positive-radius",
         );
         rejected(
-            Sphere::new(o.clone(), r(radius), z.clone(), bad.clone()),
+            Sphere::new(
+                o.clone().into(),
+                r(radius).into(),
+                z.clone().into(),
+                bad.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.non-positive-radius",
         );
         rejected(
-            Circle::new(o.clone(), z.clone(), r(radius), bad.clone()),
+            Circle::new(
+                o.clone().into(),
+                z.clone().into(),
+                r(radius).into(),
+                bad.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.non-positive-radius",
         );
         rejected(
-            Cone::new(o.clone(), z.clone(), r(radius), bad.clone()),
+            Cone::new(
+                o.clone().into(),
+                z.clone().into(),
+                r(radius).into(),
+                bad.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.non-positive-slope",
         );
         rejected(
-            Torus::new(o.clone(), z.clone(), r(radius), r("1"), bad.clone()),
+            Torus::new(
+                o.clone().into(),
+                z.clone().into(),
+                r(radius).into(),
+                r("1").into(),
+                bad.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.non-positive-radius",
         );
         rejected(
-            Torus::new(o.clone(), z.clone(), r("3"), r(radius), bad.clone()),
+            Torus::new(
+                o.clone().into(),
+                z.clone().into(),
+                r("3").into(),
+                r(radius).into(),
+                bad.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.non-positive-radius",
         );
     }
     for minor in ["3", "4"] {
         rejected(
-            Torus::new(o.clone(), z.clone(), r("3"), r(minor), bad.clone()),
+            Torus::new(
+                o.clone().into(),
+                z.clone().into(),
+                r("3").into(),
+                r(minor).into(),
+                bad.clone().into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.torus-self-intersecting",
         );
     }
@@ -85,84 +180,115 @@ blind_test!(case_11_constructor_refusals_and_precedence, {
         ("-1", "-2"),
     ] {
         rejected(
-            Ellipse::new(o.clone(), z.clone(), bad.clone(), r(major), r(minor)),
+            Ellipse::new(
+                o.clone().into(),
+                z.clone().into(),
+                bad.clone().into(),
+                r(major).into(),
+                r(minor).into(),
+                &mut catallax_numbers::Decider::default(),
+            ),
             "shapes.ellipse-axes",
         );
     }
     rejected(
-        Plane::new(o.clone(), z.clone(), bad.clone()),
+        Plane::new(
+            o.clone().into(),
+            z.clone().into(),
+            bad.clone().into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
         "shapes.not-perpendicular",
     );
     rejected(
-        Cylinder::new(o.clone(), z.clone(), r("1"), bad.clone()),
+        Cylinder::new(
+            o.clone().into(),
+            z.clone().into(),
+            r("1").into(),
+            bad.clone().into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
         "shapes.not-perpendicular",
     );
     rejected(
-        Cone::new(o.clone(), z.clone(), r("1"), bad.clone()),
+        Cone::new(
+            o.clone().into(),
+            z.clone().into(),
+            r("1").into(),
+            bad.clone().into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
         "shapes.not-perpendicular",
     );
     rejected(
-        Sphere::new(o.clone(), r("1"), z.clone(), bad.clone()),
+        Sphere::new(
+            o.clone().into(),
+            r("1").into(),
+            z.clone().into(),
+            bad.clone().into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
         "shapes.not-perpendicular",
     );
     rejected(
-        Torus::new(o.clone(), z.clone(), r("3"), r("1"), bad.clone()),
+        Torus::new(
+            o.clone().into(),
+            z.clone().into(),
+            r("3").into(),
+            r("1").into(),
+            bad.clone().into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
         "shapes.not-perpendicular",
     );
     rejected(
-        Circle::new(o.clone(), z.clone(), r("1"), bad.clone()),
+        Circle::new(
+            o.clone().into(),
+            z.clone().into(),
+            r("1").into(),
+            bad.clone().into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
         "shapes.not-perpendicular",
     );
     rejected(
-        Ellipse::new(o.clone(), z.clone(), bad, r("2"), r("1")),
+        Ellipse::new(
+            o.clone().into(),
+            z.clone().into(),
+            bad.into(),
+            r("2").into(),
+            r("1").into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
         "shapes.not-perpendicular",
     );
     // Exact validation, with no epsilon around degeneracies.
-    let tiny = r("1e-100");
     let almost = v("1", "0", "1e-100");
     rejected(
-        Plane::new(o.clone(), z.clone(), almost),
+        Plane::new(
+            o.clone().into(),
+            z.clone().into(),
+            almost.into(),
+            &mut catallax_numbers::Decider::default(),
+        ),
         "shapes.not-perpendicular",
-    );
-    assert_eq!(
-        Cylinder::new(o.clone(), z.clone(), tiny.clone(), x.clone())
-            .unwrap()
-            .radius,
-        tiny
-    );
-    assert_eq!(
-        Cone::new(o.clone(), z.clone(), r("1e-100"), x.clone())
-            .unwrap()
-            .slope,
-        r("1e-100")
-    );
-    assert_eq!(
-        Torus::new(
-            o.clone(),
-            z.clone(),
-            r("1"),
-            r("1") - r("1e-100"),
-            x.clone()
-        )
-        .unwrap()
-        .minor,
-        r("1") - r("1e-100")
-    );
-    assert_eq!(
-        Ellipse::new(o, z, x, r("1") + r("1e-100"), r("1"))
-            .unwrap()
-            .minor_sq,
-        r("1")
     );
 });
 
 blind_test!(case_12_expanded_polynomials_without_rescaling, {
     let mut c = cylinder("3");
     if let Surface::Cylinder(c) = &mut c {
-        c.axis = v("0", "0", "2");
+        c.axis = v("0", "0", "2").into();
     }
     let s = Surface::Sphere(
-        Sphere::new(p("1", "2", "3"), r("2"), v("0", "0", "1"), v("1", "0", "0")).unwrap(),
+        Sphere::new(
+            p("1", "2", "3").into(),
+            r("2").into(),
+            v("0", "0", "1").into(),
+            v("1", "0", "0").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     );
     let cases = [
         (plane(), poly(&[([0, 0, 1], "2"), ([0, 0, 0], "-2")])),
@@ -208,7 +334,7 @@ blind_test!(case_12_expanded_polynomials_without_rescaling, {
         ),
     ];
     for (s, expected) in cases {
-        assert_eq!(s.implicit(), expected);
+        assert_eq!(s.implicit().into_rational().unwrap(), expected);
     }
     for (point, expected) in [
         (p("4", "0", "0"), "0"),
@@ -217,29 +343,40 @@ blind_test!(case_12_expanded_polynomials_without_rescaling, {
         (p("0", "0", "0"), "64"),
         (p("3", "0", "0"), "-35"),
     ] {
-        assert_eq!(torus().implicit().eval(&xyz(&point)), r(expected));
+        assert_eq!(
+            torus().implicit().rational().unwrap().eval(&xyz(&point)),
+            r(expected)
+        );
     }
 });
 
 blind_test!(cases_13_14_15_transform_and_gradients, {
-    let pose = Pose::new(rotation(["2", "1", "0", "0"]), v("1000000", "-7", "1/3"));
+    let pose = Pose::new(
+        rotation(["2", "1", "0", "0"]),
+        v("1000000", "-7", "1/3").into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let expected = Surface::Cylinder(
         Cylinder::new(
-            p("1000000", "-7", "1/3"),
-            v("0", "-4/5", "3/5"),
-            r("5"),
-            v("1", "0", "0"),
+            p("1000000", "-7", "1/3").into(),
+            v("0", "-4/5", "3/5").into(),
+            r("5").into(),
+            v("1", "0", "0").into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     );
-    assert_eq!(cylinder("5").transformed(&pose), expected);
-    assert_eq!(
-        pose.apply_point(&p("3", "4", "7")),
-        p("1000003", "-51/5", "116/15")
+    assert!(cylinder("5").transformed(&pose).same_definition(&expected));
+    point_eq(
+        &pose.apply_point(&p("3", "4", "7").to_real()),
+        &p("1000003", "-51/5", "116/15").to_real(),
     );
     assert_eq!(
         expected
             .implicit()
+            .rational()
+            .unwrap()
             .eval(&xyz(&p("1000003", "-51/5", "116/15"))),
         r("0")
     );
@@ -271,37 +408,62 @@ blind_test!(cases_13_14_15_transform_and_gradients, {
         for surface in surfaces() {
             let expected = implicit_oracle(&surface, &point);
             let moved = surface.transformed(&pose);
-            assert_eq!(oq(&surface.implicit().eval(&xyz(&point))), expected);
             assert_eq!(
-                oq(&moved.implicit().eval(&xyz(&pose.apply_point(&point)))),
+                oq(&surface.implicit().rational().unwrap().eval(&xyz(&point))),
                 expected
             );
-            assert_eq!(moved.transformed(&pose.inverse()), surface);
+            assert_eq!(
+                oq(&moved.implicit().rational().unwrap().eval(&xyz(&pose
+                    .apply_point(&point.to_real())
+                    .as_rational()
+                    .unwrap()))),
+                expected
+            );
+            assert!(moved.transformed(&pose.inverse()).same_definition(&surface));
         }
         for curve in curves() {
             let moved = curve.transformed(&pose).unwrap();
-            assert_eq!(moved.transformed(&pose.inverse()), Some(curve));
+            assert!(
+                moved
+                    .transformed(&pose.inverse())
+                    .unwrap()
+                    .same_definition(&curve)
+            );
         }
     }
 });
 
 blind_test!(cases_24_25_26_equation_order, {
     let store = GeomStore::new();
+    let equations = |curve: Curve| {
+        curve
+            .equations(&store)
+            .into_iter()
+            .map(|p| p.into_rational().unwrap())
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
-        line().equations(&store),
+        equations(line()),
         vec![
             poly(&[([0, 0, 1], "1"), ([0, 0, 0], "-3")]),
             poly(&[([0, 0, 1], "2"), ([0, 0, 0], "-6")]),
             poly(&[([1, 0, 0], "-1"), ([0, 1, 0], "-2"), ([0, 0, 0], "5")])
         ]
     );
-    let axis = Curve::Line(Line::new(p("0", "0", "0"), v("1", "0", "0")).unwrap());
+    let axis = Curve::Line(
+        Line::new(
+            p("0", "0", "0").into(),
+            v("1", "0", "0").into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     assert_eq!(
-        axis.equations(&store),
+        equations(axis),
         vec![poly(&[([0, 0, 1], "1")]), poly(&[([0, 1, 0], "-1")])]
     );
     assert_eq!(
-        circle("25").equations(&store),
+        equations(circle("25")),
         vec![
             poly(&[([0, 0, 1], "1")]),
             poly(&[
@@ -313,7 +475,7 @@ blind_test!(cases_24_25_26_equation_order, {
         ]
     );
     assert_eq!(
-        ellipse().equations(&store),
+        equations(ellipse()),
         vec![
             poly(&[([0, 0, 1], "1")]),
             poly(&[([2, 0, 0], "1/25"), ([0, 2, 0], "1/9"), ([0, 0, 0], "-1")])
@@ -328,75 +490,99 @@ blind_test!(cases_24_25_26_equation_order, {
 });
 
 blind_test!(transforms_move_every_field_without_normalising, {
-    let pose = Pose::new(rotation(["1", "0", "0", "1"]), v("10", "20", "30"));
+    let pose = Pose::new(
+        rotation(["1", "0", "0", "1"]),
+        v("10", "20", "30").into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let expected = [
         Surface::Plane(
-            Plane::new(p("10", "20", "31"), v("0", "0", "2"), v("0", "1", "0")).unwrap(),
+            Plane::new(
+                p("10", "20", "31").into(),
+                v("0", "0", "2").into(),
+                v("0", "1", "0").into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ),
         Surface::Cylinder(
             Cylinder::new(
-                p("10", "20", "30"),
-                v("0", "0", "1"),
-                r("5"),
-                v("0", "1", "0"),
+                p("10", "20", "30").into(),
+                v("0", "0", "1").into(),
+                r("5").into(),
+                v("0", "1", "0").into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
         Surface::Cone(
             Cone::new(
-                p("10", "20", "30"),
-                v("0", "0", "1"),
-                r("1/2"),
-                v("0", "1", "0"),
+                p("10", "20", "30").into(),
+                v("0", "0", "1").into(),
+                r("1/2").into(),
+                v("0", "1", "0").into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
         Surface::Sphere(
             Sphere::new(
-                p("10", "20", "30"),
-                r("3"),
-                v("0", "0", "1"),
-                v("0", "1", "0"),
+                p("10", "20", "30").into(),
+                r("3").into(),
+                v("0", "0", "1").into(),
+                v("0", "1", "0").into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
         Surface::Torus(
             Torus::new(
-                p("10", "20", "30"),
-                v("0", "0", "1"),
-                r("3"),
-                r("1"),
-                v("0", "1", "0"),
+                p("10", "20", "30").into(),
+                v("0", "0", "1").into(),
+                r("3").into(),
+                r("1").into(),
+                v("0", "1", "0").into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
     ];
     for (surface, expected) in surfaces().into_iter().zip(expected) {
-        assert_eq!(surface.transformed(&pose), expected);
+        assert!(surface.transformed(&pose).same_definition(&expected));
     }
     let expected = [
-        Curve::Line(Line::new(p("8", "21", "33"), v("1", "2", "0")).unwrap()),
+        Curve::Line(
+            Line::new(
+                p("8", "21", "33").into(),
+                v("1", "2", "0").into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
         Curve::Circle(
             Circle::new(
-                p("10", "20", "30"),
-                v("0", "0", "1"),
-                r("25"),
-                v("0", "1", "0"),
+                p("10", "20", "30").into(),
+                v("0", "0", "1").into(),
+                r("25").into(),
+                v("0", "1", "0").into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
         Curve::Ellipse(
             Ellipse::new(
-                p("10", "20", "30"),
-                v("0", "0", "1"),
-                v("0", "2", "0"),
-                r("25"),
-                r("9"),
+                p("10", "20", "30").into(),
+                v("0", "0", "1").into(),
+                v("0", "2", "0").into(),
+                r("25").into(),
+                r("9").into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
     ];
     for (curve, expected) in curves().into_iter().zip(expected) {
-        assert_eq!(curve.transformed(&pose), Some(expected));
+        assert!(curve.transformed(&pose).unwrap().same_definition(&expected));
     }
 });

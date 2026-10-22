@@ -33,7 +33,7 @@ fn placement(pose: &catallax_recipe::Pose) -> Pose {
     let [w, x, y, z] = pose.rotation.each_ref().map(|n| n.value().clone());
     let rotation = Rotation::from_quaternion(w, x, y, z).expect("compiled field placement");
     let [x, y, z] = pose.translation.0.each_ref().map(|n| n.value().clone());
-    Pose::new(rotation, RVector3::new(x, y, z))
+    Pose::from_rational(rotation, RVector3::new(x, y, z))
 }
 
 /// Calls `visit` for each independently generated supporting-face candidate.
@@ -63,7 +63,8 @@ pub(crate) fn visit(
             }
             let [x, y, z] = xyz;
             visit(
-                pose.apply_point(&RPoint3::new(x, y, z)),
+                pose.apply_rational_point(&RPoint3::new(x, y, z))
+                    .expect("sampling frames come from rational recipe quaternions"),
                 &Origin {
                     step: step.id.clone(),
                     role,

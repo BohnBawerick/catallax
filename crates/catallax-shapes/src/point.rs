@@ -2,13 +2,13 @@
 
 use catallax_numbers::IsolatedRoot;
 
-use crate::{CurveId, Point3, RPoint3, SurfaceId};
+use crate::{CurveId, Point3, SurfaceId};
 
 /// The definition of a point.
 #[derive(Clone, Debug)]
 pub enum PointDef {
-    /// An exact rational point.
-    Explicit(RPoint3),
+    /// An exact point, retaining validated input or construction expressions.
+    Explicit(Point3),
     /// Where some objects meet.
     Meet(Meet),
 }

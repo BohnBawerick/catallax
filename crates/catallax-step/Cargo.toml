@@ -15,6 +15,7 @@ catallax-intersect.workspace = true
 
 [dev-dependencies]
 catallax-boolean.workspace = true
+catallax-measure.workspace = true
 
 [features]
 implementation = []

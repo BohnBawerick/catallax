@@ -1,49 +1,98 @@
-//! Shared arithmetic for frames and polynomial definitions.
+//! Shared certified arithmetic for frames and polynomial definitions.
 
-use crate::{RPoint3, RVector3};
-use catallax_numbers::{Ball, MPoly, Rational, Refusal, Sign};
+use crate::{Point3, Vector3};
+use catallax_numbers::{
+    Ball, Decider, MPoly, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
+};
 
-pub(crate) fn directions(axis: &RVector3, reference: &RVector3) -> Result<(), Refusal> {
-    if axis.is_zero() || reference.is_zero() {
-        Err(Refusal::new("shapes.zero-vector", "direction is zero"))
-    } else {
-        Ok(())
+pub(crate) fn validate(value: &Real, dec: &mut Decider) -> Result<(), Refusal> {
+    if value.as_rational().is_none() {
+        dec.enclose(value, &Rational::one())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_point(point: &Point3, dec: &mut Decider) -> Result<(), Refusal> {
+    for value in [&point.x, &point.y, &point.z] {
+        validate(value, dec)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_vector(vector: &Vector3, dec: &mut Decider) -> Result<(), Refusal> {
+    for value in [&vector.x, &vector.y, &vector.z] {
+        validate(value, dec)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    if let Some(value) = value.as_rational() {
+        return Ok(value.sign());
+    }
+    match dec.sign(value) {
+        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+        Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
+        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::Refused(r) => Err(r),
     }
 }
 
-pub(crate) fn perpendicular(axis: &RVector3, reference: &RVector3) -> Result<(), Refusal> {
-    if !axis.dot(reference).is_zero() {
-        Err(Refusal::new(
+pub(crate) fn directions(
+    axis: &Vector3,
+    reference: &Vector3,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for vector in [axis, reference] {
+        if sign(&vector.norm_squared(), dec)? == Sign::Zero {
+            return Err(Refusal::new("shapes.zero-vector", "direction is zero"));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn perpendicular(
+    axis: &Vector3,
+    reference: &Vector3,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    if sign(&axis.dot(reference), dec)? != Sign::Zero {
+        return Err(Refusal::new(
             "shapes.not-perpendicular",
             "reference direction is not perpendicular",
-        ))
-    } else {
-        Ok(())
+        ));
     }
+    Ok(())
 }
 
-pub(crate) fn positive(value: &Rational, code: &'static str) -> Result<(), Refusal> {
-    if value.sign() != Sign::Positive {
-        Err(Refusal::new(code, "parameter must be positive"))
-    } else {
-        Ok(())
+pub(crate) fn positive(value: &Real, code: &'static str, dec: &mut Decider) -> Result<(), Refusal> {
+    if sign(value, dec)? != Sign::Positive {
+        return Err(Refusal::new(code, "parameter must be positive"));
     }
+    Ok(())
 }
 
-pub(crate) fn displacement(origin: &RPoint3) -> [MPoly; 3] {
+pub(crate) fn displacement(origin: &Point3) -> [RealPoly; 3] {
     let coordinates = [&origin.x, &origin.y, &origin.z];
-    std::array::from_fn(|i| MPoly::var(3, i) - MPoly::constant(3, coordinates[i].clone()))
+    if let Some(origin) = origin.as_rational() {
+        let coordinates = [origin.x, origin.y, origin.z];
+        return std::array::from_fn(|i| {
+            RealPoly::from(MPoly::var(3, i) - MPoly::constant(3, coordinates[i].clone()))
+        });
+    }
+    std::array::from_fn(|i| RealPoly::var(3, i) - RealPoly::constant(3, coordinates[i].clone()))
 }
 
-pub(crate) fn dot(p: &[MPoly; 3], v: &RVector3) -> MPoly {
+pub(crate) fn dot(p: &[RealPoly; 3], v: &Vector3) -> RealPoly {
     p[0].scale(&v.x) + p[1].scale(&v.y) + p[2].scale(&v.z)
 }
 
-pub(crate) fn norm(p: &[MPoly; 3]) -> MPoly {
+pub(crate) fn norm(p: &[RealPoly; 3]) -> RealPoly {
     &p[0] * &p[0] + &p[1] * &p[1] + &p[2] * &p[2]
 }
 
-pub(crate) fn cross(p: &[MPoly; 3], v: &RVector3) -> [MPoly; 3] {
+pub(crate) fn cross(p: &[RealPoly; 3], v: &Vector3) -> [RealPoly; 3] {
     [
         p[1].scale(&v.z) - p[2].scale(&v.y),
         p[2].scale(&v.x) - p[0].scale(&v.z),
@@ -55,13 +104,21 @@ pub(crate) fn ball(r: &Rational, precision: u32) -> Ball {
     Ball::from_rational(r, precision)
 }
 
-pub(crate) fn point(p: &RPoint3, precision: u32) -> [Ball; 3] {
-    [&p.x, &p.y, &p.z].map(|r| ball(r, precision))
+pub(crate) fn point(p: &Point3, precision: u32, dec: &Decider) -> Result<[Ball; 3], Refusal> {
+    Ok([
+        dec.enclose_at(&p.x, precision)?,
+        dec.enclose_at(&p.y, precision)?,
+        dec.enclose_at(&p.z, precision)?,
+    ])
 }
 
-fn unit(v: &RVector3, precision: u32) -> [Ball; 3] {
-    let n = v.norm_squared();
-    [&v.x, &v.y, &v.z].map(|c| {
+fn rational_squared_norm(v: &[&Rational; 3]) -> Rational {
+    v[0] * v[0] + v[1] * v[1] + v[2] * v[2]
+}
+
+fn rational_unit(v: [&Rational; 3], precision: u32) -> [Ball; 3] {
+    let n = rational_squared_norm(&v);
+    v.map(|c| {
         let magnitude = ball(&(&(c * c) / &n), precision)
             .sqrt()
             .expect("nonnegative squared component");
@@ -73,39 +130,60 @@ fn unit(v: &RVector3, precision: u32) -> [Ball; 3] {
     })
 }
 
-pub(crate) fn frame(axis: &RVector3, reference: &RVector3, precision: u32) -> [[Ball; 3]; 3] {
-    [
-        unit(reference, precision),
-        unit(&axis.cross(reference), precision),
-        unit(axis, precision),
-    ]
+fn unit(v: &Vector3, precision: u32, dec: &Decider) -> Result<[Ball; 3], Refusal> {
+    if let Some(rational) = v.rational_components() {
+        return Ok(rational_unit(rational, precision));
+    }
+    let length = v.norm_squared().sqrt();
+    Ok([
+        dec.enclose_at(&(&v.x / &length), precision)?,
+        dec.enclose_at(&(&v.y / &length), precision)?,
+        dec.enclose_at(&(&v.z / &length), precision)?,
+    ])
+}
+
+pub(crate) fn frame(
+    axis: &Vector3,
+    reference: &Vector3,
+    precision: u32,
+    dec: &Decider,
+) -> Result<[[Ball; 3]; 3], Refusal> {
+    Ok([
+        unit(reference, precision, dec)?,
+        unit(&axis.cross(reference), precision, dec)?,
+        unit(axis, precision, dec)?,
+    ])
 }
 
 pub(crate) fn add(a: &[Ball; 3], b: &[Ball; 3]) -> [Ball; 3] {
     std::array::from_fn(|i| &a[i] + &b[i])
 }
-
 pub(crate) fn scale(a: &[Ball; 3], c: &Ball) -> [Ball; 3] {
     std::array::from_fn(|i| &a[i] * c)
 }
 
-// Exact affine bounds before rounding avoid losing small local coordinates
-// when a surface is far from the origin.
-pub(crate) fn project(p: &[Ball; 3], origin: &RPoint3, dir: &RVector3, precision: u32) -> Ball {
+// Exact affine bounds preserve tiny local coordinates at large rational offsets.
+fn rational_project(
+    p: &[Ball; 3],
+    origin: &[&Rational; 3],
+    dir: &[&Rational; 3],
+    precision: u32,
+) -> Ball {
     let mut lo = Rational::zero();
     let mut hi = Rational::zero();
     for ((b, o), c) in p
         .iter()
-        .zip([&origin.x, &origin.y, &origin.z])
-        .zip([&dir.x, &dir.y, &dir.z])
+        .zip(origin.iter().copied())
+        .zip(dir.iter().copied())
     {
         let a = &(&b.lo() - o) * c;
         let z = &(&b.hi() - o) * c;
-        lo = lo + a.clone().min(z.clone());
-        hi = hi + a.max(z);
+        let (lower, upper) = if a <= z { (a, z) } else { (z, a) };
+        lo = lo + lower;
+        hi = hi + upper;
     }
     let numerator = ball(&lo, precision).hull(&ball(&hi, precision));
-    let length = ball(&dir.norm_squared(), precision)
+    let length = ball(&rational_squared_norm(dir), precision)
         .sqrt()
         .expect("positive squared length");
     numerator
@@ -113,11 +191,35 @@ pub(crate) fn project(p: &[Ball; 3], origin: &RPoint3, dir: &RVector3, precision
         .expect("positive length enclosure")
 }
 
+pub(crate) fn project(
+    p: &[Ball; 3],
+    origin: &Point3,
+    dir: &Vector3,
+    precision: u32,
+    dec: &Decider,
+) -> Result<Ball, Refusal> {
+    if let (Some(origin), Some(dir)) = (origin.rational_components(), dir.rational_components()) {
+        return Ok(rational_project(p, &origin, &dir, precision));
+    }
+    let origin = point(origin, precision, dec)?;
+    let dir = unit(dir, precision, dec)?;
+    Ok((0..3).fold(ball(&Rational::zero(), precision), |sum, i| {
+        &sum + &(&(&p[i] - &origin[i]) * &dir[i])
+    }))
+}
+
 pub(crate) fn sqrt_upper(r: &Rational) -> Rational {
-    // Outward ball rounding proves this bound. No decision or policy is made.
     ball(r, 64).sqrt().expect("nonnegative bound").hi()
 }
 
-pub(crate) fn inverse_length_upper(v: &RVector3) -> Rational {
-    sqrt_upper(&v.norm_squared().recip().expect("nonzero direction"))
+pub(crate) fn rational_norm_squared(v: &Vector3) -> Option<Rational> {
+    v.rational_components().map(|v| rational_squared_norm(&v))
+}
+
+pub(crate) fn inverse_length_upper(v: &Vector3, dec: &Decider) -> Result<Rational, Refusal> {
+    if let Some(norm) = rational_norm_squared(v) {
+        return Ok(sqrt_upper(&norm.recip().expect("nonzero direction")));
+    }
+    let inverse = &Real::one() / &v.norm_squared().sqrt();
+    Ok(dec.enclose_at(&inverse, 64)?.hi())
 }

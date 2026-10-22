@@ -1,7 +1,7 @@
 use catallax_numbers::{
     Coincidence, Decider, Integer, Outcome, Rational, Real, Refusal, Sign, StrictSign, ZeroProof,
 };
-use catallax_shapes::{Point3, RPoint3, RVector3, Vector3};
+use catallax_shapes::{Point3, RVector3, Vector3};
 
 #[derive(Debug)]
 pub(super) enum Failure {
@@ -29,13 +29,10 @@ impl Failure {
         }
     }
 }
-pub(super) fn sq(x: &Rational) -> Rational {
-    x * x
-}
 pub(super) fn r(x: i64) -> Rational {
     Rational::from_i64(x)
 }
-pub(super) fn real(x: &Rational) -> Real {
+pub(super) fn real<T: Clone + Into<Real>>(x: &T) -> Real {
     x.clone().into()
 }
 pub(super) fn zero<T>() -> Outcome<T> {
@@ -62,6 +59,9 @@ pub(super) fn refused_pair() -> Refusal {
     )
 }
 pub(super) fn sign(x: &Real, dec: &mut Decider) -> Result<Sign, Failure> {
+    if let Some(value) = x.rational_ref() {
+        return Ok(value.sign());
+    }
     match dec.sign(x) {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
@@ -103,24 +103,34 @@ pub(super) fn root(x: &Rational) -> Real {
     rational_sqrt(x).map_or_else(|| real(x).sqrt(), Real::from_rational)
 }
 pub(super) fn root_real(x: &Real) -> Real {
-    x.as_rational().map_or_else(|| x.sqrt(), |q| root(&q))
+    x.rational_ref().map_or_else(|| x.sqrt(), root)
 }
-pub(super) fn point_rational(p: &Point3) -> Option<RPoint3> {
-    Some(RPoint3::new(
-        p.x.as_rational()?,
-        p.y.as_rational()?,
-        p.z.as_rational()?,
+pub(super) fn perp(v: &Vector3, dec: &mut Decider) -> Result<Vector3, Refusal> {
+    if let Some([x, y, z]) = v.rational_components() {
+        let a = [x.abs(), y.abs(), z.abs()];
+        let k = (0..3).min_by_key(|&k| &a[k]).unwrap();
+        let direction = match k {
+            0 => RVector3::new(r(0), z.clone(), -y),
+            1 => RVector3::new(-z, r(0), x.clone()),
+            _ => RVector3::new(y.clone(), -x, r(0)),
+        };
+        return Ok(direction.into());
+    }
+    for axis in 0..3 {
+        let components = std::array::from_fn::<_, 3, _>(|i| Real::from_i64(i64::from(i == axis)));
+        let [x, y, z] = components;
+        let direction = v.cross(&Vector3::new(x, y, z));
+        if sign(&direction.norm_squared(), dec)? != Sign::Zero {
+            return Ok(direction);
+        }
+    }
+    Err(Refusal::new(
+        "shapes.zero-vector",
+        "perpendicular direction requires a nonzero vector",
     ))
 }
-pub(super) fn perp(v: &RVector3) -> RVector3 {
-    let a = [v.x.abs(), v.y.abs(), v.z.abs()];
-    let k = (0..3).min_by_key(|&k| &a[k]).unwrap();
-    let mut e = [r(0), r(0), r(0)];
-    e[k] = r(1);
-    v.cross(&RVector3::new(e[0].clone(), e[1].clone(), e[2].clone()))
-}
-pub(super) fn unit(v: &RVector3) -> Vector3 {
-    v.to_real().scaled(&(Real::one() / root(&v.norm_squared())))
+pub(super) fn unit(v: &Vector3) -> Vector3 {
+    v.scaled(&(Real::one() / root_real(&v.norm_squared())))
 }
 pub(super) fn midpoint(a: &Point3, b: &Point3) -> Point3 {
     a.plus(

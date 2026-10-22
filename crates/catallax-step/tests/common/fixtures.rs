@@ -7,13 +7,20 @@ pub fn flip(s: Sense) -> Sense {
     }
 }
 pub fn translated(x: &str, y: &str, z: &str) -> Pose {
-    Pose::new(Rotation::identity(), RVector3::new(r(x), r(y), r(z)))
+    Pose::new(
+        Rotation::identity(),
+        (RVector3::new(r(x), r(y), r(z))).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap()
 }
 pub fn xpose(x: &str, y: &str, z: &str) -> Pose {
     Pose::new(
         Rotation::from_quaternion(n(1), n(0), n(1), n(0)).unwrap(),
-        RVector3::new(r(x), r(y), r(z)),
+        (RVector3::new(r(x), r(y), r(z))).into(),
+        &mut catallax_numbers::Decider::default(),
     )
+    .unwrap()
 }
 #[derive(Clone, Debug)]
 pub enum Primitive {
@@ -107,10 +114,11 @@ pub fn split_sphere() -> (Model, BodyId) {
     let surface = m.face(m.faces_of_body(b)[0]).surface;
     let curve = m.geom_mut().add_curve(Curve::Circle(
         Circle::new(
-            RPoint3::origin(),
-            RVector3::new(n(0), n(0), n(1)),
-            n(4),
-            RVector3::new(n(1), n(0), n(0)),
+            (RPoint3::origin()).into(),
+            (RVector3::new(n(0), n(0), n(1))).into(),
+            (n(4)).into(),
+            (RVector3::new(n(1), n(0), n(0))).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     ));
@@ -156,7 +164,7 @@ pub fn touching_blocks() -> (Model, BodyId) {
             let ap = m.vertex(av).point;
             if let (PointDef::Explicit(x), PointDef::Explicit(y)) =
                 (m.geom().point(p), m.geom().point(ap))
-                && x == y
+                && x.rational_components().unwrap() == y.rational_components().unwrap()
             {
                 p = ap;
                 break;
@@ -170,7 +178,7 @@ pub fn touching_blocks() -> (Model, BodyId) {
         let mut curve = old.curve;
         for ae in m.edges_of_body(a) {
             let ac = m.edge(ae).curve;
-            if m.geom().curve(curve) == m.geom().curve(ac) {
+            if m.geom().curve(curve).same_definition(m.geom().curve(ac)) {
                 curve = ac;
                 break;
             }
@@ -510,7 +518,12 @@ pub fn branch_pair(case: u32) -> (Model, BodyId, BodyId) {
             (
                 "1",
                 "1",
-                Pose::new(rotation, RVector3::new(n(-12), n(0), n(-16))),
+                Pose::new(
+                    rotation,
+                    (RVector3::new(n(-12), n(0), n(-16))).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
                 false,
             )
         }

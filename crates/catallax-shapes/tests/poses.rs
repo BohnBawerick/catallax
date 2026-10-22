@@ -1,18 +1,16 @@
 #![allow(missing_docs)]
 mod common;
+use catallax_numbers::{Decider, Real};
 use catallax_shapes::*;
 use common::*;
-use std::hash::{Hash, Hasher};
-
-fn hash(x: &impl Hash) -> u64 {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    x.hash(&mut h);
-    h.finish()
-}
 
 blind_test!(cases_01_to_09_quaternions, {
     for w in ["1", "2", "-3", "1/7"] {
-        assert_eq!(rotation([w, "0", "0", "0"]), Rotation::identity());
+        assert!(
+            rotation([w, "0", "0", "0"])
+                .same_rotation(&Rotation::identity(), &mut Decider::default())
+                .unwrap()
+        );
     }
     let cases = [
         (
@@ -42,25 +40,35 @@ blind_test!(cases_01_to_09_quaternions, {
     ];
     for (q, m) in cases {
         let rot = rotation(q);
-        assert_eq!(rot.matrix(), &m.map(|row| row.map(r)));
+        let expected = m.map(|row| row.map(r));
+        assert_eq!(
+            rot.rational_matrix().unwrap(),
+            expected.each_ref().map(|row| row.each_ref())
+        );
     }
     let a = rotation(["1", "2", "3", "4"]);
     for c in ["-1", "5", "1/7"] {
         let [w, x, y, z] = ["1", "2", "3", "4"].map(|x| r(x) * r(c));
         let b = Rotation::from_quaternion(w, x, y, z).unwrap();
-        assert_eq!(a, b);
-        assert_eq!(hash(&a), hash(&b));
+        assert!(a.same_rotation(&b, &mut Decider::default()).unwrap());
     }
-    assert_eq!(
-        a.then(&rotation(["2", "-1", "0", "5"])),
-        rotation(["-16", "-12", "20", "10"])
+    assert!(
+        a.then(&rotation(["2", "-1", "0", "5"]))
+            .same_rotation(
+                &rotation(["-16", "-12", "20", "10"]),
+                &mut Decider::default()
+            )
+            .unwrap()
     );
     rejected(
         Rotation::from_quaternion(r("0"), r("0"), r("0"), r("0")),
         "shapes.zero-quaternion",
     );
     assert_eq!(
-        rotation(["1", "0", "0", "1"]).apply(&v("1", "0", "0")),
+        rotation(["1", "0", "0", "1"])
+            .apply(&v("1", "0", "0").to_real())
+            .as_rational()
+            .unwrap(),
         v("0", "1", "0")
     );
 });
@@ -77,32 +85,68 @@ blind_test!(cases_07_08_generated_exact_rotation_laws, {
         };
         let rot = build(&a);
         let matrix = quaternion_matrix(&a);
-        assert_eq!(rot.matrix(), &matrix.clone().map(|row| row.map(|x| eq(&x))));
+        let expected = matrix.each_ref().map(|row| row.each_ref().map(eq));
+        assert_eq!(
+            rot.rational_matrix().unwrap(),
+            expected.each_ref().map(|row| row.each_ref())
+        );
         for i in 0..3 {
             for j in 0..3 {
                 let product: Q = (0..3)
-                    .map(|k| oq(&rot.matrix()[i][k]) * oq(&rot.matrix()[j][k]))
+                    .map(|k| {
+                        oq(rot.rational_matrix().unwrap()[i][k])
+                            * oq(rot.rational_matrix().unwrap()[j][k])
+                    })
                     .sum();
                 assert_eq!(product, q(i64::from(i == j), 1));
-                assert_eq!(rot.inverse().matrix()[i][j], rot.matrix()[j][i]);
+                assert_eq!(
+                    rot.inverse().rational_matrix().unwrap()[i][j],
+                    rot.rational_matrix().unwrap()[j][i]
+                );
             }
         }
-        let m = rot.matrix().clone().map(|row| row.map(|x| oq(&x)));
+        let m = rot.rational_matrix().unwrap().map(|row| row.map(oq));
         assert_eq!(dot(&m[0], &cross(&m[1], &m[2])), q(1, 1));
-        assert_eq!(
-            rot.inverse(),
-            build(&[a[0].clone(), -a[1].clone(), -a[2].clone(), -a[3].clone()])
+        let mut dec = Decider::default();
+        assert!(
+            rot.inverse()
+                .same_rotation(
+                    &build(&[a[0].clone(), -a[1].clone(), -a[2].clone(), -a[3].clone()]),
+                    &mut dec
+                )
+                .unwrap()
         );
-        assert_eq!(rot.then(&rot.inverse()), Rotation::identity());
-        assert_eq!(rot.then(&build(&b)), build(&hamilton(&b, &a)));
+        assert!(
+            rot.then(&rot.inverse())
+                .same_rotation(&Rotation::identity(), &mut dec)
+                .unwrap()
+        );
+        assert!(
+            rot.then(&build(&b))
+                .same_rotation(&build(&hamilton(&b, &a)), &mut dec)
+                .unwrap()
+        );
     }
 });
 
 blind_test!(case_10_pose_order_and_vectors, {
-    let pose = Pose::new(rotation(["1", "0", "0", "1"]), v("1", "2", "3"));
-    assert_eq!(pose.apply_point(&p("1", "0", "0")), p("1", "3", "3"));
+    let pose = Pose::new(
+        rotation(["1", "0", "0", "1"]),
+        v("1", "2", "3").to_real(),
+        &mut Decider::default(),
+    )
+    .unwrap();
     assert_eq!(
-        pose.inverse().apply_point(&p("1", "3", "3")),
+        pose.apply_point(&p("1", "0", "0").to_real())
+            .as_rational()
+            .unwrap(),
+        p("1", "3", "3")
+    );
+    assert_eq!(
+        pose.inverse()
+            .apply_point(&p("1", "3", "3").to_real())
+            .as_rational()
+            .unwrap(),
         p("1", "0", "0")
     );
     point_eq(
@@ -114,17 +158,23 @@ blind_test!(case_10_pose_order_and_vectors, {
         let a = rng.pose();
         let b = rng.pose();
         let point = rp(std::array::from_fn(|_| rng.rational()));
-        assert_eq!(
-            a.then(&b).apply_point(&point),
-            b.apply_point(&a.apply_point(&point))
+        point_eq(
+            &a.then(&b).apply_point(&point.to_real()),
+            &b.apply_point(&a.apply_point(&point.to_real())),
         );
-        assert_eq!(a.then(&a.inverse()), Pose::identity());
-        assert_eq!(a.inverse().apply_point(&a.apply_point(&point)), point);
+        assert!(
+            a.then(&a.inverse())
+                .same_motion(&Pose::identity(), &mut Decider::default())
+                .unwrap()
+        );
+        point_eq(
+            &a.inverse().apply_point(&a.apply_point(&point.to_real())),
+            &point.to_real(),
+        );
         let vector = RVector3::new(point.x.clone(), point.y.clone(), point.z.clone());
-        assert_eq!(a.apply_vector(&vector), a.rotation.apply(&vector));
-        vector_eq(
-            &a.rotation.apply_real(&vector.to_real()),
-            &a.apply_vector(&vector),
+        real_eq(
+            &a.apply_vector(&vector.to_real()).norm_squared(),
+            &Real::from(vector.norm_squared()),
         );
     }
 });

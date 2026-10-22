@@ -94,8 +94,10 @@ fn main() {
         .collect::<Vec<_>>();
     let half_negative = Pose::new(
         Rotation::from_quaternion(r(0), r(1), r(0), r(0)).unwrap(),
-        RVector3::new(r(0), r(0), r(3)),
-    );
+        (RVector3::new(r(0), r(0), r(3))).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     for (name, (model, body)) in [
         (
             "through-hole",

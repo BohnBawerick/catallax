@@ -1,6 +1,6 @@
 //! Fixtures derived only from the numbered cases in the piece 5 contract.
 
-use catallax_numbers::{Rational, Refusal};
+use catallax_numbers::{Rational, Real, Refusal};
 use catallax_shapes::{Pose, RPoint3, Rotation};
 use catallax_topology::{BodyId, Model, block, cone, cylinder, sphere};
 
@@ -40,7 +40,12 @@ impl Primitive {
         }
     }
     pub(crate) fn classify(&self, point: &RPoint3) -> Position {
-        let p = self.pose.inverse().apply_point(point);
+        let p = self
+            .pose
+            .inverse()
+            .apply_point(&point.to_real())
+            .as_rational()
+            .expect("rational benchmark fixture");
         match &self.kind {
             Kind::Block(size) => {
                 let x = [p.x, p.y, p.z];
@@ -116,7 +121,10 @@ impl Primitive {
                         hi[axis].clone()
                     }
                 });
-                self.pose.apply_point(&RPoint3::new(x, y, z))
+                self.pose
+                    .apply_point(&RPoint3::new(x, y, z).into())
+                    .as_rational()
+                    .expect("rational benchmark fixture")
             })
             .collect();
         let lower = std::array::from_fn(|i| {
@@ -144,8 +152,10 @@ impl Primitive {
         };
         let pose = Pose::new(
             self.pose.rotation.clone(),
-            self.pose.translation.scaled(scale),
+            self.pose.translation.scaled(&Real::from(scale.clone())),
+            &mut catallax_numbers::Decider::default(),
         )
+        .unwrap()
         .then(placement);
         Self { kind, pose }
     }
@@ -158,7 +168,12 @@ fn at(kind: Kind, t: [i64; 3], x_axis: bool) -> Primitive {
     };
     Primitive {
         kind,
-        pose: Pose::new(rotation, p(t).minus(&RPoint3::origin())),
+        pose: Pose::new(
+            rotation,
+            (p(t).minus(&RPoint3::origin())).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     }
 }
 pub(crate) fn block_at(size: [i64; 3], t: [i64; 3]) -> Primitive {
@@ -532,7 +547,7 @@ pub(crate) fn cases() -> Vec<Case> {
     let e = Rational::parse("1e-30").unwrap();
     for (name, sign) in [("gap", 1), ("overlap", -1)] {
         let mut b = block_at([1, 1, 1], [1, 0, 0]);
-        b.pose.translation.x = &b.pose.translation.x + &(&e * &r(sign));
+        b.pose.translation.x = &b.pose.translation.x + &Real::from(&e * &r(sign));
         cases.push(case(
             9,
             name,
@@ -545,7 +560,7 @@ pub(crate) fn cases() -> Vec<Case> {
             },
         ));
         let mut b = cylinder_at(2, 20, [-5, 5, 12], true);
-        b.pose.translation.z = &b.pose.translation.z + &(&e * &r(sign));
+        b.pose.translation.z = &b.pose.translation.z + &Real::from(&e * &r(sign));
         cases.push(case(
             13,
             name,
@@ -558,7 +573,7 @@ pub(crate) fn cases() -> Vec<Case> {
             },
         ));
         let mut b = ball_at(3, [5, 5, 13]);
-        b.pose.translation.z = &b.pose.translation.z + &(&e * &r(sign));
+        b.pose.translation.z = &b.pose.translation.z + &Real::from(&e * &r(sign));
         cases.push(case(
             19,
             name,
@@ -571,7 +586,7 @@ pub(crate) fn cases() -> Vec<Case> {
             },
         ));
         let mut b = ball_at(5, [10, 0, 0]);
-        b.pose.translation.x = &b.pose.translation.x + &(&e * &r(sign));
+        b.pose.translation.x = &b.pose.translation.x + &Real::from(&e * &r(sign));
         cases.push(case(
             37,
             name,
@@ -585,7 +600,7 @@ pub(crate) fn cases() -> Vec<Case> {
         ));
     }
     let mut b = cylinder_at(1, 10, [-5, 3, 0], true);
-    b.pose.translation.y = &b.pose.translation.y - &e;
+    b.pose.translation.y = &b.pose.translation.y - &Real::from(e);
     cases.push(case(
         29,
         "bite",

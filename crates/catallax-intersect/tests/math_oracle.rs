@@ -1,4 +1,5 @@
 //! Checks the mathematical fixtures without executing any piece 4 function.
+use catallax_numbers::RealPoly;
 mod common;
 use common::oracle::{Expected, Part, Shape};
 use common::*;
@@ -10,7 +11,8 @@ use common::*;
 fn enclose(x: &Real) -> Ball {
     Decider::default().enclose(x, &r("1e-80")).unwrap()
 }
-fn residual(equation: &MPoly, p: &Point3) {
+fn residual(equation: &RealPoly, p: &Point3) {
+    let equation = equation.rational().expect("rational intersection fixture");
     if let Some(p) = rational_point(p) {
         assert_eq!(equation.eval(&[p.x, p.y, p.z]), n(0));
     } else {
@@ -66,19 +68,19 @@ fn surface_fixture_residual_smoke() {
                             let p = curve.parameter_origin(&g);
                             check(&p);
                             match *curve {
-                                Curve::Line(c) => check(&p.plus(&c.dir.to_real())),
-                                Curve::Circle(c) => check(
-                                    &c.center
-                                        .to_real()
-                                        .plus(&p.minus(&c.center.to_real()).scaled(&rr(-1))),
-                                ),
+                                Curve::Line(c) => check(&p.plus(&c.dir)),
+                                Curve::Circle(c) => {
+                                    check(&c.center.plus(&p.minus(&c.center).scaled(&rr(-1))))
+                                }
                                 Curve::Ellipse(c) => {
                                     let minor = c.normal.cross(&c.major_dir);
-                                    check(&plus(
-                                        &c.center,
-                                        &minor,
-                                        &root(&(c.minor_sq / minor.norm_squared())),
-                                    ));
+                                    check(
+                                        &c.center.plus(
+                                            &minor.scaled(
+                                                &(&c.minor_sq / &minor.norm_squared()).sqrt(),
+                                            ),
+                                        ),
+                                    );
                                 }
                                 _ => unreachable!(),
                             }

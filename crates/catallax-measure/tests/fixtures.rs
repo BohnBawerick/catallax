@@ -1,15 +1,19 @@
 //! These exercise finished pieces 1–3 and the independent oracle, not the stubs.
 mod common;
-use catallax_shapes::{Curve, PointDef, RPoint3, RVector3, Surface};
+use catallax_shapes::{Curve, Point3, PointDef, Surface, Vector3};
 use common::oracle::{to_kernel, to_q};
 use common::*;
 use rug::Rational as Q;
 
-fn xyz(p: &RPoint3) -> [Q; 3] {
-    [to_q(&p.x), to_q(&p.y), to_q(&p.z)]
+fn xyz(p: &Point3) -> [Q; 3] {
+    p.rational_components()
+        .expect("rational measurement fixture")
+        .map(to_q)
 }
-fn vector(p: &RVector3) -> [Q; 3] {
-    [to_q(&p.x), to_q(&p.y), to_q(&p.z)]
+fn vector(p: &Vector3) -> [Q; 3] {
+    p.rational_components()
+        .expect("rational measurement fixture")
+        .map(to_q)
 }
 fn sub(a: &[Q; 3], b: &[Q; 3]) -> [Q; 3] {
     std::array::from_fn(|i| a[i].clone() - &b[i])
@@ -22,7 +26,7 @@ fn cross(a: &[Q; 3], b: &[Q; 3]) -> [Q; 3] {
         a[(i + 1) % 3].clone() * &b[(i + 2) % 3] - a[(i + 2) % 3].clone() * &b[(i + 1) % 3]
     })
 }
-fn point_on_curve(p: &RPoint3, c: &Curve) {
+fn point_on_curve(p: &Point3, c: &Curve) {
     match c {
         Curve::Line(c) => {
             let d = sub(&xyz(p), &xyz(&c.origin));
@@ -31,7 +35,7 @@ fn point_on_curve(p: &RPoint3, c: &Curve) {
         Curve::Circle(c) => {
             let d = sub(&xyz(p), &xyz(&c.center));
             assert_eq!(dot(&d, &vector(&c.normal)), 0);
-            assert_eq!(dot(&d, &d), to_q(&c.radius_sq));
+            assert_eq!(dot(&d, &d), to_q(c.radius_sq.rational_ref().unwrap()));
         }
         Curve::Ellipse(c) => {
             let d = sub(&xyz(p), &xyz(&c.center));
@@ -41,28 +45,28 @@ fn point_on_curve(p: &RPoint3, c: &Curve) {
             let da = dot(&d, &a);
             let db = dot(&d, &b);
             assert_eq!(
-                da.clone() * da / (dot(&a, &a) * to_q(&c.major_sq))
-                    + db.clone() * db / (dot(&b, &b) * to_q(&c.minor_sq)),
+                da.clone() * da / (dot(&a, &a) * to_q(c.major_sq.rational_ref().unwrap()))
+                    + db.clone() * db / (dot(&b, &b) * to_q(c.minor_sq.rational_ref().unwrap())),
                 1
             );
         }
         _ => panic!("analytic fixture expected"),
     }
 }
-fn point_on_surface(p: &RPoint3, s: &Surface) {
+fn point_on_surface(p: &Point3, s: &Surface) {
     let point = xyz(p);
     match s {
         Surface::Plane(s) => assert_eq!(dot(&sub(&point, &xyz(&s.origin)), &vector(&s.normal)), 0),
         Surface::Sphere(s) => {
             let d = sub(&point, &xyz(&s.center));
-            let radius = to_q(&s.radius);
+            let radius = to_q(s.radius.rational_ref().unwrap());
             assert_eq!(dot(&d, &d), radius.clone() * radius);
         }
         Surface::Cylinder(s) => {
             let d = sub(&point, &xyz(&s.origin));
             let axis = vector(&s.axis);
             let c = cross(&d, &axis);
-            let radius = to_q(&s.radius);
+            let radius = to_q(s.radius.rational_ref().unwrap());
             assert_eq!(dot(&c, &c), radius.clone() * radius * dot(&axis, &axis));
         }
         Surface::Cone(s) => {
@@ -70,7 +74,7 @@ fn point_on_surface(p: &RPoint3, s: &Surface) {
             let axis = vector(&s.axis);
             let c = cross(&d, &axis);
             let da = dot(&d, &axis);
-            let slope = to_q(&s.slope);
+            let slope = to_q(s.slope.rational_ref().unwrap());
             assert!(da >= 0);
             assert_eq!(dot(&c, &c), slope.clone() * slope * da.clone() * da);
         }

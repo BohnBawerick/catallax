@@ -1,8 +1,8 @@
 //! Signed 1-Lipschitz residuals of untrimmed analytic supports.
 
 use crate::metric::{PRECISION, Scalar};
-use catallax_numbers::{Ball, Rational};
-use catallax_shapes::{RPoint3, Surface};
+use catallax_numbers::{Ball, Decider, Real, Refusal};
+use catallax_shapes::{Point3, Pose, Surface, Vector3};
 
 #[derive(Clone, Copy, Debug)]
 enum Kind {
@@ -15,7 +15,8 @@ enum Kind {
 #[derive(Clone, Debug)]
 pub(crate) struct Support {
     kind: Kind,
-    balls: [Ball; 10],
+    exact: [Real; 10],
+    balls: Option<[Ball; 10]>,
     fast: [f64; 10],
 }
 impl Support {
@@ -25,29 +26,23 @@ impl Support {
                 Kind::Plane,
                 &s.origin,
                 &s.normal,
-                Rational::zero(),
-                Rational::zero(),
+                Real::zero(),
+                Real::zero(),
             ),
             Surface::Cylinder(s) => (
                 Kind::Cylinder,
                 &s.origin,
                 &s.axis,
                 s.radius.clone(),
-                Rational::zero(),
+                Real::zero(),
             ),
-            Surface::Cone(s) => (
-                Kind::Cone,
-                &s.apex,
-                &s.axis,
-                s.slope.clone(),
-                Rational::zero(),
-            ),
+            Surface::Cone(s) => (Kind::Cone, &s.apex, &s.axis, s.slope.clone(), Real::zero()),
             Surface::Sphere(s) => (
                 Kind::Sphere,
                 &s.center,
                 &s.axis,
                 s.radius.clone(),
-                Rational::zero(),
+                Real::zero(),
             ),
             Surface::Torus(s) => (
                 Kind::Torus,
@@ -58,7 +53,8 @@ impl Support {
             ),
             _ => unreachable!("feature analytic support"),
         };
-        let q = [
+        let factor = &a * &a + Real::one();
+        let exact = [
             origin.x.clone(),
             origin.y.clone(),
             origin.z.clone(),
@@ -66,21 +62,55 @@ impl Support {
             axis.y.clone(),
             axis.z.clone(),
             axis.norm_squared(),
-            a.clone(),
+            a,
             b,
-            &a * &a + Rational::one(),
+            factor,
         ];
         Self {
             kind,
-            balls: q.each_ref().map(|q| Ball::from_rational(q, PRECISION)),
-            fast: q.each_ref().map(Rational::to_f64_nearest),
+            balls: rational_balls(&exact),
+            fast: exact.each_ref().map(Real::to_f64),
+            exact,
         }
     }
-    pub fn proven(&self, p: &RPoint3) -> Ball {
-        self.evaluate(
-            &self.balls,
-            &[&p.x, &p.y, &p.z].map(|q| Ball::from_rational(q, PRECISION)),
-        )
+    pub fn transform(&mut self, pose: &Pose) {
+        let origin = pose.apply_point(&Point3::new(
+            self.exact[0].clone(),
+            self.exact[1].clone(),
+            self.exact[2].clone(),
+        ));
+        let axis = pose.apply_vector(&Vector3::new(
+            self.exact[3].clone(),
+            self.exact[4].clone(),
+            self.exact[5].clone(),
+        ));
+        self.exact[0] = origin.x;
+        self.exact[1] = origin.y;
+        self.exact[2] = origin.z;
+        self.exact[3] = axis.x;
+        self.exact[4] = axis.y;
+        self.exact[5] = axis.z;
+        // A certified rigid motion preserves the defining axis norm and dimensions.
+        self.balls = rational_balls(&self.exact);
+        self.fast = self.exact.each_ref().map(Real::to_f64);
+    }
+    pub fn proven(&self, p: &[Ball; 3], dec: &mut Decider) -> Result<Ball, Refusal> {
+        if let Some(q) = &self.balls {
+            return Ok(self.evaluate(q, p));
+        }
+        let q = [
+            crate::geometry::enclose(&self.exact[0], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[1], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[2], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[3], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[4], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[5], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[6], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[7], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[8], PRECISION, dec)?,
+            crate::geometry::enclose(&self.exact[9], PRECISION, dec)?,
+        ];
+        Ok(self.evaluate(&q, p))
     }
     pub fn fast(&self, p: &[f64; 3]) -> f64 {
         self.evaluate(&self.fast, p)
@@ -114,4 +144,12 @@ impl Support {
             _ => unreachable!(),
         }
     }
+}
+
+fn rational_balls(exact: &[Real; 10]) -> Option<[Ball; 10]> {
+    exact.iter().all(|q| q.rational_ref().is_some()).then(|| {
+        exact
+            .each_ref()
+            .map(|q| Ball::from_rational(q.rational_ref().expect("rational support"), PRECISION))
+    })
 }

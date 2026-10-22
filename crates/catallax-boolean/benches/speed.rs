@@ -5,10 +5,10 @@ mod common;
 use catallax_boolean::{
     BoolOp, Stage, boolean, classify, classify_point, imprint, intersect, keep, sew,
 };
-use catallax_numbers::{Decider, DecisionStats, Rational};
+use catallax_numbers::{Decider, DecisionStats, Rational, Real};
 use catallax_shapes::{
-    Curve, CurveId, MeetOf, PointDef, PointId, Pose, Position, RPoint3, RVector3, Rotation,
-    Surface, SurfaceId,
+    Curve, CurveId, MeetOf, Point3, PointDef, PointId, Pose, Position, RPoint3, RVector3, Rotation,
+    Surface, SurfaceId, Vector3,
 };
 use catallax_topology::{BodyId, Model};
 use common::{Case, Primitive, ball_at, block_at, cylinder_at, r};
@@ -30,19 +30,31 @@ impl NumberSize {
         self.numerator_bits = self.numerator_bits.max(n);
         self.denominator_bits = self.denominator_bits.max(d);
     }
-    fn point(&mut self, p: &RPoint3) {
-        for r in [&p.x, &p.y, &p.z] {
-            self.rational(r);
+    fn real(&mut self, value: &Real) {
+        if let Some(value) = value.rational_ref() {
+            self.rational(value);
+        } else {
+            self.opaque_real_coordinates += 1;
         }
     }
-    fn vector(&mut self, v: &RVector3) {
-        for r in [&v.x, &v.y, &v.z] {
-            self.rational(r);
+    fn point(&mut self, p: &Point3) {
+        for value in [&p.x, &p.y, &p.z] {
+            self.real(value);
         }
     }
-    fn polynomial(&mut self, p: &catallax_numbers::MPoly) {
-        for (_, c) in p.terms() {
-            self.rational(&c);
+    fn vector(&mut self, v: &Vector3) {
+        for value in [&v.x, &v.y, &v.z] {
+            self.real(value);
+        }
+    }
+    fn polynomial(&mut self, p: &catallax_numbers::RealPoly) {
+        for (_, coefficient) in p.terms() {
+            self.real(&coefficient);
+        }
+    }
+    fn rational_polynomial(&mut self, p: &catallax_numbers::MPoly) {
+        for (_, coefficient) in p.terms() {
+            self.rational(&coefficient);
         }
     }
 }
@@ -82,26 +94,33 @@ fn inventory(model: &Model, body: BodyId) -> NumberSize {
                     result.point(&s.origin);
                     result.vector(&s.axis);
                     result.vector(&s.ref_dir);
-                    result.rational(&s.radius);
+                    result.real(&s.radius);
                 }
                 Surface::Sphere(s) => {
                     result.point(&s.center);
                     result.vector(&s.axis);
                     result.vector(&s.ref_dir);
-                    result.rational(&s.radius);
+                    result.real(&s.radius);
                 }
                 Surface::Cone(s) => {
                     result.point(&s.apex);
                     result.vector(&s.axis);
                     result.vector(&s.ref_dir);
-                    result.rational(&s.slope);
+                    result.real(&s.slope);
                 }
                 Surface::Torus(s) => {
                     result.point(&s.center);
                     result.vector(&s.axis);
                     result.vector(&s.ref_dir);
-                    result.rational(&s.major);
-                    result.rational(&s.minor);
+                    result.real(&s.major);
+                    result.real(&s.minor);
+                }
+                Surface::EllipticCylinder(s) => {
+                    result.point(&s.origin);
+                    result.vector(&s.axis);
+                    result.vector(&s.major_dir);
+                    result.real(&s.major_sq);
+                    result.real(&s.minor_sq);
                 }
                 _ => {}
             }
@@ -122,14 +141,14 @@ fn inventory(model: &Model, body: BodyId) -> NumberSize {
                     result.point(&c.center);
                     result.vector(&c.normal);
                     result.vector(&c.ref_dir);
-                    result.rational(&c.radius_sq);
+                    result.real(&c.radius_sq);
                 }
                 Curve::Ellipse(c) => {
                     result.point(&c.center);
                     result.vector(&c.normal);
                     result.vector(&c.major_dir);
-                    result.rational(&c.major_sq);
-                    result.rational(&c.minor_sq);
+                    result.real(&c.major_sq);
+                    result.real(&c.minor_sq);
                 }
                 Curve::Intersection(c) => {
                     surfaces.extend(c.surfaces);
@@ -154,21 +173,13 @@ fn inventory(model: &Model, body: BodyId) -> NumberSize {
                         MeetOf::Curves(a, b) => curves.extend([a, b]),
                     }
                     match &m.position {
-                        Position::Closed(p) => {
-                            for coordinate in [&p.x, &p.y, &p.z] {
-                                if let Some(r) = coordinate.as_rational() {
-                                    result.rational(&r);
-                                } else {
-                                    result.opaque_real_coordinates += 1;
-                                }
-                            }
-                        }
+                        Position::Closed(p) => result.point(p),
                         Position::Isolated(root) => {
                             for r in root.root_box().lo().iter().chain(root.root_box().hi()) {
                                 result.rational(r);
                             }
                             for p in root.system().equations() {
-                                result.polynomial(p);
+                                result.rational_polynomial(p);
                             }
                         }
                     }
@@ -411,8 +422,10 @@ fn chains(selected: Option<u8>) {
                     Rotation::from_quaternion(r(101), r(next()), r(next()), r(next())).unwrap();
                 let pose = Pose::new(
                     rotation,
-                    RVector3::new(r(next() % 5), r(next() % 5), r(next() % 5)),
-                );
+                    (RVector3::new(r(next() % 5), r(next() % 5), r(next() % 5))).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap();
                 (
                     p.transformed(&Rational::one(), &pose),
                     if i % 2 == 0 {
@@ -438,8 +451,10 @@ fn main() {
         .map(|w| w[1].parse::<u8>().expect("--case needs a case number"));
     let placed = Pose::new(
         Rotation::from_quaternion(r(17), r(2), r(-3), r(5)).unwrap(),
-        RVector3::new(r(1000000), r(-1000000), r(300000)),
-    );
+        (RVector3::new(r(1000000), r(-1000000), r(300000))).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     for case in common::cases() {
         if case.number > 40 || selected.is_some_and(|n| n != case.number) {
             continue;

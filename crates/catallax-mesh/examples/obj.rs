@@ -22,8 +22,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pose = Pose::identity();
     let shifted = Pose::new(
         Rotation::identity(),
-        RVector3::new(1.into(), 0.into(), 0.into()),
-    );
+        (RVector3::new(1.into(), 0.into(), 0.into())).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let body = match args[0].as_str() {
         "block" => topology::block(&mut model, [2.into(), 3.into(), 5.into()], &pose)?,
         "cylinder" => topology::cylinder(&mut model, 2.into(), 5.into(), &pose)?,
@@ -41,13 +43,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "cross" => {
             let pose = Pose::new(
                 Rotation::identity(),
-                RVector3::new(0.into(), 0.into(), (-3).into()),
-            );
+                (RVector3::new(0.into(), 0.into(), (-3).into())).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap();
             let a = topology::cylinder(&mut model, 1.into(), 6.into(), &pose)?;
             let pose = Pose::new(
                 Rotation::identity(),
-                RVector3::new(2.into(), 0.into(), 0.into()),
-            );
+                (RVector3::new(2.into(), 0.into(), 0.into())).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap();
             let b = topology::sphere(&mut model, 2.into(), &pose)?;
             boolean(&mut model, a, b, BoolOp::Intersect, &mut dec)
                 .map_err(|e| e.refusal)?
@@ -57,8 +63,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let a = topology::block(&mut model, [6.into(), 6.into(), 4.into()], &pose)?;
             let pose = Pose::new(
                 Rotation::identity(),
-                RVector3::new(3.into(), 3.into(), (-1).into()),
-            );
+                (RVector3::new(3.into(), 3.into(), (-1).into())).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap();
             let b = topology::cylinder(&mut model, 1.into(), 6.into(), &pose)?;
             boolean(&mut model, a, b, BoolOp::Subtract, &mut dec)
                 .map_err(|e| e.refusal)?

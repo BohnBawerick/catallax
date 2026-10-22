@@ -1,5 +1,5 @@
 use super::oracle::{Expr, from_kernel, pi, rat, sqrt};
-use catallax_numbers::{Fact, FactKind, FactOrigin, MarkLog, Rational};
+use catallax_numbers::{Fact, FactKind, FactOrigin, MarkLog, Rational, Real};
 use catallax_shapes::*;
 use catallax_topology::*;
 
@@ -20,33 +20,33 @@ pub fn ten(k: i32) -> Rational {
 }
 fn plane(origin: RPoint3, normal: RVector3, ref_dir: RVector3) -> Surface {
     Surface::Plane(Plane {
-        origin,
-        normal,
-        ref_dir,
+        origin: origin.into(),
+        normal: normal.into(),
+        ref_dir: ref_dir.into(),
     })
 }
 fn sphere_surface(radius: i64) -> Surface {
     Surface::Sphere(Sphere {
-        center: p(0, 0, 0),
-        radius: r(radius),
-        axis: v(0, 0, 1),
-        ref_dir: v(1, 0, 0),
+        center: p(0, 0, 0).into(),
+        radius: r(radius).into(),
+        axis: v(0, 0, 1).into(),
+        ref_dir: v(1, 0, 0).into(),
     })
 }
 fn cylinder_surface(origin: RPoint3, axis: RVector3, radius: i64, ref_dir: RVector3) -> Surface {
     Surface::Cylinder(Cylinder {
-        origin,
-        axis,
-        radius: r(radius),
-        ref_dir,
+        origin: origin.into(),
+        axis: axis.into(),
+        radius: r(radius).into(),
+        ref_dir: ref_dir.into(),
     })
 }
 fn circle(center: RPoint3, normal: RVector3, radius_sq: i64, ref_dir: RVector3) -> Curve {
     Curve::Circle(Circle {
-        center,
-        normal,
-        radius_sq: r(radius_sq),
-        ref_dir,
+        center: center.into(),
+        normal: normal.into(),
+        radius_sq: r(radius_sq).into(),
+        ref_dir: ref_dir.into(),
     })
 }
 fn flip(s: Sense) -> Sense {
@@ -118,14 +118,17 @@ impl Expected {
     pub fn moved_scaled(&self, scale: &Rational, pose: &Pose) -> Self {
         let s = from_kernel(scale);
         let centroid = self.centroid.as_ref().map(|c| {
-            let t = [
-                &pose.translation.x,
-                &pose.translation.y,
-                &pose.translation.z,
-            ];
+            let t = pose
+                .translation
+                .rational_components()
+                .expect("rational measurement fixture");
+            let rotation = pose
+                .rotation
+                .rational_matrix()
+                .expect("rational measurement fixture");
             std::array::from_fn(|i| {
                 (0..3).fold(from_kernel(t[i]), |sum, j| {
-                    sum + from_kernel(&pose.rotation.matrix()[i][j]) * s.clone() * c[j].clone()
+                    sum + from_kernel(rotation[i][j]) * s.clone() * c[j].clone()
                 })
             })
         });
@@ -263,8 +266,8 @@ impl Blueprint {
         let pa = &self.points[a];
         let pb = &self.points[b];
         let curve = Curve::Line(Line {
-            origin: pa.clone(),
-            dir: RVector3::new(&pb.x - &pa.x, &pb.y - &pa.y, &pb.z - &pa.z),
+            origin: pa.clone().into(),
+            dir: RVector3::new(&pb.x - &pa.x, &pb.y - &pa.y, &pb.z - &pa.z).into(),
         });
         self.edge(curve, Some(a), Some(b))
     }
@@ -298,7 +301,7 @@ impl Blueprint {
         scale: &Rational,
         pose: &Pose,
     ) -> (ShellId, Vec<(FaceId, Expr)>) {
-        let point = |p: &RPoint3| pose.apply_point(&scaled_point(p, scale));
+        let point = |p: &RPoint3| pose.apply_point(&scaled_point(p, scale).into());
         let vs: Vec<_> = self
             .points
             .iter()
@@ -385,41 +388,51 @@ fn record(m: &mut Model, a: GeomKey, b: GeomKey) {
 fn scaled_point(p: &RPoint3, s: &Rational) -> RPoint3 {
     RPoint3::new(&p.x * s, &p.y * s, &p.z * s)
 }
+fn scaled_definition_point(p: &Point3, s: &Real) -> Point3 {
+    Point3::new(&p.x * s, &p.y * s, &p.z * s)
+}
 fn scaled_curve(c: &Curve, s: &Rational) -> Curve {
+    let s = Real::from(s.clone());
     match c {
         Curve::Line(c) => Curve::Line(Line {
-            origin: scaled_point(&c.origin, s),
+            origin: scaled_definition_point(&c.origin, &s),
             dir: c.dir.clone(),
         }),
         Curve::Circle(c) => Curve::Circle(Circle {
-            center: scaled_point(&c.center, s),
-            radius_sq: &(&c.radius_sq * s) * s,
-            ..c.clone()
+            center: scaled_definition_point(&c.center, &s),
+            radius_sq: &(&c.radius_sq * &s) * &s,
+            normal: c.normal.clone(),
+            ref_dir: c.ref_dir.clone(),
         }),
         Curve::Ellipse(c) => Curve::Ellipse(Ellipse {
-            center: scaled_point(&c.center, s),
-            major_sq: &(&c.major_sq * s) * s,
-            minor_sq: &(&c.minor_sq * s) * s,
-            ..c.clone()
+            center: scaled_definition_point(&c.center, &s),
+            major_sq: &(&c.major_sq * &s) * &s,
+            minor_sq: &(&c.minor_sq * &s) * &s,
+            normal: c.normal.clone(),
+            major_dir: c.major_dir.clone(),
         }),
         _ => unreachable!("fixtures only use analytic curves"),
     }
 }
 fn scaled_surface(f: &Surface, s: &Rational) -> Surface {
+    let s = Real::from(s.clone());
     match f {
         Surface::Plane(f) => Surface::Plane(Plane {
-            origin: scaled_point(&f.origin, s),
-            ..f.clone()
+            origin: scaled_definition_point(&f.origin, &s),
+            normal: f.normal.clone(),
+            ref_dir: f.ref_dir.clone(),
         }),
         Surface::Sphere(f) => Surface::Sphere(Sphere {
-            center: scaled_point(&f.center, s),
-            radius: &f.radius * s,
-            ..f.clone()
+            center: scaled_definition_point(&f.center, &s),
+            radius: &f.radius * &s,
+            axis: f.axis.clone(),
+            ref_dir: f.ref_dir.clone(),
         }),
         Surface::Cylinder(f) => Surface::Cylinder(Cylinder {
-            origin: scaled_point(&f.origin, s),
-            radius: &f.radius * s,
-            ..f.clone()
+            origin: scaled_definition_point(&f.origin, &s),
+            radius: &f.radius * &s,
+            axis: f.axis.clone(),
+            ref_dir: f.ref_dir.clone(),
         }),
         _ => unreachable!("other surfaces come from primitive builders"),
     }
@@ -622,11 +635,11 @@ fn steinmetz_blueprint() -> Blueprint {
     // Natural arc y+ -> y- has x<0, reverse endpoint order has x>0.
     for sign in [1, -1] {
         let c = Curve::Ellipse(Ellipse {
-            center: p(0, 0, 0),
-            normal: v(-sign, 0, 1),
-            major_dir: v(1, 0, sign),
-            major_sq: r(2),
-            minor_sq: r(1),
+            center: p(0, 0, 0).into(),
+            normal: v(-sign, 0, 1).into(),
+            major_dir: v(1, 0, sign).into(),
+            major_sq: r(2).into(),
+            minor_sq: r(1).into(),
         });
         d.edge(c.clone(), Some(0), Some(1));
         d.edge(c, Some(1), Some(0));
@@ -719,7 +732,12 @@ pub fn build(case: Case, scale: &Rational, pose: &Pose) -> Fixture {
                     let surf = m.geom().surface(m.face(id).surface);
                     let a = match (case, surf) {
                         (Case::Block | Case::FractionalBlock, Surface::Plane(f)) => {
-                            let n = pose.rotation.inverse().apply(&f.normal);
+                            let n = pose
+                                .rotation
+                                .inverse()
+                                .apply(&f.normal)
+                                .as_rational()
+                                .expect("rational measurement fixture");
                             let size = if case == Case::Block {
                                 [rat(2, 1), rat(3, 1), rat(5, 1)]
                             } else {
@@ -738,7 +756,12 @@ pub fn build(case: Case, scale: &Rational, pose: &Pose) -> Fixture {
                         (Case::Sphere, _) => rat(100, 1) * pi(),
                         (Case::Torus, _) => rat(12, 1) * pi() * pi(),
                         (Case::Frustum, Surface::Plane(f)) => {
-                            let n = pose.rotation.inverse().apply(&f.normal);
+                            let n = pose
+                                .rotation
+                                .inverse()
+                                .apply(&f.normal)
+                                .as_rational()
+                                .expect("rational measurement fixture");
                             if n.z > r(0) { pi() } else { rat(4, 1) * pi() }
                         }
                         (Case::Frustum, Surface::Cone(_)) => rat(3, 1) * sqrt(5) * pi(),
@@ -785,8 +808,10 @@ pub fn poses() -> Vec<Pose> {
             });
             Pose::new(
                 Rotation::from_quaternion(r(c[0]), r(c[1]), r(c[2]), r(c[3])).unwrap(),
-                RVector3::new(t[0].clone(), t[1].clone(), t[2].clone()),
+                (RVector3::new(t[0].clone(), t[1].clone(), t[2].clone())).into(),
+                &mut catallax_numbers::Decider::default(),
             )
+            .unwrap()
         })
         .collect()
 }
@@ -798,10 +823,10 @@ pub fn thin_spherical_shell(gap: &Rational) -> Fixture {
     let mut faces = vec![];
     for (radius, sense) in [(r(1), Sense::Same), (inner.clone(), Sense::Reversed)] {
         let surface = model.geom_mut().add_surface(Surface::Sphere(Sphere {
-            center: p(0, 0, 0),
-            radius: radius.clone(),
-            axis: v(0, 0, 1),
-            ref_dir: v(1, 0, 0),
+            center: p(0, 0, 0).into(),
+            radius: radius.clone().into(),
+            axis: v(0, 0, 1).into(),
+            ref_dir: v(1, 0, 0).into(),
         }));
         let face = model.add_face(Face {
             surface,

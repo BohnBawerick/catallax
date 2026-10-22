@@ -1,9 +1,11 @@
 use crate::{Completion, Finding, NotComparable, Options, Pass, Reason, Report, Revision, Verdict};
 use catallax_features::{Built, evaluate};
 use catallax_field::{Direction, FaceState, Location, Plan, Workspace};
-use catallax_numbers::{Ball, Decider, Interval, Rational};
+use catallax_numbers::{
+    Ball, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
+};
 use catallax_recipe::{Operation, Origin, Recipe};
-use catallax_shapes::{RPoint3, RVector3, Surface};
+use catallax_shapes::{RPoint3, RVector3, Surface, Vector3};
 use catallax_topology::Sense;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,77 +28,151 @@ fn absolute(x: Ball) -> Ball {
         ball(&r(0)).hull(&ball(&x.lo().abs().max(x.hi().abs())))
     }
 }
-fn support(surface: &Surface) -> catallax_numbers::MPoly {
+fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    if let Some(q) = value.rational_ref() {
+        return Ok(q.sign());
+    }
+    match dec.sign(value) {
+        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+        Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
+        Outcome::Refused(e) => Err(e),
+        Outcome::NotExact(e) => Err(Refusal::new(e.code, e.detail)),
+    }
+}
+fn real_ball(value: &Real, dec: &mut Decider) -> Result<Ball, Refusal> {
+    if let Some(q) = value.rational_ref() {
+        Ok(ball(q))
+    } else {
+        dec.enclose_budgeted_at(value, BITS)
+    }
+}
+fn real_norm(vector: &Vector3, dec: &mut Decider) -> Result<Ball, Refusal> {
+    Ok(real_ball(&vector.norm_squared(), dec)?
+        .sqrt()
+        .expect("a squared norm is nonnegative"))
+}
+fn divide(a: Ball, b: Ball) -> Result<Ball, Refusal> {
+    a.checked_div(&b).ok_or_else(|| {
+        Refusal::new(
+            "numbers.divisor-not-separated",
+            "comparison support norm is not separated from zero",
+        )
+    })
+}
+fn support(surface: &Surface, dec: &mut Decider) -> Result<RealPoly, Refusal> {
     let polynomial = surface.implicit();
-    let coefficient = polynomial.terms().into_iter().next().unwrap().1;
-    polynomial.scale(&coefficient.recip().unwrap())
+    for (_, coefficient) in polynomial.terms() {
+        if sign(&coefficient, dec)? != Sign::Zero {
+            return Ok(polynomial.scale(&(&Real::one() / &coefficient)));
+        }
+    }
+    Err(Refusal::new(
+        "numbers.zero-polynomial",
+        "surface support vanishes identically",
+    ))
 }
 fn witness(
     surface: &Surface,
-    polynomial: &catallax_numbers::MPoly,
+    polynomial: &RealPoly,
     p: &RPoint3,
     width: &Rational,
     dec: &mut Decider,
 ) -> Result<RPoint3, String> {
-    if polynomial
-        .eval(&[p.x.clone(), p.y.clone(), p.z.clone()])
-        .is_zero()
-    {
+    let xyz = [p.x.clone(), p.y.clone(), p.z.clone()];
+    let on_support = if let Some(q) = polynomial.rational() {
+        q.eval(&xyz).is_zero()
+    } else {
+        sign(&polynomial.eval_real(&xyz.map(Real::from)), dec)
+            .map_err(|e| format!("{}: {}", e.code, e.detail))?
+            == Sign::Zero
+    };
+    if on_support {
         return Ok(p.clone());
     }
     catallax_boolean::surface_witness(surface, &p.to_real(), width, dec)
         .map_err(|e| format!("{}: {}", e.code, e.detail))?
         .ok_or_else(|| "no rational projection for this surface frame".into())
 }
-fn support_distance(surface: &Surface, p: &RPoint3) -> Ball {
-    match surface {
-        Surface::Plane(s) => absolute(
-            ball(&p.minus(&s.origin).dot(&s.normal))
-                .checked_div(&norm(&s.normal))
-                .unwrap(),
-        ),
-        Surface::Sphere(s) => absolute(norm(&p.minus(&s.center)) - ball(&s.radius)),
+fn support_distance(surface: &Surface, p: &RPoint3, dec: &mut Decider) -> Result<Ball, Refusal> {
+    let p = p.to_real();
+    Ok(match surface {
+        Surface::Plane(s) => absolute(divide(
+            real_ball(&p.minus(&s.origin).dot(&s.normal), dec)?,
+            real_norm(&s.normal, dec)?,
+        )?),
+        Surface::Sphere(s) => {
+            absolute(real_norm(&p.minus(&s.center), dec)? - real_ball(&s.radius, dec)?)
+        }
         Surface::Cylinder(s) => {
             let d = p.minus(&s.origin);
             let h = d.dot(&s.axis) / s.axis.norm_squared();
-            absolute(norm(&d.minus(&s.axis.scaled(&h))) - ball(&s.radius))
+            absolute(real_norm(&d.minus(&s.axis.scaled(&h)), dec)? - real_ball(&s.radius, dec)?)
         }
         Surface::Cone(s) => {
             let d = p.minus(&s.apex);
             let t = d.dot(&s.axis) / s.axis.norm_squared();
             let radial = d.minus(&s.axis.scaled(&t));
-            let height = ball(&t) * norm(&s.axis);
-            absolute(norm(&radial) - ball(&s.slope) * absolute(height))
-                .checked_div(&(ball(&r(1)) + ball(&(&s.slope * &s.slope))).sqrt().unwrap())
-                .unwrap()
+            let height = real_ball(&t, dec)? * real_norm(&s.axis, dec)?;
+            let residual =
+                absolute(real_norm(&radial, dec)? - real_ball(&s.slope, dec)? * absolute(height));
+            let length = (ball(&r(1)) + real_ball(&(&s.slope * &s.slope), dec)?)
+                .sqrt()
+                .expect("one plus slope squared is positive");
+            divide(residual, length)?
         }
         Surface::Torus(s) => {
             let d = p.minus(&s.center);
             let t = d.dot(&s.axis) / s.axis.norm_squared();
             let radial = d.minus(&s.axis.scaled(&t));
-            let rho = norm(&radial) - ball(&s.major);
-            let h = ball(&t) * norm(&s.axis);
-            absolute((rho.square() + h.square()).sqrt().unwrap() - ball(&s.minor))
+            let rho = real_norm(&radial, dec)? - real_ball(&s.major, dec)?;
+            let h = real_ball(&t, dec)? * real_norm(&s.axis, dec)?;
+            absolute(
+                (rho.square() + h.square())
+                    .sqrt()
+                    .expect("a squared norm is nonnegative")
+                    - real_ball(&s.minor, dec)?,
+            )
         }
-        // Every distance is nonnegative. An unknown support supplies no tighter
-        // lower bound; the missing projection still prevents agreement.
+        // An unknown support supplies only the universal nonnegative distance
+        // lower bound. A missing projection still prevents sampled agreement.
         _ => ball(&r(0)),
-    }
+    })
 }
 fn direction(
-    gradient: &[catallax_numbers::MPoly; 3],
+    gradient: &[RealPoly; 3],
     p: &RPoint3,
     sense: Sense,
-) -> Option<[Ball; 3]> {
+    dec: &mut Decider,
+) -> Result<Option<[Ball; 3]>, Refusal> {
     let xyz = [p.x.clone(), p.y.clone(), p.z.clone()];
-    let n: [Rational; 3] = std::array::from_fn(|i| gradient[i].eval(&xyz));
-    let length = norm(&RVector3::new(n[0].clone(), n[1].clone(), n[2].clone()));
-    if length.lo() <= r(0) {
-        return None;
+    let orientation = if sense == Sense::Same { 1 } else { -1 };
+    if let [Some(x), Some(y), Some(z)] = gradient.each_ref().map(RealPoly::rational) {
+        let n = [x.eval(&xyz), y.eval(&xyz), z.eval(&xyz)];
+        let length = norm(&RVector3::new(n[0].clone(), n[1].clone(), n[2].clone()));
+        if length.lo() <= r(0) {
+            return Ok(None);
+        }
+        let Some(inverse) = length.recip() else {
+            return Ok(None);
+        };
+        return Ok(Some(n.map(|x| &ball(&(x * r(orientation))) * &inverse)));
     }
-    let sign = if sense == Sense::Same { 1 } else { -1 };
-    let inverse = length.recip()?;
-    Some(n.map(|x| &ball(&(x * r(sign))) * &inverse))
+    let xyz = xyz.map(Real::from);
+    let n = gradient.each_ref().map(|g| g.eval_real(&xyz));
+    let length = real_norm(&Vector3::new(n[0].clone(), n[1].clone(), n[2].clone()), dec)?;
+    if length.lo() <= r(0) {
+        return Ok(None);
+    }
+    let Some(inverse) = length.recip() else {
+        return Ok(None);
+    };
+    let orientation = Real::from_i64(orientation);
+    Ok(Some([
+        &real_ball(&(&n[0] * &orientation), dec)? * &inverse,
+        &real_ball(&(&n[1] * &orientation), dec)? * &inverse,
+        &real_ball(&(&n[2] * &orientation), dec)? * &inverse,
+    ]))
 }
 fn interval_ball(x: Interval) -> Option<Ball> {
     Some(ball(&Rational::from_f64_exact(x.lo())?).hull(&ball(&Rational::from_f64_exact(x.hi())?)))
@@ -226,18 +302,29 @@ pub(crate) fn run(
     if !report.not_comparable.is_empty() {
         return revision.publish(report);
     }
-    let field = match Plan::compile(recipe) {
+    let mut dec = Decider::default();
+    let field = match Plan::compile_checked(recipe, &mut dec) {
         Ok(f) => f,
         Err(e) => {
             whole_failure(&mut report, format!("field build {}: {}", e.code, e.detail));
             return revision.publish(report);
         }
     };
-    let supports: Vec<_> = field
+    let supports = match field
         .faces()
         .iter()
-        .map(|face| support(&face.surface))
-        .collect();
+        .map(|face| support(&face.surface, &mut dec))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(supports) => supports,
+        Err(e) => {
+            whole_failure(
+                &mut report,
+                format!("support normalisation {}: {}", e.code, e.detail),
+            );
+            return revision.publish(report);
+        }
+    };
     let registry: BTreeMap<_, _> = field
         .faces()
         .iter()
@@ -249,21 +336,28 @@ pub(crate) fn run(
             )
         })
         .collect();
-    let groups: Vec<Vec<_>> = supports
-        .iter()
-        .map(|source| {
-            supports
-                .iter()
-                .enumerate()
-                .filter(|(_, other)| source == *other)
-                .map(|(i, _)| i)
-                .collect()
-        })
-        .collect();
+    let mut groups = Vec::with_capacity(supports.len());
+    for source in &supports {
+        let mut group = Vec::new();
+        for (i, other) in supports.iter().enumerate() {
+            match source.equals(other, &mut dec) {
+                Ok(true) => group.push(i),
+                Ok(false) => (),
+                Err(e) => {
+                    whole_failure(
+                        &mut report,
+                        format!("support comparison {}: {}", e.code, e.detail),
+                    );
+                    return revision.publish(report);
+                }
+            }
+        }
+        groups.push(group);
+    }
     let (mut model, result) = if let Some(b) = built {
         (b.model.clone(), b.result)
     } else {
-        let built = match evaluate(recipe, &mut Decider::default()) {
+        let built = match evaluate(recipe, &mut dec) {
             Ok(b) => b,
             Err(e) => {
                 whole_failure(&mut report, format!("B-rep build: {e}"));
@@ -275,19 +369,18 @@ pub(crate) fn run(
     if revision.is_cancelled() {
         return Completion::Cancelled;
     }
-    let mesh =
-        match catallax_mesh::mesh_body(&model, result, &options.mesh, &mut Decider::default()) {
-            Ok(m) => {
-                if !m.marks.is_empty() {
-                    whole_failure(&mut report, "mesh inherits marked geometry");
-                }
-                m.value
+    let mesh = match catallax_mesh::mesh_body(&model, result, &options.mesh, &mut dec) {
+        Ok(m) => {
+            if !m.marks.is_empty() {
+                whole_failure(&mut report, "mesh inherits marked geometry");
             }
-            Err(e) => {
-                whole_failure(&mut report, format!("mesh {}: {}", e.code, e.detail));
-                return revision.publish(report);
-            }
-        };
+            m.value
+        }
+        Err(e) => {
+            whole_failure(&mut report, format!("mesh {}: {}", e.code, e.detail));
+            return revision.publish(report);
+        }
+    };
     if model.body(result).kind == catallax_topology::BodyKind::Empty
         && field.is_proven_empty()
         && report.findings.is_empty()
@@ -428,7 +521,6 @@ pub(crate) fn run(
     if options.region.is_none() {
         selected.extend(0..mesh.faces.len());
     }
-    let mut dec = Decider::default();
     let width = options.accuracy.mul_pow2(-20);
     let mut observed: BTreeMap<usize, BTreeSet<Origin>> = BTreeMap::new();
     let mut oriented = BTreeSet::new();
@@ -513,7 +605,13 @@ pub(crate) fn run(
             }
             let face = mesh.faces[i].face;
             let surface = &surfaces[i];
-            let d = support_distance(surface, &p).lo().max(r(0));
+            let d = match support_distance(surface, &p, &mut dec) {
+                Ok(d) => d.lo().max(r(0)),
+                Err(e) => {
+                    projection_errors.push(format!("{}: {}", e.code, e.detail));
+                    r(0) // The universal lower bound remains valid.
+                }
+            };
             lower = Some(lower.map_or(d.clone(), |old| old.min(d)));
             let q = match witness(surface, &polynomials[i], &p, &width, &mut dec) {
                 Ok(q) => q,
@@ -588,8 +686,21 @@ pub(crate) fn run(
         }
         observed.entry(i).or_default().extend(origins);
         let brep = model.face(face);
-        if let (Direction::Unique(field_normal), Some(brep_normal)) =
-            (query.direction, direction(&gradients[i], &q, brep.sense))
+        let brep_normal = match direction(&gradients[i], &q, brep.sense, &mut dec) {
+            Ok(n) => n,
+            Err(e) => {
+                unresolved(
+                    &mut report,
+                    Pass::Reverse,
+                    &p,
+                    vec![expected.to_vec()],
+                    vec![origin.clone()],
+                    format!("{}: {}", e.code, e.detail),
+                );
+                return;
+            }
+        };
+        if let (Direction::Unique(field_normal), Some(brep_normal)) = (query.direction, brep_normal)
         {
             let mut dot = ball(&r(0));
             for j in 0..3 {

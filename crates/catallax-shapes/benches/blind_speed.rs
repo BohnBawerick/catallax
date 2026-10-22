@@ -92,16 +92,32 @@ fn main() {
         for bits in [64, 1000] {
             let u = ball("1", bits);
             let v = ball("1/2", bits);
-            let point = surface.evaluate(&u, &v);
+            let point = surface
+                .evaluate(&u, &v, &catallax_numbers::Decider::default())
+                .unwrap();
             measure(&format!("evaluate.{kind:?}.{bits}"), 32, || {
-                surface.evaluate(black_box(&u), black_box(&v))
+                surface
+                    .evaluate(
+                        black_box(&u),
+                        black_box(&v),
+                        &catallax_numbers::Decider::default(),
+                    )
+                    .unwrap()
             });
             measure(&format!("derivatives.{kind:?}.{bits}"), 32, || {
-                surface.derivatives(black_box(&u), black_box(&v))
+                surface
+                    .derivatives(
+                        black_box(&u),
+                        black_box(&v),
+                        &catallax_numbers::Decider::default(),
+                    )
+                    .unwrap()
             });
             let mut none = 0;
             measure(&format!("parameters_of.{kind:?}.{bits}"), 32, || {
-                let out = surface.parameters_of(black_box(&point));
+                let out = surface
+                    .parameters_of(black_box(&point), &catallax_numbers::Decider::default())
+                    .unwrap();
                 none += u64::from(out.is_none());
                 out
             });
@@ -131,7 +147,14 @@ fn main() {
         .into_iter()
         .map(|center| {
             store.add_surface(Surface::Sphere(
-                Sphere::new(center, r("5"), v("0", "0", "1"), v("1", "0", "0")).unwrap(),
+                Sphere::new(
+                    (center).into(),
+                    (r("5")).into(),
+                    (v("0", "0", "1")).into(),
+                    (v("1", "0", "0")).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ))
         })
         .collect();
@@ -169,7 +192,9 @@ fn main() {
         for bits in [64, 1000] {
             let t = ball("1", bits);
             measure(&format!("curve.evaluate.{kind:?}.{bits}"), 32, || {
-                curve.evaluate(&t)
+                curve
+                    .evaluate(&t, &catallax_numbers::Decider::default())
+                    .unwrap()
             });
         }
     }

@@ -28,29 +28,53 @@ fn main() {
     let axis = vector(0, 0, 1);
     let reference = vector(1, 0, 0);
     let surfaces = [
-        Surface::Plane(Plane::new(origin.clone(), axis.clone(), reference.clone()).unwrap()),
+        Surface::Plane(
+            Plane::new(
+                (origin.clone()).into(),
+                (axis.clone()).into(),
+                (reference.clone()).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
         Surface::Cylinder(
-            Cylinder::new(origin.clone(), axis.clone(), 5.into(), reference.clone()).unwrap(),
+            Cylinder::new(
+                (origin.clone()).into(),
+                (axis.clone()).into(),
+                5.into(),
+                (reference.clone()).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ),
         Surface::Cone(
             Cone::new(
-                origin.clone(),
-                axis.clone(),
-                Rational::from_ratio(1, 2).unwrap(),
-                reference.clone(),
+                (origin.clone()).into(),
+                (axis.clone()).into(),
+                (Rational::from_ratio(1, 2).unwrap()).into(),
+                (reference.clone()).into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
         Surface::Sphere(
-            Sphere::new(origin.clone(), 5.into(), axis.clone(), reference.clone()).unwrap(),
+            Sphere::new(
+                (origin.clone()).into(),
+                5.into(),
+                (axis.clone()).into(),
+                (reference.clone()).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ),
         Surface::Torus(
             Torus::new(
-                origin.clone(),
-                axis.clone(),
+                (origin.clone()).into(),
+                (axis.clone()).into(),
                 3.into(),
                 1.into(),
-                reference.clone(),
+                (reference.clone()).into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
@@ -107,8 +131,10 @@ fn main() {
     ];
     let pose = Pose::new(
         Rotation::from_quaternion(1.into(), 2.into(), 3.into(), 4.into()).unwrap(),
-        vector(1_000_000, -7, 9),
-    );
+        (vector(1_000_000, -7, 9)).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     for (index, (surface, id)) in surfaces.iter().zip(ids).enumerate() {
         let mut dec = Decider::default();
         let mut sample = 0;
@@ -138,26 +164,40 @@ fn main() {
         for precision in [64, 1000] {
             let u = ball(1, precision);
             let v = ball(1, precision);
-            let p = surface.evaluate(&u, &v);
+            let p = surface
+                .evaluate(&u, &v, &catallax_numbers::Decider::default())
+                .unwrap();
             timed(
                 &format!("evaluate/{:?}/{precision}", surface.kind()),
                 4,
                 || {
-                    black_box(surface.evaluate(&u, &v));
+                    black_box(
+                        surface
+                            .evaluate(&u, &v, &catallax_numbers::Decider::default())
+                            .unwrap(),
+                    );
                 },
             );
             timed(
                 &format!("derivatives/{:?}/{precision}", surface.kind()),
                 4,
                 || {
-                    black_box(surface.derivatives(&u, &v));
+                    black_box(
+                        surface
+                            .derivatives(&u, &v, &catallax_numbers::Decider::default())
+                            .unwrap(),
+                    );
                 },
             );
             timed(
                 &format!("parameters/{:?}/{precision}", surface.kind()),
                 4,
                 || {
-                    black_box(surface.parameters_of(&p));
+                    black_box(
+                        surface
+                            .parameters_of(&p, &catallax_numbers::Decider::default())
+                            .unwrap(),
+                    );
                 },
             );
         }
@@ -177,19 +217,34 @@ fn main() {
             dec.stats().work
         );
     }
-    let p = store.add_point(PointDef::Explicit(point(3, 4, 0)));
+    let p = store.add_point(PointDef::Explicit((point(3, 4, 0)).into()));
     let curves = [
-        Curve::Line(Line::new(origin.clone(), vector(2, -1, 0)).unwrap()),
+        Curve::Line(
+            Line::new(
+                (origin.clone()).into(),
+                (vector(2, -1, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
         Curve::Circle(
-            Circle::new(origin.clone(), axis.clone(), 25.into(), reference.clone()).unwrap(),
+            Circle::new(
+                (origin.clone()).into(),
+                (axis.clone()).into(),
+                25.into(),
+                (reference.clone()).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ),
         Curve::Ellipse(
             Ellipse::new(
-                origin.clone(),
-                axis.clone(),
-                reference.clone(),
+                (origin.clone()).into(),
+                (axis.clone()).into(),
+                (reference.clone()).into(),
                 25.into(),
                 9.into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
@@ -198,7 +253,7 @@ fn main() {
             witness: p,
         }),
     ];
-    let other = store.add_point(PointDef::Explicit(point(3, 4, 1)));
+    let other = store.add_point(PointDef::Explicit((point(3, 4, 1)).into()));
     for curve in curves {
         let kind = curve.kind();
         let id = store.add_curve(curve);
@@ -209,7 +264,12 @@ fn main() {
         for precision in [64, 1000] {
             let t = ball(1, precision);
             timed(&format!("curve_evaluate/{kind:?}/{precision}"), 4, || {
-                black_box(store.curve(id).evaluate(&t));
+                black_box(
+                    store
+                        .curve(id)
+                        .evaluate(&t, &catallax_numbers::Decider::default())
+                        .unwrap(),
+                );
             });
         }
     }
@@ -227,16 +287,30 @@ fn main() {
         );
     }
     let a = store.add_surface(Surface::Sphere(
-        Sphere::new(point(6, 0, 0), 5.into(), axis.clone(), reference.clone()).unwrap(),
+        Sphere::new(
+            (point(6, 0, 0)).into(),
+            5.into(),
+            (axis.clone()).into(),
+            (reference.clone()).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let c = store.add_surface(Surface::Sphere(
-        Sphere::new(point(0, 6, 0), 5.into(), axis.clone(), reference.clone()).unwrap(),
+        Sphere::new(
+            (point(0, 6, 0)).into(),
+            5.into(),
+            (axis.clone()).into(),
+            (reference.clone()).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let system = Arc::new(
         PolySystem::new(vec![
-            store.implicit(ids[3]),
-            store.implicit(a),
-            store.implicit(c),
+            store.implicit(ids[3]).into_rational().unwrap(),
+            store.implicit(a).into_rational().unwrap(),
+            store.implicit(c).into_rational().unwrap(),
         ])
         .unwrap(),
     );

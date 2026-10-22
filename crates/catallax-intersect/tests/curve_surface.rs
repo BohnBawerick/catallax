@@ -233,8 +233,8 @@ fn check(case: &HitCase, scale: &Rational, pose: &Pose, mut d: Decider, mode: Mo
                 for s in [branch.surfaces[0], branch.surfaces[1], s] {
                     coincident(g.side_of(s, &p, &mut Decider::default()));
                 }
-                let distance2 = p.minus(&f.to_real()).dot(&cylinder.axis.to_real()).square()
-                    / Real::from_rational(cylinder.axis.norm_squared());
+                let distance2 =
+                    p.minus(&f).dot(&cylinder.axis).square() / cylinder.axis.norm_squared();
                 assert!(
                     answer
                         .marks

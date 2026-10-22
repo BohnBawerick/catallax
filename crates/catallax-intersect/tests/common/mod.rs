@@ -91,7 +91,15 @@ pub fn plane(o: RPoint3, normal: RVector3) -> Surface {
     } else {
         perp(&normal)
     };
-    Surface::Plane(Plane::new(o, normal, reference).unwrap())
+    Surface::Plane(
+        Plane::new(
+            (o).into(),
+            (normal).into(),
+            (reference).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 pub fn axis_plane(axis: usize, k: Rational) -> Surface {
     let mut a = [n(0), n(0), n(0)];
@@ -112,28 +120,63 @@ pub fn cyl(o: RPoint3, axis: RVector3, radius: Rational) -> Surface {
     } else {
         vi([0, 0, 1])
     };
-    Surface::Cylinder(Cylinder::new(o, axis, radius, reference).unwrap())
+    Surface::Cylinder(
+        Cylinder::new(
+            (o).into(),
+            (axis).into(),
+            (radius).into(),
+            (reference).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 pub fn zc(radius: i64) -> Surface {
     cyl(pi([0, 0, 0]), vi([0, 0, 1]), n(radius))
 }
 pub fn sphere(o: RPoint3, radius: Rational) -> Surface {
-    Surface::Sphere(Sphere::new(o, radius, vi([0, 0, 1]), vi([1, 0, 0])).unwrap())
+    Surface::Sphere(
+        Sphere::new(
+            (o).into(),
+            (radius).into(),
+            (vi([0, 0, 1])).into(),
+            (vi([1, 0, 0])).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 pub fn k5() -> Curve {
-    Curve::Circle(Circle::new(pi([0, 0, 0]), vi([0, 0, 1]), n(25), vi([1, 0, 0])).unwrap())
+    Curve::Circle(
+        Circle::new(
+            (pi([0, 0, 0])).into(),
+            (vi([0, 0, 1])).into(),
+            (n(25)).into(),
+            (vi([1, 0, 0])).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 pub fn line28() -> Curve {
-    Curve::Line(Line::new(pi([-10, 0, 0]), vi([1, 0, 0])).unwrap())
+    Curve::Line(
+        Line::new(
+            (pi([-10, 0, 0])).into(),
+            (vi([1, 0, 0])).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 pub fn ellipse4() -> Curve {
     Curve::Ellipse(
         Ellipse::new(
-            pi([0, 0, 0]),
-            vi([0, 3, 4]),
-            v(["0", "-12/25", "9/25"]),
-            r("625/16"),
-            n(25),
+            (pi([0, 0, 0])).into(),
+            (vi([0, 3, 4])).into(),
+            (v(["0", "-12/25", "9/25"])).into(),
+            (r("625/16")).into(),
+            (n(25)).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     )
@@ -145,7 +188,7 @@ pub fn closed(g: &mut GeomStore, p: Point3, supports: &[SurfaceId]) -> PointId {
     }))
 }
 pub fn explicit(g: &mut GeomStore, p: RPoint3) -> PointId {
-    g.add_point(PointDef::Explicit(p))
+    g.add_point(PointDef::Explicit((p).into()))
 }
 pub fn exact<T: std::fmt::Debug>(a: Answered<T>) -> T {
     let a = a.unwrap();
@@ -215,11 +258,17 @@ impl Rng {
         let [x, y, z] = std::array::from_fn(|_| n((self.next() % 201) as i64 - 100));
         let rotation = Rotation::from_quaternion(w, x, y, z).unwrap();
         let [x, y, z] = std::array::from_fn(|_| n((self.next() % 2_000_001) as i64 - 1_000_000));
-        Pose::new(rotation, RVector3::new(x, y, z))
+        Pose::new(
+            rotation,
+            (RVector3::new(x, y, z)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap()
     }
 }
 pub fn scaled_surface(s: &Surface, k: &Rational) -> Surface {
-    let point = |p: &RPoint3| RPoint3::new(&p.x * k, &p.y * k, &p.z * k);
+    let k = Real::from(k.clone());
+    let point = |p: &Point3| Point3::new(&p.x * &k, &p.y * &k, &p.z * &k);
     match s {
         Surface::Plane(s) => Surface::Plane(Plane {
             origin: point(&s.origin),
@@ -227,19 +276,21 @@ pub fn scaled_surface(s: &Surface, k: &Rational) -> Surface {
         }),
         Surface::Cylinder(s) => Surface::Cylinder(Cylinder {
             origin: point(&s.origin),
-            radius: &s.radius * k,
+            radius: &s.radius * &k,
             ..s.clone()
         }),
         Surface::Sphere(s) => Surface::Sphere(Sphere {
             center: point(&s.center),
-            radius: &s.radius * k,
+            radius: &s.radius * &k,
             ..s.clone()
         }),
         _ => panic!("unsupported fixture"),
     }
 }
 pub fn scaled_curve(c: &Curve, k: &Rational) -> Curve {
-    let point = |p: &RPoint3| RPoint3::new(&p.x * k, &p.y * k, &p.z * k);
+    let squared = Real::from(k * k);
+    let k = Real::from(k.clone());
+    let point = |p: &Point3| Point3::new(&p.x * &k, &p.y * &k, &p.z * &k);
     match c {
         Curve::Line(c) => Curve::Line(Line {
             origin: point(&c.origin),
@@ -247,13 +298,13 @@ pub fn scaled_curve(c: &Curve, k: &Rational) -> Curve {
         }),
         Curve::Circle(c) => Curve::Circle(Circle {
             center: point(&c.center),
-            radius_sq: &(&c.radius_sq * k) * k,
+            radius_sq: &c.radius_sq * &squared,
             ..c.clone()
         }),
         Curve::Ellipse(c) => Curve::Ellipse(Ellipse {
             center: point(&c.center),
-            major_sq: &(&c.major_sq * k) * k,
-            minor_sq: &(&c.minor_sq * k) * k,
+            major_sq: &c.major_sq * &squared,
+            minor_sq: &c.minor_sq * &squared,
             ..c.clone()
         }),
         _ => panic!("analytic fixture required"),

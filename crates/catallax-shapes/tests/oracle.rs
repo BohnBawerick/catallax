@@ -23,11 +23,11 @@ fn independent_fixture_math() {
         ]
     );
     let torus = Surface::Torus(Torus {
-        center: p("0", "0", "0"),
-        axis: v("0", "0", "1"),
-        major: r("3"),
-        minor: r("1"),
-        ref_dir: v("1", "0", "0"),
+        center: p("0", "0", "0").into(),
+        axis: v("0", "0", "1").into(),
+        major: r("3").into(),
+        minor: r("1").into(),
+        ref_dir: v("1", "0", "0").into(),
     });
     for (point, answer) in [
         (p("54/25", "72/25", "4/5"), q(0, 1)),

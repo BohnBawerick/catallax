@@ -145,7 +145,12 @@ fn check_trace(
                     assert_eq!(x.precision(), bits);
                 }
                 for equation in g.curve(c).equations(g) {
-                    assert!(equation.eval_ball(&p).contains_zero());
+                    assert!(
+                        equation
+                            .eval_ball(&p, &catallax_numbers::Decider::default())
+                            .unwrap()
+                            .contains_zero()
+                    );
                 }
                 for order in [4, 16] {
                     let jets = piece.taylor(&t, order, &Decider::default()).unwrap();
@@ -160,7 +165,11 @@ fn check_trace(
                         overlap(&jets[1][axis], &v[axis]);
                     }
                     for equation in g.curve(c).equations(g) {
-                        polynomial_jet_identity(&equation, &jets, bits);
+                        polynomial_jet_identity(
+                            equation.rational().expect("rational trace fixture"),
+                            &jets,
+                            bits,
+                        );
                     }
                     // Taylor's theorem provides another point enclosure from midpoint
                     // jets and an interval remainder, independent of evaluate(t).

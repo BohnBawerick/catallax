@@ -75,8 +75,10 @@ blind_test!(case_07_exact_arena_growth_and_no_reuse, {
 blind_test!(case_08_quarter_turn_has_named_corner_and_plane, {
     let pose = Pose::new(
         Rotation::from_quaternion(r(1), r(0), r(0), r(1)).unwrap(),
-        v(10, 0, 0),
-    );
+        v(10, 0, 0).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let shape = Primitive::Block([r(1), r(1), r(1)]);
     let mut m = Model::new();
     let b = shape.build(&mut m, &pose).unwrap();
@@ -84,13 +86,14 @@ blind_test!(case_08_quarter_turn_has_named_corner_and_plane, {
     assert!(
         m.vertices_of_body(b)
             .iter()
-            .any(|v| explicit(&m, *v) == &p(10, 1, 0))
+            .any(|v| explicit(&m, *v) == p(10, 1, 0))
     );
     let f = m.faces_of_body(b)[0];
-    assert_eq!(
-        m.geom().surface(m.face(f).surface),
-        &plane(p(10, 0, 0), v(0, -1, 0), v(-1, 0, 0))
-    );
+    assert!(m.geom().surface(m.face(f).surface).same_definition(&plane(
+        p(10, 0, 0),
+        v(0, -1, 0),
+        v(-1, 0, 0)
+    )));
 });
 
 blind_test!(cases_08_09_generated_rational_poses_and_orientations, {

@@ -33,11 +33,11 @@ blind_test!(case_48_through_hole_graph_has_two_circle_rings, {
             panic!("not a circle")
         };
         assert!(dec.compare(&radius_sq, &Real::from(r(9))).is_coincident());
-        assert!(normal.cross(&v(0, 0, 1)).is_zero());
+        assert!(normal.as_rational().unwrap().cross(&v(0, 0, 1)).is_zero());
         let Surface::Plane(plane) = plane else {
             unreachable!()
         };
-        let z = plane.origin.z.clone();
+        let z = plane.origin.z.rational_ref().unwrap().clone();
         assert!(z == r(0) || z == r(10));
         same_real_point(&center, &RPoint3::new(r(5), r(5), z.clone()));
         levels.insert(z);
@@ -151,7 +151,9 @@ blind_test!(cases_51_52_imprint_classify_keep_and_direct_sew, {
                 );
             }
             for &piece in pieces {
-                let mut point = exact(face_point(&mut m, piece, &mut dec));
+                let mut point = exact(face_point(&mut m, piece, &mut dec))
+                    .as_rational()
+                    .expect("rational Boolean fixture");
                 assert_eq!(
                     implicit_normal(m.geom().surface(m.face(piece).surface), &point).0,
                     r(0)

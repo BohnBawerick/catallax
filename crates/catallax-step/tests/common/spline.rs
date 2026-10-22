@@ -131,18 +131,22 @@ pub fn offset_sphere(p: &[Rational; 3], d: &Rational) {
 pub fn on_exact_support(surface: &Surface, p: &[Rational; 3], d: &Rational) {
     match surface {
         Surface::Plane(s) => {
-            let v = sub(p, &xyz(&s.origin));
-            let normal = vec_xyz(&s.normal);
+            let v = sub(p, &real_xyz(&s.origin));
+            let normal = real_vec_xyz(&s.normal);
             assert!(sq(&dot(&v, &normal)) <= sq(d) * dot(&normal, &normal));
         }
         Surface::Cylinder(s) => {
-            let v = sub(p, &xyz(&s.origin));
-            let axis = vec_xyz(&s.axis);
+            let v = sub(p, &real_xyz(&s.origin));
+            let axis = real_vec_xyz(&s.axis);
             let radial2 = dot(&v, &v) - sq(&dot(&v, &axis)) / dot(&axis, &axis);
-            radial_distance(radial2, &s.radius, d);
+            radial_distance(radial2, s.radius.rational_ref().unwrap(), d);
         }
         Surface::Sphere(s) => {
-            radial_distance(distance_sq(p, &xyz(&s.center)), &s.radius, d);
+            radial_distance(
+                distance_sq(p, &real_xyz(&s.center)),
+                s.radius.rational_ref().unwrap(),
+                d,
+            );
         }
         _ => panic!("piece 4 does not define branches on this support"),
     }

@@ -637,6 +637,14 @@ impl MPoly {
         }
         Ok(Some(q))
     }
+    pub(crate) fn construction_cmp(&self, other: &Self) -> Ordering {
+        self.nvars
+            .cmp(&other.nvars)
+            .then_with(|| self.terms.cmp(&other.terms))
+    }
+    pub(crate) fn term_count(&self) -> usize {
+        self.terms.len()
+    }
     fn accumulate(&mut self, m: Monomial, c: Rational) {
         if c.is_zero() {
             return;

@@ -160,12 +160,27 @@ pub(crate) fn canonical_point(
 pub(crate) fn r(n: i64) -> Rational {
     Rational::from_i64(n)
 }
-pub(crate) fn unit(axis: usize) -> RVector3 {
+pub(crate) fn unit(axis: usize) -> Vector3 {
     RVector3::new(
         r(i64::from(axis == 0)),
         r(i64::from(axis == 1)),
         r(i64::from(axis == 2)),
     )
+    .to_real()
+}
+
+pub(crate) fn perpendicular(
+    vector: &Vector3,
+    dec: &mut Decider,
+    code: &'static str,
+) -> Result<Vector3, Refusal> {
+    for axis in 0..3 {
+        let direction = vector.cross(&unit(axis));
+        if sign(&direction.norm_squared(), dec, code)? != Sign::Zero {
+            return Ok(direction);
+        }
+    }
+    Err(refusal(code, "zero direction has no transverse axis"))
 }
 
 /// A diagonal enumeration of two signed Calkin-Wilf sequences. Its rational

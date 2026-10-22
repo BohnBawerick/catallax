@@ -112,11 +112,10 @@ pub fn extrude(
             "extrusion distance must not be zero",
         ));
     }
-    let normal = profile.pose.apply_vector(&RVector3::new(
-        Rational::zero(),
-        Rational::zero(),
-        Rational::one(),
-    ));
+    let normal = crate::profile::rational_vector(
+        &profile.pose,
+        &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+    );
     let direction = direction.unwrap_or(&normal);
     if direction.is_zero() {
         return Err(Refusal::new(
@@ -150,11 +149,10 @@ pub(crate) fn extrude_vector(
     step: &StepId,
     vector: &RVector3,
 ) -> Result<BodyId, Refusal> {
-    let normal = profile.pose.apply_vector(&RVector3::new(
-        Rational::zero(),
-        Rational::zero(),
-        Rational::one(),
-    ));
+    let normal = crate::profile::rational_vector(
+        &profile.pose,
+        &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+    );
     if vector.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-direction",
@@ -200,9 +198,9 @@ pub(crate) fn extrude_vector(
                     .iter()
                     .map(|s| {
                         [zero.clone(), vector.clone()].map(|offset| {
-                            let point = model
-                                .geom_mut()
-                                .add_point(PointDef::Explicit(profile.world(&s.start, &offset)));
+                            let point = model.geom_mut().add_point(PointDef::Explicit(
+                                profile.world(&s.start, &offset).into(),
+                            ));
                             model.add_vertex(Vertex { point })
                         })
                     })
@@ -213,8 +211,8 @@ pub(crate) fn extrude_vector(
                 .enumerate()
                 .map(|(i, pair)| {
                     let curve = model.geom_mut().add_curve(Curve::Line(Line {
-                        origin: profile.world(&segments[i].start, &zero),
-                        dir: vector.clone(),
+                        origin: profile.world(&segments[i].start, &zero).into(),
+                        dir: vector.clone().into(),
                     }));
                     model.add_edge(Edge {
                         curve,
@@ -231,21 +229,25 @@ pub(crate) fn extrude_vector(
                 for (layer, offset) in [&zero, vector].into_iter().enumerate() {
                     let curve = if let Some((c, radius_sq, _)) = &s.circle {
                         Curve::Circle(Circle {
-                            center: profile.world(c, offset),
-                            normal: normal.clone(),
-                            radius_sq: radius_sq.clone(),
-                            ref_dir: profile.pose.apply_vector(&RVector3::new(
-                                &s.start[0] - &c[0],
-                                &s.start[1] - &c[1],
-                                Rational::zero(),
-                            )),
+                            center: profile.world(c, offset).into(),
+                            normal: normal.clone().into(),
+                            radius_sq: radius_sq.clone().into(),
+                            ref_dir: profile.pose.apply_vector(
+                                &RVector3::new(
+                                    &s.start[0] - &c[0],
+                                    &s.start[1] - &c[1],
+                                    Rational::zero(),
+                                )
+                                .to_real(),
+                            ),
                         })
                     } else {
                         Curve::Line(Line {
-                            origin: profile.world(&s.start, offset),
+                            origin: profile.world(&s.start, offset).into(),
                             dir: profile
                                 .world(&s.end, offset)
-                                .minus(&profile.world(&s.start, offset)),
+                                .minus(&profile.world(&s.start, offset))
+                                .into(),
                         })
                     };
                     let curve = model.geom_mut().add_curve(curve);
@@ -305,14 +307,17 @@ pub(crate) fn extrude_vector(
                     })?;
                     (
                         Surface::Cylinder(Cylinder {
-                            origin: profile.world(c, &zero),
-                            axis: normal.clone(),
-                            radius,
-                            ref_dir: profile.pose.apply_vector(&RVector3::new(
-                                &s.start[0] - &c[0],
-                                &s.start[1] - &c[1],
-                                Rational::zero(),
-                            )),
+                            origin: profile.world(c, &zero).into(),
+                            axis: normal.clone().into(),
+                            radius: radius.into(),
+                            ref_dir: profile.pose.apply_vector(
+                                &RVector3::new(
+                                    &s.start[0] - &c[0],
+                                    &s.start[1] - &c[1],
+                                    Rational::zero(),
+                                )
+                                .to_real(),
+                            ),
                         }),
                         if *turn == Turn::Ccw {
                             Sense::Same
@@ -329,9 +334,9 @@ pub(crate) fn extrude_vector(
                         .scaled(&Rational::from_i64(if positive { 1 } else { -1 }));
                     (
                         Surface::Plane(Plane {
-                            origin: profile.world(&s.start, &zero),
-                            normal: outward,
-                            ref_dir: vector.clone(),
+                            origin: profile.world(&s.start, &zero).into(),
+                            normal: outward.into(),
+                            ref_dir: vector.clone().into(),
                         }),
                         Sense::Same,
                     )
@@ -357,17 +362,15 @@ pub(crate) fn extrude_vector(
             bottom.push(start_path);
             top.push(end_path);
         }
-        let reference = profile.pose.apply_vector(&RVector3::new(
-            Rational::one(),
-            Rational::zero(),
-            Rational::zero(),
-        ));
-        let origin = profile.pose.apply_point(&RPoint3::origin());
+        let reference = profile.pose.apply_vector(
+            &RVector3::new(Rational::one(), Rational::zero(), Rational::zero()).to_real(),
+        );
+        let origin = profile.pose.apply_point(&RPoint3::origin().to_real());
         let start = face(
             model,
             Surface::Plane(Plane {
                 origin: origin.clone(),
-                normal: normal.clone(),
+                normal: normal.clone().into(),
                 ref_dir: reference.clone(),
             }),
             reverse(forward),
@@ -381,8 +384,8 @@ pub(crate) fn extrude_vector(
         let end = face(
             model,
             Surface::Plane(Plane {
-                origin: origin.plus(vector),
-                normal: normal.clone(),
+                origin: origin.plus(&vector.to_real()),
+                normal: normal.clone().into(),
                 ref_dir: reference,
             }),
             forward,

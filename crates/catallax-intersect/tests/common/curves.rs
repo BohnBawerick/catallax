@@ -98,7 +98,14 @@ pub fn hits() -> Vec<HitCase> {
             s.clone(),
             rational_hits(&[[-5, 0, 0], [5, 0, 0]], Crossing),
         );
-        let tangent = Curve::Line(Line::new(pi([-10, 5, 0]), vi([1, 0, 0])).unwrap());
+        let tangent = Curve::Line(
+            Line::new(
+                (pi([-10, 5, 0])).into(),
+                (vi([1, 0, 0])).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        );
         add(
             "28 line tangent",
             Carrier::Analytic(tangent),
@@ -106,7 +113,12 @@ pub fn hits() -> Vec<HitCase> {
             rational_hits(&[[0, 5, 0]], Tangent),
         );
         let miss = Curve::Line(
-            Line::new(RPoint3::new(n(-10), n(5) + r("1e-30"), n(0)), vi([1, 0, 0])).unwrap(),
+            Line::new(
+                (RPoint3::new(n(-10), n(5) + r("1e-30"), n(0))).into(),
+                (vi([1, 0, 0])).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         );
         add(
             "28 line near miss",

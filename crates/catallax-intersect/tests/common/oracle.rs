@@ -35,10 +35,20 @@ fn cv(shape: Shape, contact: Contact) -> Part {
 fn line(o: Point3, d: RVector3, contact: Contact) -> Part {
     cv(
         match rational_point(&o) {
-            Some(origin) => Shape::Analytic(Box::new(Curve::Line(Line::new(origin, d).unwrap()))),
+            Some(origin) => Shape::Analytic(Box::new(Curve::Line(
+                Line::new(
+                    (origin).into(),
+                    (d).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
+            ))),
             None => Shape::Intersection {
                 witness: o.clone(),
-                form: Box::new(CurveForm::Line { origin: o, dir: d }),
+                form: Box::new(CurveForm::Line {
+                    origin: o,
+                    dir: d.to_real(),
+                }),
             },
         },
         contact,
@@ -53,7 +63,14 @@ fn circle(
 ) -> Part {
     let shape = match rational_point(&o) {
         Some(center) => Shape::Analytic(Box::new(Curve::Circle(
-            Circle::new(center, normal, radius_sq, reference).unwrap(),
+            Circle::new(
+                (center).into(),
+                (normal).into(),
+                (radius_sq).into(),
+                (reference).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ))),
         None => {
             let witness = o.plus(
@@ -65,9 +82,9 @@ fn circle(
                 witness,
                 form: Box::new(CurveForm::Circle {
                     center: o,
-                    normal,
+                    normal: normal.to_real(),
                     radius_sq: Real::from(radius_sq),
-                    ref_dir: reference,
+                    ref_dir: reference.to_real(),
                 }),
             }
         }
@@ -77,7 +94,15 @@ fn circle(
 fn ellipse(o: RPoint3, normal: RVector3, major: RVector3, a: Rational, b: Rational) -> Part {
     cv(
         Shape::Analytic(Box::new(Curve::Ellipse(
-            Ellipse::new(o, normal, major, a, b).unwrap(),
+            Ellipse::new(
+                (o).into(),
+                (normal).into(),
+                (major).into(),
+                (a).into(),
+                (b).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         ))),
         Contact::Crossing,
     )
@@ -105,10 +130,55 @@ fn neg(v: &RVector3) -> RVector3 {
     v.scaled(&n(-1))
 }
 
+// Preserve the independent rational table oracle: algebraic input coverage is
+// checked against separate closed forms, not by reusing the kernel's decider.
+struct RPlane {
+    origin: RPoint3,
+    normal: RVector3,
+    ref_dir: RVector3,
+}
+struct RCylinder {
+    origin: RPoint3,
+    axis: RVector3,
+    radius: Rational,
+    ref_dir: RVector3,
+}
+struct RSphere {
+    center: RPoint3,
+    radius: Rational,
+}
+enum RSurface {
+    Plane(RPlane),
+    Cylinder(RCylinder),
+    Sphere(RSphere),
+    Other,
+}
+fn rational_definition(surface: &Surface) -> RSurface {
+    match surface {
+        Surface::Plane(s) => RSurface::Plane(RPlane {
+            origin: s.origin.as_rational().expect("rational table fixture"),
+            normal: s.normal.as_rational().expect("rational table fixture"),
+            ref_dir: s.ref_dir.as_rational().expect("rational table fixture"),
+        }),
+        Surface::Cylinder(s) => RSurface::Cylinder(RCylinder {
+            origin: s.origin.as_rational().expect("rational table fixture"),
+            axis: s.axis.as_rational().expect("rational table fixture"),
+            radius: s.radius.as_rational().expect("rational table fixture"),
+            ref_dir: s.ref_dir.as_rational().expect("rational table fixture"),
+        }),
+        Surface::Sphere(s) => RSurface::Sphere(RSphere {
+            center: s.center.as_rational().expect("rational table fixture"),
+            radius: s.radius.as_rational().expect("rational table fixture"),
+        }),
+        _ => RSurface::Other,
+    }
+}
+
 pub fn surfaces(a: &Surface, b: &Surface) -> Expected {
     use Contact::*;
-    match (a, b) {
-        (Surface::Plane(a), Surface::Plane(b)) => {
+    let (a, b) = (rational_definition(a), rational_definition(b));
+    match (&a, &b) {
+        (RSurface::Plane(a), RSurface::Plane(b)) => {
             let m = a.normal.cross(&b.normal);
             let k = b.origin.minus(&a.origin).dot(&b.normal);
             if m.is_zero() {
@@ -124,11 +194,11 @@ pub fn surfaces(a: &Surface, b: &Surface) -> Expected {
                 meets(line(o.to_real(), m, Crossing))
             }
         }
-        (Surface::Plane(p), Surface::Cylinder(c)) => pc(p, c, 1),
-        (Surface::Cylinder(c), Surface::Plane(p)) => pc(p, c, -1),
-        (Surface::Plane(p), Surface::Sphere(s)) => ps(p, s, 1),
-        (Surface::Sphere(s), Surface::Plane(p)) => ps(p, s, -1),
-        (Surface::Sphere(a), Surface::Sphere(b)) => {
+        (RSurface::Plane(p), RSurface::Cylinder(c)) => pc(p, c, 1),
+        (RSurface::Cylinder(c), RSurface::Plane(p)) => pc(p, c, -1),
+        (RSurface::Plane(p), RSurface::Sphere(s)) => ps(p, s, 1),
+        (RSurface::Sphere(s), RSurface::Plane(p)) => ps(p, s, -1),
+        (RSurface::Sphere(a), RSurface::Sphere(b)) => {
             let u = b.center.minus(&a.center);
             let d2 = u.norm_squared();
             let ra = &a.radius;
@@ -158,13 +228,13 @@ pub fn surfaces(a: &Surface, b: &Surface) -> Expected {
                 Crossing,
             ))
         }
-        (Surface::Cylinder(a), Surface::Cylinder(b)) => cc(a, b),
-        (Surface::Cylinder(c), Surface::Sphere(s)) => cs(c, s, 1),
-        (Surface::Sphere(s), Surface::Cylinder(c)) => cs(c, s, -1),
+        (RSurface::Cylinder(a), RSurface::Cylinder(b)) => cc(a, b),
+        (RSurface::Cylinder(c), RSurface::Sphere(s)) => cs(c, s, 1),
+        (RSurface::Sphere(s), RSurface::Cylinder(c)) => cs(c, s, -1),
         _ => Expected::Refused,
     }
 }
-fn pc(p: &Plane, c: &Cylinder, sigma: i64) -> Expected {
+fn pc(p: &RPlane, c: &RCylinder, sigma: i64) -> Expected {
     use Contact::*;
     let s = p.normal.dot(&c.axis);
     let normal = p.normal.scaled(&n(sigma));
@@ -207,7 +277,7 @@ fn pc(p: &Plane, c: &Cylinder, sigma: i64) -> Expected {
         line(plus(&f, &v, &(-h)), c.axis.scaled(&n(sigma)), Crossing),
     ])
 }
-fn ps(p: &Plane, s: &Sphere, sigma: i64) -> Expected {
+fn ps(p: &RPlane, s: &RSphere, sigma: i64) -> Expected {
     let k = s.center.minus(&p.origin).dot(&p.normal);
     let e2 = sq(&k) / p.normal.norm_squared();
     let r2 = sq(&s.radius);
@@ -228,7 +298,7 @@ fn ps(p: &Plane, s: &Sphere, sigma: i64) -> Expected {
         ))
     }
 }
-fn cc(a: &Cylinder, b: &Cylinder) -> Expected {
+fn cc(a: &RCylinder, b: &RCylinder) -> Expected {
     use Contact::*;
     if a.axis.cross(&b.axis).is_zero() {
         let d = b.origin.minus(&a.origin);
@@ -366,7 +436,7 @@ fn cc(a: &Cylinder, b: &Cylinder) -> Expected {
 fn plus_point(o: &RPoint3, v: &RVector3, t: &Real) -> Point3 {
     plus(o, v, t)
 }
-fn cs(c: &Cylinder, s: &Sphere, sigma: i64) -> Expected {
+fn cs(c: &RCylinder, s: &RSphere, sigma: i64) -> Expected {
     use Contact::*;
     let r = &c.radius;
     let big = &s.radius;

@@ -214,8 +214,13 @@ fn primitive_boundaries_agree_with_independent_exact_shape_definitions() {
         (
             block(2, [0, 0, 0]),
             Surface::Plane(
-                catallax_shapes::Plane::new(point([2, 0, 0]), reference.clone(), axis.clone())
-                    .unwrap(),
+                catallax_shapes::Plane::new(
+                    point([2, 0, 0]).into(),
+                    reference.clone().into(),
+                    axis.clone().into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ),
             point([2, 1, 1]),
             point([1, 1, 1]),
@@ -225,10 +230,11 @@ fn primitive_boundaries_agree_with_independent_exact_shape_definitions() {
             cylinder(2, 4),
             Surface::Cylinder(
                 catallax_shapes::Cylinder::new(
-                    point([0, 0, 0]),
-                    axis.clone(),
-                    r(2),
-                    reference.clone(),
+                    point([0, 0, 0]).into(),
+                    axis.clone().into(),
+                    r(2).into(),
+                    reference.clone().into(),
+                    &mut catallax_numbers::Decider::default(),
                 )
                 .unwrap(),
             ),
@@ -240,10 +246,11 @@ fn primitive_boundaries_agree_with_independent_exact_shape_definitions() {
             sphere(2),
             Surface::Sphere(
                 catallax_shapes::Sphere::new(
-                    point([0, 0, 0]),
-                    r(2),
-                    axis.clone(),
-                    reference.clone(),
+                    point([0, 0, 0]).into(),
+                    r(2).into(),
+                    axis.clone().into(),
+                    reference.clone().into(),
+                    &mut catallax_numbers::Decider::default(),
                 )
                 .unwrap(),
             ),
@@ -255,10 +262,11 @@ fn primitive_boundaries_agree_with_independent_exact_shape_definitions() {
             cone(),
             Surface::Cone(
                 catallax_shapes::Cone::new(
-                    point([0, 0, 4]),
-                    axis.scaled(&r(-1)),
-                    Rational::parse("3/4").unwrap(),
-                    reference.clone(),
+                    point([0, 0, 4]).into(),
+                    axis.scaled(&r(-1)).into(),
+                    Rational::parse("3/4").unwrap().into(),
+                    reference.clone().into(),
+                    &mut catallax_numbers::Decider::default(),
                 )
                 .unwrap(),
             ),
@@ -269,7 +277,15 @@ fn primitive_boundaries_agree_with_independent_exact_shape_definitions() {
         (
             torus(),
             Surface::Torus(
-                catallax_shapes::Torus::new(point([0, 0, 0]), axis, r(4), r(1), reference).unwrap(),
+                catallax_shapes::Torus::new(
+                    point([0, 0, 0]).into(),
+                    axis.into(),
+                    r(4).into(),
+                    r(1).into(),
+                    reference.into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ),
             point([5, 0, 0]),
             fraction(["9/2", "0", "0"]),
@@ -286,6 +302,8 @@ fn primitive_boundaries_agree_with_independent_exact_shape_definitions() {
             assert_eq!(
                 surface
                     .implicit()
+                    .rational()
+                    .unwrap()
                     .eval(&[p.x.clone(), p.y.clone(), p.z.clone()])
                     .sign(),
                 sign
@@ -755,4 +773,161 @@ fn discarded_steps_and_tangent_hidden_supports_cannot_be_selected_as_faces() {
         query(&plan, &point([4, 0, 0])).direction,
         Direction::Ambiguous
     );
+}
+
+#[test]
+fn algebraic_rigid_motion_agrees_with_brep_and_preserves_bits_and_work() {
+    fn run() -> (Vec<Vec<u64>>, u64) {
+        use catallax_numbers::{Decider, Outcome, Real, sin_cos_degrees};
+        use catallax_shapes::{Pose as GeometryPose, Rotation, Vector3};
+
+        let mut dec = Decider::default();
+        let [sine, cosine] =
+            sin_cos_degrees(&Rational::from_ratio(45, 2).unwrap(), &mut dec).unwrap();
+        let rotation =
+            Rotation::from_real_quaternion(cosine, Real::zero(), sine, Real::zero(), &mut dec)
+                .unwrap();
+        let pose = GeometryPose::new(rotation, Vector3::zero(), &mut dec).unwrap();
+        let axis = pose.apply_vector(&Vector3::new(Real::zero(), Real::zero(), Real::one()));
+        assert!(
+            dec.sign(&(&axis.x - &(&Real::from_i64(2).sqrt() / &Real::from_i64(2))))
+                .is_coincident()
+        );
+        assert!(dec.compare(&axis.x, &axis.z).is_coincident());
+
+        let recipe = Recipe::new(
+            "solid",
+            vec![Step {
+                id: id("solid"),
+                op: cylinder(1, 4),
+            }],
+            id("solid"),
+        );
+        let field = Plan::compile_checked(&recipe, &mut dec)
+            .unwrap()
+            .transformed(&pose, &mut dec)
+            .unwrap();
+        let joined = boolean(
+            block(1, [0, 0, 0]),
+            block(1, [0, -1, 0]),
+            BooleanKind::Union,
+        )
+        .transformed(&pose, &mut dec)
+        .unwrap();
+        let mut first = None;
+        for _ in 0..2 {
+            let mut model = catallax_topology::Model::new();
+            let body = catallax_topology::cylinder(&mut model, r(1), r(4), &pose).unwrap();
+            let mut workspace = Workspace::default();
+            dec.take_stats();
+            let mut answers = Vec::new();
+            for (p, expected, distance) in [
+                ([1, 0, 1], Location::Inside, -1.0),
+                ([0, 2, 0], Location::Outside, 1.0),
+                ([1, 1, 1], Location::Boundary, 0.0),
+            ] {
+                let p = point(p);
+                let query = field.proven_checked(&p, &mut workspace, &mut dec).unwrap();
+                assert_eq!(query.location, expected);
+                let Value::TrueDistance(value) = query.value else {
+                    panic!("rigid motion lost the metric certificate")
+                };
+                assert!(value.lo() <= distance && value.hi() >= distance);
+                let brep = catallax_boolean::classify_point(&mut model, body, &p, &mut dec);
+                match expected {
+                    Location::Inside => assert!(matches!(
+                        brep,
+                        Outcome::Proven(catallax_boolean::Containment::Inside)
+                    )),
+                    Location::Outside => assert!(matches!(
+                        brep,
+                        Outcome::Proven(catallax_boolean::Containment::Outside)
+                    )),
+                    Location::Boundary => {
+                        assert!(matches!(brep, Outcome::ProvenCoincident(_)));
+                        let Direction::Unique(normal) = query.direction else {
+                            panic!("smooth side has no unique normal")
+                        };
+                        for (value, expected) in normal.into_iter().zip([0.0, 1.0, 0.0]) {
+                            assert!(value.lo() <= expected && value.hi() >= expected);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+                answers.push(bits(query));
+            }
+            // The joined blocks have a genuine sharp edge through the origin.
+            // Its algebraic supports require ray germs, not a tolerance test.
+            let query = joined
+                .proven_checked(&point([0, 0, 0]), &mut workspace, &mut dec)
+                .unwrap();
+            assert_eq!(query.location, Location::Boundary);
+            assert!(matches!(query.value, Value::Residual(_)));
+            assert_eq!(query.direction, Direction::Ambiguous);
+            answers.push(bits(query));
+            let observed = (answers, dec.take_stats().work);
+            if let Some(expected) = &first {
+                assert_eq!(&observed, expected);
+            } else {
+                first = Some(observed);
+            }
+        }
+        first.unwrap()
+    }
+    let expected = run();
+    for count in [1, 2, 4] {
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..count).map(|_| scope.spawn(run)).collect();
+            for worker in workers {
+                assert_eq!(worker.join().unwrap(), expected);
+            }
+        });
+    }
+}
+
+#[test]
+fn checked_metric_enclosures_respect_the_callers_precision_policy() {
+    use catallax_numbers::{BudgetPolicy, Decider, Real, sin_cos_degrees};
+    use catallax_shapes::{Pose as GeometryPose, Rotation, Vector3};
+    let id = StepId::new("sphere").unwrap();
+    let recipe = Recipe::new(
+        "sphere",
+        vec![Step {
+            id: id.clone(),
+            op: Operation::Sphere {
+                radius: 1.into(),
+                pose: Pose::identity(),
+            },
+        }],
+        id,
+    );
+    let mut dec = Decider::default();
+    let [sine, cosine] = sin_cos_degrees(&Rational::from_ratio(45, 2).unwrap(), &mut dec).unwrap();
+    let pose = GeometryPose::new(
+        Rotation::from_real_quaternion(cosine, Real::zero(), sine, Real::zero(), &mut dec).unwrap(),
+        Vector3::zero(),
+        &mut dec,
+    )
+    .unwrap();
+    let native = Plan::compile_checked(&recipe, &mut dec).unwrap();
+    let rotated = native.transformed(&pose, &mut dec).unwrap();
+    let p = point([2, 0, 0]);
+    let policy = BudgetPolicy {
+        max_precision_bits: 64,
+        ..BudgetPolicy::default()
+    };
+    let query = native
+        .proven_checked(&p, &mut Workspace::default(), &mut Decider::new(policy))
+        .unwrap();
+    assert_eq!(query.location, Location::Outside);
+    assert!(matches!(query.value, Value::TrueDistance(value) if value.contains(1.0)));
+    let query = rotated
+        .proven_checked(&p, &mut Workspace::default(), &mut dec)
+        .unwrap();
+    assert_eq!(query.location, Location::Outside);
+    assert!(matches!(query.value, Value::TrueDistance(value) if value.contains(1.0)));
+    let refusal = rotated
+        .proven_checked(&p, &mut Workspace::default(), &mut Decider::new(policy))
+        .unwrap_err();
+    assert_eq!(refusal.code, "numbers.precision-limit");
 }

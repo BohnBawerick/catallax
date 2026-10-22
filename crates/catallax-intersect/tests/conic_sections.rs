@@ -4,10 +4,29 @@ use common::*;
 
 fn cone(apex: RPoint3, axis: RVector3, slope: Rational) -> Surface {
     let reference = perp(&axis);
-    Surface::Cone(Cone::new(apex, axis, slope, reference).unwrap())
+    Surface::Cone(
+        Cone::new(
+            apex.into(),
+            axis.into(),
+            slope.into(),
+            reference.into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 fn torus(center: RPoint3, major: Rational, minor: Rational) -> Surface {
-    Surface::Torus(Torus::new(center, vi([0, 0, 1]), major, minor, vi([1, 0, 0])).unwrap())
+    Surface::Torus(
+        Torus::new(
+            center.into(),
+            vi([0, 0, 1]).into(),
+            major.into(),
+            minor.into(),
+            vi([1, 0, 0]).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 fn section(a: Surface, b: Surface) -> (GeomStore, [SurfaceId; 2], SurfacePair) {
     let mut geom = GeomStore::new();
@@ -82,7 +101,12 @@ fn circles(a: Surface, b: Surface, expected: &[(Point3, Real, Contact)], points:
                     .evaluate(&Ball::from_rational(&t, 128), &Decider::default())
                     .unwrap();
                 for equation in &equations {
-                    assert!(equation.eval_ball(&position).contains_zero());
+                    assert!(
+                        equation
+                            .eval_ball(&position, &catallax_numbers::Decider::default())
+                            .unwrap()
+                            .contains_zero()
+                    );
                 }
             }
         }
@@ -203,7 +227,12 @@ fn open_conics_have_ordered_finite_traces_and_correct_contacts() {
                 .evaluate(&Ball::from_rational(&t, 128), &Decider::default())
                 .unwrap();
             for equation in &equations {
-                assert!(equation.eval_ball(&position).contains_zero());
+                assert!(
+                    equation
+                        .eval_ball(&position, &catallax_numbers::Decider::default())
+                        .unwrap()
+                        .contains_zero()
+                );
             }
         }
         let cutting = g.add_surface(axis_plane(2, cap));
@@ -267,7 +296,14 @@ fn generator_components_are_rays_not_whole_lines() {
         else {
             panic!("expected line carrier")
         };
-        let whole = g.add_curve(Curve::Line(Line::new(pi([0, 0, 0]), dir.clone()).unwrap()));
+        let whole = g.add_curve(Curve::Line(
+            Line::new(
+                pi([0, 0, 0]).into(),
+                dir.clone(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ));
         assert_eq!(
             same_curve(&g, curve, whole, &mut Decider::default()),
             Outcome::Proven(Apart)
@@ -483,7 +519,12 @@ fn torus_line_contact_uses_the_first_nonzero_derivative() {
     let origin = p(["12/5", "0", "4/5"]);
     let direction = vi([-4, 10, -3]);
     let curve = g.add_curve(Curve::Line(
-        Line::new(origin.clone(), direction.clone()).unwrap(),
+        Line::new(
+            origin.clone().into(),
+            direction.clone().into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let surface = g.add_surface(torus(pi([0, 0, 0]), n(3), n(1)));
     // F(origin+t*direction) = t^3 (15625 t - 6000): both roots cross.
@@ -512,7 +553,7 @@ fn circle_results_are_covariant_under_generated_rational_poses() {
         let pose = rng.pose();
         let a = cone(pi([0, 0, 0]), vi([0, 0, 1]), n(1)).transformed(&pose);
         let b = cyl(pi([0, 0, 0]), vi([0, 0, -1]), n(2)).transformed(&pose);
-        let expected = pose.apply_point(&pi([0, 0, 2])).to_real();
+        let expected = pose.apply_point(&pi([0, 0, 2]).to_real());
         circles(
             a.clone(),
             b.clone(),

@@ -15,7 +15,12 @@ pub fn side_cases() -> Vec<(Surface, RPoint3, i8)> {
         (torus(), p("2", "0", "0"), 0),
         (torus(), p("3", "0", "1"), 0),
     ];
-    let pose = Pose::new(rotation(["2", "1", "0", "0"]), v("1000000", "-7", "1/3"));
+    let pose = Pose::new(
+        rotation(["2", "1", "0", "0"]),
+        (v("1000000", "-7", "1/3")).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     cases.push((
         cylinder("5").transformed(&pose),
         p("1000003", "-51/5", "116/15"),
@@ -65,46 +70,64 @@ pub fn curve_cases() -> Vec<(Curve, RPoint3, bool)> {
     ]
 }
 pub fn surface_pairs() -> Vec<(Surface, Surface, bool)> {
-    let a =
-        Surface::Plane(Plane::new(p("0", "0", "1"), v("0", "0", "1"), v("1", "0", "0")).unwrap());
-    let b =
-        Surface::Plane(Plane::new(p("5", "7", "1"), v("0", "0", "-4"), v("0", "1", "0")).unwrap());
+    let a = Surface::Plane(
+        Plane::new(
+            (p("0", "0", "1")).into(),
+            (v("0", "0", "1")).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
+    let b = Surface::Plane(
+        Plane::new(
+            (p("5", "7", "1")).into(),
+            (v("0", "0", "-4")).into(),
+            (v("0", "1", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     let mut near = b.clone();
     if let Surface::Plane(b) = &mut near {
-        b.origin.z = &b.origin.z + &r("1e-30");
+        b.origin.z = &b.origin.z + &real("1e-30");
     }
     let mut pairs = vec![(a.clone(), b, true), (a, near, false)];
     let a = cylinder("2");
     let b = Surface::Cylinder(
         Cylinder::new(
-            p("0", "0", "5"),
-            v("0", "0", "-3"),
-            r("2"),
-            v("0", "1", "0"),
+            (p("0", "0", "5")).into(),
+            (v("0", "0", "-3")).into(),
+            (r("2")).into(),
+            (v("0", "1", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     );
     pairs.push((a.clone(), b, true));
     for b in [
         Cylinder::new(
-            p("1e-30", "0", "0"),
-            v("0", "0", "1"),
-            r("2"),
-            v("1", "0", "0"),
+            (p("1e-30", "0", "0")).into(),
+            (v("0", "0", "1")).into(),
+            (r("2")).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
         Cylinder::new(
-            p("0", "0", "0"),
-            v("0", "0", "1"),
-            r("2") + r("1e-30"),
-            v("1", "0", "0"),
+            (p("0", "0", "0")).into(),
+            (v("0", "0", "1")).into(),
+            (r("2") + r("1e-30")).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
         Cylinder::new(
-            p("0", "0", "0"),
-            v("1e-30", "0", "1"),
-            r("2"),
-            v("1", "0", "-1e-30"),
+            (p("0", "0", "0")).into(),
+            (v("1e-30", "0", "1")).into(),
+            (r("2")).into(),
+            (v("1", "0", "-1e-30")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     ] {
@@ -118,7 +141,14 @@ pub fn surface_pairs() -> Vec<(Surface, Surface, bool)> {
         pairs.push((
             cone(),
             Surface::Cone(
-                Cone::new(p("0", "0", "0"), v("0", "0", axis), slope, v("0", "1", "0")).unwrap(),
+                Cone::new(
+                    (p("0", "0", "0")).into(),
+                    (v("0", "0", axis)).into(),
+                    (slope).into(),
+                    (v("0", "1", "0")).into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ),
             same,
         ));
@@ -127,10 +157,11 @@ pub fn surface_pairs() -> Vec<(Surface, Surface, bool)> {
         sphere("3"),
         Surface::Sphere(
             Sphere::new(
-                p("0", "0", "0"),
-                r("3"),
-                v("1", "0", "0"),
-                v("0", "0", "-2"),
+                (p("0", "0", "0")).into(),
+                (r("3")).into(),
+                (v("1", "0", "0")).into(),
+                (v("0", "0", "-2")).into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
@@ -145,10 +176,11 @@ pub fn surface_pairs() -> Vec<(Surface, Surface, bool)> {
         sphere("3"),
         Surface::Sphere(
             Sphere::new(
-                p("1e-30", "0", "0"),
-                r("3"),
-                v("0", "0", "1"),
-                v("1", "0", "0"),
+                (p("1e-30", "0", "0")).into(),
+                (r("3")).into(),
+                (v("0", "0", "1")).into(),
+                (v("1", "0", "0")).into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
@@ -158,11 +190,12 @@ pub fn surface_pairs() -> Vec<(Surface, Surface, bool)> {
         torus(),
         Surface::Torus(
             Torus::new(
-                p("0", "0", "0"),
-                v("0", "0", "-7"),
-                r("3"),
-                r("1"),
-                v("0", "1", "0"),
+                (p("0", "0", "0")).into(),
+                (v("0", "0", "-7")).into(),
+                (r("3")).into(),
+                (r("1")).into(),
+                (v("0", "1", "0")).into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
@@ -172,11 +205,12 @@ pub fn surface_pairs() -> Vec<(Surface, Surface, bool)> {
         torus(),
         Surface::Torus(
             Torus::new(
-                p("0", "0", "0"),
-                v("0", "0", "1"),
-                r("3"),
-                r("1") + r("1e-30"),
-                v("1", "0", "0"),
+                (p("0", "0", "0")).into(),
+                (v("0", "0", "1")).into(),
+                (r("3")).into(),
+                (r("1") + r("1e-30")).into(),
+                (v("1", "0", "0")).into(),
+                &mut catallax_numbers::Decider::default(),
             )
             .unwrap(),
         ),
@@ -187,17 +221,37 @@ pub fn surface_pairs() -> Vec<(Surface, Surface, bool)> {
 }
 pub fn normal_cases() -> Vec<(Surface, Surface, RPoint3, i8)> {
     let plane_at = |normal| {
-        Surface::Plane(Plane::new(p("0", "0", "2"), v("0", "0", normal), v("1", "0", "0")).unwrap())
+        Surface::Plane(
+            Plane::new(
+                (p("0", "0", "2")).into(),
+                (v("0", "0", normal)).into(),
+                (v("1", "0", "0")).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        )
     };
     vec![
         (sphere("2"), plane_at("1"), p("0", "0", "2"), 1),
         (sphere("2"), plane_at("-1"), p("0", "0", "2"), -1),
         (
             Surface::Plane(
-                Plane::new(p("0", "0", "0"), v("1", "0", "0"), v("0", "1", "0")).unwrap(),
+                Plane::new(
+                    p("0", "0", "0").into(),
+                    v("1", "0", "0").into(),
+                    v("0", "1", "0").into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ),
             Surface::Plane(
-                Plane::new(p("0", "0", "0"), v("0", "1", "0"), v("1", "0", "0")).unwrap(),
+                Plane::new(
+                    p("0", "0", "0").into(),
+                    v("0", "1", "0").into(),
+                    v("1", "0", "0").into(),
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .unwrap(),
             ),
             p("0", "0", "5"),
             0,

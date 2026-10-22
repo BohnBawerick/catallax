@@ -19,13 +19,37 @@ fn v(x: i64, y: i64, z: i64) -> RVector3 {
     RVector3::new(r(x), r(y), r(z))
 }
 fn plane(origin: RPoint3, normal: RVector3, reference: RVector3) -> Surface {
-    Surface::Plane(Plane::new(origin, normal, reference).unwrap())
+    Surface::Plane(
+        Plane::new(
+            (origin).into(),
+            (normal).into(),
+            (reference).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 fn circle(center: RPoint3, normal: RVector3, reference: RVector3, radius2: i64) -> Curve {
-    Curve::Circle(Circle::new(center, normal, r(radius2), reference).unwrap())
+    Curve::Circle(
+        Circle::new(
+            (center).into(),
+            (normal).into(),
+            (r(radius2)).into(),
+            (reference).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 fn line(a: &RPoint3, b: &RPoint3) -> Curve {
-    Curve::Line(Line::new(a.clone(), b.minus(a)).unwrap())
+    Curve::Line(
+        Line::new(
+            (a.clone()).into(),
+            (b.minus(a)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 fn fact(model: &mut Model, a: GeomKey, b: GeomKey) {
     model.geom_mut().record_fact(Fact {
@@ -62,7 +86,7 @@ fn sketch(
         .map(|point| {
             let point = model
                 .geom_mut()
-                .add_point(PointDef::Explicit(pose.apply_point(&point)));
+                .add_point(PointDef::Explicit(pose.apply_point(&point.to_real())));
             model.add_vertex(Vertex { point })
         })
         .collect::<Vec<_>>();
@@ -136,7 +160,16 @@ pub(super) fn octant(pose: &Pose) -> (Model, BodyId) {
         plane(p(0, 0, 0), v(0, 0, -1), v(1, 0, 0)),
         plane(p(0, 0, 0), v(-1, 0, 0), v(0, 1, 0)),
         plane(p(0, 0, 0), v(0, -1, 0), v(0, 0, 1)),
-        Surface::Sphere(Sphere::new(p(0, 0, 0), r(3), v(0, 0, 1), v(1, 0, 0)).unwrap()),
+        Surface::Sphere(
+            Sphere::new(
+                p(0, 0, 0).into(),
+                r(3).into(),
+                v(0, 0, 1).into(),
+                v(1, 0, 0).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
     ];
     sketch(
         points,
@@ -167,7 +200,16 @@ pub(super) fn half_cylinder(pose: &Pose) -> (Model, BodyId) {
         plane(p(0, 0, 0), v(0, 0, -1), v(1, 0, 0)),
         plane(p(0, 0, 3), v(0, 0, 1), v(1, 0, 0)),
         plane(p(0, 0, 0), v(0, -1, 0), v(1, 0, 0)),
-        Surface::Cylinder(Cylinder::new(p(0, 0, 0), v(0, 0, 1), r(2), v(1, 0, 0)).unwrap()),
+        Surface::Cylinder(
+            Cylinder::new(
+                p(0, 0, 0).into(),
+                v(0, 0, 1).into(),
+                r(2).into(),
+                v(1, 0, 0).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
     ];
     sketch(
         points,
@@ -185,13 +227,49 @@ pub(super) fn half_cylinder(pose: &Pose) -> (Model, BodyId) {
 
 pub(super) fn steinmetz(pose: &Pose) -> (Model, BodyId) {
     use Sense::{Reversed as R, Same as S};
-    let minus =
-        Curve::Ellipse(Ellipse::new(p(0, 0, 0), v(-1, 0, 1), v(1, 0, 1), r(2), r(1)).unwrap());
-    let plus =
-        Curve::Ellipse(Ellipse::new(p(0, 0, 0), v(1, 0, 1), v(-1, 0, 1), r(2), r(1)).unwrap());
+    let minus = Curve::Ellipse(
+        Ellipse::new(
+            (p(0, 0, 0)).into(),
+            (v(-1, 0, 1)).into(),
+            (v(1, 0, 1)).into(),
+            (r(2)).into(),
+            (r(1)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
+    let plus = Curve::Ellipse(
+        Ellipse::new(
+            (p(0, 0, 0)).into(),
+            (v(1, 0, 1)).into(),
+            (v(-1, 0, 1)).into(),
+            (r(2)).into(),
+            (r(1)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
     let surfaces = vec![
-        Surface::Cylinder(Cylinder::new(p(0, 0, 0), v(0, 0, 1), r(1), v(1, 0, 0)).unwrap()),
-        Surface::Cylinder(Cylinder::new(p(0, 0, 0), v(1, 0, 0), r(1), v(0, 0, -1)).unwrap()),
+        Surface::Cylinder(
+            Cylinder::new(
+                p(0, 0, 0).into(),
+                v(0, 0, 1).into(),
+                r(1).into(),
+                v(1, 0, 0).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
+        Surface::Cylinder(
+            Cylinder::new(
+                p(0, 0, 0).into(),
+                v(1, 0, 0).into(),
+                r(1).into(),
+                v(0, 0, -1).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
+        ),
     ];
     sketch(
         vec![p(0, 1, 0), p(0, -1, 0)],
@@ -219,7 +297,12 @@ pub(super) fn void_block() -> (Model, BodyId) {
     let inner = catallax_topology::block(
         &mut model,
         [r(2), r(2), r(2)],
-        &Pose::new(catallax_shapes::Rotation::identity(), v(4, 4, 4)),
+        &Pose::new(
+            catallax_shapes::Rotation::identity(),
+            (v(4, 4, 4)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     )
     .unwrap();
     let mut inner_faces = Vec::new();
@@ -274,7 +357,14 @@ pub(super) fn through_hole(scale: &Rational, pose: &Pose) -> (Model, BodyId) {
         catallax_topology::block(&mut model, std::array::from_fn(|_| scale * &r(4)), pose).unwrap();
     let mut faces = model.faces_of_body(block);
     let wall = Surface::Cylinder(
-        Cylinder::new(local_point(2, 2, 0), v(0, 0, 1), scale.clone(), v(1, 0, 0)).unwrap(),
+        Cylinder::new(
+            (local_point(2, 2, 0)).into(),
+            (v(0, 0, 1)).into(),
+            (scale.clone()).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     )
     .transformed(pose);
     let wall = model.geom_mut().add_surface(wall);
@@ -282,7 +372,14 @@ pub(super) fn through_hole(scale: &Rational, pose: &Pose) -> (Model, BodyId) {
     for (index, z, hole_sense) in [(4, 0, Sense::Same), (5, 4, Sense::Reversed)] {
         let old_face = model.face(faces[index]).clone();
         let curve = Curve::Circle(
-            Circle::new(local_point(2, 2, z), v(0, 0, 1), scale * scale, v(1, 0, 0)).unwrap(),
+            Circle::new(
+                (local_point(2, 2, z)).into(),
+                (v(0, 0, 1)).into(),
+                (scale * scale).into(),
+                (v(1, 0, 0)).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         )
         .transformed(pose)
         .unwrap();
@@ -344,7 +441,15 @@ pub(super) fn through_hole(scale: &Rational, pose: &Pose) -> (Model, BodyId) {
 pub(super) fn half_torus() -> (Model, BodyId) {
     let mut model = Model::new();
     let torus = model.geom_mut().add_surface(Surface::Torus(
-        catallax_shapes::Torus::new(p(0, 0, 0), v(0, 0, 1), r(3), r(1), v(1, 0, 0)).unwrap(),
+        catallax_shapes::Torus::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 1).into(),
+            r(3).into(),
+            r(1).into(),
+            v(1, 0, 0).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let mut rings = Vec::new();
     let mut caps = Vec::new();
@@ -401,7 +506,14 @@ pub(super) fn half_torus() -> (Model, BodyId) {
 pub(super) fn cap(radius: i64, height: i64) -> (Model, BodyId) {
     let mut model = Model::new();
     let sphere = model.geom_mut().add_surface(Surface::Sphere(
-        Sphere::new(p(0, 0, 0), r(radius), v(0, 0, 1), v(1, 0, 0)).unwrap(),
+        Sphere::new(
+            (p(0, 0, 0)).into(),
+            (r(radius)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
     ));
     let plane = model
         .geom_mut()

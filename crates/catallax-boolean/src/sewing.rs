@@ -2,15 +2,13 @@
 //! boundaries and degree-two vertices before writing the result topology.
 
 use crate::Containment;
-use crate::geometry::{
-    coincident, oriented, product, record_incident, refusal, reverse, sign, unit,
-};
+use crate::geometry::{coincident, oriented, product, record_incident, refusal, reverse, sign};
 use crate::points::curve_sample;
 use crate::stages::{Imprinted, Selection};
 use catallax_intersect::{Component, SurfacePair, intersect_surfaces, same_curve, tangent_at};
 use catallax_numbers::{Answer, Answered, Decider, MarkLog, Outcome, Refusal, Sign};
 use catallax_recipe::Origin;
-use catallax_shapes::{Curve, CurveId, GeomKey, PointId, RVector3, SurfaceId};
+use catallax_shapes::{Curve, CurveId, GeomKey, PointId, SurfaceId};
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, Face, FaceId, Loop, Lump, Model, Sense, Shell, Vertex,
 };
@@ -502,32 +500,15 @@ fn orient_shell(model: &mut Model, faces: &[FaceId], dec: &mut Decider) -> Resul
                 return Ok(None);
             }
         }
-        let gradient = oriented(
-            &model.geom().surface(f.surface).gradient(&p.to_real()),
-            f.sense,
-        );
-        let normal = RVector3::new(
-            gradient
-                .x
-                .as_rational()
-                .expect("polynomial at a rational point"),
-            gradient
-                .y
-                .as_rational()
-                .expect("polynomial at a rational point"),
-            gradient
-                .z
-                .as_rational()
-                .expect("polynomial at a rational point"),
-        );
-        let tangent = (0..3)
-            .map(|i| normal.cross(&unit(i)))
-            .find(|v| !v.is_zero())
-            .expect("regular supported surface");
+        let gradient = oriented(&model.geom().surface(f.surface).gradient(p), f.sense);
+        let normal = gradient;
+        let tangent = crate::geometry::perpendicular(&normal, dec, "boolean.classify-ambiguous")?;
         let second = normal.cross(&tangent);
         for k in 0..crate::geometry::DIRECTION_ATTEMPTS {
             let (a, b) = crate::geometry::probe_parameters(k);
-            let direction = normal.plus(&tangent.scaled(&a)).plus(&second.scaled(&b));
+            let direction = normal
+                .plus(&tangent.scaled(&a.into()))
+                .plus(&second.scaled(&b.into()));
             if let Some(inside) = crate::containment::ray_parity(model, faces, p, &direction, dec)?
             {
                 return Ok(Some(!inside));

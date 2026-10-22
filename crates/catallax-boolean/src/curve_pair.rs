@@ -1,36 +1,34 @@
 //! Curve meetings needed when a non-maximal operand has coplanar faces.
-//! Elimination is over rational polynomials; candidate coordinates remain
-//! exact real expressions, and every candidate is checked before incidence.
+//! Rational elimination remains the fast path; algebraic coefficients use
+//! shared certified operations and every candidate is checked before incidence.
 
 use catallax_intersect::{
     Component, CurveSurface, SurfacePair, intersect_curve_surface, intersect_surfaces, on_curve,
     same_curve,
 };
-use catallax_numbers::{Decider, MPoly, Outcome, Rational, Real, Refusal, Sign, UPoly};
-use catallax_shapes::{
-    Curve, CurveId, Meet, MeetOf, Point3, PointDef, PointId, Position, RPoint3, RVector3,
-};
+use catallax_numbers::{Decider, MPoly, Real, RealPoly, Refusal, Sign};
+use catallax_shapes::{Curve, CurveId, Meet, MeetOf, Point3, PointDef, PointId, Position, Vector3};
 use catallax_topology::Model;
 
 use crate::geometry::{canonical_point, coincident, refusal, sign};
 
-fn substitute(poly: &MPoly, origin: &RPoint3, u: &RVector3, v: Option<&RVector3>) -> MPoly {
+fn substitute(poly: &RealPoly, origin: &Point3, u: &Vector3, v: Option<&Vector3>) -> RealPoly {
     let n = if v.is_some() { 2 } else { 1 };
     let xs = [&origin.x, &origin.y, &origin.z];
     let us = [&u.x, &u.y, &u.z];
     let vs = v.map(|v| [&v.x, &v.y, &v.z]);
     let coordinates: Vec<_> = (0..3)
         .map(|i| {
-            let mut p = MPoly::constant(n, xs[i].clone()) + MPoly::var(n, 0).scale(us[i]);
+            let mut p = RealPoly::constant(n, xs[i].clone()) + RealPoly::var(n, 0).scale(us[i]);
             if let Some(vs) = vs {
-                p = p + MPoly::var(n, 1).scale(vs[i]);
+                p = p + RealPoly::var(n, 1).scale(vs[i]);
             }
             p
         })
         .collect();
-    let mut result = MPoly::zero(n);
+    let mut result = RealPoly::zero(n);
     for (monomial, coefficient) in poly.terms() {
-        let mut term = MPoly::constant(n, coefficient);
+        let mut term = RealPoly::constant(n, coefficient);
         for (axis, &power) in monomial.exponents().iter().enumerate() {
             for _ in 0..power {
                 term = &term * &coordinates[axis];
@@ -41,7 +39,7 @@ fn substitute(poly: &MPoly, origin: &RPoint3, u: &RVector3, v: Option<&RVector3>
     result
 }
 
-fn univariate(poly: &MPoly, axis: usize) -> UPoly {
+fn univariate(poly: &RealPoly, axis: usize) -> RealPoly {
     let mut result = Vec::new();
     for (monomial, coefficient) in poly.terms() {
         assert!(
@@ -51,11 +49,10 @@ fn univariate(poly: &MPoly, axis: usize) -> UPoly {
                 .enumerate()
                 .all(|(i, &p)| i == axis || p == 0)
         );
-        let power = monomial.exponents()[axis] as usize;
-        result.resize(result.len().max(power + 1), Rational::zero());
-        result[power] = &result[power] + &coefficient;
+        let power = monomial.exponents()[axis];
+        result.push((vec![power], coefficient));
     }
-    UPoly::new(result)
+    RealPoly::from_terms(1, result)
 }
 
 fn candidate(
@@ -97,41 +94,27 @@ fn candidate(
     Ok(Some(point))
 }
 
-fn roots(poly: &UPoly, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
-    if poly.is_zero() {
+fn roots(poly: &RealPoly, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+    if poly.is_zero(dec)? {
         return Ok(Vec::new());
     }
-    match dec.real_roots(poly) {
-        Outcome::Proven(roots) => Ok(roots
-            .into_iter()
-            .map(|root| Real::from_algebraic(root.value))
-            .collect()),
-        Outcome::NotExact(n) => Err(refusal("boolean.imprint-ambiguous", n.detail)),
-        Outcome::Refused(e) => Err(e),
-        Outcome::ProvenCoincident(_) => unreachable!("nonzero polynomial roots are strict answers"),
-    }
+    poly.real_roots(dec)
 }
 
-fn affine(
-    origin: &RPoint3,
-    u: &RVector3,
-    v: Option<&RVector3>,
-    x: &Real,
-    y: Option<&Real>,
-) -> Point3 {
-    let p = origin.to_real().plus(&u.to_real().scaled(x));
+fn affine(origin: &Point3, u: &Vector3, v: Option<&Vector3>, x: &Real, y: Option<&Real>) -> Point3 {
+    let p = origin.plus(&u.scaled(x));
     match (v, y) {
-        (Some(v), Some(y)) => p.plus(&v.to_real().scaled(y)),
+        (Some(v), Some(y)) => p.plus(&v.scaled(y)),
         _ => p,
     }
 }
 
-fn quadratic(poly: &MPoly, x: &Real, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+fn quadratic(poly: &RealPoly, x: &Real, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
     let mut c = [Real::zero(), Real::zero(), Real::zero()];
     for (m, k) in poly.terms() {
         let e = m.exponents();
         assert!(e[1] <= 2);
-        c[e[1] as usize] = &c[e[1] as usize] + &(Real::from(k) * x.pow_u32(e[0]));
+        c[e[1] as usize] = &c[e[1] as usize] + &(k * x.pow_u32(e[0]));
     }
     if sign(&c[2], dec, "boolean.imprint-ambiguous")? == Sign::Zero {
         if sign(&c[1], dec, "boolean.imprint-ambiguous")? == Sign::Zero {
@@ -232,11 +215,28 @@ pub(crate) fn meetings(
         return meetings(model, b, a, dec);
     }
     if let Curve::Line(line) = model.geom().curve(a).clone() {
-        let mut common: Option<UPoly> = None;
+        let mut common: Option<RealPoly> = None;
         for equation in model.geom().curve(b).equations(model.geom()) {
             let p = univariate(&substitute(&equation, &line.origin, &line.dir, None), 0);
-            if !p.is_zero() {
-                common = Some(common.map_or(p.clone(), |q| q.gcd(&p)));
+            if !p.is_zero(dec)? {
+                common = Some(match common {
+                    None => p,
+                    Some(q) => {
+                        if let (Some(a), Some(b)) = (q.rational(), p.rational()) {
+                            let gcd = a.to_upoly(0).unwrap().gcd(&b.to_upoly(0).unwrap());
+                            RealPoly::from(MPoly::from_terms(
+                                1,
+                                gcd.coefficients()
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, c)| (vec![i as u32], c.clone()))
+                                    .collect(),
+                            ))
+                        } else {
+                            q
+                        }
+                    }
+                });
             }
         }
         if let Some(poly) = common {
@@ -268,21 +268,27 @@ pub(crate) fn meetings(
         }
     };
     let v = normal.cross(&u);
-    let first = model
-        .geom()
-        .curve(a)
-        .equations(model.geom())
-        .into_iter()
-        .map(|p| substitute(&p, &origin, &u, Some(&v)))
-        .find(|p| !p.is_zero())
-        .expect("analytic conic equation");
+    let mut first = None;
+    for equation in model.geom().curve(a).equations(model.geom()) {
+        let polynomial = substitute(&equation, &origin, &u, Some(&v));
+        if !polynomial.is_zero(dec)? {
+            first = Some(polynomial);
+            break;
+        }
+    }
+    let first = first.ok_or_else(|| {
+        refusal(
+            "boolean.imprint-ambiguous",
+            "analytic conic equation was not certified",
+        )
+    })?;
     for equation in model.geom().curve(b).equations(model.geom()) {
         let second = substitute(&equation, &origin, &u, Some(&v));
-        if second.is_zero() {
+        if second.is_zero(dec)? {
             continue;
         }
-        let eliminated = first.resultant(&second, 1);
-        if eliminated.is_zero() {
+        let eliminated = first.resultant(&second, 1, dec)?;
+        if eliminated.is_zero(dec)? {
             continue;
         }
         for x in roots(&univariate(&eliminated, 0), dec)? {

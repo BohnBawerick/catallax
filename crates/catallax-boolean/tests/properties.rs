@@ -13,8 +13,10 @@ fn refusal_placement(
     let [w, x, y, z] = quaternion.map(r);
     let pose = Pose::new(
         Rotation::from_quaternion(w, x, y, z).unwrap(),
-        RVector3::new(q(translation[0]), q(translation[1]), q(translation[2])),
-    );
+        (RVector3::new(q(translation[0]), q(translation[1]), q(translation[2]))).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
     let scale = q(scale);
     let c = case(id);
     let mut model = Model::new();
@@ -96,10 +98,18 @@ fn tiny_rotated_block_cylinder_cap() {
 fn coincident_sections_preserve_a_cavity_and_curve_contact() {
     let global = Pose::new(
         Rotation::from_quaternion(r(1), r(1), r(1), r(1)).unwrap(),
-        v(0, 0, 0),
-    );
-    let pose =
-        |[x, y, z]: [&str; 3]| Pose::new(global.rotation.clone(), RVector3::new(q(x), q(y), q(z)));
+        (v(0, 0, 0)).into(),
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
+    let pose = |[x, y, z]: [&str; 3]| {
+        Pose::new(
+            global.rotation.clone(),
+            (RVector3::new(q(x), q(y), q(z))).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap()
+    };
     let primitives = [
         Primitive {
             shape: Shape::Block([r(6), r(6), r(6)]),
@@ -147,7 +157,10 @@ fn coincident_sections_preserve_a_cavity_and_curve_contact() {
         query(
             &mut model,
             answer.body,
-            &global.apply_point(&p(x, y, z)),
+            &global
+                .apply_point(&p(x, y, z).to_real())
+                .as_rational()
+                .expect("rational Boolean fixture"),
             want,
             &mut dec,
         );
@@ -175,7 +188,13 @@ fn near_points(shape: &Primitive) -> Vec<RPoint3> {
                 RPoint3::new((radius + &eps) * q("3/5"), (radius + &eps) * q("4/5"), r(0))
             }
         };
-        out.push(shape.pose.apply_point(&local));
+        out.push(
+            shape
+                .pose
+                .apply_point(&local.to_real())
+                .as_rational()
+                .expect("rational Boolean fixture"),
+        );
     }
     out
 }
@@ -298,7 +317,10 @@ blind_test!(case_55_random_rational_primitive_poses_near_and_far, {
             }
             for _ in 0..64 {
                 let local = rng.point();
-                let point = pose.apply_point(&local);
+                let point = pose
+                    .apply_point(&local.to_real())
+                    .as_rational()
+                    .expect("rational Boolean fixture");
                 let want = primitive.locate(&local);
                 query(&mut m, b, &point, want, &mut dec);
             }
@@ -443,7 +465,11 @@ blind_test!(case_58_two_fresh_runs_and_eight_threads, {
     for &id in IDS {
         for (op, reverse, expected) in expectations(id) {
             let first = run_case(&case(id), op, reverse, Some(&expected), 0);
-            assert_eq!(first, run_case(&case(id), op, reverse, Some(&expected), 0));
+            assert_eq!(
+                first,
+                run_case(&case(id), op, reverse, Some(&expected), 0),
+                "{id} {op:?} reverse={reverse}"
+            );
             let results = std::thread::scope(|scope| {
                 let workers: Vec<_> = (0..8)
                     .map(|_| {
@@ -573,7 +599,12 @@ fn within_radial_distance(s: &Rational, radius: &Rational, height_sq: &Rational)
     left <= r(0) || sq(&left) <= &(r(4) * sq(radius)) * s
 }
 fn distance_bound_contains_boundary(shape: &Primitive, point: &RPoint3, bound: &Rational) -> bool {
-    let p = shape.pose.inverse().apply_point(point);
+    let p = shape
+        .pose
+        .inverse()
+        .apply_point(&point.to_real())
+        .as_rational()
+        .expect("rational Boolean fixture");
     let bound_sq = sq(bound);
     match &shape.shape {
         Shape::Ball(radius) => {

@@ -177,14 +177,14 @@ fn walks(
         };
         let point = model.vertex(end).point;
         let cone_axis = if let Surface::Cone(cone) = model.geom().surface(f.surface) {
-            let displacement = model.geom().position(point).minus(&cone.apex.to_real());
+            let displacement = model.geom().position(point).minus(&cone.apex);
             if sign(
                 &displacement.norm_squared(),
                 dec,
                 "boolean.imprint-ambiguous",
             )? == Sign::Zero
             {
-                Some(cone.axis.to_real())
+                Some(cone.axis.clone())
             } else {
                 None
             }

@@ -1,13 +1,15 @@
-//! Exact supporting surfaces, primitive trimming and cached numeric constants.
-
-use catallax_numbers::{Ball, MPoly, Rational, Refusal, Sign};
-use catallax_recipe::{ElementId, Operation, Origin, Role, StepId};
-use catallax_shapes::{
-    Cone, Cylinder, Plane, Pose, RPoint3, RVector3, Rotation, Sphere, Surface, Torus,
-};
+//! Exact supporting surfaces, primitive trimming and separate rounded caches.
 
 use crate::metric::{Kind, PRECISION, distance};
 use crate::{Face, Location};
+use catallax_numbers::{
+    Ball, Decider, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
+};
+use catallax_recipe::{ElementId, Operation, Origin, Role, StepId};
+use catallax_shapes::{
+    Cone, Cylinder, Plane, Point3, Pose, RPoint3, RVector3, Rotation, Sphere, Surface, Torus,
+    Vector3,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Primitive {
@@ -20,19 +22,43 @@ pub(crate) struct Primitive {
     balls: [Ball; 5],
     constraints: Vec<Constraint>,
 }
-
 #[derive(Clone, Debug)]
 pub(crate) struct Constraint {
-    pub polynomial: MPoly,
-    terms: Vec<([u32; 3], Rational)>,
+    surface: Surface,
+    pub(crate) polynomial: RealPoly,
+    terms: Terms,
+}
+#[derive(Clone, Debug)]
+enum Terms {
+    Rational(Vec<([u32; 3], Rational)>),
+    Algebraic(Vec<([u32; 3], Real)>),
 }
 
-fn unit(axis: usize, sign: i64) -> RVector3 {
-    let [x, y, z] = std::array::from_fn(|i| Rational::from_i64(if i == axis { sign } else { 0 }));
-    RVector3::new(x, y, z)
+pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    if let Some(value) = value.rational_ref() {
+        return Ok(value.sign());
+    }
+    match dec.sign(value) {
+        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+        Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
+        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::Refused(r) => Err(r),
+    }
 }
-fn at_z(z: Rational) -> RPoint3 {
-    RPoint3::new(Rational::zero(), Rational::zero(), z)
+pub(crate) fn enclose(value: &Real, precision: u32, dec: &mut Decider) -> Result<Ball, Refusal> {
+    if let Some(value) = value.rational_ref() {
+        Ok(Ball::from_rational(value, precision))
+    } else {
+        dec.enclose_budgeted_at(value, precision)
+    }
+}
+fn unit(axis: usize, sign: i64) -> Vector3 {
+    let [x, y, z] = std::array::from_fn(|i| Rational::from_i64(if i == axis { sign } else { 0 }));
+    RVector3::new(x, y, z).to_real()
+}
+fn at_z(z: Rational) -> Point3 {
+    RPoint3::new(Rational::zero(), Rational::zero(), z).to_real()
 }
 fn side(name: &str) -> Role {
     Role::Side {
@@ -49,13 +75,79 @@ fn plane(axis: usize, coordinate: Rational, sign: i64) -> Surface {
         }
     });
     Surface::Plane(Plane {
-        origin: RPoint3::new(x, y, z),
+        origin: RPoint3::new(x, y, z).to_real(),
         normal: unit(axis, sign),
         ref_dir: unit((axis + 1) % 3, 1),
     })
 }
+pub(crate) fn constraint(surface: Surface) -> Constraint {
+    let polynomial = surface.implicit();
+    let terms = if let Some(p) = polynomial.rational() {
+        Terms::Rational(
+            p.terms()
+                .into_iter()
+                .map(|(m, c)| (m.exponents().try_into().expect("three coordinates"), c))
+                .collect(),
+        )
+    } else {
+        Terms::Algebraic(
+            polynomial
+                .terms()
+                .into_iter()
+                .map(|(m, c)| (m.exponents().try_into().expect("three coordinates"), c))
+                .collect(),
+        )
+    };
+    Constraint {
+        surface,
+        polynomial,
+        terms,
+    }
+}
+impl Constraint {
+    pub(crate) fn transform(&mut self, pose: &Pose) {
+        *self = constraint(self.surface.transformed(pose));
+    }
+}
+fn support_geometry(
+    polynomial: &RealPoly,
+    dec: &mut Decider,
+) -> Result<(RealPoly, [RealPoly; 3]), Refusal> {
+    let mut first = None;
+    for (_, c) in polynomial.terms() {
+        if sign(&c, dec)? != Sign::Zero {
+            first = Some(c);
+            break;
+        }
+    }
+    let coefficient = first.ok_or_else(|| {
+        Refusal::new(
+            "numbers.zero-polynomial",
+            "surface support polynomial vanishes identically",
+        )
+    })?;
+    let support = polynomial.scale(&(&Real::one() / &coefficient));
+    Ok((support, std::array::from_fn(|i| polynomial.partial(i))))
+}
+pub(crate) fn face_geometry(
+    face: &mut Face,
+    surface: Surface,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let polynomial = surface.implicit();
+    let (support, gradient) = support_geometry(&polynomial, dec)?;
+    face.support = support;
+    face.gradient = gradient;
+    face.polynomial = polynomial;
+    face.surface = surface;
+    Ok(())
+}
 
-pub(crate) fn compile(op: &Operation, step: &StepId) -> Result<(Leaf, Vec<Face>), Refusal> {
+pub(crate) fn compile(
+    op: &Operation,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<(Leaf, Vec<Face>), Refusal> {
     let q = |n: &catallax_recipe::Number| n.value().clone();
     let z = Rational::zero();
     let (kind, mut parameters, placement) = match op {
@@ -126,50 +218,29 @@ pub(crate) fn compile(op: &Operation, step: &StepId) -> Result<(Leaf, Vec<Face>)
     let [w, x, y, zz] = placement.rotation.clone().map(|n| q(&n));
     let rotation = Rotation::from_quaternion(w, x, y, zz)?;
     let [x, y, zz] = placement.translation.0.clone().map(|n| q(&n));
-    let pose = Pose::new(rotation, RVector3::new(x, y, zz));
+    let pose = Pose::new(rotation, RVector3::new(x, y, zz).to_real(), dec)?;
     let inverse = pose.inverse();
     let mut constraints = Vec::new();
     let mut faces = Vec::new();
-    let mut add = |surface: Surface, role: Option<Role>| {
+    let mut add = |surface: Surface, role: Option<Role>| -> Result<(), Refusal> {
         let surface = surface.transformed(&pose);
-        let polynomial = surface.implicit();
-        let terms = polynomial
-            .terms()
-            .into_iter()
-            .map(|(m, c)| {
-                let e: [u32; 3] = m.exponents().try_into().expect("three coordinates");
-                assert!(
-                    e.iter().sum::<u32>() <= 4,
-                    "analytic constraints are at most quartic"
-                );
-                (e, c)
-            })
-            .collect();
-        constraints.push(Constraint {
-            polynomial: polynomial.clone(),
-            terms,
-        });
+        let constraint = constraint(surface.clone());
         if let Some(role) = role {
-            let gradient = std::array::from_fn(|i| polynomial.partial(i));
-            let coefficient = polynomial
-                .terms()
-                .into_iter()
-                .next()
-                .expect("surface polynomial")
-                .1;
-            let support = polynomial.scale(&coefficient.recip().expect("nonzero coefficient"));
+            let (support, gradient) = support_geometry(&constraint.polynomial, dec)?;
             faces.push(Face {
                 origin: Origin {
                     step: step.clone(),
                     role,
                 },
                 surface,
-                polynomial,
+                polynomial: constraint.polynomial.clone(),
                 support,
                 gradient,
                 leaf: 0,
             });
         }
+        constraints.push(constraint);
+        Ok(())
     };
     match kind {
         Kind::Block => {
@@ -178,22 +249,22 @@ pub(crate) fn compile(op: &Operation, step: &StepId) -> Result<(Leaf, Vec<Face>)
                 (1, side("y_min"), side("y_max")),
                 (2, Role::Start, Role::End),
             ] {
-                add(plane(axis, z.clone(), -1), Some(lo));
-                add(plane(axis, parameters[axis].clone(), 1), Some(hi));
+                add(plane(axis, z.clone(), -1), Some(lo))?;
+                add(plane(axis, parameters[axis].clone(), 1), Some(hi))?;
             }
         }
         Kind::Round => {
-            add(plane(2, z.clone(), -1), Some(Role::Start));
+            add(plane(2, z.clone(), -1), Some(Role::Start))?;
             add(
                 plane(2, parameters[2].clone(), 1),
                 positive(&parameters[1]).then_some(Role::End),
-            );
+            )?;
             let difference = &parameters[0] - &parameters[1];
             let wall = if difference.is_zero() {
                 Surface::Cylinder(Cylinder {
-                    origin: RPoint3::origin(),
+                    origin: Point3::origin(),
                     axis: unit(2, 1),
-                    radius: parameters[0].clone(),
+                    radius: parameters[0].clone().into(),
                     ref_dir: unit(0, 1),
                 })
             } else {
@@ -207,87 +278,125 @@ pub(crate) fn compile(op: &Operation, step: &StepId) -> Result<(Leaf, Vec<Face>)
                             1
                         },
                     ),
-                    slope: &difference.abs() / &parameters[2],
+                    slope: (&difference.abs() / &parameters[2]).into(),
                     ref_dir: unit(0, 1),
                 })
             };
-            add(wall, Some(side("wall")));
+            add(wall, Some(side("wall")))?;
             parameters[3] = -difference;
             parameters[4] = &parameters[3] * &parameters[3] + &parameters[2] * &parameters[2];
         }
         Kind::Sphere => add(
             Surface::Sphere(Sphere {
-                center: RPoint3::origin(),
-                radius: parameters[0].clone(),
+                center: Point3::origin(),
+                radius: parameters[0].clone().into(),
                 axis: unit(2, 1),
                 ref_dir: unit(0, 1),
             }),
             Some(side("wall")),
-        ),
+        )?,
         Kind::Torus => add(
             Surface::Torus(Torus {
-                center: RPoint3::origin(),
-                major: parameters[0].clone(),
-                minor: parameters[1].clone(),
+                center: Point3::origin(),
+                major: parameters[0].clone().into(),
+                minor: parameters[1].clone().into(),
                 axis: unit(2, 1),
                 ref_dir: unit(0, 1),
             }),
             Some(side("wall")),
-        ),
+        )?,
     }
-    Ok((
-        Leaf::Primitive(Primitive {
-            kind,
-            fast_matrix: std::array::from_fn(|i| {
-                std::array::from_fn(|j| inverse.rotation.matrix()[i][j].to_f64_nearest())
-            }),
-            fast_translation: [
-                &inverse.translation.x,
-                &inverse.translation.y,
-                &inverse.translation.z,
-            ]
-            .map(Rational::to_f64_nearest),
-            fast_parameters: std::array::from_fn(|i| parameters[i].to_f64_nearest()),
-            balls: std::array::from_fn(|i| Ball::from_rational(&parameters[i], PRECISION)),
-            parameters: {
-                let [a, b, c, _, _] = parameters;
-                [a, b, c]
-            },
-            inverse,
-            constraints,
-        }),
-        faces,
-    ))
+    let fast_parameters = parameters.each_ref().map(Rational::to_f64_nearest);
+    let balls = parameters
+        .each_ref()
+        .map(|p| Ball::from_rational(p, PRECISION));
+    let [a, b, c, _, _] = parameters;
+    let leaf = Primitive {
+        kind,
+        fast_matrix: fast_matrix(&inverse),
+        fast_translation: fast_translation(&inverse),
+        fast_parameters,
+        balls,
+        parameters: [a, b, c],
+        inverse,
+        constraints,
+    };
+    Ok((Leaf::Primitive(leaf), faces))
+}
+pub(crate) fn fast_matrix(inverse: &Pose) -> [[f64; 3]; 3] {
+    std::array::from_fn(|i| std::array::from_fn(|j| inverse.rotation.matrix()[i][j].to_f64()))
+}
+pub(crate) fn fast_translation(inverse: &Pose) -> [f64; 3] {
+    [
+        &inverse.translation.x,
+        &inverse.translation.y,
+        &inverse.translation.z,
+    ]
+    .map(Real::to_f64)
 }
 
 impl Primitive {
-    pub fn location(&self, point: &[Rational; 3]) -> Location {
+    pub fn same_geometry(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
+        Ok(self.kind == other.kind
+            && self.parameters == other.parameters
+            && self.inverse.same_motion(&other.inverse, dec)?)
+    }
+    fn transform(&mut self, pose: &Pose) {
+        self.inverse = pose.inverse().then(&self.inverse);
+        self.fast_matrix = fast_matrix(&self.inverse);
+        self.fast_translation = fast_translation(&self.inverse);
+        for c in &mut self.constraints {
+            *c = constraint(c.surface.transformed(pose));
+        }
+    }
+    pub fn location(&self, point: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         let mut boundary = false;
-        for poly in &self.constraints {
-            match poly.polynomial.eval(point).sign() {
-                Sign::Positive => return Location::Outside,
+        for constraint in &self.constraints {
+            let value = if let Some(p) = constraint.polynomial.rational() {
+                p.eval(point).sign()
+            } else {
+                sign(
+                    &constraint
+                        .polynomial
+                        .eval_real(&point.clone().map(Real::from)),
+                    dec,
+                )?
+            };
+            match value {
+                Sign::Positive => return Ok(Location::Outside),
                 Sign::Zero => boundary = true,
                 Sign::Negative => (),
             }
         }
-        if boundary {
+        Ok(if boundary {
             Location::Boundary
         } else {
             Location::Inside
-        }
+        })
     }
-    pub fn proven_distance(&self, point: &RPoint3, location: Location) -> Ball {
+    pub fn proven_distance(
+        &self,
+        point: &RPoint3,
+        location: Location,
+        dec: &mut Decider,
+    ) -> Result<Ball, Refusal> {
         if location == Location::Boundary {
-            return Ball::from_rational(&Rational::zero(), PRECISION);
+            return Ok(Ball::from_rational(&Rational::zero(), PRECISION));
         }
-        let p = self.inverse.apply_point(point);
-        let p = [p.x, p.y, p.z].map(|r| Ball::from_rational(&r, PRECISION));
+        let p = self.inverse.apply_point(&point.to_real());
+        let p = [
+            enclose(&p.x, PRECISION, dec)?,
+            enclose(&p.y, PRECISION, dec)?,
+            enclose(&p.z, PRECISION, dec)?,
+        ];
         let d = distance(self.kind, &self.balls, &p);
-        if self.kind == Kind::Round && location == Location::Inside {
-            -d
-        } else {
-            d
-        }
+        Ok(
+            if self.kind == Kind::Round && location == Location::Inside {
+                -d
+            } else {
+                d
+            },
+        )
     }
     pub fn fast_distance(&self, point: [f64; 3]) -> f64 {
         if self
@@ -318,50 +427,51 @@ impl Primitive {
     }
 }
 
-/// Sign at `point + epsilon * direction` for all sufficiently small positive
-/// epsilon. Each constraint is a polynomial, so its first nonzero coefficient
-/// settles the ray without choosing a tolerance or sampling a finite distance.
+/// Exact positive-infinitesimal ray classification, retaining coefficient proofs.
 pub(crate) fn ray_location(
     leaf: &Primitive,
     point: &[Rational; 3],
-    direction: &[Rational; 3],
-) -> Location {
+    direction: &Vector3,
+    dec: &mut Decider,
+) -> Result<Location, Refusal> {
     let mut boundary = false;
     for poly in &leaf.constraints {
-        match ray_sign(poly, point, direction) {
-            Sign::Positive => return Location::Outside,
+        let value = if let (Terms::Rational(terms), Some(direction)) =
+            (&poly.terms, direction.rational_components())
+        {
+            rational_ray_coefficients(terms, point, direction)
+                .into_iter()
+                .find(|c| !c.is_zero())
+                .map_or(Sign::Zero, |c| c.sign())
+        } else {
+            algebraic_ray_sign(poly, point, direction, dec)?
+        };
+        match value {
+            Sign::Positive => return Ok(Location::Outside),
             Sign::Zero => boundary = true,
             Sign::Negative => (),
         }
     }
-    if boundary {
+    Ok(if boundary {
         Location::Boundary
     } else {
         Location::Inside
-    }
+    })
 }
-
-fn ray_sign(poly: &Constraint, point: &[Rational; 3], direction: &[Rational; 3]) -> Sign {
-    ray_coefficients(poly, point, direction)
-        .iter()
-        .find(|c| !c.is_zero())
-        .map_or(Sign::Zero, Rational::sign)
-}
-
-pub(crate) fn ray_coefficients(
-    poly: &Constraint,
+fn rational_ray_coefficients(
+    terms: &[([u32; 3], Rational)],
     point: &[Rational; 3],
-    direction: &[Rational; 3],
+    direction: [&Rational; 3],
 ) -> [Rational; 5] {
     let mut coefficients: [Rational; 5] = std::array::from_fn(|_| Rational::zero());
-    for (exponents, coefficient) in &poly.terms {
+    for (exponents, coefficient) in terms {
         let mut term: [Rational; 5] = std::array::from_fn(|_| Rational::zero());
         term[0] = coefficient.clone();
         let mut degree = 0;
         for axis in 0..3 {
             for _ in 0..exponents[axis] {
                 for i in (1..=degree + 1).rev() {
-                    term[i] = (&term[i] * &point[axis]) + (&term[i - 1] * &direction[axis]);
+                    term[i] = (&term[i] * &point[axis]) + (&term[i - 1] * direction[axis]);
                 }
                 term[0] = &term[0] * &point[axis];
                 degree += 1;
@@ -374,35 +484,17 @@ pub(crate) fn ray_coefficients(
     coefficients
 }
 
-impl Constraint {
-    pub fn new(polynomial: MPoly) -> Self {
-        let terms = polynomial
-            .terms()
-            .into_iter()
-            .map(|(m, c)| (m.exponents().try_into().expect("three coordinates"), c))
-            .collect();
-        Self { polynomial, terms }
-    }
-}
-
-pub(crate) fn face(surface: Surface, origin: Origin) -> Face {
+pub(crate) fn face(surface: Surface, origin: Origin, dec: &mut Decider) -> Result<Face, Refusal> {
     let polynomial = surface.implicit();
-    let gradient = std::array::from_fn(|i| polynomial.partial(i));
-    let coefficient = polynomial
-        .terms()
-        .into_iter()
-        .next()
-        .expect("surface polynomial")
-        .1;
-    let support = polynomial.scale(&coefficient.recip().expect("nonzero coefficient"));
-    Face {
+    let (support, gradient) = support_geometry(&polynomial, dec)?;
+    Ok(Face {
         origin,
         surface,
         polynomial,
         support,
         gradient,
         leaf: 0,
-    }
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -411,27 +503,36 @@ pub(crate) enum Leaf {
     Feature(crate::features::Feature),
 }
 impl Leaf {
-    pub fn same_geometry(&self, other: &Self) -> bool {
+    pub fn same_geometry(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
         match (self, other) {
-            (Self::Primitive(a), Self::Primitive(b)) => {
-                a.kind == b.kind && a.parameters == b.parameters && a.inverse == b.inverse
-            }
-            _ => false,
+            (Self::Primitive(a), Self::Primitive(b)) => a.same_geometry(b, dec),
+            _ => Ok(false),
+        }
+    }
+    pub fn transform(&mut self, pose: &Pose) {
+        match self {
+            Self::Primitive(a) => a.transform(pose),
+            Self::Feature(a) => a.transform(pose),
         }
     }
     pub fn true_distance(&self) -> bool {
         matches!(self, Self::Primitive(_))
     }
-    pub fn location(&self, p: &[Rational; 3]) -> Location {
+    pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         match self {
-            Self::Primitive(a) => a.location(p),
-            Self::Feature(a) => a.location(p),
+            Self::Primitive(a) => a.location(p, dec),
+            Self::Feature(a) => a.location(p, dec),
         }
     }
-    pub fn proven_distance(&self, p: &RPoint3, l: Location) -> Ball {
+    pub fn proven_distance(
+        &self,
+        p: &RPoint3,
+        l: Location,
+        dec: &mut Decider,
+    ) -> Result<Ball, Refusal> {
         match self {
-            Self::Primitive(a) => a.proven_distance(p, l),
-            Self::Feature(a) => a.proven_distance(p, l),
+            Self::Primitive(a) => a.proven_distance(p, l, dec),
+            Self::Feature(a) => a.proven_distance(p, l, dec),
         }
     }
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
@@ -440,22 +541,32 @@ impl Leaf {
             Self::Feature(a) => a.fast_distance(p),
         }
     }
-    pub fn ray(&self, p: &[Rational; 3], d: &[Rational; 3]) -> Location {
+    pub fn ray(
+        &self,
+        p: &[Rational; 3],
+        d: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
         match self {
-            Self::Primitive(a) => ray_location(a, p, d),
-            Self::Feature(a) => a.ray(p, d),
+            Self::Primitive(a) => ray_location(a, p, d, dec),
+            Self::Feature(a) => a.ray(p, d, dec),
         }
     }
-    pub fn on_face(&self, role: &Role, p: &[Rational; 3]) -> Option<bool> {
+    pub fn on_face(
+        &self,
+        role: &Role,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<bool>, Refusal> {
         match self {
-            Self::Primitive(_) => Some(true),
-            Self::Feature(a) => a.on_face(role, p),
+            Self::Primitive(_) => Ok(Some(true)),
+            Self::Feature(a) => a.on_face(role, p, dec).map(Some),
         }
     }
 }
 
 impl Primitive {
-    pub(crate) fn sample_bounds(&self) -> crate::samples::Bounds {
+    pub(crate) fn sample_bounds(&self) -> Result<crate::samples::Bounds, Refusal> {
         let zero = Rational::zero();
         let p = &self.parameters;
         let local = match self.kind {
@@ -480,4 +591,73 @@ impl Primitive {
         };
         crate::samples::transform(&local, &self.inverse.inverse())
     }
+}
+fn algebraic_ray_sign(
+    poly: &Constraint,
+    point: &[Rational; 3],
+    direction: &Vector3,
+    dec: &mut Decider,
+) -> Result<Sign, Refusal> {
+    if let Some(c) = native_ray_coefficients(poly, point, direction) {
+        return Ok(c
+            .into_iter()
+            .find(|c| !c.is_zero())
+            .map_or(Sign::Zero, |c| c.sign()));
+    }
+    for coefficient in algebraic_ray_coefficients(poly, point, direction) {
+        let s = sign(&coefficient, dec)?;
+        if s != Sign::Zero {
+            return Ok(s);
+        }
+    }
+    Ok(Sign::Zero)
+}
+pub(crate) fn native_ray_coefficients(
+    poly: &Constraint,
+    point: &[Rational; 3],
+    direction: &Vector3,
+) -> Option<[Rational; 5]> {
+    let (Terms::Rational(terms), Some(d)) = (&poly.terms, direction.rational_components()) else {
+        return None;
+    };
+    Some(rational_ray_coefficients(terms, point, d))
+}
+pub(crate) fn algebraic_ray_coefficients(
+    poly: &Constraint,
+    point: &[Rational; 3],
+    direction: &Vector3,
+) -> [Real; 5] {
+    let point = point.clone().map(Real::from);
+    let direction = [&direction.x, &direction.y, &direction.z];
+    let mut coefficients: [Real; 5] = std::array::from_fn(|_| Real::zero());
+    let mut accumulate = |exponents: &[u32; 3], coefficient: Real| {
+        let mut term: [Real; 5] = std::array::from_fn(|_| Real::zero());
+        term[0] = coefficient;
+        let mut degree = 0;
+        for axis in 0..3 {
+            for _ in 0..exponents[axis] {
+                for i in (1..=degree + 1).rev() {
+                    term[i] = (&term[i] * &point[axis]) + (&term[i - 1] * direction[axis]);
+                }
+                term[0] = &term[0] * &point[axis];
+                degree += 1;
+            }
+        }
+        for i in 0..=degree {
+            coefficients[i] = &coefficients[i] + &term[i];
+        }
+    };
+    match &poly.terms {
+        Terms::Algebraic(terms) => {
+            for (exponents, coefficient) in terms {
+                accumulate(exponents, coefficient.clone());
+            }
+        }
+        Terms::Rational(terms) => {
+            for (exponents, coefficient) in terms {
+                accumulate(exponents, coefficient.clone().into());
+            }
+        }
+    }
+    coefficients
 }

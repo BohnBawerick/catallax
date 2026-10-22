@@ -1,11 +1,11 @@
 use crate::math::*;
 use crate::{Component, Contact, CurveForm, SurfacePair};
 use catallax_numbers::{
-    Answer, Answered, Fact, FactKind, FactOrigin, Rational, Real, Refusal, Sign,
+    Answer, Answered, Decider, Fact, FactKind, FactOrigin, Rational, Real, Refusal, Sign,
 };
 use catallax_shapes::{
-    Circle, Curve, Cylinder, Ellipse, GeomKey, GeomStore, IntersectionCurve, Line, Meet, MeetOf,
-    Plane, Point3, PointDef, Position, RPoint3, RVector3, Sphere, Surface, SurfaceId, Vector3,
+    Circle, Curve, Cylinder, Ellipse, EllipticCylinder, GeomKey, GeomStore, IntersectionCurve,
+    Line, Meet, MeetOf, Plane, Point3, PointDef, Position, Sphere, Surface, SurfaceId, Vector3,
 };
 use std::{cell::RefCell, collections::VecDeque, sync::Arc};
 
@@ -33,9 +33,14 @@ pub(super) struct Divider {
     pub canonical_direction: bool,
 }
 impl Divider {
-    fn rational(origin: RPoint3, vector: RVector3) -> Self {
-        let lower = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
-        Self::linear(origin.to_real(), vector.to_real(), lower, true)
+    fn new(origin: Point3, vector: Vector3) -> Self {
+        if let Some(v) = vector.as_rational() {
+            let lower = v.x.abs().max(v.y.abs()).max(v.z.abs());
+            return Self::linear(origin, vector, lower, true);
+        }
+        // Callers have proved this direction nonzero.
+        let vector = vector.scaled(&(&Real::one() / &vector.norm_squared().sqrt()));
+        Self::linear(origin, vector, r(1), true)
     }
     fn linear(
         origin: Point3,
@@ -49,24 +54,19 @@ impl Divider {
             canonical_direction,
         }
     }
-    fn conic(origin: RPoint3, vector: RVector3) -> Self {
-        let mut divider = Self::rational(origin, vector);
+    fn conic(origin: Point3, vector: Vector3) -> Self {
+        let mut divider = Self::new(origin, vector);
         divider.canonical_direction = false;
         divider
     }
-    fn radial(
-        origin: RPoint3,
-        axis: RVector3,
-        radius_sq: Rational,
-        radius_lower: Rational,
-    ) -> Self {
-        let inverse_norm_sq = real(&(&Rational::from_i64(1) / &axis.norm_squared()));
+    fn radial(origin: Point3, axis: Vector3, radius_sq: Real, radius_lower: Rational) -> Self {
+        let inverse_norm_sq = s(1) / axis.norm_squared();
         Self {
             value: DividerValue::Radius {
-                origin: origin.to_real(),
-                axis: axis.to_real(),
+                origin,
+                axis,
                 inverse_norm_sq,
-                radius_sq: real(&radius_sq),
+                radius_sq,
             },
             length_lower: radius_lower,
             canonical_direction: false,
@@ -91,23 +91,23 @@ impl Divider {
 #[derive(Clone, Debug)]
 pub(super) enum Frame {
     CylinderSphere {
-        origin: RPoint3,
+        origin: Point3,
         e1: Vector3,
         e2: Vector3,
         e3: Vector3,
-        radius: Rational,
+        radius: Real,
         d: Real,
         k: Real,
         mode: u8,
         sense: i64,
     },
     Cylinders {
-        origin: RPoint3,
+        origin: Point3,
         e1: Vector3,
         e2: Vector3,
         e3: Vector3,
-        big: Rational,
-        small: Rational,
+        big: Real,
+        small: Real,
         delta: Real,
         alpha: Real,
         gamma: Real,
@@ -193,30 +193,35 @@ impl Plan {
         }
     }
 }
-fn line(origin: Point3, dir: RVector3) -> CurveForm {
+fn s(value: i64) -> Real {
+    Real::from_i64(value)
+}
+fn line(origin: Point3, dir: Vector3) -> CurveForm {
     CurveForm::Line { origin, dir }
 }
-fn circle(center: Point3, normal: RVector3, radius_sq: Rational, ref_dir: RVector3) -> CurveForm {
+fn circle(center: Point3, normal: Vector3, radius_sq: Real, ref_dir: Vector3) -> CurveForm {
     CurveForm::Circle {
         center,
         normal,
-        radius_sq: real(&radius_sq),
+        radius_sq,
         ref_dir,
     }
 }
-fn two_lines(
-    base: RPoint3,
-    v: RVector3,
-    h2: Rational,
-    dirs: [RVector3; 2],
-    first_positive: bool,
-) -> Plan {
-    let offset = v.to_real().scaled(&root(&h2));
-    let origins = [
-        base.to_real().plus(&offset),
-        base.to_real().plus(&offset.scaled(&Real::from_i64(-1))),
-    ];
-    let witness = rational_sqrt(&h2).is_none();
+fn is_zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    Ok(sign(value, dec)? == Sign::Zero)
+}
+fn compare(a: &Real, b: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    Ok(sign(&(a - b), dec)?)
+}
+fn vector_zero(value: &Vector3, dec: &mut Decider) -> Result<bool, Refusal> {
+    is_zero(&value.norm_squared(), dec)
+}
+
+fn two_lines(base: Point3, v: Vector3, h2: Real, dirs: [Vector3; 2], first_positive: bool) -> Plan {
+    let root = root_real(&h2);
+    let offset = v.scaled(&root);
+    let origins = [base.plus(&offset), base.plus(&offset.scaled(&s(-1)))];
+    let witness = root.rational_ref().is_none();
     Plan {
         curves: origins
             .into_iter()
@@ -228,182 +233,200 @@ fn two_lines(
                 singular: vec![],
             })
             .collect(),
-        divider: Some(Divider::rational(
+        divider: Some(Divider::new(
             base,
-            if first_positive { v } else { v.scaled(&r(-1)) },
+            if first_positive { v } else { v.scaled(&s(-1)) },
         )),
         ..Plan::empty()
     }
 }
-fn planes(a: &Plane, b: &Plane) -> Plan {
+fn planes(a: &Plane, b: &Plane, dec: &mut Decider) -> Result<Plan, Refusal> {
     let m = a.normal.cross(&b.normal);
-    if m.is_zero() {
-        return if b.origin.minus(&a.origin).dot(&a.normal).is_zero() {
-            Plan::coincident(a.normal.dot(&b.normal).sign() == Sign::Positive)
-        } else {
-            Plan::disjoint()
-        };
+    if vector_zero(&m, dec)? {
+        return Ok(
+            if is_zero(&b.origin.minus(&a.origin).dot(&a.normal), dec)? {
+                Plan::coincident(sign(&a.normal.dot(&b.normal), dec)? == Sign::Positive)
+            } else {
+                Plan::disjoint()
+            },
+        );
     }
     let scale = b.origin.minus(&a.origin).dot(&b.normal) / m.norm_squared();
     let origin = a.origin.plus(&a.normal.cross(&m).scaled(&(-scale)));
-    Plan::form(line(origin.to_real(), m), Contact::Crossing)
+    Ok(Plan::form(line(origin, m), Contact::Crossing))
 }
-fn plane_cylinder(p: &Plane, c: &Cylinder, sigma: Rational) -> Plan {
-    let s = p.normal.dot(&c.axis);
-    let r2 = sq(&c.radius);
-    if !s.is_zero() {
+fn plane_cylinder(
+    p: &Plane,
+    c: &Cylinder,
+    sigma: Real,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    let dot = p.normal.dot(&c.axis);
+    let r2 = c.radius.square();
+    if !is_zero(&dot, dec)? {
         let center = c.origin.plus(
             &c.axis
-                .scaled(&(&p.origin.minus(&c.origin).dot(&p.normal) / &s)),
+                .scaled(&(&p.origin.minus(&c.origin).dot(&p.normal) / &dot)),
         );
         let normal = p.normal.scaled(&sigma);
-        if c.axis.cross(&p.normal).is_zero() {
-            return Plan::form(
-                circle(center.to_real(), normal, r2, c.ref_dir.clone()),
+        if vector_zero(&c.axis.cross(&p.normal), dec)? {
+            return Ok(Plan::form(
+                circle(center, normal, r2, c.ref_dir.clone()),
                 Contact::Crossing,
-            );
+            ));
         }
-        return Plan::form(
+        return Ok(Plan::form(
             CurveForm::Ellipse {
-                center: center.to_real(),
+                center,
                 normal,
                 major_dir: c
                     .axis
-                    .minus(&p.normal.scaled(&(&s / &p.normal.norm_squared()))),
-                major_sq: real(
-                    &(r2.clone() * p.normal.norm_squared() * c.axis.norm_squared() / sq(&s)),
-                ),
-                minor_sq: real(&r2),
+                    .minus(&p.normal.scaled(&(&dot / &p.normal.norm_squared()))),
+                major_sq: r2.clone() * p.normal.norm_squared() * c.axis.norm_squared()
+                    / dot.square(),
+                minor_sq: r2,
             },
             Contact::Crossing,
-        );
+        ));
     }
     let k = c.origin.minus(&p.origin).dot(&p.normal);
-    let e2 = sq(&k) / p.normal.norm_squared();
-    if e2 > r2 {
-        return Plan::disjoint();
+    let e2 = k.square() / p.normal.norm_squared();
+    let relation = compare(&e2, &r2, dec)?;
+    if relation == Sign::Positive {
+        return Ok(Plan::disjoint());
     }
     let foot = c
         .origin
         .plus(&p.normal.scaled(&(-k / p.normal.norm_squared())));
-    if e2 == r2 {
-        return Plan::form(line(foot.to_real(), c.axis.clone()), Contact::Tangent);
+    if relation == Sign::Zero {
+        return Ok(Plan::form(line(foot, c.axis.clone()), Contact::Tangent));
     }
     let v = p.normal.cross(&c.axis);
     let h2 = (r2 - e2) / v.norm_squared();
-    two_lines(
+    Ok(two_lines(
         foot,
         v,
         h2,
         [c.axis.scaled(&(-&sigma)), c.axis.scaled(&sigma)],
         true,
-    )
+    ))
 }
-fn plane_sphere(p: &Plane, s: &Sphere, sigma: Rational) -> Plan {
-    let k = s.center.minus(&p.origin).dot(&p.normal);
-    let e2 = sq(&k) / p.normal.norm_squared();
-    let r2 = sq(&s.radius);
-    if e2 > r2 {
-        return Plan::disjoint();
+fn plane_sphere(
+    p: &Plane,
+    sphere: &Sphere,
+    sigma: Real,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    let k = sphere.center.minus(&p.origin).dot(&p.normal);
+    let e2 = k.square() / p.normal.norm_squared();
+    let r2 = sphere.radius.square();
+    let relation = compare(&e2, &r2, dec)?;
+    if relation == Sign::Positive {
+        return Ok(Plan::disjoint());
     }
-    let foot = s
+    let foot = sphere
         .center
         .plus(&p.normal.scaled(&(-k / p.normal.norm_squared())));
-    if e2 == r2 {
-        return Plan::point(foot.to_real());
+    if relation == Sign::Zero {
+        return Ok(Plan::point(foot));
     }
-    Plan::form(
-        circle(
-            foot.to_real(),
-            p.normal.scaled(&sigma),
-            r2 - e2,
-            p.ref_dir.clone(),
-        ),
+    Ok(Plan::form(
+        circle(foot, p.normal.scaled(&sigma), r2 - e2, p.ref_dir.clone()),
         Contact::Crossing,
-    )
+    ))
 }
-fn spheres(a: &Sphere, b: &Sphere) -> Plan {
+fn spheres(a: &Sphere, b: &Sphere, dec: &mut Decider) -> Result<Plan, Refusal> {
     let u = b.center.minus(&a.center);
     let d2 = u.norm_squared();
-    if d2.is_zero() {
-        return if a.radius == b.radius {
+    if is_zero(&d2, dec)? {
+        return Ok(if is_zero(&(&a.radius - &b.radius), dec)? {
             Plan::coincident(true)
         } else {
             Plan::disjoint()
-        };
+        });
     }
     let sum = &a.radius + &b.radius;
     let diff = &a.radius - &b.radius;
-    if d2 > sq(&sum) || d2 < sq(&diff) {
-        return Plan::disjoint();
+    let outer = compare(&d2, &sum.square(), dec)?;
+    let inner = compare(&d2, &diff.square(), dec)?;
+    if outer == Sign::Positive || inner == Sign::Negative {
+        return Ok(Plan::disjoint());
     }
-    if d2 == sq(&sum) {
-        return Plan::point(a.center.plus(&u.scaled(&(&a.radius / &sum))).to_real());
+    if outer == Sign::Zero {
+        return Ok(Plan::point(a.center.plus(&u.scaled(&(&a.radius / &sum)))));
     }
-    if d2 == sq(&diff) {
-        return Plan::point(a.center.plus(&u.scaled(&(&a.radius / &diff))).to_real());
+    if inner == Sign::Zero {
+        return Ok(Plan::point(a.center.plus(&u.scaled(&(&a.radius / &diff)))));
     }
-    let t = (d2.clone() + sq(&a.radius) - sq(&b.radius)) / (r(2) * d2.clone());
-    Plan::form(
+    let t = (&d2 + &a.radius.square() - b.radius.square()) / (s(2) * d2.clone());
+    Ok(Plan::form(
         circle(
-            a.center.plus(&u.scaled(&t)).to_real(),
+            a.center.plus(&u.scaled(&t)),
             u.clone(),
-            sq(&a.radius) - sq(&t) * d2,
-            perp(&u),
+            a.radius.square() - t.square() * d2,
+            perp(&u, dec)?,
         ),
         Contact::Crossing,
-    )
+    ))
 }
-fn parallel_cylinders(a: &Cylinder, b: &Cylinder) -> Plan {
+fn parallel_cylinders(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result<Plan, Refusal> {
     let d = b.origin.minus(&a.origin);
     let u = d.minus(&a.axis.scaled(&(d.dot(&a.axis) / a.axis.norm_squared())));
     let d2 = u.norm_squared();
-    if d2.is_zero() {
-        return if a.radius == b.radius {
+    if is_zero(&d2, dec)? {
+        return Ok(if is_zero(&(&a.radius - &b.radius), dec)? {
             Plan::coincident(true)
         } else {
             Plan::disjoint()
-        };
+        });
     }
     let sum = &a.radius + &b.radius;
     let diff = &a.radius - &b.radius;
-    if d2 > sq(&sum) || d2 < sq(&diff) {
-        return Plan::disjoint();
+    let outer = compare(&d2, &sum.square(), dec)?;
+    let inner = compare(&d2, &diff.square(), dec)?;
+    if outer == Sign::Positive || inner == Sign::Negative {
+        return Ok(Plan::disjoint());
     }
-    if d2 == sq(&sum) {
-        return Plan::form(
+    if outer == Sign::Zero {
+        return Ok(Plan::form(
             line(
-                a.origin.plus(&u.scaled(&(&a.radius / &sum))).to_real(),
+                a.origin.plus(&u.scaled(&(&a.radius / &sum))),
                 a.axis.clone(),
             ),
             Contact::Tangent,
-        );
+        ));
     }
-    if d2 == sq(&diff) {
-        return Plan::form(
+    if inner == Sign::Zero {
+        return Ok(Plan::form(
             line(
-                a.origin.plus(&u.scaled(&(&a.radius / &diff))).to_real(),
+                a.origin.plus(&u.scaled(&(&a.radius / &diff))),
                 a.axis.clone(),
             ),
             Contact::Tangent,
-        );
+        ));
     }
-    let t = (d2.clone() + sq(&a.radius) - sq(&b.radius)) / (r(2) * d2.clone());
+    let t = (&d2 + &a.radius.square() - b.radius.square()) / (s(2) * d2.clone());
     let v = a.axis.cross(&u);
-    let h2 = (sq(&a.radius) - sq(&t) * d2) / v.norm_squared();
-    two_lines(
+    let h2 = (a.radius.square() - t.square() * d2) / v.norm_squared();
+    Ok(two_lines(
         a.origin.plus(&u.scaled(&t)),
         v,
         h2,
-        [a.axis.clone(), a.axis.scaled(&r(-1))],
+        [a.axis.clone(), a.axis.scaled(&s(-1))],
         true,
-    )
+    ))
 }
-fn cylinders(a: &Cylinder, b: &Cylinder) -> Result<Plan, Refusal> {
-    if a.axis.cross(&b.axis).is_zero() {
-        return Ok(parallel_cylinders(a, b));
+fn cylinders(
+    a: &Cylinder,
+    b: &Cylinder,
+    rational: bool,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    if vector_zero(&a.axis.cross(&b.axis), dec)? {
+        return parallel_cylinders(a, b, dec);
     }
-    let (big, small) = if a.radius >= b.radius { (a, b) } else { (b, a) };
+    let a_is_big = compare(&a.radius, &b.radius, dec)? != Sign::Negative;
+    let (big, small) = if a_is_big { (a, b) } else { (b, a) };
     let m = big.axis.cross(&small.axis);
     let d = small.origin.minus(&big.origin);
     let fb = big.origin.plus(
@@ -415,21 +438,32 @@ fn cylinders(a: &Cylinder, b: &Cylinder) -> Result<Plan, Refusal> {
             .axis
             .scaled(&(d.cross(&big.axis).dot(&m) / m.norm_squared())),
     );
-    let delta2 = sq(&d.dot(&m)) / m.norm_squared();
+    let delta2 = d.dot(&m).square() / m.norm_squared();
     let sum = &big.radius + &small.radius;
     let diff = &big.radius - &small.radius;
-    if delta2 > sq(&sum) {
-        return Ok(Plan::disjoint());
+    match compare(&delta2, &sum.square(), dec)? {
+        Sign::Positive => return Ok(Plan::disjoint()),
+        Sign::Zero => {
+            return Ok(Plan::point(
+                fb.plus(&fs.minus(&fb).scaled(&(&big.radius / &sum))),
+            ));
+        }
+        Sign::Negative => {}
     }
-    if delta2 == sq(&sum) {
-        return Ok(Plan::point(
-            fb.plus(&fs.minus(&fb).scaled(&(&big.radius / &sum)))
-                .to_real(),
-        ));
-    }
-    if delta2.is_zero() && diff.is_zero() {
-        let Some(k) = rational_sqrt(&(big.axis.norm_squared() * small.axis.norm_squared())) else {
-            return Err(refused_pair());
+    let zero_delta = is_zero(&delta2, dec)?;
+    if zero_delta && is_zero(&diff, dec)? {
+        let norm_product = big.axis.norm_squared() * small.axis.norm_squared();
+        let k = if rational {
+            // Preserve the existing rational CC6 coverage boundary and answers.
+            rational_sqrt(
+                norm_product
+                    .rational_ref()
+                    .expect("rational cylinder frame"),
+            )
+            .ok_or_else(refused_pair)?
+            .into()
+        } else {
+            root_real(&norm_product)
         };
         let nm = big
             .axis
@@ -439,28 +473,23 @@ fn cylinders(a: &Cylinder, b: &Cylinder) -> Result<Plan, Refusal> {
             .axis
             .scaled(&small.axis.norm_squared())
             .plus(&small.axis.scaled(&k));
-        let cos = big.axis.dot(&small.axis) / k;
-        let offset = m
-            .to_real()
-            .scaled(&root(&(sq(&big.radius) / m.norm_squared())));
-        let points = vec![
-            fb.to_real().plus(&offset),
-            fb.to_real().plus(&offset.scaled(&Real::from_i64(-1))),
-        ];
+        let cosine = big.axis.dot(&small.axis) / k;
+        let offset = m.scaled(&root_real(&(big.radius.square() / m.norm_squared())));
+        let points = vec![fb.plus(&offset), fb.plus(&offset.scaled(&s(-1)))];
         return Ok(Plan {
             points,
             curves: [
-                (nm.clone(), np.clone(), r(1) - cos.clone()),
-                (np, nm, r(1) + cos),
+                (nm.clone(), np.clone(), s(1) - cosine.clone()),
+                (np, nm, s(1) + cosine),
             ]
             .into_iter()
             .map(|(normal, major_dir, denom)| Spec {
                 form: CurveForm::Ellipse {
-                    center: fb.to_real(),
+                    center: fb.clone(),
                     normal,
                     major_dir,
-                    major_sq: real(&(r(2) * sq(&big.radius) / denom)),
-                    minor_sq: real(&sq(&big.radius)),
+                    major_sq: s(2) * big.radius.square() / denom,
+                    minor_sq: big.radius.square(),
                 },
                 witness: None,
                 contact: Contact::Crossing,
@@ -470,31 +499,28 @@ fn cylinders(a: &Cylinder, b: &Cylinder) -> Result<Plan, Refusal> {
             ..Plan::empty()
         });
     }
-    let delta = root(&delta2);
-    let radial = if delta2.is_zero() { m } else { fs.minus(&fb) };
+    let delta = root_real(&delta2);
+    let radial = if zero_delta { m } else { fs.minus(&fb) };
     let transverse = radial.cross(&big.axis);
     let e3 = unit(&big.axis);
     let e2 = unit(&radial);
     let e1 = unit(&transverse);
-    // Cancel dot-product terms in the rational field before normalising.
     let alpha_numerator = small.axis.dot(&transverse);
     let alpha =
-        real(&alpha_numerator) / root(&(small.axis.norm_squared() * transverse.norm_squared()));
-    let sigma = if a.radius >= b.radius { 1 } else { -1 };
+        &alpha_numerator / &root_real(&(small.axis.norm_squared() * transverse.norm_squared()));
+    let sigma = if a_is_big { 1 } else { -1 };
     let sense = -sigma
-        * if alpha_numerator.sign() == Sign::Positive {
+        * if sign(&alpha_numerator, dec)? == Sign::Positive {
             1
         } else {
             -1
         };
-    let gamma = real(&small.axis.dot(&big.axis))
-        / root(&(small.axis.norm_squared() * big.axis.norm_squared()));
-    let mode = if delta2 > sq(&diff) {
-        3
-    } else if delta2 == sq(&diff) {
-        4
-    } else {
-        5
+    let gamma = small.axis.dot(&big.axis)
+        / root_real(&(small.axis.norm_squared() * big.axis.norm_squared()));
+    let mode = match compare(&delta2, &diff.square(), dec)? {
+        Sign::Positive => 3,
+        Sign::Zero => 4,
+        Sign::Negative => 5,
     };
     let frame = Frame::Cylinders {
         origin: fb.clone(),
@@ -510,67 +536,67 @@ fn cylinders(a: &Cylinder, b: &Cylinder) -> Result<Plan, Refusal> {
         sense,
     };
     if mode == 3 {
-        let z = (real(&sq(&small.radius)) - (real(&big.radius) - delta).square()).sqrt() / alpha;
-        let witness = fb
-            .to_real()
-            .plus(&e2.scaled(&real(&big.radius)))
-            .plus(&e3.scaled(&z));
+        let z = (small.radius.square() - (&big.radius - &delta).square()).sqrt() / alpha;
+        let witness = fb.plus(&e2.scaled(&big.radius)).plus(&e3.scaled(&z));
         return Ok(Plan::branches(vec![witness], None, None, frame));
     }
-    let x = root(&(sq(&big.radius) - delta2));
-    let base = fs.to_real();
-    let wplus = base
+    let x = root_real(&(big.radius.square() - delta2));
+    let wplus = fs
         .plus(&e1.scaled(&x))
-        .plus(&e3.scaled(&((&gamma * &x + real(&small.radius)) / alpha.clone())));
-    let wminus = base
+        .plus(&e3.scaled(&((&gamma * &x + small.radius.clone()) / alpha.clone())));
+    let wminus = fs
         .plus(&e1.scaled(&(-&x)))
-        .plus(&e3.scaled(&((real(&small.radius) - &gamma * &x) / alpha)));
-    let node = (mode == 4).then(|| {
-        fb.plus(&fs.minus(&fb).scaled(&(&big.radius / &diff)))
-            .to_real()
-    });
+        .plus(&e3.scaled(&((&small.radius - &(&gamma * &x)) / alpha)));
+    let node = (mode == 4).then(|| fb.plus(&fs.minus(&fb).scaled(&(&big.radius / &diff))));
     Ok(Plan::branches(
         vec![wplus, wminus],
         node,
-        Some(Divider::linear(fb.to_real(), e1, r(1), true)),
+        Some(Divider::linear(fb, e1, r(1), true)),
         frame,
     ))
 }
-fn cylinder_sphere(c: &Cylinder, s: &Sphere, sigma: Rational) -> Plan {
+fn cylinder_sphere(
+    c: &Cylinder,
+    sphere: &Sphere,
+    sigma: Real,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
     let foot = c.origin.plus(
         &c.axis
-            .scaled(&(s.center.minus(&c.origin).dot(&c.axis) / c.axis.norm_squared())),
+            .scaled(&(sphere.center.minus(&c.origin).dot(&c.axis) / c.axis.norm_squared())),
     );
-    let offset = s.center.minus(&foot);
+    let offset = sphere.center.minus(&foot);
     let d2 = offset.norm_squared();
-    let r2 = sq(&c.radius);
-    let big_r2 = sq(&s.radius);
-    if d2.is_zero() {
-        if s.radius < c.radius {
-            return Plan::disjoint();
-        }
-        if s.radius == c.radius {
-            return Plan::form(
-                circle(s.center.to_real(), c.axis.clone(), r2, c.ref_dir.clone()),
-                Contact::Tangent,
-            );
+    let r2 = c.radius.square();
+    let big_r2 = sphere.radius.square();
+    if is_zero(&d2, dec)? {
+        match compare(&sphere.radius, &c.radius, dec)? {
+            Sign::Negative => return Ok(Plan::disjoint()),
+            Sign::Zero => {
+                return Ok(Plan::form(
+                    circle(sphere.center.clone(), c.axis.clone(), r2, c.ref_dir.clone()),
+                    Contact::Tangent,
+                ));
+            }
+            Sign::Positive => {}
         }
         let k2 = (big_r2 - r2.clone()) / c.axis.norm_squared();
-        let v = c.axis.to_real().scaled(&root(&k2));
+        let root = root_real(&k2);
+        let v = c.axis.scaled(&root);
         let centers = [
-            s.center.to_real().plus(&v),
-            s.center.to_real().plus(&v.scaled(&Real::from_i64(-1))),
+            sphere.center.plus(&v),
+            sphere.center.plus(&v.scaled(&s(-1))),
         ];
         let witness_offset = c
             .ref_dir
-            .to_real()
-            .scaled(&root(&(&r2 / &c.ref_dir.norm_squared())));
-        return Plan {
+            .scaled(&root_real(&(&r2 / &c.ref_dir.norm_squared())));
+        return Ok(Plan {
             curves: centers
                 .into_iter()
                 .zip([c.axis.scaled(&(-&sigma)), c.axis.scaled(&sigma)])
                 .map(|(center, normal)| Spec {
-                    witness: rational_sqrt(&k2)
+                    witness: root
+                        .rational_ref()
                         .is_none()
                         .then(|| center.plus(&witness_offset)),
                     form: circle(center, normal, r2.clone(), c.ref_dir.clone()),
@@ -578,39 +604,44 @@ fn cylinder_sphere(c: &Cylinder, s: &Sphere, sigma: Rational) -> Plan {
                     singular: vec![],
                 })
                 .collect(),
-            divider: Some(Divider::rational(s.center.clone(), c.axis.clone())),
+            divider: Some(Divider::new(sphere.center.clone(), c.axis.clone())),
             ..Plan::empty()
-        };
+        });
     }
-    // Comparing d with r +/- R avoids comparing irrational distances.
-    let sum = &c.radius + &s.radius;
-    let diff = &c.radius - &s.radius;
-    if d2 > sq(&sum) || (diff.sign() == Sign::Positive && d2 < sq(&diff)) {
-        return Plan::disjoint();
+    let sum = &c.radius + &sphere.radius;
+    let diff = &c.radius - &sphere.radius;
+    let positive_diff = sign(&diff, dec)? == Sign::Positive;
+    let outer = compare(&d2, &sum.square(), dec)?;
+    let inner = if positive_diff {
+        compare(&d2, &diff.square(), dec)?
+    } else {
+        Sign::Positive
+    };
+    if outer == Sign::Positive || inner == Sign::Negative {
+        return Ok(Plan::disjoint());
     }
-    let d = root(&d2);
-    let nearest = foot
-        .to_real()
-        .plus(&offset.to_real().scaled(&(&real(&c.radius) / &d)));
-    if d2 == sq(&sum) || (diff.sign() == Sign::Positive && d2 == sq(&diff)) {
-        return Plan::point(nearest);
+    let d = root_real(&d2);
+    let nearest = foot.plus(&offset.scaled(&(&c.radius / &d)));
+    if outer == Sign::Zero || inner == Sign::Zero {
+        return Ok(Plan::point(nearest));
     }
-    let outer_diff = &s.radius - &c.radius;
-    let mode = if outer_diff.sign() == Sign::Positive && sq(&outer_diff) > d2 {
-        8
-    } else if outer_diff.sign() == Sign::Positive && sq(&outer_diff) == d2 {
-        7
+    let outer_diff = &sphere.radius - &c.radius;
+    let mode = if sign(&outer_diff, dec)? == Sign::Positive {
+        match compare(&outer_diff.square(), &d2, dec)? {
+            Sign::Positive => 8,
+            Sign::Zero => 7,
+            Sign::Negative => 6,
+        }
     } else {
         6
     };
-    let z =
-        ((real(&big_r2) - (&real(&c.radius) - &d).square()) / real(&c.axis.norm_squared())).sqrt();
-    let upper = nearest.plus(&c.axis.to_real().scaled(&z));
-    let lower = nearest.plus(&c.axis.to_real().scaled(&(-z)));
+    let z = ((&big_r2 - &(&c.radius - &d).square()) / c.axis.norm_squared()).sqrt();
+    let upper = nearest.plus(&c.axis.scaled(&z));
+    let lower = nearest.plus(&c.axis.scaled(&(-z)));
     let e3 = unit(&c.axis);
-    let e1 = offset.to_real().scaled(&(&Real::one() / &d));
+    let e1 = offset.scaled(&(&Real::one() / &d));
     let e2 = e3.cross(&e1);
-    let k = real(&(big_r2 - r2 - d2.clone()));
+    let k = big_r2 - r2 - d2;
     let frame = Frame::CylinderSphere {
         origin: foot.clone(),
         e1,
@@ -620,18 +651,15 @@ fn cylinder_sphere(c: &Cylinder, s: &Sphere, sigma: Rational) -> Plan {
         d: d.clone(),
         k,
         mode,
-        sense: if sigma.sign() == Sign::Positive {
+        sense: if sign(&sigma, dec)? == Sign::Positive {
             1
         } else {
             -1
         },
     };
-    let node = (mode == 7).then(|| {
-        foot.to_real()
-            .plus(&offset.to_real().scaled(&(&-real(&c.radius) / &d)))
-    });
-    let divider = (mode != 6).then(|| Divider::rational(foot, c.axis.clone()));
-    Plan::branches(
+    let node = (mode == 7).then(|| foot.plus(&offset.scaled(&(&(-&c.radius) / &d))));
+    let divider = (mode != 6).then(|| Divider::new(foot, c.axis.clone()));
+    Ok(Plan::branches(
         if mode == 6 {
             vec![upper]
         } else {
@@ -640,72 +668,168 @@ fn cylinder_sphere(c: &Cylinder, s: &Sphere, sigma: Rational) -> Plan {
         node,
         divider,
         frame,
-    )
+    ))
 }
+
+fn plane_elliptic(
+    p: &Plane,
+    c: &EllipticCylinder,
+    sigma: Real,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    let e1 = unit(&c.major_dir);
+    let e3 = unit(&c.axis);
+    let e2 = e3.cross(&e1);
+    let axial = p.normal.dot(&e3);
+    if is_zero(&axial, dec)? {
+        let n1 = p.normal.dot(&e1);
+        let n2 = p.normal.dot(&e2);
+        let h2 = &c.major_sq * &n1.square() + &c.minor_sq * &n2.square();
+        let k = c.origin.minus(&p.origin).dot(&p.normal);
+        let relation = compare(&k.square(), &h2, dec)?;
+        if relation == Sign::Positive {
+            return Ok(Plan::disjoint());
+        }
+        let shift = e1
+            .scaled(&(&c.major_sq * &n1))
+            .plus(&e2.scaled(&(&c.minor_sq * &n2)))
+            .scaled(&(&(-&k) / &h2));
+        let foot = c.origin.plus(&shift);
+        if relation == Sign::Zero {
+            return Ok(Plan::form(line(foot, c.axis.clone()), Contact::Tangent));
+        }
+        let direction = p.normal.cross(&c.axis);
+        let a =
+            &direction.dot(&e1).square() / &c.major_sq + &direction.dot(&e2).square() / &c.minor_sq;
+        let height = (&Real::one() - &(&k.square() / &h2)) / a;
+        return Ok(two_lines(
+            foot,
+            direction,
+            height,
+            [c.axis.scaled(&(-&sigma)), c.axis.scaled(&sigma)],
+            true,
+        ));
+    }
+    let center = c
+        .origin
+        .plus(&e3.scaled(&(&p.origin.minus(&c.origin).dot(&p.normal) / &axial)));
+    let a = e1
+        .minus(&e3.scaled(&(&p.normal.dot(&e1) / &axial)))
+        .scaled(&root_real(&c.major_sq));
+    let b = e2
+        .minus(&e3.scaled(&(&p.normal.dot(&e2) / &axial)))
+        .scaled(&root_real(&c.minor_sq));
+    let aa = a.norm_squared();
+    let bb = b.norm_squared();
+    let ab = a.dot(&b);
+    let gap = root_real(&((&aa - &bb).square() + s(4) * ab.square()));
+    let major_sq = (&aa + &bb + gap.clone()) / s(2);
+    let minor_sq = (&aa + &bb - gap.clone()) / s(2);
+    let normal = p.normal.scaled(&sigma);
+    if is_zero(&gap, dec)? {
+        return Ok(Plan::form(
+            circle(center, normal, major_sq, a),
+            Contact::Crossing,
+        ));
+    }
+    let major_dir = if is_zero(&ab, dec)? {
+        if compare(&aa, &bb, dec)? == Sign::Positive {
+            a
+        } else {
+            b
+        }
+    } else {
+        a.scaled(&(&major_sq - &bb)).plus(&b.scaled(&ab))
+    };
+    Ok(Plan::form(
+        CurveForm::Ellipse {
+            center,
+            normal,
+            major_dir,
+            major_sq,
+            minor_sq,
+        },
+        Contact::Crossing,
+    ))
+}
+
 struct CachedPlan {
     surfaces: [Surface; 2],
     plan: Arc<Plan>,
 }
-
 thread_local! {
-    // Keys are complete ordered definitions, never arena handles or addresses.
-    // The cache cannot retain a whole model and has a fixed per-thread cap.
+    // Plans retain input Real nodes. Value-only keys would attach a fresh query
+    // to an earlier query's DAG and change memoized proof work. Reuse only the
+    // same input nodes; algebraic decision work is never cached here.
     static PLANS: RefCell<VecDeque<CachedPlan>> = const { RefCell::new(VecDeque::new()) };
 }
-
-pub(super) fn plan(a: &Surface, b: &Surface) -> Result<Arc<Plan>, Refusal> {
-    if let Some(plan) = PLANS.with(|plans| {
-        plans
-            .borrow()
-            .iter()
-            .find(|entry| entry.surfaces[0] == *a && entry.surfaces[1] == *b)
-            .map(|entry| entry.plan.clone())
-    }) {
+pub(super) fn plan(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<Arc<Plan>, Refusal> {
+    let rational = a.has_rational_definition() && b.has_rational_definition();
+    if rational
+        && let Some(plan) = PLANS.with(|plans| {
+            plans
+                .borrow()
+                .iter()
+                .find(|entry| {
+                    entry.surfaces[0].shares_definition_nodes(a)
+                        && entry.surfaces[1].shares_definition_nodes(b)
+                })
+                .map(|entry| entry.plan.clone())
+        })
+    {
         return Ok(plan);
     }
-    let plan = Arc::new(uncached_plan(a, b)?);
-    PLANS.with(|plans| {
-        let mut plans = plans.borrow_mut();
-        if plans.len() == 32 {
-            plans.pop_front();
-        }
-        plans.push_back(CachedPlan {
-            surfaces: [a.clone(), b.clone()],
-            plan: plan.clone(),
+    let plan = Arc::new(uncached_plan(a, b, rational, dec)?);
+    if rational {
+        PLANS.with(|plans| {
+            let mut plans = plans.borrow_mut();
+            if plans.len() == 32 {
+                plans.pop_front();
+            }
+            plans.push_back(CachedPlan {
+                surfaces: [a.clone(), b.clone()],
+                plan: plan.clone(),
+            });
         });
-    });
+    }
     Ok(plan)
 }
-
-fn uncached_plan(a: &Surface, b: &Surface) -> Result<Plan, Refusal> {
-    Ok(match (a, b) {
-        (Surface::Plane(a), Surface::Plane(b)) => planes(a, b),
-        (Surface::Plane(p), Surface::Cylinder(c)) => plane_cylinder(p, c, r(1)),
-        (Surface::Cylinder(c), Surface::Plane(p)) => plane_cylinder(p, c, r(-1)),
-        (Surface::Plane(p), Surface::Sphere(s)) => plane_sphere(p, s, r(1)),
-        (Surface::Sphere(s), Surface::Plane(p)) => plane_sphere(p, s, r(-1)),
-        (Surface::Sphere(a), Surface::Sphere(b)) => spheres(a, b),
-        (Surface::Cylinder(a), Surface::Cylinder(b)) => return cylinders(a, b),
-        (Surface::Cylinder(c), Surface::Sphere(s)) => cylinder_sphere(c, s, r(1)),
-        (Surface::Sphere(s), Surface::Cylinder(c)) => cylinder_sphere(c, s, r(-1)),
-        (Surface::Plane(p), Surface::Cone(c)) => return conics::plane_cone(p, c, r(1)),
-        (Surface::Cone(c), Surface::Plane(p)) => return conics::plane_cone(p, c, r(-1)),
-        (Surface::Cone(c), Surface::Cylinder(y)) => return conics::cone_cylinder(c, y, r(1)),
-        (Surface::Cylinder(y), Surface::Cone(c)) => return conics::cone_cylinder(c, y, r(-1)),
-        (Surface::Cone(c), Surface::Sphere(s)) => return conics::cone_sphere(c, s, r(1)),
-        (Surface::Sphere(s), Surface::Cone(c)) => return conics::cone_sphere(c, s, r(-1)),
-        (Surface::Cone(a), Surface::Cone(b)) => return conics::cones(a, b),
-        (Surface::Plane(p), Surface::Torus(t)) => return conics::plane_torus(p, t, r(1)),
-        (Surface::Torus(t), Surface::Plane(p)) => return conics::plane_torus(p, t, r(-1)),
-        (Surface::Cylinder(c), Surface::Torus(t)) => return conics::cylinder_torus(c, t, r(1)),
-        (Surface::Torus(t), Surface::Cylinder(c)) => return conics::cylinder_torus(c, t, r(-1)),
-        (Surface::Sphere(s), Surface::Torus(t)) => return conics::sphere_torus(s, t, r(1)),
-        (Surface::Torus(t), Surface::Sphere(s)) => return conics::sphere_torus(s, t, r(-1)),
-        (Surface::Cone(c), Surface::Torus(t)) => return conics::cone_torus(c, t, r(1)),
-        (Surface::Torus(t), Surface::Cone(c)) => return conics::cone_torus(c, t, r(-1)),
-        (Surface::Torus(a), Surface::Torus(b)) => return conics::tori(a, b),
-        _ => return Err(refused_pair()),
-    })
+fn uncached_plan(
+    a: &Surface,
+    b: &Surface,
+    rational: bool,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    match (a, b) {
+        (Surface::Plane(a), Surface::Plane(b)) => planes(a, b, dec),
+        (Surface::Plane(p), Surface::Cylinder(c)) => plane_cylinder(p, c, s(1), dec),
+        (Surface::Cylinder(c), Surface::Plane(p)) => plane_cylinder(p, c, s(-1), dec),
+        (Surface::Plane(p), Surface::Sphere(c)) => plane_sphere(p, c, s(1), dec),
+        (Surface::Sphere(c), Surface::Plane(p)) => plane_sphere(p, c, s(-1), dec),
+        (Surface::Sphere(a), Surface::Sphere(b)) => spheres(a, b, dec),
+        (Surface::Cylinder(a), Surface::Cylinder(b)) => cylinders(a, b, rational, dec),
+        (Surface::Cylinder(c), Surface::Sphere(sphere)) => cylinder_sphere(c, sphere, s(1), dec),
+        (Surface::Sphere(sphere), Surface::Cylinder(c)) => cylinder_sphere(c, sphere, s(-1), dec),
+        (Surface::Plane(p), Surface::EllipticCylinder(c)) => plane_elliptic(p, c, s(1), dec),
+        (Surface::EllipticCylinder(c), Surface::Plane(p)) => plane_elliptic(p, c, s(-1), dec),
+        (Surface::Plane(p), Surface::Cone(c)) => conics::plane_cone(p, c, s(1), rational, dec),
+        (Surface::Cone(c), Surface::Plane(p)) => conics::plane_cone(p, c, s(-1), rational, dec),
+        (Surface::Cone(c), Surface::Cylinder(y)) => conics::cone_cylinder(c, y, s(1), dec),
+        (Surface::Cylinder(y), Surface::Cone(c)) => conics::cone_cylinder(c, y, s(-1), dec),
+        (Surface::Cone(c), Surface::Sphere(sphere)) => conics::cone_sphere(c, sphere, s(1), dec),
+        (Surface::Sphere(sphere), Surface::Cone(c)) => conics::cone_sphere(c, sphere, s(-1), dec),
+        (Surface::Cone(a), Surface::Cone(b)) => conics::cones(a, b, dec),
+        (Surface::Plane(p), Surface::Torus(t)) => conics::plane_torus(p, t, s(1), dec),
+        (Surface::Torus(t), Surface::Plane(p)) => conics::plane_torus(p, t, s(-1), dec),
+        (Surface::Cylinder(c), Surface::Torus(t)) => conics::cylinder_torus(c, t, s(1), dec),
+        (Surface::Torus(t), Surface::Cylinder(c)) => conics::cylinder_torus(c, t, s(-1), dec),
+        (Surface::Sphere(sphere), Surface::Torus(t)) => conics::sphere_torus(sphere, t, s(1), dec),
+        (Surface::Torus(t), Surface::Sphere(sphere)) => conics::sphere_torus(sphere, t, s(-1), dec),
+        (Surface::Cone(c), Surface::Torus(t)) => conics::cone_torus(c, t, s(1), rational, dec),
+        (Surface::Torus(t), Surface::Cone(c)) => conics::cone_torus(c, t, s(-1), rational, dec),
+        (Surface::Torus(a), Surface::Torus(b)) => conics::tori(a, b, dec),
+        _ => Err(refused_pair()),
+    }
 }
 fn record(geom: &mut GeomStore, kind: FactKind, a: GeomKey, b: GeomKey, at: Option<GeomKey>) {
     geom.record_fact(Fact {
@@ -726,8 +850,13 @@ fn add_point(
         position: Position::Closed(p),
     }))
 }
-pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Answered<SurfacePair> {
-    let plan = plan(geom.surface(a), geom.surface(b))?;
+pub(super) fn construct(
+    geom: &mut GeomStore,
+    a: SurfaceId,
+    b: SurfaceId,
+    dec: &mut Decider,
+) -> Answered<SurfacePair> {
+    let plan = plan(geom.surface(a), geom.surface(b), dec)?;
     if let Some(answer) = &plan.terminal {
         return Ok(Answer::exact(answer.clone()));
     }
@@ -779,7 +908,7 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
             } else {
                 match &spec.form {
                     CurveForm::Line { origin, dir } => Curve::Line(Line {
-                        origin: point_rational(origin).expect("analytic rational origin"),
+                        origin: origin.clone(),
                         dir: dir.clone(),
                     }),
                     CurveForm::Circle {
@@ -788,9 +917,9 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
                         radius_sq,
                         ref_dir,
                     } => Curve::Circle(Circle {
-                        center: point_rational(center).expect("analytic rational center"),
+                        center: center.clone(),
                         normal: normal.clone(),
-                        radius_sq: radius_sq.as_rational().expect("analytic rational radius"),
+                        radius_sq: radius_sq.clone(),
                         ref_dir: ref_dir.clone(),
                     }),
                     CurveForm::Ellipse {
@@ -800,51 +929,47 @@ pub(super) fn construct(geom: &mut GeomStore, a: SurfaceId, b: SurfaceId) -> Ans
                         major_sq,
                         minor_sq,
                     } => Curve::Ellipse(Ellipse {
-                        center: point_rational(center).expect("analytic rational center"),
+                        center: center.clone(),
                         normal: normal.clone(),
                         major_dir: major_dir.clone(),
-                        major_sq: major_sq
-                            .as_rational()
-                            .expect("analytic rational major axis"),
-                        minor_sq: minor_sq
-                            .as_rational()
-                            .expect("analytic rational minor axis"),
+                        major_sq: major_sq.clone(),
+                        minor_sq: minor_sq.clone(),
                     }),
                     CurveForm::Branch
                     | CurveForm::Parabola { .. }
                     | CurveForm::Hyperbola { .. } => {
-                        unreachable!("non-rational form has a witness")
+                        unreachable!("non-analytic form has a witness")
                     }
                 }
             };
             let analytic = !matches!(definition, Curve::Intersection(_));
             let curve = geom.add_curve(definition);
             if analytic {
-                for s in [a, b] {
+                for surface in [a, b] {
                     record(
                         geom,
                         FactKind::Incident,
                         GeomKey::Curve(curve),
-                        GeomKey::Surface(s),
+                        GeomKey::Surface(surface),
                         None,
                     );
                 }
             }
-            if let Some(w) = witness {
+            if let Some(witness) = witness {
                 record(
                     geom,
                     FactKind::Incident,
-                    GeomKey::Point(w),
+                    GeomKey::Point(witness),
                     GeomKey::Curve(curve),
                     None,
                 );
             }
             let singular: Vec<_> = spec.singular.iter().map(|&i| points[i]).collect();
-            for p in &singular {
+            for point in &singular {
                 record(
                     geom,
                     FactKind::Incident,
-                    GeomKey::Point(*p),
+                    GeomKey::Point(*point),
                     GeomKey::Curve(curve),
                     None,
                 );

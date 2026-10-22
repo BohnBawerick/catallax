@@ -342,16 +342,18 @@ fn ccw(segments: &[Arc], dec: &Decider) -> Result<bool, Refusal> {
     }
 }
 
-pub(crate) fn placement(plane: &catallax_recipe::Pose) -> Result<Pose, Refusal> {
+pub(crate) fn placement(plane: &catallax_recipe::Pose, dec: &mut Decider) -> Result<Pose, Refusal> {
     let [w, x, y, z] = plane.rotation.each_ref().map(|x| x.value().clone());
-    Ok(Pose::new(
+    Pose::new(
         Rotation::from_quaternion(w, x, y, z)?,
         RVector3::new(
             plane.translation.0[0].value().clone(),
             plane.translation.0[1].value().clone(),
             plane.translation.0[2].value().clone(),
-        ),
-    ))
+        )
+        .into(),
+        dec,
+    )
 }
 
 impl Profile {
@@ -361,7 +363,7 @@ impl Profile {
         loops: &[Loop],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let pose = placement(plane)?;
+        let pose = placement(plane, dec)?;
         let mut boundaries = Vec::with_capacity(loops.len());
         for lp in loops {
             if lp.0.is_empty() {
@@ -513,10 +515,22 @@ impl Profile {
     }
 
     pub(crate) fn world(&self, p: &P, offset: &RVector3) -> RPoint3 {
-        self.pose
-            .apply_point(&RPoint3::new(p[0].clone(), p[1].clone(), Rational::zero()))
-            .plus(offset)
+        rational_point(
+            &self.pose,
+            &RPoint3::new(p[0].clone(), p[1].clone(), Rational::zero()),
+        )
+        .plus(offset)
     }
+}
+
+// Constructors receive rational recipe poses; transformed runtime geometry does not use these adapters.
+pub(crate) fn rational_point(pose: &Pose, p: &RPoint3) -> RPoint3 {
+    pose.apply_rational_point(p)
+        .expect("profile frames come from rational recipe quaternions")
+}
+pub(crate) fn rational_vector(pose: &Pose, v: &RVector3) -> RVector3 {
+    pose.apply_rational_vector(v)
+        .expect("profile frames come from rational recipe quaternions")
 }
 
 fn merge(segments: &mut Vec<Arc>) {

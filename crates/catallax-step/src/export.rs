@@ -3,8 +3,8 @@ use std::fmt::Write as _;
 use std::rc::Rc;
 
 use catallax_intersect::{CurveForm, curve_form};
-use catallax_numbers::{Answer, Answered, Ball, BoundKind, Decider, Mark, Rational, Real, Refusal};
-use catallax_shapes::{CurveId, Point3, RVector3, Surface, SurfaceId};
+use catallax_numbers::{Answer, Answered, BoundKind, Decider, Mark, Rational, Real, Refusal};
+use catallax_shapes::{CurveId, Point3, Surface, SurfaceId, Vector3};
 use catallax_topology::{BodyId, BodyKind, EdgeId, FaceId, Loop, Model, Sense, ShellId, VertexId};
 
 use crate::graph::{Graph, Id, boolean, refs, string, text};
@@ -47,7 +47,7 @@ struct Placement {
 
 struct SurfaceGeometry {
     id: Id,
-    origin: [Rational; 3],
+    origin: Bounds,
     base_error: Rational,
     extent_error: Rational,
 }
@@ -112,8 +112,8 @@ impl<'a> Exporter<'a> {
     fn placement(
         &mut self,
         origin: &Point3,
-        axis: &RVector3,
-        reference: &RVector3,
+        axis: &Vector3,
+        reference: &Vector3,
     ) -> Result<Placement, Refusal> {
         let p = number::point(origin, self.digits(), self.dec)?;
         let z = number::direction(axis, self.digits(), self.dec)?;
@@ -230,17 +230,82 @@ impl<'a> Exporter<'a> {
                 let minor = number::real(&number::sqrt_real(minor_sq), self.digits(), self.dec)?;
                 self.ellipse(center, normal, major_dir, major, Some(minor))?
             }
+            CurveForm::Parabola {
+                vertex,
+                normal,
+                axis_dir,
+                focal,
+            } => {
+                let focal = number::real(focal, self.digits(), self.dec)?;
+                self.open_conic("PARABOLA", vertex, normal, axis_dir, vec![focal])?
+            }
+            CurveForm::Hyperbola {
+                center,
+                normal,
+                axis_dir,
+                transverse_sq,
+                conjugate_sq,
+                branch,
+            } => {
+                let major =
+                    number::real(&number::sqrt_real(transverse_sq), self.digits(), self.dec)?;
+                let minor =
+                    number::real(&number::sqrt_real(conjugate_sq), self.digits(), self.dec)?;
+                if *branch == catallax_numbers::StrictSign::Negative {
+                    self.open_conic(
+                        "HYPERBOLA",
+                        center,
+                        &normal.scaled(&Real::from_i64(-1)),
+                        &axis_dir.scaled(&Real::from_i64(-1)),
+                        vec![major, minor],
+                    )?
+                } else {
+                    self.open_conic("HYPERBOLA", center, normal, axis_dir, vec![major, minor])?
+                }
+            }
             CurveForm::Branch => return Ok(None),
             _ => return Err(unsupported()),
         };
         Ok(Some(curve))
     }
 
+    fn open_conic(
+        &mut self,
+        name: &'static str,
+        center: &Point3,
+        normal: &Vector3,
+        reference: &Vector3,
+        dimensions: Vec<Number>,
+    ) -> Result<Curve, Refusal> {
+        let placement = self.placement(center, normal, reference)?;
+        let mut aspect = placement.error;
+        let mut fields = vec![text("''"), placement.id.into()];
+        for dimension in dimensions {
+            let lower = &dimension.value - &dimension.error;
+            if lower <= Rational::zero() {
+                return Err(number::budget(
+                    "rounded conic dimension has no positive lower bound",
+                ));
+            }
+            aspect = aspect + &dimension.error / &lower;
+            fields.push(text(dimension.text));
+        }
+        let error = placement.origin.error() * (Rational::one() + aspect.clone());
+        Ok(Curve {
+            id: self.graph.add(name, fields),
+            error,
+            line_origin: Some(placement.origin.xyz.map(|n| n.value)),
+            bounds: None,
+            aspect,
+            diameter: Rational::zero(),
+        })
+    }
+
     fn ellipse(
         &mut self,
         center: &Point3,
-        axis: &RVector3,
-        reference: &RVector3,
+        axis: &Vector3,
+        reference: &Vector3,
         major: Number,
         minor: Option<Number>,
     ) -> Result<Curve, Refusal> {
@@ -305,6 +370,10 @@ impl<'a> Exporter<'a> {
         let (start, end) = match (source.start, source.end) {
             (Some(a), Some(b)) => (self.vertex(a, topology)?, self.vertex(b, topology)?),
             (None, None) => {
+                if !catallax_intersect::curve_is_closed(self.model.geom(), source.curve, self.dec)?
+                {
+                    return Err(unsupported());
+                }
                 let origin = self
                     .model
                     .geom()
@@ -402,9 +471,9 @@ impl<'a> Exporter<'a> {
     fn added_circle(
         &mut self,
         center: &Point3,
-        axis: &RVector3,
-        reference: &RVector3,
-        radius: &Rational,
+        axis: &Vector3,
+        reference: &Vector3,
+        radius: &Real,
         start: &Vertex,
         end: &Vertex,
     ) -> Result<Id, Refusal> {
@@ -412,7 +481,7 @@ impl<'a> Exporter<'a> {
             .curve_geometry(&CurveForm::Circle {
                 center: center.clone(),
                 normal: axis.clone(),
-                radius_sq: Real::from(radius * radius),
+                radius_sq: radius * radius,
                 ref_dir: reference.clone(),
             })?
             .unwrap();
@@ -425,32 +494,25 @@ impl<'a> Exporter<'a> {
         let (edges, orientations) = match surface {
             Surface::Sphere(s) => {
                 let axis = number::unit(&s.axis);
-                let low = number::point_plus(&s.center.to_real(), &axis, &(-&s.radius));
-                let high = number::point_plus(&s.center.to_real(), &axis, &s.radius);
+                let low = number::point_plus(&s.center, &axis, &(-&s.radius));
+                let high = number::point_plus(&s.center, &axis, &s.radius);
                 let a = self.added_vertex(&low)?;
                 let b = self.added_vertex(&high)?;
-                let normal = s.axis.cross(&s.ref_dir).scaled(&Rational::from_i64(-1));
-                let edge =
-                    self.added_circle(&s.center.to_real(), &normal, &s.ref_dir, &s.radius, &a, &b)?;
+                let normal = s.axis.cross(&s.ref_dir).scaled(&Real::from_i64(-1));
+                let edge = self.added_circle(&s.center, &normal, &s.ref_dir, &s.radius, &a, &b)?;
                 (vec![edge, edge], vec![true, false])
             }
             Surface::Torus(s) => {
                 let radial = number::unit(&s.ref_dir);
-                let center = number::point_plus(&s.center.to_real(), &radial, &s.major);
+                let center = number::point_plus(&s.center, &radial, &s.major);
                 let radius = &s.major + &s.minor;
-                let origin = number::point_plus(&s.center.to_real(), &radial, &radius);
+                let origin = number::point_plus(&s.center, &radial, &radius);
                 let vertex = self.added_vertex(&origin)?;
-                let normal = s.axis.cross(&s.ref_dir).scaled(&Rational::from_i64(-1));
+                let normal = s.axis.cross(&s.ref_dir).scaled(&Real::from_i64(-1));
                 let tube =
                     self.added_circle(&center, &normal, &s.ref_dir, &s.minor, &vertex, &vertex)?;
-                let equator = self.added_circle(
-                    &s.center.to_real(),
-                    &s.axis,
-                    &s.ref_dir,
-                    &radius,
-                    &vertex,
-                    &vertex,
-                )?;
+                let equator =
+                    self.added_circle(&s.center, &s.axis, &s.ref_dir, &radius, &vertex, &vertex)?;
                 (
                     vec![tube, equator, tube, equator],
                     vec![true, true, false, false],
@@ -473,6 +535,31 @@ impl<'a> Exporter<'a> {
             return Ok(());
         }
         let surface = self.model.geom().surface(id);
+        if let Surface::EllipticCylinder(s) = surface {
+            let major = number::real(&number::sqrt_real(&s.major_sq), self.digits(), self.dec)?;
+            let minor = number::real(&number::sqrt_real(&s.minor_sq), self.digits(), self.dec)?;
+            let ellipse = self.ellipse(&s.origin, &s.axis, &s.major_dir, major, Some(minor))?;
+            let axis = number::direction(&s.axis, self.digits(), self.dec)?;
+            let direction = self.direction_entity(&axis);
+            let vector = self
+                .graph
+                .add("VECTOR", vec![text("''"), direction.into(), text("1.")]);
+            let entity = self.graph.add(
+                "SURFACE_OF_LINEAR_EXTRUSION",
+                vec![text("''"), ellipse.id.into(), vector.into()],
+            );
+            let origin = self.origin_bounds(&s.origin)?;
+            self.surfaces.insert(
+                id,
+                SurfaceGeometry {
+                    id: entity,
+                    origin,
+                    base_error: ellipse.error,
+                    extent_error: axis.error() * Rational::from_i64(2),
+                },
+            );
+            return Ok(());
+        }
         let (origin, axis, reference, name, sizes) = match surface {
             Surface::Plane(s) => (&s.origin, &s.normal, &s.ref_dir, "PLANE", vec![]),
             Surface::Cylinder(s) => (
@@ -499,25 +586,28 @@ impl<'a> Exporter<'a> {
             ),
             _ => return Err(unsupported()),
         };
-        let placement = self.placement(&origin.to_real(), axis, reference)?;
+        let placement = self.placement(origin, axis, reference)?;
         let mut base_error = placement.origin.error();
         let mut extent_error = placement.error.clone();
         let mut fields = vec![text("''"), placement.id.into()];
         for size in &sizes {
-            let n = number::real(&Real::from_rational(size.clone()), self.digits(), self.dec)?;
+            let n = number::real(size, self.digits(), self.dec)?;
             base_error = &base_error + &n.error;
             fields.push(text(n.text));
         }
         match surface {
             Surface::Sphere(s) => {
-                base_error = base_error + &s.radius * &extent_error;
+                base_error = base_error + &number::upper(&s.radius, self.dec)? * &extent_error;
                 extent_error = Rational::zero();
             }
             Surface::Torus(s) => {
-                base_error = base_error + &(&s.major + &s.minor) * &extent_error;
+                base_error =
+                    base_error + &number::upper(&(&s.major + &s.minor), self.dec)? * &extent_error;
                 extent_error = Rational::zero();
             }
-            Surface::Cylinder(s) => base_error = base_error + &s.radius * &extent_error,
+            Surface::Cylinder(s) => {
+                base_error = base_error + &number::upper(&s.radius, self.dec)? * &extent_error
+            }
             Surface::Cone(s) => {
                 let p = number::work_precision(
                     self.dec.policy(),
@@ -525,12 +615,13 @@ impl<'a> Exporter<'a> {
                     2,
                 )
                 .ok_or_else(|| number::budget("no work available for the cone's arctangent"))?;
-                let angle = Ball::from_rational(&s.slope, p).atan_checked(self.dec)?;
+                let angle = self.dec.enclose_at(&s.slope, p)?.atan_checked(self.dec)?;
                 // Rounding down keeps the written half-angle strictly acute,
                 // including at one digit and for nearly flat cones.
                 let n =
                     number::certified(number::floor_ball(&angle, self.digits()), self.digits())?;
-                extent_error = (&extent_error + &n.error) * (Rational::one() + s.slope.clone());
+                extent_error = (&extent_error + &n.error)
+                    * (Rational::one() + number::upper(&s.slope, self.dec)?);
                 fields.push(text("0."));
                 fields.push(text(n.text));
             }
@@ -538,12 +629,25 @@ impl<'a> Exporter<'a> {
         }
         let geometry = SurfaceGeometry {
             id: self.graph.add(name, fields),
-            origin: [&origin.x, &origin.y, &origin.z].map(Clone::clone),
+            origin: self.origin_bounds(origin)?,
             base_error,
             extent_error,
         };
         self.surfaces.insert(id, geometry);
         Ok(())
+    }
+
+    fn origin_bounds(&mut self, point: &Point3) -> Result<Bounds, Refusal> {
+        let mut result = std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
+        for (output, value) in result.iter_mut().zip([&point.x, &point.y, &point.z]) {
+            if let Some(value) = value.rational_ref() {
+                *output = [value.clone(), value.clone()];
+            } else {
+                let value = number::real(value, self.digits(), self.dec)?;
+                *output = [&value.value - &value.error, &value.value + &value.error];
+            }
+        }
+        Ok(result)
     }
 
     fn face(&mut self, id: FaceId, reverse: bool, topology: &mut Topology) -> Result<Id, Refusal> {
@@ -586,9 +690,9 @@ impl<'a> Exporter<'a> {
         let surface = &self.surfaces[&face.surface];
         let extent = boundary_extent.map_or_else(Rational::zero, |bounds| {
             (0..3).fold(Rational::zero(), |s, i| {
-                s + (&bounds[i][0] - &surface.origin[i])
+                s + (&bounds[i][0] - &surface.origin[i][1])
                     .abs()
-                    .max((&bounds[i][1] - &surface.origin[i]).abs())
+                    .max((&bounds[i][1] - &surface.origin[i][0]).abs())
             })
         });
         let error = &surface.base_error + &(&surface.extent_error * &extent);

@@ -38,6 +38,7 @@ struct FaceBuilder<'a> {
     interior_left: BTreeSet<(usize, usize)>,
     bounds: [[f64; 2]; 2],
     hessian: [Rational; 3],
+    dec: &'a Decider,
 }
 
 impl FaceBuilder<'_> {
@@ -60,7 +61,7 @@ impl FaceBuilder<'_> {
             }
             (mesh, error)
         } else {
-            let ball = self.chart.evaluate(canonical);
+            let ball = self.chart.evaluate(canonical, self.dec)?;
             let mesh = if let Some(index) = boundary {
                 index
             } else {
@@ -422,7 +423,8 @@ fn face_mesh(
         errors: Vec::new(),
         interior_left: BTreeSet::new(),
         bounds,
-        hessian: chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs())),
+        hessian: chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?,
+        dec,
     };
     builder.boundary(&segments, face.sense)?;
     builder.grid()?;
@@ -503,7 +505,7 @@ fn regular_chart(
 ) -> Result<Chart, Refusal> {
     let surface = model.geom().surface(model.face(face).surface);
     let Surface::Sphere(sphere) = surface else {
-        return Chart::new(surface);
+        return Chart::new(surface, dec);
     };
     let equations: Vec<_> = model
         .face(face)
@@ -519,7 +521,7 @@ fn regular_chart(
         .map(|c| model.geom().curve(c).equations(model.geom()))
         .collect();
     if equations.is_empty() {
-        return Chart::new(surface);
+        return Chart::new(surface, dec);
     }
     for choice in 0..options
         .max_vertices
@@ -536,13 +538,28 @@ fn regular_chart(
         let mut candidate = sphere.clone();
         candidate.axis = rotation.apply(&sphere.axis);
         candidate.ref_dir = rotation.apply(&sphere.ref_dir);
-        let chart = Chart::new(&Surface::Sphere(candidate))?;
-        let poles = [-0.25, 0.25].map(|v| chart.evaluate([0.0, v]));
-        if poles.iter().all(|pole| {
-            equations
-                .iter()
-                .all(|eqs| eqs.iter().any(|eq| !eq.eval_ball(pole).contains_zero()))
-        }) {
+        let chart = Chart::new(&Surface::Sphere(candidate), dec)?;
+        let poles = [
+            chart.evaluate([0.0, -0.25], dec)?,
+            chart.evaluate([0.0, 0.25], dec)?,
+        ];
+        let mut clear = true;
+        'poles: for pole in &poles {
+            for equations in &equations {
+                let mut apart = false;
+                for equation in equations {
+                    if !equation.eval_ball(pole, dec)?.contains_zero() {
+                        apart = true;
+                        break;
+                    }
+                }
+                if !apart {
+                    clear = false;
+                    break 'poles;
+                }
+            }
+        }
+        if clear {
             return Ok(chart);
         }
     }

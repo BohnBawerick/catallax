@@ -41,7 +41,7 @@ This piece adds no number type and holds no tolerance.
 
 An operand is a `Solid` or `Empty` body (piece 3) that passes `Model::check`, with faces and boundary curves covered by piece 4. Its faces and edges need not be maximal, and it may have several lumps and voids. An operand of another body kind is refused with `boolean.not-solid`.
 
-Cone faces use an apex-safe radial chart and exact rational probes with certified chart paths. Point loops survive imprint and sew when they remain isolated apex boundaries. Torus regions bounded by complete parallel or meridian circles use exact two-angle component labels, independent of arbitrary parameter seams. General noncircular torus boundaries still require a certified periodic chart. Missing intersection and chart paths are temporary coverage failures, not invalid operands.
+Cone faces use an apex-safe radial chart and exact parametric probes with certified chart paths. Probe frames and dimensions may be algebraic; rational definitions retain their native arithmetic path. Point loops survive imprint and sew when they remain isolated apex boundaries. Torus regions bounded by complete parallel or meridian circles use exact two-angle component labels, independent of arbitrary parameter seams. General noncircular torus boundaries still require a certified periodic chart. Missing intersection and chart paths are temporary coverage failures, not invalid operands.
 
 The result is a `Solid` or `Empty` body that:
 

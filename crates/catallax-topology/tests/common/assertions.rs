@@ -21,7 +21,7 @@ pub fn assert_builder(m: &Model, b: BodyId, shape: &Primitive, pose: &Pose) {
         let index = expected
             .points
             .iter()
-            .position(|p| p == explicit(m, *id))
+            .position(|p| p == &explicit(m, *id))
             .expect("unexpected vertex position");
         assert!(
             !vertex_indices.values().any(|i| *i == index),
@@ -41,7 +41,9 @@ pub fn assert_builder(m: &Model, b: BodyId, shape: &Primitive, pose: &Pose) {
         let index = expected
             .edges
             .iter()
-            .position(|e| e == &candidate)
+            .position(|e| {
+                e.0.same_definition(&candidate.0) && e.1 == candidate.1 && e.2 == candidate.2
+            })
             .expect("unexpected curve or endpoints");
         assert!(
             !edge_indices.values().any(|i| *i == index),
@@ -51,7 +53,7 @@ pub fn assert_builder(m: &Model, b: BodyId, shape: &Primitive, pose: &Pose) {
     }
     for (&id, (surface, sense, loops)) in fs.iter().zip(&expected.faces) {
         let f = m.face(id);
-        assert_eq!(m.geom().surface(f.surface), surface);
+        assert!(m.geom().surface(f.surface).same_definition(surface));
         assert_eq!(f.sense, *sense);
         assert_eq!(f.loops.len(), loops.len());
         assert_eq!(
@@ -109,7 +111,12 @@ pub fn assert_builder(m: &Model, b: BodyId, shape: &Primitive, pose: &Pose) {
                 let d = points[(i + 1) % 4].minus(&points[i]);
                 // For an outward-oriented convex face, n cross d points toward its centre.
                 assert_eq!(
-                    s.normal.cross(&d).dot(&center.minus(&points[i])).sign(),
+                    s.normal
+                        .as_rational()
+                        .unwrap()
+                        .cross(&d)
+                        .dot(&center.minus(&points[i]))
+                        .sign(),
                     Sign::Positive
                 );
             }
@@ -279,9 +286,9 @@ pub fn assert_facts(m: &Model, b: BodyId, shape: &Primitive) {
     }
 }
 
-// Structured equality includes handles, stored entity fields, geometry and fact
-// insertion order. PointDef has no PartialEq; builder points must be Explicit.
-#[derive(Debug, PartialEq)]
+// Snapshot equality compares immutable definitions and ordered topology/facts,
+// not geometric coincidence of independently constructed definitions.
+#[derive(Debug)]
 pub struct Snapshot {
     bodies: Vec<(BodyId, Body)>,
     lumps: Vec<(LumpId, Lump)>,
@@ -296,6 +303,33 @@ pub struct Snapshot {
     points: Vec<(PointId, RPoint3)>,
     facts: Vec<Fact<GeomKey>>,
     lengths: [usize; 12],
+}
+impl PartialEq for Snapshot {
+    fn eq(&self, other: &Self) -> bool {
+        self.bodies == other.bodies
+            && self.lumps == other.lumps
+            && self.shells == other.shells
+            && self.faces == other.faces
+            && self.loops == other.loops
+            && self.coedges == other.coedges
+            && self.edges == other.edges
+            && self.vertices == other.vertices
+            && self.points == other.points
+            && self.facts == other.facts
+            && self.lengths == other.lengths
+            && self.surfaces.len() == other.surfaces.len()
+            && self
+                .surfaces
+                .iter()
+                .zip(&other.surfaces)
+                .all(|((ka, a), (kb, b))| ka == kb && a.same_definition(b))
+            && self.curves.len() == other.curves.len()
+            && self
+                .curves
+                .iter()
+                .zip(&other.curves)
+                .all(|((ka, a), (kb, b))| ka == kb && a.same_definition(b))
+    }
 }
 pub fn snapshot(m: &Model, bs: &[BodyId]) -> Snapshot {
     let (mut lu, mut sh, mut fs, mut ls, mut cs, mut es, mut vs, mut ss, mut curves, mut ps) = (

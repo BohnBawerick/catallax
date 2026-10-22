@@ -76,7 +76,11 @@ impl<'a> Work<'a> {
         self.charge()?;
         Ok(Ball::from_rational(r, self.precision))
     }
+
     pub(crate) fn real(&mut self, value: &Real) -> Checked<Ball> {
+        if let Some(value) = value.rational_ref() {
+            return self.rational(value);
+        }
         self.charge()?;
         Ok(self.dec.enclose_at(value, self.precision)?)
     }
@@ -154,6 +158,7 @@ impl<'a> Work<'a> {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Constant(Rational),
+    Exact(usize),
     Input(usize),
     Add(usize, usize),
     Mul(usize, usize),
@@ -168,6 +173,7 @@ struct Nodes {
     defined: Vec<bool>,
     nonzero: Vec<bool>,
     lookup: BTreeMap<Node, usize>,
+    exact: Vec<Real>,
 }
 
 #[derive(Default)]
@@ -279,6 +285,7 @@ impl Builder {
         }
         let (defined, nonzero) = match &node {
             Node::Constant(value) => (true, !value.is_zero()),
+            Node::Exact(_) => (false, false),
             Node::Input(_) => (true, false),
             Node::Add(a, b) => (nodes.defined[*a] && nodes.defined[*b], false),
             Node::Mul(a, b) => (
@@ -308,6 +315,24 @@ impl Builder {
 
     pub(crate) fn r(&self, r: Rational) -> Expr<'_> {
         self.node(Node::Constant(r))
+    }
+
+    pub(crate) fn exact(&self, value: &Real) -> Expr<'_> {
+        if let Some(value) = value.rational_ref() {
+            return self.r(value.clone());
+        }
+        let mut nodes = self.0.borrow_mut();
+        let index = nodes
+            .exact
+            .iter()
+            .position(|other| other.same_definition(value))
+            .unwrap_or_else(|| {
+                let index = nodes.exact.len();
+                nodes.exact.push(value.clone());
+                index
+            });
+        drop(nodes);
+        self.node(Node::Exact(index))
     }
 
     pub(crate) fn k(&self, k: i64) -> Expr<'_> {
@@ -355,6 +380,7 @@ impl Builder {
         Program {
             nodes,
             outputs: outputs.iter().map(|e| indices[e.index]).collect(),
+            exact: self.0.borrow().exact.clone(),
         }
     }
 }
@@ -403,6 +429,7 @@ impl Neg for Expr<'_> {
 pub(crate) struct Program {
     nodes: Vec<Node>,
     outputs: Vec<usize>,
+    exact: Vec<Real>,
 }
 
 impl Program {
@@ -421,6 +448,7 @@ impl Program {
             let mut value = work.zeros::<N>();
             match node {
                 Node::Constant(r) => value[0] = work.rational(r)?,
+                Node::Exact(index) => value[0] = work.real(&self.exact[*index])?,
                 Node::Input(_) => unreachable!(),
                 Node::Add(a, b) => {
                     for (k, coefficient) in value.iter_mut().enumerate() {

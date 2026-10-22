@@ -1,6 +1,6 @@
 //! Existing exact stock builders as immutable, named recipe inputs.
 
-use catallax_numbers::{MarkLog, Rational, Refusal};
+use catallax_numbers::{Decider, MarkLog, Rational, Refusal};
 use catallax_recipe::{ElementId, Operation, Origin, Role, StepId};
 use catallax_topology::{Body, BodyId, Lump, Model, Shell};
 
@@ -15,13 +15,14 @@ pub(crate) fn build(
     model: &mut Model,
     op: &Operation,
     step: &StepId,
+    dec: &mut Decider,
 ) -> Result<Option<(BodyId, Rational)>, Refusal> {
     let (raw, roles, local_bound, placement) = match op {
         Operation::Block { size, pose } => {
             let sizes = size.each_ref().map(|n| n.value().clone());
             let bound = sizes.iter().fold(Rational::zero(), |a, b| a + b.clone());
             (
-                catallax_topology::block(model, sizes, &crate::profile::placement(pose)?)?,
+                catallax_topology::block(model, sizes, &crate::profile::placement(pose, dec)?)?,
                 vec![
                     side("x_min"),
                     side("x_max"),
@@ -43,7 +44,7 @@ pub(crate) fn build(
                 model,
                 radius.value().clone(),
                 height.value().clone(),
-                &crate::profile::placement(pose)?,
+                &crate::profile::placement(pose, dec)?,
             )?,
             vec![Role::Start, Role::End, side("wall")],
             radius.value() + height.value(),
@@ -53,7 +54,7 @@ pub(crate) fn build(
             catallax_topology::sphere(
                 model,
                 radius.value().clone(),
-                &crate::profile::placement(pose)?,
+                &crate::profile::placement(pose, dec)?,
             )?,
             vec![side("wall")],
             radius.value().clone(),
@@ -65,7 +66,7 @@ pub(crate) fn build(
             height,
             pose,
         } => {
-            let placement = crate::profile::placement(pose)?;
+            let placement = crate::profile::placement(pose, dec)?;
             let raw = if base_radius == top_radius {
                 catallax_topology::cylinder(
                     model,
@@ -100,7 +101,7 @@ pub(crate) fn build(
                 model,
                 major.value().clone(),
                 minor.value().clone(),
-                &crate::profile::placement(pose)?,
+                &crate::profile::placement(pose, dec)?,
             )?,
             vec![side("wall")],
             major.value() + minor.value(),

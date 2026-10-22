@@ -86,29 +86,67 @@ pub fn sign(x: &Q) -> i8 {
 pub fn implicit_oracle(s: &Surface, point: &RPoint3) -> Q {
     let point = qp(point);
     match s {
-        Surface::Plane(s) => dot(&sub(&point, &qp(&s.origin)), &qv(&s.normal)),
+        Surface::Plane(s) => dot(
+            &sub(
+                &point,
+                &qp(&s.origin.as_rational().expect("rational oracle fixture")),
+            ),
+            &qv(&s.normal.as_rational().expect("rational oracle fixture")),
+        ),
         Surface::Cylinder(s) => {
-            let d = sub(&point, &qp(&s.origin));
-            let a = qv(&s.axis);
+            let d = sub(
+                &point,
+                &qp(&s.origin.as_rational().expect("rational oracle fixture")),
+            );
+            let a = qv(&s.axis.as_rational().expect("rational oracle fixture"));
             let c = cross(&d, &a);
-            dot(&c, &c) - sq(&oq(&s.radius)) * dot(&a, &a)
+            dot(&c, &c)
+                - sq(&oq(&s
+                    .radius
+                    .as_rational()
+                    .expect("rational oracle fixture")))
+                    * dot(&a, &a)
         }
         Surface::Cone(s) => {
-            let d = sub(&point, &qp(&s.apex));
-            let a = qv(&s.axis);
+            let d = sub(
+                &point,
+                &qp(&s.apex.as_rational().expect("rational oracle fixture")),
+            );
+            let a = qv(&s.axis.as_rational().expect("rational oracle fixture"));
             let c = cross(&d, &a);
-            dot(&c, &c) - sq(&oq(&s.slope)) * sq(&dot(&d, &a))
+            dot(&c, &c)
+                - sq(&oq(&s
+                    .slope
+                    .as_rational()
+                    .expect("rational oracle fixture")))
+                    * sq(&dot(&d, &a))
         }
         Surface::Sphere(s) => {
-            let d = sub(&point, &qp(&s.center));
-            dot(&d, &d) - sq(&oq(&s.radius))
+            let d = sub(
+                &point,
+                &qp(&s.center.as_rational().expect("rational oracle fixture")),
+            );
+            dot(&d, &d)
+                - sq(&oq(&s
+                    .radius
+                    .as_rational()
+                    .expect("rational oracle fixture")))
         }
         Surface::Torus(s) => {
-            let d = sub(&point, &qp(&s.center));
-            let a = qv(&s.axis);
+            let d = sub(
+                &point,
+                &qp(&s.center.as_rational().expect("rational oracle fixture")),
+            );
+            let a = qv(&s.axis.as_rational().expect("rational oracle fixture"));
             let norm = dot(&d, &d);
-            let major = sq(&oq(&s.major));
-            let minor = sq(&oq(&s.minor));
+            let major = sq(&oq(&s
+                .major
+                .as_rational()
+                .expect("rational oracle fixture")));
+            let minor = sq(&oq(&s
+                .minor
+                .as_rational()
+                .expect("rational oracle fixture")));
             sq(&(norm.clone() + &major - minor))
                 - q(4, 1) * major * (norm - sq(&dot(&d, &a)) / dot(&a, &a))
         }
@@ -117,15 +155,24 @@ pub fn implicit_oracle(s: &Surface, point: &RPoint3) -> Q {
 }
 
 pub fn plane() -> Surface {
-    Surface::Plane(Plane::new(p("0", "0", "1"), v("0", "0", "2"), v("1", "0", "0")).unwrap())
+    Surface::Plane(
+        Plane::new(
+            (p("0", "0", "1")).into(),
+            (v("0", "0", "2")).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 pub fn cylinder(radius: &str) -> Surface {
     Surface::Cylinder(
         Cylinder::new(
-            p("0", "0", "0"),
-            v("0", "0", "1"),
-            r(radius),
-            v("1", "0", "0"),
+            (p("0", "0", "0")).into(),
+            (v("0", "0", "1")).into(),
+            (r(radius)).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     )
@@ -133,10 +180,11 @@ pub fn cylinder(radius: &str) -> Surface {
 pub fn cone() -> Surface {
     Surface::Cone(
         Cone::new(
-            p("0", "0", "0"),
-            v("0", "0", "1"),
-            r("1/2"),
-            v("1", "0", "0"),
+            (p("0", "0", "0")).into(),
+            (v("0", "0", "1")).into(),
+            (r("1/2")).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     )
@@ -144,10 +192,11 @@ pub fn cone() -> Surface {
 pub fn sphere(radius: &str) -> Surface {
     Surface::Sphere(
         Sphere::new(
-            p("0", "0", "0"),
-            r(radius),
-            v("0", "0", "1"),
-            v("1", "0", "0"),
+            (p("0", "0", "0")).into(),
+            (r(radius)).into(),
+            (v("0", "0", "1")).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     )
@@ -155,11 +204,12 @@ pub fn sphere(radius: &str) -> Surface {
 pub fn torus() -> Surface {
     Surface::Torus(
         Torus::new(
-            p("0", "0", "0"),
-            v("0", "0", "1"),
-            r("3"),
-            r("1"),
-            v("1", "0", "0"),
+            (p("0", "0", "0")).into(),
+            (v("0", "0", "1")).into(),
+            (r("3")).into(),
+            (r("1")).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     )
@@ -168,15 +218,23 @@ pub fn surfaces() -> Vec<Surface> {
     vec![plane(), cylinder("5"), cone(), sphere("3"), torus()]
 }
 pub fn line() -> Curve {
-    Curve::Line(Line::new(p("1", "2", "3"), v("2", "-1", "0")).unwrap())
+    Curve::Line(
+        Line::new(
+            (p("1", "2", "3")).into(),
+            (v("2", "-1", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    )
 }
 pub fn circle(radius_sq: &str) -> Curve {
     Curve::Circle(
         Circle::new(
-            p("0", "0", "0"),
-            v("0", "0", "1"),
-            r(radius_sq),
-            v("1", "0", "0"),
+            (p("0", "0", "0")).into(),
+            (v("0", "0", "1")).into(),
+            (r(radius_sq)).into(),
+            (v("1", "0", "0")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     )
@@ -184,11 +242,12 @@ pub fn circle(radius_sq: &str) -> Curve {
 pub fn ellipse() -> Curve {
     Curve::Ellipse(
         Ellipse::new(
-            p("0", "0", "0"),
-            v("0", "0", "1"),
-            v("2", "0", "0"),
-            r("25"),
-            r("9"),
+            (p("0", "0", "0")).into(),
+            (v("0", "0", "1")).into(),
+            (v("2", "0", "0")).into(),
+            (r("25")).into(),
+            (r("9")).into(),
+            &mut catallax_numbers::Decider::default(),
         )
         .unwrap(),
     )
@@ -284,7 +343,7 @@ pub fn expired() -> Decider {
     d
 }
 pub fn explicit(store: &mut GeomStore, point: RPoint3) -> PointId {
-    store.add_point(PointDef::Explicit(point))
+    store.add_point(PointDef::Explicit((point).into()))
 }
 pub fn closed_on(store: &mut GeomStore, point: Point3, supports: Vec<SurfaceId>) -> PointId {
     store.add_point(PointDef::Meet(Meet {
@@ -371,7 +430,12 @@ impl Rng {
         let [x, y, z] = std::array::from_fn(|_| {
             Rational::from_i64((self.next() % 2_000_001) as i64 - 1_000_000)
         });
-        Pose::new(rotation, RVector3::new(x, y, z))
+        Pose::new(
+            rotation,
+            (RVector3::new(x, y, z)).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap()
     }
 }
 
@@ -412,50 +476,56 @@ pub fn hamilton(a: &[Q; 4], b: &[Q; 4]) -> [Q; 4] {
 pub fn scale_point(p: &RPoint3, s: &Rational) -> RPoint3 {
     rp(xyz(p).map(|x| &x * s))
 }
+fn scale_definition_point(p: &Point3, s: &Real) -> Point3 {
+    Point3::new(&p.x * s, &p.y * s, &p.z * s)
+}
 pub fn scale_surface(surface: &Surface, s: &Rational) -> Surface {
+    let scale = Real::from(s.clone());
     match surface {
         Surface::Plane(a) => Surface::Plane(Plane {
-            origin: scale_point(&a.origin, s),
+            origin: scale_definition_point(&a.origin, &scale),
             ..a.clone()
         }),
         Surface::Cylinder(a) => Surface::Cylinder(Cylinder {
-            origin: scale_point(&a.origin, s),
-            radius: &a.radius * s,
+            origin: scale_definition_point(&a.origin, &scale),
+            radius: &a.radius * &scale,
             ..a.clone()
         }),
         Surface::Cone(a) => Surface::Cone(Cone {
-            apex: scale_point(&a.apex, s),
+            apex: scale_definition_point(&a.apex, &scale),
             ..a.clone()
         }),
         Surface::Sphere(a) => Surface::Sphere(Sphere {
-            center: scale_point(&a.center, s),
-            radius: &a.radius * s,
+            center: scale_definition_point(&a.center, &scale),
+            radius: &a.radius * &scale,
             ..a.clone()
         }),
         Surface::Torus(a) => Surface::Torus(Torus {
-            center: scale_point(&a.center, s),
-            major: &a.major * s,
-            minor: &a.minor * s,
+            center: scale_definition_point(&a.center, &scale),
+            major: &a.major * &scale,
+            minor: &a.minor * &scale,
             ..a.clone()
         }),
         _ => unreachable!(),
     }
 }
 pub fn scale_curve(curve: &Curve, s: &Rational) -> Curve {
+    let scale = Real::from(s.clone());
+    let squared = Real::from(s.pow(2).unwrap());
     match curve {
         Curve::Line(a) => Curve::Line(Line {
-            origin: scale_point(&a.origin, s),
+            origin: scale_definition_point(&a.origin, &scale),
             ..a.clone()
         }),
         Curve::Circle(a) => Curve::Circle(Circle {
-            center: scale_point(&a.center, s),
-            radius_sq: &a.radius_sq * &s.pow(2).unwrap(),
+            center: scale_definition_point(&a.center, &scale),
+            radius_sq: &a.radius_sq * &squared,
             ..a.clone()
         }),
         Curve::Ellipse(a) => Curve::Ellipse(Ellipse {
-            center: scale_point(&a.center, s),
-            major_sq: &a.major_sq * &s.pow(2).unwrap(),
-            minor_sq: &a.minor_sq * &s.pow(2).unwrap(),
+            center: scale_definition_point(&a.center, &scale),
+            major_sq: &a.major_sq * &squared,
+            minor_sq: &a.minor_sq * &squared,
             ..a.clone()
         }),
         _ => unreachable!(),

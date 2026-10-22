@@ -42,7 +42,7 @@ pub use stages::{
 };
 
 use catallax_numbers::{Answered, Decider, DecisionStats, MarkLog, Outcome, Refusal};
-use catallax_shapes::RPoint3;
+use catallax_shapes::{Point3, RPoint3};
 use catallax_topology::{Body, BodyId, BodyKind, FaceId, Model};
 
 /// A boolean operation.
@@ -220,19 +220,19 @@ fn statistics_delta(before: &DecisionStats, after: &DecisionStats) -> DecisionSt
     }
 }
 
-/// Whether a rational point is inside, outside or on the boundary of a body.
+/// Whether an exact point is inside, outside or on the boundary of a body.
 /// May add auxiliary geometry to the model's store; never changes topology.
-pub fn classify_point(
+pub fn classify_point<P: Clone + Into<Point3>>(
     model: &mut Model,
     body: BodyId,
-    point: &RPoint3,
+    point: &P,
     dec: &mut Decider,
 ) -> Outcome<Containment> {
-    containment::classify_point(model, body, point, dec)
+    containment::classify_point(model, body, &point.clone().into(), dec)
 }
 
-/// A rational point strictly inside a face.
-pub fn face_point(model: &mut Model, face: FaceId, dec: &mut Decider) -> Answered<RPoint3> {
+/// An exact point strictly inside a face, retaining its chart definition.
+pub fn face_point(model: &mut Model, face: FaceId, dec: &mut Decider) -> Answered<Point3> {
     points::face_point(model, face, dec)
 }
 
@@ -246,8 +246,10 @@ pub fn face_contains(
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let surface = model.face(face).surface;
+    let point = point.to_real();
     if let catallax_shapes::Surface::Cone(cone) = model.geom().surface(surface)
-        && point.minus(&cone.apex).dot(&cone.axis) < catallax_numbers::Rational::zero()
+        && face_sign(&point.minus(&cone.apex).dot(&cone.axis), dec)?
+            == catallax_numbers::Sign::Negative
     {
         return Ok(false);
     }
@@ -266,7 +268,7 @@ pub fn face_contains(
             ));
         }
     }
-    if let Some(inside) = comparison_cone_band(model, face, point) {
+    if let Some(inside) = comparison_cone_band(model, face, &point, dec)? {
         return Ok(inside);
     }
     Ok(!matches!(
@@ -289,50 +291,68 @@ pub fn surface_witness(
 ) -> Result<Option<RPoint3>, Refusal> {
     points::comparison_witness(surface, target, width, dec)
 }
+fn face_sign(
+    value: &catallax_numbers::Real,
+    dec: &mut Decider,
+) -> Result<catallax_numbers::Sign, Refusal> {
+    if let Some(value) = value.rational_ref() {
+        return Ok(value.sign());
+    }
+    geometry::sign(value, dec, "boolean.face-unresolved")
+}
 
 // A complete circular band has exact height limits. This query-only path avoids
 // asking the intersection engine for a conical chart it does not implement.
-fn comparison_cone_band(model: &Model, face: FaceId, point: &RPoint3) -> Option<bool> {
+fn comparison_cone_band(
+    model: &Model,
+    face: FaceId,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<Option<bool>, Refusal> {
+    use catallax_numbers::{Real, Sign};
     use catallax_shapes::{Curve, PointDef, Surface};
     use catallax_topology::{Loop, Sense};
     let f = model.face(face);
     let Surface::Cone(s) = model.geom().surface(f.surface) else {
-        return None;
+        return Ok(None);
     };
     if f.loops.len() != 2 {
-        return None;
+        return Ok(None);
     }
-    let mut bounds = std::array::from_fn::<_, 2, _>(|_| (catallax_numbers::Rational::zero(), None));
+    let mut bounds: [(Real, Option<Real>); 2] = std::array::from_fn(|_| (Real::zero(), None));
     for (index, &lp) in f.loops.iter().enumerate() {
         match model.loop_(lp) {
             Loop::Vertex(v) => {
                 let PointDef::Explicit(p) = model.geom().point(model.vertex(*v).point) else {
-                    return None;
+                    return Ok(None);
                 };
-                if p != &s.apex {
-                    return None;
+                if face_sign(&p.minus(&s.apex).norm_squared(), dec)? != Sign::Zero {
+                    return Ok(None);
                 }
-                bounds[index] = (catallax_numbers::Rational::zero(), None);
             }
             Loop::Coedges(cs) if cs.len() == 1 => {
                 let coedge = model.coedge(cs[0]);
                 let edge = model.edge(coedge.edge);
                 if edge.start.is_some() || edge.end.is_some() {
-                    return None;
+                    return Ok(None);
                 }
                 let Curve::Circle(c) = model.geom().curve(edge.curve) else {
-                    return None;
+                    return Ok(None);
                 };
                 let delta = c.center.minus(&s.apex);
-                if !delta.cross(&s.axis).is_zero() || !c.normal.cross(&s.axis).is_zero() {
-                    return None;
+                if face_sign(&delta.cross(&s.axis).norm_squared(), dec)? != Sign::Zero
+                    || face_sign(&c.normal.cross(&s.axis).norm_squared(), dec)? != Sign::Zero
+                {
+                    return Ok(None);
                 }
                 let h = delta.dot(&s.axis);
-                if h < catallax_numbers::Rational::zero() {
-                    return None;
+                if face_sign(&h, dec)? == Sign::Negative {
+                    return Ok(None);
                 }
-                if &c.radius_sq * &s.axis.norm_squared() != &(&s.slope * &s.slope) * &(&h * &h) {
-                    return None;
+                let radius = &c.radius_sq * &s.axis.norm_squared();
+                let expected = (&s.slope * &s.slope) * (&h * &h);
+                if face_sign(&(radius - expected), dec)? != Sign::Zero {
+                    return Ok(None);
                 }
                 let mut orientation = c.normal.dot(&s.axis);
                 for sense in [coedge.sense, edge.sense, f.sense] {
@@ -342,21 +362,26 @@ fn comparison_cone_band(model: &Model, face: FaceId, point: &RPoint3) -> Option<
                 }
                 bounds[index] = (h, Some(orientation));
             }
-            _ => return None,
+            _ => return Ok(None),
         }
     }
-    bounds.sort_by(|a, b| a.0.cmp(&b.0));
-    if bounds[0]
-        .1
-        .as_ref()
-        .is_some_and(|x| x <= &catallax_numbers::Rational::zero())
-        || bounds[1]
-            .1
-            .as_ref()
-            .is_none_or(|x| x >= &catallax_numbers::Rational::zero())
+    if face_sign(&(&bounds[0].0 - &bounds[1].0), dec)? == Sign::Positive {
+        bounds.swap(0, 1);
+    }
+    if let Some(lower) = &bounds[0].1
+        && face_sign(lower, dec)? != Sign::Positive
     {
-        return None;
+        return Ok(None);
+    }
+    let Some(upper) = &bounds[1].1 else {
+        return Ok(None);
+    };
+    if face_sign(upper, dec)? != Sign::Negative {
+        return Ok(None);
     }
     let h = point.minus(&s.apex).dot(&s.axis);
-    Some(bounds[0].0 <= h && h <= bounds[1].0)
+    Ok(Some(
+        face_sign(&(&h - &bounds[0].0), dec)? != Sign::Negative
+            && face_sign(&(&h - &bounds[1].0), dec)? != Sign::Positive,
+    ))
 }

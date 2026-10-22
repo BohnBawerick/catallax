@@ -1,9 +1,7 @@
-//! Analytic surfaces with exact rational parameters.
+//! Analytic surfaces retaining validated exact algebraic definitions.
 
-use catallax_numbers::{Ball, MPoly, Rational, Real, Refusal, Sign, StrictSign};
-
-use crate::math;
-use crate::{Point3, Pose, RPoint3, RVector3, Vector3};
+use crate::{Point3, Pose, RPoint3, Vector3, math};
+use catallax_numbers::{Ball, Decider, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
 
 /// The kind of a surface.
 #[non_exhaustive]
@@ -19,14 +17,16 @@ pub enum SurfaceKind {
     Sphere,
     /// Torus.
     Torus,
+    /// Elliptic cylinder.
+    EllipticCylinder,
 }
 
-/// What values a surface parameter takes.
+/// The domain of a surface parameter.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ParamKind {
     /// All reals.
     Line,
-    /// Period `2 pi`, seam at 0.
+    /// Period `2 pi`, seam at zero.
     Periodic,
     /// `[-pi/2, pi/2]`.
     Latitude,
@@ -34,76 +34,99 @@ pub enum ParamKind {
     Ray,
 }
 
-/// A plane. Normal is `normal`.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+/// A plane, oriented by its normal.
+#[derive(Clone, Debug)]
 pub struct Plane {
-    /// A point of the plane, the parameter origin.
-    pub origin: RPoint3,
-    /// Normal direction; non-zero.
-    pub normal: RVector3,
-    /// In-plane direction of the `u` parameter; perpendicular to `normal`.
-    pub ref_dir: RVector3,
+    /// Parameter origin.
+    pub origin: Point3,
+    /// Nonzero normal.
+    pub normal: Vector3,
+    /// Nonzero in-plane reference direction.
+    pub ref_dir: Vector3,
 }
 
-/// A circular cylinder. Normal points away from the axis.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+/// A circular cylinder, oriented away from its axis.
+#[derive(Clone, Debug)]
 pub struct Cylinder {
-    /// A point of the axis, where `v = 0`.
-    pub origin: RPoint3,
-    /// Axis direction; non-zero.
-    pub axis: RVector3,
-    /// Radius; positive.
-    pub radius: Rational,
-    /// Seam direction; perpendicular to `axis`.
-    pub ref_dir: RVector3,
+    /// Axis point where `v = 0`.
+    pub origin: Point3,
+    /// Nonzero axis direction.
+    pub axis: Vector3,
+    /// Positive radius.
+    pub radius: Real,
+    /// Nonzero perpendicular seam direction.
+    pub ref_dir: Vector3,
 }
 
-/// A circular cone, the nappe on the side `axis` points to. Normal points away from the axis.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+/// The nappe of a circular cone in its axis direction.
+#[derive(Clone, Debug)]
 pub struct Cone {
     /// Apex.
-    pub apex: RPoint3,
-    /// Axis direction from the apex into the nappe; non-zero.
-    pub axis: RVector3,
-    /// Radius gained per unit distance along the axis; positive.
-    pub slope: Rational,
-    /// Seam direction; perpendicular to `axis`.
-    pub ref_dir: RVector3,
+    pub apex: Point3,
+    /// Nonzero direction into the nappe.
+    pub axis: Vector3,
+    /// Positive radius gained per unit axial distance.
+    pub slope: Real,
+    /// Nonzero perpendicular seam direction.
+    pub ref_dir: Vector3,
 }
 
-/// A sphere. Normal points away from the centre.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+/// A sphere, oriented outwards.
+#[derive(Clone, Debug)]
 pub struct Sphere {
     /// Centre.
-    pub center: RPoint3,
-    /// Radius; positive.
-    pub radius: Rational,
-    /// Pole direction; non-zero.
-    pub axis: RVector3,
-    /// Seam direction; perpendicular to `axis`.
-    pub ref_dir: RVector3,
+    pub center: Point3,
+    /// Positive radius.
+    pub radius: Real,
+    /// Nonzero pole direction.
+    pub axis: Vector3,
+    /// Nonzero perpendicular seam direction.
+    pub ref_dir: Vector3,
 }
 
-/// A torus with `0 < minor < major`. Normal points away from the tube's core circle.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+/// A ring torus with `0 < minor < major`.
+#[derive(Clone, Debug)]
 pub struct Torus {
     /// Centre.
-    pub center: RPoint3,
-    /// Axis direction; non-zero.
-    pub axis: RVector3,
-    /// Radius of the core circle.
-    pub major: Rational,
-    /// Radius of the tube.
-    pub minor: Rational,
-    /// Seam direction; perpendicular to `axis`.
-    pub ref_dir: RVector3,
+    pub center: Point3,
+    /// Nonzero axis direction.
+    pub axis: Vector3,
+    /// Positive core-circle radius.
+    pub major: Real,
+    /// Positive tube radius, less than the major radius.
+    pub minor: Real,
+    /// Nonzero perpendicular seam direction.
+    pub ref_dir: Vector3,
+}
+
+/// An elliptic cylinder, oriented away from its axis.
+#[derive(Clone, Debug)]
+pub struct EllipticCylinder {
+    /// Axis point where `v = 0`.
+    pub origin: Point3,
+    /// Nonzero axis direction.
+    pub axis: Vector3,
+    /// Nonzero perpendicular major-axis and seam direction.
+    pub major_dir: Vector3,
+    /// Squared major semi-axis.
+    pub major_sq: Real,
+    /// Squared minor semi-axis, with `0 < minor_sq < major_sq`.
+    pub minor_sq: Real,
 }
 
 impl Plane {
-    /// A validated plane.
-    pub fn new(origin: RPoint3, normal: RVector3, ref_dir: RVector3) -> Result<Self, Refusal> {
-        math::directions(&normal, &ref_dir)?;
-        math::perpendicular(&normal, &ref_dir)?;
+    /// Validates field domains, direction lengths and perpendicularity, in order.
+    pub fn new(
+        origin: Point3,
+        normal: Vector3,
+        ref_dir: Vector3,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        math::validate_point(&origin, dec)?;
+        math::validate_vector(&normal, dec)?;
+        math::validate_vector(&ref_dir, dec)?;
+        math::directions(&normal, &ref_dir, dec)?;
+        math::perpendicular(&normal, &ref_dir, dec)?;
         Ok(Self {
             origin,
             normal,
@@ -111,18 +134,22 @@ impl Plane {
         })
     }
 }
-
 impl Cylinder {
-    /// A validated cylinder.
+    /// Validates field domains before proving the cylinder invariants.
     pub fn new(
-        origin: RPoint3,
-        axis: RVector3,
-        radius: Rational,
-        ref_dir: RVector3,
+        origin: Point3,
+        axis: Vector3,
+        radius: Real,
+        ref_dir: Vector3,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        math::directions(&axis, &ref_dir)?;
-        math::positive(&radius, "shapes.non-positive-radius")?;
-        math::perpendicular(&axis, &ref_dir)?;
+        math::validate_point(&origin, dec)?;
+        math::validate_vector(&axis, dec)?;
+        math::validate(&radius, dec)?;
+        math::validate_vector(&ref_dir, dec)?;
+        math::directions(&axis, &ref_dir, dec)?;
+        math::positive(&radius, "shapes.non-positive-radius", dec)?;
+        math::perpendicular(&axis, &ref_dir, dec)?;
         Ok(Self {
             origin,
             axis,
@@ -131,18 +158,22 @@ impl Cylinder {
         })
     }
 }
-
 impl Cone {
-    /// A validated cone.
+    /// Validates field domains before proving the cone invariants.
     pub fn new(
-        apex: RPoint3,
-        axis: RVector3,
-        slope: Rational,
-        ref_dir: RVector3,
+        apex: Point3,
+        axis: Vector3,
+        slope: Real,
+        ref_dir: Vector3,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        math::directions(&axis, &ref_dir)?;
-        math::positive(&slope, "shapes.non-positive-slope")?;
-        math::perpendicular(&axis, &ref_dir)?;
+        math::validate_point(&apex, dec)?;
+        math::validate_vector(&axis, dec)?;
+        math::validate(&slope, dec)?;
+        math::validate_vector(&ref_dir, dec)?;
+        math::directions(&axis, &ref_dir, dec)?;
+        math::positive(&slope, "shapes.non-positive-slope", dec)?;
+        math::perpendicular(&axis, &ref_dir, dec)?;
         Ok(Self {
             apex,
             axis,
@@ -151,18 +182,22 @@ impl Cone {
         })
     }
 }
-
 impl Sphere {
-    /// A validated sphere.
+    /// Validates field domains before proving the sphere invariants.
     pub fn new(
-        center: RPoint3,
-        radius: Rational,
-        axis: RVector3,
-        ref_dir: RVector3,
+        center: Point3,
+        radius: Real,
+        axis: Vector3,
+        ref_dir: Vector3,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        math::directions(&axis, &ref_dir)?;
-        math::positive(&radius, "shapes.non-positive-radius")?;
-        math::perpendicular(&axis, &ref_dir)?;
+        math::validate_point(&center, dec)?;
+        math::validate(&radius, dec)?;
+        math::validate_vector(&axis, dec)?;
+        math::validate_vector(&ref_dir, dec)?;
+        math::directions(&axis, &ref_dir, dec)?;
+        math::positive(&radius, "shapes.non-positive-radius", dec)?;
+        math::perpendicular(&axis, &ref_dir, dec)?;
         Ok(Self {
             center,
             radius,
@@ -171,26 +206,31 @@ impl Sphere {
         })
     }
 }
-
 impl Torus {
-    /// A validated torus.
+    /// Validates field domains before proving the ring-torus invariants.
     pub fn new(
-        center: RPoint3,
-        axis: RVector3,
-        major: Rational,
-        minor: Rational,
-        ref_dir: RVector3,
+        center: Point3,
+        axis: Vector3,
+        major: Real,
+        minor: Real,
+        ref_dir: Vector3,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        math::directions(&axis, &ref_dir)?;
-        math::positive(&major, "shapes.non-positive-radius")?;
-        math::positive(&minor, "shapes.non-positive-radius")?;
-        if minor >= major {
+        math::validate_point(&center, dec)?;
+        math::validate_vector(&axis, dec)?;
+        math::validate(&major, dec)?;
+        math::validate(&minor, dec)?;
+        math::validate_vector(&ref_dir, dec)?;
+        math::directions(&axis, &ref_dir, dec)?;
+        math::positive(&major, "shapes.non-positive-radius", dec)?;
+        math::positive(&minor, "shapes.non-positive-radius", dec)?;
+        if math::sign(&(&major - &minor), dec)? != Sign::Positive {
             return Err(Refusal::new(
                 "shapes.torus-self-intersecting",
                 "minor radius must be less than major radius",
             ));
         }
-        math::perpendicular(&axis, &ref_dir)?;
+        math::perpendicular(&axis, &ref_dir, dec)?;
         Ok(Self {
             center,
             axis,
@@ -200,25 +240,62 @@ impl Torus {
         })
     }
 }
+impl EllipticCylinder {
+    /// Validates the strict ellipse axes. Equal axes must be reduced to a
+    /// circular cylinder by the defining operation before calling this constructor.
+    pub fn new(
+        origin: Point3,
+        axis: Vector3,
+        major_dir: Vector3,
+        major_sq: Real,
+        minor_sq: Real,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        math::validate_point(&origin, dec)?;
+        math::validate_vector(&axis, dec)?;
+        math::validate_vector(&major_dir, dec)?;
+        math::validate(&major_sq, dec)?;
+        math::validate(&minor_sq, dec)?;
+        math::directions(&axis, &major_dir, dec)?;
+        if math::sign(&minor_sq, dec)? != Sign::Positive
+            || math::sign(&(&major_sq - &minor_sq), dec)? != Sign::Positive
+        {
+            return Err(Refusal::new(
+                "shapes.ellipse-axes",
+                "elliptic cylinder requires 0 < minor_sq < major_sq",
+            ));
+        }
+        math::perpendicular(&axis, &major_dir, dec)?;
+        Ok(Self {
+            origin,
+            axis,
+            major_dir,
+            major_sq,
+            minor_sq,
+        })
+    }
+}
 
-/// An analytic surface.
+/// An analytic support surface. Finite trims belong to topology.
 #[non_exhaustive]
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Debug)]
 pub enum Surface {
     /// Plane.
     Plane(Plane),
-    /// Cylinder.
+    /// Circular cylinder.
     Cylinder(Cylinder),
-    /// Cone.
+    /// Circular cone.
     Cone(Cone),
     /// Sphere.
     Sphere(Sphere),
-    /// Torus.
+    /// Ring torus.
     Torus(Torus),
+    /// Elliptic cylinder.
+    EllipticCylinder(EllipticCylinder),
 }
 
 impl Surface {
-    /// The kind.
+    /// Surface kind.
     pub fn kind(&self) -> SurfaceKind {
         match self {
             Self::Plane(_) => SurfaceKind::Plane,
@@ -226,63 +303,144 @@ impl Surface {
             Self::Cone(_) => SurfaceKind::Cone,
             Self::Sphere(_) => SurfaceKind::Sphere,
             Self::Torus(_) => SurfaceKind::Torus,
+            Self::EllipticCylinder(_) => SurfaceKind::EllipticCylinder,
         }
     }
 
-    /// Implicit polynomial in `x, y, z`, positive on the normal side, exactly
-    /// as the piece description's table gives it, with no scaling.
-    pub fn implicit(&self) -> MPoly {
+    fn definition_fields(&self) -> [Option<&Real>; 11] {
+        let (origin, axis, reference) = self.definition_frame();
+        let dimensions = match self {
+            Self::Plane(_) => [None, None],
+            Self::Cylinder(s) => [Some(&s.radius), None],
+            Self::Cone(s) => [Some(&s.slope), None],
+            Self::Sphere(s) => [Some(&s.radius), None],
+            Self::Torus(s) => [Some(&s.major), Some(&s.minor)],
+            Self::EllipticCylinder(s) => [Some(&s.major_sq), Some(&s.minor_sq)],
+        };
+        [
+            Some(&origin.x),
+            Some(&origin.y),
+            Some(&origin.z),
+            Some(&axis.x),
+            Some(&axis.y),
+            Some(&axis.z),
+            Some(&reference.x),
+            Some(&reference.y),
+            Some(&reference.z),
+            dimensions[0],
+            dimensions[1],
+        ]
+    }
+
+    /// Whether every defining scalar has a cheap exact rational value.
+    pub fn has_rational_definition(&self) -> bool {
+        self.definition_fields()
+            .into_iter()
+            .flatten()
+            .all(|value| value.rational_ref().is_some())
+    }
+
+    /// Safe construction-key agreement, not a geometry-equality predicate.
+    /// Different definitions may still describe the same point set.
+    pub fn same_definition(&self, other: &Self) -> bool {
+        self.kind() == other.kind()
+            && self
+                .definition_fields()
+                .into_iter()
+                .zip(other.definition_fields())
+                .all(|(a, b)| match (a, b) {
+                    (Some(a), Some(b)) => a.same_definition(b),
+                    (None, None) => true,
+                    _ => false,
+                })
+    }
+
+    /// Whether a cached result retains the same input expression-DAG nodes.
+    /// Value-equal but separately constructed inputs must not acquire aliases
+    /// through a cache: those aliases can change deterministic proof work.
+    pub fn shares_definition_nodes(&self, other: &Self) -> bool {
+        self.kind() == other.kind()
+            && self
+                .definition_fields()
+                .into_iter()
+                .zip(other.definition_fields())
+                .all(|(a, b)| match (a, b) {
+                    (Some(a), Some(b)) => a.same_node(b),
+                    (None, None) => true,
+                    _ => false,
+                })
+    }
+
+    /// Defining implicit polynomial, at the specified exact scaling.
+    pub fn implicit(&self) -> RealPoly {
         let (origin, axis, _) = self.definition_frame();
         let d = math::displacement(origin);
-        let constant = |r| MPoly::constant(3, r);
+        let constant = |r| RealPoly::constant(3, r);
         match self {
             Self::Plane(_) => math::dot(&d, axis),
             Self::Cylinder(s) => {
                 math::norm(&math::cross(&d, axis))
-                    - constant(&s.radius * &s.radius * axis.norm_squared())
+                    - constant(&s.radius.square() * &axis.norm_squared())
             }
             Self::Cone(s) => {
                 let h = math::dot(&d, axis);
-                math::norm(&math::cross(&d, axis)) - (&h * &h).scale(&(&s.slope * &s.slope))
+                math::norm(&math::cross(&d, axis)) - (&h * &h).scale(&s.slope.square())
             }
-            Self::Sphere(s) => math::norm(&d) - constant(&s.radius * &s.radius),
+            Self::Sphere(s) => math::norm(&d) - constant(s.radius.square()),
             Self::Torus(s) => {
                 let q = math::norm(&d);
                 let h = math::dot(&d, axis);
-                let radial = &q - &(&h * &h).scale(&axis.norm_squared().recip().unwrap());
-                let a = q + constant(&s.major * &s.major - &s.minor * &s.minor);
-                &a * &a - radial.scale(&(Rational::from_i64(4) * (&s.major * &s.major)))
+                let radial = &q - &(&h * &h).scale(&(&Real::one() / &axis.norm_squared()));
+                let a = q + constant(&s.major.square() - &s.minor.square());
+                &a * &a - radial.scale(&(&Real::from_i64(4) * &s.major.square()))
+            }
+            Self::EllipticCylinder(s) => {
+                let second = s.axis.cross(&s.major_dir);
+                let a = math::dot(&d, &s.major_dir);
+                let b = math::dot(&d, &second);
+                (&a * &a).scale(&(&Real::one() / &(&s.major_sq * &s.major_dir.norm_squared())))
+                    + (&b * &b).scale(&(&Real::one() / &(&s.minor_sq * &second.norm_squared())))
+                    - constant(Real::one())
             }
         }
     }
 
-    /// Gradient of the implicit polynomial at `p`.
+    /// Outward gradient of the implicit polynomial at an exact point.
     pub fn gradient(&self, p: &Point3) -> Vector3 {
         let (origin, axis, _) = self.definition_frame();
-        let d = p.minus(&origin.to_real());
-        let a = axis.to_real();
-        let n = Real::from(axis.norm_squared());
-        let h = d.dot(&a);
+        let d = p.minus(origin);
+        let n = axis.norm_squared();
+        let h = d.dot(axis);
         let two = Real::from_i64(2);
         match self {
-            Self::Plane(_) => a,
-            Self::Cylinder(_) => d.scaled(&n).minus(&a.scaled(&h)).scaled(&two),
-            Self::Cone(s) => {
-                let k = Real::from(Rational::one() + &s.slope * &s.slope);
-                d.scaled(&n).minus(&a.scaled(&(h * k))).scaled(&two)
-            }
+            Self::Plane(_) => axis.clone(),
+            Self::Cylinder(_) => d.scaled(&n).minus(&axis.scaled(&h)).scaled(&two),
+            Self::Cone(s) => d
+                .scaled(&n)
+                .minus(&axis.scaled(&(&h * &(&Real::one() + &s.slope.square()))))
+                .scaled(&two),
             Self::Sphere(_) => d.scaled(&two),
             Self::Torus(s) => {
-                let major_sq = Real::from(&s.major * &s.major);
-                let q = &d.norm_squared() + &major_sq - Real::from(&s.minor * &s.minor);
-                let radial = d.minus(&a.scaled(&(h / n)));
-                d.scaled(&(Real::from_i64(4) * q))
-                    .minus(&radial.scaled(&(Real::from_i64(8) * major_sq)))
+                let major_sq = s.major.square();
+                let q = &d.norm_squared() + &major_sq - s.minor.square();
+                let radial = d.minus(&axis.scaled(&(&h / &n)));
+                d.scaled(&(&Real::from_i64(4) * &q))
+                    .minus(&radial.scaled(&(&Real::from_i64(8) * &major_sq)))
+            }
+            Self::EllipticCylinder(s) => {
+                let second = s.axis.cross(&s.major_dir);
+                s.major_dir
+                    .scaled(&(&d.dot(&s.major_dir) / &(&s.major_sq * &s.major_dir.norm_squared())))
+                    .plus(
+                        &second
+                            .scaled(&(&d.dot(&second) / &(&s.minor_sq * &second.norm_squared()))),
+                    )
+                    .scaled(&two)
             }
         }
     }
 
-    /// The same surface moved by `pose`.
+    /// Applies a validated rigid pose, retaining dimensions exactly.
     pub fn transformed(&self, pose: &Pose) -> Surface {
         match self {
             Self::Plane(s) => Self::Plane(Plane {
@@ -315,47 +473,59 @@ impl Surface {
                 minor: s.minor.clone(),
                 ref_dir: pose.apply_vector(&s.ref_dir),
             }),
+            Self::EllipticCylinder(s) => Self::EllipticCylinder(EllipticCylinder {
+                origin: pose.apply_point(&s.origin),
+                axis: pose.apply_vector(&s.axis),
+                major_dir: pose.apply_vector(&s.major_dir),
+                major_sq: s.major_sq.clone(),
+                minor_sq: s.minor_sq.clone(),
+            }),
         }
     }
 
-    /// Kinds of the `u` and `v` parameters.
+    /// Parameter domains.
     pub fn domain(&self) -> [ParamKind; 2] {
         match self {
             Self::Plane(_) => [ParamKind::Line, ParamKind::Line],
-            Self::Cylinder(_) => [ParamKind::Periodic, ParamKind::Line],
+            Self::Cylinder(_) | Self::EllipticCylinder(_) => [ParamKind::Periodic, ParamKind::Line],
             Self::Cone(_) => [ParamKind::Periodic, ParamKind::Ray],
             Self::Sphere(_) => [ParamKind::Periodic, ParamKind::Latitude],
             Self::Torus(_) => [ParamKind::Periodic, ParamKind::Periodic],
         }
     }
 
-    /// Enclosure of the point at parameters `(u, v)`.
-    pub fn evaluate(&self, u: &Ball, v: &Ball) -> [Ball; 3] {
+    /// Certified chart enclosure at the input precision.
+    pub fn evaluate(&self, u: &Ball, v: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
         let precision = u.precision().max(v.precision());
         let (origin, axis, reference) = self.definition_frame();
-        let frame = math::frame(axis, reference, precision);
-        let r = |x: &Rational| math::ball(x, precision);
-        let zero = || r(&Rational::zero());
+        let frame = math::frame(axis, reference, precision, dec)?;
+        let r = |x: &Real| dec.enclose_at(x, precision);
+        let zero = || math::ball(&Rational::zero(), precision);
         let coefficients = match self {
             Self::Plane(_) => [u.clone(), v.clone(), zero()],
-            Self::Cylinder(s) => [r(&s.radius) * u.cos(), r(&s.radius) * u.sin(), v.clone()],
+            Self::Cylinder(s) => [r(&s.radius)? * u.cos(), r(&s.radius)? * u.sin(), v.clone()],
             Self::Cone(s) => {
-                let radial = v * &r(&s.slope);
+                let radial = v * &r(&s.slope)?;
                 [&radial * &u.cos(), &radial * &u.sin(), v.clone()]
             }
             Self::Sphere(s) => {
-                let radius = r(&s.radius);
+                let radius = r(&s.radius)?;
                 let radial = &radius * &v.cos();
                 [&radial * &u.cos(), &radial * &u.sin(), radius * v.sin()]
             }
             Self::Torus(s) => {
-                let radial = r(&s.major) + r(&s.minor) * v.cos();
+                let radial = r(&s.major)? + r(&s.minor)? * v.cos();
                 [
                     &radial * &u.cos(),
                     &radial * &u.sin(),
-                    r(&s.minor) * v.sin(),
+                    r(&s.minor)? * v.sin(),
                 ]
             }
+            Self::EllipticCylinder(s) => [
+                r(&s.major_sq.sqrt())? * u.cos(),
+                r(&s.minor_sq.sqrt())? * u.sin(),
+                v.clone(),
+            ],
         };
         let offset = math::add(
             &math::add(
@@ -364,36 +534,49 @@ impl Surface {
             ),
             &math::scale(&frame[2], &coefficients[2]),
         );
-        math::add(&math::point(origin, precision), &offset)
+        Ok(math::add(&math::point(origin, precision, dec)?, &offset))
     }
 
-    /// Enclosures of the derivatives `[dS/du, dS/dv]` of the parametrisation
-    /// at `(u, v)`.
-    pub fn derivatives(&self, u: &Ball, v: &Ball) -> [[Ball; 3]; 2] {
+    /// Certified chart derivatives `[dS/du, dS/dv]`.
+    pub fn derivatives(
+        &self,
+        u: &Ball,
+        v: &Ball,
+        dec: &Decider,
+    ) -> Result<[[Ball; 3]; 2], Refusal> {
         let precision = u.precision().max(v.precision());
         let (_, axis, reference) = self.definition_frame();
-        let [e1, e2, e3] = math::frame(axis, reference, precision);
+        let [e1, e2, e3] = math::frame(axis, reference, precision, dec)?;
         if matches!(self, Self::Plane(_)) {
-            return [e1, e2];
+            return Ok([e1, e2]);
         }
         let (sin_u, cos_u) = (u.sin(), u.cos());
         let tangent = math::add(&math::scale(&e1, &(-&sin_u)), &math::scale(&e2, &cos_u));
-        let r = |x: &Rational| math::ball(x, precision);
+        let r = |x: &Real| dec.enclose_at(x, precision);
         if let Self::Cylinder(s) = self {
-            return [math::scale(&tangent, &r(&s.radius)), e3];
+            return Ok([math::scale(&tangent, &r(&s.radius)?), e3]);
+        }
+        if let Self::EllipticCylinder(s) = self {
+            return Ok([
+                math::add(
+                    &math::scale(&e1, &(-r(&s.major_sq.sqrt())? * sin_u)),
+                    &math::scale(&e2, &(r(&s.minor_sq.sqrt())? * cos_u)),
+                ),
+                e3,
+            ]);
         }
         let radial = math::add(&math::scale(&e1, &cos_u), &math::scale(&e2, &sin_u));
-        match self {
-            Self::Plane(_) | Self::Cylinder(_) => unreachable!(),
+        Ok(match self {
+            Self::Plane(_) | Self::Cylinder(_) | Self::EllipticCylinder(_) => unreachable!(),
             Self::Cone(s) => {
-                let slope = r(&s.slope);
+                let slope = r(&s.slope)?;
                 [
                     math::scale(&tangent, &(v * &slope)),
                     math::add(&e3, &math::scale(&radial, &slope)),
                 ]
             }
             Self::Sphere(s) => {
-                let radius = r(&s.radius);
+                let radius = r(&s.radius)?;
                 let cos_v = v.cos();
                 [
                     math::scale(&tangent, &(&radius * &cos_v)),
@@ -407,10 +590,10 @@ impl Surface {
                 ]
             }
             Self::Torus(s) => {
-                let minor = r(&s.minor);
+                let minor = r(&s.minor)?;
                 let cos_v = v.cos();
                 [
-                    math::scale(&tangent, &(r(&s.major) + &minor * &cos_v)),
+                    math::scale(&tangent, &(r(&s.major)? + &minor * &cos_v)),
                     math::scale(
                         &math::add(
                             &math::scale(&radial, &(-v.sin())),
@@ -420,101 +603,185 @@ impl Surface {
                     ),
                 ]
             }
-        }
+        })
     }
 
-    /// Enclosure of the parameters of a point enclosed by `p`, by the formulas
-    /// of the piece description; `None` when the box meets a seam, the axis,
-    /// a pole or another place where those formulas jump or are undefined.
-    pub fn parameters_of(&self, p: &[Ball; 3]) -> Option<[Ball; 2]> {
+    /// Chart inverse. Seam/domain ambiguity is distinct from an enclosure failure.
+    pub fn parameters_of(
+        &self,
+        p: &[Ball; 3],
+        dec: &Decider,
+    ) -> Result<Option<[Ball; 2]>, Refusal> {
         let precision = p.iter().map(Ball::precision).max().unwrap();
         let work = precision.max(64).saturating_add(32);
         let (origin, axis, reference) = self.definition_frame();
-        let x = math::project(p, origin, reference, work);
+        let mut x = math::project(p, origin, reference, work, dec)?;
         let second = axis.cross(reference);
-        let y = math::project(p, origin, &second, work);
+        let mut y = math::project(p, origin, &second, work, dec)?;
         if matches!(self, Self::Plane(_)) {
-            return Some([x.with_precision(precision), y.with_precision(precision)]);
+            return Ok(Some([
+                x.with_precision(precision),
+                y.with_precision(precision),
+            ]));
         }
-        let z = math::project(p, origin, axis, work);
-        // Refuse only when a known point of the box lies on the closed seam.
-        // Uncertain interval projections instead receive a full angle enclosure.
-        let mid = RPoint3::new(p[0].mid(), p[1].mid(), p[2].mid()).minus(origin);
-        if mid.dot(&second).is_zero() && mid.dot(reference).sign() != Sign::Negative {
-            return None;
-        }
-        if let Self::Torus(s) = self
-            && mid.dot(axis).is_zero()
-            && mid.norm_squared() >= &s.major * &s.major
+        let z = math::project(p, origin, axis, work, dec)?;
+        if let (Some(origin), Some(reference), Some(axis), Some(second)) = (
+            origin.as_rational(),
+            reference.as_rational(),
+            axis.as_rational(),
+            second.as_rational(),
+        ) {
+            let mid = RPoint3::new(p[0].mid(), p[1].mid(), p[2].mid()).minus(&origin);
+            if mid.dot(&second).is_zero() && mid.dot(&reference).sign() != Sign::Negative {
+                return Ok(None);
+            }
+            if let Self::Torus(s) = self
+                && let Some(major) = s.major.rational_ref()
+                && mid.dot(&axis).is_zero()
+                && mid.norm_squared() >= major * major
+            {
+                return Ok(None);
+            }
+        } else if y.lo() <= Rational::zero()
+            && y.hi() >= Rational::zero()
+            && x.hi() >= Rational::zero()
         {
-            return None;
+            return Ok(None);
+        }
+        if let Self::EllipticCylinder(s) = self {
+            x = x
+                .checked_div(&dec.enclose_at(&s.major_sq.sqrt(), work)?)
+                .ok_or_else(|| {
+                    Refusal::new(
+                        "numbers.divisor-not-separated",
+                        "major semi-axis enclosure contains zero",
+                    )
+                })?;
+            y = y
+                .checked_div(&dec.enclose_at(&s.minor_sq.sqrt(), work)?)
+                .ok_or_else(|| {
+                    Refusal::new(
+                        "numbers.divisor-not-separated",
+                        "minor semi-axis enclosure contains zero",
+                    )
+                })?;
         }
         let u = angle(&x, &y);
-        if matches!(self, Self::Cylinder(_) | Self::Cone(_)) {
-            return Some([u.with_precision(precision), z.with_precision(precision)]);
+        if matches!(
+            self,
+            Self::Cylinder(_) | Self::Cone(_) | Self::EllipticCylinder(_)
+        ) {
+            return Ok(Some([
+                u.with_precision(precision),
+                z.with_precision(precision),
+            ]));
         }
         let rho = (x.square() + y.square()).sqrt().expect("sum of squares");
         let v = match self {
-            Self::Plane(_) | Self::Cylinder(_) | Self::Cone(_) => unreachable!(),
             Self::Sphere(_) => Ball::atan2(&z, &rho).unwrap_or_else(|| {
                 let half = Ball::pi(work) * math::ball(&Rational::from_ratio(1, 2).unwrap(), work);
                 half.hull(&(-&half))
             }),
-            Self::Torus(s) => angle(&(rho - math::ball(&s.major, work)), &z),
+            Self::Torus(s) => angle(&(rho - dec.enclose_at(&s.major, work)?), &z),
+            _ => unreachable!(),
         };
-        Some([u.with_precision(precision), v.with_precision(precision)])
+        Ok(Some([
+            u.with_precision(precision),
+            v.with_precision(precision),
+        ]))
     }
 
-    pub(crate) fn definition_frame(&self) -> (&RPoint3, &RVector3, &RVector3) {
+    pub(crate) fn definition_frame(&self) -> (&Point3, &Vector3, &Vector3) {
         match self {
             Self::Plane(s) => (&s.origin, &s.normal, &s.ref_dir),
             Self::Cylinder(s) => (&s.origin, &s.axis, &s.ref_dir),
             Self::Cone(s) => (&s.apex, &s.axis, &s.ref_dir),
             Self::Sphere(s) => (&s.center, &s.axis, &s.ref_dir),
             Self::Torus(s) => (&s.center, &s.axis, &s.ref_dir),
+            Self::EllipticCylinder(s) => (&s.origin, &s.axis, &s.major_dir),
         }
     }
 
     pub(crate) fn value(&self, p: &Point3) -> Real {
         let (origin, axis, _) = self.definition_frame();
-        let d = p.minus(&origin.to_real());
-        let a = axis.to_real();
+        let d = p.minus(origin);
         match self {
-            Self::Plane(_) => d.dot(&a),
+            Self::Plane(_) => d.dot(axis),
             Self::Cylinder(s) => {
-                d.cross(&a).norm_squared() - Real::from(&s.radius * &s.radius * axis.norm_squared())
+                d.cross(axis).norm_squared() - &s.radius.square() * &axis.norm_squared()
             }
-            Self::Cone(s) => {
-                d.cross(&a).norm_squared() - Real::from(&s.slope * &s.slope) * d.dot(&a).square()
-            }
-            Self::Sphere(s) => d.norm_squared() - Real::from(&s.radius * &s.radius),
+            Self::Cone(s) => d.cross(axis).norm_squared() - s.slope.square() * d.dot(axis).square(),
+            Self::Sphere(s) => d.norm_squared() - s.radius.square(),
             Self::Torus(s) => {
                 let q = d.norm_squared();
-                let major_sq = Real::from(&s.major * &s.major);
-                let shifted = &q + &major_sq - Real::from(&s.minor * &s.minor);
+                let major_sq = s.major.square();
+                let shifted = &q + &major_sq - s.minor.square();
                 shifted.square()
                     - Real::from_i64(4)
                         * major_sq
-                        * (q - d.dot(&a).square() / Real::from(axis.norm_squared()))
+                        * (q - d.dot(axis).square() / axis.norm_squared())
+            }
+            Self::EllipticCylinder(s) => {
+                let second = s.axis.cross(&s.major_dir);
+                &(&d.dot(&s.major_dir).square() / &(&s.major_sq * &s.major_dir.norm_squared()))
+                    + &(&d.dot(&second).square() / &(&s.minor_sq * &second.norm_squared()))
+                    - Real::one()
             }
         }
     }
 
-    pub(crate) fn distance_bound(&self, b: &Rational) -> Rational {
+    pub(crate) fn distance_bound(&self, b: &Rational, dec: &Decider) -> Result<Rational, Refusal> {
         match self {
-            Self::Plane(s) => b * &math::inverse_length_upper(&s.normal),
-            Self::Cylinder(s) => b / &(&s.axis.norm_squared() * &s.radius),
-            Self::Cone(s) => math::sqrt_upper(&(b / &s.axis.norm_squared())),
-            Self::Sphere(s) => b / &s.radius,
-            Self::Torus(s) => b / &(&s.minor * &(&s.major * &s.major - &s.minor * &s.minor)),
+            Self::Plane(s) => {
+                if let Some(norm) = math::rational_norm_squared(&s.normal) {
+                    return Ok(b * &math::sqrt_upper(&norm.recip().expect("nonzero normal")));
+                }
+            }
+            Self::Cylinder(s) => {
+                if let (Some(norm), Some(radius)) = (
+                    math::rational_norm_squared(&s.axis),
+                    s.radius.rational_ref(),
+                ) {
+                    return Ok(b / &(&norm * radius));
+                }
+            }
+            Self::Cone(s) => {
+                if let Some(norm) = math::rational_norm_squared(&s.axis) {
+                    return Ok(math::sqrt_upper(&(b / &norm)));
+                }
+            }
+            Self::Sphere(s) => {
+                if let Some(radius) = s.radius.rational_ref() {
+                    return Ok(b / radius);
+                }
+            }
+            Self::Torus(s) => {
+                if let (Some(major), Some(minor)) = (s.major.rational_ref(), s.minor.rational_ref())
+                {
+                    return Ok(b / &(minor * &(major * major - minor * minor)));
+                }
+            }
+            Self::EllipticCylinder(_) => {}
         }
+        let bound = Real::from(b.clone());
+        let value = match self {
+            Self::Plane(s) => &bound / &s.normal.norm_squared().sqrt(),
+            Self::Cylinder(s) => &bound / &(&s.axis.norm_squared() * &s.radius),
+            Self::Cone(s) => (&bound / &s.axis.norm_squared()).sqrt(),
+            Self::Sphere(s) => &bound / &s.radius,
+            Self::Torus(s) => &bound / &(&s.minor * &(&s.major.square() - &s.minor.square())),
+            Self::EllipticCylinder(s) => &bound * &s.major_sq.sqrt(),
+        };
+        if let Some(value) = value.as_rational() {
+            return Ok(value);
+        }
+        Ok(dec.enclose_at(&value, 64)?.hi())
     }
 }
 
 fn angle(x: &Ball, y: &Ball) -> Ball {
     let precision = x.precision().max(y.precision());
     if x.sign() == Some(StrictSign::Negative) {
-        // This branch avoids atan2's negative-x jump before shifting to [0, 2pi).
         return Ball::pi(precision) - Ball::atan2(y, &(-x)).expect("positive x coordinate");
     }
     match y.sign() {

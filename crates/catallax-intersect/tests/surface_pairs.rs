@@ -4,11 +4,17 @@ use common::oracle::{Expected, Part, Shape};
 use common::*;
 use std::collections::BTreeSet;
 
+fn vector_eq(a: &Vector3, b: &Vector3) {
+    for (a, b) in [&a.x, &a.y, &a.z].into_iter().zip([&b.x, &b.y, &b.z]) {
+        real_eq(a, b);
+    }
+}
+
 fn compare_form(a: CurveForm, b: &CurveForm) {
     match (a, b) {
         (CurveForm::Line { origin, dir }, CurveForm::Line { origin: o, dir: d }) => {
             point_eq(&origin, o);
-            assert_eq!(&dir, d);
+            vector_eq(&dir, d);
         }
         (
             CurveForm::Circle {
@@ -25,7 +31,8 @@ fn compare_form(a: CurveForm, b: &CurveForm) {
             },
         ) => {
             point_eq(&center, c);
-            assert_eq!((&normal, &ref_dir), (n, d));
+            vector_eq(&normal, n);
+            vector_eq(&ref_dir, d);
             real_eq(&radius_sq, r);
         }
         (
@@ -45,7 +52,8 @@ fn compare_form(a: CurveForm, b: &CurveForm) {
             },
         ) => {
             point_eq(&center, c);
-            assert_eq!((&normal, &major_dir), (n, d));
+            vector_eq(&normal, n);
+            vector_eq(&major_dir, d);
             real_eq(&major_sq, a);
             real_eq(&minor_sq, b);
         }
@@ -56,21 +64,21 @@ fn compare_form(a: CurveForm, b: &CurveForm) {
 fn expected_form(c: &Curve) -> CurveForm {
     match c {
         Curve::Line(c) => CurveForm::Line {
-            origin: c.origin.to_real(),
+            origin: c.origin.clone(),
             dir: c.dir.clone(),
         },
         Curve::Circle(c) => CurveForm::Circle {
-            center: c.center.to_real(),
+            center: c.center.clone(),
             normal: c.normal.clone(),
-            radius_sq: Real::from(c.radius_sq.clone()),
+            radius_sq: c.radius_sq.clone(),
             ref_dir: c.ref_dir.clone(),
         },
         Curve::Ellipse(c) => CurveForm::Ellipse {
-            center: c.center.to_real(),
+            center: c.center.clone(),
             normal: c.normal.clone(),
             major_dir: c.major_dir.clone(),
-            major_sq: Real::from(c.major_sq.clone()),
-            minor_sq: Real::from(c.minor_sq.clone()),
+            major_sq: c.major_sq.clone(),
+            minor_sq: c.minor_sq.clone(),
         },
         _ => unreachable!(),
     }
@@ -178,7 +186,7 @@ fn check(a: &Surface, b: &Surface, d: &mut Decider, deep: bool) -> (GeomStore, S
                         assert_eq!(singular.len(), sp.len());
                         match shape {
                             Shape::Analytic(expected) => {
-                                assert_eq!(g.curve(*curve), expected.as_ref());
+                                assert!(g.curve(*curve).same_definition(expected.as_ref()));
                                 if deep {
                                     compare_form(
                                         curve_form(&g, *curve, &mut Decider::default()).unwrap(),
@@ -370,7 +378,7 @@ blind_test!(same_handle_and_repeated_calls, {
                                 assert_ne!(x.witness, y.witness);
                                 point_eq(&g.position(x.witness), &g.position(y.witness));
                             }
-                            (x, y) => assert_eq!(x, y),
+                            (x, y) => assert!(x.same_definition(y)),
                         }
                     }
                     other => panic!("repeat changed component kind: {other:?}"),

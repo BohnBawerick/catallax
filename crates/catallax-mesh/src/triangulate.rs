@@ -581,7 +581,13 @@ pub(crate) fn build(
         .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
     let mut boundaries = edges::sample(model, body, &charts, options, dec)?;
     for face in faces {
-        face_mesh(model, face, &charts[&face], &mut boundaries, options, dec)?;
+        if let Surface::Plane(plane) = &charts[&face].surface {
+            crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
+                |e| Refusal::new(e.code, format!("face {}: {}", face.index(), e.detail)),
+            )?;
+        } else {
+            face_mesh(model, face, &charts[&face], &mut boundaries, options, dec)?;
+        }
     }
     check_closed(&boundaries.mesh)?;
     compact(&mut boundaries.mesh);

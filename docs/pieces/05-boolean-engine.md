@@ -156,8 +156,10 @@ The order of lumps, shells and faces in the result is deterministic but not part
 `boolean(model, a, b, op, dec)` runs the five stages in order and returns `BooleanAnswer { body, marks, report }`, or `BooleanRefusal { stage, refusal }` naming the first stage that broke.
 
 - `marks` holds the marks of the five stages in order, then the marks of `a`, then those of `b`. The result body's `marks` field holds the same log.
-- `report.stages` holds one `StageRecord` per stage, in order, with the statistics of the decisions the stage made and the number of marks it added. Each counter of a record's `stats` other than `max_bits` is what the stage added to the `Decider`'s statistics: that counter of `dec.stats()` when the stage ended minus that counter when it began. A record's `max_bits` is `dec.stats().max_bits` when the stage ended. Piece 1 keeps only the running maximum, so this bounds the stage's own highest precision from above and equals it when no earlier decision went higher.
+- `report.stages` holds one `StageRecord` per executed stage, in order, with the statistics of the decisions the stage made and the number of marks it added. Each counter of a record's `stats` other than `max_bits` is what the stage added to the `Decider`'s statistics: that counter of `dec.stats()` when the stage ended minus that counter when it began. A record's `max_bits` is `dec.stats().max_bits` when the stage ended. Piece 1 keeps only the running maximum, so this bounds the stage's own highest precision from above and equals it when no earlier decision went higher.
 - With an `Empty` operand, `boolean` may skip the stages and follow the set rules: `A ∪ ∅ = A`, `∅ ∪ B = B`, `A ∩ ∅ = ∅ ∩ B = ∅`, `A − ∅ = A`, `∅ − B = ∅`. Its report then holds no stage records. A result equal to an operand may reuse that operand's lumps.
+
+When both operands are the same `BodyId`, `A − A` produces a new empty body without geometric decisions. `A ∪ A` and `A ∩ A` retain the material and run maximal normalisation, so a nonmaximal operand does not bypass the result invariant. Their reports contain only the executed sew stage. All three rules retain the solid-or-empty input check and the normal operand mark order. Recipe evaluation uses these engine rules; the legacy question exchange retains its existing repeated-operand mark and statistics contract.
 
 ## Points and bodies
 

@@ -180,8 +180,6 @@ fn interval_ball(x: Interval) -> Option<Ball> {
 fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
     recipe.steps.iter().filter_map(|step| {
         let reason=match &step.op {
-            Operation::Boolean {target,tool,..} if target==tool =>
-                "B-rep recipe evaluation asserts distinct bodies when both operands name the same step",
             Operation::Block{..}|Operation::Cylinder{..}|Operation::Sphere{..}|
             Operation::Cone{..}|Operation::Torus{..}|Operation::Boolean{..}|
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|

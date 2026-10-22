@@ -509,6 +509,29 @@ impl Leaf {
             _ => Ok(false),
         }
     }
+    /// Opposite coincident halfspace constraints exclude any common interior.
+    pub fn separated_by_plane(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
+        let (Self::Primitive(a), Self::Primitive(b)) = (self, other) else {
+            return Ok(false);
+        };
+        for a in &a.constraints {
+            let Surface::Plane(a) = &a.surface else {
+                continue;
+            };
+            for b in &b.constraints {
+                let Surface::Plane(b) = &b.surface else {
+                    continue;
+                };
+                if sign(&a.normal.cross(&b.normal).norm_squared(), dec)? == Sign::Zero
+                    && sign(&a.normal.dot(&b.normal), dec)? == Sign::Negative
+                    && sign(&a.origin.minus(&b.origin).dot(&a.normal), dec)? == Sign::Zero
+                {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
     pub fn transform(&mut self, pose: &Pose) {
         match self {
             Self::Primitive(a) => a.transform(pose),
@@ -541,6 +564,41 @@ impl Leaf {
             Self::Feature(a) => a.fast_distance(p),
         }
     }
+    /// Collects every zero constraint when local membership changes are planar.
+    /// Nonzero constraints keep their sign in a neighbourhood of the point.
+    pub fn planes_at(
+        &self,
+        p: &[Rational; 3],
+        planes: &mut Vec<Vector3>,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let constraints = match self {
+            Self::Primitive(a) => &a.constraints,
+            Self::Feature(a) => &a.constraints,
+        };
+        let mut found = false;
+        for constraint in constraints {
+            if crate::polynomial_sign(&constraint.polynomial, p, dec)? != Sign::Zero {
+                continue;
+            }
+            let Surface::Plane(plane) = &constraint.surface else {
+                return Ok(false);
+            };
+            let mut duplicate = false;
+            for n in planes.iter() {
+                if sign(&plane.normal.cross(n).norm_squared(), dec)? == Sign::Zero {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if !duplicate {
+                planes.push(plane.normal.clone());
+            }
+            found = true;
+        }
+        Ok(found)
+    }
+
     pub fn ray(
         &self,
         p: &[Rational; 3],

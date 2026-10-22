@@ -394,6 +394,31 @@ fn stage_reports_preserve_a_reused_deciders_counters() {
 }
 
 #[test]
+fn same_body_booleans_obey_the_set_rules_without_changing_the_operand() {
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let a = block(&mut model, [r(2), r(3), r(5)], &Pose::identity()).unwrap();
+    for op in [BoolOp::Unite, BoolOp::Subtract, BoolOp::Intersect] {
+        let expected = if op == BoolOp::Subtract {
+            (0, 0, 0, 0, 0, 0)
+        } else {
+            (1, 1, 6, 12, 0, 8)
+        };
+        let result = operation(&mut model, a, a, op, expected, &mut dec);
+        decide(
+            &mut model,
+            result,
+            &point(1, 1, 1),
+            op != BoolOp::Subtract,
+            &mut dec,
+        );
+        decide(&mut model, result, &point(3, 1, 1), false, &mut dec);
+        decide(&mut model, a, &point(1, 1, 1), true, &mut dec);
+        assert_eq!(counts(&model, a), (1, 1, 6, 12, 0, 8));
+    }
+}
+
+#[test]
 fn empty_operands_and_expired_deadlines_do_not_corrupt_bodies() {
     let mut model = Model::new();
     let mut dec = Decider::new(BudgetPolicy::default());

@@ -1,0 +1,23 @@
+[package]
+name = "catallax-features"
+description = "Exact sketch profiles and recipe-based B-rep features."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+catallax-numbers.workspace = true
+catallax-shapes.workspace = true
+catallax-topology.workspace = true
+catallax-boolean.workspace = true
+catallax-recipe.workspace = true
+
+[dev-dependencies]
+catallax-measure.workspace = true
+catallax-step.workspace = true
+serde_json = "1"
+
+[lints]
+workspace = true

@@ -9,6 +9,8 @@
 //! and polynomial forms on rationally framed line, circle and ellipse arcs use
 //! exact antiderivatives. Other arcs use piece 4's certified traces and degree-19
 //! Taylor quadrature with a degree-20 whole-panel remainder.
+//! Straight cone generators ending at the apex have identically zero boundary
+//! integrands; their exact zero avoids a removable radial-frame singularity.
 //!
 //! Every face uses the divergence fields `p / 3` for volume and
 //! `p_i^2 e_i / 2` for first moments, in one translated frame per body.

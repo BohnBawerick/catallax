@@ -362,6 +362,7 @@ fn pieces(
             cells.entry(signature).or_default().push(l);
         }
     }
+    let origins = model.face_origins(face).to_vec();
     let mut result = Vec::with_capacity(cells.len());
     for mut loops in cells.into_values() {
         if !vertex_loops.is_empty() {
@@ -381,11 +382,14 @@ fn pieces(
                 // A boundary hit is already represented by an incident edge.
             }
         }
-        result.push(model.add_face(Face {
-            surface: f.surface,
-            sense: f.sense,
-            loops,
-        }));
+        result.push(model.add_named_face(
+            Face {
+                surface: f.surface,
+                sense: f.sense,
+                loops,
+            },
+            origins.clone(),
+        ));
     }
     if result.is_empty() {
         return Err(refusal(

@@ -1,5 +1,5 @@
 {
-  "format": "catallax-recipe/2",
+  "format": "catallax-recipe/3",
   "name": "every-operation",
   "description": "Feature operations and their roles. Primitive operations are covered separately. The geometry is meant to read sensibly, but nothing here has been built.",
   "steps": [
@@ -55,6 +55,12 @@
       "op": "extrude",
       "profile": "outline",
       "distance": "10"
+    },
+    {
+      "id": "through",
+      "op": "extrude_through",
+      "target": "base",
+      "profile": "outline"
     },
     {
       "id": "boss-sketch",

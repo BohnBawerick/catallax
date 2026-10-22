@@ -9,7 +9,7 @@ use crate::operation::{Operation, ValueKind};
 use crate::text::Canonical;
 
 /// The format identifier every recipe carries.
-pub const FORMAT: &str = "catallax-recipe/2";
+pub const FORMAT: &str = "catallax-recipe/3";
 
 /// A part: ordered steps and the step whose body is the part.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]

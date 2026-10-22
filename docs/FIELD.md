@@ -1,6 +1,6 @@
 # Analytic field kernel
 
-`catallax-field` compiles `catallax-recipe/2` blocks, capped cylinders, spheres, capped cone frusta, ring tori and regularised union, subtraction and intersection. It calls no B-rep builder. Every parameter and rigid placement retains its exact rational definition from [RECIPE.md](RECIPE.md).
+`catallax-field` compiles `catallax-recipe/3` blocks, capped cylinders, spheres, capped cone frusta, ring tori and regularised union, subtraction and intersection. It calls no B-rep builder. Every parameter and rigid placement retains its exact rational definition from [RECIPE.md](RECIPE.md). The new through-all operation and the sketch-based features still report `field.unsupported-operation`; a schema version does not imply every evaluator implements every operation.
 
 This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Regional pruning, meshing, fillets, field-only features, FEA and application integration are not implemented.
 

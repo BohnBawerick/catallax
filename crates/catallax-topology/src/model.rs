@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use catallax_recipe::{EdgeName, Origin, VertexName};
 use catallax_shapes::{Arena, CurveKind, GeomStore, SurfaceKind};
 
 use crate::{
@@ -55,6 +56,7 @@ pub struct Model {
     bodies: Arena<Body>,
     edge_coedges: Vec<Vec<CoedgeId>>,
     coedge_owners: Vec<Option<(LoopId, FaceId)>>,
+    face_origins: BTreeMap<FaceId, Vec<Origin>>,
 }
 
 impl Model {
@@ -130,6 +132,58 @@ impl Model {
             }
         }
         id
+    }
+
+    /// Adds a face with its canonical, duplicate-free set of recipe origins.
+    /// Unnamed exchange geometry continues to use [`Model::add_face`].
+    pub fn add_named_face(&mut self, face: Face, mut origins: Vec<Origin>) -> FaceId {
+        origins.sort();
+        origins.dedup();
+        let id = self.add_face(face);
+        if !origins.is_empty() {
+            self.face_origins.insert(id, origins);
+        }
+        id
+    }
+
+    /// Origins of a face in compact canonical JSON order.
+    pub fn face_origins(&self, face: FaceId) -> &[Origin] {
+        self.face(face);
+        self.face_origins.get(&face).map_or(&[], Vec::as_slice)
+    }
+
+    /// Names an edge by the first origin of its two incident faces.
+    /// Returns `None` for unnamed geometry or a pair with equal first origins.
+    pub fn edge_name(&self, body: BodyId, edge: EdgeId) -> Option<EdgeName> {
+        let origins: Vec<_> = self.unique_faces(body).filter_map(|face| {
+            self.face(face).loops.iter().any(|lp| {
+                matches!(self.loop_(*lp), Loop::Coedges(cs) if cs.iter().any(|c| self.coedge(*c).edge == edge))
+            }).then(|| self.face_origins(face).first().cloned()).flatten()
+        }).collect();
+        let [a, b]: [Origin; 2] = origins.try_into().ok()?;
+        EdgeName::new(a, b).ok()
+    }
+
+    /// Names a vertex by the first origins of all incident faces.
+    pub fn vertex_name(&self, body: BodyId, vertex: VertexId) -> Option<VertexName> {
+        let origins = self
+            .unique_faces(body)
+            .filter_map(|face| {
+                self.face(face)
+                    .loops
+                    .iter()
+                    .any(|lp| match self.loop_(*lp) {
+                        Loop::Vertex(v) => *v == vertex,
+                        Loop::Coedges(cs) => cs.iter().any(|c| {
+                            let edge = self.edge(self.coedge(*c).edge);
+                            edge.start == Some(vertex) || edge.end == Some(vertex)
+                        }),
+                    })
+                    .then(|| self.face_origins(face).first().cloned())
+                    .flatten()
+            })
+            .collect();
+        VertexName::new(origins).ok()
     }
 
     /// Adds a shell.

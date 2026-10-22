@@ -12,6 +12,7 @@ catallax-numbers.workspace = true
 catallax-shapes.workspace = true
 catallax-topology.workspace = true
 catallax-intersect.workspace = true
+catallax-recipe.workspace = true
 
 [[bench]]
 name = "speed"

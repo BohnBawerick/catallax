@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 catallax-numbers.workspace = true
 catallax-shapes.workspace = true
+catallax-recipe.workspace = true
 
 [lints]
 workspace = true

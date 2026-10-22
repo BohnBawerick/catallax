@@ -38,7 +38,7 @@ mod tests;
 
 pub use stages::{
     Classification, FaceClass, Imprinted, IntersectionGraph, SectionEdge, Selection, classify,
-    imprint, intersect, keep, sew,
+    imprint, intersect, keep, make_maximal, sew,
 };
 
 use catallax_numbers::{Answered, Decider, DecisionStats, MarkLog, Outcome, Refusal};

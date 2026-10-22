@@ -167,7 +167,7 @@ fn edge_and_vertex_names_are_in_canonical_order() {
 
 /// A small valid recipe; tests break it one way at a time.
 const PLATE: &str = r#"{
-  "format": "catallax-recipe/2",
+  "format": "catallax-recipe/3",
   "name": "plate",
   "steps": [
     { "id": "outline", "op": "sketch",
@@ -232,9 +232,10 @@ fn the_reader_rejects_what_is_not_this_format() {
         (r#""id": "plate""#, r#""id": "Plate""#, "recipe.parse"),
         (r#""id": "top""#, r#""id": "top edge""#, "recipe.parse"),
         // Another format.
-        ("catallax-recipe/2", "catallax-recipe/3", "recipe.format"),
-        ("catallax-recipe/2", "catallax-recipe/1", "recipe.format"),
-        (r#""format": "catallax-recipe/2","#, "", "recipe.format"),
+        ("catallax-recipe/3", "catallax-recipe/4", "recipe.format"),
+        ("catallax-recipe/3", "catallax-recipe/2", "recipe.format"),
+        ("catallax-recipe/3", "catallax-recipe/1", "recipe.format"),
+        (r#""format": "catallax-recipe/3","#, "", "recipe.format"),
     ];
     for (from, to, want) in cases {
         assert_eq!(code(broken(from, to)), want, "{from} -> {to}");

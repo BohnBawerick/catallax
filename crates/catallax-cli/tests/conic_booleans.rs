@@ -1,7 +1,7 @@
 //! Complete conic boolean paths: closed shells, exact-reference properties,
 //! rational-pose covariance, analytic STEP and boolean volume conservation.
 use catallax_boolean::{BoolOp, boolean};
-use catallax_measure::{Accuracy, Enclosure, MassProperties, mass_properties};
+use catallax_measure::{Accuracy, Enclosure, VolumeAreaCentroid, volume_area_centroid};
 use catallax_numbers::{Ball, Decider, Rational};
 use catallax_shapes::{Pose, RPoint3, RVector3, Rotation, Surface};
 use catallax_step::{StepOptions, write_step};
@@ -139,10 +139,10 @@ fn check_shells(model: &Model, body: BodyId, expected: &[i64]) {
     euler.sort_unstable();
     assert_eq!(euler, expected);
 }
-fn measured(model: &Model, body: BodyId, chi: &[i64], dec: &mut Decider) -> MassProperties {
+fn measured(model: &Model, body: BodyId, chi: &[i64], dec: &mut Decider) -> VolumeAreaCentroid {
     check_shells(model, body, chi);
     let accuracy = Accuracy::default();
-    let properties = mass_properties(model, body, &accuracy, dec).unwrap();
+    let properties = volume_area_centroid(model, body, &accuracy, dec).unwrap();
     assert!(properties.marks.is_empty(), "{:?}", properties.marks);
     for enclosure in [&properties.value.volume, &properties.value.area]
         .into_iter()
@@ -165,7 +165,7 @@ struct Expected {
     centroid: [Ball; 3],
     chi: &'static [i64],
 }
-fn properties_match(actual: &MassProperties, expected: &Expected, pose: &Pose) {
+fn properties_match(actual: &VolumeAreaCentroid, expected: &Expected, pose: &Pose) {
     agrees(&actual.volume, &expected.volume);
     agrees(&actual.area, &expected.area);
     for (actual, expected) in actual

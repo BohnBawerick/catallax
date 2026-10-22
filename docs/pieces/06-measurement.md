@@ -33,20 +33,21 @@ For a body `b` and its material `M` (the closure of the open set its shells boun
 - **volume**: the volume of `M`;
 - **area**: the sum of the areas of the faces of `b`, each counted once, in `faces_of_body` order;
 - **centre of mass**: `(1 / volume) * integral of p over M`, the centroid of uniform density;
+- **inertia**: the unit-density tensor about the centroid `c`, with diagonal entry `integral ((p_j-c_j)^2 + (p_k-c_k)^2)` and off-diagonal entry `-integral (p_i-c_i)(p_j-c_j)`, expressed in model axes and length units to the fifth power;
 - **face area**: the area of one face, the part of its surface inside its loops.
 
 The body is measured as built. When the body carries marks (it was built through not-exact decisions), the enclosures are proven for that body, which may differ from the true answer within those marks (`JUDGE-INTERFACE.md`, ND10). This piece does not add the body's marks to its answer; they stay on the body, and the front end reports both.
 
-An `Empty` body has volume and area exactly 0 (`lo = hi = 0`) and centroid `None`.
-A `Solid` body whose faces lie on any of the five surface kinds and whose edges lie on lines, circles, ellipses or intersection curves that piece 4 can trace is measured. That covers every primitive (cones and tori included) and every result of piece 5.
+An `Empty` body has volume and area exactly 0 (`lo = hi = 0`), centroid `None` and inertia `None`.
+A `Solid` body whose faces lie on planes, circular or elliptic cylinders, cones, spheres or tori, and whose edges lie on curves that piece 4 can trace, is measured. That covers every supported primitive and boolean result; uncovered surfaces retain `measure.unsupported-surface`.
 
 ## Rules
 
 1. **Containment.** Every result encloses the true value: `lo <= value <= hi`. A true value outside its enclosure is a wrong proven answer (DESIGN.md, R2).
-2. **Accuracy.** `Accuracy { relative, absolute }` asks for a width `hi - lo` of at most `max(relative * m, absolute)`, where `m` is the smaller of `|lo|` and `|hi|` when `lo` and `hi` have the same sign, and 0 otherwise. The default is `relative = 10^-12`, `absolute = 10^-30`. For the centroid the rule applies to each coordinate.
-3. **When the budget does not allow it.** The answer is still a proven enclosure, only wider, and it carries one mark per property that missed its width: code `measure.accuracy-not-reached`, kind `BoundKind::Value`, bound the width reached. `mass_properties` adds at most three marks, in the order volume, area, centroid (one mark for the centroid if any coordinate missed, with the largest width as its bound).
+2. **Accuracy.** `Accuracy { relative, absolute }` asks for a width `hi - lo` of at most `max(relative * m, absolute)`, where `m` is the smaller of `|lo|` and `|hi|` when `lo` and `hi` have the same sign, and 0 otherwise. The default is `relative = 10^-12`, `absolute = 10^-30`. The rule applies to each centroid coordinate and each tensor entry.
+3. **When the budget does not allow it.** The answer is still a proven enclosure, only wider, and it carries one mark per property that missed its width: code `measure.accuracy-not-reached`, kind `BoundKind::Value`, bound the width reached. `mass_properties` adds at most four marks, in the order volume, area, centroid, inertia. Centroid and inertia each contribute one mark with the largest entry width if any entry missed its target.
 4. **Exact results.** The enclosure has `lo == hi` in exactly these cases, where the property is rational and the computation can be done in rationals:
-   - the volume and the centroid of a body whose faces are all planes and whose vertices are all `Explicit` rational points;
+   - the volume, centroid and inertia of a body whose faces are all planes and whose vertices are all `Explicit` rational points;
    - the area of such a body when every plane's `normal` has a rational length (true for every posed block, since rotations keep the unit normals unit).
    Every other enclosure, including those of piece 5's planar results whose vertices are meeting points, has `lo < hi` or, by chance, `lo == hi`; tests check containment, not `lo < hi`.
 5. **Centroid.** `None` exactly when the body is `Empty`. For a `Solid` body the volume enclosure must exclude zero before dividing; this piece refines it until it does, ignoring the `absolute` floor for that purpose. When the budget runs out first, the answer is refused with `measure.centroid-not-separated`.
@@ -57,6 +58,8 @@ A `Solid` body whose faces lie on any of the five surface kinds and whose edges 
 This piece's arithmetic is `Ball` arithmetic, which piece 1 does not count. It counts its own work the same way on every machine: one `Ball` operation at working precision `p` costs `ceil(p / 64)^2` units. It never uses more than `policy().max_precision_bits` bits or more than `policy().max_work` units on one property, where `policy()` is the `Decider`'s. Exact rational arithmetic is not counted. Whether the `Ball` operations inside piece 4's `TracePiece` methods count is the creator's choice; tests do not measure the count. When the next refinement would pass either limit, it stops and returns the enclosure reached with the mark of rule 3. When no enclosure was reached at all (for example under `max_work = 0` for a property that needs `Ball` operations), that property is refused with `measure.budget-exhausted`.
 
 The exact quantities it needs from other pieces (vertex positions through `GeomStore::enclose_point`, arcs through piece 4's `trace`) go through the `Decider`, which counts them and refuses them after the deadline. So after the deadline a measurement refuses with `numbers.deadline` at its first such call, and one that needs none (a block with `Explicit` vertices, a builder sphere, whose properties need only `Ball::pi`) may answer as usual (ARCHITECTURE.md, "The time budget").
+
+Inertia uses the radial divergence field `F = p p_i p_j / 5` for each raw second moment, since `div F = p_i p_j`. The six scalar refinements each receive one sixth of the tensor's Ball-work allowance. Exact planar moments use rational triangle integrals. Curved moments use the same analytic forms, whole-surface corrections and certified quadrature as volume and centroid. The centroid enclosure's midpoint supplies a translated integration frame; interval parallel-axis subtraction retains its uncertainty. A missed final tensor width produces the inertia accuracy mark, never an unproved point value.
 
 ## How the integrals may be computed
 
@@ -117,16 +120,22 @@ impl Enclosure {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Accuracy { pub relative: Rational, pub absolute: Rational }
 // Accuracy: Default (relative 10^-12, absolute 10^-30)
+pub type InertiaTensor = [[Enclosure; 3]; 3];
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct MassProperties { pub volume: Enclosure, pub area: Enclosure, pub centroid: Option<[Enclosure; 3]> }
+pub struct MassProperties { pub volume: Enclosure, pub area: Enclosure, pub centroid: Option<[Enclosure; 3]>, pub inertia: Option<InertiaTensor> }
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct VolumeAreaCentroid { pub volume: Enclosure, pub area: Enclosure, pub centroid: Option<[Enclosure; 3]> }
 
 pub fn mass_properties(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<MassProperties>;
+pub fn volume_area_centroid(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<VolumeAreaCentroid>;
+pub fn centroid(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Option<[Enclosure; 3]>>;
+pub fn inertia(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Option<InertiaTensor>>;
 pub fn volume(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
 pub fn area(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
 pub fn face_area(model: &Model, face: FaceId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
 ```
 
-`volume`, `area` and `mass_properties` give the same enclosures for the same body, accuracy and fresh `Decider`.
+`volume`, `area`, `volume_area_centroid` and `mass_properties` give the same volume and area enclosures for the same body, accuracy and fresh `Decider`. `volume_area_centroid` retains the original three-property computation without requesting inertia. `mass_properties` requests all four properties. Application builds do not measure automatically; `ApplicationBody::mass_properties` and `ApplicationBody::inertia` borrow an already built result.
 
 ## What defines correct behaviour
 

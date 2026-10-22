@@ -86,14 +86,19 @@ fn mean(a: u8, b: u8) -> Rational {
         (2, 0) | (0, 2) => (1, 2),
         (4, 0) | (0, 4) => (3, 8),
         (2, 2) => (1, 8),
+        (6, 0) | (0, 6) => (5, 16),
+        (4, 2) | (2, 4) => (1, 16),
         _ if a % 2 == 1 || b % 2 == 1 => (0, 1),
-        _ => unreachable!("torus flux polynomial degree exceeds four"),
+        _ => unreachable!("torus flux polynomial degree exceeds six"),
     };
     Rational::from_ratio(numerator, denominator).unwrap()
 }
 // Integral of cos(t)^a sin(t)^b, anchored at t=0. The first component
 // multiplies t; the remaining terms are a periodic polynomial in cos and sin.
 fn primitive(a: u8, b: u8) -> (Rational, Vec<(u8, u8, Rational)>) {
+    if a + b > 4 {
+        return higher_primitive(a, b);
+    }
     let r = |n, d| Rational::from_ratio(n, d).unwrap();
     let terms: Vec<(u8, u8, Rational)> = match (a, b) {
         (0, 0) => vec![],
@@ -123,6 +128,34 @@ fn primitive(a: u8, b: u8) -> (Rational, Vec<(u8, u8, Rational)>) {
         terms.push((0, 0, -at_zero));
     }
     (mean, terms)
+}
+
+fn higher_primitive(a: u8, b: u8) -> (Rational, Vec<(u8, u8, Rational)>) {
+    let r = |n| Rational::from_i64(n);
+    let (angle, mut terms) = if b >= 2 {
+        let (m1, t1) = primitive(a, b - 2);
+        let (m2, t2) = primitive(a + 2, b - 2);
+        let mut terms = t1;
+        terms.extend(t2.into_iter().map(|(c, s, k)| (c, s, -k)));
+        (m1 - m2, terms)
+    } else if b == 1 {
+        let coefficient = -Rational::one() / r(i64::from(a + 1));
+        (
+            Rational::zero(),
+            vec![(a + 1, 0, coefficient.clone()), (0, 0, -coefficient)],
+        )
+    } else {
+        let (angle, terms) = primitive(a - 2, 0);
+        let factor = r(i64::from(a - 1)) / r(i64::from(a));
+        let mut terms: Vec<_> = terms
+            .into_iter()
+            .map(|(c, s, k)| (c, s, &k * &factor))
+            .collect();
+        terms.push((a - 1, 1, Rational::one() / r(i64::from(a))));
+        (angle * factor, terms)
+    };
+    terms.retain(|(_, _, coefficient)| !coefficient.is_zero());
+    (angle, terms)
 }
 
 fn evaluate_primitive<'a>(
@@ -207,17 +240,25 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
             .times(&normal[i])
             .scaled(b.k(1) / b.k(2))
     });
-    let polynomials = [
+    let mut polynomials = [
         area,
         volume,
         moments[0].clone(),
         moments[1].clone(),
         moments[2].clone(),
     ];
+    if let Property::SecondMoment(i, j) = property {
+        polynomials[2] = polynomials[0]
+            .times(&flux)
+            .times(&position[i])
+            .times(&position[j])
+            .scaled(b.k(1) / b.k(5));
+    }
     let indices = match property {
         Property::Area => vec![0],
         Property::Volume => vec![0, 1],
         Property::Centroid => vec![0, 1, 2, 3, 4],
+        Property::SecondMoment(_, _) => vec![0, 2],
     };
     let mut forms = Vec::new();
     let mut corrections = Vec::new();
@@ -254,13 +295,20 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
     }
     let whole_area = b.k(4) * b.input(6).square() * major * minor;
     let whole_volume = b.k(2) * b.input(6).square() * major * minor.square();
-    let full = [
+    let mut full = [
         whole_area,
         whole_volume,
         whole_volume * origin[0],
         whole_volume * origin[1],
         whole_volume * origin[2],
     ];
+    if let Property::SecondMoment(i, j) = property {
+        let transverse = major.square() / b.k(2) + b.k(3) * minor.square() / b.k(8);
+        full[2] = whole_volume
+            * (origin[i] * origin[j]
+                + transverse * (b.k(if i == j { 1 } else { 0 }) - axis[i] * axis[j])
+                + minor.square() * axis[i] * axis[j] / b.k(4));
+    }
     Programs {
         boundary: b.finish(&forms),
         angular_derivative: b.finish(&[dv]),
@@ -278,9 +326,12 @@ mod tests {
 
     #[test]
     fn trigonometric_primitives_differentiate_to_every_flux_monomial() {
-        // Nine rational circle samples determine the degree-eight numerator
-        // after the stereographic substitution, including all four quadrants.
-        let samples = ["-3", "-2", "-1", "-1/2", "0", "1/2", "1", "2", "3"].map(|t| {
+        // Thirteen rational samples determine the degree-twelve numerator after
+        // stereographic substitution, including all four quadrants.
+        let samples = [
+            "-5", "-4", "-3", "-2", "-1", "-1/2", "0", "1/2", "1", "2", "3", "4", "5",
+        ]
+        .map(|t| {
             let t = Rational::parse(t).unwrap();
             let square = &t * &t;
             let denominator = &Rational::one() + &square;
@@ -289,8 +340,8 @@ mod tests {
                 &(&Rational::from_i64(2) * &t) / &denominator,
             ]
         });
-        for a in 0..=4u8 {
-            for b in 0..=4 - a {
+        for a in 0..=6u8 {
+            for b in 0..=6 - a {
                 let (mean, terms) = primitive(a, b);
                 for [cos, sin] in &samples {
                     let mut derivative = mean.clone();

@@ -71,6 +71,9 @@ pub struct Properties {
     /// Centre of mass, if requested: `Some(None)` for an empty body.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub centroid: Option<Option<[Bound; 3]>>,
+    /// Centroidal unit-density inertia, if requested; null for an empty body.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inertia: Option<Option<[[Bound; 3]; 3]>>,
 }
 
 /// What the STEP export wrote.

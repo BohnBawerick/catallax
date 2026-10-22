@@ -87,6 +87,7 @@ fn rational_blocks_and_empty_need_no_budget() {
     assert_eq!(result.value.volume, exact(r(0)));
     assert_eq!(result.value.area, exact(r(0)));
     assert_eq!(result.value.centroid, None);
+    assert_eq!(result.value.inertia, None);
 }
 
 #[test]
@@ -132,6 +133,36 @@ fn primitive_closed_forms() {
         contains(&result.value.volume, &volume);
         contains(&result.value.area, &area);
         let center = result.value.centroid.unwrap();
+        let pi_fraction = |n, d| &pi * &Ball::from_rational(&(r(n) / r(d)), 256);
+        let diagonal = match kind {
+            0 => [pi_fraction(185, 3), pi_fraction(185, 3), pi_fraction(40, 1)],
+            1 => std::array::from_fn(|_| pi_fraction(5000, 3)),
+            2 => [
+                pi_fraction(157, 35),
+                pi_fraction(157, 35),
+                pi_fraction(31, 5),
+            ],
+            3 => [
+                pi_fraction(117, 5),
+                pi_fraction(117, 5),
+                pi_fraction(162, 5),
+            ],
+            _ => [
+                pi.square() * Ball::from_rational(&(r(123) / r(4)), 256),
+                pi.square() * Ball::from_rational(&(r(123) / r(4)), 256),
+                pi.square() * Ball::from_rational(&(r(117) / r(2)), 256),
+            ],
+        };
+        let tensor = result.value.inertia.as_ref().unwrap();
+        for (i, row) in tensor.iter().enumerate() {
+            contains(&row[i], &diagonal[i]);
+            for (j, entry) in row.iter().enumerate() {
+                assert_eq!(entry, &tensor[j][i]);
+                if i != j {
+                    contains(entry, &ball(0));
+                }
+            }
+        }
         assert!(
             center[0].contains(&r(0)) && center[1].contains(&r(0)) && center[2].contains(&centroid)
         );
@@ -391,6 +422,14 @@ fn limited_precision_marks_property_widths_in_order() {
     if center.iter().any(|value| !meets_width(value, &accuracy)) {
         widths.push(center.iter().map(actual_width).max().unwrap());
     }
+    let tensor = result.value.inertia.as_ref().unwrap();
+    if tensor
+        .iter()
+        .flatten()
+        .any(|value| !meets_width(value, &accuracy))
+    {
+        widths.push(tensor.iter().flatten().map(actual_width).max().unwrap());
+    }
     let marks = result.marks.iter().collect::<Vec<_>>();
     assert_eq!(marks.len(), widths.len());
     for (mark, width) in marks.into_iter().zip(widths) {
@@ -576,4 +615,58 @@ fn integer_periodic_lifts_keep_the_whole_surface_in_the_enclosure() {
         assert_eq!(marks[0].code, "measure.accuracy-not-reached");
         assert_eq!(marks[0].bound, actual_width(&result.value));
     }
+}
+
+#[test]
+fn rotated_translated_block_inertia_has_signed_products_and_exact_covariance() {
+    let mut model = Model::new();
+    let pose = Pose::new(
+        Rotation::from_quaternion(r(1), r(0), r(0), r(2)).unwrap(),
+        vector(1_000_000_000, -2_000_000_000, 300).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let body = catallax_topology::block(&mut model, [r(2), r(3), r(5)], &pose).unwrap();
+    let tensor = inertia(&model, body, &Accuracy::default(), &mut Decider::default()).unwrap();
+    assert!(tensor.marks.is_empty());
+    // Rotation in XY has cos=-3/5 and sin=4/5.
+    let expected = [
+        [r(77), r(-6), r(0)],
+        [r(-6), r(161) / r(2), r(0)],
+        [r(0), r(0), r(65) / r(2)],
+    ];
+    assert_eq!(tensor.value.unwrap(), expected.map(|row| row.map(exact)));
+}
+
+#[test]
+fn boolean_union_inertia_equals_parts_with_parallel_axis_shift() {
+    let mut model = Model::new();
+    let a = catallax_topology::block(&mut model, [r(2), r(3), r(5)], &Pose::identity()).unwrap();
+    let pose = Pose::new(
+        Rotation::identity(),
+        vector(4, 6, 0).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let b = catallax_topology::block(&mut model, [r(2), r(3), r(5)], &pose).unwrap();
+    let union = catallax_boolean::boolean(
+        &mut model,
+        a,
+        b,
+        catallax_boolean::BoolOp::Unite,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    let measured =
+        mass_properties(&model, union, &Accuracy::default(), &mut Decider::default()).unwrap();
+    let tensor = measured.value.inertia.unwrap();
+    // Each part has mass 30 and centroid displacement (+/-2, +/-3, 0).
+    let expected = [
+        [r(710), r(-360), r(0)],
+        [r(-360), r(385), r(0)],
+        [r(0), r(0), r(845)],
+    ];
+    assert_eq!(tensor, expected.map(|row| row.map(exact)));
+    assert!(measured.marks.is_empty());
 }

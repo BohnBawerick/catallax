@@ -1,6 +1,6 @@
 [package]
 name = "catallax-measure"
-description = "Piece 6 of catallax: volume, area and centre of mass with proven bounds."
+description = "Piece 6 of catallax: volume, area, centroid and unit-density inertia with proven bounds."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

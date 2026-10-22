@@ -30,8 +30,8 @@ question inputs, or `catallax_features::evaluate(&recipe, &mut decider)` for
 application recipes. Both return the body and its owning model without computing
 proven volume, area or centroid. Neither writes output files.
 
-Request properties later through `catallax_measure::volume`, `area` or
-`mass_properties`, passing that model and body with the requested `Accuracy`.
+Request properties later through `catallax_measure::volume`, `area`, `centroid`,
+`inertia` or `mass_properties`, passing that model and body with the requested `Accuracy`.
 Measurement borrows the model, so a measurement refusal does not discard the
 built body or change its construction marks. `build_question` uses the caller's
 decider policy, not the question's legacy deadline or output settings.
@@ -41,6 +41,13 @@ the verification CLI without measurement, set `"measure":{"properties":[]}` in
 the question. Requested measurements use the same enclosure algorithms as the
 legacy command. The legacy command and `answer`, `answer_since` and
 `answer_deterministic` retain their existing requested-property behavior.
+
+Question sources can explicitly request `"measure":{"properties":["inertia"]}`.
+The returned `properties.inertia` is a symmetric 3-by-3 matrix of `{lo,hi}`
+enclosures, about the centroid at unit density, in model axes and length units
+to the fifth power. Empty bodies return null. Unrequested inertia is omitted.
+The default remains volume, area and centroid; existing answers do not compute
+second moments or consume an inertia budget. Recipe and comparison outputs are unchanged.
 
 ## Response and geometric manifest
 

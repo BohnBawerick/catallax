@@ -351,8 +351,10 @@ impl Builder {
         for output in outputs {
             needed[output.index] = true;
         }
+        let mut retained = 0;
         for i in (0..source.len()).rev() {
             if needed[i] {
+                retained += 1;
                 match source[i] {
                     Node::Add(a, b) | Node::Mul(a, b) | Node::Div(a, b) => {
                         needed[a] = true;
@@ -364,7 +366,7 @@ impl Builder {
             }
         }
         let mut indices = vec![0; source.len()];
-        let mut nodes = Vec::new();
+        let mut nodes = Vec::with_capacity(retained);
         for (i, node) in source.iter().enumerate() {
             if needed[i] {
                 indices[i] = nodes.len();
@@ -378,11 +380,11 @@ impl Builder {
                 });
             }
         }
-        let outputs: Vec<_> = outputs.iter().map(|e| indices[e.index]).collect();
+        let outputs = outputs.iter().map(|e| indices[e.index]).collect();
         Program {
-            nodes,
+            nodes: nodes.into_boxed_slice(),
             outputs,
-            exact: self.0.borrow().exact.clone(),
+            exact: self.0.borrow().exact.clone().into_boxed_slice(),
             center: OnceLock::new(),
             remainder: OnceLock::new(),
         }
@@ -438,9 +440,9 @@ enum Coefficients {
 }
 
 pub(crate) struct Program {
-    nodes: Vec<Node>,
-    outputs: Vec<usize>,
-    exact: Vec<Real>,
+    nodes: Box<[Node]>,
+    outputs: Box<[usize]>,
+    exact: Box<[Real]>,
     center: OnceLock<Box<[u32]>>,
     remainder: OnceLock<Box<[u32]>>,
 }

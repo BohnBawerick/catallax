@@ -32,7 +32,7 @@ pub(crate) struct Feature {
     axis_norm: Rational,
     merge_caps: Vec<usize>,
     supports: Vec<Support>,
-    constraints: Vec<geometry::Constraint>,
+    pub(crate) constraints: Vec<geometry::Constraint>,
     fast: FastProfile,
 }
 fn bad(code: &'static str) -> Refusal {

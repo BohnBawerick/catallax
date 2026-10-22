@@ -23,12 +23,18 @@ Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four ratio
 | Path, hole, fillet, chamfer, shell, offset, thicken, draft, sweep, loft, pattern, mirror, STEP import | Not comparable: neither recipe adapter implements the operation |
 | Lattice, gyroid, smooth blend, mesh import | Not comparable: the field implementation is missing; a B-rep implementation is not planned |
 
-Every unsupported step is returned with its operation-specific reason, not only the first step. Builds, meshes and query proofs that fail stay unresolved. A proven discrepancy takes precedence over unresolved observations, which remain in the report. Exact expression identities can certify agreement of two empty results without boundary samples. General emptiness is not inferred from missing samples.
+Every unsupported step is returned with its operation-specific reason, not only the first step. Builds, meshes and query proofs that fail stay unresolved. A proven discrepancy takes precedence over unresolved observations, which remain in the report. Exact expression identities and opposite coincident primitive halfspaces can certify agreement of two empty results without boundary samples. General emptiness is not inferred from missing samples.
 
-Existing kernel limitations exposed during comparison development remain unrepaired here:
+### Coplanar booleans and repeated operands
 
-- Coplanar subtraction can return indeterminate field trim queries on removed common supports. Reproducer: two size-2 blocks at translations `[0,0,0]` and `[1,0,0]`, with identity rotations, then subtract the second from the first. Samples such as `[3/2,0,1/2]` remain unresolved, not disagreements or agreement certificates.
-- A Boolean naming the same body step as both operands reaches the B-rep engine's distinct-body assertion. The comparison capability report marks that case not comparable before entering the assertion. Reproducer: block `a` of size `[2,2,2]` at identity placement, then subtract `a` from `a`. Two separately named identical blocks do build and compare as an empty result.
+The joined-blocks recipe below now agrees with no unresolved observation. The field proves the removed meeting plane interior rather than treating its zero residual as boundary.
+
+The coplanar reproducer uses two size-2 blocks at translations `[0,0,0]` and `[1,0,0]`, with identity rotations. Union, subtraction and intersection all agree without unresolved observations. For subtraction, samples such as `[3/2,0,1/2]` are outside the regularised result and are not selectable source faces. Flush blocks translated by `[2,0,0]` also agree for all three operations, including their empty intersection.
+
+A Boolean may name the same body step twice. Union and intersection retain its material and normalise nonmaximal topology; subtraction produces an empty body. The block `a` of size `[2,2,2]` at identity placement, followed by subtracting `a` from `a`, builds and compares as empty without a capability exclusion.
+
+Remaining meshing limitation:
+
 - The default one-million-vertex meshing allowance is insufficient for a torus with major radius 30 and minor radius 10 at 0.005 mm chord tolerance. The failure is `mesh.precision-or-budget`, not impossible geometry or disagreement. Reproducer: stock torus `stock`, identity rotation and translation `[7/3,-5/7,2]`. Periodic temporary chart copies count toward this allowance. The agreeing scale fixtures request four million vertices without changing the 0.01 mm comparison accuracy or 0.005 mm mesh tolerance; production defaults are unchanged.
 
 The application still owns edit-region calculation, worker scheduling, restart policy, attribution to the edited feature and the kernel bug list. SolidDraft integration, development checks, pre-export checks and command-line exchange changes are outside this library.
@@ -53,6 +59,8 @@ have centres `[0,0,0]` and `[2,0,0]`.
 The stock measurements preceded the field-feature integration rebase. The three
 profile rows were measured afterwards using the corresponding example case
 filter. All rows use the same display accuracy and meshing controls.
+These historical measurements predate the coplanar Boolean fixes above. In
+particular, the joined-blocks outcome in this table is not its current outcome.
 
 | Example | Dimensions | Whole check, ms | Forward vertices | Reverse samples | Outcome | Unresolved observations |
 |---|---|---:|---:|---:|---|---:|
@@ -68,8 +76,8 @@ filter. All rows use the same display accuracy and meshing controls.
 | `profile_through_slot` | 20 x 10 x 5 block, 4 x 2 rectangular through slot | 211.469 | 16 | 158 | Agree | 0 |
 | `profile_quarter_revolve` | radii 1 to 2, height 3, 90-degree revolution | 1041.295 | 208 | 96 | Unresolved | 106 |
 
-No unperturbed representative part produced a proven discrepancy. The joined
-blocks expose indeterminate field queries on the removed meeting plane.
+No unperturbed representative part produced a proven discrepancy. At measurement
+time, joined blocks exposed indeterminate field queries on the removed meeting plane.
 Curved Boolean mesh vertices generally have unbounded field distance uppers;
 those observations do not become agreement. The tests also deliberately change
 dimensions, locations, names and orientation to require disagreements.

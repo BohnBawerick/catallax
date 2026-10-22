@@ -119,7 +119,7 @@ pub enum Containment {
     Outside,
 }
 
-/// Runs all five stages and adds the result body to the model.
+/// Adds the regularised result body, using set rules for repeated operands.
 pub fn boolean(
     model: &mut Model,
     a: BodyId,
@@ -134,7 +134,7 @@ pub fn boolean(
     let empty = match op {
         BoolOp::Unite => a_empty && b_empty,
         BoolOp::Intersect => a_empty || b_empty,
-        BoolOp::Subtract => a_empty,
+        BoolOp::Subtract => a_empty || a == b,
     };
     if empty {
         if [a, b]
@@ -178,17 +178,30 @@ pub fn boolean(
             answer.value
         }};
     }
-    let graph = run!(Stage::Intersect, intersect(model, a, b, dec));
-    let imprinted = run!(Stage::Imprint, imprint(model, &graph, dec));
-    let classes = run!(Stage::Classify, classify(model, &imprinted, dec));
-    let before = dec.stats().clone();
-    let selection = keep(&classes, &imprinted, op);
-    report.stages.push(StageRecord {
-        stage: Stage::Keep,
-        stats: statistics_delta(&before, dec.stats()),
-        marks: 0,
-    });
-    let body = run!(Stage::Sew, sew(model, &imprinted, &selection, dec));
+    let body = if a == b {
+        if model.body(a).kind != BodyKind::Solid {
+            return Err(BooleanRefusal {
+                stage: Stage::Intersect,
+                refusal: geometry::refusal(
+                    "boolean.not-solid",
+                    "boolean operands must be solid or empty",
+                ),
+            });
+        }
+        run!(Stage::Sew, make_maximal(model, a, dec))
+    } else {
+        let graph = run!(Stage::Intersect, intersect(model, a, b, dec));
+        let imprinted = run!(Stage::Imprint, imprint(model, &graph, dec));
+        let classes = run!(Stage::Classify, classify(model, &imprinted, dec));
+        let before = dec.stats().clone();
+        let selection = keep(&classes, &imprinted, op);
+        report.stages.push(StageRecord {
+            stage: Stage::Keep,
+            stats: statistics_delta(&before, dec.stats()),
+            marks: 0,
+        });
+        run!(Stage::Sew, sew(model, &imprinted, &selection, dec))
+    };
     marks.extend(&operand_marks);
     let body = if model.body(body).marks == marks {
         body

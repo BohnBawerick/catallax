@@ -394,10 +394,15 @@ impl PathInput {
                     ));
                 };
                 let edge = built.model.edge(*edge);
+                let (from, to) = if edge.sense == catallax_topology::Sense::Same {
+                    (edge.start, edge.end)
+                } else {
+                    (edge.end, edge.start)
+                };
                 CentrePath::Arc {
                     curve: edge.curve,
-                    from: edge.start.map(|v| built.model.vertex(v).point),
-                    to: edge.end.map(|v| built.model.vertex(v).point),
+                    from: from.map(|v| built.model.vertex(v).point),
+                    to: to.map(|v| built.model.vertex(v).point),
                 }
             }
         })

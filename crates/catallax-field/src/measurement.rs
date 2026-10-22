@@ -570,11 +570,16 @@ fn cover(
             Loop::Coedges(cs) => {
                 for c in cs {
                     let edge = model.edge(model.coedge(*c).edge);
+                    let (from, to) = if edge.sense == catallax_topology::Sense::Same {
+                        (edge.start, edge.end)
+                    } else {
+                        (edge.end, edge.start)
+                    };
                     let traced = trace(
                         model.geom(),
                         edge.curve,
-                        edge.start.map(|v| model.vertex(v).point),
-                        edge.end.map(|v| model.vertex(v).point),
+                        from.map(|v| model.vertex(v).point),
+                        to.map(|v| model.vertex(v).point),
                         dec,
                     )?;
                     if !traced.marks.is_empty() {

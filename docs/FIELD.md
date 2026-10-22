@@ -80,6 +80,90 @@ Registry entries are candidates, not a claim that all their geometry survives. `
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
 
+## Whole-face definition measurements
+
+`catallax_field::measurement::measure_face` takes a B-rep `Model`, a topology
+`FaceId`, an optional `FaceDefinition`, `MeasurementOptions` and the caller's
+`Decider`. This checker is separate from `Plan` and its model-wide field.
+`FaceDefinition::Fillet` holds a `CentrePath` and rolling radius.
+`FaceDefinition::Offset` holds the original analytic supporting surface and
+unsigned offset distance. A missing record declares an exact face and returns
+`[0, 0]`. Callers retain these records alongside their named faces; the checker
+does not infer a feature definition from the finished B-rep.
+
+For a fillet, the checked function is `abs(distance(p, centre_path) - radius)`.
+The two outward-offset rolling supports define the centre path. Points on the
+fillet face are not themselves at the rolling radius from both supports.
+For an offset the function is `abs(distance(p, original_support) - distance)`.
+These are Euclidean distances to the declared definitions, not polynomial
+residuals, Boolean min/max values, display chord errors or distances to the
+finished part's boundary.
+
+`FaceMeasurement.lower <= sup(face deviation) <= FaceMeasurement.upper`.
+The upper endpoint is the face's local tolerance in millimetres. The record also
+reports `converged`, live covering `cells` and exact trimmed-face `witnesses`.
+`converged` means the enclosure width met the requested width, not that the
+geometry met a manufacturing target. A 100 nm target is `0.0001` mm.
+
+### Whole-face proof
+
+Certified traces of every boundary arc bound the linear chart coordinates of
+compact planar, cylindrical, conical and elliptic-cylindrical faces. A linear
+chart coordinate cannot have a strict interior extremum on these supports.
+Periodic coordinates cover a full turn. Spheres and tori use complete supporting
+charts. This rectangle covers the whole face, including boundaries and holes.
+It may include trimmed-away regions, so its upper bound can be conservative
+even after refinement. The report does not claim trim-optimality.
+
+Each parameter cell has a certified centre point and a uniform spatial radius
+`E = L_u * width_u / 2 + L_v * width_v / 2`. The constants bound the Euclidean
+norms of the chart derivatives everywhere on the covering domain:
+
+| Supporting surface | `L_u` | `L_v` |
+| --- | --- | --- |
+| Plane | 1 | 1 |
+| Circular cylinder | radius | 1 |
+| Cone | slope times maximum absolute axial coordinate | `sqrt(1 + slope²)` |
+| Sphere | radius | radius |
+| Ring torus | major plus minor radius | minor radius |
+| Elliptic cylinder | major semi-axis | 1 |
+
+Angles use radians in this formula. The implementation stores turns and encloses
+the conversion with a proven pi ball. An orthonormal surface frame preserves
+these derivative bounds. Integrating the two derivatives proves that every
+point of the cell lies within `E` of its centre.
+
+Distance to a set and `abs(distance - radius)` are 1-Lipschitz. The centre's
+outward-rounded deviation enclosure plus `E` therefore bounds every point in
+the cell. The maximum cell upper endpoint bounds the whole face. Samples alone
+never supply this upper certificate. Exact support identities instead prove a
+constant deviation over the whole support, including every possible trim.
+They cover rolling cylinders, rolling tori, parallel plane offsets and
+concentric circular, spherical and toroidal offsets.
+
+The lower endpoint comes only from exact points on the actual trimmed face.
+Refinement projects candidate witnesses onto the support and checks exact trim
+membership before using their distance bounds. A point in a hole or on a
+trimmed-away support cannot raise the lower endpoint. Refinement visits the
+largest upper bound first, keeps a fixed tie order and intersects each child's
+upper certificate with its parent's. More cells cannot worsen the bound.
+
+Lines and circles have analytic path distances. `CentrePath::Arc` retains the
+model's exact carrier, selected branch and endpoints. Certified trace-piece
+boxes cover the entire arc, including non-conic degree-four intersections.
+Minimum box-distance lower bounds and distances to certified path witnesses
+bound closest distance from both sides. Elliptic-cylinder support distance uses
+the same argument after orthogonal projection onto its transverse ellipse.
+`path_segments` controls this independent path refinement.
+
+The checker uses 128-bit outward binary balls and exact rational endpoints.
+The default requested width is `1e-7` mm, with at most 4096 live face cells and
+64 subdivisions per path trace piece. A cell limit returns the attained bound
+with `converged=false`, never an invented precision. Non-compact or degenerate
+chart covers and invalid controls return `field.face-measurement`; numeric,
+intersection and exact trim-query refusals propagate. No B-rep fillet or offset
+is constructed, and no tolerance cap or merge policy is applied.
+
 ## Determinism and storage
 
 Compilation follows recipe order. Equivalent leaves and elementary Boolean identities are folded deterministically. Unreachable instructions are removed while the face registry remains intact. Evaluation follows the resulting topological tape order. Hash iteration, point reduction, scheduling and random seeds do not change a proven answer. Checked operations honor the caller's wall-clock deadline and may return a numeric refusal; default convenience queries have no wall-clock deadline.

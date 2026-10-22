@@ -212,3 +212,63 @@ fn translated_torus_bound_encloses_known_normal_displacement() {
     );
     assert!(fine.lower >= coarse.lower);
 }
+
+#[test]
+fn reversed_major_arc_cannot_be_replaced_by_its_complement_in_a_face_cover() {
+    use catallax_shapes::{Curve, PointDef};
+    use catallax_topology::{Coedge, Edge, Face, Loop, Model, Sense, Vertex};
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let circle = Circle::new(p(0, 0, 0), v(0, 0, 1), Real::one(), v(1, 0, 0), &mut dec).unwrap();
+    let curve = model.geom_mut().add_curve(Curve::Circle(circle));
+    let a = model.geom_mut().add_point(PointDef::Explicit(p(1, 0, 0)));
+    let b = model.geom_mut().add_point(PointDef::Explicit(p(0, 1, 0)));
+    let a = model.add_vertex(Vertex { point: a });
+    let b = model.add_vertex(Vertex { point: b });
+    // Clockwise A -> B is the major arc. Tracing A -> B in the carrier's
+    // natural direction instead would select the small first-quadrant arc.
+    let arc = model.add_edge(Edge {
+        curve,
+        sense: Sense::Reversed,
+        start: Some(a),
+        end: Some(b),
+    });
+    let chord = model.geom_mut().add_curve(Curve::Line(
+        Line::new(p(0, 1, 0), v(1, -1, 0), &mut dec).unwrap(),
+    ));
+    let chord = model.add_edge(Edge {
+        curve: chord,
+        sense: Sense::Same,
+        start: Some(b),
+        end: Some(a),
+    });
+    let arc = model.add_coedge(Coedge {
+        edge: arc,
+        sense: Sense::Same,
+    });
+    let chord = model.add_coedge(Coedge {
+        edge: chord,
+        sense: Sense::Same,
+    });
+    let boundary = model.add_loop(Loop::Coedges(vec![arc, chord]));
+    let support = Surface::Plane(Plane::new(p(0, 0, 0), v(0, 0, 1), v(1, 0, 0), &mut dec).unwrap());
+    let support = model.geom_mut().add_surface(support);
+    let face = model.add_face(Face {
+        surface: support,
+        sense: Sense::Reversed,
+        loops: vec![boundary],
+    });
+    let original =
+        Surface::Plane(Plane::new(p(2, 0, 0), v(1, 0, 0), v(0, 0, 1), &mut dec).unwrap());
+    let definition = FaceDefinition::Offset {
+        original,
+        distance: Real::zero(),
+    };
+    let measured =
+        measure_face(&mut model, face, Some(&definition), &options(64), &mut dec).unwrap();
+    // The actual face includes (-1,0,0), at distance three from x=2.
+    assert!(
+        measured.lower <= r(3) && measured.upper >= r(3),
+        "{measured:?}"
+    );
+}

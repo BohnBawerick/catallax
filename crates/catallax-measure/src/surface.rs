@@ -168,7 +168,7 @@ pub(crate) fn compile(
             let q = displacement(&b, &s.center);
             let radius = b.exact(&s.radius);
             let pole = unit(&b, gauge);
-            let area = radius * dot(pole, cross(q, derivative)) / (radius + dot(pole, q));
+            let area = (radius * dot(pole, cross(q, derivative))).gauge_div(radius + dot(pole, q));
             let origin = offset(&b, &s.center, anchor);
             // Integrate spherical harmonics of degrees 1, 2 and 3 by their
             // Laplace-Beltrami eigenvalues. Only the scalar area needs a gauge.
@@ -319,7 +319,7 @@ fn second_moment<'a>(
             let r = b.exact(&s.radius);
             let origin = offset(b, &s.center, anchor);
             let pole = unit(b, gauge);
-            area = r * dot(pole, cross(q, dq)) / (r + dot(pole, q));
+            area = (r * dot(pole, cross(q, dq))).gauge_div(r + dot(pole, q));
             let boundary = cross(dq, q);
             let delta = |a, c| b.k(if a == c { 1 } else { 0 });
             let first = |a: usize| -r * boundary[a] / b.k(2);

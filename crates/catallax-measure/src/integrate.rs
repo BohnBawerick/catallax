@@ -18,6 +18,7 @@ const SIZE: usize = ORDER + 1;
 pub(crate) enum Stop {
     Budget,
     Split,
+    GaugeSplit,
     Refusal(Refusal),
 }
 
@@ -164,6 +165,7 @@ enum Node {
     Add(usize, usize),
     Mul(usize, usize),
     Div(usize, usize),
+    GaugeDiv(usize, usize),
     Neg(usize),
     Sqrt(usize),
 }
@@ -238,7 +240,7 @@ impl Builder {
                     Node::Mul(a.min(b), a.max(b))
                 }
             }
-            Node::Div(a, b) => {
+            division @ (Node::Div(a, b) | Node::GaugeDiv(a, b)) => {
                 if let (Some(x), Some(y)) = (constant(a), constant(b))
                     && let Some(value) = x.checked_div(y)
                 {
@@ -251,7 +253,7 @@ impl Builder {
                         builder: self,
                     };
                 } else {
-                    Node::Div(a, b)
+                    division
                 }
             }
             Node::Neg(a) => {
@@ -293,7 +295,7 @@ impl Builder {
                 nodes.defined[*a] && nodes.defined[*b],
                 nodes.nonzero[*a] && nodes.nonzero[*b],
             ),
-            Node::Div(a, b) => (
+            Node::Div(a, b) | Node::GaugeDiv(a, b) => (
                 nodes.defined[*a] && nodes.nonzero[*b],
                 nodes.nonzero[*a] && nodes.nonzero[*b],
             ),
@@ -356,7 +358,7 @@ impl Builder {
             if needed[i] {
                 retained += 1;
                 match source[i] {
-                    Node::Add(a, b) | Node::Mul(a, b) | Node::Div(a, b) => {
+                    Node::Add(a, b) | Node::Mul(a, b) | Node::Div(a, b) | Node::GaugeDiv(a, b) => {
                         needed[a] = true;
                         needed[b] = true;
                     }
@@ -374,6 +376,7 @@ impl Builder {
                     Node::Add(a, b) => Node::Add(indices[*a], indices[*b]),
                     Node::Mul(a, b) => Node::Mul(indices[*a], indices[*b]),
                     Node::Div(a, b) => Node::Div(indices[*a], indices[*b]),
+                    Node::GaugeDiv(a, b) => Node::GaugeDiv(indices[*a], indices[*b]),
                     Node::Neg(a) => Node::Neg(indices[*a]),
                     Node::Sqrt(a) => Node::Sqrt(indices[*a]),
                     other => other.clone(),
@@ -392,6 +395,10 @@ impl Builder {
 }
 
 impl Expr<'_> {
+    pub(crate) fn gauge_div(self, rhs: Self) -> Self {
+        self.builder.node(Node::GaugeDiv(self.index, rhs.index))
+    }
+
     pub(crate) fn sqrt(self) -> Self {
         self.builder.node(Node::Sqrt(self.index))
     }
@@ -470,13 +477,15 @@ impl Program {
                     needed[a] |= prefix;
                     needed[b] |= prefix;
                 }
-                Node::Div(a, b) if matches!(&nodes[b], Node::Constant(_) | Node::Exact(_)) => {
+                Node::Div(a, b) | Node::GaugeDiv(a, b)
+                    if matches!(&nodes[b], Node::Constant(_) | Node::Exact(_)) =>
+                {
                     // A constant divisor has no nonzero higher coefficients.
                     // Keep its zeroth coefficient for the domain check.
                     needed[a] |= mask;
                     needed[b] |= 1;
                 }
-                Node::Div(a, b) => {
+                Node::Div(a, b) | Node::GaugeDiv(a, b) => {
                     needed[i] = prefix;
                     needed[a] |= prefix;
                     needed[b] |= prefix;
@@ -602,9 +611,13 @@ impl Program {
                         }
                     }
                 }
-                Node::Div(a, b) => {
+                Node::Div(a, b) | Node::GaugeDiv(a, b) => {
                     if values[*b][0].contains_zero() {
-                        return Err(Stop::Split);
+                        return Err(if matches!(node, Node::GaugeDiv(..)) {
+                            Stop::GaugeSplit
+                        } else {
+                            Stop::Split
+                        });
                     }
                     if N == 1 {
                         value[0] = work.div(&values[*a][0], &values[*b][0])?;

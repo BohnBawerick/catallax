@@ -277,7 +277,7 @@ impl Program {
                 Node::Add(a, b) => values[*a].add(&values[*b]),
                 Node::Mul(a, b) => values[*a].mul(&values[*b]),
                 Node::Neg(a) => values[*a].scale(&Rational::from_i64(-1)),
-                Node::Div(a, b) => {
+                Node::Div(a, b) | Node::GaugeDiv(a, b) => {
                     if let Some(divisor) = values[*b].as_constant() {
                         values[*a].scale(&divisor.recip()?)
                     } else if values[*a].0.is_empty()

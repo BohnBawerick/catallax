@@ -388,13 +388,11 @@ impl GeomStore {
             && let Curve::Circle(circle) = self.curve(curve)
         {
             let surface = self.surface(surface);
-            // Full incidence plus a perpendicular section plane proves that
-            // the circle's centre lies on the rotational carrier's axis.
+            // Circular sections of circular cylinders and cones share their
+            // carrier's axis. Tori also admit non-axial circular sections.
             let coaxial = match surface {
-                Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_) => {
-                    crate::intent::axis(surface)
-                        .is_some_and(|(_, axis)| crate::intent::parallel(&circle.normal, axis))
-                }
+                Surface::Cylinder(_) | Surface::Cone(_) => true,
+                Surface::Torus(torus) => crate::intent::parallel(&circle.normal, &torus.axis),
                 _ => false,
             };
             let concentric = crate::intent::center(surface)

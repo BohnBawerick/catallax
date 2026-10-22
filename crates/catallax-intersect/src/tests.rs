@@ -128,7 +128,7 @@ fn coaxial_sections_keep_distinct_centres_without_reproving_parallelism() {
     let mut g = GeomStore::new();
     let cylinder = cyl(&mut g, p(0, 0, 0), v(0, 0, 1), 3, v(1, 0, 0));
     let bottom = plane(&mut g, p(0, 0, 0), v(0, 0, 1), v(1, 0, 0));
-    let top = plane(&mut g, p(0, 0, 2), v(0, 0, 1), v(1, 0, 0));
+    let top = plane(&mut g, p(0, 0, 2), v(0, 0, 2), v(1, 0, 0));
     let a = curve(&components(&mut g, cylinder, bottom, &mut dec())[0]);
     let b = curve(&components(&mut g, cylinder, top, &mut dec())[0]);
     let mut d = dec();

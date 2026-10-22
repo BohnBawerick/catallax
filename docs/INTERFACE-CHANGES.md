@@ -576,7 +576,7 @@ Migration: this changes only a preliminary metered enclosure request. A zero-con
 ## 2026-10-22: omit Taylor coefficients unused by panel certificates
 
 Piece: 6
-Change: integration programs lazily compile center and remainder dependency plans. Symmetric center integration needs even output coefficients; its whole-range certificate needs only the order-20 output coefficient. Products, variable quotients and roots retain every lower coefficient needed by their recurrences. Constant divisors retain their zeroth coefficient and requested numerator coefficients.
+Change: integration programs lazily compile center and remainder dependency plans into fixed-size boxed slices, keeping both plans independently lazy without spare-capacity metadata. Symmetric center integration needs even output coefficients; its whole-range certificate needs only the order-20 output coefficient. Products, variable quotients and roots retain every lower coefficient needed by their recurrences. Constant divisors retain their zeroth coefficient and requested numerator coefficients.
 Why: evaluating every output coefficient forced arithmetic that never entered the integral or its remainder bound.
 Migration: requested coefficient arithmetic keeps its order and outward rounding; definedness checks and nonsymmetric angular integrals remain intact. No public signature, requested accuracy, default allowance or deadline changes. Regressions use exact antiderivatives and keep undefined zeroth-order operations visible.
 
@@ -600,4 +600,11 @@ Piece: 5
 Change: cylindrical projection compares each diamond phase against shifted anchor thresholds instead of normalizing a rational difference. Corner bounds are computed once, and four phases use a fixed array.
 Why: chart subdivision repeatedly normalized fractions only to compare their order.
 Migration: phase quotients, corner order, strict wrap cutoffs and outward hull rounding are unchanged. A before/after smoke retains identical results for 2,916 scaled boxes at 8, 64, 128 and 256 bits. Permanent checks independently bound all four quadrants, a periodic seam and an axis, and reject a box containing the projection pole.
+
+## 2026-10-22: restrict straight contact quadrics using their source proof
+
+Piece: 5
+Change: a verified straight planar probe with proven source contact uses `f(t) = t*c1 + t²*(f(q)-c1)`, where `c1 = grad(f)(q)·p + 2*f(q) - grad(f)(q)·q`. The coefficients are affine in the algebraic source point.
+Why: expanding quadratic source-coordinate products reconstructed a zero already supplied by the contact proof.
+Migration: only exact carrier checks and existing incidence proofs enable the reduction. Other paths retain their original expansion, and whole-path separation and component checks remain mandatory. Regressions independently derive simple, double and contained contacts. A standalone smoke checks nine coefficients and fifteen exact path values.
 

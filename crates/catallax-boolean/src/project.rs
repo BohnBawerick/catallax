@@ -77,10 +77,10 @@ fn phase_box(x: &Ball, y: &Ball) -> Option<Ball> {
     let lower = &corners[0] - &half_turn;
     let upper = &corners[0] + &half_turn;
     for c in &mut corners {
-        if &*c > &upper {
+        if *c > upper {
             *c = &*c - &r(4);
         }
-        if &*c < &lower {
+        if *c < lower {
             *c = &*c + &r(4);
         }
     }

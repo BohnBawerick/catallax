@@ -441,12 +441,12 @@ pub(crate) struct Program {
     nodes: Vec<Node>,
     outputs: Vec<usize>,
     exact: Vec<Real>,
-    center: OnceLock<Vec<u32>>,
-    remainder: OnceLock<Vec<u32>>,
+    center: OnceLock<Box<[u32]>>,
+    remainder: OnceLock<Box<[u32]>>,
 }
 
 impl Program {
-    fn coefficient_plan(nodes: &[Node], outputs: &[usize], mask: u32) -> Vec<u32> {
+    fn coefficient_plan(nodes: &[Node], outputs: &[usize], mask: u32) -> Box<[u32]> {
         let mut needed = vec![0; nodes.len()];
         for &output in outputs {
             needed[output] |= mask;
@@ -487,7 +487,7 @@ impl Program {
                 Node::Constant(_) | Node::Exact(_) | Node::Input(_) => {}
             }
         }
-        needed
+        needed.into_boxed_slice()
     }
 
     fn evaluate<const N: usize>(

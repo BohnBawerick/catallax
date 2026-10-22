@@ -188,8 +188,8 @@ fn uncached_groebner(generators: Vec<P>) -> Vec<P> {
         let p = reduce(p, &basis).monic();
         if !p.0.is_empty() {
             let j = basis.len();
-            for i in 0..j {
-                pairs.insert(critical_pair(&basis[i], &p, i, j));
+            for (i, g) in basis.iter().enumerate() {
+                pairs.insert(critical_pair(g, &p, i, j));
             }
             basis.push(p);
         }
@@ -220,8 +220,8 @@ fn uncached_groebner(generators: Vec<P>) -> Vec<P> {
         let s = reduce(s, &basis).monic();
         if !s.0.is_empty() {
             let j = basis.len();
-            for i in 0..j {
-                pairs.insert(critical_pair(&basis[i], &s, i, j));
+            for (i, g) in basis.iter().enumerate() {
+                pairs.insert(critical_pair(g, &s, i, j));
             }
             basis.push(s);
         }

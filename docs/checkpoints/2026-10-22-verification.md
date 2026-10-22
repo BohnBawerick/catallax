@@ -1,8 +1,8 @@
 # Verification tooling checkpoint, 22 October 2026
 
-This is the first target-part report, not a C1 completion claim. The [machine-readable report](2026-10-22-parts.json) was generated from implementation commit `994de258de6bcab35c1b0c1eae729c29e337ffcd`, with binary SHA-256 `c93b20fb6b1760dd9a9ff92c8e48f0465f3e034510287a9936c63a006278eda9`. Recipe hashes, complete adapter responses, work counts, operation logs and timings are in that report.
+This is the first target-part report, not a C1 completion claim. The [machine-readable report](2026-10-22-parts.json) was generated from commit `d98ac6a00552760399e2cd5f58b55a4a90179c0b`, after rebasing onto the owner's published roadmap, with binary SHA-256 `6dc829c48dc39381dd4557afb8b4ef78866142ae189c3f57894a9f91393b26ff`. Recipe hashes, complete adapter responses, work counts, operation logs and timings are in that report.
 
-The per-request allowance was 1,000,000 units. The worker was pinned to CPU 2 on a shared machine whose initial 1/5/15-minute load averages were 23.45/22.31/19.76. These are diagnostic timings under load, not evidence of quiet-core speed or a slowdown. The B-rep adapter's time includes topology summary and STEP export when they run.
+The per-request allowance was 1,000,000 units. The worker was pinned to CPU 2 on a shared machine whose initial 1/5/15-minute load averages were 20.18/21.16/20.35. These are diagnostic timings under load, not evidence of quiet-core speed or a slowdown. The B-rep adapter's time includes topology summary and STEP export when they run.
 
 | Observation | Count |
 | --- | ---: |

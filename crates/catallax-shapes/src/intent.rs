@@ -10,12 +10,12 @@ fn same_vector(a: &Vector3, b: &Vector3) -> bool {
     a.x.same_definition(&b.x) && a.y.same_definition(&b.y) && a.z.same_definition(&b.z)
 }
 
-// Negation is a definition operation, not a sign decision or a tolerance test.
+// Opposite direction definitions prove parallelism without allocating negations.
 pub(crate) fn parallel(a: &Vector3, b: &Vector3) -> bool {
     same_vector(a, b)
-        || (a.x.same_definition(&(-&b.x))
-            && a.y.same_definition(&(-&b.y))
-            && a.z.same_definition(&(-&b.z)))
+        || (a.x.same_negated_definition(&b.x)
+            && a.y.same_negated_definition(&b.y)
+            && a.z.same_negated_definition(&b.z))
 }
 
 pub(crate) fn on_plane(origin: &Point3, normal: &Vector3, p: &Point3) -> bool {

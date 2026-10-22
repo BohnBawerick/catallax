@@ -1,7 +1,7 @@
 //! Piece 6 of catallax: measurement.
 //!
-//! Volume, area and centre of mass of a body, and the area of a face, as
-//! proven enclosures computed from exact definitions.
+//! Body mass properties, face centroids and areas, edge arc lengths and midpoints,
+//! and axis-aligned bounds, as proven enclosures from exact definitions.
 //!
 //! The contract is `docs/pieces/06-measurement.md`.
 //!
@@ -21,9 +21,10 @@
 //! a closed surface represented with coincident seam boundaries.
 //!
 //! Ball operations share a fresh deterministic budget for each property.
-//! Subdivision and precision refine independently. The last certified enclosure
-//! survives budget exhaustion, with one width mark for each unmet property.
-//! A centroid is returned only after its volume enclosure excludes zero.
+//! Integral subdivision and precision refine independently. The last certified
+//! integral enclosure survives exhaustion, with a width mark for each unmet property.
+//! Bounds refinement refuses exhausted work. Body centroids require nonzero volume;
+//! face centroids require nonzero area.
 //!
 //! `cargo bench -p catallax-measure --bench speed` reports wall time, enclosure widths
 //! and public Decider statistics. `CATALLAX_MEASURE_BENCH_QUICK=1` selects default
@@ -556,7 +557,7 @@ pub fn bounding_box(
 }
 
 /// Proven enclosing box of a face, independent of the display mesh.
-/// Sphere and torus trims use the whole compact carrier's support box.
+/// Analytic extrema are selected with exact membership in the trimmed face.
 pub fn face_bounding_box(
     model: &Model,
     face: FaceId,

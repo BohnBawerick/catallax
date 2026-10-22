@@ -13,9 +13,10 @@ fn dot(a: &[Ball; 3], b: &[Ball; 3]) -> Ball {
 fn unit(v: &Vector3, dec: &Decider) -> Result<[Ball; 3], Refusal> {
     let norm = v.norm_squared().sqrt();
     let values = [&v.x, &v.y, &v.z].map(|x| dec.enclose_at(&(x / &norm), BITS));
-    Ok([values[0].clone()?, values[1].clone()?, values[2].clone()?])
+    let [x, y, z] = values;
+    Ok([x?, y?, z?])
 }
-fn normal(chart: &Chart, uv: &[Uv; 3], dec: &Decider) -> Result<[Ball; 3], Refusal> {
+fn normal(chart: &Chart, uv: Uv, dec: &Decider) -> Result<[Ball; 3], Refusal> {
     let (axis, reference) = match &chart.surface {
         Surface::Plane(p) => return unit(&p.normal, dec),
         Surface::Cylinder(c) => (&c.axis, &c.ref_dir),
@@ -28,12 +29,8 @@ fn normal(chart: &Chart, uv: &[Uv; 3], dec: &Decider) -> Result<[Ball; 3], Refus
     let first = unit(reference, dec)?;
     let second = unit(&axis.cross(reference), dec)?;
     let tau = &Ball::pi_checked(BITS, dec)? * &Ball::from_rational(&Rational::from_i64(2), BITS);
-    let interval = |i| {
-        let lo = uv.iter().map(|p| chart::q(p[i])).min().unwrap();
-        let hi = uv.iter().map(|p| chart::q(p[i])).max().unwrap();
-        &Ball::from_rational(&lo, BITS).hull(&Ball::from_rational(&hi, BITS)) * &tau
-    };
-    let u = interval(0);
+    let angle = |i| &Ball::from_rational(&chart::q(uv[i]), BITS) * &tau;
+    let u = angle(0);
     let cosine = u.cos();
     let sine = u.sin();
     let radial: [Ball; 3] = std::array::from_fn(|i| &(&first[i] * &cosine) + &(&second[i] * &sine));
@@ -53,7 +50,7 @@ fn normal(chart: &Chart, uv: &[Uv; 3], dec: &Decider) -> Result<[Ball; 3], Refus
             Ok(values)
         }
         Surface::Sphere(_) | Surface::Torus(_) => {
-            let v = interval(1);
+            let v = angle(1);
             let cosine = v.cos();
             let sine = v.sin();
             Ok(std::array::from_fn(|i| {
@@ -71,13 +68,21 @@ pub(crate) fn length_squared(a: [f64; 3], b: [f64; 3]) -> Rational {
     })
 }
 
+pub(crate) fn cosine_limit(angle: &Rational, dec: &Decider) -> Result<Rational, Refusal> {
+    if *angle >= Ball::pi_checked(BITS, dec)?.hi() {
+        Ok(Rational::from_i64(-1))
+    } else {
+        Ok(Ball::from_rational(angle, BITS).cos().hi())
+    }
+}
+
 pub(crate) fn quality(
     chart: &Chart,
     uvs: &[Uv; 3],
     positions: [[f64; 3]; 3],
-    angular: bool,
+    angular_limit: Option<&Rational>,
     dec: &Decider,
-) -> Result<(Rational, Option<Rational>), Refusal> {
+) -> Result<(Rational, bool), Refusal> {
     let [a, b, c] = positions.map(|p| p.map(chart::q));
     let ab: [Rational; 3] = std::array::from_fn(|i| &b[i] - &a[i]);
     let ac: [Rational; 3] = std::array::from_fn(|i| &c[i] - &a[i]);
@@ -99,17 +104,43 @@ pub(crate) fn quality(
         .max()
         .unwrap();
     let aspect = &longest / &norm.lo();
-    let angle = if angular {
-        let facet = cross
-            .each_ref()
-            .map(|x| Ball::from_rational(x, BITS).checked_div(&norm).unwrap());
-        let cosine = dot(&facet, &normal(chart, uvs, dec)?)
-            .lo()
-            .max(Rational::from_i64(-1))
-            .min(Rational::one());
-        Some(Ball::from_rational(&cosine, BITS).acos().unwrap().hi())
+    let angular_reached = if let Some(limit) = angular_limit {
+        let center = std::array::from_fn(|i| {
+            let lo = uvs.iter().map(|p| p[i]).fold(f64::INFINITY, f64::min);
+            let hi = uvs.iter().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
+            lo * 0.5 + hi * 0.5
+        });
+        let spans: [Rational; 2] = std::array::from_fn(|i| {
+            uvs.iter()
+                .map(|p| (chart::q(p[i]) - chart::q(center[i])).abs())
+                .max()
+                .unwrap()
+        });
+        let parameter_span = match chart.surface {
+            Surface::Plane(_) => Rational::zero(),
+            Surface::Cylinder(_) | Surface::Cone(_) => spans[0].clone(),
+            Surface::Sphere(_) | Surface::Torus(_) => &spans[0] + &spans[1],
+            _ => return Err(failure("surface has no normal variation certificate")),
+        };
+        // Each angular parameter rotates a unit normal. The spherical triangle
+        // inequality bounds its variation by the sum of the rotation magnitudes.
+        let variation =
+            parameter_span * (Ball::pi_checked(BITS, dec)?.hi() * Rational::from_i64(2));
+        let margin = limit - &variation;
+        if margin <= Rational::zero() {
+            false
+        } else {
+            let facet = cross
+                .each_ref()
+                .map(|x| Ball::from_rational(x, BITS).checked_div(&norm).unwrap());
+            let cosine = dot(&facet, &normal(chart, center, dec)?)
+                .lo()
+                .max(Rational::from_i64(-1))
+                .min(Rational::one());
+            cosine >= cosine_limit(&margin, dec)?
+        }
     } else {
-        None
+        true
     };
-    Ok((aspect, angle))
+    Ok((aspect, angular_reached))
 }

@@ -439,27 +439,36 @@ pub(super) fn through_hole(scale: &Rational, pose: &Pose) -> (Model, BodyId) {
 }
 
 pub(super) fn half_torus() -> (Model, BodyId) {
+    half_torus_posed(&Pose::identity())
+}
+
+pub(super) fn half_torus_posed(pose: &Pose) -> (Model, BodyId) {
     let mut model = Model::new();
-    let torus = model.geom_mut().add_surface(Surface::Torus(
-        catallax_shapes::Torus::new(
-            p(0, 0, 0).into(),
-            v(0, 0, 1).into(),
-            r(3).into(),
-            r(1).into(),
-            v(1, 0, 0).into(),
-            &mut catallax_numbers::Decider::default(),
+    let torus = model.geom_mut().add_surface(
+        Surface::Torus(
+            catallax_shapes::Torus::new(
+                p(0, 0, 0).into(),
+                v(0, 0, 1).into(),
+                r(3).into(),
+                r(1).into(),
+                v(1, 0, 0).into(),
+                &mut catallax_numbers::Decider::default(),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    ));
+        .transformed(pose),
+    );
     let mut rings = Vec::new();
     let mut caps = Vec::new();
     for (x, normal, reference) in [(3, v(0, -1, 0), v(1, 0, 0)), (-3, v(0, 1, 0), v(-1, 0, 0))] {
         let plane = model
             .geom_mut()
-            .add_surface(plane(p(x, 0, 0), v(0, -1, 0), v(1, 0, 0)));
-        let curve = model
-            .geom_mut()
-            .add_curve(circle(p(x, 0, 0), normal, reference, 1));
+            .add_surface(plane(p(x, 0, 0), v(0, -1, 0), v(1, 0, 0)).transformed(pose));
+        let curve = model.geom_mut().add_curve(
+            circle(p(x, 0, 0), normal, reference, 1)
+                .transformed(pose)
+                .unwrap(),
+        );
         fact(&mut model, GeomKey::Curve(curve), GeomKey::Surface(torus));
         fact(&mut model, GeomKey::Curve(curve), GeomKey::Surface(plane));
         let edge = model.add_edge(Edge {

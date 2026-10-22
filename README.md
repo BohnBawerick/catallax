@@ -53,9 +53,9 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-topology` builds blocks, cylinders, spheres, cones and tori in append-only curved topology and checks structural faults.
 - `catallax-intersect` handles plane, cylinder and sphere pairs, closed-form cone/torus configurations, branch-aware curve queries and certified finite conic traces. General noncoaxial cone and torus branch tracing remains unfinished.
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Ambiguous and unsupported cases remain unfinished work.
-- `catallax-measure` computes volume, area, centroid and unit-density centroidal inertia with proven bounds for the body actually built.
+- `catallax-measure` computes proven body mass properties, face centroids and areas, edge lengths and half-arc-length points, and body/face axis-aligned bounds.
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.
-- `catallax-mesh` builds shared-edge display meshes of analytic faces and certified intersection traces, with picking IDs, proven chord bounds and OBJ export.
+- `catallax-mesh` builds shared-edge display meshes with picking IDs, proven chord, angular and edge-length controls, aspect-ratio reports and OBJ export.
 - `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/3` JSON form. It evaluates no geometry.
 - `catallax-field` compiles recipe stock solids, exact sketch profiles, signed extrusions, infinite through-all cuts, rational-frame full/partial revolutions and booleans into a fixed-order tape. It keeps names outside that tape and supplies tentative and proven scalar/batch queries. Sweep and Boolean residuals carry conservative distance bounds, not a true-distance claim.
 - `catallax-features::evaluate` builds named B-rep stock solids, exact line/circle/arc profiles with holes, signed extrusions, rationally represented full and partial revolutions, explicit booleans and target-bounded through-all cuts. `Built` retains an immutable recipe definition and returns the model, result and intermediate body handles; `Model::face_origins`, `edge_name` and `vertex_name` expose the names. Split faces keep their origins and merged faces take their union.
@@ -124,8 +124,8 @@ refuses the mesh. No option changes exact geometry or STEP output.
 `Mesh::positions` is shared across faces. Each `Triangle` carries its input
 `FaceId`; each `FaceMesh` identifies a contiguous triangle range and its proven
 maximum chord error, aspect-ratio bound and optional angular bound. `EdgeMesh`
-records the one polyline used by both incident
-faces, including its proven curve-to-polyline error. Face IDs belong to the
+records the one polyline used by both incident faces, including its proven
+curve-to-polyline error. Face IDs belong to the
 input model, not to rebuild-stable recipe names.
 
 Planes, cylinders, cones, spheres and tori use their exact definitions.

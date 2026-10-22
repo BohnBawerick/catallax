@@ -671,3 +671,29 @@ Pieces: display mesh
 Change: planar faces now triangulate their trims with certified `Real` orientation and containment predicates before rounding display positions. Hole bridges and ears retain every sampled boundary vertex and shared edge index. Curved faces keep the periodic CDT path.
 Why: a valid flange union leaves a gap smaller than one binary64 ulp between a cap's outer loop and a hole. Projecting rounded positions first made those constraints overlap and split without orientation labels. The exact body and Boolean are unchanged.
 Migration: no API, model, STEP or chord-tolerance changes. A planar triangle's bound is the maximum certified endpoint displacement, since its exact support is affine. Sub-ulp strips may have coincident rounded positions but retain distinct indices and closed incidence. The minimized two-block union and multiple-bore regressions cover these boundaries.
+
+## 2026-10-23: exact application queries and optional display bounds
+
+Pieces: measurement, Boolean point queries, meshing and application
+Change: `catallax-measure` adds `face_centroid`, `edge_length`, `edge_midpoint`,
+`bounding_box`, `face_bounding_box` and `BoundingBox`. `ApplicationBody` borrows its
+existing build for each query. Bounds select analytic extrema with exact trim
+membership and use budgeted second-derivative enclosures for general branches.
+`face_contains` accepts exact `Point3` through a source-compatible generic argument;
+its rational caller and classifier are unchanged. Measurement now depends on the
+Boolean crate without introducing a dependency cycle.
+
+Display options add `angular_deviation`, `max_edge_length` and an optional
+`max_aspect_ratio` request. Facet normal certificates include analytic normal
+variation across each parameter triangle and coordinate rounding. Length checks
+use the exact rational values of returned binary64 positions. Face reports give
+an aspect-ratio bound and the requested certified angular bound. Unmet aspect
+requests appear in `Mesh::unavailable_controls`, with the face and reason.
+
+Why: applications need exact geometric summaries and explicit display guarantees,
+not quantities inferred from triangles or controls silently discarded.
+Migration: mesh option literals should use `..Default::default()` for optional
+controls. An edge midpoint is halfway along arc length, including closed edges
+with their start vertex or carrier seam. Bounds contain no display chord padding;
+an empty body has no box. Existing mass-property requests, question defaults,
+answer formats and STEP definitions are unchanged.

@@ -1,6 +1,6 @@
 [package]
 name = "catallax-measure"
-description = "Piece 6 of catallax: volume, area, centroid and unit-density inertia with proven bounds."
+description = "Piece 6 of catallax: proven body, face and edge measurements and axis-aligned bounds."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,12 +12,12 @@ catallax-numbers.workspace = true
 catallax-shapes.workspace = true
 catallax-topology.workspace = true
 catallax-intersect.workspace = true
+catallax-boolean.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-catallax-boolean.workspace = true
 rug = { version = "1.28", default-features = false, features = ["integer", "rational", "float", "std"] }
 
 [[bench]]

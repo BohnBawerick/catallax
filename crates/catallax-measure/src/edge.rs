@@ -115,28 +115,56 @@ pub(crate) fn measure(
     }
     let zero = Ball::from_rational(&Rational::zero(), work.precision);
     let mut best = None;
-    for _ in 0..256 {
+    'refine: for _ in 0..256 {
         dec.check_deadline()?;
-        let total = panels.iter().fold(zero.clone(), |s, p| &s + &p.length);
+        let total = match panels
+            .iter()
+            .try_fold(zero.clone(), |sum, p| work.add(&sum, &p.length))
+        {
+            Ok(value) => value,
+            Err(Stop::Refusal(r)) => return Err(r),
+            Err(_) => break,
+        };
         let length = Enclosure::from_ball(&total);
         let target_lo = total.lo().mul_pow2(-1);
         let target_hi = total.hi().mul_pow2(-1);
         let mut cumulative = zero.clone();
         let mut candidates = Vec::new();
         let mut positions: Option<[Ball; 3]> = None;
-        for (i, p) in panels.iter().enumerate() {
-            let next = &cumulative + &p.length;
-            if midpoint && cumulative.lo() <= target_hi && next.hi() >= target_lo {
-                let parameter = Ball::from_rational(&p.lo, work.precision)
-                    .hull(&Ball::from_rational(&p.hi, work.precision));
-                let xyz = pieces[p.piece].evaluate(&parameter, dec)?;
-                positions = Some(match positions {
-                    Some(old) => std::array::from_fn(|j| old[j].hull(&xyz[j])),
-                    None => xyz,
-                });
-                candidates.push(i);
+        if midpoint {
+            for (i, p) in panels.iter().enumerate() {
+                let next = match work.add(&cumulative, &p.length) {
+                    Ok(value) => value,
+                    Err(Stop::Refusal(r)) => return Err(r),
+                    Err(_) => break 'refine,
+                };
+                if cumulative.lo() <= target_hi && next.hi() >= target_lo {
+                    let parameter = match work.interval(&p.lo, &p.hi) {
+                        Ok(value) => value,
+                        Err(Stop::Refusal(r)) => return Err(r),
+                        Err(_) => break 'refine,
+                    };
+                    let xyz = pieces[p.piece].evaluate(&parameter, dec)?;
+                    positions = Some(if let Some(old) = positions {
+                        let union = (|| -> Result<[Ball; 3], Stop> {
+                            Ok([
+                                work.hull(&old[0], &xyz[0])?,
+                                work.hull(&old[1], &xyz[1])?,
+                                work.hull(&old[2], &xyz[2])?,
+                            ])
+                        })();
+                        match union {
+                            Ok(value) => value,
+                            Err(Stop::Refusal(r)) => return Err(r),
+                            Err(_) => break 'refine,
+                        }
+                    } else {
+                        xyz
+                    });
+                    candidates.push(i);
+                }
+                cumulative = next;
             }
-            cumulative = next;
         }
         let center = positions.map(|xyz| xyz.each_ref().map(Enclosure::from_ball));
         let length_reached = accuracy.reached(&length)
@@ -220,20 +248,30 @@ fn analytic(
 ) -> Result<Option<Answer<Enclosure>>, Refusal> {
     use catallax_shapes::Curve;
     let edge = model.edge(edge_id);
+    let curve = model.geom().curve(edge.curve);
+    let supported = match curve {
+        Curve::Line(_) => edge.start.is_some() && edge.end.is_some(),
+        Curve::Circle(_) => edge.start == edge.end,
+        _ => false,
+    };
+    if !supported {
+        return Ok(None);
+    }
     let bits = dec.policy().max_precision_bits.min(256);
     if bits == 0 || dec.policy().max_work == 0 {
         return Ok(None);
     }
     let policy = *dec.policy();
     let mut work = Work::new(&policy, bits, policy.max_work, dec).map_err(refusal)?;
-    let length = match model.geom().curve(edge.curve) {
+    let length = match curve {
         Curve::Line(_) => {
             let (Some(a), Some(b)) = (edge.start, edge.end) else {
                 return Ok(None);
             };
             let a = model.geom().position(model.vertex(a).point);
             let b = model.geom().position(model.vertex(b).point);
-            work.real(&b.minus(&a).norm_squared().sqrt()).map_err(refusal)?
+            work.real(&b.minus(&a).norm_squared().sqrt())
+                .map_err(refusal)?
         }
         Curve::Circle(c) if edge.start == edge.end => {
             let radius = work.real(&c.radius_sq.sqrt()).map_err(refusal)?;
@@ -288,18 +326,24 @@ pub(crate) fn midpoint(
         _ => None,
     };
     if let Some(point) = point {
-        let bits = dec.policy().max_precision_bits.min(256);
-        let coordinates = [&point.x, &point.y, &point.z].map(|x| {
-            if let Some(value) = x.as_rational() {
-                Ok(Enclosure::exact(value))
-            } else if bits == 0 || dec.policy().max_work == 0 {
-                Err(refusal(Stop::Budget))
-            } else {
-                dec.enclose_at(x, bits).map(|b| Enclosure::from_ball(&b))
+        let values = if let Some(point) = point.as_rational() {
+            [&point.x, &point.y, &point.z].map(|x| Enclosure::exact(x.clone()))
+        } else {
+            let policy = *dec.policy();
+            let bits = policy.max_precision_bits.min(256);
+            if bits == 0 || policy.max_work == 0 {
+                return Err(refusal(Stop::Budget));
             }
-        });
-        let [x, y, z] = coordinates;
-        let values = [x?, y?, z?];
+            let mut work = Work::new(&policy, bits, policy.max_work, dec).map_err(refusal)?;
+            let coordinates = [&point.x, &point.y, &point.z]
+                .map(|x| work.real(x).map(|b| Enclosure::from_ball(&b)));
+            let [x, y, z] = coordinates;
+            [
+                x.map_err(refusal)?,
+                y.map_err(refusal)?,
+                z.map_err(refusal)?,
+            ]
+        };
         let mut marks = catallax_numbers::MarkLog::new();
         accuracy.mark(&mut marks, &values.each_ref(), "edge midpoint");
         return Ok(Answer::with_marks(values, marks));

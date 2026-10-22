@@ -888,7 +888,8 @@ fn edge_queries_and_boxes_use_exact_carriers() {
                             .zip([&start.x, &start.y, &start.z]),
                     ) {
                         let expected = &(center * &catallax_numbers::Real::from(2)) - start;
-                        assert!(value.contains(&expected.as_rational().unwrap()));
+                        let expected = Decider::default().enclose_at(&expected, 512).unwrap();
+                        assert!(value.lo <= expected.lo() && value.hi >= expected.hi());
                     }
                 }
                 _ => panic!("unexpected primitive boundary"),
@@ -986,4 +987,139 @@ fn trimmed_face_centroids_and_arc_midpoints_follow_area_and_arc_length() {
     assert!(answer.marks.is_empty());
     assert!(answer.value[0].contains(&r(0)) && answer.value[2].contains(&r(0)));
     assert!(answer.value[1].lo <= y.lo() && answer.value[1].hi >= y.hi());
+}
+
+#[test]
+fn trimmed_boxes_include_only_exactly_admitted_axis_extrema() {
+    let accuracy = Accuracy {
+        relative: r(0),
+        absolute: Rational::parse("1e-8").unwrap(),
+    };
+    let (model, body) = crate::fixtures::cap(5, 3);
+    let bounds = bounding_box(&model, body, &accuracy, &mut Decider::default()).unwrap();
+    assert!(bounds.marks.is_empty());
+    let bounds = bounds.value.unwrap();
+    for (actual, expected) in bounds.min.iter().zip([r(-4), r(-4), r(3)]) {
+        assert!(*actual <= expected && &expected - actual <= accuracy.absolute);
+    }
+    for (actual, expected) in bounds.max.iter().zip([r(4), r(4), r(5)]) {
+        assert!(*actual >= expected && actual - &expected <= accuracy.absolute);
+    }
+
+    let pose = Pose::new(
+        Rotation::from_quaternion(r(1), r(2), r(3), r(4)).unwrap(),
+        vector(7, -2, 3).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let (model, body) = crate::fixtures::half_torus_posed(&pose);
+    let answer = bounding_box(&model, body, &accuracy, &mut Decider::default()).unwrap();
+    assert!(answer.marks.is_empty(), "{:?}", answer.marks);
+    let bounds = answer.value.unwrap();
+    let first = pose
+        .apply_vector(&vector(1, 0, 0).to_real())
+        .as_rational()
+        .unwrap();
+    let second = pose
+        .apply_vector(&vector(0, 1, 0).to_real())
+        .as_rational()
+        .unwrap();
+    let axis = pose
+        .apply_vector(&vector(0, 0, 1).to_real())
+        .as_rational()
+        .unwrap();
+    for (i, ((x, y), z)) in [&first.x, &first.y, &first.z]
+        .into_iter()
+        .zip([&second.x, &second.y, &second.z])
+        .zip([&axis.x, &axis.y, &axis.z])
+        .enumerate()
+    {
+        let radial = Ball::from_rational(&(x * x + y * y), 512).sqrt().unwrap();
+        let endpoint = Ball::from_rational(&x.abs(), 512);
+        let fmax = if *y >= r(0) {
+            radial.clone()
+        } else {
+            endpoint.clone()
+        };
+        let fmin = if *y <= r(0) { -radial } else { -endpoint };
+        let z2 = Ball::from_rational(&(z * z), 512);
+        let origin = Ball::from_rational(&r([7, -2, 3][i]), 512);
+        let three = Ball::from_rational(&r(3), 512);
+        let low = &(&origin + &(&three * &fmin)) - &(&(&fmin * &fmin) + &z2).sqrt().unwrap();
+        let high = &(&origin + &(&three * &fmax)) + &(&(&fmax * &fmax) + &z2).sqrt().unwrap();
+        assert!(
+            bounds.min[i] <= low.lo() && low.hi() - bounds.min[i].clone() <= accuracy.absolute,
+            "axis {i}: minimum {} excludes {low:?}",
+            bounds.min[i]
+        );
+        assert!(
+            bounds.max[i] >= high.hi() && bounds.max[i].clone() - high.lo() <= accuracy.absolute,
+            "axis {i}: maximum {} excludes {high:?}",
+            bounds.max[i]
+        );
+    }
+}
+
+#[test]
+fn branch_bounds_keep_curved_extrema_and_refuse_exhausted_work() {
+    let mut model = Model::new();
+    let cylinder_pose = Pose::new(
+        Rotation::identity(),
+        vector(0, 0, -3).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let sphere_pose = Pose::new(
+        Rotation::identity(),
+        vector(2, 0, 0).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let cylinder = catallax_topology::cylinder(&mut model, r(1), r(6), &cylinder_pose).unwrap();
+    let sphere = catallax_topology::sphere(&mut model, r(2), &sphere_pose).unwrap();
+    let body = catallax_boolean::boolean(
+        &mut model,
+        cylinder,
+        sphere,
+        catallax_boolean::BoolOp::Intersect,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    let accuracy = Accuracy {
+        relative: r(0),
+        absolute: Rational::parse("1e-7").unwrap(),
+    };
+    let answer = bounding_box(&model, body, &accuracy, &mut Decider::default()).unwrap();
+    assert!(answer.marks.is_empty());
+    let bounds = answer.value.unwrap();
+    let y = Ball::from_rational(&Rational::from_ratio(15, 16).unwrap(), 512)
+        .sqrt()
+        .unwrap();
+    let z = Ball::from_rational(&r(3), 512).sqrt().unwrap();
+    for (i, extent) in [Ball::from_rational(&r(0), 512), y.clone(), z.clone()]
+        .iter()
+        .enumerate()
+    {
+        let low = -extent;
+        let high = if i == 0 {
+            Ball::from_rational(&r(1), 512)
+        } else {
+            extent.clone()
+        };
+        assert!(bounds.min[i] <= low.lo() && low.hi() - bounds.min[i].clone() <= accuracy.absolute);
+        assert!(
+            bounds.max[i] >= high.hi() && bounds.max[i].clone() - high.lo() <= accuracy.absolute
+        );
+    }
+    let mut limited = Decider::new(BudgetPolicy {
+        max_precision_bits: 128,
+        max_work: 0,
+    });
+    assert_eq!(
+        bounding_box(&model, body, &accuracy, &mut limited)
+            .unwrap_err()
+            .code,
+        "measure.budget-exhausted"
+    );
 }

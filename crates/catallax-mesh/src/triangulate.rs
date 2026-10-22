@@ -293,11 +293,6 @@ impl FaceBuilder<'_> {
             let mut triangles = Vec::new();
             let mut maximum = Rational::zero();
             let mut aspect = Rational::zero();
-            let mut angular = self
-                .options
-                .angular_deviation
-                .as_ref()
-                .map(|_| Rational::zero());
             for f in self.cdt.inner_faces() {
                 if !labels[f.index()] {
                     continue;
@@ -345,18 +340,14 @@ impl FaceBuilder<'_> {
                     pending.insert(key(center), center);
                     continue;
                 }
-                let (ratio, angle) = crate::controls::quality(
+                let (ratio, angular_reached) = crate::controls::quality(
                     self.chart,
                     &uvs,
                     vertices.map(|i| self.positions[i]),
-                    self.options.angular_deviation.is_some(),
+                    self.options.angular_deviation.as_ref(),
                     dec,
                 )?;
-                if angle
-                    .as_ref()
-                    .zip(self.options.angular_deviation.as_ref())
-                    .is_some_and(|(actual, requested)| actual > requested)
-                {
+                if !angular_reached {
                     let mut center = self.chart.canonical(center);
                     for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
                         if periodic {
@@ -368,9 +359,6 @@ impl FaceBuilder<'_> {
                     continue;
                 }
                 aspect = aspect.max(ratio);
-                if let (Some(maximum), Some(angle)) = (&mut angular, angle) {
-                    *maximum = maximum.clone().max(angle);
-                }
                 maximum = maximum.max(error);
                 if sense == Sense::Reversed {
                     vertices.swap(1, 2);
@@ -381,7 +369,12 @@ impl FaceBuilder<'_> {
             }
             if pending.is_empty() {
                 triangles.sort_unstable_by_key(|t| t.vertices);
-                return Ok((triangles, maximum, aspect, angular));
+                return Ok((
+                    triangles,
+                    maximum,
+                    aspect,
+                    self.options.angular_deviation.clone(),
+                ));
             }
             let mut added = false;
             for center in pending.into_values() {
@@ -493,7 +486,7 @@ fn face_mesh(
             .push(crate::UnavailableControl {
                 face: face_id,
                 control: crate::MeshControl::AspectRatio,
-                reason: "boundary-constrained triangulation exceeds the requested aspect ratio",
+                reason: "the certified aspect-ratio bound exceeds the requested limit",
             });
     }
     boundaries.mesh.faces.push(FaceMesh {

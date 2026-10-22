@@ -2,13 +2,15 @@
 
 Geometry should not require a vendor's permission. Catallax is a geometry kernel in safe Rust, free for everyone, for ever.
 
+Catallax is built for SolidDraft, the CAD application. They are one project in two repositories; SolidDraft's repository is still private. In design: SolidDraft runs only on Catallax, with no other kernel as a fallback. [The roadmap](docs/PLAN.md) orders the kernel work and its application integration.
+
 Kernel site: [kernel.zigrawbohnbawerick.org](https://kernel.zigrawbohnbawerick.org/).
 
 ## Picking up where Fornjot left off
 
 Hanno Braun worked on Fornjot, an early-stage B-rep CAD kernel in Rust, from July 2020 until he shut it down in June 2026. His retrospective, ["Shutting Down Fornjot"](https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/), names the mistakes he saw: extrapolating from early success, selling a dream before there was a product, sticking to incremental improvements, half-measures in a crisis, a vision that blurred once the application was cut, and prototyping that came too late.
 
-Catallax picks up where Fornjot left off. The goal is the one he started with: a free B-rep kernel in Rust that a CAD application can stand on. The method is different. AI coding agents write most of the code, and a human directs, questions and checks it. We throw AI horsepower and human curiosity at the problem that wore one person down. We read his retrospective as a checklist and are reshaping our plan around it: measure the hard cases instead of assuming progress, keep a "works today" list beside every sponsorship ask, prototype before committing to an architecture, and aim at one application, SolidDraft, with real parts.
+Catallax picks up where Fornjot left off. The goal is the one he started with: a free B-rep kernel in Rust that a CAD application can stand on. AI coding agents write most of the code, and a human directs, questions and checks it. [The roadmap](docs/PLAN.md#2-fornjots-lessons-and-what-each-one-changes) applies his lessons to our existing build order. In design: measure hard cases and real parts in SolidDraft, keep a works-today list beside sponsorship asks, prototype when an unknown answer would change the build, and end each checkpoint with work committed or parked.
 
 To be plain about what this is and is not: Catallax shares no code with Fornjot. It is not affiliated with Hanno Braun and he has not endorsed it. What we take from Fornjot is its published lessons, with thanks.
 
@@ -30,20 +32,24 @@ Licensed under MIT. See [LICENSE](LICENSE).
 
 Catallax was started by Pedro De Paiva.
 
-## One recipe, two kernels
+## Two kernels, one recipe
 
-One recipe, the feature tree, is the master. An exact B-rep kernel and a signed distance field kernel build each part from it, using one mathematical definition for each operation. Recipe builds name faces and edges by the operations that created them, not their position in a result list.
+The recipe, the feature tree, is the master. An exact B-rep kernel and a signed distance field kernel already evaluate a shared subset of its operations. Each operation has one mathematical definition. Recipe builds name faces and edges by the operations that created them, not their position in a result list.
 
-The kernels must agree exactly where mathematics allows, and within 1 nm only where necessity forces a tolerance. Impossible geometry is the only acceptable final refusal. Every other refusal is unfinished work. The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels, not a claim to beat them.
+The direction is **exact by definition, approximate on purpose**. In design: the B-rep carries parametric parts, STEP and drawings; the field carries lattices, field-driven design and optimisation, and checks the B-rep. SolidDraft grows on both kernels as their operations land.
 
-[The PRD](docs/PRD.md) sets that direction. The B-rep starting code remains intact. [RECIPE.md](docs/RECIPE.md) defines the shared language, and `catallax-field` evaluates its stock solids and booleans with exact predicates, bounded distances and named face queries. [FIELD.md](docs/FIELD.md) states the query guarantees and unresolved cases. `catallax-compare` runs a two-way sampled display check with revision-gated publication. It is not the finer 1 nm pre-export check. The inherited B-rep mark APIs do not yet enforce the new 1 nm geometric limit, and its 50-second deadline conflicts with the same-answer rule. These gaps remain explicit in [the plan](docs/PLAN.md).
+The kept rules are the same answer on every machine and at every thread count, no unsafe code, derived geometry stored by definition, and no wrong proven answer. Only impossible geometry is an acceptable final refusal. Other refusals are unfinished work. The destination remains a kernel comparable to OpenCASCADE, SMLib and the Rust kernels; target parts rebuilding in SolidDraft at click speed are milestones, not the finish line.
+
+In design: one modelling tolerance defines sameness, separate from display and export accuracy. Approximation is reserved for decisions proven too close to call and shapes with no exact form the B-rep can carry. Decisions are recorded once, objects judged the same are merged, approximated pieces carry capped local tolerances measured against their definitions, and topology is checked before publication. The modelling tolerance value and the other open choices are in [the roadmap](docs/PLAN.md#15-open-questions); its [proposed PRD changes](docs/PLAN.md#14-proposed-prd-changes) remain proposals.
+
+[The PRD](docs/PRD.md) defines the product, and [the roadmap](docs/PLAN.md) orders the work. [RECIPE.md](docs/RECIPE.md) defines the shared language; its version 4 definitions are docs-only, while the crate still reads version 3. [FIELD.md](docs/FIELD.md) states the field's query guarantees and unresolved cases. [COMPARE.md](docs/COMPARE.md) documents the two-way sampled display check, not a whole-boundary or 1 nm certificate. In design: the tolerance and consistency core and the finer pre-export check. The inherited B-rep mark APIs do not yet enforce that geometric policy. The deterministic verification exchange uses work budgets; the legacy commands still have their 50-second deadline.
 
 ## What works today
 
 The code is early, and supported operations can still refuse. Measure it by its results, not the length of its roadmap.
 
-- `catallax-numbers` supplies exact arithmetic, certified enclosures and decisions, polynomial roots, construction facts and marks.
-- `catallax-shapes` stores exact rational poses, analytic geometry and derived points by definition, with proven parameter enclosures.
+- `catallax-numbers` supplies exact arithmetic, certified enclosures and decisions, polynomial roots, construction facts and marks. The shared algebraic foundation adds `RealPoly` and certified sine/cosine construction for rational-degree angles.
+- `catallax-shapes` stores exact algebraic placements and analytic dimensions, including elliptic-cylinder definitions, with proven parameter enclosures. Derived points retain their definitions. These definitions do not imply complete recipe or display-mesh coverage for every kind.
 - `catallax-topology` builds blocks, cylinders, spheres, cones and tori in append-only curved topology and checks structural faults.
 - `catallax-intersect` handles plane, cylinder and sphere pairs, closed-form cone/torus configurations, branch-aware curve queries and certified finite conic traces. General noncoaxial cone and torus branch tracing remains unfinished.
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Ambiguous and unsupported cases remain unfinished work.
@@ -55,8 +61,11 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-features::evaluate` builds named B-rep stock solids, exact line/circle/arc profiles with holes, signed extrusions, rationally represented full and partial revolutions, explicit booleans and target-bounded through-all cuts. `Built` retains an immutable recipe definition and returns the model, result and intermediate body handles; `Model::face_origins`, `edge_name` and `vertex_name` expose the names. Split faces keep their origins and merged faces take their union.
 - `catallax-compare` checks every selected display mesh vertex against certified field distance bounds, projects independent field boundary samples onto exact trimmed B-rep faces, and compares origin sets and outward directions. Reports distinguish agreement, proven disagreement and unresolved work. Edit regions and cooperative cancellation do not require app integration.
 - `catallax-cli` builds `catallax` and the legacy `exact-brep` program from the same main. They read a question, build and operate, measure, and write a manifest and optional STEP file.
+- `catallax-verify` runs persistent question, recipe and sampled comparison requests with whole-request deterministic work budgets, separate wall-time reporting and distinct geometry tags. Its replay driver supports caching, strict STEP comparison and worker-count checks; the legacy commands are unchanged.
 
-General algebraic feature frames, oblique circular sweeps and some generated radii remain unsupported legal geometry, listed with specific refusal codes in [RECIPE.md section 7.14](docs/RECIPE.md#714-b-rep-feature-geometry-bugs). Fillets, chamfers, shell, offset, draft, sweep, loft and STEP import remain missing. The kernel does not yet implement the whole PRD. Existing ignored regressions remain visible.
+Not yet: complete algebraic feature frames, oblique circular sweeps and some generated radii, listed with refusal codes in [RECIPE.md section 7.14](docs/RECIPE.md#714-b-rep-feature-geometry-bugs); display meshes for elliptic cylinders and open conics; general cone/torus branch tracing; and sound answers for every coplanar, equal-diameter crossing or near-tangent case. Supported operations can still refuse or take seconds. The kernel does not implement the whole PRD, and ignored regressions remain visible.
+
+In design, not implemented: the tolerance and consistency core, whole-result geometric certificates, complete trimmed-face distance queries, fillets, chamfers, holes as named features, shell, offset, thicken, draft, sweep, loft, pattern, mirror, STEP import, field-only lattices and gyroids, and the SolidDraft application entry and end-to-end verification loop. Settled feature definitions in RECIPE.md are specifications, not shipped operations.
 
 ## Building
 
@@ -167,10 +176,14 @@ Nobody should sponsor a dream. This is what the code on `main` does today, and w
 Works today:
 
 - Blocks, cylinders, spheres, cones and tori, built exactly and by definition in safe Rust.
-- Unite, subtract and intersect on plane, cylinder and sphere pairs, plus closed-form cone and torus cases.
-- Sketch profiles of lines, arcs and circles, extruded or revolved, with faces named by the operation that made them.
+- Unite, subtract and intersect on plane, cylinder and sphere pairs, plus closed-form cone and torus cases, not arbitrary poses.
+- Exact algebraic placements and dimensions, rational-degree rotation construction and elliptic-cylinder definitions. Complete feature and display coverage does not follow from those definitions.
+- Sketch profiles of lines, arcs and circles, extruded or revolved in the supported rational subset, with faces named by the operation that made them.
 - Volume, area and centroid with proven bounds.
 - STEP AP242 export with a proven deviation report, and display meshes with proven chord error.
 - A signed distance field evaluator for the same solids, sketches and booleans, and a sampled two-way check between the two kernels.
+- A deterministic verification CLI for questions, recipes and sampled comparisons, with replay and strict STEP checks.
 
-Not yet: fillets, chamfers, shell, offset, draft, sweep, loft, patterns, mirror and STEP import. Some valid cone and torus poses, equal-diameter crossing pipes and other near-tangent cases still refuse or run past the 50-second deadline. Several operations take seconds. Nothing runs at click speed yet.
+Not yet: complete cone/torus and algebraic-feature coverage, coplanar and near-tangent booleans, or consistently interactive rebuilds. Valid cases still refuse or take seconds. The legacy commands can still reach their 50-second deadline; `catallax-verify` uses deterministic work allowances instead.
+
+In design: fillets, chamfers, shell, offset, thicken, draft, sweep, loft, patterns, mirror, STEP import, field-only features, the tolerance and consistency core, and SolidDraft integration. [The roadmap](docs/PLAN.md) sets the build order and proposed checkpoints.

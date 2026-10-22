@@ -1,24 +1,106 @@
-# Catallax implementation direction
+# Catallax roadmap
 
-[PRD.md](PRD.md) defines the product. This plan separates the inherited B-rep implementation from the work still required. The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels. The former 1-in-10,000 programme and grid-cell acceptance goals are retired; keep their useful mathematical regressions.
+Written 22 October 2026, against `main` after the shared algebraic foundation (#18) and the deterministic verification exchange (#12) merged. [PRD.md](PRD.md) defines the product. This file replaces the previous `docs/PLAN.md` and keeps its backbone. Every item of the previous plan appears below with a verdict, or moves word for word to [COMPARE.md](COMPARE.md) when it documents the comparison library rather than ordering work.
 
-## Keep the B-rep starting code
+The companion document is SolidDraft's roadmap in the SolidDraft repository. Catallax and SolidDraft are one project in two repositories. This file orders the kernel work; SolidDraft's roadmap orders the application work, and each names the other's items where they depend on each other.
+
+The plan was rewritten after reading Hanno Braun's retrospective ["Shutting Down Fornjot"](https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/). His lessons are added to the existing plan, not used to replace it. Where a recommendation would change the PRD, it is listed under [Proposed PRD changes](#14-proposed-prd-changes) and waits for the project owner.
+
+## 1. Premise
+
+Catallax is SolidDraft's kernel, and SolidDraft runs only on Catallax. Kernel work is chosen by where SolidDraft is going, not by what the application does today. SolidDraft grows step by step toward the most usable parts of SolidWorks and nTopology: parametric solids, drawings and assemblies on one side, and implicit modelling, lattices, field-driven thickness, topology optimisation and simulation-led shapes on the other.
+
+The destination stays where the PRD puts it, a kernel comparable to OpenCASCADE, SMLib and the Rust kernels. Target parts that rebuild in SolidDraft at click speed are the milestones on the way and the scoreboard, not the finish line. The former 1-in-10,000 programme and grid-cell acceptance goals stay retired; their useful mathematical regressions stay.
+
+Two kernels build one recipe. The exact B-rep carries parametric parts, STEP and drawings. The signed distance field carries lattices, field-driven design and optimisation, and checks the B-rep. Each operation has one written definition that both kernels read.
+
+The kept rules hold: the same question gives the same answer on every machine and at every thread count; no unsafe code; derived geometry is stored by its definition; a proven answer is never wrong; only impossible geometry is an acceptable final refusal.
+
+## 2. Fornjot's lessons, and what each one changes
+
+Hanno Braun worked on Fornjot from July 2020 to June 2026 and did not reach a usable kernel. His retrospective names six mistakes.
+
+| Lesson | What changes here |
+|---|---|
+| Early progress does not extrapolate. Primitives and transversal intersections come fast; tangent, coincident and tolerance cases are a cliff. | The hard cases are the work. Refusal repair stays a standing lane, and every slow or refusing case is sorted by cause and gets the fix that matches it. A fixed set of hard cases is measured at every checkpoint. Progress is counted as target parts that build in the application at click speed. |
+| Funding before a product sells a dream. | A works-today list stands beside every sponsorship ask. Aspirations carry an "in design" label. Each checkpoint publishes what changed, including the numbers that went the wrong way. |
+| Incremental change alone cannot fix an architecture. Prototype constantly; integrate only what proved itself. | Prototypes are a standing practice with a fixed shape and a decision rule written before any code. Section 8 says which questions get one and which do not. |
+| Half-measures sink a project. In each crisis the options were full commitment or quitting. | Full commitment: SolidDraft drops its other kernel and runs only on Catallax. Checkpoints end every piece of work as committed or parked, never "almost there". Direction changes only at a checkpoint, with evidence. |
+| A generic kernel is a vaguer target than an application. | Catallax is designed for SolidDraft's intended feature set. Integration moves from the last item of the previous plan to now. |
+| Prototyping came too late, and the redesign never landed. The codebase sat half-migrated. | One representation-wide redesign at a time, landed whole. The algebraic foundation landed on 22 October; the tolerance and consistency core in section 3 is the next and only one. |
+
+His final experimental architecture stored geometry as polylines and triangles built at a caller tolerance, and gave up exact geometry on purpose. It never reached booleans, fillets or STEP. Catallax shares his data model (append-only stores, handles, explicit coincidence, keeping the generating definition) and makes the opposite bet on geometry: exact by definition, approximated only on purpose.
+
+## 3. Kernel direction: exact by definition, approximate on purpose
+
+### 3.1 One modelling tolerance
+
+Catallax uses one modelling tolerance when it creates geometry. Two things closer than it are the same thing. The recommended value is 1 nm; 10 nm is the open alternative (section 15).
+
+A floating-point kernel needs a tolerance well above the rounding noise that builds up across operations, which is why Parasolid works at 10 nm. Catallax's numbers carry no accumulated noise, so its tolerance only defines sameness. Mechanical parts are made to microns, so both values sit far below anything a designer means. Proving a gap is under 1 nm costs a few more bits of precision than proving it is under 10 nm. The expensive step is proving an exact zero, and any tolerance removes that step.
+
+Display accuracy and export accuracy are settings of those outputs, not kernel tolerances. The tolerance is chosen before the work starts and is never enlarged because work ran long, so the same question keeps the same answer.
+
+### 3.2 When approximation happens
+
+Approximation never happens for geometry that is clearly apart; the floating-point filter in front of the exact decisions settles those, about four decisions in five on the existing corpus. It never happens for contact known by construction either. Builders record design intent when they create geometry (coaxial, concentric, flush, tangent), and a recorded fact answers its decision with no arithmetic.
+
+It happens in two situations only.
+
+1. A decision is too close to call: the gap is tiny and proving it exactly zero would be expensive. Typical causes are a contact the user meant but reached through arithmetic instead of declaring it, the same point or edge reached by two routes, near-tangency, and imported geometry. The decision is settled as "the same" when the gap is proven smaller than the modelling tolerance.
+2. A shape has no exact form the B-rep can carry: fillets, offsets and blends between general surfaces, and intersections of spline surfaces. The B-rep carries an approximation within a local tolerance and keeps the definition beside it.
+
+### 3.3 Four consistency rules
+
+Once anything is approximated, disagreements between approximations, or between an approximation and an exact answer, cannot be ruled out. Sameness within a tolerance is not transitive; an approximate answer can contradict an exact one about the same object; an approximated face may not quite meet its neighbour. Four rules keep the model whole.
+
+1. Decide once, everyone obeys. Each too-close-to-call decision is recorded, and every later decision reads the record instead of asking again.
+2. What is declared the same becomes one object. Merging points and edges judged the same stops sameness from drifting across three nearly equal objects.
+3. Approximated pieces carry their own recorded local tolerance, the way Parasolid's tolerant edges do. An imported edge does the same. Later operations respect it, and the looseness is visible rather than hidden.
+4. Topology is checked before any result is published. A result is a valid solid or a failed operation, never a cracked solid.
+
+In a floating-point kernel every number is an approximation, so disagreements can start anywhere. In Catallax they can start only where the kernel chose to approximate, and each one has a proven size.
+
+### 3.4 Local tolerance caps
+
+| Source of the local tolerance | Target | Cap | Above the cap |
+|---|---|---|---|
+| An approximation the kernel makes itself: fillets, offsets, blends | 100 nm | 1 µm | The operation refines, splits and refits, or substitutes exact geometry. If none works it fails and reports the deviation it reached. |
+| Imported geometry | | 10 µm | Refused, unless the user explicitly accepts a looser tolerance for that file. The acceptance is recorded in the model. |
+
+A local tolerance is also never more than a tenth of the shortest neighbouring edge or the narrowest neighbouring face, so it cannot swallow a feature. The number is never clamped down to the cap; a clamped tolerance leaves a broken solid. Under PRD section 3.2 a failure to meet the cap is unfinished coverage, a bug to fix, not impossible geometry.
+
+The reasons behind the numbers: Parasolid's tolerant-modelling paper (Jackson, 1995, doi:10.1145/218013.218067) says its earlier single tolerance was below what imported mechanical parts carried, ties every limit to feature size, and says "tolerance growth should be contained where possible". ACIS creates a tolerant edge in local operations only below 100 times its base tolerance. Automotive and defence data-quality rules for exchanged models allow face gaps up to 0.01 mm (Hedberg et al., JCISE 16(2), 2016). Fine machining and resin printing hold about ±0.05 mm.
+
+### 3.5 No growth
+
+Parasolid's tolerances grow because later operations build on the approximations and inherit their error. Catallax keeps every shape's definition, so a later operation measures each approximated piece against its definition and resets its local tolerance to the deviation actually present. A boolean only trims an approximated face; a shell or offset of a fillet face is the same kind of shape at another radius. Local tolerances therefore do not accumulate along a feature tree.
+
+### 3.6 Field-only features
+
+Lattices, gyroids, graded density, field-driven thickness and smooth blends belong to the field. They do not have to become B-rep. Conversion is attempted when the user wants it. When it gets too awkward, by size, time or the caps above, the feature stays field-only: it is displayed and exported from the field, as a mesh or 3MF for printing. Whether the B-rep then carries the PRD section 7 stand-in, the outer envelope plus bodies matching mass, centre of gravity and inertia, is an open question (section 15). A smooth blend is a field feature in its own right, not an approximate fillet; smooth-minimum blends match a rolling ball only between two perpendicular planes.
+
+### 3.7 The field as the checker
+
+The field holds the exact version of what the B-rep has to approximate. An offset by r is everything within r of the shape. A rolling-ball fillet is everything at distance r from the path of the ball's centre, and that path is where the two faces meet once each is pushed outward by r. Between two planes the path is a line, between a plane and a cylinder a circle or ellipse, and between two cylinders a degree-4 curve. Distance to a curve is an exact expression.
+
+1. Each approximated piece is measured against its own definition: a fillet face against distance r from both faces it rolls on, an offset face against distance r from the original. Proven bounds over the whole face, not samples alone, give the worst deviation, and that value is the piece's local tolerance.
+2. The field does not measure against one min/max field for the whole model. After a boolean, a min/max field stops being a true distance near corners and inside the solid, and offsetting it gives wrong shapes. Where the field measures tolerances it uses distance to each face's definition, bounded from both sides. A one-sided "at least this far" bound can prove two things apart but never prove them close.
+3. For the whole-part second opinion the field builds every step it can. Where it cannot build a step yet, it takes over the B-rep's result for that step and checks every later step independently. Only that step loses its independent check, and the local measurement in point 1 still covers it. Every check reports what it covered.
+
+When the two kernels disagree, the definition is the truth, not either kernel. A disagreement larger than the local tolerance is a bug in one of them, and the field's distance shows which.
+
+Commercial kernels check results with a self-checker rather than a second kernel; Open CASCADE samples each edge against its faces and compares the gap with the edge tolerance. Hybrid products such as nTopology convert between forms within a stated deviation and do not cross-check afterwards. Catallax's check is stricter, and its fallback is never weaker than theirs.
+
+## 4. The starting point, kept
 
 Carry forward exact arithmetic and certified decisions with deterministic work budgets, definition-based analytic geometry, append-only curved topology, the five-stage boolean engine, bounded mass properties and STEP AP242 export. Preserve the public exchange contract unchanged, including its legacy names. `catallax-features` adds named B-rep recipe stock solids and rationally represented sketch features. The independent `catallax-field` evaluator covers stock solids and booleans; see [FIELD.md](FIELD.md) for its guarantees.
 
 The existing tests include ignored cases. Their source records the reasons; a green default suite does not mean those cases were repaired. Existing work still in the source repository must arrive as a separately reviewed export delta, never by silently replacing this tree.
 
-## Next work, in order
+## 5. The feature build order, kept
 
-1. Continue independent testing of the B-rep half and repair refusals of possible geometry. General cone and torus pairs, ambiguous imprints and classification, precision limits and missed measurement accuracy remain unfinished work. Only impossible geometry is an acceptable final refusal.
-2. [RECIPE.md](RECIPE.md) defines each operation and its origin-based naming. Named B-rep recipe builds now preserve origins through splits and maximal merges. Settle the remaining section 7 items and widen exact geometry beyond rational analytic frames. Arena indices are not persistent names.
-3. Define and enforce a composable geometric error policy. A bounded decision may stand in for exact coincidence only after proving the gap smaller than 1 nm. Existing scalar, angle and distance marks do not yet establish that invariant over a whole result.
-4. The field evaluator covers stock solids, sketch profiles, signed extrusions, two-sided through-all cuts, rational-frame revolutions and booleans. `catallax-compare` performs sampled two-way display comparison over that common subset. Extend certified classification of degenerate regularised zeros and finite closest-point bounds on surviving trimmed faces before claiming complete distance/proximity queries or generally resolved curved-sweep and Boolean comparisons.
-5. Finish the remaining sketch, extrusion and revolution geometry bugs listed in RECIPE.md section 7.14 in both evaluators, preserving common definitions and comparable origin sets. Continue through holes, fillets and chamfers, shell and offset, draft, sweep and loft, pattern and mirror. Every operation needs its shared definition before two implementations can agree.
-6. Integrate the shared-edge display meshes from `catallax-mesh`, then add STEP import, on-demand conversions, output hand-off checks, export accuracy levels and large-part stand-ins. Seam curves require a versioned exchange-contract change. Measure export interoperability rather than assuming a syntactically valid file works in every CAD tool.
-7. Integrate the kernel into SolidDraft once the required operations are covered. Add field-only features, printing, FEA queries and interference checks with the hand-off guarantees in the PRD. FEA solver design remains separate.
-
-## Feature build order after the shared foundation
+The build order merged with the settled recipe definitions stays the backbone of the kernel work. The staged path in section 6 follows it, with one change: chamfers on plane and circular edges come forward into stage 3. They produce planes and cones, need no approximation, and SolidDraft loses its current chamfer when its other kernel is removed. Fillets between planes and cylinders are exact cylinders and tori and may come forward the same way if the application needs them sooner (section 15).
 
 RECIPE.md sections 7.1 to 7.13 now record the settled definitions and product choices, with future variable-radius and nonplanar parting-line extensions kept distinct. Its version 4 specification is docs-only; the crate still reads version 3. Land the schema and migration review separately before emitting version 4 files. Do not relabel arc-length lofts automatically.
 
@@ -30,95 +112,286 @@ RECIPE.md sections 7.1 to 7.13 now record the settled definitions and product ch
 
 At each stage compare point sets, surviving origins and refusal classifications in both kernels. Require whole-result error transfer proofs under ARCHITECTURE.md before accepting bounded geometry; display agreement is separate evidence. Reassess after shared analytic operations and their comparison proofs land, before committing to general derived carriers.
 
-## Background comparison prerequisites
+## 6. The staged path
 
-`catallax-mesh` now supplies deterministic display tessellation with explicit mesh-to-exact-surface deviation bounds and face picking IDs. `catallax-features` supplies the B-rep recipe adapter for stock definitions and booleans, retaining operation names through trimming and merging. Resolve mesh face IDs through `Model::face_origins` before comparing canonical origin sets; arena IDs are not persistent names. Neither implementation is part of the field crate.
+Stages are ordered by dependency. Work inside a stage runs in parallel unless an item says otherwise.
 
-`catallax-compare` supplies the library check. `Controller::begin` invalidates the previous revision and clears its published result. Dispatch `Revision::check` on an application-owned worker, or use `check_built` with a cached B-rep build and the field recipe. Only a complete report for the still-current revision can publish. `cancel` invalidates its own revision without touching a newer edit. No library thread pool, clock deadline or app-side edit tracking is added.
+### Stage 0: land what waited for the foundation
 
-The forward pass evaluates the certified field query at every selected mesh vertex, preserving exact binary64 coordinates as rationals. For mesh deviation `e` and field distance interval `[l,u]`, the comparison uses the lower bound `max(0,l-e)` and upper bound `u+e`. A lower bound above the display accuracy proves a gap; an unbounded upper bound remains unresolved even when an auxiliary surface projection exists. No raw Boolean residual decides proximity.
+The foundation, the verification exchange, the settled recipe definitions and the Fornjot statement are merged. The lanes told to rebase once onto the foundation now do so and land, or park: refusal fix batch 5, and any other lane in ARCHITECTURE.md's integration order whose work is not yet on `main`. Each rebases exactly once and lands within one checkpoint of the rebase.
 
-The reverse pass generates rational stock-boundary and feature-boundary candidates independently of the B-rep mesh. `Plan::visit_feature_candidates` uses the field's stored profile and sweep definitions, including signed and oblique extrusion, rational-frame full/partial revolution and through-all walls. Through-all sampling uses a conservative field-result bounding box propagated through the expression tree, not artificial tool caps or a B-rep bound. Certified field face queries discard removed candidates and retain unresolved trimming. Each surviving sample projects to an exact rational supporting-surface witness, then checks that witness against the matching trimmed B-rep face. Analytic support distances supply lower bounds; the measured distance to a certified on-face witness supplies the upper bound. A chart projection need not be the closest point. The added queries do not change either kernel's generated geometry.
+### Stage 1: cheap speed wins, both verification loops, and Catallax in SolidDraft
 
-Origin comparisons use canonical sets from `Model::face_origins`. A maximal merged face can contain different creating origins on adjacent patches, so the check collects the locally witnessed names over that face rather than requiring every name at every point. Field normal enclosures and exact B-rep gradients check outward direction at the reverse witnesses. Sharp mesh vertices do not acquire fabricated unique normals. Missing origin or direction coverage stays unresolved.
+- Record design intent when parts are built: coaxial, concentric, flush and tangent. On the existing corpus about one decision in eight proves an exact zero the slow way, while recorded facts settle fewer than one in thirty.
+- Compute proven volume, area and centroid only when asked. In the slow cases measured so far, most of the time went to proven measurement, not to the boolean; one block-and-sphere union spent 0.18 s of 12 s in the boolean. The legacy command keeps measuring every answer under its contract.
+- Both verification loops from section 7.
+- Catallax's application entry: a recipe goes in; the body, its display mesh with edge polylines and face origins, names and typed refusals come out. SolidDraft builds its first parts through it (sketches, extrudes, cuts, revolves and booleans) and removes its other kernel, as its roadmap describes.
+- Sound booleans when operands share a face or a face lies in another's plane, in both kernels. SolidDraft's first parts unite flush faces.
+- The two prototypes in section 8 start.
 
-Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four rational intervals per sampling parameter interval, and minimum normal cosine 999/1000. These are sampled display checks, not a global Hausdorff certificate or the finer 1 nm pre-export check. Raising `divisions` increases independent reverse sampling. A closed rational `Region` restricts both passes; forward selection pads the box by the local mesh error. A scope with no two-way samples stays unresolved. A merged-face origin whose extent cannot be established within the region stays unresolved rather than causing a remote naming change to fail the local check. The library still rebuilds and meshes the complete B-rep, so regional rechecks reduce query work, not build cost. Cancellation is cooperative between kernel calls and individual samples; existing build and meshing calls are not interrupted internally.
+Exit: the first target part rebuilds in SolidDraft on Catallax inside the interactive targets.
 
-| Recipe operations | Comparison coverage |
-|---|---|
-| Block, cylinder, sphere, cone frustum, ring torus | Both builds, display vertices, independent exact field samples, trimmed-face projections, names and directions |
-| Unite, subtract, intersect | Same two-way path wherever both kernels build and mesh the recipe; unresolved Boolean query bounds remain unresolved |
-| Sketch, extrude, extrude-through, revolve | Same two-way path for the shared rational support subset, including profile holes and segment aliases; specific unfinished frame/surface refusals stay unresolved |
-| Path, hole, fillet, chamfer, shell, offset, thicken, draft, sweep, loft, pattern, mirror, STEP import | Not comparable: neither recipe adapter implements the operation |
-| Lattice, gyroid, smooth blend, mesh import | Not comparable: the field implementation is missing; a B-rep implementation is not planned |
+### Stage 2: the tolerance and consistency core
 
-Every unsupported step is returned with its operation-specific reason, not only the first step. Builds, meshes and query proofs that fail stay unresolved. A proven discrepancy takes precedence over unresolved observations, which remain in the report. Exact expression identities can certify agreement of two empty results without boundary samples. General emptiness is not inferred from missing samples.
+Section 3 built directly, in pieces, following the migration order already recorded in ARCHITECTURE.md for the composable error policy: certificate types and the modelling tolerance; scoped residual conversions; certificates bound to valid bodies; meeting loci, contact and branch selection; composition through the five boolean stages and every feature node; measurement; export. The decide-once record, merging, local tolerances with their caps, no growth and the topology check before publishing land with the pieces that need them. Each piece must turn some of today's near-miss refusals into valid answers without changing any proven answer. If a piece does not, work stops and the cause is found before the next piece starts.
 
-Existing kernel limitations exposed during comparison development remain unrepaired here:
+Exit: the near-miss class of refusals answers, with the same answer on every machine and at every thread count, and a forged mark is rejected.
 
-- Coplanar subtraction can return indeterminate field trim queries on removed common supports. Reproducer: two size-2 blocks at translations `[0,0,0]` and `[1,0,0]`, with identity rotations, then subtract the second from the first. Samples such as `[3/2,0,1/2]` remain unresolved, not disagreements or agreement certificates.
-- A Boolean naming the same body step as both operands reaches the B-rep engine's distinct-body assertion. The comparison capability report marks that case not comparable before entering the assertion. Reproducer: block `a` of size `[2,2,2]` at identity placement, then subtract `a` from `a`. Two separately named identical blocks do build and compare as an empty result.
-- The default one-million-vertex meshing allowance is insufficient for a torus with major radius 30 and minor radius 10 at 0.005 mm chord tolerance. The failure is `mesh.precision-or-budget`, not impossible geometry or disagreement. Reproducer: stock torus `stock`, identity rotation and translation `[7/3,-5/7,2]`. Periodic temporary chart copies count toward this allowance. The agreeing scale fixtures request four million vertices without changing the 0.01 mm comparison accuracy or 0.005 mm mesh tolerance; production defaults are unchanged.
+### Stage 3: everyday features, and distance in both kernels
 
-The application still owns edit-region calculation, worker scheduling, restart policy, attribution to the edited feature and the kernel bug list. SolidDraft integration, development checks, pre-export checks and command-line exchange changes are outside this library.
+- Build order step 1: finish algebraic sketches, extrusion and revolution; named holes and countersinks; the additional extrusion end conditions; pattern and mirror. Chamfers come forward into this stage.
+- Build order step 2: trimmed-face distance queries and regularised offsets in both kernels, then shells, outward shells and thicken. In the field this is the per-face distance that section 3.7 uses as the measuring stick.
+- The field-only feature track starts once the field's per-face distance exists.
 
+Exit: a part with holes, a chamfer and a pattern, and a shelled part, build and compare in SolidDraft.
 
-## Deterministic verification policy
+### Stage 4: fillets and draft
+
+Build order step 3. Fillets are built on the distance work, owned and constructed as the fillet prototype decided. The field measures each fillet face's local tolerance. Ends and corners follow the settled definitions in RECIPE.md section 4.5.1, last. Planar and cylindrical draft land alongside.
+
+Exit: a filleted part builds in SolidDraft with every fillet face under the 100 nm target, and the field check passes.
+
+### Stage 5: sweeps, lofts and splines
+
+Build order step 4: generic derived carriers with their charts, predicates, intersections, integration and export together, then rational lofts and fixed spline sweeps. Helices need the certified function representation the build order names.
+
+### Stage 6: STEP import and editing
+
+Build order step 5, with imported geometry carrying local tolerances up to 10 µm under section 3.4. Seam curves in STEP need the versioned exchange-contract change. STEP accuracy levels stay an export setting.
+
+### Throughout every stage
+
+- Refusal repair. Every slow or refusing case is sorted into one cause and gets the fix for it: unrecorded intent gets the fact recorded; a near-miss gets the tolerance rule; growing complexity gets a different representation or a bounded approximation; measurement gets moved off the rebuild path. A profile of the case is enough to sort it. Cases a target part hits go first.
+- The field grows alongside the B-rep toward parity, and takes over where it cannot build a step yet.
+- Each new operation reaches SolidDraft as soon as it lands.
+- The works-today list changes in the same pull request as the capability it describes.
+
+## 7. Verification loops
+
+Agents write most of the code, so the loops that check it must be fast and run without a person.
+
+### 7.1 The kernel loop
+
+The `catallax-verify` exchange is the kernel loop: one question or recipe in, the answer with its manifest, deterministic work counts and wall time out. It finds and fixes a bug inside the kernel in seconds. One, two and four workers give identical outcomes and work counts. Its policy, kept from the previous plan:
 
 The policy conflict is closed for the opt-in `catallax-verify` exchange. Whole-request work budgets choose outcomes; wall-clock measurements report performance only. External cancellation leaves an incomplete run. The legacy CLI retains its 50-second deadline unchanged until callers migrate. [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md) defines the versions, adapters and replay driver; [ARCHITECTURE.md](ARCHITECTURE.md#the-time-budget) records the allowance and interactive targets.
 
-## Measure useful latency
+Two additions serve the loops: a per-operation log in a stable machine-readable form (how each decision was settled, refusals with codes, marks, local tolerances and timings), and a question format that the application loop can export.
+
+### 7.2 The application loop
+
+Headless SolidDraft, running on Catallax, driven by agents through its command layer and MCP the way a user drives it, at volume. Each run saves the recipe, rendered views, the kernel's per-operation log and a pass or fail result. Any failure exports its recipe or step as a kernel-loop question, so the fix is checked in seconds and the run repeats through the application. It is the same application users run. SolidDraft's roadmap owns this loop; Catallax owns the log and the export format.
+
+Full suites run on GitHub's runners. Timings that count as progress come from a quiet, pinned core, as ARCHITECTURE.md requires; numbers taken under load are labelled as such.
+
+### 7.3 Useful latency, kept
 
 Record rebuild and query time per representative edit, including refusal latency and agreement-check cost. Speed per click matters. Optimize measured costs without weakening proofs. Safe background threads and cancellation must preserve deterministic answers and must never expose a half-built result to the application.
 
-### Whole-check measurements, 2026-10-22
+The interactive targets in ARCHITECTURE.md are the click budget: 100 ms for stock solids, 500 ms for booleans, 1,000 ms for recipe feature builds and 2,000 ms for the complete background comparison, including requested measurement and export.
 
-Measured on an x86_64 Linux workstation with an Intel Core i7-9750H, release
-build, process priority `nice 10`, default comparison options. Each row is one
-complete run including independent field compilation, named B-rep construction,
-display meshing, both query passes and revision-gated publication. Compilation
-time is excluded. Other validation work was running concurrently; these are
-observed shared-machine costs, not idle-machine throughput estimates.
+## 8. Prototypes
 
-```sh
-nice -n 10 cargo run --release -p catallax-compare --example measure -- 1
-```
+### 8.1 When a prototype is worth it
 
-The example fixes the complete recipes, including identity placements. Dimensions
-are millimetres. The joined blocks share a complete end face. The bored block
-subtracts a radius-1.5 cylinder of height 7 at `[5,5,-1]`. The intersecting spheres
-have centres `[0,0,0]` and `[2,0,0]`.
-The stock measurements preceded the field-feature integration rebase. The three
-profile rows were measured afterwards using the corresponding example case
-filter. All rows use the same display accuracy and meshing controls.
+A prototype is worth it only when all three hold.
 
-| Example | Dimensions | Whole check, ms | Forward vertices | Reverse samples | Outcome | Unresolved observations |
-|---|---|---:|---:|---:|---|---:|
-| `block` | 20 x 10 x 5 | 20.145 | 8 | 96 | Agree | 0 |
-| `cylinder` | radius 2, height 5 | 1393.344 | 496 | 192 | Agree | 0 |
-| `sphere` | radius 2 | 19674.712 | 8066 | 128 | Agree | 0 |
-| `frustum` | radii 2 and 1, height 4 | 11564.849 | 4376 | 192 | Agree | 0 |
-| `torus` | major 3, minor 1 | 52706.842 | 16384 | 256 | Agree | 0 |
-| `joined_blocks` | 20 x 10 x 5 united with 5 x 10 x 5 | 275.867 | 8 | 160 | Unresolved | 32 |
-| `bored_block` | 20 x 10 x 5 with a through bore | 2163.574 | 400 | 128 | Unresolved | 178 |
-| `intersecting_spheres` | two radius-2 spheres | 51719.860 | 3294 | 44 | Unresolved | 3293 |
-| `profile_extrude` | 4 x 3 rectangular profile, signed height 2 | 38.059 | 8 | 96 | Agree | 0 |
-| `profile_through_slot` | 20 x 10 x 5 block, 4 x 2 rectangular through slot | 211.469 | 16 | 158 | Agree | 0 |
-| `profile_quarter_revolve` | radii 1 to 2, height 3, 90-degree revolution | 1041.295 | 208 | 96 | Unresolved | 106 |
+1. The answer is unknown.
+2. The answer would change what is built or in what order.
+3. A throwaway version answers it far more cheaply than building it properly.
 
-No unperturbed representative part produced a proven discrepancy. The joined
-blocks expose indeterminate field queries on the removed meeting plane.
-Curved Boolean mesh vertices generally have unbounded field distance uppers;
-those observations do not become agreement. The tests also deliberately change
-dimensions, locations, names and orientation to require disagreements.
+Otherwise the work is built directly, with acceptance tests. The tolerance and consistency core is built directly: it is established practice with proofs added, and it is needed whatever a prototype would say. Recording intent and measurement on request are built directly because they are plainly right. The verification loops are tooling.
 
-No general interactive budget or candidate-versus-baseline slowdown is established
-by these shared-machine samples. Attribute a performance regression only after
-three matched baseline/candidate rounds on separate pinned physical cores,
-recording load and geometric work units. Field Boolean queries also need finite
-upper distance bounds before the background check can routinely settle those
-edits. That is a useful reassessment point before app integration.
+### 8.2 Prototypes now
+
+1. Fillet construction and ownership. Which kernel builds the fillet the user sees, and does a B-rep fillet face built from the offset-face path meet the 100 nm target inside the click budget? Candidates: the B-rep constructs the rolling-ball surface from its definition and the field measures it; or the field displays the fillet first and the B-rep builds it only for export and drawings. Measured on the filleted target part: time to first display, deviation from the definition measured by the field, names after a radius edit, and STEP that opens in OpenCASCADE. Decision rule: the candidate that meets the click budget and the 100 nm target owns fillet display; if both do, the B-rep, because STEP and drawings need it anyway; if neither does, RECIPE.md section 4.5 is revisited for interactive use.
+2. Intersections that grow in complexity. The equal-radius cylinder class refuses today on polynomial algebra over very large numbers. Candidates: keep the meeting curve implicit as "where these surfaces meet" and decide against it directly; or carry a certified approximation within the local tolerance and keep the definition beside it. Measured on the equal-radius and seam cases of the hard-case set: time, refusals, topology validity and proven deviation. Decision rule: the candidate that answers the most cases inside the click budget with valid topology and no changed proven answer is promoted; a tie goes to the implicit candidate, because it approximates nothing.
+
+### 8.3 Prototypes later
+
+How large a lattice can be before B-rep conversion is too awkward. The answer sets the threshold at which a lattice stays field-only, and the PRD's open stand-in size (section 11 of the PRD) with it.
+
+### 8.4 How a prototype runs
+
+- A one-page file under `docs/prototypes/<name>.md` comes before any code: the question, the candidates, the test cases, the numbers, the decision rule, and a time box of one checkpoint, two at most.
+- The code lives on a `prototype/<name>` branch and is never merged. It may break every design rule except two: it may not report a wrong answer as right, and it may not change the measuring tool.
+- It is measured with the kernel loop and, once it exists, the application loop, against a baseline taken on `main` at a named revision before anything changes.
+- The verdict is promote, park, or repeat once when the measurement itself was wrong. "Promising, needs more time" is park.
+- A promoted idea is rebuilt properly on `main`, with the prototype's numbers as its exit check.
+
+## 9. Target parts
+
+Target parts are the scoreboard and a tie-breaker. Work proceeds in the build order whether or not a target part needs it yet; when two items compete for the same hands, the one an earlier unbuilt part needs goes first. The list below is a proposal (section 15). Each part is a `catallax-recipe` file under `parts/` with fixed dimensions, so timings compare across revisions.
+
+| Part | What it exercises | First stage that can build it |
+|---|---|---|
+| P1 Bracket. A plate with a flange along one edge, a boss with a through bore, four bolt holes on a rectangular pattern and a slot through the flange. | Extrusions and booleans, including a union whose operands share a face, and a chain of about a dozen subtractions. | 1 |
+| P2 Turned collar. A rectangle revolved a full turn into a ring, chamfered on both outer edges. | Revolution, torus and cone surfaces, chamfer on circular edges. | 3 |
+| P3 Filleted boss. A block with a cylindrical boss on top, the junction edge filleted, the block's top edges filleted. | Plane-to-plane and plane-to-cylinder fillets, concave and convex, with transversal ends. | 4 |
+| P4 Shelled tray. A block shelled to a thin wall with its top face open, then intersected with a cylinder to round its corners. | Shell with an open face, then a boolean on the shelled body. | 3 |
+| P5 Flanged housing. A revolved housing with a pattern of countersunk holes and fillets where the flange meets the body. | Pattern, countersink cones in booleans, fillet against a revolved face. | 4 |
+
+The next five are named so that no near-term decision closes them off: P6 lattice-filled bracket, P7 field-driven bracket with gyroid infill, P8 helical spring and threaded boss, P9 lofted duct, P10 topology-optimised bracket. Their recipes are written when their turn comes.
+
+P0 is the hard-case set: equal-diameter pipes crossing at right angles, cylinders tangent along a line, a cylinder and a sphere with equal radii, a block and sphere union, poses along a seam, near-miss poses, and the general cone and torus poses that refuse today. P0 is both a gauge, measured at every checkpoint, and a work queue for the refusal-repair lane.
+
+A target part counts as built when:
+
+- the B-rep builds it from the recipe with no refusal, and every local tolerance is under its target;
+- the field builds the same recipe and the comparison agrees, or the field took over named steps and the report says which;
+- a full rebuild finishes inside the interactive targets;
+- its STEP file opens in OpenCASCADE with the same face count and a volume within the exported deviation;
+- a parameter edit (plate thickness, boss radius, fillet radius) rebuilds with every recipe name resolving to the same face;
+- the application loop builds and edits it in SolidDraft and passes.
+
+## 10. Process
+
+### 10.1 Checkpoints
+
+Checkpoints fall on fixed dates. At each one a dated note under `docs/checkpoints/` records what landed, what parked and why, the target-part and P0 numbers, and what the next checkpoint must show. The same note goes to sponsors. A checkpoint can slip a day for a build to finish, never for a design argument.
+
+Every piece of work in flight gets one of two verdicts. Committed means merged, or rebased with a landing date before the next checkpoint. Parked means the branch stays, `docs/parked/<name>.md` records what works, what does not and what resuming would take, and no further work happens until a later checkpoint un-parks it. Work that is "almost there" at two checkpoints in a row is parked.
+
+A change of kernel direction, meaning a new representation, a new default arithmetic path or a new kernel effort, happens only at a checkpoint, only with a prototype result or a measured failure as its reason, and only as a written decision in ARCHITECTURE.md.
+
+The cadence is open (section 15). With two weeks, the proposed dates and must-show lists are:
+
+| Checkpoint | Date | Must show |
+|---|---|---|
+| C1 | 5 November 2026 | Stage 0 lanes landed or parked. Intent recording and measurement on request merged. The kernel loop's per-operation log. `parts/` with P0 to P5 recipes and a scoreboard report. Both prototype files written and both prototypes started. |
+| C2 | 19 November 2026 | P1 builds in SolidDraft on Catallax inside the interactive targets, with the other kernel removed. Coplanar booleans sound in both kernels. The application loop runs on GitHub's runners. Both prototypes decided. The first tolerance-core piece merged. |
+| C3 | 3 December 2026 | The near-miss class of P0 answers. Holes, end conditions and chamfers in the application; P2 built. STEP and mesh export from SolidDraft through Catallax. |
+| C4 | 17 December 2026 | Pattern and mirror. Offset, shell and thicken in both kernels; P4 built. Names survive the parameter edit on P1, P2 and P4. |
+| C5 | 14 January 2027 | Fillets as the prototype decided, with local tolerances measured by the field; P3 and P5 built. Planar and cylindrical draft. P0 republished. The field-only track's first feature started. |
+
+A checkpoint that misses its list is not failed. It records what it showed instead, and the next list is rewritten. Hiding a miss is the failure.
+
+### 10.2 Landing work without a half-migrated codebase
+
+1. One representation-wide redesign at a time. The foundation was the first. The tolerance and consistency core is the next, and nothing else of that kind starts while it is open.
+2. A redesign merges only whole, behind its gate. If the gate is not green by its checkpoint, it parks and `main` keeps the previous representation.
+3. Each dependent lane rebases exactly once, onto the merged base, and lands within one checkpoint of that rebase or parks.
+4. A lane that needs a type the base does not have asks for a recorded decision. It does not add a parallel type.
+5. Independent fixes that widen no interface may land at any time.
+6. No decision taken to ship an early target part may close off a later one. The recipe language keeps every operation in RECIPE.md section 4, the field stays a kernel rather than a checker only, and generic swept surfaces stay the planned path for sweeps and lofts.
+7. Every merge updates the in-flight ledger in section 13. A branch not in it is parked.
+
+### 10.3 Sponsorship tied to shipped capability
+
+- The works-today list in README.md and on the site names only what `main` does, with a "not yet" line for what it does not.
+- A pull request that adds, removes or materially speeds up a capability updates both lists in the same change. Review checks for it.
+- The site names an aspiration only with an "in design" label, never as a capability.
+- The checkpoint note is the sponsor update: dated, with the numbers, including the ones that went the wrong way.
+
+### 10.4 How the work is produced
+
+Most Catallax code is written by AI coding agents, directed and checked by a person. The rules above are written so an orchestrator can dispatch them: a prototype is a file, a branch, a time box and a decision rule; a checkpoint is a dated review of the ledger; a target part is a recipe and a scoreboard row. Agent throughput makes two-week checkpoints realistic. It also makes direction churn cheap, which is why the checkpoint rule is strict. Prototypes are a good fit for offloaded workers because their code is throwaway and their decision rule is written down.
+
+## 11. Verdicts
+
+### 11.1 The previous plan's items
+
+| Previous item | Verdict | Reason |
+|---|---|---|
+| Keep the B-rep starting code | Stays | Section 4, word for word. |
+| Next work 1: independent testing and refusal repair | Stays | A standing lane. Each case is sorted by cause and gets the matching fix; cases a target part hits go first. The independent tester and its exchange contract are unchanged. |
+| Next work 2: settle RECIPE.md section 7 and widen exact geometry | Stays, largely done | Sections 7.1 to 7.13 are settled. The algebraic foundation widened exact geometry beyond rational frames. Section 7.14's bugs land in stage 0 and stage 3. |
+| Next work 3: define and enforce the composable error policy | Changes | Becomes the tolerance and consistency core, stage 2. The 1 nm bound and the certificate design stay; the decide-once record, merging, local tolerances, caps, no growth and the publication check are added. |
+| Next work 4: field degenerate zeros and finite closest-point bounds | Stays, moves up | The coplanar part blocks SolidDraft's first parts and lands in stage 1. Two-sided distance to each face's definition is the field's checking role and lands in stage 3. |
+| Next work 5: section 7.14 bugs, then holes through mirror | Stays | In the build order's sequence, with chamfers brought forward into stage 3. |
+| Next work 6: display meshes, STEP import, conversions, hand-off checks, export levels, stand-ins | Changes | Display meshes with edge polylines and face origins stay at the front, because SolidDraft draws them from stage 1. B-rep to field takeover arrives with the field checking role. Field to B-rep conversion follows the field-only rule in section 3.6. STEP import is stage 6. Export accuracy levels stay an export setting. The stand-in is an open question. Seam curves still need the versioned contract change. Interoperability is measured by opening exports in OpenCASCADE. |
+| Next work 7: integrate into SolidDraft once operations are covered | Changes | Integration starts now with the operations Catallax builds today, and SolidDraft runs only on Catallax. Field-only features, printing, FEA queries and interference checks keep the PRD's hand-off guarantees and come on the field track; the FEA solver design stays separate. |
+| Feature build order after the shared foundation | Stays | Section 5, word for word, as the backbone of stages 3 to 6. One change: chamfers forward. |
+| Background comparison prerequisites | Moves | Documentation of `catallax-compare`, moved word for word to COMPARE.md. |
+| Deterministic verification policy | Stays | Section 7.1, word for word. |
+| Measure useful latency | Stays | Section 7.3. The whole-check measurements of 22 October move word for word to COMPARE.md. |
+| Evidence for completion | Stays | Kept at the end, with target parts and both loops added. |
+
+### 11.2 Work in flight and recently landed
+
+| Item | State on 22 October 2026 | Verdict | Condition |
+|---|---|---|---|
+| Shared algebraic foundation | Merged (#18) | Landed | Waiting lanes rebase once onto it in stage 0. |
+| Deterministic verification exchange | Merged (#12) | Landed, becomes the kernel loop | Gains the per-operation log and the exported-question format. |
+| Recipe open-item definitions | Merged (#16) | Landed | Each build item implements the settled definition; none is reopened without a recorded decision. |
+| Fornjot statement and works-today list | Merged (#15) | Landed | The works-today list follows section 10.3 from now on. |
+| Refusal fix batch 5 | Not on `main` | Stays | Rebases once onto the foundation in stage 0. Fixes that keep a P0 or target-part number at least as good land; the rest park with their state recorded. Later batches pick cases by cause. |
+| Previous roadmap pull request (#17) | Open | Replaced | This file replaces it; it closes unmerged. |
+
+### 11.3 Queued items
+
+| Item | Verdict | Reason and condition |
+|---|---|---|
+| Display meshes for new kinds: elliptic cylinders, open conics | Stays | After the foundation, for every kind it added, because SolidDraft draws every face Catallax builds. Edge polylines and face roles come first. |
+| Primitive and feature name equivalence | Stays, moves up | SolidDraft's persistent references depend on it, and the target-part edit check tests it. Lands with the application entry in stage 1 and completes by C4. |
+| Comparison-found gaps | Stays | The coplanar subtraction query and the same-body boolean assertion land in stage 1. The torus meshing allowance joins refusal repair as a measurement-class case, not parked. |
+| Error-policy enforcement | Changes | Becomes stage 2, the tolerance and consistency core. |
+| Codex cloud offload | Stays, outside the product roadmap | Capacity, not product. Prototypes suit offloaded workers. It changes nothing in this plan's order. |
+
+## 12. Next items
+
+Numbered in priority order. The project owner picks from this list at each checkpoint.
+
+1. **Land the stage 0 lanes.** Build. Deliverable: refusal fix batch 5, and any other lane in ARCHITECTURE.md's integration order whose work is not yet on `main`, rebased once onto the foundation and merged, or parked with a state file. Exit: every successful exchange fixture keeps its STEP and manifest content apart from elapsed time; every enabled test passes on GitHub's runners; no lane carries a second representation. By C1.
+2. **Record design intent at construction.** Build. Deliverable: builders and intersections record coaxial, concentric, flush and tangent facts wherever the construction guarantees them. Exit: on the existing corpus the share of decisions settled by facts rises and the share proved exactly zero by arithmetic falls; no proven answer changes; one, two and four workers give identical outcomes. By C1.
+3. **Measurement on request.** Build. Deliverable: library and application paths build a body without computing its proven volume, area and centroid; measurement runs when asked and returns the same enclosures as before. The legacy command keeps measuring every answer. Exit: the block-and-sphere union builds its body without its integration cost; a measurement request returns identical bounds. By C1.
+4. **Kernel-loop log and exported questions.** Build. Deliverable: a stable per-operation log in the exchange's output and a question format the application loop writes. Exit: a recipe exported by SolidDraft replays through `catallax-verify` with the same outcome and work count. By C1.
+5. **Target-part corpus and scoreboard.** Build. Deliverable: `parts/` with P0 to P5 recipes and a report that builds each part on both kernels, compares, times and checks STEP. Exit: the report runs on `main`, and the first one is committed under `docs/checkpoints/`. By C1.
+6. **Application entry for SolidDraft.** Build. Deliverable: the converter from SolidDraft's recipe to `catallax-recipe` following RECIPE.md section 6.2, and a library entry returning the body, its display mesh with edge polylines and face origins, names and typed refusals. Exit: P1 built through the entry displays and edits in SolidDraft with faces picked and named; the backend lives in SolidDraft's repository. By C2.
+7. **Coplanar booleans and the same-body rule.** Build. Deliverable: sound union, subtraction and intersection when operands share a face or a face lies in another's plane, in both kernels, with the field's degenerate zero classified. Exit: the joined-blocks and coplanar reproducers in COMPARE.md agree with no unresolved observation; subtracting a body from itself reaches the set rule. By C2.
+8. **Prototype: fillet construction and ownership.** Prototype, section 8.2 item 1. Exit: the result section filled in with P3 numbers against a named baseline and a verdict. Decided by C2.
+9. **Prototype: intersections that grow in complexity.** Prototype, section 8.2 item 2. Exit: the result section filled in with P0 numbers and a verdict. Decided by C2.
+10. **Tolerance core, first piece.** Build. Deliverable: certificate and evidence types, the modelling tolerance as a recorded setting, the decide-once record, and the two reserved refusal codes. Exit: some near-miss P0 cases answer with valid topology; no proven answer changes; outcomes are identical across worker counts. By C2.
+11. **Tolerance core, remaining pieces.** Build. Deliverable: merging, local tolerances with the caps, no growth and the topology check before publishing, through the ARCHITECTURE.md migration order. Exit: the near-miss class of P0 answers; a forged mark is rejected; an approximation above its cap fails with its deviation reported. By C3.
+12. **Holes, countersinks and end conditions.** Build. Deliverable: RECIPE.md sections 4.1.1, 4.1.2 and 4.3 implemented. Exit: the hole features of P1 and P5 build in SolidDraft inside the interactive targets. By C3.
+13. **Chamfer.** Build. Deliverable: RECIPE.md section 4.6 for plane-plane and circular edges, with names. Exit: P2 builds and compares; STEP opens in OpenCASCADE. By C3.
+14. **Name equivalence and edit survival.** Build. Deliverable: primitive and feature names equivalent across both kernels and the parameter-edit check in the scoreboard. Exit: the edit check passes on P1, P2 and P4. By C4.
+15. **Pattern and mirror.** Build. Deliverable: RECIPE.md sections 4.13 and 4.14 with saved feature-pattern expansion. Exit: P5's hole pattern builds with names resolving per copy. By C4.
+16. **Distance, offset, shell and thicken.** Build. Deliverable: build order step 2 in both kernels, with the field's two-sided per-face distance. Exit: P4 builds and compares; the field reports an offset face's deviation from its definition. By C4.
+17. **Fillets.** Build, as the prototype decided. Deliverable: RECIPE.md section 4.5 for plane-plane and plane-cylinder edges, then ends and corners per section 4.5.1. Exit: P3 and P5 build with every fillet face under 100 nm, a radius edit keeps every name, and STEP opens in OpenCASCADE. By C5.
+18. **Draft.** Build. Deliverable: planar and cylindrical cases of RECIPE.md section 4.10. Exit: a drafted variant of P1 builds and compares. By C5.
+19. **First field-only feature.** Build. Deliverable: lattice inside a shell per RECIPE.md section 4.15, displayed and exported from the field. Exit: P6 exports a printable mesh, and the B-rep side follows the answer to the stand-in question. After C5.
+20. **Checkpoint notes.** Build, recurring. Deliverable: a dated note under `docs/checkpoints/` at each checkpoint. Exit: the note exists on the date, and the same text went to sponsors.
+
+Sweeps, lofts and splines, then STEP import and editing, follow these in the build order.
+
+## 13. In-flight ledger
+
+Updated at every merge and every checkpoint. A branch not listed here is parked.
+
+| Lane | Verdict at C0 (22 October 2026) | Lands by |
+|---|---|---|
+| Refusal fix batch 5 | Committed, rebase once onto the foundation | C1 |
+| This roadmap | Waits for the project owner | C1 |
+
+## 14. Proposed PRD changes
+
+These change the PRD's direction. They are proposals; docs/PRD.md is unchanged until the project owner decides.
+
+1. **Section 1.** "It is the kernel for SolidDraft and for anyone else who wants it" becomes "It is the kernel for SolidDraft, designed for the features SolidDraft's users drive as it grows toward the most usable of SolidWorks's parametric modelling and nTopology's implicit modelling. Anyone may use it; generalising it for others comes after it carries one application well."
+2. **Section 3.8.** The target stays: comparable to OpenCASCADE, SMLib and the Rust kernels. Add: "Target parts that rebuild in SolidDraft at click speed with no wrong answer are the milestones toward it and the published scoreboard."
+3. **Section 3.1.** Add the tolerance model of section 3: one modelling tolerance (1 nm or 10 nm, to be decided); approximation only for too-close-to-call decisions and for shapes with no exact form; the four consistency rules; local tolerances of 100 nm target and 1 µm cap for the kernel's own approximations and up to 10 µm for imports with an explicit recorded override; the tenth-of-the-nearest-feature cap; no growth. This widens case 1 of section 3.1: the B-rep may carry an approximated surface with a recorded local tolerance while keeping the definition, not only in the exported file.
+4. **Section 3.2.** Keep the rule. Add: refusal latency is reported with every refusal; a refusal that arrives after the click budget is a bug twice; failing to meet a local tolerance cap is unfinished coverage, not impossible geometry.
+5. **Section 3.5.** Add the field's checking role: each approximated piece is measured against its own definition with two-sided bounds; for the whole-part check the field takes over the B-rep's result for a step it cannot build yet, and every check reports its coverage.
+6. **Sections 3.3 and 7.** Field-only features need not become B-rep. Conversion is attempted on request and abandoned when it is too awkward; the feature then stays field-only. Whether the stand-in applies is the open question in section 15.
+7. **Section 9.4 and RECIPE.md section 6.** SolidDraft runs only on Catallax. Its kernel slot stops being a swappable slot; its interface and recipe format converge on RECIPE.md through the section 6.2 mapping.
+8. **Section 10.** Integration with SolidDraft moves from step 6 to step 2. The field kernel grows in parallel with the B-rep toward parity instead of gating each widening step.
+9. **Section 11.** Close the deadline item: the verification exchange's deterministic allowance decides outcomes, and the legacy command keeps its deadline for compatibility. Add the tolerance number and the stand-in question.
+
+## 15. Open questions
+
+1. **Modelling tolerance.** 1 nm, as recommended, or 10 nm.
+2. **The stand-in for field-only lattices.** Should the B-rep carry the PRD section 7 stand-in, the outer envelope plus bodies matching mass, centre of gravity and inertia, so drawings and STEP show where a field-only lattice is?
+3. **Target parts.** Confirm, swap or add to P1 to P5 and P6 to P10.
+4. **Checkpoint cadence.** Two weeks, as proposed, or four if review time is the constraint.
+5. **Sponsorship during the change.** Keep the sponsor links live with the works-today list beside them, or pause asks until P1 builds in SolidDraft on Catallax.
+6. **Earlier fillets.** Should fillets between planes and cylinders, which are exact surfaces, come forward into stage 3 for SolidDraft's sake?
 
 ## Evidence for completion
 
 Use mathematical cases, independent numeric oracles, scale and placement variations, repeatability checks and measured timings. Keep refusals, marked answers and wrong proofs distinct. An independent tester built without seeing the kernel's code uses the documented exchange contract. No unpublished tester design or acceptance system forms part of this plan.
+
+Add to that evidence the target-part scoreboard, the P0 numbers at each checkpoint, and passing runs of both verification loops.
+
+---
+

@@ -1,0 +1,195 @@
+//! Versioned deterministic verification exchange. Legacy commands do not use it.
+use std::{fs, path::PathBuf, time::Instant};
+
+use catallax_numbers::{Decider, with_operation_budget};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+/// Default complete-request allowance, in arithmetic and checkpoint units.
+pub const DEFAULT_WORK: u64 = 100_000_000;
+
+/// One synchronous stream request. Workers run independent requests.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Request {
+    /// Must be `catallax-request/1`.
+    pub format: String,
+    /// `question`, `recipe`, or `compare`.
+    pub source: String,
+    /// Original question or recipe object.
+    pub problem: Value,
+    /// Owned directory for this request's manifest and STEP artifacts.
+    pub out: PathBuf,
+    /// Complete-operation work allowance, independent of machine speed.
+    #[serde(default = "default_work")]
+    pub max_work: u64,
+}
+fn default_work() -> u64 {
+    DEFAULT_WORK
+}
+
+fn refused(code: &str, detail: impl ToString) -> Value {
+    json!({"format":"catallax-manifest/3", "status":"refused", "exact":false,
+        "result":null, "properties":null, "step":null, "marks":[],
+        "refusal":{"code":code,"detail":detail.to_string(),"step":null,"stage":null}})
+}
+
+/// Answers one request and publishes a deterministic manifest plus timing.
+/// A panic remains an internal error, never a geometric refusal.
+pub fn answer(request: &Request) -> std::io::Result<Value> {
+    let started = Instant::now();
+    crate::prepare_output(&request.out)?;
+    let (result, work) = with_operation_budget(request.max_work, || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluate(request)))
+    });
+    let mut manifest = match result {
+        Ok(result) => result?,
+        Err(_) => {
+            let mut value = refused("cli.internal-error", "kernel panicked");
+            value["status"] = json!("internal-error");
+            value
+        }
+    };
+    if work.exhausted && manifest["status"] != "internal-error" {
+        manifest = refused(
+            "numbers.operation-budget",
+            "operation work allowance exhausted",
+        );
+    }
+    if manifest["status"] != "answered" {
+        crate::prepare_output(&request.out)?;
+    }
+    manifest["kernel"] = serde_json::to_value(crate::kernel_info())?;
+    let response = json!({"format":"catallax-response/1", "manifest":manifest,
+        "work":{"used":work.used,"limit":request.max_work,"exhausted":work.exhausted},
+        "wall_ms":started.elapsed().as_secs_f64()*1000.0});
+    fs::write(
+        request.out.join("manifest.json"),
+        serde_json::to_vec_pretty(&response["manifest"])?,
+    )?;
+    Ok(response)
+}
+
+fn evaluate(request: &Request) -> std::io::Result<Value> {
+    if request.format != "catallax-request/1" {
+        let mut value = refused("cli.invalid-request", "expected catallax-request/1");
+        value["status"] = json!("invalid-question");
+        return Ok(value);
+    }
+    match request.source.as_str() {
+        "question" => {
+            let text = serde_json::to_string(&request.problem)?;
+            let manifest = match crate::parse_question(&text) {
+                Ok(question) => crate::answer_deterministic(&question, &request.out)?,
+                Err(error) => crate::failure(
+                    error.question_id,
+                    crate::Status::InvalidQuestion,
+                    "cli.invalid-question",
+                    error.detail,
+                ),
+            };
+            let mut value: Value = serde_json::from_str(&crate::render_manifest(&manifest))?;
+            value["format"] = json!("catallax-manifest/3");
+            Ok(value)
+        }
+        "recipe" | "compare" => {
+            let recipe = match catallax_recipe::Recipe::parse(&request.problem.to_string()) {
+                Ok(recipe) => recipe,
+                Err(error) => {
+                    let mut value = refused("cli.invalid-recipe", error);
+                    value["status"] = json!("invalid-question");
+                    return Ok(value);
+                }
+            };
+            if request.source == "compare" {
+                let controller = catallax_compare::Controller::default();
+                controller
+                    .begin()
+                    .check(&recipe, &catallax_compare::Options::default());
+                let report = controller
+                    .latest()
+                    .expect("synchronous comparison publishes");
+                let verdict = match report.verdict {
+                    catallax_compare::Verdict::Agree => "agree",
+                    catallax_compare::Verdict::Disagree => "disagree",
+                    catallax_compare::Verdict::Unresolved => "unresolved",
+                };
+                let findings: Vec<_> = report.findings.iter().map(|finding| {
+                    let (code, detail) = match &finding.reason {
+                        catallax_compare::Reason::Gap => ("compare.gap", String::new()),
+                        catallax_compare::Reason::Origins => ("compare.origins", String::new()),
+                        catallax_compare::Reason::Direction => ("compare.direction", String::new()),
+                        catallax_compare::Reason::Unresolved(detail) => ("compare.unresolved", detail.clone()),
+                    };
+                    json!({"code":code,"detail":detail,"pass":match finding.pass {
+                        catallax_compare::Pass::Forward=>"forward",catallax_compare::Pass::Reverse=>"reverse"},
+                        "witness":format!("{:?}",finding.point),
+                        "brep_faces":format!("{:?}",finding.brep_faces),
+                        "field_faces":format!("{:?}",finding.field_faces),
+                        "gap":format!("{:?}",finding.gap)})
+                }).collect();
+                let unsupported: Vec<_> = report.not_comparable.iter().map(|entry| json!({"step":entry.step.to_string(),"operation":entry.operation,"reason":entry.reason})).collect();
+                return Ok(
+                    json!({"format":"catallax-manifest/3","status":"answered", "exact":false,
+                    "comparison":{"verdict":verdict,"forward_vertices":report.forward_vertices,
+                    "reverse_samples":report.reverse_samples,"findings":findings,"not_comparable":unsupported},
+                    "marks":[],"refusal":null,"step":null}),
+                );
+            }
+            let mut dec = Decider::default();
+            let built = match catallax_features::evaluate(&recipe, &mut dec) {
+                Ok(built) => built,
+                Err(catallax_features::BuildError::Geometry { step, refusal }) => {
+                    let mut value = refused(refusal.code, refusal.detail);
+                    value["refusal"]["step"] = json!(step.to_string());
+                    return Ok(value);
+                }
+                Err(error) => return Ok(refused("cli.invalid-recipe", error)),
+            };
+            let summary = match crate::result_summary(&built.model, built.result, &mut dec, true) {
+                Ok(summary) => summary,
+                Err(error) => return Ok(refused(error.code, error.detail)),
+            };
+            let mut step = Value::Null;
+            let mut marks: Vec<_> = built
+                .model
+                .body(built.result)
+                .marks
+                .iter()
+                .map(|mark| crate::mark_entry(mark, None))
+                .collect();
+            if summary.kind != "empty" {
+                let mut file = fs::File::create(request.out.join("answer.step"))?;
+                match catallax_step::write_step(
+                    &built.model,
+                    &[built.result],
+                    &Default::default(),
+                    &mut dec,
+                    &mut file,
+                ) {
+                    Ok(answer) => {
+                        marks.extend(
+                            answer
+                                .marks
+                                .iter()
+                                .map(|mark| crate::mark_entry(mark, None)),
+                        );
+                        let report = answer.value;
+                        step = json!({"file":"answer.step","max_deviation":report.max_deviation.to_decimal_bounds(40).1,
+                            "approximated_curves":report.approximated_curves,"added_vertices":report.added_vertices,"added_edges":report.added_edges});
+                    }
+                    Err(error) => return Ok(refused(error.code, error.detail)),
+                }
+            }
+            Ok(
+                json!({"format":"catallax-manifest/3","status":"answered","exact":marks.is_empty(),
+                "result":summary,"marks":marks,"step":step,"refusal":null}),
+            )
+        }
+        _ => {
+            let mut value = refused("cli.invalid-source", "use question, recipe, or compare");
+            value["status"] = json!("invalid-question");
+            Ok(value)
+        }
+    }
+}

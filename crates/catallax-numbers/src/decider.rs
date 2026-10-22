@@ -451,7 +451,7 @@ impl Decider {
         }
     }
     fn expired(&self) -> bool {
-        self.deadline.is_some_and(deadline_passed)
+        crate::operation::charge(1) || self.deadline.is_some_and(deadline_passed)
     }
     fn refused<T>(&mut self, r: Refusal) -> Outcome<T> {
         self.stats.refused += 1;
@@ -599,6 +599,12 @@ impl Decider {
     }
 }
 fn deadline() -> Refusal {
+    if crate::operation::exhausted() {
+        return Refusal::new(
+            "numbers.operation-budget",
+            "operation work allowance exhausted",
+        );
+    }
     Refusal::new("numbers.deadline", "operation deadline passed")
 }
 fn coincident<T>(proof: ZeroProof) -> Outcome<T> {
@@ -639,7 +645,9 @@ impl Work {
     pub fn check_deadline(&self) -> Result<(), &'static str> {
         #[cfg(any(test, feature = "test-deadline"))]
         test_deadline::checkpoint(test_deadline::Point::Work);
-        if self.deadline.is_some_and(deadline_passed) {
+        if crate::operation::charge(1) {
+            Err("numbers.operation-budget")
+        } else if self.deadline.is_some_and(deadline_passed) {
             Err("numbers.deadline")
         } else {
             Ok(())
@@ -650,6 +658,9 @@ impl Work {
         if n > self.policy.max_work.saturating_sub(self.used) {
             Err("numbers.budget-exhausted")
         } else {
+            if crate::operation::charge(n) {
+                return Err("numbers.operation-budget");
+            }
             self.used += n;
             Ok(())
         }

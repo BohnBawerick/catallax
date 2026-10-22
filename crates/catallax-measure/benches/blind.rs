@@ -35,6 +35,11 @@ fn mass_widths(m: &MassProperties) -> Vec<Rational> {
     if let Some(c) = &m.centroid {
         w.extend(c.iter().map(width));
     }
+    if let Some(tensor) = &m.inertia {
+        for (i, row) in tensor.iter().enumerate() {
+            w.extend(row[i..].iter().map(width));
+        }
+    }
     w
 }
 fn main() {
@@ -49,7 +54,7 @@ fn main() {
         return;
     }
     // No timing assertions, iteration deadline, or speed-based exit code.
-    // Centroid has no standalone API; its time is included in mass_properties.
+    // Centroid and inertia time are included in mass_properties.
     for case in CASES {
         let f = build(case, &r(1), &Pose::identity());
         let name = format!("{case:?}");

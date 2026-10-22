@@ -164,6 +164,11 @@ fn main() {
                     if let Some(center) = &value.centroid {
                         widths.extend(center.iter().map(Enclosure::width));
                     }
+                    if let Some(tensor) = &value.inertia {
+                        for (i, row) in tensor.iter().enumerate() {
+                            widths.extend(row[i..].iter().map(Enclosure::width));
+                        }
+                    }
                     widths
                 },
             );

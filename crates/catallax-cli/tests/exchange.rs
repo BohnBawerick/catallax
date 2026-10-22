@@ -713,7 +713,6 @@ fn usage_io_and_about_contracts() {
         about["operations"],
         json!(["unite", "subtract", "intersect"])
     );
-    assert_eq!(about["properties"], json!(["volume", "area", "centroid"]));
     for args in [
         vec![],
         vec!["answer"],

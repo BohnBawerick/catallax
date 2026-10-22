@@ -404,10 +404,11 @@ fn evaluate(
             volume: None,
             area: None,
             centroid: None,
+            inertia: None,
         };
         if request.centroid {
             let answer =
-                catallax_measure::mass_properties(model, built.body, &request.accuracy, dec)?;
+                catallax_measure::volume_area_centroid(model, built.body, &request.accuracy, dec)?;
             manifest
                 .marks
                 .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));
@@ -437,6 +438,17 @@ fn evaluate(
                     .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));
                 properties.area = Some(bound(&answer.value, &request.accuracy));
             }
+        }
+        if request.inertia {
+            let answer = catallax_measure::inertia(model, built.body, &request.accuracy, dec)?;
+            manifest
+                .marks
+                .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));
+            properties.inertia = Some(answer.value.as_ref().map(|tensor| {
+                tensor
+                    .each_ref()
+                    .map(|row| row.each_ref().map(|value| bound(value, &request.accuracy)))
+            }));
         }
         mark_decimal_accuracy(&properties, &request.accuracy, &mut manifest.marks);
         Ok(properties)
@@ -603,11 +615,13 @@ fn mark_decimal_accuracy(
 ) {
     let mut widest = catallax_numbers::Rational::zero();
     let centroid = properties.centroid.as_ref().and_then(Option::as_ref);
+    let inertia = properties.inertia.as_ref().and_then(Option::as_ref);
     for bound in properties
         .volume
         .iter()
         .chain(&properties.area)
         .chain(centroid.into_iter().flatten())
+        .chain(inertia.into_iter().flatten().flatten())
     {
         let lo = catallax_numbers::Rational::parse(&bound.lo).expect("decimal lower bound parses");
         let hi = catallax_numbers::Rational::parse(&bound.hi).expect("decimal upper bound parses");
@@ -679,7 +693,7 @@ pub fn about() -> String {
         manifest_format: &'static str,
         shapes: [&'static str; 5],
         operations: [&'static str; 3],
-        properties: [&'static str; 3],
+        properties: [&'static str; 4],
     }
     serde_json::to_string(&About {
         kernel: kernel_info(),
@@ -687,7 +701,7 @@ pub fn about() -> String {
         manifest_format: MANIFEST_FORMAT,
         shapes: ["block", "cylinder", "sphere", "cone", "torus"],
         operations: ["unite", "subtract", "intersect"],
-        properties: ["volume", "area", "centroid"],
+        properties: ["volume", "area", "centroid", "inertia"],
     })
     .expect("about fields serialize as JSON")
 }

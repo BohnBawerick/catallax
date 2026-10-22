@@ -73,6 +73,8 @@ pub struct MeasureRequest {
     pub area: bool,
     /// Measure the centre of mass.
     pub centroid: bool,
+    /// Measure unit-density inertia about the centroid.
+    pub inertia: bool,
     /// Requested width.
     pub accuracy: Accuracy,
 }
@@ -437,6 +439,7 @@ fn parse(text: &str) -> Result<Question, String> {
         volume: false,
         area: false,
         centroid: false,
+        inertia: false,
         accuracy,
     };
     let properties = measure
@@ -447,6 +450,7 @@ fn parse(text: &str) -> Result<Question, String> {
             "volume" => request.volume = true,
             "area" => request.area = true,
             "centroid" => request.centroid = true,
+            "inertia" => request.inertia = true,
             _ => return Err("unknown measured property".into()),
         }
     }

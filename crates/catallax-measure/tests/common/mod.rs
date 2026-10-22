@@ -112,6 +112,19 @@ pub fn assert_mass(
         }
         _ => panic!("centroid must be None exactly for Empty"),
     };
+    match (&a.value.inertia, &e.centroid) {
+        (None, None) => {}
+        (Some(tensor), Some(_)) => {
+            if tensor
+                .iter()
+                .flatten()
+                .any(|value| !meets(value, requested))
+            {
+                missed.push(tensor.iter().flatten().map(width).max().unwrap());
+            }
+        }
+        _ => panic!("inertia must be None exactly for Empty"),
+    }
     if require_accuracy {
         assert!(missed.is_empty(), "requested accuracy not reached: {a:?}");
     }

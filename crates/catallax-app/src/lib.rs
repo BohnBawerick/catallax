@@ -37,6 +37,27 @@ pub struct ApplicationBody {
     pub names: Names,
 }
 
+impl ApplicationBody {
+    /// Requests proven mass properties, including centroidal unit-density inertia.
+    /// A refusal leaves the exact body, picking names and display untouched.
+    pub fn mass_properties(
+        &self,
+        accuracy: &catallax_measure::Accuracy,
+        decider: &mut Decider,
+    ) -> catallax_numbers::Answered<catallax_measure::MassProperties> {
+        catallax_measure::mass_properties(&self.built.model, self.built.result, accuracy, decider)
+    }
+
+    /// Requests only centroidal unit-density inertia.
+    pub fn inertia(
+        &self,
+        accuracy: &catallax_measure::Accuracy,
+        decider: &mut Decider,
+    ) -> catallax_numbers::Answered<Option<catallax_measure::InertiaTensor>> {
+        catallax_measure::inertia(&self.built.model, self.built.result, accuracy, decider)
+    }
+}
+
 /// Failure stage. No variant returns a partial body or substitutes approximate geometry.
 #[derive(Clone, Debug)]
 #[non_exhaustive]

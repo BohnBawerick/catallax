@@ -409,3 +409,17 @@ Pieces: field, features, recipe
 Change: `catallax_field::Plan::compile` accepts sketch profiles, signed `extrude`, two-sided `extrude_through` and rational-frame full/partial `revolve`. Sketch validation uses `catallax_features::Profile::new`; feature supports and trims are evaluated without calling a B-rep builder. Source face candidates retain segment aliases, split domains, reversed cut orientations and 180-degree merged-cap names.
 Why: both recipe evaluators must build the same feature definitions and report their creating origins.
 Migration: no Rust signature, recipe format or command-line protocol changes. Sweep values use `Value::Residual` and `Approximate::true_distance_formula = false`; unsigned distance upper bounds remain unbounded off the certified boundary. Callers must not treat a sweep residual as true Euclidean distance. The specific unfinished `features.unsupported-*` codes from RECIPE.md section 7.14 now apply to field compilation as well.
+
+## 2026-10-22: sampled two-kernel display comparison
+
+Pieces: 5, field queries, recipe consumers, display comparison
+Change: add `catallax-compare` with `Controller`, revision tokens, scoped `Options`, complete `Report` values and explicit agreement/disagreement/unresolved outcomes. Add piece 5 query helpers `face_contains` and `surface_witness`, and `Plan::is_proven_empty` in the independent field evaluator. No existing geometry builder, recipe schema, question, manifest or STEP signature changes.
+Why: the background display check needs certified distances in both directions, exact trimmed-face associations, face origin sets and cancellation that cannot publish stale or partial work.
+Migration: existing callers are unchanged. Comparison callers begin a revision per edit and dispatch its check on their own worker. Read `Controller::latest` only as a revision-tagged snapshot. Treat regional and sampled agreement as scoped display evidence, never as a 1 nm or whole-boundary certificate. `surface_witness` supplies an exact rational chart projection, not a closest point; measure its distance and call `face_contains` before using it as an upper-distance witness.
+
+## 2026-10-22: comparison consumes field profile sweeps
+
+Pieces: field queries, display comparison
+Change: add `Plan::visit_feature_candidates` as a query-only, cooperatively stoppable source of rational supporting-face candidates for compiled sketch sweeps. Comparison now accepts sketch, extrusion, through-all and revolution steps in the common rational support subset. Candidate generation propagates conservative field-result bounds through the expression tree to sample through-all walls without finite construction caps.
+Why: the field evaluator gained these operations while the comparison library was being built. They must use the same two-way checks as stock solids rather than retaining obsolete unsupported-operation reports.
+Migration: call `face_query` before accepting a candidate as a surviving boundary point. The visitor returns `Ok(false)` when its callback stops, not a complete-coverage claim. `field.sample-options`, `field.sample-unbounded`, `field.sample-role` and `field.sample-algebraic-radius` are sampling failures, not geometry refusals or agreement. Existing builders, query meanings, recipe schema and exchange formats are unchanged.

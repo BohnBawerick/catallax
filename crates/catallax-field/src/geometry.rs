@@ -453,3 +453,31 @@ impl Leaf {
         }
     }
 }
+
+impl Primitive {
+    pub(crate) fn sample_bounds(&self) -> crate::samples::Bounds {
+        let zero = Rational::zero();
+        let p = &self.parameters;
+        let local = match self.kind {
+            Kind::Block => std::array::from_fn(|i| [zero.clone(), p[i].clone()]),
+            Kind::Round => {
+                let radius = p[0].clone().max(p[1].clone());
+                [
+                    [-radius.clone(), radius.clone()],
+                    [-radius.clone(), radius],
+                    [zero, p[2].clone()],
+                ]
+            }
+            Kind::Sphere => std::array::from_fn(|_| [-p[0].clone(), p[0].clone()]),
+            Kind::Torus => {
+                let radius = &p[0] + &p[1];
+                [
+                    [-radius.clone(), radius.clone()],
+                    [-radius.clone(), radius],
+                    [-p[1].clone(), p[1].clone()],
+                ]
+            }
+        };
+        crate::samples::transform(&local, &self.inverse.inverse())
+    }
+}

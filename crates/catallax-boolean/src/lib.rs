@@ -234,3 +234,128 @@ pub fn classify_point(
 pub fn face_point(model: &mut Model, face: FaceId, dec: &mut Decider) -> Answered<RPoint3> {
     points::face_point(model, face, dec)
 }
+
+/// Membership of an exact rational point in a trimmed face.
+/// This query may append auxiliary geometry, but never changes topology.
+/// Unsettled support or trimming predicates return a refusal, not membership.
+pub fn face_contains(
+    model: &mut Model,
+    face: FaceId,
+    point: &RPoint3,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let surface = model.face(face).surface;
+    if let catallax_shapes::Surface::Cone(cone) = model.geom().surface(surface)
+        && point.minus(&cone.apex).dot(&cone.axis) < catallax_numbers::Rational::zero()
+    {
+        return Ok(false);
+    }
+    let p = model
+        .geom_mut()
+        .add_point(catallax_shapes::PointDef::Explicit(point.clone()));
+    match model.geom().side(surface, p, dec) {
+        Outcome::ProvenCoincident(proof)
+            if proof.proof != catallax_numbers::ZeroProof::SeparationBound => {}
+        Outcome::Proven(_) => return Ok(false),
+        Outcome::Refused(error) => return Err(error),
+        _ => {
+            return Err(Refusal::new(
+                "boolean.face-unresolved",
+                "face support incidence is not exact",
+            ));
+        }
+    }
+    if let Some(inside) = comparison_cone_band(model, face, point) {
+        return Ok(inside);
+    }
+    Ok(!matches!(
+        region::locate(model, face, p, dec)?,
+        region::Location::Outside
+    ))
+}
+
+/// Constructs an exact rational supporting-surface witness near a target.
+/// This is a rational chart projection, not necessarily the closest point.
+/// Callers must measure its distance and check trimmed-face membership.
+/// `None` means the surface frame has no supported rational parametrisation.
+/// `width` must be positive. It controls coordinate/parameter refinement, not
+/// the final physical distance to the target.
+pub fn surface_witness(
+    surface: &catallax_shapes::Surface,
+    target: &catallax_shapes::Point3,
+    width: &catallax_numbers::Rational,
+    dec: &mut Decider,
+) -> Result<Option<RPoint3>, Refusal> {
+    points::comparison_witness(surface, target, width, dec)
+}
+
+// A complete circular band has exact height limits. This query-only path avoids
+// asking the intersection engine for a conical chart it does not implement.
+fn comparison_cone_band(model: &Model, face: FaceId, point: &RPoint3) -> Option<bool> {
+    use catallax_shapes::{Curve, PointDef, Surface};
+    use catallax_topology::{Loop, Sense};
+    let f = model.face(face);
+    let Surface::Cone(s) = model.geom().surface(f.surface) else {
+        return None;
+    };
+    if f.loops.len() != 2 {
+        return None;
+    }
+    let mut bounds = std::array::from_fn::<_, 2, _>(|_| (catallax_numbers::Rational::zero(), None));
+    for (index, &lp) in f.loops.iter().enumerate() {
+        match model.loop_(lp) {
+            Loop::Vertex(v) => {
+                let PointDef::Explicit(p) = model.geom().point(model.vertex(*v).point) else {
+                    return None;
+                };
+                if p != &s.apex {
+                    return None;
+                }
+                bounds[index] = (catallax_numbers::Rational::zero(), None);
+            }
+            Loop::Coedges(cs) if cs.len() == 1 => {
+                let coedge = model.coedge(cs[0]);
+                let edge = model.edge(coedge.edge);
+                if edge.start.is_some() || edge.end.is_some() {
+                    return None;
+                }
+                let Curve::Circle(c) = model.geom().curve(edge.curve) else {
+                    return None;
+                };
+                let delta = c.center.minus(&s.apex);
+                if !delta.cross(&s.axis).is_zero() || !c.normal.cross(&s.axis).is_zero() {
+                    return None;
+                }
+                let h = delta.dot(&s.axis);
+                if h < catallax_numbers::Rational::zero() {
+                    return None;
+                }
+                if &c.radius_sq * &s.axis.norm_squared() != &(&s.slope * &s.slope) * &(&h * &h) {
+                    return None;
+                }
+                let mut orientation = c.normal.dot(&s.axis);
+                for sense in [coedge.sense, edge.sense, f.sense] {
+                    if sense == Sense::Reversed {
+                        orientation = -orientation;
+                    }
+                }
+                bounds[index] = (h, Some(orientation));
+            }
+            _ => return None,
+        }
+    }
+    bounds.sort_by(|a, b| a.0.cmp(&b.0));
+    if bounds[0]
+        .1
+        .as_ref()
+        .is_some_and(|x| x <= &catallax_numbers::Rational::zero())
+        || bounds[1]
+            .1
+            .as_ref()
+            .is_none_or(|x| x >= &catallax_numbers::Rational::zero())
+    {
+        return None;
+    }
+    let h = point.minus(&s.apex).dot(&s.axis);
+    Some(bounds[0].0 <= h && h <= bounds[1].0)
+}

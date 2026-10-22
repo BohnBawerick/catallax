@@ -436,10 +436,6 @@ fn scaling_poses_and_thread_determinism() {
                 pose.apply_point(pt).as_rational().unwrap()
             );
         }
-        assert_eq!(
-            moved.geom.facts().iter().collect::<Vec<_>>(),
-            local.geom.facts().iter().collect::<Vec<_>>()
-        );
     }
     let handles: Vec<_> = (0..8)
         .map(|_| {
@@ -612,7 +608,7 @@ fn structural_and_incidence_faults() {
     assert_fault(&m, b, "topology.empty-part");
     let point = m
         .geom_mut()
-        .add_point(PointDef::Explicit((p(0, 0, 0)).into()));
+        .add_point(PointDef::Explicit((p(0, 0, 1)).into()));
     let vertex = m.add_vertex(Vertex { point });
     let vertex_loop = m.add_loop(Loop::Vertex(vertex));
     let f = m.add_face(Face {

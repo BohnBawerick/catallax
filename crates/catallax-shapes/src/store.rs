@@ -168,10 +168,50 @@ impl GeomStore {
         Self::default()
     }
 
-    /// Adds a surface.
+    /// Adds a surface and records identities guaranteed by its definition.
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId {
         self.implicits.push(s.implicit());
-        self.surfaces.push(s)
+        let id = self.surfaces.push(s);
+        for index in 0..id.index {
+            let other = Handle {
+                index,
+                _kind: PhantomData,
+            };
+            let a = self.surface(other);
+            let b = self.surface(id);
+            let coincident = crate::intent::coincident(a, b);
+            let concentric = crate::intent::center(a)
+                .zip(crate::intent::center(b))
+                .is_some_and(|(a, b)| crate::intent::same_point(a, b));
+            let parallel = crate::intent::direction(a)
+                .zip(crate::intent::direction(b))
+                .is_some_and(|(a, b)| crate::intent::parallel(a, b));
+            let coaxial = crate::intent::axis(a)
+                .zip(crate::intent::axis(b))
+                .is_some_and(|((a, axis), (b, _))| parallel && crate::intent::on_axis(a, axis, b));
+            for (kind, holds) in [
+                (FactKind::Coincident, coincident),
+                (FactKind::Concentric, concentric),
+                (FactKind::Parallel, parallel),
+                (FactKind::Coaxial, coaxial),
+            ] {
+                if holds {
+                    self.construction(kind, GeomKey::Surface(other), GeomKey::Surface(id));
+                }
+            }
+        }
+        if matches!(self.surface(id), Surface::Plane(_)) {
+            for index in 0..self.points.len() {
+                self.record_plane_incidence(
+                    id,
+                    Handle {
+                        index: u32::try_from(index).expect("valid point index"),
+                        _kind: PhantomData,
+                    },
+                );
+            }
+        }
+        id
     }
 
     /// Adds a curve; an intersection curve also records its incidence facts.
@@ -187,6 +227,32 @@ impl GeomStore {
             let surfaces = i.surfaces;
             for s in surfaces {
                 self.incident(GeomKey::Curve(id), GeomKey::Surface(s));
+            }
+        }
+        if matches!(self.curve(id), Curve::Circle(_)) {
+            for index in 0..self.surfaces.len() {
+                let surface = Handle {
+                    index: u32::try_from(index).expect("valid surface index"),
+                    _kind: PhantomData,
+                };
+                let Curve::Circle(circle) = self.curve(id) else {
+                    unreachable!()
+                };
+                let s = self.surface(surface);
+                let coaxial = crate::intent::axis(s).is_some_and(|(origin, axis)| {
+                    crate::intent::parallel(&circle.normal, axis)
+                        && crate::intent::on_axis(origin, axis, &circle.center)
+                });
+                let concentric = crate::intent::center(s)
+                    .is_some_and(|center| crate::intent::same_point(center, &circle.center));
+                for (kind, holds) in [
+                    (FactKind::Coaxial, coaxial),
+                    (FactKind::Concentric, concentric),
+                ] {
+                    if holds {
+                        self.construction(kind, GeomKey::Curve(id), GeomKey::Surface(surface));
+                    }
+                }
             }
         }
         id
@@ -250,6 +316,15 @@ impl GeomStore {
                     record(GeomKey::Curve(*b));
                 }
             }
+        }
+        for index in 0..self.surfaces.len() {
+            self.record_plane_incidence(
+                Handle {
+                    index: u32::try_from(index).expect("valid surface index"),
+                    _kind: PhantomData,
+                },
+                id,
+            );
         }
         id
     }
@@ -448,18 +523,32 @@ impl GeomStore {
         ) {
             return fact_decision(dec);
         }
+        let known = |kind, dec: &mut Decider| {
+            let holds = self
+                .facts
+                .holds(kind, GeomKey::Surface(a), GeomKey::Surface(b));
+            if holds {
+                dec.note_fact_decision();
+            }
+            holds
+        };
         let zero =
             |value: Real, dec: &mut Decider| math::sign(&value, dec).map(|s| s == Sign::Zero);
         let equal = (|| -> Result<bool, Refusal> {
             Ok(match (self.surface(a), self.surface(b)) {
                 (Surface::Plane(a), Surface::Plane(b)) => {
-                    zero(a.normal.cross(&b.normal).norm_squared(), dec)?
+                    (known(FactKind::Parallel, dec)
+                        || zero(a.normal.cross(&b.normal).norm_squared(), dec)?)
                         && zero(b.origin.minus(&a.origin).dot(&a.normal), dec)?
                 }
                 (Surface::Cylinder(a), Surface::Cylinder(b)) => {
                     zero(&a.radius_sq - &b.radius_sq, dec)?
-                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
-                        && zero(b.origin.minus(&a.origin).cross(&a.axis).norm_squared(), dec)?
+                        && (known(FactKind::Coaxial, dec)
+                            || (zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                                && zero(
+                                    b.origin.minus(&a.origin).cross(&a.axis).norm_squared(),
+                                    dec,
+                                )?))
                 }
                 (Surface::Cone(a), Surface::Cone(b)) => {
                     zero(a.apex.minus(&b.apex).norm_squared(), dec)?
@@ -468,14 +557,17 @@ impl GeomStore {
                         && math::sign(&a.axis.dot(&b.axis), dec)? == Sign::Positive
                 }
                 (Surface::Sphere(a), Surface::Sphere(b)) => {
-                    zero(a.center.minus(&b.center).norm_squared(), dec)?
+                    (known(FactKind::Concentric, dec)
+                        || zero(a.center.minus(&b.center).norm_squared(), dec)?)
                         && zero(&a.radius - &b.radius, dec)?
                 }
                 (Surface::Torus(a), Surface::Torus(b)) => {
-                    zero(a.center.minus(&b.center).norm_squared(), dec)?
+                    (known(FactKind::Concentric, dec)
+                        || zero(a.center.minus(&b.center).norm_squared(), dec)?)
                         && zero(&a.major - &b.major, dec)?
                         && zero(&a.minor - &b.minor, dec)?
-                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                        && (known(FactKind::Parallel, dec)
+                            || zero(a.axis.cross(&b.axis).norm_squared(), dec)?)
                 }
                 (Surface::EllipticCylinder(_), Surface::EllipticCylinder(_)) => self.implicits
                     [a.index as usize]
@@ -514,6 +606,32 @@ impl GeomStore {
                 .gradient(&p)
                 .dot(&self.surface(b).gradient(&p)),
         )
+    }
+
+    fn record_plane_incidence(&mut self, surface: SurfaceId, point: PointId) {
+        let position = match self.point(point) {
+            PointDef::Explicit(p) => p,
+            PointDef::Meet(crate::Meet {
+                position: Position::Closed(p),
+                ..
+            }) => p,
+            _ => return,
+        };
+        if let Surface::Plane(plane) = self.surface(surface)
+            && crate::intent::on_plane(&plane.origin, &plane.normal, position)
+        {
+            self.incident(GeomKey::Point(point), GeomKey::Surface(surface));
+        }
+    }
+
+    fn construction(&mut self, kind: FactKind, a: GeomKey, b: GeomKey) {
+        self.facts.record(Fact {
+            kind,
+            a,
+            b,
+            at: None,
+            origin: FactOrigin::Construction("shapes.definition"),
+        });
     }
 
     fn incident(&mut self, a: GeomKey, b: GeomKey) {

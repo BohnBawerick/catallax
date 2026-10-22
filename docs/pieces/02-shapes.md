@@ -280,12 +280,16 @@ The creator of a `Meet` point (pieces 3 and 4) guarantees that its position lies
 - `GeomStore::implicit(s)` equals `surface(s).implicit()`. It may be cached.
 - `GeomStore::normal(s, p)` is `surface(s).gradient(&position(p))`.
 
-Two constructions record facts, because the definition makes them true:
+Construction records facts only when immutable definitions make them true:
 
-- `add_curve` of an intersection curve records `Incident(curve, surfaces[0])`, then `Incident(curve, surfaces[1])`.
-- `add_point` of a `Meet` records `Incident(point, x)` for every object `x` it names, in the order named (`CurveSurface(c, s)` records the curve, then the surface).
+- `add_curve` of an intersection curve records incidence on both defining surfaces.
+- `add_point` of a `Meet` records incidence on every named object.
+- Surface insertion records coincident carriers, shared centres, shared axis lines and parallel defining directions when their construction expressions agree. Opposite normal or axis definitions also prove parallelism. A cone's nappe direction still matters for coincidence.
+- Circular curves record shared axes and centres with existing surfaces. The round-solid builders supply the axis relations guaranteed by their common construction frame.
+- A closed or explicit point is incident on a plane when each coordinate either matches the plane's origin definition or has a structurally zero normal coefficient. This includes flush coordinate-plane contact in either insertion order. General cancellations remain numeric decisions.
 
-Their origin is `FactOrigin::Construction("shapes.definition")` and their `at` is `None`. Adding an analytic curve, a surface or an explicit point records nothing.
+These store-generated facts have origin `FactOrigin::Construction("shapes.definition")` and `at: None`. They use expression identity and cached exact rational values, never approximate coordinates, intervals, refinement or near-equality. Different definitions do not prove apartness. Facts are append-only; insertion does not merge handles. The set and order of additional structural facts need not survive a change of coordinate frame, but identical construction sequences produce identical facts.
+
 `record_fact` passes a fact to the fact book and returns what `FactBook::record` returns. Recording a fact that is not true is a programming error of the caller.
 
 ## Decisions
@@ -316,6 +320,9 @@ The fact book closes `Incident` chains and crosses `Coincident` links (piece 1, 
 
 A decision settled by a fact returns `ProvenCoincident` with `ZeroProof::ConstructionFact`, calls `Decider::note_fact_decision` exactly once, and calls no other `Decider` method. So it adds one to `decisions` and one to `coincident_fact`, and adds no work.
 It answers even when the `Decider`'s deadline has passed, because it does no work.
+
+For a partially known surface comparison, `Parallel`, `Coaxial` and `Concentric` settle only their corresponding subdecisions. Each fact lookup that settles a subdecision calls `note_fact_decision` once without arithmetic; dimensions and any remaining placement conditions still require their own exact comparisons. Sharing an axis or centre does not imply equal surfaces.
+
 
 ### Then numbers
 
@@ -384,7 +391,7 @@ The `code` and `detail` of the converted `NotExact` are those of the first piece
 
 - **Outcomes.** Every decision returns `Outcome`, mapped from piece 1's as in the table above. Constructors return `Result<_, Refusal>`.
 - **Budgets.** Every numeric decision runs on the caller's `Decider` and its `BudgetPolicy`. This piece never creates a `Decider` or a policy, and holds no budget of its own.
-- **Facts.** The store holds one `FactBook<GeomKey>`. This piece records only the incidences that a definition makes true, consults facts before numbers, and reports fact-settled decisions through `note_fact_decision`.
+- **Facts.** The store holds one `FactBook<GeomKey>`. It records construction-proven incidence, coincidence, shared axes, shared centres and parallel directions, consults facts before numbers, and counts each fact-settled decision through `note_fact_decision`.
 - **Marks.** This piece never builds a `Mark`. Its callers build one from each `NotExact` they accept, with `BoundKind::Distance` for `side`, `side_of`, `point_on_curve` and `same_point`, and `BoundKind::Value` for `normals_agree`.
 - **Refusals.** This piece adds only the constructor codes below. Every `numbers.*` refusal passes through unchanged.
 
@@ -691,7 +698,7 @@ The `Ball` inputs below are exact rationals or multiples of `Ball::pi`. Tests ch
 ### Store and facts
 
 45. Handles are issued from 0 in order; `len`, `handles` and `get` agree with the order of `push`.
-46. `add_curve` of an intersection curve on `[s0, s1]` records `Incident(curve, s0)` then `Incident(curve, s1)`; `add_point` of `Meet` of `Surfaces([s0, s1, s2])` records three incidences in that order; `CurveSurface(c, s)` records `Incident(p, c)` then `Incident(p, s)`; `Curves(a, b)` records `Incident(p, a)` then `Incident(p, b)`. Each origin is `Construction("shapes.definition")`. Analytic curves, surfaces and explicit points record nothing.
+46. Intersection curves and meeting points record their defining incidences. Analytic surfaces, circular curves and explicit or closed points also record the positive structural identities listed under "The store". Additional facts do not deduplicate entities. Tests exercise zero-work fact decisions and near-miss counterexamples rather than fixing the number or order of incidental records.
 47. Fact paths: for a point added as a `Meet` of spheres `a` and `b`, `side(a, p)` is `ProvenCoincident` with `ConstructionFact`, and it adds exactly one `decision`, one `coincident_fact` and no work. After `Incident(p, c)` and `Incident(c, s)` are recorded, `side(s, p)` is settled by fact; after `Coincident(s, s2)` is recorded, `side(s2, p)` is too. `same_surface(a, a)` is settled by fact.
 48. `position` returns the defining coordinates; `approx_point` of explicit `(1/3, 0, 0)` is `[to_f64_nearest(1/3), 0.0, 0.0]`; for meeting points each value lies in the coordinate's `Real::approx()`.
 49. `enclose_point` with `max_width = 2^-100` on the root `(3, 3, sqrt(7))` of case 20, under the default budget: three balls of width at most `2^-100`, containing 3, 3 and `sqrt(7)` (checked against `sqrt(7) = 2.6457513110645905905016157536392604257102...`).

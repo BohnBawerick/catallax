@@ -87,6 +87,41 @@ fn hit_positions(
         other => panic!("expected hits: {other:?}"),
     }
 }
+
+#[test]
+fn constructed_tangent_locus_skips_gradient_zero_proofs() {
+    let mut g = GeomStore::new();
+    let a = plane(&mut g, p(0, 5, 0), v(0, 1, 0), v(1, 0, 0));
+    let b = cyl(&mut g, p(0, 0, 0), v(0, 0, 1), 5, v(1, 0, 0));
+    let parts = components(&mut g, a, b, &mut dec());
+    let locus = curve(&parts[0]);
+    assert!(matches!(
+        parts[0],
+        Component::Curve {
+            contact: Contact::Tangent,
+            ..
+        }
+    ));
+    let witness = g.add_point(PointDef::Meet(catallax_shapes::Meet {
+        of: catallax_shapes::MeetOf::CurveSurface(locus, a),
+        position: catallax_shapes::Position::Closed(p(0, 5, 1).to_real()),
+    }));
+    let definition = g.add_curve(Curve::Intersection(catallax_shapes::IntersectionCurve {
+        surfaces: [a, b],
+        witness,
+    }));
+    let mut d = dec();
+    let vectors = tangent_at(&g, definition, witness, &mut d).unwrap();
+    assert_eq!(d.stats().coincident_fact, 1);
+    assert_eq!(d.stats().coincident_exact, 0);
+    for tangent in vectors {
+        point_equal(
+            &Point3::origin().plus(&tangent),
+            &p(0, 0, 1).to_real(),
+            &mut dec(),
+        );
+    }
+}
 #[test]
 fn rational_configuration_fields_and_no_decisions() {
     let mut g = GeomStore::new();

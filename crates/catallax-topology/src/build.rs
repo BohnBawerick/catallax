@@ -396,6 +396,14 @@ fn round_solid(
         let vertex = model.add_vertex(Vertex { point });
         model.add_loop(Loop::Vertex(vertex))
     });
+    let side_key = GeomKey::Surface(side_surface);
+    let bottom_key = GeomKey::Curve(model.edge(bottom).curve);
+    record(model, FactKind::Coaxial, bottom_key, side_key, origin);
+    if let Some(top) = top {
+        let top_key = GeomKey::Curve(model.edge(top).curve);
+        record(model, FactKind::Coaxial, top_key, side_key, origin);
+        record(model, FactKind::Coaxial, bottom_key, top_key, origin);
+    }
     faces.push(face(model, side_surface, side_loops, origin));
     solid(model, faces)
 }

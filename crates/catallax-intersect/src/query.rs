@@ -26,11 +26,7 @@ pub(super) fn validate(
             ) {
                 return Err(refused_curve());
             }
-            let p = pair::plan(
-                geom.surface(i.surfaces[0]),
-                geom.surface(i.surfaces[1]),
-                dec,
-            )?;
+            let p = pair::plan(geom, i.surfaces, dec)?;
             if let (Surface::Cylinder(a), Surface::Cylinder(b)) =
                 (geom.surface(i.surfaces[0]), geom.surface(i.surfaces[1]))
                 && p.frame.is_none()
@@ -642,18 +638,45 @@ pub(super) fn tangent(
     validate(geom, c, dec)?;
     let position = geom.position(p);
     if let Curve::Intersection(i) = geom.curve(c) {
-        let cross = geom
-            .surface(i.surfaces[0])
-            .gradient(&position)
-            .cross(&geom.surface(i.surfaces[1]).gradient(&position));
+        // Tangency is local to its recorded component, not the entire pair.
+        let tangent = geom.facts().iter().any(|f| {
+            f.kind == FactKind::Tangent
+                && ((f.a == GeomKey::Surface(i.surfaces[0])
+                    && f.b == GeomKey::Surface(i.surfaces[1]))
+                    || (f.b == GeomKey::Surface(i.surfaces[0])
+                        && f.a == GeomKey::Surface(i.surfaces[1])))
+                && match f.at {
+                    Some(GeomKey::Point(at)) => at == p,
+                    Some(GeomKey::Curve(at)) => {
+                        at == c
+                            || geom.facts().holds(
+                                FactKind::Incident,
+                                GeomKey::Point(p),
+                                GeomKey::Curve(at),
+                            )
+                    }
+                    _ => false,
+                }
+        });
         let mut regular = false;
-        for component in [&cross.x, &cross.y, &cross.z] {
-            if sign(component, dec)? != Sign::Zero {
-                regular = true;
-                break;
+        let cross = if tangent {
+            dec.note_fact_decision();
+            None
+        } else {
+            let cross = geom
+                .surface(i.surfaces[0])
+                .gradient(&position)
+                .cross(&geom.surface(i.surfaces[1]).gradient(&position));
+            for component in [&cross.x, &cross.y, &cross.z] {
+                if sign(component, dec)? != Sign::Zero {
+                    regular = true;
+                    break;
+                }
             }
-        }
+            Some(cross)
+        };
         if regular {
+            let cross = cross.expect("regular gradient cross product");
             return Ok([cross.clone(), cross]);
         }
         let closed_form = form(geom, c, dec)?;

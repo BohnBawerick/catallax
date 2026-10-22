@@ -114,9 +114,10 @@ A component is either `Component::Curve { curve, contact, singular }` or `Compon
 - `Incident(curve, a)` and `Incident(curve, b)` for every analytic curve it adds;
 - `Incident(witness, curve)` for every intersection curve, after the curve is added;
 - `Incident(point, curve)` for every singular point and every curve that lists it;
-- `Tangent(Surface(a), Surface(b))` with `at: Some(Curve(curve))` or `at: Some(Point(point))` for every tangent component.
+- `Tangent(Surface(a), Surface(b))` with `at: Some(Curve(curve))` or `at: Some(Point(point))` for every tangent component;
+- `Coincident(Surface(a), Surface(b))` when the pair construction proves coincidence.
 
-It records no other fact.
+Circular components also acquire any structurally guaranteed coaxial or concentric relations from the geometry store. Pair construction consumes recorded coincidence, concentric sphere centres and coaxial cylinders before recomputing placement. The remaining radius or orientation comparison is still exact. Tangent queries skip the gradient-cross zero proof only at the recorded point, on the recorded component, or at a point recorded incident on that component. A tangent fact about one component never settles another component's contact.
 
 **Order of the arguments.** Swapping `a` and `b` gives the same configuration and the same meeting set, and each intersection curve's `surfaces` swapped. The fields, the order and the directions of the components are those the tables give for the new order, so they can differ: a line's origin (PP1, CP4, CP5); the `dir` of the tangent line of CP4 and CP5 when the axes point opposite ways; the order of the two lines of CP3 when `w_a . w_b > 0`; the `ref_dir` of the SS3 circle, which becomes `perp(-u) = -perp(u)` and so moves the parameter origin to the opposite point of the circle; a witness of CC3 when the radii are equal; and the second ellipse of CC6, whose normal `n+` is symmetric in the two cylinders while its `major_dir` changes sign. Tests of a swapped call compare against the tables evaluated with the swapped arguments, never against the unswapped answer with directions reversed. Where a table needs a role ("the plane", "the cylinder", "the larger cylinder"), it says how the role is chosen.
 
@@ -367,7 +368,7 @@ A trace piece encloses its non-rational constants when a call needs them, at tha
 
 - **Outcomes.** Operations that add to the store return `Answered`; questions return `Outcome`, mapped from piece 1's and piece 2's as stated above. A `NotExact` from piece 1 or 2 inside an operation becomes the degenerate branch and a mark; inside a question it is returned as `NotExact` with the bound stated.
 - **Budgets.** Every decision runs on the caller's `Decider` and its `BudgetPolicy`. This piece never creates a `Decider` or a policy. The deadline reaches it only through `Decider` calls that do work (ARCHITECTURE.md, "The time budget"): `intersect_surfaces` makes none, and a fact-settled decision makes none.
-- **Facts.** This piece records only the construction facts listed above, consults `Incident` and `Coincident` facts first in `intersect_curve_surface`, `on_curve` and `same_curve`, and reports each fact-settled decision through `note_fact_decision`.
+- **Facts.** This piece records the construction facts listed above and uses the store's structural identities. Fact-settled incidence, coincidence, shared-axis, shared-centre and local tangency decisions call `note_fact_decision` without numeric work.
 - **Marks.** `intersect_curve_surface` builds marks with `Mark::from_not_exact`, with the kinds of its table. `intersect_surfaces` and `trace` never build one.
 - **Refusals.** This piece adds the codes below and passes every `numbers.*` refusal through unchanged.
 

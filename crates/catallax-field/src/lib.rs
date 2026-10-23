@@ -257,6 +257,7 @@ impl Plan {
                         target,
                         profile,
                         direction,
+                        side,
                     } => {
                         let built = features::Feature::extrude(
                             &profiles[profile],
@@ -266,7 +267,61 @@ impl Plan {
                             steps[target] == 0,
                             dec,
                         )?;
-                        let tool = plan.feature(built, dec)?;
+                        let mut tool = plan.feature(built, dec)?;
+                        if let Some(
+                            side @ (catallax_recipe::ThroughSide::Forward
+                            | catallax_recipe::ThroughSide::Backward),
+                        ) = side
+                        {
+                            let profile = &profiles[profile];
+                            let normal = profile::rational_vector(
+                                &profile.pose,
+                                &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+                            );
+                            let direction = direction
+                                .as_ref()
+                                .map(|v| {
+                                    let [x, y, z] = v.0.each_ref().map(|n| n.value().clone());
+                                    RVector3::new(x, y, z)
+                                })
+                                .unwrap_or_else(|| normal.clone());
+                            let positive = direction.dot(&normal).sign() == Sign::Positive;
+                            let forward = *side == catallax_recipe::ThroughSide::Forward;
+                            let plane = Surface::Plane(catallax_shapes::Plane {
+                                origin: profile
+                                    .pose
+                                    .apply_point(&catallax_shapes::Point3::origin()),
+                                normal: normal
+                                    .scaled(&Rational::from_i64(if positive == forward {
+                                        -1
+                                    } else {
+                                        1
+                                    }))
+                                    .into(),
+                                ref_dir: profile.pose.apply_vector(
+                                    &RVector3::new(
+                                        Rational::one(),
+                                        Rational::zero(),
+                                        Rational::zero(),
+                                    )
+                                    .to_real(),
+                                ),
+                            });
+                            let face = geometry::face(
+                                plane.clone(),
+                                Origin {
+                                    step: step.id.clone(),
+                                    role: catallax_recipe::Role::Start,
+                                },
+                                dec,
+                            )?;
+                            let cap = plan.leaf(
+                                geometry::Leaf::Cell(geometry::Cell::new(vec![plane], None)),
+                                vec![face],
+                                dec,
+                            )?;
+                            tool = plan.boolean(BooleanKind::Intersect, tool, cap, dec)?;
+                        }
                         plan.boolean(BooleanKind::Subtract, steps[target], tool, dec)?
                     }
                     Operation::Revolve {
@@ -327,6 +382,153 @@ impl Plan {
                         &step.id,
                         dec,
                     )?,
+                    Operation::ExtrudeTo {
+                        target,
+                        profile,
+                        direction,
+                        ..
+                    }
+                    | Operation::ExtrudeNext {
+                        target,
+                        profile,
+                        direction,
+                    } => {
+                        let limit = if let Operation::ExtrudeTo { limit, .. } = &step.op {
+                            Some(limit)
+                        } else {
+                            None
+                        };
+                        let cap = catallax_features::end_condition::Capped::compile(
+                            recipe,
+                            target,
+                            profile,
+                            direction.as_ref(),
+                            limit,
+                            dec,
+                        )?;
+                        let built = features::Feature::extrude(
+                            &profiles[profile],
+                            &step.id,
+                            None,
+                            direction.as_ref(),
+                            false,
+                            dec,
+                        )?;
+                        let tool = plan.feature(built, dec)?;
+                        let mut envelope = 0;
+                        for cell in cap.cells.iter().filter(|c| c.active) {
+                            let planes = cap.cell_planes(cell, dec)?;
+                            let mut faces = Vec::new();
+                            for (plane, role) in &planes {
+                                if let Some(role) = role {
+                                    faces.push(geometry::face(
+                                        Surface::Plane(plane.clone()),
+                                        Origin {
+                                            step: step.id.clone(),
+                                            role: role.clone(),
+                                        },
+                                        dec,
+                                    )?);
+                                }
+                            }
+                            let surfaces =
+                                planes.into_iter().map(|(p, _)| Surface::Plane(p)).collect();
+                            let node = plan.leaf(
+                                geometry::Leaf::Cell(geometry::Cell::new(
+                                    surfaces,
+                                    Some(cap.column_radius.clone()),
+                                )),
+                                faces,
+                                dec,
+                            )?;
+                            envelope = plan.boolean(BooleanKind::Union, envelope, node, dec)?;
+                        }
+                        plan.boolean(BooleanKind::Intersect, tool, envelope, dec)?
+                    }
+                    Operation::Hole {
+                        target,
+                        at,
+                        diameter,
+                        depth,
+                        tip,
+                        head,
+                    } => {
+                        catallax_features::hole::validate(
+                            diameter.value(),
+                            depth,
+                            tip,
+                            head.as_ref(),
+                        )?;
+                        let target = steps[target];
+                        let bound = plan.node_radius(target, dec)?;
+                        let mut tool_node = 0;
+                        for placement in at {
+                            let tool = catallax_features::hole::HoleTool::new(
+                                placement,
+                                diameter.value(),
+                                depth,
+                                tip,
+                                head.as_ref(),
+                                &bound,
+                                dec,
+                            )?;
+                            for band in &tool.bands {
+                                let side = tool.surface(band);
+                                let lower = tool.cap(&band.depth[0], false);
+                                let upper = tool.cap(&band.depth[1], true);
+                                let mut faces = vec![geometry::face(
+                                    side.clone(),
+                                    Origin {
+                                        step: step.id.clone(),
+                                        role: catallax_recipe::Role::Hole {
+                                            at: placement.id.clone(),
+                                            part: band.part,
+                                        },
+                                    },
+                                    dec,
+                                )?];
+                                for part in &band.end {
+                                    faces.push(geometry::face(
+                                        upper.clone(),
+                                        Origin {
+                                            step: step.id.clone(),
+                                            role: catallax_recipe::Role::Hole {
+                                                at: placement.id.clone(),
+                                                part: *part,
+                                            },
+                                        },
+                                        dec,
+                                    )?);
+                                }
+                                let mut radius = placement
+                                    .point
+                                    .0
+                                    .iter()
+                                    .fold(Rational::zero(), |s, n| s + n.value().abs());
+                                let mut axial = Rational::zero();
+                                let mut radial = Rational::zero();
+                                for x in &band.depth {
+                                    let b = geometry::enclose(x, 128, dec)?;
+                                    axial = axial.max(b.lo().abs().max(b.hi().abs()));
+                                }
+                                for x in &band.radius {
+                                    radial = radial.max(geometry::enclose(x, 128, dec)?.hi());
+                                }
+                                radius = radius + axial + radial;
+                                let node = plan.leaf(
+                                    geometry::Leaf::Cell(geometry::Cell::new(
+                                        vec![lower, upper, side],
+                                        Some(radius),
+                                    )),
+                                    faces,
+                                    dec,
+                                )?;
+                                tool_node =
+                                    plan.boolean(BooleanKind::Union, tool_node, node, dec)?;
+                            }
+                        }
+                        plan.boolean(BooleanKind::Subtract, target, tool_node, dec)?
+                    }
                     _ => {
                         let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
                         plan.leaf(leaf, faces, dec)?
@@ -393,6 +595,35 @@ impl Plan {
         self.definition_roles
             .get(&face)
             .unwrap_or(&self.faces[face].origin.role)
+    }
+
+    fn node_radius(&self, node: usize, dec: &mut Decider) -> Result<Rational, Refusal> {
+        let mut bounds: Vec<Option<Rational>> = Vec::with_capacity(node + 1);
+        for instruction in &self.instructions[..=node] {
+            let bound = match *instruction {
+                Instruction::Empty => Some(Rational::zero()),
+                Instruction::Leaf(i) => self.leaves[i].display_radius(dec)?,
+                Instruction::Boolean { kind, a, b } => match kind {
+                    BooleanKind::Subtract => bounds[a].clone(),
+                    BooleanKind::Union => bounds[a]
+                        .as_ref()
+                        .zip(bounds[b].as_ref())
+                        .map(|(a, b)| a.clone().max(b.clone())),
+                    BooleanKind::Intersect => match (&bounds[a], &bounds[b]) {
+                        (Some(a), Some(b)) => Some(a.clone().min(b.clone())),
+                        (Some(a), None) | (None, Some(a)) => Some(a.clone()),
+                        _ => None,
+                    },
+                },
+            };
+            bounds.push(bound);
+        }
+        bounds[node].clone().ok_or_else(|| {
+            Refusal::new(
+                "field.unbounded-target",
+                "hole target has no certified finite bound",
+            )
+        })
     }
 
     fn feature(
@@ -882,6 +1113,61 @@ impl Plan {
 
     /// Named-face query with an explicit shared proof policy.
     pub fn face_query_checked(
+        &self,
+        id: FaceId,
+        point: &RPoint3,
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<FaceQuery, Refusal> {
+        let origin = &self
+            .faces
+            .get(id.0)
+            .ok_or_else(|| Refusal::new("field.face-id", "face handle is not in this plan"))?
+            .origin;
+        let mut chosen: Option<(usize, FaceQuery)> = None;
+        let mut indeterminate = false;
+        for (index, face) in self
+            .faces
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| &f.origin == origin)
+        {
+            let query = self.face_candidate_query(FaceId(index), point, storage, dec)?;
+            match query.state {
+                FaceState::OnFace => {
+                    if let Some((old, previous)) = &mut chosen {
+                        if !same_support(&self.faces[*old], face, dec)? {
+                            previous.direction = Direction::Ambiguous;
+                        }
+                    } else {
+                        chosen = Some((index, query));
+                    }
+                }
+                FaceState::Indeterminate => indeterminate = true,
+                FaceState::NotOnFace => (),
+            }
+        }
+        if let Some((_, mut query)) = chosen {
+            if indeterminate {
+                query.direction = Direction::Ambiguous;
+            }
+            return Ok(query);
+        }
+        Ok(FaceQuery {
+            state: if indeterminate {
+                FaceState::Indeterminate
+            } else {
+                FaceState::NotOnFace
+            },
+            direction: if indeterminate {
+                Direction::Ambiguous
+            } else {
+                Direction::Undefined
+            },
+        })
+    }
+
+    fn face_candidate_query(
         &self,
         id: FaceId,
         point: &RPoint3,

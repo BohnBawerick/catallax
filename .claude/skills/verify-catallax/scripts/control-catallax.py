@@ -73,7 +73,7 @@ def load(paths, source, adapter=None):
                     problems.append({'source': value['source'], 'problem': value['problem']})
                 elif fmt == 'exact-brep-question/2':
                     problems.append({'source': 'question', 'problem': value})
-                elif fmt == 'catallax-recipe/3':
+                elif fmt in ('catallax-recipe/3', 'catallax-recipe/4'):
                     problems.append({'source': source if source in ('compare', 'field') else 'recipe', 'problem': value})
                 elif fmt == 'catallax-question/1':
                     if set(value) != {'format', 'source', 'problem', 'max_work'}:
@@ -451,8 +451,8 @@ def parts(args):
     problems = []
     for file in files:
         problem = json.loads(file.read_text())
-        if problem.get('format') != 'catallax-recipe/3':
-            raise ValueError(f'{file}: target must be catallax-recipe/3')
+        if problem.get('format') not in ('catallax-recipe/3', 'catallax-recipe/4'):
+            raise ValueError(f'{file}: target must be catallax-recipe/3 or catallax-recipe/4')
         problems.append((file, file.relative_to(root).as_posix(), problem))
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)

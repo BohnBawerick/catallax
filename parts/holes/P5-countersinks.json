@@ -1,0 +1,23 @@
+{
+  "format":"catallax-recipe/3",
+  "name":"P5 named countersinks",
+  "description":"The fixed P5 housing and its four diameter4 through holes with diameter8 90-degree countersinks on radius17. Placements are explicit: pattern and junction fillet remain separate features in P5-flanged-housing.json.",
+  "steps":[
+    {"id":"section","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+      {"kind":"line","id":"flange-bottom","to":["22","0"]},
+      {"kind":"line","id":"flange-rim","to":["22","5"]},
+      {"kind":"line","id":"flange-top","to":["12","5"]},
+      {"kind":"line","id":"body-wall","to":["12","30"]},
+      {"kind":"line","id":"body-top","to":["8","30"]},
+      {"kind":"line","id":"inner-wall","to":["8","0"]}
+    ]]},
+    {"id":"housing","op":"revolve","profile":"section","axis":{"point":["0","0","0"],"direction":["0","1","0"]},"angle":"360"},
+    {"id":"drilled","op":"hole","target":"housing","at":[
+      {"id":"bolt-0","point":["17","5","0"],"direction":["0","-1","0"]},
+      {"id":"bolt-1","point":["0","5","-17"],"direction":["0","-1","0"]},
+      {"id":"bolt-2","point":["-17","5","0"],"direction":["0","-1","0"]},
+      {"id":"bolt-3","point":["0","5","17"],"direction":["0","-1","0"]}
+    ],"diameter":"4","depth":"through","tip":"flat","head":{"countersink":{"diameter":"8","angle":"90"}}}
+  ],
+  "result":"drilled"
+}

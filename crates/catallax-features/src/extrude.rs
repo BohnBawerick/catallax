@@ -140,7 +140,13 @@ pub fn extrude(
         )
     })?;
     let vector = direction.scaled(&(distance / &length));
-    extrude_vector(model, profile, step, &vector)
+    extrude_vector(
+        model,
+        profile,
+        step,
+        &vector,
+        [Some(Role::Start), Some(Role::End)],
+    )
 }
 
 pub(crate) fn extrude_vector(
@@ -148,6 +154,7 @@ pub(crate) fn extrude_vector(
     profile: &Profile,
     step: &StepId,
     vector: &RVector3,
+    caps: [Option<Role>; 2],
 ) -> Result<BodyId, Refusal> {
     let normal = crate::profile::rational_vector(
         &profile.pose,
@@ -370,10 +377,13 @@ pub(crate) fn extrude_vector(
             reverse(forward),
             bottom,
             None,
-            vec![Origin {
-                step: step.clone(),
-                role: Role::Start,
-            }],
+            caps[0]
+                .iter()
+                .map(|role| Origin {
+                    step: step.clone(),
+                    role: role.clone(),
+                })
+                .collect(),
         );
         let end = face(
             model,
@@ -385,10 +395,13 @@ pub(crate) fn extrude_vector(
             forward,
             top,
             None,
-            vec![Origin {
-                step: step.clone(),
-                role: Role::End,
-            }],
+            caps[1]
+                .iter()
+                .map(|role| Origin {
+                    step: step.clone(),
+                    role: role.clone(),
+                })
+                .collect(),
         );
         let mut faces = vec![start, end];
         faces.extend(sides);

@@ -1,0 +1,26 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P1 named bore and bolt holes",
+  "description": "The fixed P1 plate, flange and boss through its bore and four bolt holes. The slot subtraction chain remains in P1-bracket.json and has a separate repair.",
+  "steps": [
+    {"id":"plate-profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+      {"kind":"line","id":"bottom","to":["60","0"]},{"kind":"line","id":"right","to":["60","40"]},{"kind":"line","id":"top","to":["0","40"]},{"kind":"line","id":"left","to":["0","0"]}
+    ]]},
+    {"id":"plate","op":"extrude","profile":"plate-profile","distance":"5"},
+    {"id":"flange-profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","5"]},"loops":[[
+      {"kind":"line","id":"bottom","to":["60","0"]},{"kind":"line","id":"right","to":["60","5"]},{"kind":"line","id":"top","to":["0","5"]},{"kind":"line","id":"left","to":["0","0"]}
+    ]]},
+    {"id":"flange","op":"extrude","profile":"flange-profile","distance":"25"},
+    {"id":"base","op":"boolean","kind":"union","target":"plate","tool":"flange"},
+    {"id":"boss","op":"cylinder","radius":"8","height":"10","pose":{"rotation":["1","0","0","0"],"translation":["30","25","5"]}},
+    {"id":"bossed","op":"boolean","kind":"union","target":"base","tool":"boss"},
+    {"id":"bored","op":"hole","target":"bossed","at":[{"id":"bore","point":["30","25","15"],"direction":["0","0","-1"]}],"diameter":"8","depth":"through","tip":"flat"},
+    {"id":"bolt-cut-3","op":"hole","target":"bored","at":[
+      {"id":"bolt-0","point":["10","12","5"],"direction":["0","0","-1"]},
+      {"id":"bolt-1","point":["50","12","5"],"direction":["0","0","-1"]},
+      {"id":"bolt-2","point":["10","32","5"],"direction":["0","0","-1"]},
+      {"id":"bolt-3","point":["50","32","5"],"direction":["0","0","-1"]}
+    ],"diameter":"4","depth":"through","tip":"flat"}
+  ],
+  "result": "bolt-cut-3"
+}

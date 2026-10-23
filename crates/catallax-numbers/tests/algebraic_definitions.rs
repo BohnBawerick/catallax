@@ -271,3 +271,20 @@ fn constructible_half_angles_obey_independent_double_angle_identities() {
         ));
     }
 }
+
+#[test]
+fn primitive_angle_roots_match_independent_pentagon_values() {
+    let root_five = Real::from_i64(5).sqrt();
+    let large = &(&Real::one() + &root_five) / &Real::from_i64(4);
+    let small = &(&root_five - &Real::one()) / &Real::from_i64(4);
+    for (angle, sine, expected) in [
+        ("36", false, large.clone()),
+        ("72", false, small.clone()),
+        ("18", true, small),
+        ("54", true, large),
+    ] {
+        let mut dec = Decider::default();
+        let pair = sin_cos_degrees(&q(angle), &mut dec).unwrap();
+        zero(&(&pair[if sine { 0 } else { 1 }] - &expected), &mut dec);
+    }
+}

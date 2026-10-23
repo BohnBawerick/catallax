@@ -178,7 +178,19 @@ pub(crate) fn intersect(
             let pair = if let Some(value) = pairs.get(&(sa, sb)) {
                 value.clone()
             } else {
-                let answer = intersect_surfaces(model.geom_mut(), sa, sb, dec)?;
+                let answer = match intersect_surfaces(model.geom_mut(), sa, sb, dec) {
+                    Ok(answer) => answer,
+                    Err(refusal) => {
+                        if refusal.code == "intersect.traced-pair-required"
+                            && crate::bounds::disjoint(model, fa, fb, dec)?
+                        {
+                            // This proves only this trimmed pair disjoint. Never
+                            // cache it as a statement about the whole supports.
+                            continue;
+                        }
+                        return Err(refusal);
+                    }
+                };
                 assert!(
                     answer.marks.is_empty(),
                     "surface configuration is rational and exact"

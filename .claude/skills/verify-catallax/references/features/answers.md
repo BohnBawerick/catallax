@@ -5,9 +5,9 @@ Build exact geometry or compare the two recipe evaluators without a wall-clock c
 ## Sub-features
 
 - `answer.question`: question/2 produces manifest/3 and requested STEP.
-- `answer.recipe`: recipe/3 produces topology and STEP.
-- `answer.compare`: recipe/3 produces a sampled comparison report.
-- `answer.field-display`: recipe/3 produces the field's own `display.obj`, a proven two-sided boundary distance bound and `face_measurements.display.first_mesh_ms`. Unsupported features and charts refuse without B-rep fallback.
+- `answer.recipe`: recipe/3 and recipe/4 produce topology and STEP for implemented operations.
+- `answer.compare`: either recipe version produces a sampled comparison report.
+- `answer.field-display`: either recipe version produces the field's own `display.obj`, a proven two-sided boundary distance bound and `face_measurements.display.first_mesh_ms`. Unsupported features and charts refuse without B-rep fallback.
 - `answer.budget`: zero work refuses and leaves no STEP.
 - `answer.log`: each completed response records executed operations with decision settlement counts, marks, work, refusal codes and diagnostic timings.
 - `answer.export`: portable question/1 replays the original source and work allowance.
@@ -25,6 +25,8 @@ Preconditions: release build, doctor passed, `PROOF` names an external directory
 
 - Question: run `control-catallax.py run .claude/skills/verify-catallax/references/examples/block.json --binary target/release/catallax-verify --out "$PROOF/question" --json`. Require one answered result and an `answer.step` artifact despite the example's zero legacy deadline.
 - Recipe: run `control-catallax.py run .claude/skills/verify-catallax/references/examples/recipe.json --source recipe --binary target/release/catallax-verify --out "$PROOF/recipe" --json`. Require answered topology and STEP.
+- Named holes: run `parts/holes` with `--source recipe` to exercise the fixed P1 bore/bolts and P5 countersink placements. These are feature prefixes, not full target-part acceptance. Keep native field-display and comparison refusals visible when running the scoreboard.
+- Version 4 end conditions: run `crates/catallax-features/tests/fixtures/stepped-limit.json` with `--source recipe`. Require a complete capped body and STEP, including the interior `end` curtain; a support-plane extension is not a valid substitute for the selected trimmed faces. Non-planar target limits remain an explicit implementation gap.
 - Comparison: repeat the recipe command with `--source compare` and a separate output directory. Inspect `manifest.comparison.verdict` and findings. Require no STEP and a non-null rational `sampled_distance_upper_mm` at most `0.01` for this agreeing block example. Curved distance regressions must also exercise trimmed extrusion, revolution and Boolean faces, not infer proximity from a small residual.
 - Field display: repeat the recipe command with `--source field` and a separate output directory. Require `display.obj`, actual vertex and triangle counts, `face_measurements.display.first_mesh_ms` and exact rational `deviation_bound_mm`. The empty `face_measurements.faces` list is not a fillet-definition measurement. P3's elementary fillets compile independently; compilation and point-query regressions do not prove native field display. Check the actual display outcome and artifact rather than expecting the former unsupported-operation refusal. Compare independent one-, two- and four-worker runs, retaining strict OBJ bytes as well as certificates.
 - Budget: repeat the question command with `--max-work 0` and a separate directory. Require `numbers.operation-budget` and no STEP.

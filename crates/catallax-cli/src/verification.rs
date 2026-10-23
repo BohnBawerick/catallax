@@ -277,6 +277,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 let report = controller
                     .latest()
                     .expect("synchronous comparison publishes");
+                if let Some(refusal) = &report.refusal {
+                    return Ok(refused(refusal.code, &refusal.detail));
+                }
                 let verdict = match report.verdict {
                     catallax_compare::Verdict::Agree => "agree",
                     catallax_compare::Verdict::Disagree => "disagree",

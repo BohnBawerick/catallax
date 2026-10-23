@@ -185,10 +185,10 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Block{..}|Operation::Cylinder{..}|Operation::Sphere{..}|
             Operation::Cone{..}|Operation::Torus{..}|Operation::Boolean{..}|
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
-            Operation::Revolve{..}|Operation::Pattern{..}|Operation::Mirror{..}|
+            Operation::ExtrudeTo{..}|Operation::ExtrudeNext{..}|
+            Operation::Revolve{..}|Operation::Hole{..}|Operation::Pattern{..}|Operation::Mirror{..}|
             Operation::Fillet{..}=>return None,
             Operation::Path{..}=>"neither kernel evaluates recipe paths",
-            Operation::Hole{..}=>"neither kernel evaluates recipe holes",
             Operation::Chamfer{..}=>"neither kernel evaluates recipe chamfers",
             Operation::Shell{..}=>"neither kernel evaluates recipe shelling",
             Operation::Offset{..}=>"neither kernel evaluates recipe offsets",
@@ -400,6 +400,7 @@ pub(crate) fn run(
         sampled_distance_upper: Some(r(0)),
         findings: vec![],
         not_comparable: coverage(recipe),
+        refusal: None,
     };
     let valid = options.accuracy > r(0)
         && (1..=64).contains(&options.divisions)
@@ -771,6 +772,7 @@ pub(crate) fn run(
         Option<Result<catallax_measure::distance::PreparedFace, Refusal>>,
     > = (0..mesh.faces.len()).map(|_| None).collect();
     let sampling_failed = std::cell::Cell::new(false);
+    let mut sample_refusal = None;
     let mut check_sample = |p: RPoint3, origin: &Origin| {
         if sampling_failed.get() {
             return;
@@ -795,6 +797,7 @@ pub(crate) fn run(
                     vec![origin.clone()],
                     format!("field face query {}: {}", error.code, error.detail),
                 );
+                sample_refusal = Some(error);
                 return;
             }
         };
@@ -833,6 +836,7 @@ pub(crate) fn run(
                             vec![face.origin.clone()],
                             format!("coactive field face query {}: {}", error.code, error.detail),
                         );
+                        sample_refusal = Some(error);
                         return;
                     }
                 }
@@ -1086,6 +1090,14 @@ pub(crate) fn run(
         check_sample(p, origin);
         !revision.is_cancelled() && !sampling_failed.get()
     });
+    if let Some(refusal) = sample_refusal {
+        whole_failure(
+            &mut report,
+            format!("field face query {}: {}", refusal.code, refusal.detail),
+        );
+        report.refusal = Some(refusal);
+        return revision.publish(report);
+    }
     if let Err(error) = primitive_sampling {
         whole_failure(
             &mut report,

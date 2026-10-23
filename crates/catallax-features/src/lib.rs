@@ -32,12 +32,16 @@
 //! ```
 
 mod edge_blend;
+/// Definition-native first-hit limits and their exact boundary assembly.
+pub mod end_condition;
 mod evaluate;
 mod extrude;
 /// Exact elementary rolling-ball definitions retained beside their topology.
 pub mod fillet;
 mod fillet_build;
 mod placement;
+/// Definition-based hole meridians, shared with independent field compilation.
+pub mod hole;
 mod profile;
 mod revolve;
 mod stock;

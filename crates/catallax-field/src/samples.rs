@@ -94,6 +94,7 @@ impl Plan {
                 Instruction::Leaf(i) => match &self.leaves[i] {
                     Leaf::Primitive(p) => Some(p.sample_bounds()?),
                     Leaf::Feature(f) => f.sample_bounds()?,
+                    Leaf::Cell(c) => c.sample_bounds()?,
                 },
                 Instruction::Boolean { kind, a, b } => match kind {
                     BooleanKind::Subtract => bounds[a].clone(),

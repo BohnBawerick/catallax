@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 mod certified_prism;
+mod chamfer;
 /// Definition-native, certified display approximations. No B-rep is constructed.
 pub mod display;
 /// Certified trimmed-face and boundary minimum-distance queries.
@@ -428,6 +429,30 @@ impl Plan {
                             dec,
                         )?
                     }
+                    Operation::Chamfer {
+                        body,
+                        edges,
+                        distance,
+                        other_distance,
+                    } => plan.chamfer(
+                        steps[body],
+                        &step_faces[body],
+                        edges,
+                        &chamfer::Setbacks {
+                            distances: [
+                                distance.value().clone().into(),
+                                other_distance
+                                    .as_ref()
+                                    .unwrap_or(distance)
+                                    .value()
+                                    .clone()
+                                    .into(),
+                            ],
+                            ordered: other_distance.is_some(),
+                        },
+                        &step.id,
+                        dec,
+                    )?,
                     Operation::Fillet {
                         body,
                         edges,
@@ -607,6 +632,7 @@ impl Plan {
                     }
                     Operation::Pattern { body, .. }
                     | Operation::Fillet { body, .. }
+                    | Operation::Chamfer { body, .. }
                     | Operation::Mirror {
                         body,
                         keep_original: true,

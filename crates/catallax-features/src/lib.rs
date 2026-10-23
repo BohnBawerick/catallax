@@ -1,7 +1,7 @@
 //! Recipe-based B-rep features with retained exact definitions.
 //!
 //! [`evaluate`] builds stock solids, sketches, extrusions, revolutions, elementary
-//! fillets, booleans, exact body patterns and mirrors.
+//! fillets and chamfers, booleans, exact body patterns and mirrors.
 //! Every returned face has canonical recipe origins, including faces split or merged
 //! by a boolean. The model remains compatible with `catallax-measure` and
 //! `catallax-step`; the legacy CLI protocol is not extended.
@@ -36,6 +36,9 @@
 //! ```
 
 mod certified;
+/// Exact setback definitions retained beside their topology.
+pub mod chamfer;
+mod chamfer_build;
 /// Exact neutral-curve definitions for analytic draft supports.
 pub mod draft;
 mod draft_build;

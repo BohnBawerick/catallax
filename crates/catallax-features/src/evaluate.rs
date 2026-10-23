@@ -22,6 +22,8 @@ pub struct Built {
     pub fillets: Vec<crate::fillet::FilletDefinition>,
     /// Canonical removed-face history from draft operations, not selectable names.
     pub consumed: Vec<crate::ConsumedFace>,
+    /// Generating definitions of every elementary chamfer and named copy.
+    pub chamfers: Vec<crate::chamfer::ChamferDefinition>,
     pub(crate) definition: Arc<Recipe>,
 }
 
@@ -274,6 +276,7 @@ fn evaluate_impl(
     let mut bodies: BTreeMap<StepId, BodyValue> = BTreeMap::new();
     let mut fillets = Vec::new();
     let mut consumed = Vec::new();
+    let mut chamfers = Vec::new();
     for step in &recipe.steps {
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
         let mut build = |model: &mut Model,
@@ -535,12 +538,49 @@ fn evaluate_impl(
                         radius: &target.radius + &(radius.value() * &Rational::from_i64(2)),
                     }
                 }
+                Operation::Chamfer {
+                    body,
+                    edges,
+                    distance,
+                    other_distance,
+                } => {
+                    let target = &bodies[body];
+                    let other = other_distance.as_ref().unwrap_or(distance);
+                    let distances = [
+                        distance.value().clone().into(),
+                        other.value().clone().into(),
+                    ];
+                    let (body, definitions) = crate::chamfer_build::build(
+                        model,
+                        target.body,
+                        edges,
+                        &distances,
+                        other_distance.is_some(),
+                        &step.id,
+                        dec,
+                    )?;
+                    chamfers.extend(definitions);
+                    BodyValue {
+                        body,
+                        radius: &(&target.radius + distance.value()) + other.value(),
+                    }
+                }
                 Operation::Pattern { body, layout } => {
                     // Validate even count-one and empty patterns before set identities.
                     crate::pattern_placement(layout, 0, dec)?;
                     let source = &bodies[body];
                     let mut body = source.body;
                     let mut radius = source.radius.clone();
+                    let source_chamfers: Vec<_> = chamfers
+                        .iter()
+                        .filter(|d| {
+                            model
+                                .faces_of_body(source.body)
+                                .iter()
+                                .any(|f| model.face_origins(*f).contains(&d.origin))
+                        })
+                        .cloned()
+                        .collect();
                     let source_fillets = if layout.count() > 1 {
                         source_fillet_indices(model, source.body, &fillets)
                     } else {
@@ -574,6 +614,13 @@ fn evaluate_impl(
                             |origin| crate::copy_origin(&step.id, instance, origin),
                         );
                         copy_fillets(&mut fillets, &source_fillets, &map, &step.id, instance)?;
+                        for definition in &source_chamfers {
+                            let mut definition = definition.clone();
+                            definition.transform(&map)?;
+                            definition.origin =
+                                crate::copy_origin(&step.id, instance, &definition.origin);
+                            chamfers.push(definition);
+                        }
                         let copy_bounds = source_bounds
                             .as_ref()
                             .map(|bounds| transformed_bounds(bounds, &map, dec))
@@ -600,6 +647,16 @@ fn evaluate_impl(
                 } => {
                     let map = crate::mirror_placement(plane)?;
                     let source = &bodies[body];
+                    let source_chamfers: Vec<_> = chamfers
+                        .iter()
+                        .filter(|d| {
+                            model
+                                .faces_of_body(source.body)
+                                .iter()
+                                .any(|f| model.face_origins(*f).contains(&d.origin))
+                        })
+                        .cloned()
+                        .collect();
                     let source_fillets = source_fillet_indices(model, source.body, &fillets);
                     let source_bounds = if *keep_original {
                         catallax_measure::bounding_box(
@@ -623,6 +680,11 @@ fn evaluate_impl(
                             crate::copy_origin(&step.id, 1, origin)
                         });
                     copy_fillets(&mut fillets, &source_fillets, &map, &step.id, 1)?;
+                    for mut definition in source_chamfers {
+                        definition.transform(&map)?;
+                        definition.origin = crate::copy_origin(&step.id, 1, &definition.origin);
+                        chamfers.push(definition);
+                    }
                     let body = if *keep_original {
                         let copy_bounds = source_bounds
                             .as_ref()
@@ -708,6 +770,7 @@ fn evaluate_impl(
             .map(|(id, value)| (id, value.body))
             .collect(),
         fillets,
+        chamfers,
         definition: certification
             .and_then(|context| context.snapshot())
             .unwrap_or_else(|| Arc::new(recipe.clone())),

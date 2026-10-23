@@ -358,7 +358,7 @@ impl Plan {
         step: &catallax_recipe::StepId,
         dec: &mut Decider,
     ) -> Result<Option<Self>, Refusal> {
-        let Some(expansion) = catallax_recipe::CanonicalStock::new(operation, step) else {
+        let Some(expansion) = catallax_recipe::CanonicalStock::new(operation, step)? else {
             return Ok(None);
         };
         let mut plan = Self::compile_checked(expansion.recipe(), dec)?;

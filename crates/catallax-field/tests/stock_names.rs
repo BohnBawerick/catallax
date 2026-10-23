@@ -152,7 +152,7 @@ fn canonical_features_keep_stock_face_edge_and_vertex_names_in_both_kernels() {
 fn cone_correspondence_does_not_rename_an_authored_radial_segment() {
     let operation: Operation = serde_json::from_value(json!({"op":"cone", "base_radius":"3", "top_radius":"1", "height":"4", "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}})).unwrap();
     let step = StepId::new("canonical_profile").unwrap();
-    let expansion = CanonicalStock::new(&operation, &step).unwrap();
+    let expansion = CanonicalStock::new(&operation, &step).unwrap().unwrap();
     let raw = evaluate(expansion.recipe(), &mut Decider::default()).unwrap();
     let named = evaluate_canonical_stock(&operation, &step, &mut Decider::default())
         .unwrap()
@@ -175,4 +175,56 @@ fn cone_correspondence_does_not_rename_an_authored_radial_segment() {
             .iter()
             .any(|f| named.model.face_origins(*f).contains(&cap))
     );
+}
+
+#[test]
+fn canonical_expansion_cannot_turn_impossible_stock_dimensions_into_legal_sweeps() {
+    for fields in [
+        json!({"op":"block","size":["-1","2","3"]}),
+        json!({"op":"block","size":["1","0","3"]}),
+        json!({"op":"block","size":["1","2","-3"]}),
+        json!({"op":"cylinder","radius":"-1","height":"3"}),
+        json!({"op":"cylinder","radius":"1","height":"0"}),
+        json!({"op":"cylinder","radius":"1","height":"-3"}),
+        json!({"op":"sphere","radius":"-3"}),
+        json!({"op":"cone","base_radius":"0","top_radius":"1","height":"4"}),
+        json!({"op":"cone","base_radius":"3","top_radius":"-1","height":"4"}),
+        json!({"op":"cone","base_radius":"3","top_radius":"1","height":"0"}),
+        json!({"op":"cone","base_radius":"3","top_radius":"1","height":"-4"}),
+        json!({"op":"torus","major":"6","minor":"0"}),
+        json!({"op":"torus","major":"1","minor":"2"}),
+        json!({"op":"torus","major":"-6","minor":"2"}),
+    ] {
+        let mut value = fields;
+        value["pose"] = json!({"rotation":["1","0","0","0"],"translation":["0","0","0"]});
+        let operation: Operation = serde_json::from_value(value.clone()).unwrap();
+        let step = StepId::new("stock").unwrap();
+        let recipe = Recipe::new(
+            "invalid stock",
+            vec![Step {
+                id: step.clone(),
+                op: operation.clone(),
+            }],
+            step.clone(),
+        );
+        assert!(
+            evaluate(&recipe, &mut Decider::default()).is_err(),
+            "{value}"
+        );
+        assert!(Plan::compile(&recipe).is_err(), "{value}");
+        let error =
+            evaluate_canonical_stock(&operation, &step, &mut Decider::default()).unwrap_err();
+        assert!(
+            matches!(error, catallax_features::BuildError::Geometry { refusal, .. }
+            if refusal.code == "recipe.impossible-stock"),
+            "{value}"
+        );
+        assert_eq!(
+            Plan::compile_canonical_stock(&operation, &step, &mut Decider::default())
+                .unwrap_err()
+                .code,
+            "recipe.impossible-stock",
+            "{value}"
+        );
+    }
 }

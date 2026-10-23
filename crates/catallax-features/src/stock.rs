@@ -151,7 +151,14 @@ pub fn evaluate_canonical_stock(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<Option<crate::Built>, crate::BuildError> {
-    let Some(expansion) = catallax_recipe::CanonicalStock::new(operation, step) else {
+    let Some(expansion) =
+        catallax_recipe::CanonicalStock::new(operation, step).map_err(|refusal| {
+            crate::BuildError::Geometry {
+                step: step.clone(),
+                refusal,
+            }
+        })?
+    else {
         return Ok(None);
     };
     let mut built = crate::evaluate(expansion.recipe(), dec)?;

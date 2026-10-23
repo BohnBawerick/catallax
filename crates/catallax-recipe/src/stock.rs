@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use catallax_numbers::{Refusal, Sign};
+
 use crate::{
     Axis, ElementId, Loop, Number, Operation, Origin, Point2, Point3, Recipe, Role, Segment, Step,
     StepId, Turn, Vector3,
@@ -17,9 +19,34 @@ pub struct CanonicalStock {
 }
 
 impl CanonicalStock {
-    /// Expands a stock operation. Non-stock operations return `None`.
-    /// Dimension and placement validity remain the evaluators' responsibility.
-    pub fn new(operation: &Operation, step: &StepId) -> Option<Self> {
+    /// Expands a stock operation. Non-stock operations return `Ok(None)`.
+    /// Stock dimension rules are checked before producing a feature definition;
+    /// placement validity remains the evaluators' responsibility.
+    pub fn new(operation: &Operation, step: &StepId) -> Result<Option<Self>, Refusal> {
+        let positive = |n: &Number| n.value().sign() == Sign::Positive;
+        let valid = match operation {
+            Operation::Block { size, .. } => size.iter().all(positive),
+            Operation::Cylinder { radius, height, .. } => positive(radius) && positive(height),
+            Operation::Sphere { radius, .. } => positive(radius),
+            Operation::Cone {
+                base_radius,
+                top_radius,
+                height,
+                ..
+            } => {
+                positive(base_radius)
+                    && positive(height)
+                    && top_radius.value().sign() != Sign::Negative
+            }
+            Operation::Torus { major, minor, .. } => positive(minor) && major > minor,
+            _ => return Ok(None),
+        };
+        if !valid {
+            return Err(Refusal::new(
+                "recipe.impossible-stock",
+                format!("{step}: stock dimensions violate RECIPE.md section 4.0"),
+            ));
+        }
         let id = |text: &str| ElementId::new(text).expect("fixed canonical segment id");
         let p = |x: Number, y: Number| Point2([x, y]);
         let line = |name: &str, x: Number, y: Number| Segment::Line {
@@ -93,7 +120,7 @@ impl CanonicalStock {
                 segments.push(line("axis", zero.clone(), zero.clone()));
                 (pose, vec![Loop(segments)], None)
             }
-            _ => return None,
+            _ => return Ok(None),
         };
         let mut plane = pose.clone();
         let sweep = if let Some(distance) = distance {
@@ -149,7 +176,7 @@ impl CanonicalStock {
                 );
             }
         }
-        Some(Self {
+        Ok(Some(Self {
             recipe: Recipe::new(
                 "canonical stock feature",
                 vec![
@@ -165,7 +192,7 @@ impl CanonicalStock {
                 step.clone(),
             ),
             origins,
-        })
+        }))
     }
 
     /// The immutable sketch and sweep definition. Its construction step is never

@@ -711,3 +711,216 @@ fn collapsed_planar_facets_preserve_incidence_and_report_unavailable_quality() {
         assert_eq!(face.max_aspect_ratio.is_none(), collapsed);
     }
 }
+
+#[test]
+fn oblique_elliptic_cylinder_shares_circular_cap_rails() {
+    use catallax_shapes::{EllipticCylinder, Plane};
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let p = |[x, y, z]: [i64; 3]| RPoint3::new(x.into(), y.into(), z.into()).into();
+    let v = |[x, y, z]: [i64; 3]| RVector3::new(x.into(), y.into(), z.into()).into();
+    let side = model.geom_mut().add_surface(Surface::EllipticCylinder(
+        EllipticCylinder::new(
+            p([0, 0, 0]),
+            v([1, 0, 1]),
+            v([0, 1, 0]),
+            4.into(),
+            2.into(),
+            &mut dec,
+        )
+        .unwrap(),
+    ));
+    let mut rings = Vec::new();
+    let mut faces = Vec::new();
+    for (center, normal) in [([0, 0, 0], [0, 0, -1]), ([2, 0, 2], [0, 0, 1])] {
+        let surface = model.geom_mut().add_surface(Surface::Plane(
+            Plane::new(p(center), v(normal), v([1, 0, 0]), &mut dec).unwrap(),
+        ));
+        let curve = model.geom_mut().add_curve(Curve::Circle(
+            Circle::new(p(center), v([0, 0, 1]), 4.into(), v([1, 0, 0]), &mut dec).unwrap(),
+        ));
+        let edge = model.add_edge(Edge {
+            curve,
+            sense: Sense::Same,
+            start: None,
+            end: None,
+        });
+        rings.push(edge);
+        let coedge = model.add_coedge(Coedge {
+            edge,
+            sense: if normal[2] < 0 {
+                Sense::Reversed
+            } else {
+                Sense::Same
+            },
+        });
+        let ring = model.add_loop(Loop::Coedges(vec![coedge]));
+        faces.push(model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops: vec![ring],
+        }));
+    }
+    let loops = rings
+        .into_iter()
+        .zip([Sense::Same, Sense::Reversed])
+        .map(|(edge, sense)| {
+            let coedge = model.add_coedge(Coedge { edge, sense });
+            model.add_loop(Loop::Coedges(vec![coedge]))
+        })
+        .collect();
+    faces.push(model.add_face(Face {
+        surface: side,
+        sense: Sense::Same,
+        loops,
+    }));
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: MarkLog::new(),
+    });
+    let options = MeshOptions::default();
+    let mesh = mesh_body(&model, body, &options, &mut dec).unwrap().value;
+    assert_closed(&mesh);
+    for face in &mesh.faces {
+        assert!(face.max_chord_error <= options.chord_tolerance);
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            for weights in [[1.0 / 3.0; 3], [0.2, 0.3, 0.5]] {
+                let p: [f64; 3] = std::array::from_fn(|i| {
+                    (0..3)
+                        .map(|j| weights[j] * mesh.positions[triangle.vertices[j]][i])
+                        .sum()
+                });
+                let error = if model.face(face.face).surface == side {
+                    let major = p[1];
+                    let minor = (p[2] - p[0]) / 2.0_f64.sqrt();
+                    // Radial projection supplies an independent upper bound on
+                    // distance to the ellipse, whose major semi-axis is two.
+                    2.0 * ((major * major / 4.0 + minor * minor / 2.0).sqrt() - 1.0).abs()
+                } else {
+                    p[2].abs().min((p[2] - 2.0).abs())
+                };
+                assert!(error <= face.max_chord_error.to_f64_nearest() + 1e-12);
+            }
+        }
+    }
+}
+
+#[test]
+fn torus_trimmed_between_non_grid_latitudes_closes_across_both_seams() {
+    let mut model = Model::new();
+    let original = topology::torus(&mut model, 3.into(), 1.into(), &Pose::identity()).unwrap();
+    let surface = model.face(model.faces_of_body(original)[0]).surface;
+    let mut dec = Decider::default();
+    let edges: Vec<_> = [18, 12]
+        .into_iter()
+        .map(|radius| {
+            let radius = Rational::from_ratio(radius, 5).unwrap();
+            let curve = model.geom_mut().add_curve(Curve::Circle(
+                Circle::new(
+                    RPoint3::new(0.into(), 0.into(), Rational::from_ratio(4, 5).unwrap()).into(),
+                    RVector3::new(0.into(), 0.into(), 1.into()).into(),
+                    (&radius * &radius).into(),
+                    RVector3::new(3.into(), 4.into(), 0.into()).into(),
+                    &mut dec,
+                )
+                .unwrap(),
+            ));
+            model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: None,
+                end: None,
+            })
+        })
+        .collect();
+    let faces: Vec<_> = [
+        [Sense::Same, Sense::Reversed],
+        [Sense::Reversed, Sense::Same],
+    ]
+    .into_iter()
+    .map(|senses| {
+        let loops = edges
+            .iter()
+            .zip(senses)
+            .map(|(&edge, sense)| {
+                let coedge = model.add_coedge(Coedge { edge, sense });
+                model.add_loop(Loop::Coedges(vec![coedge]))
+            })
+            .collect();
+        model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops,
+        })
+    })
+    .collect();
+    let upper = faces[0];
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: MarkLog::new(),
+    });
+    let options = MeshOptions::default();
+    let mesh = mesh_body(&model, body, &options, &mut dec).unwrap().value;
+    assert_closed(&mesh);
+    for face in &mesh.faces {
+        assert!(face.max_chord_error <= options.chord_tolerance);
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            let z = triangle
+                .vertices
+                .iter()
+                .map(|&i| mesh.positions[i][2])
+                .sum::<f64>()
+                / 3.0;
+            if face.face == upper {
+                assert!(z >= 0.8 - 1e-12);
+            } else {
+                assert!(z <= 0.8 + 1e-12);
+            }
+        }
+    }
+}
+
+#[test]
+fn strongly_curved_shared_rails_do_not_emit_boundary_only_ears() {
+    let mut model = Model::new();
+    let a = topology::cylinder(&mut model, 2.into(), 8.into(), &pose(0, 0, -4)).unwrap();
+    let rotation = Rotation::from_quaternion(1.into(), 1.into(), 0.into(), 0.into()).unwrap();
+    let placed = Pose::new(
+        rotation,
+        RVector3::new(0.into(), 4.into(), 0.into()).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let b = topology::cylinder(&mut model, 2.into(), 8.into(), &placed).unwrap();
+    let body = boolean(&mut model, a, b, BoolOp::Intersect, &mut Decider::default())
+        .unwrap()
+        .body;
+    let options = MeshOptions::default();
+    let mesh = mesh_body(&model, body, &options, &mut Decider::default())
+        .unwrap()
+        .value;
+    assert_closed(&mesh);
+    assert_accuracy(&model, &mesh);
+    for face in &mesh.faces {
+        assert!(face.max_chord_error <= options.chord_tolerance);
+    }
+    for edge in &mesh.edges {
+        let rail: std::collections::BTreeSet<_> = edge.vertices.iter().copied().collect();
+        for triangle in &mesh.triangles {
+            assert!(
+                !triangle.vertices.iter().all(|vertex| rail.contains(vertex)),
+                "one rail must not become a zero-volume face ear"
+            );
+        }
+    }
+}

@@ -4,7 +4,7 @@ use crate::{
     chart::{self, BITS, Chart, Uv},
     failure,
 };
-use catallax_numbers::{Ball, Decider, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal};
 use catallax_shapes::{Surface, Vector3};
 
 fn dot(a: &[Ball; 3], b: &[Ball; 3]) -> Ball {
@@ -23,6 +23,7 @@ fn normal(chart: &Chart, uv: Uv, dec: &Decider) -> Result<[Ball; 3], Refusal> {
         Surface::Cone(c) => (&c.axis, &c.ref_dir),
         Surface::Sphere(s) => (&s.axis, &s.ref_dir),
         Surface::Torus(t) => (&t.axis, &t.ref_dir),
+        Surface::EllipticCylinder(s) => (&s.axis, &s.major_dir),
         _ => return Err(failure("surface has no normal certificate")),
     };
     let axis_unit = unit(axis, dec)?;
@@ -36,6 +37,19 @@ fn normal(chart: &Chart, uv: Uv, dec: &Decider) -> Result<[Ball; 3], Refusal> {
     let radial: [Ball; 3] = std::array::from_fn(|i| &(&first[i] * &cosine) + &(&second[i] * &sine));
     match &chart.surface {
         Surface::Cylinder(_) => Ok(radial),
+        Surface::EllipticCylinder(s) => {
+            let major = dec.enclose_at(&s.major_sq.sqrt(), BITS)?;
+            let minor = dec.enclose_at(&s.minor_sq.sqrt(), BITS)?;
+            let x = cosine.checked_div(&major).unwrap();
+            let y = sine.checked_div(&minor).unwrap();
+            let norm = (&x.square() + &y.square()).sqrt().unwrap();
+            let values = std::array::from_fn(|i| {
+                (&(&first[i] * &x) + &(&second[i] * &y))
+                    .checked_div(&norm)
+                    .unwrap()
+            });
+            Ok(values)
+        }
         Surface::Cone(c) => {
             let slope = dec.enclose_at(&c.slope, BITS)?;
             let norm = dec.enclose_at(
@@ -76,6 +90,37 @@ pub(crate) fn cosine_limit(angle: &Rational, dec: &Decider) -> Result<Rational, 
     }
 }
 
+fn filtered_aspect(positions: [[f64; 3]; 3]) -> Option<Rational> {
+    let [a, b, c] = positions.map(|p| p.map(|x| Interval::point(x).unwrap()));
+    let ab: [Interval; 3] = std::array::from_fn(|i| b[i] - a[i]);
+    let ac: [Interval; 3] = std::array::from_fn(|i| c[i] - a[i]);
+    let cross = [
+        ab[1] * ac[2] - ab[2] * ac[1],
+        ab[2] * ac[0] - ab[0] * ac[2],
+        ab[0] * ac[1] - ab[1] * ac[0],
+    ];
+    let norm = cross
+        .iter()
+        .fold(Interval::point(0.0).unwrap(), |sum, x| sum + x.square())
+        .sqrt()?;
+    if norm.lo() <= 0.0 {
+        return None;
+    }
+    let longest = (0..3)
+        .map(|i| {
+            let p = positions[i];
+            let q = positions[(i + 1) % 3];
+            (0..3)
+                .fold(Interval::point(0.0).unwrap(), |sum, j| {
+                    sum + (Interval::point(p[j]).unwrap() - Interval::point(q[j]).unwrap()).square()
+                })
+                .hi()
+        })
+        .fold(0.0_f64, f64::max);
+    let ratio = Interval::point(longest).unwrap() / norm;
+    ratio.is_finite().then(|| chart::q(ratio.hi()))
+}
+
 pub(crate) fn quality(
     chart: &Chart,
     uvs: &[Uv; 3],
@@ -83,6 +128,11 @@ pub(crate) fn quality(
     angular_limit: Option<&Rational>,
     dec: &Decider,
 ) -> Result<(Option<Rational>, bool), Refusal> {
+    if angular_limit.is_none()
+        && let Some(aspect) = filtered_aspect(positions)
+    {
+        return Ok((Some(aspect), true));
+    }
     let [a, b, c] = positions.map(|p| p.map(chart::q));
     let ab: [Rational; 3] = std::array::from_fn(|i| &b[i] - &a[i]);
     let ac: [Rational; 3] = std::array::from_fn(|i| &c[i] - &a[i]);
@@ -116,10 +166,14 @@ pub(crate) fn quality(
                 .max()
                 .unwrap()
         });
-        let parameter_span = match chart.surface {
+        let parameter_span = match &chart.surface {
             Surface::Plane(_) => Rational::zero(),
             Surface::Cylinder(_) | Surface::Cone(_) => spans[0].clone(),
             Surface::Sphere(_) | Surface::Torus(_) => &spans[0] + &spans[1],
+            Surface::EllipticCylinder(s) => {
+                let ratio = (&s.major_sq / &s.minor_sq).sqrt();
+                &spans[0] * &dec.enclose_at(&ratio, BITS)?.hi()
+            }
             _ => return Err(failure("surface has no normal variation certificate")),
         };
         // Each angular parameter rotates a unit normal. The spherical triangle

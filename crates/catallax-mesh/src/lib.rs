@@ -13,6 +13,7 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 mod chart;
 mod controls;
 mod edges;
+mod evaluate;
 mod planar;
 mod triangulate;
 

@@ -18,7 +18,10 @@ fn p2_compares_in_both_directions_with_the_default_allowance() {
     assert!(report.findings.is_empty());
     assert!(report.not_comparable.is_empty());
     assert!(report.forward_vertices > 0 && report.reverse_samples > 0);
-    assert!(report.sampled_distance_upper.as_ref().is_some_and(|upper| {
-        upper <= &catallax_compare::Options::default().accuracy
-    }));
+    assert!(
+        report
+            .sampled_distance_upper
+            .as_ref()
+            .is_some_and(|upper| { upper <= &catallax_compare::Options::default().accuracy })
+    );
 }

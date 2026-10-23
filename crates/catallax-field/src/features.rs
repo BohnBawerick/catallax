@@ -552,6 +552,12 @@ impl Feature {
         }
         Ok(())
     }
+    pub(crate) fn display_classifier(&self) -> Option<crate::display::membership::Classifier<'_>> {
+        let Sweep::Extrude { vector, through } = &self.sweep else {
+            return None;
+        };
+        crate::display::membership::Classifier::new(&self.inverse, vector, *through, &self.loops)
+    }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         self.classify(
             &Point3::new(

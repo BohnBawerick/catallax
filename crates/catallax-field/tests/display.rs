@@ -222,53 +222,322 @@ fn translated_cylinder_displays_its_boundary_without_quadric_cancellation() {
     use catallax_numbers::with_operation_budget;
     let mut pose = Pose::identity();
     pose.translation.0 = [1_000_000.into(), 1_000_000.into(), 0.into()];
-    let plan = plan(
+    let operation = Operation::Cylinder {
+        radius: 3.into(),
+        height: 7.into(),
+        pose,
+    };
+    let direct = plan(
         vec![Step {
             id: id("cylinder"),
-            op: Operation::Cylinder {
-                radius: 3.into(),
-                height: 7.into(),
-                pose,
-            },
+            op: operation.clone(),
         }],
         "cylinder",
     );
-    let (result, work) = with_operation_budget(100_000_000, || {
-        mesh_plan(&plan, &Options::default(), &mut Decider::default())
-    });
-    let mesh = result.unwrap();
-    assert!(!work.exhausted);
-    let bound = mesh.max_deviation.to_f64_nearest() + 1e-8;
-    for p in &mesh.positions {
-        let rho = ((p[0] - 1_000_000.0).powi(2) + (p[1] - 1_000_000.0).powi(2)).sqrt();
-        let z = p[2];
-        let distance = if rho <= 3.0 && (0.0..=7.0).contains(&z) {
-            (3.0 - rho).min(z).min(7.0 - z)
-        } else {
-            ((rho - 3.0).max(0.0).powi(2) + (-z).max(z - 7.0).max(0.0).powi(2)).sqrt()
-        };
+    let canonical =
+        Plan::compile_canonical_stock(&operation, &id("cylinder"), &mut Decider::default())
+            .unwrap()
+            .unwrap();
+    for plan in [direct, canonical] {
+        let (result, work) = with_operation_budget(100_000_000, || {
+            mesh_plan(&plan, &Options::default(), &mut Decider::default())
+        });
+        let mesh = result.unwrap();
+        assert!(!work.exhausted);
+        let bound = mesh.max_deviation.to_f64_nearest() + 1e-8;
+        for p in &mesh.positions {
+            let rho = ((p[0] - 1_000_000.0).powi(2) + (p[1] - 1_000_000.0).powi(2)).sqrt();
+            let z = p[2];
+            let distance = if rho <= 3.0 && (0.0..=7.0).contains(&z) {
+                (3.0 - rho).min(z).min(7.0 - z)
+            } else {
+                ((rho - 3.0).max(0.0).powi(2) + (-z).max(z - 7.0).max(0.0).powi(2)).sqrt()
+            };
+            assert!(
+                distance <= bound,
+                "display point outside certified cylinder bound: {p:?}, {distance}"
+            );
+        }
+        let area = mesh
+            .triangles
+            .iter()
+            .map(|t| {
+                let [a, b, c] = t.vertices.map(|i| mesh.positions[i]);
+                let u = std::array::from_fn::<_, 3, _>(|i| b[i] - a[i]);
+                let v = std::array::from_fn::<_, 3, _>(|i| c[i] - a[i]);
+                let cross = [
+                    u[1] * v[2] - u[2] * v[1],
+                    u[2] * v[0] - u[0] * v[2],
+                    u[0] * v[1] - u[1] * v[0],
+                ];
+                if a[2].to_bits() == b[2].to_bits() && b[2].to_bits() == c[2].to_bits() {
+                    let outward = if a[2] == 0.0 { -1.0 } else { 1.0 };
+                    assert!(
+                        cross[2] * outward > 0.0,
+                        "reversed or degenerate cap triangle"
+                    );
+                }
+                cross.into_iter().map(|x| x * x).sum::<f64>().sqrt() * 0.5
+            })
+            .sum::<f64>();
         assert!(
-            distance <= bound,
-            "display point outside certified cylinder bound: {p:?}, {distance}"
+            (area - 60.0 * std::f64::consts::PI).abs() < 2.0,
+            "missing or duplicated cylinder boundary: {area}"
         );
     }
-    let area = mesh
-        .triangles
-        .iter()
-        .map(|t| {
-            let [a, b, c] = t.vertices.map(|i| mesh.positions[i]);
-            let u = std::array::from_fn::<_, 3, _>(|i| b[i] - a[i]);
-            let v = std::array::from_fn::<_, 3, _>(|i| c[i] - a[i]);
-            let cross = [
-                u[1] * v[2] - u[2] * v[1],
-                u[2] * v[0] - u[0] * v[2],
-                u[0] * v[1] - u[1] * v[0],
-            ];
-            cross.into_iter().map(|x| x * x).sum::<f64>().sqrt() * 0.5
-        })
-        .sum::<f64>();
+}
+
+#[test]
+fn non_dyadic_planar_trims_fit_a_small_cover_without_losing_face_area() {
+    let size = [
+        Rational::from_ratio(1, 3).unwrap(),
+        Rational::from_ratio(5, 7).unwrap(),
+        Rational::from_ratio(11, 13).unwrap(),
+    ];
+    let plan = plan(
+        vec![Step {
+            id: id("box"),
+            op: Operation::Block {
+                size: size.clone().map(Into::into),
+                pose: Pose::identity(),
+            },
+        }],
+        "box",
+    );
+    let mesh = mesh_plan(
+        &plan,
+        &Options {
+            max_cells: 256,
+            ..Options::default()
+        },
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let size = size.map(|v| v.to_f64_nearest());
+    let mut areas = [0.0; 6];
+    for t in mesh.triangles {
+        let [a, b, c] = t.vertices.map(|i| mesh.positions[i]);
+        for axis in 0..3 {
+            for (side, coordinate) in [0.0, size[axis]].into_iter().enumerate() {
+                if [a, b, c]
+                    .iter()
+                    .all(|p| (p[axis] - coordinate).abs() < 1e-12)
+                {
+                    let u = (axis + 1) % 3;
+                    let v = (axis + 2) % 3;
+                    areas[axis * 2 + side] +=
+                        ((b[u] - a[u]) * (c[v] - a[v]) - (b[v] - a[v]) * (c[u] - a[u])).abs() * 0.5;
+                }
+            }
+        }
+    }
+    for axis in 0..3 {
+        let expected = size[(axis + 1) % 3] * size[(axis + 2) % 3];
+        for side in 0..2 {
+            assert!((areas[axis * 2 + side] - expected).abs() < 1e-10);
+        }
+    }
+}
+
+#[test]
+fn uncertain_bore_trim_fans_stay_near_the_boundary_and_keep_both_caps() {
+    // The flush variant has the identical analytic boundary, but the bore's
+    // unresolved membership must remain correlated across the internal join.
+    for flush in [false, true] {
+        let mut pose = Pose::identity();
+        pose.translation.0 = [
+            Rational::from_ratio(7, 3).unwrap().into(),
+            Rational::from_ratio(5, 3).unwrap().into(),
+            (-1).into(),
+        ];
+        let mut steps = if flush {
+            let mut upper_pose = Pose::identity();
+            upper_pose.translation.0[2] = 1.into();
+            vec![
+                Step {
+                    id: id("lower"),
+                    op: Operation::Block {
+                        size: [4.into(), 4.into(), 1.into()],
+                        pose: Pose::identity(),
+                    },
+                },
+                Step {
+                    id: id("upper"),
+                    op: Operation::Block {
+                        size: [4.into(), 4.into(), 1.into()],
+                        pose: upper_pose,
+                    },
+                },
+                Step {
+                    id: id("plate"),
+                    op: Operation::Boolean {
+                        kind: BooleanKind::Union,
+                        target: id("lower"),
+                        tool: id("upper"),
+                    },
+                },
+            ]
+        } else {
+            vec![Step {
+                id: id("plate"),
+                op: Operation::Block {
+                    size: [4.into(), 4.into(), 2.into()],
+                    pose: Pose::identity(),
+                },
+            }]
+        };
+        steps.extend([
+            Step {
+                id: id("bore"),
+                op: Operation::Cylinder {
+                    radius: 1.into(),
+                    height: 4.into(),
+                    pose,
+                },
+            },
+            Step {
+                id: id("cut"),
+                op: Operation::Boolean {
+                    kind: BooleanKind::Subtract,
+                    target: id("plate"),
+                    tool: id("bore"),
+                },
+            },
+        ]);
+        let plan = plan(steps, "cut");
+        let options = Options {
+            tolerance: Rational::from_ratio(1, 20).unwrap(),
+            max_cells: 10_000,
+            ..Options::default()
+        };
+        let mesh = mesh_plan(&plan, &options, &mut Decider::default()).unwrap();
+        for &[x, y, z] in &mesh.positions {
+            let rho = ((x - 7.0 / 3.0).powi(2) + (y - 5.0 / 3.0).powi(2)).sqrt();
+            assert!((-1e-10..=4.0 + 1e-10).contains(&x));
+            assert!((-1e-10..=4.0 + 1e-10).contains(&y));
+            assert!((-1e-10..=2.0 + 1e-10).contains(&z));
+            let distance = if rho < 1.0 {
+                1.0 - rho
+            } else {
+                [
+                    x.abs(),
+                    (4.0 - x).abs(),
+                    y.abs(),
+                    (4.0 - y).abs(),
+                    z.abs(),
+                    (2.0 - z).abs(),
+                    rho - 1.0,
+                ]
+                .into_iter()
+                .fold(f64::INFINITY, f64::min)
+            };
+            assert!(
+                distance <= 0.05 + 1e-10,
+                "uncertified bore vertex: {x}, {y}, {z}"
+            );
+        }
+        let mut cap_area = [0.0; 2];
+        for triangle in &mesh.triangles {
+            let [a, b, c] = triangle.vertices.map(|i| mesh.positions[i]);
+            if a[2].to_bits() == b[2].to_bits() && b[2].to_bits() == c[2].to_bits() {
+                let side = usize::from(a[2] > 1.0);
+                let signed = ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) * 0.5;
+                assert!(signed * if side == 0 { -1.0 } else { 1.0 } > 0.0);
+                cap_area[side] += signed.abs();
+            }
+        }
+        for area in cap_area {
+            assert!(
+                (area - (16.0 - std::f64::consts::PI)).abs() < 0.5,
+                "lost or filled bore cap: {area}"
+            );
+        }
+    }
+}
+
+#[test]
+fn flush_union_prunes_buried_trim_curves_without_removing_exterior_caps() {
+    let mut upper_pose = Pose::identity();
+    upper_pose.translation.0[2] = 1.into();
+    let mut cylinder_pose = Pose::identity();
+    cylinder_pose.translation.0 = [2.into(), 2.into(), 1.into()];
+    let plan = plan(
+        vec![
+            Step {
+                id: id("lower"),
+                op: Operation::Block {
+                    size: [4.into(), 4.into(), 1.into()],
+                    pose: Pose::identity(),
+                },
+            },
+            Step {
+                id: id("upper"),
+                op: Operation::Block {
+                    size: [4.into(), 4.into(), 1.into()],
+                    pose: upper_pose,
+                },
+            },
+            Step {
+                id: id("joined"),
+                op: Operation::Boolean {
+                    kind: BooleanKind::Union,
+                    target: id("lower"),
+                    tool: id("upper"),
+                },
+            },
+            Step {
+                id: id("buried"),
+                op: Operation::Cylinder {
+                    radius: 1.into(),
+                    height: Rational::from_ratio(1, 2).unwrap().into(),
+                    pose: cylinder_pose,
+                },
+            },
+            Step {
+                id: id("result"),
+                op: Operation::Boolean {
+                    kind: BooleanKind::Union,
+                    target: id("joined"),
+                    tool: id("buried"),
+                },
+            },
+        ],
+        "result",
+    );
+    let mesh = mesh_plan(
+        &plan,
+        &Options {
+            max_cells: 1000,
+            ..Options::default()
+        },
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let mut area = 0.0;
+    for triangle in &mesh.triangles {
+        let [a, b, c] = triangle.vertices.map(|i| mesh.positions[i]);
+        assert!(
+            (0..3).any(|axis| {
+                let extent = if axis == 2 { 2.0 } else { 4.0 };
+                [0.0, extent].into_iter().any(|coordinate| {
+                    [a, b, c]
+                        .iter()
+                        .all(|p| (p[axis] - coordinate).abs() < 1e-10)
+                })
+            }),
+            "published a buried support patch"
+        );
+        let u = std::array::from_fn::<_, 3, _>(|i| b[i] - a[i]);
+        let v = std::array::from_fn::<_, 3, _>(|i| c[i] - a[i]);
+        let cross = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
+        area += cross.into_iter().map(|x| x * x).sum::<f64>().sqrt() * 0.5;
+    }
     assert!(
-        (area - 60.0 * std::f64::consts::PI).abs() < 2.0,
-        "missing or duplicated cylinder boundary: {area}"
+        (area - 64.0).abs() < 1e-10,
+        "lost exterior boundary area: {area}"
     );
 }

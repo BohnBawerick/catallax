@@ -69,6 +69,86 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
+        let Sweep::Extrude { vector, through } = &self.sweep else {
+            let radius = self.display_radius(dec)?.expect("finite revolve");
+            return Ok(Some(std::array::from_fn(|_| {
+                Ball::from_rational(&(-&radius), 128).hull(&Ball::from_rational(&radius, 128))
+            })));
+        };
+        if *through {
+            return Ok(None);
+        }
+        let mut bounds: Option<[[Rational; 2]; 3]> = None;
+        for edge in self.loops.iter().flatten() {
+            for point in [&edge.start, &edge.end] {
+                let b = bounds.get_or_insert_with(|| {
+                    [
+                        [point[0].clone(), point[0].clone()],
+                        [point[1].clone(), point[1].clone()],
+                        [Rational::zero(), Rational::zero()],
+                    ]
+                });
+                for i in 0..2 {
+                    b[i][0] = b[i][0].clone().min(point[i].clone());
+                    b[i][1] = b[i][1].clone().max(point[i].clone());
+                }
+            }
+            if let Some((centre, radius, _)) = &edge.circle {
+                let radius = Ball::from_rational(radius, 128)
+                    .sqrt()
+                    .expect("positive profile radius")
+                    .hi();
+                let b = bounds.as_mut().expect("edge endpoints");
+                for i in 0..2 {
+                    b[i][0] = b[i][0].clone().min(&centre[i] - &radius);
+                    b[i][1] = b[i][1].clone().max(&centre[i] + &radius);
+                }
+            }
+        }
+        let Some(mut bounds) = bounds else {
+            return Ok(None);
+        };
+        for (i, v) in [&vector.x, &vector.y, &vector.z].into_iter().enumerate() {
+            bounds[i][0] = &bounds[i][0] + &v.clone().min(Rational::zero());
+            bounds[i][1] = &bounds[i][1] + &v.clone().max(Rational::zero());
+        }
+        Ok(Some(geometry::display_box(
+            &self.inverse.inverse(),
+            &bounds,
+            dec,
+        )?))
+    }
+    pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
+        let mut radius = Rational::zero();
+        for edge in self.loops.iter().flatten() {
+            for p in [&edge.start, &edge.end] {
+                radius = radius.max(p[0].abs() + p[1].abs());
+            }
+            if let Some((c, r, _)) = &edge.circle {
+                let r = catallax_numbers::Ball::from_rational(r, 128)
+                    .sqrt()
+                    .expect("positive profile radius")
+                    .hi();
+                radius = radius.max(c[0].abs() + c[1].abs() + r);
+            }
+        }
+        radius = match &self.sweep {
+            Sweep::Extrude { through: true, .. } => return Ok(None),
+            Sweep::Extrude { vector, .. } => {
+                radius + vector.x.abs() + vector.y.abs() + vector.z.abs()
+            }
+            Sweep::Revolve { origin, .. } => {
+                radius + Rational::from_i64(2) * (origin.x.abs() + origin.y.abs() + origin.z.abs())
+            }
+        };
+        let translation = self.inverse.inverse().translation;
+        for x in [&translation.x, &translation.y, &translation.z] {
+            let b = geometry::enclose(x, 128, dec)?;
+            radius = radius + b.lo().abs().max(b.hi().abs());
+        }
+        Ok(Some(radius))
+    }
     pub fn extrude(
         profile: &Profile,
         step: &StepId,

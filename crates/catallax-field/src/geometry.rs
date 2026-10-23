@@ -105,11 +105,22 @@ pub(crate) fn constraint(surface: Surface) -> Constraint {
     }
 }
 impl Constraint {
+    pub(crate) fn reference_point(&self) -> Option<&Point3> {
+        match &self.surface {
+            Surface::Plane(s) => Some(&s.origin),
+            Surface::Cylinder(s) => Some(&s.origin),
+            Surface::Cone(s) => Some(&s.apex),
+            Surface::Sphere(s) => Some(&s.center),
+            Surface::Torus(s) => Some(&s.center),
+            Surface::EllipticCylinder(s) => Some(&s.origin),
+            _ => None,
+        }
+    }
     pub(crate) fn transform(&mut self, pose: &Pose) {
         *self = constraint(self.surface.transformed(pose));
     }
 }
-fn support_geometry(
+pub(crate) fn support_geometry(
     polynomial: &RealPoly,
     dec: &mut Decider,
 ) -> Result<(RealPoly, [RealPoly; 3]), Refusal> {
@@ -323,6 +334,34 @@ pub(crate) fn compile(
     };
     Ok((Leaf::Primitive(leaf), faces))
 }
+
+pub(crate) fn display_box(
+    pose: &Pose,
+    bounds: &[[Rational; 2]; 3],
+    dec: &mut Decider,
+) -> Result<[Ball; 3], Refusal> {
+    let local = bounds
+        .each_ref()
+        .map(|b| Ball::from_rational(&b[0], 128).hull(&Ball::from_rational(&b[1], 128)));
+    let shift = [
+        &pose.translation.x,
+        &pose.translation.y,
+        &pose.translation.z,
+    ];
+    let mut result = [
+        Ball::from_rational(&Rational::zero(), 128),
+        Ball::from_rational(&Rational::zero(), 128),
+        Ball::from_rational(&Rational::zero(), 128),
+    ];
+    for i in 0..3 {
+        result[i] = enclose(shift[i], 128, dec)?;
+        for (j, coordinate) in local.iter().enumerate() {
+            result[i] = &result[i]
+                + &(enclose(&pose.rotation.matrix()[i][j], 128, dec)? * coordinate.clone());
+        }
+    }
+    Ok(result)
+}
 pub(crate) fn fast_matrix(inverse: &Pose) -> [[f64; 3]; 3] {
     std::array::from_fn(|i| std::array::from_fn(|j| inverse.rotation.matrix()[i][j].to_f64()))
 }
@@ -503,6 +542,64 @@ pub(crate) enum Leaf {
     Feature(crate::features::Feature),
 }
 impl Leaf {
+    pub(crate) fn constraints(&self) -> &[Constraint] {
+        match self {
+            Self::Primitive(a) => &a.constraints,
+            Self::Feature(a) => &a.constraints,
+        }
+    }
+
+    pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
+        let Self::Primitive(a) = self else {
+            let Self::Feature(a) = self else {
+                unreachable!()
+            };
+            return a.display_box(dec);
+        };
+        let zero = Rational::zero();
+        let bounds = match a.kind {
+            Kind::Block => a.parameters.each_ref().map(|x| [zero.clone(), x.clone()]),
+            Kind::Round => {
+                let r = a.parameters[0].clone().max(a.parameters[1].clone());
+                [[-&r, r.clone()], [-&r, r], [zero, a.parameters[2].clone()]]
+            }
+            Kind::Sphere => std::array::from_fn(|_| [-&a.parameters[0], a.parameters[0].clone()]),
+            Kind::Torus => {
+                let r = &a.parameters[0] + &a.parameters[1];
+                [
+                    [-&r, r.clone()],
+                    [-&r, r],
+                    [-&a.parameters[1], a.parameters[1].clone()],
+                ]
+            }
+        };
+        Ok(Some(display_box(&a.inverse.inverse(), &bounds, dec)?))
+    }
+
+    pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
+        let Self::Primitive(a) = self else {
+            let Self::Feature(a) = self else {
+                unreachable!()
+            };
+            return a.display_radius(dec);
+        };
+        let local = match a.kind {
+            Kind::Block | Kind::Round => a
+                .parameters
+                .iter()
+                .fold(Rational::zero(), |sum, x| &sum + x),
+            Kind::Sphere => a.parameters[0].clone(),
+            Kind::Torus => &a.parameters[0] + &a.parameters[1],
+        };
+        let translation = a.inverse.inverse().translation;
+        let shift = [&translation.x, &translation.y, &translation.z]
+            .into_iter()
+            .try_fold(Rational::zero(), |sum, x| {
+                let b = enclose(x, 128, dec)?;
+                Ok::<_, Refusal>(sum + b.lo().abs().max(b.hi().abs()))
+            })?;
+        Ok(Some(local + shift))
+    }
     pub fn same_geometry(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
         match (self, other) {
             (Self::Primitive(a), Self::Primitive(b)) => a.same_geometry(b, dec),

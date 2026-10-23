@@ -22,6 +22,23 @@ pub struct OperationWork {
     pub exhausted: bool,
 }
 
+/// Observes accepted work in the current request without charging it.
+/// Outside a request budget both counters are zero/false.
+pub fn current_operation_work() -> OperationWork {
+    ACTIVE.with(|slot| {
+        slot.get().map_or(
+            OperationWork {
+                used: 0,
+                exhausted: false,
+            },
+            |state| OperationWork {
+                used: state.used,
+                exhausted: state.exhausted,
+            },
+        )
+    })
+}
+
 /// Runs a synchronous operation with a deterministic work allowance.
 ///
 /// All deciders on this thread share the allowance. The operation must not spawn

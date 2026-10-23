@@ -7,6 +7,7 @@ Build exact geometry or compare the two recipe evaluators without a wall-clock c
 - `answer.question`: question/2 produces manifest/3 and requested STEP.
 - `answer.recipe`: recipe/3 produces topology and STEP.
 - `answer.compare`: recipe/3 produces a sampled comparison report.
+- `answer.field-display`: recipe/3 produces the field's own `display.obj`, a proven two-sided boundary distance bound and `face_measurements.display.first_mesh_ms`. Unsupported features and charts refuse without B-rep fallback.
 - `answer.budget`: zero work refuses and leaves no STEP.
 - `answer.log`: each completed response records executed operations with decision settlement counts, marks, work, refusal codes and diagnostic timings.
 - `answer.export`: portable question/1 replays the original source and work allowance.
@@ -24,6 +25,7 @@ Preconditions: release build, doctor passed, `PROOF` names an external directory
 - Question: run `control-catallax.py run .claude/skills/verify-catallax/references/examples/block.json --binary target/release/catallax-verify --out "$PROOF/question" --json`. Require one answered result and an `answer.step` artifact despite the example's zero legacy deadline.
 - Recipe: run `control-catallax.py run .claude/skills/verify-catallax/references/examples/recipe.json --source recipe --binary target/release/catallax-verify --out "$PROOF/recipe" --json`. Require answered topology and STEP.
 - Comparison: repeat the recipe command with `--source compare` and a separate output directory. Inspect `manifest.comparison.verdict` and findings. Require no STEP.
+- Field display: repeat the recipe command with `--source field` and a separate output directory. Require `display.obj`, actual vertex and triangle counts, `face_measurements.display.first_mesh_ms` and exact rational `deviation_bound_mm`. The empty `face_measurements.faces` list is not a fillet-definition measurement. Replay `parts/P3-filleted-boss.json` with this source and require `field.unsupported-operation` until the field evaluator implements fillets, with neither stale OBJ nor STEP. Compare independent one-, two- and four-worker runs, retaining strict OBJ bytes as well as certificates.
 - Budget: repeat the question command with `--max-work 0` and a separate directory. Require `numbers.operation-budget` and no STEP.
 - Export: locate the recipe run's `question.json`, then run `target/release/catallax-verify replay QUESTION --out "$PROOF/replayed"`. Require the same manifest, work and STEP bytes. Compare executed operation entries after removing only `wall_ms`.
 - Scoreboard: run `control-catallax.py parts parts --binary target/release/catallax-verify --out "$PROOF/parts" --max-work 1000000 --occt-python /tmp/occt/bin/python --json`. Require every recipe in `parts.json`, including typed refusals from both implementations. Check `step_check` for actual OpenCASCADE import status and coverage limits.

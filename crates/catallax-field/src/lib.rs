@@ -8,6 +8,8 @@
 
 #![forbid(unsafe_code)]
 
+/// Definition-native, certified display approximations. No B-rep is constructed.
+pub mod display;
 mod features;
 mod geometry;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
@@ -120,6 +122,13 @@ pub struct Face {
 /// Handle into one plan's immutable face registry. Not a persistent recipe name.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FaceId(usize);
+
+impl FaceId {
+    /// Index in the owning plan's face registry, never a persistent recipe name.
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
 
 /// Whether a supporting-surface point survives Boolean trimming.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

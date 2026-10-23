@@ -104,14 +104,17 @@ fn answer_with_deadline(
     Ok(manifest)
 }
 
-/// Creates the output directory and removes any stale STEP answer.
+/// Creates the output directory and removes stale geometry artifacts.
 pub fn prepare_output(out_dir: &Path) -> io::Result<()> {
     fs::create_dir_all(out_dir)?;
-    match fs::remove_file(out_dir.join("answer.step")) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error),
+    for name in ["answer.step", "display.obj"] {
+        match fs::remove_file(out_dir.join(name)) {
+            Ok(()) => (),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error),
+        }
     }
+    Ok(())
 }
 
 /// Makes an invalid-question or internal-error manifest.

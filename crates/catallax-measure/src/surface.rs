@@ -11,6 +11,7 @@ pub(crate) enum Property {
     Area,
     Volume,
     Centroid,
+    FaceCentroid,
     /// Raw second moment in the body's translated frame.
     SecondMoment(usize, usize),
 }
@@ -65,6 +66,9 @@ pub(crate) fn compile(
     let mut sphere = false;
     if let Property::SecondMoment(i, j) = property {
         return second_moment(surface, anchor, closed, gauge, i, j, &b);
+    }
+    if property == Property::FaceCentroid {
+        return face_centroid(surface, anchor, closed, gauge, &b);
     }
     let expressions = match surface {
         Surface::Plane(p) => {
@@ -213,6 +217,7 @@ pub(crate) fn compile(
         Property::Area => vec![0],
         Property::Volume => vec![1],
         Property::Centroid => vec![1, 2, 3, 4],
+        Property::FaceCentroid => unreachable!(),
         Property::SecondMoment(_, _) => unreachable!(),
     };
     if sphere && !closed && property != Property::Area {
@@ -397,6 +402,136 @@ fn second_moment<'a>(
     Some(Compiled {
         boundary: select(expressions),
         full: full.map(select),
+        indices,
+        closed,
+        sphere,
+    })
+}
+
+fn face_centroid(
+    surface: &Surface,
+    anchor: &RPoint3,
+    closed: bool,
+    gauge: &Vector3,
+    b: &Builder,
+) -> Option<Compiled> {
+    let dq = std::array::from_fn(|i| b.input(i + 3));
+    let mut full = None;
+    let mut sphere = false;
+    let expressions = match surface {
+        Surface::Plane(p) => {
+            let q = displacement(b, &p.origin);
+            let first = constants(b, direction(&p.ref_dir));
+            let second_vector = p.normal.cross(&p.ref_dir);
+            let second = constants(b, direction(&second_vector));
+            let u = dot(q, first) / b.exact(&p.ref_dir.norm_squared());
+            let v = dot(q, second) / b.exact(&second_vector.norm_squared());
+            let du = dot(dq, first) / b.exact(&p.ref_dir.norm_squared());
+            let density =
+                b.exact(&p.normal.norm_squared()).sqrt() * b.exact(&p.ref_dir.norm_squared());
+            let origin = offset(b, &p.origin, anchor);
+            let area = -density * v * du;
+            let moments = std::array::from_fn::<_, 3, _>(|i| {
+                -density * ((origin[i] + u * first[i]) * v + second[i] * v.square() / b.k(2)) * du
+            });
+            [area, area, moments[0], moments[1], moments[2]]
+        }
+        Surface::Cylinder(c) => {
+            let q = displacement(b, &c.origin);
+            let axis = unit(b, &c.axis);
+            let z = dot(q, axis);
+            let radius = b.exact(&c.radius);
+            let radial = std::array::from_fn::<_, 3, _>(|i| q[i] - z * axis[i]);
+            let du = dot(axis, cross(q, dq)) / radius.square();
+            let origin = offset(b, &c.origin, anchor);
+            let area = -radius * z * du;
+            let moments = std::array::from_fn::<_, 3, _>(|i| {
+                -radius * ((origin[i] + radial[i]) * z + axis[i] * z.square() / b.k(2)) * du
+            });
+            [area, area, moments[0], moments[1], moments[2]]
+        }
+        Surface::EllipticCylinder(c) => {
+            let q = displacement(b, &c.origin);
+            let axis = unit(b, &c.axis);
+            let first = unit(b, &c.major_dir);
+            let second = cross(axis, first);
+            let major = b.exact(&c.major_sq).sqrt();
+            let minor = b.exact(&c.minor_sq).sqrt();
+            let x = dot(q, first);
+            let y = dot(q, second);
+            let z = dot(q, axis);
+            let du = (x * dot(dq, second) - y * dot(dq, first)) / (major * minor);
+            let density = (major.square() * (y / minor).square()
+                + minor.square() * (x / major).square())
+            .sqrt();
+            let origin = offset(b, &c.origin, anchor);
+            let area = -density * z * du;
+            let moments = std::array::from_fn::<_, 3, _>(|i| {
+                -density
+                    * ((origin[i] + x * first[i] + y * second[i]) * z
+                        + axis[i] * z.square() / b.k(2))
+                    * du
+            });
+            [area, area, moments[0], moments[1], moments[2]]
+        }
+        Surface::Cone(c) => {
+            let q = displacement(b, &c.apex);
+            let axis = unit(b, &c.axis);
+            let z = dot(q, axis);
+            let slope = b.exact(&c.slope);
+            let radial = std::array::from_fn::<_, 3, _>(|i| q[i] - z * axis[i]);
+            let z2du = dot(axis, cross(q, dq)) / slope.square();
+            let density = slope * (b.k(1) + slope.square()).sqrt();
+            let origin = offset(b, &c.apex, anchor);
+            let area = -density * z2du / b.k(2);
+            let moments = std::array::from_fn::<_, 3, _>(|i| {
+                -density * z2du * (origin[i] / b.k(2) + (radial[i] + axis[i] * z) / b.k(3))
+            });
+            [area, area, moments[0], moments[1], moments[2]]
+        }
+        Surface::Sphere(s) => {
+            sphere = true;
+            let q = displacement(b, &s.center);
+            let radius = b.exact(&s.radius);
+            let pole = unit(b, gauge);
+            let area = radius * dot(pole, cross(q, dq)) / (radius + dot(pole, q));
+            let origin = offset(b, &s.center, anchor);
+            let boundary = cross(dq, q);
+            let moments = std::array::from_fn::<_, 3, _>(|i| {
+                origin[i] * area - radius * boundary[i] / b.k(2)
+            });
+            let whole = b.k(4) * b.input(6) * radius.square();
+            full = Some([
+                whole,
+                whole,
+                whole * origin[0],
+                whole * origin[1],
+                whole * origin[2],
+            ]);
+            [area, area, moments[0], moments[1], moments[2]]
+        }
+        Surface::Torus(t) if closed => {
+            let whole = b.k(4) * b.input(6).square() * b.exact(&t.major) * b.exact(&t.minor);
+            let origin = offset(b, &t.center, anchor);
+            full = Some([
+                whole,
+                whole,
+                whole * origin[0],
+                whole * origin[1],
+                whole * origin[2],
+            ]);
+            [b.k(0); 5]
+        }
+        _ => return None,
+    };
+    let indices = if sphere {
+        vec![0, 1, 2, 3, 4]
+    } else {
+        vec![1, 2, 3, 4]
+    };
+    Some(Compiled {
+        boundary: b.finish(&indices.iter().map(|i| expressions[*i]).collect::<Vec<_>>()),
+        full: full.map(|values| b.finish(&indices.iter().map(|i| values[*i]).collect::<Vec<_>>())),
         indices,
         closed,
         sphere,

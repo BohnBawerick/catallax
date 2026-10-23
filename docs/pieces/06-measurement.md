@@ -2,7 +2,7 @@
 
 Status: complete for blind test writing and blind building.
 
-This is the input the test writer and the creator get, together with `docs/DESIGN.md`, `docs/ARCHITECTURE.md` and the descriptions of pieces 1 to 4 in `docs/pieces/`. This piece reads piece 3's `Model`, evaluates piece 2's surface parametrisations and piece 4's traces, and uses piece 1's `Ball` arithmetic, outcomes and marks exactly as those descriptions define them. Nothing else is needed.
+This is the input the test writer and the creator get, together with `docs/DESIGN.md`, `docs/ARCHITECTURE.md` and the descriptions of pieces 1 to 5 in `docs/pieces/`. This piece reads piece 3's `Model`, evaluates piece 2's surface parametrisations and piece 4's traces, and uses piece 1's `Ball` arithmetic, outcomes and marks. Bounds reuse piece 5's exact trimmed-face classifier on a private copy of the model.
 
 ## Approved algebraic-definition migration
 
@@ -14,7 +14,7 @@ Use certified closure and finite conic traces from piece 4. A parabola or hyperb
 
 ## What this piece is for
 
-Piece 6 computes the volume, surface area and centre of mass of a body, and the area of one face, as proven enclosures: intervals with exact rational ends that contain the true value for the body as built.
+Piece 6 computes body mass properties, face areas and centroids, edge lengths and half-arc-length points, and body and face axis-aligned bounds. Results are proven enclosures with exact rational ends for the geometry as built.
 It works from exact definitions only: the surfaces' parametrisations and their derivatives (piece 2), the certified traces of edge arcs (piece 4), and `Ball` enclosures of `pi` and elementary functions (piece 1). It never measures a mesh or a sample.
 
 ## Number types
@@ -34,7 +34,9 @@ For a body `b` and its material `M` (the closure of the open set its shells boun
 - **area**: the sum of the areas of the faces of `b`, each counted once, in `faces_of_body` order;
 - **centre of mass**: `(1 / volume) * integral of p over M`, the centroid of uniform density;
 - **inertia**: the unit-density tensor about the centroid `c`, with diagonal entry `integral ((p_j-c_j)^2 + (p_k-c_k)^2)` and off-diagonal entry `-integral (p_i-c_i)(p_j-c_j)`, expressed in model axes and length units to the fifth power;
-- **face area**: the area of one face, the part of its surface inside its loops.
+- **face area and centroid**: area and first area moments of the part of the surface inside its loops;
+- **edge length and midpoint**: trimmed arc length and its half-arc-length point;
+- **bounds**: inclusive axis-aligned limits for the exact body or face, without display padding.
 
 The body is measured as built. When the body carries marks (it was built through not-exact decisions), the enclosures are proven for that body, which may differ from the true answer within those marks (`JUDGE-INTERFACE.md`, ND10). This piece does not add the body's marks to its answer; they stay on the body, and the front end reports both.
 
@@ -80,9 +82,9 @@ Complete torus parallel circles use the exact Fourier mean of the boundary form 
 
 ## How this piece uses the earlier pieces
 
-- **Outcomes.** Every function returns `Answered`. A refusal of pieces 1, 2 or 4 is returned unchanged.
+- **Outcomes.** Every function returns `Answered`. Refusals from geometry, tracing and exact trim membership pass through unchanged.
 - **Budgets.** As stated above. This piece never creates a `Decider` or a policy.
-- **Facts.** This piece reads no facts and records none.
+- **Facts.** Integral measurements read no facts and record none. Bounds delegate exact trim predicates to piece 5 on a private model copy; the caller's facts remain unchanged.
 - **Marks.** Only `measure.accuracy-not-reached`, built with `Mark::new`. A `trace` from piece 4 never carries marks.
 - **Geometry.** Surface points and derivatives from piece 2's `Surface::evaluate` and `derivatives`; parameters of edge points from `parameters_of` when a method needs them; arcs from piece 4's `trace` with the coedge's edge and its `start` and `end` vertices' points (a ring edge is traced with `None, None`); vertex-loop points from `GeomStore::enclose_point`.
 
@@ -92,10 +94,13 @@ Complete torus parallel circles use the exact Fourier mean of the boundary form 
 | --- | --- |
 | `measure.not-solid` | the body's kind is neither `Solid` nor `Empty` (piece 3 has no such kind yet, so no test reaches it) |
 | `measure.unsupported-surface` | a face's surface kind this piece does not measure (none today; the enum is non-exhaustive) |
-| `measure.centroid-not-separated` | the volume enclosure could not be separated from zero within the budget |
+| `measure.centroid-not-separated` | the normalizing volume or face area enclosure could not be separated from zero |
 | `measure.budget-exhausted` | no enclosure of a property was reached within the budget |
+| `measure.bounds-not-separated` | an exact extrema ordering or membership predicate is unresolved |
+| `measure.unbounded-face` | a face or edge has no finite trimmed extrema |
+| `measure.unsupported-curve` | a future curve kind has no extrema definition |
 
-Refusals of pieces 1, 2 and 4 pass through unchanged.
+Refusals of pieces 1, 2, 4 and the reused piece 5 trim classifier pass through unchanged.
 
 ## Programming errors
 
@@ -133,9 +138,49 @@ pub fn inertia(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decid
 pub fn volume(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
 pub fn area(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
 pub fn face_area(model: &Model, face: FaceId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
+pub fn face_centroid(model: &Model, face: FaceId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<[Enclosure; 3]>;
+pub fn edge_length(model: &Model, edge: EdgeId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
+pub fn edge_midpoint(model: &Model, edge: EdgeId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<[Enclosure; 3]>;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundingBox { pub min: [Rational; 3], pub max: [Rational; 3] }
+pub fn bounding_box(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Option<BoundingBox>>;
+pub fn face_bounding_box(model: &Model, face: FaceId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<BoundingBox>;
 ```
 
 `volume`, `area`, `volume_area_centroid` and `mass_properties` give the same volume and area enclosures for the same body, accuracy and fresh `Decider`. `volume_area_centroid` retains the original three-property computation without requesting inertia. `mass_properties` requests all four properties. Application builds do not measure automatically; `ApplicationBody::mass_properties` and `ApplicationBody::inertia` borrow an already built result.
+
+### Face, edge and bounds queries
+
+`face_centroid` divides the surface's first area moments by its area, independent
+of material orientation. Rational polygonal faces use exact triangle moments.
+Curved faces use boundary forms, including the sphere pole and torus holonomy
+corrections used by body measurement. Area must exclude zero before division.
+
+`edge_length` measures the trimmed arc. `edge_midpoint` is its half-arc-length
+point, not the average of endpoints or a parameter midpoint. Closed edges start
+at their vertex, or at the carrier seam when vertexless. Lines and whole circles
+have direct formulas. Other arcs use certified speed quadrature; midpoint panels
+enclose every parameter interval whose cumulative length can contain half the
+total. Budget exhaustion retains the last proven length or midpoint enclosure
+with its accuracy mark.
+
+Bounds have inclusive rational limits and no display chord padding. An empty
+body has no box. Bounds select vertices, exact axis extrema of conic edges and
+interior points whose surface normal is parallel to an axis. Compact carriers
+with trims use piece 5's exact `face_contains` classifier on a private model copy;
+the query does not change the caller's geometry or topology. That classifier
+accepts exact `Point3` as well as the existing rational points. Measurement's
+dependency on the Boolean crate is acyclic.
+
+General intersection-branch extrema use endpoint ranges padded by a certified
+second-derivative interpolation error. Only panels that can improve an unmet
+extremum refine. Each request shares one deterministic arithmetic allowance,
+including body requests over multiple faces. If this fallback exhausts it,
+`measure.budget-exhausted` refuses the query rather than returning an unfinished
+refinement. An unsettled exact candidate predicate returns
+`measure.bounds-not-separated`; an unbounded face returns
+`measure.unbounded-face`. Numeric extrema enclosures that miss the requested
+width carry the ordinary accuracy marks. No query measures display triangles.
 
 ## What defines correct behaviour
 

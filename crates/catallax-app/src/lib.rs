@@ -56,6 +56,55 @@ impl ApplicationBody {
     ) -> catallax_numbers::Answered<Option<catallax_measure::InertiaTensor>> {
         catallax_measure::inertia(&self.built.model, self.built.result, accuracy, decider)
     }
+
+    /// Requests the exact body's enclosing axis-aligned box, without display padding.
+    pub fn bounding_box(
+        &self,
+        accuracy: &catallax_measure::Accuracy,
+        decider: &mut Decider,
+    ) -> catallax_numbers::Answered<Option<catallax_measure::BoundingBox>> {
+        catallax_measure::bounding_box(&self.built.model, self.built.result, accuracy, decider)
+    }
+
+    /// Requests an area-weighted centroid of one exact face.
+    pub fn face_centroid(
+        &self,
+        face: FaceId,
+        accuracy: &catallax_measure::Accuracy,
+        decider: &mut Decider,
+    ) -> catallax_numbers::Answered<[catallax_measure::Enclosure; 3]> {
+        catallax_measure::face_centroid(&self.built.model, face, accuracy, decider)
+    }
+
+    /// Requests a proven enclosing box of one exact face.
+    pub fn face_bounding_box(
+        &self,
+        face: FaceId,
+        accuracy: &catallax_measure::Accuracy,
+        decider: &mut Decider,
+    ) -> catallax_numbers::Answered<catallax_measure::BoundingBox> {
+        catallax_measure::face_bounding_box(&self.built.model, face, accuracy, decider)
+    }
+
+    /// Requests the arc length of an exact trimmed edge.
+    pub fn edge_length(
+        &self,
+        edge: EdgeId,
+        accuracy: &catallax_measure::Accuracy,
+        decider: &mut Decider,
+    ) -> catallax_numbers::Answered<catallax_measure::Enclosure> {
+        catallax_measure::edge_length(&self.built.model, edge, accuracy, decider)
+    }
+
+    /// Requests the half-arc-length point, not the mean of the edge's endpoints.
+    pub fn edge_midpoint(
+        &self,
+        edge: EdgeId,
+        accuracy: &catallax_measure::Accuracy,
+        decider: &mut Decider,
+    ) -> catallax_numbers::Answered<[catallax_measure::Enclosure; 3]> {
+        catallax_measure::edge_midpoint(&self.built.model, edge, accuracy, decider)
+    }
 }
 
 /// Failure stage. No variant returns a partial body or substitutes approximate geometry.

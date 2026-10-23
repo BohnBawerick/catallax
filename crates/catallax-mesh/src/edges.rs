@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, MarkLog, Rational, Refusal};
+use catallax_shapes::Point3;
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
@@ -14,6 +15,7 @@ pub(crate) struct Boundaries {
     pub(crate) mesh: Mesh,
     pub(crate) edges: BTreeMap<EdgeId, usize>,
     pub(crate) vertices: BTreeMap<VertexId, usize>,
+    pub(crate) exact_positions: BTreeMap<usize, Point3>,
     pub(crate) marks: MarkLog,
 }
 
@@ -48,6 +50,7 @@ struct Sampler<'a> {
     positions: &'a mut Vec<[f64; 3]>,
     indices: &'a mut Vec<usize>,
     error: &'a mut Rational,
+    exact_positions: Option<&'a mut BTreeMap<usize, Point3>>,
 }
 
 impl Sampler<'_> {
@@ -58,14 +61,10 @@ impl Sampler<'_> {
         first: usize,
         last: usize,
         depth: u32,
+        endpoints: [&[Ball; 3]; 2],
     ) -> Result<(), Refusal> {
         self.dec.check_deadline()?;
-        let a = self
-            .piece
-            .evaluate(&Ball::from_rational(&lo, BITS), self.dec)?;
-        let b = self
-            .piece
-            .evaluate(&Ball::from_rational(&hi, BITS), self.dec)?;
+        let [a, b] = endpoints;
         let interval = Ball::from_rational(&lo, BITS).hull(&Ball::from_rational(&hi, BITS));
         let second = self.piece.taylor(&interval, 2, self.dec)?.pop().unwrap();
         let acceleration = second
@@ -73,21 +72,36 @@ impl Sampler<'_> {
             .fold(Rational::zero(), |s, x| s + x.lo().abs().max(x.hi().abs()));
         let width = &hi - &lo;
         let bound = &(&acceleration * &width) * &width * Rational::from_ratio(1, 4).unwrap()
-            + chart::residual(&self.positions[first], &a)
-                .max(chart::residual(&self.positions[last], &b));
+            + chart::residual(&self.positions[first], a)
+                .max(chart::residual(&self.positions[last], b));
         let mid = (&lo + &hi).mul_pow2(-1);
-        let middle = chart::position(
-            &self
-                .piece
-                .evaluate(&Ball::from_rational(&mid, BITS), self.dec)?,
-        )?;
+        let middle_values = self
+            .piece
+            .evaluate(&Ball::from_rational(&mid, BITS), self.dec)?;
+        let middle = chart::position(&middle_values)?;
         let mut small = bound <= self.options.chord_tolerance.mul_pow2(-3);
+        if let Some(limit) = &self.options.max_edge_length {
+            small &= crate::controls::length_squared(self.positions[first], self.positions[last])
+                <= limit * limit;
+        }
         for chart in self.charts {
             let a = chart.project(self.positions[first]);
             let b = align(chart.project(self.positions[last]), a, chart.periodic);
             let m = align(chart.project(middle), a, chart.periodic);
             let hessian = chart.hessian(a[1].abs().max(b[1].abs()).max(m[1].abs()), self.dec)?;
             small &= (0..2).all(|i| !chart.periodic[i] || (b[i] - a[i]).abs() <= 0.125);
+            if let Some(angle) = &self.options.angular_deviation {
+                let mut span = (crate::chart::q(b[0]) - crate::chart::q(a[0])).abs();
+                if matches!(
+                    chart.surface,
+                    catallax_shapes::Surface::Sphere(_) | catallax_shapes::Surface::Torus(_)
+                ) {
+                    span = span + (crate::chart::q(b[1]) - crate::chart::q(a[1])).abs();
+                }
+                if !matches!(chart.surface, catallax_shapes::Surface::Plane(_)) {
+                    small &= span * Rational::from_i64(16) <= *angle;
+                }
+            }
             small &= chord_bound(&[a, b, m], &hessian) <= self.options.chord_tolerance.mul_pow2(-3);
         }
         if small {
@@ -102,8 +116,18 @@ impl Sampler<'_> {
         }
         let index = self.positions.len();
         self.positions.push(middle);
-        self.segment(lo, mid.clone(), first, index, depth + 1)?;
-        self.segment(mid, hi, index, last, depth + 1)
+        if let Some(points) = &mut self.exact_positions {
+            points.insert(index, self.piece.evaluate_exact(&mid, self.dec)?);
+        }
+        self.segment(
+            lo,
+            mid.clone(),
+            first,
+            index,
+            depth + 1,
+            [a, &middle_values],
+        )?;
+        self.segment(mid, hi, index, last, depth + 1, [&middle_values, b])
     }
 }
 
@@ -118,6 +142,7 @@ pub(crate) fn sample(
         mesh: Mesh::default(),
         edges: BTreeMap::new(),
         vertices: BTreeMap::new(),
+        exact_positions: BTreeMap::new(),
         marks: model.body(body).marks.clone(),
     };
     let mut adjacent = BTreeMap::<EdgeId, Vec<&Chart>>::new();
@@ -154,14 +179,24 @@ pub(crate) fn sample(
         )?;
         result.marks.extend(&traced.marks);
         let pieces = traced.value.pieces();
+        let initial_values = pieces
+            .first()
+            .map(|piece| piece.evaluate(&Ball::from_rational(&Rational::zero(), BITS), dec))
+            .transpose()?;
+        let planar = adjacent[&edge_id]
+            .iter()
+            .any(|chart| matches!(chart.surface, catallax_shapes::Surface::Plane(_)));
         let first = if let Some(v) = from {
             result.vertex(model, v, dec)?
         } else {
-            let p = chart::position(
-                &pieces[0].evaluate(&Ball::from_rational(&Rational::zero(), BITS), dec)?,
-            )?;
+            let p = chart::position(initial_values.as_ref().unwrap())?;
             let index = result.mesh.positions.len();
             result.mesh.positions.push(p);
+            if planar {
+                result
+                    .exact_positions
+                    .insert(index, pieces[0].evaluate_exact(&Rational::zero(), dec)?);
+            }
             index
         };
         let end = if let Some(v) = to {
@@ -172,14 +207,25 @@ pub(crate) fn sample(
         let mut indices = vec![first];
         let mut error = Rational::zero();
         for (i, piece) in pieces.iter().enumerate() {
+            let next_values;
+            let first_values = if i == 0 {
+                initial_values.as_ref().unwrap()
+            } else {
+                next_values = piece.evaluate(&Ball::from_rational(&Rational::zero(), BITS), dec)?;
+                &next_values
+            };
+            let last_values = piece.evaluate(&Ball::from_rational(&Rational::one(), BITS), dec)?;
             let last = if i + 1 == pieces.len() {
                 end
             } else {
-                let p = chart::position(
-                    &piece.evaluate(&Ball::from_rational(&Rational::one(), BITS), dec)?,
-                )?;
+                let p = chart::position(&last_values)?;
                 let index = result.mesh.positions.len();
                 result.mesh.positions.push(p);
+                if planar {
+                    result
+                        .exact_positions
+                        .insert(index, piece.evaluate_exact(&Rational::one(), dec)?);
+                }
                 index
             };
             let start = *indices.last().unwrap();
@@ -191,8 +237,16 @@ pub(crate) fn sample(
                 positions: &mut result.mesh.positions,
                 indices: &mut indices,
                 error: &mut error,
+                exact_positions: planar.then_some(&mut result.exact_positions),
             }
-            .segment(Rational::zero(), Rational::one(), start, last, 0)?;
+            .segment(
+                Rational::zero(),
+                Rational::one(),
+                start,
+                last,
+                0,
+                [first_values, &last_values],
+            )?;
         }
         if edge.sense == Sense::Reversed {
             indices.reverse();

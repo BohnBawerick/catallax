@@ -123,7 +123,10 @@ pub(crate) fn line(
         // radial-unit-vector factors at the apex would introduce a removable 0/0.
         return Some(std::array::from_fn(|_| Rational::zero()));
     }
-    if matches!(property, crate::surface::Property::SecondMoment(_, _)) {
+    if matches!(
+        property,
+        crate::surface::Property::SecondMoment(_, _) | crate::surface::Property::FaceCentroid
+    ) {
         return None;
     }
     let Surface::Plane(plane) = surface else {
@@ -216,6 +219,17 @@ impl Planar {
         property: crate::surface::Property,
     ) {
         let cross = a.cross(b);
+        if property == crate::surface::Property::FaceCentroid {
+            let area = normal.dot(&a.minus(origin).cross(&b.minus(origin)));
+            let coordinates = [direction(origin), direction(a), direction(b)];
+            for (i, moment) in self.moments.iter_mut().enumerate() {
+                *moment = &*moment
+                    + &(&area * &(&(coordinates[0][i] + coordinates[1][i]) + coordinates[2][i])
+                        / Rational::from_i64(6));
+            }
+            self.area_numerator = &self.area_numerator + &normal.dot(&cross);
+            return;
+        }
         if property != crate::surface::Property::Area {
             self.volume = &self.volume + &(origin.dot(&cross) / Rational::from_i64(6));
         }
@@ -273,6 +287,9 @@ pub(crate) fn body(
     anchor: &RPoint3,
     property: crate::surface::Property,
 ) -> Option<[Rational; 5]> {
+    if property == crate::surface::Property::FaceCentroid {
+        return None;
+    }
     use std::collections::BTreeMap;
     let mut groups = BTreeMap::new();
     let mut uses = BTreeMap::new();

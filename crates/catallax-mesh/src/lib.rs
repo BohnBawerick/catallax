@@ -11,6 +11,7 @@ use catallax_numbers::{Answered, Decider, Rational, Refusal};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 
 mod chart;
+mod controls;
 mod edges;
 mod planar;
 mod triangulate;
@@ -20,6 +21,14 @@ mod triangulate;
 pub struct MeshOptions {
     /// Maximum surface-to-chord distance, including coordinate rounding.
     pub chord_tolerance: Rational,
+    /// Maximum angle in radians between a facet normal and every analytic
+    /// normal over its parameter triangle. Includes coordinate rounding.
+    pub angular_deviation: Option<Rational>,
+    /// Maximum length of every triangle and boundary-polyline segment.
+    pub max_edge_length: Option<Rational>,
+    /// Requested longest-edge/shortest-altitude ratio. Reported as unavailable
+    /// when triangulation cannot certify it; achieved ratios are always reported.
+    pub max_aspect_ratio: Option<Rational>,
     /// Deterministic limit on generated vertices, including temporary chart copies.
     pub max_vertices: usize,
 }
@@ -28,6 +37,9 @@ impl Default for MeshOptions {
     fn default() -> Self {
         Self {
             chord_tolerance: Rational::from_ratio(1, 100).unwrap(),
+            angular_deviation: None,
+            max_edge_length: None,
+            max_aspect_ratio: None,
             max_vertices: 1_000_000,
         }
     }
@@ -52,6 +64,11 @@ pub struct FaceMesh {
     /// Proven maximum deviation from the analytic surface over each triangle's
     /// parameter triangle. Includes endpoint replacement and binary64 rounding.
     pub max_chord_error: Rational,
+    /// Proven upper bound on longest edge divided by shortest altitude.
+    /// None when coordinate rounding collapses a triangle to zero area.
+    pub max_aspect_ratio: Option<Rational>,
+    /// Proven angular bound in radians, when requested and supported.
+    pub max_angular_deviation: Option<Rational>,
 }
 
 /// The single sampled polyline used by both faces of a B-rep edge.
@@ -65,6 +82,27 @@ pub struct EdgeMesh {
     pub max_chord_error: Rational,
 }
 
+/// A requested display control that was not certified.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnavailableControl {
+    /// Face on which the control is unavailable.
+    pub face: FaceId,
+    /// Name of the requested control.
+    pub control: MeshControl,
+    /// Why the control could not be certified.
+    pub reason: &'static str,
+}
+
+/// Optional display controls, distinct from the mandatory chord bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeshControl {
+    /// Surface-to-facet normal deviation.
+    AngularDeviation,
+    /// Triangle and polyline segment length.
+    EdgeLength,
+    /// Longest edge divided by shortest altitude.
+    AspectRatio,
+}
 /// A display approximation. It never replaces geometry in the model.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Mesh {
@@ -76,6 +114,8 @@ pub struct Mesh {
     pub faces: Vec<FaceMesh>,
     /// Shared B-rep boundary polylines in body-edge order.
     pub edges: Vec<EdgeMesh>,
+    /// Requested controls that were not certified. No control is silently ignored.
+    pub unavailable_controls: Vec<UnavailableControl>,
 }
 
 impl Mesh {
@@ -109,6 +149,24 @@ pub fn mesh_body(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
+    if options
+        .angular_deviation
+        .as_ref()
+        .is_some_and(|v| *v <= Rational::zero())
+        || options
+            .max_edge_length
+            .as_ref()
+            .is_some_and(|v| *v <= Rational::zero())
+        || options
+            .max_aspect_ratio
+            .as_ref()
+            .is_some_and(|v| *v <= Rational::zero())
+    {
+        return Err(Refusal::new(
+            "mesh.invalid-options",
+            "optional controls must be positive",
+        ));
+    }
     if options.chord_tolerance <= Rational::zero() || options.max_vertices < 4 {
         return Err(Refusal::new(
             "mesh.invalid-options",

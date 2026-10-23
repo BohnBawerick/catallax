@@ -57,6 +57,7 @@ pub(crate) struct Chart {
     pub(crate) periodic: [bool; 2],
     origin: [f64; 3],
     frame: [[f64; 3]; 3],
+    turn: Option<Ball>,
 }
 
 impl Chart {
@@ -85,10 +86,16 @@ impl Chart {
         if !origin.iter().all(|v| v.is_finite()) {
             return Err(failure("surface origin exceeds binary64"));
         }
+        let turn = if matches!(surface, Surface::Plane(_)) {
+            None
+        } else {
+            Some(Ball::pi_checked(BITS, dec)? * Ball::from_rational(&Rational::from_i64(2), BITS))
+        };
         Ok(Self {
             surface: surface.clone(),
             periodic,
             origin,
+            turn,
             frame: [
                 unit(reference, dec)?,
                 unit(&axis.cross(reference), dec)?,
@@ -137,20 +144,22 @@ impl Chart {
     }
 
     pub(crate) fn evaluate(&self, uv: Uv, dec: &Decider) -> Result<[Ball; 3], Refusal> {
-        let turn = Ball::pi_checked(BITS, dec)? * Ball::from_rational(&Rational::from_i64(2), BITS);
         let mut parameters = uv.map(|x| Ball::from_rational(&q(x), BITS));
-        if !matches!(self.surface, Surface::Plane(_)) {
-            parameters[0] = &parameters[0] * &turn;
-        }
-        if matches!(self.surface, Surface::Sphere(_) | Surface::Torus(_)) {
-            parameters[1] = &parameters[1] * &turn;
+        if let Some(turn) = &self.turn {
+            parameters[0] = &parameters[0] * turn;
+            if matches!(self.surface, Surface::Sphere(_) | Surface::Torus(_)) {
+                parameters[1] = &parameters[1] * turn;
+            }
         }
         self.surface.evaluate(&parameters[0], &parameters[1], dec)
     }
 
     /// Euclidean upper bounds on S_uu, S_uv and S_vv in this chart.
     pub(crate) fn hessian(&self, vmax: f64, dec: &Decider) -> Result<[Rational; 3], Refusal> {
-        let tau = Ball::pi_checked(BITS, dec)?.hi() * Rational::from_i64(2);
+        if matches!(self.surface, Surface::Plane(_)) {
+            return Ok(std::array::from_fn(|_| Rational::zero()));
+        }
+        let tau = self.turn.as_ref().unwrap().hi();
         let tau2 = &tau * &tau;
         let zero = Rational::zero();
         let upper = |value: &Real| -> Result<Rational, Refusal> {

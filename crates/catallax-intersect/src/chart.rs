@@ -407,6 +407,30 @@ fn enclose_jets(
         .map(|k| [a[k].clone(), b[k].clone(), c[k].clone()])
         .collect())
 }
+pub(super) fn exact_position(
+    coords: &[E; 3],
+    t: &Rational,
+    dec: &Decider,
+) -> Result<Point3, Refusal> {
+    let parameter = Real::from(t.clone());
+    let mut cache = HashMap::new();
+    let mut coordinate = |e| {
+        jets(e, &parameter, 0, 0, Some(dec), &mut cache)
+            .map(|values| values[0].clone())
+            .map_err(|error| match error {
+                JetError::Deadline(refusal) => refusal,
+                JetError::Split => {
+                    Refusal::new("intersection.trace", "exact trace point is singular")
+                }
+            })
+    };
+    Ok(Point3::new(
+        coordinate(&coords[0])?,
+        coordinate(&coords[1])?,
+        coordinate(&coords[2])?,
+    ))
+}
+
 pub(super) fn ball_jets(
     coords: &[E; 3],
     t: &Ball,

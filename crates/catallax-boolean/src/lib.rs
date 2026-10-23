@@ -249,17 +249,17 @@ pub fn face_point(model: &mut Model, face: FaceId, dec: &mut Decider) -> Answere
     points::face_point(model, face, dec)
 }
 
-/// Membership of an exact rational point in a trimmed face.
+/// Membership of an exact point in a trimmed face. Rational callers are unchanged.
 /// This query may append auxiliary geometry, but never changes topology.
 /// Unsettled support or trimming predicates return a refusal, not membership.
-pub fn face_contains(
+pub fn face_contains<P: Clone + Into<Point3>>(
     model: &mut Model,
     face: FaceId,
-    point: &RPoint3,
+    point: &P,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let surface = model.face(face).surface;
-    let point = point.to_real();
+    let point: Point3 = point.clone().into();
     if let catallax_shapes::Surface::Cone(cone) = model.geom().surface(surface)
         && face_sign(&point.minus(&cone.apex).dot(&cone.axis), dec)?
             == catallax_numbers::Sign::Negative

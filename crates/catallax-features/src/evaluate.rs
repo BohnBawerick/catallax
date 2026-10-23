@@ -335,7 +335,11 @@ fn evaluate_impl(
                         && (context.has_certificate(target) || context.has_certificate(tool))
                     {
                         let (body, radius) = context.boolean(
-                            model, &step.id, kind, [(target, a.body), (tool, b.body)], dec,
+                            model,
+                            &step.id,
+                            kind,
+                            [(target, a.body), (tool, b.body)],
+                            dec,
                         )?;
                         return Ok(Some(BodyValue { body, radius }));
                     }
@@ -506,122 +510,25 @@ fn evaluate_impl(
                         .expect("certified branch")
                         .offset(
                             model,
-                            profile,
+                            &profiles,
                             &step.id,
+                            (body, input.body, &input.radius),
                             distance.value(),
-                            direction.as_ref(),
-                        )?;
-                        BodyValue {
-                            body,
-                            radius: profile_radius(profile) + distance.value().abs(),
-                        }
-                    }
-                    Operation::Revolve {
-                        profile,
-                        axis,
-                        angle,
-                    } => {
-                        let profile = &profiles[profile];
-                        let body = revolve(model, profile, &step.id, axis, angle.value(), dec)?;
-                        let origin = RPoint3::new(
-                            axis.point.0[0].value().clone(),
-                            axis.point.0[1].value().clone(),
-                            axis.point.0[2].value().clone(),
-                        );
-                        BodyValue {
-                            body,
-                            radius: profile_radius(profile)
-                                + Rational::from_i64(2) * norm_upper(&origin),
-                        }
-                    }
-                    Operation::ExtrudeThrough {
-                        target,
-                        profile,
-                        direction,
-                    } => {
-                        let target = &bodies[target];
-                        let body = through(
-                            model,
-                            &profiles[profile],
-                            &step.id,
-                            target,
-                            direction.as_ref(),
                             dec,
                         )?;
-                        BodyValue {
-                            body,
-                            radius: target.radius.clone(),
-                        }
-                    }
-                    Operation::Boolean { kind, target, tool } => {
-                        let a = &bodies[target];
-                        let b = &bodies[tool];
-                        if let Some(context) = certification.as_deref_mut()
-                            && (context.has_certificate(target) || context.has_certificate(tool))
-                        {
-                            let (body, radius) = context.boolean(
-                                model,
-                                &step.id,
-                                kind,
-                                [(target, a.body), (tool, b.body)],
-                                dec,
-                            )?;
-                            return Ok(Some(BodyValue { body, radius }));
-                        }
-                        let (op, radius) = match kind {
-                            BooleanKind::Union => {
-                                (BoolOp::Unite, a.radius.clone().max(b.radius.clone()))
-                            }
-                            BooleanKind::Subtract => (BoolOp::Subtract, a.radius.clone()),
-                            BooleanKind::Intersect => {
-                                (BoolOp::Intersect, a.radius.clone().min(b.radius.clone()))
-                            }
-                        };
-                        // Recipes allow repeated operands. Apply exact set identities
-                        // before the two-distinct-operands intersection graph.
-                        let body = if a.body == b.body {
-                            if *kind == BooleanKind::Subtract {
-                                model.add_body(catallax_topology::Body {
-                                    kind: BodyKind::Empty,
-                                    lumps: Vec::new(),
-                                    marks: model.body(a.body).marks.clone(),
-                                })
-                            } else {
-                                a.body
-                            }
-                        } else {
-                            boolean(model, a.body, b.body, op, dec)
-                                .map_err(|e| e.refusal)?
-                                .body
-                        };
-                        BodyValue { body, radius }
-                    }
-                    Operation::Offset { body, distance } if certification.is_some() => {
-                        let input = &bodies[body];
-                        let (body, radius) = certification
-                            .as_deref_mut()
-                            .expect("certified branch")
-                            .offset(
-                                model,
-                                &profiles,
-                                &step.id,
-                                (body, input.body, &input.radius),
-                                distance.value(),
-                                dec,
-                            )?;
-                        BodyValue { body, radius }
-                    }
-                    _ => {
-                        return Err(Refusal::new(
-                            "features.unsupported-operation",
-                            format!(
-                                "B-rep recipe operation {} is not implemented",
-                                step.op.name()
-                            ),
-                        ));
-                    }
-                }))
-            };
+                    BodyValue { body, radius }
+                }
+                _ => {
+                    return Err(Refusal::new(
+                        "features.unsupported-operation",
+                        format!(
+                            "B-rep recipe operation {} is not implemented",
+                            step.op.name()
+                        ),
+                    ));
+                }
+            }))
+        };
         let result = if let Operation::Sketch { plane, loops } = &step.op {
             Profile::new(plane, loops, dec).map(|profile| {
                 profiles.insert(step.id.clone(), profile);

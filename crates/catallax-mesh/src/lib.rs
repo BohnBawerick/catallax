@@ -10,6 +10,12 @@
 //! interval orientation checks preserve outward triangles. These bounds concern
 //! the represented spline model; its error to an original feature definition is
 //! a separate body certificate, not an enlarged display tolerance.
+//!
+//! Spline faces report certified rounded-facet aspect bounds and unmet requested
+//! aspect controls explicitly. A requested edge-length limit is checked against
+//! every returned triangle and ring segment; a grid requiring further interior
+//! refinement refuses. Whole-spline angular controls remain an explicit coverage
+//! refusal rather than an ignored option or an unproved normal bound.
 
 use std::{io::Write, ops::Range};
 

@@ -387,6 +387,7 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
         .map(|options| catallax_mesh::MeshOptions {
             chord_tolerance: options.chord_tolerance.value().clone(),
             max_vertices: options.max_vertices,
+            ..Default::default()
         });
     let mut dec = Decider::default();
     let app = match catallax_app::build_certified(&recipe, mesh_options.as_ref(), &mut dec) {

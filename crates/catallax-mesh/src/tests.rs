@@ -616,7 +616,7 @@ fn requested_controls_bound_the_returned_triangles_and_polylines() {
                         crate::chart::q(p[1]).into(),
                         crate::chart::q(p[2]).into(),
                     );
-                    let gradient = surface.gradient(&exact);
+                    let gradient = surface.gradient(&exact).expect("analytic fixture gradient");
                     let mut analytic = [&gradient.x, &gradient.y, &gradient.z].map(|x| x.to_f64());
                     if model.face(face.face).sense == Sense::Reversed {
                         analytic = analytic.map(|x| -x);

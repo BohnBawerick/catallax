@@ -3,7 +3,7 @@
 use super::{
     BSplineSurface, Net, bounds, de_boor, invalid, validate_axis, validate_controls, zero,
 };
-use crate::{Point3, Pose, math};
+use crate::{Isometry, Point3, Pose, math};
 use catallax_numbers::{Ball, Decider, Rational, Real, RealPoly, Refusal, Sign};
 use std::sync::Arc;
 
@@ -49,8 +49,8 @@ struct Owned {
 #[derive(Debug)]
 struct CurveTransport {
     source: BSplineCurve,
-    pose: Pose,
-    inverse: Pose,
+    pose: Isometry,
+    inverse: Isometry,
 }
 #[derive(Clone, Debug)]
 enum Definition {
@@ -388,6 +388,9 @@ impl BSplineCurve {
     /// Exact rigid transport, retaining the source frame for inverse queries.
     /// Repeated motions compose against the original controls, not the last fit.
     pub fn transformed(&self, pose: &Pose) -> Self {
+        self.mapped(&Isometry::from(pose))
+    }
+    pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
         let (source, pose) = match self.transport() {
             None => (self, pose.clone()),
             Some(transport) => (&transport.source, transport.pose.then(pose)),

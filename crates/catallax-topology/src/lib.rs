@@ -10,8 +10,8 @@ mod build;
 mod check;
 mod entity;
 mod model;
-mod transform;
 mod spline_prism;
+mod transform;
 
 pub use build::{block, cone, cylinder, empty, sphere, torus};
 pub use entity::{
@@ -19,5 +19,5 @@ pub use entity::{
     LumpId, Sense, Shell, ShellId, Vertex, VertexId,
 };
 pub use model::{EntityCounts, Model, TopologyFault};
-pub use transform::transformed_body;
 pub use spline_prism::SplinePrism;
+pub use transform::transformed_body;

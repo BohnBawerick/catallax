@@ -97,7 +97,6 @@ name = "catallax-features"
 version = "0.0.0"
 dependencies = [
  "catallax-boolean",
- "catallax-intersect",
  "catallax-field",
  "catallax-intersect",
  "catallax-measure",

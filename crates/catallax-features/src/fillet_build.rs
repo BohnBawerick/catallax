@@ -111,13 +111,7 @@ fn outward(
 ) -> Result<catallax_shapes::Vector3, Refusal> {
     let f = model.face(face);
     let surface = model.geom().surface(f.surface);
-    let polynomial = surface.implicit();
-    let p = [at.x.clone(), at.y.clone(), at.z.clone()];
-    let n = catallax_shapes::Vector3::new(
-        polynomial.partial(0).eval_real(&p),
-        polynomial.partial(1).eval_real(&p),
-        polynomial.partial(2).eval_real(&p),
-    );
+    let n = surface.normal_at(at, dec)?;
     if sign(&n.norm_squared(), dec)? == Sign::Zero {
         return Err(bad("singular support has no normal"));
     }

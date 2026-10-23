@@ -227,7 +227,10 @@ fn fitted_algebraic_boundary_recovers_exact_non_dyadic_parameter_without_elimina
 #[test]
 fn checked_finite_spline_support_has_exact_incidence_outward_side_and_rigid_transport() {
     use catallax_numbers::{Outcome, Sign, StrictSign};
-    use catallax_shapes::{Pose, Rotation, SplineSurface, certify_elliptic_offset_sweep};
+    use catallax_shapes::{
+        Curve, Isometry, Pose, RPoint3, RVector3, Rotation, SplineSurface, Surface,
+        certify_elliptic_offset_sweep,
+    };
     let mut dec = Decider::default();
     let definition = rational_source_definition(&mut dec);
     let (result, work) = with_operation_budget(100_000_000, || {
@@ -338,6 +341,39 @@ fn checked_finite_spline_support_has_exact_incidence_outward_side_and_rigid_tran
                 .expect("transported interior side proof"),
             Sign::Negative
         );
+        let mirror = Isometry::reflection(
+            &RPoint3::new(r("2"), r("-1"), r("3")),
+            &RVector3::new(r("1"), r("1"), r("0")),
+        )?;
+        let reflected_point = mirror.apply_point(&moved_point);
+        let reflected = mirror.surface(&Surface::BSpline(moved.clone().into()));
+        let actual_normal = reflected.normal_at(&reflected_point, &mut dec)?;
+        let expected_normal = mirror.apply_vector(&moved_normal);
+        for (actual, expected) in [&actual_normal.x, &actual_normal.y, &actual_normal.z]
+            .into_iter()
+            .zip([&expected_normal.x, &expected_normal.y, &expected_normal.z])
+        {
+            assert!(dec.compare(actual, expected).is_coincident());
+        }
+        let Surface::BSpline(reflected) = reflected else {
+            panic!("expected a spline support")
+        };
+        assert_eq!(
+            reflected.side_at(&mirror.apply_point(&pose.apply_point(&centre)), &mut dec)?,
+            Sign::Negative,
+        );
+        let motion = Isometry::from(&pose).then(&mirror);
+        let Curve::BSpline(edge) = motion
+            .curve(&Curve::BSpline(support.lower_edge().clone()))
+            .unwrap()
+        else {
+            panic!("expected a spline boundary")
+        };
+        let mapped_base = motion.apply_point(&base);
+        let parameter = edge
+            .parameter_of(&mapped_base, &mut dec)?
+            .expect("mapped curve incidence");
+        assert!(dec.compare(parameter.value(), &u).is_coincident());
         Ok::<_, catallax_numbers::Refusal>(())
     });
     result.unwrap();

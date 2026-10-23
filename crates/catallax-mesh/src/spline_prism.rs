@@ -17,7 +17,7 @@ fn oriented(
     positions: &[[f64; 3]],
     triangle: [usize; 3],
     normal: &[Ball; 3],
-) -> Result<(), Refusal> {
+) -> Result<(Rational, Rational), Refusal> {
     let points = triangle
         .map(|index| positions[index].map(|x| Ball::from_rational(&chart::q(x), chart::BITS)));
     let a = std::array::from_fn(|i| &points[1][i] - &points[0][i]);
@@ -29,7 +29,24 @@ fn oriented(
             "binary64 triangle material orientation is not separated from zero",
         ));
     }
-    Ok(())
+    let area2 = (&(&actual[0].square() + &actual[1].square()) + &actual[2].square())
+        .sqrt()
+        .ok_or_else(|| failure("rounded triangle area is not enclosed"))?;
+    if area2.lo() <= Rational::zero() {
+        return Err(failure(
+            "rounded triangle quality exceeds certificate precision",
+        ));
+    }
+    let longest = (0..3)
+        .map(|i| {
+            crate::controls::length_squared(
+                positions[triangle[i]],
+                positions[triangle[(i + 1) % 3]],
+            )
+        })
+        .max()
+        .unwrap();
+    Ok((&longest / &area2.lo(), longest))
 }
 
 struct Sampler<'a> {
@@ -41,6 +58,8 @@ struct Sampler<'a> {
     rings: [Vec<usize>; 2],
     errors: [Rational; 2],
     side: Vec<[usize; 3]>,
+    side_aspect: Rational,
+    max_length_squared: Rational,
 }
 impl Sampler<'_> {
     fn pair(
@@ -101,12 +120,22 @@ impl Sampler<'_> {
             let normal = cross(&chord, &self.axis);
             let triangles = [[first[0], last[0], last[1]], [first[0], last[1], first[1]]];
             for triangle in triangles {
-                oriented(&self.mesh.positions, triangle, &normal)?;
+                let (aspect, length_squared) = oriented(&self.mesh.positions, triangle, &normal)?;
+                if aspect > self.side_aspect {
+                    self.side_aspect = aspect;
+                }
+                if self.options.max_edge_length.is_some()
+                    && length_squared > self.max_length_squared
+                {
+                    self.max_length_squared = length_squared;
+                }
                 self.side.push(triangle);
             }
-            for index in 0..2 {
+            for (index, proof) in proofs.into_iter().enumerate() {
                 self.rings[index].push(last[index]);
-                self.errors[index] = self.errors[index].clone().max(proofs[index].error.clone());
+                if proof.error > self.errors[index] {
+                    self.errors[index] = proof.error;
+                }
             }
             return Ok(());
         }
@@ -134,6 +163,12 @@ pub(crate) fn build(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
+    if options.angular_deviation.is_some() {
+        return Err(Refusal::new(
+            "mesh.spline-angular-coverage",
+            "whole-spline normal variation is not yet certified for the requested angular control",
+        ));
+    }
     let checked = SplinePrism::check(model, body, dec)?;
     let spline = checked.spline();
     let Surface::EllipticCylinder(original) = spline.definition().original() else {
@@ -180,13 +215,15 @@ pub(crate) fn build(
         rings: [Vec::new(), Vec::new()],
         errors: [Rational::zero(), Rational::zero()],
         side: Vec::new(),
+        side_aspect: Rational::zero(),
+        max_length_squared: Rational::zero(),
     };
     let first = sampler.pair(
         [&lower.value.pieces()[0], &upper.value.pieces()[0]],
         &Rational::zero(),
     )?;
-    for index in 0..2 {
-        sampler.rings[index].push(first[index]);
+    for (index, &vertex) in first.iter().enumerate() {
+        sampler.rings[index].push(vertex);
     }
     let mut previous = first;
     let span_count = lower.value.pieces().len();
@@ -240,6 +277,11 @@ pub(crate) fn build(
             .position(|actual| *actual == face)
             .ok_or_else(|| failure("display face inventory differs from checked prism"))?;
         let start = sampler.mesh.triangles.len();
+        let mut max_aspect_ratio = if slot == 2 {
+            std::mem::take(&mut sampler.side_aspect)
+        } else {
+            Rational::zero()
+        };
         let error = if slot < 2 {
             let normal = if slot == 0 {
                 sampler.axis.each_ref().map(|x| -x)
@@ -252,7 +294,13 @@ pub(crate) fn build(
                 } else {
                     [centers[slot], pair[0], pair[1]]
                 };
-                oriented(&sampler.mesh.positions, triangle, &normal)?;
+                let (aspect, length_squared) =
+                    oriented(&sampler.mesh.positions, triangle, &normal)?;
+                max_aspect_ratio = max_aspect_ratio.max(aspect);
+                if options.max_edge_length.is_some() && length_squared > sampler.max_length_squared
+                {
+                    sampler.max_length_squared = length_squared;
+                }
                 sampler.mesh.triangles.push(Triangle {
                     vertices: triangle,
                     face,
@@ -272,11 +320,37 @@ pub(crate) fn build(
                 "proved spline mesh error exceeds the requested output accuracy",
             ));
         }
+        if options
+            .max_aspect_ratio
+            .as_ref()
+            .is_some_and(|limit| max_aspect_ratio > *limit)
+        {
+            sampler
+                .mesh
+                .unavailable_controls
+                .push(crate::UnavailableControl {
+                    face,
+                    control: crate::MeshControl::AspectRatio,
+                    reason: "the certified spline-facet aspect bound exceeds the requested limit",
+                });
+        }
         sampler.mesh.faces.push(FaceMesh {
             face,
             triangles: start..sampler.mesh.triangles.len(),
             max_chord_error: error,
+            max_aspect_ratio: Some(max_aspect_ratio),
+            max_angular_deviation: None,
         });
+    }
+    if options
+        .max_edge_length
+        .as_ref()
+        .is_some_and(|limit| sampler.max_length_squared > limit * limit)
+    {
+        return Err(Refusal::new(
+            "mesh.spline-edge-length",
+            "the shared cap/strip grid needs additional interior refinement to meet the requested edge length",
+        ));
     }
     for (index, vertices) in sampler.rings.into_iter().enumerate() {
         let mut vertices = vertices;

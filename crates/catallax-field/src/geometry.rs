@@ -643,10 +643,7 @@ impl Leaf {
     }
     pub fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
         match self {
-            Self::Primitive(a) => {
-                a.transform(pose);
-                Ok(())
-            }
+            Self::Primitive(a) => a.transform(pose),
             Self::Feature(a) => a.transform(pose),
         }
     }

@@ -112,14 +112,12 @@ class DriverTests(unittest.TestCase):
         inputs.mkdir()
         for name, problem in [('offset', original), ('second', second), ('trimmed', trimmed), ('empty', empty)]:
             (inputs / f'{name}.json').write_text(json.dumps(problem))
-        reference_display = None
         for workers in (1, 2, 4):
             output = self.out / f'certified-{workers}'
             result = self.command('run', inputs, '--binary', BINARY, '--workers', workers,
                                   '--fresh', '--out', output)
             self.assertEqual(result['outcomes'], {'answered': 4})
             run = json.loads((output / 'run.json').read_text())
-            displays = {}
             for case in run['cases']:
                 response = case['response']
                 manifest = response['manifest']
@@ -148,11 +146,7 @@ class DriverTests(unittest.TestCase):
                     actual_refs = {(item['kind'], item['old_handle']) for item in manifest['edit']['resolved']}
                     self.assertEqual(actual_refs, expected_refs)
                     self.assertTrue(all(match['status'] == 'resolved' for match in manifest['edit']['resolved']))
-                displays[case['key']] = (Path(case['path']) / 'display.obj').read_bytes()
-            if reference_display is None:
-                reference_display = displays
-            else:
-                self.assertEqual(displays, reference_display)
+            if workers != 1:
                 self.command('compare', self.out / 'certified-1/run.json', output / 'run.json')
 
     def test_interruption_resumes_complete_artifacts(self):

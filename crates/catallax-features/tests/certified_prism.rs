@@ -333,6 +333,9 @@ fn spline_display_is_watertight_shared_and_within_model_relative_accuracy() {
     let options = catallax_mesh::MeshOptions {
         chord_tolerance: r("1/1000"),
         max_vertices: 20_000,
+        max_edge_length: Some(r("10")),
+        max_aspect_ratio: Some(r("1")),
+        ..Default::default()
     };
     let (result, work) = with_operation_budget(100_000_000, || {
         let mut dec = Decider::default();
@@ -358,6 +361,32 @@ fn spline_display_is_watertight_shared_and_within_model_relative_accuracy() {
         .unwrap()
         .into_iter()
         .collect();
+    let unavailable_faces: BTreeSet<_> = mesh
+        .unavailable_controls
+        .iter()
+        .map(|control| {
+            assert_eq!(control.control, catallax_mesh::MeshControl::AspectRatio);
+            control.face
+        })
+        .collect();
+    assert_eq!(unavailable_faces, faces);
+    assert!(mesh.faces.iter().all(|face| {
+        face.max_aspect_ratio
+            .as_ref()
+            .is_some_and(|ratio| *ratio > Rational::one())
+    }));
+    let angular = catallax_mesh::MeshOptions {
+        angular_deviation: Some(r("1/100")),
+        ..options.clone()
+    };
+    let refusal = catallax_mesh::mesh_body(
+        &built.built().model,
+        built.built().result,
+        &angular,
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(refusal.code, "mesh.spline-angular-coverage");
     let mut uses = std::collections::BTreeMap::<_, (usize, i32, BTreeSet<_>)>::new();
     for triangle in &mesh.triangles {
         assert!(faces.contains(&triangle.face));

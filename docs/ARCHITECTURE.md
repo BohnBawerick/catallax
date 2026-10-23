@@ -373,9 +373,10 @@ origin/name tables. The approved opt-in
 uses unchanged request/1 and nested recipe/3, but returns manifest/4 with actual
 spline tags, complete evidence, requested consumers and a separately rebuilt
 scalar edit. The public example exercises that full path. Existing adapters
-retain their contracts. Outward offsets, general spline booleans, rolling
-fillets and policy enforcement across every feature remain separate coverage;
-this family does not imply their completion.
+retain their contracts. Outward offsets, general spline booleans, general
+non-analytic rolling-ball fillets and policy enforcement across every feature
+remain separate coverage. Existing exact elementary fillets are not replaced
+by this family.
 
 ### Historical baseline and evidence for the ruling
 

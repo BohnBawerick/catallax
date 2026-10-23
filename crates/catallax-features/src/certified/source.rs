@@ -82,9 +82,9 @@ pub(super) fn axial_box(
     let corner = crate::profile::rational_point(&placement, &RPoint3::origin()).to_real();
     let delta = original.origin.minus(&corner);
     let mut axial = None;
-    for index in 0..3 {
+    for (index, extent) in size.iter().enumerate() {
         dec.check_deadline()?;
-        if size[index].value() <= &Rational::zero() {
+        if extent.value() <= &Rational::zero() {
             return Err(unproven("clipping box has a nonpositive extent"));
         }
         let basis = std::array::from_fn(|i| {
@@ -109,7 +109,7 @@ pub(super) fn axial_box(
                 Sign::Zero => return Err(unproven("axial clipping direction vanished")),
             };
             let a = -center.clone() / along.clone();
-            let b = (Real::from_rational(size[index].value().clone()) - center) / along;
+            let b = (Real::from_rational(extent.value().clone()) - center) / along;
             let bounds = if positive { [a, b] } else { [b, a] };
             let origins = [!positive, positive].map(|high| {
                 vec![Origin {
@@ -127,7 +127,7 @@ pub(super) fn axial_box(
             let radius = support_radius(original, &direction);
             if sign(&(&center - &radius), dec)? == Sign::Negative
                 || sign(
-                    &(&center + &radius - Real::from_rational(size[index].value().clone())),
+                    &(&center + &radius - Real::from_rational(extent.value().clone())),
                     dec,
                 )? == Sign::Positive
             {
@@ -224,10 +224,10 @@ pub(super) fn recognize(
     }
     let mut original = None;
     for face in model.faces_of_body(body) {
-        if let Surface::EllipticCylinder(surface) = model.geom().surface(model.face(face).surface) {
-            if original.replace(surface).is_some() {
-                return Err(unproven("source body has more than one elliptic side"));
-            }
+        if let Surface::EllipticCylinder(surface) = model.geom().surface(model.face(face).surface)
+            && original.replace(surface).is_some()
+        {
+            return Err(unproven("source body has more than one elliptic side"));
         }
     }
     let original =

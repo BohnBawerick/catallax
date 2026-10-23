@@ -8,9 +8,9 @@
 
 #![forbid(unsafe_code)]
 
+mod certified_prism;
 /// Definition-native, certified display approximations. No B-rep is constructed.
 pub mod display;
-mod certified_prism;
 mod features;
 mod fillet;
 mod geometry;

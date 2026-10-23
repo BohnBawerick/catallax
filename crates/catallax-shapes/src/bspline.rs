@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 
-use crate::{Point3, Pose, math};
+use crate::{Isometry, Point3, Pose, math};
 
 mod curve;
 pub use curve::{BSplineCurve, BSplineCurveJet, SplineBoundary, SplineCurveParameter};
@@ -457,6 +457,9 @@ impl BSplineSurface {
 
     /// Applies an exact rigid motion, sharing unchanged knots and scalar weights.
     pub fn transformed(&self, pose: &Pose) -> Self {
+        self.mapped(&Isometry::from(pose))
+    }
+    pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
         Self::from_validated(
             self.data.degrees,
             self.data.knots.clone(),

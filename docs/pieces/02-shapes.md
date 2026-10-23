@@ -120,12 +120,14 @@ filter proves whole-span negative tangent half-planes or a positive outside
 witness; uncertain contact falls through to exact incidence and side proofs.
 No interval ambiguity becomes coincidence or a larger modelling tolerance.
 
-Rigid transport retains the canonical checked source plus the composed exact
-pose. Inverse queries map back through `Pose::inverse`; resulting points,
-tangents and normals map forward. Repeated poses compose against the same
-source rather than re-solving dependent world-coordinate equations or making
-the previous posed controls a new target. The posed carrier remains available
-for geometric consumers. This local support proof still authorizes no body.
+Exact isometric transport retains the canonical checked source and composed
+`Isometry`, including reflections. Inverse queries map back through its exact
+inverse; points, tangents and material-outward normals map forward. Repeated
+motions compose against the same source rather than re-solving dependent world
+equations or making posed controls a new target. Reflected normals are the
+mapped source normals, not an uncorrected cross product of reflected tangents.
+The existing proper-`Pose` APIs and pose schema remain unchanged. Local support
+transport preserves its metric bound but still authorizes no recipe-bound body.
 
 The spline data and `fit_elliptic_offset` candidate do not add an analytic kind
 or authorize a body. Topological use also requires checked shared boundaries,

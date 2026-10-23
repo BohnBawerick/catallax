@@ -35,15 +35,15 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-mod edge_blend;
 mod certified;
+mod edge_blend;
 mod evaluate;
 mod extrude;
 /// Exact elementary rolling-ball definitions retained beside their topology.
 pub mod fillet;
 mod fillet_build;
-mod placement;
 mod offset_fit;
+mod placement;
 mod profile;
 mod revolve;
 mod stock;
@@ -51,8 +51,8 @@ mod stock;
 pub use certified::{BodyCertificate, CertificateKey, CertifiedBuilt, PrismTarget};
 pub use evaluate::{BuildError, Built, evaluate, evaluate_certified};
 pub use extrude::extrude;
-pub use placement::{copy_origin, mirror_placement, pattern_placement};
 pub use offset_fit::{EllipticOffsetFit, OffsetSpanBound, fit_elliptic_offset};
+pub use placement::{copy_origin, mirror_placement, pattern_placement};
 pub use profile::Profile;
 pub use revolve::revolve;
 pub use stock::evaluate_canonical_stock;

@@ -9,7 +9,8 @@ use crate::{
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Axis, Origin, Role, StepId};
 use catallax_shapes::{
-    Cone, Cylinder, EllipticCylinder, Isometry, Plane, Point3, RPoint3, RVector3, Sphere, Surface, Torus, Vector3,
+    Cone, Cylinder, EllipticCylinder, Isometry, Plane, Point3, RPoint3, RVector3, Sphere, Surface,
+    Torus, Vector3,
 };
 
 #[derive(Clone, Debug)]
@@ -202,7 +203,6 @@ impl Feature {
                         minor_sq: (r * &(&height * &height) / v.norm_squared()).into(),
                     })
                 }
-
             } else {
                 Surface::Plane(Plane {
                     origin: profile.world(&edge.start).into(),

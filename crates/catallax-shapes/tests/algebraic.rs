@@ -29,7 +29,7 @@ fn squared_radius_cylinder_preserves_exact_incidence_without_a_metric_radius() {
     )
     .unwrap();
     let surface = Surface::Cylinder(cylinder);
-    let implicit = surface.implicit();
+    let implicit = surface.implicit().expect("analytic fixture support");
     for (p, expected) in [
         ([0, 0, 7], 0),
         ([2, 1, -3], 0),

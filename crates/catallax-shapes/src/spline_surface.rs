@@ -1,8 +1,8 @@
 //! Finite regular spline supports with an independently checked exact target.
 
 use crate::{
-    BSplineCurve, BSplineSurface, EllipticOffsetDefinition, OffsetSweepProof, Point3, Pose,
-    SplineBoundary, SplineCurveParameter, Vector3, math,
+    BSplineCurve, BSplineSurface, EllipticOffsetDefinition, Isometry, OffsetSweepProof, Point3,
+    Pose, SplineBoundary, SplineCurveParameter, Vector3, math,
 };
 use catallax_numbers::{Ball, Decider, EvidenceBound, Rational, Real, Refusal, Sign};
 use std::{
@@ -25,8 +25,8 @@ struct Data {
 #[derive(Debug)]
 struct Transport {
     source: SplineSurface,
-    pose: Pose,
-    inverse: Pose,
+    pose: Isometry,
+    inverse: Isometry,
 }
 
 /// A checked finite, outward-oriented spline sweep. Unlike raw control data,
@@ -63,6 +63,11 @@ impl SplineSupport {
     pub fn transformed(&self, pose: &Pose) -> Self {
         match self {
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.transformed(pose)),
+        }
+    }
+    pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
+        match self {
+            Self::EllipticOffset(surface) => Self::EllipticOffset(surface.mapped(pose)),
         }
     }
     /// Positive expression-node identity for deterministic cache reuse.
@@ -221,7 +226,7 @@ impl SplineSurface {
             .expect("validated elliptic offset source is analytic");
         (origin, self.axis(), reference)
     }
-    fn source_frame(&self) -> (&Self, Option<&Pose>) {
+    fn source_frame(&self) -> (&Self, Option<&Isometry>) {
         match &self.data.transport {
             None => (self, None),
             Some(transport) => (&transport.source, Some(&transport.pose)),
@@ -230,17 +235,20 @@ impl SplineSurface {
     /// Rigid transport preserves regularity, material orientation and the metric
     /// bound. It does not reinterpret fitted controls as a new exact target.
     pub fn transformed(&self, pose: &Pose) -> Self {
+        self.mapped(&Isometry::from(pose))
+    }
+    pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
         let (source, pose) = match &self.data.transport {
             None => (self, pose.clone()),
             Some(transport) => (&transport.source, transport.pose.then(pose)),
         };
         let inverse = pose.inverse();
-        let carrier = source.carrier().transformed(&pose);
+        let carrier = source.carrier().mapped(&pose);
         let edge = BSplineCurve::boundary(&carrier, SplineBoundary::VMin);
         Self {
             data: Arc::new(Data {
                 carrier,
-                definition: source.definition().transformed(&pose),
+                definition: source.definition().mapped(&pose),
                 axial: source.data.axial.clone(),
                 height: source.height().clone(),
                 axis: pose.apply_vector(source.axis()),
@@ -689,13 +697,13 @@ fn ball_dot(a: &[Ball; 3], b: &[Ball; 3]) -> Ball {
     &(&a[0] * &b[0]) + &(&a[1] * &b[1]) + &a[2] * &b[2]
 }
 fn transform_box(
-    pose: &Pose,
+    pose: &Isometry,
     point: &[Ball; 3],
     precision: u32,
     dec: &Decider,
 ) -> Result<[Ball; 3], Refusal> {
     let row = |i: usize| -> Result<Ball, Refusal> {
-        let matrix = pose.rotation.matrix();
+        let matrix = pose.matrix();
         let coefficients = [
             dec.enclose_at(&matrix[i][0], precision)?,
             dec.enclose_at(&matrix[i][1], precision)?,

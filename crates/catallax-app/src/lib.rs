@@ -7,9 +7,9 @@
 //! Handles belong to the returned model, not to a later rebuild. Store origins and
 //! names for persistent references; do not persist numeric handles.
 
+mod certified;
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
-mod certified;
 pub mod soliddraft;
 pub use certified::{CertifiedApplicationBody, build_certified};
 

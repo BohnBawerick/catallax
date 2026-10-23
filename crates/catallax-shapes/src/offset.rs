@@ -2,7 +2,7 @@
 
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 
-use crate::{EllipticCylinder, Pose, Surface, math};
+use crate::{EllipticCylinder, Isometry, Pose, Surface, math};
 
 /// Chosen side of the outward-oriented elliptic-cylinder support.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,8 +74,11 @@ impl EllipticOffsetDefinition {
 
     /// Rigidly transports the original law and selected side without refitting.
     pub fn transformed(&self, pose: &Pose) -> Self {
+        self.mapped(&Isometry::from(pose))
+    }
+    pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
         Self {
-            original: self.original.transformed(pose),
+            original: pose.surface(&self.original),
             distance: self.distance.clone(),
             side: self.side,
         }

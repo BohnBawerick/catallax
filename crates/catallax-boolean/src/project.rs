@@ -1,7 +1,7 @@
 //! Rational charts. The cylindrical coordinate is a lift of a diamond,
 //! not an angle or a transcendental parameter.
 
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Ball, Decider, Integer, Rational, Real, Refusal, Sign};
 use catallax_shapes::{Point3, Rotation, Surface, Vector3};
 
 use crate::geometry::{r, refusal, sign, unit};
@@ -47,17 +47,52 @@ fn displacement(p: &[Ball; 3], origin: &Point3, dec: &Decider) -> Result<[Ball; 
     ])
 }
 
-fn phase(x: &Rational, y: &Rational) -> Rational {
-    if y.sign() != Sign::Negative {
-        if x.sign() != Sign::Negative {
-            y / &(x + y)
+// Corner coordinates are dyadic. Keep their phase homogeneous until the
+// final binary enclosure; normalizing each corner only adds general GCDs.
+struct Phase {
+    numerator: Integer,
+    denominator: Integer,
+}
+impl Phase {
+    fn new(x: &Rational, y: &Rational) -> Self {
+        let bits = x
+            .denominator()
+            .bit_length()
+            .max(y.denominator().bit_length());
+        let x = x.numerator().mul_pow2(bits - x.denominator().bit_length());
+        let y = y.numerator().mul_pow2(bits - y.denominator().bit_length());
+        let denominator = x.abs() + y.abs();
+        let numerator = if y.sign() != Sign::Negative {
+            if x.sign() != Sign::Negative {
+                y
+            } else {
+                &denominator - &x
+            }
+        } else if x.sign() == Sign::Negative {
+            denominator.mul_pow2(1) - y
         } else {
-            r(1) + (-x) / (-x + y.clone())
+            &denominator * &Integer::from_i64(3) + x
+        };
+        Self {
+            numerator,
+            denominator,
         }
-    } else if x.sign() == Sign::Negative {
-        r(2) + (-y) / (-x - y.clone())
-    } else {
-        r(3) + x / &(x - y)
+    }
+
+    fn shifted(&self, amount: i64) -> Self {
+        Self {
+            numerator: &self.numerator + &(&self.denominator * &Integer::from_i64(amount)),
+            denominator: self.denominator.clone(),
+        }
+    }
+
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&self.numerator * &other.denominator).cmp(&(&other.numerator * &self.denominator))
+    }
+
+    fn enclose(&self, bits: u32) -> Ball {
+        Ball::from_ratio(&self.numerator, &self.denominator, bits)
+            .expect("phase corners exclude the pole")
     }
 }
 
@@ -68,28 +103,27 @@ fn phase_box(x: &Ball, y: &Ball) -> Option<Ball> {
     // The pole guard excludes (0, 0) at every corner.
     let (x0, x1, y0, y1) = (x.lo(), x.hi(), y.lo(), y.hi());
     let mut corners = [
-        phase(&x0, &y0),
-        phase(&x0, &y1),
-        phase(&x1, &y0),
-        phase(&x1, &y1),
+        Phase::new(&x0, &y0),
+        Phase::new(&x0, &y1),
+        Phase::new(&x1, &y0),
+        Phase::new(&x1, &y1),
     ];
-    let half_turn = r(2);
-    let lower = &corners[0] - &half_turn;
-    let upper = &corners[0] + &half_turn;
+    let lower = corners[0].shifted(-2);
+    let upper = corners[0].shifted(2);
     for c in &mut corners {
-        if *c > upper {
-            *c = &*c - &r(4);
+        if c.cmp(&upper).is_gt() {
+            *c = c.shifted(-4);
         }
-        if *c < lower {
-            *c = &*c + &r(4);
+        if c.cmp(&lower).is_lt() {
+            *c = c.shifted(4);
         }
     }
-    let lo = corners.iter().min()?;
-    let hi = corners.iter().max()?;
-    if hi >= &(lo + &half_turn) {
+    let lo = corners.iter().min_by(|a, b| a.cmp(b))?;
+    let hi = corners.iter().max_by(|a, b| a.cmp(b))?;
+    if hi.cmp(&lo.shifted(2)).is_ge() {
         return None;
     }
-    let result = ball(lo, hi, x.precision());
+    let result = lo.enclose(x.precision()).hull(&hi.enclose(x.precision()));
     (result.hi() - result.lo() < r(2)).then_some(result)
 }
 
@@ -331,5 +365,34 @@ mod tests {
             assert!(result.hi() < &hi + &epsilon);
         }
         assert!(phase_box(&ball(&r(-1), &r(1), 128), &ball(&r(-1), &r(1), 128)).is_none());
+    }
+
+    #[test]
+    fn diamond_point_bounds_keep_unequal_dyadic_scales() {
+        for (x, y, phase) in [
+            ("1", "1/8", "1/9"),
+            ("-1", "1/8", "17/9"),
+            ("-1", "-1/8", "19/9"),
+            ("1", "-1/8", "35/9"),
+            ("1", "0", "0"),
+            ("0", "1", "1"),
+            ("-1", "0", "2"),
+            ("0", "-1", "3"),
+        ] {
+            for power in [-4096, 0, 4096] {
+                let x = Rational::parse(x).unwrap().mul_pow2(power);
+                let y = Rational::parse(y).unwrap().mul_pow2(power);
+                for bits in [8, 64, 128, 512] {
+                    let result = phase_box(
+                        &Ball::from_rational(&x, bits),
+                        &Ball::from_rational(&y, bits),
+                    )
+                    .unwrap();
+                    let expected = Ball::from_rational(&Rational::parse(phase).unwrap(), bits);
+                    assert_eq!(result.mid(), expected.mid());
+                    assert_eq!(result.rad(), expected.rad());
+                }
+            }
+        }
     }
 }

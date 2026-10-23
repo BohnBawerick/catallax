@@ -96,7 +96,7 @@ impl FilletDefinition {
                     Surface::Cylinder(Cylinder {
                         origin: centre,
                         axis: e.dir.clone(),
-                        radius: radius.clone(),
+                        radius_sq: radius.square(),
                         ref_dir: na,
                     }),
                     feet.map(|origin| {
@@ -189,7 +189,7 @@ fn plane_cylinder(
 ) -> Result<(Surface, [Curve; 2]), Refusal> {
     if sign(&plane.normal.norm_squared(), dec)? == Sign::Zero
         || sign(&cylinder.axis.norm_squared(), dec)? == Sign::Zero
-        || sign(&cylinder.radius, dec)? != Sign::Positive
+        || sign(&cylinder.radius_sq, dec)? != Sign::Positive
         || sign(&edge.normal.norm_squared(), dec)? == Sign::Zero
         || sign(&edge.ref_dir.norm_squared(), dec)? == Sign::Zero
         || sign(&edge.normal.cross(&cylinder.axis).norm_squared(), dec)? != Sign::Zero
@@ -203,7 +203,7 @@ fn plane_cylinder(
             dec,
         )? != Sign::Zero
         || sign(&edge.center.minus(&plane.origin).dot(&plane.normal), dec)? != Sign::Zero
-        || sign(&(&edge.radius_sq - &cylinder.radius.square()), dec)? != Sign::Zero
+        || sign(&(&edge.radius_sq - &cylinder.radius_sq), dec)? != Sign::Zero
     {
         return Err(Refusal::new(
             "fillet.invalid-edge",
@@ -216,7 +216,7 @@ fn plane_cylinder(
     let n = normal(&plane.normal, same[0]);
     let centre = edge.center.plus(&n.scaled(&(-(k * radius))));
     let shift = &(k * &Real::from_i64(if same[1] { 1 } else { -1 })) * radius;
-    let major = &cylinder.radius - &shift;
+    let major = &cylinder.radius() - &shift;
     if sign(&(&major - radius), dec)? != Sign::Positive {
         return Err(bad(
             "this contact requires a horn or spindle torus and its sheet continuation",
@@ -240,7 +240,7 @@ fn plane_cylinder(
         }),
         [
             circle(edge.center.clone(), major.square()),
-            circle(centre, cylinder.radius.square()),
+            circle(centre, cylinder.radius_sq.clone()),
         ],
     ))
 }
@@ -266,7 +266,7 @@ fn bounds(
             if sign(&component(&c.axis), dec)? != Sign::Zero {
                 return Ok(None);
             }
-            (coordinate(&c.origin), c.radius.clone())
+            (coordinate(&c.origin), c.radius())
         }
         Surface::Torus(t) => {
             let axial = component(&t.axis);
@@ -316,7 +316,7 @@ pub(crate) fn separated(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<b
             };
             lower_squared = lower_squared + gap.square();
         }
-        if sign(&(lower_squared - (&c.radius + &t.minor).square()), dec)? == Sign::Positive {
+        if sign(&(lower_squared - (&c.radius() + &t.minor).square()), dec)? == Sign::Positive {
             return Ok(true);
         }
     }

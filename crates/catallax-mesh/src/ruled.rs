@@ -1,6 +1,7 @@
-//! Axial strips between two periodic elliptic-cylinder boundary polygons.
+//! Certified axial strips for elliptic cylinders and finite cylinder fillets.
 
 use catallax_numbers::{Decider, Rational, Refusal};
+use catallax_shapes::Surface;
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
 use crate::{
@@ -27,6 +28,12 @@ pub(crate) fn build(
     dec: &Decider,
 ) -> Result<bool, Refusal> {
     let face = model.face(face_id);
+    if face.loops.len() == 1 {
+        return open_strip(model, face_id, chart, boundaries, options, dec);
+    }
+    if matches!(chart.surface, Surface::Cylinder(_)) {
+        return Ok(false);
+    }
     if face.loops.len() != 2 {
         return Ok(false);
     }
@@ -114,13 +121,36 @@ pub(crate) fn build(
         }
     }
     for ring in [&mut lower, &mut upper] {
+        let mut last = ring[0].clone();
+        last.uv[0] += 1.0;
+        ring.push(last);
+    }
+    stitch(
+        lower,
+        upper,
+        (face_id, face.sense),
+        chart,
+        boundaries,
+        options,
+        dec,
+    )
+}
+
+fn stitch(
+    mut lower: Vec<Sample>,
+    mut upper: Vec<Sample>,
+    face: (FaceId, Sense),
+    chart: &Chart,
+    boundaries: &mut Boundaries,
+    options: &MeshOptions,
+    dec: &Decider,
+) -> Result<bool, Refusal> {
+    let (face_id, sense) = face;
+    for ring in [&mut lower, &mut upper] {
         for sample in ring.iter_mut() {
             let values = chart.evaluate(chart.canonical(sample.uv), dec)?;
             sample.error = chart::residual(&boundaries.mesh.positions[sample.vertex], &values);
         }
-        let mut last = ring[0].clone();
-        last.uv[0] += 1.0;
-        ring.push(last);
     }
     let hessian = chart.hessian(0.0, dec)?;
     let mut triangles = Vec::with_capacity(lower.len() + upper.len() - 2);
@@ -177,7 +207,7 @@ pub(crate) fn build(
         }
         maximum = maximum.max(error);
         aspect = aspect.max(ratio);
-        if face.sense == Sense::Reversed {
+        if sense == Sense::Reversed {
             vertices.swap(1, 2);
         }
         let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
@@ -212,4 +242,98 @@ pub(crate) fn build(
             });
     }
     Ok(true)
+}
+
+fn open_strip(
+    model: &Model,
+    face_id: FaceId,
+    chart: &Chart,
+    boundaries: &mut Boundaries,
+    options: &MeshOptions,
+    dec: &Decider,
+) -> Result<bool, Refusal> {
+    let face = model.face(face_id);
+    let Loop::Coedges(coedges) = model.loop_(face.loops[0]) else {
+        return Ok(false);
+    };
+    if coedges.len() != 4 {
+        return Ok(false);
+    }
+    let mut chains: [Vec<Sample>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut axial = [false; 4];
+    for (i, &coedge) in coedges.iter().enumerate() {
+        let coedge = model.coedge(coedge);
+        let vertices = &boundaries.mesh.edges[boundaries.edges[&coedge.edge]].vertices;
+        if vertices.len() < 2 {
+            return Ok(false);
+        }
+        for j in 0..vertices.len() {
+            let j = if coedge.sense == Sense::Same {
+                j
+            } else {
+                vertices.len() - 1 - j
+            };
+            let vertex = vertices[j];
+            let uv = chart.canonical(chart.project(boundaries.mesh.positions[vertex]));
+            chains[i].push(Sample {
+                vertex,
+                uv,
+                error: Rational::zero(),
+            });
+        }
+        axial[i] = chains[i]
+            .iter()
+            .all(|p| p.uv[0].to_bits() == chains[i][0].uv[0].to_bits());
+        if axial[i] && chains[i].len() != 2 {
+            return Ok(false);
+        }
+    }
+    let caps: Vec<_> = (0..4).filter(|&i| !axial[i]).collect();
+    if caps.len() != 2 || (caps[0] + 2) % 4 != caps[1] {
+        return Ok(false);
+    }
+    let mut lower = None;
+    let mut upper = None;
+    for index in caps {
+        let mut chain = std::mem::take(&mut chains[index]);
+        let mut direction = None;
+        for i in 1..chain.len() {
+            chain[i].uv = align(chain[i].uv, chain[i - 1].uv, chart.periodic);
+            let delta = chain[i].uv[0] - chain[i - 1].uv[0];
+            if delta == 0.0 || direction.is_some_and(|forward| forward != (delta > 0.0)) {
+                return Ok(false);
+            }
+            direction = Some(delta > 0.0);
+        }
+        let forward = direction.unwrap();
+        if !forward {
+            chain.reverse();
+        }
+        if forward == (face.sense == Sense::Same) {
+            lower = Some(chain);
+        } else {
+            upper = Some(chain);
+        }
+    }
+    let (Some(lower), Some(mut upper)) = (lower, upper) else {
+        return Ok(false);
+    };
+    let shift = libm::round(lower[0].uv[0] - upper[0].uv[0]);
+    for sample in &mut upper {
+        sample.uv[0] += shift;
+    }
+    if lower[0].uv[0].to_bits() != upper[0].uv[0].to_bits()
+        || lower.last().unwrap().uv[0].to_bits() != upper.last().unwrap().uv[0].to_bits()
+    {
+        return Ok(false);
+    }
+    stitch(
+        lower,
+        upper,
+        (face_id, face.sense),
+        chart,
+        boundaries,
+        options,
+        dec,
+    )
 }

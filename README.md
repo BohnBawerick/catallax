@@ -51,7 +51,7 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/3` and `catallax-recipe/4` JSON forms. Version 3 rejects version 4 end-condition fields and operations. It evaluates no geometry.
 - `catallax-field` compiles recipe stock solids, exact sketch profiles, signed extrusions, two-sided and one-sided through-all cuts, rational-frame full/partial revolutions, named holes, linear and circular body patterns, mirrors and booleans into a fixed-order tape. Bounded face/next extrusions use definition-native planar first-hit cells. Names stay outside the tape. Sweep, cell and Boolean residuals carry conservative distance bounds, not a true-distance claim.
 - `catallax-features::evaluate` builds named B-rep stock solids, exact line/circle/arc profiles with holes, signed extrusions, rationally represented full and partial revolutions, named holes, exact linear and circular body copies, mirrors, booleans and target-bounded through-all cuts. Bounded face/next extrusions currently support planar limiting boundaries, trimmed references and discontinuity curtains. `Built` retains an immutable recipe definition and returns the model, result and intermediate body handles; `Model::face_origins`, `edge_name` and `vertex_name` expose the names. Split faces keep their origins and merged faces take their union. `catallax_app::pattern::expand_feature` saves explicitly bound feature instances as ordinary recipe steps.
-- Exact elementary fillets build named cylinder strips between planes and torus strips between a plane and a perpendicular cylinder. `Built::fillets` retains their generating definitions. P3 construction and radius-edit names are covered; its application display and sampled comparison still depend on periodic trimmed-face meshing.
+- Exact elementary fillets build named cylinder strips between planes and torus strips between a plane and a perpendicular cylinder. `Built::fillets` retains their generating definitions. P3 construction, named display faces and radius-edit names are covered. Whole-part sampled comparison remains a separate acceptance gate.
 - `catallax-compare` checks every selected display mesh vertex against certified field distance bounds, projects independent field boundary samples onto exact trimmed B-rep faces, and compares origin sets and outward directions. Reports distinguish agreement, proven disagreement and unresolved work. Edit regions and cooperative cancellation do not require app integration.
 - `catallax-cli` builds `catallax` and the legacy `exact-brep` program from the same main. They read a question, build and operate, measure, and write a manifest and optional STEP file.
 - `catallax-verify` runs persistent question, recipe and sampled comparison requests with whole-request deterministic work budgets, separate wall-time reporting and distinct geometry tags. Its replay driver supports caching, strict STEP comparison and worker-count checks; the legacy commands are unchanged.
@@ -129,9 +129,13 @@ second-derivative bounds over parameter triangles. An elliptic cylinder uses its
 semi-axis-scaled angular chart; its major semi-axis bounds positional curvature,
 and the semi-axis ratio bounds normal rotation.
 For an elliptic-cylinder strip bounded by two angularly monotone closed loops,
-the mesher joins the existing edge samples in angular order. Every strip triangle
-passes the same orientation, chord and requested-control checks. Other trims or
-controls needing interior vertices use the periodic triangulator.
+or a finite cylindrical fillet between two monotone end curves, the mesher joins
+the existing edge samples in angular order. Every strip triangle passes the same
+orientation, chord and requested-control checks. Other trims or controls needing
+interior vertices use the periodic triangulator. Toroidal bands use a bounded
+minor-angle chart and local certified frame/trigonometric caches. A face-local
+diagonal cannot reuse another face's interior chord between boundary vertices;
+the mesher refines that chord on the analytic face instead.
 Bounds include replacement of boundary vertices and binary64 coordinate
 rounding. They describe chord error against the analytic face and edge
 definitions, not a proof that polygonal trims equal the exact curved region.

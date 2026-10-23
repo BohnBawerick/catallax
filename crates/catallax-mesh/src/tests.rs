@@ -856,56 +856,59 @@ fn elliptic_cylinders_share_cap_edges_and_preserve_transformed_charts() {
 #[test]
 fn elliptic_normal_and_length_controls_bound_the_returned_facets() {
     use catallax_shapes::Point3;
-    let (model, body) = elliptic_cylinder(&Pose::identity(), false);
-    let options = MeshOptions {
-        angular_deviation: Some(Rational::parse("0.8").unwrap()),
-        max_edge_length: Some(Rational::parse("1.5").unwrap()),
-        ..MeshOptions::default()
-    };
-    let result = mesh_body(&model, body, &options, &mut Decider::default())
-        .unwrap()
-        .value;
-    assert_closed(&result);
-    assert!(result.unavailable_controls.is_empty());
-    for face in &result.faces {
-        assert!(face.max_chord_error <= options.chord_tolerance);
-        assert_eq!(face.max_angular_deviation, options.angular_deviation);
-        let definition = model.face(face.face);
-        let surface = model.geom().surface(definition.surface);
-        for triangle in &result.triangles[face.triangles.clone()] {
-            let points = triangle.vertices.map(|i| result.positions[i]);
-            let ab: [f64; 3] = std::array::from_fn(|i| points[1][i] - points[0][i]);
-            let ac: [f64; 3] = std::array::from_fn(|i| points[2][i] - points[0][i]);
-            let normal: [f64; 3] = std::array::from_fn(|i| {
-                ab[(i + 1) % 3] * ac[(i + 2) % 3] - ab[(i + 2) % 3] * ac[(i + 1) % 3]
-            });
-            let norm = libm::sqrt(normal.iter().map(|x| x * x).sum());
-            for i in 0..3 {
-                assert!(
-                    crate::controls::length_squared(points[i], points[(i + 1) % 3])
-                        <= Rational::from_ratio(9, 4).unwrap()
-                );
-                let p = points[i].map(|x| catallax_numbers::Real::from(crate::chart::q(x)));
-                let gradient =
-                    surface.gradient(&Point3::new(p[0].clone(), p[1].clone(), p[2].clone()));
-                let mut analytic = [&gradient.x, &gradient.y, &gradient.z].map(|x| x.to_f64());
-                if definition.sense == Sense::Reversed {
-                    analytic = analytic.map(|x| -x);
+    for oblique_caps in [false, true] {
+        let (model, body) = elliptic_cylinder(&Pose::identity(), oblique_caps);
+        let options = MeshOptions {
+            angular_deviation: Some(Rational::parse("0.8").unwrap()),
+            max_edge_length: Some(Rational::parse("1.5").unwrap()),
+            ..MeshOptions::default()
+        };
+        let result = mesh_body(&model, body, &options, &mut Decider::default())
+            .unwrap()
+            .value;
+        assert_closed(&result);
+        assert!(result.unavailable_controls.is_empty());
+        for face in &result.faces {
+            assert!(face.max_chord_error <= options.chord_tolerance);
+            assert_eq!(face.max_angular_deviation, options.angular_deviation);
+            let definition = model.face(face.face);
+            let surface = model.geom().surface(definition.surface);
+            for triangle in &result.triangles[face.triangles.clone()] {
+                let points = triangle.vertices.map(|i| result.positions[i]);
+                let ab: [f64; 3] = std::array::from_fn(|i| points[1][i] - points[0][i]);
+                let ac: [f64; 3] = std::array::from_fn(|i| points[2][i] - points[0][i]);
+                let normal: [f64; 3] = std::array::from_fn(|i| {
+                    ab[(i + 1) % 3] * ac[(i + 2) % 3] - ab[(i + 2) % 3] * ac[(i + 1) % 3]
+                });
+                let norm = libm::sqrt(normal.iter().map(|x| x * x).sum());
+                for i in 0..3 {
+                    assert!(
+                        crate::controls::length_squared(points[i], points[(i + 1) % 3])
+                            <= Rational::from_ratio(9, 4).unwrap()
+                    );
+                    let p = points[i].map(|x| catallax_numbers::Real::from(crate::chart::q(x)));
+                    let gradient =
+                        surface.gradient(&Point3::new(p[0].clone(), p[1].clone(), p[2].clone()));
+                    let mut analytic = [&gradient.x, &gradient.y, &gradient.z].map(|x| x.to_f64());
+                    if definition.sense == Sense::Reversed {
+                        analytic = analytic.map(|x| -x);
+                    }
+                    let anorm = libm::sqrt(analytic.iter().map(|x| x * x).sum());
+                    let cosine =
+                        (0..3).map(|j| normal[j] * analytic[j]).sum::<f64>() / (norm * anorm);
+                    assert!(libm::acos(cosine.clamp(-1.0, 1.0)) <= 0.8 + 1e-10);
                 }
-                let anorm = libm::sqrt(analytic.iter().map(|x| x * x).sum());
-                let cosine = (0..3).map(|j| normal[j] * analytic[j]).sum::<f64>() / (norm * anorm);
-                assert!(libm::acos(cosine.clamp(-1.0, 1.0)) <= 0.8 + 1e-10);
             }
         }
-    }
-    for edge in &result.edges {
-        for pair in edge.vertices.windows(2) {
-            assert!(
-                crate::controls::length_squared(
-                    result.positions[pair[0]],
-                    result.positions[pair[1]]
-                ) <= Rational::from_ratio(9, 4).unwrap()
-            );
+        for edge in &result.edges {
+            for pair in edge.vertices.windows(2) {
+                assert!(
+                    crate::controls::length_squared(
+                        result.positions[pair[0]],
+                        result.positions[pair[1]]
+                    ) <= Rational::from_ratio(9, 4).unwrap()
+                );
+            }
         }
     }
 }

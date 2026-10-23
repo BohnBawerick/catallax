@@ -141,7 +141,7 @@ impl Domain {
         ];
         let dimensions = match surface {
             Surface::Plane(_) => [Real::zero(), Real::zero()],
-            Surface::Cylinder(s) => [s.radius.clone(), Real::zero()],
+            Surface::Cylinder(s) => [s.radius(), Real::zero()],
             Surface::Cone(s) => [s.slope.clone(), Real::zero()],
             Surface::Sphere(s) => [s.radius.clone(), Real::zero()],
             Surface::Torus(s) => [s.major.clone(), s.minor.clone()],
@@ -217,7 +217,10 @@ impl Domain {
         } else {
             let [c, s] = circle(&u, chart.quadrant[0]);
             match &self.surface {
-                Surface::Cylinder(a) => [&c * &a.radius, &s * &a.radius, v],
+                Surface::Cylinder(a) => {
+                    let radius = a.radius();
+                    [&c * &radius, &s * &radius, v]
+                }
                 Surface::EllipticCylinder(a) => {
                     [&c * &a.major_sq.sqrt(), &s * &a.minor_sq.sqrt(), v]
                 }
@@ -322,7 +325,7 @@ pub fn project(surface: &Surface, target: &Point3, dec: &mut Decider) -> Result<
     Ok(match surface {
         Surface::Cylinder(a) => origin
             .plus(&axis.scaled(&h))
-            .plus(&radial.scaled(&a.radius)),
+            .plus(&radial.scaled(&a.radius())),
         Surface::Cone(a) => {
             let t = (&h + &(&a.slope * &rho2.sqrt())) / (Real::one() + a.slope.square());
             let t = if math::sign(&t, dec)? == Sign::Negative {

@@ -636,7 +636,7 @@ pub(crate) fn run(
                     let Some(&(id, source)) = registry.get(origin) else {
                         continue;
                     };
-                    let Ok(q) = witness(
+                    let Ok(q) = self::witness(
                         &field.faces()[source].surface,
                         &supports[source],
                         &p,

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Catallax + SolidDraft · Two kernels, one recipe</title>
-<meta name="description" content="Catallax is SolidDraft's geometry kernel in safe Rust. Exact by definition, approximate on purpose. One project, two repositories. See what works today and what is in design.">
+<meta name="description" content="Geometry should not require a vendor's permission. Catallax is a geometry kernel in safe Rust, free for everyone, for ever, built for SolidDraft. Exact by definition, approximate on purpose. See what works today and what is in design.">
 <meta name="theme-color" content="#0b0c0d">
 <link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/">
 <link rel="icon" href="brand/mark.svg" type="image/svg+xml">
@@ -24,7 +24,7 @@
     <span>catallax</span>
   </a>
   <nav class="nav__links" aria-label="Sections">
-    <a href="#lineage">Fornjot</a>
+    <a href="#why">Why free</a>
     <a href="#kernel">Kernel</a>
     <a href="#work">Recipe</a>
     <a href="#soliddraft">SolidDraft</a>
@@ -49,10 +49,10 @@
       <span class="line">Approximate</span>
       <span class="line">on <em>purpose</em>.</span>
     </h1>
-    <p class="hero__lede"><strong>Two kernels, one recipe.</strong> Exact B-rep × signed distance fields. Catallax is the kernel. SolidDraft is the CAD application it is built for. One project, two repositories.</p>
+    <p class="hero__lede"><strong>Geometry should not require a vendor's permission.</strong> Catallax is a geometry kernel in safe Rust, free for everyone, for ever. Exact B-rep × signed distance fields. SolidDraft is the CAD application it is built for. One project, two repositories.</p>
     <div class="hero__ctas">
-      <a class="btn btn--solid magnetic" href="#support"><span>See what works today</span></a>
-      <a class="btn magnetic" href="#soliddraft"><span>Meet SolidDraft</span></a>
+      <a class="btn btn--solid magnetic" href="#why"><span>Why it is free</span></a>
+      <a class="btn magnetic" href="#support"><span>See what works today</span></a>
     </div>
   </div>
 
@@ -74,40 +74,42 @@
 
 <div class="marquee" aria-hidden="true">
   <div class="marquee__track">
-    <span>exact by definition</span><i></i><span>picking up where Fornjot left off</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
-    <span>exact by definition</span><i></i><span>picking up where Fornjot left off</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
+    <span>exact by definition</span><i></i><span>no vendor's permission</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
+    <span>exact by definition</span><i></i><span>no vendor's permission</span><i></i><span>safe Rust</span><i></i><span>STEP to the machine shop</span><i></i><span>curved topology</span><i></i><span>proof-carrying geometry</span><i></i><span>free under MIT</span><i></i>
   </div>
 </div>
 
-<!-- LINEAGE --------------------------------------------------------------->
-<section class="lineage section" id="lineage">
-  <p class="label section__label"><span>01</span>Where this starts</p>
-  <h2 class="display" data-lines>Picking up where <em>Fornjot</em> left off.</h2>
-  <div class="lineage__grid">
-    <div class="lineage__copy">
-      <p class="lineage__lede">Hanno Braun spent six years on Fornjot, an early-stage B-rep CAD kernel in Rust. In June 2026 he shut it down and wrote up what went wrong. We read that post as a to-do list.</p>
-      <p>Catallax carries on the same goal, a free B-rep kernel in Rust that a CAD application can stand on, and throws AI horsepower and human curiosity at it. AI coding agents write most of the code. A human directs, questions and checks it.</p>
-      <p class="lineage__plain">Catallax shares no code with Fornjot. It is not affiliated with Hanno Braun and he has not endorsed it. What we take is his published lessons, with thanks.</p>
-      <a class="btn magnetic" href="https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/"><span>Read "Shutting Down Fornjot"</span></a>
+<!-- WHY THIS IS FREE ---------------------------------------------------->
+<section class="why section" id="why">
+  <p class="label section__label"><span>01</span>Why this is free</p>
+  <h2 class="display" data-lines>Geometry should not require a vendor's <em>permission</em>.</h2>
+  <div class="why__grid">
+    <div class="why__copy">
+      <p class="why__lede">Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.</p>
+      <p>That law is not property. Property exists because things are scarce. If you copy this kernel, we still have it, and now you have one too. Nobody is poorer. Programs are not scarce, so the "intellectual property" over them has to be manufactured by the state: a grant that forbids you from arranging your own bits in a pattern someone else arranged first. Murray Rothbard wrote, "Patents, therefore, are grants of exclusive monopoly privilege by the State" in <a href="https://mises.org/online-book/man-economy-and-state-power-and-market/10-monopoly-and-competition/7-patents-and-copyrights">Man, Economy, and State, chapter 10, section 7</a>. Stephan Kinsella extended the point to copyright: "Ideas are not naturally scarce" in Against Intellectual Property, Journal of Libertarian Studies 15:2, 2001. We stand with that reading.</p>
+      <p>Geometry is mathematics and belongs to everyone. A public kernel lets a one-person CAD product enter the market without buying permission from a kernel vendor. Copy this code. Change it. Sell a product built on it. Compete with us.</p>
+      <p>Catallax puts AI coding agents to work on exact geometry, directed and checked by a human. Most of the inherited implementation was written that way. Whether this approach works at the scale a useful CAD kernel demands is an open question. We will find out in public.</p>
+      <p class="why__plain">Copyright attaches to code by default. We use the legal instrument available to let you use the code without asking us. MIT grants permission to use, copy, modify, publish and sell it, with the notice kept on copies and no warranty.</p>
+      <a class="btn magnetic" href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE"><span>Read the MIT licence</span></a>
     </div>
-    <div class="lineage__lessons">
-      <p class="label">His lessons · what we do about them</p>
-      <ul class="lineage__list">
-        <li><span>Early progress does not extrapolate</span><b>Measure the hard cases, tangent, coincident and equal radii, and publish the numbers.</b></li>
-        <li><span>Do not sell a dream</span><b>A works-today list beside every sponsorship ask, including the one further down this page.</b></li>
-        <li><span>Incremental change cannot fix an architecture</span><b>Prototype unknowns with a decision rule. Rebuild only what proves itself.</b></li>
-        <li><span>Half-measures sink a project</span><b>In design: SolidDraft runs only on Catallax. Remove its current kernel, with no fallback.</b></li>
-        <li><span>A generic kernel blurs the vision</span><b>In design: build toward SolidDraft's intended features. Target parts rebuilding at click speed are the scoreboard, not the finish line.</b></li>
-        <li><span>Do not leave a redesign half-landed</span><b>One representation-wide redesign at a time. Commit or park at each work-based milestone.</b></li>
+    <div class="why__terms">
+      <p class="label">A closed kernel · a free kernel</p>
+      <ul class="why__list">
+        <li><span>Licence</span><b>Closed kernels are licensed, metered and can be withdrawn. Catallax is MIT, for everyone, for ever.</b></li>
+        <li><span>The maths</span><b>A century old and published. Geometry is mathematics and belongs to everyone.</b></li>
+        <li><span>The code</span><b>Kept closed by law, not by nature. Copy this one. We still have it, and now you have one too.</b></li>
+        <li><span>The market</span><b>A one-person CAD product can enter without buying permission from a kernel vendor. Compete with us.</b></li>
+        <li><span>The work</span><b>AI coding agents write most of the code. A human directs, questions and checks it, in public.</b></li>
       </ul>
     </div>
   </div>
 </section>
 
-<!-- MANIFESTO ------------------------------------------------------------>
+<!-- WHAT CATALLAX IS ------------------------------------------------------>
 <section class="manifesto section" id="about">
-  <p class="label section__label"><span>02</span>Built for what comes next <span class="status-chip">Vision · in design</span></p>
-  <p class="manifesto__text" data-words>Parametric parts, drawings and assemblies. Lattices, field-driven thickness and simulation-led shapes. SolidDraft grows toward both. The B-rep carries exact faces; the field carries implicit features and checks the B-rep. <em>One definition is the truth.</em></p>
+  <p class="label section__label"><span>02</span>What Catallax is</p>
+  <p class="manifesto__text" data-words>A geometry kernel in safe Rust, built for SolidDraft, the CAD application. Two kernels, one recipe: an exact B-rep and a signed distance field evaluate the same feature tree. The B-rep carries exact faces; the field carries implicit features and checks the B-rep. <em>One definition is the truth.</em></p>
+  <p class="direction__note"><span class="status-chip">Vision · in design</span> Parametric parts, drawings and assemblies. Lattices, field-driven thickness and simulation-led shapes. SolidDraft grows toward both, and runs only on Catallax, with no other kernel as a fallback.</p>
   <p class="direction__note">In design: one modelling tolerance chosen before building, separate from display and export accuracy. Approximate only a proven near-contact or a shape the B-rep cannot carry exactly. Record each decision once, merge what is declared the same, carry visible local tolerances and check topology before publishing. Later operations measure against the definition, so tolerances do not accumulate.</p>
   <p class="direction__note">In design: the field measures approximated pieces against their own definitions. Where it cannot build a step yet, it takes over that B-rep result and checks later steps independently, reporting the coverage. Field-only features need not become B-rep. <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">Read the build order</a>.</p>
   <div class="manifesto__sig">
@@ -398,9 +400,37 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
   </div>
 </section>
 
+<!-- SPECIAL THANKS -------------------------------------------------------->
+<section class="thanks section" id="thanks">
+  <p class="label section__label"><span>10</span>Special thanks</p>
+  <h2 class="display" data-lines>Knowledge, published <em>free</em>.</h2>
+  <div class="thanks__grid">
+    <div class="thanks__copy">
+      <p class="thanks__lede">This kernel stands on work that people put into the world for anyone to read: papers, retrospectives, source code and standards, published for free, which is how knowledge should move.</p>
+      <p>None of it entered Catallax as code. What we took is what they wrote down: a definition, a proof, a lesson, a mistake named plainly. Thank you.</p>
+      <p class="thanks__plain">Catallax shares no code with Fornjot. It is not affiliated with Hanno Braun and he has not endorsed it. The same holds for every project and author below: their published ideas and results, not their source, with thanks.</p>
+    </div>
+    <div class="thanks__sources">
+      <p class="label">Published work this kernel learned from</p>
+      <ul class="thanks__list">
+        <li><span>Hanno Braun · Fornjot</span><b>Six years on <a href="https://github.com/hannobraun/fornjot">Fornjot</a>, a B-rep kernel in Rust, and the retrospective <a href="https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/">"Shutting Down Fornjot"</a>. Its six named mistakes shaped our build order and the works-today rule beside every sponsorship ask.</b></li>
+        <li><span>Matt Keeter · Fidget, libfive</span><b><a href="https://github.com/mkeeter/fidget">Fidget</a> and <a href="https://libfive.com/">libfive</a>. The field kernel's fixed-order tapes, independent point evaluation and reusable evaluator storage follow their design.</b></li>
+        <li><span>OpenCASCADE</span><b><a href="https://dev.opencascade.org/">The open-source kernel</a> that opens and checks every STEP file Catallax exports. It never runs inside the kernel.</b></li>
+        <li><span>monstertruck, Nacre, ogeom-rs</span><b><a href="https://github.com/virtualritz/monstertruck">monstertruck</a>, <a href="https://github.com/elgar328/nacre">Nacre</a> and <a href="https://github.com/gilbertorconde/ogeom-rs">ogeom-rs</a>, Rust B-rep kernels whose public code was a reference point when our B-rep pieces were compared against existing implementations.</b></li>
+        <li><span>Raghothama and Shapiro</span><b><a href="https://doi.org/10.1016/S0010-4485(00)00036-1">"Consistent updates in dual representation systems"</a> (2000). The method behind checking that two kernels model the same solid.</b></li>
+        <li><span>Rossignac and Requicha</span><b>"Constant-radius blending in solid modeling" (1984) and <a href="https://faculty.cc.gatech.edu/~jarek/papers/Offsets.pdf">"Offsetting operations in solid modelling"</a> (1986). The rolling-ball fillet as an offset construction.</b></li>
+        <li><span>Farouki and Sverrisson</span><b><a href="https://doi.org/10.1016/0010-4485(96)00008-5">"Approximation of rolling-ball blends for free-form parametric surfaces"</a> (1996). How a blend is approximated to a prescribed precision.</b></li>
+        <li><span>Jackson · Parasolid</span><b><a href="https://doi.org/10.1145/218013.218067">Parasolid's tolerant-modelling paper</a> (1995). The reasons behind our local tolerance caps and the rule that tolerance growth must be contained.</b></li>
+        <li><span>Hedberg et al.</span><b><a href="https://doi.org/10.1115/1.4032697">"Testing the digital thread"</a> (2016). The gap limits exchanged models carry in automotive and defence work.</b></li>
+        <li><span>STEP Tools</span><b><a href="https://www.steptools.com/docs/stp_aim/html/">Public documentation</a> of the STEP AP242 entities our exporter writes.</b></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
 <!-- CONTACT -------------------------------------------------------------->
 <section class="contact section" id="contact">
-  <p class="label section__label"><span>10</span>Contact</p>
+  <p class="label section__label"><span>11</span>Contact</p>
   <h2 class="contact__title" data-lines>Have geometry that has to be <em>exact</em>?</h2>
   <p class="contact__lede">I'm open to kernel work. Got a stubborn geometry problem? Let's make something of it.</p>
   <div class="contact__ctas">

@@ -6,14 +6,6 @@ Catallax is built for SolidDraft, the CAD application. They are one project in t
 
 Kernel site: [kernel.zigrawbohnbawerick.org](https://kernel.zigrawbohnbawerick.org/).
 
-## Picking up where Fornjot left off
-
-Hanno Braun worked on Fornjot, an early-stage B-rep CAD kernel in Rust, from July 2020 until he shut it down in June 2026. His retrospective, ["Shutting Down Fornjot"](https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/), names the mistakes he saw: extrapolating from early success, selling a dream before there was a product, sticking to incremental improvements, half-measures in a crisis, a vision that blurred once the application was cut, and prototyping that came too late.
-
-Catallax picks up where Fornjot left off. The goal is the one he started with: a free B-rep kernel in Rust that a CAD application can stand on. AI coding agents write most of the code, and a human directs, questions and checks it. [The roadmap](docs/PLAN.md#2-fornjots-lessons-and-what-each-one-changes) applies his lessons to our existing build order. In design: measure hard cases and real parts in SolidDraft, keep a works-today list beside sponsorship asks, prototype when an unknown answer would change the build, and end each work-based milestone with work committed or parked.
-
-To be plain about what this is and is not: Catallax shares no code with Fornjot. It is not affiliated with Hanno Braun and he has not endorsed it. What we take from Fornjot is its published lessons, with thanks.
-
 ## Why this is free
 
 Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.
@@ -162,6 +154,25 @@ library decider has no deadline.
 Read the design rules first. A guessed topological decision, an unproven construction fact, an `unsafe` block or a silent fallback is a defect. Keep API and format changes explicit, update callers and document the migration. Bring mathematical evidence for geometry changes and report refusals honestly.
 
 Agent-written code is welcome. Say how it was produced and stay accountable for what it does. This repository's independent tester was built without seeing the kernel's code.
+
+## Special thanks
+
+This kernel stands on work that people put into the world for anyone to read: papers, retrospectives, source code and standards, published for free, which is how knowledge should move. None of it entered Catallax as code. What we took is what they wrote down.
+
+Hanno Braun worked on [Fornjot](https://github.com/hannobraun/fornjot), an early-stage B-rep CAD kernel in Rust, from July 2020 until he shut it down in June 2026. His retrospective, ["Shutting Down Fornjot"](https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/), names the mistakes he saw: extrapolating from early success, selling a dream before there was a product, sticking to incremental improvements, half-measures in a crisis, a vision that blurred once the application was cut, and prototyping that came too late. [The roadmap](docs/PLAN.md#2-fornjots-lessons-and-what-each-one-changes) applies those lessons to our build order: measure hard cases and real parts in SolidDraft, keep a works-today list beside sponsorship asks, prototype when an unknown answer would change the build, and end each work-based milestone with work committed or parked.
+
+To be plain about what this is and is not: Catallax shares no code with Fornjot. It is not affiliated with Hanno Braun and he has not endorsed it. The same holds for every project and author below: their published ideas and results, not their source, with thanks.
+
+- Matt Keeter's [Fidget](https://github.com/mkeeter/fidget) and [libfive](https://libfive.com/). The field kernel's fixed-order tapes, independent point evaluation and reusable evaluator storage follow their design; see [FIELD.md](docs/FIELD.md).
+- [OpenCASCADE](https://dev.opencascade.org/), which opens and checks every STEP file Catallax exports. It never runs inside the kernel.
+- [monstertruck](https://github.com/virtualritz/monstertruck), [Nacre](https://github.com/elgar328/nacre) and [ogeom-rs](https://github.com/gilbertorconde/ogeom-rs), Rust B-rep kernels whose public code was a reference point when the B-rep pieces were compared against existing implementations; see [PROVENANCE.md](docs/PROVENANCE.md).
+- Raghothama and Shapiro, ["Consistent updates in dual representation systems"](https://doi.org/10.1016/S0010-4485(00)00036-1) (2000), the method behind checking that two kernels model the same solid.
+- Rossignac and Requicha, "Constant-radius blending in solid modeling" (1984) and ["Offsetting operations in solid modelling"](https://faculty.cc.gatech.edu/~jarek/papers/Offsets.pdf) (1986), the rolling-ball fillet as an offset construction.
+- Farouki and Sverrisson, ["Approximation of rolling-ball blends for free-form parametric surfaces"](https://doi.org/10.1016/0010-4485(96)00008-5) (1996).
+- Jackson, [Parasolid's tolerant-modelling paper](https://doi.org/10.1145/218013.218067) (1995), and Hedberg et al., ["Testing the digital thread"](https://doi.org/10.1115/1.4032697) (2016), the reasons behind the tolerance caps in [the roadmap](docs/PLAN.md#34-local-tolerance-caps).
+- [STEP Tools](https://www.steptools.com/docs/stp_aim/html/), public documentation of the STEP AP242 entities the exporter writes.
+
+The research notes in [docs/research](docs/research/) record the wider reading behind the design.
 
 ## Other products
 

@@ -84,6 +84,7 @@ dependencies = [
  "catallax-boolean",
  "catallax-features",
  "catallax-field",
+ "catallax-measure",
  "catallax-mesh",
  "catallax-numbers",
  "catallax-recipe",

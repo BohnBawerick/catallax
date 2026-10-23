@@ -325,3 +325,70 @@ fn zx_revolution_keeps_axial_height_radial_bounds_and_segment_names() {
             .all(|e| e.vertices.first() == e.vertices.last())
     );
 }
+
+#[test]
+fn p3_fillet_faces_are_pickable_watertight_and_named_after_radius_edit() {
+    use catallax_recipe::Recipe;
+    use catallax_shapes::Surface;
+    use std::collections::BTreeMap;
+    let mut recipe = Recipe::parse(include_str!("../../../parts/P3-filleted-boss.json")).unwrap();
+    let mut previous = None;
+    for edited_radius in ["1", "3/2"] {
+        let Operation::Fillet { radius, .. } = &mut recipe.steps[4].op else {
+            panic!("P3 must retain its selected top-edge fillets");
+        };
+        *radius = serde_json::from_value(json!(edited_radius)).unwrap();
+        let app =
+            catallax_app::build(&recipe, &MeshOptions::default(), &mut Decider::default()).unwrap();
+        let model = &app.built.model;
+        let mesh = &app.display.value;
+        assert_eq!(
+            mesh.faces.len(),
+            model.faces_of_body(app.built.result).len()
+        );
+        let mut origins = Vec::new();
+        let (mut cylinders, mut tori) = (0, 0);
+        for face in &mesh.faces {
+            assert!(!face.triangles.is_empty());
+            assert!(face.max_chord_error <= MeshOptions::default().chord_tolerance);
+            for origin in &app.names.faces[&face.face] {
+                if matches!(origin.role, Role::Blend { .. }) {
+                    origins.push(origin.clone());
+                    match model.geom().surface(model.face(face.face).surface) {
+                        Surface::Cylinder(_) => {
+                            assert_eq!(origin.step.as_str(), "rounded");
+                            cylinders += 1;
+                        }
+                        Surface::Torus(_) => {
+                            assert_eq!(origin.step.as_str(), "junction");
+                            tori += 1;
+                        }
+                        other => panic!("unexpected blend carrier {other:?}"),
+                    }
+                }
+            }
+        }
+        assert_eq!((cylinders, tori), (4, 1));
+        origins.sort();
+        if let Some(previous) = previous {
+            assert_eq!(origins, previous);
+        }
+        previous = Some(origins);
+        let mut uses = BTreeMap::<(usize, usize), (usize, i32)>::new();
+        for triangle in &mesh.triangles {
+            for i in 0..3 {
+                let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+                let entry = uses.entry((a.min(b), a.max(b))).or_default();
+                entry.0 += 1;
+                entry.1 += if a < b { 1 } else { -1 };
+            }
+        }
+        assert!(uses.values().all(|&count| count == (2, 0)));
+        for edge in &mesh.edges {
+            assert!(edge.max_chord_error <= MeshOptions::default().chord_tolerance);
+            for pair in edge.vertices.windows(2) {
+                assert_eq!(uses[&(pair[0].min(pair[1]), pair[0].max(pair[1]))], (2, 0));
+            }
+        }
+    }
+}

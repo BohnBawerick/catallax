@@ -1,12 +1,12 @@
 # Analytic field kernel
 
-`catallax-field` compiles `catallax-recipe/3` stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided through-all cuts, full and rational-frame partial revolutions, linear and circular body patterns, plane mirrors, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`, so both kernels use the same intersection, tangency and nesting rules and refusal codes. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
+`catallax-field` compiles version 3 and version 4 recipe stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided and one-sided through-all cuts, full and rational-frame partial revolutions, named hole bands, planar first-hit face/next extrusions, linear and circular body patterns, plane mirrors, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`; hole meridians and planar first-hit arrangements likewise share definition-native compilers. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
 
 This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, field-only features, FEA and application integration are not implemented.
 
 ## Shared algebraic definitions
 
-The evaluator uses the 2026-10-22 shared algebraic foundation, including the existing profile-sweep consumers. Rational definitions retain the existing arithmetic path. No recipe operation is added. Rational oblique circular extrusions use elliptic-cylinder supports and the conservative metric below, not a circular-cylinder distance formula.
+The evaluator uses the 2026-10-22 shared algebraic foundation, including the existing profile-sweep consumers. Rational definitions retain the existing arithmetic path. Rational oblique circular extrusions use elliptic-cylinder supports, not a circular-cylinder distance formula. The trimmed-distance API below supplies certified metric bounds on valid analytic definitions; support residuals retain their separate conservative semantics.
 
 Store the same exact `Surface`, `RealPoly`, frame and dimension definitions as B-rep. Widen polynomial constraints, gradients and cached ray coefficients together. Keep the rational sign path for rational coefficients; use the shared decider for algebraic signs, zero coefficients and support comparisons. Normalising a polynomial by its first syntactic coefficient is invalid if that expression might be zero. Certify the first nonzero coefficient before division. Equal support equations do not remove nappe or trim constraints. Definition keys may permit safe work sharing, but unequal expression keys cannot prove different sets.
 
@@ -24,6 +24,8 @@ Add cross-kernel fixtures for 45-degree revolve, extrusion along `[1,0,1]`, obli
 | `Plan::fast` | Tentative scalar display/filter value. `true_distance_formula` identifies the underlying analytic formula, not a floating-point accuracy certificate. |
 | `Plan::proven`, `proven_checked` | Exact rational/algebraic predicates, outward-rounded binary-ball evaluation and explicit result semantics. Input coordinates are exact `RPoint3` values in millimetres; the checked variant propagates numeric refusals under the caller's policy. |
 | `Plan::transformed` | Compose a validated exact rigid pose into supports, constraints, metric placements and face records using the caller's decider. |
+| `Plan::prepare_distances` | Prepare reusable compact analytic chart covers from recipe bounds and trim predicates. No B-rep is built. |
+| `distance::Prepared::{point_to_face, face_to_face, point_to_boundary}` | Outward-rounded minimum-distance bounds with exact admitted witnesses, an explicit convergence flag and deterministic refinement limits. |
 | `Value::TrueDistance` | Enclosure of true signed Euclidean distance to a primitive boundary. Negative inside. |
 | `Value::Residual` | Enclosure of a sweep support residual or min/max Boolean expression. It is not Euclidean distance. |
 | `DistanceBound` | Bounds on unsigned geometric distance to the result boundary, separate from the field value. Infinity means unbounded, not a measured tolerance. |
@@ -48,7 +50,7 @@ Each primitive signed distance is 1-Lipschitz. Minimum, maximum and negation pre
 
 For an enclosed residual `[lo, hi]`, the lower distance bound is zero if the enclosure contains zero, otherwise `min(abs(lo), abs(hi))`. The Boolean upper distance bound is positive infinity. We do not compose primitive upper bounds through booleans: hidden or removed source faces make that unsound. At a certified boundary point the distance is exactly zero. Primitive queries return both finite distance bounds when representable as doubles. An overflowed endpoint remains an honest outward infinity.
 
-These lower bounds support certified exclusion and filtering. They do not certify proximity, clearance below a threshold, offsets, or a 1 nm hand-off. Such uses need finite upper bounds from certified closest points on surviving trimmed faces. There is no claim that a small residual proves closeness.
+These lower bounds alone support certified exclusion and filtering, not proximity or clearance below a threshold. Prepared trimmed-face queries supply finite upper bounds from certified points on surviving faces. A small residual still does not prove closeness, and neither API constructs offsets or certifies a 1 nm hand-off.
 
 ### Profile sweep certificates
 
@@ -63,6 +65,14 @@ lower bound, not the nearest distance. Exact profile projection still selects
 the swept material and the original oblique caps.
 
 Extrusion projects a query along its defining vector back into the sketch plane, then tests exact odd-loop membership and the signed blind interval. Through-all omits both interval caps and subtracts that infinite tool from the target. It has no construction caps or arbitrary extent. Revolution projects to the meridian using the exact square root of squared radial distance, tests both radial sides of the profile, and applies the cardinal angular sector for partial turns. Profile boundary predicates retain circular arcs rather than replacing them with chords. Shared `Decider` signs settle algebraic meridian and ray-crossing expressions; an exhausted exact decision produces `Indeterminate`, not a guessed sign.
+
+Named holes compile each cylindrical or conical band into a convex analytic cell with exact axial constraints. Planar face/next extrusions intersect their original infinite profile sweep with the union of the active first-hit columns. Construction cells outside the profile cannot contribute result geometry. One `end` origin can name several limiting supports and discontinuity curtains; a named-face query searches that origin's candidate domains rather than treating one support handle as its complete meaning.
+
+Cells use the minimum unsigned distance to their supporting analytic surfaces, signed by exact membership. Their residual is conservative, not true distance to the trimmed cell. Unbounded halfspaces have no finite sample sphere. One-sided through-all uses such a halfspace at the sketch plane, without a finite artificial end.
+
+Exact body copies map cell constraints and finite sample-sphere centres with `Isometry`, including plane reflection. Radii and metric bounds are unchanged by these orthogonal maps. Copied face records retain their wrapped recipe origins.
+
+A hole's result snapshot includes target-face candidates as well as drill parts. Subsequent copies therefore retain wrapped origins for unchanged target faces; candidate membership still requires the exact surviving-domain query.
 
 Full turns omit cap names and axis segments that sweep no area. At 180 degrees, caps connected along an axis segment expose both `start` and `end` names over the merged domain. Consecutive collinear or cocircular segments expose every merged segment origin over the maximal side domain. Face queries check that domain as well as the supporting equation, including the correct branch of a revolved surface.
 
@@ -103,6 +113,66 @@ Normals come from exact supporting-surface gradients, not finite differences. In
 Registry entries are candidates, not a claim that all their geometry survives. `face_query` checks the supporting equation, source primitive domain, result classification and orientation. It returns `NotOnFace` for removed or out-of-trim points. Distinct active supporting surfaces at a Boolean trim intersection can return `Indeterminate`; mere contact with a support is not proof of a surviving face patch. Primitive edge/corner incidence remains selectable with an ambiguous normal. Coactive names on a common surviving support provide the merged face's origin set. This crate does not construct maximal B-rep faces, edge graphs or split components.
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
+
+## Trimmed minimum distances
+
+`catallax_shapes::distance` bounds minimum distance on planes, cylinders, cones,
+spheres, tori and elliptic cylinders. Rational quarter-circle charts cover seams
+and poles without an angle approximation. Frames and dimensions may be algebraic.
+Elliptic distances use the actual orthonormal frame and semi-axes, not a circular
+distance after an affine stretch. Cones retain only their declared nappe.
+
+Every live parameter cell has an outward-rounded spatial box. The minimum box
+separation is a lower certificate. Exact carrier projections also provide support
+lower bounds, with a scaled Lipschitz residual for the ellipse. Upper certificates
+come only from exact points admitted by the trim adapter. The search refines low
+distance cells and admitted witness cells so outside cells touching a trim edge
+cannot indefinitely prevent better witnesses on its surviving side.
+For ellipse semi-axes `a >= b`, the function
+`b * (sqrt((x/a)^2 + (y/b)^2) - 1)` is 1-Lipschitz in its orthonormal transverse
+frame and vanishes on the support. Its absolute value is therefore a distance
+lower bound, not an ellipse distance formula.
+
+`catallax_measure::distance::PreparedFace` uses analytic face bounds, certified
+boundary-loop traces and exact `face_contains`, including holes and closed edges.
+A connected cell with an excluded centre is discarded only if its whole spatial
+cover avoids every boundary loop. The field adapter instead uses its own recipe
+profiles, support constraints and Boolean ray germs. If only one source leaf is
+on a boundary, all other source memberships are locally constant. Evaluating the
+Boolean tape with that leaf inside and outside proves whether its face survives,
+without rebuilding radial roots for normal germs. Joint boundaries retain exact
+ray proofs. Interval constraint signs prove constant trim membership over cells.
+Buried tangent sources cannot supply witnesses at isolated contacts; nearby
+open-face witnesses approach their surviving closed trim boundaries.
+Neither adapter uses display triangles as its distance proof.
+Only face entries owned by the compiled result receive distance domains.
+Reusing a coincident evaluation leaf does not reactivate discarded copy names;
+such registry-only handles report `field.face-id` from the distance API.
+Canonical public names retain the plan's generated-domain role for trim
+predicates; renaming a revolved cone cap does not turn it into an angular cap.
+
+`Options::width` requests an enclosure width, not geometric acceptance.
+`max_cells` limits refinement. Exhaustion returns the attained bounds with
+`converged=false`; `upper=None` means no admitted witness was established.
+`face_to_face` measures the minimum distance, not Hausdorff distance. These queries
+do not replace `measurement::measure_face` or its whole-face definition metric.
+
+Analytic query coverage does not add missing recipe emitters. Oblique circular
+extrusion still reports `features.unsupported-elliptic-cylinder`. The elliptic
+distance regressions construct exact B-rep circle loops and an independent
+native profile/sweep definition directly; they check the Euclidean metric and
+the excluded extension beyond the end trim without enabling that recipe feature.
+
+The sampled comparison uses prepared field bounds when the residual alone has
+no finite upper, and prepared B-rep bounds when a support projection misses its
+trim. `Report::sampled_distance_upper` includes forward mesh error. It is finite
+only when every checked distance has a finite upper. Agreement remains sampled;
+the comparison accuracy, mesh controls and numeric budgets are unchanged.
+After a required trimmed witness settles proximity, later mesh vertices try
+incident witnesses before repeating the signed field query. This changes proof
+order, not acceptance: every early upper still comes from an exact surviving
+boundary point, and a miss retains the original distance and gap checks.
+
 
 ## Whole-face definition measurements
 
@@ -285,6 +355,17 @@ Each source leaf also supplies a conservative spatial box from its dimensions,
 profile and sweep. Cells outside every coactive source box are rejected before
 trim queries. These are defining bounds, not fitted boxes or sampled extents.
 
+Project these boxes onto a planar chart's two axes, or a cylinder chart's
+height axis, before subdivision. The hull of the coactive source projections
+still covers the entire named support domain. Every leaf also uses its own box
+to prove regional absence, including leaves unrelated to the candidate face.
+
+Chart coordinates are enclosed directly with outward binary64 interval
+arithmetic and cached rational-frame enclosures. Quarter-circle cosine and
+sine use their exact monotonicity on each parameter interval, including the
+sphere's `[-1,1]` latitude chart. An exact centre point is constructed only
+when a membership or boundary witness requires it.
+
 Circular coordinates use rational quarter-circle charts
 `((1-t²)/(1+t²), 2t/(1+t²))`. Their speed is at most 2 and their acceleration
 norm at most 8. Products give uniform first- and second-derivative bounds for
@@ -292,6 +373,33 @@ each supported surface. For a parameter rectangle with spans `du,dv`, linear
 triangle interpolation differs from its exact chart by at most
 `(Huu*du² + 2*Huv*du*dv + Hvv*dv²)/8`. Exact conversion residuals add the
 binary64 vertex-rounding error. These bounds cover whole triangles, not samples.
+
+Planar caps bounded by coaxial circular supports and parallel planes use
+four radial quarter-circle charts. A conservative source-box L1 radius covers
+their entire domain. A squared-radius cylinder may have a rational nonunit
+radial frame. For its squared norm `n` and L1 norm `s`, `n/s` is a positive
+lower metric bound and `s` is an upper bound. Exact rational norms replace
+both bounds when available. The parameter extent divides the source radius
+by the lower bound; physical chord bounds multiply by the upper bound.
+A constraint proved equal to a coaxial cylinder restricts
+to `A*r²+B`; exact radial endpoint signs classify its open cells, and rational
+roots become subdivision cuts. This equality is established from the complete
+support definitions, not fitted from samples.
+
+For a radial cell, the emitted triangles form the chord trapezoid of an
+annular sector, or a fan when the inner radius is zero. Every point of that
+trapezoid has the form `r*((1-s)*c(u0)+s*c(u1))` for an intermediate radius
+and angle fraction; the converse construction maps each sector point into the
+trapezoid. The quarter-circle acceleration bound therefore gives two-sided
+set distance at most `r_max*du²`, where `r_max` bounds the physical radius,
+including radial-frame scale. No radial subdivision is required merely
+to reduce this bound. This is a set-distance certificate, not an interpolation
+claim at matching chart parameters. Exact coordinate-rounding residuals are
+added as for other charts. Degenerate fan triangles are not published.
+
+Other sign-stable cells split according to curvature contributions rather
+than physical edge length, so straight cylinder generators need not subdivide
+with their curved direction. Unsettled trims retain witness-radius refinement.
 
 Outward polynomial ranges determine which leaf constraints can change sign
 over a chart cell. Identical supporting constraints remain exactly zero.
@@ -312,14 +420,67 @@ witness. Only boundary or unresolved registers need the field's exact
 infinitesimal ray predicates. Opposite proven interior/exterior rays establish
 a genuine boundary point and orient its normal. No metric calculation on
 unrelated leaves is needed to prove that boundary point.
+For an unresolved leaf, exact strict membership at the witness can likewise
+settle both infinitesimal directions without a polynomial ray expansion.
+This witness-local state is discarded at the next cell and never promoted to
+a regional trim or coverage proof.
+
+A leaf's proved location is cached with its open parameter rectangle.
+Descendants reuse it only when their open interiors lie inside that rectangle.
+This reuses interval proofs and sign-stable membership, never unproved point
+samples. Fixed traversal order makes this regional simplification independent
+of worker scheduling.
+
+On a planar chart, exact coincident support identities also define two open
+normal half-regions. When every other support of a leaf has a fixed nonzero
+sign on the open cell, its two infinitesimal material sides are constant there.
+Certify that pair with the exact ray predicate and cache it with the rectangle.
+The evaluation tape represents both side predicates as reduced ordered Boolean
+diagrams. Variable order is operand identity, then germ kind. Strict material
+states are constants; unresolved predicates are variables.
+
+An unresolved operand shares one variable across the two sides only when every
+support polynomial has an exact, nonzero restriction to the candidate plane.
+The complete affine pullback is computed in rational arithmetic. Its zero set
+has no open planar patch, so any remaining boundary there belongs to that
+operand's own carrier charts. A zero or unproved restriction retains separate
+germ variables; coincident membership is never equated without a proof.
+
+Union, intersection and subtraction combine canonical predicates, including
+negation for a cut. Equal canonical side expressions prove that this plane has
+no exposed open patch, even when the common material predicate varies over the
+cell. This prunes the patch without claiming that its entire region is inside
+or outside. Nodes and apply results are shared across neighbouring cells in a
+request-local arena. Construction and apply operations check the unchanged
+shared numeric work policy.
+
+Opposite constant side expressions prove a wholly exposed planar patch.
+Unequal unresolved expressions still require trim refinement or a certified
+witness; inequality alone is not an exposure proof.
+The chart already lies exactly on the common plane, so the split is by its
+two infinitesimal normal directions, not by a rounded spatial offset.
+Closed-inside membership alone is insufficient: an exterior cap also has
+`f = 0` on its exposed patch. No `sup(f) <= 0` result alone removes
+a patch. Shared cell edges retain the closure coverage described below.
+
+Display witnesses for rational extrusions of polygon loops and full circles
+use native rational projection, exact odd-loop membership, cap and segment
+tests. Their ray displacement uses the same all-support coefficient-dominance
+proof as the shared exact-real feature predicate. These caches borrow the
+defining loops and do not change field query APIs. Arcs, revolutions and
+nonrational placements retain the shared exact-real predicates.
 
 A plane constraint on a planar chart is affine. Its four exact corner values
 prove a strict sign on the open rectangle when they are weakly of one sign
 and not all zero. Zero endpoint pairs classify aligned edges exactly.
-On a cylindrical chart the same argument applies when at most one radial
-frame coefficient is nonzero, because that quarter-circle coordinate is
-monotone and height is affine. Other cases retain interval refinement.
+On cylindrical and radial cap charts, exact Bernstein signs of the angular
+derivative prove when the projected circular coordinate is monotone on a cell.
+Height or radial position is affine, so the same corner argument then applies.
+Cells spanning an unproved angular extremum retain interval refinement.
 No arbitrary near-zero value is treated as an aligned edge.
+Axis-aligned affine trim roots become exact chart cuts, rather than being
+approached indefinitely by midpoint subdivision. The same rule applies to
+axial plane trims of cylinders.
 
 Open cell interiors are disjoint. Their shared edges have no area, and the
 closure of an exposed open patch covers its limiting edge points without
@@ -328,10 +489,21 @@ its exposed two-dimensional support patches. Thus rejecting an absent open
 cell does not lose an isolated trim edge, and emitting the closed triangles
 does not double count area at an aligned cell edge.
 
-Unsettled trim cells shrink to less than half the requested tolerance in
-spatial L1 diameter. A certified surviving boundary point then bounds the
-whole displayed cell from the definition and covers every possible boundary
-point in that cell. A cell without such a witness may be omitted only when
+For an unsettled trim cell, enclose its distance from the exact chart centre
+by `R = sqrt(sum_i max(abs(lo_i-centre_i),abs(hi_i-centre_i))²)`, rounded
+outward. Refine until `R` is at most half the requested tolerance. When that
+centre is a certified surviving boundary point, publish it as a mesh vertex
+and triangulate the cell as a fan.
+
+Every true boundary point in the cell is within `R` of this mesh vertex.
+Conversely, every fan triangle lies in the convex hull of corners and centre,
+each within `R` of the true boundary witness. Convexity of Euclidean balls
+therefore bounds the whole displayed fan, not just its vertices. Vertex
+rounding adds its exact residual as before. Using this radius rather than
+the full cell diameter sharpens the proof without changing the requested
+tolerance or its half-tolerance rounding reserve.
+
+A cell without such a witness may be omitted only when
 an existing mesh vertex is proved within the requested tolerance of its
 entire spatial cover. Otherwise it is refined or refused. This also prevents
 an unseen small component from silently disappearing. The union of accepted

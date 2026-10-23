@@ -188,7 +188,7 @@ fn provenance_changes_are_disagreements_even_at_zero_gap() {
         && !f.field_faces.is_empty()));
 }
 #[test]
-fn unbounded_boolean_upper_distance_never_agrees() {
+fn small_boolean_perturbations_agree_only_with_finite_trimmed_distance_bounds() {
     let a = recipe(vec![
         block("a", "2", "0"),
         block("b", "1", "5"),
@@ -200,13 +200,13 @@ fn unbounded_boolean_upper_distance_never_agrees() {
         json!({"id":"result","op":"boolean","kind":"union","target":"a","tool":"b"}),
     ]);
     let report = compare(&a, &b, &options());
-    assert_eq!(report.verdict, Verdict::Unresolved, "{report:?}");
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|f| f.pass == Pass::Forward && matches!(f.reason, Reason::Unresolved(_)))
-    );
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+    let upper = report
+        .sampled_distance_upper
+        .as_ref()
+        .expect("finite sampled bound");
+    assert!(upper >= &Rational::parse("1/10000").unwrap(), "{report:?}");
+    assert!(upper <= &options().accuracy, "{report:?}");
 }
 #[test]
 fn region_filters_both_directions_and_empty_scope_is_unresolved() {
@@ -513,7 +513,7 @@ fn extra_brep_origin_cannot_be_mistaken_for_insufficient_sampling() {
 }
 
 #[test]
-fn round_boolean_checks_keep_unbounded_vertex_distances_unresolved() {
+fn round_boolean_self_checks_have_finite_trimmed_distance_bounds() {
     for op in ["sphere", "cylinder"] {
         for kind in ["union", "subtract", "intersect"] {
             let solid = |id: &str, x: &str| {
@@ -528,18 +528,12 @@ fn round_boolean_checks_keep_unbounded_vertex_distances_unresolved() {
                 solid("b", "1/5"),
                 json!({"id":"result","op":"boolean","kind":kind,"target":"a","tool":"b"}),
             ]));
-            assert_eq!(
-                report.verdict,
-                Verdict::Unresolved,
-                "{op} {kind}: {report:?}"
-            );
+            assert_eq!(report.verdict, Verdict::Agree, "{op} {kind}: {report:?}");
             assert!(
-                report.findings.iter().any(|f| f.pass == Pass::Forward
-                    && matches!(f.reason, Reason::Unresolved(_))
-                    && f.brep_faces
-                        .iter()
-                        .flatten()
-                        .any(|o| o.step.as_str() == "a")),
+                report
+                    .sampled_distance_upper
+                    .as_ref()
+                    .is_some_and(|u| u <= &options().accuracy),
                 "{op} {kind}: {report:?}"
             );
         }
@@ -611,7 +605,7 @@ fn feature_reverse_check_catches_an_extended_extrusion() {
 }
 
 #[test]
-fn feature_curved_extrusions_and_full_partial_revolutions_keep_unbounded_uppers() {
+fn feature_curved_extrusions_and_full_partial_revolutions_agree_with_finite_bounds() {
     let extrusion = recipe(vec![
         json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"1/5"}]]}),
         json!({"id":"feature","op":"extrude","profile":"profile","distance":"2/5"}),
@@ -625,21 +619,12 @@ fn feature_curved_extrusions_and_full_partial_revolutions_keep_unbounded_uppers(
     }
     for part in parts {
         let report = check(&part);
-        assert_eq!(report.verdict, Verdict::Unresolved, "{report:?}");
+        assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
         assert!(
-            report.findings.iter().any(|f| f.pass == Pass::Forward
-                && matches!(f.reason, Reason::Unresolved(_))
-                && f.brep_faces
-                    .iter()
-                    .flatten()
-                    .any(|o| o.step.as_str() == "feature")),
-            "{report:?}"
-        );
-        assert!(
-            !report
-                .findings
-                .iter()
-                .any(|f| matches!(f.reason, Reason::Gap | Reason::Origins | Reason::Direction)),
+            report
+                .sampled_distance_upper
+                .as_ref()
+                .is_some_and(|u| u <= &options().accuracy),
             "{report:?}"
         );
     }
@@ -708,10 +693,19 @@ fn copied_and_reflected_features_preserve_comparison_certainty() {
         ]]}),
         json!({"id":"seed","op":"extrude","profile":"profile","distance":"1"}),
     ];
-    for (steps, expected) in [
-        (vec![block("seed", "1", "2")], Verdict::Agree),
-        (feature, Verdict::Agree),
-    ] {
+    let cylinder = vec![
+        json!({"id":"profile","op":"sketch","plane":pose("2"),"loops":[[
+            {"kind":"circle","id":"wall","centre":["0","0"],"radius":"1/2"}
+        ]]}),
+        json!({"id":"seed","op":"extrude","profile":"profile","distance":"1"}),
+    ];
+    let revolution = vec![
+        json!({"id":"profile","op":"sketch","plane":pose("2"),"loops":[[
+            {"kind":"line","id":"a","to":["2","0"]},{"kind":"line","id":"b","to":["2","1"]},{"kind":"line","id":"c","to":["1","1"]},{"kind":"line","id":"d","to":["1","0"]}
+        ]]}),
+        json!({"id":"seed","op":"revolve","profile":"profile","axis":{"point":["2","0","0"],"direction":["0","1","0"]},"angle":"90"}),
+    ];
+    for steps in [vec![block("seed", "1", "2")], feature, cylinder, revolution] {
         for operation in [
             json!({"id":"copies","op":"pattern","body":"seed","layout":{"linear":{"vector":["3","0","0"],"count":3}}}),
             json!({"id":"copies","op":"pattern","body":"seed","layout":{"circular":{"axis":{"point":["0","0","0"],"direction":["0","0","5"]},"angle":"90","count":4}}}),
@@ -720,7 +714,14 @@ fn copied_and_reflected_features_preserve_comparison_certainty() {
             let mut steps = steps.clone();
             steps.push(operation);
             let report = check(&recipe(steps));
-            assert_eq!(report.verdict, expected, "{report:?}");
+            assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+            assert!(
+                report
+                    .sampled_distance_upper
+                    .as_ref()
+                    .is_some_and(|upper| upper <= &options().accuracy),
+                "{report:?}"
+            );
         }
     }
 }
@@ -754,4 +755,36 @@ fn a_numeric_refusal_during_copy_comparison_is_not_a_kernel_panic() {
             Reason::Unresolved(reason) if reason.contains("numbers.operation-budget")))
         );
     }
+}
+
+#[test]
+fn separated_curved_features_keep_finite_gap_bounds_after_near_samples() {
+    let part = |radius: &str, z: &str| {
+        recipe(vec![
+            json!({"id":"pa","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","1"]},"loops":[[
+                {"kind":"circle","id":"wall","centre":["0","0"],"radius":"1/5"}
+            ]]}),
+            json!({"id":"a","op":"extrude","profile":"pa","distance":"2/5"}),
+            json!({"id":"pb","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["1","0",z]},"loops":[[
+                {"kind":"circle","id":"wall","centre":["0","0"],"radius":radius}
+            ]]}),
+            json!({"id":"b","op":"extrude","profile":"pb","distance":"2/5"}),
+            json!({"id":"result","op":"boolean","kind":"union","target":"a","tool":"b"}),
+        ])
+    };
+    // One component supplies genuine near witnesses. The other is both
+    // narrower and higher, so none of its old bottom rims is near the new
+    // side or cap supports. A failed seed must retain the gap proof path.
+    let report = compare(&part("1/5", "0"), &part("1/10", "1/10"), &options());
+    assert_eq!(report.verdict, Verdict::Disagree, "{report:?}");
+    assert!(
+        report.findings.iter().any(|finding| {
+            finding.pass == Pass::Forward
+                && finding.reason == Reason::Gap
+                && finding
+                    .gap
+                    .is_some_and(|gap| gap.lo() > 0.01 && gap.hi().is_finite())
+        }),
+        "{report:?}"
+    );
 }

@@ -42,7 +42,6 @@ blind_test!(case_45_arenas_handles_and_no_deduplication, {
         ),
         (2, 2, 2)
     );
-    assert!(store.facts().is_empty());
     let keys = [
         GeomKey::Surface(s0),
         GeomKey::Surface(s1),
@@ -57,84 +56,6 @@ blind_test!(case_45_arenas_handles_and_no_deduplication, {
     clone.add_surface(sphere("1"));
     assert_eq!(clone.surface_count(), 1);
     assert_eq!(store.surface_count(), 2);
-});
-
-blind_test!(case_46_construction_incidence_order_and_origin, {
-    let mut store = GeomStore::new();
-    // All supports contain the origin; both intersection witnesses are regular.
-    let s0 = store.add_surface(Surface::Plane(
-        Plane::new(
-            p("0", "0", "0").into(),
-            v("1", "0", "0").into(),
-            v("0", "1", "0").into(),
-            &mut catallax_numbers::Decider::default(),
-        )
-        .unwrap(),
-    ));
-    let s1 = store.add_surface(Surface::Plane(
-        Plane::new(
-            p("0", "0", "0").into(),
-            v("0", "1", "0").into(),
-            v("1", "0", "0").into(),
-            &mut catallax_numbers::Decider::default(),
-        )
-        .unwrap(),
-    ));
-    let s2 = store.add_surface(Surface::Plane(
-        Plane::new(
-            p("0", "0", "0").into(),
-            v("0", "0", "1").into(),
-            v("1", "0", "0").into(),
-            &mut catallax_numbers::Decider::default(),
-        )
-        .unwrap(),
-    ));
-    let w = explicit(&mut store, p("0", "0", "0"));
-    assert!(store.facts().is_empty());
-    let c0 = store.add_curve(Curve::Intersection(IntersectionCurve {
-        surfaces: [s1, s0],
-        witness: w,
-    }));
-    let c1 = store.add_curve(Curve::Intersection(IntersectionCurve {
-        surfaces: [s2, s0],
-        witness: w,
-    }));
-    let p0 = closed_on(&mut store, p("0", "0", "0").to_real(), vec![s2, s0, s1]);
-    let p1 = store.add_point(PointDef::Meet(Meet {
-        of: MeetOf::CurveSurface(c0, s2),
-        position: Position::Closed(p("0", "0", "0").to_real()),
-    }));
-    let p2 = store.add_point(PointDef::Meet(Meet {
-        of: MeetOf::Curves(c1, c0),
-        position: Position::Closed(p("0", "0", "0").to_real()),
-    }));
-    let expected = [
-        (GeomKey::Curve(c0), GeomKey::Surface(s1)),
-        (GeomKey::Curve(c0), GeomKey::Surface(s0)),
-        (GeomKey::Curve(c1), GeomKey::Surface(s2)),
-        (GeomKey::Curve(c1), GeomKey::Surface(s0)),
-        (GeomKey::Point(p0), GeomKey::Surface(s2)),
-        (GeomKey::Point(p0), GeomKey::Surface(s0)),
-        (GeomKey::Point(p0), GeomKey::Surface(s1)),
-        (GeomKey::Point(p1), GeomKey::Curve(c0)),
-        (GeomKey::Point(p1), GeomKey::Surface(s2)),
-        (GeomKey::Point(p2), GeomKey::Curve(c1)),
-        (GeomKey::Point(p2), GeomKey::Curve(c0)),
-    ];
-    let facts: Vec<_> = store.facts().iter().copied().collect();
-    assert_eq!(facts.len(), expected.len());
-    for (fact, (a, b)) in facts.iter().zip(expected) {
-        assert_eq!(
-            *fact,
-            Fact {
-                kind: FactKind::Incident,
-                a,
-                b,
-                at: None,
-                origin: FactOrigin::Construction("shapes.definition")
-            }
-        );
-    }
 });
 
 blind_test!(

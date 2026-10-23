@@ -292,6 +292,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 let report = controller
                     .latest()
                     .expect("synchronous comparison publishes");
+                if let Some(refusal) = &report.refusal {
+                    return Ok(refused(refusal.code, &refusal.detail));
+                }
                 let verdict = match report.verdict {
                     catallax_compare::Verdict::Agree => "agree",
                     catallax_compare::Verdict::Disagree => "disagree",
@@ -315,7 +318,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 return Ok(
                     json!({"format":"catallax-manifest/3","status":"answered", "exact":false,
                     "comparison":{"verdict":verdict,"forward_vertices":report.forward_vertices,
-                    "reverse_samples":report.reverse_samples,"findings":findings,"not_comparable":unsupported},
+                    "reverse_samples":report.reverse_samples,
+                    "sampled_distance_upper_mm":report.sampled_distance_upper.as_ref().map(ToString::to_string),
+                    "findings":findings,"not_comparable":unsupported},
                     "marks":[],"refusal":null,"step":null}),
                 );
             }

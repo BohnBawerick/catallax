@@ -8,6 +8,9 @@
 
 mod bspline;
 mod curve;
+/// Certified minimum-distance bounds on trimmed analytic carriers.
+pub mod distance;
+mod intent;
 mod isometry;
 mod math;
 mod offset;

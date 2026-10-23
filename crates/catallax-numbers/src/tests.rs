@@ -249,6 +249,38 @@ fn ball_rounding_domains_and_sqrt_containment() {
 }
 
 #[test]
+fn ratio_balls_keep_signed_rounding_and_common_factors() {
+    for (n, d, mid, rad) in [
+        (7, 2, "4", "1/2"),
+        (-7, 2, "-3", "1/2"),
+        (7, -2, "-3", "1/2"),
+        (-7, -2, "4", "1/2"),
+        (0, -7, "0", "0"),
+    ] {
+        let b = Ball::from_ratio(&Integer::from_i64(n), &Integer::from_i64(d), 2).unwrap();
+        assert_eq!(b.mid(), q(mid));
+        assert_eq!(b.rad(), q(rad));
+    }
+    let factor = Integer::one().mul_pow2(1024) + Integer::from_i64(37);
+    for bits in [0, 1, 53, 128, 512] {
+        for n in -12..=12 {
+            for d in [-17, -1, 1, 17] {
+                let n = Integer::from_i64(n);
+                let d = Integer::from_i64(d);
+                let exact = Rational::new(n.clone(), d.clone()).unwrap();
+                let b = Ball::from_ratio(&n, &d, bits).unwrap();
+                let scaled = Ball::from_ratio(&(&n * &factor), &(&d * &factor), bits).unwrap();
+                assert!(b.contains(&exact));
+                assert_eq!(b.precision(), bits.max(1));
+                assert_eq!(b.mid(), scaled.mid());
+                assert_eq!(b.rad(), scaled.rad());
+            }
+        }
+    }
+    assert!(Ball::from_ratio(&Integer::one(), &Integer::zero(), 128).is_none());
+}
+
+#[test]
 fn enclosure_errors_survive_deep_precision_and_underflow() {
     for p in [2048, 8192, 10000] {
         let tiny = q("1/3").mul_pow2(-20000);
@@ -1094,6 +1126,30 @@ fn facts_keep_origin_order_and_relation_specific_closures() {
         book.facts_about(2).iter().map(|f| f.a).collect::<Vec<_>>(),
         vec![1, 2]
     );
+}
+
+#[test]
+fn negated_construction_identity_keeps_signs_and_denominators() {
+    for value in ["0", "1", "-1", "12345678901234567890123456789/17"] {
+        let a = real(value);
+        let b = -&a;
+        assert!(a.same_negated_definition(&b));
+        assert!(b.same_negated_definition(&a));
+    }
+    for (a, b) in [
+        ("1", "1"),
+        ("1/2", "-1/3"),
+        ("1", "-1.0000000000000000000001"),
+    ] {
+        assert!(!real(a).same_negated_definition(&real(b)));
+    }
+    let root = real("2").sqrt();
+    let opposite = -&root;
+    assert!(root.same_negated_definition(&opposite));
+    assert!(opposite.same_negated_definition(&root));
+    assert!(!root.same_negated_definition(&root));
+    let mut dec = Decider::default();
+    assert!(dec.sign(&(&root + &opposite)).is_coincident());
 }
 
 #[test]

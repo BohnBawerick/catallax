@@ -644,6 +644,13 @@ Change: new `catallax-app` crate exposes `soliddraft::convert`, `build` and `bui
 Why: SolidDraft needs one entry from recipes to named, displayable bodies without inventing topology identities or taking mesh geometry as the model. Fillet, chamfer, shell and unresolved conversion constructions remain explicit not-yet results.
 Migration: SolidDraft's backend consumes this entry in its own repository. Map returned handles explicitly to backend ids, preserve merged origin sets, and persist names rather than handle indices. `docs/RECIPE.md` section 6.3 describes the output contract and current conversion limits. Recipe booleans also apply exact repeated-operand set identities before invoking the distinct-operand intersection graph, so a body combined with itself no longer panics.
 
+## 2026-10-22: construction intent before arithmetic
+
+Pieces: numbers, shapes, primitive and recipe builders and intersections
+Change: construction events record guaranteed `Coincident`, `Parallel`, `Coaxial`, `Concentric`, `Incident` and `Tangent` relations on their named inputs and outputs. Flush contact uses existing coincidence and incidence relations. Cylinder and cone builders retain rim-axis relations through rigid poses; recipe boundaries also derive shared axes and centres from guaranteed incidence. Circular and surface comparisons consume the applicable relations without re-proving them. Intersections retain local tangent loci and exact curve-surface tangent contacts; bounded guesses and uncertain merges never become facts. Direct fact hits avoid allocating a closure traversal. Opposite direction definitions are recognised without allocating negated expressions.
+Why: a contact guaranteed by construction does not need another arithmetic zero proof. Global structural pair discovery is outside this item and adds work on unrelated geometry; insertion performs none.
+Migration: no exchange versions, geometry definitions or numeric allowances change. Builders keep their own construction provenance. Fact decisions count in `decisions` and `coincident_fact` and consume zero work. Callers must not assume an exact incidental fact count or ordering, or an arithmetic proof kind for a construction-known answer. Identical inputs give deterministic results at every worker count. Cylinder sameness and coaxial intersection planning compare stored squared radii directly; a shared-axis fact never bypasses the size comparison.
+
 ## 2026-10-22: reuse failed sphere-gauge enclosure attempts
 
 Piece: 6
@@ -840,3 +847,148 @@ Pieces: shapes, feature consumers, field, mesh and application
 Change: exact `Isometry` mapping now carries finite spline controls and checked supports, retaining canonical-source inverses and material-outward normals through reflections. Existing proper-Pose APIs and schemas remain unchanged. Concurrent elementary-fillet consumers use squared cylinder radii and fallible point normals without requiring a global polynomial for every surface. Primitive field transport propagates a missing parametric-constraint proof instead of discarding its refusal.
 Why: new surface kinds must integrate with the existing exact copy and display interfaces without reintroducing polynomial assumptions, changing old analytic geometry or silently ignoring controls.
 Migration: local isometric support transport is not a recipe-bound whole-body transfer certificate. Existing exact elementary fillets remain available; general non-analytic rolling constructions are still uncovered. Spline meshes report rounded-facet aspect bounds and unmet aspect requests. Edge length is accepted only when proved for the complete returned mesh; insufficient cap/strip refinement uses `mesh.spline-edge-length`. Uncovered whole-spline angular requests use `mesh.spline-angular-coverage`. Neither refusal changes the body or its modelling tolerance.
+
+## 2026-10-23: binary enclosures of unreduced integer ratios
+
+Pieces: 1, 5
+Change: `Ball::from_ratio(&Integer, &Integer, u32) -> Option<Ball>` encloses an integer ratio without constructing a normalized `Rational`. Either denominator sign is accepted; a zero denominator returns `None`.
+Why: cylindrical winding repeatedly normalized exact diamond-chart corner fractions before immediately rounding them to binary balls. Homogeneous corner comparisons and direct ratio enclosures avoid those GCDs while preserving the exact enclosure.
+Migration: existing callers are unchanged. Piece 5 uses the new constructor for phase extrema. No budget, tolerance, answer format or refusal code changes.
+
+## 2026-10-23: elementary fillets adopt native squared cylinder radii
+
+Pieces: features, shapes
+Change: elementary fillet definitions construct and compare `Cylinder::radius_sq` directly. Metric bounds and torus major-radius calculations use `Cylinder::radius()`.
+Why: integrating exact fillets with native squared-radius carriers must preserve both definitions without extracting roots for incidence predicates.
+Migration: cylinder consumers use the squared field for algebraic support equations and the positive radius accessor for metric expressions. No recipe schema, budget, tolerance or STEP-option change.
+
+## 2026-10-23: regional field display refinement
+
+Pieces: field, cli
+Change: definition-native display projects source bounds into its charts, reuses regional and reduced ordered Boolean side proofs, aligns exact trim cuts and uses certified radial charts for circular caps. Rational polygon and full-circle extrusion witnesses use display-local native predicates. OBJ bytes, triangle counts, cells, work, diagnostic decisions and human-readable refusal details can change; no request, response, manifest or OBJ format changes.
+Why: avoid refining simple support regions and repeating exact-real trim work for neighbouring cells.
+Migration: regenerate field display artifacts and deterministic display-work expectations. The 0.01 mm proven bound, display limits and request allowance are unchanged. B-rep construction, field query APIs and STEP export are unchanged.
+
+## 2026-10-23: certified trimmed analytic minimum distances
+
+Pieces: shapes, measurement, field, comparison, verification CLI
+Change: `catallax_shapes::distance` exports compact `Domain` covers, `Trim`,
+`Membership`, `Options`, `Bounds`, `project`, `point_distance` and `face_distance`.
+`catallax_measure::distance::PreparedFace` adapts exact B-rep loops.
+`Plan::prepare_distances` returns field-native `distance::Prepared`, with
+`point_to_face`, `face_to_face` and `point_to_boundary`. Comparison reports add
+`sampled_distance_upper`; verification exposes it as the additive
+`comparison.sampled_distance_upper_mm` rational string or null.
+Why: curved support residuals alone cannot prove proximity to a surviving trimmed
+face. Exact admitted witnesses give finite upper bounds; interval chart covers
+prove lower bounds without replacing trims or the whole-face definition metric.
+Migration: distance callers must inspect `converged` and optional `upper`, retain
+the prepared model or plan's definitions, and supply a certified compact box when
+using the shapes-level API. Default query width is 1e-6 mm with 4096 parameter
+cells. Invalid covers or controls use `shapes.distance-domain`; unmarked B-rep
+bounds and traces are required by `measure.distance-marked`. A field result
+without a certified compact recipe domain returns `field.distance-unbounded`;
+absent field handles retain `field.face-id`. Numeric and exact trim refusals
+propagate. Comparison accuracies, numeric budgets, recipe construction, STEP
+output and whole-face definition measurements are unchanged. Previous curved
+extrusion, revolution, round-Boolean and small planar-Boolean perturbation
+limitation tests now require agreement with finite sampled bounds.
+## 2026-10-23: named drill tools and versioned extrusion end conditions
+
+Pieces: recipe, features, field, compare, verification CLI
+Change: `Operation::ExtrudeThrough` gains optional `side: Option<ThroughSide>`; `ThroughSide` has `Both`, `Forward` and `Backward`. `Operation` gains `ExtrudeTo` and `ExtrudeNext`. The reader explicitly accepts `FORMAT_V4` alongside `FORMAT`, rejects version 4 end-condition syntax in version 3, and preserves the stored version when writing. Both kernels evaluate named holes and one-sided through-all cuts. `catallax_features::hole::HoleTool` exposes definition-native axial bands; `end_condition::Capped` exposes the planar first-hit reduction used independently by B-rep and field. Non-planar limiting boundaries remain an explicit implementation gap.
+Why: RECIPE sections 4.1.1, 4.1.2 and 4.3 define these operations, their trimmed caps, discontinuity curtains and stable origins.
+Migration: exhaustive operation matches handle both new variants and the optional through side; callers creating version 3 through steps use `side: None`. Version 4 authors set the format explicitly. Existing version 3 canonical recipes and verification exchange formats are unchanged. New impossible-input refusals are `hole.non-positive-diameter`, `hole.non-positive-depth`, `hole.non-positive-head-depth`, `hole.zero-direction`, `hole.invalid-angle`, `hole.head-too-small` and `extrude.no-finite-cap`. Runtime reference resolution uses `recipe.missing-reference` and `recipe.ambiguous-reference`; unsupported non-planar reductions use `features.unsupported-limit-surface`, never `extrude.no-finite-cap`. Internal arrangement inconsistencies use `features.limit-arrangement`.
+
+Drill-band cylinder supports and certified finite-band bounds use native `Cylinder::radius_sq`. Analytic-cell copies keep their infallible exact isometries inside the fallible field leaf-transform API. Prepared field distances classify these cells by their exact constraint conjunction, including algebraic points and one-sided ray germs.
+
+## 2026-10-23: comparison queries propagate their original refusal
+
+Pieces: compare, verification CLI
+Change: `Report` gains `refusal: Option<catallax_numbers::Refusal>`. A failed field face or coactive-face query stops further reverse queries and publishes its original refusal instead of panicking. The verification adapter returns that code and detail; a whole-request numeric-budget refusal still takes precedence.
+Why: the first P5 countersink exhausted its unchanged request allowance inside reverse face queries and previously became `verify.internal-error`.
+Migration: report constructors initialise `refusal`; adapters propagate a present refusal without converting it to a proven disagreement or internal error. No allowance or tolerance changes.
+
+## 2026-10-23: blind short-head ledges keep the floor origin
+
+Pieces: recipe, features, field
+Change: a blind hole with a head can structurally reference `floor` even with a cone tip. The planar annulus at blind depth between an unfinished head and the narrower cone tip carries that origin. Its point set is unchanged.
+Why: a legal short countersink or counterbore can leave this ledge; the earlier flat-tip-only structural rule gave it no usable name.
+Migration: no new role or alias. Existing through-hole floor references remain invalid.
+
+## 2026-10-23: primitive rational-angle defining polynomials
+
+Pieces: numbers, features, field
+Change: non-quadratic rational-degree sine/cosine definitions use the primitive real cyclotomic polynomial, selected by exact coprime angle order. Existing closed forms remain unchanged. The public API, exact values and allowances do not change.
+Why: standard 118-degree drill tips and 82-degree countersinks previously spent most of their request allowance constructing unrelated Chebyshev conjugates. The smaller definition reduces that construction cost but does not complete the subsequent Boolean proof.
+Migration: none. These standard-angle hole builds still refuse cleanly with `numbers.operation-budget`; they are unfinished coverage awaiting geometric quadric classification and construction-intent facts, not impossible geometry.
+
+## 2026-10-23: drill and capped-sweep cells compose with exact copies
+
+Pieces: field, comparison
+Change: analytic drill and planar first-hit cells transport their constraints and finite sample-sphere centres through the shared exact `Isometry`, including reflections. Reverse comparison retains checked field queries and cancellation from body-copy integration while preserving the original query refusal in `Report::refusal`.
+Why: named holes and capped sweeps must remain valid inputs to the newly available body pattern and mirror operations.
+Migration: none; dimensions, work allowances and query result contracts are unchanged.
+
+## 2026-10-23: saved first-hit feature instances
+
+Pieces: application, features
+Change: `expand_feature` transports explicit directions for `extrude_to` and `extrude_next`, supplies the mapped authored normal for reflected default directions, and reuses explicit input/origin binding for target and limit references.
+Why: a saved reflected capped extrusion must query its reflected target along the original physical sweep direction, not the repaired sketch frame's opposite normal.
+Migration: no schema change; save the ordinary version 4 steps returned by expansion.
+
+## 2026-10-23: filtered trace Taylor enclosures and curved display meshing
+
+Pieces: 4, display mesh, application
+Change: `TracePiece::taylor_interval` returns optional outward-rounded binary64 Taylor enclosures through the requested order. `None` requests the existing ball path; deadline errors still propagate. Immutable trace constants retain a binary64 enclosure; nonrational constants derive it at 128-bit working precision, and ball enclosures remain precision-specific. Display charts now include elliptic cylinders and filter evaluation, chord and aspect bounds before exact-rational or ball fallback. Fillet cylinder carriers retain exact squared radii, and display coefficients obtain radii through the definition accessor.
+Why: repeated high-precision evaluation and incremental UV insertion blocked display latency. Shared-rail ears also created coincident sliver triangles between exact fillet strips.
+Migration: existing trace and meshing callers need no API changes. Filter callers must handle `None` with the existing certified path. Display triangle counts, indices and conservative reported bounds may change within the requested certificate. The 0.01 mm default, vertex and work limits, exact B-rep, question formats and STEP definitions are unchanged.
+
+## 2026-10-24: elliptic-cylinder display coverage
+
+Pieces: display mesh
+
+Change: elliptic cylinders now use their exact periodic/linear chart through the existing shared-edge display path. Inverse projection scales the transverse coordinates by the semi-axes. The major semi-axis bounds chart acceleration; the major/minor ratio bounds normal rotation. Facet-normal and edge-length controls retain their existing certificate semantics. Two angularly monotone boundary loops can form an axial triangle strip without interior samples; every candidate triangle must pass the existing chord and quality bounds, or the periodic triangulator supplies refinement.
+
+Why: SolidDraft must display all six analytic support kinds without replacing exact geometry. Finite parabola and hyperbola edges already use certified traces; new closed-solid regressions exercise both forms alongside elliptic caps, oblique circular caps and rigid placements.
+
+Migration: no API, face or edge picking IDs, recipe role, tolerance, budget, manifest or STEP changes. Edge polylines still contain the single shared vertex sequence used by adjacent faces. Display bounds remain bounds against the analytic definition, not a claim that polygonal trims equal curved trims.
+
+## 2026-10-24: exact fillet display strips and shared-chord ownership
+
+Pieces: display mesh, application regression coverage
+
+Change: finite cylindrical fillets use the same certified ruled-strip triangulation as elliptic cylinders, retaining every shared end-curve sample. Toroidal bands lift the minor angle into a nonperiodic interval selected by their oriented loops. Certified frame and angular evaluations are cached locally for that band; grid dimensions follow the weighted curvature terms rather than the cone's aspect heuristic. The existing half-tolerance grid reserve and mandatory triangle/edge certificates are unchanged.
+
+Curved-face triangulation also records interior chords between boundary vertices in face order. A later face refines an unconstrained chord already owned by another face. Shared B-rep polylines remain fixed. This prevents adjacent cylinder fillets from publishing opposite copies of a boundary-only triangle and giving their interior diagonal four uses.
+
+Why: P3 previously refused mesh closure at adjacent cylinder strips. Exact convex torus fillets displayed but traversed unnecessary periodic copies and repeated certified angular evaluations. The native application regression now exercises P3's four cylinder blends and torus blend, face picking roles, shared-edge incidence and radius-edit names.
+
+Migration: no exact model, fillet construction, API, naming, tolerance, work allowance, manifest or STEP-option changes. General curved-boundary acceleration remains separate work.
+
+## 2026-10-24: bounded display bands reuse the shared certified evaluator
+
+Pieces: display mesh
+
+Change: a bounded torus band restricts its face-owned chart in place and uses the shared outward-rounded display evaluator with the existing ball fallback. This supersedes the separate band-local frame and angular cache described in the preceding exact-fillet display entry. The merged shared-rail ear guard and cross-face interior-chord ownership check are both retained.
+
+Why: integrating the curved-display work must not bypass its certified sampler or duplicate cached definitions and chart copies.
+
+Migration: no public API, exact geometry, face or edge IDs, default 0.01 mm tolerance, vertex limit, arithmetic allowance, manifest or STEP changes.
+
+## 2026-10-24: ruled display strips share the certified sampling filter
+
+Pieces: display mesh
+
+Change: ruled cylinder and elliptic-cylinder strips certify their existing boundary coordinates through the shared display sampler, including its ball fallback, instead of unconditionally rebuilding ball evaluations. Shared polylines and candidate triangle coordinates are unchanged; conservative reported residual bounds may change.
+
+Why: the new-kind path must reuse the merged certified evaluator rather than introduce avoidable high-precision work.
+
+Migration: no public API, exact geometry, picking IDs, requested controls, tolerance, vertex or work allowances, manifest or STEP changes.
+
+## 2026-10-23: spline carriers integrate with trimmed analytic distances and drill cells
+
+Pieces: shapes, Boolean filters, features and field
+Change: analytic `distance::Domain::new` and `distance::project` return `shapes.distance-uncovered` for finite B-spline supports rather than assuming a global analytic frame. The bounded-face exclusion filter uses an implicit equation only when one exists. Definition-native drill and capped-sweep cells propagate fallible constraint construction through their exact isometry API.
+Why: the independently landed analytic-distance and feature consumers must retain their coverage guarantees when the genuine spline kind is present.
+Migration: generic trimmed analytic distance charts do not yet cover represented spline faces. Use the separately certified original-target prism field for its nominal true-distance contract; do not substitute that definition for represented-face distance. An unavailable analytic exclusion proof falls through to the existing intersection path and never proves disjointness. Existing analytic definitions, numeric allowances and output accuracies are unchanged.

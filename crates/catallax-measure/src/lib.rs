@@ -36,6 +36,8 @@ use catallax_numbers::{
 use catallax_topology::{BodyId, BodyKind, FaceId, Model};
 
 mod bounds;
+/// Certified minimum distances between trimmed analytic faces and points.
+pub mod distance;
 mod edge;
 mod engine;
 pub use bounds::BoundingBox;

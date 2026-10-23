@@ -20,6 +20,10 @@ These are `catallax-recipe/3` inputs for the roadmap's P0–P5 scoreboard. Dimen
 
 Stock quaternions are homogeneous and normalized by the existing exact placement code. Recipes keep operation IDs and origin references fixed. Do not rename them to accommodate a kernel failure. Change dimensions only as a reviewed corpus revision, with a new report and an explanation of why the old input was wrong.
 
+`holes/P1-bolt-holes.json` and `holes/P5-countersinks.json` isolate the named-hole feature gates with the same fixed P1/P5 dimensions. They are not completed target parts: P1's slot chain remains in the full bracket, and P5's pattern and junction fillet remain in the full housing. The hole cases use one placement group rather than replacing the pattern operation's acceptance test.
+
+Run the same report on `parts/holes` to measure these feature gates in both kernels. Application timings still require an actual `catallax-app` build; the scoreboard does not infer them from kernel construction. Paired timing evidence records load averages before and after every AB/BA pair.
+
 ## Run the report
 
 Build `catallax-verify`, then run from the repository root:

@@ -1,6 +1,6 @@
 //! Exact supporting surfaces, primitive trimming and separate rounded caches.
 
-use crate::metric::{Kind, PRECISION, distance};
+use crate::metric::{Kind, PRECISION, Scalar, distance};
 use crate::{Face, Location};
 use catallax_numbers::{
     Ball, Decider, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
@@ -552,16 +552,26 @@ pub(crate) fn face(surface: Surface, origin: Origin, dec: &mut Decider) -> Resul
 pub(crate) enum Leaf {
     Primitive(Primitive),
     Feature(crate::features::Feature),
+    Cell(Cell),
 }
 impl Leaf {
     pub(crate) fn constraints(&self) -> &[Constraint] {
         match self {
             Self::Primitive(a) => &a.constraints,
             Self::Feature(a) => &a.constraints,
+            Self::Cell(a) => &a.constraints,
         }
     }
 
     pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
+        if let Self::Cell(a) = self {
+            let Some(radius) = a.display_radius(dec)? else {
+                return Ok(None);
+            };
+            return Ok(Some(std::array::from_fn(|_| {
+                Ball::from_rational(&(-&radius), 128).hull(&Ball::from_rational(&radius, 128))
+            })));
+        }
         let Self::Primitive(a) = self else {
             let Self::Feature(a) = self else {
                 unreachable!()
@@ -589,6 +599,9 @@ impl Leaf {
     }
 
     pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
+        if let Self::Cell(a) = self {
+            return a.display_radius(dec);
+        }
         let Self::Primitive(a) = self else {
             let Self::Feature(a) = self else {
                 unreachable!()
@@ -645,6 +658,7 @@ impl Leaf {
         match self {
             Self::Primitive(a) => a.transform(pose),
             Self::Feature(a) => a.transform(pose),
+            Self::Cell(a) => a.transform(pose),
         }
     }
     pub fn true_distance(&self) -> bool {
@@ -654,6 +668,7 @@ impl Leaf {
         match self {
             Self::Primitive(a) => a.location(p, dec),
             Self::Feature(a) => a.location(p, dec),
+            Self::Cell(a) => a.location(p, dec),
         }
     }
     pub fn proven_distance(
@@ -665,12 +680,14 @@ impl Leaf {
         match self {
             Self::Primitive(a) => a.proven_distance(p, l, dec),
             Self::Feature(a) => a.proven_distance(p, l, dec),
+            Self::Cell(a) => a.proven_distance(p, l, dec),
         }
     }
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
         match self {
             Self::Primitive(a) => a.fast_distance(p),
             Self::Feature(a) => a.fast_distance(p),
+            Self::Cell(a) => a.fast_distance(p),
         }
     }
     /// Collects every zero constraint when local membership changes are planar.
@@ -684,6 +701,7 @@ impl Leaf {
         let constraints = match self {
             Self::Primitive(a) => &a.constraints,
             Self::Feature(a) => &a.constraints,
+            Self::Cell(a) => &a.constraints,
         };
         let mut found = false;
         for constraint in constraints {
@@ -717,6 +735,7 @@ impl Leaf {
         match self {
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
+            Self::Cell(a) => a.ray(p, d, dec),
         }
     }
     pub fn on_face(
@@ -725,13 +744,10 @@ impl Leaf {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
-        let mut role = role;
-        while let Role::Copy { of, .. } = role {
-            role = &of.role;
-        }
         match self {
             Self::Primitive(_) => Ok(Some(true)),
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),
+            Self::Cell(_) => Ok(Some(true)),
         }
     }
 }
@@ -799,6 +815,14 @@ pub(crate) fn algebraic_ray_coefficients(
     direction: &Vector3,
 ) -> [Real; 5] {
     let point = point.clone().map(Real::from);
+    point_ray_coefficients(poly, &point, direction)
+}
+
+pub(crate) fn point_ray_coefficients(
+    poly: &Constraint,
+    point: &[Real; 3],
+    direction: &Vector3,
+) -> [Real; 5] {
     let direction = [&direction.x, &direction.y, &direction.z];
     let mut coefficients: [Real; 5] = std::array::from_fn(|_| Real::zero());
     let mut accumulate = |exponents: &[u32; 3], coefficient: Real| {
@@ -831,4 +855,162 @@ pub(crate) fn algebraic_ray_coefficients(
         }
     }
     coefficients
+}
+
+/// An analytic intersection of halfspaces, optionally with a certified finite bound.
+#[derive(Clone, Debug)]
+pub(crate) struct Cell {
+    constraints: Vec<Constraint>,
+    supports: Vec<crate::support::Support>,
+    fast: Vec<Vec<([u32; 3], f64)>>,
+    center: Point3,
+    radius: Option<Rational>,
+}
+
+impl Cell {
+    pub(crate) fn sample_bounds(&self) -> Result<Option<crate::samples::Bounds>, Refusal> {
+        let Some(radius) = &self.radius else {
+            return Ok(None);
+        };
+        let center = self
+            .center
+            .as_rational()
+            .ok_or_else(crate::samples::placement_error)?;
+        Ok(Some(
+            [center.x, center.y, center.z].map(|x| [&x - radius, &x + radius]),
+        ))
+    }
+    pub(crate) fn new(surfaces: Vec<Surface>, radius: Option<Rational>) -> Result<Self, Refusal> {
+        let constraints: Vec<_> = surfaces
+            .iter()
+            .cloned()
+            .map(constraint)
+            .collect::<Result<_, _>>()?;
+        let fast = constraints
+            .iter()
+            .map(|c| {
+                c.polynomial
+                    .terms()
+                    .into_iter()
+                    .map(|(m, c)| {
+                        (
+                            m.exponents().try_into().expect("three coordinates"),
+                            c.to_f64(),
+                        )
+                    })
+                    .collect()
+            })
+            .collect();
+        Ok(Self {
+            constraints,
+            supports: surfaces.iter().map(crate::support::Support::new).collect(),
+            fast,
+            center: Point3::origin(),
+            radius,
+        })
+    }
+    fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
+        let mut boundary = false;
+        for c in &self.constraints {
+            match crate::polynomial_sign(&c.polynomial, p, dec)? {
+                Sign::Positive => return Ok(Location::Outside),
+                Sign::Zero => boundary = true,
+                Sign::Negative => (),
+            }
+        }
+        Ok(if boundary {
+            Location::Boundary
+        } else {
+            Location::Inside
+        })
+    }
+    fn ray(&self, p: &[Rational; 3], d: &Vector3, dec: &mut Decider) -> Result<Location, Refusal> {
+        let mut boundary = false;
+        for c in &self.constraints {
+            let mut value = Sign::Zero;
+            for coefficient in algebraic_ray_coefficients(c, p, d) {
+                value = sign(&coefficient, dec)?;
+                if value != Sign::Zero {
+                    break;
+                }
+            }
+            match value {
+                Sign::Positive => return Ok(Location::Outside),
+                Sign::Zero => boundary = true,
+                Sign::Negative => (),
+            }
+        }
+        Ok(if boundary {
+            Location::Boundary
+        } else {
+            Location::Inside
+        })
+    }
+    fn proven_distance(
+        &self,
+        p: &RPoint3,
+        location: Location,
+        dec: &mut Decider,
+    ) -> Result<Ball, Refusal> {
+        if location == Location::Boundary {
+            return Ok(Ball::integer(0));
+        }
+        let p = [&p.x, &p.y, &p.z].map(|v| Ball::from_rational(v, crate::metric::PRECISION));
+        let mut values = self.supports.iter();
+        let mut residual = values.next().expect("bounded cell").proven(&p, dec)?;
+        for support in values {
+            residual = residual.min(&support.proven(&p, dec)?);
+        }
+        Ok(match location {
+            Location::Inside => -residual,
+            Location::Indeterminate => residual.hull(&(-&residual)),
+            _ => residual,
+        })
+    }
+    fn fast_distance(&self, p: [f64; 3]) -> f64 {
+        let inside = self.fast.iter().all(|terms| {
+            terms
+                .iter()
+                .map(|(powers, c)| {
+                    let mut term = *c;
+                    for i in 0..3 {
+                        for _ in 0..powers[i] {
+                            term *= p[i];
+                        }
+                    }
+                    term
+                })
+                .sum::<f64>()
+                <= 0.0
+        });
+        let residual = self
+            .supports
+            .iter()
+            .map(|s| s.fast(&p))
+            .fold(f64::INFINITY, f64::min);
+        if inside { -residual } else { residual }
+    }
+    fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
+        let Some(radius) = &self.radius else {
+            return Ok(None);
+        };
+        [&self.center.x, &self.center.y, &self.center.z]
+            .into_iter()
+            .try_fold(radius.clone(), |sum, x| {
+                let b = enclose(x, 128, dec)?;
+                Ok(sum + b.lo().abs().max(b.hi().abs()))
+            })
+            .map(Some)
+    }
+    fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
+        let surfaces = self
+            .constraints
+            .iter()
+            .map(|c| pose.surface(&c.surface))
+            .collect();
+        let center = pose.apply_point(&self.center);
+        *self = Self::new(surfaces, self.radius.clone())?;
+        self.center = center;
+        Ok(())
+    }
 }

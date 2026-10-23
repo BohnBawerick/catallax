@@ -409,6 +409,13 @@ fn finite_interval_inverse_covers_a_knot_and_refuses_to_choose_the_periodic_seam
         )?;
         let support = SplineSurface::from_offset(proof);
         let carrier: SplineSupport = support.clone().into();
+        let analytic_query = catallax_shapes::distance::project(
+            &catallax_shapes::Surface::BSpline(carrier.clone()),
+            &point,
+            &mut dec,
+        )
+        .unwrap_err();
+        assert_eq!(analytic_query.code, "shapes.distance-uncovered");
         let point_box =
             [&point.x, &point.y, &point.z].map(|value| dec.enclose_at(value, 128).unwrap());
         let parameters = carrier

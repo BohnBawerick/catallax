@@ -17,9 +17,9 @@ Sources:
 | Source | Problem format | Result |
 | --- | --- | --- |
 | `question` | `exact-brep-question/2` | Full geometric manifest and optional STEP. Parse all legacy fields, but ignore `limits.deadline_ms` during evaluation. |
-| `recipe` | `catallax-recipe/3` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. |
-| `compare` | `catallax-recipe/3` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
-| `field` | `catallax-recipe/3` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations retain their `field.*` refusal codes, with no display fallback. |
+| `recipe` | `catallax-recipe/3`, `catallax-recipe/4` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. |
+| `compare` | `catallax-recipe/3`, `catallax-recipe/4` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
+| `field` | `catallax-recipe/3`, `catallax-recipe/4` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
 | `name-edit` | `catallax-name-edit/1` | Rebuild `recipe` and `edited_recipe`, resolve every original result-face origin and physical-edge name, and check the independently compiled field registries. Report `name_edit`; no STEP or display. |
 
 A new source implements one evaluation adapter returning a manifest. External corpus adapters export Python `load(Path)` and yield `{"source":...,"problem":...}` records. These adapters are trusted executable code selected explicitly with `--adapter`. Data files cannot select executable adapters.
@@ -123,6 +123,13 @@ second moments or consume an inertia budget. Recipe and comparison outputs are u
 A `catallax-response/1` object has `manifest`, `work`, `wall_ms` and the additive `operation_log` field. Consumers must tolerate additional response fields. `work` contains `used`, `limit` and `exhausted`. `wall_ms` is measured elapsed time and never changes an outcome. Work counts are deterministic for the same kernel build, input and allowance. They may change when the implementation changes.
 
 The geometric manifest is `catallax-manifest/3`. For question sources it retains the fields and meanings of manifest/2. Recipe sources return `status`, `exact`, `result`, `marks`, `step`, `refusal` and `kernel`; omitted properties mean unmeasured. A comparison returns `comparison` instead of geometry. `comparison` contains `verdict`, sample counts, ordered findings and `not_comparable`. Findings contain `code`, `detail`, `pass` and diagnostic exact-coordinate `witness`, `brep_faces`, `field_faces` and `gap` strings. These are sampled display checks, never global geometric certificates; `exact` is false for this source. Free-text details and witness formatting are diagnostic.
+
+`comparison.sampled_distance_upper_mm` is the maximum certified distance upper
+bound over checked samples, including forward mesh error. It is an exact rational
+string in millimetres, or `null` if any required sample distance is unbounded.
+It is not a whole-part Hausdorff bound. Trimmed-face queries can establish finite
+upper bounds on curved Boolean and swept faces without changing the comparison's
+accuracy or promoting residual values to true distance.
 
 The surface vocabulary is `plane`, `cylinder`, `elliptic-cylinder`, `cone`, `sphere`, `torus`. The curve vocabulary is `line`, `circle`, `ellipse`, `parabola`, `hyperbola`, `intersection`. Elliptic cylinders use their own tag when their builders land. Parabolas and hyperbolas retain their own tags and finite trimming topology. No old tag is remapped. New analytic kinds require another version change; unknown library kinds must not be published under a convenient existing tag.
 
@@ -375,7 +382,7 @@ Cache keys include executable SHA-256, source, canonical problem, allowance and 
 
 `compare` checks identical ordered inputs, geometric manifests excluding `stats`, build identity and opt-in `face_measurements.display.first_mesh_ms`, and exact STEP bytes. Refusals remain visible by stable code. `report` separates outcome counts from slow cases grouped by operation, operand kinds and outcome cause. These groups identify follow-up profiling work; they are not measured call-stack attribution.
 
-`pair` keeps both binaries alive, pins them to the same core, alternates AB and BA, records one warmup then repeated uncached pairs, and retains every response. `legacy` measures the original process-per-question path. Record affinity, build hashes, machine contention and full elapsed run time alongside results. Compare correctness before interpreting timing deltas.
+`pair` keeps both binaries alive, pins them to the same core, alternates AB and BA, records one warmup then repeated uncached pairs, and retains every response. Each pair records `load_average_before` and `load_average_after`; these are the operating system's one-, five- and fifteen-minute averages, not per-process CPU measurements. `legacy` measures the original process-per-question path. Record affinity, build hashes, machine contention and full elapsed run time alongside results. Compare correctness before interpreting timing deltas.
 
 ## Target-part scoreboard
 

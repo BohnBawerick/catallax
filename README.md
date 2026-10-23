@@ -34,31 +34,31 @@ The kept rules are the same answer on every machine and at every thread count, n
 
 In design: one modelling tolerance defines sameness, separate from display and export accuracy. Approximation is reserved for decisions proven too close to call and shapes with no exact form the B-rep can carry. Decisions are recorded once, objects judged the same are merged, approximated pieces carry capped local tolerances measured against their definitions, and topology is checked before publication. The modelling tolerance value and the other answered choices are in [the roadmap](docs/PLAN.md#15-decided-on-22-october-2026); its [proposed PRD changes](docs/PLAN.md#14-proposed-prd-changes) remain proposals except for the tolerance and stand-in decisions.
 
-[The PRD](docs/PRD.md) defines the product, and [the roadmap](docs/PLAN.md) orders the work. [RECIPE.md](docs/RECIPE.md) defines the shared language; its version 4 definitions are docs-only, while the crate still reads version 3. [FIELD.md](docs/FIELD.md) states the field's query guarantees and unresolved cases. [COMPARE.md](docs/COMPARE.md) documents the two-way sampled display check, not a whole-boundary or 1 nm certificate. In design: the tolerance and consistency core and the finer pre-export check. The inherited B-rep mark APIs do not yet enforce that geometric policy. The deterministic verification exchange uses work budgets; the legacy commands still have their 50-second deadline.
+[The PRD](docs/PRD.md) defines the product, and [the roadmap](docs/PLAN.md) orders the work. [RECIPE.md](docs/RECIPE.md) defines the shared language; the reader accepts versions 3 and 4, including version 4 extrusion end conditions. Other version 4 definitions remain unimplemented. [FIELD.md](docs/FIELD.md) states the field's query guarantees and unresolved cases. [COMPARE.md](docs/COMPARE.md) documents the two-way sampled display check, not a whole-boundary or 1 nm certificate. In design: the tolerance and consistency core and the finer pre-export check. The inherited B-rep mark APIs do not yet enforce that geometric policy. The deterministic verification exchange uses work budgets; the legacy commands still have their 50-second deadline.
 
 ## What works today
 
 The code is early, and supported operations can still refuse. Measure it by its results, not the length of its roadmap.
 
 - `catallax-numbers` supplies exact arithmetic, certified enclosures and decisions, polynomial roots, construction facts and marks. The shared algebraic foundation adds `RealPoly` and certified sine/cosine construction for rational-degree angles.
-- `catallax-shapes` stores exact algebraic placements and analytic dimensions, including elliptic-cylinder definitions, with proven parameter enclosures. Derived points retain their definitions. These definitions do not imply complete recipe or display-mesh coverage for every kind.
+- `catallax-shapes` stores exact algebraic placements and analytic dimensions, including elliptic-cylinder definitions, with proven parameter enclosures. Derived points retain their definitions. These definitions do not imply complete recipe coverage for every kind.
 - `catallax-topology` builds blocks, cylinders, spheres, cones and tori in append-only curved topology and checks structural faults.
 - `catallax-intersect` handles plane, cylinder and sphere pairs, closed-form cone/torus configurations, branch-aware curve queries and certified finite conic traces. General noncoaxial cone and torus branch tracing remains unfinished.
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Ambiguous and unsupported cases remain unfinished work.
 - `catallax-measure` computes proven body mass properties, face centroids and areas, edge lengths and half-arc-length points, and body/face axis-aligned bounds.
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.
 - `catallax-mesh` builds shared-edge display meshes with picking IDs, proven chord, angular and edge-length controls, aspect-ratio reports and OBJ export.
-- `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/3` JSON form. It evaluates no geometry.
-- `catallax-field` compiles recipe stock solids, exact sketch profiles, signed extrusions, infinite through-all cuts, rational-frame full/partial revolutions, linear and circular body patterns, mirrors and booleans into a fixed-order tape. It keeps names outside that tape and supplies tentative and proven scalar/batch queries. Sweep and Boolean residuals carry conservative distance bounds, not a true-distance claim.
-- `catallax-features::evaluate` builds named B-rep stock solids, exact line/circle/arc profiles with holes, signed extrusions, rationally represented full and partial revolutions, exact linear and circular body copies, mirrors, explicit booleans and target-bounded through-all cuts. `Built` retains an immutable recipe definition and returns the model, result and intermediate body handles; `Model::face_origins`, `edge_name` and `vertex_name` expose the names. Split faces keep their origins and merged faces take their union. `catallax_app::pattern::expand_feature` saves explicitly bound feature instances as ordinary recipe steps.
-- Exact elementary fillets build named cylinder strips between planes and torus strips between a plane and a perpendicular cylinder. `Built::fillets` retains their generating definitions. P3 construction and radius-edit names are covered; its application display and sampled comparison still depend on periodic trimmed-face meshing.
+- `catallax-recipe` reads, checks and writes recipes in the canonical `catallax-recipe/3` and `catallax-recipe/4` JSON forms. Version 3 rejects version 4 end-condition fields and operations. It evaluates no geometry.
+- `catallax-field` compiles recipe stock solids, exact sketch profiles, signed extrusions, two-sided and one-sided through-all cuts, rational-frame full/partial revolutions, named holes, linear and circular body patterns, mirrors and booleans into a fixed-order tape. Bounded face/next extrusions use definition-native planar first-hit cells. Names stay outside the tape. Sweep, cell and Boolean residuals carry conservative distance bounds, not a true-distance claim.
+- `catallax-features::evaluate` builds named B-rep stock solids, exact line/circle/arc profiles with holes, signed extrusions, rationally represented full and partial revolutions, named holes, exact linear and circular body copies, mirrors, booleans and target-bounded through-all cuts. Bounded face/next extrusions currently support planar limiting boundaries, trimmed references and discontinuity curtains. `Built` retains an immutable recipe definition and returns the model, result and intermediate body handles; `Model::face_origins`, `edge_name` and `vertex_name` expose the names. Split faces keep their origins and merged faces take their union. `catallax_app::pattern::expand_feature` saves explicitly bound feature instances as ordinary recipe steps.
+- Exact elementary fillets build named cylinder strips between planes and torus strips between a plane and a perpendicular cylinder. `Built::fillets` retains their generating definitions. P3 construction, named display faces and radius-edit names are covered. Whole-part sampled comparison remains a separate acceptance gate.
 - `catallax-compare` checks every selected display mesh vertex against certified field distance bounds, projects independent field boundary samples onto exact trimmed B-rep faces, and compares origin sets and outward directions. Reports distinguish agreement, proven disagreement and unresolved work. Edit regions and cooperative cancellation do not require app integration.
 - `catallax-cli` builds `catallax` and the legacy `exact-brep` program from the same main. They read a question, build and operate, measure, and write a manifest and optional STEP file.
 - `catallax-verify` runs persistent question, recipe and sampled comparison requests with whole-request deterministic work budgets, separate wall-time reporting and distinct geometry tags. Its replay driver supports caching, strict STEP comparison and worker-count checks; the legacy commands are unchanged.
 
-Not yet: complete algebraic feature frames, oblique circular sweeps and some generated radii, listed with refusal codes in [RECIPE.md section 7.14](docs/RECIPE.md#714-b-rep-feature-geometry-bugs); display meshes for elliptic cylinders and open conics; general cone/torus branch tracing; and sound answers for every coplanar, equal-diameter crossing or near-tangent case. Supported operations can still refuse or take seconds. The kernel does not implement the whole PRD, and ignored regressions remain visible.
+Not yet: complete algebraic feature frames, oblique circular sweeps and some generated radii, listed with refusal codes in [RECIPE.md section 7.14](docs/RECIPE.md#714-b-rep-feature-geometry-bugs); general cone/torus branch tracing; and sound answers for every coplanar, equal-diameter crossing or near-tangent case. Supported operations can still refuse or take seconds. The kernel does not implement the whole PRD, and ignored regressions remain visible.
 
-In design, not implemented: the tolerance and consistency core, whole-result geometric certificates, complete trimmed-face distance queries, general fillets and corner continuation, chamfers, holes as named features, shell, offset, thicken, draft, sweep, loft, STEP import, field-only lattices and gyroids, and the SolidDraft application entry and end-to-end verification loop. Settled feature definitions in RECIPE.md are specifications, not shipped operations.
+In design, not implemented: the tolerance and consistency core, whole-result geometric certificates, complete trimmed-face distance queries, non-planar first-hit extrusion limits, general fillets and corner continuation, chamfers, shell, offset, thicken, draft, sweep, loft, STEP import, field-only lattices and gyroids, and the SolidDraft application entry and end-to-end verification loop. Settled feature definitions in RECIPE.md are specifications, not shipped operations.
 
 ## Building
 
@@ -122,14 +122,34 @@ records the one polyline used by both incident faces, including its proven
 curve-to-polyline error. Face IDs belong to the
 input model, not to rebuild-stable recipe names.
 
-Planes, cylinders, cones, spheres and tori use their exact definitions.
-Intersection edges use piece 4's certified traces. Surface bounds use Taylor's
-theorem and analytic second-derivative bounds over parameter triangles.
+Planes, circular and elliptic cylinders, cones, spheres and tori use their exact
+definitions. Intersection edges, including finite parabola and hyperbola arcs,
+use piece 4's certified traces. Surface bounds use Taylor's theorem and analytic
+second-derivative bounds over parameter triangles. An elliptic cylinder uses its
+semi-axis-scaled angular chart; its major semi-axis bounds positional curvature,
+and the semi-axis ratio bounds normal rotation.
+For an elliptic-cylinder strip bounded by two angularly monotone closed loops,
+or a finite cylindrical fillet between two monotone end curves, the mesher joins
+the existing edge samples in angular order. Strip vertex certificates use the
+shared surface sampler; every triangle passes the same orientation, chord and
+requested-control checks. Other trims or controls needing
+interior vertices use the periodic triangulator. Toroidal bands use a bounded
+minor-angle chart and the shared certified surface sampler. A face-local
+diagonal cannot reuse another face's interior chord between boundary vertices;
+the mesher refines that chord on the analytic face instead.
 Bounds include replacement of boundary vertices and binary64 coordinate
 rounding. They describe chord error against the analytic face and edge
 definitions, not a proof that polygonal trims equal the exact curved region.
 All covered definitions have proven bounds, so no sampled estimate is presented
 as a proof. Input and trace marks are preserved.
+
+Outward-rounded double intervals filter surface evaluation, trace Taylor
+coefficients, chord checks and facet quality. Uncertain filters retain the
+ball or exact-rational path. Curved faces bulk-load their UV constraints and
+grid points without splitting the shared boundary polylines. A triangle whose
+three vertices belong to one shared rail receives a certified interior Steiner
+point instead of becoming a zero-volume fin between adjacent faces. Every
+resulting triangle still passes the same chord certificate and work limits.
 
 The implementation is serial with fixed traversal, subdivision and output
 orders. Pure-Rust angle projection and dyadic periodic coordinates avoid

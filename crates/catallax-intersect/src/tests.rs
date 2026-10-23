@@ -1,5 +1,5 @@
 use super::*;
-use catallax_numbers::{BudgetPolicy, Real, StrictSign};
+use catallax_numbers::{BudgetPolicy, Fact, FactKind, FactOrigin, Real, StrictSign};
 use catallax_shapes::{
     Circle, Curve, Cylinder, GeomKey, Line, Plane, PointDef, RPoint3, RVector3, Sphere, Surface,
 };
@@ -86,6 +86,143 @@ fn hit_positions(
             .collect(),
         other => panic!("expected hits: {other:?}"),
     }
+}
+
+#[test]
+fn constructed_tangent_locus_skips_gradient_zero_proofs() {
+    let mut g = GeomStore::new();
+    let a = plane(&mut g, p(0, 5, 0), v(0, 1, 0), v(1, 0, 0));
+    let b = cyl(&mut g, p(0, 0, 0), v(0, 0, 1), 5, v(1, 0, 0));
+    let parts = components(&mut g, a, b, &mut dec());
+    let locus = curve(&parts[0]);
+    assert!(matches!(
+        parts[0],
+        Component::Curve {
+            contact: Contact::Tangent,
+            ..
+        }
+    ));
+    let witness = g.add_point(PointDef::Meet(catallax_shapes::Meet {
+        of: catallax_shapes::MeetOf::CurveSurface(locus, a),
+        position: catallax_shapes::Position::Closed(p(0, 5, 1).to_real()),
+    }));
+    let definition = g.add_curve(Curve::Intersection(catallax_shapes::IntersectionCurve {
+        surfaces: [a, b],
+        witness,
+    }));
+    let mut d = dec();
+    let vectors = tangent_at(&g, definition, witness, &mut d).unwrap();
+    assert_eq!(d.stats().coincident_fact, 1);
+    assert_eq!(d.stats().coincident_exact, 0);
+    for tangent in vectors {
+        point_equal(
+            &Point3::origin().plus(&tangent),
+            &p(0, 0, 1).to_real(),
+            &mut dec(),
+        );
+    }
+}
+
+#[test]
+fn coaxial_sections_keep_distinct_centres_without_reproving_parallelism() {
+    let mut g = GeomStore::new();
+    let cylinder = cyl(&mut g, p(0, 0, 0), v(0, 0, 1), 3, v(1, 0, 0));
+    let bottom = plane(&mut g, p(0, 0, 0), v(0, 0, 1), v(1, 0, 0));
+    let top = plane(&mut g, p(0, 0, 2), v(0, 0, 2), v(1, 0, 0));
+    let a = curve(&components(&mut g, cylinder, bottom, &mut dec())[0]);
+    let b = curve(&components(&mut g, cylinder, top, &mut dec())[0]);
+    let mut d = dec();
+    assert_eq!(
+        same_curve(&g, a, b, &mut d),
+        Outcome::Proven(catallax_shapes::Apart)
+    );
+    assert_eq!(d.stats().coincident_fact, 1);
+    assert_eq!(d.stats().coincident_exact, 0);
+}
+
+#[test]
+fn coaxial_facts_keep_squared_radius_equality_and_separation_distinct() {
+    for (other_radius_sq, coincident) in [(2, true), (3, false)] {
+        let mut g = GeomStore::new();
+        let a = g.add_surface(Surface::Cylinder(
+            Cylinder::from_radius_sq(
+                p(0, 0, 0).to_real(),
+                v(0, 0, 1).to_real(),
+                r(2).into(),
+                v(1, 0, 0).to_real(),
+                &mut dec(),
+            )
+            .unwrap(),
+        ));
+        let b = g.add_surface(Surface::Cylinder(
+            Cylinder::from_radius_sq(
+                p(0, 0, 3).to_real(),
+                v(0, 0, 2).to_real(),
+                r(other_radius_sq).into(),
+                v(0, 1, 0).to_real(),
+                &mut dec(),
+            )
+            .unwrap(),
+        ));
+        g.record_fact(Fact {
+            kind: FactKind::Coaxial,
+            a: GeomKey::Surface(a),
+            b: GeomKey::Surface(b),
+            at: None,
+            origin: FactOrigin::Construction("test.shared-axis"),
+        });
+        let same = g.same_surface(a, b, &mut dec());
+        let expected = if coincident {
+            assert!(same.is_coincident());
+            SurfacePair::Coincident { same_sense: true }
+        } else {
+            assert_eq!(same, Outcome::Proven(catallax_shapes::Apart));
+            SurfacePair::Disjoint
+        };
+        let answer = intersect_surfaces(&mut g, a, b, &mut dec()).unwrap();
+        assert!(answer.is_exact());
+        assert_eq!(answer.value, expected);
+    }
+}
+
+#[test]
+fn curve_surface_tangent_facts_are_local_and_reused() {
+    let mut g = GeomStore::new();
+    let torus = g.add_surface(Surface::Torus(catallax_shapes::Torus {
+        center: p(0, 0, 0).to_real(),
+        axis: v(0, 0, 1).to_real(),
+        major: r(2).into(),
+        minor: r(1).into(),
+        ref_dir: v(1, 0, 0).to_real(),
+    }));
+    let line = g.add_curve(Curve::Line(Line {
+        origin: p(1, 0, 0).to_real(),
+        dir: v(0, 1, 0).to_real(),
+    }));
+    let mut first_dec = dec();
+    let CurveSurface::Meets(first) = intersect_curve_surface(&mut g, line, torus, &mut first_dec)
+        .unwrap()
+        .value
+    else {
+        panic!("the inner tangent and two transverse crossings must meet");
+    };
+    let mut second_dec = dec();
+    let CurveSurface::Meets(second) = intersect_curve_surface(&mut g, line, torus, &mut second_dec)
+        .unwrap()
+        .value
+    else {
+        panic!("repeated intersection must preserve the meeting set");
+    };
+    for hits in [&first, &second] {
+        assert_eq!(
+            hits.iter().map(|hit| hit.contact).collect::<Vec<_>>(),
+            [Contact::Crossing, Contact::Tangent, Contact::Crossing]
+        );
+    }
+    for (a, b) in first.iter().zip(&second) {
+        point_equal(&g.position(a.point), &g.position(b.point), &mut dec());
+    }
+    assert_eq!(second_dec.stats().coincident_fact, 1);
 }
 #[test]
 fn rational_configuration_fields_and_no_decisions() {

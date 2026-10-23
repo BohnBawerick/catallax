@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use catallax_intersect::{TracePiece, trace};
-use catallax_numbers::{Ball, Decider, MarkLog, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Refusal};
 use catallax_shapes::Point3;
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
@@ -11,11 +11,48 @@ use crate::{
     failure,
 };
 
+/// Membership in shared topological polylines, independent of chart copies.
+#[derive(Default)]
+pub(crate) struct Rails {
+    entries: Vec<(usize, EdgeId)>,
+    end: usize,
+}
+
+impl Rails {
+    fn new(edges: &[EdgeMesh]) -> Self {
+        let mut entries: Vec<_> = edges
+            .iter()
+            .flat_map(|edge| edge.vertices.iter().map(move |&vertex| (vertex, edge.edge)))
+            .collect();
+        entries.sort_unstable();
+        entries.dedup();
+        let end = entries.last().map_or(0, |&(vertex, _)| vertex + 1);
+        Self { entries, end }
+    }
+
+    pub(crate) fn contains_triangle(&self, vertices: [usize; 3]) -> bool {
+        if vertices.iter().any(|&vertex| vertex >= self.end) {
+            return false;
+        }
+        let start = self
+            .entries
+            .partition_point(|&(vertex, _)| vertex < vertices[0]);
+        self.entries[start..]
+            .iter()
+            .take_while(|&&(vertex, _)| vertex == vertices[0])
+            .any(|&(_, edge)| {
+                self.entries.binary_search(&(vertices[1], edge)).is_ok()
+                    && self.entries.binary_search(&(vertices[2], edge)).is_ok()
+            })
+    }
+}
+
 pub(crate) struct Boundaries {
     pub(crate) mesh: Mesh,
     pub(crate) edges: BTreeMap<EdgeId, usize>,
     pub(crate) vertices: BTreeMap<VertexId, usize>,
     pub(crate) exact_positions: BTreeMap<usize, Point3>,
+    pub(crate) rails: Rails,
     pub(crate) marks: MarkLog,
 }
 
@@ -86,30 +123,78 @@ struct Sampler<'a> {
 }
 
 impl Sampler<'_> {
+    fn acceleration(&self, interval: &Ball) -> Result<Rational, Refusal> {
+        if let Some(jets) = self
+            .piece
+            .taylor_interval(interval.to_interval(), 2, self.dec)?
+        {
+            let sum = jets[2]
+                .iter()
+                .fold(Interval::point(0.0).unwrap(), |sum, x| {
+                    sum + Interval::point(x.lo().abs().max(x.hi().abs())).unwrap()
+                });
+            if sum.is_finite() {
+                return Ok(chart::q(sum.hi()));
+            }
+        }
+        Ok(self
+            .piece
+            .taylor(interval, 2, self.dec)?
+            .pop()
+            .unwrap()
+            .iter()
+            .fold(Rational::zero(), |s, x| s + x.lo().abs().max(x.hi().abs())))
+    }
+
+    fn enclose_point(&self, t: &Rational) -> Result<[Ball; 3], Refusal> {
+        if let Some(jets) = self
+            .piece
+            .taylor_interval(Interval::from_rational(t), 0, self.dec)?
+        {
+            let values = jets[0];
+            let width = values.iter().fold(Interval::point(0.0).unwrap(), |sum, x| {
+                sum + Interval::point(x.width()).unwrap()
+            });
+            if width.is_finite()
+                && chart::q(width.hi()) <= self.options.chord_tolerance.mul_pow2(-4)
+            {
+                return Ok(values.map(|x| {
+                    Ball::from_rational(&chart::q(x.lo()), BITS)
+                        .hull(&Ball::from_rational(&chart::q(x.hi()), BITS))
+                }));
+            }
+        }
+        self.piece.evaluate(&Ball::from_rational(t, BITS), self.dec)
+    }
+
     fn segment(
         &mut self,
         lo: Rational,
         hi: Rational,
-        first: usize,
-        last: usize,
+        indices: [usize; 2],
         depth: u32,
+        inherited_acceleration: Option<&Rational>,
         endpoints: [&[Ball; 3]; 2],
     ) -> Result<(), Refusal> {
         self.dec.check_deadline()?;
+        let [first, last] = indices;
         let [a, b] = endpoints;
         let interval = Ball::from_rational(&lo, BITS).hull(&Ball::from_rational(&hi, BITS));
-        let second = self.piece.taylor(&interval, 2, self.dec)?.pop().unwrap();
-        let acceleration = second
-            .iter()
-            .fold(Rational::zero(), |s, x| s + x.lo().abs().max(x.hi().abs()));
         let width = &hi - &lo;
-        let bound = &(&acceleration * &width) * &width * Rational::from_ratio(1, 4).unwrap()
-            + chart::residual(&self.positions[first], a)
-                .max(chart::residual(&self.positions[last], b));
+        let residual = chart::residual(&self.positions[first], a)
+            .max(chart::residual(&self.positions[last], b));
+        let distance =
+            |acceleration: &Rational| &(&(acceleration * &width) * &width).mul_pow2(-2) + &residual;
+        let acceleration = if let Some(acceleration) = inherited_acceleration
+            && distance(acceleration) <= self.options.chord_tolerance.mul_pow2(-3)
+        {
+            acceleration.clone()
+        } else {
+            self.acceleration(&interval)?
+        };
+        let bound = distance(&acceleration);
         let mid = (&lo + &hi).mul_pow2(-1);
-        let middle_values = self
-            .piece
-            .evaluate(&Ball::from_rational(&mid, BITS), self.dec)?;
+        let middle_values = self.enclose_point(&mid)?;
         let middle = chart::position(&middle_values)?;
         let mut small = bound <= self.options.chord_tolerance.mul_pow2(-3);
         if let Some(limit) = &self.options.max_edge_length {
@@ -130,8 +215,19 @@ impl Sampler<'_> {
                 ) {
                     span = span + (crate::chart::q(b[1]) - crate::chart::q(a[1])).abs();
                 }
+                if let catallax_shapes::Surface::EllipticCylinder(s) = &chart.surface {
+                    let ratio = (&s.major_sq / &s.minor_sq).sqrt();
+                    span = &span * &self.dec.enclose_at(&ratio, BITS)?.hi();
+                }
                 if !matches!(chart.surface, catallax_shapes::Surface::Plane(_)) {
-                    small &= span * Rational::from_i64(16) <= *angle;
+                    let span = span * Rational::from_i64(16);
+                    let span =
+                        if matches!(chart.surface, catallax_shapes::Surface::EllipticCylinder(_)) {
+                            &span * &chart.normal_scale
+                        } else {
+                            span
+                        };
+                    small &= span <= *angle;
                 }
             }
             small &= chord_bound(&[a, b, m], &hessian) <= self.options.chord_tolerance.mul_pow2(-3);
@@ -154,12 +250,19 @@ impl Sampler<'_> {
         self.segment(
             lo,
             mid.clone(),
-            first,
-            index,
+            [first, index],
             depth + 1,
+            Some(&acceleration),
             [a, &middle_values],
         )?;
-        self.segment(mid, hi, index, last, depth + 1, [&middle_values, b])
+        self.segment(
+            mid,
+            hi,
+            [index, last],
+            depth + 1,
+            Some(&acceleration),
+            [&middle_values, b],
+        )
     }
 }
 
@@ -175,6 +278,7 @@ pub(crate) fn sample(
         edges: BTreeMap::new(),
         vertices: BTreeMap::new(),
         exact_positions: BTreeMap::new(),
+        rails: Rails::default(),
         marks: model.body(body).marks.clone(),
     };
     let mut adjacent = BTreeMap::<EdgeId, Vec<&Chart>>::new();
@@ -274,9 +378,9 @@ pub(crate) fn sample(
             .segment(
                 Rational::zero(),
                 Rational::one(),
-                start,
-                last,
+                [start, last],
                 0,
+                None,
                 [first_values, &last_values],
             )?;
         }
@@ -320,5 +424,6 @@ pub(crate) fn sample(
             max_chord_error: error,
         });
     }
+    result.rails = Rails::new(&result.mesh.edges);
     Ok(result)
 }

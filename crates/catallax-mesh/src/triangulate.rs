@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use catallax_numbers::{Answer, Answered, Decider, Rational, Refusal};
+use catallax_numbers::{Answer, Answered, Decider, Interval, Rational, Refusal};
 use catallax_shapes::Surface;
 use catallax_topology::{BodyId, FaceId, Loop, Model, Sense};
 use spade::{
-    ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
+    ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
+    PositionInTriangulation, Triangulation,
 };
 
 use crate::{
@@ -26,30 +27,28 @@ impl HasPosition for Node {
         self.uv
     }
 }
-type Cdt = ConstrainedDelaunayTriangulation<Node>;
+type Cdt = ConstrainedDelaunayTriangulation<Node, (), (), (), HierarchyHintGenerator<f64>>;
 
 struct FaceBuilder<'a> {
     chart: &'a Chart,
     options: &'a MeshOptions,
     positions: &'a mut Vec<[f64; 3]>,
+    rails: &'a edges::Rails,
     cdt: Cdt,
     canonical: BTreeMap<[u64; 2], (usize, usize)>,
     errors: Vec<Rational>,
+    filtered_errors: Vec<Interval>,
     interior_left: BTreeSet<(usize, usize)>,
+    prior_chords: &'a BTreeSet<(usize, usize)>,
     bounds: [[f64; 2]; 2],
     hessian: [Rational; 3],
+    filtered_hessian: [Interval; 3],
     dec: &'a Decider,
 }
 
 impl FaceBuilder<'_> {
-    fn insert(
-        &mut self,
-        uv: Uv,
-        boundary: Option<usize>,
-    ) -> Result<spade::handles::FixedVertexHandle, Refusal> {
-        if self.cdt.num_vertices() >= self.options.max_vertices
-            || self.positions.len() >= self.options.max_vertices
-        {
+    fn node(&mut self, uv: Uv, boundary: Option<usize>) -> Result<Node, Refusal> {
+        if self.positions.len() >= self.options.max_vertices {
             return Err(failure("face triangulation reached max_vertices"));
         }
         let canonical = self.chart.canonical(uv);
@@ -61,28 +60,84 @@ impl FaceBuilder<'_> {
             }
             (mesh, error)
         } else {
-            let ball = self.chart.evaluate(canonical, self.dec)?;
+            let (p, residual) = self.chart.sample(
+                canonical,
+                boundary.map(|index| self.positions[index]),
+                &self.options.chord_tolerance,
+                self.dec,
+            )?;
             let mesh = if let Some(index) = boundary {
                 index
             } else {
-                let p = chart::position(&ball)?;
                 let index = self.positions.len();
                 self.positions.push(p);
                 index
             };
             let error = self.errors.len();
-            self.errors
-                .push(chart::residual(&self.positions[mesh], &ball));
+            self.filtered_errors
+                .push(Interval::from_rational(&residual));
+            self.errors.push(residual);
             self.canonical.insert(key(canonical), (mesh, error));
             (mesh, error)
         };
+        Ok(Node {
+            uv: Point2::new(uv[0], uv[1]),
+            mesh,
+            error,
+        })
+    }
+
+    fn insert(
+        &mut self,
+        uv: Uv,
+        boundary: Option<usize>,
+    ) -> Result<spade::handles::FixedVertexHandle, Refusal> {
+        if self.cdt.num_vertices() >= self.options.max_vertices {
+            return Err(failure("face triangulation reached max_vertices"));
+        }
+        let node = self.node(uv, boundary)?;
         self.cdt
-            .insert(Node {
-                uv: Point2::new(uv[0], uv[1]),
-                mesh,
-                error,
-            })
+            .insert(node)
             .map_err(|e| failure(format!("chart vertex insertion: {e}")))
+    }
+
+    fn queue(
+        &mut self,
+        nodes: &mut Vec<Node>,
+        indices: &mut BTreeMap<[u64; 2], usize>,
+        uv: Uv,
+        boundary: Option<usize>,
+    ) -> Result<usize, Refusal> {
+        if let Some(&index) = indices.get(&key(uv)) {
+            if boundary.is_some_and(|mesh| mesh != nodes[index].mesh) {
+                return Err(failure(
+                    "distinct boundary vertices collapse in the display chart",
+                ));
+            }
+            return Ok(index);
+        }
+        if nodes.len() >= self.options.max_vertices {
+            return Err(failure("face triangulation reached max_vertices"));
+        }
+        let node = self.node(uv, boundary)?;
+        let index = nodes.len();
+        nodes.push(node);
+        indices.insert(key(uv), index);
+        Ok(index)
+    }
+
+    fn bulk_load(&mut self, nodes: Vec<Node>) -> Result<(), Refusal> {
+        let constraints = self.interior_left.iter().map(|&(a, b)| [a, b]).collect();
+        let mut conflict = false;
+        // Input UVs are unique. Spade's stable bulk loader therefore preserves
+        // the indices used by the oriented boundary constraints.
+        let cdt = Cdt::try_bulk_load_cdt(nodes, constraints, |_| conflict = true)
+            .map_err(|error| failure(format!("chart bulk insertion: {error}")))?;
+        if conflict {
+            return Err(failure("boundary polylines cross at this display accuracy"));
+        }
+        self.cdt = cdt;
+        Ok(())
     }
 
     fn shifts(&self) -> impl Iterator<Item = Uv> + use<> {
@@ -104,6 +159,8 @@ impl FaceBuilder<'_> {
         segments: &[(Uv, Uv, usize, usize)],
         sense: Sense,
     ) -> Result<(), Refusal> {
+        let mut nodes = Vec::new();
+        let mut indices = BTreeMap::new();
         for &(mut a, mut b, first, last) in segments {
             for i in 0..2 {
                 if self.chart.periodic[i] {
@@ -113,24 +170,26 @@ impl FaceBuilder<'_> {
                 }
             }
             for shift in self.shifts() {
-                let a = self.insert([a[0] + shift[0], a[1] + shift[1]], Some(first))?;
-                let b = self.insert([b[0] + shift[0], b[1] + shift[1]], Some(last))?;
+                let a = self.queue(
+                    &mut nodes,
+                    &mut indices,
+                    [a[0] + shift[0], a[1] + shift[1]],
+                    Some(first),
+                )?;
+                let b = self.queue(
+                    &mut nodes,
+                    &mut indices,
+                    [b[0] + shift[0], b[1] + shift[1]],
+                    Some(last),
+                )?;
                 if a == b {
                     return Err(failure("boundary segment collapsed in parameter space"));
                 }
-                if !self.cdt.can_add_constraint(a, b) {
-                    return Err(failure("boundary polylines cross at this display accuracy"));
-                }
-                self.cdt.add_constraint(a, b);
-                let pair = if sense == Sense::Same {
-                    (a.index(), b.index())
-                } else {
-                    (b.index(), a.index())
-                };
+                let pair = if sense == Sense::Same { (a, b) } else { (b, a) };
                 self.interior_left.insert(pair);
             }
         }
-        Ok(())
+        self.bulk_load(nodes)
     }
 
     fn free_point(&mut self, uv: Uv) -> Result<bool, Refusal> {
@@ -150,6 +209,8 @@ impl FaceBuilder<'_> {
 
     fn grid(&mut self) -> Result<(), Refusal> {
         let widths = self.bounds.map(|b| b[1] - b[0]);
+        let bounded_torus =
+            matches!(self.chart.surface, Surface::Torus(_)) && !self.chart.periodic[1];
         let mut counts = [1usize; 2];
         for (i, count) in counts.iter_mut().enumerate() {
             if self.chart.periodic[i] {
@@ -168,12 +229,14 @@ impl FaceBuilder<'_> {
             let v = &self.hessian[2] * &chart::q(dv) * chart::q(dv);
             let dimension = if u >= v { 0 } else { 1 };
             // A cone's mixed derivative also needs axial subdivisions.
-            let dimension =
-                if !self.hessian[1].is_zero() && counts[dimension] > counts[1 - dimension] * 2 {
-                    1 - dimension
-                } else {
-                    dimension
-                };
+            let dimension = if !bounded_torus
+                && !self.hessian[1].is_zero()
+                && counts[dimension] > counts[1 - dimension] * 2
+            {
+                1 - dimension
+            } else {
+                dimension
+            };
             counts[dimension] = counts[dimension]
                 .checked_mul(2)
                 .ok_or_else(|| failure("grid size overflow"))?;
@@ -188,15 +251,42 @@ impl FaceBuilder<'_> {
                 (0, counts[i] as i64)
             }
         });
+        let mut queued = None;
         for i in ranges[0].0..=ranges[0].1 {
             for j in ranges[1].0..=ranges[1].1 {
                 let uv = std::array::from_fn(|k| {
                     self.bounds[k][0] + widths[k] * [i, j][k] as f64 / counts[k] as f64
                 });
-                self.free_point(uv)?;
+                // Query the fixed boundary triangulation before bulk loading.
+                // A new point on a rail would split only this face's constraint
+                // and destroy the shared polyline on its adjacent face.
+                match self.cdt.locate(Point2::new(uv[0], uv[1])) {
+                    PositionInTriangulation::OnVertex(_) => continue,
+                    PositionInTriangulation::OnEdge(edge)
+                        if self.cdt.is_constraint_edge(edge.as_undirected()) =>
+                    {
+                        continue;
+                    }
+                    _ => {}
+                }
+                let (nodes, indices) = queued.get_or_insert_with(|| {
+                    let nodes: Vec<_> = self.cdt.vertices().map(|vertex| *vertex.data()).collect();
+                    let indices = nodes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, node)| (key([node.uv.x, node.uv.y]), i))
+                        .collect();
+                    (nodes, indices)
+                });
+                self.queue(nodes, indices, uv, None)?;
             }
         }
-        Ok(())
+        if let Some((nodes, indices)) = queued {
+            drop(indices);
+            self.bulk_load(nodes)
+        } else {
+            Ok(())
+        }
     }
 
     fn labels(&self) -> Result<Vec<bool>, Refusal> {
@@ -280,12 +370,40 @@ impl FaceBuilder<'_> {
         (0..2).all(|i| !self.chart.periodic[i] || (0.0..1.0).contains(&uv[i]))
     }
 
+    fn ear_point(&self, uvs: &[Uv; 3], center: Uv) -> Result<Uv, Refusal> {
+        let mut point = self.chart.canonical(center);
+        for (value, periodic) in point.iter_mut().zip(self.chart.periodic) {
+            if periodic {
+                *value = libm::round(*value * 281_474_976_710_656.0) / 281_474_976_710_656.0;
+            }
+        }
+        let point = self.chart.canonical(point);
+        let lifted = align(point, center, self.chart.periodic).map(chart::q);
+        let triangle = uvs.map(|uv| uv.map(chart::q));
+        // Strict exact orientation against every side certifies an interior
+        // chart point, rather than a rounded point on the shared polyline.
+        let inside = (0..3).all(|i| {
+            let a = &triangle[i];
+            let b = &triangle[(i + 1) % 3];
+            &(&(&b[0] - &a[0]) * &(&lifted[1] - &a[1]))
+                - &(&(&b[1] - &a[1]) * &(&lifted[0] - &a[0]))
+                > Rational::zero()
+        });
+        if !inside {
+            return Err(failure(
+                "shared-rail ear has no interior point at chart precision",
+            ));
+        }
+        Ok(point)
+    }
+
     fn finish(
         &mut self,
         face: FaceId,
         sense: Sense,
         dec: &Decider,
     ) -> Result<(Vec<Triangle>, Rational, Rational, Option<Rational>), Refusal> {
+        let filtered_tolerance = Interval::from_rational(&self.options.chord_tolerance);
         for _ in 0..48 {
             dec.check_deadline()?;
             let labels = self.labels()?;
@@ -310,8 +428,45 @@ impl FaceBuilder<'_> {
                 {
                     continue;
                 }
+                if self.rails.contains_triangle(vertices) {
+                    let point = self.ear_point(&uvs, center)?;
+                    pending.insert(key(point), point);
+                    continue;
+                }
+                // A face-local diagonal must not become a second shared edge.
+                // Two incident faces can otherwise emit the same boundary-only
+                // triangle in opposite directions, producing four edge uses.
+                let mut split = false;
+                for edge in f.adjacent_edges() {
+                    let a = *edge.from().data();
+                    let b = *edge.to().data();
+                    if !edge.is_constraint_edge()
+                        && self
+                            .prior_chords
+                            .contains(&(a.mesh.min(b.mesh), a.mesh.max(b.mesh)))
+                    {
+                        let midpoint = self
+                            .chart
+                            .canonical([(a.uv.x + b.uv.x) * 0.5, (a.uv.y + b.uv.y) * 0.5]);
+                        pending.insert(key(midpoint), midpoint);
+                        split = true;
+                    }
+                }
+                if split {
+                    continue;
+                }
                 let residual = nodes.iter().map(|n| &self.errors[n.error]).max().unwrap();
-                let error = &chord_bound(&uvs, &self.hessian) + residual;
+                let filtered_residual = nodes
+                    .iter()
+                    .map(|n| self.filtered_errors[n.error].hi())
+                    .fold(0.0_f64, f64::max);
+                let filtered = chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
+                    + Interval::point(filtered_residual).unwrap();
+                let error = if filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo() {
+                    chart::q(filtered.hi())
+                } else {
+                    &chord_bound(&uvs, &self.hessian) + residual
+                };
                 if let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {
                         crate::controls::length_squared(
@@ -398,12 +553,18 @@ impl FaceBuilder<'_> {
 fn face_mesh(
     model: &Model,
     face_id: FaceId,
-    chart: &Chart,
+    chart: &mut Chart,
     boundaries: &mut Boundaries,
     options: &MeshOptions,
+    prior_chords: &BTreeSet<(usize, usize)>,
     dec: &Decider,
 ) -> Result<(), Refusal> {
     let face = model.face(face_id);
+    if let Some(center) =
+        crate::bounded::minor_angle_center(model, face_id, chart, boundaries, dec)?
+    {
+        chart.restrict(1, center);
+    }
     let mut segments = Vec::new();
     let mut projected = Vec::new();
     for &l in &face.loops {
@@ -457,16 +618,21 @@ fn face_mesh(
             "face has no finite two-dimensional parameter region",
         ));
     }
+    let hessian = chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?;
     let mut builder = FaceBuilder {
         chart,
         options,
         positions: &mut boundaries.mesh.positions,
+        rails: &boundaries.rails,
         cdt: Cdt::new(),
         canonical: BTreeMap::new(),
         errors: Vec::new(),
+        filtered_errors: Vec::new(),
         interior_left: BTreeSet::new(),
+        prior_chords,
         bounds,
-        hessian: chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?,
+        filtered_hessian: hessian.each_ref().map(Interval::from_rational),
+        hessian,
         dec,
     };
     builder.boundary(&segments, face.sense)?;
@@ -650,18 +816,54 @@ pub(crate) fn build(
     }) {
         return crate::spline_prism::build(model, body, &faces, options, dec);
     }
-    let charts = faces
+    let mut charts = faces
         .iter()
         .map(|&f| Ok((f, regular_chart(model, f, options, dec)?)))
         .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
     let mut boundaries = edges::sample(model, body, &charts, options, dec)?;
+    let boundary_limit = boundaries.mesh.positions.len();
+    let mut prior_chords = BTreeSet::new();
     for face in faces {
+        let start = boundaries.mesh.triangles.len();
         if let Surface::Plane(plane) = &charts[&face].surface {
             crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
                 |e| Refusal::new(e.code, format!("face {}: {}", face.index(), e.detail)),
             )?;
         } else {
-            face_mesh(model, face, &charts[&face], &mut boundaries, options, dec)?;
+            let strip = matches!(
+                charts[&face].surface,
+                Surface::Cylinder(_) | Surface::EllipticCylinder(_)
+            ) && crate::ruled::build(
+                model,
+                face,
+                &charts[&face],
+                &mut boundaries,
+                options,
+                dec,
+            )?;
+            if !strip {
+                face_mesh(
+                    model,
+                    face,
+                    charts.get_mut(&face).unwrap(),
+                    &mut boundaries,
+                    options,
+                    &prior_chords,
+                    dec,
+                )?;
+            }
+        }
+        let mut once = BTreeSet::new();
+        for triangle in &boundaries.mesh.triangles[start..] {
+            for i in 0..3 {
+                let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+                if a < boundary_limit && b < boundary_limit {
+                    let pair = (a.min(b), a.max(b));
+                    if !once.insert(pair) {
+                        prior_chords.insert(pair);
+                    }
+                }
+            }
         }
     }
     check_closed(&boundaries.mesh)?;

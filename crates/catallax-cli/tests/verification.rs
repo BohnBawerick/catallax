@@ -412,3 +412,150 @@ fn certified_budget_refusal_retains_its_version_and_publishes_no_partial_body() 
     assert!(!dir.join("display.obj").exists());
     fs::remove_dir_all(dir).unwrap();
 }
+#[test]
+fn curved_compare_preserves_work_refusals_and_reports_finite_agreement() {
+    use catallax_cli::verification::{Request, answer};
+    let root = std::env::temp_dir().join(format!(
+        "catallax-distance-budget-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let problem = json!({"format":"catallax-recipe/3","name":"distance-budget","steps":[
+        {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+            {"kind":"line","id":"bottom","to":["2/5","0"]},
+            {"kind":"line","id":"right","to":["2/5","2/5"]},
+            {"kind":"line","id":"top","to":["1/5","2/5"]},
+            {"kind":"line","id":"left","to":["1/5","0"]}
+        ]]},
+        {"id":"feature","op":"revolve","profile":"profile","axis":{"point":["0","0","0"],"direction":["0","1","0"]},"angle":"270"}
+    ],"result":"feature"});
+    for limit in [0, 1_000_000, 30_000_000, 100_000_000] {
+        let out = root.join(limit.to_string());
+        fs::create_dir_all(&out).unwrap();
+        fs::write(out.join("answer.step"), "stale STEP").unwrap();
+        let response = answer(&Request {
+            format: "catallax-request/1".into(),
+            source: "compare".into(),
+            problem: problem.clone(),
+            out: out.clone(),
+            max_work: limit,
+        })
+        .unwrap();
+        assert!(
+            response["work"]["used"].as_u64().unwrap() <= limit,
+            "{response}"
+        );
+        if response["work"]["exhausted"] == true {
+            assert_eq!(response["manifest"]["status"], "refused", "{response}");
+            assert_eq!(
+                response["manifest"]["refusal"]["code"], "numbers.operation-budget",
+                "{response}"
+            );
+        } else {
+            assert_eq!(
+                response["manifest"]["comparison"]["verdict"], "agree",
+                "{response}"
+            );
+            let upper = catallax_numbers::Rational::parse(
+                response["manifest"]["comparison"]["sampled_distance_upper_mm"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(
+                upper <= catallax_numbers::Rational::parse("0.01").unwrap(),
+                "{response}"
+            );
+        }
+        if limit == 100_000_000 {
+            assert_eq!(response["manifest"]["status"], "answered", "{response}");
+        }
+        assert!(!out.join("answer.step").exists());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn comparison_query_exhaustion_is_a_budget_refusal_not_an_internal_error() {
+    use catallax_cli::verification::{Request, answer};
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-compare-query-budget-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut problem: Value =
+        serde_json::from_str(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
+    problem["steps"].as_array_mut().unwrap().truncate(2);
+    problem["steps"].as_array_mut().unwrap().push(json!({
+        "id":"drilled","op":"hole","target":"housing",
+        "at":[{"id":"bolt","point":["17","5","0"],"direction":["0","-1","0"]}],
+        "diameter":"4","depth":"through","tip":"flat",
+        "head":{"countersink":{"diameter":"8","angle":"90"}}
+    }));
+    problem["result"] = json!("drilled");
+    let response = answer(&Request {
+        format: "catallax-request/1".into(),
+        source: "compare".into(),
+        problem,
+        out: dir.clone(),
+        max_work: 100_000_000,
+    })
+    .unwrap();
+    if response["work"]["exhausted"] == true {
+        assert_eq!(response["manifest"]["status"], "refused", "{response}");
+        assert_eq!(
+            response["manifest"]["refusal"]["code"],
+            "numbers.operation-budget"
+        );
+        assert!(!dir.join("answer.step").exists());
+    } else {
+        assert_eq!(response["manifest"]["status"], "answered", "{response}");
+        assert!(matches!(
+            response["manifest"]["comparison"]["verdict"].as_str(),
+            Some("agree" | "unresolved")
+        ));
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+/// Unfinished Boolean coverage, not impossible geometry. Geometric quadric
+/// classification and construction intent must settle these without relaxing work.
+#[test]
+fn standard_hole_angles_refuse_cleanly_at_the_existing_request_allowance() {
+    use catallax_cli::verification::{Request, answer};
+    for (tip, head) in [
+        (json!({"cone":"118"}), None),
+        (
+            json!("flat"),
+            Some(json!({"countersink":{"diameter":"8","angle":"82"}})),
+        ),
+    ] {
+        let dir = std::env::temp_dir().join(format!(
+            "catallax-standard-hole-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut hole = json!({"id":"drill","op":"hole","target":"stock","at":[{"id":"centre","point":["0","0","0"],"direction":["0","0","1"]}],"diameter":"2","depth":{"blind":"4"},"tip":tip});
+        if let Some(head) = head {
+            hole["head"] = head;
+        }
+        let problem = json!({"format":"catallax-recipe/3","name":"standard hole angle coverage","steps":[
+            {"id":"stock","op":"block","size":["10","10","10"],"pose":{"rotation":["1","0","0","0"],"translation":["-5","-5","0"]}},hole
+        ],"result":"drill"});
+        let response = answer(&Request {
+            format: "catallax-request/1".into(),
+            source: "recipe".into(),
+            problem,
+            out: dir.clone(),
+            max_work: 100_000_000,
+        })
+        .unwrap();
+        assert_eq!(response["manifest"]["status"], "refused", "{response}");
+        assert_eq!(
+            response["manifest"]["refusal"]["code"], "numbers.operation-budget",
+            "{response}"
+        );
+        assert!(!dir.join("answer.step").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+}

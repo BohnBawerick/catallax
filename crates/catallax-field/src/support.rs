@@ -23,35 +23,6 @@ pub(crate) struct Support {
 impl Support {
     pub fn new(surface: &Surface) -> Self {
         let (kind, origin, axis, a, b) = match surface {
-            Surface::EllipticCylinder(s) => {
-                let major = s
-                    .major_dir
-                    .scaled(&(&Real::one() / &s.major_dir.norm_squared().sqrt()));
-                let axis = s
-                    .axis
-                    .scaled(&(&Real::one() / &s.axis.norm_squared().sqrt()));
-                let minor = axis.cross(&major);
-                let b = s.minor_sq.sqrt();
-                let major = major.scaled(&(&b / &s.major_sq.sqrt()));
-                // Covectors have operator norm one: b/a along the major
-                // direction and one along the minor. The resulting radial
-                // residual is 1-Lipschitz, not a claimed nearest distance.
-                return Self::from_exact(
-                    Kind::EllipticCylinder,
-                    [
-                        s.origin.x.clone(),
-                        s.origin.y.clone(),
-                        s.origin.z.clone(),
-                        major.x,
-                        major.y,
-                        major.z,
-                        minor.x,
-                        minor.y,
-                        minor.z,
-                        b,
-                    ],
-                );
-            }
             Surface::Plane(s) => (
                 Kind::Plane,
                 &s.origin,
@@ -81,6 +52,7 @@ impl Support {
                 s.major.clone(),
                 s.minor.clone(),
             ),
+            Surface::EllipticCylinder(s) => return Self::elliptic(s),
             _ => unreachable!("feature analytic support"),
         };
         let factor = if matches!(kind, Kind::Cone) {
@@ -114,6 +86,35 @@ impl Support {
             exact,
         }
     }
+    fn elliptic(surface: &catallax_shapes::EllipticCylinder) -> Self {
+        // Pack the two scaled transverse vectors into the existing ten-value
+        // cache. b*(||[x/a,y/b]||-1) is 1-Lipschitz for a >= b, so its
+        // absolute value is a lower bound, never an affine-stretched distance.
+        let major = surface.major_dir.scaled(
+            &(Real::one() / (&surface.major_dir.norm_squared() * &surface.major_sq).sqrt()),
+        );
+        let minor = surface.axis.cross(&surface.major_dir);
+        let minor =
+            minor.scaled(&(Real::one() / (&minor.norm_squared() * &surface.minor_sq).sqrt()));
+        let exact = [
+            surface.origin.x.clone(),
+            surface.origin.y.clone(),
+            surface.origin.z.clone(),
+            major.x,
+            major.y,
+            major.z,
+            minor.x,
+            minor.y,
+            minor.z,
+            surface.minor_sq.sqrt(),
+        ];
+        Self {
+            kind: Kind::EllipticCylinder,
+            balls: rational_balls(Kind::EllipticCylinder, &exact),
+            fast: exact.each_ref().map(Real::to_f64),
+            exact,
+        }
+    }
     pub fn transform(&mut self, pose: &Isometry) {
         let origin = pose.apply_point(&Point3::new(
             self.exact[0].clone(),
@@ -141,7 +142,7 @@ impl Support {
             self.exact[7] = minor.y;
             self.exact[8] = minor.z;
         }
-        // A certified rigid motion preserves the defining axis norm and dimensions.
+        // A certified rigid motion preserves vector norms and dimension scalars.
         self.balls = rational_balls(self.kind, &self.exact);
         let radius = self.fast[7];
         self.fast = self.exact.each_ref().map(Real::to_f64);
@@ -177,13 +178,17 @@ impl Support {
         let d: [T; 3] = std::array::from_fn(|i| p[i].sub(&q[i]));
         let norm = |p: &[T; 3]| p[0].square().add(&p[1].square()).add(&p[2].square()).sqrt();
         let abs = |x: T| x.max(&x.neg());
+        if matches!(self.kind, Kind::EllipticCylinder) {
+            let dot = |offset| {
+                d[0].mul(&q[offset])
+                    .add(&d[1].mul(&q[offset + 1]))
+                    .add(&d[2].mul(&q[offset + 2]))
+            };
+            let rho = dot(3).square().add(&dot(6).square()).sqrt();
+            return abs(rho.sub(&T::integer(1))).mul(&q[9]);
+        }
         if matches!(self.kind, Kind::Sphere) {
             return abs(norm(&d).sub(&q[7]));
-        }
-        if matches!(self.kind, Kind::EllipticCylinder) {
-            let major = d[0].mul(&q[3]).add(&d[1].mul(&q[4])).add(&d[2].mul(&q[5]));
-            let minor = d[0].mul(&q[6]).add(&d[1].mul(&q[7])).add(&d[2].mul(&q[8]));
-            return abs(major.square().add(&minor.square()).sqrt().sub(&q[9]));
         }
         let length = q[6].sqrt();
         let z = d[0]

@@ -768,7 +768,44 @@ thread_local! {
     // same input nodes; algebraic decision work is never cached here.
     static PLANS: RefCell<VecDeque<CachedPlan>> = const { RefCell::new(VecDeque::new()) };
 }
-pub(super) fn plan(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<Arc<Plan>, Refusal> {
+pub(super) fn plan(
+    geom: &GeomStore,
+    ids: [SurfaceId; 2],
+    dec: &mut Decider,
+) -> Result<Arc<Plan>, Refusal> {
+    let a = geom.surface(ids[0]);
+    let b = geom.surface(ids[1]);
+    let known = |kind| {
+        geom.facts()
+            .holds(kind, GeomKey::Surface(ids[0]), GeomKey::Surface(ids[1]))
+    };
+    if known(FactKind::Coincident) {
+        dec.note_fact_decision();
+        let same_sense = match (a, b) {
+            (Surface::Plane(a), Surface::Plane(b)) => {
+                sign(&a.normal.dot(&b.normal), dec)? == Sign::Positive
+            }
+            _ => true,
+        };
+        return Ok(Arc::new(Plan::coincident(same_sense)));
+    }
+    let radial_measures = match (a, b) {
+        (Surface::Sphere(a), Surface::Sphere(b)) if known(FactKind::Concentric) => {
+            Some((&a.radius, &b.radius))
+        }
+        (Surface::Cylinder(a), Surface::Cylinder(b)) if known(FactKind::Coaxial) => {
+            Some((&a.radius_sq, &b.radius_sq))
+        }
+        _ => None,
+    };
+    if let Some((a, b)) = radial_measures {
+        dec.note_fact_decision();
+        return Ok(Arc::new(if is_zero(&(a - b), dec)? {
+            Plan::coincident(true)
+        } else {
+            Plan::disjoint()
+        }));
+    }
     let rational = a.has_rational_definition() && b.has_rational_definition();
     if rational
         && let Some(plan) = PLANS.with(|plans| {
@@ -861,8 +898,17 @@ pub(super) fn construct(
     b: SurfaceId,
     dec: &mut Decider,
 ) -> Answered<SurfacePair> {
-    let plan = plan(geom.surface(a), geom.surface(b), dec)?;
+    let plan = plan(geom, [a, b], dec)?;
     if let Some(answer) = &plan.terminal {
+        if matches!(answer, SurfacePair::Coincident { .. }) {
+            record(
+                geom,
+                FactKind::Coincident,
+                GeomKey::Surface(a),
+                GeomKey::Surface(b),
+                None,
+            );
+        }
         return Ok(Answer::exact(answer.clone()));
     }
     let points: Vec<_> = plan

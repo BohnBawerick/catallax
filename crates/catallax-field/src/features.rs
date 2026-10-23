@@ -562,6 +562,12 @@ impl Feature {
         }
         Ok(())
     }
+    pub(crate) fn display_classifier(&self) -> Option<crate::display::membership::Classifier<'_>> {
+        let Sweep::Extrude { vector, through } = &self.sweep else {
+            return None;
+        };
+        crate::display::membership::Classifier::new(&self.inverse, vector, *through, &self.loops)
+    }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         self.classify(
             &Point3::new(
@@ -572,7 +578,7 @@ impl Feature {
             dec,
         )
     }
-    fn classify(&self, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
+    pub(crate) fn classify(&self, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
         let local = self.inverse.apply_point(p);
         match &self.sweep {
             Sweep::Extrude { vector, through } => {
@@ -659,6 +665,26 @@ impl Feature {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        self.on_face_point(
+            role,
+            &Point3::new(
+                p[0].clone().into(),
+                p[1].clone().into(),
+                p[2].clone().into(),
+            ),
+            dec,
+        )
+    }
+    pub(crate) fn on_face_point(
+        &self,
+        role: &Role,
+        p: &Point3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
         let alias = self
             .fillet
             .as_ref()
@@ -668,11 +694,7 @@ impl Feature {
                 path: None,
             });
         let role = alias.as_ref().unwrap_or(role);
-        let local = self.inverse.apply_point(&Point3::new(
-            p[0].clone().into(),
-            p[1].clone().into(),
-            p[2].clone().into(),
-        ));
+        let local = self.inverse.apply_point(p);
         let norm = &self.axis_norm;
         let merge_caps = &self.merge_caps;
         match &self.sweep {
@@ -1429,3 +1451,7 @@ fn sample_rotate(
         .plus(&radial.scaled(cosine))
         .plus(&axis.cross(&radial).scaled(sine_over_axis_length))
 }
+
+#[cfg(test)]
+#[path = "features/distance_tests.rs"]
+mod distance_tests;

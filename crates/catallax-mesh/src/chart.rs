@@ -1,6 +1,6 @@
 //! Dyadic turns make translated periodic chart copies bit-identical.
 
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
+use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal};
 use catallax_shapes::{Surface, Vector3};
 
 use crate::failure;
@@ -55,9 +55,13 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 pub(crate) struct Chart {
     pub(crate) surface: Surface,
     pub(crate) periodic: [bool; 2],
+    pub(crate) normal_scale: Rational,
     origin: [f64; 3],
     frame: [[f64; 3]; 3],
     turn: Option<Ball>,
+    evaluator: Option<crate::evaluate::Evaluator>,
+    ellipse_radii: Option<[f64; 2]>,
+    centers: [Option<f64>; 2],
 }
 
 impl Chart {
@@ -68,11 +72,7 @@ impl Chart {
             Surface::Cone(s) => (&s.apex, &s.axis, &s.ref_dir, [true, false]),
             Surface::Sphere(s) => (&s.center, &s.axis, &s.ref_dir, [true, false]),
             Surface::Torus(s) => (&s.center, &s.axis, &s.ref_dir, [true, true]),
-            Surface::EllipticCylinder(_) => {
-                return Err(failure(
-                    "elliptic-cylinder display charts are not implemented",
-                ));
-            }
+            Surface::EllipticCylinder(s) => (&s.origin, &s.axis, &s.major_dir, [true, false]),
             _ => return Err(failure("unknown analytic surface definition")),
         };
         let scalar = |value: &Real| -> Result<f64, Refusal> {
@@ -86,6 +86,17 @@ impl Chart {
         if !origin.iter().all(|v| v.is_finite()) {
             return Err(failure("surface origin exceeds binary64"));
         }
+        let (axes, normal_scale) = if let Surface::EllipticCylinder(s) = surface {
+            let major = dec.enclose_at(&s.major_sq.sqrt(), BITS)?;
+            let minor = dec.enclose_at(&s.minor_sq.sqrt(), BITS)?;
+            let axes = [midpoint(&major), midpoint(&minor)];
+            if axes.iter().any(|x| !x.is_finite() || *x <= 0.0) || minor.lo() <= Rational::zero() {
+                return Err(failure("ellipse axes exceed display coordinate precision"));
+            }
+            (Some(axes), major.hi() / minor.lo())
+        } else {
+            (None, Rational::one())
+        };
         let turn = if matches!(surface, Surface::Plane(_)) {
             None
         } else {
@@ -94,14 +105,27 @@ impl Chart {
         Ok(Self {
             surface: surface.clone(),
             periodic,
+            ellipse_radii: axes,
+            centers: [None; 2],
+            normal_scale,
             origin,
             turn,
+            evaluator: if matches!(surface, Surface::Plane(_)) {
+                None
+            } else {
+                Some(crate::evaluate::Evaluator::new(surface, dec)?)
+            },
             frame: [
                 unit(reference, dec)?,
                 unit(&axis.cross(reference), dec)?,
                 unit(axis, dec)?,
             ],
         })
+    }
+
+    pub(crate) fn restrict(&mut self, dimension: usize, center: f64) {
+        self.periodic[dimension] = false;
+        self.centers[dimension] = Some(center);
     }
 
     pub(crate) fn project(&self, p: [f64; 3]) -> Uv {
@@ -115,13 +139,23 @@ impl Chart {
             // Leave enough mantissa bits for exact translations by -2..=2.
             libm::round(t * 281_474_976_710_656.0) / 281_474_976_710_656.0
         };
-        let u = angle(y, x);
+        let u = if let Some([major, minor]) = self.ellipse_radii {
+            angle(y / minor, x / major)
+        } else {
+            angle(y, x)
+        };
         let v = match &self.surface {
             Surface::Sphere(_) => angle(z, libm::sqrt(x * x + y * y)),
             Surface::Torus(s) => angle(z, libm::sqrt(x * x + y * y) - s.major.to_f64()),
             _ => z,
         };
-        [u, v]
+        let mut uv = [u, v];
+        for (value, center) in uv.iter_mut().zip(self.centers) {
+            if let Some(center) = center {
+                *value += libm::round(center - *value);
+            }
+        }
+        uv
     }
 
     pub(crate) fn canonical(&self, mut uv: Uv) -> Uv {
@@ -154,6 +188,46 @@ impl Chart {
         self.surface.evaluate(&parameters[0], &parameters[1], dec)
     }
 
+    pub(crate) fn sample(
+        &self,
+        uv: Uv,
+        boundary: Option<[f64; 3]>,
+        tolerance: &Rational,
+        dec: &Decider,
+    ) -> Result<([f64; 3], Rational), Refusal> {
+        dec.check_deadline()?;
+        if let Some(values) = self
+            .evaluator
+            .as_ref()
+            .and_then(|e| e.evaluate(&self.surface, uv))
+        {
+            let position = boundary.unwrap_or_else(|| values.map(|v| v.mid()));
+            let deltas = std::array::from_fn::<_, 3, _>(|i| {
+                catallax_numbers::Interval::point(position[i]).unwrap() - values[i]
+            });
+            let error = deltas
+                .iter()
+                .all(catallax_numbers::Interval::is_finite)
+                .then(|| {
+                    deltas.iter().fold(Rational::zero(), |sum, delta| {
+                        sum + q(delta.lo().abs().max(delta.hi().abs()))
+                    })
+                });
+            if let Some(error) = error
+                && error <= tolerance.mul_pow2(-4)
+            {
+                return Ok((position, error));
+            }
+        }
+        let balls = self.evaluate(uv, dec)?;
+        let position = match boundary {
+            Some(position) => position,
+            None => position(&balls)?,
+        };
+        let error = residual(&position, &balls);
+        Ok((position, error))
+    }
+
     /// Euclidean upper bounds on S_uu, S_uv and S_vv in this chart.
     pub(crate) fn hessian(&self, vmax: f64, dec: &Decider) -> Result<[Rational; 3], Refusal> {
         if matches!(self.surface, Surface::Plane(_)) {
@@ -171,6 +245,9 @@ impl Chart {
         Ok(match &self.surface {
             Surface::Plane(_) => [zero.clone(), zero.clone(), zero],
             Surface::Cylinder(s) => [&upper(&s.radius())? * &tau2, zero.clone(), zero],
+            Surface::EllipticCylinder(s) => {
+                [&upper(&s.major_sq.sqrt())? * &tau2, zero.clone(), zero]
+            }
             Surface::Cone(s) => {
                 let slope = upper(&s.slope)?;
                 [&(&slope * &q(vmax.abs())) * &tau2, &slope * &tau, zero]
@@ -201,14 +278,26 @@ pub(crate) fn align(mut b: Uv, a: Uv, periodic: [bool; 2]) -> Uv {
     b
 }
 
+pub(crate) fn filtered_chord_bound(uvs: &[Uv], hessian: &[Interval; 3]) -> Interval {
+    let [u, v] = std::array::from_fn::<_, 2, _>(|i| {
+        let lo = uvs.iter().map(|uv| uv[i]).fold(f64::INFINITY, f64::min);
+        let hi = uvs.iter().map(|uv| uv[i]).fold(f64::NEG_INFINITY, f64::max);
+        Interval::point(hi).unwrap() - Interval::point(lo).unwrap()
+    });
+    (hessian[0] * u.square()
+        + hessian[1] * u * v * Interval::point(2.0).unwrap()
+        + hessian[2] * v.square())
+        * Interval::point(0.125).unwrap()
+}
+
 /// Taylor's theorem bounds interpolation error by half a Hessian-weighted
 /// variance. Each parameter variance is at most its squared range / 4;
 /// Cauchy-Schwarz bounds the mixed term. Endpoint residuals interpolate convexly.
 pub(crate) fn chord_bound(uvs: &[Uv], hessian: &[Rational; 3]) -> Rational {
     let span: [Rational; 2] = std::array::from_fn(|i| {
-        let lo = uvs.iter().map(|uv| q(uv[i])).min().unwrap();
-        let hi = uvs.iter().map(|uv| q(uv[i])).max().unwrap();
-        hi - lo
+        let lo = uvs.iter().map(|uv| uv[i]).fold(f64::INFINITY, f64::min);
+        let hi = uvs.iter().map(|uv| uv[i]).fold(f64::NEG_INFINITY, f64::max);
+        q(hi) - q(lo)
     });
     let [u, v] = &span;
     (&(&hessian[0] * u) * u
@@ -218,5 +307,5 @@ pub(crate) fn chord_bound(uvs: &[Uv], hessian: &[Rational; 3]) -> Rational {
 }
 
 pub(crate) fn key(uv: Uv) -> [u64; 2] {
-    uv.map(f64::to_bits)
+    uv.map(|value| if value == 0.0 { 0 } else { value.to_bits() })
 }

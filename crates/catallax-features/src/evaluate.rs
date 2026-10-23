@@ -4,7 +4,7 @@ use crate::{Profile, extrude, revolve};
 use catallax_boolean::{BoolOp, boolean};
 use catallax_measure::BoundingBox;
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
-use catallax_recipe::{BooleanKind, Operation, Recipe, RecipeError, StepId};
+use catallax_recipe::{BooleanKind, Operation, Recipe, RecipeError, Role, StepId, ThroughSide};
 use catallax_shapes::{Isometry, RPoint3, RVector3};
 use catallax_topology::{BodyId, BodyKind, Model};
 use std::{collections::BTreeMap, fmt, sync::Arc};
@@ -109,7 +109,7 @@ fn vector(v: &catallax_recipe::Vector3) -> RVector3 {
 fn norm_upper(p: &RPoint3) -> Rational {
     p.x.abs() + p.y.abs() + p.z.abs()
 }
-fn profile_radius(profile: &Profile) -> Rational {
+pub(crate) fn profile_radius(profile: &Profile) -> Rational {
     let zero = RVector3::zero();
     profile
         .loops
@@ -185,6 +185,7 @@ fn through(
     step: &StepId,
     target: &BodyValue,
     direction: Option<&catallax_recipe::Vector3>,
+    side: Option<ThroughSide>,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
     let normal = crate::profile::rational_vector(
@@ -215,14 +216,22 @@ fn through(
     // Rescaling direction changes t inversely, not the resulting through-all set.
     let extent =
         ((&target.radius + &norm_upper(&origin)) * normal_l1) / dot.abs() + Rational::one();
-    let offset = direction.scaled(&extent);
+    let (low, high, caps) = match side.unwrap_or(ThroughSide::Both) {
+        ThroughSide::Both => (-&extent, extent.clone(), [None, None]),
+        ThroughSide::Forward => (Rational::zero(), extent.clone(), [Some(Role::Start), None]),
+        ThroughSide::Backward => (-&extent, Rational::zero(), [None, Some(Role::Start)]),
+    };
     let mut shifted = profile.clone();
-    shifted.pose.translation = shifted.pose.translation.minus(&offset.to_real());
+    shifted.pose.translation = shifted
+        .pose
+        .translation
+        .plus(&direction.scaled(&low).to_real());
     let tool = crate::extrude::extrude_vector(
         model,
         &shifted,
         step,
-        &offset.scaled(&Rational::from_i64(2)),
+        &direction.scaled(&(high - low)),
+        caps,
     )?;
     Ok(boolean(model, target.body, tool, BoolOp::Subtract, dec)
         .map_err(|e| e.refusal)?
@@ -313,6 +322,7 @@ fn evaluate_impl(
                     target,
                     profile,
                     direction,
+                    side,
                 } => {
                     let target = &bodies[target];
                     let body = through(
@@ -321,8 +331,112 @@ fn evaluate_impl(
                         &step.id,
                         target,
                         direction.as_ref(),
+                        *side,
                         dec,
                     )?;
+                    BodyValue {
+                        body,
+                        radius: target.radius.clone(),
+                    }
+                }
+                Operation::ExtrudeTo {
+                    target,
+                    profile,
+                    direction,
+                    limit,
+                } => {
+                    let cap = crate::end_condition::Capped::compile(
+                        recipe,
+                        target,
+                        profile,
+                        direction.as_ref(),
+                        Some(limit),
+                        dec,
+                    )?;
+                    BodyValue {
+                        body: cap.build(model, &step.id, dec)?,
+                        radius: cap.radius,
+                    }
+                }
+                Operation::ExtrudeNext {
+                    target,
+                    profile,
+                    direction,
+                } => {
+                    let cap = crate::end_condition::Capped::compile(
+                        recipe,
+                        target,
+                        profile,
+                        direction.as_ref(),
+                        None,
+                        dec,
+                    )?;
+                    BodyValue {
+                        body: cap.build(model, &step.id, dec)?,
+                        radius: cap.radius,
+                    }
+                }
+                Operation::Hole {
+                    target,
+                    at,
+                    diameter,
+                    depth,
+                    tip,
+                    head,
+                } => {
+                    crate::hole::validate(diameter.value(), depth, tip, head.as_ref())?;
+                    let target = &bodies[target];
+                    let mut body = target.body;
+                    let tools = at
+                        .iter()
+                        .map(|placement| {
+                            crate::hole::HoleTool::new(
+                                placement,
+                                diameter.value(),
+                                depth,
+                                tip,
+                                head.as_ref(),
+                                &target.radius,
+                                dec,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    if model.body(body).kind != BodyKind::Empty {
+                        let mut disjoint = true;
+                        for i in 0..tools.len() {
+                            for other in &tools[..i] {
+                                if !tools[i].disjoint(other, dec)? {
+                                    disjoint = false;
+                                    break;
+                                }
+                            }
+                            if !disjoint {
+                                break;
+                            }
+                        }
+                        if disjoint && !tools.is_empty() {
+                            let mut lumps = Vec::new();
+                            for (tool, placement) in tools.iter().zip(at) {
+                                let tool = tool.build(model, &step.id, &placement.id);
+                                lumps.extend_from_slice(&model.body(tool).lumps);
+                            }
+                            let tool = model.add_body(catallax_topology::Body {
+                                kind: BodyKind::Solid,
+                                lumps,
+                                marks: Default::default(),
+                            });
+                            body = boolean(model, body, tool, BoolOp::Subtract, dec)
+                                .map_err(|e| e.refusal)?
+                                .body;
+                        } else {
+                            for (tool, placement) in tools.iter().zip(at) {
+                                let tool = tool.build(model, &step.id, &placement.id);
+                                body = boolean(model, body, tool, BoolOp::Subtract, dec)
+                                    .map_err(|e| e.refusal)?
+                                    .body;
+                            }
+                        }
+                    }
                     BodyValue {
                         body,
                         radius: target.radius.clone(),

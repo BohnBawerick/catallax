@@ -7,16 +7,28 @@ use crate::names::{
     EdgeName, EdgeRef, EdgeSelection, FaceRef, HolePart, Origin, OriginPattern, Role, VertexName,
 };
 use crate::operation::{Grade, HoleDepth, HoleHead, HoleTip, Operation, ValueKind};
-use crate::recipe::{FORMAT, Recipe, RecipeError};
+use crate::recipe::{FORMAT, FORMAT_V4, Recipe, RecipeError};
 
 pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
-    if recipe.format != FORMAT {
+    if recipe.format != FORMAT && recipe.format != FORMAT_V4 {
         return Err(RecipeError::Format {
             found: recipe.format.clone(),
         });
     }
     let mut index = BTreeMap::new();
     for (i, step) in recipe.steps.iter().enumerate() {
+        if recipe.format == FORMAT
+            && matches!(
+                &step.op,
+                Operation::ExtrudeThrough { side: Some(_), .. }
+                    | Operation::ExtrudeTo { .. }
+                    | Operation::ExtrudeNext { .. }
+            )
+        {
+            return Err(RecipeError::Parse {
+                message: "extrusion end conditions require catallax-recipe/4".into(),
+            });
+        }
         if index.contains_key(&step.id) {
             return Err(RecipeError::DuplicateStep {
                 step: step.id.clone(),
@@ -58,6 +70,7 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
         }
     }
     match op {
+        Operation::ExtrudeTo { limit, .. } => face(limit).collect(),
         Operation::Fillet {
             edges: EdgeSelection::Refs(refs),
             ..
@@ -285,12 +298,30 @@ impl Ctx<'_> {
                 },
             ) if segment.as_str() == "wall" => Ok(()),
             (
-                O::Extrude { .. } | O::Revolve { .. } | O::Sweep { .. } | O::Loft { .. },
+                O::Extrude { .. }
+                | O::ExtrudeTo { .. }
+                | O::ExtrudeNext { .. }
+                | O::Revolve { .. }
+                | O::Sweep { .. }
+                | O::Loft { .. },
                 Role::Start | Role::End,
+            ) => Ok(()),
+            (
+                O::ExtrudeThrough {
+                    side:
+                        Some(
+                            crate::operation::ThroughSide::Forward
+                            | crate::operation::ThroughSide::Backward,
+                        ),
+                    ..
+                },
+                Role::Start,
             ) => Ok(()),
             (
                 O::Extrude { profile, .. }
                 | O::ExtrudeThrough { profile, .. }
+                | O::ExtrudeTo { profile, .. }
+                | O::ExtrudeNext { profile, .. }
                 | O::Revolve { profile, .. },
                 Role::Side {
                     segment,
@@ -334,7 +365,7 @@ impl Ctx<'_> {
                 let blind = matches!(depth, HoleDepth::Blind(_));
                 let made = match part {
                     HolePart::Entry | HolePart::Wall => true,
-                    HolePart::Floor => blind && *tip == HoleTip::Flat,
+                    HolePart::Floor => blind && (*tip == HoleTip::Flat || head.is_some()),
                     HolePart::Tip => blind && matches!(tip, HoleTip::Cone(_)),
                     HolePart::CounterboreWall | HolePart::CounterboreFloor => {
                         matches!(head, Some(HoleHead::Counterbore { .. }))

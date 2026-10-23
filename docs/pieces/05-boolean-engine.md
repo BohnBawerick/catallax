@@ -43,6 +43,8 @@ An operand is a `Solid` or `Empty` body (piece 3) that passes `Model::check`, wi
 
 Cone faces use an apex-safe radial chart and exact parametric probes with certified chart paths. Probe frames and dimensions may be algebraic; rational definitions retain their native arithmetic path. Point loops survive imprint and sew when they remain isolated apex boundaries. Torus regions bounded by complete parallel or meridian circles use exact two-angle component labels, independent of arbitrary parameter seams. General noncircular torus boundaries still require a certified periodic chart. Missing intersection and chart paths are temporary coverage failures, not invalid operands.
 
+Cylindrical winding uses a periodic diamond chart. Its dyadic rectangle corners keep phase as an integer numerator and positive denominator through quadrant selection, seam lifting and extrema comparisons. Only the two extrema become binary balls, through `Ball::from_ratio`. This avoids repeated general GCD normalization without changing the phase bounds, pole rejection, precision or winding decisions.
+
 The result is a `Solid` or `Empty` body that:
 
 1. passes `Model::check` with no fault;

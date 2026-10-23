@@ -33,7 +33,7 @@ For private corpora pass paths at runtime. JSONL corpus rows may wrap the questi
 
 Compare main and candidate builds using `compare "$PROOF/main/run.json" "$PROOF/candidate/run.json" --json`. It checks ordered inputs, manifests excluding stats and build identity, and strict STEP bytes. Compare same-build runs to check deterministic work too. An internal error fails comparison even when it occurs in both runs.
 
-For timing use `pair INPUT --baseline BASE_BINARY --candidate CANDIDATE_BINARY --cores CORE --out "$PROOF/pairs" --json`. This does not read caches. It alternates order on one core, with a warmup and three measured pairs by default. Use `legacy` to time the old process-per-question CLI. Record machine load; do not describe a shared machine as idle without evidence.
+For timing use `pair INPUT --baseline BASE_BINARY --candidate CANDIDATE_BINARY --cores CORE --out "$PROOF/pairs" --json`. This does not read caches. It alternates order on one core, with a warmup and three measured pairs by default. Every pair records the one-, five- and fifteen-minute load averages at its start and end. Use `legacy` to time the old process-per-question CLI. Do not describe a shared machine as idle without evidence.
 
 Each completed request includes `operation_log` and writes `operations.json` plus a portable `question.json`. Replay the latter with `catallax-verify replay QUESTION --out DIR`, or pass it to the driver's `run`. Both preserve its original work allowance. Compare manifests, STEP bytes and work; exclude operation `wall_ms` when comparing logs.
 
@@ -53,7 +53,7 @@ Run `"$DRIVER" cleanup --out "$PROOF" --dry-run --json`, then `"$DRIVER" cleanup
 
 ## Helpers
 
-`control-catallax.py --help` is the canonical interface. Built-in source adapters cover question/2, recipe/3, opt-in certified-recipe/1, independent field compilation, sampled comparison, opt-in `name-edit` wrappers and portable question/1 replay. A trusted custom Python module passed with `--adapter` exports `load(Path)` yielding source/problem objects; it cannot change the kernel's exchange semantics.
+`control-catallax.py --help` is the canonical interface. Built-in source adapters cover question/2, recipe/3 and recipe/4, opt-in certified-recipe/1, independent field compilation, sampled comparison, opt-in `name-edit` wrappers and portable question/1 replay. A trusted custom Python module passed with `--adapter` exports `load(Path)` yielding source/problem objects; it cannot change the kernel's exchange semantics.
 
 Run `python3 -B -m unittest discover -s .claude/skills/verify-catallax/scripts -p 'test_*.py' -v` after building to verify the driver against real commands. Set `CATALLAX_VERIFY_BINARY` to test a preserved executable.
 

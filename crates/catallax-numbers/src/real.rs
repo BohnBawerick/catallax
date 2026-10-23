@@ -145,6 +145,20 @@ impl Real {
         }
         self.construction_cmp(other).is_eq()
     }
+    /// Whether this definition is the negation of `other`, without constructing
+    /// an expression or refining either value. A false result is inconclusive.
+    pub fn same_negated_definition(&self, other: &Self) -> bool {
+        if let (Some(a), Some(b)) = (self.rational_ref(), other.rational_ref()) {
+            return a.d == b.d
+                && a.n.0.magnitude() == b.n.0.magnitude()
+                && (a.is_zero() || a.sign() != b.sign());
+        }
+        match (&self.node.expr, &other.node.expr) {
+            (Expr::Neg(a), _) => a.same_definition(other),
+            (_, Expr::Neg(b)) => self.same_definition(b),
+            _ => false,
+        }
+    }
     /// Whether two values share the same immutable definition node.
     /// Use only for caches whose reuse must preserve expression-DAG sharing;
     /// distinct nodes do not prove distinct mathematical values.

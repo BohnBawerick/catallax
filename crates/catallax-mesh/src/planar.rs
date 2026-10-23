@@ -618,6 +618,61 @@ fn refine(
     ))
 }
 
+fn split_rail_ears(
+    triangles: &mut Vec<Triangle>,
+    points: &mut BTreeMap<usize, [Real; 3]>,
+    rails: &crate::edges::Rails,
+    mesh: &mut Mesh,
+    options: &MeshOptions,
+    dec: &Decider,
+) -> Result<Rational, Refusal> {
+    let third = Real::from(Rational::from_ratio(1, 3).unwrap());
+    let mut error = Rational::zero();
+    let original = triangles.len();
+    for i in 0..original {
+        dec.check_deadline()?;
+        let vertices = triangles[i].vertices;
+        if !rails.contains_triangle(vertices) {
+            continue;
+        }
+        if mesh.positions.len() >= options.max_vertices {
+            return Err(failure("planar rail-ear refinement reached max_vertices"));
+        }
+        let [a, b, c] = vertices;
+        // The exact affine centroid lies strictly inside the already-certified
+        // planar triangle. No shared boundary sample or segment is replaced.
+        let p = std::array::from_fn::<_, 3, _>(|axis| {
+            &(&(&points[&a][axis] + &points[&b][axis]) + &points[&c][axis]) * &third
+        });
+        let balls = [
+            dec.enclose_at(&p[0], chart::BITS)?,
+            dec.enclose_at(&p[1], chart::BITS)?,
+            dec.enclose_at(&p[2], chart::BITS)?,
+        ];
+        let position = chart::position(&balls)?;
+        error = error.max(chart::residual(&position, &balls));
+        if error > options.chord_tolerance {
+            return Err(failure("planar rail-ear rounding exceeds chord tolerance"));
+        }
+        let index = mesh.positions.len();
+        mesh.positions.push(position);
+        if options.max_edge_length.is_some() {
+            points.insert(index, p);
+        }
+        let face = triangles[i].face;
+        triangles[i].vertices = [a, b, index];
+        triangles.push(Triangle {
+            vertices: [b, c, index],
+            face,
+        });
+        triangles.push(Triangle {
+            vertices: [c, a, index],
+            face,
+        });
+    }
+    Ok(error)
+}
+
 pub(crate) fn build(
     model: &Model,
     face: FaceId,
@@ -763,6 +818,14 @@ pub(crate) fn build(
         }
         triangles
     };
+    error = error.max(split_rail_ears(
+        &mut triangles,
+        &mut points,
+        &boundaries.rails,
+        &mut boundaries.mesh,
+        options,
+        polygon.dec,
+    )?);
     error = error.max(refine(
         &mut triangles,
         &mut points,

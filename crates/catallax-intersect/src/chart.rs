@@ -3,16 +3,22 @@ use crate::{
     math::*,
     pair::{Frame, Plan},
 };
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal, Sign};
 use catallax_shapes::{Curve, CurveId, GeomStore, Point3, Vector3};
 use std::{
     collections::{BTreeMap, HashMap},
     ops::{Add, Div, Mul, Neg, Sub},
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 
-type Enclosures = Mutex<BTreeMap<u32, Ball>>;
+const INTERVAL_PRECISION: u32 = 128;
+
+#[derive(Debug, Default)]
+struct Enclosures {
+    balls: Mutex<BTreeMap<u32, Ball>>,
+    interval: OnceLock<Interval>,
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct E(Arc<Node>);
@@ -31,7 +37,7 @@ impl E {
         Self(Arc::new(Node::T))
     }
     pub fn constant(x: Real) -> Self {
-        Self(Arc::new(Node::Constant(x, Mutex::new(BTreeMap::new()))))
+        Self(Arc::new(Node::Constant(x, Enclosures::default())))
     }
     fn integer(x: i64) -> Self {
         Self::constant(Real::from_i64(x))
@@ -173,7 +179,7 @@ impl Scalar for Ball {
         if let Some(r) = x.as_rational() {
             return Ok(Ball::from_rational(&r, p));
         }
-        let mut cached = cache.lock().expect("trace constant enclosure lock");
+        let mut cached = cache.balls.lock().expect("trace constant enclosure lock");
         if let Some(ball) = cached.get(&p) {
             return Ok(ball.clone());
         }
@@ -184,6 +190,61 @@ impl Scalar for Ball {
         Ok(ball)
     }
 }
+impl Scalar for Interval {
+    fn integer(x: i64, _: u32) -> Self {
+        if (-(1_i64 << 53)..=(1_i64 << 53)).contains(&x) {
+            Interval::point(x as f64).unwrap()
+        } else {
+            Interval::from_rational(&r(x))
+        }
+    }
+    fn plus(&self, b: &Self) -> Self {
+        *self + *b
+    }
+    fn minus(&self, b: &Self) -> Self {
+        *self - *b
+    }
+    fn times(&self, b: &Self) -> Self {
+        *self * *b
+    }
+    fn divide(&self, b: &Self) -> Option<Self> {
+        if b.contains_zero() {
+            return None;
+        }
+        let value = *self / *b;
+        value.is_finite().then_some(value)
+    }
+    fn root(&self) -> Option<Self> {
+        self.sqrt()
+    }
+    #[allow(clippy::float_cmp)] // Singleton identity, not approximate coincidence.
+    fn is_zero(&self) -> bool {
+        self.lo() == 0.0 && self.hi() == 0.0
+    }
+    fn constant(
+        x: &Real,
+        cache: &Enclosures,
+        p: u32,
+        dec: Option<&Decider>,
+    ) -> Result<Self, JetError> {
+        if let Some(value) = x.rational_ref() {
+            return Ok(*cache
+                .interval
+                .get_or_init(|| Interval::from_rational(value)));
+        }
+        if p == INTERVAL_PRECISION
+            && let Some(value) = cache.interval.get()
+        {
+            return Ok(*value);
+        }
+        let value = <Ball as Scalar>::constant(x, cache, p, dec)?.to_interval();
+        if p == INTERVAL_PRECISION {
+            let _ = cache.interval.set(value);
+        }
+        Ok(value)
+    }
+}
+
 #[derive(Debug)]
 enum JetError {
     Split,
@@ -449,6 +510,37 @@ fn enclose_jets(
         .map(|k| [a[k].clone(), b[k].clone(), c[k].clone()])
         .collect())
 }
+pub(super) fn interval_jets(
+    coords: &[E; 3],
+    t: Interval,
+    n: usize,
+    dec: &Decider,
+) -> Result<Option<Vec<[Interval; 3]>>, Refusal> {
+    let mut cache = HashMap::new();
+    let result = coords
+        .each_ref()
+        .map(|e| jets(e, &t, n, INTERVAL_PRECISION, Some(dec), &mut cache));
+    let mut values = Vec::with_capacity(3);
+    for value in result {
+        match value {
+            Ok(value) => values.push(value),
+            Err(JetError::Split) => return Ok(None),
+            Err(JetError::Deadline(refusal)) if refusal.code == "numbers.deadline" => {
+                return Err(refusal);
+            }
+            Err(JetError::Deadline(_)) => return Ok(None),
+        }
+    }
+    let result: Vec<_> = (0..=n)
+        .map(|k| [values[0][k], values[1][k], values[2][k]])
+        .collect();
+    Ok(result
+        .iter()
+        .flatten()
+        .all(Interval::is_finite)
+        .then_some(result))
+}
+
 pub(super) fn exact_position(
     coords: &[E; 3],
     t: &Rational,
@@ -1063,6 +1155,13 @@ mod tests {
         let start = Point3::new(root.clone(), Real::zero(), Real::zero());
         let end = Point3::new(root, Real::one(), Real::zero());
         let piece = TracePiece::new(segment(&start, &end, &mut dec).unwrap());
+        let filtered = piece
+            .taylor_interval(Interval::point(0.5).unwrap(), 1, &dec)
+            .unwrap()
+            .unwrap();
+        let lo = Rational::from_f64_exact(filtered[0][0].lo()).unwrap();
+        let hi = Rational::from_f64_exact(filtered[0][0].hi()).unwrap();
+        assert!(lo >= r(0) && &lo * &lo <= r(2) && &hi * &hi >= r(2));
 
         for p in [64, 256] {
             let t = Ball::from_rational(&Rational::from_ratio(1, 2).unwrap(), p);
@@ -1086,6 +1185,11 @@ mod tests {
         let value = Rational::parse("1e100").unwrap();
         let high = Ball::from_rational(&r(0), 512);
         assert!(warm.evaluate(&high, &dec).unwrap()[0].contains(&value));
+        assert!(
+            warm.taylor_interval(Interval::point(0.0).unwrap(), 0, &dec)
+                .unwrap()
+                .is_none()
+        );
         for precision in [64, 256, 512] {
             let point = high.with_precision(precision);
             match (piece().evaluate(&point, &dec), warm.evaluate(&point, &dec)) {
@@ -1108,6 +1212,71 @@ mod tests {
         expired.set_deadline(Some(std::time::Instant::now()));
         assert_eq!(
             warm.evaluate(&high, &expired).unwrap_err().code,
+            "numbers.deadline"
+        );
+    }
+
+    #[test]
+    fn binary64_taylor_filter_encloses_conic_derivatives_and_defers_singular_panels() {
+        let dec = Decider::default();
+        let (cosine, sine) = trig();
+        let coords = [cosine, sine, E::t()];
+        for (lo, hi) in [(0.0, 0.25), (0.25, 0.5), (0.5, 1.0)] {
+            let filtered = interval_jets(&coords, Interval::new(lo, hi).unwrap(), 2, &dec)
+                .unwrap()
+                .unwrap();
+            for t in [lo, (lo + hi) * 0.5, hi] {
+                let mut cache = HashMap::new();
+                for (axis, expression) in coords.iter().enumerate() {
+                    let exact = jets(
+                        expression,
+                        &Real::from(Rational::from_f64_exact(t).unwrap()),
+                        2,
+                        0,
+                        None,
+                        &mut cache,
+                    )
+                    .unwrap();
+                    for k in 0..=2 {
+                        let value = exact[k].rational_ref().unwrap();
+                        assert!(
+                            Rational::from_f64_exact(filtered[k][axis].lo()).unwrap() <= *value
+                        );
+                        assert!(
+                            Rational::from_f64_exact(filtered[k][axis].hi()).unwrap() >= *value
+                        );
+                    }
+                }
+            }
+        }
+        let singular = [
+            E::integer(1) / (E::t() - E::constant(Real::from(Rational::from_ratio(1, 2).unwrap()))),
+            E::t(),
+            E::integer(0),
+        ];
+        assert!(
+            interval_jets(&singular, Interval::new(0.25, 0.75).unwrap(), 2, &dec)
+                .unwrap()
+                .is_none()
+        );
+        let root = Real::from_i64(2).sqrt();
+        let tiny = Real::from(Rational::parse("1e-50").unwrap());
+        let ill_conditioned = [
+            E::constant(Real::one() / (&(&root + &tiny) - &root)),
+            E::t(),
+            E::integer(0),
+        ];
+        assert!(
+            interval_jets(&ill_conditioned, Interval::point(0.0).unwrap(), 0, &dec)
+                .unwrap()
+                .is_none()
+        );
+        let mut expired = Decider::default();
+        expired.set_deadline(Some(std::time::Instant::now()));
+        assert_eq!(
+            interval_jets(&coords, Interval::point(0.0).unwrap(), 0, &expired)
+                .unwrap_err()
+                .code,
             "numbers.deadline"
         );
     }

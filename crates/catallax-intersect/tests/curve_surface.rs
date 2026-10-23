@@ -132,6 +132,15 @@ fn check(case: &HitCase, scale: &Rational, pose: &Pose, mut d: Decider, mode: Mo
                                 |m| m.kind == BoundKind::Value || m.kind == BoundKind::Distance
                             )
                         );
+                        assert!(
+                            !g.facts().iter().any(|fact| fact.kind == FactKind::Tangent
+                                && ((fact.a == GeomKey::Curve(c)
+                                    && fact.b == GeomKey::Surface(s))
+                                    || (fact.b == GeomKey::Curve(c)
+                                        && fact.a == GeomKey::Surface(s)))
+                                && fact.at == Some(GeomKey::Point(h.point))),
+                            "bounded contact must not become an exact tangent fact"
+                        );
                     }
                     match &m.of {
                         MeetOf::CurveSurface(cc, ss) => assert_eq!((*cc, *ss), (c, s)),
@@ -185,11 +194,6 @@ fn check(case: &HitCase, scale: &Rational, pose: &Pose, mut d: Decider, mode: Mo
                         );
                     }
                 }
-            }
-            for f in g.facts().iter().skip(counts.3) {
-                assert_eq!(f.kind, FactKind::Incident);
-                assert_eq!(f.origin, FactOrigin::Construction("shapes.definition"));
-                assert_eq!(f.at, None);
             }
         }
         (CurveSurface::Meets(actual), Hits::Disjoint) if marked => {

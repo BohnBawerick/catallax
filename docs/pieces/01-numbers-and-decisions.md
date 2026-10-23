@@ -153,6 +153,8 @@ Each function returns `None` outside its domain, as the domain rules below defin
 
 Precision rules: a precision of 0 is treated as 1. `from_rational(r, p)` rounds `r` to a midpoint of `p` significant bits and puts the rounding error in the radius (radius 0 when `r` fits). `with_precision(p)` with `p` below the current precision rounds the midpoint to `p` bits and widens the radius to keep containment; with a larger `p` it only changes the working precision. `hull` uses the larger of the two precisions.
 
+`from_ratio(numerator, denominator, p)` encloses an integer ratio directly, without first reducing it to a canonical `Rational`. It accepts either denominator sign and returns `None` only for a zero denominator. Common factors do not change the midpoint or radius. Rounding and precision rules are the same as `from_rational`.
+
 `is_exact_zero()` is true only for the singleton ball `[0, 0]`; it is false for a nonzero-width ball that contains zero. It reads the binary fields without allocating or copying them. `mid`, `rad`, `lo` and `hi` still return canonical exact `Rational` values.
 
 Domain rules: `sqrt` returns `None` only for a ball entirely below zero; otherwise it encloses the square root of the ball's non-negative part, like `Interval::sqrt`. `ln` needs `lo > 0`. `asin` and `acos` need `-1 <= lo` and `hi <= 1` (the ends may touch `±1`). `atan2` returns `None` when both balls contain zero. `recip` and `checked_div` return `None` when the divisor contains zero.
@@ -415,6 +417,7 @@ impl Interval {
 pub struct Ball;
 impl Ball {
     pub fn from_rational(r: &Rational, precision: u32) -> Self;
+    pub fn from_ratio(numerator: &Integer, denominator: &Integer, precision: u32) -> Option<Self>;
     pub fn from_integer(n: &Integer, precision: u32) -> Self;
     pub fn precision(&self) -> u32;
     pub fn with_precision(&self, precision: u32) -> Self;

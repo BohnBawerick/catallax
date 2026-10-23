@@ -1,6 +1,6 @@
 //! Rational charts, exact witnesses and uniform interpolation bounds.
 
-use catallax_numbers::{Ball, Rational, Real, Refusal};
+use catallax_numbers::{Interval, Rational, Real, Refusal};
 use catallax_shapes::{RPoint3, RVector3, Surface, Vector3};
 
 use super::{Cell, failure};
@@ -32,6 +32,7 @@ fn unit(v: &Vector3) -> Result<[Rational; 3], Refusal> {
 #[derive(Clone, Copy)]
 enum Kind {
     Plane,
+    Disk,
     Cylinder,
     Cone,
     Sphere,
@@ -45,11 +46,117 @@ pub(super) struct Chart {
     radius: Rational,
     minor: Rational,
     quadrant: [usize; 2],
+    cached_origin: [Interval; 3],
+    cached_frame: [[Interval; 3]; 3],
+    cached_radius: Interval,
+    cached_minor: Interval,
     pub(super) domain: Cell,
     pub(super) lipschitz: [Rational; 2],
     pub(super) hessian: [Rational; 3],
 }
 impl Chart {
+    pub(super) fn is_disk(&self) -> bool {
+        matches!(self.kind, Kind::Disk)
+    }
+
+    /// A nonzero affine pullback can vanish only on a set with no open planar
+    /// patch. No point sample or coefficient enclosure is an identity proof.
+    pub(super) fn has_nonzero_planar_restriction(
+        &self,
+        polynomial: &catallax_numbers::MPoly,
+    ) -> bool {
+        use catallax_numbers::MPoly;
+        if !matches!(self.kind, Kind::Plane | Kind::Disk) {
+            return false;
+        }
+        let coordinates: [MPoly; 3] = std::array::from_fn(|i| {
+            MPoly::from_terms(
+                2,
+                vec![
+                    (vec![0, 0], self.origin[i].clone()),
+                    (vec![1, 0], self.frame[0][i].clone()),
+                    (vec![0, 1], self.frame[1][i].clone()),
+                ],
+            )
+        });
+        let mut restricted = MPoly::zero(2);
+        for (monomial, coefficient) in polynomial.terms() {
+            let mut term = MPoly::constant(2, coefficient);
+            for (axis, &power) in monomial.exponents().iter().enumerate() {
+                for _ in 0..power {
+                    term = &term * &coordinates[axis];
+                }
+            }
+            restricted = &restricted + &term;
+        }
+        !restricted.is_zero()
+    }
+
+    pub(super) fn disk(
+        plane: &catallax_shapes::Plane,
+        cylinder: &catallax_shapes::Cylinder,
+        boxes: &[&[Interval; 3]],
+        bound: &Rational,
+    ) -> Result<Vec<Self>, Refusal> {
+        let axis = unit(&cylinder.axis)?;
+        let normal = unit(&plane.normal)?;
+        let origin = [
+            rational(&cylinder.origin.x)?,
+            rational(&cylinder.origin.y)?,
+            rational(&cylinder.origin.z)?,
+        ];
+        let plane_origin = [
+            rational(&plane.origin.x)?,
+            rational(&plane.origin.y)?,
+            rational(&plane.origin.z)?,
+        ];
+        let offset = (0..3).fold(q(0), |s, i| {
+            s + &normal[i] * &(&plane_origin[i] - &origin[i])
+        });
+        let divisor = (0..3).fold(q(0), |s, i| s + &normal[i] * &axis[i]);
+        let centre: [Rational; 3] =
+            std::array::from_fn(|i| &origin[i] + &(&axis[i] * &(&offset / &divisor)));
+        let radius = boxes
+            .iter()
+            .map(|b| {
+                (0..3).fold(q(0), |sum, i| {
+                    let lo = (&Rational::from_f64_exact(b[i].lo()).unwrap() - &centre[i]).abs();
+                    let hi = (&Rational::from_f64_exact(b[i].hi()).unwrap() - &centre[i]).abs();
+                    sum + lo.max(hi)
+                })
+            })
+            .max()
+            .expect("source boxes");
+        let support = Surface::Cylinder(catallax_shapes::Cylinder {
+            origin: RPoint3::new(centre[0].clone(), centre[1].clone(), centre[2].clone()).into(),
+            ..cylinder.clone()
+        });
+        let mut charts = Self::all(&support, bound)?;
+        // Quarter charts share the radial frame. A squared-radius cylinder
+        // may use a rational, nonunit frame: bound its parameter extent and
+        // physical distances once for the entire cap.
+        let radial = &charts[0].frame[0];
+        let squared = radial.iter().fold(q(0), |s, x| s + x * x);
+        let (lower, upper) = if let Some(length) = crate::profile::sqrt(&squared) {
+            (length.clone(), length)
+        } else {
+            let upper = radial.iter().fold(q(0), |s, x| s + x.abs());
+            (&squared / &upper, upper)
+        };
+        let extent = &radius / &lower;
+        let physical = &extent * &upper;
+        let domain = [q(0), extent];
+        let lipschitz = [physical.mul_pow2(1), upper.clone()];
+        let hessian = [physical.mul_pow2(3), upper.mul_pow2(1), q(0)];
+        for chart in &mut charts {
+            chart.kind = Kind::Disk;
+            chart.domain.range[1] = domain.clone();
+            chart.lipschitz = lipschitz.clone();
+            chart.hessian = hessian.clone();
+        }
+        Ok(charts)
+    }
+
     pub(super) fn all(surface: &Surface, bound: &Rational) -> Result<Vec<Self>, Refusal> {
         let cylinder_radius = match surface {
             Surface::Cylinder(s) => Some(s.radius()),
@@ -139,7 +246,7 @@ impl Chart {
             b = b.mul_pow2(1);
         }
         let [lu, lv, huu, huv, hvv] = match kind {
-            Kind::Plane => [q(1), q(1), q(0), q(0), q(0)],
+            Kind::Plane | Kind::Disk => [q(1), q(1), q(0), q(0), q(0)],
             Kind::Cylinder => {
                 let bound = radial_bound.as_ref().unwrap_or(&radius);
                 [bound.mul_pow2(1), q(1), bound.mul_pow2(3), q(0), q(0)]
@@ -186,6 +293,12 @@ impl Chart {
                     radius: radius.clone(),
                     minor: minor.clone(),
                     quadrant: [i, j],
+                    cached_origin: origin.each_ref().map(Interval::from_rational),
+                    cached_frame: frame
+                        .each_ref()
+                        .map(|v| v.each_ref().map(Interval::from_rational)),
+                    cached_radius: Interval::from_rational(&radius),
+                    cached_minor: Interval::from_rational(&minor),
                     domain: Cell {
                         range: [u.clone(), v.clone()],
                         depth: 0,
@@ -196,6 +309,73 @@ impl Chart {
             }
         }
         Ok(charts)
+    }
+    /// Project every source box into linear chart coordinates. The union of
+    /// those projections covers every source face on this support.
+    pub(super) fn restrict(&mut self, boxes: &[&[Interval; 3]]) {
+        if boxes.is_empty() || boxes.iter().any(|b| b.iter().any(|v| !v.is_finite())) {
+            return;
+        }
+        for axis in 0..2 {
+            let frame = match self.kind {
+                Kind::Plane => &self.frame[axis],
+                Kind::Cylinder if axis == 1 => &self.frame[2],
+                _ => continue,
+            };
+            let mut bounds: Option<[Rational; 2]> = None;
+            for b in boxes {
+                let mut range = [q(0), q(0)];
+                for i in 0..3 {
+                    let a = &frame[i]
+                        * &(&Rational::from_f64_exact(b[i].lo()).unwrap() - &self.origin[i]);
+                    let z = &frame[i]
+                        * &(&Rational::from_f64_exact(b[i].hi()).unwrap() - &self.origin[i]);
+                    range[0] = &range[0] + (&a).min(&z);
+                    range[1] = &range[1] + (&a).max(&z);
+                }
+                bounds = Some(match bounds {
+                    None => range,
+                    Some([lo, hi]) => [lo.min(range[0].clone()), hi.max(range[1].clone())],
+                });
+            }
+            let [lo, hi] = bounds.expect("nonempty source boxes");
+            self.domain.range[axis][0] = self.domain.range[axis][0].clone().max(lo);
+            self.domain.range[axis][1] = self.domain.range[axis][1].clone().min(hi);
+        }
+    }
+
+    /// Exact parameter cuts where an axis-aligned planar trim changes sign.
+    pub(super) fn cuts(&self, constraints: &[Vec<super::Constraint>]) -> [Vec<Rational>; 2] {
+        let mut cuts = [Vec::new(), Vec::new()];
+        for c in constraints.iter().flatten() {
+            let Some((normal, constant)) = &c.linear else {
+                continue;
+            };
+            let dot = |v: &[Rational; 3]| (0..3).fold(q(0), |s, i| s + &v[i] * &normal[i]);
+            let offset = &dot(&self.origin) + constant;
+            let coefficients = match self.kind {
+                Kind::Plane => [dot(&self.frame[0]), dot(&self.frame[1])],
+                Kind::Cylinder
+                    if dot(&self.frame[0]).is_zero() && dot(&self.frame[1]).is_zero() =>
+                {
+                    [q(0), dot(&self.frame[2])]
+                }
+                _ => continue,
+            };
+            for axis in 0..2 {
+                if !coefficients[axis].is_zero() && coefficients[1 - axis].is_zero() {
+                    let root = -&offset / coefficients[axis].clone();
+                    if root > self.domain.range[axis][0] && root < self.domain.range[axis][1] {
+                        cuts[axis].push(root);
+                    }
+                }
+            }
+        }
+        for axis in &mut cuts {
+            axis.sort();
+            axis.dedup();
+        }
+        cuts
     }
     pub(super) fn point(&self, uv: &[Rational; 2]) -> RPoint3 {
         let circle = |t: &Rational, quadrant: usize| {
@@ -216,6 +396,7 @@ impl Chart {
         } else {
             let [c, s] = circle(u, self.quadrant[0]);
             match self.kind {
+                Kind::Disk => [&c * v, &s * v, q(0)],
                 Kind::Cylinder => [&c * &self.radius, &s * &self.radius, v.clone()],
                 Kind::Cone => [
                     &(&c * &self.radius) * v,
@@ -251,7 +432,7 @@ impl Chart {
     pub(super) fn corner_signs_suffice(&self, normal: &[Rational; 3], cell: &Cell) -> bool {
         match self.kind {
             Kind::Plane => true,
-            Kind::Cylinder => {
+            Kind::Cylinder | Kind::Disk => {
                 let dot =
                     |axis: usize| (0..3).fold(q(0), |s, i| s + &self.frame[axis][i] * &normal[i]);
                 let (a, b) = (dot(0), dot(1));
@@ -277,30 +458,86 @@ impl Chart {
             _ => false,
         }
     }
-    pub(super) fn cover(&self, cell: &Cell, p: &RPoint3) -> [Ball; 3] {
-        // Coordinate-wise derivative bounds avoid widening directions that the
-        // chart does not move, especially plane/plane and cylinder/cap trims.
-        let span = cell.span();
-        let mut radii = [q(0), q(0), q(0)];
-        for (i, radius) in radii.iter_mut().enumerate() {
-            let (lu, lv) = match self.kind {
-                Kind::Plane => (self.frame[0][i].abs(), self.frame[1][i].abs()),
-                Kind::Cylinder => (
-                    (&self.radius * &(self.frame[0][i].abs() + self.frame[1][i].abs())).mul_pow2(1),
-                    self.frame[2][i].abs(),
-                ),
-                _ => (self.lipschitz[0].clone(), self.lipschitz[1].clone()),
+    pub(super) fn cover(&self, cell: &Cell) -> [Interval; 3] {
+        let range = |axis: usize| {
+            Interval::new(
+                Interval::from_rational(&cell.range[axis][0]).lo(),
+                Interval::from_rational(&cell.range[axis][1]).hi(),
+            )
+            .unwrap()
+        };
+        let zero = Interval::point(0.0).unwrap();
+        let one = Interval::point(1.0).unwrap();
+        let circle = |axis: usize, quadrant: usize| {
+            let at = |t: &Rational| {
+                let t = Interval::from_rational(t);
+                let square = t.square();
+                [(one - square) / (one + square), (t + t) / (one + square)]
             };
-            *radius = (&lu * &span[0] + &lv * &span[1]).mul_pow2(-1);
-        }
-        let coordinates = [&p.x, &p.y, &p.z];
+            let a = at(&cell.range[axis][0]);
+            let b = at(&cell.range[axis][1]);
+            // Cosine is even and decreases with |t|. Sine increases on [-1, 1].
+            let c = Interval::new(
+                a[0].lo().min(b[0].lo()),
+                if cell.range[axis][0] <= q(0) && cell.range[axis][1] >= q(0) {
+                    1.0
+                } else {
+                    a[0].hi().max(b[0].hi())
+                },
+            )
+            .unwrap();
+            let s = Interval::new(a[1].lo(), b[1].hi()).unwrap();
+            match quadrant {
+                0 => [c, s],
+                1 => [-s, c],
+                2 => [-c, -s],
+                _ => [s, -c],
+            }
+        };
+        let local = if matches!(self.kind, Kind::Plane) {
+            [range(0), range(1), zero]
+        } else {
+            let [c, s] = circle(0, self.quadrant[0]);
+            match self.kind {
+                Kind::Disk => [c * range(1), s * range(1), zero],
+                Kind::Cylinder => [c * self.cached_radius, s * self.cached_radius, range(1)],
+                Kind::Cone => [
+                    c * self.cached_radius * range(1),
+                    s * self.cached_radius * range(1),
+                    range(1),
+                ],
+                Kind::Sphere => {
+                    let [cv, sv] = circle(1, 0);
+                    [
+                        c * cv * self.cached_radius,
+                        s * cv * self.cached_radius,
+                        sv * self.cached_radius,
+                    ]
+                }
+                Kind::Torus => {
+                    let [cv, sv] = circle(1, self.quadrant[1]);
+                    let radius = self.cached_radius + cv * self.cached_minor;
+                    [c * radius, s * radius, sv * self.cached_minor]
+                }
+                Kind::Plane => unreachable!(),
+            }
+        };
         std::array::from_fn(|i| {
-            Ball::from_rational(&(coordinates[i] - &radii[i]), 128)
-                .hull(&Ball::from_rational(&(coordinates[i] + &radii[i]), 128))
+            (0..3).fold(self.cached_origin[i], |sum, j| {
+                sum + self.cached_frame[j][i] * local[j]
+            })
         })
     }
     pub(super) fn chord(&self, cell: &Cell) -> Rational {
         let [u, v] = cell.span();
+        if self.is_disk() {
+            // Each radial line is exact. The two triangles form the annular
+            // sector's chord trapezoid, whose inner and outer circular arcs
+            // deviate by at most max_physical_radius * du^2. This is a set-distance
+            // bound, not interpolation at matching (angle, radius) parameters.
+            let radius = &cell.range[1][1] * &self.lipschitz[1];
+            return &(&radius * &u) * &u;
+        }
         (&(&self.hessian[0] * &u) * &u
             + (&(&self.hessian[1] * &u) * &v).mul_pow2(1)
             + &(&self.hessian[2] * &v) * &v)
@@ -311,7 +548,7 @@ impl Chart {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use catallax_shapes::{Cylinder, Point3};
+    use catallax_shapes::{Cone, Cylinder, Plane, Point3, Sphere, Torus};
 
     #[test]
     fn irrational_cylinder_chart_does_not_assume_monotonicity_across_an_extremum() {
@@ -354,5 +591,156 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn scaled_radial_cap_chord_bounds_physical_distance() {
+        for scale in [q(10), Rational::from_ratio(1, 10).unwrap()] {
+            let cylinder = Cylinder {
+                origin: Point3::origin(),
+                axis: Vector3::new(0.into(), 0.into(), 1.into()),
+                radius_sq: (&scale * &scale).mul_pow2(1).into(),
+                ref_dir: Vector3::new(scale.clone().into(), scale.clone().into(), 0.into()),
+            };
+            let plane = Plane {
+                origin: Point3::origin(),
+                normal: cylinder.axis.clone(),
+                ref_dir: cylinder.ref_dir.clone(),
+            };
+            let extent = (&scale * &Rational::from_ratio(3, 2).unwrap()).to_f64_nearest();
+            let bounds = [Interval::new(-extent, extent).unwrap(); 3];
+            let charts = Chart::disk(&plane, &cylinder, &[&bounds], &q(32)).unwrap();
+            for chart in charts {
+                // Parameter radius one is on the source circle at both scales.
+                assert!(chart.domain.range[1][1] >= q(1), "scale={scale}");
+                let cell = Cell {
+                    range: [[q(0), Rational::from_ratio(1, 4).unwrap()], [q(0), q(1)]],
+                    depth: 2,
+                };
+                let a = chart.point(&[q(0), q(1)]);
+                let b = chart.point(&[Rational::from_ratio(1, 4).unwrap(), q(1)]);
+                let p = chart.point(&[Rational::from_ratio(1, 8).unwrap(), q(1)]);
+                let chord = b.minus(&a);
+                let offset = p.minus(&a);
+                let projection = offset.dot(&chord);
+                assert!(projection >= q(0) && projection <= chord.norm_squared());
+                let distance_squared = offset.cross(&chord).norm_squared() / chord.norm_squared();
+                let bound = chart.chord(&cell);
+                assert!(distance_squared <= &bound * &bound, "scale={scale}");
+            }
+        }
+    }
+
+    #[test]
+    fn interval_covers_contain_exact_chart_points_in_every_quadrant() {
+        let origin = Point3::new(
+            Rational::from_ratio(7_000_001, 7).unwrap().into(),
+            Rational::from_ratio(-11, 13).unwrap().into(),
+            q(17).into(),
+        );
+        let axis = Vector3::new(0.into(), 0.into(), 1.into());
+        let reference = Vector3::new(
+            Rational::from_ratio(3, 5).unwrap().into(),
+            Rational::from_ratio(4, 5).unwrap().into(),
+            0.into(),
+        );
+        let surfaces = [
+            Surface::Plane(Plane {
+                origin: origin.clone(),
+                normal: axis.clone(),
+                ref_dir: reference.clone(),
+            }),
+            Surface::Cylinder(Cylinder {
+                origin: origin.clone(),
+                axis: axis.clone(),
+                ref_dir: reference.clone(),
+                radius_sq: q(9).into(),
+            }),
+            Surface::Cylinder(Cylinder {
+                origin: origin.clone(),
+                axis: axis.clone(),
+                ref_dir: Vector3::new(10.into(), 10.into(), 0.into()),
+                radius_sq: q(200).into(),
+            }),
+            Surface::Cone(Cone {
+                apex: origin.clone(),
+                axis: axis.clone(),
+                ref_dir: reference.clone(),
+                slope: Rational::from_ratio(2, 3).unwrap().into(),
+            }),
+            Surface::Sphere(Sphere {
+                center: origin.clone(),
+                axis: axis.clone(),
+                ref_dir: reference.clone(),
+                radius: q(3).into(),
+            }),
+            Surface::Torus(Torus {
+                center: origin,
+                axis,
+                ref_dir: reference,
+                major: q(5).into(),
+                minor: q(2).into(),
+            }),
+        ];
+        for surface in surfaces {
+            let mut charts = Chart::all(&surface, &q(32)).unwrap();
+            if let Surface::Cylinder(cylinder) = &surface {
+                let plane = Plane {
+                    origin: cylinder.origin.clone(),
+                    normal: cylinder.axis.clone(),
+                    ref_dir: cylinder.ref_dir.clone(),
+                };
+                let bounds = [&plane.origin.x, &plane.origin.y, &plane.origin.z].map(|v| {
+                    let v = rational(v).unwrap();
+                    Interval::from_rational(&(&v - &q(32)))
+                        .hull(&Interval::from_rational(&(&v + &q(32))))
+                });
+                charts.extend(Chart::disk(&plane, cylinder, &[&bounds], &q(32)).unwrap());
+            }
+            for chart in charts {
+                let mut cells = vec![chart.domain.clone()];
+                for axis in 0..2 {
+                    cells = cells
+                        .into_iter()
+                        .flat_map(|cell| cell.split(axis, &[]))
+                        .collect();
+                }
+                for cell in cells {
+                    let cover = chart.cover(&cell);
+                    for u in 0..=4 {
+                        for v in 0..=4 {
+                            let uv = [u, v].map(|i| q(i).mul_pow2(-2));
+                            let p = chart.point(&std::array::from_fn(|i| {
+                                &cell.range[i][0] + &(&cell.span()[i] * &uv[i])
+                            }));
+                            for (coordinate, interval) in [p.x, p.y, p.z].iter().zip(cover) {
+                                assert!(
+                                    Rational::from_f64_exact(interval.lo()).unwrap() <= *coordinate
+                                        && Rational::from_f64_exact(interval.hi()).unwrap()
+                                            >= *coordinate,
+                                    "{surface:?}: {coordinate} outside {interval:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn planar_side_sharing_checks_a_complete_polynomial_identity() {
+        use catallax_numbers::MPoly;
+        let plane = Surface::Plane(Plane {
+            origin: Point3::origin(),
+            normal: Vector3::new(0.into(), 0.into(), 1.into()),
+            ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+        });
+        let chart = Chart::all(&plane, &q(4)).unwrap().remove(0);
+        let x = MPoly::var(3, 0);
+        let y = MPoly::var(3, 1);
+        let z = MPoly::var(3, 2);
+        assert!(!chart.has_nonzero_planar_restriction(&(&x * &z)));
+        assert!(chart.has_nonzero_planar_restriction(&(&x + &y)));
     }
 }

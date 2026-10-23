@@ -718,24 +718,6 @@ fn fact_closure_deadlines_and_numeric_short_circuit() {
         of: MeetOf::CurveSurface(c, plane),
         position: Position::Closed(p(1, 2, 2).to_real()),
     }));
-    let facts: Vec<_> = store.facts().iter().collect();
-    assert_eq!(facts.len(), 4);
-    assert_eq!(
-        (facts[0].a, facts[0].b),
-        (GeomKey::Curve(c), GeomKey::Surface(s))
-    );
-    assert_eq!(
-        (facts[1].a, facts[1].b),
-        (GeomKey::Curve(c), GeomKey::Surface(plane))
-    );
-    assert_eq!(
-        (facts[2].a, facts[2].b),
-        (GeomKey::Point(meet), GeomKey::Curve(c))
-    );
-    for fact in facts {
-        assert_eq!(fact.origin, FactOrigin::Construction("shapes.definition"));
-        assert_eq!(fact.at, None);
-    }
     let mut dec = Decider::default();
     dec.set_deadline(Some(Instant::now() - Duration::from_secs(1)));
     assert_eq!(

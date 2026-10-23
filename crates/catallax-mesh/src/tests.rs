@@ -711,3 +711,650 @@ fn collapsed_planar_facets_preserve_incidence_and_report_unavailable_quality() {
         assert_eq!(face.max_aspect_ratio.is_none(), collapsed);
     }
 }
+
+fn elliptic_cylinder(placement: &Pose, oblique_caps: bool) -> (Model, BodyId) {
+    use catallax_shapes::{Ellipse, EllipticCylinder, Plane, Point3, Vector3};
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let axis = if oblique_caps {
+        Vector3::new(1.into(), 0.into(), 1.into())
+    } else {
+        Vector3::new(0.into(), 0.into(), 1.into())
+    };
+    let reference = if oblique_caps {
+        Vector3::new(0.into(), 1.into(), 0.into())
+    } else {
+        Vector3::new(1.into(), 0.into(), 0.into())
+    };
+    let (major_sq, minor_sq) = if oblique_caps { (4, 2) } else { (9, 1) };
+    let side = Surface::EllipticCylinder(
+        EllipticCylinder::new(
+            Point3::origin(),
+            axis.clone(),
+            reference.clone(),
+            major_sq.into(),
+            minor_sq.into(),
+            &mut dec,
+        )
+        .unwrap(),
+    );
+    let surface = model.geom_mut().add_surface(side.transformed(placement));
+    let mut side_loops = Vec::new();
+    let mut faces = Vec::new();
+    let height = if oblique_caps { 2 } else { 4 };
+    let cap_axis = Vector3::new(0.into(), 0.into(), 1.into());
+    let cap_reference = Vector3::new(1.into(), 0.into(), 0.into());
+    for (height, sense) in [(0, Sense::Reversed), (height, Sense::Same)] {
+        let x = if oblique_caps { height } else { 0 };
+        let center = Point3::new(x.into(), 0.into(), height.into());
+        let curve = if oblique_caps {
+            Curve::Circle(
+                Circle::new(
+                    center.clone(),
+                    cap_axis.clone(),
+                    4.into(),
+                    cap_reference.clone(),
+                    &mut dec,
+                )
+                .unwrap(),
+            )
+        } else {
+            Curve::Ellipse(
+                Ellipse::new(
+                    center.clone(),
+                    cap_axis.clone(),
+                    cap_reference.clone(),
+                    major_sq.into(),
+                    minor_sq.into(),
+                    &mut dec,
+                )
+                .unwrap(),
+            )
+        };
+        let curve = model
+            .geom_mut()
+            .add_curve(curve.transformed(placement).unwrap());
+        let edge = model.add_edge(Edge {
+            curve,
+            sense: Sense::Same,
+            start: None,
+            end: None,
+        });
+        let cap = Surface::Plane(
+            Plane::new(center, cap_axis.clone(), cap_reference.clone(), &mut dec).unwrap(),
+        );
+        let cap = model.geom_mut().add_surface(cap.transformed(placement));
+        let coedge = model.add_coedge(Coedge { edge, sense });
+        let boundary = model.add_loop(Loop::Coedges(vec![coedge]));
+        faces.push(model.add_face(Face {
+            surface: cap,
+            sense,
+            loops: vec![boundary],
+        }));
+        let coedge = model.add_coedge(Coedge {
+            edge,
+            sense: if sense == Sense::Same {
+                Sense::Reversed
+            } else {
+                Sense::Same
+            },
+        });
+        side_loops.push(model.add_loop(Loop::Coedges(vec![coedge])));
+    }
+    faces.push(model.add_face(Face {
+        surface,
+        sense: Sense::Same,
+        loops: side_loops,
+    }));
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: MarkLog::new(),
+    });
+    (model, body)
+}
+
+#[test]
+fn elliptic_cylinders_share_cap_edges_and_preserve_transformed_charts() {
+    let transformed = Pose::new(
+        Rotation::from_quaternion(1.into(), 2.into(), 3.into(), 4.into()).unwrap(),
+        RVector3::new(7.into(), (-2).into(), 3.into()).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    for (placement, oblique_caps) in [
+        (Pose::identity(), false),
+        (transformed.clone(), false),
+        (Pose::identity(), true),
+        (transformed, true),
+    ] {
+        let (model, body) = elliptic_cylinder(&placement, oblique_caps);
+        let options = MeshOptions::default();
+        let result = mesh_body(&model, body, &options, &mut Decider::default())
+            .unwrap()
+            .value;
+        assert_closed(&result);
+        assert_eq!(result.faces.len(), 3);
+        assert_eq!(result.edges.len(), 2);
+        for face in &result.faces {
+            assert!(!face.triangles.is_empty());
+            assert!(face.max_chord_error <= options.chord_tolerance);
+        }
+        assert_eq!(
+            result,
+            mesh_body(&model, body, &options, &mut Decider::default())
+                .unwrap()
+                .value
+        );
+    }
+}
+
+#[test]
+fn elliptic_normal_and_length_controls_bound_the_returned_facets() {
+    use catallax_shapes::Point3;
+    for oblique_caps in [false, true] {
+        let (model, body) = elliptic_cylinder(&Pose::identity(), oblique_caps);
+        let options = MeshOptions {
+            angular_deviation: Some(Rational::parse("0.8").unwrap()),
+            max_edge_length: Some(Rational::parse("1.5").unwrap()),
+            ..MeshOptions::default()
+        };
+        let result = mesh_body(&model, body, &options, &mut Decider::default())
+            .unwrap()
+            .value;
+        assert_closed(&result);
+        assert!(result.unavailable_controls.is_empty());
+        for face in &result.faces {
+            assert!(face.max_chord_error <= options.chord_tolerance);
+            assert_eq!(face.max_angular_deviation, options.angular_deviation);
+            let definition = model.face(face.face);
+            let surface = model.geom().surface(definition.surface);
+            for triangle in &result.triangles[face.triangles.clone()] {
+                let points = triangle.vertices.map(|i| result.positions[i]);
+                let ab: [f64; 3] = std::array::from_fn(|i| points[1][i] - points[0][i]);
+                let ac: [f64; 3] = std::array::from_fn(|i| points[2][i] - points[0][i]);
+                let normal: [f64; 3] = std::array::from_fn(|i| {
+                    ab[(i + 1) % 3] * ac[(i + 2) % 3] - ab[(i + 2) % 3] * ac[(i + 1) % 3]
+                });
+                let norm = libm::sqrt(normal.iter().map(|x| x * x).sum());
+                for i in 0..3 {
+                    assert!(
+                        crate::controls::length_squared(points[i], points[(i + 1) % 3])
+                            <= Rational::from_ratio(9, 4).unwrap()
+                    );
+                    let p = points[i].map(|x| catallax_numbers::Real::from(crate::chart::q(x)));
+                    let gradient = surface
+                        .gradient(&Point3::new(p[0].clone(), p[1].clone(), p[2].clone()))
+                        .expect("analytic plane or elliptic cylinder support");
+                    let mut analytic = [&gradient.x, &gradient.y, &gradient.z].map(|x| x.to_f64());
+                    if definition.sense == Sense::Reversed {
+                        analytic = analytic.map(|x| -x);
+                    }
+                    let anorm = libm::sqrt(analytic.iter().map(|x| x * x).sum());
+                    let cosine =
+                        (0..3).map(|j| normal[j] * analytic[j]).sum::<f64>() / (norm * anorm);
+                    assert!(libm::acos(cosine.clamp(-1.0, 1.0)) <= 0.8 + 1e-10);
+                }
+            }
+        }
+        for edge in &result.edges {
+            for pair in edge.vertices.windows(2) {
+                assert!(
+                    crate::controls::length_squared(
+                        result.positions[pair[0]],
+                        result.positions[pair[1]]
+                    ) <= Rational::from_ratio(9, 4).unwrap()
+                );
+            }
+        }
+    }
+}
+
+fn conic_section(parabola: bool) -> (Model, BodyId) {
+    use catallax_intersect::{Component, SurfacePair, intersect_surfaces};
+    use catallax_shapes::{Cone, Line, Plane, Point3, PointDef, Vector3};
+    use catallax_topology::Vertex;
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let vector = |x: i64, y: i64, z: i64| Vector3::new(x.into(), y.into(), z.into());
+    let point = |x: i64, y: Rational, z: Rational| Point3::new(x.into(), y.into(), z.into());
+    let cone = model.geom_mut().add_surface(Surface::Cone(
+        Cone::new(
+            Point3::origin(),
+            vector(0, 0, 1),
+            1.into(),
+            vector(1, 0, 0),
+            &mut dec,
+        )
+        .unwrap(),
+    ));
+    let (origin, normal, height, half_width) = if parabola {
+        (
+            Point3::new((-1).into(), 0.into(), 0.into()),
+            vector(1, 0, -1),
+            Rational::one(),
+            Rational::one(),
+        )
+    } else {
+        (
+            Point3::new(1.into(), 0.into(), 0.into()),
+            vector(1, 0, 0),
+            Rational::from_ratio(5, 4).unwrap(),
+            Rational::from_ratio(3, 4).unwrap(),
+        )
+    };
+    let cut = model.geom_mut().add_surface(Surface::Plane(
+        Plane::new(origin, normal, vector(0, 1, 0), &mut dec).unwrap(),
+    ));
+    let SurfacePair::Meets(components) = intersect_surfaces(model.geom_mut(), cut, cone, &mut dec)
+        .unwrap()
+        .value
+    else {
+        panic!("expected a conic section");
+    };
+    let [Component::Curve { curve: conic, .. }] = components.as_slice() else {
+        panic!("expected one conic component");
+    };
+    let x = if parabola { 0 } else { 1 };
+    let vertices = [-half_width.clone(), half_width].map(|y| {
+        let point = model
+            .geom_mut()
+            .add_point(PointDef::Explicit(point(x, y, height.clone())));
+        model.add_vertex(Vertex { point })
+    });
+    let line = model.geom_mut().add_curve(Curve::Line(
+        Line::new(
+            point(x, Rational::zero(), height.clone()),
+            vector(0, 1, 0),
+            &mut dec,
+        )
+        .unwrap(),
+    ));
+    let circle = model.geom_mut().add_curve(Curve::Circle(
+        Circle::new(
+            point(0, Rational::zero(), height.clone()),
+            vector(0, 0, 1),
+            catallax_numbers::Real::from(height.clone()).square(),
+            vector(1, 0, 0),
+            &mut dec,
+        )
+        .unwrap(),
+    ));
+    let edges = [*conic, line, circle].map(|curve| {
+        let endpoints = if curve == circle && parabola {
+            [vertices[1], vertices[0]]
+        } else {
+            vertices
+        };
+        model.add_edge(Edge {
+            curve,
+            sense: Sense::Same,
+            start: Some(endpoints[0]),
+            end: Some(endpoints[1]),
+        })
+    });
+    let cap = model.geom_mut().add_surface(Surface::Plane(
+        Plane::new(
+            point(0, Rational::zero(), height),
+            vector(0, 0, 1),
+            vector(1, 0, 0),
+            &mut dec,
+        )
+        .unwrap(),
+    ));
+    let same = Sense::Same;
+    let reversed = Sense::Reversed;
+    let boundaries = if parabola {
+        [
+            [(0, same), (1, reversed)],
+            [(1, same), (2, same)],
+            [(2, reversed), (0, reversed)],
+        ]
+    } else {
+        [
+            [(0, reversed), (1, same)],
+            [(1, reversed), (2, same)],
+            [(2, reversed), (0, same)],
+        ]
+    };
+    let faces = [cut, cap, cone]
+        .into_iter()
+        .enumerate()
+        .map(|(i, surface)| {
+            let coedges = boundaries[i].map(|(edge, sense)| {
+                model.add_coedge(Coedge {
+                    edge: edges[edge],
+                    sense,
+                })
+            });
+            let boundary = model.add_loop(Loop::Coedges(coedges.to_vec()));
+            model.add_face(Face {
+                surface,
+                sense: if i == 0 && !parabola { reversed } else { same },
+                loops: vec![boundary],
+            })
+        })
+        .collect();
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: MarkLog::new(),
+    });
+    (model, body)
+}
+
+#[test]
+fn finite_parabola_and_hyperbola_edges_share_their_planar_and_conical_faces() {
+    use catallax_intersect::{CurveForm, curve_form};
+    for parabola in [false, true] {
+        let (model, body) = conic_section(parabola);
+        let conics: Vec<_> = model
+            .edges_of_body(body)
+            .into_iter()
+            .filter(|&edge| {
+                let form = curve_form(
+                    model.geom(),
+                    model.edge(edge).curve,
+                    &mut Decider::default(),
+                )
+                .unwrap();
+                if parabola {
+                    matches!(form, CurveForm::Parabola { .. })
+                } else {
+                    matches!(form, CurveForm::Hyperbola { .. })
+                }
+            })
+            .collect();
+        assert!(!conics.is_empty(), "fixture must contain an open conic");
+        let options = MeshOptions::default();
+        let result = mesh_body(&model, body, &options, &mut Decider::default())
+            .unwrap()
+            .value;
+        assert_closed(&result);
+        assert_eq!(result.faces.len(), model.faces_of_body(body).len());
+        for edge in conics {
+            let polyline = result.edges.iter().find(|e| e.edge == edge).unwrap();
+            assert_ne!(polyline.vertices.first(), polyline.vertices.last());
+            assert!(polyline.max_chord_error <= options.chord_tolerance);
+        }
+        for face in &result.faces {
+            assert!(!face.triangles.is_empty());
+            assert!(face.max_chord_error <= options.chord_tolerance);
+        }
+    }
+}
+
+#[test]
+fn elliptic_bores_and_partial_trims_keep_shared_boundaries_and_winding() {
+    for bore in [true, false] {
+        let (mut model, ellipse) = elliptic_cylinder(&Pose::identity(), false);
+        let (placement, size, operation) = if bore {
+            (
+                pose(-5, -5, 1),
+                [10.into(), 10.into(), 2.into()],
+                BoolOp::Subtract,
+            )
+        } else {
+            (
+                pose(0, -5, -1),
+                [5.into(), 10.into(), 6.into()],
+                BoolOp::Intersect,
+            )
+        };
+        let block = topology::block(&mut model, size, &placement).unwrap();
+        let body = boolean(
+            &mut model,
+            block,
+            ellipse,
+            operation,
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .body;
+        let options = MeshOptions::default();
+        let result = mesh_body(&model, body, &options, &mut Decider::default())
+            .unwrap()
+            .value;
+        assert_closed(&result);
+        assert_eq!(result.faces.len(), model.faces_of_body(body).len());
+        let curved = result
+            .faces
+            .iter()
+            .find(|face| {
+                matches!(
+                    model.geom().surface(model.face(face.face).surface),
+                    Surface::EllipticCylinder(_)
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            model.face(curved.face).sense,
+            if bore { Sense::Reversed } else { Sense::Same }
+        );
+        assert!(curved.max_chord_error <= options.chord_tolerance);
+        if !bore {
+            assert!(result.positions.iter().all(|p| p[0] >= -1e-12));
+        }
+    }
+}
+
+#[test]
+fn oblique_elliptic_cylinder_shares_circular_cap_rails() {
+    use catallax_shapes::{EllipticCylinder, Plane};
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let p = |[x, y, z]: [i64; 3]| RPoint3::new(x.into(), y.into(), z.into()).into();
+    let v = |[x, y, z]: [i64; 3]| RVector3::new(x.into(), y.into(), z.into()).into();
+    let side = model.geom_mut().add_surface(Surface::EllipticCylinder(
+        EllipticCylinder::new(
+            p([0, 0, 0]),
+            v([1, 0, 1]),
+            v([0, 1, 0]),
+            4.into(),
+            2.into(),
+            &mut dec,
+        )
+        .unwrap(),
+    ));
+    let mut rings = Vec::new();
+    let mut faces = Vec::new();
+    for (center, normal) in [([0, 0, 0], [0, 0, -1]), ([2, 0, 2], [0, 0, 1])] {
+        let surface = model.geom_mut().add_surface(Surface::Plane(
+            Plane::new(p(center), v(normal), v([1, 0, 0]), &mut dec).unwrap(),
+        ));
+        let curve = model.geom_mut().add_curve(Curve::Circle(
+            Circle::new(p(center), v([0, 0, 1]), 4.into(), v([1, 0, 0]), &mut dec).unwrap(),
+        ));
+        let edge = model.add_edge(Edge {
+            curve,
+            sense: Sense::Same,
+            start: None,
+            end: None,
+        });
+        rings.push(edge);
+        let coedge = model.add_coedge(Coedge {
+            edge,
+            sense: if normal[2] < 0 {
+                Sense::Reversed
+            } else {
+                Sense::Same
+            },
+        });
+        let ring = model.add_loop(Loop::Coedges(vec![coedge]));
+        faces.push(model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops: vec![ring],
+        }));
+    }
+    let loops = rings
+        .into_iter()
+        .zip([Sense::Same, Sense::Reversed])
+        .map(|(edge, sense)| {
+            let coedge = model.add_coedge(Coedge { edge, sense });
+            model.add_loop(Loop::Coedges(vec![coedge]))
+        })
+        .collect();
+    faces.push(model.add_face(Face {
+        surface: side,
+        sense: Sense::Same,
+        loops,
+    }));
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: MarkLog::new(),
+    });
+    let options = MeshOptions::default();
+    let mesh = mesh_body(&model, body, &options, &mut dec).unwrap().value;
+    assert_closed(&mesh);
+    for face in &mesh.faces {
+        assert!(face.max_chord_error <= options.chord_tolerance);
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            for weights in [[1.0 / 3.0; 3], [0.2, 0.3, 0.5]] {
+                let p: [f64; 3] = std::array::from_fn(|i| {
+                    (0..3)
+                        .map(|j| weights[j] * mesh.positions[triangle.vertices[j]][i])
+                        .sum()
+                });
+                let error = if model.face(face.face).surface == side {
+                    let major = p[1];
+                    let minor = (p[2] - p[0]) / 2.0_f64.sqrt();
+                    // Radial projection supplies an independent upper bound on
+                    // distance to the ellipse, whose major semi-axis is two.
+                    2.0 * ((major * major / 4.0 + minor * minor / 2.0).sqrt() - 1.0).abs()
+                } else {
+                    p[2].abs().min((p[2] - 2.0).abs())
+                };
+                assert!(error <= face.max_chord_error.to_f64_nearest() + 1e-12);
+            }
+        }
+    }
+}
+
+#[test]
+fn torus_trimmed_between_non_grid_latitudes_closes_across_both_seams() {
+    let mut model = Model::new();
+    let original = topology::torus(&mut model, 3.into(), 1.into(), &Pose::identity()).unwrap();
+    let surface = model.face(model.faces_of_body(original)[0]).surface;
+    let mut dec = Decider::default();
+    let edges: Vec<_> = [18, 12]
+        .into_iter()
+        .map(|radius| {
+            let radius = Rational::from_ratio(radius, 5).unwrap();
+            let curve = model.geom_mut().add_curve(Curve::Circle(
+                Circle::new(
+                    RPoint3::new(0.into(), 0.into(), Rational::from_ratio(4, 5).unwrap()).into(),
+                    RVector3::new(0.into(), 0.into(), 1.into()).into(),
+                    (&radius * &radius).into(),
+                    RVector3::new(3.into(), 4.into(), 0.into()).into(),
+                    &mut dec,
+                )
+                .unwrap(),
+            ));
+            model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: None,
+                end: None,
+            })
+        })
+        .collect();
+    let faces: Vec<_> = [
+        [Sense::Same, Sense::Reversed],
+        [Sense::Reversed, Sense::Same],
+    ]
+    .into_iter()
+    .map(|senses| {
+        let loops = edges
+            .iter()
+            .zip(senses)
+            .map(|(&edge, sense)| {
+                let coedge = model.add_coedge(Coedge { edge, sense });
+                model.add_loop(Loop::Coedges(vec![coedge]))
+            })
+            .collect();
+        model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops,
+        })
+    })
+    .collect();
+    let upper = faces[0];
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: MarkLog::new(),
+    });
+    let options = MeshOptions::default();
+    let mesh = mesh_body(&model, body, &options, &mut dec).unwrap().value;
+    assert_closed(&mesh);
+    for face in &mesh.faces {
+        assert!(face.max_chord_error <= options.chord_tolerance);
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            let z = triangle
+                .vertices
+                .iter()
+                .map(|&i| mesh.positions[i][2])
+                .sum::<f64>()
+                / 3.0;
+            if face.face == upper {
+                assert!(z >= 0.8 - 1e-12);
+            } else {
+                assert!(z <= 0.8 + 1e-12);
+            }
+        }
+    }
+}
+
+#[test]
+fn strongly_curved_shared_rails_do_not_emit_boundary_only_ears() {
+    let mut model = Model::new();
+    let a = topology::cylinder(&mut model, 2.into(), 8.into(), &pose(0, 0, -4)).unwrap();
+    let rotation = Rotation::from_quaternion(1.into(), 1.into(), 0.into(), 0.into()).unwrap();
+    let placed = Pose::new(
+        rotation,
+        RVector3::new(0.into(), 4.into(), 0.into()).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let b = topology::cylinder(&mut model, 2.into(), 8.into(), &placed).unwrap();
+    let body = boolean(&mut model, a, b, BoolOp::Intersect, &mut Decider::default())
+        .unwrap()
+        .body;
+    let options = MeshOptions::default();
+    let mesh = mesh_body(&model, body, &options, &mut Decider::default())
+        .unwrap()
+        .value;
+    assert_closed(&mesh);
+    assert_accuracy(&model, &mesh);
+    for face in &mesh.faces {
+        assert!(face.max_chord_error <= options.chord_tolerance);
+    }
+    for edge in &mesh.edges {
+        let rail: std::collections::BTreeSet<_> = edge.vertices.iter().copied().collect();
+        for triangle in &mesh.triangles {
+            assert!(
+                !triangle.vertices.iter().all(|vertex| rail.contains(vertex)),
+                "one rail must not become a zero-volume face ear"
+            );
+        }
+    }
+}

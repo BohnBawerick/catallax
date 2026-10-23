@@ -42,7 +42,7 @@ impl Evaluator {
         let [x, y, z] = [&origin.x, &origin.y, &origin.z].map(enclose);
         let dimensions = match surface {
             Surface::Plane(_) => [point(0.0); 2],
-            Surface::Cylinder(s) => [enclose(&s.radius)?, point(0.0)],
+            Surface::Cylinder(s) => [enclose(&s.radius())?, point(0.0)],
             Surface::Cone(s) => [enclose(&s.slope)?, point(0.0)],
             Surface::Sphere(s) => [enclose(&s.radius)?, point(0.0)],
             Surface::Torus(s) => [enclose(&s.major)?, enclose(&s.minor)?],

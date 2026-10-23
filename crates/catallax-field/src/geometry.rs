@@ -651,7 +651,10 @@ impl Leaf {
                 Ok(())
             }
             Self::Feature(a) => a.transform(pose),
-            Self::Cell(a) => a.transform(pose),
+            Self::Cell(a) => {
+                a.transform(pose);
+                Ok(())
+            }
         }
     }
     pub fn true_distance(&self) -> bool {

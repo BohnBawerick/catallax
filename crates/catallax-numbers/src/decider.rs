@@ -508,9 +508,8 @@ impl Decider {
         };
         let cache_hit = cached.is_some();
         let result = match cached {
-            // The exact root certificate was charged when first computed.
-            // Reusing its immutable entries charges only their deterministic
-            // access/copy cost, not the work of solving the same polynomial.
+            // Reusing a cached certificate still charges its original work
+            // so the deterministic budget does not depend on cache timing.
             Some(cached) => work.charge(cached.work).map(|()| cached.roots.clone()),
             None => algebraic::isolate(p, &mut work),
         };

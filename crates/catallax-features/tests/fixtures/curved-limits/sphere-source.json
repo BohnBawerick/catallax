@@ -1,0 +1,25 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Curved cap source prefix",
+  "description": "Mathematical source/profile inputs for the curved-cap module tests. The target remains the recipe result; this prefix does not claim a completed extrusion through the recipe dispatcher.",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]},
+      "loops": [[
+        {"kind": "line", "id": "bottom", "to": ["1/2", "-1/2"]},
+        {"kind": "line", "id": "right", "to": ["1/2", "1/2"]},
+        {"kind": "line", "id": "top", "to": ["-1/2", "1/2"]},
+        {"kind": "line", "id": "left", "to": ["-1/2", "-1/2"]}
+      ]]
+    },
+    {
+      "id": "target",
+      "op": "sphere",
+      "radius": "2",
+      "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "5"]}
+    }
+  ],
+  "result": "target"
+}

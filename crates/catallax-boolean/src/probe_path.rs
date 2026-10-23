@@ -2,14 +2,35 @@
 //! is certified free of other boundary arcs; displacement alone proves nothing.
 
 use crate::geometry::{natural_ends, on_arc, r, sign, unit};
-use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign};
+use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
 use catallax_shapes::{Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, Vector3};
 use catallax_topology::{EdgeId, Model};
 
 fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
-    // Decider::sign already applies the cached interval and all certified
-    // refinements before its exact proof paths. An unsuccessful preliminary
-    // enclosure repeats that work and can exhaust the shared allowance.
+    if x.as_rational().is_none() && x.approx().sign().is_none() {
+        // Try the cached interval's width first: a modest enclosure often
+        // separates a sign before the finer pre-elimination target is needed.
+        // Both stages are filters; a ball containing zero proves nothing.
+        let coarse_width = Rational::from_f64_exact(x.approx().width());
+        let bits = dec.policy().max_precision_bits.min(256);
+        let mut width = Rational::one().mul_pow2(-i64::from(bits));
+        if let Some(coarse_width) = &coarse_width {
+            width = width.max(coarse_width.mul_pow2(-i64::from(bits.saturating_sub(64))));
+        }
+        let initial = coarse_width.as_ref().filter(|coarse| *coarse > &width);
+        for width in initial.into_iter().chain(std::iter::once(&width)) {
+            let enclosure = dec.enclose(x, width)?;
+            if let Some(value) = enclosure.sign() {
+                return Ok(match value {
+                    StrictSign::Negative => Sign::Negative,
+                    StrictSign::Positive => Sign::Positive,
+                });
+            }
+            if enclosure.is_exact_zero() {
+                break;
+            }
+        }
+    }
     sign(x, dec, "boolean.imprint-ambiguous")
 }
 

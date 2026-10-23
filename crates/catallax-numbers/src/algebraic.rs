@@ -437,9 +437,15 @@ fn isolate_quadratic(
     if work.policy.max_precision_bits == 0 {
         return Ok(QuadraticIsolation::NoRationalRoots);
     }
-    // Try a directly certified closed-form bracket at the ordinary
-    // rational-reconstruction width. Exact endpoint signs and the width check
-    // below gate every enclosure; an inconclusive ball falls back to Descartes.
+    // Ordinary separated roots retain the established Descartes brackets.
+    // Use the closed form only when the magnitude guard cannot separate the
+    // branches, preserving the enclosures consumed by measurement and export.
+    let scale = &center.abs() + &denominator.abs();
+    work.exact(&scale, &scale, true)?;
+    let guard = NEWTON_GUARD_BITS.min(i64::from(work.policy.max_precision_bits));
+    if discriminant >= (&scale * &scale).mul_pow2(-2 * guard) {
+        return Ok(QuadraticIsolation::NoRationalRoots);
+    }
     let magnitude = (polynomial
         .coefficients()
         .iter()
@@ -506,33 +512,8 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
         remaining = UPoly::new(remaining.coefficients()[1..].to_vec());
     }
     let integers = remaining.primitive_integer_checked(&|| work.check_deadline())?;
-    let candidate_primitive = UPoly::new(
-        integers
-            .iter()
-            .cloned()
-            .map(Rational::from_integer)
-            .collect(),
-    );
-    let candidate_quadratic = candidate_primitive.degree() == Some(2);
-    let mut quadratic_proves_no_rational_roots = false;
-    if candidate_quadratic {
-        let q = integers.last().unwrap().abs();
-        let target = Rational::new(Integer::one(), (&q * &q).mul_pow2(2)).unwrap();
-        match isolate_quadratic(&candidate_primitive, &target, &mut result, work)? {
-            QuadraticIsolation::Complete => return Ok(result),
-            QuadraticIsolation::NoRationalRoots => {
-                // rational_sqrt proved the discriminant nonsquare, so the
-                // optional rational-root theorem search cannot find anything.
-                quadratic_proves_no_rational_roots = true;
-            }
-        }
-    }
-    let candidates = if quadratic_proves_no_rational_roots {
-        None
-    } else {
-        rational_candidates(&integers, work)?
-    };
-    let mut rational_complete = quadratic_proves_no_rational_roots || candidates.is_some();
+    let candidates = rational_candidates(&integers, work)?;
+    let rational_complete = candidates.is_some();
     if let Some(candidates) = candidates {
         for r in candidates {
             if filtered_sign(&remaining, &r, work)? == Sign::Zero {
@@ -568,11 +549,14 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
     );
     let q = integers.last().unwrap().abs();
     let target = Rational::new(Integer::one(), (&q * &q).mul_pow2(2)).unwrap();
-    if !candidate_quadratic && remaining.degree() == Some(2) && !rational_complete {
-        match isolate_quadratic(&primitive, &target, &mut result, work)? {
-            QuadraticIsolation::Complete => return Ok(result),
-            QuadraticIsolation::NoRationalRoots => rational_complete = true,
-        }
+    if remaining.degree() == Some(2)
+        && !rational_complete
+        && matches!(
+            isolate_quadratic(&primitive, &target, &mut result, work)?,
+            QuadraticIsolation::Complete
+        )
+    {
+        return Ok(result);
     }
     let irrational_start = result.len();
     let mut derivative = None;
@@ -1174,7 +1158,7 @@ mod tests {
     }
 
     #[test]
-    fn rational_quadratic_roots_use_the_closed_form_before_divisor_search() {
+    fn bounded_divisor_search_falls_back_to_the_rational_quadratic_formula() {
         let polynomial = UPoly::new(vec![
             Rational::from_i64(2),
             Rational::from_i64(-3027),
@@ -1197,24 +1181,30 @@ mod tests {
     }
 
     #[test]
-    fn nonsquare_quadratic_roots_use_checked_closed_form_brackets() {
-        let polynomial = UPoly::new(vec![
-            Rational::from_i64(-2),
-            Rational::zero(),
-            Rational::one(),
-        ]);
-        let mut work = Work::new(crate::BudgetPolicy::default(), None);
-        let roots = isolate(&polynomial, &mut work).unwrap();
-        assert_eq!(roots.len(), 2);
-        assert!(roots.iter().all(|root| root.value.as_rational().is_none()));
-        let intervals: Vec<_> = roots
-            .iter()
-            .map(|root| root.value.isolating_interval())
-            .collect();
-        assert!(intervals[0].0 < intervals[0].1);
-        assert!(intervals[0].1 < intervals[1].0);
-        assert!(intervals[1].0 < intervals[1].1);
-        assert!(work.used < 1_000, "closed form used {} work", work.used);
+    fn separated_quadratics_preserve_canonical_isolating_intervals() {
+        for (coefficients, expected) in [
+            ([-2, 0, 1], [("-25/16", "-21/16"), ("5/4", "3/2")]),
+            ([1, -3, 1], [("1/4", "1/2"), ("19/8", "23/8")]),
+        ] {
+            let polynomial = UPoly::new(coefficients.into_iter().map(Rational::from_i64).collect());
+            let mut work = Work::new(crate::BudgetPolicy::default(), None);
+            let roots = isolate(&polynomial, &mut work).unwrap();
+            assert_eq!(roots.len(), 2);
+            assert!(
+                roots
+                    .iter()
+                    .all(|root| root.multiplicity == 1 && root.value.as_rational().is_none())
+            );
+            let intervals: Vec<_> = roots
+                .iter()
+                .map(|root| root.value.isolating_interval())
+                .collect();
+            let expected: Vec<_> = expected
+                .into_iter()
+                .map(|(lo, hi)| (Rational::parse(lo).unwrap(), Rational::parse(hi).unwrap()))
+                .collect();
+            assert_eq!(intervals, expected);
+        }
     }
 
     #[test]

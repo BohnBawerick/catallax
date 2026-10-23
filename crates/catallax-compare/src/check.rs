@@ -467,6 +467,7 @@ pub(crate) fn run(
     let mut storage = Workspace::default();
     let width = options.accuracy.mul_pow2(-20);
     let mut distance_domains = None;
+    let mut preferred = Vec::new();
     for (i, position) in mesh.positions.iter().enumerate() {
         if revision.is_cancelled() {
             return Completion::Cancelled;
@@ -546,18 +547,70 @@ pub(crate) fn run(
             let prepared =
                 distance_domains.get_or_insert_with(|| field.prepare_distances(&mut dec));
             if let Ok(prepared) = prepared {
-                let controls = catallax_shapes::distance::Options {
-                    width: if options.accuracy > error {
-                        (&options.accuracy - &error).mul_pow2(-1)
+                let remaining = &options.accuracy - &error;
+                let mut controls = catallax_shapes::distance::Options {
+                    width: if remaining > r(0) {
+                        remaining.mul_pow2(-1)
                     } else {
                         options.accuracy.mul_pow2(-2)
                     },
                     ..Default::default()
                 };
-                if let Ok(distance) = prepared.point_to_boundary(&p.to_real(), &controls, &mut dec)
+                preferred.clear();
+                for &index in &incident[i] {
+                    for origin in &face_origins[index] {
+                        if let Some((id, _)) = registry.get(origin) {
+                            preferred.push(*id);
+                        }
+                    }
+                }
+                // Names guide witness order only. Every candidate still needs
+                // the independent field trim proof, and failure falls back to
+                // the complete field registry. Curved incident supports avoid
+                // unnecessary meridian-root queries on distant planar caps.
+                preferred.sort_unstable_by_key(|id| {
+                    (
+                        matches!(&field.faces()[id.index()].surface, Surface::Plane(_)),
+                        id.index(),
+                    )
+                });
+                preferred.dedup();
+                let point = p.to_real();
+                let cell_limit = controls.max_cells;
+                controls.max_cells = 1;
+                let mut geometric_upper = None;
+                for &id in &preferred {
+                    if let Ok(distance) = prepared.point_to_face(id, &point, &controls, &mut dec)
+                        && let Some(bound) = distance.upper
+                        && geometric_upper.as_ref().is_none_or(|old| bound < *old)
+                    {
+                        geometric_upper = Some(bound);
+                    }
+                    if geometric_upper
+                        .as_ref()
+                        .is_some_and(|bound| bound <= &remaining)
+                    {
+                        break;
+                    }
+                }
+                controls.max_cells = cell_limit;
+                if (geometric_upper.is_none()
+                    || (!proven_gap
+                        && geometric_upper
+                            .as_ref()
+                            .is_some_and(|bound| bound > &remaining)))
+                    && let Ok(distance) = prepared.point_to_boundary(&point, &controls, &mut dec)
                     && let Some(bound) = distance.upper
+                    && geometric_upper.as_ref().is_none_or(|old| bound < *old)
                 {
-                    upper = Some(bound + error.clone());
+                    geometric_upper = Some(bound);
+                }
+                if let Some(bound) = geometric_upper {
+                    let bound = &bound + &error;
+                    upper = Some(match upper {
+                        Some(old) => old.min(bound),
+                        None => bound,
+                    });
                 }
             }
         }

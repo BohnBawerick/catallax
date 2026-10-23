@@ -235,4 +235,92 @@ fn native_field_display_keeps_its_default_certificate() {
     assert!(!work.exhausted);
     assert!(!mesh.triangles.is_empty());
     assert!(mesh.max_deviation <= options.tolerance);
+    let mut roles = Vec::new();
+    for triangle in &mesh.triangles {
+        let origin = &plan.faces()[triangle.face.index()].origin;
+        assert_eq!(origin.step, id("cap"));
+        if !roles.contains(&origin.role) {
+            roles.push(origin.role.clone());
+        }
+    }
+    for role in [Role::Start, Role::End] {
+        assert!(roles.contains(&role), "missing retained cap {role:?}");
+    }
+    for side in ["left", "right", "bottom", "top"] {
+        assert!(
+            roles
+                .iter()
+                .any(|role| matches!(role, Role::Side {segment,..} if segment.as_str()==side)),
+            "missing crossing-boundary wall {side}"
+        );
+    }
+    // The cells cross at the trim edges. The display optimization must not
+    // classify the retained interior or closed side boundary as outside.
+    let mut workspace = catallax_field::Workspace::default();
+    for (p, want) in [
+        (["0", "0", "2"], catallax_field::Location::Inside),
+        (["0", "0", "3"], catallax_field::Location::Boundary),
+        (["1/2", "0", "2"], catallax_field::Location::Boundary),
+        (["1/2", "1/2", "0"], catallax_field::Location::Boundary),
+        (["0", "0", "4"], catallax_field::Location::Outside),
+    ] {
+        let [x, y, z] = p.map(q);
+        assert_eq!(
+            plan.proven(&RPoint3::new(x, y, z), &mut workspace).location,
+            want,
+            "{p:?}"
+        );
+    }
+}
+
+#[test]
+fn cell_pruning_keeps_nonconvex_feature_winding_and_cap_area() {
+    let recipe = Recipe::parse(&serde_json::json!({
+        "format":"catallax-recipe/3","name":"nonconvex feature remains a feature","steps":[
+            {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+                {"kind":"line","id":"bottom","to":["2","0"]},
+                {"kind":"line","id":"right","to":["2","1"]},
+                {"kind":"line","id":"notch-bottom","to":["1","1"]},
+                {"kind":"line","id":"notch-left","to":["1","2"]},
+                {"kind":"line","id":"top","to":["0","2"]},
+                {"kind":"line","id":"left","to":["0","0"]}
+            ]]},
+            {"id":"body","op":"extrude","profile":"profile","distance":"2"}
+        ],"result":"body"
+    }).to_string()).unwrap();
+    let plan = catallax_field::Plan::compile(&recipe).unwrap();
+    let options = catallax_field::display::Options::default();
+    let (result, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        catallax_field::display::mesh_plan(&plan, &options, &mut Decider::default())
+    });
+    let mesh = result.unwrap();
+    assert!(!work.exhausted);
+    assert!(mesh.max_deviation <= options.tolerance);
+    let end = plan
+        .select(&catallax_recipe::Origin {
+            step: id("body"),
+            role: Role::End,
+        })
+        .unwrap();
+    let mut area = 0.0;
+    for triangle in mesh.triangles.iter().filter(|t| t.face == end) {
+        let [a, b, c] = triangle.vertices.map(|i| mesh.positions[i]);
+        area += ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])).abs() * 0.5;
+    }
+    assert!(
+        (area - 3.0).abs() <= 1e-12,
+        "the concave cap lost area: {area}"
+    );
+    let mut workspace = catallax_field::Workspace::default();
+    for (p, want) in [
+        (["3/2", "1/2", "1"], catallax_field::Location::Inside),
+        (["1/2", "3/2", "1"], catallax_field::Location::Inside),
+        (["3/2", "3/2", "1"], catallax_field::Location::Outside),
+    ] {
+        let [x, y, z] = p.map(q);
+        assert_eq!(
+            plan.proven(&RPoint3::new(x, y, z), &mut workspace).location,
+            want
+        );
+    }
 }

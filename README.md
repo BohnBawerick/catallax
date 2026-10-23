@@ -2,7 +2,7 @@
 
 Geometry should not require a vendor's permission. Catallax is a geometry kernel in safe Rust, free for everyone, for ever.
 
-Catallax is built for SolidDraft, the CAD application. They are one project in two repositories; SolidDraft's repository is still private. In design: SolidDraft runs only on Catallax, with no other kernel as a fallback. [The roadmap](docs/PLAN.md) orders the kernel work and its application integration.
+Catallax is built for SolidDraft, the CAD application. They are one project in two repositories. [SolidDraft is public under MIT](https://github.com/BohnBawerick/soliddraft). It is not released for download yet; a release with the features is coming soon. For now it is research grade only. In design: SolidDraft runs only on Catallax, with no other kernel as a fallback. [The roadmap](docs/PLAN.md) orders the kernel work and its application integration.
 
 Kernel site: [kernel.zigrawbohnbawerick.org](https://kernel.zigrawbohnbawerick.org/).
 

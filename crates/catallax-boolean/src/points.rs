@@ -161,21 +161,34 @@ fn exact_probe(
             ))))
         }
         Surface::Cylinder(s) => {
-            let length = root(&s.ref_dir.norm_squared());
-            let base = s.ref_dir.scaled(&(&s.radius / &length));
+            let base = s.radial_reference();
             let tangent = s.axis.cross(&base);
             let squared = base.norm_squared();
             let tangent_squared = tangent.norm_squared();
             let d = target.minus(&s.origin);
             let h = d.dot(&s.axis) / s.axis.norm_squared();
-            for sense in [Sense::Same, Sense::Reversed] {
+            let along = d.dot(&base);
+            // Keep the stereographic denominator away from the opposite pole,
+            // including when the target is a rounded point just off the surface.
+            let senses = if crate::geometry::sign(&along, dec, "boolean.imprint-ambiguous")?
+                == Sign::Negative
+            {
+                [Sense::Reversed, Sense::Same]
+            } else {
+                [Sense::Same, Sense::Reversed]
+            };
+            for sense in senses {
                 let b = if sense == Sense::Same {
                     base.clone()
                 } else {
                     base.scaled(&Real::from_i64(-1))
                 };
                 let v = s.axis.cross(&b);
-                let denominator = &squared + &d.dot(&b);
+                let denominator = if sense == Sense::Same {
+                    &squared + &along
+                } else {
+                    &squared - &along
+                };
                 match dec.sign(&denominator) {
                     Outcome::ProvenCoincident(_) | Outcome::NotExact(_) => continue,
                     Outcome::Refused(e) => return Err(e),
@@ -483,7 +496,7 @@ fn search<T>(
             let tangent = oriented(&tangent, product(edge.sense, coedge.sense));
             let inward = oriented(&surface.gradient(&p), f.sense).cross(&tangent);
             let scale = match &surface {
-                Surface::Cylinder(s) => size_upper(&s.radius, dec)?,
+                Surface::Cylinder(s) => size_upper(&s.radius(), dec)?,
                 Surface::Sphere(s) => size_upper(&s.radius, dec)?,
                 Surface::EllipticCylinder(s) => size_upper(&root(&s.minor_sq), dec)?,
                 _ => {

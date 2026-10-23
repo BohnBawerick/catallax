@@ -58,7 +58,7 @@ fn surface(s: &Step, id: usize, def: &Surface, digits: u32) {
         Surface::Cylinder(p) => {
             s.e(id, "CYLINDRICAL_SURFACE");
             placement(s, a, &p.origin, &p.axis, &p.ref_dir, digits);
-            rounded(&e.args[2], p.radius.rational_ref().unwrap(), digits);
+            rounded(&e.args[2], p.radius().rational_ref().unwrap(), digits);
         }
         Surface::Sphere(p) => {
             s.e(id, "SPHERICAL_SURFACE");

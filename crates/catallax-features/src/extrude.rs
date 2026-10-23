@@ -299,17 +299,11 @@ pub(crate) fn extrude_vector(
                             "an oblique circular sweep needs an exact elliptic-cylinder definition",
                         ));
                     }
-                    let radius = sqrt(radius_sq).ok_or_else(|| {
-                        Refusal::new(
-                            "features.unsupported-algebraic-cylinder-radius",
-                            "the analytic surface store needs a squared-radius cylinder definition",
-                        )
-                    })?;
                     (
                         Surface::Cylinder(Cylinder {
                             origin: profile.world(c, &zero).into(),
                             axis: normal.clone().into(),
-                            radius: radius.into(),
+                            radius_sq: radius_sq.clone().into(),
                             ref_dir: profile.pose.apply_vector(
                                 &RVector3::new(
                                     &s.start[0] - &c[0],

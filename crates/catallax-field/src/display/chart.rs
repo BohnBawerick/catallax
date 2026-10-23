@@ -1,7 +1,7 @@
 //! Rational charts, exact witnesses and uniform interpolation bounds.
 
 use catallax_numbers::{Ball, Rational, Real, Refusal};
-use catallax_shapes::{RPoint3, Surface, Vector3};
+use catallax_shapes::{RPoint3, RVector3, Surface, Vector3};
 
 use super::{Cell, failure};
 
@@ -51,6 +51,33 @@ pub(super) struct Chart {
 }
 impl Chart {
     pub(super) fn all(surface: &Surface, bound: &Rational) -> Result<Vec<Self>, Refusal> {
+        let cylinder_radius = match surface {
+            Surface::Cylinder(s) => Some(s.radius()),
+            _ => None,
+        };
+        let radial_frame = if let Surface::Cylinder(s) = surface
+            && cylinder_radius.as_ref().unwrap().rational_ref().is_none()
+        {
+            let radial = s.radial_reference().as_rational().ok_or_else(|| {
+                failure(
+                    "field.display-unsupported",
+                    "cylinder has no rational point-on-circle frame",
+                )
+            })?;
+            let axis = unit(&s.axis)?;
+            let tangent =
+                RVector3::new(axis[0].clone(), axis[1].clone(), axis[2].clone()).cross(&radial);
+            Some([
+                [radial.x, radial.y, radial.z],
+                [tangent.x, tangent.y, tangent.z],
+                axis,
+            ])
+        } else {
+            None
+        };
+        let radial_bound = radial_frame
+            .as_ref()
+            .map(|f| f[0].iter().fold(q(0), |sum, x| sum + x.abs()));
         let (kind, origin, axis, reference, radius, minor) = match surface {
             Surface::Plane(s) => (Kind::Plane, &s.origin, &s.normal, &s.ref_dir, q(0), q(0)),
             Surface::Cylinder(s) => (
@@ -58,7 +85,11 @@ impl Chart {
                 &s.origin,
                 &s.axis,
                 &s.ref_dir,
-                rational(&s.radius)?,
+                if radial_frame.is_some() {
+                    q(1)
+                } else {
+                    rational(cylinder_radius.as_ref().unwrap())?
+                },
                 q(0),
             ),
             Surface::Cone(s) => (
@@ -97,7 +128,11 @@ impl Chart {
             rational(&origin.y)?,
             rational(&origin.z)?,
         ];
-        let frame = [unit(reference)?, unit(&axis.cross(reference))?, unit(axis)?];
+        let frame = if let Some(frame) = radial_frame {
+            frame
+        } else {
+            [unit(reference)?, unit(&axis.cross(reference))?, unit(axis)?]
+        };
         let extent = bound + &origin.iter().fold(q(0), |sum, x| sum + x.abs());
         let mut b = q(1);
         while b < extent {
@@ -105,7 +140,10 @@ impl Chart {
         }
         let [lu, lv, huu, huv, hvv] = match kind {
             Kind::Plane => [q(1), q(1), q(0), q(0), q(0)],
-            Kind::Cylinder => [radius.mul_pow2(1), q(1), radius.mul_pow2(3), q(0), q(0)],
+            Kind::Cylinder => {
+                let bound = radial_bound.as_ref().unwrap_or(&radius);
+                [bound.mul_pow2(1), q(1), bound.mul_pow2(3), q(0), q(0)]
+            }
             Kind::Cone => [
                 (&radius * &b).mul_pow2(1),
                 &q(1) + &radius,
@@ -208,17 +246,33 @@ impl Chart {
         let [x, y, z] = p;
         RPoint3::new(x, y, z)
     }
-    /// A linear world constraint is affine on a plane. On a cylinder it is
-    /// affine in height and monotone in the quarter-circle coordinate when
-    /// at most one radial frame coefficient is nonzero. Its corner values
-    /// then certify the open cell; zero endpoint pairs certify aligned edges.
-    pub(super) fn corner_signs_suffice(&self, normal: &[Rational; 3]) -> bool {
+    /// A linear constraint is affine in height. Exact Bernstein signs of its
+    /// angular derivative prove when corner values bound the entire cell.
+    pub(super) fn corner_signs_suffice(&self, normal: &[Rational; 3], cell: &Cell) -> bool {
         match self.kind {
             Kind::Plane => true,
             Kind::Cylinder => {
                 let dot =
                     |axis: usize| (0..3).fold(q(0), |s, i| s + &self.frame[axis][i] * &normal[i]);
-                dot(0).is_zero() || dot(1).is_zero()
+                let (a, b) = (dot(0), dot(1));
+                if a.is_zero() || b.is_zero() {
+                    return true;
+                }
+                let (a, b) = match self.quadrant[0] {
+                    0 => (a, b),
+                    1 => (b, -a),
+                    2 => (-a, -b),
+                    _ => (-b, a),
+                };
+                let [lo, hi] = &cell.range[0];
+                // d/dt of a*cos(t)+b*sin(t) has the sign of
+                // b*(1-t²)-2*a*t in the rational quarter-circle chart.
+                let coefficients = [
+                    &b * &(&q(1) - &(lo * lo)) - (&a * lo).mul_pow2(1),
+                    &b * &(&q(1) - &(lo * hi)) - &a * &(lo + hi),
+                    &b * &(&q(1) - &(hi * hi)) - (&a * hi).mul_pow2(1),
+                ];
+                coefficients.iter().all(|x| x >= &q(0)) || coefficients.iter().all(|x| x <= &q(0))
             }
             _ => false,
         }
@@ -251,5 +305,53 @@ impl Chart {
             + (&(&self.hessian[1] * &u) * &v).mul_pow2(1)
             + &(&self.hessian[2] * &v) * &v)
             .mul_pow2(-3)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_shapes::{Cylinder, Point3};
+
+    #[test]
+    fn irrational_cylinder_chart_does_not_assume_monotonicity_across_an_extremum() {
+        let surface = Surface::Cylinder(Cylinder {
+            origin: Point3::origin(),
+            axis: Vector3::new(0.into(), 0.into(), 1.into()),
+            radius_sq: 2.into(),
+            ref_dir: Vector3::new(1.into(), 1.into(), 0.into()),
+        });
+        let charts = Chart::all(&surface, &q(4)).unwrap();
+        let normal = [q(1), q(0), q(0)];
+        assert!(charts[0].corner_signs_suffice(&normal, &charts[0].domain));
+        assert!(!charts[1].corner_signs_suffice(&normal, &charts[1].domain));
+        for range in [
+            [q(0), Rational::from_ratio(1, 4).unwrap()],
+            [Rational::from_ratio(3, 4).unwrap(), q(1)],
+        ] {
+            let cell = Cell {
+                range: [range, [q(-1), q(1)]],
+                depth: 2,
+            };
+            assert!(charts[1].corner_signs_suffice(&normal, &cell));
+        }
+        let mut dec = catallax_numbers::Decider::default();
+        for chart in charts {
+            for uv in [
+                [q(0), q(0)],
+                [Rational::from_ratio(1, 3).unwrap(), q(2)],
+                [q(1), q(-2)],
+            ] {
+                let p = chart.point(&uv);
+                assert!(
+                    dec.sign(&surface.implicit().eval_real(&[
+                        Real::from(p.x),
+                        Real::from(p.y),
+                        Real::from(p.z)
+                    ],))
+                        .is_coincident()
+                );
+            }
+        }
     }
 }

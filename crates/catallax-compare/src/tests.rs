@@ -39,6 +39,53 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
     controller.latest().unwrap()
 }
 #[test]
+fn rational_bisector_arc_with_irrational_radius_agrees() {
+    let part = recipe(vec![
+        json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[
+            {"kind":"arc","id":"round","centre":["1","1/2"],"to":["0","0"],"turn":"ccw"},
+            {"kind":"line","id":"chord","to":["2","0"]}
+        ]]}),
+        json!({"id":"body","op":"extrude","profile":"profile","distance":"3"}),
+    ]);
+    let report = check(&part);
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+}
+
+#[test]
+fn reflected_irrational_arc_agrees_at_rounded_boundary_points() {
+    let part = recipe(vec![
+        json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[
+            {"kind":"arc","id":"round","centre":["1","1/2"],"to":["0","0"],"turn":"ccw"},
+            {"kind":"line","id":"chord","to":["2","0"]}
+        ]]}),
+        json!({"id":"body","op":"extrude","profile":"profile","distance":"3"}),
+        json!({"id":"reflected","op":"mirror","body":"body","plane":{
+            "point":["0","0","0"],"normal":["1","2","0"]
+        },"keep_original":false}),
+    ]);
+    let report = check(&part);
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+}
+
+#[test]
+fn arc_just_past_a_chart_seam_keeps_its_shared_display_boundary() {
+    let n = Rational::parse("10000000000000000").unwrap();
+    let n2 = &n * &n;
+    let denominator = &n2 + &Rational::one();
+    let x = (&Rational::one() - &n2) / denominator.clone();
+    let y = (-Rational::from_i64(2) * n) / denominator;
+    let part = recipe(vec![
+        json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[
+            {"kind":"arc","id":"round","centre":["0","0"],"to":[x.to_string(),y.to_string()],"turn":"ccw"},
+            {"kind":"line","id":"chord","to":["1","0"]}
+        ]]}),
+        json!({"id":"body","op":"extrude","profile":"profile","distance":"2"}),
+    ]);
+    let report = check(&part);
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+}
+
+#[test]
 fn agreeing_stock_across_poses_and_scales() {
     // Periodic chart copies count toward the mesher's work allowance. Keep the
     // same display accuracy at every scale, with enough work for the largest case.

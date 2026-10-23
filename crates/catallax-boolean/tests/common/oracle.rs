@@ -251,7 +251,7 @@ pub fn implicit_normal(s: &Surface, p: &RPoint3) -> (Rational, RVector3) {
             let aa = axis.norm_squared();
             let radial = d.scaled(&aa).minus(&axis.scaled(&d.dot(&axis)));
             (
-                d.cross(&axis).norm_squared() - sq(&s.radius.as_rational().unwrap()) * aa,
+                d.cross(&axis).norm_squared() - s.radius_sq.as_rational().unwrap() * aa,
                 radial.scaled(&r(2)),
             )
         }

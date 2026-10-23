@@ -33,7 +33,7 @@ impl Support {
                 Kind::Cylinder,
                 &s.origin,
                 &s.axis,
-                s.radius.clone(),
+                s.radius_sq.clone(),
                 Real::zero(),
             ),
             Surface::Cone(s) => (Kind::Cone, &s.apex, &s.axis, s.slope.clone(), Real::zero()),
@@ -53,7 +53,11 @@ impl Support {
             ),
             _ => unreachable!("feature analytic support"),
         };
-        let factor = &a * &a + Real::one();
+        let factor = if matches!(kind, Kind::Cone) {
+            &a * &a + Real::one()
+        } else {
+            Real::one()
+        };
         let exact = [
             origin.x.clone(),
             origin.y.clone(),
@@ -66,10 +70,14 @@ impl Support {
             b,
             factor,
         ];
+        let mut fast = exact.each_ref().map(Real::to_f64);
+        if let Surface::Cylinder(cylinder) = surface {
+            fast[7] = cylinder.radius().to_f64();
+        }
         Self {
             kind,
-            balls: rational_balls(&exact),
-            fast: exact.each_ref().map(Real::to_f64),
+            balls: rational_balls(kind, &exact),
+            fast,
             exact,
         }
     }
@@ -91,14 +99,18 @@ impl Support {
         self.exact[4] = axis.y;
         self.exact[5] = axis.z;
         // A certified rigid motion preserves the defining axis norm and dimensions.
-        self.balls = rational_balls(&self.exact);
+        self.balls = rational_balls(self.kind, &self.exact);
+        let radius = self.fast[7];
         self.fast = self.exact.each_ref().map(Real::to_f64);
+        if matches!(self.kind, Kind::Cylinder) {
+            self.fast[7] = radius;
+        }
     }
     pub fn proven(&self, p: &[Ball; 3], dec: &mut Decider) -> Result<Ball, Refusal> {
         if let Some(q) = &self.balls {
             return Ok(self.evaluate(q, p));
         }
-        let q = [
+        let mut q = [
             crate::geometry::enclose(&self.exact[0], PRECISION, dec)?,
             crate::geometry::enclose(&self.exact[1], PRECISION, dec)?,
             crate::geometry::enclose(&self.exact[2], PRECISION, dec)?,
@@ -110,6 +122,9 @@ impl Support {
             crate::geometry::enclose(&self.exact[8], PRECISION, dec)?,
             crate::geometry::enclose(&self.exact[9], PRECISION, dec)?,
         ];
+        if matches!(self.kind, Kind::Cylinder) {
+            q[7] = q[7].sqrt().expect("validated positive squared radius");
+        }
         Ok(self.evaluate(&q, p))
     }
     pub fn fast(&self, p: &[f64; 3]) -> f64 {
@@ -146,10 +161,19 @@ impl Support {
     }
 }
 
-fn rational_balls(exact: &[Real; 10]) -> Option<[Ball; 10]> {
+fn rational_balls(kind: Kind, exact: &[Real; 10]) -> Option<[Ball; 10]> {
     exact.iter().all(|q| q.rational_ref().is_some()).then(|| {
-        exact
+        let mut balls = exact
             .each_ref()
-            .map(|q| Ball::from_rational(q.rational_ref().expect("rational support"), PRECISION))
+            .map(|q| Ball::from_rational(q.rational_ref().expect("rational support"), PRECISION));
+        if matches!(kind, Kind::Cylinder) {
+            balls[7] = if let Some(radius) = crate::profile::sqrt(exact[7].rational_ref().unwrap())
+            {
+                Ball::from_rational(&radius, PRECISION)
+            } else {
+                balls[7].sqrt().expect("validated positive squared radius")
+            };
+        }
+        balls
     })
 }

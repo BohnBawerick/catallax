@@ -52,8 +52,8 @@ pub struct Cylinder {
     pub origin: Point3,
     /// Nonzero axis direction.
     pub axis: Vector3,
-    /// Positive radius.
-    pub radius: Real,
+    /// Positive squared radius, retained without extracting a root.
+    pub radius_sq: Real,
     /// Nonzero perpendicular seam direction.
     pub ref_dir: Vector3,
 }
@@ -153,9 +153,45 @@ impl Cylinder {
         Ok(Self {
             origin,
             axis,
-            radius,
+            radius_sq: radius.square(),
             ref_dir,
         })
+    }
+
+    /// Validates a cylinder directly from its positive squared radius.
+    pub fn from_radius_sq(
+        origin: Point3,
+        axis: Vector3,
+        radius_sq: Real,
+        ref_dir: Vector3,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        math::validate_point(&origin, dec)?;
+        math::validate_vector(&axis, dec)?;
+        math::validate(&radius_sq, dec)?;
+        math::validate_vector(&ref_dir, dec)?;
+        math::directions(&axis, &ref_dir, dec)?;
+        math::positive(&radius_sq, "shapes.non-positive-radius", dec)?;
+        math::perpendicular(&axis, &ref_dir, dec)?;
+        Ok(Self {
+            origin,
+            axis,
+            radius_sq,
+            ref_dir,
+        })
+    }
+
+    /// Positive radius for metric calculations and exchange formats.
+    pub fn radius(&self) -> Real {
+        math::exact_sqrt(&self.radius_sq)
+    }
+
+    /// A point-on-circle direction, without roots when the seam already has
+    /// the defining radius, as it does for an extruded circular arc.
+    pub fn radial_reference(&self) -> Vector3 {
+        self.ref_dir.scaled(&math::exact_sqrt(
+            &(&self.radius_sq / &self.ref_dir.norm_squared()),
+        ))
     }
 }
 impl Cone {
@@ -311,7 +347,7 @@ impl Surface {
         let (origin, axis, reference) = self.definition_frame();
         let dimensions = match self {
             Self::Plane(_) => [None, None],
-            Self::Cylinder(s) => [Some(&s.radius), None],
+            Self::Cylinder(s) => [Some(&s.radius_sq), None],
             Self::Cone(s) => [Some(&s.slope), None],
             Self::Sphere(s) => [Some(&s.radius), None],
             Self::Torus(s) => [Some(&s.major), Some(&s.minor)],
@@ -379,8 +415,7 @@ impl Surface {
         match self {
             Self::Plane(_) => math::dot(&d, axis),
             Self::Cylinder(s) => {
-                math::norm(&math::cross(&d, axis))
-                    - constant(&s.radius.square() * &axis.norm_squared())
+                math::norm(&math::cross(&d, axis)) - constant(&s.radius_sq * &axis.norm_squared())
             }
             Self::Cone(s) => {
                 let h = math::dot(&d, axis);
@@ -451,7 +486,7 @@ impl Surface {
             Self::Cylinder(s) => Self::Cylinder(Cylinder {
                 origin: pose.apply_point(&s.origin),
                 axis: pose.apply_vector(&s.axis),
-                radius: s.radius.clone(),
+                radius_sq: s.radius_sq.clone(),
                 ref_dir: pose.apply_vector(&s.ref_dir),
             }),
             Self::Cone(s) => Self::Cone(Cone {
@@ -503,7 +538,10 @@ impl Surface {
         let zero = || math::ball(&Rational::zero(), precision);
         let coefficients = match self {
             Self::Plane(_) => [u.clone(), v.clone(), zero()],
-            Self::Cylinder(s) => [r(&s.radius)? * u.cos(), r(&s.radius)? * u.sin(), v.clone()],
+            Self::Cylinder(s) => {
+                let radius = r(&s.radius())?;
+                [&radius * &u.cos(), &radius * &u.sin(), v.clone()]
+            }
             Self::Cone(s) => {
                 let radial = v * &r(&s.slope)?;
                 [&radial * &u.cos(), &radial * &u.sin(), v.clone()]
@@ -554,7 +592,7 @@ impl Surface {
         let tangent = math::add(&math::scale(&e1, &(-&sin_u)), &math::scale(&e2, &cos_u));
         let r = |x: &Real| dec.enclose_at(x, precision);
         if let Self::Cylinder(s) = self {
-            return Ok([math::scale(&tangent, &r(&s.radius)?), e3]);
+            return Ok([math::scale(&tangent, &r(&s.radius())?), e3]);
         }
         if let Self::EllipticCylinder(s) = self {
             return Ok([
@@ -707,9 +745,7 @@ impl Surface {
         let d = p.minus(origin);
         match self {
             Self::Plane(_) => d.dot(axis),
-            Self::Cylinder(s) => {
-                d.cross(axis).norm_squared() - &s.radius.square() * &axis.norm_squared()
-            }
+            Self::Cylinder(s) => d.cross(axis).norm_squared() - &s.radius_sq * &axis.norm_squared(),
             Self::Cone(s) => d.cross(axis).norm_squared() - s.slope.square() * d.dot(axis).square(),
             Self::Sphere(s) => d.norm_squared() - s.radius.square(),
             Self::Torus(s) => {
@@ -738,10 +774,9 @@ impl Surface {
                 }
             }
             Self::Cylinder(s) => {
-                if let (Some(norm), Some(radius)) = (
-                    math::rational_norm_squared(&s.axis),
-                    s.radius.rational_ref(),
-                ) {
+                if let Some(norm) = math::rational_norm_squared(&s.axis)
+                    && let Some(radius) = s.radius().rational_ref()
+                {
                     return Ok(b / &(&norm * radius));
                 }
             }
@@ -766,7 +801,7 @@ impl Surface {
         let bound = Real::from(b.clone());
         let value = match self {
             Self::Plane(s) => &bound / &s.normal.norm_squared().sqrt(),
-            Self::Cylinder(s) => &bound / &(&s.axis.norm_squared() * &s.radius),
+            Self::Cylinder(s) => &bound / &(&s.axis.norm_squared() * &s.radius()),
             Self::Cone(s) => (&bound / &s.axis.norm_squared()).sqrt(),
             Self::Sphere(s) => &bound / &s.radius,
             Self::Torus(s) => &bound / &(&s.minor * &(&s.major.square() - &s.minor.square())),

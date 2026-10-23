@@ -119,7 +119,7 @@ impl Size {
                 self.point(&s.origin);
                 self.vector(&s.axis);
                 self.vector(&s.ref_dir);
-                self.real(&s.radius);
+                self.real(&s.radius_sq);
             }
             Surface::Sphere(s) => {
                 self.point(&s.center);

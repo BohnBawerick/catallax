@@ -15,6 +15,47 @@ fn point([x, y, z]: [i64; 3]) -> Point3 {
 fn vector([x, y, z]: [i64; 3]) -> Vector3 {
     Vector3::new(real(x), real(y), real(z))
 }
+#[test]
+fn squared_radius_cylinder_preserves_exact_incidence_without_a_metric_radius() {
+    let mut dec = Decider::default();
+    let half = Real::from(Rational::from_ratio(1, 2).unwrap());
+    let radius_sq = Real::from(Rational::from_ratio(5, 4).unwrap());
+    let cylinder = Cylinder::from_radius_sq(
+        Point3::new(real(1), half.clone(), real(0)),
+        vector([0, 0, 2]),
+        radius_sq,
+        Vector3::new(real(1), -half, real(0)),
+        &mut dec,
+    )
+    .unwrap();
+    let surface = Surface::Cylinder(cylinder);
+    let implicit = surface.implicit();
+    for (p, expected) in [
+        ([0, 0, 7], 0),
+        ([2, 1, -3], 0),
+        ([1, 1, 0], -4),
+        ([3, 0, 1], 12),
+    ] {
+        assert!(
+            dec.compare(&implicit.eval_real(&p.map(real)), &real(expected))
+                .is_coincident()
+        );
+    }
+    for invalid in [real(0), real(-1)] {
+        assert_eq!(
+            Cylinder::from_radius_sq(
+                Point3::origin(),
+                vector([0, 0, 1]),
+                invalid,
+                vector([1, 0, 0]),
+                &mut dec,
+            )
+            .unwrap_err()
+            .code,
+            "shapes.non-positive-radius"
+        );
+    }
+}
 
 #[test]
 fn algebraic_dimensions_preserve_incidence_gradient_and_implicit_scale() {

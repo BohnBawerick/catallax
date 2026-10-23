@@ -255,11 +255,11 @@ pub(super) fn cone_cylinder(
             "non-coaxial cone/cylinder intersection requires certified branch tracing",
         ));
     }
-    let t = root(&(sq(&y.radius) / (sq(&c.slope) * c.axis.norm_squared())));
+    let t = root(&(&y.radius_sq / &(sq(&c.slope) * c.axis.norm_squared())));
     Ok(one_circle(
         c.apex.clone().plus(&c.axis.clone().scaled(&t)),
         c.axis.scaled(&(-sigma)),
-        real(&sq(&y.radius)),
+        real(&y.radius_sq),
         c.ref_dir.clone(),
         Contact::Crossing,
     ))
@@ -517,7 +517,7 @@ pub(super) fn cylinder_torus(
             "non-coaxial cylinder/torus intersection requires certified branch tracing",
         ));
     }
-    let discriminant = sq(&t.minor) - sq(&(&c.radius - &t.major));
+    let discriminant = sq(&t.minor) - sq(&(&c.radius() - &t.major));
     if sign(&discriminant, dec)? == Sign::Negative {
         return Ok(Plan::disjoint());
     }
@@ -534,7 +534,7 @@ pub(super) fn cylinder_torus(
         plan.curves.push(circle(
             center,
             t.axis.scaled(&(&s(-side) * &sigma)),
-            real(&sq(&c.radius)),
+            real(&c.radius_sq),
             c.ref_dir.clone(),
             if is_zero(&discriminant, dec)? {
                 Contact::Tangent

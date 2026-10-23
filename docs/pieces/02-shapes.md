@@ -41,9 +41,15 @@ A recipe angle in rational degrees uses piece 1's certified sine/cosine construc
 
 Widen `PointDef::Explicit` to `Explicit(Point3)`. Its coordinates are exact input or construction expressions, not rounded measurements. Rational callers use `to_real()`. `Meet` continues to store the defining objects and the selected solution; do not replace a meeting definition with an explicit coordinate cache. The caller must validate explicit expressions before insertion, just as it guarantees meeting-point incidence. All explicit-point approximations become caches of the exact expressions with the same enclosure rule as other points.
 
+### Circular cylinders
+
+`Cylinder` stores `radius_sq: Real`, not a metric radius. `from_radius_sq` validates the positive squared radius directly. The radius-input convenience constructor `new` validates before squaring. Implicit equations, surface equality and parallel circular-carrier intersections use the stored square. `radius()` extracts the positive root only for metric evaluation or exchange. `radial_reference()` scales the seam to a point on the circle, so an extruded rational arc retains a rational parametrisation even when its radius is irrational.
+
+Rational cylinder witnesses select their stereographic pole from the exact sign of the target's seam projection. This avoids the singular chart for rounded targets near the opposite seam point. The resulting witness still needs a distance bound and a trimmed-face membership check.
+
 ### Elliptic cylinders
 
-Add `EllipticCylinder` to `Surface` and `SurfaceKind` with fields `origin: Point3`, `axis: Vector3`, `major_dir: Vector3`, `major_sq: Real`, `minor_sq: Real`. Its constructor follows the validation rules above, requiring nonzero perpendicular directions and `0 < minor_sq < major_sq`. Invalid squared semi-axis values use `shapes.ellipse-axes`, as for an ellipse. Zero direction vectors still use `shapes.zero-vector`. Equal axes reduce to `Cylinder` with radius `sqrt(major_sq)` before this constructor; negative or zero axes do not silently reduce.
+Add `EllipticCylinder` to `Surface` and `SurfaceKind` with fields `origin: Point3`, `axis: Vector3`, `major_dir: Vector3`, `major_sq: Real`, `minor_sq: Real`. Its constructor follows the validation rules above, requiring nonzero perpendicular directions and `0 < minor_sq < major_sq`. Invalid squared semi-axis values use `shapes.ellipse-axes`, as for an ellipse. Zero direction vectors still use `shapes.zero-vector`. Equal axes reduce to `Cylinder` with `radius_sq = major_sq` before this constructor; negative or zero axes do not silently reduce.
 
 Let `e3 = axis / |axis|`, `e1 = major_dir / |major_dir|`, `e2 = e3 x e1`, `d = x - origin`, `a = sqrt(major_sq)` and `b = sqrt(minor_sq)`.
 
@@ -133,7 +139,7 @@ Because `ref_dir` is exactly perpendicular to `axis` (or `normal`), `(e1, e2, e3
 | Surface | Fields | Implicit `f` (positive on the normal side) | Parametrisation `S(u, v)` | Domain `[u, v]` |
 | --- | --- | --- | --- | --- |
 | Plane | `origin`, `normal`, `ref_dir` | `(x - origin) . normal` | `origin + u e1 + v e2` | `[Line, Line]` |
-| Cylinder | `origin`, `axis`, `radius`, `ref_dir` | `\|(x - origin) x axis\|^2 - radius^2 \|axis\|^2` | `origin + radius (cos u e1 + sin u e2) + v e3` | `[Periodic, Line]` |
+| Cylinder | `origin`, `axis`, `radius_sq`, `ref_dir` | `\|(x - origin) x axis\|^2 - radius_sq \|axis\|^2` | `origin + sqrt(radius_sq) (cos u e1 + sin u e2) + v e3` | `[Periodic, Line]` |
 | Cone | `apex`, `axis`, `slope`, `ref_dir` | `\|(x - apex) x axis\|^2 - slope^2 ((x - apex) . axis)^2` | `apex + v (e3 + slope (cos u e1 + sin u e2))` | `[Periodic, Ray]` |
 | Sphere | `center`, `radius`, `axis`, `ref_dir` | `\|x - center\|^2 - radius^2` | `center + radius (cos v (cos u e1 + sin u e2) + sin v e3)` | `[Periodic, Latitude]` |
 | Torus | `center`, `axis`, `major`, `minor`, `ref_dir` | `(\|x - c\|^2 + major^2 - minor^2)^2 - 4 major^2 (\|x - c\|^2 - ((x - c) . axis)^2 / \|axis\|^2)` | `c + (major + minor cos v)(cos u e1 + sin u e2) + minor sin v e3` | `[Periodic, Periodic]` |
@@ -317,7 +323,7 @@ It answers even when the `Decider`'s deadline has passed, because it does no wor
 
 - Different kinds are never the same point set: `Proven(Apart)`.
 - Two planes: same point set exactly when `normal_a x normal_b = 0` and `(origin_b - origin_a) . normal_a = 0`.
-- Two cylinders: `radius_a = radius_b`, `axis_a x axis_b = 0` and `(origin_b - origin_a) x axis_a = 0`.
+- Two cylinders: `radius_sq_a = radius_sq_b`, `axis_a x axis_b = 0` and `(origin_b - origin_a) x axis_a = 0`.
 - Two cones: `apex_a = apex_b`, `slope_a = slope_b`, `axis_a x axis_b = 0` and `axis_a . axis_b > 0`.
 - Two spheres: `center_a = center_b` and `radius_a = radius_b`.
 - Two tori: `center_a = center_b`, `major_a = major_b`, `minor_a = minor_b` and `axis_a x axis_b = 0`.
@@ -506,12 +512,17 @@ pub enum SurfaceKind { Plane, Cylinder, Cone, Sphere, Torus }
 pub enum ParamKind { Line, Periodic, Latitude, Ray }
 // Each struct: #[derive(Clone, PartialEq, Eq, Hash, Debug)], public fields, validating new(...)
 pub struct Plane { pub origin: RPoint3, pub normal: RVector3, pub ref_dir: RVector3 }
-pub struct Cylinder { pub origin: RPoint3, pub axis: RVector3, pub radius: Rational, pub ref_dir: RVector3 }
+pub struct Cylinder { pub origin: Point3, pub axis: Vector3, pub radius_sq: Real, pub ref_dir: Vector3 }
 pub struct Cone { pub apex: RPoint3, pub axis: RVector3, pub slope: Rational, pub ref_dir: RVector3 }
 pub struct Sphere { pub center: RPoint3, pub radius: Rational, pub axis: RVector3, pub ref_dir: RVector3 }
 pub struct Torus { pub center: RPoint3, pub axis: RVector3, pub major: Rational, pub minor: Rational, pub ref_dir: RVector3 }
 impl Plane { pub fn new(origin: RPoint3, normal: RVector3, ref_dir: RVector3) -> Result<Self, Refusal>; }
-impl Cylinder { pub fn new(origin: RPoint3, axis: RVector3, radius: Rational, ref_dir: RVector3) -> Result<Self, Refusal>; }
+impl Cylinder {
+    pub fn new(origin: Point3, axis: Vector3, radius: Real, ref_dir: Vector3, dec: &mut Decider) -> Result<Self, Refusal>;
+    pub fn from_radius_sq(origin: Point3, axis: Vector3, radius_sq: Real, ref_dir: Vector3, dec: &mut Decider) -> Result<Self, Refusal>;
+    pub fn radius(&self) -> Real;
+    pub fn radial_reference(&self) -> Vector3;
+}
 impl Cone { pub fn new(apex: RPoint3, axis: RVector3, slope: Rational, ref_dir: RVector3) -> Result<Self, Refusal>; }
 impl Sphere { pub fn new(center: RPoint3, radius: Rational, axis: RVector3, ref_dir: RVector3) -> Result<Self, Refusal>; }
 impl Torus { pub fn new(center: RPoint3, axis: RVector3, major: Rational, minor: Rational, ref_dir: RVector3) -> Result<Self, Refusal>; }

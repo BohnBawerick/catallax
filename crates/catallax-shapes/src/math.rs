@@ -2,8 +2,33 @@
 
 use crate::{Point3, Vector3};
 use catallax_numbers::{
-    Ball, Decider, MPoly, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
+    Ball, Decider, Integer, MPoly, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
 };
+
+pub(crate) fn exact_sqrt(value: &Real) -> Real {
+    fn integer_sqrt(n: &Integer) -> Option<Integer> {
+        if n.sign() == Sign::Negative {
+            return None;
+        }
+        if n.is_zero() {
+            return Some(Integer::zero());
+        }
+        let mut x = Integer::one().mul_pow2(n.bit_length().div_ceil(2));
+        loop {
+            let y = (&x + &n.div_rem_floor(&x)?.0)
+                .div_rem_floor(&Integer::from_i64(2))?
+                .0;
+            if y >= x {
+                return (&x * &x == *n).then_some(x);
+            }
+            x = y;
+        }
+    }
+    let rational = value
+        .rational_ref()
+        .and_then(|q| Rational::new(integer_sqrt(q.numerator())?, integer_sqrt(q.denominator())?));
+    rational.map_or_else(|| value.sqrt(), Real::from)
+}
 
 pub(crate) fn validate(value: &Real, dec: &mut Decider) -> Result<(), Refusal> {
     if value.as_rational().is_none() {

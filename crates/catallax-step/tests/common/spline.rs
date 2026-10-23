@@ -139,7 +139,7 @@ pub fn on_exact_support(surface: &Surface, p: &[Rational; 3], d: &Rational) {
             let v = sub(p, &real_xyz(&s.origin));
             let axis = real_vec_xyz(&s.axis);
             let radial2 = dot(&v, &v) - sq(&dot(&v, &axis)) / dot(&axis, &axis);
-            radial_distance(radial2, s.radius.rational_ref().unwrap(), d);
+            radial_distance(radial2, s.radius().rational_ref().unwrap(), d);
         }
         Surface::Sphere(s) => {
             radial_distance(

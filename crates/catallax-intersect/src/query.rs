@@ -35,7 +35,7 @@ pub(super) fn validate(
                 (geom.surface(i.surfaces[0]), geom.surface(i.surfaces[1]))
                 && p.frame.is_none()
                 && sign(&a.axis.cross(&b.axis).norm_squared(), dec)? != Sign::Zero
-                && sign(&(&a.radius - &b.radius), dec)? == Sign::Zero
+                && sign(&(&a.radius_sq - &b.radius_sq), dec)? == Sign::Zero
             {
                 return Err(refused_curve());
             }

@@ -37,7 +37,7 @@ fn cylinder_surface(origin: RPoint3, axis: RVector3, radius: i64, ref_dir: RVect
     Surface::Cylinder(Cylinder {
         origin: origin.into(),
         axis: axis.into(),
-        radius: r(radius).into(),
+        radius_sq: catallax_numbers::Real::from(r(radius)).square(),
         ref_dir: ref_dir.into(),
     })
 }
@@ -430,7 +430,7 @@ fn scaled_surface(f: &Surface, s: &Rational) -> Surface {
         }),
         Surface::Cylinder(f) => Surface::Cylinder(Cylinder {
             origin: scaled_definition_point(&f.origin, &s),
-            radius: &f.radius * &s,
+            radius_sq: &f.radius_sq * &s.square(),
             axis: f.axis.clone(),
             ref_dir: f.ref_dir.clone(),
         }),

@@ -46,11 +46,6 @@ fn unavailable_placements_and_elliptic_cylinders_have_specific_codes() {
 
 #[test]
 fn irrational_generated_radii_name_the_missing_surface_family() {
-    let semicircle = json!([[{"kind":"arc","id":"round","centre":["0","0"],"to":["-1","-1"],"turn":"ccw"},{"kind":"line","id":"chord","to":["1","1"]}]]);
-    assert_eq!(
-        refusal(semicircle, extrude(["0", "0", "1"])),
-        "features.unsupported-algebraic-cylinder-radius"
-    );
     let spherical_band = json!([[{"kind":"arc","id":"round","centre":["0","0"],"to":["1","1"],"turn":"ccw"},{"kind":"line","id":"chord","to":["1","-1"]}]]);
     assert_eq!(
         refusal(spherical_band, revolve("360")),

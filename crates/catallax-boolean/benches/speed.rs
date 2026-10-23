@@ -94,7 +94,7 @@ fn inventory(model: &Model, body: BodyId) -> NumberSize {
                     result.point(&s.origin);
                     result.vector(&s.axis);
                     result.vector(&s.ref_dir);
-                    result.real(&s.radius);
+                    result.real(&s.radius_sq);
                 }
                 Surface::Sphere(s) => {
                     result.point(&s.center);

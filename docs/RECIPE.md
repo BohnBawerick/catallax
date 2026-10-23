@@ -391,6 +391,8 @@ For example, a sphere's face is `{"step":"ball","role":{"side":{"segment":"wall"
 
 Two consecutive collinear lines make coplanar side faces. These merge (ND6), and the merged face carries both `side` origins.
 
+Normal circular sweeps retain each side cylinder's exact squared radius. A rational centre and endpoints may define an irrational radius, such as radius squared `5/4`; neither kernel needs to extract that radius to construct the sweep. The input sketch coordinates and the shared tolerance are unchanged.
+
 **Impossible.** `d = 0`. `w = 0`. `w` parallel to the sketch plane, `w · n = 0`, which gives zero thickness.
 
 - **A negative distance is allowed.** It extrudes the other way, and `start` stays in the sketch plane. Flipping the direction is then a parameter edit that keeps every name. The alternative is requiring `d > 0`, as SolidDraft's slot does, and flipping by `direction`. One sign rule is less to explain, but a flip becomes a different kind of edit.
@@ -1204,12 +1206,11 @@ These are valid geometry, not additions to the impossible-input lists. The curre
 | A signed extrusion whose normalized direction is irrational, such as `[1, 0, 1]`; a quarter-turn revolve about an axis with an irrational unit vector | `features.unsupported-algebraic-placement` | Algebraic placements and rotated frames |
 | A non-cardinal rational-degree revolve, such as 45 degrees | `features.unsupported-algebraic-revolve-frame` | Algebraic rotated cap and trimming-curve definitions |
 | An oblique extrusion of a circle or arc, such as direction `[3, 0, 4]` from the XY plane | `features.unsupported-elliptic-cylinder` | Elliptic cylinders, not circular cylinders |
-| A cylinder generated with irrational radius, including an arc with radius squared 2 | `features.unsupported-algebraic-cylinder-radius` | Cylinders with exact algebraic radii or squared-radius definitions |
 | A revolved circular arc producing a sphere with irrational radius | `features.unsupported-algebraic-sphere-radius` | Spheres with exact algebraic radii |
 | A revolved arc or circle whose torus major or minor radius is irrational | `features.unsupported-algebraic-torus-radius` | Tori with exact algebraic radii |
 | A valid trimmed horn or spindle torus sheet generated from an arc | `features.unsupported-spindle-torus` | Non-ring torus sheets and their branch predicates |
 
-Extrusion supports axis-aligned and Pythagorean directions whose unit vectors are rational. Circular sweeps additionally require a normal direction and a rational surface radius. Revolve supports full turns and partial turns of 90, 180 or 270 degrees when the required frames and dimensions are rational. Zero degrees is impossible, not an empty partial revolve.
+Extrusion supports axis-aligned and Pythagorean directions whose unit vectors are rational. Circular sweeps additionally require a normal direction; their squared surface radii remain exact even when their radii are irrational. Revolve supports full turns and partial turns of 90, 180 or 270 degrees when the required frames and other dimensions are rational. Zero degrees is impossible, not an empty partial revolve.
 
 The language still specifies angles as rational degrees. A non-cardinal Pythagorean unit-circle point does not correspond to a rational number of degrees, so it has no exact input spelling in this schema. Supporting explicit rational cosine/sine pairs needs a separately versioned angle representation. No rounded degree value is treated as the exact Pythagorean angle.
 

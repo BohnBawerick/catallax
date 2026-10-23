@@ -199,8 +199,7 @@ fn paths(
             result
         }
         Surface::Cylinder(s) => {
-            let length = crate::points::root(&s.ref_dir.norm_squared());
-            let base = s.ref_dir.scaled(&(&s.radius / &length));
+            let base = s.radial_reference();
             let mut result = Vec::new();
             for b in [base.clone(), base.scaled(&Real::from_i64(-1))] {
                 let v = s.axis.cross(&b);

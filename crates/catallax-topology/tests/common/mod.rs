@@ -244,7 +244,7 @@ pub fn expected(shape: &Primitive, pose: &Pose) -> Expected {
                 Surface::Cylinder(Cylinder {
                     origin: p(0, 0, 0).into(),
                     axis: v(0, 0, 1).into(),
-                    radius: radius.clone().into(),
+                    radius_sq: catallax_numbers::Real::from(radius.clone()).square(),
                     ref_dir: v(1, 0, 0).into(),
                 })
             } else {
@@ -573,8 +573,7 @@ pub fn implicit(s: &Surface, p: &RPoint3) -> Rational {
         Surface::Cylinder(s) => {
             let d = p.minus(&s.origin.as_rational().unwrap());
             let axis = s.axis.as_rational().unwrap();
-            d.cross(&axis).norm_squared()
-                - sq(&s.radius.as_rational().unwrap()) * axis.norm_squared()
+            d.cross(&axis).norm_squared() - s.radius_sq.as_rational().unwrap() * axis.norm_squared()
         }
         Surface::Cone(s) => {
             let d = p.minus(&s.apex.as_rational().unwrap());

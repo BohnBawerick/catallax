@@ -163,7 +163,7 @@ fn rational_definition(surface: &Surface) -> RSurface {
         Surface::Cylinder(s) => RSurface::Cylinder(RCylinder {
             origin: s.origin.as_rational().expect("rational table fixture"),
             axis: s.axis.as_rational().expect("rational table fixture"),
-            radius: s.radius.as_rational().expect("rational table fixture"),
+            radius: s.radius().as_rational().expect("rational table fixture"),
             ref_dir: s.ref_dir.as_rational().expect("rational table fixture"),
         }),
         Surface::Sphere(s) => RSurface::Sphere(RSphere {

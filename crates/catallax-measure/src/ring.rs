@@ -71,7 +71,7 @@ pub(crate) fn compile(
                     .norm_squared()
                     .as_rational()?
                     .is_zero()
-                || !(&circle.radius_sq - &cylinder.radius.square())
+                || !(&circle.radius_sq - &cylinder.radius_sq)
                     .as_rational()?
                     .is_zero()
             {
@@ -80,7 +80,7 @@ pub(crate) fn compile(
             let axis = unit(&b, &cylinder.axis);
             let z = dot(offset(&b, &circle.center, &cylinder.origin), axis);
             let origin = offset(&b, &cylinder.origin, anchor);
-            let radius = b.exact(&cylinder.radius);
+            let radius = b.exact(&cylinder.radius());
             let signed_pi = orientation(&b, &circle.normal, &cylinder.axis)? * pi;
             let area = -b.k(2) * signed_pi * radius * z;
             let volume = -b.k(2) * signed_pi * radius.square() * z / b.k(3);
@@ -204,15 +204,13 @@ fn second_moment(
                 .norm_squared()
                 .as_rational()?
                 .is_zero()
-                || !(&circle.radius_sq - &c.radius.square())
-                    .as_rational()?
-                    .is_zero()
+                || !(&circle.radius_sq - &c.radius_sq).as_rational()?.is_zero()
             {
                 return None;
             }
             let z = dot(offset(&b, &circle.center, &c.origin), axis);
             let o = offset(&b, &c.origin, &anchor);
-            let r = b.exact(&c.radius);
+            let r = b.exact(&c.radius());
             let axial = dot(o, axis);
             let po: [Expr<'_>; 3] = std::array::from_fn(|a| o[a] - axial * axis[a]);
             let second = r * o[i] * o[j]
@@ -344,9 +342,7 @@ fn face_centroid(
                     .norm_squared()
                     .as_rational()?
                     .is_zero()
-                || !(&circle.radius_sq - &c.radius.square())
-                    .as_rational()?
-                    .is_zero()
+                || !(&circle.radius_sq - &c.radius_sq).as_rational()?.is_zero()
             {
                 return None;
             }
@@ -354,7 +350,7 @@ fn face_centroid(
             let z = dot(offset(&b, &circle.center, &c.origin), axis);
             let origin = offset(&b, &c.origin, &anchor);
             let density =
-                -b.k(2) * orientation(&b, &circle.normal, &c.axis)? * pi * b.exact(&c.radius);
+                -b.k(2) * orientation(&b, &circle.normal, &c.axis)? * pi * b.exact(&c.radius());
             (
                 density * z,
                 std::array::from_fn(|i| density * (origin[i] * z + axis[i] * z.square() / b.k(2))),

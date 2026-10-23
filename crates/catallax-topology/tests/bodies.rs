@@ -294,7 +294,7 @@ blind_test!(case_20_block_with_cylindrical_hole, {
         Surface::Cylinder(Cylinder {
             origin: p(2, 2, 0).into(),
             axis: v(0, 0, 1).into(),
-            radius: r(1).into(),
+            radius_sq: r(1).into(),
             ref_dir: v(1, 0, 0).into(),
         }),
         Sense::Reversed,

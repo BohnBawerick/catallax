@@ -205,7 +205,7 @@ impl Metric {
                 &s.origin,
                 &s.axis,
                 RadialKind::Cylinder,
-                dec.enclose_at(&s.radius, BITS)?,
+                dec.enclose_at(&s.radius(), BITS)?,
                 zero,
             ),
             Surface::Cone(s) => (
@@ -428,7 +428,7 @@ fn constant(
                 radius,
             },
         ) if same_axis(&s.origin, &s.axis, &l.origin, &l.dir, dec)? => {
-            Some(dec.enclose_at(&(&s.radius - radius), BITS)?)
+            Some(dec.enclose_at(&(&s.radius() - radius), BITS)?)
         }
         (_, FaceDefinition::Offset { original, distance }) => {
             let gap = match (surface, original) {
@@ -440,7 +440,7 @@ fn constant(
                 (Surface::Cylinder(a), Surface::Cylinder(b))
                     if same_axis(&a.origin, &a.axis, &b.origin, &b.axis, dec)? =>
                 {
-                    Some(&a.radius - &b.radius)
+                    Some(a.radius() - b.radius())
                 }
                 (Surface::Sphere(a), Surface::Sphere(b))
                     if exact_zero(&a.center.minus(&b.center).norm_squared(), dec)? =>
@@ -618,7 +618,7 @@ fn speeds(surface: &Surface, cover: &Cover, dec: &Decider) -> Result<[Rational; 
     let upper = |x: &Real| dec.enclose_at(x, BITS).map(|b| b.hi());
     Ok(match surface {
         Surface::Plane(_) => [q(1), q(1)],
-        Surface::Cylinder(s) => [upper(&s.radius)?, q(1)],
+        Surface::Cylinder(s) => [upper(&s.radius())?, q(1)],
         Surface::Cone(s) => {
             let vmax = cover.domain[1][0].abs().max(cover.domain[1][1].abs());
             [

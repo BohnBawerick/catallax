@@ -150,7 +150,7 @@ impl Constraint {
         corners: &mut Option<[RPoint3; 4]>,
     ) -> Option<catallax_numbers::Sign> {
         let (normal, constant) = self.linear.as_ref()?;
-        if !chart.corner_signs_suffice(normal) {
+        if !chart.corner_signs_suffice(normal, cell) {
             return None;
         }
         let corners = corners.get_or_insert_with(|| cell.corners().map(|uv| chart.point(&uv)));

@@ -137,11 +137,7 @@ fn carrier(segment: &Arc, frame: &Frame) -> Result<Option<Surface>, Refusal> {
         return Ok(Some(Surface::Cylinder(Cylinder {
             origin: frame.project(&start).into(),
             axis: frame.axis.clone().into(),
-            radius: rational_radius(
-                &radial.norm_squared(),
-                "features.unsupported-algebraic-cylinder-radius",
-            )?
-            .into(),
+            radius_sq: radial.norm_squared().into(),
             ref_dir: radial.into(),
         })));
     }

@@ -233,11 +233,88 @@ fn whole_failure(report: &mut Report, reason: impl Into<String>) {
         reason,
     );
 }
+struct FieldWitness {
+    point: Point3,
+    remaining: Rational,
+    controls: catallax_shapes::distance::Options,
+    upper: Option<Rational>,
+}
+impl FieldWitness {
+    fn seed(
+        prepared: &catallax_field::distance::Prepared<'_>,
+        preferred: &[catallax_field::FaceId],
+        point: &RPoint3,
+        error: &Rational,
+        options: &Options,
+        dec: &mut Decider,
+    ) -> Self {
+        let point = point.to_real();
+        let remaining = &options.accuracy - error;
+        let mut controls = catallax_shapes::distance::Options {
+            width: if remaining > r(0) {
+                remaining.mul_pow2(-1)
+            } else {
+                options.accuracy.mul_pow2(-2)
+            },
+            ..Default::default()
+        };
+        let cell_limit = controls.max_cells;
+        controls.max_cells = 1;
+        let mut upper = None;
+        for &id in preferred {
+            if let Ok(distance) = prepared.point_to_face(id, &point, &controls, dec)
+                && let Some(bound) = distance.upper
+                && upper.as_ref().is_none_or(|old| bound < *old)
+            {
+                upper = Some(bound);
+            }
+            if upper.as_ref().is_some_and(|bound| bound <= &remaining) {
+                break;
+            }
+        }
+        controls.max_cells = cell_limit;
+        Self {
+            point,
+            remaining,
+            controls,
+            upper,
+        }
+    }
+    fn near_upper(&self) -> Option<&Rational> {
+        self.upper
+            .as_ref()
+            .filter(|bound| *bound <= &self.remaining)
+    }
+    fn refine(
+        &mut self,
+        prepared: &catallax_field::distance::Prepared<'_>,
+        proven_gap: bool,
+        dec: &mut Decider,
+    ) {
+        if (self.upper.is_none()
+            || (!proven_gap
+                && self
+                    .upper
+                    .as_ref()
+                    .is_some_and(|bound| bound > &self.remaining)))
+            && let Ok(distance) = prepared.point_to_boundary(&self.point, &self.controls, dec)
+            && let Some(bound) = distance.upper
+            && self.upper.as_ref().is_none_or(|old| bound < *old)
+        {
+            self.upper = Some(bound);
+        }
+    }
+}
 fn retain_distance_upper(report: &mut Report, upper: Option<&Rational>) {
-    report.sampled_distance_upper = match (&report.sampled_distance_upper, upper) {
-        (Some(old), Some(upper)) => Some(old.max(upper).clone()),
-        _ => None,
-    };
+    if let Some(upper) = upper {
+        if let Some(old) = &mut report.sampled_distance_upper
+            && upper > &*old
+        {
+            *old = upper.clone();
+        }
+    } else {
+        report.sampled_distance_upper = None;
+    }
 }
 fn distance_finding(
     report: &mut Report,
@@ -468,6 +545,27 @@ pub(crate) fn run(
     let width = options.accuracy.mul_pow2(-20);
     let mut distance_domains = None;
     let mut preferred = Vec::new();
+    let mut prefer_witness = false;
+    let choose_preferred = |i: usize, preferred: &mut Vec<catallax_field::FaceId>| {
+        preferred.clear();
+        for &index in &incident[i] {
+            for origin in &face_origins[index] {
+                if let Some((id, _)) = registry.get(origin) {
+                    preferred.push(*id);
+                }
+            }
+        }
+        // Names order candidates, never certify membership or exclude faces.
+        // Incident planes have cheap linear projections; curved candidates
+        // remain available when a cap projection misses its trim.
+        preferred.sort_unstable_by_key(|id| {
+            (
+                !matches!(&field.faces()[id.index()].surface, Surface::Plane(_)),
+                id.index(),
+            )
+        });
+        preferred.dedup();
+    };
     for (i, position) in mesh.positions.iter().enumerate() {
         if revision.is_cancelled() {
             return Completion::Cancelled;
@@ -492,6 +590,27 @@ pub(crate) fn run(
         selected.extend(incident[i].iter().copied());
         for &face in &incident[i] {
             sample_points[face].get_or_insert_with(|| p.clone());
+        }
+        let mut witness = None;
+        if prefer_witness {
+            let prepared =
+                distance_domains.get_or_insert_with(|| field.prepare_distances(&mut dec));
+            if let Ok(prepared) = prepared {
+                choose_preferred(i, &mut preferred);
+                if !preferred.is_empty() {
+                    let seed =
+                        FieldWitness::seed(prepared, &preferred, &p, &error, options, &mut dec);
+                    if let Some(bound) = seed.near_upper() {
+                        // An admitted boundary point already proves proximity.
+                        // Signed classification at the mesh point adds no
+                        // distance evidence; reverse names/normals still run.
+                        let upper = bound + &error;
+                        retain_distance_upper(&mut report, Some(&upper));
+                        continue;
+                    }
+                    witness = Some(seed);
+                }
+            }
         }
         let query = field.proven(&p, &mut storage);
         if incident[i].is_empty() {
@@ -547,66 +666,14 @@ pub(crate) fn run(
             let prepared =
                 distance_domains.get_or_insert_with(|| field.prepare_distances(&mut dec));
             if let Ok(prepared) = prepared {
-                let remaining = &options.accuracy - &error;
-                let mut controls = catallax_shapes::distance::Options {
-                    width: if remaining > r(0) {
-                        remaining.mul_pow2(-1)
-                    } else {
-                        options.accuracy.mul_pow2(-2)
-                    },
-                    ..Default::default()
-                };
-                preferred.clear();
-                for &index in &incident[i] {
-                    for origin in &face_origins[index] {
-                        if let Some((id, _)) = registry.get(origin) {
-                            preferred.push(*id);
-                        }
-                    }
-                }
-                // Names guide witness order only. Every candidate still needs
-                // the independent field trim proof, and failure falls back to
-                // the complete field registry. Curved incident supports avoid
-                // unnecessary meridian-root queries on distant planar caps.
-                preferred.sort_unstable_by_key(|id| {
-                    (
-                        matches!(&field.faces()[id.index()].surface, Surface::Plane(_)),
-                        id.index(),
-                    )
+                let witness = witness.get_or_insert_with(|| {
+                    choose_preferred(i, &mut preferred);
+                    FieldWitness::seed(prepared, &preferred, &p, &error, options, &mut dec)
                 });
-                preferred.dedup();
-                let point = p.to_real();
-                let cell_limit = controls.max_cells;
-                controls.max_cells = 1;
-                let mut geometric_upper = None;
-                for &id in &preferred {
-                    if let Ok(distance) = prepared.point_to_face(id, &point, &controls, &mut dec)
-                        && let Some(bound) = distance.upper
-                        && geometric_upper.as_ref().is_none_or(|old| bound < *old)
-                    {
-                        geometric_upper = Some(bound);
-                    }
-                    if geometric_upper
-                        .as_ref()
-                        .is_some_and(|bound| bound <= &remaining)
-                    {
-                        break;
-                    }
-                }
-                controls.max_cells = cell_limit;
-                if (geometric_upper.is_none()
-                    || (!proven_gap
-                        && geometric_upper
-                            .as_ref()
-                            .is_some_and(|bound| bound > &remaining)))
-                    && let Ok(distance) = prepared.point_to_boundary(&point, &controls, &mut dec)
-                    && let Some(bound) = distance.upper
-                    && geometric_upper.as_ref().is_none_or(|old| bound < *old)
-                {
-                    geometric_upper = Some(bound);
-                }
-                if let Some(bound) = geometric_upper {
-                    let bound = &bound + &error;
+                witness.refine(prepared, proven_gap, &mut dec);
+                prefer_witness |= witness.near_upper().is_some();
+                if let Some(bound) = &witness.upper {
+                    let bound = bound + &error;
                     upper = Some(match upper {
                         Some(old) => old.min(bound),
                         None => bound,
@@ -614,15 +681,19 @@ pub(crate) fn run(
                 }
             }
         }
-        retain_distance_upper(&mut report, upper.as_ref());
         if query.location != Location::Indeterminate
             && upper.as_ref().is_some_and(|h| h <= &options.accuracy)
         {
+            retain_distance_upper(&mut report, upper.as_ref());
             continue;
         }
         if let Some(vertices) = endpoints.get(&i) {
             match endpoint_distance(&model, &field, vertices, &p, &mut storage, &mut dec) {
-                Ok(Some(distance)) if &distance + &error <= options.accuracy => continue,
+                Ok(Some(distance)) if &distance + &error <= options.accuracy => {
+                    let upper = &distance + &error;
+                    retain_distance_upper(&mut report, Some(&upper));
+                    continue;
+                }
                 Err(error) => whole_failure(
                     &mut report,
                     format!("field endpoint witness {}: {}", error.code, error.detail),
@@ -630,6 +701,7 @@ pub(crate) fn run(
                 _ => (),
             }
         }
+        retain_distance_upper(&mut report, upper.as_ref());
         let names: Vec<Vec<Origin>> = incident[i]
             .iter()
             .map(|&f| face_origins[f].clone())

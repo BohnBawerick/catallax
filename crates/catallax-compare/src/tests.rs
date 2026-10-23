@@ -756,3 +756,35 @@ fn a_numeric_refusal_during_copy_comparison_is_not_a_kernel_panic() {
         );
     }
 }
+
+#[test]
+fn separated_curved_features_keep_finite_gap_bounds_after_near_samples() {
+    let part = |radius: &str, z: &str| {
+        recipe(vec![
+            json!({"id":"pa","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","1"]},"loops":[[
+                {"kind":"circle","id":"wall","centre":["0","0"],"radius":"1/5"}
+            ]]}),
+            json!({"id":"a","op":"extrude","profile":"pa","distance":"2/5"}),
+            json!({"id":"pb","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["1","0",z]},"loops":[[
+                {"kind":"circle","id":"wall","centre":["0","0"],"radius":radius}
+            ]]}),
+            json!({"id":"b","op":"extrude","profile":"pb","distance":"2/5"}),
+            json!({"id":"result","op":"boolean","kind":"union","target":"a","tool":"b"}),
+        ])
+    };
+    // One component supplies genuine near witnesses. The other is both
+    // narrower and higher, so none of its old bottom rims is near the new
+    // side or cap supports. A failed seed must retain the gap proof path.
+    let report = compare(&part("1/5", "0"), &part("1/10", "1/10"), &options());
+    assert_eq!(report.verdict, Verdict::Disagree, "{report:?}");
+    assert!(
+        report.findings.iter().any(|finding| {
+            finding.pass == Pass::Forward
+                && finding.reason == Reason::Gap
+                && finding
+                    .gap
+                    .is_some_and(|gap| gap.lo() > 0.01 && gap.hi().is_finite())
+        }),
+        "{report:?}"
+    );
+}

@@ -7,9 +7,22 @@ Background comparison contract, current coverage and historical whole-check meas
 
 `catallax-compare` supplies the library check. `Controller::begin` invalidates the previous revision and clears its published result. Dispatch `Revision::check` on an application-owned worker, or use `check_built` with a cached B-rep build and the field recipe. Only a complete report for the still-current revision can publish. `cancel` invalidates its own revision without touching a newer edit. No library thread pool, clock deadline or app-side edit tracking is added.
 
-The forward pass evaluates the certified field query at every selected mesh vertex, preserving exact binary64 coordinates as rationals. If a residual supplies no finite upper, prepared field-native trimmed-face queries seek exact admitted witnesses. For mesh deviation `e` and field distance interval `[l,u]`, the comparison uses the lower bound `max(0,l-e)` and upper bound `u+e`. A lower bound above the display accuracy proves a gap. An exact topological endpoint may supply another candidate, but only after the independent field proves that point is on its result boundary; the measured point-to-witness distance then supplies a certified upper bound. An unbounded upper remains unresolved when no such witness settles it. A supporting-surface hit without a surviving trim witness never proves proximity, and no raw Boolean residual decides it.
+The forward pass preserves exact binary64 mesh coordinates as rationals. It uses
+the certified field query, then prepared field-native trimmed-face witnesses when
+the residual alone cannot settle proximity. After such a witness succeeds, later
+vertices try incident witnesses before repeating the signed query. An exact
+admitted boundary point already proves unsigned proximity; no signed classification
+at the mesh point is needed for that upper certificate. A failed seed retains the
+original query and complete-registry search. For mesh deviation `e` and field
+distance interval `[l,u]`, the comparison uses the lower bound `max(0,l-e)` and
+upper bound `u+e`. A lower bound above the display accuracy proves a gap. An exact
+topological endpoint may also supply a candidate after the independent field
+proves it is on its result boundary. Its witnessed upper is retained before
+aggregation. An unbounded upper remains unresolved when no witness settles it.
+A supporting-surface hit without a surviving trim witness never proves proximity,
+and no raw Boolean residual decides it.
 
-Incident B-rep origins guide field witness order, with curved supports first.
+Incident B-rep origins guide field witness order, with cheap linear projections first.
 They never establish trim membership or exclude other field faces. A failed
 preferred witness falls back to the complete field registry.
 

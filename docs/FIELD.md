@@ -150,6 +150,10 @@ no finite upper, and prepared B-rep bounds when a support projection misses its
 trim. `Report::sampled_distance_upper` includes forward mesh error. It is finite
 only when every checked distance has a finite upper. Agreement remains sampled;
 the comparison accuracy, mesh controls and numeric budgets are unchanged.
+After a required trimmed witness settles proximity, later mesh vertices try
+incident witnesses before repeating the signed field query. This changes proof
+order, not acceptance: every early upper still comes from an exact surviving
+boundary point, and a miss retains the original distance and gap checks.
 
 
 ## Whole-face definition measurements

@@ -28,8 +28,53 @@ pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     }
 }
 
-fn unit(vector: &Vector3) -> Vector3 {
-    vector.scaled(&(&Real::one() / &vector.norm_squared().sqrt()))
+fn unit(vector: &Vector3, dec: &mut Decider) -> Result<Vector3, Refusal> {
+    let length = reduced(vector.norm_squared().sqrt(), dec)?;
+    let scaled = vector.scaled(&(&Real::one() / &length));
+    Ok(Vector3::new(
+        reduced(scaled.x, dec)?,
+        reduced(scaled.y, dec)?,
+        reduced(scaled.z, dec)?,
+    ))
+}
+
+fn reduced(value: Real, dec: &mut Decider) -> Result<Real, Refusal> {
+    if value.rational_ref().is_some() {
+        return Ok(value);
+    }
+    Ok(dec.rational_value(&value)?.map(Real::from).unwrap_or(value))
+}
+
+fn reduced_point(point: Point3, dec: &mut Decider) -> Result<Point3, Refusal> {
+    Ok(Point3::new(
+        reduced(point.x, dec)?,
+        reduced(point.y, dec)?,
+        reduced(point.z, dec)?,
+    ))
+}
+
+fn homogeneous_direction(vector: Vector3, dec: &mut Decider) -> Result<Vector3, Refusal> {
+    let mut magnitude = None;
+    for component in [&vector.x, &vector.y, &vector.z] {
+        match sign(component, dec)? {
+            Sign::Zero => (),
+            Sign::Positive => {
+                magnitude = Some(component.clone());
+                break;
+            }
+            Sign::Negative => {
+                magnitude = Some(-component);
+                break;
+            }
+        }
+    }
+    let magnitude = magnitude.expect("validated nonzero draft direction");
+    let scaled = vector.scaled(&(&Real::one() / &magnitude));
+    Ok(Vector3::new(
+        reduced(scaled.x, dec)?,
+        reduced(scaled.y, dec)?,
+        reduced(scaled.z, dec)?,
+    ))
 }
 
 /// The saved pull, neutral plane and exact algebraic angle of a draft.
@@ -82,7 +127,7 @@ impl DraftDefinition {
         }
         let [sine, cosine] = sin_cos_degrees(angle, dec)?;
         Ok(Self {
-            pull: unit(&pull),
+            pull: unit(&pull, dec)?,
             neutral,
             sine,
             cosine,
@@ -118,7 +163,7 @@ impl DraftDefinition {
                         same_sense,
                     });
                 }
-                let radius = cylinder.radius_sq.sqrt();
+                let radius = reduced(cylinder.radius_sq.sqrt(), dec)?;
                 let centre = cylinder.origin.plus(
                     &self.pull.scaled(
                         &(&self
@@ -147,16 +192,14 @@ impl DraftDefinition {
                 } else {
                     slope
                 };
-                let apex = centre.plus(
-                    &self
-                        .pull
-                        .scaled(&(&(&radius * &self.cosine) / &signed_sine)),
-                );
+                let cotangent = reduced(&self.cosine / &signed_sine, dec)?;
+                let apex =
+                    reduced_point(centre.plus(&self.pull.scaled(&(&radius * &cotangent))), dec)?;
                 Ok(DraftSupport {
                     surface: Surface::Cone(Cone::new(
                         apex,
                         axis,
-                        slope,
+                        reduced(slope, dec)?,
                         cylinder.ref_dir.clone(),
                         dec,
                     )?),
@@ -225,7 +268,7 @@ impl DraftDefinition {
         let generator = self
             .pull
             .scaled(&self.cosine)
-            .minus(&unit(&radial).scaled(&self.sine));
+            .minus(&unit(&radial, dec)?.scaled(&self.sine));
         let mut outward = generator.cross(&line);
         if sign(&outward.norm_squared(), dec)? == Sign::Zero {
             return Err(Refusal::new(
@@ -233,27 +276,26 @@ impl DraftDefinition {
                 "draft generators collapse onto the neutral line",
             ));
         }
-        // Keep the input material sense on the neutral plane, independently of
-        // the arbitrary signs or scales of its normal and of the line direction.
-        let trace_normal =
-            normal.minus(&self.neutral.normal.scaled(
-                &(&normal.dot(&self.neutral.normal) / &self.neutral.normal.norm_squared()),
-            ));
-        match sign(&outward.dot(&trace_normal), dec)? {
+        // Preserve the source's material-outward radial direction. An oblique
+        // neutral can cross the generator direction as the angle changes; using
+        // its trace normal here would silently reverse the solid at that event.
+        match sign(&outward.dot(&radial), dec)? {
             Sign::Negative => outward = outward.scaled(&Real::from_i64(-1)),
             Sign::Zero => {
                 return Err(Refusal::new(
-                    "draft.degenerate-support",
-                    "drafted plane has no oriented material crossing on the neutral plane",
+                    "draft.unsupported-neutral-orientation",
+                    "neutral curve is parallel to the source's pull-tangent direction",
                 ));
             }
             Sign::Positive => (),
         }
         Ok(DraftSupport {
             surface: Surface::Plane(Plane {
-                origin,
-                normal: outward,
-                ref_dir: line,
+                origin: reduced_point(origin, dec)?,
+                // Positive homogeneous rescaling removes common algebraic
+                // factors before Boolean predicates see the support equation.
+                normal: homogeneous_direction(outward, dec)?,
+                ref_dir: homogeneous_direction(line, dec)?,
             }),
             same_sense: true,
         })

@@ -45,6 +45,23 @@ fn both(recipe: &Recipe, cases: &[([&str; 3], Location)]) {
         assert!(agrees, "B-rep at {xyz:?}: {answer:?}");
     }
 }
+
+#[test]
+fn an_oblique_neutral_does_not_reverse_the_material_sense() {
+    let mut steps = block();
+    steps[0]["pose"]["translation"] = json!(["0", "0", "-4"]);
+    let mut draft = operation("x_max");
+    draft["neutral"] = json!({"point":["8","0","-2"],"normal":["2","0","1"]});
+    let recipe = recipe(steps, draft);
+    both(
+        &recipe,
+        &[
+            (["9", "4", "-7/2"], Location::Inside),
+            (["8", "4", "-1"], Location::Outside),
+            (["7", "4", "-1"], Location::Boundary),
+        ],
+    );
+}
 #[test]
 fn planar_draft_changes_material_and_measures_true_trimmed_distance() {
     let recipe = recipe(block(), operation("x_max"));
@@ -252,4 +269,27 @@ fn an_oblique_cylindrical_neutral_is_unfinished_not_an_impossible_input() {
         Plan::compile(&recipe).unwrap_err().code,
         "draft.unsupported-oblique-neutral"
     );
+}
+
+#[test]
+fn drafted_flange_unites_with_plate_inside_scoreboard_work_allowance() {
+    let mut recipe = Recipe::parse(include_str!("../../../parts/P1-drafted-bracket.json")).unwrap();
+    let base = recipe
+        .steps
+        .iter()
+        .position(|step| step.id.to_string() == "base")
+        .unwrap();
+    recipe.steps.truncate(base + 1);
+    recipe.result = catallax_recipe::StepId::new("base").unwrap();
+    let (_, work) = catallax_numbers::with_operation_budget(1_000_000, || {
+        both(
+            &recipe,
+            &[
+                (["50", "2", "10"], Location::Inside),
+                (["58", "2", "10"], Location::Outside),
+                (["59", "20", "2"], Location::Inside),
+            ],
+        );
+    });
+    assert!(!work.exhausted);
 }

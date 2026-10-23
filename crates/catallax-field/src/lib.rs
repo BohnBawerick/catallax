@@ -398,8 +398,7 @@ impl Plan {
                             dec,
                         )?;
                         plan.draft(
-                            steps[body],
-                            &step_faces[body],
+                            (steps[body], &step_faces[body]),
                             faces,
                             &definition,
                             keep_regions.as_deref(),

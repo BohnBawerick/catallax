@@ -27,7 +27,7 @@ pub struct ConsumedFace {
 
 enum Cell {
     Planar(PlanarCell),
-    Round(RoundCell),
+    Round(Box<RoundCell>),
 }
 
 impl Cell {
@@ -418,7 +418,7 @@ pub(crate) fn build(
         }) {
             Cell::Planar(planar(model, &faces, &chosen, definition, dec)?)
         } else {
-            Cell::Round(round(model, &faces, &chosen, definition, dec)?)
+            Cell::Round(Box::new(round(model, &faces, &chosen, definition, dec)?))
         };
         components.push((faces, cell));
     }

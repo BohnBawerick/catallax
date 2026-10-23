@@ -117,8 +117,8 @@ impl PlanarCell {
         'basis: for i in 1..vertices.len() {
             for j in i + 1..vertices.len() {
                 let cross = vertices[i].minus(first).cross(&vertices[j].minus(first));
-                for k in j + 1..vertices.len() {
-                    if exact_sign(&cross.dot(&vertices[k].minus(first)), dec)? != Sign::Zero {
+                for vertex in vertices.iter().skip(j + 1) {
+                    if exact_sign(&cross.dot(&vertex.minus(first)), dec)? != Sign::Zero {
                         volume = true;
                         break 'basis;
                     }

@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug)]
 pub(crate) enum Cell {
     Planar(PlanarCell),
-    Round(RoundCell),
+    Round(Box<RoundCell>),
 }
 
 #[derive(Clone, Debug)]
@@ -394,14 +394,14 @@ impl Region {
 impl Plan {
     pub(crate) fn draft(
         &mut self,
-        source: usize,
-        source_faces: &[usize],
+        source: (usize, &[usize]),
         refs: &[FaceRef],
         definition: &DraftDefinition,
         keep_regions: Option<&[catallax_recipe::Point3]>,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
+        let (source, source_faces) = source;
         let Instruction::Leaf(leaf) = self.instructions[source] else {
             if source == 0 && refs.is_empty() {
                 return Ok(0);
@@ -503,7 +503,9 @@ impl Plan {
                     "axial field draft needs two complete cap planes",
                 )
             })?;
-            Cell::Round(RoundCell::new(&c, origins, caps, definition, dec)?)
+            Cell::Round(Box::new(RoundCell::new(
+                &c, origins, caps, definition, dec,
+            )?))
         } else {
             self.leaves[leaf].certify_planar_convexity(dec)?;
             Cell::Planar(PlanarCell::new(planes, dec)?.ok_or_else(|| {

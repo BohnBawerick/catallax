@@ -1,8 +1,12 @@
 //! Query-only sampling support. These bounds and candidates never build geometry.
-use crate::{Instruction, Plan, geometry::Leaf};
-use catallax_numbers::{Rational, Refusal};
-use catallax_recipe::{BooleanKind, Origin};
-use catallax_shapes::{Isometry, RPoint3};
+use crate::{
+    Instruction, Plan,
+    draft::{Cell, Region},
+    geometry::Leaf,
+};
+use catallax_numbers::{Decider, Rational, Real, Refusal};
+use catallax_recipe::{BooleanKind, Origin, Role};
+use catallax_shapes::{Isometry, Point3, RPoint3, RVector3, Vector3};
 
 pub(crate) type Bounds = [[Rational; 2]; 3];
 
@@ -54,7 +58,7 @@ pub(crate) fn circle(n: u32) -> Vec<[Rational; 2]> {
     points
 }
 impl Plan {
-    /// Visits rational supporting-face candidates for sketch-based features.
+    /// Visits rational supporting-face candidates for sketch features and analytic drafts.
     /// Stock-solid candidates are not included. Candidates are independent of
     /// B-rep construction and display meshes; use `face_query` to establish
     /// surviving boundary membership, names and orientation before accepting one.
@@ -78,7 +82,7 @@ impl Plan {
         if !self.faces.iter().any(|face| {
             face.in_result
                 && self.leaf_registers[face.leaf].is_some()
-                && matches!(self.leaves[face.leaf], Leaf::Feature(_))
+                && matches!(self.leaves[face.leaf], Leaf::Feature(_) | Leaf::Draft(_))
         }) {
             return Ok(true);
         }
@@ -132,17 +136,163 @@ impl Plan {
             if !face.in_result || self.leaf_registers[face.leaf].is_none() {
                 continue;
             }
-            if let Leaf::Feature(feature) = &self.leaves[face.leaf]
-                && !feature.sample_candidates(
+            let complete = match &self.leaves[face.leaf] {
+                Leaf::Feature(feature) => feature.sample_candidates(
                     self.definition_role(index),
                     divisions,
                     result,
                     &mut |p| visit(p, &face.origin),
-                )?
-            {
+                )?,
+                Leaf::Draft(region) => {
+                    region.sample_candidates(self.definition_role(index), divisions, &mut |p| {
+                        visit(p, &face.origin)
+                    })?
+                }
+                Leaf::Primitive(_) => true,
+            };
+            if !complete {
                 return Ok(false);
             }
         }
         Ok(true)
+    }
+}
+
+fn native_scalar(value: &Real, dec: &mut Decider) -> Result<Rational, Refusal> {
+    if let Some(value) = value.rational_ref() {
+        return Ok(value.clone());
+    }
+    dec.rational_value(value)?.ok_or_else(placement_error)
+}
+
+fn native_point(point: &Point3, dec: &mut Decider) -> Result<RPoint3, Refusal> {
+    Ok(RPoint3::new(
+        native_scalar(&point.x, dec)?,
+        native_scalar(&point.y, dec)?,
+        native_scalar(&point.z, dec)?,
+    ))
+}
+
+fn native_vector(vector: &Vector3, dec: &mut Decider) -> Result<RVector3, Refusal> {
+    Ok(RVector3::new(
+        native_scalar(&vector.x, dec)?,
+        native_scalar(&vector.y, dec)?,
+        native_scalar(&vector.z, dec)?,
+    ))
+}
+
+fn unwrapped(mut role: &Role) -> &Role {
+    while let Role::Copy { of, .. } = role {
+        role = &of.role;
+    }
+    role
+}
+
+fn has_role(origins: &[Origin], role: &Role) -> bool {
+    origins
+        .iter()
+        .any(|origin| unwrapped(&origin.role) == unwrapped(role))
+}
+
+impl Region {
+    fn sample_candidates(
+        &self,
+        role: &Role,
+        divisions: u32,
+        visit: &mut impl FnMut(RPoint3) -> bool,
+    ) -> Result<bool, Refusal> {
+        let mut dec = Decider::default();
+        match &self.cell {
+            Cell::Planar(cell) => {
+                for (support, cycle) in cell.supports.iter().zip(&cell.cycles) {
+                    if cycle.is_empty() || !has_role(&support.origins, role) {
+                        continue;
+                    }
+                    let vertices = cycle
+                        .iter()
+                        .map(|i| native_point(&cell.vertices[*i], &mut dec))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let denominator = Rational::from_i64(i64::from(2 * divisions + 1));
+                    for triangle in 1..vertices.len() - 1 {
+                        let u = vertices[triangle].minus(&vertices[0]);
+                        let v = vertices[triangle + 1].minus(&vertices[0]);
+                        for i in 0..divisions {
+                            for j in 0..divisions - i {
+                                let a =
+                                    Rational::from_i64(i64::from(2 * i + 1)) / denominator.clone();
+                                let b =
+                                    Rational::from_i64(i64::from(2 * j + 1)) / denominator.clone();
+                                if !visit(vertices[0].plus(&u.scaled(&a)).plus(&v.scaled(&b))) {
+                                    return Ok(false);
+                                }
+                            }
+                        }
+                    }
+                    return Ok(true);
+                }
+            }
+            Cell::Round(cell) => {
+                let axis = native_vector(&cell.axis, &mut dec)?;
+                let reference = cell
+                    .reference
+                    .scaled(&(&Real::one() / &cell.reference.norm_squared().sqrt()));
+                let u = native_vector(&reference, &mut dec)?;
+                let v = native_vector(&cell.axis.cross(&reference), &mut dec)?;
+                let origin = native_point(&cell.origin, &mut dec)?;
+                let heights = [
+                    native_scalar(&cell.heights[0], &mut dec)?,
+                    native_scalar(&cell.heights[1], &mut dec)?,
+                ];
+                let radii = [
+                    native_scalar(&cell.radii[0], &mut dec)?,
+                    native_scalar(&cell.radii[1], &mut dec)?,
+                ];
+                let angular = circle(divisions);
+                if has_role(&cell.origins, role) {
+                    for i in 0..divisions {
+                        let t = fraction(i, divisions);
+                        let height = &heights[0] + &(&t * &(&heights[1] - &heights[0]));
+                        let radius = &radii[0] + &(&t * &(&radii[1] - &radii[0]));
+                        let centre = origin.plus(&axis.scaled(&height));
+                        for [c, s] in &angular {
+                            if !visit(
+                                centre
+                                    .plus(&u.scaled(&(&radius * c)))
+                                    .plus(&v.scaled(&(&radius * s))),
+                            ) {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                    return Ok(true);
+                }
+                for i in 0..2 {
+                    let Some((_, origins)) = &cell.caps[i] else {
+                        continue;
+                    };
+                    if !has_role(origins, role) {
+                        continue;
+                    }
+                    let centre = origin.plus(&axis.scaled(&heights[i]));
+                    for ring in 0..divisions {
+                        let radius = &radii[i] * &fraction(ring, divisions);
+                        for [c, s] in &angular {
+                            if !visit(
+                                centre
+                                    .plus(&u.scaled(&(&radius * c)))
+                                    .plus(&v.scaled(&(&radius * s))),
+                            ) {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                    return Ok(true);
+                }
+            }
+        }
+        Err(Refusal::new(
+            "field.draft-sample-role",
+            "result origin has no analytic draft patch",
+        ))
     }
 }

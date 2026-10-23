@@ -1,6 +1,6 @@
 //! Exact single-nappe cells between two planes perpendicular to pull.
 
-use crate::draft::{DraftDefinition, sign};
+use crate::draft::{DraftDefinition, reduced, sign};
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::Origin;
 use catallax_shapes::{Cylinder, Plane, Point3, Surface, Vector3};
@@ -59,7 +59,10 @@ impl RoundCell {
                     "round cell has no pair of opposing caps",
                 ));
             }
-            heights[index] = plane.origin.minus(&cylinder.origin).dot(&plane.normal) / dot;
+            heights[index] = reduced(
+                plane.origin.minus(&cylinder.origin).dot(&plane.normal) / dot,
+                dec,
+            )?;
             ordered[index] = Some((plane, origins));
         }
         if ordered.iter().any(Option::is_none)
@@ -70,17 +73,19 @@ impl RoundCell {
                 "round cell has no positive axial interior",
             ));
         }
-        let neutral_height = definition
-            .neutral
-            .origin
-            .minus(&cylinder.origin)
-            .dot(&definition.neutral.normal)
-            / definition.pull.dot(&definition.neutral.normal);
-        let radius = cylinder.radius_sq.sqrt();
-        let tangent = &definition.sine / &definition.cosine;
-        let mut radii = heights
-            .each_ref()
-            .map(|h| &radius - &(&tangent * &(h - &neutral_height)));
+        let neutral_height = reduced(
+            definition
+                .neutral
+                .origin
+                .minus(&cylinder.origin)
+                .dot(&definition.neutral.normal)
+                / definition.pull.dot(&definition.neutral.normal),
+            dec,
+        )?;
+        let radius = reduced(cylinder.radius_sq.sqrt(), dec)?;
+        let tangent = reduced(&definition.sine / &definition.cosine, dec)?;
+        let mut radius_at = |h: &Real| reduced(&radius - &(&tangent * &(h - &neutral_height)), dec);
+        let mut radii = [radius_at(&heights[0])?, radius_at(&heights[1])?];
         let signs = [sign(&radii[0], dec)?, sign(&radii[1], dec)?];
         if signs.iter().all(|s| *s != Sign::Positive) {
             return Err(Refusal::new(
@@ -90,7 +95,7 @@ impl RoundCell {
         }
         for i in 0..2 {
             if signs[i] != Sign::Positive {
-                heights[i] = &neutral_height + &(&radius / &tangent);
+                heights[i] = reduced(&neutral_height + &(&radius / &tangent), dec)?;
                 radii[i] = Real::zero();
                 ordered[i] = None;
             }

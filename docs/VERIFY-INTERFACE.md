@@ -65,9 +65,9 @@ with `field.display-options`; unsupported native charts or exact frames use
 `field.display-unbounded`; resource/refinement limits use
 `field.display-budget`; coordinate range or rounding failures use
 `field.display-precision`. Numeric refusals propagate. Every refusal removes
-`display.obj` and `answer.step`. The field still refuses unimplemented fillets
-with `field.unsupported-operation` at compilation. No partial mesh, B-rep
-fallback or sampled deviation estimate is published.
+`display.obj` and `answer.step`. Elementary fillets compile independently;
+unsupported contact domains retain their specific construction refusals.
+No partial mesh, B-rep fallback or sampled deviation estimate is published.
 
 Executed mesh attempts also publish `display_diagnostics`, format
 `catallax-display-diagnostics/1`, even on a shared numeric-budget refusal.
@@ -230,9 +230,9 @@ Supporting-surface records use `kind` with these fields:
 Points and directions are arrays of three recipe-number strings. All dimensions
 and controls use exact recipe numbers; limits are positive integer counts.
 Unknown fields refuse. The wrapper is available only through `source=recipe`;
-the B-rep builder still refuses unimplemented fillet and offset operations.
-Declaring a definition measures a constructed face and does not construct a
-new feature.
+the B-rep builder supports elementary cylinder and torus fillet strips but still
+refuses unimplemented general contacts and offsets. Declaring a measurement
+definition does not construct a new feature.
 
 The successful manifest adds `face_measurements`, format
 `catallax-face-measurements/1`:

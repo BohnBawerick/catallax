@@ -1,7 +1,7 @@
 //! Exact recipe-based features over the B-rep model.
 //!
-//! [`evaluate`] builds stock solids, sketches, extrusions, revolutions, booleans,
-//! exact body patterns and mirrors.
+//! [`evaluate`] builds stock solids, sketches, extrusions, revolutions, elementary
+//! fillets, booleans, exact body patterns and mirrors.
 //! Every returned face has canonical recipe origins, including faces split or merged
 //! by a boolean. The model remains compatible with `catallax-measure` and
 //! `catallax-step`; the legacy CLI protocol is not extended.
@@ -31,8 +31,12 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+mod edge_blend;
 mod evaluate;
 mod extrude;
+/// Exact elementary rolling-ball definitions retained beside their topology.
+pub mod fillet;
+mod fillet_build;
 mod placement;
 mod profile;
 mod revolve;

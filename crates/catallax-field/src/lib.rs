@@ -11,6 +11,7 @@
 /// Definition-native, certified display approximations. No B-rep is constructed.
 pub mod display;
 mod features;
+mod fillet;
 mod geometry;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
@@ -312,6 +313,18 @@ impl Plan {
                             copy
                         }
                     }
+                    Operation::Fillet {
+                        body,
+                        edges,
+                        radius,
+                    } => plan.fillet(
+                        steps[body],
+                        &step_faces[body],
+                        edges,
+                        &radius.value().clone().into(),
+                        &step.id,
+                        dec,
+                    )?,
                     _ => {
                         let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
                         plan.leaf(leaf, faces, dec)?
@@ -329,6 +342,7 @@ impl Plan {
                         .collect(),
                     Operation::ExtrudeThrough { target, .. } => step_faces[target].clone(),
                     Operation::Pattern { body, .. }
+                    | Operation::Fillet { body, .. }
                     | Operation::Mirror {
                         body,
                         keep_original: true,
@@ -430,7 +444,7 @@ impl Plan {
         let map = Isometry::from(&pose);
         let mut result = self.clone();
         for leaf in &mut result.leaves {
-            leaf.transform(&map);
+            leaf.transform(&map)?;
         }
         for face in &mut result.faces {
             geometry::face_geometry(face, face.surface.transformed(&pose), dec)?;
@@ -470,7 +484,7 @@ impl Plan {
                 }
                 Instruction::Leaf(id) => {
                     let mut leaf = self.leaves[id].clone();
-                    leaf.transform(map);
+                    leaf.transform(map)?;
                     let mut faces = source_faces
                         .iter()
                         .map(|i| &self.faces[*i])

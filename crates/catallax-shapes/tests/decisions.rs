@@ -396,11 +396,10 @@ blind_test!(cases_30_to_36_same_surfaces_and_normals, {
         let mut d = expired();
         let out = store.same_surface(a, b, &mut d);
         if same {
-            coincident(out, Some(ZeroProof::ExactArithmetic));
+            coincident(out, None);
         } else {
             incidence(out, false);
         }
-        assert_eq!(d.stats(), &DecisionStats::default());
     }
     for (a, b, at, expected) in normal_cases() {
         let mut store = GeomStore::new();

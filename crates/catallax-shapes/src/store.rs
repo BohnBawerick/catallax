@@ -168,7 +168,7 @@ impl GeomStore {
         Self::default()
     }
 
-    /// Adds a surface.
+    /// Adds a surface without searching unrelated geometry for relations.
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId {
         self.implicits.push(s.implicit());
         self.surfaces.push(s)
@@ -289,9 +289,41 @@ impl GeomStore {
         &self.facts
     }
 
-    /// Records a fact; `false` if already present.
+    /// Records a fact and circular-carrier relations it guarantees; `false`
+    /// when the supplied fact is already present.
     pub fn record_fact(&mut self, fact: Fact<GeomKey>) -> bool {
-        self.facts.record(fact)
+        let recorded = self.facts.record(fact);
+        if fact.kind == FactKind::Incident
+            && fact.at.is_none()
+            && let (GeomKey::Curve(curve), GeomKey::Surface(surface)) = (fact.a, fact.b)
+            && let Curve::Circle(circle) = self.curve(curve)
+        {
+            let surface = self.surface(surface);
+            // Circular sections of circular cylinders and cones share their
+            // carrier's axis. Tori also admit non-axial circular sections.
+            let coaxial = match surface {
+                Surface::Cylinder(_) | Surface::Cone(_) => true,
+                Surface::Torus(torus) => crate::intent::parallel(&circle.normal, &torus.axis),
+                _ => false,
+            };
+            let concentric = crate::intent::center(surface)
+                .is_some_and(|center| crate::intent::same_point(center, &circle.center));
+            for (kind, holds) in [
+                (FactKind::Coaxial, coaxial),
+                (FactKind::Concentric, concentric),
+            ] {
+                if holds {
+                    self.facts.record(Fact {
+                        kind,
+                        a: fact.a,
+                        b: fact.b,
+                        at: None,
+                        origin: fact.origin,
+                    });
+                }
+            }
+        }
+        recorded
     }
 
     /// Implicit polynomial of a surface (cached).
@@ -448,34 +480,52 @@ impl GeomStore {
         ) {
             return fact_decision(dec);
         }
+        let known = |kind, dec: &mut Decider| {
+            let holds = self
+                .facts
+                .holds(kind, GeomKey::Surface(a), GeomKey::Surface(b));
+            if holds {
+                dec.note_fact_decision();
+            }
+            holds
+        };
         let zero =
             |value: Real, dec: &mut Decider| math::sign(&value, dec).map(|s| s == Sign::Zero);
         let equal = (|| -> Result<bool, Refusal> {
             Ok(match (self.surface(a), self.surface(b)) {
                 (Surface::Plane(a), Surface::Plane(b)) => {
-                    zero(a.normal.cross(&b.normal).norm_squared(), dec)?
+                    (known(FactKind::Parallel, dec)
+                        || zero(a.normal.cross(&b.normal).norm_squared(), dec)?)
                         && zero(b.origin.minus(&a.origin).dot(&a.normal), dec)?
                 }
                 (Surface::Cylinder(a), Surface::Cylinder(b)) => {
                     zero(&a.radius_sq - &b.radius_sq, dec)?
-                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
-                        && zero(b.origin.minus(&a.origin).cross(&a.axis).norm_squared(), dec)?
+                        && (known(FactKind::Coaxial, dec)
+                            || (zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                                && zero(
+                                    b.origin.minus(&a.origin).cross(&a.axis).norm_squared(),
+                                    dec,
+                                )?))
                 }
                 (Surface::Cone(a), Surface::Cone(b)) => {
                     zero(a.apex.minus(&b.apex).norm_squared(), dec)?
                         && zero(&a.slope - &b.slope, dec)?
-                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                        && (known(FactKind::Parallel, dec)
+                            || zero(a.axis.cross(&b.axis).norm_squared(), dec)?)
                         && math::sign(&a.axis.dot(&b.axis), dec)? == Sign::Positive
                 }
                 (Surface::Sphere(a), Surface::Sphere(b)) => {
-                    zero(a.center.minus(&b.center).norm_squared(), dec)?
+                    (known(FactKind::Concentric, dec)
+                        || zero(a.center.minus(&b.center).norm_squared(), dec)?)
                         && zero(&a.radius - &b.radius, dec)?
                 }
                 (Surface::Torus(a), Surface::Torus(b)) => {
-                    zero(a.center.minus(&b.center).norm_squared(), dec)?
+                    (known(FactKind::Concentric, dec)
+                        || zero(a.center.minus(&b.center).norm_squared(), dec)?)
                         && zero(&a.major - &b.major, dec)?
                         && zero(&a.minor - &b.minor, dec)?
-                        && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
+                        && (known(FactKind::Parallel, dec)
+                            || zero(a.axis.cross(&b.axis).norm_squared(), dec)?)
                 }
                 (Surface::EllipticCylinder(_), Surface::EllipticCylinder(_)) => self.implicits
                     [a.index as usize]

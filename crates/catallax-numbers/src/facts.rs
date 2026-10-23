@@ -108,6 +108,14 @@ impl<K: Copy + Ord> FactBook<K> {
         if kind != FactKind::Incident && a == b {
             return true;
         }
+        if let Some(neighbors) = self.edges.get(&(kind, a)) {
+            if neighbors.contains(&b) {
+                return true;
+            }
+        } else if kind != FactKind::Incident || !self.edges.contains_key(&(FactKind::Coincident, a))
+        {
+            return false;
+        }
         let mut seen = BTreeSet::new();
         let mut queue = VecDeque::from([(a, false)]);
         seen.insert((a, false));

@@ -644,6 +644,13 @@ Change: new `catallax-app` crate exposes `soliddraft::convert`, `build` and `bui
 Why: SolidDraft needs one entry from recipes to named, displayable bodies without inventing topology identities or taking mesh geometry as the model. Fillet, chamfer, shell and unresolved conversion constructions remain explicit not-yet results.
 Migration: SolidDraft's backend consumes this entry in its own repository. Map returned handles explicitly to backend ids, preserve merged origin sets, and persist names rather than handle indices. `docs/RECIPE.md` section 6.3 describes the output contract and current conversion limits. Recipe booleans also apply exact repeated-operand set identities before invoking the distinct-operand intersection graph, so a body combined with itself no longer panics.
 
+## 2026-10-22: construction intent before arithmetic
+
+Pieces: numbers, shapes, primitive and recipe builders and intersections
+Change: construction events record guaranteed `Coincident`, `Parallel`, `Coaxial`, `Concentric`, `Incident` and `Tangent` relations on their named inputs and outputs. Flush contact uses existing coincidence and incidence relations. Cylinder and cone builders retain rim-axis relations through rigid poses; recipe boundaries also derive shared axes and centres from guaranteed incidence. Circular and surface comparisons consume the applicable relations without re-proving them. Intersections retain local tangent loci and exact curve-surface tangent contacts; bounded guesses and uncertain merges never become facts. Direct fact hits avoid allocating a closure traversal. Opposite direction definitions are recognised without allocating negated expressions.
+Why: a contact guaranteed by construction does not need another arithmetic zero proof. Global structural pair discovery is outside this item and adds work on unrelated geometry; insertion performs none.
+Migration: no exchange versions, geometry definitions or numeric allowances change. Builders keep their own construction provenance. Fact decisions count in `decisions` and `coincident_fact` and consume zero work. Callers must not assume an exact incidental fact count or ordering, or an arithmetic proof kind for a construction-known answer. Identical inputs give deterministic results at every worker count. Cylinder sameness and coaxial intersection planning compare stored squared radii directly; a shared-axis fact never bypasses the size comparison.
+
 ## 2026-10-22: reuse failed sphere-gauge enclosure attempts
 
 Piece: 6

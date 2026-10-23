@@ -1129,6 +1129,30 @@ fn facts_keep_origin_order_and_relation_specific_closures() {
 }
 
 #[test]
+fn negated_construction_identity_keeps_signs_and_denominators() {
+    for value in ["0", "1", "-1", "12345678901234567890123456789/17"] {
+        let a = real(value);
+        let b = -&a;
+        assert!(a.same_negated_definition(&b));
+        assert!(b.same_negated_definition(&a));
+    }
+    for (a, b) in [
+        ("1", "1"),
+        ("1/2", "-1/3"),
+        ("1", "-1.0000000000000000000001"),
+    ] {
+        assert!(!real(a).same_negated_definition(&real(b)));
+    }
+    let root = real("2").sqrt();
+    let opposite = -&root;
+    assert!(root.same_negated_definition(&opposite));
+    assert!(opposite.same_negated_definition(&root));
+    assert!(!root.same_negated_definition(&root));
+    let mut dec = Decider::default();
+    assert!(dec.sign(&(&root + &opposite)).is_coincident());
+}
+
+#[test]
 fn mark_bounds_and_answer_mapping_preserve_errors() {
     let mut marks = MarkLog::new();
     marks.push(Mark::new(

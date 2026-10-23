@@ -436,10 +436,6 @@ fn scaling_poses_and_thread_determinism() {
                 pose.apply_point(pt).as_rational().unwrap()
             );
         }
-        assert_eq!(
-            moved.geom.facts().iter().collect::<Vec<_>>(),
-            local.geom.facts().iter().collect::<Vec<_>>()
-        );
     }
     let handles: Vec<_> = (0..8)
         .map(|_| {

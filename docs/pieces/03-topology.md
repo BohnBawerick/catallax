@@ -192,12 +192,13 @@ Each also adds one shell, one lump and one body. No builder reuses geometry or t
 
 ### Construction facts
 
-Each builder records at least these facts, with origin `FactOrigin::Construction("topology.block")` (`"topology.cylinder"`, `"topology.sphere"`, `"topology.cone"`, `"topology.torus"`):
+Each builder ensures at least these facts, with construction provenance. The store may already have recorded a structural identity with origin `Construction("shapes.definition")`; otherwise the builder records its own origin `Construction("topology.block")`, `"topology.cylinder"`, `"topology.sphere"`, `"topology.cone"` or `"topology.torus"`:
 
 - `Incident(curve, surface)` for each edge's curve and the surface of each face that uses the edge;
 - `Incident(point, curve)` for each edge's start and end point and the edge's curve;
 - `Incident(point, surface)` for each vertex loop's point and its face's surface;
-- `Parallel(a, b)` for the planes of each pair of opposite block faces, and for the bottom and top planes of a cylinder or of a cone with `top_radius > 0`.
+- `Parallel(a, b)` for the planes of each pair of opposite block faces, and for the bottom and top planes of a cylinder or of a cone with `top_radius > 0`;
+- `Coaxial` between every circular rim and its cylinder or cone carrier, and between the two rims when both exist. These relations come from the common local axis and survive arbitrary rigid poses.
 
 A builder may record more facts, but only facts its construction makes true. So these must not hold after a block: `Parallel` between the planes `x = 0` and `y = 0`; `Incident` of the corner `000` on the plane `x = sx`.
 

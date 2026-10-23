@@ -485,6 +485,57 @@ mod tests {
     use catallax_shapes::{Pose, RPoint3};
 
     #[test]
+    fn auxiliary_probe_history_does_not_spend_the_next_query_allowance() {
+        let mut original = Model::new();
+        let body = catallax_topology::cylinder(
+            &mut original,
+            Rational::one(),
+            Rational::from_i64(2),
+            &Pose::identity(),
+        )
+        .unwrap();
+        let face = original
+            .faces_of_body(body)
+            .into_iter()
+            .find(|face| {
+                matches!(
+                    original.geom().surface(original.face(*face).surface),
+                    Surface::Cylinder(_)
+                )
+            })
+            .unwrap();
+        let position = RPoint3::new(Rational::one(), Rational::zero(), Rational::one()).to_real();
+        let point = original
+            .geom_mut()
+            .add_point(PointDef::Explicit(position.clone()));
+        let mut cold = original.clone();
+        let (answer, work) = catallax_numbers::with_operation_budget(u64::MAX, || {
+            locate(&mut cold, face, point, &mut Decider::default())
+        });
+        assert_eq!(answer.unwrap(), Some(Location::Inside));
+        let mut warm = original;
+        for n in 1..=4 {
+            plane_through(
+                &mut warm,
+                GeomKey::Point(point),
+                position.clone(),
+                RVector3::new(Rational::one(), Rational::from_i64(n), Rational::one()).to_real(),
+                &mut Decider::default(),
+            )
+            .unwrap()
+            .unwrap();
+        }
+        let (answer, warm_work) = catallax_numbers::with_operation_budget(work.used, || {
+            locate(&mut warm, face, point, &mut Decider::default())
+        });
+        assert!(
+            !warm_work.exhausted,
+            "auxiliary history consumed the query allowance"
+        );
+        assert_eq!(answer.unwrap(), Some(Location::Inside));
+    }
+
+    #[test]
     fn multi_component_probe_does_not_infer_a_branch() {
         for x in [-1, 1] {
             let mut model = Model::new();

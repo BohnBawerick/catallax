@@ -118,7 +118,6 @@ blind_test!(check_uses_factbook_closure_not_only_direct_records, {
         GeomKey::Curve(curve),
         GeomKey::Surface(s1)
     ));
-    assert_eq!(m.geom().facts().len(), 4);
 });
 
 blind_test!(body_marks_survive_sharing_cloning_and_queries, {

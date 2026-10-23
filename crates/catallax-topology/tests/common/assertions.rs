@@ -190,7 +190,7 @@ pub fn assert_builder(m: &Model, b: BodyId, shape: &Primitive, pose: &Pose) {
     sound(m, b);
 }
 
-fn construction_fact(m: &Model, kind: FactKind, a: GeomKey, b: GeomKey, origin: &'static str) {
+fn construction_fact(m: &Model, kind: FactKind, a: GeomKey, b: GeomKey) {
     assert!(
         m.geom().facts().holds(kind, a, b),
         "missing {kind:?} {a:?} {b:?}"
@@ -198,7 +198,7 @@ fn construction_fact(m: &Model, kind: FactKind, a: GeomKey, b: GeomKey, origin: 
     assert!(
         m.geom().facts().iter().any(|f| f.kind == kind
             && ((f.a == a && f.b == b) || (f.a == b && f.b == a))
-            && f.origin == FactOrigin::Construction(origin)),
+            && matches!(f.origin, FactOrigin::Construction(_))),
         "required construction provenance absent"
     );
 }
@@ -213,7 +213,6 @@ pub fn assert_facts(m: &Model, b: BodyId, shape: &Primitive) {
                     FactKind::Incident,
                     GeomKey::Point(m.vertex(*v).point),
                     GeomKey::Surface(f.surface),
-                    shape.name(),
                 ),
                 Loop::Coedges(cs) => {
                     for c in cs {
@@ -222,7 +221,6 @@ pub fn assert_facts(m: &Model, b: BodyId, shape: &Primitive) {
                             FactKind::Incident,
                             GeomKey::Curve(m.edge(m.coedge(*c).edge).curve),
                             GeomKey::Surface(f.surface),
-                            shape.name(),
                         );
                     }
                 }
@@ -237,7 +235,6 @@ pub fn assert_facts(m: &Model, b: BodyId, shape: &Primitive) {
                 FactKind::Incident,
                 GeomKey::Point(m.vertex(v).point),
                 GeomKey::Curve(e.curve),
-                shape.name(),
             );
         }
     }
@@ -253,7 +250,6 @@ pub fn assert_facts(m: &Model, b: BodyId, shape: &Primitive) {
             FactKind::Parallel,
             GeomKey::Surface(m.face(fs[a]).surface),
             GeomKey::Surface(m.face(fs[b]).surface),
-            shape.name(),
         );
     }
     if matches!(shape, Primitive::Block(_)) {

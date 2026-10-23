@@ -9,7 +9,7 @@ use crate::{
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Axis, Origin, Role, StepId};
 use catallax_shapes::{
-    Cone, Cylinder, Isometry, Plane, Point3, RPoint3, RVector3, Sphere, Surface, Torus, Vector3,
+    Cone, Cylinder, EllipticCylinder, Isometry, Plane, Point3, RPoint3, RVector3, Sphere, Surface, Torus, Vector3,
 };
 
 #[derive(Clone, Debug)]
@@ -184,15 +184,25 @@ impl Feature {
         let mut faces = Vec::new();
         for edge in profile.loops.iter().flatten() {
             let surface = if let Some((c, r, _)) = &edge.circle {
-                if !v.cross(&normal).is_zero() {
-                    return Err(bad("features.unsupported-elliptic-cylinder"));
+                let major_dir = normal.cross(&v);
+                if major_dir.is_zero() {
+                    Surface::Cylinder(Cylinder {
+                        origin: profile.world(c).into(),
+                        axis: normal.clone().into(),
+                        radius_sq: r.clone().into(),
+                        ref_dir: profile.world(&edge.start).minus(&profile.world(c)).into(),
+                    })
+                } else {
+                    let height = v.dot(&normal);
+                    Surface::EllipticCylinder(EllipticCylinder {
+                        origin: profile.world(c).into(),
+                        axis: v.clone().into(),
+                        major_dir: major_dir.into(),
+                        major_sq: r.clone().into(),
+                        minor_sq: (r * &(&height * &height) / v.norm_squared()).into(),
+                    })
                 }
-                Surface::Cylinder(Cylinder {
-                    origin: profile.world(c).into(),
-                    axis: normal.clone().into(),
-                    radius_sq: r.clone().into(),
-                    ref_dir: profile.world(&edge.start).minus(&profile.world(c)).into(),
-                })
+
             } else {
                 Surface::Plane(Plane {
                     origin: profile.world(&edge.start).into(),

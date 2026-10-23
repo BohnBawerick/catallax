@@ -10,6 +10,8 @@ use catallax_shapes::{
 };
 use catallax_topology::{FaceId, Loop, Model};
 
+pub use crate::offset_spline::{OffsetSweepMeasurement, measure_elliptic_offset_sweep};
+
 const BITS: u32 = 128;
 
 /// The exact path of a rolling ball's centre. An arc retains its selected branch

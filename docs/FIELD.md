@@ -6,7 +6,7 @@ This is original MIT code. Fidget supplied design ideas, notably fixed-order tap
 
 ## Shared algebraic definitions
 
-The evaluator uses the 2026-10-22 shared algebraic foundation, including the existing profile-sweep consumers. Rational definitions retain the existing arithmetic path. This migration adds no recipe operation or elliptic-cylinder metric coverage; the public distance/result distinctions below continue to apply.
+The evaluator uses the 2026-10-22 shared algebraic foundation, including the existing profile-sweep consumers. Rational definitions retain the existing arithmetic path. No recipe operation is added. Rational oblique circular extrusions use elliptic-cylinder supports and the conservative metric below, not a circular-cylinder distance formula.
 
 Store the same exact `Surface`, `RealPoly`, frame and dimension definitions as B-rep. Widen polynomial constraints, gradients and cached ray coefficients together. Keep the rational sign path for rational coefficients; use the shared decider for algebraic signs, zero coefficients and support comparisons. Normalising a polynomial by its first syntactic coefficient is invalid if that expression might be zero. Certify the first nonzero coefficient before division. Equal support equations do not remove nappe or trim constraints. Definition keys may permit safe work sharing, but unequal expression keys cannot prove different sets.
 
@@ -54,11 +54,19 @@ These lower bounds support certified exclusion and filtering. They do not certif
 
 Sweeps use conservative residuals, even when a particular profile could reduce to a stock solid. Each supporting plane, cylinder, sphere or torus contributes its unsigned distance to the untrimmed surface. A cone contributes `abs(rho - slope * abs(z)) / sqrt(1 + slope²)` in its unit-axis frame. This is a 1-Lipschitz lower bound to the double-cone support; it does not select a nappe or replace the profile trim. Take the minimum over all supports and give it the exact solid-membership sign. Every genuine sweep boundary belongs to at least one support, so this signed residual is continuous and 1-Lipschitz, including across a change of membership. It can vanish on inactive supports inside or outside the solid. Its absolute value is a certified distance lower bound, never evidence of proximity. The upper distance bound is infinity except at a certified boundary point.
 
+For an elliptic cylinder with orthonormal transverse axes `e1`, `e2`, semi-axes
+`a > b > 0` and `d = p - origin`, use
+`abs(sqrt(((b/a) * dot(d,e1))² + dot(d,e2)²) - b)`.
+The transverse linear map has operator norm one, so this residual is
+1-Lipschitz and vanishes on the exact support. It is a conservative distance
+lower bound, not the nearest distance. Exact profile projection still selects
+the swept material and the original oblique caps.
+
 Extrusion projects a query along its defining vector back into the sketch plane, then tests exact odd-loop membership and the signed blind interval. Through-all omits both interval caps and subtracts that infinite tool from the target. It has no construction caps or arbitrary extent. Revolution projects to the meridian using the exact square root of squared radial distance, tests both radial sides of the profile, and applies the cardinal angular sector for partial turns. Profile boundary predicates retain circular arcs rather than replacing them with chords. Shared `Decider` signs settle algebraic meridian and ray-crossing expressions; an exhausted exact decision produces `Indeterminate`, not a guessed sign.
 
 Full turns omit cap names and axis segments that sweep no area. At 180 degrees, caps connected along an axis segment expose both `start` and `end` names over the merged domain. Consecutive collinear or cocircular segments expose every merged segment origin over the maximal side domain. Face queries check that domain as well as the supporting equation, including the correct branch of a revolved surface.
 
-The supported rational subset and `features.unsupported-*` refusals match [RECIPE.md section 7.14](RECIPE.md#714-b-rep-feature-geometry-bugs). Legal algebraic placements, non-cardinal cap frames, elliptic cylinders and generated irrational surface radii remain explicit unfinished geometry, not impossible inputs.
+The supported rational subset and `features.unsupported-*` refusals match [RECIPE.md section 7.14](RECIPE.md#714-b-rep-feature-geometry-bugs). Legal algebraic placements, non-cardinal cap frames and generated irrational round-surface radii remain explicit unfinished geometry, not impossible inputs.
 
 ### Patterns and mirrors
 
@@ -185,6 +193,32 @@ with `converged=false`, never an invented precision. Non-compact or degenerate
 chart covers and invalid controls return `field.face-measurement`; numeric,
 intersection and exact trim-query refusals propagate. No B-rep fillet or offset
 is constructed, and no tolerance cap or merge policy is applied.
+
+### Signed normal-offset spline sweeps
+
+`measurement::measure_elliptic_offset_sweep` checks a `BSplineSurface` against
+its retained `EllipticOffsetDefinition` and exact axial interval. This interface
+uses the definition's signed normal branch, unlike the unsigned analytic
+support checker. It covers a whole degree-(3,1), unit-weight composite-Bezier
+sweep on `[0,4] x [0,1]`; cropped domains and detached control columns refuse.
+
+The checker reconstructs exact endpoint positions and tangents on every
+normal-offset quarter chart, verifies the cubic Hermite controls and recomputes
+whole-span fourth-derivative interpolation bounds. It takes no producer error
+estimate as input. The shared parameter cover proves both directions of
+boundary coverage, including periodic closure. Positive Bernstein curvature
+coefficients and open derivative half-planes prove a regular embedded convex
+cross-section, with a single tangent winding. Inward offsets must remain inside
+the original ellipse's regular normal neighbourhood.
+
+`OffsetSweepMeasurement` reports the conservative `[lower, upper]` enclosure in
+millimetres, complete span count and `converged`. Non-negativity supplies the
+current zero lower bound; the upper bound covers every span, not sample points.
+The checker streams one span at a time. Unsupported carriers, inconsistent
+interpolation, a wrong branch or a forged seam use `field.offset-spline`;
+numeric refusals propagate. This result is not a body certificate: common cap
+curves, changed cap domains, local limits and outward material correspondence
+must also be checked before publication.
 
 ## Definition-native display
 

@@ -3,7 +3,8 @@
 use catallax_numbers::{Fact, FactKind, FactOrigin, Integer, MarkLog, Rational, Refusal, Sign};
 use catallax_recipe::{Origin, Role, StepId, Turn};
 use catallax_shapes::{
-    Circle, Curve, Cylinder, GeomKey, Line, Plane, PointDef, RPoint3, RVector3, Surface,
+    Circle, Curve, Cylinder, EllipticCylinder, GeomKey, Line, Plane, PointDef, RPoint3, RVector3,
+    Surface,
 };
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell,
@@ -293,13 +294,8 @@ pub(crate) fn extrude_vector(
                         .collect()
                 };
                 let (surface, sense) = if let Some((c, radius_sq, turn)) = &s.circle {
-                    if !vector.cross(&normal).is_zero() {
-                        return Err(Refusal::new(
-                            "features.unsupported-elliptic-cylinder",
-                            "an oblique circular sweep needs an exact elliptic-cylinder definition",
-                        ));
-                    }
-                    (
+                    let major_dir = normal.cross(vector);
+                    let surface = if major_dir.is_zero() {
                         Surface::Cylinder(Cylinder {
                             origin: profile.world(c, &zero).into(),
                             axis: normal.clone().into(),
@@ -312,7 +308,22 @@ pub(crate) fn extrude_vector(
                                 )
                                 .to_real(),
                             ),
-                        }),
+                        })
+                    } else {
+                        // The profile normal is a rigid image of the unit z
+                        // axis. Nonzero height and major_dir prove 0 < cos² < 1.
+                        // Keep the original circular end curves and oblique caps.
+                        Surface::EllipticCylinder(EllipticCylinder {
+                            origin: profile.world(c, &zero).into(),
+                            axis: vector.clone().into(),
+                            major_dir: major_dir.into(),
+                            major_sq: radius_sq.clone().into(),
+                            minor_sq: (radius_sq * &(&height * &height) / vector.norm_squared())
+                                .into(),
+                        })
+                    };
+                    (
+                        surface,
                         if *turn == Turn::Ccw {
                             Sense::Same
                         } else {

@@ -1205,12 +1205,12 @@ These are valid geometry, not additions to the impossible-input lists. The curre
 |---|---|---|
 | A signed extrusion whose normalized direction is irrational, such as `[1, 0, 1]`; a quarter-turn revolve about an axis with an irrational unit vector | `features.unsupported-algebraic-placement` | Algebraic placements and rotated frames |
 | A non-cardinal rational-degree revolve, such as 45 degrees | `features.unsupported-algebraic-revolve-frame` | Algebraic rotated cap and trimming-curve definitions |
-| An oblique extrusion of a circle or arc, such as direction `[3, 0, 4]` from the XY plane | `features.unsupported-elliptic-cylinder` | Elliptic cylinders, not circular cylinders |
+
 | A revolved circular arc producing a sphere with irrational radius | `features.unsupported-algebraic-sphere-radius` | Spheres with exact algebraic radii |
 | A revolved arc or circle whose torus major or minor radius is irrational | `features.unsupported-algebraic-torus-radius` | Tori with exact algebraic radii |
 | A valid trimmed horn or spindle torus sheet generated from an arc | `features.unsupported-spindle-torus` | Non-ring torus sheets and their branch predicates |
 
-Extrusion supports axis-aligned and Pythagorean directions whose unit vectors are rational. Circular sweeps additionally require a normal direction; their squared surface radii remain exact even when their radii are irrational. Revolve supports full turns and partial turns of 90, 180 or 270 degrees when the required frames and other dimensions are rational. Zero degrees is impossible, not an empty partial revolve.
+Extrusion supports axis-aligned and Pythagorean directions whose unit vectors are rational. A circular sweep reduces to a circular cylinder for a normal direction and an elliptic cylinder otherwise, retaining the original circular boundary curves and cap planes. Squared surface radii remain exact even when their radii are irrational; elliptic reductions retain exact squared semi-axes. Revolve supports full turns and partial turns of 90, 180 or 270 degrees when the required frames and dimensions are rational. Zero degrees is impossible, not an empty partial revolve.
 
 The language still specifies angles as rational degrees. A non-cardinal Pythagorean unit-circle point does not correspond to a rational number of degrees, so it has no exact input spelling in this schema. Supporting explicit rational cosine/sine pairs needs a separately versioned angle representation. No rounded degree value is treated as the exact Pythagorean angle.
 

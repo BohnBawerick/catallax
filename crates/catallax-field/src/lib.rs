@@ -16,6 +16,7 @@ mod geometry;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
 mod metric;
+mod offset_spline;
 mod planar;
 mod profile;
 mod samples;

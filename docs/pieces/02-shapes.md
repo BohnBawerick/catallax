@@ -67,7 +67,36 @@ No unrestricted `Quadric`, `Extruded` or `Revolved` surface variant is added in 
 
 `EllipticOffsetDefinition::new(original: EllipticCylinder, signed_distance: Real, dec: &mut Decider)` validates and retains an immutable copy of the original support and the exact offset expression. Positive distance selects `OffsetSide::Outward`, negative distance selects `Inward`, and zero retains the original support. `original()` returns the exact `Surface`; `distance()` returns the nonnegative `Real` magnitude required by the field measuring stick's offset definition. `side()` retains the branch that unsigned distance alone cannot distinguish.
 
-The record is intent, not a new `Surface` variant, fitted carrier, finite trimmed face or geometric certificate. Inward offsets still require domain, branch and regularity proofs before construction. This interface does not choose the pending approximated-carrier representation or change the six existing surface kinds.
+The record is intent, not a new `Surface` variant, fitted carrier, finite trimmed face or geometric certificate. Inward offsets still require domain, branch and regularity proofs before construction. This interface does not itself construct an approximated face or change the six existing surface kinds.
+
+### Explicit spline data and exact offset charts
+
+`BSplineSurface::new` validates a finite tensor-product carrier: positive degrees,
+expanded nondecreasing rational knots, clamped endpoints, rectangular exact
+`Point3` controls and positive exact `Real` weights. Controls are u-major and
+v-minor. Internal multiplicity cannot exceed the degree. The carrier shares
+immutable data and caches its homogeneous derivative nets and positive weight
+lower bound; construction alone does not establish a regular or injective face.
+
+`jet` encloses position, first derivatives and second derivatives on a binary
+parameter box, including the hull of one-sided values at internal knots.
+`jet_box` accepts an exact rational parameter rectangle, so non-dyadic finite
+endpoints remain usable without treating outward rounding as an invalid domain.
+Out-of-domain requests still refuse rather than clamp. Both methods use the
+caller's precision and work policy. `transformed` applies a validated rigid
+motion to exact controls while sharing knots and weights.
+
+`EllipticOffsetDefinition::chart` retains algebraic quarter charts of the exact
+signed normal offset. `point_and_tangent` returns exact positions and tangents;
+`hermite_error_bound` proves a uniform cubic-interpolation position bound from
+interval fourth derivatives over a complete span. Adjacent quarters share their
+position and parameter speed, including closure. An inward chart alone is not
+proof that the selected erosion branch is regular.
+
+The spline data and `fit_elliptic_offset` candidate do not add an analytic kind
+or authorize a body. Topological use also requires checked shared boundaries,
+finite domains, regularity, material correspondence and local certificates.
+
 
 ### Acceptance of the migration
 

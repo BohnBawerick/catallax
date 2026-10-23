@@ -428,16 +428,11 @@ fn source_names_match_brep_aliases_and_survive_splitting() {
 
 #[test]
 fn invalid_profiles_and_unfinished_algebraic_cases_share_specific_codes() {
-    let mut oblique = extrude(circles(&["1"], ["0", "0"]), "5");
-    if let catallax_recipe::Operation::Extrude { direction, .. } = &mut oblique.steps[1].op {
-        *direction = Some(catallax_recipe::Vector3([3.into(), 0.into(), 4.into()]));
-    }
     let mut irrational = extrude(rectangle(), "2");
     if let catallax_recipe::Operation::Extrude { direction, .. } = &mut irrational.steps[1].op {
         *direction = Some(catallax_recipe::Vector3([1.into(), 0.into(), 1.into()]));
     }
     for r in [
-        oblique,
         irrational,
         revolve(rectangle(), "45"),
         extrude(circles(&["0"], ["0", "0"]), "2"),
@@ -818,4 +813,34 @@ fn algebraic_rigid_frames_preserve_sweep_trims_germs_and_complete_answers() {
             assert_eq!(actual, expected);
         }
     }
+}
+
+#[test]
+fn rational_oblique_circle_has_exact_membership_caps_and_conservative_metric() {
+    let mut source = extrude(circles(&["2"], ["0", "0"]), "5");
+    if let catallax_recipe::Operation::Extrude { direction, .. } = &mut source.steps[1].op {
+        *direction = Some(catallax_recipe::Vector3([3.into(), 0.into(), 4.into()]));
+    }
+    let plan = Plan::compile(&source).unwrap();
+    check(
+        &plan,
+        &[
+            (["3/2", "0", "2"], Location::Inside),
+            (["3/2", "2", "2"], Location::Boundary),
+            (["3/2", "21/10", "2"], Location::Outside),
+            (["0", "0", "0"], Location::Boundary),
+            (["3", "0", "4"], Location::Boundary),
+            (["3", "0", "5"], Location::Outside),
+        ],
+    );
+    normal(query(&plan, ["3/2", "2", "2"]).direction, [0, 1, 0]);
+    normal(query(&plan, ["0", "0", "0"]).direction, [0, 0, -1]);
+    normal(query(&plan, ["3", "0", "4"]).direction, [0, 0, 1]);
+    let outside = query(&plan, ["3/2", "21/10", "2"]);
+    // The 1-Lipschitz elliptic residual is 0.08 mm; true distance here is
+    // 0.1 mm. Calling the residual a nearest distance would be incorrect.
+    assert!(outside.value.enclosure().contains(0.08));
+    assert!(outside.distance.millimetres.lo() > 0.079);
+    assert!(outside.distance.millimetres.lo() < 0.081);
+    assert!(outside.distance.millimetres.hi().is_infinite());
 }

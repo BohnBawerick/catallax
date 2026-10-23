@@ -406,3 +406,69 @@ fn cone_apex_names_survive_singular_loops_and_split_edge_fans() {
         assert!(properties.volume.lo <= volume.lo() && properties.volume.hi >= volume.hi());
     }
 }
+
+#[test]
+fn rational_oblique_circle_keeps_its_swept_support_and_original_caps() {
+    use catallax_numbers::{Real, RealPoly};
+    use catallax_shapes::Surface;
+    use catallax_topology::Sense;
+    for (distance, height) in [("5", 4), ("-5", -4)] {
+        let built = build(
+            vec![
+                json!({"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},
+                "loops":[[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"2"}]]}),
+                json!({"id":"body","op":"extrude","profile":"profile","distance":distance,"direction":["3","0","4"]}),
+            ],
+            "body",
+        );
+        let mut cap_count = 0;
+        let mut side_count = 0;
+        let mut dec = Decider::default();
+        for face in built.model.faces_of_body(built.result) {
+            let face = built.model.face(face);
+            match built.model.geom().surface(face.surface) {
+                Surface::EllipticCylinder(_) => {
+                    side_count += 1;
+                    let [x, y, t] = std::array::from_fn(|i| RealPoly::var(3, i));
+                    // Pull the entire support back along (X,Y,t) -> (X+3t,Y,4t).
+                    // This is an identity for every swept generator, not samples.
+                    let support = built
+                        .model
+                        .geom()
+                        .surface(face.surface)
+                        .implicit()
+                        .substitute(2, &t.scale(&Real::from_i64(4)))
+                        .substitute(0, &(&x + &t.scale(&Real::from_i64(3))));
+                    let circle = (&x.pow_u32(2) + &y.pow_u32(2))
+                        .scale(&Rational::from_ratio(1, 4).unwrap().into())
+                        - RealPoly::constant(3, Real::one());
+                    assert!((&support - &circle).is_zero(&mut dec).unwrap());
+                    assert_eq!(face.sense, Sense::Same);
+                }
+                Surface::Plane(plane) => {
+                    cap_count += 1;
+                    assert!(plane.normal.x.rational_ref().unwrap().is_zero());
+                    assert!(plane.normal.y.rational_ref().unwrap().is_zero());
+                    let z = plane.origin.z.rational_ref().unwrap();
+                    assert!(z.is_zero() || *z == Rational::from_i64(height));
+                    let outward = if face.sense == Sense::Same {
+                        plane.normal.z.clone()
+                    } else {
+                        -&plane.normal.z
+                    };
+                    let want = if z.is_zero() {
+                        -height.signum()
+                    } else {
+                        height.signum()
+                    };
+                    assert!(matches!(
+                        dec.sign(&(&outward * &Real::from_i64(want))),
+                        Outcome::Proven(catallax_numbers::StrictSign::Positive)
+                    ));
+                }
+                other => panic!("unexpected swept support: {other:?}"),
+            }
+        }
+        assert_eq!((side_count, cap_count), (1, 2));
+    }
+}

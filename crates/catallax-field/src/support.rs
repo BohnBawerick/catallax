@@ -11,6 +11,7 @@ enum Kind {
     Cone,
     Sphere,
     Torus,
+    EllipticCylinder,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct Support {
@@ -22,6 +23,35 @@ pub(crate) struct Support {
 impl Support {
     pub fn new(surface: &Surface) -> Self {
         let (kind, origin, axis, a, b) = match surface {
+            Surface::EllipticCylinder(s) => {
+                let major = s
+                    .major_dir
+                    .scaled(&(&Real::one() / &s.major_dir.norm_squared().sqrt()));
+                let axis = s
+                    .axis
+                    .scaled(&(&Real::one() / &s.axis.norm_squared().sqrt()));
+                let minor = axis.cross(&major);
+                let b = s.minor_sq.sqrt();
+                let major = major.scaled(&(&b / &s.major_sq.sqrt()));
+                // Covectors have operator norm one: b/a along the major
+                // direction and one along the minor. The resulting radial
+                // residual is 1-Lipschitz, not a claimed nearest distance.
+                return Self::from_exact(
+                    Kind::EllipticCylinder,
+                    [
+                        s.origin.x.clone(),
+                        s.origin.y.clone(),
+                        s.origin.z.clone(),
+                        major.x,
+                        major.y,
+                        major.z,
+                        minor.x,
+                        minor.y,
+                        minor.z,
+                        b,
+                    ],
+                );
+            }
             Surface::Plane(s) => (
                 Kind::Plane,
                 &s.origin,
@@ -70,9 +100,12 @@ impl Support {
             b,
             factor,
         ];
+        Self::from_exact(kind, exact)
+    }
+    fn from_exact(kind: Kind, exact: [Real; 10]) -> Self {
         let mut fast = exact.each_ref().map(Real::to_f64);
-        if let Surface::Cylinder(cylinder) = surface {
-            fast[7] = cylinder.radius().to_f64();
+        if matches!(kind, Kind::Cylinder) {
+            fast[7] = exact[7].sqrt().to_f64();
         }
         Self {
             kind,
@@ -98,6 +131,16 @@ impl Support {
         self.exact[3] = axis.x;
         self.exact[4] = axis.y;
         self.exact[5] = axis.z;
+        if matches!(self.kind, Kind::EllipticCylinder) {
+            let minor = pose.apply_vector(&Vector3::new(
+                self.exact[6].clone(),
+                self.exact[7].clone(),
+                self.exact[8].clone(),
+            ));
+            self.exact[6] = minor.x;
+            self.exact[7] = minor.y;
+            self.exact[8] = minor.z;
+        }
         // A certified rigid motion preserves the defining axis norm and dimensions.
         self.balls = rational_balls(self.kind, &self.exact);
         let radius = self.fast[7];
@@ -136,6 +179,11 @@ impl Support {
         let abs = |x: T| x.max(&x.neg());
         if matches!(self.kind, Kind::Sphere) {
             return abs(norm(&d).sub(&q[7]));
+        }
+        if matches!(self.kind, Kind::EllipticCylinder) {
+            let major = d[0].mul(&q[3]).add(&d[1].mul(&q[4])).add(&d[2].mul(&q[5]));
+            let minor = d[0].mul(&q[6]).add(&d[1].mul(&q[7])).add(&d[2].mul(&q[8]));
+            return abs(major.square().add(&minor.square()).sqrt().sub(&q[9]));
         }
         let length = q[6].sqrt();
         let z = d[0]

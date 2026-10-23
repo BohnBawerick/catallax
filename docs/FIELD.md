@@ -62,6 +62,8 @@ Named holes compile each cylindrical or conical band into a convex analytic cell
 
 Cells use the minimum unsigned distance to their supporting analytic surfaces, signed by exact membership. Their residual is conservative, not true distance to the trimmed cell. Unbounded halfspaces have no finite sample sphere. One-sided through-all uses such a halfspace at the sketch plane, without a finite artificial end.
 
+Exact body copies map cell constraints and finite sample-sphere centres with `Isometry`, including plane reflection. Radii and metric bounds are unchanged by these orthogonal maps. Copied face records retain their wrapped recipe origins.
+
 Full turns omit cap names and axis segments that sweep no area. At 180 degrees, caps connected along an axis segment expose both `start` and `end` names over the merged domain. Consecutive collinear or cocircular segments expose every merged segment origin over the maximal side domain. Face queries check that domain as well as the supporting equation, including the correct branch of a revolved surface.
 
 The supported rational subset and `features.unsupported-*` refusals match [RECIPE.md section 7.14](RECIPE.md#714-b-rep-feature-geometry-bugs). Legal algebraic placements, non-cardinal cap frames, elliptic cylinders and generated irrational surface radii remain explicit unfinished geometry, not impossible inputs.

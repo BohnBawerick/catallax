@@ -42,6 +42,7 @@ mod fillet_build;
 mod placement;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
+mod placement;
 mod profile;
 mod revolve;
 mod stock;

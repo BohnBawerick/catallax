@@ -991,11 +991,11 @@ impl Cell {
             })
             .map(Some)
     }
-    fn transform(&mut self, pose: &Pose) {
+    fn transform(&mut self, pose: &Isometry) {
         let surfaces = self
             .constraints
             .iter()
-            .map(|c| c.surface.transformed(pose))
+            .map(|c| pose.surface(&c.surface))
             .collect();
         let center = pose.apply_point(&self.center);
         *self = Self::new(surfaces, self.radius.clone());

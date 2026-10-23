@@ -850,3 +850,10 @@ Pieces: numbers, features, field
 Change: non-quadratic rational-degree sine/cosine definitions use the primitive real cyclotomic polynomial, selected by exact coprime angle order. Existing closed forms remain unchanged. The public API, exact values and allowances do not change.
 Why: standard 118-degree drill tips and 82-degree countersinks previously spent most of their request allowance constructing unrelated Chebyshev conjugates. The smaller definition reduces that construction cost but does not complete the subsequent Boolean proof.
 Migration: none. These standard-angle hole builds still refuse cleanly with `numbers.operation-budget`; they are unfinished coverage awaiting geometric quadric classification and construction-intent facts, not impossible geometry.
+
+## 2026-10-23: drill and capped-sweep cells compose with exact copies
+
+Pieces: field, comparison
+Change: analytic drill and planar first-hit cells transport their constraints and finite sample-sphere centres through the shared exact `Isometry`, including reflections. Reverse comparison retains checked field queries and cancellation from body-copy integration while preserving the original query refusal in `Report::refusal`.
+Why: named holes and capped sweeps must remain valid inputs to the newly available body pattern and mirror operations.
+Migration: none; dimensions, work allowances and query result contracts are unchanged.

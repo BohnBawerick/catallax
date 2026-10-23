@@ -12,6 +12,7 @@ mod isometry;
 mod math;
 mod offset;
 mod offset_chart;
+mod offset_sweep;
 mod point;
 mod pose;
 mod store;
@@ -21,11 +22,14 @@ mod vector;
 #[cfg(test)]
 mod tests;
 
-pub use bspline::{BSplineJet, BSplineSurface};
+pub use bspline::{
+    BSplineCurve, BSplineCurveJet, BSplineJet, BSplineSurface, SplineBoundary, SplineCurveParameter,
+};
 pub use curve::{Circle, Curve, CurveKind, Ellipse, IntersectionCurve, Line};
 pub use isometry::Isometry;
 pub use offset::{EllipticOffsetDefinition, OffsetSide};
 pub use offset_chart::EllipticOffsetChart;
+pub use offset_sweep::{OffsetSweepProof, certify_elliptic_offset_sweep};
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};

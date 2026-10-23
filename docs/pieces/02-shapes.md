@@ -86,12 +86,29 @@ Out-of-domain requests still refuse rather than clamp. Both methods use the
 caller's precision and work policy. `transformed` applies a validated rigid
 motion to exact controls while sharing knots and weights.
 
+`BSplineCurve` validates standalone finite clamped positive-weight curve data
+or shares an exact `SplineBoundary` view of a surface. Boundary views reuse the
+same controls and weights; they do not fit a second curve. Position and first
+and second parameter derivatives include rational-weight quotient terms and
+knot-side hulls. Exact point preimages use coordinate-polynomial common factors
+in the existing coefficient field, rejecting points outside the finite curve.
+`SplineCurveParameter` binds the recovered parameter to its checked span.
+It is an incidence witness, not a uniqueness proof for an unchecked
+self-intersecting curve; constant or unresolved preimages refuse.
+
 `EllipticOffsetDefinition::chart` retains algebraic quarter charts of the exact
 signed normal offset. `point_and_tangent` returns exact positions and tangents;
 `hermite_error_bound` proves a uniform cubic-interpolation position bound from
 interval fourth derivatives over a complete span. Adjacent quarters share their
 position and parameter speed, including closure. An inward chart alone is not
 proof that the selected erosion branch is regular.
+
+`certify_elliptic_offset_sweep` returns an opaque `OffsetSweepProof` bound to
+the immutable carrier, original signed definition and finite axial interval.
+It checks the complete span cover, interpolation and shared periodic seams,
+the regular branch, convex embedding and a recomputed two-way position bound.
+The field measuring stick uses this same geometric checker. This local proof
+does not establish cap domains, complete body topology or recipe identity.
 
 The spline data and `fit_elliptic_offset` candidate do not add an analytic kind
 or authorize a body. Topological use also requires checked shared boundaries,

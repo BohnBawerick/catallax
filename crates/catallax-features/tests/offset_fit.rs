@@ -173,3 +173,50 @@ fn independently_measured_sweep_rejects_wrong_side_detached_column_and_forged_se
     );
     assert_eq!(result.unwrap_err().code, "field.offset-spline");
 }
+
+#[test]
+fn fitted_algebraic_boundary_recovers_exact_non_dyadic_parameter_without_elimination() {
+    use catallax_shapes::{BSplineCurve, SplineBoundary};
+    let mut dec = Decider::default();
+    let original = EllipticCylinder::new(
+        Point3::origin(),
+        Vector3::new(Real::from_i64(3), Real::zero(), Real::from_i64(4)),
+        Vector3::new(Real::zero(), Real::one(), Real::zero()),
+        Real::from_i64(4),
+        r("64/25").into(),
+        &mut dec,
+    )
+    .unwrap();
+    let definition = EllipticOffsetDefinition::new(original, r("-1/4").into(), &mut dec).unwrap();
+    let (result, work) = with_operation_budget(100_000_000, || {
+        let fit = fit_elliptic_offset(
+            &definition,
+            [r("9/4").into(), r("23/4").into()],
+            &r("0.0001"),
+            &mut dec,
+        )?;
+        let edge = BSplineCurve::boundary(&fit.surface, SplineBoundary::VMin);
+        let expected = Real::from_rational(r("1/3"));
+        let point = edge.point_at(&expected, &mut dec)?;
+        let inverse = edge
+            .parameter_of(&point, &mut dec)?
+            .expect("point on its finite spline");
+        assert!(dec.compare(inverse.value(), &expected).is_coincident());
+        let tangent = inverse.first(&dec)?;
+        let parameter = r("1/3");
+        let zero = r("0");
+        let chart = fit
+            .surface
+            .jet_box([&parameter, &parameter], [&zero, &zero], 128, &dec)?;
+        for (component, expected) in [tangent.x, tangent.y, tangent.z]
+            .iter()
+            .zip(&chart.first[0])
+        {
+            let actual = dec.enclose(component, &r("1e-12"))?;
+            assert!(actual.lo() <= expected.hi() && actual.hi() >= expected.lo());
+        }
+        Ok::<_, catallax_numbers::Refusal>(())
+    });
+    result.unwrap();
+    assert!(!work.exhausted);
+}

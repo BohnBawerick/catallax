@@ -9,6 +9,77 @@ use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 
 use crate::{Point3, Pose, math};
 
+mod curve;
+pub use curve::{BSplineCurve, BSplineCurveJet, SplineBoundary, SplineCurveParameter};
+
+fn validate_axis(
+    degree: usize,
+    knots: &[Rational],
+    n: usize,
+    dec: &Decider,
+) -> Result<(), Refusal> {
+    if degree == 0
+        || degree >= n
+        || n.checked_add(degree).and_then(|x| x.checked_add(1)) != Some(knots.len())
+    {
+        return Err(invalid("invalid degree or expanded knot count"));
+    }
+    for pair in knots.windows(2) {
+        dec.check_deadline()?;
+        if pair[0] > pair[1] {
+            return Err(invalid("knot vector is not nondecreasing"));
+        }
+    }
+    if knots[degree] >= knots[n] {
+        return Err(invalid("zero-width active knot domain"));
+    }
+    if !knots[..=degree].iter().all(|x| x == &knots[degree])
+        || !knots[n..].iter().all(|x| x == &knots[n])
+    {
+        return Err(invalid("finite spline endpoints must be clamped"));
+    }
+    if knots[degree + 1] == knots[degree] || knots[n - 1] == knots[n] {
+        return Err(invalid(
+            "endpoint knot multiplicity exceeds degree plus one",
+        ));
+    }
+    let mut multiplicity = 0;
+    let mut previous = None;
+    for knot in &knots[degree + 1..n] {
+        multiplicity = if previous == Some(knot) {
+            multiplicity + 1
+        } else {
+            1
+        };
+        if multiplicity > degree {
+            return Err(invalid("discontinuous internal knot"));
+        }
+        previous = Some(knot);
+    }
+    Ok(())
+}
+
+fn validate_controls(
+    controls: &[Point3],
+    weights: &[Real],
+    dec: &mut Decider,
+) -> Result<(Rational, bool), Refusal> {
+    let mut minimum: Option<Rational> = None;
+    for (point, weight) in controls.iter().zip(weights) {
+        dec.check_deadline()?;
+        math::validate_point(point, dec)?;
+        math::validate(weight, dec)?;
+        math::positive(weight, "shapes.bspline-weight", dec)?;
+        let lower = positive_weight_bound(weight, dec)?;
+        minimum = Some(match minimum {
+            Some(old) => old.min(lower),
+            None => lower,
+        });
+    }
+    let constant = weights[1..].iter().all(|w| w.same_definition(&weights[0]));
+    Ok((minimum.expect("validated nonempty control net"), constant))
+}
+
 fn invalid(detail: impl Into<String>) -> Refusal {
     Refusal::new("shapes.bspline-data", detail)
 }
@@ -268,68 +339,16 @@ impl BSplineSurface {
             ));
         }
         for axis in 0..2 {
-            let degree = degrees[axis];
-            let n = count[axis];
-            if degree == 0
-                || degree >= n
-                || n.checked_add(degree).and_then(|x| x.checked_add(1)) != Some(knots[axis].len())
-            {
-                return Err(invalid("invalid degree or expanded knot count"));
-            }
-            for pair in knots[axis].windows(2) {
-                dec.check_deadline()?;
-                if pair[0] > pair[1] {
-                    return Err(invalid("knot vector is not nondecreasing"));
-                }
-            }
-            if knots[axis][degree] >= knots[axis][n] {
-                return Err(invalid("zero-width active knot domain"));
-            }
-            if !knots[axis][..=degree]
-                .iter()
-                .all(|x| x == &knots[axis][degree])
-                || !knots[axis][n..].iter().all(|x| x == &knots[axis][n])
-            {
-                return Err(invalid("finite spline endpoints must be clamped"));
-            }
-            if knots[axis][degree + 1] == knots[axis][degree]
-                || knots[axis][n - 1] == knots[axis][n]
-            {
-                return Err(invalid(
-                    "endpoint knot multiplicity exceeds degree plus one",
-                ));
-            }
-            let mut multiplicity = 0;
-            let mut previous = None;
-            for knot in &knots[axis][degree + 1..n] {
-                multiplicity = if previous == Some(knot) {
-                    multiplicity + 1
-                } else {
-                    1
-                };
-                if multiplicity > degree {
-                    return Err(invalid("discontinuous internal knot"));
-                }
-                previous = Some(knot);
-            }
+            validate_axis(degrees[axis], &knots[axis], count[axis], dec)?;
         }
-        let mut weight_lower: Option<Rational> = None;
-        for (point, weight) in controls.iter().zip(&weights) {
-            dec.check_deadline()?;
-            math::validate_point(point, dec)?;
-            math::validate(weight, dec)?;
-            math::positive(weight, "shapes.bspline-weight", dec)?;
-            let lower = positive_weight_bound(weight, dec)?;
-            weight_lower = Some(weight_lower.map_or(lower.clone(), |old| old.min(lower)));
-        }
-        let constant_weight = weights[1..].iter().all(|w| w.same_definition(&weights[0]));
+        let (weight_lower, constant_weight) = validate_controls(&controls, &weights, dec)?;
         Ok(Self::from_validated(
             degrees,
             knots.map(Arc::from),
             count,
             controls,
             weights.into(),
-            weight_lower.unwrap(),
+            weight_lower,
             constant_weight,
         ))
     }

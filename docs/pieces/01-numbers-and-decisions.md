@@ -14,6 +14,13 @@ Add `RealPoly`, a polynomial in a fixed number of variables with `Real` coeffici
 
 `rational() -> Option<&MPoly>` borrows the rational backend without copying coefficients; `into_rational() -> Option<MPoly>` consumes it. `total_degree`, `is_zero`, `equals`, `resultant` and `real_roots` accept the caller's mutable decider; `eval_ball` accepts its enclosure context. `Decider::rational_value` can certify a rational value for a correlated algebraic expression. Its `None` result is inconclusive and must not be used as an irrationality or domain certificate.
 
+`RealPoly::gcd` takes two univariate polynomials and the caller's mutable
+decider. It returns their monic greatest common divisor in the existing exact
+coefficient field, with `gcd(0, 0) = 0`. It validates all coefficient domains
+before a constant shortcut and certifies algebraically zero leading terms.
+The sparse Euclidean remainder path does not eliminate algebraic coefficients
+into a larger rational polynomial; numeric refusals and work limits propagate.
+
 A syntactic term bound is not the mathematical degree. Algebraically zero coefficients may remain until a decider proves zero. Degree selection, leading-coefficient division, polynomial equality and zero-polynomial tests must therefore be certified operations; no caller may use list length or expression identity as those proofs. `RealPoly` has no mathematical `Eq`, `Ord` or `Hash`. Enclosure evaluation includes coefficient error as well as input error, using the caller's precision and decision policy.
 
 For non-rational coefficients, solvers must either operate in a certified common algebraic extension or lower the expression graph to rational polynomial equations with auxiliary variables and certified root/domain selectors. Lowering retains shared leaves and their correlations, positive square-root choices and nonzero divisors. Elimination gives candidate roots; it must not admit other conjugates or denominator zeros. Certify and order candidates against the original equations and component selectors. Rational `UPoly`, `MPoly`, `PolySystem` and `IsolatedRoot` keep their current contracts. Lifted systems need their own certificates when singular; the existing nonsingular `IsolatedRoot` constructor cannot certify them by assertion.

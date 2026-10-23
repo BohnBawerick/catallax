@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use catallax_numbers::{Ball, Decider, Rational, Real, with_operation_budget};
-use catallax_shapes::{BSplineSurface, Point3};
+use catallax_shapes::{BSplineCurve, BSplineSurface, Point3, SplineBoundary};
 
 fn r(s: &str) -> Rational {
     Rational::parse(s).unwrap()
@@ -218,6 +218,11 @@ fn non_dyadic_finite_endpoints_remain_usable_without_clamping_external_boxes() {
         assert!(jet.first[1][2].contains(&Rational::one()));
         assert!(jet.value[0].hi() - jet.value[0].lo() < r("1e-20"));
     }
+    let edge = BSplineCurve::boundary(&surface, SplineBoundary::VMin);
+    for x in &u {
+        let point = edge.evaluate_box([x, x], 128, &dec).unwrap();
+        assert!(point[0].contains(x) && point[2].contains(&v[0]));
+    }
     assert!(
         surface
             .jet(
@@ -231,5 +236,82 @@ fn non_dyadic_finite_endpoints_remain_usable_without_clamping_external_boxes() {
         surface
             .jet_box([&r("0"), &u[1]], v.each_ref(), 128, &dec)
             .is_err()
+    );
+}
+
+#[test]
+fn shared_boundary_curves_keep_rational_position_and_parameter_derivatives() {
+    let surface = BSplineSurface::new(
+        [1, 1],
+        [linear_knots(), linear_knots()],
+        [2, 2],
+        vec![
+            p("0", "0", "0"),
+            p("0", "0", "1"),
+            p("2", "0", "0"),
+            p("2", "0", "1"),
+        ],
+        vec![
+            Real::one(),
+            Real::one(),
+            Real::from_i64(2),
+            Real::from_i64(2),
+        ],
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let t = r("1/2");
+    for (side, z) in [
+        (SplineBoundary::VMin, r("0")),
+        (SplineBoundary::VMax, r("1")),
+    ] {
+        let edge = BSplineCurve::boundary(&surface, side);
+        let jet = edge.jet_box([&t, &t], 128, &Decider::default()).unwrap();
+        assert!(jet.value[0].contains(&r("4/3")) && jet.value[2].contains(&z));
+        assert!(jet.first[0].contains(&r("16/9")));
+        assert!(jet.second[0].contains(&r("-64/27")));
+        assert!(jet.first[2].contains(&r("0")));
+    }
+    let edge = BSplineCurve::boundary(&surface, SplineBoundary::UMax);
+    let jet = edge.jet_box([&t, &t], 128, &Decider::default()).unwrap();
+    assert!(jet.value[0].contains(&r("2")) && jet.value[2].contains(&t));
+    assert!(jet.first[0].contains(&r("0")) && jet.first[2].contains(&r("1")));
+}
+
+#[test]
+fn exact_curve_preimages_separate_incidence_from_nearby_points() {
+    let mut dec = Decider::default();
+    let curve = BSplineCurve::new(
+        2,
+        ["0", "0", "0", "1", "1", "1"].map(r).to_vec(),
+        vec![p("0", "0", "0"), p("1/2", "0", "0"), p("1", "1", "0")],
+        vec![Real::one(); 3],
+        &mut dec,
+    )
+    .unwrap();
+    let point = p("1/3", "1/9", "0");
+    let parameter = curve.parameter_of(&point, &mut dec).unwrap().unwrap();
+    assert!(
+        dec.compare(parameter.value(), &r("1/3").into())
+            .is_coincident()
+    );
+    let tangent = parameter.first(&dec).unwrap();
+    for (component, expected) in [tangent.x, tangent.y, tangent.z]
+        .iter()
+        .zip(["1", "2/3", "0"])
+    {
+        assert!(dec.compare(component, &r(expected).into()).is_coincident());
+    }
+    assert!(
+        curve
+            .parameter_of(&p("1/3", "2/9", "0"), &mut dec)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        curve
+            .parameter_of(&p("4/3", "16/9", "0"), &mut dec)
+            .unwrap()
+            .is_none()
     );
 }

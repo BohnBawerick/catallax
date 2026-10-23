@@ -249,6 +249,38 @@ fn ball_rounding_domains_and_sqrt_containment() {
 }
 
 #[test]
+fn ratio_balls_keep_signed_rounding_and_common_factors() {
+    for (n, d, mid, rad) in [
+        (7, 2, "4", "1/2"),
+        (-7, 2, "-3", "1/2"),
+        (7, -2, "-3", "1/2"),
+        (-7, -2, "4", "1/2"),
+        (0, -7, "0", "0"),
+    ] {
+        let b = Ball::from_ratio(&Integer::from_i64(n), &Integer::from_i64(d), 2).unwrap();
+        assert_eq!(b.mid(), q(mid));
+        assert_eq!(b.rad(), q(rad));
+    }
+    let factor = Integer::one().mul_pow2(1024) + Integer::from_i64(37);
+    for bits in [0, 1, 53, 128, 512] {
+        for n in -12..=12 {
+            for d in [-17, -1, 1, 17] {
+                let n = Integer::from_i64(n);
+                let d = Integer::from_i64(d);
+                let exact = Rational::new(n.clone(), d.clone()).unwrap();
+                let b = Ball::from_ratio(&n, &d, bits).unwrap();
+                let scaled = Ball::from_ratio(&(&n * &factor), &(&d * &factor), bits).unwrap();
+                assert!(b.contains(&exact));
+                assert_eq!(b.precision(), bits.max(1));
+                assert_eq!(b.mid(), scaled.mid());
+                assert_eq!(b.rad(), scaled.rad());
+            }
+        }
+    }
+    assert!(Ball::from_ratio(&Integer::one(), &Integer::zero(), 128).is_none());
+}
+
+#[test]
 fn enclosure_errors_survive_deep_precision_and_underflow() {
     for p in [2048, 8192, 10000] {
         let tiny = q("1/3").mul_pow2(-20000);

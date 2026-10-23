@@ -776,3 +776,10 @@ Change: recipe fillets now construct exact cylinder strips on plane-plane line e
 Why: these elementary blends have exact analytic carriers and need no sphere-union approximation or fitted spline face. Construction and export must remain separate from display readiness.
 
 Migration: no recipe schema, command, budget, tolerance, legacy question or STEP-option change. Handle the specific `fillet.*` and `field.fillet-contact` construction refusals for unfinished domains. General contacts, roll-over, corner patches, filtered field references and nonrational sections remain uncovered. P3 application display and whole-part comparison are not acceptance claims of this change; both still require the periodic trimmed-face mesh prerequisite. SolidDraft's positional-selector converter is unchanged.
+
+## 2026-10-23: binary enclosures of unreduced integer ratios
+
+Pieces: 1, 5
+Change: `Ball::from_ratio(&Integer, &Integer, u32) -> Option<Ball>` encloses an integer ratio without constructing a normalized `Rational`. Either denominator sign is accepted; a zero denominator returns `None`.
+Why: cylindrical winding repeatedly normalized exact diamond-chart corner fractions before immediately rounding them to binary balls. Homogeneous corner comparisons and direct ratio enclosures avoid those GCDs while preserving the exact enclosure.
+Migration: existing callers are unchanged. Piece 5 uses the new constructor for phase extrema. No budget, tolerance, answer format or refusal code changes.

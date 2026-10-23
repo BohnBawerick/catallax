@@ -24,18 +24,33 @@ impl Ball {
         if r.is_integer() {
             return Self::from_integer(r.numerator(), p);
         }
-        let numerator = Binary::from_integer(r.numerator().clone());
-        let denominator = Binary::from_integer(r.denominator().clone());
+        Self::from_ratio(r.numerator(), r.denominator(), p).expect("positive rational denominator")
+    }
+    /// Contains an integer ratio without normalizing it to a rational first.
+    /// Returns `None` for a zero denominator.
+    pub fn from_ratio(numerator: &Integer, denominator: &Integer, precision: u32) -> Option<Self> {
+        let p = precision.max(1);
+        let negative = match denominator.sign() {
+            Sign::Zero => return None,
+            Sign::Negative => true,
+            Sign::Positive => false,
+        };
+        let numerator = Binary::from_integer(if negative {
+            -numerator
+        } else {
+            numerator.clone()
+        });
+        let denominator = Binary::from_integer(denominator.abs());
         let mid = numerator.div_rounded(&denominator, p, false);
-        // |r - mid| = |n - mid*d| / d. Keep that residual dyadic;
+        // |n/d - mid| = |n - mid*d| / d. Keep that residual dyadic;
         // normalizing a new rational would only add redundant GCDs.
         let error = (&numerator - &(&mid * &denominator)).into_abs();
         let rad = error.div_rounded(&denominator, p, true);
-        Self {
+        Some(Self {
             mid,
             rad,
             precision: p,
-        }
+        })
     }
     /// Contains an integer at the requested precision.
     pub fn from_integer(n: &Integer, precision: u32) -> Self {

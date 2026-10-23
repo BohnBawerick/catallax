@@ -14,6 +14,9 @@ mod export;
 mod fit;
 mod graph;
 mod number;
+mod certified_spline;
+
+pub use certified_spline::{CertifiedSplineStepOptions, write_spline_prism_step};
 
 /// Export options.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

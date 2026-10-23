@@ -158,7 +158,7 @@ pub struct GeomStore {
     curves: Arena<Curve>,
     points: Arena<PointDef>,
     facts: FactBook<GeomKey>,
-    implicits: Vec<RealPoly>,
+    implicits: Vec<Option<RealPoly>>,
     approximate_points: Vec<[f64; 3]>,
 }
 
@@ -294,9 +294,9 @@ impl GeomStore {
         self.facts.record(fact)
     }
 
-    /// Implicit polynomial of a surface (cached).
-    pub fn implicit(&self, s: SurfaceId) -> RealPoly {
-        self.implicits[s.index as usize].clone()
+    /// Borrowed global analytic equation, absent for a parametric support.
+    pub fn implicit(&self, s: SurfaceId) -> Option<&RealPoly> {
+        self.implicits[s.index as usize].as_ref()
     }
 
     /// Exact position of a point.
@@ -332,9 +332,10 @@ impl GeomStore {
         ])
     }
 
-    /// Gradient of the surface's implicit polynomial at a point.
-    pub fn normal(&self, s: SurfaceId, p: PointId) -> Vector3 {
-        self.surface(s).gradient(&self.position(p))
+    /// Outward normal covector at a surface point. A parametric support must
+    /// prove its finite chart preimage; it has no global implicit gradient.
+    pub fn normal(&self, s: SurfaceId, p: PointId, dec: &mut Decider) -> Result<Vector3, Refusal> {
+        self.surface(s).normal_at(&self.position(p), dec)
     }
 
     /// Which side of `s` the point `p` is on; coincident when on its carrier.
@@ -353,7 +354,20 @@ impl GeomStore {
     /// A not-exact outcome carries a distance bound.
     pub fn side_of(&self, s: SurfaceId, p: &Point3, dec: &mut Decider) -> Outcome<Side> {
         let surface = self.surface(s);
-        match dec.sign(&surface.value(p)).map(|s| match s {
+        if let Surface::BSpline(spline) = surface {
+            return match spline.side_at(p, dec) {
+                Ok(Sign::Positive) => Outcome::Proven(Side::Front),
+                Ok(Sign::Negative) => Outcome::Proven(Side::Back),
+                Ok(Sign::Zero) => Outcome::ProvenCoincident(Coincidence {
+                    proof: ZeroProof::Algebraic,
+                }),
+                Err(refusal) => Outcome::Refused(refusal),
+            };
+        }
+        let Some(value) = surface.value(p) else {
+            return Outcome::Refused(missing_equation());
+        };
+        match dec.sign(&value).map(|s| match s {
             StrictSign::Positive => Side::Front,
             StrictSign::Negative => Side::Back,
         }) {
@@ -387,8 +401,19 @@ impl GeomStore {
             return fact_decision(dec);
         }
         let position = self.position(p);
+        if let Curve::BSpline(curve) = curve {
+            return match curve.parameter_of(&position, dec) {
+                Ok(Some(_)) => Outcome::ProvenCoincident(Coincidence {
+                    proof: ZeroProof::Algebraic,
+                }),
+                Ok(None) => Outcome::Proven(Apart),
+                Err(refusal) => Outcome::Refused(refusal),
+            };
+        }
         let coordinates = [position.x, position.y, position.z];
-        let equations = curve.equations(self);
+        let Some(equations) = curve.equations(self) else {
+            return Outcome::Refused(missing_equation());
+        };
         decide_zeroes(
             equations.iter().map(|e| e.eval_real(&coordinates)),
             dec,
@@ -419,6 +444,7 @@ impl GeomStore {
                         self.surface(c.surfaces[1])
                             .distance_bound(&bounds[1], dec)?,
                     )),
+                Curve::BSpline(_) => Err(missing_equation()),
             },
         )
     }
@@ -477,9 +503,26 @@ impl GeomStore {
                         && zero(&a.minor - &b.minor, dec)?
                         && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
                 }
-                (Surface::EllipticCylinder(_), Surface::EllipticCylinder(_)) => self.implicits
-                    [a.index as usize]
-                    .equals(&self.implicits[b.index as usize], dec)?,
+                (Surface::EllipticCylinder(_), Surface::EllipticCylinder(_)) => self
+                    .implicit(a)
+                    .ok_or_else(missing_equation)?
+                    .equals(self.implicit(b).ok_or_else(missing_equation)?, dec)?,
+                (Surface::BSpline(a), Surface::BSpline(b)) => {
+                    dec.check_deadline()?;
+                    if !a.carrier().same_definition(b.carrier()) {
+                        return Err(Refusal::new(
+                            "shapes.parametric-query",
+                            "unrelated spline supports need a certified equality solver",
+                        ));
+                    }
+                    true
+                }
+                (Surface::BSpline(_), _) | (_, Surface::BSpline(_)) => {
+                    return Err(Refusal::new(
+                        "shapes.parametric-query",
+                        "cross-kind spline support equality is not covered",
+                    ));
+                }
                 _ => false,
             })
         })();
@@ -498,8 +541,8 @@ impl GeomStore {
         }
     }
 
-    /// Sign of the dot product of the two surfaces' gradients at `at`. A
-    /// not-exact outcome bounds the dot product itself.
+    /// Sign of the dot product of two co-oriented surface normals at `at`.
+    /// A not-exact outcome bounds the dot product itself, not a displacement.
     pub fn normals_agree(
         &self,
         a: SurfaceId,
@@ -508,12 +551,15 @@ impl GeomStore {
         dec: &mut Decider,
     ) -> Outcome<StrictSign> {
         let p = self.position(at);
-        dec.sign(
-            &self
-                .surface(a)
-                .gradient(&p)
-                .dot(&self.surface(b).gradient(&p)),
-        )
+        let first = match self.surface(a).normal_at(&p, dec) {
+            Ok(normal) => normal,
+            Err(refusal) => return Outcome::Refused(refusal),
+        };
+        let second = match self.surface(b).normal_at(&p, dec) {
+            Ok(normal) => normal,
+            Err(refusal) => return Outcome::Refused(refusal),
+        };
+        dec.sign(&first.dot(&second))
     }
 
     fn incident(&mut self, a: GeomKey, b: GeomKey) {
@@ -525,6 +571,13 @@ impl GeomStore {
             origin: FactOrigin::Construction("shapes.definition"),
         });
     }
+}
+
+fn missing_equation() -> Refusal {
+    Refusal::new(
+        "shapes.parametric-query",
+        "this query needs a finite parametric solver rather than global equations",
+    )
 }
 
 fn fact_decision<T>(dec: &mut Decider) -> Outcome<T> {

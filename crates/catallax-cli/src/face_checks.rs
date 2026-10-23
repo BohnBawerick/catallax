@@ -12,6 +12,7 @@ use catallax_shapes::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use crate::recipe_edit::ScalarEdit;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -21,7 +22,7 @@ pub(crate) struct FaceChecks {
     definitions: Vec<Attachment>,
     #[serde(default)]
     options: Controls,
-    edit: Option<Edit>,
+    edit: Option<ScalarEdit>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -139,13 +140,6 @@ impl Default for Controls {
             path_segments: segments(),
         }
     }
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Edit {
-    step: String,
-    parameter: String,
-    value: Number,
 }
 fn point(p: &[Number; 3]) -> Point3 {
     Point3::new(real(&p[0]), real(&p[1]), real(&p[2]))
@@ -514,24 +508,10 @@ impl FaceChecks {
     fn edit_report(
         &self,
         recipe: &Recipe,
-        edit: &Edit,
+        edit: &ScalarEdit,
         dec: &mut Decider,
     ) -> Result<Value, Refusal> {
-        // Edit the declared scalar in a copy, then parse and rebuild normally.
-        // No internal parameter setter or reused face handles bypasses naming.
-        let mut value: Value =
-            serde_json::from_str(&recipe.to_text()).map_err(|e| refusal(e.to_string()))?;
-        let steps = value["steps"].as_array_mut().unwrap();
-        let step = steps
-            .iter_mut()
-            .find(|s| s["id"] == edit.step)
-            .ok_or_else(|| refusal("edited step does not exist"))?;
-        let parameter = step
-            .get_mut(&edit.parameter)
-            .filter(|v| v.is_string())
-            .ok_or_else(|| refusal("edit must name an existing scalar parameter"))?;
-        *parameter = json!(edit.value);
-        let recipe = Recipe::parse(&value.to_string()).map_err(|e| refusal(e.to_string()))?;
+        let recipe = edit.apply(recipe).map_err(refusal)?;
         let edited =
             catallax_features::evaluate(&recipe, dec).map_err(|e| refusal(e.to_string()))?;
         let faces = edited.model.faces_of_body(edited.result);

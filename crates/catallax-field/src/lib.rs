@@ -13,6 +13,8 @@ pub mod display;
 mod features;
 mod fillet;
 mod geometry;
+mod certified_prism;
+pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
 mod metric;

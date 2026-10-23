@@ -393,6 +393,45 @@ impl Chart {
         Ok(coords)
     }
 }
+
+/// The exact rational polynomial on one already-selected finite knot span.
+/// Reparameterising this expression never extrapolates it to another span.
+pub(super) fn spline_span(
+    curve: &catallax_shapes::BSplineCurve,
+    span: usize,
+    from: Real,
+    to: Real,
+    dec: &Decider,
+) -> Result<[E; 3], Refusal> {
+    let parameter = E::constant(from.clone()) + E::constant(to - from) * E::t();
+    let polynomial = |p: &catallax_numbers::RealPoly| {
+        let terms = p.terms();
+        let Some((monomial, coefficient)) = terms.last() else {
+            return E::integer(0);
+        };
+        let mut power = monomial.exponents()[0];
+        let mut expression = E::constant(coefficient.clone());
+        for (monomial, coefficient) in terms[..terms.len() - 1].iter().rev() {
+            let next = monomial.exponents()[0];
+            for _ in next..power {
+                expression = expression * parameter.clone();
+            }
+            expression = expression + E::constant(coefficient.clone());
+            power = next;
+        }
+        for _ in 0..power {
+            expression = expression * parameter.clone();
+        }
+        expression
+    };
+    let [x, y, z, w] = curve.span_polynomials(span, dec)?.each_ref().map(polynomial);
+    if matches!(w.0.as_ref(), Node::Constant(value, _)
+        if value.rational_ref().is_some_and(|q| q == &Rational::one()))
+    {
+        return Ok([x, y, z]);
+    }
+    Ok([x / w.clone(), y / w.clone(), z / w])
+}
 fn enclose_jets(
     coords: &[E; 3],
     t: &Ball,
@@ -548,13 +587,89 @@ pub(super) fn form_charts(form: &CurveForm) -> Vec<Chart> {
         _ => unreachable!("closed analytic form"),
     }
 }
-fn rotated(c: E, s: E, q: usize) -> (E, E) {
-    let (c, s) = match q {
+pub(super) fn offset_profile_quarter(
+    definition: &catallax_shapes::EllipticOffsetDefinition,
+    axial: &Real,
+    quarter: usize,
+    dec: &mut Decider,
+) -> Result<[E; 3], Refusal> {
+    use catallax_shapes::{OffsetSide, Surface};
+    if quarter >= 4 {
+        return Err(Refusal::new("intersect.offset-quarter", "profile quarter must be in 0..4"));
+    }
+    dec.check_deadline()?;
+    let Surface::EllipticCylinder(original) = definition.original() else {
+        unreachable!("validated elliptic-offset definition");
+    };
+    if definition.side() == OffsetSide::Inward {
+        let reach = &original.minor_sq / &original.major_sq.sqrt();
+        if sign(&(&reach - definition.distance()), dec).map_err(Refusal::from)? != Sign::Positive {
+            return Err(Refusal::new(
+                "intersect.offset-nonregular-branch",
+                "inward profile must remain strictly below the original normal reach",
+            ));
+        }
+    }
+    if axial.rational_ref().is_none() {
+        dec.enclose_budgeted_at(axial, 64u32.min(dec.policy().max_precision_bits))?;
+    }
+    let unit = |v: &Vector3| v.scaled(&(&Real::one() / &v.norm_squared().sqrt()));
+    let major = unit(&original.major_dir);
+    let axis = unit(&original.axis);
+    let minor = axis.cross(&major);
+    let center = original.origin.plus(&axis.scaled(axial));
+    let a = E::constant(original.major_sq.sqrt());
+    let b = E::constant(original.minor_sq.sqrt());
+    let t = E::t();
+    let square = t.clone().square();
+    let denominator = E::integer(1) + square.clone();
+    let (c, s) = rotate_quarter(E::integer(1) - square, E::integer(2) * t, quarter);
+    let mut x = a.clone() * c.clone() / denominator.clone();
+    let mut y = b.clone() * s.clone() / denominator;
+    if !definition.distance().rational_ref().is_some_and(Rational::is_zero) {
+        let d = E::constant(match definition.side() {
+            OffsetSide::Outward => definition.distance().clone(),
+            OffsetSide::Inward => -definition.distance(),
+        });
+        let bc = b * c;
+        let as_ = a * s;
+        let rho = (bc.clone().square() + as_.clone().square()).sqrt();
+        x = x + d.clone() * bc / rho.clone();
+        y = y + d * as_ / rho;
+    }
+    let origin = [&center.x, &center.y, &center.z];
+    let major = [&major.x, &major.y, &major.z];
+    let minor = [&minor.x, &minor.y, &minor.z];
+    Ok(std::array::from_fn(|i| {
+        let mut value = if origin[i].rational_ref().is_some_and(Rational::is_zero) {
+            None
+        } else {
+            Some(E::constant(origin[i].clone()))
+        };
+        for (coefficient, expression) in [(major[i], &x), (minor[i], &y)] {
+            if coefficient.rational_ref().is_some_and(Rational::is_zero) { continue; }
+            let term = if coefficient.rational_ref().is_some_and(|r| r == &Rational::one()) {
+                expression.clone()
+            } else {
+                E::constant(coefficient.clone()) * expression.clone()
+            };
+            value = Some(match value { Some(value) => value + term, None => term });
+        }
+        value.unwrap_or_else(|| E::integer(0))
+    }))
+}
+
+fn rotate_quarter(c: E, s: E, q: usize) -> (E, E) {
+    match q {
         0 => (c, s),
         1 => (-s, c),
         2 => (-c, -s),
         _ => (s, -c),
-    };
+    }
+}
+
+fn rotated(c: E, s: E, q: usize) -> (E, E) {
+    let (c, s) = rotate_quarter(c, s, q);
     // Rational parameter-plane rotation keeps the table's witnesses away
     // from chart seams without introducing angles into any predicate.
     let a = E::constant(real(&Rational::from_ratio(3, 5).unwrap()));

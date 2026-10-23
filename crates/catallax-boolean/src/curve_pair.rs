@@ -88,7 +88,7 @@ fn candidate(
     dec: &mut Decider,
 ) -> Result<Option<PointId>, Refusal> {
     for curve in [a, b] {
-        for equation in model.geom().curve(curve).equations(model.geom()) {
+        for equation in model.geom().curve(curve).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
             if sign(
                 &equation.eval_real(&[p.x.clone(), p.y.clone(), p.z.clone()]),
                 dec,
@@ -231,7 +231,7 @@ pub(crate) fn meetings(
     if let Curve::Line(line) = model.geom().curve(a).clone() {
         let mut common: Option<RealPoly> = None;
         let mut common_proven = true;
-        for equation in model.geom().curve(b).equations(model.geom()) {
+        for equation in model.geom().curve(b).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
             let p = univariate(&substitute(&equation, &line.origin, &line.dir, None), 0);
             if !p.is_zero(dec)? {
                 common = Some(match common {
@@ -290,7 +290,7 @@ pub(crate) fn meetings(
     };
     let v = normal.cross(&u);
     let mut first = None;
-    for equation in model.geom().curve(a).equations(model.geom()) {
+    for equation in model.geom().curve(a).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
         let polynomial = substitute(&equation, &origin, &u, Some(&v));
         if !polynomial.is_zero(dec)? {
             first = Some(polynomial);
@@ -303,7 +303,7 @@ pub(crate) fn meetings(
             "analytic conic equation was not certified",
         )
     })?;
-    for equation in model.geom().curve(b).equations(model.geom()) {
+    for equation in model.geom().curve(b).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
         let second = substitute(&equation, &origin, &u, Some(&v));
         if second.is_zero(dec)? {
             continue;

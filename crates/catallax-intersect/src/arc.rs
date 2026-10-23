@@ -5,7 +5,7 @@ use crate::{
     query,
 };
 use catallax_numbers::{Answer, Answered, Decider, Real, Refusal, Sign};
-use catallax_shapes::{CurveId, GeomStore, Point3, PointId};
+use catallax_shapes::{BSplineCurve, CurveId, GeomStore, Point3, PointId};
 
 fn ends(
     geom: &GeomStore,
@@ -75,6 +75,82 @@ fn open_ends(
         catallax_numbers::Outcome::Refused(e) => Err(e),
     }
 }
+fn spline_ranges(
+    geom: &GeomStore,
+    c: CurveId,
+    curve: &BSplineCurve,
+    from: Option<PointId>,
+    to: Option<PointId>,
+    dec: &mut Decider,
+) -> Result<Vec<(usize, Real, Real)>, Refusal> {
+    let closed = crate::curve_is_closed(geom, c, dec)?;
+    let [lo, hi] = curve.domain().map(|q| Real::from_rational(q.clone()));
+    let (a, b, whole) = match (from, to) {
+        (None, None) if closed => (lo.clone(), hi.clone(), false),
+        (Some(a), Some(b)) => {
+            let start = query::spline_parameter(curve, &geom.position(a), dec)?
+                .value()
+                .clone();
+            let end = if a == b {
+                start.clone()
+            } else {
+                query::spline_parameter(curve, &geom.position(b), dec)?
+                    .value()
+                    .clone()
+            };
+            let equal = sign(&(&end - &start), dec)? == Sign::Zero;
+            if equal && !closed {
+                return Err(Refusal::new(
+                    "intersect.spline-arc",
+                    "open spline arc needs distinct ordered endpoints",
+                ));
+            }
+            (start, end, equal)
+        }
+        _ => {
+            return Err(Refusal::new(
+                "intersect.spline-arc",
+                "an open spline needs both finite arc endpoints",
+            ));
+        }
+    };
+    let order = sign(&(&b - &a), dec)?;
+    if !closed && order != Sign::Positive {
+        return Err(Refusal::new(
+            "intersect.spline-arc",
+            "open spline endpoints oppose its natural parameter direction",
+        ));
+    }
+    let mut pieces = Vec::new();
+    let mut append = |from: &Real, to: &Real| -> Result<(), Refusal> {
+        for (span, interval) in curve.spans() {
+            dec.check_deadline()?;
+            let lower = Real::from_rational(interval[0].clone());
+            let upper = Real::from_rational(interval[1].clone());
+            let a = if sign(&(from - &lower), dec)? == Sign::Positive {
+                from.clone()
+            } else {
+                lower
+            };
+            let b = if sign(&(to - &upper), dec)? == Sign::Negative {
+                to.clone()
+            } else {
+                upper
+            };
+            if sign(&(&b - &a), dec)? == Sign::Positive {
+                pieces.push((span, a, b));
+            }
+        }
+        Ok(())
+    };
+    if whole || order == Sign::Negative {
+        append(&a, &hi)?;
+        append(&lo, &b)?;
+    } else {
+        append(&a, &b)?;
+    }
+    Ok(pieces)
+}
 pub(super) fn point(
     geom: &GeomStore,
     c: CurveId,
@@ -83,6 +159,15 @@ pub(super) fn point(
     dec: &mut Decider,
 ) -> Answered<Point3> {
     let form = query::form(geom, c, dec)?;
+    if let CurveForm::BSpline(curve) = &form {
+        let ranges = spline_ranges(geom, c, curve, from, to, dec)?;
+        let (_, a, b) = ranges.first().ok_or_else(|| {
+            Refusal::new("intersect.spline-arc", "spline arc has no positive parameter span")
+        })?;
+        return Ok(Answer::exact(
+            curve.point_at(&((a + b) / Real::from_i64(2)), dec)?,
+        ));
+    }
     if matches!(form, CurveForm::Line { .. }) {
         let (a, b) = open_ends(geom, c, from, to, dec)?;
         return Ok(Answer::exact(midpoint(&a, &b)));
@@ -112,6 +197,14 @@ pub(super) fn trace(
     dec: &mut Decider,
 ) -> Answered<CurveTrace> {
     let form = query::form(geom, c, dec)?;
+    if let CurveForm::BSpline(curve) = &form {
+        let ranges = spline_ranges(geom, c, curve, from, to, dec)?;
+        let mut pieces = Vec::with_capacity(ranges.len());
+        for (span, from, to) in ranges {
+            pieces.push(TracePiece::new(chart::spline_span(curve, span, from, to, dec)?));
+        }
+        return Ok(Answer::exact(CurveTrace { pieces }));
+    }
     if matches!(form, CurveForm::Line { .. }) {
         let (a, b) = open_ends(geom, c, from, to, dec)?;
         return Ok(Answer::exact(CurveTrace {

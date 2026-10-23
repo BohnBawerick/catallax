@@ -71,7 +71,7 @@ fn algebraic_dimensions_preserve_incidence_gradient_and_implicit_scale() {
         )
         .unwrap(),
     );
-    let implicit = cylinder.implicit();
+    let implicit = cylinder.implicit().expect("analytic fixture support");
     // Axis length squared is 2, so the unscaled carrier is 2(x²+y²)-4.
     for (p, expected) in [([1, 1, 5], 0), ([1, 0, 5], -2), ([2, 0, 5], 4)] {
         let p = p.map(real);
@@ -80,7 +80,7 @@ fn algebraic_dimensions_preserve_incidence_gradient_and_implicit_scale() {
                 .is_coincident()
         );
     }
-    let gradient = cylinder.gradient(&point([1, 1, 5]));
+    let gradient = cylinder.gradient(&point([1, 1, 5])).expect("analytic fixture gradient");
     for (got, expected) in [&gradient.x, &gradient.y, &gradient.z]
         .into_iter()
         .zip([4, 4, 0])
@@ -99,7 +99,7 @@ fn algebraic_dimensions_preserve_incidence_gradient_and_implicit_scale() {
         .unwrap(),
     );
     let p = [root.sqrt(), real(0), real(0)];
-    for equation in circle.equations(&GeomStore::new()) {
+    for equation in circle.equations(&GeomStore::new()).expect("analytic fixture equations") {
         assert!(dec.sign(&equation.eval_real(&p)).is_coincident());
     }
 }

@@ -77,7 +77,11 @@ fn positive(value: &Real, dec: &mut Decider) -> Result<(), Refusal> {
     }
 }
 
-fn convex_span(
+/// Proves that a cubic Bezier span's derivative lies in the open half-plane
+/// selected by `reference`, and its curvature projected about `axis` is
+/// strictly positive throughout. Planarity, periodic closure and whole-curve
+/// winding remain the caller's obligations.
+pub fn certify_convex_cubic_span(
     controls: [&Point3; 4],
     reference: &Vector3,
     axis: &Vector3,
@@ -203,7 +207,7 @@ pub fn certify_elliptic_offset_sweep<'a>(
             same_point(&controls[2 * i + 1], &controls[2 * i].plus(&sweep), dec)?;
         }
         let reference = start.1.plus(&end.1);
-        convex_span(
+        certify_convex_cubic_span(
             [&controls[0], &controls[2], &controls[4], &controls[6]],
             &reference,
             axis,

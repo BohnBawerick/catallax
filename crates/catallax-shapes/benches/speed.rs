@@ -308,9 +308,9 @@ fn main() {
     ));
     let system = Arc::new(
         PolySystem::new(vec![
-            store.implicit(ids[3]).into_rational().unwrap(),
-            store.implicit(a).into_rational().unwrap(),
-            store.implicit(c).into_rational().unwrap(),
+            store.implicit(ids[3]).unwrap().rational().unwrap().clone(),
+            store.implicit(a).unwrap().rational().unwrap().clone(),
+            store.implicit(c).unwrap().rational().unwrap().clone(),
         ])
         .unwrap(),
     );

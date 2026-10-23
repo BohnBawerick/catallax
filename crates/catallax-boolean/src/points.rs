@@ -494,7 +494,7 @@ fn search<T>(
             let p = model.geom().position(point);
             let tangent = tangent_at(model.geom(), edge.curve, point, dec)?[1].clone();
             let tangent = oriented(&tangent, product(edge.sense, coedge.sense));
-            let inward = oriented(&surface.gradient(&p), f.sense).cross(&tangent);
+            let inward = oriented(&surface.normal_at(&p, dec)?, f.sense).cross(&tangent);
             let scale = match &surface {
                 Surface::Cylinder(s) => size_upper(&s.radius(), dec)?,
                 Surface::Sphere(s) => size_upper(&s.radius, dec)?,

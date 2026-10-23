@@ -16,6 +16,9 @@ catallax-intersect.workspace = true
 [dev-dependencies]
 catallax-boolean.workspace = true
 catallax-measure.workspace = true
+catallax-features.workspace = true
+catallax-recipe.workspace = true
+serde_json = "1"
 
 [features]
 implementation = []

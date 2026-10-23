@@ -129,7 +129,7 @@ impl Size {
             }
             _ => panic!("benchmark uses only supported surfaces"),
         }
-        for (_, q) in m.geom().implicit(id).terms() {
+        for (_, q) in m.geom().implicit(id).expect("analytic benchmark support").terms() {
             self.real(&q);
         }
     }
@@ -163,7 +163,7 @@ impl Size {
             }
             _ => panic!("new curve definition"),
         }
-        for equation in m.geom().curve(id).equations(m.geom()) {
+        for equation in m.geom().curve(id).equations(m.geom()).expect("analytic benchmark curve") {
             for (_, q) in equation.terms() {
                 self.real(&q);
             }

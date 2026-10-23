@@ -44,6 +44,13 @@ struct Owned {
     lower: Rational,
     constant: bool,
     nets: [Option<Net>; 3],
+    transport: Option<CurveTransport>,
+}
+#[derive(Debug)]
+struct CurveTransport {
+    source: BSplineCurve,
+    pose: Pose,
+    inverse: Pose,
 }
 #[derive(Clone, Debug)]
 enum Definition {
@@ -94,6 +101,7 @@ impl BSplineCurve {
             weights.into(),
             lower,
             constant,
+            None,
         ))
     }
     fn from_validated(
@@ -103,6 +111,7 @@ impl BSplineCurve {
         weights: Arc<[Real]>,
         lower: Rational,
         constant: bool,
+        transport: Option<CurveTransport>,
     ) -> Self {
         let net = Net {
             degrees: [degree, 0],
@@ -128,6 +137,7 @@ impl BSplineCurve {
                 lower,
                 constant,
                 nets: [Some(net), first, second],
+                transport,
             })),
         }
     }
@@ -144,6 +154,12 @@ impl BSplineCurve {
     pub fn is_boundary_of(&self, surface: &BSplineSurface, side: SplineBoundary) -> bool {
         matches!(&self.definition, Definition::Boundary { surface: original, side: boundary }
             if *boundary == side && Arc::ptr_eq(&original.data, &surface.data))
+    }
+    fn transport(&self) -> Option<&CurveTransport> {
+        match &self.definition {
+            Definition::Owned(data) => data.transport.as_ref(),
+            Definition::Boundary { .. } => None,
+        }
     }
     fn axis(&self) -> usize {
         match &self.definition {
@@ -369,24 +385,35 @@ impl BSplineCurve {
         };
         Ok([value, first])
     }
-    /// Exact rigidly transformed curve, without transforming unrelated surface controls.
+    /// Exact rigid transport, retaining the source frame for inverse queries.
+    /// Repeated motions compose against the original controls, not the last fit.
     pub fn transformed(&self, pose: &Pose) -> Self {
-        let (lower, constant) = self.weight_bound();
-        let knots = match &self.definition {
+        let (source, pose) = match self.transport() {
+            None => (self, pose.clone()),
+            Some(transport) => (&transport.source, transport.pose.then(pose)),
+        };
+        let (lower, constant) = source.weight_bound();
+        let knots = match &source.definition {
             Definition::Owned(data) => data.knots.clone(),
             Definition::Boundary { surface, side } => surface.data.knots[side.axis()].clone(),
         };
-        let weights = match &self.definition {
+        let weights = match &source.definition {
             Definition::Owned(data) => data.weights.clone(),
-            Definition::Boundary { .. } => self.weights().cloned().collect(),
+            Definition::Boundary { .. } => source.weights().cloned().collect(),
         };
+        let inverse = pose.inverse();
         Self::from_validated(
-            self.degree(),
+            source.degree(),
             knots,
-            self.controls().map(|p| pose.apply_point(p)).collect(),
+            source.controls().map(|p| pose.apply_point(p)).collect(),
             weights,
             lower.clone(),
             constant.is_some(),
+            Some(CurveTransport {
+                source: source.clone(),
+                pose,
+                inverse,
+            }),
         )
     }
     /// Safe positive definition identity; false does not prove different point sets.
@@ -507,6 +534,67 @@ impl SplineCurveParameter<'_> {
     pub fn first(&self, dec: &Decider) -> Result<crate::Vector3, Refusal> {
         self.curve.first_on_span(self.span, &self.value, dec)
     }
+    /// Arriving and leaving derivatives at this parameter, including a closed
+    /// seam. A stationary branch refuses instead of inventing a tangent.
+    pub fn tangents(&self, dec: &mut Decider) -> Result<[crate::Vector3; 2], Refusal> {
+        let mut arriving = None;
+        let mut leaving = None;
+        for (span, interval) in self.curve.spans() {
+            let from = math::sign(
+                &(&self.value - &Real::from_rational(interval[0].clone())),
+                dec,
+            )?;
+            let to = math::sign(
+                &(&self.value - &Real::from_rational(interval[1].clone())),
+                dec,
+            )?;
+            if from == Sign::Positive && to == Sign::Negative {
+                let tangent = self.curve.first_on_span(span, &self.value, dec)?;
+                if math::sign(&tangent.norm_squared(), dec)? == Sign::Zero {
+                    return Err(invalid("stationary spline branch has no regular tangent"));
+                }
+                return Ok([tangent.clone(), tangent]);
+            }
+            if to == Sign::Zero {
+                arriving = Some(self.curve.first_on_span(span, &self.value, dec)?);
+            }
+            if from == Sign::Zero {
+                leaving = Some(self.curve.first_on_span(span, &self.value, dec)?);
+            }
+        }
+        let domain = self.curve.domain();
+        if self.curve.is_closed() == Some(true) {
+            if math::sign(&(&self.value - &Real::from_rational(domain[0].clone())), dec)?
+                == Sign::Zero
+            {
+                arriving = Some(self.curve.first_on_span(
+                    self.curve.control_count() - 1,
+                    &Real::from_rational(domain[1].clone()),
+                    dec,
+                )?);
+            }
+            if math::sign(&(&self.value - &Real::from_rational(domain[1].clone())), dec)?
+                == Sign::Zero
+            {
+                leaving = Some(self.curve.first_on_span(
+                    self.curve.degree(),
+                    &Real::from_rational(domain[0].clone()),
+                    dec,
+                )?);
+            }
+        }
+        let tangents = match (arriving, leaving) {
+            (Some(a), Some(b)) => [a, b],
+            (Some(tangent), None) | (None, Some(tangent)) => [tangent.clone(), tangent],
+            (None, None) => return Err(invalid("spline preimage leaves its finite domain")),
+        };
+        for tangent in &tangents {
+            if math::sign(&tangent.norm_squared(), dec)? == Sign::Zero {
+                return Err(invalid("stationary spline branch has no regular tangent"));
+            }
+        }
+        Ok(tangents)
+    }
 }
 
 impl BSplineCurve {
@@ -603,6 +691,11 @@ impl BSplineCurve {
         parameter: &Real,
         dec: &Decider,
     ) -> Result<Point3, Refusal> {
+        if let Some(transport) = self.transport() {
+            return Ok(transport.pose.apply_point(
+                &transport.source.point_on_span(span, parameter, dec)?,
+            ));
+        }
         let p = self.span_polynomials(span, dec)?;
         let denominator = p[3].eval_real(std::slice::from_ref(parameter));
         Ok(Point3::new(
@@ -617,6 +710,11 @@ impl BSplineCurve {
         parameter: &Real,
         dec: &Decider,
     ) -> Result<crate::Vector3, Refusal> {
+        if let Some(transport) = self.transport() {
+            return Ok(transport.pose.apply_vector(
+                &transport.source.first_on_span(span, parameter, dec)?,
+            ));
+        }
         let p = self.span_polynomials(span, dec)?;
         let denominator = p[3].eval_real(std::slice::from_ref(parameter));
         let weight_derivative = p[3].partial(0).eval_real(std::slice::from_ref(parameter));
@@ -653,7 +751,34 @@ impl BSplineCurve {
         point: &Point3,
         dec: &mut Decider,
     ) -> Result<Option<SplineCurveParameter<'a>>, Refusal> {
+        self.preimage(point, dec, false)
+    }
+    /// Finds a unique preimage, identifying structurally shared closed endpoints.
+    /// Other multiple preimages refuse; ordering never selects an arbitrary branch.
+    pub fn unique_parameter_of<'a>(
+        &'a self,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<SplineCurveParameter<'a>>, Refusal> {
+        self.preimage(point, dec, true)
+    }
+    fn preimage<'a>(
+        &'a self,
+        point: &Point3,
+        dec: &mut Decider,
+        unique: bool,
+    ) -> Result<Option<SplineCurveParameter<'a>>, Refusal> {
         dec.check_deadline()?;
+        if let Some(transport) = self.transport() {
+            return Ok(transport
+                .source
+                .preimage(&transport.inverse.apply_point(point), dec, unique)?
+                .map(|parameter| SplineCurveParameter {
+                    curve: self,
+                    span: parameter.span,
+                    value: parameter.value,
+                }));
+        }
         math::validate_point(point, dec)?;
         let bits = 128.min(dec.policy().max_precision_bits);
         if bits == 0 {
@@ -667,6 +792,8 @@ impl BSplineCurve {
             dec.enclose_at(&point.y, bits)?,
             dec.enclose_at(&point.z, bits)?,
         ];
+        let mut found: Option<SplineCurveParameter<'a>> = None;
+        let canonical_seam = unique && self.is_closed() == Some(true);
         for (span, interval) in self.spans() {
             dec.check_deadline()?;
             let mut possible = true;
@@ -728,15 +855,37 @@ impl BSplineCurve {
                         dec,
                     )? != Sign::Positive
                 {
-                    return Ok(Some(SplineCurveParameter {
+                    let mut candidate = SplineCurveParameter {
                         curve: self,
                         span,
                         value: parameter,
-                    }));
+                    };
+                    if !unique {
+                        return Ok(Some(candidate));
+                    }
+                    if canonical_seam
+                        && math::sign(
+                            &(&candidate.value - &Real::from_rational(self.domain()[1].clone())),
+                            dec,
+                        )? == Sign::Zero
+                    {
+                        candidate.span = self.degree();
+                        candidate.value = Real::from_rational(self.domain()[0].clone());
+                    }
+                    if let Some(old) = &found {
+                        if math::sign(&(&candidate.value - &old.value), dec)? != Sign::Zero {
+                            return Err(Refusal::new(
+                                "shapes.spline-ambiguous-parameter",
+                                "point has distinct finite spline preimages",
+                            ));
+                        }
+                    } else {
+                        found = Some(candidate);
+                    }
                 }
             }
         }
-        Ok(None)
+        Ok(found)
     }
 }
 

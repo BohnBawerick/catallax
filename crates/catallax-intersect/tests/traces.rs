@@ -144,7 +144,7 @@ fn check_trace(
                 for x in p.iter().chain(v.iter()) {
                     assert_eq!(x.precision(), bits);
                 }
-                for equation in g.curve(c).equations(g) {
+                for equation in g.curve(c).equations(g).expect("analytic fixture equations") {
                     assert!(
                         equation
                             .eval_ball(&p, &catallax_numbers::Decider::default())
@@ -164,7 +164,7 @@ fn check_trace(
                         overlap(&jets[0][axis], &p[axis]);
                         overlap(&jets[1][axis], &v[axis]);
                     }
-                    for equation in g.curve(c).equations(g) {
+                    for equation in g.curve(c).equations(g).expect("analytic fixture equations") {
                         polynomial_jet_identity(
                             equation.rational().expect("rational trace fixture"),
                             &jets,

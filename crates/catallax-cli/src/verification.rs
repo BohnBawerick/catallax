@@ -324,7 +324,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             };
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
-            let summary = crate::result_summary(&built.model, built.result, &mut dec, true);
+            let summary = crate::result_summary(&built.model, built.result, &mut dec, crate::SummaryExchange::Analytic);
             span.finish(&dec, summary.as_ref().err(), None);
             let summary = match summary {
                 Ok(summary) => summary,

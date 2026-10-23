@@ -195,7 +195,7 @@ fn walks(
             // The apex link is the radial disk, oriented opposite the axis.
             oriented(&axis.scaled(&catallax_numbers::Real::from_i64(-1)), f.sense)
         } else {
-            oriented(&model.geom().normal(f.surface, point), f.sense)
+            oriented(&model.geom().normal(f.surface, point, dec)?, f.sense)
         };
         let candidates = outgoing.get(&end).ok_or_else(|| {
             refusal(

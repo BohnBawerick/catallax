@@ -14,6 +14,7 @@ mod chart;
 mod controls;
 mod edges;
 mod planar;
+mod spline_prism;
 mod triangulate;
 
 /// Display meshing controls. Lengths use the model's millimetres.
@@ -61,8 +62,8 @@ pub struct FaceMesh {
     pub face: FaceId,
     /// Range in [`Mesh::triangles`].
     pub triangles: Range<usize>,
-    /// Proven maximum deviation from the analytic surface over each triangle's
-    /// parameter triangle. Includes endpoint replacement and binary64 rounding.
+    /// Proven maximum deviation from the represented surface over each triangle's
+    /// complete parameter domain. Includes endpoint replacement and binary64 rounding.
     pub max_chord_error: Rational,
     /// Proven upper bound on longest edge divided by shortest altitude.
     /// None when coordinate rounding collapses a triangle to zero area.

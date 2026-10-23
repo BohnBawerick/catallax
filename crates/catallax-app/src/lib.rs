@@ -8,6 +8,8 @@
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
 pub mod soliddraft;
+mod certified;
+pub use certified::{CertifiedApplicationBody, build_certified};
 
 use std::{collections::BTreeMap, fmt};
 
@@ -15,7 +17,7 @@ use catallax_features::{BuildError, Built, evaluate};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
 use catallax_numbers::{Answer, Decider, Refusal};
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
-use catallax_topology::{EdgeId, FaceId, VertexId};
+use catallax_topology::{BodyId, EdgeId, FaceId, Model, VertexId};
 
 /// Names of every entity in the result, keyed by that build's picking handles.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -164,30 +166,23 @@ pub fn build(
     }
     let display =
         mesh_body(&built.model, built.result, options, decider).map_err(Error::Display)?;
-    let model = &built.model;
-    let body = built.result;
-    let names = Names {
-        faces: model
-            .faces_of_body(body)
-            .into_iter()
-            .map(|face| (face, model.face_origins(face).to_vec()))
-            .collect(),
-        edges: model
-            .edges_of_body(body)
-            .into_iter()
-            .map(|edge| (edge, model.edge_name(body, edge)))
-            .collect(),
-        vertices: model
-            .vertices_of_body(body)
-            .into_iter()
-            .map(|vertex| (vertex, model.vertex_name(body, vertex)))
-            .collect(),
-    };
+    let names = result_names(&built.model, built.result);
     Ok(ApplicationBody {
         built,
         display,
         names,
     })
+}
+
+fn result_names(model: &Model, body: BodyId) -> Names {
+    Names {
+        faces: model.faces_of_body(body).into_iter()
+            .map(|face| (face, model.face_origins(face).to_vec())).collect(),
+        edges: model.edges_of_body(body).into_iter()
+            .map(|edge| (edge, model.edge_name(body, edge))).collect(),
+        vertices: model.vertices_of_body(body).into_iter()
+            .map(|vertex| (vertex, model.vertex_name(body, vertex))).collect(),
+    }
 }
 
 /// A SolidDraft build, with the conversion's original-tag to step-id table.

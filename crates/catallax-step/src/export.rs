@@ -766,7 +766,7 @@ impl<'a> Exporter<'a> {
             .max(self.report.max_deviation.clone());
         let uncertainty = number::decimal(&uncertainty.to_decimal_bounds(self.digits()).1);
         let mut output = self.graph.write(&solids, |numbers| {
-            header(self.options, numbers, &uncertainty)
+            header(&self.options.product_name, numbers, &uncertainty)
         });
         output.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
         let mut answer = Answer::exact((output, self.report));
@@ -813,9 +813,9 @@ fn include_bounds(bounds: &mut Option<Bounds>, other: &Bounds) {
     }
 }
 
-fn header(options: &StepOptions, solids: &[usize], uncertainty: &str) -> String {
-    let name = string(&options.product_name);
-    let filename = string(&format!("{}.step", options.product_name));
+pub(crate) fn header(product_name: &str, solids: &[usize], uncertainty: &str) -> String {
+    let name = string(product_name);
+    let filename = string(&format!("{product_name}.step"));
     let mut items = String::from("#17");
     for id in solids {
         write!(items, ",#{id}").unwrap();

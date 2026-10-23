@@ -343,3 +343,79 @@ fn checked_finite_spline_support_has_exact_incidence_outward_side_and_rigid_tran
     result.unwrap();
     assert!(!work.exhausted);
 }
+
+#[test]
+fn finite_interval_inverse_covers_a_knot_and_refuses_to_choose_the_periodic_seam() {
+    use catallax_shapes::{SplineSupport, SplineSurface, certify_elliptic_offset_sweep};
+    let mut dec = Decider::default();
+    let definition = rational_source_definition(&mut dec);
+    let (result, work) = with_operation_budget(100_000_000, || {
+        let fit = fit_elliptic_offset(
+            &definition,
+            [r("9/4").into(), r("23/4").into()],
+            &r("0.0001"),
+            &mut dec,
+        )?;
+        let knot = &fit.spans[1];
+        let parameter = Rational::from_i64(knot.quarter as i64) + knot.parameter[0].clone();
+        let axial = Real::from_rational(r("13/4"));
+        let (point, tangent) = definition.chart().point_and_tangent(
+            knot.quarter,
+            &knot.parameter[0],
+            &axial,
+            &mut dec,
+        )?;
+        let proof = certify_elliptic_offset_sweep(
+            &fit.surface,
+            &definition,
+            [&fit.axial[0], &fit.axial[1]],
+            &mut dec,
+        )?;
+        let support = SplineSurface::from_offset(proof);
+        let carrier: SplineSupport = support.clone().into();
+        let point_box =
+            [&point.x, &point.y, &point.z].map(|value| dec.enclose_at(value, 128).unwrap());
+        let parameters = carrier
+            .parameters_of(&point_box, &dec)?
+            .expect("one connected finite knot branch");
+        assert!(parameters[0].contains(&parameter));
+        assert!(parameters[1].contains(&r("2/7")));
+        assert!(&parameters[0].hi() - &parameters[0].lo() < r("1e-12"));
+        let evaluated = carrier
+            .carrier()
+            .evaluate(&parameters[0], &parameters[1], &dec)?;
+        let derivatives = carrier
+            .carrier()
+            .derivatives(&parameters[0], &parameters[1], &dec)?;
+        let axial_tangent = support.axis().scaled(support.height());
+        for (actual, expected) in evaluated.iter().zip([&point.x, &point.y, &point.z]) {
+            let expected = dec.enclose_at(expected, 160)?;
+            assert!(actual.lo() <= expected.lo() && actual.hi() >= expected.hi());
+        }
+        for (actual, expected) in derivatives[0]
+            .iter()
+            .zip([&tangent.x, &tangent.y, &tangent.z])
+            .chain(derivatives[1].iter().zip([
+                &axial_tangent.x,
+                &axial_tangent.y,
+                &axial_tangent.z,
+            ]))
+        {
+            let expected = dec.enclose_at(expected, 160)?;
+            assert!(actual.lo() <= expected.lo() && actual.hi() >= expected.hi());
+        }
+        let (seam, _) = definition
+            .chart()
+            .point_and_tangent(0, &r("0"), &axial, &mut dec)?;
+        let seam_box = [&seam.x, &seam.y, &seam.z].map(|value| dec.enclose_at(value, 128).unwrap());
+        assert!(carrier.parameters_of(&seam_box, &dec)?.is_none());
+        let beyond = point.plus(&support.axis().scaled(&Real::from_i64(10)));
+        assert_eq!(
+            carrier.side_at(&beyond, &mut dec).unwrap_err().code,
+            "shapes.bspline-domain"
+        );
+        Ok::<_, catallax_numbers::Refusal>(())
+    });
+    result.unwrap();
+    assert!(!work.exhausted);
+}

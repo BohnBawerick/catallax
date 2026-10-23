@@ -102,7 +102,7 @@ fn check(case: &HitCase, scale: &Rational, pose: &Pose, mut d: Decider, mode: Mo
                         assert!(matches!(m.position, Position::Closed(_)));
                     }
                     coincident(g.side_of(s, &g.position(h.point), &mut Decider::default()));
-                    for equation in g.curve(c).equations(&g) {
+                    for equation in g.curve(c).equations(&g).expect("analytic fixture equations") {
                         coincident(
                             Decider::default()
                                 .sign(&equation.eval_real(&xyz(&g.position(h.point)))),

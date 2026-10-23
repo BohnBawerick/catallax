@@ -11,6 +11,8 @@ use catallax_topology::{
 
 use crate::{StepOptions, StepReport, write_step};
 
+mod certified_spline;
+
 fn q(s: &str) -> Rational {
     Rational::parse(s).unwrap()
 }

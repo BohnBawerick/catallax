@@ -268,5 +268,8 @@ blind_test!(cases_48_49_positions_cache_and_ordered_enclosures, {
     for b in &enclosure {
         assert!(b.hi() - b.lo() <= width);
     }
-    vector_eq(&store.normal(s, point), &v("2/3", "0", "0"));
+    vector_eq(
+        &store.normal(s, point, &mut actual).unwrap(),
+        &v("2/3", "0", "0"),
+    );
 });

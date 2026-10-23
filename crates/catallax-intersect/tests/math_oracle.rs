@@ -44,14 +44,14 @@ fn surface_fixture_residual_smoke() {
         };
         let check = |p: &Point3| {
             for s in [a, b] {
-                residual(&g.implicit(s), p);
+                residual(g.implicit(s).expect("analytic fixture support"), p);
             }
         };
         for part in parts {
             match part {
                 Part::Point(p) => {
                     check(&p);
-                    let cross = case.a.gradient(&p).cross(&case.b.gradient(&p));
+                    let cross = case.a.gradient(&p).expect("analytic fixture gradient").cross(&case.b.gradient(&p).expect("analytic fixture gradient"));
                     singular(&cross);
                 }
                 Part::Curve {
@@ -61,7 +61,7 @@ fn surface_fixture_residual_smoke() {
                 } => {
                     for p in nodes {
                         check(&p);
-                        singular(&case.a.gradient(&p).cross(&case.b.gradient(&p)));
+                        singular(&case.a.gradient(&p).expect("analytic fixture gradient").cross(&case.b.gradient(&p).expect("analytic fixture gradient")));
                     }
                     match shape {
                         Shape::Analytic(curve) => {
@@ -92,7 +92,8 @@ fn surface_fixture_residual_smoke() {
                                     &case
                                         .a
                                         .gradient(&witness)
-                                        .cross(&case.b.gradient(&witness))
+                                        .expect("analytic fixture gradient")
+                                        .cross(&case.b.gradient(&witness).expect("analytic fixture gradient"))
                                         .norm_squared()
                                 )
                                 .lo()
@@ -114,8 +115,8 @@ fn curve_hit_fixture_residual_smoke() {
         let s = g.add_surface(case.surface);
         if let curves::Hits::Meets(points) = case.expected {
             for (point, _) in points {
-                residual(&g.implicit(s), &point);
-                for equation in g.curve(c).equations(&g) {
+                residual(g.implicit(s).expect("analytic fixture support"), &point);
+                for equation in g.curve(c).equations(&g).expect("analytic fixture equations") {
                     residual(&equation, &point);
                 }
             }

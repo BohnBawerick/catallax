@@ -1,6 +1,6 @@
-//! Analytic curves and certified intersection components stored by definition.
+//! Analytic, finite B-spline and certified intersection curves by definition.
 
-use crate::{GeomStore, Point3, PointId, Pose, SurfaceId, Vector3, math};
+use crate::{BSplineCurve, GeomStore, Point3, PointId, Pose, SurfaceId, Vector3, math};
 use catallax_numbers::{Ball, Decider, Real, RealPoly, Refusal, Sign};
 
 /// The kind of a curve.
@@ -15,6 +15,8 @@ pub enum CurveKind {
     Ellipse,
     /// Intersection component.
     Intersection,
+    /// Finite positive-weight B-spline curve.
+    BSpline,
 }
 
 /// A line `origin + t dir`.
@@ -134,7 +136,7 @@ impl Ellipse {
     }
 }
 
-/// An exact analytic curve or a certified intersection component.
+/// An exact analytic or B-spline curve, or a certified intersection component.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum Curve {
@@ -146,6 +148,8 @@ pub enum Curve {
     Ellipse(Ellipse),
     /// Intersection component.
     Intersection(IntersectionCurve),
+    /// Genuine finite B-spline geometry, including shared surface boundaries.
+    BSpline(BSplineCurve),
 }
 
 impl Curve {
@@ -156,6 +160,7 @@ impl Curve {
             Self::Circle(_) => CurveKind::Circle,
             Self::Ellipse(_) => CurveKind::Ellipse,
             Self::Intersection(_) => CurveKind::Intersection,
+            Self::BSpline(_) => CurveKind::BSpline,
         }
     }
 
@@ -176,7 +181,7 @@ impl Curve {
                 Some(&c.major_sq),
                 Some(&c.minor_sq),
             ),
-            Self::Intersection(_) => return None,
+            Self::Intersection(_) | Self::BSpline(_) => return None,
         };
         Some([
             Some(&origin.x),
@@ -196,6 +201,9 @@ impl Curve {
     /// Whether all analytic defining scalars have cheap rational values.
     /// Intersection components require their carrier and selector context.
     pub fn has_rational_definition(&self) -> bool {
+        if let Self::BSpline(curve) = self {
+            return curve.has_rational_definition();
+        }
         self.definition_fields().is_some_and(|fields| {
             fields
                 .into_iter()
@@ -210,6 +218,9 @@ impl Curve {
         if self.kind() != other.kind() {
             return false;
         }
+        if let (Self::BSpline(a), Self::BSpline(b)) = (self, other) {
+            return a.same_definition(b);
+        }
         match (self.definition_fields(), other.definition_fields()) {
             (Some(a), Some(b)) => a.into_iter().zip(b).all(|(a, b)| match (a, b) {
                 (Some(a), Some(b)) => a.same_definition(b),
@@ -223,10 +234,11 @@ impl Curve {
         }
     }
 
-    /// Defining equations in the documented order. The equations contain an
-    /// intersection component's carrier; its witness still selects the component.
-    pub fn equations(&self, store: &GeomStore) -> Vec<RealPoly> {
-        match self {
+    /// Global defining equations in their documented order, when available.
+    /// A multi-span B-spline has no single global equation set. Intersection
+    /// equations still require the retained component selector.
+    pub fn equations(&self, store: &GeomStore) -> Option<Vec<RealPoly>> {
+        Some(match self {
             Self::Line(c) => math::cross(&math::displacement(&c.origin), &c.dir)
                 .into_iter()
                 .filter(|p| !p.rational().is_some_and(|r| r.is_zero()))
@@ -251,8 +263,12 @@ impl Curve {
                         - RealPoly::constant(3, Real::one()),
                 ]
             }
-            Self::Intersection(c) => c.surfaces.map(|s| store.implicit(s)).into(),
-        }
+            Self::Intersection(c) => vec![
+                store.implicit(c.surfaces[0])?.clone(),
+                store.implicit(c.surfaces[1])?.clone(),
+            ],
+            Self::BSpline(_) => return None,
+        })
     }
 
     /// Cheap closure query; component closure requires an intersection proof.
@@ -261,6 +277,7 @@ impl Curve {
             Self::Line(_) => Some(false),
             Self::Circle(_) | Self::Ellipse(_) => Some(true),
             Self::Intersection(_) => None,
+            Self::BSpline(curve) => curve.is_closed(),
         }
     }
 
@@ -284,6 +301,7 @@ impl Curve {
                 major_sq: c.major_sq.clone(),
                 minor_sq: c.minor_sq.clone(),
             }),
+            Self::BSpline(curve) => Self::BSpline(curve.transformed(pose)),
             Self::Intersection(_) => return None,
         })
     }
@@ -304,6 +322,7 @@ impl Curve {
             Self::Circle(c) => (&c.center, &c.normal, &c.ref_dir, &c.radius_sq, &c.radius_sq),
             Self::Ellipse(c) => (&c.center, &c.normal, &c.major_dir, &c.major_sq, &c.minor_sq),
             Self::Intersection(_) => return Ok(None),
+            Self::BSpline(curve) => return curve.evaluate(t, dec).map(Some),
         };
         let [e1, e2, _] = math::frame(normal, reference, precision, dec)?;
         // Keep the rational chart's rounding order: enclose squared dimension,
@@ -337,6 +356,7 @@ impl Curve {
                     .scaled(&(&c.major_sq / &c.major_dir.norm_squared()).sqrt()),
             ),
             Self::Intersection(c) => store.position(c.witness),
+            Self::BSpline(curve) => curve.control(0).clone(),
         }
     }
 }

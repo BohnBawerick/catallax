@@ -411,6 +411,32 @@ impl BSplineSurface {
     pub fn weights(&self) -> &[Real] {
         &self.data.weights
     }
+    /// Cheap positive definition identity, not a negative geometry comparison.
+    pub fn same_definition(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.data, &other.data)
+            || (self.data.degrees == other.data.degrees
+                && self.data.knots == other.data.knots
+                && self.data.count == other.data.count
+                && self.controls().iter().zip(other.controls()).all(|(a, b)| {
+                    [&a.x, &a.y, &a.z]
+                        .into_iter()
+                        .zip([&b.x, &b.y, &b.z])
+                        .all(|(a, b)| a.same_definition(b))
+                })
+                && self
+                    .weights()
+                    .iter()
+                    .zip(other.weights())
+                    .all(|(a, b)| a.same_definition(b)))
+    }
+
+    /// Whether every control and weight has a cached exact rational value.
+    pub fn has_rational_definition(&self) -> bool {
+        self.controls()
+            .iter()
+            .all(|p| p.rational_components().is_some())
+            && self.weights().iter().all(|w| w.rational_ref().is_some())
+    }
     /// Closed active parameter intervals.
     pub fn domain(&self) -> [[&Rational; 2]; 2] {
         std::array::from_fn(|axis| {
@@ -446,9 +472,7 @@ impl BSplineSurface {
         )
     }
 
-    /// Encloses position and all first/second chart derivatives on a finite box.
-    /// Boxes crossing knots are covered by every intersected nonzero span.
-    pub fn jet(&self, u: &Ball, v: &Ball, dec: &Decider) -> Result<BSplineJet, Refusal> {
+    fn check_binary_box(&self, u: &Ball, v: &Ball, dec: &Decider) -> Result<u32, Refusal> {
         dec.check_deadline()?;
         let precision = u.precision().max(v.precision());
         if precision > dec.policy().max_precision_bits {
@@ -465,6 +489,39 @@ impl BSplineSurface {
                 ));
             }
         }
+        Ok(precision)
+    }
+
+    /// Encloses position without evaluating unrequested derivatives.
+    pub fn evaluate(&self, u: &Ball, v: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
+        let precision = self.check_binary_box(u, v, dec)?;
+        let ([value], denominator) = self.homogeneous_cover(u, v, precision, dec)?;
+        cartesian(&value, &denominator)
+    }
+
+    /// Encloses both first derivatives, without evaluating second derivatives.
+    pub fn derivatives(
+        &self,
+        u: &Ball,
+        v: &Ball,
+        dec: &Decider,
+    ) -> Result<[[Ball; 3]; 2], Refusal> {
+        let precision = self.check_binary_box(u, v, dec)?;
+        let ([position, du, dv], denominator) = self.homogeneous_cover(u, v, precision, dec)?;
+        if self.data.constant_weight {
+            return Ok([cartesian(&du, &denominator)?, cartesian(&dv, &denominator)?]);
+        }
+        let value = cartesian(&position, &denominator)?;
+        Ok([
+            quotient_first(&value, &du, &denominator)?,
+            quotient_first(&value, &dv, &denominator)?,
+        ])
+    }
+
+    /// Encloses position and all first/second chart derivatives on a finite box.
+    /// Boxes crossing knots are covered by every intersected nonzero span.
+    pub fn jet(&self, u: &Ball, v: &Ball, dec: &Decider) -> Result<BSplineJet, Refusal> {
+        let precision = self.check_binary_box(u, v, dec)?;
         self.jet_cover(u, v, precision, dec)
     }
 
@@ -508,28 +565,7 @@ impl BSplineSurface {
         precision: u32,
         dec: &Decider,
     ) -> Result<BSplineJet, Refusal> {
-        let mut homogeneous: [[Ball; 4]; 6] =
-            std::array::from_fn(|_| std::array::from_fn(|_| zero(precision)));
-        let mut workspace = self
-            .data
-            .degrees
-            .map(|degree| Vec::with_capacity(degree + 1));
-        for (output, net) in homogeneous.iter_mut().zip(&self.data.jets) {
-            if let Some(net) = net {
-                *output = net.enclose([u, v], precision, dec, &mut workspace)?;
-            }
-        }
-        // Partition of unity bounds the true denominator below by min(weight),
-        // even when interval dependencies make de Boor's enclosure reach zero.
-        let denominator = if self.data.constant_weight {
-            dec.enclose_at(&self.data.weights[0], precision)?
-        } else {
-            bounds(
-                &homogeneous[0][3].lo().max(self.data.weight_lower.clone()),
-                &homogeneous[0][3].hi(),
-                precision,
-            )
-        };
+        let (homogeneous, denominator) = self.homogeneous_cover::<6>(u, v, precision, dec)?;
         let divide = |value: Ball| {
             value
                 .checked_div(&denominator)
@@ -564,4 +600,61 @@ impl BSplineSurface {
             second,
         })
     }
+
+    fn homogeneous_cover<const N: usize>(
+        &self,
+        u: &Ball,
+        v: &Ball,
+        precision: u32,
+        dec: &Decider,
+    ) -> Result<([[Ball; 4]; N], Ball), Refusal> {
+        let mut values: [Option<[Ball; 4]>; N] = [const { None }; N];
+        let mut workspace = self
+            .data
+            .degrees
+            .map(|degree| Vec::with_capacity(degree + 1));
+        for (output, net) in values.iter_mut().zip(&self.data.jets) {
+            *output = Some(match net {
+                Some(net) => net.enclose([u, v], precision, dec, &mut workspace)?,
+                None => std::array::from_fn(|_| zero(precision)),
+            });
+        }
+        let homogeneous =
+            values.map(|value| value.expect("every requested homogeneous derivative assigned"));
+        // Partition of unity bounds the denominator independently of interval
+        // dependencies in de Boor's expression.
+        let denominator = if self.data.constant_weight {
+            dec.enclose_at(&self.data.weights[0], precision)?
+        } else {
+            bounds(
+                &homogeneous[0][3].lo().max(self.data.weight_lower.clone()),
+                &homogeneous[0][3].hi(),
+                precision,
+            )
+        };
+        Ok((homogeneous, denominator))
+    }
+}
+
+fn cartesian(value: &[Ball; 4], denominator: &Ball) -> Result<[Ball; 3], Refusal> {
+    let divide = |i: usize| {
+        value[i]
+            .checked_div(denominator)
+            .ok_or_else(|| invalid("positive chart denominator was not separated"))
+    };
+    Ok([divide(0)?, divide(1)?, divide(2)?])
+}
+
+fn quotient_first(
+    value: &[Ball; 3],
+    derivative: &[Ball; 4],
+    denominator: &Ball,
+) -> Result<[Ball; 3], Refusal> {
+    let component = |i: usize| {
+        let correction = &value[i] * &derivative[3];
+        (&derivative[i] - &correction)
+            .checked_div(denominator)
+            .ok_or_else(|| invalid("positive chart denominator was not separated"))
+    };
+    Ok([component(0)?, component(1)?, component(2)?])
 }

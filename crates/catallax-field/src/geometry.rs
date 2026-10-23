@@ -80,8 +80,8 @@ fn plane(axis: usize, coordinate: Rational, sign: i64) -> Surface {
         ref_dir: unit((axis + 1) % 3, 1),
     })
 }
-pub(crate) fn constraint(surface: Surface) -> Constraint {
-    let polynomial = surface.implicit();
+pub(crate) fn constraint(surface: Surface) -> Result<Constraint, Refusal> {
+    let polynomial = analytic_polynomial(&surface)?;
     let terms = if let Some(p) = polynomial.rational() {
         Terms::Rational(
             p.terms()
@@ -98,11 +98,11 @@ pub(crate) fn constraint(surface: Surface) -> Constraint {
                 .collect(),
         )
     };
-    Constraint {
+    Ok(Constraint {
         surface,
         polynomial,
         terms,
-    }
+    })
 }
 impl Constraint {
     pub(crate) fn reference_point(&self) -> Option<&Point3> {
@@ -116,9 +116,18 @@ impl Constraint {
             _ => None,
         }
     }
-    pub(crate) fn transform(&mut self, pose: &Isometry) {
-        *self = constraint(pose.surface(&self.surface));
+    pub(crate) fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
+        *self = constraint(pose.surface(&self.surface))?;
+        Ok(())
     }
+}
+fn analytic_polynomial(surface: &Surface) -> Result<RealPoly, Refusal> {
+    surface.implicit().ok_or_else(|| {
+        Refusal::new(
+            "field.parametric-support",
+            "polynomial field constraints need a finite parametric support solver",
+        )
+    })
 }
 pub(crate) fn support_geometry(
     polynomial: &RealPoly,
@@ -145,7 +154,7 @@ pub(crate) fn face_geometry(
     surface: Surface,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let polynomial = surface.implicit();
+    let polynomial = analytic_polynomial(&surface)?;
     let (support, gradient) = support_geometry(&polynomial, dec)?;
     face.support = support;
     face.gradient = gradient;
@@ -235,7 +244,7 @@ pub(crate) fn compile(
     let mut faces = Vec::new();
     let mut add = |surface: Surface, role: Option<Role>| -> Result<(), Refusal> {
         let surface = surface.transformed(&pose);
-        let constraint = constraint(surface.clone());
+        let constraint = constraint(surface.clone())?;
         if let Some(role) = role {
             let (support, gradient) = support_geometry(&constraint.polynomial, dec)?;
             faces.push(Face {
@@ -381,13 +390,14 @@ impl Primitive {
             && self.parameters == other.parameters
             && self.inverse.same_motion(&other.inverse, dec)?)
     }
-    fn transform(&mut self, pose: &Isometry) {
+    fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
         self.inverse = pose.inverse().then(&self.inverse);
         self.fast_matrix = fast_matrix(&self.inverse);
         self.fast_translation = fast_translation(&self.inverse);
         for c in &mut self.constraints {
-            *c = constraint(pose.surface(&c.surface));
+            c.transform(pose)?;
         }
+        Ok(())
     }
     pub fn location(&self, point: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         let mut boundary = false;
@@ -525,7 +535,7 @@ fn rational_ray_coefficients(
 }
 
 pub(crate) fn face(surface: Surface, origin: Origin, dec: &mut Decider) -> Result<Face, Refusal> {
-    let polynomial = surface.implicit();
+    let polynomial = analytic_polynomial(&surface)?;
     let (support, gradient) = support_geometry(&polynomial, dec)?;
     Ok(Face {
         origin,

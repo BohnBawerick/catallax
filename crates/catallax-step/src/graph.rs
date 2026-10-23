@@ -6,6 +6,7 @@ use std::fmt::Write as _;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Id(usize);
 
+#[derive(Clone)]
 pub(crate) enum Field {
     Text(Cow<'static, str>),
     Ref(Id),

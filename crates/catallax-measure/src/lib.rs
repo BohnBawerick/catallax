@@ -44,6 +44,11 @@ mod planar;
 mod ring;
 mod surface;
 mod torus;
+mod offset_prism;
+
+pub use offset_prism::{
+    elliptic_offset_prism_mass_properties, elliptic_offset_prism_volume_area_centroid,
+};
 
 /// A proven enclosure `[lo, hi]` with exact rational ends.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

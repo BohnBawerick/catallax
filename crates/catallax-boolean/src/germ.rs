@@ -90,7 +90,7 @@ pub(crate) fn curvature(
         return Ok(Vector3::new(Real::zero(), Real::zero(), Real::zero()));
     }
     let position = model.geom().position(point);
-    let equations = model.geom().curve(curve).equations(model.geom());
+    let equations = model.geom().curve(curve).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?;
     let mut first = None;
     for p in &equations {
         let g = gradient(p, &position);
@@ -161,7 +161,7 @@ impl Jet {
         let point = model.geom().position(germ.point);
         let (equations, gradients) = match germ.source {
             Source::Curve(curve) => {
-                let equations = model.geom().curve(curve).equations(model.geom());
+                let equations = model.geom().curve(curve).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?;
                 let mut independent = None;
                 'pair: for (i, a) in equations.iter().enumerate() {
                     let a = gradient(a, &point);
@@ -180,7 +180,7 @@ impl Jet {
                     .ok_or_else(|| refusal(code, "higher-order germs require a regular curve"))?
             }
             Source::Surface(surface) => {
-                let equation = model.geom().surface(surface).implicit();
+                let equation = model.geom().surface(surface).implicit().ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "surface equation unavailable; this boolean path needs a finite parametric solver"))?;
                 let gradient = gradient(&equation, &point);
                 ([Some(equation), None], [gradient, normal.clone()])
             }
@@ -383,7 +383,12 @@ pub(crate) fn surface_germ(
 ) -> Result<Germ, Refusal> {
     let s = model.geom().surface(surface);
     let p = model.geom().position(point);
-    let normal = s.gradient(&p);
+    let normal = s.gradient(&p).ok_or_else(|| {
+        refusal(
+            "boolean.parametric-query",
+            "surface germ requires a finite parametric curvature solver",
+        )
+    })?;
     let n2 = normal.norm_squared();
     if sign(&n2, dec, "boolean.merge-ambiguous")? == Sign::Zero {
         return Err(refusal(
@@ -391,7 +396,7 @@ pub(crate) fn surface_germ(
             "surface normal vanished on a sewn edge",
         ));
     }
-    let acceleration = -tangent.dot(&hessian(&s.implicit(), &p, &tangent)) / n2;
+    let acceleration = -tangent.dot(&hessian(&s.implicit().ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "surface equation unavailable; this boolean path needs a finite parametric solver"))?, &p, &tangent)) / n2;
     let curvature = normal.scaled(&acceleration);
     Ok(Germ {
         key,

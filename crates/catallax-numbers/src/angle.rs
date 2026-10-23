@@ -128,9 +128,9 @@ fn mobius(mut n: usize) -> i64 {
     let mut sign = 1;
     let mut p = 2;
     while p <= n / p {
-        if n % p == 0 {
+        if n.is_multiple_of(p) {
             n /= p;
-            if n % p == 0 {
+            if n.is_multiple_of(p) {
                 return 0;
             }
             sign = -sign;
@@ -144,7 +144,7 @@ fn real_cyclotomic(order: usize, work: &mut Work) -> Result<UPoly, &'static str>
     let mut numerator = UPoly::constant(Rational::one());
     let mut denominator = numerator.clone();
     for d in 1..=order {
-        if order % d != 0 {
+        if !order.is_multiple_of(d) {
             continue;
         }
         let power = mobius(order / d);

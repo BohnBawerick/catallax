@@ -8,16 +8,18 @@ pub(super) struct Wall {
 #[derive(Clone, Debug)]
 enum Node {
     Convex(Vec<Wall>),
-    Sweep {
-        profile: Profile,
-        vector: RVector3,
-        range: [Option<Real>; 2],
-    },
+    Sweep(usize),
     Boolean {
         kind: BooleanKind,
         a: usize,
         b: usize,
     },
+}
+#[derive(Clone, Debug)]
+struct Sweep {
+    profile: Profile,
+    vector: RVector3,
+    range: [Option<Real>; 2],
 }
 #[derive(Clone, Debug)]
 struct Source {
@@ -29,6 +31,7 @@ struct Source {
 pub(super) struct Scene {
     pub planes: Vec<Plane>,
     nodes: Vec<Node>,
+    sweeps: Vec<Sweep>,
     sources: Vec<Source>,
     pub root: usize,
     pub bound: Rational,
@@ -85,6 +88,7 @@ impl Scene {
         let mut scene = Self {
             planes: vec![],
             nodes: vec![],
+            sweeps: vec![],
             sources: vec![],
             root: 0,
             bound: recipe_bound(recipe, target, dec)?,
@@ -370,11 +374,13 @@ impl Scene {
                 "a curved target wall needs a non-planar first-hit carrier",
             ));
         }
-        let node = self.node(Node::Sweep {
+        let index = self.sweeps.len();
+        self.sweeps.push(Sweep {
             profile: profile.clone(),
             vector: vector.clone(),
             range: range.clone(),
         });
+        let node = self.node(Node::Sweep(index));
         for edge in profile.loops.iter().flat_map(|b| &b.segments) {
             let a = profile.world(&edge.start, &zero_vec());
             let b = profile.world(&edge.end, &zero_vec());
@@ -500,10 +506,10 @@ impl Scene {
                 for w in walls {
                     let plane = &self.planes[w.plane];
                     let mut s = sign(&value(plane, p), dec)?;
-                    if s == Sign::Zero {
-                        if let Some(d) = germ {
-                            s = sign(&plane.normal.dot(d), dec)?;
-                        }
+                    if s == Sign::Zero
+                        && let Some(d) = germ
+                    {
+                        s = sign(&plane.normal.dot(d), dec)?;
                     }
                     if (w.negative && s == Sign::Positive) || (!w.negative && s == Sign::Negative) {
                         return Ok(false);
@@ -511,11 +517,12 @@ impl Scene {
                 }
                 Ok(true)
             }
-            Node::Sweep {
-                profile,
-                vector,
-                range,
-            } => {
+            Node::Sweep(index) => {
+                let Sweep {
+                    profile,
+                    vector,
+                    range,
+                } = &self.sweeps[*index];
                 let mut p = p.clone();
                 if let Some(d) = germ {
                     let mut epsilon = Real::one();
@@ -545,15 +552,15 @@ impl Scene {
                 let local = profile.pose.inverse().apply_point(&p);
                 let v = crate::profile::rational_vector(&profile.pose.inverse(), vector);
                 let t = &local.z / &Real::from(v.z.clone());
-                if let Some(lo) = &range[0] {
-                    if sign(&(&t - lo), dec)? == Sign::Negative {
-                        return Ok(false);
-                    }
+                if let Some(lo) = &range[0]
+                    && sign(&(&t - lo), dec)? == Sign::Negative
+                {
+                    return Ok(false);
                 }
-                if let Some(hi) = &range[1] {
-                    if sign(&(&t - hi), dec)? == Sign::Positive {
-                        return Ok(false);
-                    }
+                if let Some(hi) = &range[1]
+                    && sign(&(&t - hi), dec)? == Sign::Positive
+                {
+                    return Ok(false);
                 }
                 let q = [
                     &local.x - &(&t * &Real::from(v.x)),
@@ -674,11 +681,11 @@ fn clip3(
     wall: Wall,
     planes: &[Plane],
     points: &mut Vec<Point3>,
-    values: &mut Vec<Real>,
-    signs: &mut Vec<Sign>,
+    classifications: (&mut Vec<Real>, &mut Vec<Sign>),
     cache: &mut BTreeMap<(usize, usize), usize>,
     dec: &mut Decider,
 ) -> Result<Poly, Refusal> {
+    let (values, signs) = classifications;
     let keep = |s| {
         if wall.negative {
             s != Sign::Positive
@@ -873,8 +880,7 @@ impl Scene {
                             Wall { plane, negative },
                             &self.planes,
                             &mut points,
-                            &mut values,
-                            &mut signs,
+                            (&mut values, &mut signs),
                             &mut cache,
                             dec,
                         )?);

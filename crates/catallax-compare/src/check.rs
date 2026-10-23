@@ -183,10 +183,10 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Block{..}|Operation::Cylinder{..}|Operation::Sphere{..}|
             Operation::Cone{..}|Operation::Torus{..}|Operation::Boolean{..}|
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
-            Operation::Revolve{..}|Operation::Pattern{..}|Operation::Mirror{..}=>return None,
+            Operation::Revolve{..}|Operation::Pattern{..}|Operation::Mirror{..}|
+            Operation::Fillet{..}=>return None,
             Operation::Path{..}=>"neither kernel evaluates recipe paths",
             Operation::Hole{..}=>"neither kernel evaluates recipe holes",
-            Operation::Fillet{..}=>"neither kernel evaluates recipe fillets",
             Operation::Chamfer{..}=>"neither kernel evaluates recipe chamfers",
             Operation::Shell{..}=>"neither kernel evaluates recipe shelling",
             Operation::Offset{..}=>"neither kernel evaluates recipe offsets",

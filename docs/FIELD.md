@@ -2,7 +2,7 @@
 
 `catallax-field` compiles `catallax-recipe/3` stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided through-all cuts, full and rational-frame partial revolutions, linear and circular body patterns, plane mirrors, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`, so both kernels use the same intersection, tangency and nesting rules and refusal codes. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
 
-This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. Fillets, field-only features, FEA and application integration are not implemented.
+This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, field-only features, FEA and application integration are not implemented.
 
 ## Shared algebraic definitions
 
@@ -68,6 +68,13 @@ Copy zero keeps its origins. Later pattern copies and mirror images wrap each so
 
 Feature-pattern editing saves ordinary operations through `catallax_app::pattern::expand_feature`; the field compiler needs no feature-pattern opcode. The rational candidate-sampling APIs still report their algebraic-placement limitation when a transformed candidate has no native rational coordinates. That limitation does not round the field's geometry or change its proven query semantics.
 
+### Elementary fillet regions
+
+Plane-plane line contacts reduce to exact cylinder strips. A plane meeting a perpendicular cylinder at a ring reduces to a torus strip. The field resolves the source supports from recipe origins and classifies their material sector with exact positive-infinitesimal rays. It constructs no B-rep. Each rolling-ball section retains its circular arc, then extrudes or revolves the enclosed edge region. Convex regions subtract material; concave regions add it.
+
+Finite straight runs use independently resolved source-edge intervals and perpendicular end planes. Every requested reference must resolve a sharp input component. The blend origin uses the input edge name, not the radius or a generated handle. The retained definition includes both supports, their orientations, the selected carrier, radius, material side and contact rails; rigid transforms move that definition with the field.
+
+The sweep residual and conservative distance bounds above still apply. This is not a new true-distance formula. Filtered references, algebraic section coordinates, oblique line-strip ends, horn or spindle tori, neighbour roll-over and general corner patches remain explicit unfinished coverage. An unproved contact continuation returns `field.fillet-contact` or `fillet.unsupported-overflow`, not an impossible-geometry claim. Independent P3 point and face queries cover convex removal, concave addition and blend origins. Application display and sampled whole-part comparison remain gated by periodic trimmed-face meshing.
 
 ## Exact signs and surface directions
 

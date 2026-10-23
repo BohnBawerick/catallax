@@ -18,6 +18,8 @@ pub struct Built {
     pub result: BodyId,
     /// Every body-producing step, in canonical step-id order.
     pub bodies: BTreeMap<StepId, BodyId>,
+    /// Generating definitions of every elementary fillet and named copy in build order.
+    pub fillets: Vec<crate::fillet::FilletDefinition>,
     pub(crate) definition: Arc<Recipe>,
 }
 
@@ -59,6 +61,44 @@ struct BodyValue {
     // A certified bounding sphere about model-space zero, not a fitted box.
     radius: Rational,
 }
+
+fn source_fillet_indices(
+    model: &Model,
+    body: BodyId,
+    fillets: &[crate::fillet::FilletDefinition],
+) -> Vec<usize> {
+    if fillets.is_empty() {
+        return Vec::new();
+    }
+    let faces = model.faces_of_body(body);
+    fillets
+        .iter()
+        .enumerate()
+        .filter_map(|(index, definition)| {
+            faces
+                .iter()
+                .any(|face| model.face_origins(*face).contains(&definition.origin))
+                .then_some(index)
+        })
+        .collect()
+}
+
+fn copy_fillets(
+    fillets: &mut Vec<crate::fillet::FilletDefinition>,
+    indices: &[usize],
+    map: &Isometry,
+    step: &StepId,
+    instance: u32,
+) -> Result<(), Refusal> {
+    for &index in indices {
+        let mut definition = fillets[index].clone();
+        definition.transform(map)?;
+        definition.origin = crate::copy_origin(step, instance, &definition.origin);
+        fillets.push(definition);
+    }
+    Ok(())
+}
+
 fn vector(v: &catallax_recipe::Vector3) -> RVector3 {
     RVector3::new(
         v.0[0].value().clone(),
@@ -189,16 +229,20 @@ fn through(
         .body)
 }
 
-/// Builds stock solids, sketches, extrusions, revolutions, cuts, booleans, patterns and mirrors.
+/// Builds stock solids, sketches, extrusions, revolutions, elementary fillets,
+/// cuts, booleans, patterns and mirrors.
 /// Other recipe operations retain their unfinished-operation refusal, not a partial body.
 pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError> {
     recipe.check().map_err(BuildError::Recipe)?;
     let mut model = Model::new();
     let mut profiles = BTreeMap::new();
     let mut bodies: BTreeMap<StepId, BodyValue> = BTreeMap::new();
+    let mut fillets = Vec::new();
     for step in &recipe.steps {
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
-        let build = |model: &mut Model, dec: &mut Decider| -> Result<Option<BodyValue>, Refusal> {
+        let mut build = |model: &mut Model,
+                         dec: &mut Decider|
+         -> Result<Option<BodyValue>, Refusal> {
             if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id, dec)? {
                 return Ok(Some(BodyValue { body, radius }));
             }
@@ -291,12 +335,37 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                     };
                     BodyValue { body, radius }
                 }
+                Operation::Fillet {
+                    body,
+                    edges,
+                    radius,
+                } => {
+                    let target = &bodies[body];
+                    let (body, definitions) = crate::fillet_build::build(
+                        model,
+                        target.body,
+                        edges,
+                        &radius.value().clone().into(),
+                        &step.id,
+                        dec,
+                    )?;
+                    fillets.extend(definitions);
+                    BodyValue {
+                        body,
+                        radius: &target.radius + &(radius.value() * &Rational::from_i64(2)),
+                    }
+                }
                 Operation::Pattern { body, layout } => {
                     // Validate even count-one and empty patterns before set identities.
                     crate::pattern_placement(layout, 0, dec)?;
                     let source = &bodies[body];
                     let mut body = source.body;
                     let mut radius = source.radius.clone();
+                    let source_fillets = if layout.count() > 1 {
+                        source_fillet_indices(model, source.body, &fillets)
+                    } else {
+                        Vec::new()
+                    };
                     let source_bounds = if layout.count() > 1 {
                         catallax_measure::bounding_box(
                             model,
@@ -324,6 +393,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                             &map,
                             |origin| crate::copy_origin(&step.id, instance, origin),
                         );
+                        copy_fillets(&mut fillets, &source_fillets, &map, &step.id, instance)?;
                         let copy_bounds = source_bounds
                             .as_ref()
                             .map(|bounds| transformed_bounds(bounds, &map, dec))
@@ -350,6 +420,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                 } => {
                     let map = crate::mirror_placement(plane)?;
                     let source = &bodies[body];
+                    let source_fillets = source_fillet_indices(model, source.body, &fillets);
                     let source_bounds = if *keep_original {
                         catallax_measure::bounding_box(
                             model,
@@ -371,6 +442,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                         catallax_topology::transformed_body(model, source.body, &map, |origin| {
                             crate::copy_origin(&step.id, 1, origin)
                         });
+                    copy_fillets(&mut fillets, &source_fillets, &map, &step.id, 1)?;
                     let body = if *keep_original {
                         let copy_bounds = source_bounds
                             .as_ref()
@@ -440,6 +512,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
             .into_iter()
             .map(|(id, value)| (id, value.body))
             .collect(),
+        fillets,
         definition: Arc::new(recipe.clone()),
     })
 }

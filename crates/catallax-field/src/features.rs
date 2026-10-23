@@ -34,6 +34,7 @@ pub(crate) struct Feature {
     supports: Vec<Support>,
     pub(crate) constraints: Vec<geometry::Constraint>,
     fast: FastProfile,
+    pub(crate) fillet: Option<Box<catallax_features::fillet::FilletDefinition>>,
 }
 fn bad(code: &'static str) -> Refusal {
     Refusal::new(
@@ -538,9 +539,13 @@ impl Feature {
             sweep,
             constraints,
             supports,
+            fillet: None,
         }
     }
-    pub fn transform(&mut self, pose: &Isometry) {
+    pub fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
+        if let Some(definition) = &mut self.fillet {
+            definition.transform(pose)?;
+        }
         self.inverse = pose.inverse().then(&self.inverse);
         self.fast.matrix = geometry::fast_matrix(&self.inverse);
         self.fast.translation = geometry::fast_translation(&self.inverse);
@@ -551,6 +556,7 @@ impl Feature {
         for constraint in &mut self.constraints {
             constraint.transform(pose);
         }
+        Ok(())
     }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         self.classify(
@@ -649,6 +655,15 @@ impl Feature {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        let alias = self
+            .fillet
+            .as_ref()
+            .filter(|f| &f.origin.role == role)
+            .map(|_| Role::Side {
+                segment: catallax_recipe::ElementId::new("blend").expect("fixed section id"),
+                path: None,
+            });
+        let role = alias.as_ref().unwrap_or(role);
         let local = self.inverse.apply_point(&Point3::new(
             p[0].clone().into(),
             p[1].clone().into(),
@@ -1202,6 +1217,15 @@ impl Feature {
         while let Role::Copy { of, .. } = role {
             role = &of.role;
         }
+        let alias = self
+            .fillet
+            .as_ref()
+            .filter(|f| &f.origin.role == role)
+            .map(|_| Role::Side {
+                segment: catallax_recipe::ElementId::new("blend").expect("fixed section id"),
+                path: None,
+            });
+        let role = alias.as_ref().unwrap_or(role);
         use crate::samples::{circle, fraction};
         let pose = self.inverse.inverse();
         if pose

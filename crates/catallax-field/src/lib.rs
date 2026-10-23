@@ -1267,6 +1267,15 @@ impl Plan {
         if polynomial_sign(&face.polynomial, &p, dec)? != Sign::Zero {
             return Ok(absent);
         }
+        if matches!(self.instructions[self.root], Instruction::Leaf(i) if i == face.leaf)
+            && let geometry::Leaf::Draft(region) = &self.leaves[face.leaf]
+            && let Some(n) = region.interior_normal(&face.origin, &p, dec)?
+        {
+            return Ok(FaceQuery {
+                state: FaceState::OnFace,
+                direction: unit_direction(n, dec)?,
+            });
+        }
         match self.leaves[face.leaf].location(&p, dec)? {
             Location::Inside | Location::Outside => return Ok(absent),
             Location::Indeterminate => {
@@ -1287,11 +1296,13 @@ impl Plan {
             }
             Some(true) => (),
         }
-        let query = self.proven_checked(point, storage, dec)?;
-        if matches!(query.location, Location::Inside | Location::Outside) {
-            return Ok(absent);
-        }
+        // For a sole result leaf, the membership and trim proofs above already
+        // prove result ownership. A face query needs no distance evaluation.
         if !matches!(self.instructions[self.root], Instruction::Leaf(_)) {
+            let query = self.proven_checked(point, storage, dec)?;
+            if matches!(query.location, Location::Inside | Location::Outside) {
+                return Ok(absent);
+            }
             for &other in &storage.active {
                 if !same_support(face, &self.faces[other], dec)? {
                     return Ok(FaceQuery {

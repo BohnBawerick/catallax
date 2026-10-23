@@ -68,6 +68,13 @@ One origin can label several trimmed pieces on different supports. Native candid
 
 Draft trim and sampling domains match complete origins rather than roles alone. Disconnected coplanar faces from different creators can both have role `end` without acquiring one another's domains. Handles remain local to the immutable plan; only recipe origins are persistent names.
 
+Named-face queries need membership and an outward direction, not a distance.
+For a sole result leaf, the leaf's membership and named trim prove ownership
+without evaluating the full field metric. A strict interior point of a
+polyhedral draft boundary tile also has that tile's stored outward plane
+normal. Tile edges retain the general ray proof; Boolean roots retain their
+global ownership and coactive-support checks.
+
 
 ### Profile sweep certificates
 

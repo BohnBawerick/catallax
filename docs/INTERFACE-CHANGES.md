@@ -1069,3 +1069,13 @@ Why: a drafted neighbour can split while keeping its origin, and only one piece 
 Prior art: [OCCT shape history](https://occt3d.com/dev/doc/refman/html/class_b_rep_tools___history.html) distinguishes a source's ancestry from the list of geometric shapes modified from it. Candidate handles preserve that one-to-many distinction without making new recipe names. No source code is copied.
 
 Migration: candidate visitors query the supplied handle directly and read its origin from `plan.faces()[id.index()]`. The old callback and sampler are removed, not retained as aliases. All repository callers are migrated. Primitive frame failures now use the field sampling error namespace. Numeric proof policy, cooperative stop, comparison accuracy and coverage requirements are unchanged.
+
+## 2026-10-24: direct draft face proofs
+
+Pieces: field
+
+Change: named-face queries on a sole result leaf no longer compute the field's full distance. Exact leaf membership and named trim already prove result ownership. A point strictly inside a published polyhedral draft boundary tile also uses its stored outward plane normal directly. Points on tile edges retain the existing ray proof. Boolean results retain their global ownership and coactive-support checks.
+
+Why: comparison asks for named boundary membership and direction at many points. Repeating trimmed-boundary distance and whole-cell ray calculations for a certified facet interior does not strengthen either answer.
+
+Migration: no public signature, answer format, tolerance or work-allowance changes.

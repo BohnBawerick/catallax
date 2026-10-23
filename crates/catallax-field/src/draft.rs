@@ -124,6 +124,53 @@ impl Region {
         }
     }
 
+    /// A strict interior point of a published boundary tile has its stored
+    /// outward normal. Tile edges still require the general ray proof.
+    pub(crate) fn interior_normal(
+        &self,
+        origin: &Origin,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<Vector3>, Refusal> {
+        let Cell::Polyhedral(cell) = &self.cell else {
+            return Ok(None);
+        };
+        let Some(source) = self.source_origin(origin) else {
+            return Ok(None);
+        };
+        let p = Point3::new(
+            Real::from(p[0].clone()),
+            Real::from(p[1].clone()),
+            Real::from(p[2].clone()),
+        );
+        for face in &cell.faces {
+            if !face.origins.contains(source) {
+                continue;
+            }
+            let plane = cell.plane(face);
+            if geometry::sign(&p.minus(&plane.origin).dot(&plane.normal), dec)? != Sign::Zero {
+                continue;
+            }
+            for tile in &face.tiles {
+                let mut interior = true;
+                for i in 0..tile.len() {
+                    let a = &cell.vertices[tile[i]];
+                    let edge = cell.vertices[tile[(i + 1) % tile.len()]].minus(a);
+                    if geometry::sign(&edge.cross(&p.minus(a)).dot(&plane.normal), dec)?
+                        != Sign::Positive
+                    {
+                        interior = false;
+                        break;
+                    }
+                }
+                if interior {
+                    return Ok(Some(plane.normal));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     fn new(cell: Cell, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut edges = BTreeSet::new();
         let mut include = |cycles: &[Vec<usize>]| {

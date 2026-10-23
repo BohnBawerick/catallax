@@ -1210,6 +1210,34 @@ fn singleton_zero_is_distinct_from_a_ball_that_only_contains_zero() {
     assert!(!tiny.is_exact_zero());
 }
 
+#[test]
+fn open_root_endpoints_prove_strict_sign_without_refinement() {
+    let leading = &q("1e600") + &q("1");
+    for (constant, lo, hi, expected) in [
+        ("-2", "0", "1", StrictSign::Positive),
+        ("2", "-1", "0", StrictSign::Negative),
+    ] {
+        // Each cubic is strictly increasing and changes sign between these
+        // endpoints. Its sole root is nonzero despite the zero endpoint.
+        let value = Real::from_algebraic(Algebraic::isolated(
+            UPoly::new(vec![q(constant), q("0"), q("0"), leading.clone()]),
+            q(lo),
+            q(hi),
+        ));
+        let mut decider = Decider::new(BudgetPolicy {
+            max_precision_bits: 0,
+            max_work: 1,
+        });
+        assert!(matches!(decider.sign(&value), Outcome::Proven(sign) if sign == expected));
+    }
+    let zero = Real::from_algebraic(Algebraic::isolated(
+        UPoly::new(vec![q("0"), q("1")]),
+        q("-1"),
+        q("1"),
+    ));
+    assert!(Decider::default().sign(&zero).is_coincident());
+}
+
 fn odd_denominator_cubic_root() -> Real {
     // The cubic is strictly increasing, and these exact endpoints bracket
     // cbrt(2). A large odd denominator is certificate representation, not

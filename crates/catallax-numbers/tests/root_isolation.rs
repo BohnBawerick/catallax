@@ -650,3 +650,51 @@ fn separated_irrational_quadratic_fits_a_small_work_allowance() {
         check_irrational_certificate(&root.value);
     }
 }
+
+#[test]
+fn bounded_trial_factorization_keeps_its_terminal_prime_certificate() {
+    for leading in [r("999983"), r("1018081")] {
+        let polynomial = UPoly::new(vec![
+            r("-2"),
+            r("2") * leading.clone() + r("3"),
+            -(r("3") * leading.clone()) - r("1"),
+            leading.clone(),
+        ]);
+        let mut decider = Decider::new(BudgetPolicy {
+            max_precision_bits: 0,
+            max_work: 100_000,
+        });
+        let result = roots(&mut decider, &polynomial);
+        let actual: Vec<_> = result
+            .iter()
+            .map(|root| (root.value.as_rational().unwrap().clone(), root.multiplicity))
+            .collect();
+        // 999983 is prime below 1000²; 1018081 = 1009² requires reconstruction.
+        assert_eq!(
+            actual,
+            vec![(&r("1") / &leading, 1), (r("1"), 1), (r("2"), 1)]
+        );
+    }
+}
+
+#[test]
+fn separated_quadratic_keeps_a_tiny_positive_root_under_cancellation() {
+    let polynomial = UPoly::new(vec![r("1000003"), r("-1e200"), r("1")]);
+    let mut decider = Decider::new(BudgetPolicy {
+        max_precision_bits: 512,
+        max_work: 1_000_000,
+    });
+    let result = roots(&mut decider, &polynomial);
+    assert_eq!(result.len(), 2);
+    assert!(result[0].value.isolating_interval().1 < result[1].value.isolating_interval().0);
+    for root in result {
+        assert_eq!(root.multiplicity, 1);
+        check_irrational_certificate(&root.value);
+        let value = Real::from_algebraic(root.value);
+        let mut sign_decider = Decider::new(BudgetPolicy {
+            max_precision_bits: 512,
+            max_work: 1_000,
+        });
+        proven_sign(&mut sign_decider, &value, 1);
+    }
+}

@@ -9,6 +9,31 @@ use std::{
 
 const NEWTON_GUARD_BITS: i64 = 64;
 
+// After removing smaller prime powers, composite trial divisors cannot divide.
+const TRIAL_PRIMES: [i64; 168] = {
+    let mut primes = [0; 168];
+    let mut count = 0;
+    let mut candidate = 2;
+    while candidate <= 1000 {
+        let mut divisor = 2;
+        let mut prime = true;
+        while divisor * divisor <= candidate {
+            if candidate % divisor == 0 {
+                prime = false;
+                break;
+            }
+            divisor += 1;
+        }
+        if prime {
+            primes[count] = candidate;
+            count += 1;
+        }
+        candidate += 1;
+    }
+    assert!(count == primes.len());
+    primes
+};
+
 /// Exact rational, or a single real root in an open rational interval.
 #[derive(Clone, Debug)]
 pub struct Algebraic {
@@ -455,7 +480,107 @@ fn quadratic_roots(polynomial: &UPoly, work: &mut Work) -> Result<QuadraticRoots
     Ok(QuadraticRoots::Rational(lower, upper))
 }
 
-fn isolate_quadratic(
+fn guarded_quadratic(
+    polynomial: &UPoly,
+    target: &Rational,
+    output: &mut Vec<Algebraic>,
+    work: &mut Work,
+) -> Result<bool, &'static str> {
+    let [c, b, a] = polynomial.coefficients() else {
+        unreachable!("quadratic isolator requires degree two");
+    };
+    let QuadraticRoots::Irrational(discriminant) = quadratic_roots(polynomial, work)? else {
+        return Ok(false);
+    };
+    let cap = work.policy.max_precision_bits;
+    if cap == 0 {
+        return Ok(false);
+    }
+    // Midpoint and residual radius each need guard bits. Leave additional room
+    // before testing that both endpoints round to the same guarded ball.
+    let guard = 256.min(cap.saturating_sub(64) / 2).max(1);
+    let mut precision = (2 * guard + 64).min(cap);
+    loop {
+        let intervals = 'attempt: {
+            work.ball(precision, true)?;
+            let d = Ball::from_rational(&discriminant, precision);
+            work.ball(precision, true)?;
+            let Some(root) = d.sqrt() else {
+                break 'attempt None;
+            };
+            work.ball(precision, true)?;
+            let center = Ball::from_rational(&(-b), precision);
+            work.ball(precision, true)?;
+            let denominator = Ball::from_rational(&a.mul_pow2(1), precision);
+            work.ball(precision, true)?;
+            let product = Ball::from_rational(&c.mul_pow2(1), precision);
+            // Select the noncancelling branch, then use the exact root product
+            // for the other branch. Tiny positive roots must not become zero.
+            work.ball(precision, false)?;
+            let numerator = if b.sign() == Sign::Negative {
+                &center + &root
+            } else {
+                &center - &root
+            };
+            work.ball(precision, true)?;
+            work.ball(precision, true)?;
+            let Some(first) = numerator.checked_div(&denominator) else {
+                break 'attempt None;
+            };
+            work.ball(precision, true)?;
+            work.ball(precision, true)?;
+            let Some(second) = product.checked_div(&numerator) else {
+                break 'attempt None;
+            };
+            let mut intervals = [(first.lo(), first.hi()), (second.lo(), second.hi())];
+            if intervals[0].0 > intervals[1].0 {
+                intervals.swap(0, 1);
+            }
+            if intervals[0].1 >= intervals[1].0 {
+                break 'attempt None;
+            }
+            for (lo, hi) in &intervals {
+                work.exact(lo, hi, false)?;
+                if lo >= hi {
+                    break 'attempt None;
+                }
+                // A coarser established target is cheap and may carry a
+                // deliberately wider export bound. Keep its original bracket.
+                if hi - lo <= *target {
+                    return Ok(false);
+                }
+                let lower = filtered_sign(polynomial, lo, work)?;
+                let upper = filtered_sign(polynomial, hi, work)?;
+                if lower == Sign::Zero || upper == Sign::Zero || lower == upper {
+                    break 'attempt None;
+                }
+                // Preserve the unique outward-rounded enclosure at consumer
+                // precisions, including roots arbitrarily close to dyadic ties.
+                work.ball(guard, true)?;
+                let lower = Ball::from_rational(lo, guard);
+                work.ball(guard, true)?;
+                let upper = Ball::from_rational(hi, guard);
+                if lower.lo() != upper.lo() || lower.hi() != upper.hi() {
+                    break 'attempt None;
+                }
+            }
+            Some(intervals)
+        };
+        if let Some(intervals) = intervals {
+            output
+                .extend(intervals.map(|(lo, hi)| Algebraic::isolated(polynomial.clone(), lo, hi)));
+            return Ok(true);
+        }
+        if precision == cap {
+            return Ok(false);
+        }
+        precision = precision.saturating_mul(2).min(cap);
+    }
+}
+
+// Retain the established target-width brackets for clustered roots when the
+// target is already coarser than guarded construction would produce.
+fn target_quadratic(
     polynomial: &UPoly,
     target: &Rational,
     output: &mut Vec<Algebraic>,
@@ -464,20 +589,8 @@ fn isolate_quadratic(
     let [_, b, a] = polynomial.coefficients() else {
         unreachable!("quadratic isolator requires degree two");
     };
-    let discriminant = match quadratic_roots(polynomial, work)? {
-        QuadraticRoots::Nonreal => return Ok(true),
-        QuadraticRoots::Repeated(root) => {
-            output.push(Algebraic::from_rational(root));
-            return Ok(true);
-        }
-        QuadraticRoots::Rational(lower, upper) => {
-            output.extend([
-                Algebraic::from_rational(lower),
-                Algebraic::from_rational(upper),
-            ]);
-            return Ok(true);
-        }
-        QuadraticRoots::Irrational(discriminant) => discriminant,
+    let QuadraticRoots::Irrational(discriminant) = quadratic_roots(polynomial, work)? else {
+        return Ok(false);
     };
     let center = -b;
     let denominator = a.mul_pow2(1);
@@ -490,8 +603,6 @@ fn isolate_quadratic(
     if discriminant >= (&scale * &scale).mul_pow2(-2 * guard) {
         return Ok(false);
     }
-    // Retain the ordinary rational-reconstruction width, even though the
-    // nonsquare discriminant already proves both roots irrational.
     let magnitude = (polynomial
         .coefficients()
         .iter()
@@ -514,7 +625,7 @@ fn isolate_quadratic(
     let center = Ball::from_rational(&center, precision);
     work.ball(precision, true)?;
     let denominator = Ball::from_rational(&denominator, precision);
-    let mut roots = [None, None];
+    let mut intervals = [None, None];
     for (index, subtract) in [true, false].into_iter().enumerate() {
         work.ball(precision, false)?;
         let numerator = if subtract {
@@ -533,14 +644,17 @@ fn isolate_quadratic(
         if lo >= hi || &hi - &lo >= *target {
             return Ok(false);
         }
-        let lower_sign = filtered_sign(polynomial, &lo, work)?;
-        let upper_sign = filtered_sign(polynomial, &hi, work)?;
-        if lower_sign == Sign::Zero || upper_sign == Sign::Zero || lower_sign == upper_sign {
+        let lower = filtered_sign(polynomial, &lo, work)?;
+        let upper = filtered_sign(polynomial, &hi, work)?;
+        if lower == Sign::Zero || upper == Sign::Zero || lower == upper {
             return Ok(false);
         }
-        roots[index] = Some(Algebraic::isolated(polynomial.clone(), lo, hi));
+        intervals[index] = Some((lo, hi));
     }
-    output.extend(roots.map(Option::unwrap));
+    output.extend(intervals.map(|interval| {
+        let (lo, hi) = interval.unwrap();
+        Algebraic::isolated(polynomial.clone(), lo, hi)
+    }));
     Ok(true)
 }
 
@@ -557,19 +671,36 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
         result.push(Algebraic::from_rational(Rational::zero()));
         remaining = UPoly::new(remaining.coefficients()[1..].to_vec());
     }
-    // A nonsquare discriminant proves that no rational root needs recovery.
-    let irrational_quadratic = remaining.degree() == Some(2)
-        && matches!(
-            quadratic_roots(&remaining, work)?,
-            QuadraticRoots::Irrational(_)
-        );
-    let candidates = if irrational_quadratic {
-        None
+    let irrational_quadratic = if remaining.degree() == Some(2) {
+        match quadratic_roots(&remaining, work)? {
+            QuadraticRoots::Nonreal => return Ok(result),
+            QuadraticRoots::Repeated(root) => {
+                result.push(Algebraic::from_rational(root));
+                return Ok(result);
+            }
+            QuadraticRoots::Rational(lower, upper) => {
+                result.extend([
+                    Algebraic::from_rational(lower),
+                    Algebraic::from_rational(upper),
+                ]);
+                return Ok(result);
+            }
+            QuadraticRoots::Irrational(_) => true,
+        }
     } else {
-        let integers = remaining.primitive_integer_checked(&|| work.check_deadline())?;
-        rational_candidates(&integers, work)?
+        false
     };
-    let rational_complete = irrational_quadratic || candidates.is_some();
+    let integers = remaining.primitive_integer_checked(&|| work.check_deadline())?;
+    // Retain the established coarse brackets when bounded divisor enumeration
+    // was complete. Only formerly reconstructed quadratics need guarded bounds.
+    let (candidates, enumeration_complete) = if irrational_quadratic {
+        (None, rational_search_complete(&integers, work)?)
+    } else {
+        let candidates = rational_candidates(&integers, work)?;
+        let complete = candidates.is_some();
+        (candidates, complete)
+    };
+    let rational_complete = enumeration_complete;
     if let Some(candidates) = candidates {
         for r in candidates {
             if filtered_sign(&remaining, &r, work)? == Sign::Zero {
@@ -595,7 +726,11 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
         }
         return Ok(result);
     }
-    let integers = remaining.primitive_integer_checked(&|| work.check_deadline())?;
+    let integers = if irrational_quadratic {
+        integers
+    } else {
+        remaining.primitive_integer_checked(&|| work.check_deadline())?
+    };
     let primitive = UPoly::new(
         integers
             .iter()
@@ -605,9 +740,15 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
     );
     let q = integers.last().unwrap().abs();
     let target = Rational::new(Integer::one(), (&q * &q).mul_pow2(2)).unwrap();
+    if irrational_quadratic
+        && !enumeration_complete
+        && guarded_quadratic(&primitive, &target, &mut result, work)?
+    {
+        return Ok(result);
+    }
     if remaining.degree() == Some(2)
-        && (!rational_complete || irrational_quadratic)
-        && isolate_quadratic(&primitive, &target, &mut result, work)?
+        && !rational_complete
+        && target_quadratic(&primitive, &target, &mut result, work)?
     {
         return Ok(result);
     }
@@ -636,7 +777,9 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
                     break Algebraic::from_rational(mid);
                 }
                 if &hi - &lo < target {
-                    if let Some(r) = rational_root(&primitive, &mid, &q, &lo, &hi, work)? {
+                    if !irrational_quadratic
+                        && let Some(r) = rational_root(&primitive, &mid, &q, &lo, &hi, work)?
+                    {
                         break Algebraic::from_rational(r);
                     }
                     break Algebraic::isolated(primitive.clone(), lo, hi);
@@ -847,12 +990,13 @@ pub(crate) fn eval_ball_checked(
 fn quartic_has_no_real_roots(p: &UPoly, work: &mut Work) -> Result<bool, &'static str> {
     let bound = root_bound(p, work)?;
     let mut pending = vec![(-&bound, Rational::zero()), (Rational::zero(), bound)];
+    let mut splits = 0;
     while let Some((lo, hi)) = pending.pop() {
         let variations = descartes_variations(p, &lo, &hi, work)?;
         if variations == 0 {
             continue;
         }
-        if variations == 1 {
+        if variations == 1 || splits == 16 {
             return Ok(false);
         }
         work.exact(&lo, &hi, false)?;
@@ -860,6 +1004,7 @@ fn quartic_has_no_real_roots(p: &UPoly, work: &mut Work) -> Result<bool, &'stati
         if filtered_sign(p, &mid, work)? == Sign::Zero {
             return Ok(false);
         }
+        splits += 1;
         pending.push((mid.clone(), hi));
         pending.push((lo, mid));
     }
@@ -1134,24 +1279,30 @@ fn rational_candidates(
     }
     Ok(Some(candidates.into_iter().collect()))
 }
-fn divisors(n: &Integer, work: &mut Work) -> Result<Option<Vec<Integer>>, &'static str> {
+fn small_prime_factors(
+    n: &Integer,
+    work: &mut Work,
+    mut factor: impl FnMut(Integer, u32),
+) -> Result<bool, &'static str> {
+    if n.bit_length() <= 1 {
+        return Ok(!n.is_zero());
+    }
     let mut n = n.clone();
-    let mut factors = Vec::new();
-    let mut trial = 2i64;
-    while n > Integer::one() && trial <= 1000 {
-        let d = Integer::from_i64(trial);
-        if &d * &d > n {
-            factors.push((n.clone(), 1u32));
-            n = Integer::one();
-            break;
+    for &trial in &TRIAL_PRIMES {
+        if n.bit_length() == 1 {
+            return Ok(true);
         }
+        if n.to_i64().is_some_and(|value| value < trial * trial) {
+            factor(n, 1);
+            return Ok(true);
+        }
+        let d = Integer::from_i64(trial);
         let mut exponent = 0;
         loop {
-            work.exact(
-                &Rational::from_integer(n.clone()),
-                &Rational::from_integer(d.clone()),
-                true,
-            )?;
+            // The same integer/word division charge as exact rational arithmetic,
+            // without cloning a large integer only to compute its cost.
+            let limbs = n.bit_length().div_ceil(64).max(1).saturating_add(1);
+            work.charge(limbs.saturating_mul(2))?;
             let (q, r) = n.div_rem_floor(&d).unwrap();
             if !r.is_zero() {
                 break;
@@ -1160,11 +1311,39 @@ fn divisors(n: &Integer, work: &mut Work) -> Result<Option<Vec<Integer>>, &'stat
             exponent += 1;
         }
         if exponent != 0 {
-            factors.push((d, exponent));
+            factor(d, exponent);
         }
-        trial += 1;
     }
-    if n != Integer::one() {
+    if n.bit_length() > 1 {
+        // All primes <= 1000 were removed. A remaining value <= 1000² is prime.
+        // This retains the old trial loop's final composite-index square check.
+        if n.to_i64().is_none_or(|value| value > 1_000_000) {
+            return Ok(false);
+        }
+        factor(n, 1);
+    }
+    Ok(true)
+}
+
+fn rational_search_complete(
+    coefficients: &[Integer],
+    work: &mut Work,
+) -> Result<bool, &'static str> {
+    let mut candidates = 1usize;
+    for coefficient in [&coefficients[0], coefficients.last().unwrap()] {
+        let complete = small_prime_factors(&coefficient.abs(), work, |_, exponent| {
+            candidates = candidates.saturating_mul((exponent as usize).saturating_add(1));
+        })?;
+        if !complete || candidates > 4096 {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn divisors(n: &Integer, work: &mut Work) -> Result<Option<Vec<Integer>>, &'static str> {
+    let mut factors = Vec::new();
+    if !small_prime_factors(n, work, |prime, exponent| factors.push((prime, exponent)))? {
         return Ok(None);
     }
     let mut result = vec![Integer::one()];

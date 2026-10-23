@@ -228,3 +228,198 @@ fn canonical_expansion_cannot_turn_impossible_stock_dimensions_into_legal_sweeps
         );
     }
 }
+
+#[test]
+fn pattern_and_nested_mirror_copies_resolve_canonical_stock_names() {
+    use catallax_features::{copy_origin, mirror_placement, pattern_placement};
+    use catallax_recipe::{EdgeName, Origin, PatternLayout, Plane, Point3, Vector3};
+    use std::collections::BTreeSet;
+
+    let seed = StepId::new("seed").unwrap();
+    let row = StepId::new("row").unwrap();
+    let image = StepId::new("image").unwrap();
+    let layout = PatternLayout::Linear {
+        vector: Vector3([30.into(), 0.into(), 0.into()]),
+        count: 3,
+    };
+    let plane = Plane {
+        point: Point3([0.into(), 0.into(), 0.into()]),
+        normal: Vector3([1.into(), 0.into(), 0.into()]),
+    };
+    for mut value in [
+        json!({"op":"block","size":["4","6","8"]}),
+        json!({"op":"cylinder","radius":"3","height":"4"}),
+        json!({"op":"cone","base_radius":"3","top_radius":"1","height":"4"}),
+        json!({"op":"sphere","radius":"3"}),
+        json!({"op":"torus","major":"6","minor":"2"}),
+    ] {
+        value["pose"] = json!({"rotation":["1","0","0","0"],"translation":["12","0","0"]});
+        let operation: Operation = serde_json::from_value(value.clone()).unwrap();
+        let canonical = evaluate_canonical_stock(&operation, &seed, &mut Decider::default())
+            .unwrap()
+            .unwrap();
+        let source_field =
+            Plan::compile_canonical_stock(&operation, &seed, &mut Decider::default())
+                .unwrap()
+                .unwrap();
+        for expanded in [false, true] {
+            // Cone cap correspondence belongs to the canonical entry, not to
+            // generic authored radial segments. Its copied names are still
+            // checked against that entry's result below.
+            if expanded && matches!(operation, Operation::Cone { .. }) {
+                continue;
+            }
+            for mirrored in [false, true] {
+                let mut recipe = if expanded {
+                    CanonicalStock::new(&operation, &seed)
+                        .unwrap()
+                        .unwrap()
+                        .recipe()
+                        .clone()
+                } else {
+                    Recipe::new(
+                        "copied stock",
+                        vec![Step {
+                            id: seed.clone(),
+                            op: operation.clone(),
+                        }],
+                        seed.clone(),
+                    )
+                };
+                recipe.steps.push(Step {
+                    id: row.clone(),
+                    op: Operation::Pattern {
+                        body: seed.clone(),
+                        layout: layout.clone(),
+                    },
+                });
+                recipe.result = row.clone();
+                if mirrored {
+                    recipe.steps.push(Step {
+                        id: image.clone(),
+                        op: Operation::Mirror {
+                            body: row.clone(),
+                            plane: plane.clone(),
+                            keep_original: false,
+                        },
+                    });
+                    recipe.result = image.clone();
+                }
+                let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+                let field = Plan::compile(&recipe).unwrap();
+                for instance in 0..3 {
+                    let copied = |origin: &Origin| {
+                        let origin = copy_origin(&row, instance, origin);
+                        if mirrored {
+                            copy_origin(&image, 1, &origin)
+                        } else {
+                            origin
+                        }
+                    };
+                    let mut map =
+                        pattern_placement(&layout, instance, &mut Decider::default()).unwrap();
+                    if mirrored {
+                        map = map.then(&mirror_placement(&plane).unwrap());
+                    }
+                    let mut expected = BTreeSet::new();
+                    for face in canonical.model.faces_of_body(canonical.result) {
+                        for origin in canonical.model.face_origins(face) {
+                            let name = copied(origin);
+                            assert_eq!(
+                                built.model.faces_with_origin(built.result, &name).len(),
+                                1,
+                                "{value}: {name:?}, expanded={expanded}, mirrored={mirrored}"
+                            );
+                            expected.insert(name);
+                        }
+                    }
+                    for edge in canonical.model.edges_of_body(canonical.result) {
+                        let name = canonical.model.edge_name(canonical.result, edge).unwrap();
+                        let [a, b] = name.between();
+                        let name = EdgeName::new(copied(a), copied(b)).unwrap();
+                        assert_eq!(
+                            built.model.edges_with_name(built.result, &name).len(),
+                            1,
+                            "{value}: {name:?}, expanded={expanded}, mirrored={mirrored}"
+                        );
+                    }
+                    let mut witnessed = BTreeSet::new();
+                    source_field
+                        .visit_feature_candidates(1, |point, origin| {
+                            if source_field
+                                .face_query(
+                                    source_field.select(origin).unwrap(),
+                                    &point,
+                                    &mut Workspace::default(),
+                                )
+                                .unwrap()
+                                .state
+                                == FaceState::OnFace
+                            {
+                                let name = copied(origin);
+                                let placed = map.apply_rational_point(&point).unwrap();
+                                assert_eq!(
+                                    field
+                                        .face_query(
+                                            field.select(&name).unwrap(),
+                                            &placed,
+                                            &mut Workspace::default()
+                                        )
+                                        .unwrap()
+                                        .state,
+                                    FaceState::OnFace,
+                                    "{value}: {name:?}, expanded={expanded}, mirrored={mirrored}"
+                                );
+                                if mirrored {
+                                    assert_eq!(
+                                        field
+                                            .face_query(
+                                                field.select(origin).unwrap(),
+                                                &placed,
+                                                &mut Workspace::default()
+                                            )
+                                            .unwrap()
+                                            .state,
+                                        FaceState::NotOnFace
+                                    );
+                                }
+                                witnessed.insert(name);
+                            }
+                            true
+                        })
+                        .unwrap();
+                    assert_eq!(
+                        witnessed, expected,
+                        "{value}: every copied origin needs a boundary witness"
+                    );
+                }
+                if expanded {
+                    // The final feature-sampling pass must not publish aliases
+                    // belonging only to the seed or an unkept mirror input.
+                    let mut sampled = BTreeSet::new();
+                    field
+                        .visit_feature_candidates(1, |_, origin| {
+                            assert_eq!(
+                                built.model.faces_with_origin(built.result, origin).len(),
+                                1,
+                                "{value}: sampled an unused source alias {origin:?}"
+                            );
+                            sampled.insert(origin.clone());
+                            true
+                        })
+                        .unwrap();
+                    let expected: BTreeSet<_> = built
+                        .model
+                        .faces_of_body(built.result)
+                        .into_iter()
+                        .flat_map(|face| built.model.face_origins(face).iter().cloned())
+                        .collect();
+                    assert_eq!(
+                        sampled, expected,
+                        "{value}: sample every named result face, not its unused aliases"
+                    );
+                }
+            }
+        }
+    }
+}

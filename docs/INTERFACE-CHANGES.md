@@ -699,6 +699,10 @@ convex hull, every triangle orientation and the oriented trim-boundary incidence
 Collapsed or uncertified proposals retain the exact trim clipper. Outward-rounded
 binary64 interval filters accept only proven signs; inconclusive predicates use
 `Real` arithmetic.
+Sine/cosine range reduction uses a stored 4096-bit Machin enclosure of pi with
+outward truncation and a series fallback above that precision. The constant has
+no numeric work charge or per-request cache state. Direct pi queries are unchanged.
+Edge subdivision reuses its certified endpoint enclosures down the recursion.
 
 Why: applications need exact geometric summaries and explicit display guarantees,
 not quantities inferred from triangles or controls silently discarded.

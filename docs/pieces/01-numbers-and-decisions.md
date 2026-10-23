@@ -134,6 +134,12 @@ Domain rules: `sqrt` returns `None` only for a ball entirely below zero; otherwi
 
 These functions are the kernel's own. They must not call the platform's floating-point library, so results are the same on every machine (DESIGN.md, R10).
 
+Sine and cosine range reduction use a stored 4096-bit Machin enclosure of pi,
+outward rounded to the required guard precision. Higher precision recomputes the
+series. Loading and truncating the immutable dyadics charge no numeric work,
+independently of first use or worker count. `Ball::pi` and `pi_checked` retain
+their existing series construction and enclosure representation.
+
 ### Polynomials
 
 - `UPoly`: a univariate polynomial with `Rational` coefficients, stored lowest degree first, with trailing zero coefficients removed (the zero polynomial has no coefficients and no degree). Operations: arithmetic, exact evaluation at a rational, evaluation on an `Interval`, a `Ball` and a `Real`, derivative, division with remainder, monic greatest common divisor, square-free factorisation (monic factors, each with its multiplicity, in increasing multiplicity; the zero polynomial and constants give an empty list), composition, and conversion to primitive integer coefficients with a positive leading coefficient (lowest degree first, empty for the zero polynomial). `UPoly::constant(0)` is the zero polynomial and `from_roots(&[])` is 1.

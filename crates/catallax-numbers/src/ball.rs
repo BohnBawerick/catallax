@@ -7,6 +7,7 @@ use crate::{Decider, Integer, Interval, Rational, Refusal, Sign, StrictSign};
 use std::borrow::Cow;
 
 mod binary;
+mod pi_constant;
 use binary::Binary;
 
 /// Binary midpoint-radius enclosure with a working precision in bits.
@@ -415,7 +416,7 @@ impl Ball {
             self.mid.binary_exponent().max(0).min(i64::from(u32::MAX)) as u32
         };
         let g = p.saturating_add(extra).saturating_add(32);
-        let pi = Self::pi(g);
+        let pi = pi_constant::at(g);
         let period = &pi * &scalar(2, g);
         let turns = (&self.mid() / &period.mid()).mul_pow2(0);
         let n = (&turns + &Rational::from_ratio(1, 2).unwrap()).floor();

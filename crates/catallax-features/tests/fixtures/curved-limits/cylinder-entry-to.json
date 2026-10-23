@@ -1,0 +1,96 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "cylinder selected wall first hit",
+  "description": "Public exact rectangular first-hit cap on a stock quadric; no silhouette or trim crossing.",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "1",
+          "1",
+          "1"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "5"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "1/2",
+              "-1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "1/2",
+              "1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-1/2",
+              "1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-1/2",
+              "-1/2"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "target",
+      "op": "cylinder",
+      "height": "10",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "5",
+          "0",
+          "0"
+        ]
+      },
+      "radius": "2"
+    },
+    {
+      "id": "cap",
+      "op": "extrude_to",
+      "target": "target",
+      "profile": "profile",
+      "limit": {
+        "face": {
+          "step": "target",
+          "role": {
+            "side": {
+              "segment": "wall"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "result": "cap"
+}

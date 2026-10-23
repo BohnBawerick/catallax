@@ -351,17 +351,41 @@ fn evaluate_impl(
                     direction,
                     limit,
                 } => {
-                    let cap = crate::end_condition::Capped::compile(
-                        recipe,
-                        target,
-                        profile,
-                        direction.as_ref(),
-                        Some(limit),
-                        dec,
-                    )?;
-                    BodyValue {
-                        body: cap.build(model, &step.id, dec)?,
-                        radius: cap.radius,
+                    if !profiles[profile].is_empty()
+                        && matches!(
+                            recipe.step(target).map(|s| &s.op),
+                            Some(
+                                Operation::Sphere { .. }
+                                    | Operation::Cylinder { .. }
+                                    | Operation::Cone { .. }
+                            )
+                        )
+                    {
+                        let cap = crate::end_condition::curved::AuthoredCap::compile(
+                            recipe,
+                            target,
+                            profile,
+                            direction.as_ref(),
+                            Some(limit),
+                            dec,
+                        )?;
+                        BodyValue {
+                            body: cap.build(model, &step.id, dec)?,
+                            radius: cap.radius().clone(),
+                        }
+                    } else {
+                        let cap = crate::end_condition::Capped::compile(
+                            recipe,
+                            target,
+                            profile,
+                            direction.as_ref(),
+                            Some(limit),
+                            dec,
+                        )?;
+                        BodyValue {
+                            body: cap.build(model, &step.id, dec)?,
+                            radius: cap.radius,
+                        }
                     }
                 }
                 Operation::ExtrudeNext {
@@ -369,17 +393,41 @@ fn evaluate_impl(
                     profile,
                     direction,
                 } => {
-                    let cap = crate::end_condition::Capped::compile(
-                        recipe,
-                        target,
-                        profile,
-                        direction.as_ref(),
-                        None,
-                        dec,
-                    )?;
-                    BodyValue {
-                        body: cap.build(model, &step.id, dec)?,
-                        radius: cap.radius,
+                    if !profiles[profile].is_empty()
+                        && matches!(
+                            recipe.step(target).map(|s| &s.op),
+                            Some(
+                                Operation::Sphere { .. }
+                                    | Operation::Cylinder { .. }
+                                    | Operation::Cone { .. }
+                            )
+                        )
+                    {
+                        let cap = crate::end_condition::curved::AuthoredCap::compile(
+                            recipe,
+                            target,
+                            profile,
+                            direction.as_ref(),
+                            None,
+                            dec,
+                        )?;
+                        BodyValue {
+                            body: cap.build(model, &step.id, dec)?,
+                            radius: cap.radius().clone(),
+                        }
+                    } else {
+                        let cap = crate::end_condition::Capped::compile(
+                            recipe,
+                            target,
+                            profile,
+                            direction.as_ref(),
+                            None,
+                            dec,
+                        )?;
+                        BodyValue {
+                            body: cap.build(model, &step.id, dec)?,
+                            radius: cap.radius,
+                        }
                     }
                 }
                 Operation::Hole {

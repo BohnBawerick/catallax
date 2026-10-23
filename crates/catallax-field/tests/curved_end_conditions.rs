@@ -1,14 +1,10 @@
 //! The field's support-sign query is independent of height evaluation and B-rep.
 
 use catallax_features::end_condition::curved::{AuthoredCap, Location};
-// Shared field export/dispatch ownership has not been released. Compile this
-// exclusive module against the real feature crate without changing field lib.rs.
-#[path = "../src/end_condition.rs"]
-mod field_end_condition;
+use catallax_field::CurvedField;
 use catallax_numbers::{Decider, Rational};
 use catallax_recipe::{Recipe, Role, StepId};
 use catallax_shapes::RPoint3;
-use field_end_condition::CurvedField;
 
 fn id(s: &str) -> StepId {
     StepId::new(s).unwrap()
@@ -137,4 +133,106 @@ fn inside_and_backward_queries_keep_the_first_crossing_and_world_origins() {
         assert_eq!(origins[0].role, Role::End);
         assert_eq!(origins[0].step, id("capped"));
     }
+}
+
+#[test]
+fn native_plan_dispatch_classifies_curved_entry_exit_and_selected_end_faces() {
+    use catallax_field::{FaceState, Location as PlanLocation, Plan, Workspace};
+    for (text, inside, outside, end) in [
+        (
+            include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/sphere-entry-to.json"
+            ),
+            ["0", "0", "2"],
+            ["0", "0", "4"],
+            ["0", "0", "3"],
+        ),
+        (
+            include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/sphere-exit-next.json"
+            ),
+            ["0", "0", "6"],
+            ["0", "0", "8"],
+            ["0", "0", "7"],
+        ),
+        (
+            include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/sphere-backward-next.json"
+            ),
+            ["0", "0", "8"],
+            ["0", "0", "6"],
+            ["0", "0", "7"],
+        ),
+        (
+            include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/cylinder-entry-to.json"
+            ),
+            ["1", "0", "5"],
+            ["4", "0", "5"],
+            ["3", "0", "5"],
+        ),
+        (
+            include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/cone-entry-next.json"
+            ),
+            ["1", "0", "5"],
+            ["4", "0", "5"],
+            ["2", "0", "5"],
+        ),
+    ] {
+        let recipe = Recipe::parse(text).unwrap();
+        let plan = Plan::compile(&recipe).unwrap();
+        let mut workspace = Workspace::default();
+        let point = |p: [&str; 3]| {
+            let [x, y, z] = p.map(q);
+            RPoint3::new(x, y, z)
+        };
+        for (p, want) in [
+            (inside, PlanLocation::Inside),
+            (outside, PlanLocation::Outside),
+            (end, PlanLocation::Boundary),
+        ] {
+            assert_eq!(
+                plan.proven(&point(p), &mut workspace).location,
+                want,
+                "{} at {p:?}",
+                recipe.name
+            );
+        }
+        let face = plan
+            .select(&catallax_recipe::Origin {
+                step: id("cap"),
+                role: Role::End,
+            })
+            .unwrap();
+        assert_eq!(
+            plan.face_query(face, &point(end), &mut workspace)
+                .unwrap()
+                .state,
+            FaceState::OnFace
+        );
+        assert_eq!(
+            plan.face_query(face, &point(inside), &mut workspace)
+                .unwrap()
+                .state,
+            FaceState::NotOnFace
+        );
+    }
+}
+
+#[test]
+fn native_field_display_keeps_its_default_certificate() {
+    let recipe = Recipe::parse(include_str!(
+        "../../catallax-features/tests/fixtures/curved-limits/sphere-entry-next.json"
+    ))
+    .unwrap();
+    let plan = catallax_field::Plan::compile(&recipe).unwrap();
+    let options = catallax_field::display::Options::default();
+    let (result, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        catallax_field::display::mesh_plan(&plan, &options, &mut Decider::default())
+    });
+    let mesh = result.unwrap();
+    assert!(!work.exhausted);
+    assert!(!mesh.triangles.is_empty());
+    assert!(mesh.max_deviation <= options.tolerance);
 }

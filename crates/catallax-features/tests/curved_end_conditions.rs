@@ -362,3 +362,40 @@ fn unproved_trim_coverage_does_not_become_a_missing_cap_claim() {
     .unwrap_err();
     assert_eq!(error.code, "features.unsupported-curved-limit");
 }
+
+#[test]
+fn recipe_dispatch_builds_entry_exit_and_selected_stock_walls() {
+    for text in [
+        include_str!("fixtures/curved-limits/sphere-entry-next.json"),
+        include_str!("fixtures/curved-limits/sphere-entry-to.json"),
+        include_str!("fixtures/curved-limits/sphere-exit-next.json"),
+        include_str!("fixtures/curved-limits/sphere-backward-next.json"),
+        include_str!("fixtures/curved-limits/cylinder-entry-next.json"),
+        include_str!("fixtures/curved-limits/cylinder-entry-to.json"),
+        include_str!("fixtures/curved-limits/cone-entry-next.json"),
+        include_str!("fixtures/curved-limits/cone-entry-to.json"),
+    ] {
+        let recipe = Recipe::parse(text).unwrap();
+        assert_eq!(Recipe::parse(&recipe.to_text()).unwrap(), recipe);
+        let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+        assert!(built.model.check(built.result).is_empty());
+        assert!(built.model.body(built.result).marks.is_empty());
+        let names: Vec<_> = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .flat_map(|f| built.model.face_origins(f))
+            .collect();
+        assert!(names.iter().all(|o| o.step.as_str() == "cap"));
+        for role in [Role::Start, Role::End] {
+            assert!(names.iter().any(|o| o.role == role));
+        }
+        for side in ids() {
+            assert!(
+                names
+                    .iter()
+                    .any(|o| matches!(&o.role, Role::Side { segment, .. } if *segment == side))
+            );
+        }
+    }
+}

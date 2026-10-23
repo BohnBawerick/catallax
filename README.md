@@ -122,7 +122,7 @@ records the one polyline used by both incident faces, including its proven
 curve-to-polyline error. Face IDs belong to the
 input model, not to rebuild-stable recipe names.
 
-Planes, cylinders, cones, spheres and tori use their exact definitions.
+Planes, cylinders, cones, spheres, tori and elliptic cylinders use their exact definitions.
 Intersection edges use piece 4's certified traces. Surface bounds use Taylor's
 theorem and analytic second-derivative bounds over parameter triangles.
 Bounds include replacement of boundary vertices and binary64 coordinate
@@ -130,6 +130,14 @@ rounding. They describe chord error against the analytic face and edge
 definitions, not a proof that polygonal trims equal the exact curved region.
 All covered definitions have proven bounds, so no sampled estimate is presented
 as a proof. Input and trace marks are preserved.
+
+Outward-rounded double intervals filter surface evaluation, trace Taylor
+coefficients, chord checks and facet quality. Uncertain filters retain the
+ball or exact-rational path. Curved faces bulk-load their UV constraints and
+grid points without splitting the shared boundary polylines. A triangle whose
+three vertices belong to one shared rail receives a certified interior Steiner
+point instead of becoming a zero-volume fin between adjacent faces. Every
+resulting triangle still passes the same chord certificate and work limits.
 
 The implementation is serial with fixed traversal, subdivision and output
 orders. Pure-Rust angle projection and dyadic periodic coordinates avoid

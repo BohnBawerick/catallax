@@ -6,7 +6,9 @@
 //!
 //! The contract is `docs/pieces/04-intersections.md`.
 
-use catallax_numbers::{Answered, Ball, Decider, Outcome, Rational, Refusal, StrictOrder};
+use catallax_numbers::{
+    Answered, Ball, Decider, Interval, Outcome, Rational, Refusal, StrictOrder,
+};
 use catallax_shapes::{
     Apart, CurveId, GeomStore, Point3, PointId, SurfaceId, SurfaceKind, Vector3,
 };
@@ -229,6 +231,19 @@ impl TracePiece {
     /// `k = 0..=order`, valid for every `s` in `t`, or a deadline refusal.
     pub fn taylor(&self, t: &Ball, order: usize, dec: &Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
         self.enclose_jets(t, order, dec)
+    }
+
+    /// Outward-rounded binary64 Taylor enclosures, using the same trace
+    /// definition and recurrence as [`Self::taylor`]. `None` means the filter
+    /// could not enclose a denominator or finite result; use `taylor` then.
+    pub fn taylor_interval(
+        &self,
+        t: Interval,
+        order: usize,
+        dec: &Decider,
+    ) -> Result<Option<Vec<[Interval; 3]>>, Refusal> {
+        dec.check_deadline()?;
+        chart::interval_jets(&self.coords, t, order, dec)
     }
 }
 

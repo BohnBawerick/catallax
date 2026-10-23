@@ -23,7 +23,7 @@ fn identity() -> CertificateIdentity<u32> {
 fn evidence(dependencies: &[u32]) -> GeometricEvidence<u32> {
     GeometricEvidence {
         identity: identity(),
-        bound: bound("0.0000008"),
+        bound: Some(bound("0.0000008")),
         proof: GeometricProof::WholeResult(100),
         dependencies: dependencies.iter().copied().collect(),
         context: ProofContext {
@@ -33,8 +33,8 @@ fn evidence(dependencies: &[u32]) -> GeometricEvidence<u32> {
         },
     }
 }
-fn certificate() -> GeometricCertificate<u32> {
-    GeometricCertificate {
+fn certificate() -> GapCertificate<u32> {
+    GapCertificate {
         identity: identity(),
         bound: bound("0.0000009"),
         evidence: 3,
@@ -165,8 +165,8 @@ fn evidence_shares_identity_and_orders_records_independently_of_insertion() {
         forward.iter().collect::<Vec<_>>(),
         reverse.iter().collect::<Vec<_>>()
     );
-    forward.check_structure(&certificate(), &dec).unwrap();
-    reverse.check_structure(&certificate(), &dec).unwrap();
+    forward.check_gap_structure(&certificate(), &dec).unwrap();
+    reverse.check_gap_structure(&certificate(), &dec).unwrap();
     assert!(!forward.record(0, evidence(&[]), &dec).unwrap());
     assert_eq!(
         forward.record(0, evidence(&[1]), &dec).unwrap_err().code,
@@ -188,7 +188,9 @@ fn missing_cyclic_or_incomplete_evidence_cannot_pass_structure_checking() {
             book.record(id, record, &dec).unwrap();
         }
         assert_eq!(
-            book.check_structure(&certificate(), &dec).unwrap_err().code,
+            book.check_gap_structure(&certificate(), &dec)
+                .unwrap_err()
+                .code,
             GEOMETRIC_GAP_UNPROVEN
         );
     }
@@ -205,7 +207,7 @@ fn missing_cyclic_or_incomplete_evidence_cannot_pass_structure_checking() {
     };
     let mut book = EvidenceBook::new(ModellingTolerance::default());
     book.record(3, record, &dec).unwrap();
-    assert!(book.check_structure(&certificate(), &dec).is_err());
+    assert!(book.check_gap_structure(&certificate(), &dec).is_err());
 }
 
 #[test]
@@ -216,16 +218,16 @@ fn certificate_binding_domains_and_understated_bounds_are_rejected() {
     let original = certificate();
     let mut changed = original.clone();
     changed.identity.revision += 1;
-    assert!(book.check_structure(&changed, &dec).is_err());
+    assert!(book.check_gap_structure(&changed, &dec).is_err());
     let mut changed = original.clone();
     changed.identity.representation += 1;
-    assert!(book.check_structure(&changed, &dec).is_err());
+    assert!(book.check_gap_structure(&changed, &dec).is_err());
     let mut changed = original.clone();
     changed.identity.target += 1;
-    assert!(book.check_structure(&changed, &dec).is_err());
+    assert!(book.check_gap_structure(&changed, &dec).is_err());
     let mut changed = original;
     changed.bound = bound("0.0000007");
-    assert!(book.check_structure(&changed, &dec).is_err());
+    assert!(book.check_gap_structure(&changed, &dec).is_err());
     for scope in [
         CertificateScope::Entities(BTreeSet::new()),
         CertificateScope::ParameterBox {
@@ -243,7 +245,7 @@ fn certificate_binding_domains_and_understated_bounds_are_rejected() {
         claim.identity.scope = scope;
         let mut book = EvidenceBook::new(ModellingTolerance::default());
         book.record(3, record, &dec).unwrap();
-        assert!(book.check_structure(&claim, &dec).is_err());
+        assert!(book.check_gap_structure(&claim, &dec).is_err());
     }
 }
 

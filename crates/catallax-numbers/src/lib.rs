@@ -42,9 +42,10 @@ pub use angle::sin_cos_degrees;
 pub use ball::Ball;
 pub use certificate::{
     CertificateIdentity, CertificateScope, DecisionBook, DecisionEvidence, EvidenceBook,
-    EvidenceBound, EvidenceUnit, GEOMETRIC_GAP_EXCEEDED, GEOMETRIC_GAP_UNPROVEN,
-    GeometricCertificate, GeometricEvidence, GeometricProof, ModellingTolerance, ProofContext,
-    RecordedChoice,
+    EvidenceBound, EvidenceUnit, ExceptionSource, FeatureSizeLowerBound, GEOMETRIC_GAP_EXCEEDED,
+    GEOMETRIC_GAP_UNPROVEN, GapCertificate, GeometricCertificate, GeometricEvidence,
+    GeometricProof, ImportToleranceAcceptance, LocalException, LocalToleranceSettings,
+    ModellingTolerance, ProofContext, RecordedChoice, RegionCertificate,
 };
 pub use decider::{BudgetPolicy, Decider, DecisionStats};
 pub use facts::{Fact, FactBook, FactKind, FactOrigin};

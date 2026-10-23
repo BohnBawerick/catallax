@@ -10,7 +10,7 @@ use crate::{Decider, Rational, Real, Refusal, Sign};
 
 /// A geometric conversion, scope or whole-result proof is missing.
 pub const GEOMETRIC_GAP_UNPROVEN: &str = "numbers.geometric-gap-unproven";
-/// The available geometric upper bound does not meet the strict modelling cap.
+/// Available decision or local geometric evidence does not meet its named limit.
 pub const GEOMETRIC_GAP_EXCEEDED: &str = "numbers.geometric-gap-exceeded";
 
 fn unproven(detail: impl Into<String>) -> Refusal {
@@ -133,7 +133,7 @@ impl EvidenceBound {
 /// The complete domain of a claim. A witness alone cannot stand for a face.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CertificateScope<K> {
-    /// The oriented whole-solid signed-distance metric over Euclidean space.
+    /// Complete oriented whole-result cover, optionally with a distance summary.
     WholeSolid,
     /// The complete named entities, including their finite trims.
     Entities(BTreeSet<K>),
@@ -209,6 +209,14 @@ pub struct DecisionEvidence<K> {
 pub enum GeometricProof<K> {
     /// Exact construction identity, to be checked against the named definition.
     ExactDefinition(K),
+    /// Explicit representation beside an immutable definition, with a checked
+    /// whole-domain approximation or imported-geometry correspondence theorem.
+    Approximation {
+        /// Exact definition being represented, not yesterday's fitted controls.
+        definition: K,
+        /// Producer-owned correspondence, branch and neighbourhood theorem.
+        theorem: K,
+    },
     /// Scoped conversion with conditioning and branch-correspondence evidence.
     Conversion {
         /// Original residual, affected entities and selected branch.
@@ -227,8 +235,9 @@ pub enum GeometricProof<K> {
 pub struct GeometricEvidence<K> {
     /// Exact target, represented object and covered domain.
     pub identity: CertificateIdentity<K>,
-    /// Available upper bound in millimetres.
-    pub bound: EvidenceBound,
+    /// Optional geometric upper bound in millimetres. A complete result cover
+    /// need not assert a uniform metric; absence never means zero displacement.
+    pub bound: Option<EvidenceBound>,
     /// Producer-owned geometric proof obligation.
     pub proof: GeometricProof<K>,
     /// Shared dependencies in canonical identity order.
@@ -237,9 +246,10 @@ pub struct GeometricEvidence<K> {
     pub context: ProofContext<K>,
 }
 
-/// A certificate claim, separate from marks and from proof verification status.
+/// A scoped gap claim under the strict 1 nm decision/legacy-output rule.
+/// This is separate from a whole-result certificate containing local exceptions.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GeometricCertificate<K> {
+pub struct GapCertificate<K> {
     /// Immutable target and representation binding.
     pub identity: CertificateIdentity<K>,
     /// Nonnegative geometric upper bound in millimetres.
@@ -248,10 +258,221 @@ pub struct GeometricCertificate<K> {
     pub evidence: K,
 }
 
+/// Fixed local approximation policy recorded before proof work starts.
+/// Only a file-specific explicit import acceptance can relax its import limit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalToleranceSettings {
+    kernel_target_mm: Rational,
+    kernel_cap_mm: Rational,
+    import_cap_mm: Rational,
+}
+
+impl Default for LocalToleranceSettings {
+    fn default() -> Self {
+        Self {
+            kernel_target_mm: Rational::from_ratio(1, 10_000).unwrap(),
+            kernel_cap_mm: Rational::from_ratio(1, 1_000).unwrap(),
+            import_cap_mm: Rational::from_ratio(1, 100).unwrap(),
+        }
+    }
+}
+
+impl LocalToleranceSettings {
+    /// Engineering fit target, 100 nm; exceeding it is not itself a cap failure.
+    pub fn kernel_target_mm(&self) -> &Rational {
+        &self.kernel_target_mm
+    }
+    /// Inclusive kernel-made approximation cap, 1 micrometre.
+    pub fn kernel_cap_mm(&self) -> &Rational {
+        &self.kernel_cap_mm
+    }
+    /// Inclusive default import cap, 10 micrometres.
+    pub fn import_cap_mm(&self) -> &Rational {
+        &self.import_cap_mm
+    }
+}
+
+/// Explicit acceptance belonging to one immutable imported file revision.
+/// The consumer must verify that `record` is the recipe's actual authorisation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportToleranceAcceptance<K> {
+    /// Accepted file revision, never a global or later-file override.
+    pub file: K,
+    /// Accepted geometric limit with explicit millimetre units.
+    pub limit: EvidenceBound,
+    /// Immutable authorisation record.
+    pub record: K,
+}
+
+/// Why an entity is an explicit exception to exact agreement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExceptionSource<K> {
+    /// A fitted representation of a retained exact construction law.
+    KernelApproximation,
+    /// Geometry declared by an imported file, not an invented intended design.
+    Import {
+        /// Immutable source file revision.
+        file: K,
+        /// Source uncertainty, distinct from deviation from declared geometry.
+        source_uncertainty: Option<EvidenceBound>,
+        /// Explicit file-specific acceptance of a looser limit.
+        acceptance: Option<ImportToleranceAcceptance<K>>,
+    },
+    /// Effect of one bounded choice; it cannot borrow the fitting allowance.
+    BoundedDecision {
+        /// Original converted decision evidence, also listed in the result.
+        decision: K,
+    },
+}
+
+/// A claimed neighbouring-size lower bound, covered by the region's theorem.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FeatureSizeLowerBound {
+    /// Explicit claim that this kind of neighbour is absent. The geometric
+    /// consumer must check adjacency; this never stands for an unknown size.
+    NoNeighbour,
+    /// Positive proved lower bound, in millimetres.
+    Millimetres(Rational),
+}
+
+/// Local deviation and limits for a complete represented trimmed domain.
+/// These public records are claims; arithmetic checks are not geometry proofs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalException<K> {
+    /// Lower endpoint of the attained deviation enclosure, in millimetres.
+    pub lower_mm: Rational,
+    /// Upper endpoint over both corresponding domains, including boundaries.
+    pub bound: EvidenceBound,
+    /// Applicable source hard limit as recorded when the work was requested.
+    pub limit: EvidenceBound,
+    /// Approximation, import or bounded-choice provenance.
+    pub source: ExceptionSource<K>,
+    /// Lower bound on the shortest neighbouring edge.
+    pub shortest_edge: FeatureSizeLowerBound,
+    /// Lower bound on the narrowest neighbouring face.
+    pub narrowest_face: FeatureSizeLowerBound,
+}
+
+impl<K: Ord> LocalException<K> {
+    /// Checks units, interval order, source cap and both tenth-of-feature limits.
+    /// A fit above 100 nm but within its hard limits passes; inspect
+    /// `kernel_target_met` separately. No value or setting is ever clamped.
+    pub fn check(
+        &self,
+        tolerance: &ModellingTolerance,
+        settings: &LocalToleranceSettings,
+    ) -> Result<(), Refusal> {
+        self.bound.check_millimetres()?;
+        self.limit.check_millimetres()?;
+        if self.lower_mm < Rational::zero() || self.lower_mm > self.bound.upper {
+            return Err(unproven("invalid local deviation enclosure"));
+        }
+        let cap = match &self.source {
+            ExceptionSource::KernelApproximation => settings.kernel_cap_mm(),
+            ExceptionSource::BoundedDecision { .. } => tolerance.millimetres(),
+            ExceptionSource::Import {
+                file,
+                source_uncertainty,
+                acceptance,
+            } => {
+                if let Some(uncertainty) = source_uncertainty {
+                    uncertainty.check_millimetres()?;
+                }
+                if let Some(accepted) = acceptance {
+                    accepted.limit.check_millimetres()?;
+                    if &accepted.file != file || accepted.limit.upper < *settings.import_cap_mm() {
+                        return Err(unproven(
+                            "import acceptance is not a looser limit for this file",
+                        ));
+                    }
+                    &accepted.limit.upper
+                } else {
+                    settings.import_cap_mm()
+                }
+            }
+        };
+        if self.limit.upper != *cap {
+            return Err(unproven(
+                "recorded local source limit differs from its applicable policy",
+            ));
+        }
+        if matches!(self.source, ExceptionSource::BoundedDecision { .. }) {
+            tolerance.check(&self.bound)?;
+        } else if self.bound.upper > *cap {
+            return Err(Refusal::new(
+                GEOMETRIC_GAP_EXCEEDED,
+                format!(
+                    "available local upper bound {} mm exceeds inclusive source cap {} mm",
+                    self.bound.upper, cap
+                ),
+            ));
+        }
+        let ten_upper = &self.bound.upper * &Rational::from_i64(10);
+        for (name, size) in [
+            ("edge", &self.shortest_edge),
+            ("face", &self.narrowest_face),
+        ] {
+            if let FeatureSizeLowerBound::Millimetres(lower) = size {
+                if lower <= &Rational::zero() {
+                    return Err(unproven(
+                        "neighbouring feature has no positive size lower bound",
+                    ));
+                }
+                if &ten_upper > lower {
+                    return Err(Refusal::new(
+                        GEOMETRIC_GAP_EXCEEDED,
+                        format!(
+                            "available local upper bound {} mm exceeds one tenth of the neighbouring {name} lower bound {lower} mm",
+                            self.bound.upper
+                        ),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Numeric engineering-target status; `None` for non-kernel exceptions.
+    /// This does not replace cap or geometric proof checking.
+    pub fn kernel_target_met(&self, settings: &LocalToleranceSettings) -> Option<bool> {
+        matches!(self.source, ExceptionSource::KernelApproximation)
+            .then(|| self.bound.upper <= *settings.kernel_target_mm())
+    }
+}
+
+/// One exact region or explicit local exception in a complete result cover.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegionCertificate<K> {
+    /// Exact definition, immutable representation and complete trimmed domain.
+    pub identity: CertificateIdentity<K>,
+    /// Checked geometry theorem and shared dependencies.
+    pub evidence: K,
+    /// `None` requires a zero-displacement proof, not an empty mark log.
+    pub exception: Option<LocalException<K>>,
+}
+
+/// Complete exact/exception cover and oriented material correspondence claim.
+/// The geometric consumer must verify topology and the named theorems.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GeometricCertificate<K> {
+    /// Whole represented body and immutable recipe target.
+    pub identity: CertificateIdentity<K>,
+    /// Complete oriented correspondence and validity evidence.
+    pub evidence: K,
+    /// Every actual region exactly once, keyed by its representation identity.
+    pub regions: BTreeMap<K, RegionCertificate<K>>,
+    /// Original converted bounded choices; each retains the strict 1 nm rule.
+    pub decisions: BTreeSet<K>,
+    /// Optional proved uniform signed-distance summary, not a sub-1-nm gate.
+    /// A maximum of local bounds alone cannot establish this claim.
+    pub uniform_bound: Option<EvidenceBound>,
+}
+
 /// Append-only shared proof records, ordered by stable definition identity.
 #[derive(Clone, Debug)]
 pub struct EvidenceBook<K> {
     tolerance: ModellingTolerance,
+    local_settings: LocalToleranceSettings,
     records: BTreeMap<K, GeometricEvidence<K>>,
 }
 
@@ -260,6 +481,7 @@ impl<K: Ord> EvidenceBook<K> {
     pub fn new(tolerance: ModellingTolerance) -> Self {
         Self {
             tolerance,
+            local_settings: LocalToleranceSettings::default(),
             records: BTreeMap::new(),
         }
     }
@@ -267,6 +489,11 @@ impl<K: Ord> EvidenceBook<K> {
     /// The immutable modelling setting attached to this record.
     pub fn tolerance(&self) -> &ModellingTolerance {
         &self.tolerance
+    }
+
+    /// Immutable local approximation policy recorded with this evidence book.
+    pub fn local_settings(&self) -> &LocalToleranceSettings {
+        &self.local_settings
     }
 
     /// Adds evidence without changing an existing shared proof identity.
@@ -298,12 +525,11 @@ impl<K: Ord> EvidenceBook<K> {
         self.records.iter()
     }
 
-    /// Checks binding, units, the strict cap and the reachable dependency graph.
-    /// This does not verify geometric theorems, topology, coverage or orientation,
-    /// and must not be used alone to publish a successful geometric result.
-    pub fn check_structure(
+    /// Checks a scoped gap's binding, strict cap and dependency graph.
+    /// This does not verify its geometric theorem or authorize publication.
+    pub fn check_gap_structure(
         &self,
-        certificate: &GeometricCertificate<K>,
+        certificate: &GapCertificate<K>,
         dec: &Decider,
     ) -> Result<(), Refusal> {
         dec.check_deadline()?;
@@ -318,13 +544,21 @@ impl<K: Ord> EvidenceBook<K> {
                 "certificate is bound to a different target or representation",
             ));
         }
-        root.bound.check_millimetres()?;
-        if certificate.bound.upper < root.bound.upper {
+        let bound = root
+            .bound
+            .as_ref()
+            .ok_or_else(|| unproven("gap evidence has no geometric bound"))?;
+        bound.check_millimetres()?;
+        if certificate.bound.upper < bound.upper {
             return Err(unproven("certificate understates its root evidence bound"));
         }
+        self.check_graph(&certificate.evidence, dec).map(|_| ())
+    }
+
+    fn check_graph<'a>(&'a self, root: &'a K, dec: &Decider) -> Result<BTreeSet<&'a K>, Refusal> {
         let mut active = BTreeSet::new();
         let mut checked = BTreeSet::new();
-        let mut pending = vec![(&certificate.evidence, false)];
+        let mut pending = vec![(root, false)];
         while let Some((id, finish)) = pending.pop() {
             dec.check_deadline()?;
             if finish {
@@ -342,7 +576,9 @@ impl<K: Ord> EvidenceBook<K> {
                 .records
                 .get(id)
                 .ok_or_else(|| unproven("missing geometric proof dependency"))?;
-            record.bound.check_millimetres()?;
+            if let Some(bound) = &record.bound {
+                bound.check_millimetres()?;
+            }
             record.identity.scope.check()?;
             if record.context.producer.is_empty() {
                 return Err(unproven("geometric evidence has no producing piece"));
@@ -362,6 +598,124 @@ impl<K: Ord> EvidenceBook<K> {
                     .rev()
                     .map(|dependency| (dependency, false)),
             );
+        }
+        Ok(checked)
+    }
+
+    /// Checks a whole-result claim against the actual representation inventory.
+    /// Source caps are local and inclusive; decisions remain strictly below 1 nm.
+    /// This checks structure and arithmetic only. The caller still verifies
+    /// geometry, adjacency, exact definitions, complete coverage and orientation.
+    pub fn check_structure(
+        &self,
+        certificate: &GeometricCertificate<K>,
+        expected_regions: &BTreeSet<K>,
+        dec: &Decider,
+    ) -> Result<(), Refusal> {
+        dec.check_deadline()?;
+        if !matches!(certificate.identity.scope, CertificateScope::WholeSolid) {
+            return Err(unproven(
+                "result certificate does not cover the whole solid",
+            ));
+        }
+        if certificate.regions.len() != expected_regions.len()
+            || certificate
+                .regions
+                .keys()
+                .any(|key| !expected_regions.contains(key))
+        {
+            return Err(unproven(
+                "result certificate omits or invents a represented region",
+            ));
+        }
+        let checked = self.check_graph(&certificate.evidence, dec)?;
+        let root = self.records.get(&certificate.evidence).unwrap();
+        if root.identity != certificate.identity
+            || !matches!(root.proof, GeometricProof::WholeResult(_))
+        {
+            return Err(unproven(
+                "result certificate is not bound to its whole correspondence proof",
+            ));
+        }
+        if certificate.uniform_bound != root.bound {
+            return Err(unproven(
+                "uniform metric summary does not match its complete proof",
+            ));
+        }
+        for decision in &certificate.decisions {
+            if !checked.contains(decision) {
+                return Err(unproven(
+                    "result lists a decision absent from its proof graph",
+                ));
+            }
+            let record = self.records.get(decision).unwrap();
+            if !matches!(record.proof, GeometricProof::Conversion { .. }) {
+                return Err(unproven(
+                    "bounded choice is not original converted decision evidence",
+                ));
+            }
+            self.tolerance.check(
+                record
+                    .bound
+                    .as_ref()
+                    .ok_or_else(|| unproven("bounded choice has no geometric gap proof"))?,
+            )?;
+        }
+        for (key, region) in &certificate.regions {
+            dec.check_deadline()?;
+            if !checked.contains(&region.evidence)
+                || region.identity.revision != certificate.identity.revision
+                || &region.identity.representation != key
+                || !matches!(&region.identity.scope,
+                    CertificateScope::Entities(entities) if entities.len() == 1 && entities.contains(key))
+            {
+                return Err(unproven("region binding or complete domain is missing"));
+            }
+            let record = self.records.get(&region.evidence).unwrap();
+            if record.identity != region.identity {
+                return Err(unproven(
+                    "region evidence names a different definition or representation",
+                ));
+            }
+            let bound = record
+                .bound
+                .as_ref()
+                .ok_or_else(|| unproven("region correspondence has no geometric bound"))?;
+            match &region.exception {
+                None if !bound.upper.is_zero() => {
+                    return Err(unproven(
+                        "changed region is not listed as a local exception",
+                    ));
+                }
+                None => {}
+                Some(exception) => {
+                    exception.check(&self.tolerance, &self.local_settings)?;
+                    if exception.bound.upper < bound.upper {
+                        return Err(unproven("local record understates its geometric evidence"));
+                    }
+                    match &exception.source {
+                        ExceptionSource::KernelApproximation | ExceptionSource::Import { .. } => {
+                            if !matches!(&record.proof, GeometricProof::Approximation { definition, .. }
+                                if definition == &region.identity.target)
+                            {
+                                return Err(unproven(
+                                    "fit/import exception lacks its retained-definition correspondence",
+                                ));
+                            }
+                        }
+                        ExceptionSource::BoundedDecision { decision } => {
+                            if !certificate.decisions.contains(decision)
+                                || (&region.evidence != decision
+                                    && !record.dependencies.contains(decision))
+                            {
+                                return Err(unproven(
+                                    "decision-only exception lacks its original bounded choice",
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }

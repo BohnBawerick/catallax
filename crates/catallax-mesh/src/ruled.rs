@@ -148,8 +148,13 @@ fn stitch(
     let (face_id, sense) = face;
     for ring in [&mut lower, &mut upper] {
         for sample in ring.iter_mut() {
-            let values = chart.evaluate(chart.canonical(sample.uv), dec)?;
-            sample.error = chart::residual(&boundaries.mesh.positions[sample.vertex], &values);
+            let (_, error) = chart.sample(
+                chart.canonical(sample.uv),
+                Some(boundaries.mesh.positions[sample.vertex]),
+                &options.chord_tolerance,
+                dec,
+            )?;
+            sample.error = error;
         }
     }
     let hessian = chart.hessian(0.0, dec)?;

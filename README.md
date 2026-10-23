@@ -130,8 +130,9 @@ semi-axis-scaled angular chart; its major semi-axis bounds positional curvature,
 and the semi-axis ratio bounds normal rotation.
 For an elliptic-cylinder strip bounded by two angularly monotone closed loops,
 or a finite cylindrical fillet between two monotone end curves, the mesher joins
-the existing edge samples in angular order. Every strip triangle passes the same
-orientation, chord and requested-control checks. Other trims or controls needing
+the existing edge samples in angular order. Strip vertex certificates use the
+shared surface sampler; every triangle passes the same orientation, chord and
+requested-control checks. Other trims or controls needing
 interior vertices use the periodic triangulator. Toroidal bands use a bounded
 minor-angle chart and the shared certified surface sampler. A face-local
 diagonal cannot reuse another face's interior chord between boundary vertices;

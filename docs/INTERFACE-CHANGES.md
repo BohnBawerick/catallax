@@ -911,3 +911,13 @@ Change: a bounded torus band restricts its face-owned chart in place and uses th
 Why: integrating the curved-display work must not bypass its certified sampler or duplicate cached definitions and chart copies.
 
 Migration: no public API, exact geometry, face or edge IDs, default 0.01 mm tolerance, vertex limit, arithmetic allowance, manifest or STEP changes.
+
+## 2026-10-24: ruled display strips share the certified sampling filter
+
+Pieces: display mesh
+
+Change: ruled cylinder and elliptic-cylinder strips certify their existing boundary coordinates through the shared display sampler, including its ball fallback, instead of unconditionally rebuilding ball evaluations. Shared polylines and candidate triangle coordinates are unchanged; conservative reported residual bounds may change.
+
+Why: the new-kind path must reuse the merged certified evaluator rather than introduce avoidable high-precision work.
+
+Migration: no public API, exact geometry, picking IDs, requested controls, tolerance, vertex or work allowances, manifest or STEP changes.

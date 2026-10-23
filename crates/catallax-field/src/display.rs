@@ -1076,8 +1076,10 @@ impl Builder<'_> {
                                 )
                             });
                         stable &= sign.is_some();
-                        if matches!(self.plan.leaves[i], crate::geometry::Leaf::Primitive(_))
-                            && sign == Some(catallax_numbers::Sign::Positive)
+                        if matches!(
+                            self.plan.leaves[i],
+                            crate::geometry::Leaf::Primitive(_) | crate::geometry::Leaf::Cell(_)
+                        ) && sign == Some(catallax_numbers::Sign::Positive)
                         {
                             outside = true;
                             break;
@@ -1328,3 +1330,6 @@ impl Builder<'_> {
         false
     }
 }
+
+#[cfg(test)]
+mod cell_tests;

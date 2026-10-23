@@ -41,7 +41,7 @@ In design: one modelling tolerance defines sameness, separate from display and e
 The code is early, and supported operations can still refuse. Measure it by its results, not the length of its roadmap.
 
 - `catallax-numbers` supplies exact arithmetic, certified enclosures and decisions, polynomial roots, construction facts and marks. The shared algebraic foundation adds `RealPoly` and certified sine/cosine construction for rational-degree angles.
-- `catallax-shapes` stores exact algebraic placements and analytic dimensions, including elliptic-cylinder definitions, with proven parameter enclosures. Derived points retain their definitions. These definitions do not imply complete recipe or display-mesh coverage for every kind.
+- `catallax-shapes` stores exact algebraic placements and analytic dimensions, including elliptic-cylinder definitions, with proven parameter enclosures. Derived points retain their definitions. These definitions do not imply complete recipe coverage for every kind.
 - `catallax-topology` builds blocks, cylinders, spheres, cones and tori in append-only curved topology and checks structural faults.
 - `catallax-intersect` handles plane, cylinder and sphere pairs, closed-form cone/torus configurations, branch-aware curve queries and certified finite conic traces. General noncoaxial cone and torus branch tracing remains unfinished.
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Ambiguous and unsupported cases remain unfinished work.
@@ -56,7 +56,7 @@ The code is early, and supported operations can still refuse. Measure it by its 
 - `catallax-cli` builds `catallax` and the legacy `exact-brep` program from the same main. They read a question, build and operate, measure, and write a manifest and optional STEP file.
 - `catallax-verify` runs persistent question, recipe and sampled comparison requests with whole-request deterministic work budgets, separate wall-time reporting and distinct geometry tags. Its replay driver supports caching, strict STEP comparison and worker-count checks; the legacy commands are unchanged.
 
-Not yet: complete algebraic feature frames, oblique circular sweeps and some generated radii, listed with refusal codes in [RECIPE.md section 7.14](docs/RECIPE.md#714-b-rep-feature-geometry-bugs); display meshes for elliptic cylinders and open conics; general cone/torus branch tracing; and sound answers for every coplanar, equal-diameter crossing or near-tangent case. Supported operations can still refuse or take seconds. The kernel does not implement the whole PRD, and ignored regressions remain visible.
+Not yet: complete algebraic feature frames, oblique circular sweeps and some generated radii, listed with refusal codes in [RECIPE.md section 7.14](docs/RECIPE.md#714-b-rep-feature-geometry-bugs); general cone/torus branch tracing; and sound answers for every coplanar, equal-diameter crossing or near-tangent case. Supported operations can still refuse or take seconds. The kernel does not implement the whole PRD, and ignored regressions remain visible.
 
 In design, not implemented: the tolerance and consistency core, whole-result geometric certificates, complete trimmed-face distance queries, non-planar first-hit extrusion limits, general fillets and corner continuation, chamfers, shell, offset, thicken, draft, sweep, loft, STEP import, field-only lattices and gyroids, and the SolidDraft application entry and end-to-end verification loop. Settled feature definitions in RECIPE.md are specifications, not shipped operations.
 
@@ -122,9 +122,16 @@ records the one polyline used by both incident faces, including its proven
 curve-to-polyline error. Face IDs belong to the
 input model, not to rebuild-stable recipe names.
 
-Planes, cylinders, cones, spheres, tori and elliptic cylinders use their exact definitions.
-Intersection edges use piece 4's certified traces. Surface bounds use Taylor's
-theorem and analytic second-derivative bounds over parameter triangles.
+Planes, circular and elliptic cylinders, cones, spheres and tori use their exact
+definitions. Intersection edges, including finite parabola and hyperbola arcs,
+use piece 4's certified traces. Surface bounds use Taylor's theorem and analytic
+second-derivative bounds over parameter triangles. An elliptic cylinder uses its
+semi-axis-scaled angular chart; its major semi-axis bounds positional curvature,
+and the semi-axis ratio bounds normal rotation.
+For an elliptic-cylinder strip bounded by two angularly monotone closed loops,
+the mesher joins the existing edge samples in angular order. Every strip triangle
+passes the same orientation, chord and requested-control checks. Other trims or
+controls needing interior vertices use the periodic triangulator.
 Bounds include replacement of boundary vertices and binary64 coordinate
 rounding. They describe chord error against the analytic face and edge
 definitions, not a proof that polygonal trims equal the exact curved region.

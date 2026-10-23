@@ -14,6 +14,7 @@ mod chart;
 mod controls;
 mod edges;
 mod evaluate;
+mod elliptic;
 mod planar;
 mod triangulate;
 

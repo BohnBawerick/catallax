@@ -777,6 +777,18 @@ pub(crate) fn build(
                 |e| Refusal::new(e.code, format!("face {}: {}", face.index(), e.detail)),
             )?;
         } else {
+            if matches!(charts[&face].surface, Surface::EllipticCylinder(_))
+                && crate::elliptic::build(
+                    model,
+                    face,
+                    &charts[&face],
+                    &mut boundaries,
+                    options,
+                    dec,
+                )?
+            {
+                continue;
+            }
             face_mesh(model, face, &charts[&face], &mut boundaries, options, dec)?;
         }
     }

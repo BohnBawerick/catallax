@@ -26,7 +26,6 @@ fn normal(chart: &Chart, uv: Uv, dec: &Decider) -> Result<[Ball; 3], Refusal> {
         Surface::EllipticCylinder(s) => (&s.axis, &s.major_dir),
         _ => return Err(failure("surface has no normal certificate")),
     };
-    let axis_unit = unit(axis, dec)?;
     let first = unit(reference, dec)?;
     let second = unit(&axis.cross(reference), dec)?;
     let tau = &Ball::pi_checked(BITS, dec)? * &Ball::from_rational(&Rational::from_i64(2), BITS);
@@ -34,22 +33,27 @@ fn normal(chart: &Chart, uv: Uv, dec: &Decider) -> Result<[Ball; 3], Refusal> {
     let u = angle(0);
     let cosine = u.cos();
     let sine = u.sin();
+    if let Surface::EllipticCylinder(c) = &chart.surface {
+        let major = dec.enclose_at(&c.major_sq.sqrt(), BITS)?;
+        let minor = dec.enclose_at(&c.minor_sq.sqrt(), BITS)?;
+        let x = &minor * &cosine;
+        let y = &major * &sine;
+        let norm = (&x * &x + &y * &y)
+            .sqrt()
+            .ok_or_else(|| failure("ellipse normal exceeds certificate precision"))?;
+        if norm.lo() <= Rational::zero() {
+            return Err(failure("ellipse normal exceeds certificate precision"));
+        }
+        return Ok(std::array::from_fn(|i| {
+            (&first[i] * &x + &second[i] * &y)
+                .checked_div(&norm)
+                .unwrap()
+        }));
+    }
+    let axis_unit = unit(axis, dec)?;
     let radial: [Ball; 3] = std::array::from_fn(|i| &(&first[i] * &cosine) + &(&second[i] * &sine));
     match &chart.surface {
         Surface::Cylinder(_) => Ok(radial),
-        Surface::EllipticCylinder(s) => {
-            let major = dec.enclose_at(&s.major_sq.sqrt(), BITS)?;
-            let minor = dec.enclose_at(&s.minor_sq.sqrt(), BITS)?;
-            let x = cosine.checked_div(&major).unwrap();
-            let y = sine.checked_div(&minor).unwrap();
-            let norm = (&x.square() + &y.square()).sqrt().unwrap();
-            let values = std::array::from_fn(|i| {
-                (&(&first[i] * &x) + &(&second[i] * &y))
-                    .checked_div(&norm)
-                    .unwrap()
-            });
-            Ok(values)
-        }
         Surface::Cone(c) => {
             let slope = dec.enclose_at(&c.slope, BITS)?;
             let norm = dec.enclose_at(
@@ -169,11 +173,10 @@ pub(crate) fn quality(
         let parameter_span = match &chart.surface {
             Surface::Plane(_) => Rational::zero(),
             Surface::Cylinder(_) | Surface::Cone(_) => spans[0].clone(),
+            // The ellipse normal angle has derivative ab/(b² cos² u + a² sin² u),
+            // bounded by a/b for a >= b > 0.
+            Surface::EllipticCylinder(_) => &spans[0] * &chart.normal_scale,
             Surface::Sphere(_) | Surface::Torus(_) => &spans[0] + &spans[1],
-            Surface::EllipticCylinder(s) => {
-                let ratio = (&s.major_sq / &s.minor_sq).sqrt();
-                &spans[0] * &dec.enclose_at(&ratio, BITS)?.hi()
-            }
             _ => return Err(failure("surface has no normal variation certificate")),
         };
         // Each angular parameter rotates a unit normal. The spherical triangle

@@ -26,8 +26,8 @@ Add cross-kernel fixtures for 45-degree revolve, extrusion along `[1,0,1]`, obli
 | `Plan::transformed` | Compose a validated exact rigid pose into supports, constraints, metric placements and face records using the caller's decider. |
 | `Plan::prepare_distances` | Prepare reusable compact analytic chart covers from recipe bounds and trim predicates. No B-rep is built. |
 | `distance::Prepared::{point_to_face, face_to_face, point_to_boundary}` | Outward-rounded minimum-distance bounds with exact admitted witnesses, an explicit convergence flag and deterministic refinement limits. |
-| `Value::TrueDistance` | Enclosure of true signed Euclidean distance to a primitive boundary. Negative inside. |
-| `Value::Residual` | Enclosure of a sweep support residual or min/max Boolean expression. It is not Euclidean distance. |
+| `Value::TrueDistance` | Enclosure of true signed Euclidean distance to a primitive or analytic draft boundary, including certified unions of retained components. Negative inside. |
+| `Value::Residual` | Enclosure of a sweep support residual or a min/max Boolean expression without a distance certificate. It is not Euclidean distance. |
 | `DistanceBound` | Bounds on unsigned geometric distance to the result boundary, separate from the field value. Infinity means unbounded, not a measured tolerance. |
 | `Location` | Proven interior, exterior or boundary; `Indeterminate` when an exact trim or the local Boolean proof cannot settle the query. |
 | `Direction` | Componentwise enclosure of a unique outward unit normal at a certified boundary point, `Ambiguous` at a sharp or unresolved configuration, `Undefined` elsewhere. |
@@ -48,9 +48,11 @@ For a capped round solid, reduce to `(rho, z)`, where `rho = sqrt(x²+y²)`. The
 
 Each primitive signed distance is 1-Lipschitz. Minimum, maximum and negation preserve that property, so the compiled Boolean residual `f` is also 1-Lipschitz. Every genuine boundary point `q` of the regularised result satisfies `f(q) = 0`, even though regularisation may remove other zeros. Consequently `abs(f(p)) <= norm(p-q)`. Taking the infimum gives a proven lower bound on distance to the result boundary.
 
-For an enclosed residual `[lo, hi]`, the lower distance bound is zero if the enclosure contains zero, otherwise `min(abs(lo), abs(hi))`. The Boolean upper distance bound is positive infinity. We do not compose primitive upper bounds through booleans: hidden or removed source faces make that unsound. At a certified boundary point the distance is exactly zero. Primitive queries return both finite distance bounds when representable as doubles. An overflowed endpoint remains an honest outward infinity.
+For an enclosed residual `[lo, hi]`, the lower distance bound is zero if the enclosure contains zero, otherwise `min(abs(lo), abs(hi))`. An uncertified Boolean expression has positive infinity as its upper distance bound. We do not compose primitive upper bounds through arbitrary booleans: hidden or removed source faces make that unsound. At a certified boundary point the distance is exactly zero. True-distance queries return both finite distance bounds when representable as doubles. An overflowed endpoint remains an honest outward infinity.
 
 These lower bounds alone support certified exclusion and filtering, not proximity or clearance below a threshold. Prepared trimmed-face queries supply finite upper bounds from certified points on surviving faces. A small residual still does not prove closeness, and neither API constructs offsets or certifies a 1 nm hand-off.
+
+Analytic draft cells measure distance to their surviving trimmed facets and edges, or to the axial meridian and cap disks. Internal plane-subdivision seams are not boundary geometry. Retained connected interior components have no hidden shared facet. Outside all components, the nearest boundary belongs to one of them. Inside one component, a segment to another component crosses the containing component's boundary first. Their signed minimum is therefore true Euclidean distance. The compiler records this certificate only for the separated components proved by draft, and preserves it through tape compaction and rigid copies. An arbitrary Boolean union gets no such certificate.
 
 ### Profile sweep certificates
 
@@ -80,7 +82,7 @@ The supported rational subset and `features.unsupported-*` refusals match [RECIP
 
 ### Patterns and mirrors
 
-Each copy composes an exact inverse isometry into the seed leaves' metric and trim evaluators. Supporting surfaces, constraints, gradients, display caches and names move together. A circular pattern uses `k * angle` about the authored axis, not a total angle or a rounded quaternion. Reflection uses the rational plane formula for normals of any nonzero length. Isometries preserve primitive distance formulas and sweep residual bounds; a union of copies still has Boolean residual semantics.
+Each copy composes an exact inverse isometry into the seed leaves' metric and trim evaluators. Supporting surfaces, constraints, gradients, display caches and names move together. A circular pattern uses `k * angle` about the authored axis, not a total angle or a rounded quaternion. Reflection uses the rational plane formula for normals of any nonzero length. Isometries preserve primitive and certified draft distance formulas and sweep residual bounds. A newly introduced union of pattern copies still has ordinary Boolean residual semantics.
 
 Copy zero keeps its origins. Later pattern copies and mirror images wrap each source origin with their creating step and `copy.instance`. Every copied subgraph reads a snapshot of its seed's face candidates, independent of evaluation-leaf sharing. The registry retains removed candidates, but selectable ownership follows the actual result body. Thus coincident copies keep all authored names, while a symmetric mirror without its original exposes only the image's wrapped names.
 

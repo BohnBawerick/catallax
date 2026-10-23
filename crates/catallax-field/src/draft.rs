@@ -3,6 +3,7 @@
 use crate::{Face, Instruction, Location, Plan, geometry, metric::PRECISION};
 use catallax_features::draft::{
     DraftDefinition,
+    arrangement::Polyhedron,
     cell::{PlanarCell, PlanePatch},
     round::RoundCell,
 };
@@ -15,6 +16,24 @@ use std::collections::BTreeSet;
 pub(crate) enum Cell {
     Planar(PlanarCell),
     Round(Box<RoundCell>),
+    Polyhedral(Box<Polyhedron>),
+}
+
+impl Cell {
+    fn contains_interior(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        match self {
+            Self::Planar(c) => c.contains_interior(p, dec),
+            Self::Round(c) => c.contains_interior(p, dec),
+            Self::Polyhedral(c) => c.contains_interior(p, dec),
+        }
+    }
+    fn anchored(&self, definition: &DraftDefinition, dec: &mut Decider) -> Result<bool, Refusal> {
+        match self {
+            Self::Planar(c) => c.anchored(&definition.neutral, dec),
+            Self::Round(c) => c.anchored(&definition.neutral, dec),
+            Self::Polyhedral(c) => c.anchored(&definition.neutral, dec),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -75,13 +94,22 @@ fn clamp(value: Real, dec: &mut Decider) -> Result<Real, Refusal> {
 impl Region {
     fn new(cell: Cell, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut edges = BTreeSet::new();
-        if let Cell::Planar(cell) = &cell {
-            for cycle in &cell.cycles {
+        let mut include = |cycles: &[Vec<usize>]| {
+            for cycle in cycles {
                 for i in 0..cycle.len() {
                     let (a, b) = (cycle[i], cycle[(i + 1) % cycle.len()]);
                     edges.insert((a.min(b), a.max(b)));
                 }
             }
+        };
+        match &cell {
+            Cell::Planar(c) => include(&c.cycles),
+            Cell::Polyhedral(c) => {
+                for face in &c.faces {
+                    include(&face.loops);
+                }
+            }
+            Cell::Round(_) => (),
         }
         let fast = Self::fast_geometry(&cell);
         let mut result = Self {
@@ -105,6 +133,14 @@ impl Region {
                     .map(|s| (point(&s.plane.origin), vector(&s.plane.normal)))
                     .collect(),
             },
+            Cell::Polyhedral(c) => Fast::Planar {
+                vertices: c.vertices.iter().map(point).collect(),
+                planes: c
+                    .planes
+                    .iter()
+                    .map(|p| (point(&p.origin), vector(&p.normal)))
+                    .collect(),
+            },
             Cell::Round(cell) => Fast::Round {
                 origin: point(&cell.origin),
                 axis: vector(&cell.axis),
@@ -120,6 +156,11 @@ impl Region {
                 cell.supports
                     .iter()
                     .map(|s| geometry::constraint(Surface::Plane(s.plane.clone()))),
+            ),
+            Cell::Polyhedral(c) => self.constraints.extend(
+                c.faces
+                    .iter()
+                    .map(|f| geometry::constraint(Surface::Plane(c.plane(f)))),
             ),
             Cell::Round(cell) => {
                 self.constraints
@@ -167,6 +208,11 @@ impl Region {
                     include(p, &Real::zero())?;
                 }
             }
+            Cell::Polyhedral(c) => {
+                for p in &c.vertices {
+                    include(p, &Real::zero())?;
+                }
+            }
             Cell::Round(cell) => {
                 for i in 0..2 {
                     include(&cell.centre(i), &cell.radii[i])?;
@@ -201,6 +247,27 @@ impl Region {
                     s.plane = p;
                 }
             }
+            Cell::Polyhedral(c) => {
+                for point in &mut c.vertices {
+                    *point = map.apply_point(point);
+                }
+                for plane in &mut c.planes {
+                    let Surface::Plane(p) = map.surface(&Surface::Plane(plane.clone())) else {
+                        unreachable!()
+                    };
+                    *plane = p;
+                }
+                for term in &mut c.terms {
+                    term.witness = map.apply_point(&term.witness);
+                }
+                if map.reversing() {
+                    for face in &mut c.faces {
+                        for cycle in face.loops.iter_mut().chain(&mut face.tiles) {
+                            cycle.reverse();
+                        }
+                    }
+                }
+            }
             Cell::Round(cell) => {
                 cell.origin = map.apply_point(&cell.origin);
                 cell.axis = map.apply_vector(&cell.axis);
@@ -227,6 +294,20 @@ impl Region {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
+        if let Cell::Polyhedral(c) = &self.cell {
+            let p = Point3::new(
+                p[0].clone().into(),
+                p[1].clone().into(),
+                p[2].clone().into(),
+            );
+            return Ok(if !c.contains(&p, None, dec)? {
+                Location::Outside
+            } else if c.on_boundary(&p, None, dec)? {
+                Location::Boundary
+            } else {
+                Location::Inside
+            });
+        }
         let mut boundary = false;
         for constraint in &self.constraints {
             match crate::polynomial_sign(&constraint.polynomial, p, dec)? {
@@ -295,6 +376,34 @@ impl Region {
                     minimum(&mut best, p.minus(&foot).norm_squared(), dec)?;
                 }
             }
+            Cell::Polyhedral(c) => {
+                for face in &c.faces {
+                    let plane = &c.planes[face.support];
+                    let signed = p.minus(&plane.origin).dot(&plane.normal);
+                    let projected = p.plus(
+                        &plane
+                            .normal
+                            .scaled(&(-&signed / plane.normal.norm_squared())),
+                    );
+                    if c.on_face(face, &projected, None, dec)? {
+                        minimum(
+                            &mut best,
+                            signed.square() / plane.normal.norm_squared(),
+                            dec,
+                        )?;
+                    }
+                }
+                for (a, b) in &self.edges {
+                    let a = &c.vertices[*a];
+                    let direction = c.vertices[*b].minus(a);
+                    let t = clamp(p.minus(a).dot(&direction) / direction.norm_squared(), dec)?;
+                    minimum(
+                        &mut best,
+                        p.minus(&a.plus(&direction.scaled(&t))).norm_squared(),
+                        dec,
+                    )?;
+                }
+            }
             Cell::Round(cell) => {
                 let d = p.minus(&cell.origin);
                 let h = d.dot(&cell.axis);
@@ -357,6 +466,43 @@ impl Region {
                 }
                 inside
             }
+            (Cell::Polyhedral(c), Fast::Planar { vertices, planes }) => {
+                for face in &c.faces {
+                    let (origin, normal) = planes[face.support];
+                    let value = dot(sub(p, origin), normal);
+                    let norm = dot(normal, normal);
+                    let foot = std::array::from_fn(|i| p[i] - normal[i] * (value / norm));
+                    let inside = face.tiles.iter().any(|tile| {
+                        tile.iter().enumerate().all(|(i, a)| {
+                            let edge = sub(vertices[tile[(i + 1) % tile.len()]], vertices[*a]);
+                            let d = sub(foot, vertices[*a]);
+                            let cross = [
+                                edge[1] * d[2] - edge[2] * d[1],
+                                edge[2] * d[0] - edge[0] * d[2],
+                                edge[0] * d[1] - edge[1] * d[0],
+                            ];
+                            dot(cross, normal) * if face.same_sense { 1.0 } else { -1.0 } >= 0.0
+                        })
+                    });
+                    if inside {
+                        best = best.min(value * value / norm);
+                    }
+                }
+                for (a, b) in &self.edges {
+                    let direction = sub(vertices[*b], vertices[*a]);
+                    let t = (dot(sub(p, vertices[*a]), direction) / dot(direction, direction))
+                        .clamp(0.0, 1.0);
+                    let delta =
+                        std::array::from_fn(|i| p[i] - (vertices[*a][i] + t * direction[i]));
+                    best = best.min(dot(delta, delta));
+                }
+                c.terms.iter().any(|term| {
+                    term.sides.iter().all(|(i, same)| {
+                        let (o, n) = planes[*i];
+                        dot(sub(p, o), n) * if *same { 1.0 } else { -1.0 } <= 0.0
+                    })
+                })
+            }
             (
                 Cell::Round(cell),
                 Fast::Round {
@@ -392,48 +538,70 @@ impl Region {
 }
 
 impl Plan {
-    pub(crate) fn draft(
-        &mut self,
-        source: (usize, &[usize]),
-        refs: &[FaceRef],
+    /// Returns distinct connected material interiors, not a convex decomposition.
+    fn draft_cells(
+        &self,
+        leaf: usize,
+        source_faces: &[usize],
+        selected: &mut BTreeSet<usize>,
         definition: &DraftDefinition,
-        keep_regions: Option<&[catallax_recipe::Point3]>,
-        step: &StepId,
         dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
-        let (source, source_faces) = source;
-        let Instruction::Leaf(leaf) = self.instructions[source] else {
-            if source == 0 && refs.is_empty() {
-                return Ok(0);
+    ) -> Result<Vec<Cell>, Refusal> {
+        let planar = source_faces
+            .iter()
+            .all(|f| matches!(self.faces[*f].surface, Surface::Plane(_)));
+        if planar {
+            let convex = match self.leaves[leaf].certify_planar_convexity(dec) {
+                Ok(()) => true,
+                Err(e) if e.code == "draft.unsupported-arrangement" => false,
+                Err(e) => return Err(e),
+            };
+            if !convex {
+                let origins: Vec<_> = source_faces
+                    .iter()
+                    .map(|f| &self.faces[*f].origin)
+                    .collect();
+                let skin = match &self.leaves[leaf] {
+                    geometry::Leaf::Feature(f) => f.planar_skin(&origins, dec)?,
+                    geometry::Leaf::Draft(region) => match &region.cell {
+                        Cell::Polyhedral(c) => c.skin(),
+                        _ => {
+                            return Err(Refusal::new(
+                                "draft.unsupported-arrangement",
+                                "source has no planar boundary definition",
+                            ));
+                        }
+                    },
+                    _ => {
+                        return Err(Refusal::new(
+                            "draft.unsupported-arrangement",
+                            "source has no planar boundary definition",
+                        ));
+                    }
+                };
+                let mut patches = BTreeSet::new();
+                for (i, patch) in skin.patches.iter().enumerate() {
+                    if selected
+                        .iter()
+                        .any(|f| patch.origins.contains(&self.faces[*f].origin))
+                    {
+                        patches.insert(i);
+                        for f in source_faces {
+                            if patch.origins.contains(&self.faces[*f].origin) {
+                                selected.insert(*f);
+                            }
+                        }
+                    }
+                }
+                return Ok(skin
+                    .draft(&patches, definition, dec)?
+                    .into_iter()
+                    .map(|c| Cell::Polyhedral(Box::new(c)))
+                    .collect());
             }
-            return Err(Refusal::new(
-                "draft.unsupported-arrangement",
-                "field draft needs an oriented multi-cell arrangement for Boolean inputs",
-            ));
-        };
-        let mut selected = BTreeSet::new();
-        for reference in refs {
-            let matches: Vec<_> = source_faces
-                .iter()
-                .copied()
-                .filter(|f| reference.face.matches(&self.faces[*f].origin))
-                .collect();
-            if matches.is_empty() {
-                return Err(Refusal::new(
-                    "draft.lost-face",
-                    format!("no input face resolves {reference:?}"),
-                ));
-            }
-            if !reference.touching.is_empty() || reference.near.is_some() {
-                return Err(Refusal::new(
-                    "draft.unsupported-reference",
-                    "filtered field draft references need exact adjacency and trimmed-face distances",
-                ));
-            }
-            selected.extend(matches);
         }
-        // A convex leaf can publish several origins for one merged support,
-        // such as adjacent collinear sketch segments. Replace the whole patch.
+        // A convex carrier has only one physical patch. Its aliases all move
+        // together; coplanar disconnected patches took the skin path above.
         for face in source_faces {
             if selected.iter().any(|s| {
                 self.faces[*face]
@@ -454,7 +622,7 @@ impl Plan {
                 if side == Sign::Zero {
                     return Err(Refusal::new(
                         "draft.unsupported-arrangement",
-                        "a source support passes through the proposed interior witness",
+                        "a source support passes through its interior witness",
                     ));
                 }
                 if side == Sign::Positive {
@@ -462,9 +630,7 @@ impl Plan {
                 }
             }
             if selected.contains(f) {
-                // The plane above is already outward oriented.
-                let replacement = definition.support(&surface, true, dec)?;
-                surface = replacement.surface;
+                surface = definition.support(&surface, true, dec)?.surface;
             }
             match surface {
                 Surface::Plane(plane) => planes.push(PlanePatch {
@@ -472,8 +638,7 @@ impl Plan {
                     origins: vec![face.origin.clone()],
                 }),
                 Surface::Cylinder(_) | Surface::Cone(_) => {
-                    let original = &face.surface;
-                    let Surface::Cylinder(c) = original else {
+                    let Surface::Cylinder(c) = &face.surface else {
                         return Err(Refusal::new(
                             "draft.unsupported-surface",
                             "selected field support is not an axial cylinder",
@@ -482,7 +647,7 @@ impl Plan {
                     if !selected.contains(f) || cylinder.is_some() {
                         return Err(Refusal::new(
                             "draft.unsupported-arrangement",
-                            "mixed curved support arrangements need additional cells",
+                            "mixed curved supports need oriented curved cells",
                         ));
                     }
                     cylinder = Some((c.clone(), vec![face.origin.clone()]));
@@ -490,24 +655,27 @@ impl Plan {
                 _ => {
                     return Err(Refusal::new(
                         "draft.unsupported-arrangement",
-                        "field draft supports require analytic oriented cells",
+                        "field draft requires analytic oriented cells",
                     ));
                 }
             }
         }
         let cell = if let Some((c, origins)) = cylinder {
-            let caps: Vec<_> = planes.into_iter().map(|p| (p.plane, p.origins)).collect();
-            let caps = caps.try_into().map_err(|_| {
-                Refusal::new(
-                    "draft.unsupported-round-cap",
-                    "axial field draft needs two complete cap planes",
-                )
-            })?;
+            let caps = planes
+                .into_iter()
+                .map(|p| (p.plane, p.origins))
+                .collect::<Vec<_>>()
+                .try_into()
+                .map_err(|_| {
+                    Refusal::new(
+                        "draft.unsupported-round-cap",
+                        "axial field draft needs two complete cap planes",
+                    )
+                })?;
             Cell::Round(Box::new(RoundCell::new(
                 &c, origins, caps, definition, dec,
             )?))
         } else {
-            self.leaves[leaf].certify_planar_convexity(dec)?;
             Cell::Planar(PlanarCell::new(planes, dec)?.ok_or_else(|| {
                 Refusal::new(
                     "draft.reversed-solid",
@@ -515,45 +683,118 @@ impl Plan {
                 )
             })?)
         };
-        let retained = if let Some(points) = keep_regions {
+        Ok(vec![cell])
+    }
+
+    pub(crate) fn draft(
+        &mut self,
+        source: (usize, &[usize]),
+        refs: &[FaceRef],
+        definition: &DraftDefinition,
+        keep_regions: Option<&[catallax_recipe::Point3]>,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let (source, source_faces) = source;
+        let Instruction::Leaf(leaf) = self.instructions[source] else {
+            if source == 0 && refs.is_empty() {
+                return Ok(0);
+            }
+            return Err(Refusal::new(
+                "draft.unsupported-arrangement",
+                "field draft needs the boundary of its Boolean input",
+            ));
+        };
+        let mut selected = BTreeSet::new();
+        for reference in refs {
+            let matches: Vec<_> = source_faces
+                .iter()
+                .copied()
+                .filter(|f| reference.face.matches(&self.faces[*f].origin))
+                .collect();
+            if matches.is_empty() {
+                return Err(Refusal::new(
+                    "draft.lost-face",
+                    format!("no input face resolves {reference:?}"),
+                ));
+            }
+            if !reference.touching.is_empty() || reference.near.is_some() {
+                return Err(Refusal::new(
+                    "draft.unsupported-reference",
+                    "filtered field references need exact patch adjacency and distance",
+                ));
+            }
+            selected.extend(matches);
+        }
+        let components = self.draft_cells(leaf, source_faces, &mut selected, definition, dec)?;
+        let mut retained = vec![false; components.len()];
+        if let Some(points) = keep_regions {
             for p in points {
                 let [x, y, z] = p.0.each_ref().map(|n| n.value().clone().into());
-                let p = Point3::new(x, y, z);
-                let inside = match &cell {
-                    Cell::Planar(c) => c.contains_interior(&p, dec)?,
-                    Cell::Round(c) => c.contains_interior(&p, dec)?,
-                };
-                if !inside {
+                let point = Point3::new(x, y, z);
+                let mut found = false;
+                for (i, cell) in components.iter().enumerate() {
+                    if cell.contains_interior(&point, dec)? {
+                        retained[i] = true;
+                        found = true;
+                    }
+                }
+                if !found {
                     return Err(Refusal::new(
                         "draft.invalid-keep-region",
                         "saved region point is on a boundary or outside all candidate material",
                     ));
                 }
             }
-            !points.is_empty()
         } else {
-            match &cell {
-                Cell::Planar(c) => c.anchored(&definition.neutral, dec)?,
-                Cell::Round(c) => c.anchored(&definition.neutral, dec)?,
+            for (i, cell) in components.iter().enumerate() {
+                retained[i] = cell.anchored(definition, dec)?;
             }
-        };
+        }
         let mut surviving = BTreeSet::new();
-        if retained {
+        let mut result = 0;
+        for (cell, keep) in components.into_iter().zip(retained) {
+            if !keep {
+                continue;
+            }
+            let mut faces = Vec::<Face>::new();
+            let mut add = |surface: Surface, origins: &[Origin]| -> Result<(), Refusal> {
+                for origin in origins {
+                    faces.push(geometry::face(surface.clone(), origin.clone(), dec)?);
+                }
+                Ok(())
+            };
             match &cell {
-                Cell::Planar(cell) => {
-                    for (support, cycle) in cell.supports.iter().zip(&cell.cycles) {
+                Cell::Planar(c) => {
+                    for (s, cycle) in c.supports.iter().zip(&c.cycles) {
                         if !cycle.is_empty() {
-                            surviving.extend(support.origins.iter().cloned());
+                            add(Surface::Plane(s.plane.clone()), &s.origins)?;
                         }
                     }
                 }
-                Cell::Round(cell) => {
-                    surviving.extend(cell.origins.iter().cloned());
-                    for (_, origins) in cell.caps.iter().flatten() {
-                        surviving.extend(origins.iter().cloned());
+                Cell::Round(c) => {
+                    add(c.surface.clone(), &c.origins)?;
+                    for (p, origins) in c.caps.iter().flatten() {
+                        add(Surface::Plane(p.clone()), origins)?;
+                    }
+                }
+                Cell::Polyhedral(c) => {
+                    for face in &c.faces {
+                        add(Surface::Plane(c.plane(face)), &face.origins)?;
                     }
                 }
             }
+            surviving.extend(faces.iter().map(|f| f.origin.clone()));
+            let region = Region::new(cell, dec)?;
+            let register = self.leaf(geometry::Leaf::Draft(region), faces, dec)?;
+            result = if result == 0 {
+                register
+            } else {
+                let union =
+                    self.boolean(catallax_recipe::BooleanKind::Union, result, register, dec)?;
+                self.separated_unions.insert(union);
+                union
+            };
         }
         let by: Vec<_> = selected
             .iter()
@@ -561,15 +802,13 @@ impl Plan {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let mut removed: Vec<_> = source_faces
+        let removed: BTreeSet<_> = source_faces
             .iter()
             .filter_map(|f| {
                 let origin = &self.faces[*f].origin;
                 (!surviving.contains(origin)).then(|| vec![origin.clone()])
             })
             .collect();
-        removed.sort();
-        removed.dedup();
         for source in removed {
             self.consumed.push(catallax_features::ConsumedFace {
                 step: step.clone(),
@@ -577,32 +816,6 @@ impl Plan {
                 by: by.clone(),
             });
         }
-        if !retained {
-            return Ok(0);
-        }
-        let mut faces = Vec::<Face>::new();
-        let mut add = |surface: Surface, origins: &[Origin]| -> Result<(), Refusal> {
-            for origin in origins {
-                faces.push(geometry::face(surface.clone(), origin.clone(), dec)?);
-            }
-            Ok(())
-        };
-        match &cell {
-            Cell::Planar(cell) => {
-                for (s, cycle) in cell.supports.iter().zip(&cell.cycles) {
-                    if !cycle.is_empty() {
-                        add(Surface::Plane(s.plane.clone()), &s.origins)?;
-                    }
-                }
-            }
-            Cell::Round(cell) => {
-                add(cell.surface.clone(), &cell.origins)?;
-                for (p, origins) in cell.caps.iter().flatten() {
-                    add(Surface::Plane(p.clone()), origins)?;
-                }
-            }
-        }
-        let region = Region::new(cell, dec)?;
-        self.leaf(geometry::Leaf::Draft(region), faces, dec)
+        Ok(result)
     }
 }

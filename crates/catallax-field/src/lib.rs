@@ -27,7 +27,7 @@ mod profile;
 mod samples;
 mod support;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, RealPoly, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Operation, Origin, Recipe};
@@ -203,6 +203,9 @@ pub struct Plan {
     // the generated feature role, independently of the public stock name.
     definition_roles: BTreeMap<usize, catallax_recipe::Role>,
     consumed: Vec<catallax_features::ConsumedFace>,
+    // Certified unions of distinct connected interior components, with no
+    // hidden shared facet. Their signed minimum is a true Euclidean distance.
+    separated_unions: BTreeSet<usize>,
 }
 
 impl Plan {
@@ -233,6 +236,7 @@ impl Plan {
             leaf_registers: vec![],
             definition_roles: BTreeMap::new(),
             consumed: Vec::new(),
+            separated_unions: BTreeSet::new(),
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
@@ -769,6 +773,9 @@ impl Plan {
                     self.leaf(leaf, faces, dec)?
                 }
             };
+            if self.separated_unions.contains(&i) {
+                self.separated_unions.insert(remap[i]);
+            }
         }
         Ok(remap[source])
     }
@@ -837,6 +844,12 @@ impl Plan {
             };
             tape.push(instruction);
         }
+        self.separated_unions = self
+            .separated_unions
+            .iter()
+            .filter(|i| live[**i])
+            .map(|i| remap[*i])
+            .collect();
         self.root = remap[self.root];
         self.instructions = tape;
     }
@@ -897,7 +910,8 @@ impl Plan {
         }
         Ok(Approximate {
             value: storage.fast[self.root],
-            true_distance_formula: matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance()),
+            true_distance_formula: matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
+                || self.separated_unions.contains(&self.root),
         })
     }
 
@@ -957,7 +971,8 @@ impl Plan {
             storage.values.push(value);
             storage.locations.push(location);
         }
-        let primitive = matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance());
+        let true_distance = matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
+            || self.separated_unions.contains(&self.root);
         let mut location = storage.locations[self.root];
         storage.active.clear();
         for (id, face) in self.faces.iter().enumerate() {
@@ -987,14 +1002,14 @@ impl Plan {
         let absolute = unsigned(enclosure);
         let distance = if location == Location::Boundary {
             Interval::point(0.0).unwrap()
-        } else if primitive {
+        } else if true_distance {
             absolute
         } else {
             Interval::new(absolute.lo(), f64::INFINITY).unwrap()
         };
         Ok(Query {
             location,
-            value: if primitive {
+            value: if true_distance {
                 Value::TrueDistance(enclosure)
             } else {
                 Value::Residual(enclosure)

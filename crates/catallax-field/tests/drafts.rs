@@ -46,6 +46,168 @@ fn both(recipe: &Recipe, cases: &[([&str; 3], Location)]) {
     }
 }
 
+fn split_u(keep: Option<Json>) -> Recipe {
+    let vertices = [
+        (0, 0),
+        (8, 0),
+        (8, 8),
+        (6, 8),
+        (6, 1),
+        (2, 1),
+        (2, 8),
+        (0, 8),
+    ];
+    let edges:Vec<_>=(0..vertices.len()).map(|i| {
+        let to=vertices[(i+1)%vertices.len()];
+        json!({"kind":"line","id":if i==4 {"floor".to_owned()}else{format!("e{i}")},"to":[to.0.to_string(),to.1.to_string()]})
+    }).collect();
+    let steps = vec![
+        json!({"id":"profile","op":"sketch","plane":{"rotation":["1","1","0","0"],"translation":["0","0","0"]},"loops":[edges]}),
+        json!({"id":"base","op":"extrude","profile":"profile","distance":"2"}),
+    ];
+    let mut draft = operation("floor");
+    draft["pull"] = json!(["1", "0", "0"]);
+    draft["neutral"] = json!({"point":["0","0","0"],"normal":["1","0","0"]});
+    if let Some(keep) = keep {
+        draft["keep_regions"] = keep;
+    }
+    recipe(steps, draft)
+}
+
+#[test]
+fn neutral_retention_keeps_remote_material_connected_through_the_drafted_bridge() {
+    let mut document = serde_json::to_value(split_u(None)).unwrap();
+    document["steps"][2]["angle"] = json!("-45");
+    let recipe = Recipe::parse(&document.to_string()).unwrap();
+    both(
+        &recipe,
+        &[
+            (["7", "-1", "4"], Location::Inside),
+            (["4", "-1", "4"], Location::Inside),
+            (["4", "-1", "6"], Location::Outside),
+            (["4", "-1", "5"], Location::Boundary),
+        ],
+    );
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    assert_eq!(built.model.body(built.result).lumps.len(), 1);
+    let field = Plan::compile(&recipe).unwrap();
+    let q = field.proven(&point(["4", "-1", "6"]), &mut Workspace::default());
+    assert!(
+        matches!(q.value,Value::TrueDistance(interval) if interval.contains(0.5_f64.sqrt())),
+        "{q:?}"
+    );
+}
+
+#[test]
+fn swallowed_floor_separates_components_without_merging_coplanar_names() {
+    for (keep, left) in [(None, true), (Some(json!([["7", "-1", "4"]])), false)] {
+        let recipe = split_u(keep);
+        let (inside, outside, corner) = if left {
+            (["1", "-1", "4"], ["7", "-1", "4"], ["3", "-1", "-1"])
+        } else {
+            (["7", "-1", "4"], ["1", "-1", "4"], ["5", "-1", "-1"])
+        };
+        both(
+            &recipe,
+            &[
+                (inside, Location::Inside),
+                (outside, Location::Outside),
+                (["4", "-1", "1/2"], Location::Outside),
+            ],
+        );
+        let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+        assert_eq!(built.model.body(built.result).lumps.len(), 1);
+        assert_eq!(built.model.counts(built.result).faces, 6);
+        let names: Vec<_> = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .flat_map(|f| built.model.face_origins(f))
+            .collect();
+        let has = |id: &str| {
+            names
+                .iter()
+                .any(|o| matches!(&o.role,Role::Side{segment,..} if segment.to_string()==id))
+        };
+        assert_eq!(has("e6"), left);
+        assert_eq!(has("e2"), !left);
+        assert!(!has("floor"));
+        let field = Plan::compile(&recipe).unwrap();
+        for history in [&built.consumed[..], field.consumed_faces()] {
+            assert!(!history.iter().any(|r| {
+                r.source
+                    .iter()
+                    .any(|o| matches!(o.role, Role::Start | Role::End))
+            }));
+            assert!(history.iter().any(|r| r.source.iter().any(
+                |o| matches!(&o.role,Role::Side{segment,..} if segment.to_string()=="floor")
+            )));
+        }
+        let q = field.proven(&point(corner), &mut Workspace::default());
+        assert!(
+            matches!(q.value,Value::TrueDistance(interval) if interval.contains(2_f64.sqrt())),
+            "{q:?}"
+        );
+    }
+}
+
+#[test]
+fn retained_picks_accept_internal_subdivision_seams_and_deduplicate_components() {
+    let recipe = split_u(Some(json!([
+        ["1/2", "-1", "1/2"],
+        ["1", "-1", "4"],
+        ["7", "-1", "4"]
+    ])));
+    both(
+        &recipe,
+        &[
+            (["1/2", "-1", "1/2"], Location::Inside),
+            (["7", "-1", "4"], Location::Inside),
+            (["4", "-1", "1/2"], Location::Outside),
+            (["2", "-1", "1"], Location::Boundary),
+        ],
+    );
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    assert_eq!(built.model.body(built.result).lumps.len(), 2);
+    assert_eq!(built.model.counts(built.result).faces, 12);
+    let field = Plan::compile(&recipe).unwrap();
+    let q = field.proven(&point(["1/2", "-1", "1/2"]), &mut Workspace::default());
+    assert!(
+        matches!(q.value,Value::TrueDistance(interval) if interval.contains(-0.5)),
+        "{q:?}"
+    );
+}
+
+#[test]
+fn reflected_retained_components_preserve_trim_normals_and_distance_proofs() {
+    let mut document =
+        serde_json::to_value(split_u(Some(json!([["1", "-1", "4"], ["7", "-1", "4"]])))).unwrap();
+    document["steps"].as_array_mut().unwrap().push(json!({
+        "id":"reflected","op":"mirror","body":"drafted","keep_original":false,
+        "plane":{"point":["0","0","0"],"normal":["1","0","0"]}
+    }));
+    document["result"] = json!("reflected");
+    let recipe = Recipe::parse(&document.to_string()).unwrap();
+    both(
+        &recipe,
+        &[
+            (["-1/2", "-1", "1/2"], Location::Inside),
+            (["-7", "-1", "4"], Location::Inside),
+            (["-4", "-1", "1/2"], Location::Outside),
+            (["-2", "-1", "4"], Location::Boundary),
+        ],
+    );
+    let field = Plan::compile(&recipe).unwrap();
+    for (xyz, expected) in [(["-1/2", "-1", "1/2"], -0.5), (["-4", "-1", "1/2"], 2.0)] {
+        let q = field.proven(&point(xyz), &mut Workspace::default());
+        assert!(
+            matches!(q.value,Value::TrueDistance(interval) if interval.contains(expected)),
+            "{q:?}"
+        );
+        assert!(q.distance.millimetres.hi() - q.distance.millimetres.lo() <= 1e-9);
+    }
+}
+
 #[test]
 fn an_oblique_neutral_does_not_reverse_the_material_sense() {
     let mut steps = block();

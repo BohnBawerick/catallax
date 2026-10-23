@@ -8,6 +8,9 @@ use catallax_numbers::{
 };
 use catallax_shapes::{Cone, Plane, Point3, Surface, Vector3};
 
+/// Oriented multi-cell planar support arrangements and patch provenance.
+#[path = "draft_arrangement.rs"]
+pub mod arrangement;
 /// Exact bounded cells used by analytic support arrangements.
 #[path = "draft_cell.rs"]
 pub mod cell;

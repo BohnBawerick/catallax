@@ -712,6 +712,34 @@ impl Leaf {
         planes: &mut Vec<Vector3>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        if let Self::Draft(region) = self
+            && let crate::draft::Cell::Polyhedral(poly) = &region.cell
+        {
+            let point = Point3::new(
+                p[0].clone().into(),
+                p[1].clone().into(),
+                p[2].clone().into(),
+            );
+            let mut found = false;
+            for face in &poly.faces {
+                if !poly.on_face(face, &point, None, dec)? {
+                    continue;
+                }
+                let normal = poly.plane(face).normal;
+                let mut duplicate = false;
+                for existing in planes.iter() {
+                    if sign(&normal.cross(existing).norm_squared(), dec)? == Sign::Zero {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if !duplicate {
+                    planes.push(normal);
+                }
+                found = true;
+            }
+            return Ok(found);
+        }
         let constraints = self.constraints();
         let mut found = false;
         for constraint in constraints {
@@ -746,7 +774,24 @@ impl Leaf {
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
-            Self::Draft(a) => ray_constraints(&a.constraints, p, d, dec),
+            Self::Draft(a) => {
+                if let crate::draft::Cell::Polyhedral(poly) = &a.cell {
+                    let point = Point3::new(
+                        p[0].clone().into(),
+                        p[1].clone().into(),
+                        p[2].clone().into(),
+                    );
+                    Ok(if !poly.contains(&point, Some(d), dec)? {
+                        Location::Outside
+                    } else if poly.on_boundary(&point, Some(d), dec)? {
+                        Location::Boundary
+                    } else {
+                        Location::Inside
+                    })
+                } else {
+                    ray_constraints(&a.constraints, p, d, dec)
+                }
+            }
         }
     }
     pub fn on_face(
@@ -756,7 +801,31 @@ impl Leaf {
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
         match self {
-            Self::Primitive(_) | Self::Draft(_) => Ok(Some(true)),
+            Self::Primitive(_) => Ok(Some(true)),
+            Self::Draft(region) => {
+                if let crate::draft::Cell::Polyhedral(poly) = &region.cell {
+                    let point = Point3::new(
+                        p[0].clone().into(),
+                        p[1].clone().into(),
+                        p[2].clone().into(),
+                    );
+                    for face in &poly.faces {
+                        let matches = face.origins.iter().any(|o| {
+                            let mut source = &o.role;
+                            while let Role::Copy { of, .. } = source {
+                                source = &of.role;
+                            }
+                            source == role
+                        });
+                        if matches && poly.on_face(face, &point, None, dec)? {
+                            return Ok(Some(true));
+                        }
+                    }
+                    Ok(Some(false))
+                } else {
+                    Ok(Some(true))
+                }
+            }
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),
             Self::Cell(_) => Ok(Some(true)),
         }
@@ -796,6 +865,7 @@ impl Leaf {
                         .axis
                         .scaled(&((&cell.heights[0] + &cell.heights[1]) / Real::from_i64(2))),
                 ),
+                crate::draft::Cell::Polyhedral(poly) => poly.terms[0].witness.clone(),
             }),
         }
     }

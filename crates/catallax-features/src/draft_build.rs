@@ -2,6 +2,7 @@
 
 use crate::draft::{
     DraftDefinition,
+    arrangement::{Patch, Polyhedron, Skin},
     cell::{PlanarCell, PlanePatch},
     round::RoundCell,
     sign,
@@ -28,6 +29,7 @@ pub struct ConsumedFace {
 enum Cell {
     Planar(PlanarCell),
     Round(Box<RoundCell>),
+    Polyhedral(Box<Polyhedron>),
 }
 
 impl Cell {
@@ -35,6 +37,7 @@ impl Cell {
         match self {
             Self::Planar(cell) => cell.contains_interior(point, dec),
             Self::Round(cell) => cell.contains_interior(point, dec),
+            Self::Polyhedral(cell) => cell.contains_interior(point, dec),
         }
     }
 
@@ -42,6 +45,7 @@ impl Cell {
         match self {
             Self::Planar(cell) => cell.anchored(&definition.neutral, dec),
             Self::Round(cell) => cell.anchored(&definition.neutral, dec),
+            Self::Polyhedral(cell) => cell.anchored(&definition.neutral, dec),
         }
     }
 
@@ -60,6 +64,11 @@ impl Cell {
                 .chain(cell.caps.iter().flatten().flat_map(|(_, origins)| origins))
                 .cloned()
                 .collect(),
+            Self::Polyhedral(cell) => cell
+                .faces
+                .iter()
+                .flat_map(|f| f.origins.iter().cloned())
+                .collect(),
         }
     }
 
@@ -74,6 +83,12 @@ impl Cell {
         };
         match self {
             Self::Planar(cell) => cell
+                .vertices
+                .iter()
+                .try_fold(Rational::zero(), |bound, point| {
+                    Ok(bound.max(point_bound(point, dec)?))
+                }),
+            Self::Polyhedral(cell) => cell
                 .vertices
                 .iter()
                 .try_fold(Rational::zero(), |bound, point| {
@@ -96,6 +111,7 @@ impl Cell {
         match self {
             Self::Planar(cell) => assemble(model, cell),
             Self::Round(cell) => assemble_round(model, cell),
+            Self::Polyhedral(cell) => assemble_polyhedral(model, cell),
         }
     }
 }
@@ -273,37 +289,25 @@ fn planar(
     chosen: &BTreeSet<FaceId>,
     definition: &DraftDefinition,
     dec: &mut Decider,
-) -> Result<PlanarCell, Refusal> {
+) -> Result<Vec<Cell>, Refusal> {
     let mut original = Vec::with_capacity(faces.len());
-    let mut supports = Vec::with_capacity(faces.len());
     for face in faces {
         let f = model.face(*face);
-        let surface = model.geom().surface(f.surface);
-        let Surface::Plane(plane) = surface else {
+        let Surface::Plane(plane) = model.geom().surface(f.surface) else {
             return Err(Refusal::new(
                 "draft.unsupported-arrangement",
-                "this support arrangement requires curved cell construction",
+                "planar construction needs planar carriers",
             ));
         };
         let mut plane = plane.clone();
         if f.sense == Sense::Reversed {
             plane.normal = plane.normal.scaled(&Real::from_i64(-1));
         }
-        original.push(plane.clone());
-        if chosen.contains(face) {
-            let replacement = definition.support(surface, f.sense == Sense::Same, dec)?;
-            let Surface::Plane(replacement) = replacement.surface else {
-                unreachable!("plane draft remains planar")
-            };
-            plane = replacement;
-        }
-        supports.push(PlanePatch {
+        original.push(PlanePatch {
             plane,
             origins: model.face_origins(*face).to_vec(),
         });
     }
-    // Convexity is proved against the immutable input skin, not guessed from
-    // face normals or the new arrangement's successful closure.
     let mut vertices = BTreeSet::new();
     for face in faces {
         for lp in &model.face(*face).loops {
@@ -315,22 +319,159 @@ fn planar(
             }
         }
     }
-    for vertex in vertices {
-        let point = model.geom().position(model.vertex(vertex).point);
-        for plane in &original {
-            if sign(&point.minus(&plane.origin).dot(&plane.normal), dec)? == Sign::Positive {
-                return Err(Refusal::new(
-                    "draft.unsupported-arrangement",
-                    "nonconvex planar input requires a multi-cell support arrangement",
-                ));
+    let mut convex = true;
+    'convex: for vertex in &vertices {
+        let point = model.geom().position(model.vertex(*vertex).point);
+        for support in &original {
+            if sign(
+                &point
+                    .minus(&support.plane.origin)
+                    .dot(&support.plane.normal),
+                dec,
+            )? == Sign::Positive
+            {
+                convex = false;
+                break 'convex;
             }
         }
     }
-    PlanarCell::new(supports, dec)?.ok_or_else(|| {
-        Refusal::new(
-            "draft.reversed-solid",
-            "replaced boundary has no full-dimensional material cell",
-        )
+    if convex {
+        for (face, support) in faces.iter().zip(&mut original) {
+            if chosen.contains(face) {
+                let Surface::Plane(plane) = definition
+                    .support(&Surface::Plane(support.plane.clone()), true, dec)?
+                    .surface
+                else {
+                    unreachable!("plane draft remains planar")
+                };
+                support.plane = plane;
+            }
+        }
+        let cell = PlanarCell::new(original, dec)?.ok_or_else(|| {
+            Refusal::new(
+                "draft.reversed-solid",
+                "replaced boundary has no full-dimensional material cell",
+            )
+        })?;
+        return Ok(vec![Cell::Planar(cell)]);
+    }
+    let indices: BTreeMap<_, _> = vertices.iter().enumerate().map(|(i, v)| (*v, i)).collect();
+    let points = vertices
+        .iter()
+        .map(|v| model.geom().position(model.vertex(*v).point))
+        .collect();
+    let mut patches = Vec::with_capacity(faces.len());
+    for (face, support) in faces.iter().zip(original) {
+        let mut loops = Vec::new();
+        for lp in &model.face(*face).loops {
+            let Loop::Coedges(cs) = model.loop_(*lp) else {
+                return Err(Refusal::new(
+                    "draft.unsupported-arrangement",
+                    "planar skin requires finite straight wires",
+                ));
+            };
+            let mut cycle = Vec::with_capacity(cs.len());
+            for c in cs {
+                let coedge = model.coedge(*c);
+                let edge = model.edge(coedge.edge);
+                if !matches!(model.geom().curve(edge.curve), Curve::Line(_)) {
+                    return Err(Refusal::new(
+                        "draft.unsupported-arrangement",
+                        "planar skin requires line intersections",
+                    ));
+                }
+                let vertex = if coedge.sense == Sense::Same {
+                    edge.start
+                } else {
+                    edge.end
+                };
+                let Some(vertex) = vertex else {
+                    return Err(Refusal::new(
+                        "draft.nonclosing-boundary",
+                        "planar skin wire has no endpoint",
+                    ));
+                };
+                cycle.push(indices[&vertex]);
+            }
+            loops.push(cycle);
+        }
+        patches.push(Patch {
+            plane: support.plane,
+            origins: support.origins,
+            loops,
+        });
+    }
+    let selected = faces
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| chosen.contains(f).then_some(i))
+        .collect();
+    Skin {
+        vertices: points,
+        patches,
+    }
+    .draft(&selected, definition, dec)
+    .map(|cells| {
+        cells
+            .into_iter()
+            .map(|c| Cell::Polyhedral(Box::new(c)))
+            .collect()
+    })
+}
+
+fn assemble_polyhedral(model: &mut Model, cell: &Polyhedron) -> BodyId {
+    let vertices: Vec<_> = cell
+        .vertices
+        .iter()
+        .map(|point| {
+            let point = model
+                .geom_mut()
+                .add_point(PointDef::Explicit(point.clone()));
+            model.add_vertex(Vertex { point })
+        })
+        .collect();
+    let mut edges = BTreeMap::new();
+    let mut faces = Vec::new();
+    for face in &cell.faces {
+        let mut paths = Vec::new();
+        for cycle in &face.loops {
+            let mut path = Vec::with_capacity(cycle.len());
+            for i in 0..cycle.len() {
+                let (a, b) = (cycle[i], cycle[(i + 1) % cycle.len()]);
+                let pair = (a.min(b), a.max(b));
+                let edge = *edges.entry(pair).or_insert_with(|| {
+                    let curve = model.geom_mut().add_curve(Curve::Line(Line {
+                        origin: cell.vertices[pair.0].clone(),
+                        dir: cell.vertices[pair.1].minus(&cell.vertices[pair.0]),
+                    }));
+                    model.add_edge(Edge {
+                        curve,
+                        sense: Sense::Same,
+                        start: Some(vertices[pair.0]),
+                        end: Some(vertices[pair.1]),
+                    })
+                });
+                path.push((edge, if a < b { Sense::Same } else { Sense::Reversed }));
+            }
+            paths.push(path);
+        }
+        faces.push(crate::extrude::face(
+            model,
+            Surface::Plane(cell.plane(face)),
+            Sense::Same,
+            paths,
+            None,
+            face.origins.clone(),
+        ));
+    }
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: Default::default(),
     })
 }
 
@@ -400,35 +541,41 @@ pub(crate) fn build(
 ) -> Result<(BodyId, Vec<ConsumedFace>, Rational), Refusal> {
     let chosen = selected(model, body, refs)?;
     let input = model.body(body).clone();
-    let mut components = Vec::new();
-    for lump in &input.lumps {
-        let shells = &model.lump(*lump).shells;
-        if shells.len() != 1 {
-            return Err(Refusal::new(
-                "draft.unsupported-arrangement",
-                "multiple-shell draft needs explicit oriented void cells",
-            ));
-        }
-        let faces = model.shell(shells[0]).faces.clone();
-        let cell = if faces.iter().all(|f| {
+    let source_faces = model.faces_of_body(body);
+    let mut components = if !source_faces.is_empty()
+        && source_faces.iter().all(|f| {
             matches!(
                 model.geom().surface(model.face(*f).surface),
                 Surface::Plane(_)
             )
         }) {
-            Cell::Planar(planar(model, &faces, &chosen, definition, dec)?)
-        } else {
-            Cell::Round(Box::new(round(model, &faces, &chosen, definition, dec)?))
-        };
-        components.push((faces, cell));
+        planar(model, &source_faces, &chosen, definition, dec)?
+    } else {
+        Vec::new()
+    };
+    if components.is_empty() && !source_faces.is_empty() {
+        for lump in &input.lumps {
+            let shells = &model.lump(*lump).shells;
+            if shells.len() != 1 {
+                return Err(Refusal::new(
+                    "draft.unsupported-arrangement",
+                    "mixed curved shells require oriented curved cells",
+                ));
+            }
+            let faces = &model.shell(shells[0]).faces;
+            components.push(Cell::Round(Box::new(round(
+                model, faces, &chosen, definition, dec,
+            )?)));
+        }
     }
+    let needs_maximal = components.iter().any(|c| matches!(c, Cell::Polyhedral(_)));
     let mut keep = vec![false; components.len()];
     if let Some(points) = keep_regions {
         for point in points {
             let [x, y, z] = point.0.each_ref().map(|n| n.value().clone().into());
             let point = Point3::new(x, y, z);
             let mut found = false;
-            for (i, (_, cell)) in components.iter().enumerate() {
+            for (i, cell) in components.iter().enumerate() {
                 if cell.contains_interior(&point, dec)? {
                     keep[i] = true;
                     found = true;
@@ -442,7 +589,7 @@ pub(crate) fn build(
             }
         }
     } else {
-        for (i, (_, cell)) in components.iter().enumerate() {
+        for (i, cell) in components.iter().enumerate() {
             keep[i] = cell.anchored(definition, dec)?;
         }
     }
@@ -456,21 +603,10 @@ pub(crate) fn build(
         .into_iter()
         .collect();
     let mut radius = Rational::zero();
-    for ((faces, cell), keep) in components.into_iter().zip(keep) {
-        let surviving = if keep {
-            cell.origins()
-        } else {
-            BTreeSet::new()
-        };
-        for face in faces {
-            let source = model.face_origins(face);
-            if source.iter().all(|o| !surviving.contains(o)) {
-                consumed.push(ConsumedFace {
-                    step: step.clone(),
-                    source: source.to_vec(),
-                    by: by.clone(),
-                });
-            }
+    let mut surviving = BTreeSet::new();
+    for (cell, keep) in components.into_iter().zip(keep) {
+        if keep {
+            surviving.extend(cell.origins());
         }
         if !keep {
             continue;
@@ -479,12 +615,27 @@ pub(crate) fn build(
         let component = cell.assemble(model);
         result.lumps.extend_from_slice(&model.body(component).lumps);
     }
+    for face in source_faces {
+        let source = model.face_origins(face);
+        if source.iter().all(|o| !surviving.contains(o)) {
+            consumed.push(ConsumedFace {
+                step: step.clone(),
+                source: source.to_vec(),
+                by: by.clone(),
+            });
+        }
+    }
     result.kind = if result.lumps.is_empty() {
         BodyKind::Empty
     } else {
         BodyKind::Solid
     };
     let result = model.add_body(result);
+    let result = if needs_maximal {
+        catallax_boolean::make_maximal(model, result, dec)?.value
+    } else {
+        result
+    };
     let faults = model.check(result);
     if !faults.is_empty() {
         return Err(Refusal::new(

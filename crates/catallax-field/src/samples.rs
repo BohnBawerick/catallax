@@ -231,6 +231,40 @@ impl Region {
                     return Ok(true);
                 }
             }
+            Cell::Polyhedral(cell) => {
+                let mut matched = false;
+                for face in &cell.faces {
+                    if !has_role(&face.origins, role) {
+                        continue;
+                    }
+                    matched = true;
+                    for cycle in &face.tiles {
+                        let vertices = cycle
+                            .iter()
+                            .map(|i| native_point(&cell.vertices[*i], &mut dec))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let denominator = Rational::from_i64(i64::from(2 * divisions + 1));
+                        for triangle in 1..vertices.len() - 1 {
+                            let u = vertices[triangle].minus(&vertices[0]);
+                            let v = vertices[triangle + 1].minus(&vertices[0]);
+                            for i in 0..divisions {
+                                for j in 0..divisions - i {
+                                    let a = Rational::from_i64(i64::from(2 * i + 1))
+                                        / denominator.clone();
+                                    let b = Rational::from_i64(i64::from(2 * j + 1))
+                                        / denominator.clone();
+                                    if !visit(vertices[0].plus(&u.scaled(&a)).plus(&v.scaled(&b))) {
+                                        return Ok(false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if matched {
+                    return Ok(true);
+                }
+            }
             Cell::Round(cell) => {
                 let axis = native_vector(&cell.axis, &mut dec)?;
                 let reference = cell

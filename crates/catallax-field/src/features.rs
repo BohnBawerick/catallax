@@ -71,6 +71,144 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    /// Collects the finite planar sweep skin from field definitions, without
+    /// constructing or consulting B-rep topology.
+    pub(crate) fn planar_skin(
+        &self,
+        origins: &[&Origin],
+        dec: &mut Decider,
+    ) -> Result<catallax_features::draft::arrangement::Skin, Refusal> {
+        use catallax_features::draft::arrangement::{Patch, Skin};
+        let Sweep::Extrude {
+            vector,
+            through: false,
+        } = &self.sweep
+        else {
+            return Err(bad("draft.unsupported-arrangement"));
+        };
+        if self.fillet.is_some() || self.loops.iter().flatten().any(|e| e.circle.is_some()) {
+            return Err(bad("draft.unsupported-arrangement"));
+        }
+        fn source_role(origin: &Origin) -> &Role {
+            let mut role = &origin.role;
+            while let Role::Copy { of, .. } = role {
+                role = &of.role;
+            }
+            role
+        }
+        let named = |role: &Role| -> Vec<Origin> {
+            origins
+                .iter()
+                .filter(|o| source_role(o) == role)
+                .map(|o| (**o).clone())
+                .collect()
+        };
+        let placement = self.inverse.inverse();
+        let sweep = placement.apply_vector(&vector.to_real());
+        let mut vertices = Vec::new();
+        let mut patches = Vec::new();
+        let mut caps = Vec::new();
+        for (index, edges) in self.loops.iter().enumerate() {
+            let mut depth = 0;
+            for (j, other) in self.loops.iter().enumerate() {
+                if index != j
+                    && profile::loop_location(other, &profile::real(&edges[0].start), dec)?
+                        == Location::Inside
+                {
+                    depth += 1;
+                }
+            }
+            let area = edges.iter().fold(Rational::zero(), |sum, e| {
+                sum + profile::cross(&e.start, &e.end)
+            });
+            let desired = if depth % 2 == 0 {
+                Sign::Positive
+            } else {
+                Sign::Negative
+            };
+            let follows = (area.sign() == desired) == (vector.z.sign() == Sign::Positive);
+            let start = vertices.len();
+            for edge in edges {
+                vertices.push(placement.apply_point(&point(&edge.start).to_real()));
+            }
+            for edge in edges {
+                vertices.push(placement.apply_point(&point(&edge.start).plus(vector).to_real()));
+            }
+            let mut cap: Vec<_> = (start..start + edges.len()).collect();
+            if area.sign() != desired {
+                cap.reverse();
+            }
+            caps.push((depth, cap));
+            for (i, edge) in edges.iter().enumerate() {
+                let j = (i + 1) % edges.len();
+                let mut normal = point(&edge.end)
+                    .minus(&point(&edge.start))
+                    .cross(vector)
+                    .to_real();
+                if !follows {
+                    normal = normal.scaled(&Real::from_i64(-1));
+                }
+                let names=origins.iter().filter(|o|matches!(source_role(o),Role::Side{segment,..} if edge.ids.contains(segment))).map(|o|(**o).clone()).collect();
+                patches.push(Patch {
+                    plane: Plane {
+                        origin: vertices[start + i].clone(),
+                        normal: placement.apply_vector(&normal),
+                        ref_dir: sweep.clone(),
+                    },
+                    loops: vec![vec![
+                        start + i,
+                        start + j,
+                        start + edges.len() + j,
+                        start + edges.len() + i,
+                    ]],
+                    origins: names,
+                });
+            }
+        }
+        caps.sort_by_key(|(depth, _)| *depth);
+        let normal = placement.apply_vector(&Vector3::new(
+            Real::zero(),
+            Real::zero(),
+            Real::from_i64(if vector.z.sign() == Sign::Positive {
+                1
+            } else {
+                -1
+            }),
+        ));
+        let reference =
+            placement.apply_vector(&Vector3::new(Real::one(), Real::zero(), Real::zero()));
+        let mut start_loops = Vec::new();
+        let mut end_loops = Vec::new();
+        for (_, cycle) in caps {
+            let count = cycle.len();
+            end_loops.push(cycle.iter().map(|i| i + count).collect());
+            start_loops.push(cycle);
+        }
+        let origin = placement.apply_point(&Point3::origin());
+        patches.push(Patch {
+            plane: Plane {
+                origin: origin.clone(),
+                normal: normal.scaled(&Real::from_i64(-1)),
+                ref_dir: reference.clone(),
+            },
+            loops: start_loops,
+            origins: named(&Role::Start),
+        });
+        patches.push(Patch {
+            plane: Plane {
+                origin: origin.plus(&sweep),
+                normal,
+                ref_dir: reference,
+            },
+            loops: end_loops,
+            origins: named(&Role::End),
+        });
+        if patches.iter().any(|p| p.origins.is_empty()) {
+            return Err(bad("draft.missing-source-origin"));
+        }
+        Ok(Skin { vertices, patches })
+    }
+
     pub(crate) fn draft_witness(&self) -> Result<Point3, Refusal> {
         let Sweep::Extrude {
             vector,

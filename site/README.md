@@ -14,7 +14,7 @@ Open http://127.0.0.1:8873/ in Chromium. No package install or build step is nee
 
 ## Publication rules
 
-Keep Catallax's works-today list beside the shared sponsorship links. Name only capabilities on `main`, retain the not-yet line and label aspirations "in design". SolidDraft's section must distinguish its current SMLib backend from the planned Catallax-only cutover. Until the application repository opens, say "opening soon" and do not link to it.
+Keep Catallax's works-today list beside the shared sponsorship links. Name only capabilities on `main`, retain the not-yet line and label aspirations "in design". SolidDraft's section must distinguish its current SMLib backend from the planned Catallax-only cutover. [SolidDraft is public under MIT](https://github.com/BohnBawerick/soliddraft). It is not released for download yet; a release with the features is coming soon. For now it is research grade only.
 
 The SolidDraft image is real application output, not interface artwork. `media/soliddraft-bracket-a3.svg` is an unmodified copy of the committed CLI drawing fixture at the revision recorded in `evidence.json`. Its source exit test invokes `soliddraft draw bracket.json --template iso-a3` with a fixed `SOURCE_DATE_EPOCH` and compares the SVG byte for byte. It was not regenerated for the site and is not evidence of Catallax integration. Keep the backend caption, source revision and checksum when replacing it.
 

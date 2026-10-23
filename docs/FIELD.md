@@ -221,6 +221,17 @@ Each source leaf also supplies a conservative spatial box from its dimensions,
 profile and sweep. Cells outside every coactive source box are rejected before
 trim queries. These are defining bounds, not fitted boxes or sampled extents.
 
+Project these boxes onto a planar chart's two axes, or a cylinder chart's
+height axis, before subdivision. The hull of the coactive source projections
+still covers the entire named support domain. Every leaf also uses its own box
+to prove regional absence, including leaves unrelated to the candidate face.
+
+Chart coordinates are enclosed directly with outward binary64 interval
+arithmetic and cached rational-frame enclosures. Quarter-circle cosine and
+sine use their exact monotonicity on each parameter interval, including the
+sphere's `[-1,1]` latitude chart. An exact centre point is constructed only
+when a membership or boundary witness requires it.
+
 Circular coordinates use rational quarter-circle charts
 `((1-t²)/(1+t²), 2t/(1+t²))`. Their speed is at most 2 and their acceleration
 norm at most 8. Products give uniform first- and second-derivative bounds for
@@ -228,6 +239,33 @@ each supported surface. For a parameter rectangle with spans `du,dv`, linear
 triangle interpolation differs from its exact chart by at most
 `(Huu*du² + 2*Huv*du*dv + Hvv*dv²)/8`. Exact conversion residuals add the
 binary64 vertex-rounding error. These bounds cover whole triangles, not samples.
+
+Planar caps bounded by coaxial circular supports and parallel planes use
+four radial quarter-circle charts. A conservative source-box L1 radius covers
+their entire domain. A squared-radius cylinder may have a rational nonunit
+radial frame. For its squared norm `n` and L1 norm `s`, `n/s` is a positive
+lower metric bound and `s` is an upper bound. Exact rational norms replace
+both bounds when available. The parameter extent divides the source radius
+by the lower bound; physical chord bounds multiply by the upper bound.
+A constraint proved equal to a coaxial cylinder restricts
+to `A*r²+B`; exact radial endpoint signs classify its open cells, and rational
+roots become subdivision cuts. This equality is established from the complete
+support definitions, not fitted from samples.
+
+For a radial cell, the emitted triangles form the chord trapezoid of an
+annular sector, or a fan when the inner radius is zero. Every point of that
+trapezoid has the form `r*((1-s)*c(u0)+s*c(u1))` for an intermediate radius
+and angle fraction; the converse construction maps each sector point into the
+trapezoid. The quarter-circle acceleration bound therefore gives two-sided
+set distance at most `r_max*du²`, where `r_max` bounds the physical radius,
+including radial-frame scale. No radial subdivision is required merely
+to reduce this bound. This is a set-distance certificate, not an interpolation
+claim at matching chart parameters. Exact coordinate-rounding residuals are
+added as for other charts. Degenerate fan triangles are not published.
+
+Other sign-stable cells split according to curvature contributions rather
+than physical edge length, so straight cylinder generators need not subdivide
+with their curved direction. Unsettled trims retain witness-radius refinement.
 
 Outward polynomial ranges determine which leaf constraints can change sign
 over a chart cell. Identical supporting constraints remain exactly zero.
@@ -248,14 +286,67 @@ witness. Only boundary or unresolved registers need the field's exact
 infinitesimal ray predicates. Opposite proven interior/exterior rays establish
 a genuine boundary point and orient its normal. No metric calculation on
 unrelated leaves is needed to prove that boundary point.
+For an unresolved leaf, exact strict membership at the witness can likewise
+settle both infinitesimal directions without a polynomial ray expansion.
+This witness-local state is discarded at the next cell and never promoted to
+a regional trim or coverage proof.
+
+A leaf's proved location is cached with its open parameter rectangle.
+Descendants reuse it only when their open interiors lie inside that rectangle.
+This reuses interval proofs and sign-stable membership, never unproved point
+samples. Fixed traversal order makes this regional simplification independent
+of worker scheduling.
+
+On a planar chart, exact coincident support identities also define two open
+normal half-regions. When every other support of a leaf has a fixed nonzero
+sign on the open cell, its two infinitesimal material sides are constant there.
+Certify that pair with the exact ray predicate and cache it with the rectangle.
+The evaluation tape represents both side predicates as reduced ordered Boolean
+diagrams. Variable order is operand identity, then germ kind. Strict material
+states are constants; unresolved predicates are variables.
+
+An unresolved operand shares one variable across the two sides only when every
+support polynomial has an exact, nonzero restriction to the candidate plane.
+The complete affine pullback is computed in rational arithmetic. Its zero set
+has no open planar patch, so any remaining boundary there belongs to that
+operand's own carrier charts. A zero or unproved restriction retains separate
+germ variables; coincident membership is never equated without a proof.
+
+Union, intersection and subtraction combine canonical predicates, including
+negation for a cut. Equal canonical side expressions prove that this plane has
+no exposed open patch, even when the common material predicate varies over the
+cell. This prunes the patch without claiming that its entire region is inside
+or outside. Nodes and apply results are shared across neighbouring cells in a
+request-local arena. Construction and apply operations check the unchanged
+shared numeric work policy.
+
+Opposite constant side expressions prove a wholly exposed planar patch.
+Unequal unresolved expressions still require trim refinement or a certified
+witness; inequality alone is not an exposure proof.
+The chart already lies exactly on the common plane, so the split is by its
+two infinitesimal normal directions, not by a rounded spatial offset.
+Closed-inside membership alone is insufficient: an exterior cap also has
+`f = 0` on its exposed patch. No `sup(f) <= 0` result alone removes
+a patch. Shared cell edges retain the closure coverage described below.
+
+Display witnesses for rational extrusions of polygon loops and full circles
+use native rational projection, exact odd-loop membership, cap and segment
+tests. Their ray displacement uses the same all-support coefficient-dominance
+proof as the shared exact-real feature predicate. These caches borrow the
+defining loops and do not change field query APIs. Arcs, revolutions and
+nonrational placements retain the shared exact-real predicates.
 
 A plane constraint on a planar chart is affine. Its four exact corner values
 prove a strict sign on the open rectangle when they are weakly of one sign
 and not all zero. Zero endpoint pairs classify aligned edges exactly.
-On a cylindrical chart the same argument applies when at most one radial
-frame coefficient is nonzero, because that quarter-circle coordinate is
-monotone and height is affine. Other cases retain interval refinement.
+On cylindrical and radial cap charts, exact Bernstein signs of the angular
+derivative prove when the projected circular coordinate is monotone on a cell.
+Height or radial position is affine, so the same corner argument then applies.
+Cells spanning an unproved angular extremum retain interval refinement.
 No arbitrary near-zero value is treated as an aligned edge.
+Axis-aligned affine trim roots become exact chart cuts, rather than being
+approached indefinitely by midpoint subdivision. The same rule applies to
+axial plane trims of cylinders.
 
 Open cell interiors are disjoint. Their shared edges have no area, and the
 closure of an exposed open patch covers its limiting edge points without
@@ -264,10 +355,21 @@ its exposed two-dimensional support patches. Thus rejecting an absent open
 cell does not lose an isolated trim edge, and emitting the closed triangles
 does not double count area at an aligned cell edge.
 
-Unsettled trim cells shrink to less than half the requested tolerance in
-spatial L1 diameter. A certified surviving boundary point then bounds the
-whole displayed cell from the definition and covers every possible boundary
-point in that cell. A cell without such a witness may be omitted only when
+For an unsettled trim cell, enclose its distance from the exact chart centre
+by `R = sqrt(sum_i max(abs(lo_i-centre_i),abs(hi_i-centre_i))²)`, rounded
+outward. Refine until `R` is at most half the requested tolerance. When that
+centre is a certified surviving boundary point, publish it as a mesh vertex
+and triangulate the cell as a fan.
+
+Every true boundary point in the cell is within `R` of this mesh vertex.
+Conversely, every fan triangle lies in the convex hull of corners and centre,
+each within `R` of the true boundary witness. Convexity of Euclidean balls
+therefore bounds the whole displayed fan, not just its vertices. Vertex
+rounding adds its exact residual as before. Using this radius rather than
+the full cell diameter sharpens the proof without changing the requested
+tolerance or its half-tolerance rounding reserve.
+
+A cell without such a witness may be omitted only when
 an existing mesh vertex is proved within the requested tolerance of its
 entire spatial cover. Otherwise it is refined or refused. This also prevents
 an unseen small component from silently disappearing. The union of accepted

@@ -95,3 +95,19 @@ pub(crate) fn exhausted() -> bool {
 pub(crate) fn used() -> u64 {
     ACTIVE.with(|slot| slot.get().map_or(0, |state| state.used))
 }
+
+/// Remaining request allowance, when an operation scope is active.
+///
+/// Optional certificates use this to stop before they exhaust the caller's
+/// budget, leaving room for a complete fallback proof path.
+pub(crate) fn remaining() -> Option<u64> {
+    ACTIVE.with(|slot| {
+        slot.get().map(|state| {
+            if state.exhausted {
+                0
+            } else {
+                state.limit.saturating_sub(state.used)
+            }
+        })
+    })
+}

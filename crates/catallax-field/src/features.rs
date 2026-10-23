@@ -71,6 +71,65 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    pub(crate) fn draft_witness(&self) -> Result<Point3, Refusal> {
+        let Sweep::Extrude {
+            vector,
+            through: false,
+        } = &self.sweep
+        else {
+            return Err(bad("draft.unsupported-arrangement"));
+        };
+        let [edges] = self.loops.as_slice() else {
+            return Err(bad("draft.unsupported-arrangement"));
+        };
+        let centre = if let [edge] = edges.as_slice() {
+            edge.circle.as_ref().map(|(centre, _, _)| centre.clone())
+        } else {
+            None
+        };
+        let centre = centre.unwrap_or_else(|| {
+            let count = Rational::from_i64(edges.len() as i64);
+            std::array::from_fn(|i| {
+                edges
+                    .iter()
+                    .fold(Rational::zero(), |sum, edge| sum + edge.start[i].clone())
+                    / count.clone()
+            })
+        });
+        let half = Rational::from_ratio(1, 2).expect("nonzero denominator");
+        let local = point(&centre).plus(&vector.scaled(&half));
+        Ok(self.inverse.inverse().apply_point(&local.to_real()))
+    }
+
+    pub(crate) fn certify_planar_convexity(&self, _dec: &mut Decider) -> Result<(), Refusal> {
+        let Sweep::Extrude { through: false, .. } = self.sweep else {
+            return Err(bad("draft.unsupported-arrangement"));
+        };
+        let [edges] = self.loops.as_slice() else {
+            return Err(bad("draft.unsupported-arrangement"));
+        };
+        for edge in edges {
+            if edge.circle.is_some() {
+                return Err(bad("draft.unsupported-arrangement"));
+            }
+            let direction = [&edge.end[0] - &edge.start[0], &edge.end[1] - &edge.start[1]];
+            let mut side = Sign::Zero;
+            for other in edges {
+                let cross = &direction[0] * &(&other.start[1] - &edge.start[1])
+                    - &direction[1] * &(&other.start[0] - &edge.start[0]);
+                let sign = cross.sign();
+                if sign == Sign::Zero {
+                    continue;
+                }
+                if side != Sign::Zero && side != sign {
+                    return Err(bad("draft.unsupported-arrangement"));
+                }
+                side = sign;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
         let Sweep::Extrude { vector, through } = &self.sweep else {
             let radius = self.display_radius(dec)?.expect("finite revolve");

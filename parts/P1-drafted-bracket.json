@@ -1,0 +1,561 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P1 drafted bracket",
+  "description": "mm. Plate 60x40x5; flush flange 60x5x25 above z=5; boss r8 h10 at (30,25,5), bore r4. Four r2 bolts at x10/50,y12/32. Flange slot 20x6, rounded ends r3, centre z18. Thirteen cuts plus slot bridge. Right flange wall drafted inward 45 degrees about z=5 before joining the plate; full P1 cuts retained.",
+  "steps": [
+    {
+      "id": "plate-profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "60",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "60",
+              "40"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "0",
+              "40"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "plate",
+      "op": "extrude",
+      "profile": "plate-profile",
+      "distance": "5"
+    },
+    {
+      "id": "flange-profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "5"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "60",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "60",
+              "5"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "0",
+              "5"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "flange",
+      "op": "extrude",
+      "profile": "flange-profile",
+      "distance": "25"
+    },
+    {
+      "id": "flange-draft",
+      "op": "draft",
+      "body": "flange",
+      "faces": [
+        {
+          "face": {
+            "step": "flange",
+            "role": {
+              "side": {
+                "segment": "right"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "0",
+        "0",
+        "1"
+      ],
+      "neutral": {
+        "point": [
+          "0",
+          "0",
+          "5"
+        ],
+        "normal": [
+          "0",
+          "0",
+          "1"
+        ]
+      },
+      "angle": "45"
+    },
+    {
+      "id": "base",
+      "op": "boolean",
+      "kind": "union",
+      "target": "plate",
+      "tool": "flange-draft"
+    },
+    {
+      "id": "boss",
+      "op": "cylinder",
+      "radius": "8",
+      "height": "10",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "30",
+          "25",
+          "5"
+        ]
+      }
+    },
+    {
+      "id": "bossed",
+      "op": "boolean",
+      "kind": "union",
+      "target": "base",
+      "tool": "boss"
+    },
+    {
+      "id": "bore",
+      "op": "cylinder",
+      "radius": "4",
+      "height": "17",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "30",
+          "25",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "bored",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "bossed",
+      "tool": "bore"
+    },
+    {
+      "id": "bolt-0",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "10",
+          "12",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "bolt-cut-0",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "bored",
+      "tool": "bolt-0"
+    },
+    {
+      "id": "bolt-1",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "50",
+          "12",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "bolt-cut-1",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "bolt-cut-0",
+      "tool": "bolt-1"
+    },
+    {
+      "id": "bolt-2",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "10",
+          "32",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "bolt-cut-2",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "bolt-cut-1",
+      "tool": "bolt-2"
+    },
+    {
+      "id": "bolt-3",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "50",
+          "32",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "bolt-cut-3",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "bolt-cut-2",
+      "tool": "bolt-3"
+    },
+    {
+      "id": "slot-tool-0",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "23",
+          "6",
+          "18"
+        ]
+      }
+    },
+    {
+      "id": "slot-cut-0",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "bolt-cut-3",
+      "tool": "slot-tool-0"
+    },
+    {
+      "id": "slot-tool-1",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "25",
+          "6",
+          "18"
+        ]
+      }
+    },
+    {
+      "id": "slot-cut-1",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "slot-cut-0",
+      "tool": "slot-tool-1"
+    },
+    {
+      "id": "slot-tool-2",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "27",
+          "6",
+          "18"
+        ]
+      }
+    },
+    {
+      "id": "slot-cut-2",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "slot-cut-1",
+      "tool": "slot-tool-2"
+    },
+    {
+      "id": "slot-tool-3",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "29",
+          "6",
+          "18"
+        ]
+      }
+    },
+    {
+      "id": "slot-cut-3",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "slot-cut-2",
+      "tool": "slot-tool-3"
+    },
+    {
+      "id": "slot-tool-4",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "31",
+          "6",
+          "18"
+        ]
+      }
+    },
+    {
+      "id": "slot-cut-4",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "slot-cut-3",
+      "tool": "slot-tool-4"
+    },
+    {
+      "id": "slot-tool-5",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "33",
+          "6",
+          "18"
+        ]
+      }
+    },
+    {
+      "id": "slot-cut-5",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "slot-cut-4",
+      "tool": "slot-tool-5"
+    },
+    {
+      "id": "slot-tool-6",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "35",
+          "6",
+          "18"
+        ]
+      }
+    },
+    {
+      "id": "slot-cut-6",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "slot-cut-5",
+      "tool": "slot-tool-6"
+    },
+    {
+      "id": "slot-tool-7",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "7",
+      "pose": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "37",
+          "6",
+          "18"
+        ]
+      }
+    },
+    {
+      "id": "slot-cut-7",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "slot-cut-6",
+      "tool": "slot-tool-7"
+    },
+    {
+      "id": "slot-middle",
+      "op": "block",
+      "size": [
+        "14",
+        "7",
+        "6"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "23",
+          "-1",
+          "15"
+        ]
+      }
+    },
+    {
+      "id": "bracket",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "slot-cut-7",
+      "tool": "slot-middle"
+    }
+  ],
+  "result": "bracket"
+}

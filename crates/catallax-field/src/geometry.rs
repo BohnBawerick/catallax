@@ -484,8 +484,17 @@ pub(crate) fn ray_location(
     direction: &Vector3,
     dec: &mut Decider,
 ) -> Result<Location, Refusal> {
+    ray_constraints(&leaf.constraints, point, direction, dec)
+}
+
+pub(crate) fn ray_constraints(
+    constraints: &[Constraint],
+    point: &[Rational; 3],
+    direction: &Vector3,
+    dec: &mut Decider,
+) -> Result<Location, Refusal> {
     let mut boundary = false;
-    for poly in &leaf.constraints {
+    for poly in constraints {
         let value = if let (Terms::Rational(terms), Some(direction)) =
             (&poly.terms, direction.rational_components())
         {
@@ -553,6 +562,7 @@ pub(crate) enum Leaf {
     Primitive(Primitive),
     Feature(crate::features::Feature),
     Cell(Cell),
+    Draft(crate::draft::Region),
 }
 impl Leaf {
     pub(crate) fn constraints(&self) -> &[Constraint] {
@@ -560,23 +570,23 @@ impl Leaf {
             Self::Primitive(a) => &a.constraints,
             Self::Feature(a) => &a.constraints,
             Self::Cell(a) => &a.constraints,
+            Self::Draft(a) => &a.constraints,
         }
     }
 
     pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
-        if let Self::Cell(a) = self {
-            let Some(radius) = a.display_radius(dec)? else {
-                return Ok(None);
-            };
-            return Ok(Some(std::array::from_fn(|_| {
-                Ball::from_rational(&(-&radius), 128).hull(&Ball::from_rational(&radius, 128))
-            })));
-        }
-        let Self::Primitive(a) = self else {
-            let Self::Feature(a) = self else {
-                unreachable!()
-            };
-            return a.display_box(dec);
+        let a = match self {
+            Self::Primitive(a) => a,
+            Self::Feature(a) => return a.display_box(dec),
+            Self::Draft(a) => return a.display_box(dec).map(Some),
+            Self::Cell(a) => {
+                let Some(radius) = a.display_radius(dec)? else {
+                    return Ok(None);
+                };
+                return Ok(Some(std::array::from_fn(|_| {
+                    Ball::from_rational(&(-&radius), 128).hull(&Ball::from_rational(&radius, 128))
+                })));
+            }
         };
         let zero = Rational::zero();
         let bounds = match a.kind {
@@ -599,14 +609,11 @@ impl Leaf {
     }
 
     pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
-        if let Self::Cell(a) = self {
-            return a.display_radius(dec);
-        }
-        let Self::Primitive(a) = self else {
-            let Self::Feature(a) = self else {
-                unreachable!()
-            };
-            return a.display_radius(dec);
+        let a = match self {
+            Self::Primitive(a) => a,
+            Self::Feature(a) => return a.display_radius(dec),
+            Self::Draft(a) => return a.display_radius(dec).map(Some),
+            Self::Cell(a) => return a.display_radius(dec),
         };
         let local = match a.kind {
             Kind::Block | Kind::Round => a
@@ -659,16 +666,21 @@ impl Leaf {
             Self::Primitive(a) => a.transform(pose),
             Self::Feature(a) => a.transform(pose),
             Self::Cell(a) => a.transform(pose),
+            Self::Draft(a) => {
+                a.transform(pose);
+                Ok(())
+            }
         }
     }
     pub fn true_distance(&self) -> bool {
-        matches!(self, Self::Primitive(_))
+        matches!(self, Self::Primitive(_) | Self::Draft(_))
     }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         match self {
             Self::Primitive(a) => a.location(p, dec),
             Self::Feature(a) => a.location(p, dec),
             Self::Cell(a) => a.location(p, dec),
+            Self::Draft(a) => a.location(p, dec),
         }
     }
     pub fn proven_distance(
@@ -681,6 +693,7 @@ impl Leaf {
             Self::Primitive(a) => a.proven_distance(p, l, dec),
             Self::Feature(a) => a.proven_distance(p, l, dec),
             Self::Cell(a) => a.proven_distance(p, l, dec),
+            Self::Draft(a) => a.proven_distance(p, l, dec),
         }
     }
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
@@ -688,6 +701,7 @@ impl Leaf {
             Self::Primitive(a) => a.fast_distance(p),
             Self::Feature(a) => a.fast_distance(p),
             Self::Cell(a) => a.fast_distance(p),
+            Self::Draft(a) => a.fast_distance(p),
         }
     }
     /// Collects every zero constraint when local membership changes are planar.
@@ -698,11 +712,7 @@ impl Leaf {
         planes: &mut Vec<Vector3>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
-        let constraints = match self {
-            Self::Primitive(a) => &a.constraints,
-            Self::Feature(a) => &a.constraints,
-            Self::Cell(a) => &a.constraints,
-        };
+        let constraints = self.constraints();
         let mut found = false;
         for constraint in constraints {
             if crate::polynomial_sign(&constraint.polynomial, p, dec)? != Sign::Zero {
@@ -736,6 +746,7 @@ impl Leaf {
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
+            Self::Draft(a) => ray_constraints(&a.constraints, p, d, dec),
         }
     }
     pub fn on_face(
@@ -745,9 +756,59 @@ impl Leaf {
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
         match self {
-            Self::Primitive(_) => Ok(Some(true)),
+            Self::Primitive(_) | Self::Draft(_) => Ok(Some(true)),
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),
             Self::Cell(_) => Ok(Some(true)),
+        }
+    }
+
+    pub(crate) fn draft_witness(&self) -> Result<Point3, Refusal> {
+        match self {
+            Self::Primitive(p) => {
+                let half = Rational::from_ratio(1, 2).expect("nonzero denominator");
+                let coordinates = match p.kind {
+                    Kind::Block => p.parameters.each_ref().map(|x| x * &half),
+                    Kind::Round => [Rational::zero(), Rational::zero(), &p.parameters[2] * &half],
+                    _ => {
+                        return Err(Refusal::new(
+                            "draft.unsupported-surface",
+                            "draft source is not a planar or cylindrical cell",
+                        ));
+                    }
+                };
+                let [x, y, z] = coordinates;
+                Ok(p.inverse
+                    .inverse()
+                    .apply_point(&RPoint3::new(x, y, z).to_real()))
+            }
+            Self::Feature(feature) => feature.draft_witness(),
+            Self::Draft(region) => Ok(match &region.cell {
+                crate::draft::Cell::Planar(cell) => {
+                    let sum = cell.vertices.iter().fold(Vector3::zero(), |sum, p| {
+                        sum.plus(&p.minus(&Point3::origin()))
+                    });
+                    Point3::origin().plus(
+                        &sum.scaled(&(&Real::one() / &Real::from_i64(cell.vertices.len() as i64))),
+                    )
+                }
+                crate::draft::Cell::Round(cell) => cell.origin.plus(
+                    &cell
+                        .axis
+                        .scaled(&((&cell.heights[0] + &cell.heights[1]) / Real::from_i64(2))),
+                ),
+            }),
+        }
+    }
+
+    pub(crate) fn certify_planar_convexity(&self, dec: &mut Decider) -> Result<(), Refusal> {
+        match self {
+            Self::Primitive(p) if p.kind == Kind::Block => Ok(()),
+            Self::Draft(region) if matches!(region.cell, crate::draft::Cell::Planar(_)) => Ok(()),
+            Self::Feature(feature) => feature.certify_planar_convexity(dec),
+            _ => Err(Refusal::new(
+                "draft.unsupported-arrangement",
+                "source is not a certified planar convex cell",
+            )),
         }
     }
 }

@@ -13,6 +13,7 @@ mod certified_prism;
 pub mod display;
 /// Certified trimmed-face and boundary minimum-distance queries.
 pub mod distance;
+mod draft;
 mod features;
 mod fillet;
 mod geometry;
@@ -201,9 +202,16 @@ pub struct Plan {
     // Only explicit canonical expansions rename roles; domain predicates retain
     // the generated feature role, independently of the public stock name.
     definition_roles: BTreeMap<usize, catallax_recipe::Role>,
+    consumed: Vec<catallax_features::ConsumedFace>,
 }
 
 impl Plan {
+    /// Removed-face provenance from draft operations, in recipe order.
+    /// These records never make a vanished face selectable.
+    pub fn consumed_faces(&self) -> &[catallax_features::ConsumedFace] {
+        &self.consumed
+    }
+
     /// Compiles stock solids, sketch sweeps and regularised booleans.
     /// Unsupported operations and impossible dimensions report a stable refusal.
     /// Sketch validation is shared with features; no B-rep builder is called.
@@ -224,6 +232,7 @@ impl Plan {
             root: 0,
             leaf_registers: vec![],
             definition_roles: BTreeMap::new(),
+            consumed: Vec::new(),
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
@@ -372,6 +381,31 @@ impl Plan {
                         } else {
                             copy
                         }
+                    }
+                    Operation::Draft {
+                        body,
+                        faces,
+                        pull,
+                        neutral,
+                        angle,
+                        keep_regions,
+                    } => {
+                        let [x, y, z] = pull.0.each_ref().map(|n| n.value().clone());
+                        let definition = catallax_features::draft::DraftDefinition::new(
+                            RVector3::new(x, y, z).to_real(),
+                            catallax_features::draft::neutral_plane(neutral),
+                            angle.value(),
+                            dec,
+                        )?;
+                        plan.draft(
+                            steps[body],
+                            &step_faces[body],
+                            faces,
+                            &definition,
+                            keep_regions.as_deref(),
+                            &step.id,
+                            dec,
+                        )?
                     }
                     Operation::Fillet {
                         body,
@@ -821,10 +855,13 @@ impl Plan {
     }
 
     /// Resolves a stable recipe name without depending on tape indices.
+    /// When a support is replaced without changing its origin, the result's
+    /// candidate takes precedence over the retained construction-history entry.
     pub fn select(&self, origin: &Origin) -> Option<FaceId> {
         self.faces
             .iter()
-            .position(|f| &f.origin == origin)
+            .position(|f| f.in_result && &f.origin == origin)
+            .or_else(|| self.faces.iter().position(|f| &f.origin == origin))
             .map(FaceId)
     }
 

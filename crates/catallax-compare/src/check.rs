@@ -198,7 +198,6 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Shell{..}=>"neither kernel evaluates recipe shelling",
             Operation::Offset{..}=>"neither kernel evaluates recipe offsets",
             Operation::Thicken{..}=>"neither kernel evaluates recipe thickening",
-            Operation::Draft{..}=>"neither kernel evaluates recipe draft",
             Operation::Sweep{..}=>"neither kernel evaluates recipe sweeps",
             Operation::Loft{..}=>"neither kernel evaluates recipe lofts",
             Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",

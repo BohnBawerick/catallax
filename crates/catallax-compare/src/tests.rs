@@ -263,7 +263,7 @@ fn unsupported_operations_are_all_reported() {
     let recipe = recipe(vec![
         block("a", "2", "0"),
         json!({"id":"offset","op":"offset","body":"a","distance":"1"}),
-        json!({"id":"draft","op":"draft","body":"offset","faces":[{"face":{"step":"a","role":"end"}}],"pull":["0","0","1"],"neutral":{"point":["0","0","0"],"normal":["0","0","1"]},"angle":"5"}),
+        json!({"id":"thicken","op":"thicken","body":"offset","faces":[{"face":{"step":"a","role":"end"}}],"thickness":"1","side":"front"}),
     ]);
     let report = check(&recipe);
     assert_eq!(report.verdict, Verdict::Unresolved);
@@ -273,7 +273,7 @@ fn unsupported_operations_are_all_reported() {
             .iter()
             .map(|o| o.operation.as_str())
             .collect::<Vec<_>>(),
-        ["offset", "draft"]
+        ["offset", "thicken"]
     );
 }
 #[test]

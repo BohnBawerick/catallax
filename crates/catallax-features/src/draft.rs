@@ -1,0 +1,279 @@
+//! Exact analytic draft supports from RECIPE.md section 4.10.
+//!
+//! A support alone is not a drafted solid. The arrangement builder must retain
+//! its nappe, material orientation, trims and neutral-connected components.
+
+use catallax_numbers::{
+    Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign, sin_cos_degrees,
+};
+use catallax_shapes::{Cone, Plane, Point3, Surface, Vector3};
+
+/// Exact bounded cells used by analytic support arrangements.
+#[path = "draft_cell.rs"]
+pub mod cell;
+/// Exact axial cells bounded by drafted cylindrical supports.
+#[path = "draft_round.rs"]
+pub mod round;
+
+pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    if let Some(value) = value.rational_ref() {
+        return Ok(value.sign());
+    }
+    match dec.sign(value) {
+        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+        Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
+        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::Refused(r) => Err(r),
+    }
+}
+
+fn unit(vector: &Vector3) -> Vector3 {
+    vector.scaled(&(&Real::one() / &vector.norm_squared().sqrt()))
+}
+
+/// The saved pull, neutral plane and exact algebraic angle of a draft.
+#[derive(Clone, Debug)]
+pub struct DraftDefinition {
+    /// Unit pull direction, retaining algebraic normalisation exactly.
+    pub pull: Vector3,
+    /// The authored neutral plane, never replaced with an axial section.
+    pub neutral: Plane,
+    /// Sine of the authored rational angle in degrees.
+    pub sine: Real,
+    /// Cosine of the authored rational angle in degrees.
+    pub cosine: Real,
+}
+
+/// One oriented replacement support. It retains the source face's origins.
+#[derive(Clone, Debug)]
+pub struct DraftSupport {
+    /// Exact replacement plane, cylinder or single cone nappe.
+    pub surface: Surface,
+    /// Whether the material is on the negative side of the support.
+    pub same_sense: bool,
+}
+
+impl DraftDefinition {
+    /// Validates the authored domains before any empty-body simplification.
+    pub fn new(
+        pull: Vector3,
+        neutral: Plane,
+        angle: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if angle.abs() >= Rational::from_i64(90) {
+            return Err(Refusal::new(
+                "draft.angle",
+                "draft angle must lie strictly between -90 and 90 degrees",
+            ));
+        }
+        if sign(&pull.norm_squared(), dec)? != Sign::Positive {
+            return Err(Refusal::new(
+                "draft.zero-pull",
+                "draft pull direction must be nonzero",
+            ));
+        }
+        if sign(&neutral.normal.norm_squared(), dec)? != Sign::Positive {
+            return Err(Refusal::new(
+                "draft.zero-neutral-normal",
+                "neutral plane normal must be nonzero",
+            ));
+        }
+        let [sine, cosine] = sin_cos_degrees(angle, dec)?;
+        Ok(Self {
+            pull: unit(&pull),
+            neutral,
+            sine,
+            cosine,
+        })
+    }
+
+    /// Constructs only the support specified by the neutral-curve generators.
+    /// This does not extend neighbours, select material or publish topology.
+    pub fn support(
+        &self,
+        source: &Surface,
+        same_sense: bool,
+        dec: &mut Decider,
+    ) -> Result<DraftSupport, Refusal> {
+        match source {
+            Surface::Plane(plane) => self.plane(plane, same_sense, dec),
+            Surface::Cylinder(cylinder) => {
+                if sign(&cylinder.axis.cross(&self.pull).norm_squared(), dec)? != Sign::Zero {
+                    return Err(Refusal::new(
+                        "draft.unsupported-cylinder-axis",
+                        "non-axial cylindrical draft needs a derived ruled support",
+                    ));
+                }
+                if sign(&self.neutral.normal.cross(&self.pull).norm_squared(), dec)? != Sign::Zero {
+                    return Err(Refusal::new(
+                        "draft.unsupported-oblique-neutral",
+                        "an oblique cylindrical neutral curve does not reduce to an exact cone",
+                    ));
+                }
+                if sign(&self.sine, dec)? == Sign::Zero {
+                    return Ok(DraftSupport {
+                        surface: source.clone(),
+                        same_sense,
+                    });
+                }
+                let radius = cylinder.radius_sq.sqrt();
+                let centre = cylinder.origin.plus(
+                    &self.pull.scaled(
+                        &(&self
+                            .neutral
+                            .origin
+                            .minus(&cylinder.origin)
+                            .dot(&self.neutral.normal)
+                            / &self.pull.dot(&self.neutral.normal)),
+                    ),
+                );
+                let signed_sine = if same_sense {
+                    self.sine.clone()
+                } else {
+                    -&self.sine
+                };
+                let axis = self.pull.scaled(&Real::from_i64(
+                    if sign(&signed_sine, dec)? == Sign::Positive {
+                        -1
+                    } else {
+                        1
+                    },
+                ));
+                let slope = &self.sine / &self.cosine;
+                let slope = if sign(&slope, dec)? == Sign::Negative {
+                    -slope
+                } else {
+                    slope
+                };
+                let apex = centre.plus(
+                    &self
+                        .pull
+                        .scaled(&(&(&radius * &self.cosine) / &signed_sine)),
+                );
+                Ok(DraftSupport {
+                    surface: Surface::Cone(Cone::new(
+                        apex,
+                        axis,
+                        slope,
+                        cylinder.ref_dir.clone(),
+                        dec,
+                    )?),
+                    same_sense,
+                })
+            }
+            _ => Err(Refusal::new(
+                "draft.unsupported-surface",
+                "analytic draft supports are implemented only for planes and pull-parallel cylinders",
+            )),
+        }
+    }
+
+    fn plane(
+        &self,
+        plane: &Plane,
+        same_sense: bool,
+        dec: &mut Decider,
+    ) -> Result<DraftSupport, Refusal> {
+        let normal = plane
+            .normal
+            .scaled(&Real::from_i64(if same_sense { 1 } else { -1 }));
+        if sign(&normal.norm_squared(), dec)? != Sign::Positive {
+            return Err(Refusal::new(
+                "draft.zero-face-normal",
+                "selected face normal must be nonzero",
+            ));
+        }
+        let radial = normal.minus(&self.pull.scaled(&normal.dot(&self.pull)));
+        if sign(&radial.norm_squared(), dec)? == Sign::Zero {
+            return Err(Refusal::new(
+                "draft.parallel-face-normal",
+                "selected face normal is parallel to pull on its neutral curve",
+            ));
+        }
+        let line = normal.cross(&self.neutral.normal);
+        if sign(&line.norm_squared(), dec)? == Sign::Zero {
+            let separation = self.neutral.origin.minus(&plane.origin).dot(&normal);
+            return Err(if sign(&separation, dec)? == Sign::Zero {
+                Refusal::new(
+                    "draft.degenerate-neutral",
+                    "coincident support and neutral plane do not define a neutral line",
+                )
+            } else {
+                Refusal::new(
+                    "draft.missing-neutral",
+                    "selected support misses the neutral plane",
+                )
+            });
+        }
+        // Move within the source plane, perpendicular to the neutral line.
+        let across = self
+            .neutral
+            .normal
+            .minus(&normal.scaled(&(&self.neutral.normal.dot(&normal) / &normal.norm_squared())));
+        let origin = plane.origin.plus(
+            &across.scaled(
+                &(&self
+                    .neutral
+                    .origin
+                    .minus(&plane.origin)
+                    .dot(&self.neutral.normal)
+                    / &across.norm_squared()),
+            ),
+        );
+        let generator = self
+            .pull
+            .scaled(&self.cosine)
+            .minus(&unit(&radial).scaled(&self.sine));
+        let mut outward = generator.cross(&line);
+        if sign(&outward.norm_squared(), dec)? == Sign::Zero {
+            return Err(Refusal::new(
+                "draft.degenerate-support",
+                "draft generators collapse onto the neutral line",
+            ));
+        }
+        // Keep the input material sense on the neutral plane, independently of
+        // the arbitrary signs or scales of its normal and of the line direction.
+        let trace_normal =
+            normal.minus(&self.neutral.normal.scaled(
+                &(&normal.dot(&self.neutral.normal) / &self.neutral.normal.norm_squared()),
+            ));
+        match sign(&outward.dot(&trace_normal), dec)? {
+            Sign::Negative => outward = outward.scaled(&Real::from_i64(-1)),
+            Sign::Zero => {
+                return Err(Refusal::new(
+                    "draft.degenerate-support",
+                    "drafted plane has no oriented material crossing on the neutral plane",
+                ));
+            }
+            Sign::Positive => (),
+        }
+        Ok(DraftSupport {
+            surface: Surface::Plane(Plane {
+                origin,
+                normal: outward,
+                ref_dir: line,
+            }),
+            same_sense: true,
+        })
+    }
+}
+
+/// Converts the recipe's exact rational neutral plane without fitting a frame.
+pub fn neutral_plane(plane: &catallax_recipe::Plane) -> Plane {
+    let [x, y, z] = plane.point.0.each_ref().map(|n| n.value().clone().into());
+    let [nx, ny, nz] = plane.normal.0.each_ref().map(|n| n.value().clone().into());
+    let normal = Vector3::new(nx, ny, nz);
+    let basis = if plane.normal.0[0].value().is_zero() {
+        Vector3::new(Real::one(), Real::zero(), Real::zero())
+    } else {
+        Vector3::new(Real::zero(), Real::one(), Real::zero())
+    };
+    let ref_dir = normal.cross(&basis);
+    Plane {
+        origin: Point3::new(x, y, z),
+        normal,
+        ref_dir,
+    }
+}

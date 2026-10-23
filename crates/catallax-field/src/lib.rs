@@ -123,6 +123,13 @@ pub struct Face {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FaceId(usize);
 
+impl FaceId {
+    /// Index in the owning plan's face registry, never a persistent recipe name.
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
 /// Whether a supporting-surface point survives Boolean trimming.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[non_exhaustive]

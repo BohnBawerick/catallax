@@ -60,6 +60,24 @@ with `field.display-options`; unsupported native charts or exact frames use
 with `field.unsupported-operation` at compilation. No partial mesh, B-rep
 fallback or sampled deviation estimate is published.
 
+Executed mesh attempts also publish `display_diagnostics`, format
+`catallax-display-diagnostics/1`, even on a shared numeric-budget refusal.
+This is an observed prefix, never partial geometry or a distance certificate.
+`total` and `common` contain `cells`, `max_depth`, `decisions` and `work`.
+`work` is accepted complete-request work; reading a counter charges nothing.
+`common` covers preparation and shared indexing not assigned to a support.
+Decisions count the executing caller's decider, as in the operation log.
+
+`supports` groups coincident source faces. Each entry has registry `faces`,
+`origins`, `total`, and included `classification`, `queries` and `emission`
+stage costs. Count shared support work once. `faces` records each source
+registry handle and origin, shared `candidate_cells` and `max_depth`, and
+its executed boundary `queries` cost. A coactive name may have no separate
+query when another name already proved the same patch. Face query costs are
+included in support query costs, not added to them. All these observations
+are deterministic and remain part of independent-worker comparisons.
+
+
 The driver accepts `--source field` for recipe inputs. `compare` excludes
 `first_mesh_ms` but compares display certificates, work for identical builds,
 strict `display.obj` bytes and strict STEP bytes.

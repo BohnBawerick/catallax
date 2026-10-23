@@ -101,10 +101,14 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
         }
     };
     if work.exhausted && manifest["status"] != "internal-error" {
+        let display_diagnostics = manifest.get("display_diagnostics").cloned();
         manifest = refused(
             "numbers.operation-budget",
             "operation work allowance exhausted",
         );
+        if let Some(diagnostics) = display_diagnostics {
+            manifest["display_diagnostics"] = diagnostics;
+        }
     }
     if manifest["status"] != "answered" {
         crate::prepare_output(&request.out)?;
@@ -224,13 +228,24 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                     "display",
                     &dec,
                 );
-                let mesh = catallax_field::display::mesh_plan(&plan, &options, &mut dec);
+                let mut diagnostics = catallax_field::display::Diagnostics::default();
+                let mesh = catallax_field::display::mesh_plan_reported(
+                    &plan,
+                    &options,
+                    &mut dec,
+                    &mut diagnostics,
+                );
                 span.finish(&dec, mesh.as_ref().err(), None);
+                let first_mesh_ms = display_started.elapsed().as_secs_f64() * 1000.0;
+                let diagnostics = display_diagnostics(&plan, &diagnostics);
                 let mesh = match mesh {
                     Ok(mesh) => mesh,
-                    Err(error) => return Ok(refused(error.code, error.detail)),
+                    Err(error) => {
+                        let mut manifest = refused(error.code, error.detail);
+                        manifest["display_diagnostics"] = diagnostics;
+                        return Ok(manifest);
+                    }
                 };
-                let first_mesh_ms = display_started.elapsed().as_secs_f64() * 1000.0;
                 let mut file = fs::File::create(request.out.join("display.obj"))?;
                 mesh.write_obj(&mut file)?;
                 return Ok(json!({
@@ -245,7 +260,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                             "coverage":"two-sided distance to the defined result boundary",
                             "cells":mesh.cells}
                     },
-                    "marks":[],"refusal":null,"step":null
+                    "marks":[],"refusal":null,"step":null,"display_diagnostics":diagnostics
                 }));
             }
             if request.source == "compare" {
@@ -364,4 +379,27 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             Ok(value)
         }
     }
+}
+
+fn display_diagnostics(
+    plan: &catallax_field::Plan,
+    report: &catallax_field::display::Diagnostics,
+) -> Value {
+    let cost = |c: &catallax_field::display::Cost| {
+        json!({
+            "cells":c.cells,"max_depth":c.max_depth,"decisions":c.decisions,"work":c.work
+        })
+    };
+    let faces:Vec<_> = report.faces.iter().map(|f|json!({
+        "face":f.face.index(),"origin":plan.faces()[f.face.index()].origin,
+        "candidate_cells":f.candidate_cells,"max_depth":f.max_depth,"queries":cost(&f.queries)
+    })).collect();
+    let supports:Vec<_> = report.supports.iter().enumerate().map(|(i,s)|json!({
+        "support":i,"faces":s.faces.iter().map(|f|f.index()).collect::<Vec<_>>(),
+        "origins":s.faces.iter().map(|f|&plan.faces()[f.index()].origin).collect::<Vec<_>>(),
+        "total":cost(&s.total),"classification":cost(&s.classification),
+        "queries":cost(&s.queries),"emission":cost(&s.emission)
+    })).collect();
+    json!({"format":"catallax-display-diagnostics/1","total":cost(&report.total),"common":cost(&report.common),
+        "faces":faces,"supports":supports})
 }

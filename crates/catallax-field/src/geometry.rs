@@ -105,6 +105,17 @@ pub(crate) fn constraint(surface: Surface) -> Constraint {
     }
 }
 impl Constraint {
+    pub(crate) fn reference_point(&self) -> Option<&Point3> {
+        match &self.surface {
+            Surface::Plane(s) => Some(&s.origin),
+            Surface::Cylinder(s) => Some(&s.origin),
+            Surface::Cone(s) => Some(&s.apex),
+            Surface::Sphere(s) => Some(&s.center),
+            Surface::Torus(s) => Some(&s.center),
+            Surface::EllipticCylinder(s) => Some(&s.origin),
+            _ => None,
+        }
+    }
     pub(crate) fn transform(&mut self, pose: &Pose) {
         *self = constraint(self.surface.transformed(pose));
     }

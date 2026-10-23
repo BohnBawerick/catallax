@@ -21,7 +21,7 @@ mod interval;
 mod marks;
 mod operation;
 mod outcome;
-pub use operation::{OperationWork, with_operation_budget};
+pub use operation::{OperationWork, current_operation_work, with_operation_budget};
 mod poly;
 mod quadratic;
 mod rational;

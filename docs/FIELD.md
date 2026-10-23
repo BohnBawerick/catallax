@@ -173,6 +173,16 @@ visited-cell work and a proven two-sided `max_deviation` in millimetres.
 `Mesh::write_obj` writes the display artifact. It is not an exportable solid,
 and adaptive trim cells and differing refinement levels need not sew watertight.
 
+`mesh_plan_reported` performs the same work with non-charging `Diagnostics`.
+The report survives a refusal and records full-request work per shared support,
+per-face query costs, cell counts and maximum depth. It is an executed prefix,
+not partial geometry. Unreported meshing allocates no diagnostic arrays.
+`FaceId::index` maps a display handle to this plan's registry; it is not a
+persistent name. See [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-display)
+for support sharing and cost aggregation. Work counters require an active
+`with_operation_budget` scope and are zero outside it.
+
+
 The default tolerance is 0.01 mm, with at most one million distinct vertices
 and two million visited parameter cells. Plane, cylinder, cone, sphere and
 ring-torus charts use rational unit frames and dimensions. Unsupported frames
@@ -207,13 +217,21 @@ Outward polynomial ranges determine which leaf constraints can change sign
 over a chart cell. Identical supporting constraints remain exactly zero.
 Exact leaf membership, field face membership and result-oriented normal queries
 settle sign-stable cells. A sample is used only after this regional proof.
+
+For a rational support reference point `a`, cache the exact polynomial
+`Q(d) = P(a + d)` once and evaluate it on outward enclosures of `box - a`.
+This preserves every sign and zero while removing the dependency cancellation
+of expanded terms such as `x² - 2*a*x + a²`. A nonrational reference uses
+the original coordinates. Coincidence checks and exact point predicates keep
+the original definitions; no surface or trim is moved by this evaluation frame.
+
+
 Boundary queries reuse regional strict interior/exterior classifications,
 which remain constant under a sufficiently small ray from the cell's interior
 witness. Only boundary or unresolved registers need the field's exact
 infinitesimal ray predicates. Opposite proven interior/exterior rays establish
 a genuine boundary point and orient its normal. No metric calculation on
 unrelated leaves is needed to prove that boundary point.
-
 
 A plane constraint on a planar chart is affine. Its four exact corner values
 prove a strict sign on the open rectangle when they are weakly of one sign

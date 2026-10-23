@@ -13,7 +13,10 @@ use catallax_shapes::RPoint3;
 use std::{collections::BTreeMap, io::Write};
 
 mod chart;
+mod diagnostics;
 use chart::Chart;
+use diagnostics::Snapshot;
+pub use diagnostics::{Cost, Diagnostics, FaceWork, SupportWork};
 
 /// Deterministic display limits, in millimetres and counts.
 #[derive(Clone, Debug)]
@@ -117,9 +120,11 @@ struct Constraint {
     terms: Vec<([u32; 3], Interval)>,
     support: catallax_numbers::RealPoly,
     linear: Option<([Rational; 3], Rational)>,
+    anchor: [Interval; 3],
 }
 impl Constraint {
     fn range(&self, p: &[Interval; 3]) -> Interval {
+        let p: [Interval; 3] = std::array::from_fn(|i| p[i] - self.anchor[i]);
         self.terms
             .iter()
             .fold(Interval::point(0.0).unwrap(), |sum, (powers, c)| {
@@ -184,6 +189,45 @@ struct Builder<'a> {
 /// Every unsupported chart, unresolved trim or exhausted limit returns a stable
 /// refusal rather than publishing incomplete geometry or falling back to B-rep.
 pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Mesh, Refusal> {
+    mesh_plan_inner(plan, options, dec, None)
+}
+
+/// Builds the same mesh and retains non-charging per-face/support observations,
+/// including a refusal's executed prefix. No partial mesh is returned on error.
+pub fn mesh_plan_reported(
+    plan: &Plan,
+    options: &Options,
+    dec: &mut Decider,
+    report: &mut Diagnostics,
+) -> Result<Mesh, Refusal> {
+    *report = Diagnostics::default();
+    let before = Snapshot::new(dec);
+    let result = mesh_plan_inner(plan, options, dec, Some(report));
+    report.total.record(before, dec, 0, false);
+    report.total.cells = report.supports.iter().map(|s| s.total.cells).sum();
+    report.total.max_depth = report
+        .supports
+        .iter()
+        .map(|s| s.total.max_depth)
+        .max()
+        .unwrap_or(0);
+    report.common.work = report
+        .total
+        .work
+        .saturating_sub(report.supports.iter().map(|s| s.total.work).sum());
+    report.common.decisions = report
+        .total
+        .decisions
+        .saturating_sub(report.supports.iter().map(|s| s.total.decisions).sum());
+    result
+}
+
+fn mesh_plan_inner(
+    plan: &Plan,
+    options: &Options,
+    dec: &mut Decider,
+    mut report: Option<&mut Diagnostics>,
+) -> Result<Mesh, Refusal> {
     if options.tolerance <= q(0) || options.max_vertices < 4 || options.max_cells == 0 {
         return Err(failure(
             "field.display-options",
@@ -236,8 +280,30 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
         let mut constraints = Vec::new();
         for c in leaf.constraints() {
             let (support, _) = crate::geometry::support_geometry(&c.polynomial, dec)?;
+            // Translate exactly once, before interval evaluation. Expanding
+            // (x-c)^2 in world coordinates needlessly correlates x^2 and 2cx.
+            let anchor = c
+                .reference_point()
+                .and_then(|p| Some([p.x.as_rational()?, p.y.as_rational()?, p.z.as_rational()?]))
+                .unwrap_or_else(|| [q(0), q(0), q(0)]);
+            let mut local = None;
+            for (axis, shift) in anchor.iter().enumerate() {
+                if !shift.is_zero() {
+                    let variable = catallax_numbers::RealPoly::var(3, axis);
+                    let constant = catallax_numbers::RealPoly::constant(
+                        3,
+                        catallax_numbers::Real::from(shift.clone()),
+                    );
+                    local = Some(
+                        local
+                            .as_ref()
+                            .unwrap_or(&c.polynomial)
+                            .substitute(axis, &(&variable + &constant)),
+                    );
+                }
+            }
             let mut terms = Vec::new();
-            for (m, c) in c.polynomial.terms() {
+            for (m, c) in local.as_ref().unwrap_or(&c.polynomial).terms() {
                 terms.push((
                     m.exponents().try_into().expect("three coordinates"),
                     crate::geometry::enclose(&c, 128, dec)?.to_interval(),
@@ -264,6 +330,7 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
                 terms,
                 support,
                 linear,
+                anchor: anchor.each_ref().map(Interval::from_rational),
             });
         }
         builder.constraints.push(constraints);
@@ -285,6 +352,29 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
         } else {
             groups.push(vec![i]);
         }
+    }
+    if let Some(report) = report.as_deref_mut() {
+        report.faces = plan
+            .faces
+            .iter()
+            .enumerate()
+            .map(|(i, _)| FaceWork {
+                face: FaceId(i),
+                candidate_cells: 0,
+                max_depth: 0,
+                queries: Cost::default(),
+            })
+            .collect();
+        report.supports = groups
+            .iter()
+            .map(|faces| SupportWork {
+                faces: faces.iter().copied().map(FaceId).collect(),
+                total: Cost::default(),
+                classification: Cost::default(),
+                queries: Cost::default(),
+                emission: Cost::default(),
+            })
+            .collect();
     }
     let source_boxes: Vec<_> = plan
         .leaves
@@ -321,91 +411,156 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
     let mut deferred = Vec::new();
     loop {
         while let Some((id, cell)) = stack.pop() {
-            dec.check_deadline()?;
-            builder.mesh.cells += 1;
-            let work = &mut face_work[patches[id].group];
-            work.1 += 1;
-            work.2 = work.2.max(cell.depth);
-            if builder.mesh.cells > options.max_cells || cell.depth > 64 {
-                return Err(failure(
-                    "field.display-budget",
-                    format!(
-                        "refinement limit: {} cells; per support (origin, cells, maximum depth): {:?}",
-                        builder.mesh.cells,
-                        face_work
-                            .iter()
-                            .map(|(face, cells, depth)| (&plan.faces[*face].origin, *cells, *depth))
-                            .collect::<Vec<_>>()
-                    ),
-                ));
-            }
-            let patch = &patches[id];
-            let point = patch.chart.point(&cell.centre());
-            let cover = patch.chart.cover(&cell, &point);
-            if patch.faces.iter().all(|&face| {
-                source_boxes[plan.faces[face].leaf]
-                    .as_ref()
-                    .is_some_and(|bounds| {
-                        (0..3).any(|i| {
-                            cover[i].hi() < bounds[i].lo() || cover[i].lo() > bounds[i].hi()
+            let before = report.as_ref().map(|_| Snapshot::new(dec));
+            let previous_cells = builder.mesh.cells;
+            let mut deferred_cover = None;
+            let result = (|| -> Result<Visit, Refusal> {
+                dec.check_deadline()?;
+                builder.mesh.cells += 1;
+                let work = &mut face_work[patches[id].group];
+                work.1 += 1;
+                work.2 = work.2.max(cell.depth);
+                if let Some(report) = report.as_deref_mut() {
+                    for &face in &patches[id].faces {
+                        report.faces[face].candidate_cells += 1;
+                        report.faces[face].max_depth = report.faces[face].max_depth.max(cell.depth);
+                    }
+                }
+                if builder.mesh.cells > options.max_cells || cell.depth > 64 {
+                    return Err(failure(
+                        "field.display-budget",
+                        format!(
+                            "refinement limit: {} cells; per support (origin, cells, maximum depth): {:?}",
+                            builder.mesh.cells,
+                            face_work
+                                .iter()
+                                .map(|(face, cells, depth)| (
+                                    &plan.faces[*face].origin,
+                                    *cells,
+                                    *depth
+                                ))
+                                .collect::<Vec<_>>()
+                        ),
+                    ));
+                }
+                let patch = &patches[id];
+                let point = patch.chart.point(&cell.centre());
+                let cover = patch.chart.cover(&cell, &point);
+                if patch.faces.iter().all(|&face| {
+                    source_boxes[plan.faces[face].leaf]
+                        .as_ref()
+                        .is_some_and(|bounds| {
+                            (0..3).any(|i| {
+                                cover[i].hi() < bounds[i].lo() || cover[i].lo() > bounds[i].hi()
+                            })
                         })
-                    })
-            }) {
-                continue;
-            }
-            let (location, stable) = builder.classify(patch, &cell, &cover, &point, dec)?;
-            if matches!(location, Location::Inside | Location::Outside) {
-                continue;
-            }
-            let diameter = cover.iter().fold(q(0), |sum, b| sum + b.hi() - b.lo());
-            let small = diameter <= options.tolerance.mul_pow2(-1);
-            if stable || small {
-                let mut present = None;
-                let mut absent = true;
-                for &face in &patch.faces {
-                    let query = builder.face_at(face, &point, stable, dec)?;
-                    if query.state == FaceState::OnFace {
-                        present = Some((face, query.direction));
-                        break;
-                    }
-                    absent &= query.state == FaceState::NotOnFace;
+                }) {
+                    return Ok(Visit::Skip);
                 }
-                if let Some((face, direction)) = present {
-                    let chord = patch.chart.chord(&cell);
-                    if (stable && chord <= options.tolerance.mul_pow2(-1)) || small {
-                        builder.emit(
-                            patch,
-                            &cell,
-                            face,
-                            if stable { chord } else { diameter },
-                            direction,
-                        )?;
-                        continue;
+                let stage = report.as_ref().map(|_| Snapshot::new(dec));
+                let classified = builder.classify(patch, &cell, &cover, &point, dec);
+                if let (Some(report), Some(stage)) = (report.as_deref_mut(), stage) {
+                    report.supports[patch.group]
+                        .classification
+                        .record(stage, dec, cell.depth, true);
+                }
+                let (location, stable) = classified?;
+                if matches!(location, Location::Inside | Location::Outside) {
+                    return Ok(Visit::Skip);
+                }
+                let diameter = cover.iter().fold(q(0), |sum, b| sum + b.hi() - b.lo());
+                let small = diameter <= options.tolerance.mul_pow2(-1);
+                if stable || small {
+                    let mut present = None;
+                    let mut absent = true;
+                    for &face in &patch.faces {
+                        let stage = report.as_ref().map(|_| Snapshot::new(dec));
+                        let queried = builder.face_at(face, &point, stable, dec);
+                        if let (Some(report), Some(stage)) = (report.as_deref_mut(), stage) {
+                            report.faces[face]
+                                .queries
+                                .record(stage, dec, cell.depth, true);
+                            report.supports[patch.group]
+                                .queries
+                                .record(stage, dec, cell.depth, true);
+                        }
+                        let query = queried?;
+                        if query.state == FaceState::OnFace {
+                            present = Some((face, query.direction));
+                            break;
+                        }
+                        absent &= query.state == FaceState::NotOnFace;
                     }
-                } else if stable && absent {
-                    // Only the open cell is classified. Closed surviving
-                    // neighbours cover its aligned trim edges without area.
+                    if let Some((face, direction)) = present {
+                        let chord = patch.chart.chord(&cell);
+                        if (stable && chord <= options.tolerance.mul_pow2(-1)) || small {
+                            let stage = report.as_ref().map(|_| Snapshot::new(dec));
+                            let emitted = builder.emit(
+                                patch,
+                                &cell,
+                                face,
+                                if stable { chord } else { diameter },
+                                direction,
+                            );
+                            if let (Some(report), Some(stage)) = (report.as_deref_mut(), stage) {
+                                report.supports[patch.group]
+                                    .emission
+                                    .record(stage, dec, cell.depth, true);
+                            }
+                            emitted?;
+                            return Ok(Visit::Skip);
+                        }
+                    } else if stable && absent {
+                        // Only the open cell is classified. Closed surviving
+                        // neighbours cover its aligned trim edges without area.
+                        return Ok(Visit::Skip);
+                    }
+                    if small {
+                        deferred_cover = Some(cover);
+                        return Ok(Visit::Defer);
+                    }
+                }
+                Ok(Visit::Split)
+            })();
+            if let (Some(report), Some(before)) = (report.as_deref_mut(), before) {
+                report.supports[patches[id].group].total.record(
+                    before,
+                    dec,
+                    cell.depth,
+                    builder.mesh.cells != previous_cells,
+                );
+            }
+            match result? {
+                Visit::Skip => continue,
+                Visit::Defer => {
+                    deferred.push((id, cell, deferred_cover.expect("deferred cell cover")));
                     continue;
                 }
-                if small {
-                    deferred.push((id, cell, cover));
-                    continue;
+                Visit::Split => {
+                    let patch = &patches[id];
+                    let span = cell.span();
+                    let axis = usize::from(
+                        &patch.chart.lipschitz[1] * &span[1] > &patch.chart.lipschitz[0] * &span[0],
+                    );
+                    let [a, b] = cell.split(axis);
+                    stack.push((id, b));
+                    stack.push((id, a));
                 }
             }
-            let span = cell.span();
-            let axis = usize::from(
-                &patch.chart.lipschitz[1] * &span[1] > &patch.chart.lipschitz[0] * &span[0],
-            );
-            let [a, b] = cell.split(axis);
-            stack.push((id, b));
-            stack.push((id, a));
         }
         if deferred.is_empty() {
             break;
         }
         let bins = builder.bins();
         for (id, cell, cover) in deferred.drain(..) {
-            if builder.covered(&cover, &bins) {
+            let before = report.as_ref().map(|_| Snapshot::new(dec));
+            let covered = builder.covered(&cover, &bins);
+            if let (Some(report), Some(before)) = (report.as_deref_mut(), before) {
+                report.supports[patches[id].group]
+                    .total
+                    .record(before, dec, cell.depth, false);
+            }
+            if covered {
                 continue;
             }
             let patch = &patches[id];
@@ -424,6 +579,12 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
     builder.mesh.max_deviation = options.tolerance.clone();
     Ok(builder.mesh)
 }
+enum Visit {
+    Skip,
+    Defer,
+    Split,
+}
+
 impl Builder<'_> {
     fn ray_at(
         &mut self,

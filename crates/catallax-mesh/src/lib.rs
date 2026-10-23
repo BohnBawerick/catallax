@@ -12,6 +12,7 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 
 mod chart;
 mod edges;
+mod planar;
 mod triangulate;
 
 /// Display meshing controls. Lengths use the model's millimetres.

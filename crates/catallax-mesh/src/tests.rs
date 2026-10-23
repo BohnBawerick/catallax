@@ -437,3 +437,109 @@ fn a_sphere_boundary_through_definition_poles_uses_a_regular_chart() {
         }
     }
 }
+
+#[test]
+fn a_sub_ulp_gap_between_a_planar_hole_and_its_outer_boundary_stays_connected() {
+    let mut model = Model::new();
+    let plate = topology::block(
+        &mut model,
+        [2.into(), 3.into(), 1.into()],
+        &Pose::identity(),
+    )
+    .unwrap();
+    let epsilon = Rational::parse("1e-36").unwrap();
+    let flange_pose = Pose::new(
+        Rotation::identity(),
+        RVector3::new(Rational::one() - epsilon, 1.into(), 0.into()).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let flange = topology::block(&mut model, [1.into(), 1.into(), 2.into()], &flange_pose).unwrap();
+    let body = boolean(
+        &mut model,
+        plate,
+        flange,
+        BoolOp::Unite,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    let options = MeshOptions::default();
+    let mesh = mesh_body(&model, body, &options, &mut Decider::default())
+        .unwrap()
+        .value;
+    assert_eq!(mesh.faces.len(), model.faces_of_body(body).len());
+    assert!(
+        mesh.faces
+            .iter()
+            .all(|f| f.max_chord_error <= options.chord_tolerance)
+    );
+    // Binary64 collapses the thin strip geometrically, but not its incidence.
+    let mut incidence = BTreeMap::<(usize, usize), Vec<(usize, usize)>>::new();
+    for triangle in &mesh.triangles {
+        for i in 0..3 {
+            let a = triangle.vertices[i];
+            let b = triangle.vertices[(i + 1) % 3];
+            incidence
+                .entry((a.min(b), a.max(b)))
+                .or_default()
+                .push((a, b));
+        }
+    }
+    for uses in incidence.values() {
+        assert_eq!(uses.len(), 2);
+        assert_eq!(uses[0], (uses[1].1, uses[1].0));
+    }
+    for edge in &mesh.edges {
+        for pair in edge.vertices.windows(2) {
+            assert!(incidence.contains_key(&(pair[0].min(pair[1]), pair[0].max(pair[1]))));
+        }
+    }
+}
+
+#[test]
+fn planar_hole_bridges_preserve_multiple_bores() {
+    let mut model = Model::new();
+    let mut body = topology::block(
+        &mut model,
+        [8.into(), 4.into(), 2.into()],
+        &Pose::identity(),
+    )
+    .unwrap();
+    for x in [2, 6] {
+        let bore = topology::cylinder(&mut model, 1.into(), 4.into(), &pose(x, 2, -1)).unwrap();
+        body = boolean(
+            &mut model,
+            body,
+            bore,
+            BoolOp::Subtract,
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .body;
+    }
+    let result = mesh(&model, body);
+    assert_closed(&result);
+    assert_accuracy(&model, &result);
+    for face in &result.faces {
+        if !matches!(
+            model.geom().surface(model.face(face.face).surface),
+            Surface::Plane(_)
+        ) {
+            continue;
+        }
+        for triangle in &result.triangles[face.triangles.clone()] {
+            let center: [f64; 3] = std::array::from_fn(|i| {
+                triangle
+                    .vertices
+                    .iter()
+                    .map(|&v| result.positions[v][i])
+                    .sum::<f64>()
+                    / 3.0
+            });
+            for x in [2.0, 6.0] {
+                assert!((center[0] - x).powi(2) + (center[1] - 2.0).powi(2) > 0.9);
+            }
+        }
+    }
+}

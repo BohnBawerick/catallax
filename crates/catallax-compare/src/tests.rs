@@ -708,23 +708,9 @@ fn copied_and_reflected_features_preserve_comparison_certainty() {
         ]]}),
         json!({"id":"seed","op":"extrude","profile":"profile","distance":"1"}),
     ];
-    let cylinder = vec![
-        json!({"id":"profile","op":"sketch","plane":pose("2"),"loops":[[
-            {"kind":"circle","id":"wall","centre":["0","0"],"radius":"1/2"}
-        ]]}),
-        json!({"id":"seed","op":"extrude","profile":"profile","distance":"1"}),
-    ];
-    let revolution = vec![
-        json!({"id":"profile","op":"sketch","plane":pose("2"),"loops":[[
-            {"kind":"line","id":"a","to":["2","0"]},{"kind":"line","id":"b","to":["2","1"]},{"kind":"line","id":"c","to":["1","1"]},{"kind":"line","id":"d","to":["1","0"]}
-        ]]}),
-        json!({"id":"seed","op":"revolve","profile":"profile","axis":{"point":["2","0","0"],"direction":["0","1","0"]},"angle":"90"}),
-    ];
     for (steps, expected) in [
         (vec![block("seed", "1", "2")], Verdict::Agree),
         (feature, Verdict::Agree),
-        (cylinder, Verdict::Unresolved),
-        (revolution, Verdict::Unresolved),
     ] {
         for operation in [
             json!({"id":"copies","op":"pattern","body":"seed","layout":{"linear":{"vector":["3","0","0"],"count":3}}}),

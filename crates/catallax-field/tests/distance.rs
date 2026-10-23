@@ -1,0 +1,120 @@
+//! Distances must use surviving trimmed faces, not merely carrier residuals.
+use catallax_field::Plan;
+use catallax_numbers::{Decider, Rational, Real};
+use catallax_recipe::{Recipe, Role};
+use catallax_shapes::{RPoint3, distance::Options};
+use serde_json::{Value, json};
+fn pose(x: &str) -> Value {
+    json!({"rotation":["1","0","0","0"],"translation":[x,"0","0"]})
+}
+fn recipe(steps: Vec<Value>) -> Recipe {
+    let result = steps.last().unwrap()["id"].clone();
+    Recipe::parse(&json!({"format":"catallax-recipe/3","name":"trimmed-distance","steps":steps,"result":result}).to_string()).unwrap()
+}
+fn point(x: i64, y: i64, z: i64) -> catallax_shapes::Point3 {
+    RPoint3::new(x.into(), y.into(), z.into()).into()
+}
+fn controls() -> Options {
+    Options {
+        width: Rational::from_ratio(1, 1000).unwrap(),
+        max_cells: 4096,
+    }
+}
+#[test]
+fn cylindrical_wall_distance_respects_height_trims_and_cap_pair_distance() {
+    let recipe = recipe(vec![
+        json!({"id":"stock","op":"cylinder","radius":"1","height":"2","pose":pose("0")}),
+    ]);
+    let mut dec = Decider::default();
+    let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+    let prepared = plan.prepare_distances(&mut dec).unwrap();
+    let face = |role: Role| {
+        plan.faces()
+            .iter()
+            .find(|f| f.origin.role == role)
+            .map(|f| plan.select(&f.origin).unwrap())
+            .unwrap()
+    };
+    let wall = plan
+        .faces()
+        .iter()
+        .find(|f| matches!(f.origin.role, Role::Side { .. }))
+        .map(|f| plan.select(&f.origin).unwrap())
+        .unwrap();
+    let answer = prepared
+        .point_to_face(wall, &point(1, 0, 3), &controls(), &mut dec)
+        .unwrap();
+    assert!(answer.lower <= Rational::one(), "{answer:?}");
+    assert!(
+        answer.lower >= Rational::parse("0.999").unwrap(),
+        "{answer:?}"
+    );
+    assert!(answer.upper.as_ref().unwrap() >= &Rational::one());
+    assert!(
+        answer.upper.as_ref().unwrap() <= &Rational::parse("1.001").unwrap(),
+        "{answer:?}"
+    );
+    let pair = prepared
+        .face_to_face(face(Role::Start), face(Role::End), &controls(), &mut dec)
+        .unwrap();
+    assert_eq!(pair.lower, Rational::from_i64(2));
+    assert_eq!(pair.upper, Some(Rational::from_i64(2)));
+}
+#[test]
+fn cap_hole_rejects_the_plane_projection() {
+    let recipe = recipe(vec![
+        json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[{"kind":"circle","id":"outer","centre":["0","0"],"radius":"2"}],[{"kind":"circle","id":"inner","centre":["0","0"],"radius":"1"}]]}),
+        json!({"id":"feature","op":"extrude","profile":"profile","distance":"2"}),
+    ]);
+    let mut dec = Decider::default();
+    let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+    let cap = plan
+        .faces()
+        .iter()
+        .find(|f| f.origin.role == Role::Start)
+        .map(|f| plan.select(&f.origin).unwrap())
+        .unwrap();
+    let answer = plan
+        .prepare_distances(&mut dec)
+        .unwrap()
+        .point_to_face(cap, &point(0, 0, -1), &controls(), &mut dec)
+        .unwrap();
+    let expected = dec.enclose_at(&Real::from_i64(2).sqrt(), 128).unwrap();
+    assert!(answer.lower <= expected.lo(), "{answer:?}");
+    assert!(
+        answer.upper.as_ref().unwrap() >= &expected.hi(),
+        "{answer:?}"
+    );
+    assert!(answer.lower > Rational::parse("1.4").unwrap(), "{answer:?}");
+}
+#[test]
+fn a_buried_tangent_source_cannot_supply_a_face_distance_witness() {
+    let recipe = recipe(vec![
+        json!({"id":"outer","op":"sphere","radius":"2","pose":pose("0")}),
+        json!({"id":"inner","op":"sphere","radius":"1","pose":pose("1")}),
+        json!({"id":"result","op":"boolean","kind":"union","target":"outer","tool":"inner"}),
+    ]);
+    let mut dec = Decider::default();
+    let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+    let inner = plan
+        .faces()
+        .iter()
+        .find(|f| f.origin.step.as_str() == "inner")
+        .map(|f| plan.select(&f.origin).unwrap())
+        .unwrap();
+    let answer = plan
+        .prepare_distances(&mut dec)
+        .unwrap()
+        .point_to_face(
+            inner,
+            &point(2, 0, 0),
+            &Options {
+                max_cells: 64,
+                ..controls()
+            },
+            &mut dec,
+        )
+        .unwrap();
+    assert!(answer.upper.is_none(), "{answer:?}");
+    assert!(!answer.converged);
+}

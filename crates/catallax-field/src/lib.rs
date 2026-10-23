@@ -10,6 +10,8 @@
 
 /// Definition-native, certified display approximations. No B-rep is constructed.
 pub mod display;
+/// Certified trimmed-face and boundary minimum-distance queries.
+pub mod distance;
 mod features;
 mod fillet;
 mod geometry;

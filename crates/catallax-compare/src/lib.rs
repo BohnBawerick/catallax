@@ -129,6 +129,10 @@ pub struct Report {
     pub forward_vertices: usize,
     /// Number of certified surviving field samples checked.
     pub reverse_samples: usize,
+    /// Maximum certified distance upper bound over checked samples, including
+    /// forward mesh error. `None` means at least one distance is unbounded.
+    /// This is not a whole-boundary Hausdorff certificate.
+    pub sampled_distance_upper: Option<Rational>,
     /// Proven disagreements and explicit unresolved observations, in fixed order.
     pub findings: Vec<Finding>,
     /// Every unsupported operation, in recipe order.

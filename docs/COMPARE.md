@@ -1,5 +1,5 @@
 
-This part is destined for `docs/COMPARE.md`. Its text is moved word for word from the previous plan; only this introduction is new.
+Background comparison contract, current coverage and historical whole-check measurements.
 
 ## Background comparison prerequisites
 
@@ -7,11 +7,13 @@ This part is destined for `docs/COMPARE.md`. Its text is moved word for word fro
 
 `catallax-compare` supplies the library check. `Controller::begin` invalidates the previous revision and clears its published result. Dispatch `Revision::check` on an application-owned worker, or use `check_built` with a cached B-rep build and the field recipe. Only a complete report for the still-current revision can publish. `cancel` invalidates its own revision without touching a newer edit. No library thread pool, clock deadline or app-side edit tracking is added.
 
-The forward pass evaluates the certified field query at every selected mesh vertex, preserving exact binary64 coordinates as rationals. For mesh deviation `e` and field distance interval `[l,u]`, the comparison uses the lower bound `max(0,l-e)` and upper bound `u+e`. A lower bound above the display accuracy proves a gap. An exact topological endpoint may supply another candidate, but only after the independent field proves that point is on its result boundary; the measured point-to-witness distance then supplies a certified upper bound. An unbounded upper remains unresolved when no such witness settles it, even when an auxiliary supporting-surface projection exists. No raw Boolean residual decides proximity.
+The forward pass evaluates the certified field query at every selected mesh vertex, preserving exact binary64 coordinates as rationals. If a residual supplies no finite upper, prepared field-native trimmed-face queries seek exact admitted witnesses. For mesh deviation `e` and field distance interval `[l,u]`, the comparison uses the lower bound `max(0,l-e)` and upper bound `u+e`. A lower bound above the display accuracy proves a gap. An exact topological endpoint may supply another candidate, but only after the independent field proves that point is on its result boundary; the measured point-to-witness distance then supplies a certified upper bound. An unbounded upper remains unresolved when no such witness settles it. A supporting-surface hit without a surviving trim witness never proves proximity, and no raw Boolean residual decides it.
 
-The reverse pass generates rational stock-boundary and feature-boundary candidates independently of the B-rep mesh. `Plan::visit_feature_candidates` uses the field's stored profile and sweep definitions, including signed and oblique extrusion, rational-frame full/partial revolution and through-all walls. Through-all sampling uses a conservative field-result bounding box propagated through the expression tree, not artificial tool caps or a B-rep bound. Certified field face queries discard removed candidates and retain unresolved trimming. Each surviving sample projects to an exact rational supporting-surface witness, then checks that witness against the matching trimmed B-rep face. Analytic support distances supply lower bounds; the measured distance to a certified on-face witness supplies the upper bound. A chart projection need not be the closest point. The added queries do not change either kernel's generated geometry.
+The reverse pass generates rational stock-boundary and feature-boundary candidates independently of the B-rep mesh. `Plan::visit_feature_candidates` uses the field's stored profile and sweep definitions, including signed and oblique extrusion, rational-frame full/partial revolution and through-all walls. Through-all sampling uses a conservative field-result bounding box propagated through the expression tree, not artificial tool caps or a B-rep bound. Certified field face queries discard removed candidates and retain unresolved trimming. Each surviving sample first tries an exact rational support witness and checks it against the matching trimmed B-rep face. If that projection misses the trim, `catallax_measure::distance::PreparedFace` refines certified analytic chart boxes and admits exact rational or algebraic witnesses through the boundary-loop predicate. Lower certificates cover every retained cell; upper certificates use only admitted face points. These queries change neither kernel's generated geometry.
 
 Origin comparisons use canonical sets from `Model::face_origins`. A maximal merged face can contain different creating origins on adjacent patches, so the check collects the locally witnessed names over that face rather than requiring every name at every point. Field normal enclosures and exact B-rep gradients check outward direction at the reverse witnesses. Sharp mesh vertices do not acquire fabricated unique normals. Missing origin or direction coverage stays unresolved.
+
+`Report::sampled_distance_upper` is the maximum checked distance upper, including forward mesh error. `None` means at least one checked distance remains unbounded. The verification CLI publishes it as `comparison.sampled_distance_upper_mm`. It is a sampled bound, not a whole-part Hausdorff certificate. See [trimmed minimum distances](FIELD.md#trimmed-minimum-distances) for the shared interval engine and the independent trim adapters.
 
 Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four rational intervals per sampling parameter interval, and minimum normal cosine 999/1000. These are sampled display checks, not a global Hausdorff certificate or the finer 1 nm pre-export check. Raising `divisions` increases independent reverse sampling. A closed rational `Region` restricts both passes; forward selection pads the box by the local mesh error. A scope with no two-way samples stays unresolved. A merged-face origin whose extent cannot be established within the region stays unresolved rather than causing a remote naming change to fail the local check. The library still rebuilds and meshes the complete B-rep, so regional rechecks reduce query work, not build cost. Cancellation is cooperative between kernel calls and individual samples; existing build and meshing calls are not interrupted internally.
 
@@ -81,13 +83,14 @@ particular, the joined-blocks outcome in this table is not its current outcome.
 
 No unperturbed representative part produced a proven discrepancy. At measurement
 time, joined blocks exposed indeterminate field queries on the removed meeting plane.
-Curved Boolean mesh vertices generally have unbounded field distance uppers;
-those observations do not become agreement. The tests also deliberately change
-dimensions, locations, names and orientation to require disagreements.
+At that time, curved Boolean mesh vertices generally had unbounded field distance
+uppers; those observations did not become agreement. Current limitation regressions
+instead require finite trimmed bounds, while changed dimensions, names and
+orientation still require proven discrepancies.
 
 No general interactive budget or candidate-versus-baseline slowdown is established
 by these shared-machine samples. Attribute a performance regression only after
-three matched baseline/candidate rounds on separate pinned physical cores,
-recording load and geometric work units. Field Boolean queries also need finite
-upper distance bounds before the background check can routinely settle those
-edits. That is a useful reassessment point before app integration.
+three matched alternating baseline/candidate pairs on one pinned core, recording
+load and geometric work units. Finite trimmed-face upper bounds now provide the
+distance proof missing from the historical curved examples. Application integration
+still needs its own edit-loop and interactive latency evidence.

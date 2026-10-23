@@ -342,3 +342,66 @@ fn unsupported_field_feature_removes_previous_display_without_brep_fallback() {
     );
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn curved_compare_preserves_work_refusals_and_reports_finite_agreement() {
+    use catallax_cli::verification::{Request, answer};
+    let root = std::env::temp_dir().join(format!(
+        "catallax-distance-budget-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let problem = json!({"format":"catallax-recipe/3","name":"distance-budget","steps":[
+        {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+            {"kind":"line","id":"bottom","to":["2/5","0"]},
+            {"kind":"line","id":"right","to":["2/5","2/5"]},
+            {"kind":"line","id":"top","to":["1/5","2/5"]},
+            {"kind":"line","id":"left","to":["1/5","0"]}
+        ]]},
+        {"id":"feature","op":"revolve","profile":"profile","axis":{"point":["0","0","0"],"direction":["0","1","0"]},"angle":"270"}
+    ],"result":"feature"});
+    for limit in [0, 1_000_000, 30_000_000, 100_000_000] {
+        let out = root.join(limit.to_string());
+        fs::create_dir_all(&out).unwrap();
+        fs::write(out.join("answer.step"), "stale STEP").unwrap();
+        let response = answer(&Request {
+            format: "catallax-request/1".into(),
+            source: "compare".into(),
+            problem: problem.clone(),
+            out: out.clone(),
+            max_work: limit,
+        })
+        .unwrap();
+        assert!(
+            response["work"]["used"].as_u64().unwrap() <= limit,
+            "{response}"
+        );
+        if response["work"]["exhausted"] == true {
+            assert_eq!(response["manifest"]["status"], "refused", "{response}");
+            assert_eq!(
+                response["manifest"]["refusal"]["code"], "numbers.operation-budget",
+                "{response}"
+            );
+        } else {
+            assert_eq!(
+                response["manifest"]["comparison"]["verdict"], "agree",
+                "{response}"
+            );
+            let upper = catallax_numbers::Rational::parse(
+                response["manifest"]["comparison"]["sampled_distance_upper_mm"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(
+                upper <= catallax_numbers::Rational::parse("0.01").unwrap(),
+                "{response}"
+            );
+        }
+        if limit == 100_000_000 {
+            assert_eq!(response["manifest"]["status"], "answered", "{response}");
+        }
+        assert!(!out.join("answer.step").exists());
+    }
+    fs::remove_dir_all(root).unwrap();
+}

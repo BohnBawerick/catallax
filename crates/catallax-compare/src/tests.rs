@@ -188,7 +188,7 @@ fn provenance_changes_are_disagreements_even_at_zero_gap() {
         && !f.field_faces.is_empty()));
 }
 #[test]
-fn unbounded_boolean_upper_distance_never_agrees() {
+fn small_boolean_perturbations_agree_only_with_finite_trimmed_distance_bounds() {
     let a = recipe(vec![
         block("a", "2", "0"),
         block("b", "1", "5"),
@@ -200,13 +200,13 @@ fn unbounded_boolean_upper_distance_never_agrees() {
         json!({"id":"result","op":"boolean","kind":"union","target":"a","tool":"b"}),
     ]);
     let report = compare(&a, &b, &options());
-    assert_eq!(report.verdict, Verdict::Unresolved, "{report:?}");
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|f| f.pass == Pass::Forward && matches!(f.reason, Reason::Unresolved(_)))
-    );
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+    let upper = report
+        .sampled_distance_upper
+        .as_ref()
+        .expect("finite sampled bound");
+    assert!(upper >= &Rational::parse("1/10000").unwrap(), "{report:?}");
+    assert!(upper <= &options().accuracy, "{report:?}");
 }
 #[test]
 fn region_filters_both_directions_and_empty_scope_is_unresolved() {
@@ -513,7 +513,7 @@ fn extra_brep_origin_cannot_be_mistaken_for_insufficient_sampling() {
 }
 
 #[test]
-fn round_boolean_checks_keep_unbounded_vertex_distances_unresolved() {
+fn round_boolean_self_checks_have_finite_trimmed_distance_bounds() {
     for op in ["sphere", "cylinder"] {
         for kind in ["union", "subtract", "intersect"] {
             let solid = |id: &str, x: &str| {
@@ -528,18 +528,12 @@ fn round_boolean_checks_keep_unbounded_vertex_distances_unresolved() {
                 solid("b", "1/5"),
                 json!({"id":"result","op":"boolean","kind":kind,"target":"a","tool":"b"}),
             ]));
-            assert_eq!(
-                report.verdict,
-                Verdict::Unresolved,
-                "{op} {kind}: {report:?}"
-            );
+            assert_eq!(report.verdict, Verdict::Agree, "{op} {kind}: {report:?}");
             assert!(
-                report.findings.iter().any(|f| f.pass == Pass::Forward
-                    && matches!(f.reason, Reason::Unresolved(_))
-                    && f.brep_faces
-                        .iter()
-                        .flatten()
-                        .any(|o| o.step.as_str() == "a")),
+                report
+                    .sampled_distance_upper
+                    .as_ref()
+                    .is_some_and(|u| u <= &options().accuracy),
                 "{op} {kind}: {report:?}"
             );
         }
@@ -611,7 +605,7 @@ fn feature_reverse_check_catches_an_extended_extrusion() {
 }
 
 #[test]
-fn feature_curved_extrusions_and_full_partial_revolutions_keep_unbounded_uppers() {
+fn feature_curved_extrusions_and_full_partial_revolutions_agree_with_finite_bounds() {
     let extrusion = recipe(vec![
         json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"1/5"}]]}),
         json!({"id":"feature","op":"extrude","profile":"profile","distance":"2/5"}),
@@ -625,21 +619,12 @@ fn feature_curved_extrusions_and_full_partial_revolutions_keep_unbounded_uppers(
     }
     for part in parts {
         let report = check(&part);
-        assert_eq!(report.verdict, Verdict::Unresolved, "{report:?}");
+        assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
         assert!(
-            report.findings.iter().any(|f| f.pass == Pass::Forward
-                && matches!(f.reason, Reason::Unresolved(_))
-                && f.brep_faces
-                    .iter()
-                    .flatten()
-                    .any(|o| o.step.as_str() == "feature")),
-            "{report:?}"
-        );
-        assert!(
-            !report
-                .findings
-                .iter()
-                .any(|f| matches!(f.reason, Reason::Gap | Reason::Origins | Reason::Direction)),
+            report
+                .sampled_distance_upper
+                .as_ref()
+                .is_some_and(|u| u <= &options().accuracy),
             "{report:?}"
         );
     }

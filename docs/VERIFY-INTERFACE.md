@@ -124,6 +124,13 @@ A `catallax-response/1` object has `manifest`, `work`, `wall_ms` and the additiv
 
 The geometric manifest is `catallax-manifest/3`. For question sources it retains the fields and meanings of manifest/2. Recipe sources return `status`, `exact`, `result`, `marks`, `step`, `refusal` and `kernel`; omitted properties mean unmeasured. A comparison returns `comparison` instead of geometry. `comparison` contains `verdict`, sample counts, ordered findings and `not_comparable`. Findings contain `code`, `detail`, `pass` and diagnostic exact-coordinate `witness`, `brep_faces`, `field_faces` and `gap` strings. These are sampled display checks, never global geometric certificates; `exact` is false for this source. Free-text details and witness formatting are diagnostic.
 
+`comparison.sampled_distance_upper_mm` is the maximum certified distance upper
+bound over checked samples, including forward mesh error. It is an exact rational
+string in millimetres, or `null` if any required sample distance is unbounded.
+It is not a whole-part Hausdorff bound. Trimmed-face queries can establish finite
+upper bounds on curved Boolean and swept faces without changing the comparison's
+accuracy or promoting residual values to true distance.
+
 The surface vocabulary is `plane`, `cylinder`, `elliptic-cylinder`, `cone`, `sphere`, `torus`. The curve vocabulary is `line`, `circle`, `ellipse`, `parabola`, `hyperbola`, `intersection`. Elliptic cylinders use their own tag when their builders land. Parabolas and hyperbolas retain their own tags and finite trimming topology. No old tag is remapped. New analytic kinds require another version change; unknown library kinds must not be published under a convenient existing tag.
 
 `numbers.operation-budget` is a whole-request refusal. It clears partial geometry, marks and STEP output. No deadline refusal originates in this command. Structural input errors have status `invalid-question`; a panic has status `internal-error`. A worker I/O error exits nonzero and is an infrastructure failure. External termination or machine resource exhaustion leaves an incomplete request, never a geometric refusal. A verifier must fail correctness validation for an internal error, missing response or nonzero exit, even if another build fails the same way.

@@ -8,6 +8,8 @@
 
 mod curve;
 mod isometry;
+/// Certified minimum-distance bounds on trimmed analytic carriers.
+pub mod distance;
 mod math;
 mod point;
 mod pose;

@@ -29,12 +29,14 @@ Catallax is a new public repository, exported from the existing B-rep implementa
 
 ### 3.1 Agreement
 
-The two kernels agree exactly wherever the mathematics allows it.
-Where it does not, they agree within 1 nm, which is 0.000001 mm.
+The two kernels agree exactly on exact regions. Permitted approximations carry the proved bounds below.
+Geometry creation uses one modelling tolerance of 1 nm, which is 0.000001 mm, for sameness and decisions.
 A tolerance is allowed only in two cases, and both are cases of necessity.
 
-1. Surfaces that STEP cannot hold exactly. Examples are a fillet between two curved faces, an offset of a curved face, and a gyroid. Both kernels hold these exactly by their definition. The approximation appears only in the exported file.
+1. Shapes needing a different representation in the B-rep or in STEP, including general curved-face offsets and fillets. Both kernels retain the exact definition. The B-rep may carry a certified polynomial or rational B-spline surface beside it. Each approximated face records its proved local tolerance: 100 nm target and 1 µm hard cap for kernel-made approximations; 10 µm for imports unless the user explicitly accepts and records a looser limit for that file. A local tolerance is also at most a tenth of the shortest neighbouring edge or narrowest neighbouring face. The body's certificate proves exact agreement except for the listed approximated/imported faces and bounded decisions, with complete coverage, orientation and valid topology. A permitted face approximation does not also have to meet a universal 1 nm whole-result bound. Later operations remeasure against the retained exact definition, so tolerances do not grow by inheritance. Display and export record separate output errors and accuracy requirements. Field-only features remain field-only unless an explicit conversion meets its contract.
 2. A decision that takes too long to prove. This is allowed only after the B-rep kernel has proven that the gap behind the decision is smaller than 1 nm. exact-brep already has this outcome, "not exact, with a proven bound". The 1 nm limit is new.
+
+Decide once and reuse the record; merge objects declared the same; retain each local tolerance; and check topology before publication. Never clamp a measured tolerance to its cap. [ARCHITECTURE.md](ARCHITECTURE.md#composable-geometric-error-decision-of-2026-10-22) defines composition and the measurement, comparison and STEP hand-offs for these scoped certificates.
 
 ### 3.2 Refusals
 
@@ -80,7 +82,7 @@ Agreement does not matter for a picture on screen, or for a workflow that only e
 
 Agreement is checked in three places.
 
-1. **In development.** An independent tester built without seeing the kernel's code, exact and certified checks using the Raghothama and Shapiro method, and random recipes run through both kernels. These prove agreement at the 1 nm level on as many kinds of problem as possible.
+1. **In development.** An independent tester built without seeing the kernel's code, exact and certified checks using the Raghothama and Shapiro method, and random recipes run through both kernels. These prove exact agreement or complete coverage of the permitted local bounds, including the 1 nm decision limit, on as many kinds of problem as possible.
 2. **In the app, after every edit.** A cheap surface comparison runs in the background. It evaluates the field at every vertex of the B-rep's display mesh, and it measures how far sampled points on the field's surface are from that mesh. It rechecks only the region the edit touched. It never blocks the user and restarts if the user edits again. It catches differences larger than the mesh accuracy, which is about 0.01 mm. The estimated cost is a fraction of a second of one core per edit. That estimate comes from published Fidget benchmarks and is not measured on our kernels.
 3. **Before anything leaves the app.** STEP export, printing and FEA run the same comparison at a finer level over the whole part.
 
@@ -191,7 +193,7 @@ What changes in exact-brep's design documents (`docs/DESIGN.md`, `docs/ARCHITECT
 
 - what it is part of: the B-rep half of Catallax;
 - the refusal rule in DESIGN R1, per section 3.2;
-- the proven-bound outcome in R1 and R3, now limited to 1 nm per section 3.1;
+- the proven-bound decision outcome in R1 and R3, with geometric gaps below 1 nm per section 3.1;
 - the target, per section 3.8, which retires the 1-in-10,000 programme and its grid cells as the goal;
 - speed per click now matters, because the kernel serves an interactive CAD tool;
 - faces and edges named by the operation that made them.
@@ -245,7 +247,7 @@ SolidDraft is the application this kernel serves. Integration must use the share
 - The FEA design.
 - The on-screen speed measurement.
 - The current 50-second `numbers.deadline` cutoff can answer or refuse the same question depending on machine load. This conflicts with the same-answer rule; resolution needs a separate design and contract change, not a code change in this publication.
-- Enforcing and composing the new 1 nm geometric bound over the inherited mark APIs.
+- Enforcing and composing complete exact/exception certificates over the inherited mark APIs, with the 1 nm decision limit and recorded local face caps.
 
 ## Sources
 

@@ -170,7 +170,7 @@ impl Chart {
         };
         Ok(match &self.surface {
             Surface::Plane(_) => [zero.clone(), zero.clone(), zero],
-            Surface::Cylinder(s) => [&upper(&s.radius)? * &tau2, zero.clone(), zero],
+            Surface::Cylinder(s) => [&upper(&s.radius())? * &tau2, zero.clone(), zero],
             Surface::Cone(s) => {
                 let slope = upper(&s.slope)?;
                 [&(&slope * &q(vmax.abs())) * &tau2, &slope * &tau, zero]

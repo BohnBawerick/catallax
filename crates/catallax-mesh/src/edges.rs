@@ -248,6 +248,36 @@ pub(crate) fn sample(
                 [first_values, &last_values],
             )?;
         }
+        // Chart seams can add a trace sample closer to an endpoint than the
+        // periodic display grid can distinguish. Remove only interior mesh
+        // samples, retaining the exact edge and both topological endpoints.
+        let mut i = 1;
+        while i < indices.len() {
+            let (a, b) = (indices[i - 1], indices[i]);
+            let collapses = adjacent[&edge_id].iter().any(|chart| {
+                chart::key(chart.canonical(chart.project(result.mesh.positions[a])))
+                    == chart::key(chart.canonical(chart.project(result.mesh.positions[b])))
+            });
+            if collapses && !(a == first && b == end) {
+                let displacement = (0..3).fold(Rational::zero(), |sum, k| {
+                    sum + (chart::q(result.mesh.positions[a][k])
+                        - chart::q(result.mesh.positions[b][k]))
+                    .abs()
+                });
+                let bound = &error + &displacement;
+                if bound <= options.chord_tolerance.mul_pow2(-3) {
+                    error = bound;
+                    if b == end {
+                        indices.remove(i - 1);
+                        i = i.saturating_sub(1).max(1);
+                    } else {
+                        indices.remove(i);
+                    }
+                    continue;
+                }
+            }
+            i += 1;
+        }
         if edge.sense == Sense::Reversed {
             indices.reverse();
         }

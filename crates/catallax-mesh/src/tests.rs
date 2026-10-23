@@ -94,7 +94,7 @@ fn surface_distance(surface: &Surface, p: [f64; 3]) -> f64 {
     let radial = libm::sqrt((d.iter().map(|x| x * x).sum::<f64>() - z * z).max(0.0));
     match surface {
         Surface::Plane(_) => z.abs(),
-        Surface::Cylinder(s) => (radial - s.radius.to_f64()).abs(),
+        Surface::Cylinder(s) => (radial - s.radius().to_f64()).abs(),
         Surface::Cone(s) => {
             let k = s.slope.to_f64();
             (radial - k * z).abs() / libm::sqrt(1.0 + k * k)

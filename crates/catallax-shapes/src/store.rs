@@ -457,7 +457,7 @@ impl GeomStore {
                         && zero(b.origin.minus(&a.origin).dot(&a.normal), dec)?
                 }
                 (Surface::Cylinder(a), Surface::Cylinder(b)) => {
-                    zero(&a.radius - &b.radius, dec)?
+                    zero(&a.radius_sq - &b.radius_sq, dec)?
                         && zero(a.axis.cross(&b.axis).norm_squared(), dec)?
                         && zero(b.origin.minus(&a.origin).cross(&a.axis).norm_squared(), dec)?
                 }

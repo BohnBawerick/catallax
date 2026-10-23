@@ -107,7 +107,7 @@ fn support_distance(surface: &Surface, p: &RPoint3, dec: &mut Decider) -> Result
         Surface::Cylinder(s) => {
             let d = p.minus(&s.origin);
             let h = d.dot(&s.axis) / s.axis.norm_squared();
-            absolute(real_norm(&d.minus(&s.axis.scaled(&h)), dec)? - real_ball(&s.radius, dec)?)
+            absolute(real_norm(&d.minus(&s.axis.scaled(&h)), dec)? - real_ball(&s.radius(), dec)?)
         }
         Surface::Cone(s) => {
             let d = p.minus(&s.apex);
@@ -455,6 +455,7 @@ pub(crate) fn run(
     let mut selected = BTreeSet::new();
     let mut sample_points = vec![None; mesh.faces.len()];
     let mut storage = Workspace::default();
+    let width = options.accuracy.mul_pow2(-20);
     for (i, position) in mesh.positions.iter().enumerate() {
         if revision.is_cancelled() {
             return Completion::Cancelled;
@@ -493,7 +494,38 @@ pub(crate) fn run(
             continue;
         }
         let d = query.distance.millimetres;
-        let upper = Rational::from_f64_exact(d.hi()).map(|h| &h + &error);
+        let mut upper = Rational::from_f64_exact(d.hi()).map(|h| &h + &error);
+        if query.location != Location::Indeterminate
+            && upper.as_ref().is_none_or(|h| h > &options.accuracy)
+        {
+            // A residual has no metric upper bound. Seek an independent,
+            // trim-checked field boundary point instead of treating it as distance.
+            'witness: for &face in &incident[i] {
+                for origin in &face_origins[face] {
+                    let Some(&(id, source)) = registry.get(origin) else {
+                        continue;
+                    };
+                    let Ok(q) = witness(
+                        &field.faces()[source].surface,
+                        &supports[source],
+                        &p,
+                        &width,
+                        &mut dec,
+                    ) else {
+                        continue;
+                    };
+                    let candidate = norm(&q.minus(&p)).hi() + error.clone();
+                    if candidate <= options.accuracy
+                        && field
+                            .face_query_checked(id, &q, &mut storage, &mut dec)
+                            .is_ok_and(|q| q.state == FaceState::OnFace)
+                    {
+                        upper = Some(candidate);
+                        break 'witness;
+                    }
+                }
+            }
+        }
         if query.location != Location::Indeterminate
             && upper.as_ref().is_some_and(|h| h <= &options.accuracy)
         {
@@ -572,7 +604,6 @@ pub(crate) fn run(
     if options.region.is_none() {
         selected.extend(0..mesh.faces.len());
     }
-    let width = options.accuracy.mul_pow2(-20);
     let mut observed: BTreeMap<usize, BTreeSet<Origin>> = BTreeMap::new();
     let mut oriented = BTreeSet::new();
     let sampling_failed = std::cell::Cell::new(false);

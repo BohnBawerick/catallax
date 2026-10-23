@@ -102,7 +102,7 @@ pub fn implicit_oracle(s: &Surface, point: &RPoint3) -> Q {
             let c = cross(&d, &a);
             dot(&c, &c)
                 - sq(&oq(&s
-                    .radius
+                    .radius()
                     .as_rational()
                     .expect("rational oracle fixture")))
                     * dot(&a, &a)
@@ -488,7 +488,7 @@ pub fn scale_surface(surface: &Surface, s: &Rational) -> Surface {
         }),
         Surface::Cylinder(a) => Surface::Cylinder(Cylinder {
             origin: scale_definition_point(&a.origin, &scale),
-            radius: &a.radius * &scale,
+            radius_sq: &a.radius_sq * &scale.square(),
             ..a.clone()
         }),
         Surface::Cone(a) => Surface::Cone(Cone {

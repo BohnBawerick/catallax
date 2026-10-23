@@ -190,9 +190,7 @@ impl Feature {
                 Surface::Cylinder(Cylinder {
                     origin: profile.world(c).into(),
                     axis: normal.clone().into(),
-                    radius: profile::sqrt(r)
-                        .ok_or_else(|| bad("features.unsupported-algebraic-cylinder-radius"))?
-                        .into(),
+                    radius_sq: r.clone().into(),
                     ref_dir: profile.world(&edge.start).minus(&profile.world(c)).into(),
                 })
             } else {
@@ -430,11 +428,7 @@ impl Feature {
                         Surface::Cylinder(Cylinder {
                             origin: project(&start).into(),
                             axis: axis.clone().into(),
-                            radius: profile::sqrt(&radial.norm_squared())
-                                .ok_or_else(|| {
-                                    bad("features.unsupported-algebraic-cylinder-radius")
-                                })?
-                                .into(),
+                            radius_sq: radial.norm_squared().into(),
                             ref_dir: radial.into(),
                         })
                     } else {
@@ -1323,14 +1317,14 @@ impl Feature {
         {
             let mut points = Vec::new();
             if let Some((center, radius, _)) = &edge.circle {
-                let radius = profile::sqrt(radius).ok_or_else(|| {
-                    Refusal::new(
-                        "field.sample-algebraic-radius",
-                        "no rational circle sampling frame",
-                    )
-                })?;
+                let radial = profile::sqrt(radius)
+                    .map(|r| [r, Rational::zero()])
+                    .unwrap_or_else(|| profile::sub(&edge.start, center));
                 for [x, y] in circle(n) {
-                    let q = [&center[0] + &(&radius * &x), &center[1] + &(&radius * &y)];
+                    let q = [
+                        &center[0] + &(&(&radial[0] * &x) - &(&radial[1] * &y)),
+                        &center[1] + &(&(&radial[0] * &y) + &(&radial[1] * &x)),
+                    ];
                     if edge.contains(&profile::real(&q), &mut dec)? {
                         points.push(q);
                     }

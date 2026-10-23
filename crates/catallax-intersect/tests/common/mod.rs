@@ -276,7 +276,7 @@ pub fn scaled_surface(s: &Surface, k: &Rational) -> Surface {
         }),
         Surface::Cylinder(s) => Surface::Cylinder(Cylinder {
             origin: point(&s.origin),
-            radius: &s.radius * &k,
+            radius_sq: &s.radius_sq * &k.square(),
             ..s.clone()
         }),
         Surface::Sphere(s) => Surface::Sphere(Sphere {

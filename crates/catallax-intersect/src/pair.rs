@@ -262,7 +262,7 @@ fn plane_cylinder(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     let dot = p.normal.dot(&c.axis);
-    let r2 = c.radius.square();
+    let r2 = c.radius_sq.clone();
     if !is_zero(&dot, dec)? {
         let center = c.origin.plus(
             &c.axis
@@ -374,14 +374,16 @@ fn parallel_cylinders(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result<P
     let u = d.minus(&a.axis.scaled(&(d.dot(&a.axis) / a.axis.norm_squared())));
     let d2 = u.norm_squared();
     if is_zero(&d2, dec)? {
-        return Ok(if is_zero(&(&a.radius - &b.radius), dec)? {
+        return Ok(if is_zero(&(&a.radius_sq - &b.radius_sq), dec)? {
             Plan::coincident(true)
         } else {
             Plan::disjoint()
         });
     }
-    let sum = &a.radius + &b.radius;
-    let diff = &a.radius - &b.radius;
+    let a_radius = a.radius();
+    let b_radius = b.radius();
+    let sum = &a_radius + &b_radius;
+    let diff = &a_radius - &b_radius;
     let outer = compare(&d2, &sum.square(), dec)?;
     let inner = compare(&d2, &diff.square(), dec)?;
     if outer == Sign::Positive || inner == Sign::Negative {
@@ -390,7 +392,7 @@ fn parallel_cylinders(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result<P
     if outer == Sign::Zero {
         return Ok(Plan::form(
             line(
-                a.origin.plus(&u.scaled(&(&a.radius / &sum))),
+                a.origin.plus(&u.scaled(&(&a_radius / &sum))),
                 a.axis.clone(),
             ),
             Contact::Tangent,
@@ -399,15 +401,15 @@ fn parallel_cylinders(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result<P
     if inner == Sign::Zero {
         return Ok(Plan::form(
             line(
-                a.origin.plus(&u.scaled(&(&a.radius / &diff))),
+                a.origin.plus(&u.scaled(&(&a_radius / &diff))),
                 a.axis.clone(),
             ),
             Contact::Tangent,
         ));
     }
-    let t = (&d2 + &a.radius.square() - b.radius.square()) / (s(2) * d2.clone());
+    let t = (&d2 + &a.radius_sq - b.radius_sq.clone()) / (s(2) * d2.clone());
     let v = a.axis.cross(&u);
-    let h2 = (a.radius.square() - t.square() * d2) / v.norm_squared();
+    let h2 = (a.radius_sq.clone() - t.square() * d2) / v.norm_squared();
     Ok(two_lines(
         a.origin.plus(&u.scaled(&t)),
         v,
@@ -425,7 +427,7 @@ fn cylinders(
     if vector_zero(&a.axis.cross(&b.axis), dec)? {
         return parallel_cylinders(a, b, dec);
     }
-    let a_is_big = compare(&a.radius, &b.radius, dec)? != Sign::Negative;
+    let a_is_big = compare(&a.radius_sq, &b.radius_sq, dec)? != Sign::Negative;
     let (big, small) = if a_is_big { (a, b) } else { (b, a) };
     let m = big.axis.cross(&small.axis);
     let d = small.origin.minus(&big.origin);
@@ -439,13 +441,15 @@ fn cylinders(
             .scaled(&(d.cross(&big.axis).dot(&m) / m.norm_squared())),
     );
     let delta2 = d.dot(&m).square() / m.norm_squared();
-    let sum = &big.radius + &small.radius;
-    let diff = &big.radius - &small.radius;
+    let big_radius = big.radius();
+    let small_radius = small.radius();
+    let sum = &big_radius + &small_radius;
+    let diff = &big_radius - &small_radius;
     match compare(&delta2, &sum.square(), dec)? {
         Sign::Positive => return Ok(Plan::disjoint()),
         Sign::Zero => {
             return Ok(Plan::point(
-                fb.plus(&fs.minus(&fb).scaled(&(&big.radius / &sum))),
+                fb.plus(&fs.minus(&fb).scaled(&(&big_radius / &sum))),
             ));
         }
         Sign::Negative => {}
@@ -474,7 +478,7 @@ fn cylinders(
             .scaled(&small.axis.norm_squared())
             .plus(&small.axis.scaled(&k));
         let cosine = big.axis.dot(&small.axis) / k;
-        let offset = m.scaled(&root_real(&(big.radius.square() / m.norm_squared())));
+        let offset = m.scaled(&root_real(&(&big.radius_sq / &m.norm_squared())));
         let points = vec![fb.plus(&offset), fb.plus(&offset.scaled(&s(-1)))];
         return Ok(Plan {
             points,
@@ -488,8 +492,8 @@ fn cylinders(
                     center: fb.clone(),
                     normal,
                     major_dir,
-                    major_sq: s(2) * big.radius.square() / denom,
-                    minor_sq: big.radius.square(),
+                    major_sq: s(2) * big.radius_sq.clone() / denom,
+                    minor_sq: big.radius_sq.clone(),
                 },
                 witness: None,
                 contact: Contact::Crossing,
@@ -527,8 +531,8 @@ fn cylinders(
         e1: e1.clone(),
         e2: e2.clone(),
         e3: e3.clone(),
-        big: big.radius.clone(),
-        small: small.radius.clone(),
+        big: big_radius.clone(),
+        small: small_radius.clone(),
         delta: delta.clone(),
         alpha: alpha.clone(),
         gamma: gamma.clone(),
@@ -536,18 +540,18 @@ fn cylinders(
         sense,
     };
     if mode == 3 {
-        let z = (small.radius.square() - (&big.radius - &delta).square()).sqrt() / alpha;
-        let witness = fb.plus(&e2.scaled(&big.radius)).plus(&e3.scaled(&z));
+        let z = (&small.radius_sq - &(&big_radius - &delta).square()).sqrt() / alpha;
+        let witness = fb.plus(&e2.scaled(&big_radius)).plus(&e3.scaled(&z));
         return Ok(Plan::branches(vec![witness], None, None, frame));
     }
-    let x = root_real(&(big.radius.square() - delta2));
+    let x = root_real(&(&big.radius_sq - &delta2));
     let wplus = fs
         .plus(&e1.scaled(&x))
-        .plus(&e3.scaled(&((&gamma * &x + small.radius.clone()) / alpha.clone())));
+        .plus(&e3.scaled(&((&gamma * &x + small_radius.clone()) / alpha.clone())));
     let wminus = fs
         .plus(&e1.scaled(&(-&x)))
-        .plus(&e3.scaled(&((&small.radius - &(&gamma * &x)) / alpha)));
-    let node = (mode == 4).then(|| fb.plus(&fs.minus(&fb).scaled(&(&big.radius / &diff))));
+        .plus(&e3.scaled(&((&small_radius - &(&gamma * &x)) / alpha)));
+    let node = (mode == 4).then(|| fb.plus(&fs.minus(&fb).scaled(&(&big_radius / &diff))));
     Ok(Plan::branches(
         vec![wplus, wminus],
         node,
@@ -567,10 +571,10 @@ fn cylinder_sphere(
     );
     let offset = sphere.center.minus(&foot);
     let d2 = offset.norm_squared();
-    let r2 = c.radius.square();
+    let r2 = c.radius_sq.clone();
     let big_r2 = sphere.radius.square();
     if is_zero(&d2, dec)? {
-        match compare(&sphere.radius, &c.radius, dec)? {
+        match compare(&big_r2, &r2, dec)? {
             Sign::Negative => return Ok(Plan::disjoint()),
             Sign::Zero => {
                 return Ok(Plan::form(
@@ -608,8 +612,9 @@ fn cylinder_sphere(
             ..Plan::empty()
         });
     }
-    let sum = &c.radius + &sphere.radius;
-    let diff = &c.radius - &sphere.radius;
+    let radius = c.radius();
+    let sum = &radius + &sphere.radius;
+    let diff = &radius - &sphere.radius;
     let positive_diff = sign(&diff, dec)? == Sign::Positive;
     let outer = compare(&d2, &sum.square(), dec)?;
     let inner = if positive_diff {
@@ -621,11 +626,11 @@ fn cylinder_sphere(
         return Ok(Plan::disjoint());
     }
     let d = root_real(&d2);
-    let nearest = foot.plus(&offset.scaled(&(&c.radius / &d)));
+    let nearest = foot.plus(&offset.scaled(&(&radius / &d)));
     if outer == Sign::Zero || inner == Sign::Zero {
         return Ok(Plan::point(nearest));
     }
-    let outer_diff = &sphere.radius - &c.radius;
+    let outer_diff = &sphere.radius - &radius;
     let mode = if sign(&outer_diff, dec)? == Sign::Positive {
         match compare(&outer_diff.square(), &d2, dec)? {
             Sign::Positive => 8,
@@ -635,7 +640,7 @@ fn cylinder_sphere(
     } else {
         6
     };
-    let z = ((&big_r2 - &(&c.radius - &d).square()) / c.axis.norm_squared()).sqrt();
+    let z = ((&big_r2 - &(&radius - &d).square()) / c.axis.norm_squared()).sqrt();
     let upper = nearest.plus(&c.axis.scaled(&z));
     let lower = nearest.plus(&c.axis.scaled(&(-z)));
     let e3 = unit(&c.axis);
@@ -647,7 +652,7 @@ fn cylinder_sphere(
         e1,
         e2,
         e3,
-        radius: c.radius.clone(),
+        radius: radius.clone(),
         d: d.clone(),
         k,
         mode,
@@ -657,7 +662,7 @@ fn cylinder_sphere(
             -1
         },
     };
-    let node = (mode == 7).then(|| foot.plus(&offset.scaled(&(&(-&c.radius) / &d))));
+    let node = (mode == 7).then(|| foot.plus(&offset.scaled(&(&(-&radius) / &d))));
     let divider = (mode != 6).then(|| Divider::new(foot, c.axis.clone()));
     Ok(Plan::branches(
         if mode == 6 {

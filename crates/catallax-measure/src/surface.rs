@@ -98,7 +98,7 @@ pub(crate) fn compile(
             let axis = unit(&b, &c.axis);
             let z = dot(q, axis);
             let radial = std::array::from_fn::<_, 3, _>(|i| q[i] - z * axis[i]);
-            let radius = b.exact(&c.radius);
+            let radius = b.exact(&c.radius());
             let er = radial.map(|x| x / radius);
             let du = dot(axis, cross(q, derivative)) / radius.square();
             let origin = offset(&b, &c.origin, anchor);
@@ -277,7 +277,7 @@ fn second_moment<'a>(
             let q = displacement(b, &c.origin);
             let axis = unit(b, &c.axis);
             let z = dot(q, axis);
-            let radius = b.exact(&c.radius);
+            let radius = b.exact(&c.radius());
             let er = std::array::from_fn(|k| (q[k] - z * axis[k]) / radius);
             let du = dot(axis, cross(q, dq)) / radius.square();
             let origin = offset(b, &c.origin, anchor);
@@ -440,7 +440,7 @@ fn face_centroid(
             let q = displacement(b, &c.origin);
             let axis = unit(b, &c.axis);
             let z = dot(q, axis);
-            let radius = b.exact(&c.radius);
+            let radius = b.exact(&c.radius());
             let radial = std::array::from_fn::<_, 3, _>(|i| q[i] - z * axis[i]);
             let du = dot(axis, cross(q, dq)) / radius.square();
             let origin = offset(b, &c.origin, anchor);

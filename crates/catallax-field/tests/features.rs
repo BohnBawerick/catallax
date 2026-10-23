@@ -651,16 +651,46 @@ fn placements_empty_material_and_nonunit_axis_definitions() {
 }
 
 #[test]
+fn rational_bisector_arc_keeps_its_irrational_radius_and_trims() {
+    let part = extrude(
+        json!([[
+            {"kind":"arc","id":"round","centre":["1","1/2"],"to":["0","0"],"turn":"ccw"},
+            {"kind":"line","id":"chord","to":["2","0"]}
+        ]]),
+        "3",
+    );
+    let plan = Plan::compile(&part).unwrap();
+    check(
+        &plan,
+        &[
+            (["1", "1", "1"], Location::Inside),
+            (["1", "-1/4", "1"], Location::Outside),
+            (["0", "1", "1"], Location::Boundary),
+            (["2", "1", "1"], Location::Boundary),
+            (["1", "1", "0"], Location::Boundary),
+            (["1", "1", "3"], Location::Boundary),
+            (["1", "1", "4"], Location::Outside),
+        ],
+    );
+    let built = catallax_features::evaluate(&part, &mut Decider::default()).unwrap();
+    for face in built.model.faces_of_body(built.result) {
+        if let catallax_shapes::Surface::Cylinder(c) =
+            built.model.geom().surface(built.model.face(face).surface)
+        {
+            assert_eq!(
+                c.radius_sq.as_rational(),
+                Some(Rational::parse("5/4").unwrap())
+            );
+        }
+    }
+}
+
+#[test]
 fn generated_algebraic_radii_and_spindle_sheets_keep_the_shared_refusals() {
-    let semicircle = json!([[{"kind":"arc","id":"round","centre":["0","0"],"to":["-1","-1"],"turn":"ccw"},{"kind":"line","id":"chord","to":["1","1"]}]]);
     let spherical = json!([[{"kind":"arc","id":"round","centre":["0","0"],"to":["1","1"],"turn":"ccw"},{"kind":"line","id":"chord","to":["1","-1"]}]]);
     let toroidal = json!([[{"kind":"arc","id":"round","centre":["3","0"],"to":["4","1"],"turn":"ccw"},{"kind":"line","id":"chord","to":["4","-1"]}]]);
     let spindle = json!([[{"kind":"arc","id":"round","centre":["1","0"],"to":["1","2"],"turn":"ccw"},{"kind":"line","id":"chord","to":["1","-2"]}]]);
     for (r, code) in [
-        (
-            extrude(semicircle, "2"),
-            "features.unsupported-algebraic-cylinder-radius",
-        ),
         (
             revolve(spherical, "360"),
             "features.unsupported-algebraic-sphere-radius",

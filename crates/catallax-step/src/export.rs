@@ -567,7 +567,7 @@ impl<'a> Exporter<'a> {
                 &s.axis,
                 &s.ref_dir,
                 "CYLINDRICAL_SURFACE",
-                vec![s.radius.clone()],
+                vec![s.radius()],
             ),
             Surface::Cone(s) => (&s.apex, &s.axis, &s.ref_dir, "CONICAL_SURFACE", vec![]),
             Surface::Sphere(s) => (
@@ -606,7 +606,7 @@ impl<'a> Exporter<'a> {
                 extent_error = Rational::zero();
             }
             Surface::Cylinder(s) => {
-                base_error = base_error + &number::upper(&s.radius, self.dec)? * &extent_error
+                base_error = base_error + &number::upper(&s.radius(), self.dec)? * &extent_error
             }
             Surface::Cone(s) => {
                 let p = number::work_precision(

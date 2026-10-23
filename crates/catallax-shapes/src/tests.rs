@@ -441,7 +441,7 @@ fn sides_near_carriers_and_scaled_placed_families() {
                     s.origin = Point3::origin()
                         .plus(&s.origin.minus(&Point3::origin()).scaled(&real_scale))
                 }
-                Surface::Cylinder(s) => s.radius = &s.radius * &real_scale,
+                Surface::Cylinder(s) => s.radius_sq = &s.radius_sq * &real_scale.square(),
                 Surface::Cone(_) => {}
                 Surface::Sphere(s) => s.radius = &s.radius * &real_scale,
                 Surface::Torus(s) => {

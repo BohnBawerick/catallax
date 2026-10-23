@@ -113,7 +113,7 @@ pub fn cylinder(
     let side = Surface::Cylinder(Cylinder {
         origin: Point3::origin(),
         axis: unit(2, 1),
-        radius: radius.clone().into(),
+        radius_sq: catallax_numbers::Real::from(radius.clone()).square(),
         ref_dir: unit(0, 1),
     });
     Ok(round_solid(

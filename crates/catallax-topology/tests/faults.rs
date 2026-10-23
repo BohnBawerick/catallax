@@ -98,7 +98,7 @@ blind_test!(case_26_unbounded_plane_cylinder_and_cone, {
         Surface::Cylinder(Cylinder {
             origin: p(0, 0, 0).into(),
             axis: v(0, 0, 1).into(),
-            radius: r(2).into(),
+            radius_sq: r(4).into(),
             ref_dir: v(1, 0, 0).into(),
         }),
         Surface::Cone(Cone {

@@ -270,7 +270,7 @@ impl Isometry {
             Surface::Cylinder(s) => Surface::Cylinder(Cylinder {
                 origin: p(&s.origin),
                 axis: v(&s.axis),
-                radius: s.radius.clone(),
+                radius_sq: s.radius_sq.clone(),
                 ref_dir: v(&s.ref_dir),
             }),
             Surface::Cone(s) => Surface::Cone(Cone {

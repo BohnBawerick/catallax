@@ -276,7 +276,7 @@ pub(crate) fn compile(
                 Surface::Cylinder(Cylinder {
                     origin: Point3::origin(),
                     axis: unit(2, 1),
-                    radius: parameters[0].clone().into(),
+                    radius_sq: catallax_numbers::Real::from(parameters[0].clone()).square(),
                     ref_dir: unit(0, 1),
                 })
             } else {

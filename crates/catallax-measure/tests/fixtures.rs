@@ -66,7 +66,7 @@ fn point_on_surface(p: &Point3, s: &Surface) {
             let d = sub(&point, &xyz(&s.origin));
             let axis = vector(&s.axis);
             let c = cross(&d, &axis);
-            let radius = to_q(s.radius.rational_ref().unwrap());
+            let radius = to_q(s.radius().rational_ref().unwrap());
             assert_eq!(dot(&c, &c), radius.clone() * radius * dot(&axis, &axis));
         }
         Surface::Cone(s) => {

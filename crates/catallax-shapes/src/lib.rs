@@ -7,6 +7,7 @@
 //! The contract is `docs/pieces/02-shapes.md`.
 
 mod curve;
+mod isometry;
 mod math;
 mod point;
 mod pose;
@@ -18,6 +19,7 @@ mod vector;
 mod tests;
 
 pub use curve::{Circle, Curve, CurveKind, Ellipse, IntersectionCurve, Line};
+pub use isometry::Isometry;
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};

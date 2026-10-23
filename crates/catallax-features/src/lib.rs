@@ -32,11 +32,13 @@
 
 mod evaluate;
 mod extrude;
+mod placement;
 mod profile;
 mod revolve;
 mod stock;
 
 pub use evaluate::{BuildError, Built, evaluate};
 pub use extrude::extrude;
+pub use placement::{copy_origin, mirror_placement, pattern_placement};
 pub use profile::Profile;
 pub use revolve::revolve;

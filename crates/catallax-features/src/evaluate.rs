@@ -242,6 +242,62 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                     };
                     BodyValue { body, radius }
                 }
+                Operation::Pattern { body, layout } => {
+                    // Validate even count-one and empty patterns before set identities.
+                    crate::pattern_placement(layout, 0, dec)?;
+                    let source = &bodies[body];
+                    let mut body = source.body;
+                    let mut radius = source.radius.clone();
+                    for instance in 1..layout.count() {
+                        let map = crate::pattern_placement(layout, instance, dec)?;
+                        let shift = [&map.translation.x, &map.translation.y, &map.translation.z]
+                            .into_iter()
+                            .try_fold(Rational::zero(), |sum, v| {
+                                let b = dec.enclose_at(v, 128)?;
+                                Ok::<_, Refusal>(sum + b.lo().abs().max(b.hi().abs()))
+                            })?;
+                        radius = radius.max(&source.radius + &shift);
+                        let copy = catallax_topology::transformed_body(
+                            model,
+                            source.body,
+                            &map,
+                            |origin| crate::copy_origin(&step.id, instance, origin),
+                        );
+                        body = boolean(model, body, copy, BoolOp::Unite, dec)
+                            .map_err(|e| e.refusal)?
+                            .body;
+                    }
+                    BodyValue { body, radius }
+                }
+                Operation::Mirror {
+                    body,
+                    plane,
+                    keep_original,
+                } => {
+                    let map = crate::mirror_placement(plane)?;
+                    let source = &bodies[body];
+                    let shift = [&map.translation.x, &map.translation.y, &map.translation.z]
+                        .into_iter()
+                        .try_fold(Rational::zero(), |sum, v| {
+                            let b = dec.enclose_at(v, 128)?;
+                            Ok::<_, Refusal>(sum + b.lo().abs().max(b.hi().abs()))
+                        })?;
+                    let copy =
+                        catallax_topology::transformed_body(model, source.body, &map, |origin| {
+                            crate::copy_origin(&step.id, 1, origin)
+                        });
+                    let body = if *keep_original {
+                        boolean(model, source.body, copy, BoolOp::Unite, dec)
+                            .map_err(|e| e.refusal)?
+                            .body
+                    } else {
+                        copy
+                    };
+                    BodyValue {
+                        body,
+                        radius: &source.radius + &shift,
+                    }
+                }
                 _ => {
                     return Err(Refusal::new(
                         "features.unsupported-operation",

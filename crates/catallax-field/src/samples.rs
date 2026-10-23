@@ -2,11 +2,11 @@
 use crate::{Instruction, Plan, geometry::Leaf};
 use catallax_numbers::{Rational, Refusal};
 use catallax_recipe::{BooleanKind, Origin};
-use catallax_shapes::{Pose, RPoint3};
+use catallax_shapes::{Isometry, RPoint3};
 
 pub(crate) type Bounds = [[Rational; 2]; 3];
 
-pub(crate) fn transform(bounds: &Bounds, pose: &Pose) -> Result<Bounds, Refusal> {
+pub(crate) fn transform(bounds: &Bounds, pose: &Isometry) -> Result<Bounds, Refusal> {
     let mut result: Option<Bounds> = None;
     for corner in 0..8 {
         let [x, y, z] = std::array::from_fn(|i| bounds[i][(corner >> i) & 1].clone());
@@ -76,7 +76,8 @@ impl Plan {
             ));
         }
         if !self.faces.iter().any(|face| {
-            self.leaf_registers[face.leaf].is_some()
+            face.in_result
+                && self.leaf_registers[face.leaf].is_some()
                 && matches!(self.leaves[face.leaf], Leaf::Feature(_))
         }) {
             return Ok(true);
@@ -126,7 +127,7 @@ impl Plan {
             )
         })?;
         for face in &self.faces {
-            if self.leaf_registers[face.leaf].is_none() {
+            if !face.in_result || self.leaf_registers[face.leaf].is_none() {
                 continue;
             }
             if let Leaf::Feature(feature) = &self.leaves[face.leaf]

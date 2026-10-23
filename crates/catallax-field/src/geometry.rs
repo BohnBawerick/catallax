@@ -7,15 +7,15 @@ use catallax_numbers::{
 };
 use catallax_recipe::{ElementId, Operation, Origin, Role, StepId};
 use catallax_shapes::{
-    Cone, Cylinder, Plane, Point3, Pose, RPoint3, RVector3, Rotation, Sphere, Surface, Torus,
-    Vector3,
+    Cone, Cylinder, Isometry, Plane, Point3, Pose, RPoint3, RVector3, Rotation, Sphere, Surface,
+    Torus, Vector3,
 };
 
 #[derive(Clone, Debug)]
 pub(crate) struct Primitive {
     pub kind: Kind,
     pub parameters: [Rational; 3],
-    inverse: Pose,
+    inverse: Isometry,
     fast_matrix: [[f64; 3]; 3],
     fast_translation: [f64; 3],
     fast_parameters: [f64; 5],
@@ -116,8 +116,8 @@ impl Constraint {
             _ => None,
         }
     }
-    pub(crate) fn transform(&mut self, pose: &Pose) {
-        *self = constraint(self.surface.transformed(pose));
+    pub(crate) fn transform(&mut self, pose: &Isometry) {
+        *self = constraint(pose.surface(&self.surface));
     }
 }
 pub(crate) fn support_geometry(
@@ -230,7 +230,7 @@ pub(crate) fn compile(
     let rotation = Rotation::from_quaternion(w, x, y, zz)?;
     let [x, y, zz] = placement.translation.0.clone().map(|n| q(&n));
     let pose = Pose::new(rotation, RVector3::new(x, y, zz).to_real(), dec)?;
-    let inverse = pose.inverse();
+    let inverse = Isometry::from(&pose.inverse());
     let mut constraints = Vec::new();
     let mut faces = Vec::new();
     let mut add = |surface: Surface, role: Option<Role>| -> Result<(), Refusal> {
@@ -248,6 +248,7 @@ pub(crate) fn compile(
                 support,
                 gradient,
                 leaf: 0,
+                in_result: false,
             });
         }
         constraints.push(constraint);
@@ -336,7 +337,7 @@ pub(crate) fn compile(
 }
 
 pub(crate) fn display_box(
-    pose: &Pose,
+    pose: &Isometry,
     bounds: &[[Rational; 2]; 3],
     dec: &mut Decider,
 ) -> Result<[Ball; 3], Refusal> {
@@ -356,16 +357,16 @@ pub(crate) fn display_box(
     for i in 0..3 {
         result[i] = enclose(shift[i], 128, dec)?;
         for (j, coordinate) in local.iter().enumerate() {
-            result[i] = &result[i]
-                + &(enclose(&pose.rotation.matrix()[i][j], 128, dec)? * coordinate.clone());
+            result[i] =
+                &result[i] + &(enclose(&pose.matrix()[i][j], 128, dec)? * coordinate.clone());
         }
     }
     Ok(result)
 }
-pub(crate) fn fast_matrix(inverse: &Pose) -> [[f64; 3]; 3] {
-    std::array::from_fn(|i| std::array::from_fn(|j| inverse.rotation.matrix()[i][j].to_f64()))
+pub(crate) fn fast_matrix(inverse: &Isometry) -> [[f64; 3]; 3] {
+    std::array::from_fn(|i| std::array::from_fn(|j| inverse.matrix()[i][j].to_f64()))
 }
-pub(crate) fn fast_translation(inverse: &Pose) -> [f64; 3] {
+pub(crate) fn fast_translation(inverse: &Isometry) -> [f64; 3] {
     [
         &inverse.translation.x,
         &inverse.translation.y,
@@ -380,12 +381,12 @@ impl Primitive {
             && self.parameters == other.parameters
             && self.inverse.same_motion(&other.inverse, dec)?)
     }
-    fn transform(&mut self, pose: &Pose) {
+    fn transform(&mut self, pose: &Isometry) {
         self.inverse = pose.inverse().then(&self.inverse);
         self.fast_matrix = fast_matrix(&self.inverse);
         self.fast_translation = fast_translation(&self.inverse);
         for c in &mut self.constraints {
-            *c = constraint(c.surface.transformed(pose));
+            *c = constraint(pose.surface(&c.surface));
         }
     }
     pub fn location(&self, point: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
@@ -533,6 +534,7 @@ pub(crate) fn face(surface: Surface, origin: Origin, dec: &mut Decider) -> Resul
         support,
         gradient,
         leaf: 0,
+        in_result: false,
     })
 }
 
@@ -629,7 +631,7 @@ impl Leaf {
         }
         Ok(false)
     }
-    pub fn transform(&mut self, pose: &Pose) {
+    pub fn transform(&mut self, pose: &Isometry) {
         match self {
             Self::Primitive(a) => a.transform(pose),
             Self::Feature(a) => a.transform(pose),
@@ -713,6 +715,10 @@ impl Leaf {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
         match self {
             Self::Primitive(_) => Ok(Some(true)),
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),

@@ -10,6 +10,7 @@ mod build;
 mod check;
 mod entity;
 mod model;
+mod transform;
 
 pub use build::{block, cone, cylinder, empty, sphere, torus};
 pub use entity::{
@@ -17,3 +18,4 @@ pub use entity::{
     LumpId, Sense, Shell, ShellId, Vertex, VertexId,
 };
 pub use model::{EntityCounts, Model, TopologyFault};
+pub use transform::transformed_body;

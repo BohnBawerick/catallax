@@ -29,6 +29,7 @@ dependencies = [
  "catallax-mesh",
  "catallax-numbers",
  "catallax-recipe",
+ "catallax-shapes",
  "catallax-topology",
  "libm",
  "serde",

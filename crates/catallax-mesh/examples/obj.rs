@@ -103,8 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             face.max_chord_error.to_f64_nearest()
         );
         println!(
-            "  aspect <= {}, angle <= {:?}",
-            face.max_aspect_ratio.to_f64_nearest(),
+            "  aspect <= {:?}, angle <= {:?}",
+            face.max_aspect_ratio.as_ref().map(Rational::to_f64_nearest),
             face.max_angular_deviation
                 .as_ref()
                 .map(Rational::to_f64_nearest)

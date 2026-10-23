@@ -214,6 +214,12 @@ impl TracePiece {
         Ok(self.enclose_jets(t, 0, dec)?.remove(0))
     }
 
+    /// Exact algebraic point at a parameter in `[0, 1]`.
+    /// Retains incidence when display rounding collapses distinct samples.
+    pub fn evaluate_exact(&self, t: &Rational, dec: &Decider) -> Result<Point3, Refusal> {
+        chart::exact_position(&self.coords, t, dec)
+    }
+
     /// Proven enclosure of the derivative at parameter `t`, or a deadline refusal.
     pub fn derivative(&self, t: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
         Ok(self.enclose_jets(t, 1, dec)?.remove(1))

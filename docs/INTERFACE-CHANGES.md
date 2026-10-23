@@ -689,6 +689,11 @@ variation across each parameter triangle and coordinate rounding. Length checks
 use the exact rational values of returned binary64 positions. Face reports give
 an aspect-ratio bound and the requested certified angular bound. Unmet aspect
 requests appear in `Mesh::unavailable_controls`, with the face and reason.
+Exact planar trims retain their incidence through shared dyadic edge refinement.
+`TracePiece::evaluate_exact` retains the algebraic positions of boundary samples
+before display rounding, including samples introduced by length controls.
+The aspect bound is `None` when rounding collapses a facet to zero area; requested
+aspect and angular controls then appear as unavailable rather than finite bounds.
 
 Why: applications need exact geometric summaries and explicit display guarantees,
 not quantities inferred from triangles or controls silently discarded.

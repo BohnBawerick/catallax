@@ -82,7 +82,7 @@ pub(crate) fn quality(
     positions: [[f64; 3]; 3],
     angular_limit: Option<&Rational>,
     dec: &Decider,
-) -> Result<(Rational, bool), Refusal> {
+) -> Result<(Option<Rational>, bool), Refusal> {
     let [a, b, c] = positions.map(|p| p.map(chart::q));
     let ab: [Rational; 3] = std::array::from_fn(|i| &b[i] - &a[i]);
     let ac: [Rational; 3] = std::array::from_fn(|i| &c[i] - &a[i]);
@@ -93,7 +93,7 @@ pub(crate) fn quality(
     ];
     let norm2 = cross.iter().fold(Rational::zero(), |s, x| s + x * x);
     if norm2.is_zero() {
-        return Err(failure("display triangle has zero area"));
+        return Ok((None, angular_limit.is_none()));
     }
     let norm = Ball::from_rational(&norm2, BITS).sqrt().unwrap();
     if norm.lo() <= Rational::zero() {
@@ -142,5 +142,5 @@ pub(crate) fn quality(
     } else {
         true
     };
-    Ok((aspect, angular_reached))
+    Ok((Some(aspect), angular_reached))
 }

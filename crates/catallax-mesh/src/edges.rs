@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, MarkLog, Rational, Refusal};
+use catallax_shapes::Point3;
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
@@ -14,6 +15,7 @@ pub(crate) struct Boundaries {
     pub(crate) mesh: Mesh,
     pub(crate) edges: BTreeMap<EdgeId, usize>,
     pub(crate) vertices: BTreeMap<VertexId, usize>,
+    pub(crate) exact_positions: BTreeMap<usize, Point3>,
     pub(crate) marks: MarkLog,
 }
 
@@ -48,6 +50,7 @@ struct Sampler<'a> {
     positions: &'a mut Vec<[f64; 3]>,
     indices: &'a mut Vec<usize>,
     error: &'a mut Rational,
+    exact_positions: Option<&'a mut BTreeMap<usize, Point3>>,
 }
 
 impl Sampler<'_> {
@@ -118,6 +121,9 @@ impl Sampler<'_> {
         }
         let index = self.positions.len();
         self.positions.push(middle);
+        if let Some(points) = &mut self.exact_positions {
+            points.insert(index, self.piece.evaluate_exact(&mid, self.dec)?);
+        }
         self.segment(lo, mid.clone(), first, index, depth + 1)?;
         self.segment(mid, hi, index, last, depth + 1)
     }
@@ -134,6 +140,7 @@ pub(crate) fn sample(
         mesh: Mesh::default(),
         edges: BTreeMap::new(),
         vertices: BTreeMap::new(),
+        exact_positions: BTreeMap::new(),
         marks: model.body(body).marks.clone(),
     };
     let mut adjacent = BTreeMap::<EdgeId, Vec<&Chart>>::new();
@@ -170,6 +177,9 @@ pub(crate) fn sample(
         )?;
         result.marks.extend(&traced.marks);
         let pieces = traced.value.pieces();
+        let planar = adjacent[&edge_id]
+            .iter()
+            .any(|chart| matches!(chart.surface, catallax_shapes::Surface::Plane(_)));
         let first = if let Some(v) = from {
             result.vertex(model, v, dec)?
         } else {
@@ -178,6 +188,11 @@ pub(crate) fn sample(
             )?;
             let index = result.mesh.positions.len();
             result.mesh.positions.push(p);
+            if planar {
+                result
+                    .exact_positions
+                    .insert(index, pieces[0].evaluate_exact(&Rational::zero(), dec)?);
+            }
             index
         };
         let end = if let Some(v) = to {
@@ -196,6 +211,11 @@ pub(crate) fn sample(
                 )?;
                 let index = result.mesh.positions.len();
                 result.mesh.positions.push(p);
+                if planar {
+                    result
+                        .exact_positions
+                        .insert(index, piece.evaluate_exact(&Rational::one(), dec)?);
+                }
                 index
             };
             let start = *indices.last().unwrap();
@@ -207,6 +227,7 @@ pub(crate) fn sample(
                 positions: &mut result.mesh.positions,
                 indices: &mut indices,
                 error: &mut error,
+                exact_positions: planar.then_some(&mut result.exact_positions),
             }
             .segment(Rational::zero(), Rational::one(), start, last, 0)?;
         }

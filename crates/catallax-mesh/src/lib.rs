@@ -65,7 +65,8 @@ pub struct FaceMesh {
     /// parameter triangle. Includes endpoint replacement and binary64 rounding.
     pub max_chord_error: Rational,
     /// Proven upper bound on longest edge divided by shortest altitude.
-    pub max_aspect_ratio: Rational,
+    /// None when coordinate rounding collapses a triangle to zero area.
+    pub max_aspect_ratio: Option<Rational>,
     /// Proven angular bound in radians, when requested and supported.
     pub max_angular_deviation: Option<Rational>,
 }

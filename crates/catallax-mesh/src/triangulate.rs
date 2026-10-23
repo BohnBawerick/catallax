@@ -347,6 +347,7 @@ impl FaceBuilder<'_> {
                     self.options.angular_deviation.as_ref(),
                     dec,
                 )?;
+                let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
                 if !angular_reached {
                     let mut center = self.chart.canonical(center);
                     for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
@@ -493,7 +494,7 @@ fn face_mesh(
         face: face_id,
         triangles: start..boundaries.mesh.triangles.len(),
         max_chord_error,
-        max_aspect_ratio,
+        max_aspect_ratio: Some(max_aspect_ratio),
         max_angular_deviation,
     });
     Ok(())

@@ -114,10 +114,11 @@ every triangle edge and boundary-polyline segment in millimetres. Both bounds
 include the returned binary64 coordinates. Nonpositive optional controls return
 `mesh.invalid-options`.
 
-Each face reports `max_aspect_ratio`, an upper bound on longest edge divided by
-shortest altitude. `max_aspect_ratio` in the options requests a ratio but does not
-force quality refinement across fixed boundaries. Faces that exceed it appear in
-`Mesh::unavailable_controls`, with the control and reason. A requested control
+Each face reports `max_aspect_ratio`, an optional upper bound on longest edge
+divided by shortest altitude. `None` means rounding collapsed a facet to zero
+area. `max_aspect_ratio` in the options requests a ratio but does not force
+quality refinement across fixed boundaries. Unmet ratios and undefined facet
+normals appear in `Mesh::unavailable_controls`, with the control and reason. A requested control
 must either be certified or appear there; a resource or precision failure still
 refuses the mesh. No option changes exact geometry or STEP output.
 

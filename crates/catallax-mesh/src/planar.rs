@@ -1,12 +1,15 @@
 //! Planar trims need exact predicates before positions are rounded for display.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::Plane;
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
-use crate::{FaceMesh, MeshOptions, Triangle, chart, edges::Boundaries, failure};
+use crate::{
+    FaceMesh, Mesh, MeshControl, MeshOptions, Triangle, UnavailableControl, chart,
+    edges::Boundaries, failure,
+};
 
 type Point = [Real; 2];
 
@@ -212,6 +215,131 @@ impl Polygon<'_> {
     }
 }
 
+fn refine(
+    triangles: &mut Vec<Triangle>,
+    points: &mut BTreeMap<usize, [Real; 3]>,
+    loops: &[Vec<usize>],
+    mesh: &mut Mesh,
+    options: &MeshOptions,
+    dec: &Decider,
+) -> Result<Rational, Refusal> {
+    let Some(limit) = &options.max_edge_length else {
+        return Ok(Rational::zero());
+    };
+    let limit2 = limit * limit;
+    let boundary: BTreeSet<_> = loops
+        .iter()
+        .flat_map(|ring| {
+            (0..ring.len()).map(|i| {
+                let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+                (a.min(b), a.max(b))
+            })
+        })
+        .collect();
+    let half = Real::from(Rational::from_ratio(1, 2).unwrap());
+    let mut error = Rational::zero();
+    for _ in 0..48 {
+        dec.check_deadline()?;
+        let mut pending = BTreeSet::new();
+        for triangle in triangles.iter() {
+            for i in 0..3 {
+                let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+                if crate::controls::length_squared(mesh.positions[a], mesh.positions[b]) > limit2 {
+                    let key = (a.min(b), a.max(b));
+                    if boundary.contains(&key) {
+                        return Err(failure(
+                            "sampled planar boundary exceeds maximum edge length",
+                        ));
+                    }
+                    pending.insert(key);
+                }
+            }
+        }
+        if pending.is_empty() {
+            return Ok(error);
+        }
+        if pending.len() > options.max_vertices.saturating_sub(mesh.positions.len()) {
+            return Err(failure("planar refinement reached max_vertices"));
+        }
+        let mut midpoints = BTreeMap::new();
+        for (a, b) in pending {
+            let p = std::array::from_fn::<_, 3, _>(|i| &(&points[&a][i] + &points[&b][i]) * &half);
+            let balls = [
+                dec.enclose_at(&p[0], chart::BITS)?,
+                dec.enclose_at(&p[1], chart::BITS)?,
+                dec.enclose_at(&p[2], chart::BITS)?,
+            ];
+            let position = chart::position(&balls)?;
+            let bits = position.map(f64::to_bits);
+            if [a, b]
+                .iter()
+                .any(|&i| mesh.positions[i].map(f64::to_bits) == bits)
+            {
+                return Err(failure(
+                    "coordinate precision cannot shorten a planar mesh edge",
+                ));
+            }
+            error = error.max(chart::residual(&position, &balls));
+            if error > options.chord_tolerance {
+                return Err(failure("planar midpoint rounding exceeds chord tolerance"));
+            }
+            let index = mesh.positions.len();
+            mesh.positions.push(position);
+            points.insert(index, p);
+            midpoints.insert((a, b), index);
+        }
+        let mut refined = Vec::with_capacity(triangles.len() + 2 * midpoints.len());
+        for triangle in triangles.iter() {
+            let vertices = triangle.vertices;
+            let mids = std::array::from_fn::<_, 3, _>(|i| {
+                let (a, b) = (vertices[i], vertices[(i + 1) % 3]);
+                midpoints.get(&(a.min(b), a.max(b))).copied()
+            });
+            let count = mids.iter().filter(|m| m.is_some()).count();
+            let mut emit = |vertices| {
+                refined.push(Triangle {
+                    vertices,
+                    face: triangle.face,
+                })
+            };
+            match count {
+                0 => emit(vertices),
+                1 => {
+                    let i = mids.iter().position(Option::is_some).unwrap();
+                    let [a, b, c] = std::array::from_fn(|j| vertices[(i + j) % 3]);
+                    let m = mids[i].unwrap();
+                    emit([a, m, c]);
+                    emit([m, b, c]);
+                }
+                2 => {
+                    let i = (0..3)
+                        .find(|&i| mids[i].is_some() && mids[(i + 1) % 3].is_some())
+                        .unwrap();
+                    let [a, b, c] = std::array::from_fn(|j| vertices[(i + j) % 3]);
+                    let ab = mids[i].unwrap();
+                    let bc = mids[(i + 1) % 3].unwrap();
+                    emit([a, ab, c]);
+                    emit([ab, bc, c]);
+                    emit([ab, b, bc]);
+                }
+                3 => {
+                    let [a, b, c] = vertices;
+                    let [ab, bc, ca] = mids.map(Option::unwrap);
+                    emit([a, ab, ca]);
+                    emit([ab, b, bc]);
+                    emit([ca, bc, c]);
+                    emit([ab, bc, ca]);
+                }
+                _ => unreachable!(),
+            }
+        }
+        *triangles = refined;
+    }
+    Err(failure(
+        "planar refinement reached its deterministic subdivision limit",
+    ))
+}
+
 pub(crate) fn build(
     model: &Model,
     face: FaceId,
@@ -221,7 +349,6 @@ pub(crate) fn build(
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
     let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
-    let origin = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
     let mut candidates = [0, 1, 2];
     candidates.sort_by(|&a, &b| {
         normal[b]
@@ -260,14 +387,13 @@ pub(crate) fn build(
                 });
             }
             for &index in sampled {
-                points.entry(index).or_insert_with(|| {
-                    let mut p = boundaries.mesh.positions[index].map(|x| Real::from(chart::q(x)));
-                    let offset = (0..3)
-                        .filter(|&i| i != drop)
-                        .fold(Real::from(0), |s, i| s + normal[i] * &(&p[i] - origin[i]));
-                    p[drop] = origin[drop] - &(&offset / normal[drop]);
-                    p
-                });
+                if let std::collections::btree_map::Entry::Vacant(entry) = points.entry(index) {
+                    let p = boundaries
+                        .exact_positions
+                        .get(&index)
+                        .ok_or_else(|| failure("planar boundary lacks its exact trace sample"))?;
+                    entry.insert([p.x.clone(), p.y.clone(), p.z.clone()]);
+                }
             }
             if coedge.sense == Sense::Same {
                 ring.extend_from_slice(&sampled[..sampled.len() - 1]);
@@ -299,8 +425,8 @@ pub(crate) fn build(
     }
     let mut polygon = Polygon {
         points: points
-            .into_iter()
-            .map(|(i, p)| (i, axes.map(|a| p[a].clone())))
+            .iter()
+            .map(|(&i, p)| (i, axes.map(|a| p[a].clone())))
             .collect(),
         dec,
     };
@@ -342,6 +468,54 @@ pub(crate) fn build(
         }
         polygon.clip(ring, face, &mut triangles)?;
     }
+    error = error.max(refine(
+        &mut triangles,
+        &mut points,
+        &loops,
+        &mut boundaries.mesh,
+        options,
+        polygon.dec,
+    )?);
+    let chart = chart::Chart::new(&catallax_shapes::Surface::Plane(plane.clone()), polygon.dec)?;
+    let mut aspect = Some(Rational::zero());
+    let mut angular_reached = true;
+    for triangle in &triangles {
+        let mut positions = triangle.vertices.map(|i| boundaries.mesh.positions[i]);
+        // Quality is compared with the carrier's normal, before face reversal.
+        if model.face(face).sense == Sense::Reversed {
+            positions.swap(1, 2);
+        }
+        let (ratio, reached) = crate::controls::quality(
+            &chart,
+            &[[0.0; 2]; 3],
+            positions,
+            options.angular_deviation.as_ref(),
+            polygon.dec,
+        )?;
+        aspect = aspect.zip(ratio).map(|(a, b)| a.max(b));
+        angular_reached &= reached;
+    }
+    if options
+        .max_aspect_ratio
+        .as_ref()
+        .is_some_and(|limit| aspect.as_ref().is_none_or(|value| value > limit))
+    {
+        boundaries.mesh.unavailable_controls.push(UnavailableControl {
+            face,
+            control: MeshControl::AspectRatio,
+            reason: "rounded planar triangles have no aspect-ratio bound within the requested limit",
+        });
+    }
+    if options.angular_deviation.is_some() && !angular_reached {
+        boundaries
+            .mesh
+            .unavailable_controls
+            .push(UnavailableControl {
+                face,
+                control: MeshControl::AngularDeviation,
+                reason: "rounded planar triangles have no certified facet-normal bound",
+            });
+    }
     for t in &mut triangles {
         let min = (0..3).min_by_key(|&i| t.vertices[i]).unwrap();
         t.vertices.rotate_left(min);
@@ -353,6 +527,11 @@ pub(crate) fn build(
         face,
         triangles: start..boundaries.mesh.triangles.len(),
         max_chord_error: error,
+        max_aspect_ratio: aspect,
+        max_angular_deviation: options
+            .angular_deviation
+            .clone()
+            .filter(|_| angular_reached),
     });
     Ok(())
 }

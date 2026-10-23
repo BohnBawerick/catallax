@@ -609,7 +609,7 @@ fn requested_controls_bound_the_returned_triangles_and_polylines() {
                 ];
                 let norm = libm::sqrt(normal.iter().map(|x| x * x).sum());
                 let ratio = lengths.iter().copied().fold(0.0, f64::max).powi(2) / norm;
-                assert!(ratio <= face.max_aspect_ratio.to_f64_nearest() + 1e-10);
+                assert!(ratio <= face.max_aspect_ratio.as_ref().unwrap().to_f64_nearest() + 1e-10);
                 for p in points {
                     let exact = catallax_shapes::Point3::new(
                         crate::chart::q(p[0]).into(),
@@ -632,5 +632,82 @@ fn requested_controls_bound_the_returned_triangles_and_polylines() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn collapsed_planar_facets_preserve_incidence_and_report_unavailable_quality() {
+    let mut model = Model::new();
+    let body = topology::block(
+        &mut model,
+        [Rational::parse("1e-36").unwrap(), 2.into(), 2.into()],
+        &pose(1, 0, 0),
+    )
+    .unwrap();
+    let options = MeshOptions {
+        angular_deviation: Some(Rational::parse("0.8").unwrap()),
+        max_edge_length: Some(Rational::one()),
+        max_aspect_ratio: Some(Rational::from_i64(10)),
+        ..options()
+    };
+    let mesh = mesh_body(&model, body, &options, &mut Decider::default())
+        .unwrap()
+        .value;
+    let mut incidence = BTreeMap::<(usize, usize), Vec<(usize, usize)>>::new();
+    for triangle in &mesh.triangles {
+        for i in 0..3 {
+            let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+            incidence
+                .entry((a.min(b), a.max(b)))
+                .or_default()
+                .push((a, b));
+        }
+    }
+    for uses in incidence.values() {
+        assert_eq!(uses.len(), 2);
+        assert_eq!(uses[0], (uses[1].1, uses[1].0));
+    }
+    for edge in &mesh.edges {
+        for pair in edge.vertices.windows(2) {
+            assert!(incidence.contains_key(&(pair[0].min(pair[1]), pair[0].max(pair[1]))));
+        }
+    }
+    assert!(
+        mesh.faces
+            .iter()
+            .any(|face| face.max_aspect_ratio.is_none())
+    );
+    for face in &mesh.faces {
+        assert!(face.max_chord_error <= options.chord_tolerance);
+        let mut collapsed = false;
+        if face.max_aspect_ratio.is_none() {
+            assert!(face.max_angular_deviation.is_none());
+            for control in [
+                crate::MeshControl::AspectRatio,
+                crate::MeshControl::AngularDeviation,
+            ] {
+                assert!(
+                    mesh.unavailable_controls
+                        .iter()
+                        .any(|c| c.face == face.face && c.control == control)
+                );
+            }
+        }
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            let points = triangle.vertices.map(|i| mesh.positions[i]);
+            let ab: [f64; 3] = std::array::from_fn(|i| points[1][i] - points[0][i]);
+            let ac: [f64; 3] = std::array::from_fn(|i| points[2][i] - points[0][i]);
+            collapsed |= (0..3).all(|i| {
+                let cross = ab[(i + 1) % 3] * ac[(i + 2) % 3] - ab[(i + 2) % 3] * ac[(i + 1) % 3];
+                cross.abs().to_bits() == 0
+            });
+            for i in 0..3 {
+                let distance2: f64 = (0..3)
+                    .map(|j| (points[i][j] - points[(i + 1) % 3][j]).powi(2))
+                    .sum();
+                assert!(distance2 <= 1.0);
+            }
+        }
+        assert_eq!(face.max_aspect_ratio.is_none(), collapsed);
     }
 }

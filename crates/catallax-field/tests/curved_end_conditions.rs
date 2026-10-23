@@ -1,10 +1,14 @@
 //! The field's support-sign query is independent of height evaluation and B-rep.
 
 use catallax_features::end_condition::curved::{AuthoredCap, Location};
-use catallax_field::CurvedField;
+// Shared field export/dispatch ownership has not been released. Compile this
+// exclusive module against the real feature crate without changing field lib.rs.
+#[path = "../src/end_condition.rs"]
+mod field_end_condition;
 use catallax_numbers::{Decider, Rational};
 use catallax_recipe::{Recipe, Role, StepId};
 use catallax_shapes::RPoint3;
+use field_end_condition::CurvedField;
 
 fn id(s: &str) -> StepId {
     StepId::new(s).unwrap()
@@ -86,4 +90,51 @@ fn query_cannot_reuse_a_definition_to_escape_request_exhaustion() {
     });
     assert!(work.exhausted);
     assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+}
+
+#[test]
+fn inside_and_backward_queries_keep_the_first_crossing_and_world_origins() {
+    for (start, direction, inside, outside, end) in [
+        ("5", None, "6", "8", "7"),
+        ("10", Some(["0", "0", "-2"]), "8", "6", "7"),
+    ] {
+        let mut value: serde_json::Value = serde_json::from_str(include_str!(
+            "../../catallax-features/tests/fixtures/curved-limits/sphere-source.json"
+        ))
+        .unwrap();
+        value["steps"][0]["plane"]["translation"][2] = start.into();
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let direction = direction.map(|v| {
+            serde_json::from_value::<catallax_recipe::Vector3>(serde_json::json!(v)).unwrap()
+        });
+        let mut dec = Decider::default();
+        let cap = AuthoredCap::compile(
+            &recipe,
+            &id("target"),
+            &id("profile"),
+            direction.as_ref(),
+            None,
+            &mut dec,
+        )
+        .unwrap();
+        let field = CurvedField::new(cap, id("capped"));
+        for (z, want) in [
+            (inside, Location::Inside),
+            (outside, Location::Outside),
+            (end, Location::Boundary),
+        ] {
+            assert_eq!(
+                field
+                    .location(&RPoint3::new(q("0"), q("0"), q(z)), &mut dec)
+                    .unwrap(),
+                want
+            );
+        }
+        let origins = field
+            .origins(&RPoint3::new(q("0"), q("0"), q(end)), &mut dec)
+            .unwrap();
+        assert_eq!(origins.len(), 1);
+        assert_eq!(origins[0].role, Role::End);
+        assert_eq!(origins[0].step, id("capped"));
+    }
 }

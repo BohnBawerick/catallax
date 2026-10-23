@@ -1,15 +1,13 @@
 //! Independent whole-domain certificates and real Boolean boundary assembly.
-//! The path import keeps this module testable before shared dispatch ownership
-//! is handed over; production integration must expose the same source module.
+//! Tests consume the production feature module on the merged dependency base.
 
-#[path = "../src/end_condition/curved.rs"]
-pub mod curved;
+use catallax_features::end_condition::curved;
 
 use catallax_numbers::{Decider, Outcome, Rational, Real};
 use catallax_recipe::{ElementId, Recipe, Role, StepId};
 use catallax_shapes::{Point3, RPoint3, Vector3};
 use catallax_topology::Model;
-use curved::{Branch, CurvedCapped, Frame, Location, Scene};
+use curved::{AuthoredCap, Branch, CurvedCapped, Frame, Location, Scene};
 
 fn q(x: &str) -> Rational {
     Rational::parse(x).unwrap()
@@ -274,4 +272,93 @@ fn zero_request_allowance_cannot_publish_a_curved_definition_or_body() {
     });
     assert!(work.exhausted);
     assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+}
+
+#[test]
+fn clockwise_authored_rectangle_keeps_physical_segment_ids() {
+    let mut value: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/curved-limits/sphere-source.json")).unwrap();
+    value["steps"][0]["loops"][0] = serde_json::json!([
+        {"kind":"line","id":"bottom","to":["-1/2","-1/2"]},
+        {"kind":"line","id":"left","to":["-1/2","1/2"]},
+        {"kind":"line","id":"top","to":["1/2","1/2"]},
+        {"kind":"line","id":"right","to":["1/2","-1/2"]}
+    ]);
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let cap = AuthoredCap::compile(
+        &recipe,
+        &StepId::new("target").unwrap(),
+        &StepId::new("profile").unwrap(),
+        None,
+        None,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(cap.side_ids(), &ids());
+}
+
+#[test]
+fn proper_placement_transports_the_exact_branch_and_boundary() {
+    let mut value: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/curved-limits/sphere-source.json")).unwrap();
+    value["steps"][0]["plane"] =
+        serde_json::json!({"rotation":["1","1","0","0"],"translation":["7","-11","3"]});
+    value["steps"][1]["pose"] =
+        serde_json::json!({"rotation":["1","1","0","0"],"translation":["7","-16","3"]});
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let mut dec = Decider::default();
+    let cap = AuthoredCap::compile(
+        &recipe,
+        &StepId::new("target").unwrap(),
+        &StepId::new("profile").unwrap(),
+        None,
+        None,
+        &mut dec,
+    )
+    .unwrap();
+    equal(
+        &cap.definition()
+            .height(&[x("0"), x("0")], &mut dec)
+            .unwrap(),
+        &x("3"),
+        &mut dec,
+    );
+    let mut model = Model::new();
+    let body = cap
+        .build(&mut model, &StepId::new("capped").unwrap(), &mut dec)
+        .unwrap();
+    assert!(model.check(body).is_empty());
+    assert!(model.body(body).marks.is_empty());
+    for (y, want) in [
+        ("-13", catallax_boolean::Containment::Inside),
+        ("-15", catallax_boolean::Containment::Outside),
+    ] {
+        let p = RPoint3::new(q("7"), q(y), q("3"));
+        assert!(
+            matches!(catallax_boolean::classify_point(&mut model,body,&p,&mut dec),Outcome::Proven(found) if found==want)
+        );
+    }
+}
+
+#[test]
+fn unproved_trim_coverage_does_not_become_a_missing_cap_claim() {
+    let recipe=Recipe::parse(r#"{"format":"catallax-recipe/3","name":"trim event","steps":[
+        {"id":"target","op":"cylinder","radius":"2","height":"10","pose":{"rotation":["1","0","0","0"],"translation":["5","0","0"]}}
+    ],"result":"target"}"#).unwrap();
+    let mut dec = Decider::default();
+    let scene = Scene::compile(&recipe, &StepId::new("target").unwrap(), &mut dec).unwrap();
+    let frame = Frame {
+        origin: Point3::new(x("0"), x("0"), x("1/4")),
+        u: vector(["0", "1", "0"]),
+        v: vector(["0", "0", "1"]),
+        direction: vector(["1", "0", "0"]),
+    };
+    let error = CurvedCapped::rectangle(
+        scene,
+        frame,
+        [[q("-1/2"), q("1/2")], [q("-1/2"), q("1/2")]],
+        &mut dec,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "features.unsupported-curved-limit");
 }

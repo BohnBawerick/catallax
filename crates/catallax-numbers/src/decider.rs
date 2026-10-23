@@ -508,7 +508,8 @@ impl Decider {
         };
         let cache_hit = cached.is_some();
         let result = match cached {
-            // Certificate reuse must not change per-decision work or budgets.
+            // Reusing a cached certificate still charges its original work
+            // so the deterministic budget does not depend on cache timing.
             Some(cached) => work.charge(cached.work).map(|()| cached.roots.clone()),
             None => algebraic::isolate(p, &mut work),
         };
@@ -845,6 +846,35 @@ impl Work {
         } else {
             a.saturating_add(b)
         })
+    }
+    /// Charge an optional exact-arithmetic step only when it fits inside both
+    /// its local ceiling and the remaining caller allowances. Returns `false`
+    /// without charging when the caller should use an exact fallback instead.
+    pub(crate) fn exact_within(
+        &mut self,
+        a: &Rational,
+        b: &Rational,
+        mul: bool,
+        used_at_start: u64,
+        ceiling: u64,
+    ) -> Result<bool, &'static str> {
+        let a_limbs = limbs(a);
+        let b_limbs = limbs(b);
+        let cost = if mul {
+            a_limbs.saturating_mul(b_limbs)
+        } else {
+            a_limbs.saturating_add(b_limbs)
+        };
+        let used = self.used.saturating_sub(used_at_start);
+        if cost > ceiling.saturating_sub(used)
+            || cost > self.policy.max_work.saturating_sub(self.used)
+            || crate::operation::remaining()
+                .is_some_and(|remaining| remaining < cost.saturating_add(1))
+        {
+            return Ok(false);
+        }
+        self.exact(a, b, mul)?;
+        Ok(true)
     }
     pub fn ball(&mut self, p: u32, mul: bool) -> Result<(), &'static str> {
         if p > self.policy.max_precision_bits {

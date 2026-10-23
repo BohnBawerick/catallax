@@ -718,10 +718,6 @@ impl Leaf {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
-        let mut role = role;
-        while let Role::Copy { of, .. } = role {
-            role = &of.role;
-        }
         match self {
             Self::Primitive(_) => Ok(Some(true)),
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),
@@ -792,6 +788,14 @@ pub(crate) fn algebraic_ray_coefficients(
     direction: &Vector3,
 ) -> [Real; 5] {
     let point = point.clone().map(Real::from);
+    point_ray_coefficients(poly, &point, direction)
+}
+
+pub(crate) fn point_ray_coefficients(
+    poly: &Constraint,
+    point: &[Real; 3],
+    direction: &Vector3,
+) -> [Real; 5] {
     let direction = [&direction.x, &direction.y, &direction.z];
     let mut coefficients: [Real; 5] = std::array::from_fn(|_| Real::zero());
     let mut accumulate = |exponents: &[u32; 3], coefficient: Real| {

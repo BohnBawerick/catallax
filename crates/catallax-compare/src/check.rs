@@ -5,7 +5,7 @@ use catallax_numbers::{
     Ball, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
 };
 use catallax_recipe::{Operation, Origin, Recipe};
-use catallax_shapes::{RPoint3, RVector3, Surface, Vector3};
+use catallax_shapes::{Point3, RPoint3, RVector3, Surface, Vector3};
 use catallax_topology::Sense;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -141,13 +141,16 @@ fn support_distance(surface: &Surface, p: &RPoint3, dec: &mut Decider) -> Result
 }
 fn direction(
     gradient: &[RealPoly; 3],
-    p: &RPoint3,
+    p: &Point3,
     sense: Sense,
     dec: &mut Decider,
 ) -> Result<Option<[Ball; 3]>, Refusal> {
     let xyz = [p.x.clone(), p.y.clone(), p.z.clone()];
     let orientation = if sense == Sense::Same { 1 } else { -1 };
-    if let [Some(x), Some(y), Some(z)] = gradient.each_ref().map(RealPoly::rational) {
+    if let [Some(x), Some(y), Some(z)] = gradient.each_ref().map(RealPoly::rational)
+        && let Some(point) = p.as_rational()
+    {
+        let xyz = [point.x, point.y, point.z];
         let n = [x.eval(&xyz), y.eval(&xyz), z.eval(&xyz)];
         let length = norm(&RVector3::new(n[0].clone(), n[1].clone(), n[2].clone()));
         if length.lo() <= r(0) {
@@ -158,7 +161,6 @@ fn direction(
         };
         return Ok(Some(n.map(|x| &ball(&(x * r(orientation))) * &inverse)));
     }
-    let xyz = xyz.map(Real::from);
     let n = gradient.each_ref().map(|g| g.eval_real(&xyz));
     let length = real_norm(&Vector3::new(n[0].clone(), n[1].clone(), n[2].clone()), dec)?;
     if length.lo() <= r(0) {
@@ -231,6 +233,89 @@ fn whole_failure(report: &mut Report, reason: impl Into<String>) {
         reason,
     );
 }
+struct FieldWitness {
+    point: Point3,
+    remaining: Rational,
+    controls: catallax_shapes::distance::Options,
+    upper: Option<Rational>,
+}
+impl FieldWitness {
+    fn seed(
+        prepared: &catallax_field::distance::Prepared<'_>,
+        preferred: &[catallax_field::FaceId],
+        point: &RPoint3,
+        error: &Rational,
+        options: &Options,
+        dec: &mut Decider,
+    ) -> Self {
+        let point = point.to_real();
+        let remaining = &options.accuracy - error;
+        let mut controls = catallax_shapes::distance::Options {
+            width: if remaining > r(0) {
+                remaining.mul_pow2(-1)
+            } else {
+                options.accuracy.mul_pow2(-2)
+            },
+            ..Default::default()
+        };
+        let cell_limit = controls.max_cells;
+        controls.max_cells = 1;
+        let mut upper = None;
+        for &id in preferred {
+            if let Ok(distance) = prepared.point_to_face(id, &point, &controls, dec)
+                && let Some(bound) = distance.upper
+                && upper.as_ref().is_none_or(|old| bound < *old)
+            {
+                upper = Some(bound);
+            }
+            if upper.as_ref().is_some_and(|bound| bound <= &remaining) {
+                break;
+            }
+        }
+        controls.max_cells = cell_limit;
+        Self {
+            point,
+            remaining,
+            controls,
+            upper,
+        }
+    }
+    fn near_upper(&self) -> Option<&Rational> {
+        self.upper
+            .as_ref()
+            .filter(|bound| *bound <= &self.remaining)
+    }
+    fn refine(
+        &mut self,
+        prepared: &catallax_field::distance::Prepared<'_>,
+        proven_gap: bool,
+        dec: &mut Decider,
+    ) {
+        if (self.upper.is_none()
+            || (!proven_gap
+                && self
+                    .upper
+                    .as_ref()
+                    .is_some_and(|bound| bound > &self.remaining)))
+            && let Ok(distance) = prepared.point_to_boundary(&self.point, &self.controls, dec)
+            && let Some(bound) = distance.upper
+            && self.upper.as_ref().is_none_or(|old| bound < *old)
+        {
+            self.upper = Some(bound);
+        }
+    }
+}
+fn retain_distance_upper(report: &mut Report, upper: Option<&Rational>) {
+    if let Some(upper) = upper {
+        if let Some(old) = &mut report.sampled_distance_upper
+            && upper > &*old
+        {
+            *old = upper.clone();
+        }
+    } else {
+        report.sampled_distance_upper = None;
+    }
+}
 fn distance_finding(
     report: &mut Report,
     pass: Pass,
@@ -241,6 +326,7 @@ fn distance_finding(
     options: &Options,
 ) {
     let (lo, hi) = bounds;
+    retain_distance_upper(report, hi.as_ref());
     if lo > options.accuracy {
         let low = Interval::from_rational(&lo).lo();
         let high = hi
@@ -311,6 +397,7 @@ pub(crate) fn run(
         verdict: Verdict::Unresolved,
         forward_vertices: 0,
         reverse_samples: 0,
+        sampled_distance_upper: Some(r(0)),
         findings: vec![],
         not_comparable: coverage(recipe),
     };
@@ -456,6 +543,29 @@ pub(crate) fn run(
     let mut sample_points = vec![None; mesh.faces.len()];
     let mut storage = Workspace::default();
     let width = options.accuracy.mul_pow2(-20);
+    let mut distance_domains = None;
+    let mut preferred = Vec::new();
+    let mut prefer_witness = false;
+    let choose_preferred = |i: usize, preferred: &mut Vec<catallax_field::FaceId>| {
+        preferred.clear();
+        for &index in &incident[i] {
+            for origin in &face_origins[index] {
+                if let Some((id, _)) = registry.get(origin) {
+                    preferred.push(*id);
+                }
+            }
+        }
+        // Names order candidates, never certify membership or exclude faces.
+        // Incident planes have cheap linear projections; curved candidates
+        // remain available when a cap projection misses its trim.
+        preferred.sort_unstable_by_key(|id| {
+            (
+                !matches!(&field.faces()[id.index()].surface, Surface::Plane(_)),
+                id.index(),
+            )
+        });
+        preferred.dedup();
+    };
     for (i, position) in mesh.positions.iter().enumerate() {
         if revision.is_cancelled() {
             return Completion::Cancelled;
@@ -481,6 +591,27 @@ pub(crate) fn run(
         for &face in &incident[i] {
             sample_points[face].get_or_insert_with(|| p.clone());
         }
+        let mut witness = None;
+        if prefer_witness {
+            let prepared =
+                distance_domains.get_or_insert_with(|| field.prepare_distances(&mut dec));
+            if let Ok(prepared) = prepared {
+                choose_preferred(i, &mut preferred);
+                if !preferred.is_empty() {
+                    let seed =
+                        FieldWitness::seed(prepared, &preferred, &p, &error, options, &mut dec);
+                    if let Some(bound) = seed.near_upper() {
+                        // An admitted boundary point already proves proximity.
+                        // Signed classification at the mesh point adds no
+                        // distance evidence; reverse names/normals still run.
+                        let upper = bound + &error;
+                        retain_distance_upper(&mut report, Some(&upper));
+                        continue;
+                    }
+                    witness = Some(seed);
+                }
+            }
+        }
         let query = field.proven(&p, &mut storage);
         if incident[i].is_empty() {
             unresolved(
@@ -505,7 +636,7 @@ pub(crate) fn run(
                     let Some(&(id, source)) = registry.get(origin) else {
                         continue;
                     };
-                    let Ok(q) = witness(
+                    let Ok(q) = self::witness(
                         &field.faces()[source].surface,
                         &supports[source],
                         &p,
@@ -526,14 +657,43 @@ pub(crate) fn run(
                 }
             }
         }
+        let proven_gap =
+            Rational::from_f64_exact(d.lo()).is_some_and(|lo| &lo - &error > options.accuracy);
+        if query.location != Location::Indeterminate
+            && (upper.is_none()
+                || (!proven_gap && upper.as_ref().is_some_and(|h| h > &options.accuracy)))
+        {
+            let prepared =
+                distance_domains.get_or_insert_with(|| field.prepare_distances(&mut dec));
+            if let Ok(prepared) = prepared {
+                let witness = witness.get_or_insert_with(|| {
+                    choose_preferred(i, &mut preferred);
+                    FieldWitness::seed(prepared, &preferred, &p, &error, options, &mut dec)
+                });
+                witness.refine(prepared, proven_gap, &mut dec);
+                prefer_witness |= witness.near_upper().is_some();
+                if let Some(bound) = &witness.upper {
+                    let bound = bound + &error;
+                    upper = Some(match upper {
+                        Some(old) => old.min(bound),
+                        None => bound,
+                    });
+                }
+            }
+        }
         if query.location != Location::Indeterminate
             && upper.as_ref().is_some_and(|h| h <= &options.accuracy)
         {
+            retain_distance_upper(&mut report, upper.as_ref());
             continue;
         }
         if let Some(vertices) = endpoints.get(&i) {
             match endpoint_distance(&model, &field, vertices, &p, &mut storage, &mut dec) {
-                Ok(Some(distance)) if &distance + &error <= options.accuracy => continue,
+                Ok(Some(distance)) if &distance + &error <= options.accuracy => {
+                    let upper = &distance + &error;
+                    retain_distance_upper(&mut report, Some(&upper));
+                    continue;
+                }
                 Err(error) => whole_failure(
                     &mut report,
                     format!("field endpoint witness {}: {}", error.code, error.detail),
@@ -541,6 +701,7 @@ pub(crate) fn run(
                 _ => (),
             }
         }
+        retain_distance_upper(&mut report, upper.as_ref());
         let names: Vec<Vec<Origin>> = incident[i]
             .iter()
             .map(|&f| face_origins[f].clone())
@@ -606,6 +767,9 @@ pub(crate) fn run(
     }
     let mut observed: BTreeMap<usize, BTreeSet<Origin>> = BTreeMap::new();
     let mut oriented = BTreeSet::new();
+    let mut brep_distance_domains: Vec<
+        Option<Result<catallax_measure::distance::PreparedFace, Refusal>>,
+    > = (0..mesh.faces.len()).map(|_| None).collect();
     let sampling_failed = std::cell::Cell::new(false);
     let mut check_sample = |p: RPoint3, origin: &Origin| {
         if sampling_failed.get() {
@@ -708,7 +872,7 @@ pub(crate) fn run(
             .map(|&i| face_origins[i].clone())
             .collect::<Vec<_>>();
         let mut lower: Option<Rational> = None;
-        let mut closest: Option<(Rational, usize, RPoint3)> = None;
+        let mut closest: Option<(Rational, usize, Point3)> = None;
         let mut projection_errors = Vec::new();
         for &i in &candidates {
             if revision.is_cancelled() {
@@ -741,7 +905,54 @@ pub(crate) fn run(
             }
             let upper = norm(&p.minus(&q)).hi();
             if closest.as_ref().is_none_or(|(best, _, _)| upper < *best) {
-                closest = Some((upper, i, q));
+                closest = Some((upper, i, q.to_real()));
+            }
+        }
+        if closest.is_none()
+            || (lower.as_ref().is_none_or(|lo| lo <= &options.accuracy)
+                && closest
+                    .as_ref()
+                    .is_some_and(|(upper, _, _)| upper > &options.accuracy))
+        {
+            let controls = catallax_shapes::distance::Options {
+                width: options.accuracy.mul_pow2(-2),
+                ..Default::default()
+            };
+            let mut trimmed_lower: Option<Rational> = None;
+            for &i in &candidates {
+                let prepared = brep_distance_domains[i].get_or_insert_with(|| {
+                    catallax_measure::distance::PreparedFace::new(
+                        &model,
+                        mesh.faces[i].face,
+                        &mut dec,
+                    )
+                });
+                let distance = match prepared {
+                    Ok(prepared) => {
+                        prepared.point_to_face(&mut model, &p.to_real(), &controls, &mut dec)
+                    }
+                    Err(e) => Err(e.clone()),
+                };
+                match distance {
+                    Ok(distance) => {
+                        trimmed_lower = Some(
+                            trimmed_lower
+                                .map_or(distance.lower.clone(), |old| old.min(distance.lower)),
+                        );
+                        if let (Some(upper), Some([_, q])) = (distance.upper, distance.witnesses)
+                            && closest.as_ref().is_none_or(|(best, _, _)| upper < *best)
+                        {
+                            closest = Some((upper, i, q));
+                        }
+                    }
+                    Err(e) => {
+                        trimmed_lower = Some(r(0));
+                        projection_errors.push(format!("{}: {}", e.code, e.detail));
+                    }
+                }
+            }
+            if let Some(trimmed) = trimmed_lower {
+                lower = Some(lower.map_or(trimmed.clone(), |old| old.max(trimmed)));
             }
         }
         let upper = closest.as_ref().map(|(d, _, _)| d.clone());
@@ -756,6 +967,7 @@ pub(crate) fn run(
                 options,
             );
         } else {
+            retain_distance_upper(&mut report, None);
             report.findings.push(Finding {
                 pass: Pass::Reverse,
                 point: p.clone(),

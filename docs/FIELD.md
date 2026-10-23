@@ -6,7 +6,7 @@ This is original MIT code. Fidget supplied design ideas, notably fixed-order tap
 
 ## Shared algebraic definitions
 
-The evaluator uses the 2026-10-22 shared algebraic foundation, including the existing profile-sweep consumers. Rational definitions retain the existing arithmetic path. This migration adds no recipe operation or elliptic-cylinder metric coverage; the public distance/result distinctions below continue to apply.
+The evaluator uses the 2026-10-22 shared algebraic foundation, including the existing profile-sweep consumers. Rational definitions retain the existing arithmetic path. That foundation migration added no recipe operation or elliptic-cylinder metric coverage; the trimmed-distance API below now supplies certified metric bounds on valid analytic definitions.
 
 Store the same exact `Surface`, `RealPoly`, frame and dimension definitions as B-rep. Widen polynomial constraints, gradients and cached ray coefficients together. Keep the rational sign path for rational coefficients; use the shared decider for algebraic signs, zero coefficients and support comparisons. Normalising a polynomial by its first syntactic coefficient is invalid if that expression might be zero. Certify the first nonzero coefficient before division. Equal support equations do not remove nappe or trim constraints. Definition keys may permit safe work sharing, but unequal expression keys cannot prove different sets.
 
@@ -24,6 +24,8 @@ Add cross-kernel fixtures for 45-degree revolve, extrusion along `[1,0,1]`, obli
 | `Plan::fast` | Tentative scalar display/filter value. `true_distance_formula` identifies the underlying analytic formula, not a floating-point accuracy certificate. |
 | `Plan::proven`, `proven_checked` | Exact rational/algebraic predicates, outward-rounded binary-ball evaluation and explicit result semantics. Input coordinates are exact `RPoint3` values in millimetres; the checked variant propagates numeric refusals under the caller's policy. |
 | `Plan::transformed` | Compose a validated exact rigid pose into supports, constraints, metric placements and face records using the caller's decider. |
+| `Plan::prepare_distances` | Prepare reusable compact analytic chart covers from recipe bounds and trim predicates. No B-rep is built. |
+| `distance::Prepared::{point_to_face, face_to_face, point_to_boundary}` | Outward-rounded minimum-distance bounds with exact admitted witnesses, an explicit convergence flag and deterministic refinement limits. |
 | `Value::TrueDistance` | Enclosure of true signed Euclidean distance to a primitive boundary. Negative inside. |
 | `Value::Residual` | Enclosure of a sweep support residual or min/max Boolean expression. It is not Euclidean distance. |
 | `DistanceBound` | Bounds on unsigned geometric distance to the result boundary, separate from the field value. Infinity means unbounded, not a measured tolerance. |
@@ -48,7 +50,7 @@ Each primitive signed distance is 1-Lipschitz. Minimum, maximum and negation pre
 
 For an enclosed residual `[lo, hi]`, the lower distance bound is zero if the enclosure contains zero, otherwise `min(abs(lo), abs(hi))`. The Boolean upper distance bound is positive infinity. We do not compose primitive upper bounds through booleans: hidden or removed source faces make that unsound. At a certified boundary point the distance is exactly zero. Primitive queries return both finite distance bounds when representable as doubles. An overflowed endpoint remains an honest outward infinity.
 
-These lower bounds support certified exclusion and filtering. They do not certify proximity, clearance below a threshold, offsets, or a 1 nm hand-off. Such uses need finite upper bounds from certified closest points on surviving trimmed faces. There is no claim that a small residual proves closeness.
+These lower bounds alone support certified exclusion and filtering, not proximity or clearance below a threshold. Prepared trimmed-face queries supply finite upper bounds from certified points on surviving faces. A small residual still does not prove closeness, and neither API constructs offsets or certifies a 1 nm hand-off.
 
 ### Profile sweep certificates
 
@@ -95,6 +97,66 @@ Normals come from exact supporting-surface gradients, not finite differences. In
 Registry entries are candidates, not a claim that all their geometry survives. `face_query` checks the supporting equation, source primitive domain, result classification and orientation. It returns `NotOnFace` for removed or out-of-trim points. Distinct active supporting surfaces at a Boolean trim intersection can return `Indeterminate`; mere contact with a support is not proof of a surviving face patch. Primitive edge/corner incidence remains selectable with an ambiguous normal. Coactive names on a common surviving support provide the merged face's origin set. This crate does not construct maximal B-rep faces, edge graphs or split components.
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
+
+## Trimmed minimum distances
+
+`catallax_shapes::distance` bounds minimum distance on planes, cylinders, cones,
+spheres, tori and elliptic cylinders. Rational quarter-circle charts cover seams
+and poles without an angle approximation. Frames and dimensions may be algebraic.
+Elliptic distances use the actual orthonormal frame and semi-axes, not a circular
+distance after an affine stretch. Cones retain only their declared nappe.
+
+Every live parameter cell has an outward-rounded spatial box. The minimum box
+separation is a lower certificate. Exact carrier projections also provide support
+lower bounds, with a scaled Lipschitz residual for the ellipse. Upper certificates
+come only from exact points admitted by the trim adapter. The search refines low
+distance cells and admitted witness cells so outside cells touching a trim edge
+cannot indefinitely prevent better witnesses on its surviving side.
+For ellipse semi-axes `a >= b`, the function
+`b * (sqrt((x/a)^2 + (y/b)^2) - 1)` is 1-Lipschitz in its orthonormal transverse
+frame and vanishes on the support. Its absolute value is therefore a distance
+lower bound, not an ellipse distance formula.
+
+`catallax_measure::distance::PreparedFace` uses analytic face bounds, certified
+boundary-loop traces and exact `face_contains`, including holes and closed edges.
+A connected cell with an excluded centre is discarded only if its whole spatial
+cover avoids every boundary loop. The field adapter instead uses its own recipe
+profiles, support constraints and Boolean ray germs. If only one source leaf is
+on a boundary, all other source memberships are locally constant. Evaluating the
+Boolean tape with that leaf inside and outside proves whether its face survives,
+without rebuilding radial roots for normal germs. Joint boundaries retain exact
+ray proofs. Interval constraint signs prove constant trim membership over cells.
+Buried tangent sources cannot supply witnesses at isolated contacts; nearby
+open-face witnesses approach their surviving closed trim boundaries.
+Neither adapter uses display triangles as its distance proof.
+Only face entries owned by the compiled result receive distance domains.
+Reusing a coincident evaluation leaf does not reactivate discarded copy names;
+such registry-only handles report `field.face-id` from the distance API.
+Canonical public names retain the plan's generated-domain role for trim
+predicates; renaming a revolved cone cap does not turn it into an angular cap.
+
+`Options::width` requests an enclosure width, not geometric acceptance.
+`max_cells` limits refinement. Exhaustion returns the attained bounds with
+`converged=false`; `upper=None` means no admitted witness was established.
+`face_to_face` measures the minimum distance, not Hausdorff distance. These queries
+do not replace `measurement::measure_face` or its whole-face definition metric.
+
+Analytic query coverage does not add missing recipe emitters. Oblique circular
+extrusion still reports `features.unsupported-elliptic-cylinder`. The elliptic
+distance regressions construct exact B-rep circle loops and an independent
+native profile/sweep definition directly; they check the Euclidean metric and
+the excluded extension beyond the end trim without enabling that recipe feature.
+
+The sampled comparison uses prepared field bounds when the residual alone has
+no finite upper, and prepared B-rep bounds when a support projection misses its
+trim. `Report::sampled_distance_upper` includes forward mesh error. It is finite
+only when every checked distance has a finite upper. Agreement remains sampled;
+the comparison accuracy, mesh controls and numeric budgets are unchanged.
+After a required trimmed witness settles proximity, later mesh vertices try
+incident witnesses before repeating the signed field query. This changes proof
+order, not acceptance: every early upper still comes from an exact surviving
+boundary point, and a miss retains the original distance and gap checks.
+
 
 ## Whole-face definition measurements
 

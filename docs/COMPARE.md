@@ -26,6 +26,8 @@ Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four ratio
 
 Every unsupported step is returned with its operation-specific reason, not only the first step. Builds, meshes and query proofs that fail stay unresolved. A proven discrepancy takes precedence over unresolved observations, which remain in the report. Exact expression identities and opposite coincident primitive halfspaces can certify agreement of two empty results without boundary samples. General emptiness is not inferred from missing samples.
 
+Named field queries are fallible even when their handles are valid. A numeric refusal in reverse sampling records its code as an unresolved observation and stops that sampling phase; it is never an internal panic or evidence that a face disappeared. The verification CLI discards a request whose shared work allowance is exhausted and returns `numbers.operation-budget`, rather than publishing partial comparison results.
+
 ### Coplanar booleans and repeated operands
 
 The joined-blocks recipe below now agrees with no unresolved observation. The field proves the removed meeting plane interior rather than treating its zero residual as boundary.

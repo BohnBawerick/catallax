@@ -691,3 +691,34 @@ fn copied_and_reflected_features_preserve_comparison_certainty() {
         }
     }
 }
+
+#[test]
+fn a_numeric_refusal_during_copy_comparison_is_not_a_kernel_panic() {
+    let part = recipe(vec![
+        json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[
+            {"kind":"line","id":"radius","to":["1","0"]},
+            {"kind":"line","id":"wall","to":["1","4"]},
+            {"kind":"line","id":"top","to":["0","4"]},
+            {"kind":"line","id":"axis","to":["0","0"]}
+        ]]}),
+        json!({"id":"seed","op":"revolve","profile":"profile","axis":{"point":["0","0","0"],"direction":["0","1","0"]},"angle":"360"}),
+        json!({"id":"copies","op":"pattern","body":"seed","layout":{"linear":{"vector":["4","0","0"],"count":3}}}),
+    ]);
+    let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        check_with_options(&part, &Options::default())
+    });
+    assert!(matches!(
+        report.verdict,
+        Verdict::Agree | Verdict::Unresolved
+    ));
+    if work.exhausted {
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| matches!(&finding.reason,
+            Reason::Unresolved(reason) if reason.contains("numbers.operation-budget")))
+        );
+    }
+}

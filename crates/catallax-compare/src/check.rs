@@ -575,7 +575,11 @@ pub(crate) fn run(
     let width = options.accuracy.mul_pow2(-20);
     let mut observed: BTreeMap<usize, BTreeSet<Origin>> = BTreeMap::new();
     let mut oriented = BTreeSet::new();
+    let sampling_failed = std::cell::Cell::new(false);
     let mut check_sample = |p: RPoint3, origin: &Origin| {
+        if sampling_failed.get() {
+            return;
+        }
         if options
             .region
             .as_ref()
@@ -584,9 +588,21 @@ pub(crate) fn run(
             return;
         }
         let (id, source) = registry[origin];
-        let query = field
-            .face_query(id, &p, &mut storage)
-            .expect("selected field face");
+        let query = match field.face_query_checked(id, &p, &mut storage, &mut dec) {
+            Ok(query) => query,
+            Err(error) => {
+                sampling_failed.set(true);
+                unresolved(
+                    &mut report,
+                    Pass::Reverse,
+                    &p,
+                    vec![],
+                    vec![origin.clone()],
+                    format!("field face query {}: {}", error.code, error.detail),
+                );
+                return;
+            }
+        };
         match query.state {
             FaceState::NotOnFace => return,
             FaceState::OnFace => (),
@@ -609,9 +625,22 @@ pub(crate) fn run(
             let coactive = if index == source {
                 query
             } else {
-                field
-                    .face_query(registry[&face.origin].0, &p, &mut storage)
-                    .unwrap()
+                match field.face_query_checked(registry[&face.origin].0, &p, &mut storage, &mut dec)
+                {
+                    Ok(query) => query,
+                    Err(error) => {
+                        sampling_failed.set(true);
+                        unresolved(
+                            &mut report,
+                            Pass::Reverse,
+                            &p,
+                            vec![],
+                            vec![face.origin.clone()],
+                            format!("coactive field face query {}: {}", error.code, error.detail),
+                        );
+                        return;
+                    }
+                }
             };
             match coactive.state {
                 FaceState::OnFace => {
@@ -812,7 +841,7 @@ pub(crate) fn run(
             return false;
         }
         check_sample(p, origin);
-        !revision.is_cancelled()
+        !revision.is_cancelled() && !sampling_failed.get()
     });
     if let Err(error) = primitive_sampling {
         whole_failure(

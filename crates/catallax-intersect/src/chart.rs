@@ -12,10 +12,12 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
+const INTERVAL_PRECISION: u32 = 128;
+
 #[derive(Debug, Default)]
 struct Enclosures {
     balls: Mutex<BTreeMap<u32, Ball>>,
-    rational_interval: OnceLock<Interval>,
+    interval: OnceLock<Interval>,
 }
 
 #[derive(Clone, Debug)]
@@ -227,10 +229,19 @@ impl Scalar for Interval {
     ) -> Result<Self, JetError> {
         if let Some(value) = x.rational_ref() {
             return Ok(*cache
-                .rational_interval
+                .interval
                 .get_or_init(|| Interval::from_rational(value)));
         }
-        <Ball as Scalar>::constant(x, cache, p, dec).map(|b| b.to_interval())
+        if p == INTERVAL_PRECISION
+            && let Some(value) = cache.interval.get()
+        {
+            return Ok(*value);
+        }
+        let value = <Ball as Scalar>::constant(x, cache, p, dec)?.to_interval();
+        if p == INTERVAL_PRECISION {
+            let _ = cache.interval.set(value);
+        }
+        Ok(value)
     }
 }
 
@@ -466,7 +477,7 @@ pub(super) fn interval_jets(
     let mut cache = HashMap::new();
     let result = coords
         .each_ref()
-        .map(|e| jets(e, &t, n, 128, Some(dec), &mut cache));
+        .map(|e| jets(e, &t, n, INTERVAL_PRECISION, Some(dec), &mut cache));
     let mut values = Vec::with_capacity(3);
     for value in result {
         match value {
@@ -1011,6 +1022,13 @@ mod tests {
         let start = Point3::new(root.clone(), Real::zero(), Real::zero());
         let end = Point3::new(root, Real::one(), Real::zero());
         let piece = TracePiece::new(segment(&start, &end, &mut dec).unwrap());
+        let filtered = piece
+            .taylor_interval(Interval::point(0.5).unwrap(), 1, &dec)
+            .unwrap()
+            .unwrap();
+        let lo = Rational::from_f64_exact(filtered[0][0].lo()).unwrap();
+        let hi = Rational::from_f64_exact(filtered[0][0].hi()).unwrap();
+        assert!(lo >= r(0) && &lo * &lo <= r(2) && &hi * &hi >= r(2));
 
         for p in [64, 256] {
             let t = Ball::from_rational(&Rational::from_ratio(1, 2).unwrap(), p);
@@ -1034,6 +1052,11 @@ mod tests {
         let value = Rational::parse("1e100").unwrap();
         let high = Ball::from_rational(&r(0), 512);
         assert!(warm.evaluate(&high, &dec).unwrap()[0].contains(&value));
+        assert!(
+            warm.taylor_interval(Interval::point(0.0).unwrap(), 0, &dec)
+                .unwrap()
+                .is_none()
+        );
         for precision in [64, 256, 512] {
             let point = high.with_precision(precision);
             match (piece().evaluate(&point, &dec), warm.evaluate(&point, &dec)) {

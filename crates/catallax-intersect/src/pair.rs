@@ -789,16 +789,16 @@ pub(super) fn plan(
         };
         return Ok(Arc::new(Plan::coincident(same_sense)));
     }
-    let radii = match (a, b) {
+    let radial_measures = match (a, b) {
         (Surface::Sphere(a), Surface::Sphere(b)) if known(FactKind::Concentric) => {
             Some((&a.radius, &b.radius))
         }
         (Surface::Cylinder(a), Surface::Cylinder(b)) if known(FactKind::Coaxial) => {
-            Some((&a.radius, &b.radius))
+            Some((&a.radius_sq, &b.radius_sq))
         }
         _ => None,
     };
-    if let Some((a, b)) = radii {
+    if let Some((a, b)) = radial_measures {
         dec.note_fact_decision();
         return Ok(Arc::new(if is_zero(&(a - b), dec)? {
             Plan::coincident(true)

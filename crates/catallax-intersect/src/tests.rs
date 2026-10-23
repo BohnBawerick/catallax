@@ -1,5 +1,5 @@
 use super::*;
-use catallax_numbers::{BudgetPolicy, Real, StrictSign};
+use catallax_numbers::{BudgetPolicy, Fact, FactKind, FactOrigin, Real, StrictSign};
 use catallax_shapes::{
     Circle, Curve, Cylinder, GeomKey, Line, Plane, PointDef, RPoint3, RVector3, Sphere, Surface,
 };
@@ -138,6 +138,51 @@ fn coaxial_sections_keep_distinct_centres_without_reproving_parallelism() {
     );
     assert_eq!(d.stats().coincident_fact, 1);
     assert_eq!(d.stats().coincident_exact, 0);
+}
+
+#[test]
+fn coaxial_facts_keep_squared_radius_equality_and_separation_distinct() {
+    for (other_radius_sq, coincident) in [(2, true), (3, false)] {
+        let mut g = GeomStore::new();
+        let a = g.add_surface(Surface::Cylinder(
+            Cylinder::from_radius_sq(
+                p(0, 0, 0).to_real(),
+                v(0, 0, 1).to_real(),
+                r(2).into(),
+                v(1, 0, 0).to_real(),
+                &mut dec(),
+            )
+            .unwrap(),
+        ));
+        let b = g.add_surface(Surface::Cylinder(
+            Cylinder::from_radius_sq(
+                p(0, 0, 3).to_real(),
+                v(0, 0, 2).to_real(),
+                r(other_radius_sq).into(),
+                v(0, 1, 0).to_real(),
+                &mut dec(),
+            )
+            .unwrap(),
+        ));
+        g.record_fact(Fact {
+            kind: FactKind::Coaxial,
+            a: GeomKey::Surface(a),
+            b: GeomKey::Surface(b),
+            at: None,
+            origin: FactOrigin::Construction("test.shared-axis"),
+        });
+        let same = g.same_surface(a, b, &mut dec());
+        let expected = if coincident {
+            assert!(same.is_coincident());
+            SurfacePair::Coincident { same_sense: true }
+        } else {
+            assert_eq!(same, Outcome::Proven(catallax_shapes::Apart));
+            SurfacePair::Disjoint
+        };
+        let answer = intersect_surfaces(&mut g, a, b, &mut dec()).unwrap();
+        assert!(answer.is_exact());
+        assert_eq!(answer.value, expected);
+    }
 }
 
 #[test]

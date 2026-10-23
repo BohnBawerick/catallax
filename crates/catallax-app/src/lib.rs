@@ -1,14 +1,16 @@
-//! Application entry for named, exact B-rep builds and their display approximations.
+//! Application entries for named B-rep builds and their display approximations.
 //!
 //! [`build`] accepts Catallax recipes. [`build_soliddraft`] first converts the
 //! application's JSON format. No SolidDraft backend or external checkout is needed.
+//! [`build_certified`] adds geometry-bound inward offset prisms, optional display
+//! and original-definition properties without changing the exact build entry.
 //! Handles belong to the returned model, not to a later rebuild. Store origins and
 //! names for persistent references; do not persist numeric handles.
 
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
-pub mod soliddraft;
 mod certified;
+pub mod soliddraft;
 pub use certified::{CertifiedApplicationBody, build_certified};
 
 use std::{collections::BTreeMap, fmt};
@@ -176,12 +178,21 @@ pub fn build(
 
 fn result_names(model: &Model, body: BodyId) -> Names {
     Names {
-        faces: model.faces_of_body(body).into_iter()
-            .map(|face| (face, model.face_origins(face).to_vec())).collect(),
-        edges: model.edges_of_body(body).into_iter()
-            .map(|edge| (edge, model.edge_name(body, edge))).collect(),
-        vertices: model.vertices_of_body(body).into_iter()
-            .map(|vertex| (vertex, model.vertex_name(body, vertex))).collect(),
+        faces: model
+            .faces_of_body(body)
+            .into_iter()
+            .map(|face| (face, model.face_origins(face).to_vec()))
+            .collect(),
+        edges: model
+            .edges_of_body(body)
+            .into_iter()
+            .map(|edge| (edge, model.edge_name(body, edge)))
+            .collect(),
+        vertices: model
+            .vertices_of_body(body)
+            .into_iter()
+            .map(|vertex| (vertex, model.vertex_name(body, vertex)))
+            .collect(),
     }
 }
 

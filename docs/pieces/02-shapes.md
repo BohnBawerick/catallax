@@ -25,9 +25,9 @@ Analytic constructors take the target field types and a final `&mut Decider`, re
 
 Remove `PartialEq`, `Eq` and `Hash` from definitions containing `Real`, including `Rotation`, `Pose`, analytic structs, `Surface` and `Curve`. Handles and kind tags retain their traits; rational input structs retain theirs. Geometry equality belongs to `same_surface`, `same_point` and piece 4's `same_curve`, using facts then exact decisions. An expression or construction key can prove identity for cache reuse, but unequal keys cannot prove different geometry. Do not compare independent algebraic roots by their isolating intervals or polynomial text.
 
-`Surface::implicit()`, `GeomStore::implicit()` and `Curve::equations()` return `RealPoly` or `Vec<RealPoly>`. Preserve the exact scaling of every formula below. For rational defining data, construct the existing polynomial without avoidable square roots, so it converts back to the identical `MPoly`. An algebraic expression that happens to be rational need not be detected by the cheap conversion. Gradients and rigid-transform identities hold for all validated algebraic points. `same_surface` retains the listed geometric criteria, evaluated through the decider when quantities are non-rational. Its rational fast path retains the existing no-decision result. For elliptic cylinders, compare axis lines and the transverse quadratic forms, including their eigenvalues and eigendirections; reference directions are geometric for an ellipse. Equality of proportional implicit polynomials alone does not prove equality of selected nappes or trimmed domains.
+`Surface::implicit()` returns `Option<RealPoly>`, `GeomStore::implicit()` returns a cached `Option<&RealPoly>`, and `Curve::equations()` returns `Option<Vec<RealPoly>>`. Existing analytic definitions return `Some` with the exact scaling of every formula below. Parametric spline supports return `None`, never a zero polynomial or an equation for the original target. For rational defining data, construct the existing polynomial without avoidable square roots, so it converts back to the identical `MPoly`. An algebraic expression that happens to be rational need not be detected by the cheap conversion. Analytic gradients and rigid-transform identities hold for all validated algebraic points. `same_surface` retains the listed geometric criteria, evaluated through the decider when quantities are non-rational. Its rational fast path retains the existing no-decision result. For elliptic cylinders, compare axis lines and the transverse quadratic forms, including their eigenvalues and eigendirections; reference directions are geometric for an ellipse. Equality of proportional implicit polynomials alone does not prove equality of selected nappes or trimmed domains.
 
-Chart evaluation must enclose algebraic constants through piece 1 under the caller's policy. Add a final `&Decider` argument and an outer `Result<_, Refusal>` to `Surface::{evaluate, derivatives, parameters_of}` and `Curve::evaluate`; preserve each method's existing inner return type and input-precision/containment rules. A `parameters_of` seam/domain ambiguity remains `Ok(None)`, distinct from an enclosure failure. `implicit`, `gradient`, `transformed` and `parameter_origin` still only build exact expressions and need no decision context. This prevents unbudgeted coefficient refinement or hidden rationalisation in measurement, meshing and export.
+Chart evaluation must enclose algebraic constants through piece 1 under the caller's policy. Add a final `&Decider` argument and an outer `Result<_, Refusal>` to `Surface::{evaluate, derivatives, parameters_of}` and `Curve::evaluate`; preserve each method's existing inner return type and input-precision/containment rules. A `parameters_of` seam/domain ambiguity remains `Ok(None)`, distinct from an enclosure failure. `implicit`, analytic `gradient`, `transformed` and `parameter_origin` only build exact expressions and need no decision context. `gradient` returns `Option<Vector3>`; `normal_at(point, &mut Decider)` and `GeomStore::normal(surface, point, &mut Decider)` return `Result<Vector3, Refusal>` and prove finite spline incidence before returning a parametric normal. This prevents unbudgeted coefficient refinement or hidden rationalisation in measurement, meshing and export.
 
 ### Poses and explicit points
 
@@ -130,6 +130,24 @@ for geometric consumers. This local support proof still authorizes no body.
 The spline data and `fit_elliptic_offset` candidate do not add an analytic kind
 or authorize a body. Topological use also requires checked shared boundaries,
 finite domains, regularity, material correspondence and local certificates.
+
+### Checked spline B-rep supports
+
+`Surface::BSpline` holds the checked `SplineSurface` support, and
+`Curve::BSpline` holds real finite `BSplineCurve` geometry, including shared
+surface-boundary views. The six analytic kinds retain their equations and
+fast paths. A raw spline or an `OffsetSweepProof` alone still authorizes no
+published body.
+
+The first support has a finite periodic `u` domain and finite `v` domain,
+reported as `PeriodicFinite` and `Finite`. Exact inverse queries require a
+unique finite preimage; a self-crossing or ambiguous preimage is not silently
+selected. At knots, curve consumers retain arriving and leaving tangents.
+Closed seams use one canonical parameter rather than creating a model edge.
+Supported side and incidence queries use this checked finite chart. Consumers
+requiring a global polynomial must handle `None` with an explicit coverage
+refusal; they must not use a target ellipse as the spline's geometry.
+
 
 
 ### Acceptance of the migration

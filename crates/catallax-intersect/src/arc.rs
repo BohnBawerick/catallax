@@ -162,7 +162,10 @@ pub(super) fn point(
     if let CurveForm::BSpline(curve) = &form {
         let ranges = spline_ranges(geom, c, curve, from, to, dec)?;
         let (_, a, b) = ranges.first().ok_or_else(|| {
-            Refusal::new("intersect.spline-arc", "spline arc has no positive parameter span")
+            Refusal::new(
+                "intersect.spline-arc",
+                "spline arc has no positive parameter span",
+            )
         })?;
         return Ok(Answer::exact(
             curve.point_at(&((a + b) / Real::from_i64(2)), dec)?,
@@ -201,7 +204,9 @@ pub(super) fn trace(
         let ranges = spline_ranges(geom, c, curve, from, to, dec)?;
         let mut pieces = Vec::with_capacity(ranges.len());
         for (span, from, to) in ranges {
-            pieces.push(TracePiece::new(chart::spline_span(curve, span, from, to, dec)?));
+            pieces.push(TracePiece::new(chart::spline_span(
+                curve, span, from, to, dec,
+            )?));
         }
         return Ok(Answer::exact(CurveTrace { pieces }));
     }

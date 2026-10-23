@@ -578,9 +578,13 @@ fn regular_chart(
             Loop::Vertex(_) => Vec::new(),
         })
         .map(|c| {
-            model.geom().curve(c).equations(model.geom()).ok_or_else(|| {
-                failure("sphere pole separation requires a finite parametric boundary solver")
-            })
+            model
+                .geom()
+                .curve(c)
+                .equations(model.geom())
+                .ok_or_else(|| {
+                    failure("sphere pole separation requires a finite parametric boundary solver")
+                })
         })
         .collect::<Result<Vec<_>, _>>()?;
     if equations.is_empty() {
@@ -638,7 +642,12 @@ pub(crate) fn build(
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     let faces = model.faces_of_body(body);
-    if faces.iter().any(|face| matches!(model.geom().surface(model.face(*face).surface), Surface::BSpline(_))) {
+    if faces.iter().any(|face| {
+        matches!(
+            model.geom().surface(model.face(*face).surface),
+            Surface::BSpline(_)
+        )
+    }) {
         return crate::spline_prism::build(model, body, &faces, options, dec);
     }
     let charts = faces

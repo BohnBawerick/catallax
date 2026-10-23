@@ -4,6 +4,12 @@
 //! vertex indices on either side of that edge. Periodic chart copies close
 //! seams without adding topological edges. All traversal and refinement orders
 //! are fixed; the implementation has no thread-local or process-global state.
+//!
+//! Checked spline prisms use one adaptive paired ring grid for both planar caps
+//! and the ruled side. Whole-span chord bounds include coordinate rounding, and
+//! interval orientation checks preserve outward triangles. These bounds concern
+//! the represented spline model; its error to an original feature definition is
+//! a separate body certificate, not an enlarged display tolerance.
 
 use std::{io::Write, ops::Range};
 

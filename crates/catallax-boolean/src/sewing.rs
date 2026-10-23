@@ -239,7 +239,8 @@ fn merge_faces(
             let point = curve_sample(model, edge.curve, from, to, dec)?;
             let agree = match sign(
                 &model
-                    .geom().normal(a.surface, point, dec)?
+                    .geom()
+                    .normal(a.surface, point, dec)?
                     .dot(&model.geom().normal(b.surface, point, dec)?),
                 dec,
                 "boolean.merge-ambiguous",

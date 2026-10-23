@@ -90,7 +90,16 @@ pub(crate) fn curvature(
         return Ok(Vector3::new(Real::zero(), Real::zero(), Real::zero()));
     }
     let position = model.geom().position(point);
-    let equations = model.geom().curve(curve).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?;
+    let equations = model
+        .geom()
+        .curve(curve)
+        .equations(model.geom())
+        .ok_or_else(|| {
+            catallax_numbers::Refusal::new(
+                "boolean.parametric-query",
+                "curve equation unavailable; this boolean path needs a finite parametric solver",
+            )
+        })?;
     let mut first = None;
     for p in &equations {
         let g = gradient(p, &position);
@@ -396,7 +405,16 @@ pub(crate) fn surface_germ(
             "surface normal vanished on a sewn edge",
         ));
     }
-    let acceleration = -tangent.dot(&hessian(&s.implicit().ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "surface equation unavailable; this boolean path needs a finite parametric solver"))?, &p, &tangent)) / n2;
+    let acceleration = -tangent.dot(&hessian(
+        &s.implicit().ok_or_else(|| {
+            catallax_numbers::Refusal::new(
+                "boolean.parametric-query",
+                "surface equation unavailable; this boolean path needs a finite parametric solver",
+            )
+        })?,
+        &p,
+        &tangent,
+    )) / n2;
     let curvature = normal.scaled(&acceleration);
     Ok(Germ {
         key,

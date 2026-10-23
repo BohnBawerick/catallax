@@ -60,14 +60,18 @@ pub(crate) fn trace_chord(
     let b = piece.evaluate(&Ball::from_rational(hi, BITS), dec)?;
     let interval = Ball::from_rational(lo, BITS).hull(&Ball::from_rational(hi, BITS));
     let second = piece.taylor(&interval, 2, dec)?.pop().unwrap();
-    let acceleration = second
-        .iter()
-        .fold(Rational::zero(), |sum, x| sum + x.lo().abs().max(x.hi().abs()));
+    let acceleration = second.iter().fold(Rational::zero(), |sum, x| {
+        sum + x.lo().abs().max(x.hi().abs())
+    });
     let width = hi - lo;
     let replacement = chart::residual(positions[0], &a).max(chart::residual(positions[1], &b));
     let curvature = &(&acceleration * &width) * &width * Rational::from_ratio(1, 4).unwrap();
     let error = &curvature + &replacement;
-    Ok(ChordProof { error, replacement, endpoints: [a, b] })
+    Ok(ChordProof {
+        error,
+        replacement,
+        endpoints: [a, b],
+    })
 }
 
 struct Sampler<'a> {

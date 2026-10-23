@@ -85,15 +85,30 @@ fn circles(a: Surface, b: Surface, expected: &[(Point3, Real, Contact)], points:
         let point = closed(&mut geom, point, &supports);
         coincident(on_curve(&geom, curve, point, &mut Decider::default()));
         if contact == Contact::Crossing {
-            let cross = geom.normal(supports[0], point, &mut catallax_numbers::Decider::default()).expect("surface normal fixture")
-                .cross(&geom.normal(supports[1], point, &mut catallax_numbers::Decider::default()).expect("surface normal fixture"));
+            let cross = geom
+                .normal(
+                    supports[0],
+                    point,
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .expect("surface normal fixture")
+                .cross(
+                    &geom
+                        .normal(
+                            supports[1],
+                            point,
+                            &mut catallax_numbers::Decider::default(),
+                        )
+                        .expect("surface normal fixture"),
+                );
             positive_multiple(
                 &tangent_at(&geom, curve, point, &mut Decider::default()).unwrap()[1],
                 &cross,
             );
         }
         let trace = exact(trace(&geom, curve, None, None, &mut Decider::default()));
-        let equations = supports.map(|surface| geom.implicit(surface).expect("analytic fixture support"));
+        let equations =
+            supports.map(|surface| geom.implicit(surface).expect("analytic fixture support"));
         for piece in trace.pieces() {
             for t in [r("0"), r("1/3"), r("1")] {
                 let position = piece

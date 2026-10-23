@@ -4,7 +4,7 @@ Build the release binaries and run the skill's doctor first. Use a separate exte
 
 | Feature | Entry points |
 | --- | --- |
-| [Deterministic answers](answers.md) | Questions, recipes, whole-face definition checks and comparison sources |
+| [Deterministic answers](answers.md) | Questions, recipes, certified spline bodies and consumers, whole-face definition checks and comparison sources |
 | [Regression replay](replay.md) | Persistent workers, cache, resume and strict comparison |
 | [Interactive latency](latency.md) | Pinned matched pairs, old replay and performance report |
 | [Operation logs and exported questions](answers.md) | `operation_log`, `operations.json`, portable `question.json`, `replay` |

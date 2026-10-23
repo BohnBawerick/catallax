@@ -5,11 +5,15 @@
 //! supplies the whole-panel remainder; no meshed or fitted values enter here.
 
 use catallax_intersect::{TracePiece, trace_elliptic_offset_quarter};
-use catallax_numbers::{Answer, Answered, Ball, Decider, MarkLog, Outcome, Rational, Real, Refusal, StrictSign};
-use catallax_shapes::{EllipticCylinder, EllipticOffsetDefinition, OffsetSide, Point3, Surface, Vector3};
+use catallax_numbers::{
+    Answer, Answered, Ball, Decider, MarkLog, Outcome, Rational, Real, Refusal, StrictSign,
+};
+use catallax_shapes::{
+    EllipticCylinder, EllipticOffsetDefinition, OffsetSide, Point3, Surface, Vector3,
+};
 
-use crate::{Accuracy, Enclosure, MassProperties, VolumeAreaCentroid};
 use crate::integrate::{Builder, Program, Stop, Work};
+use crate::{Accuracy, Enclosure, MassProperties, VolumeAreaCentroid};
 
 /// Exact-target volume, area, centroid and centroidal unit-density inertia of
 /// the product of an elliptic normal-offset profile and an axial interval.
@@ -35,9 +39,14 @@ pub fn elliptic_offset_prism_volume_area_centroid(
     dec: &mut Decider,
 ) -> Answered<VolumeAreaCentroid> {
     let answer = measure(definition, axial, accuracy, false, dec)?;
-    Ok(Answer::with_marks(VolumeAreaCentroid {
-        volume: answer.value.volume, area: answer.value.area, centroid: answer.value.centroid,
-    }, answer.marks))
+    Ok(Answer::with_marks(
+        VolumeAreaCentroid {
+            volume: answer.value.volume,
+            area: answer.value.area,
+            centroid: answer.value.centroid,
+        },
+        answer.marks,
+    ))
 }
 
 fn program(inertia: bool) -> Program {
@@ -49,14 +58,22 @@ fn program(inertia: bool) -> Program {
     let perimeter = (dx * dx + dy * dy).sqrt();
     if inertia {
         let y = b.input(1);
-        b.finish(&[area, perimeter, x * x * x * dy / b.k(3), -y * y * y * dx / b.k(3)])
+        b.finish(&[
+            area,
+            perimeter,
+            x * x * x * dy / b.k(3),
+            -y * y * y * dx / b.k(3),
+        ])
     } else {
         b.finish(&[area, perimeter])
     }
 }
 
 fn integrate(
-    program: &Program, trace: &TracePiece, depth: u32, work: &mut Work,
+    program: &Program,
+    trace: &TracePiece,
+    depth: u32,
+    work: &mut Work,
 ) -> Result<Vec<Ball>, Stop> {
     let count = 1u64.checked_shl(depth).ok_or(Stop::Budget)?;
     let step = Rational::one().mul_pow2(-i64::from(depth));
@@ -66,23 +83,38 @@ fn integrate(
         let hi = &lo + &step;
         let values = program.panel(trace, &lo, &hi, work)?;
         if let Some(sum) = &mut sum {
-            for (sum, value) in sum.iter_mut().zip(values) { *sum = work.add(sum, &value)?; }
+            for (sum, value) in sum.iter_mut().zip(values) {
+                *sum = work.add(sum, &value)?;
+            }
         } else {
             sum = Some(values);
         }
     }
     let four = work.rational(&Rational::from_i64(4))?;
     let mut sum = sum.unwrap();
-    for value in &mut sum { *value = work.mul(value, &four)?; }
+    for value in &mut sum {
+        *value = work.mul(value, &four)?;
+    }
     Ok(sum)
 }
 
 fn real3(values: &[Real; 3], work: &mut Work) -> Result<[Ball; 3], Stop> {
-    Ok([work.real(&values[0])?, work.real(&values[1])?, work.real(&values[2])?])
+    Ok([
+        work.real(&values[0])?,
+        work.real(&values[1])?,
+        work.real(&values[2])?,
+    ])
 }
 
 fn inertia_entries(tensor: &crate::InertiaTensor) -> [&Enclosure; 6] {
-    [&tensor[0][0], &tensor[0][1], &tensor[0][2], &tensor[1][1], &tensor[1][2], &tensor[2][2]]
+    [
+        &tensor[0][0],
+        &tensor[0][1],
+        &tensor[0][2],
+        &tensor[1][1],
+        &tensor[1][2],
+        &tensor[2][2],
+    ]
 }
 
 struct Frame {
@@ -104,7 +136,8 @@ impl Frame {
         });
         Self {
             axes,
-            center: [center.x, center.y, center.z], height: axial[1] - axial[0],
+            center: [center.x, center.y, center.z],
+            height: axial[1] - axial[0],
         }
     }
 
@@ -123,11 +156,20 @@ impl Frame {
             let axial = work.mul(&volume, &height2)?;
             let twelve = work.rational(&Rational::from_i64(12))?;
             let mw = work.div(&axial, &twelve)?;
-            let principal = [work.add(&mv, &mw)?, work.add(&mu, &mw)?, work.add(&mu, &mv)?];
+            let principal = [
+                work.add(&mv, &mw)?,
+                work.add(&mu, &mw)?,
+                work.add(&mu, &mv)?,
+            ];
             let axes = self.axes.as_ref().unwrap();
-            let basis = [real3(&axes[0], work)?, real3(&axes[1], work)?, real3(&axes[2], work)?];
+            let basis = [
+                real3(&axes[0], work)?,
+                real3(&axes[1], work)?,
+                real3(&axes[2], work)?,
+            ];
             let zero = Enclosure::exact(Rational::zero());
-            let mut tensor: [[Enclosure; 3]; 3] = std::array::from_fn(|_| std::array::from_fn(|_| zero.clone()));
+            let mut tensor: [[Enclosure; 3]; 3] =
+                std::array::from_fn(|_| std::array::from_fn(|_| zero.clone()));
             for i in 0..3 {
                 for j in i..3 {
                     let mut sum = work.rational(&Rational::zero())?;
@@ -137,40 +179,66 @@ impl Frame {
                         sum = work.add(&sum, &value)?;
                     }
                     tensor[i][j] = Enclosure::from_ball(&sum);
-                    if i != j { tensor[j][i] = tensor[i][j].clone(); }
+                    if i != j {
+                        tensor[j][i] = tensor[i][j].clone();
+                    }
                 }
             }
             Some(tensor)
-        } else { None };
+        } else {
+            None
+        };
         Ok(MassProperties {
-            volume: Enclosure::from_ball(&volume), area: Enclosure::from_ball(&area),
-            centroid: Some(center.each_ref().map(Enclosure::from_ball)), inertia,
+            volume: Enclosure::from_ball(&volume),
+            area: Enclosure::from_ball(&area),
+            centroid: Some(center.each_ref().map(Enclosure::from_ball)),
+            inertia,
         })
     }
 }
 
 fn reached(result: &MassProperties, accuracy: &Accuracy) -> bool {
-    accuracy.reached(&result.volume) && accuracy.reached(&result.area)
-        && result.centroid.as_ref().unwrap().iter().all(|c| accuracy.reached(c))
-        && result.inertia.as_ref().is_none_or(|tensor| inertia_entries(tensor).into_iter().all(|c| accuracy.reached(c)))
+    accuracy.reached(&result.volume)
+        && accuracy.reached(&result.area)
+        && result
+            .centroid
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|c| accuracy.reached(c))
+        && result.inertia.as_ref().is_none_or(|tensor| {
+            inertia_entries(tensor)
+                .into_iter()
+                .all(|c| accuracy.reached(c))
+        })
 }
 
 fn budget() -> Refusal {
-    Refusal::new("measure.budget-exhausted", "no exact-target offset-prism enclosure reached within the measurement budget")
+    Refusal::new(
+        "measure.budget-exhausted",
+        "no exact-target offset-prism enclosure reached within the measurement budget",
+    )
 }
 
 fn measure(
-    definition: &EllipticOffsetDefinition, axial: [&Real; 2], accuracy: &Accuracy,
-    inertia: bool, dec: &mut Decider,
+    definition: &EllipticOffsetDefinition,
+    axial: [&Real; 2],
+    accuracy: &Accuracy,
+    inertia: bool,
+    dec: &mut Decider,
 ) -> Answered<MassProperties> {
     accuracy.validate();
     dec.check_deadline()?;
     match dec.sign(&(axial[1] - axial[0])) {
-        Outcome::Proven(StrictSign::Positive) => {},
-        Outcome::Proven(_) | Outcome::ProvenCoincident(_) => return Ok(Answer::exact(MassProperties {
-            volume: Enclosure::exact(Rational::zero()), area: Enclosure::exact(Rational::zero()),
-            centroid: None, inertia: None,
-        })),
+        Outcome::Proven(StrictSign::Positive) => {}
+        Outcome::Proven(_) | Outcome::ProvenCoincident(_) => {
+            return Ok(Answer::exact(MassProperties {
+                volume: Enclosure::exact(Rational::zero()),
+                area: Enclosure::exact(Rational::zero()),
+                centroid: None,
+                inertia: None,
+            }));
+        }
         Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
         Outcome::Refused(r) => return Err(r),
     }
@@ -178,20 +246,29 @@ fn measure(
         unreachable!("validated elliptic-offset definition");
     };
     let signed = match definition.side() {
-        OffsetSide::Outward => definition.distance().clone(), OffsetSide::Inward => -definition.distance(),
+        OffsetSide::Outward => definition.distance().clone(),
+        OffsetSide::Inward => -definition.distance(),
     };
     // Integrate in the principal plane, avoiding translation-dependent interval
     // cancellation. The exact source frame transports centroid and inertia.
-    let canonical = EllipticOffsetDefinition::new(EllipticCylinder {
-        origin: Point3::origin(), axis: Vector3::new(Real::zero(), Real::zero(), Real::one()),
-        major_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
-        major_sq: original.major_sq.clone(), minor_sq: original.minor_sq.clone(),
-    }, signed, dec)?;
+    let canonical = EllipticOffsetDefinition::new(
+        EllipticCylinder {
+            origin: Point3::origin(),
+            axis: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+            major_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+            major_sq: original.major_sq.clone(),
+            minor_sq: original.minor_sq.clone(),
+        },
+        signed,
+        dec,
+    )?;
     let trace = trace_elliptic_offset_quarter(&canonical, &Real::zero(), 0, dec)?.value;
     let frame = Frame::new(original, axial, inertia);
     let program = program(inertia);
     let policy = *dec.policy();
-    if policy.max_precision_bits == 0 || policy.max_work == 0 { return Err(budget()); }
+    if policy.max_precision_bits == 0 || policy.max_work == 0 {
+        return Err(budget());
+    }
     let mut precision = 128u32.min(policy.max_precision_bits);
     // These halves separate one of the two normal-denominator coordinates
     // from zero, before Taylor evaluation; refinement never changes geometry.
@@ -201,7 +278,9 @@ fn measure(
     let mut split_precision = false;
     loop {
         let mut work = match Work::new(&policy, precision, remaining, dec) {
-            Ok(work) => work, Err(Stop::Refusal(r)) => return Err(r), Err(_) => break,
+            Ok(work) => work,
+            Err(Stop::Refusal(r)) => return Err(r),
+            Err(_) => break,
         };
         let attempt = integrate(&program, &trace, depth, &mut work)
             .and_then(|values| frame.properties(&values, &mut work));
@@ -211,28 +290,42 @@ fn measure(
             Ok(result) => {
                 let done = reached(&result, accuracy);
                 best = Some(result);
-                if done { return Ok(Answer::exact(best.unwrap())); }
-                if work.quadrature_dominates { depth += 1; }
-                else if precision < policy.max_precision_bits {
+                if done {
+                    return Ok(Answer::exact(best.unwrap()));
+                }
+                if work.quadrature_dominates {
+                    depth += 1;
+                } else if precision < policy.max_precision_bits {
                     precision = precision.saturating_mul(2).min(policy.max_precision_bits);
-                } else { break; }
-            },
+                } else {
+                    break;
+                }
+            }
             Err(Stop::Refusal(r)) => return Err(r),
             Err(Stop::Budget) => break,
             Err(Stop::Split | Stop::GaugeSplit) => {
                 if !split_precision && precision < policy.max_precision_bits {
                     precision = precision.saturating_mul(2).min(policy.max_precision_bits);
                     split_precision = true;
-                } else { depth += 1; split_precision = false; }
-            },
+                } else {
+                    depth += 1;
+                    split_precision = false;
+                }
+            }
         }
-        if remaining == 0 { break; }
+        if remaining == 0 {
+            break;
+        }
     }
     let result = best.ok_or_else(budget)?;
     let mut marks = MarkLog::new();
     accuracy.mark(&mut marks, &[&result.volume], "volume");
     accuracy.mark(&mut marks, &[&result.area], "area");
-    accuracy.mark(&mut marks, &result.centroid.as_ref().unwrap().each_ref(), "centroid");
+    accuracy.mark(
+        &mut marks,
+        &result.centroid.as_ref().unwrap().each_ref(),
+        "centroid",
+    );
     if let Some(tensor) = &result.inertia {
         accuracy.mark(&mut marks, &inertia_entries(tensor), "inertia");
     }

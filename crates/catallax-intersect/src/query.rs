@@ -8,8 +8,8 @@ use catallax_numbers::{
     Ball, Decider, FactKind, Outcome, Rational, Real, Refusal, Sign, StrictOrder, StrictSign,
 };
 use catallax_shapes::{
-    Apart, BSplineCurve, Curve, CurveId, GeomKey, GeomStore, Point3, PointId,
-    SplineCurveParameter, Surface, Vector3,
+    Apart, BSplineCurve, Curve, CurveId, GeomKey, GeomStore, Point3, PointId, SplineCurveParameter,
+    Surface, Vector3,
 };
 use std::sync::Arc;
 
@@ -322,9 +322,7 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             proof: catallax_numbers::ZeroProof::Algebraic,
         });
     }
-    if matches!(geom.curve(a), Curve::BSpline(_))
-        || matches!(geom.curve(b), Curve::BSpline(_))
-    {
+    if matches!(geom.curve(a), Curve::BSpline(_)) || matches!(geom.curve(b), Curve::BSpline(_)) {
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
             "different spline definitions require a finite curve-equivalence proof",
@@ -555,8 +553,12 @@ pub(super) fn order(
                 ));
             }
             Ok((
-                spline_parameter(curve, &geom.position(p), dec)?.value().clone(),
-                spline_parameter(curve, &geom.position(q), dec)?.value().clone(),
+                spline_parameter(curve, &geom.position(p), dec)?
+                    .value()
+                    .clone(),
+                spline_parameter(curve, &geom.position(q), dec)?
+                    .value()
+                    .clone(),
             ))
         })();
         return match parameters {

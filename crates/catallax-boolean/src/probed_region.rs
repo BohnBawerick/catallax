@@ -419,7 +419,10 @@ pub(crate) fn locate(
                 return Ok(Some(location));
             }
         }
-        let normal = model.geom().surface(model.face(face).surface).normal_at(&p, dec)?;
+        let normal = model
+            .geom()
+            .surface(model.face(face).surface)
+            .normal_at(&p, dec)?;
         let u = crate::geometry::perpendicular(&normal, dec, "boolean.classify-ambiguous")?;
         let v = normal.cross(&u);
         for index in 0..attempts {

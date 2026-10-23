@@ -290,7 +290,17 @@ pub(crate) fn meetings(
     };
     let v = normal.cross(&u);
     let mut first = None;
-    for equation in model.geom().curve(a).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
+    for equation in model
+        .geom()
+        .curve(a)
+        .equations(model.geom())
+        .ok_or_else(|| {
+            catallax_numbers::Refusal::new(
+                "boolean.parametric-query",
+                "curve equation unavailable; this boolean path needs a finite parametric solver",
+            )
+        })?
+    {
         let polynomial = substitute(&equation, &origin, &u, Some(&v));
         if !polynomial.is_zero(dec)? {
             first = Some(polynomial);
@@ -303,7 +313,17 @@ pub(crate) fn meetings(
             "analytic conic equation was not certified",
         )
     })?;
-    for equation in model.geom().curve(b).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
+    for equation in model
+        .geom()
+        .curve(b)
+        .equations(model.geom())
+        .ok_or_else(|| {
+            catallax_numbers::Refusal::new(
+                "boolean.parametric-query",
+                "curve equation unavailable; this boolean path needs a finite parametric solver",
+            )
+        })?
+    {
         let second = substitute(&equation, &origin, &u, Some(&v));
         if second.is_zero(dec)? {
             continue;

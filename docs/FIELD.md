@@ -220,6 +220,30 @@ numeric refusals propagate. This result is not a body certificate: common cap
 curves, changed cap domains, local limits and outward material correspondence
 must also be checked before publication.
 
+## True-distance queries for certified offset prisms
+
+`CertifiedPrismField::new(&CertifiedBuilt, &mut Decider)` verifies and borrows
+the immutable geometry-bound body. `proven_checked` answers at an exact
+rational point against its retained original normal-offset product solid,
+not the fitted carrier. It returns `Value::TrueDistance`, location, unsigned
+distance and a unique, ambiguous or undefined direction as appropriate.
+Empty material has infinite distance.
+
+In the transverse plane the nearest point on an ellipse is selected through
+the unique regular multiplier above the minor-axis singular value. Exact axis
+branches handle the interior medial set instead of choosing a root by a
+rounded sign. The regular inward offset shifts that genuine signed distance.
+Combining it with the exact axial interval gives side, cap, edge/corner and
+interior distances for the nominal product solid. Subtracting the offset from
+an ellipse's implicit residual is not an alternative distance proof.
+
+`face_query` additionally checks the selected nominal face and surviving
+boundary. A point on the approximate spline does not thereby become an exact
+nominal boundary point. The verified body's separate local/whole error record
+relates these two geometries; it never changes the field query's scope or the
+1 nm modelling tolerance. This API does not widen the ordinary recipe `Plan`
+compiler into general offset/fillet coverage.
+
 ## Definition-native display
 
 `catallax_field::display::mesh_plan` consumes a compiled `Plan`, `Options` and

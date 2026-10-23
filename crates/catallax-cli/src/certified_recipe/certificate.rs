@@ -3,18 +3,27 @@
 use std::fmt::Write as _;
 
 use catallax_features::{CertificateKey, CertifiedBuilt};
-use catallax_numbers::{CertificateIdentity, CertificateScope, DecisionEvidence, EvidenceBound, EvidenceUnit, ExceptionSource, FeatureSizeLowerBound, GeometricProof, LocalException};
+use catallax_numbers::{
+    CertificateIdentity, CertificateScope, DecisionEvidence, EvidenceBound, EvidenceUnit,
+    ExceptionSource, FeatureSizeLowerBound, GeometricProof, LocalException,
+};
 use serde_json::{Value, json};
 
 pub(super) fn key(value: &CertificateKey) -> String {
     let mut text = String::with_capacity(64);
-    for byte in value { write!(text, "{byte:02x}").unwrap(); }
+    for byte in value {
+        write!(text, "{byte:02x}").unwrap();
+    }
     text
 }
 fn unit(unit: EvidenceUnit) -> &'static str {
     match unit {
-        EvidenceUnit::Millimetres => "mm", EvidenceUnit::Radians => "rad", EvidenceUnit::Scalar => "scalar",
-        EvidenceUnit::SquareMillimetres => "mm2", EvidenceUnit::CubicMillimetres => "mm3", EvidenceUnit::Raw => "raw",
+        EvidenceUnit::Millimetres => "mm",
+        EvidenceUnit::Radians => "rad",
+        EvidenceUnit::Scalar => "scalar",
+        EvidenceUnit::SquareMillimetres => "mm2",
+        EvidenceUnit::CubicMillimetres => "mm3",
+        EvidenceUnit::Raw => "raw",
     }
 }
 pub(super) fn bound(bound: &EvidenceBound) -> Value {
@@ -23,9 +32,13 @@ pub(super) fn bound(bound: &EvidenceBound) -> Value {
 fn scope(scope: &CertificateScope<CertificateKey>) -> Value {
     match scope {
         CertificateScope::WholeSolid => json!({"kind":"whole-solid"}),
-        CertificateScope::Entities(entities) => json!({"kind":"complete-entities-and-trims","entities":entities.iter().map(key).collect::<Vec<_>>()}),
-        CertificateScope::ParameterBox { chart, bounds } => json!({"kind":"closed-parameter-box","chart":key(chart),
-            "bounds":bounds.iter().map(|(lo, hi)| [lo.to_string(),hi.to_string()]).collect::<Vec<_>>()}),
+        CertificateScope::Entities(entities) => {
+            json!({"kind":"complete-entities-and-trims","entities":entities.iter().map(key).collect::<Vec<_>>()})
+        }
+        CertificateScope::ParameterBox { chart, bounds } => {
+            json!({"kind":"closed-parameter-box","chart":key(chart),
+            "bounds":bounds.iter().map(|(lo, hi)| [lo.to_string(),hi.to_string()]).collect::<Vec<_>>()})
+        }
         CertificateScope::Query(query) => json!({"kind":"query","query":key(query)}),
     }
 }
@@ -38,24 +51,46 @@ fn decision(decision: &DecisionEvidence<CertificateKey>) -> Value {
 }
 fn proof(proof: &GeometricProof<CertificateKey>) -> Value {
     match proof {
-        GeometricProof::ExactDefinition(definition) => json!({"kind":"exact-definition","definition":key(definition)}),
-        GeometricProof::Approximation { definition, theorem } => json!({"kind":"approximation","definition":key(definition),"theorem":key(theorem)}),
-        GeometricProof::Conversion { decision: original, theorem } => json!({"kind":"scoped-residual-conversion","decision":decision(original),"theorem":key(theorem)}),
-        GeometricProof::Transfer(theorem) => json!({"kind":"operation-transfer","theorem":key(theorem)}),
-        GeometricProof::WholeResult(theorem) => json!({"kind":"whole-oriented-result","theorem":key(theorem)}),
+        GeometricProof::ExactDefinition(definition) => {
+            json!({"kind":"exact-definition","definition":key(definition)})
+        }
+        GeometricProof::Approximation {
+            definition,
+            theorem,
+        } => json!({"kind":"approximation","definition":key(definition),"theorem":key(theorem)}),
+        GeometricProof::Conversion {
+            decision: original,
+            theorem,
+        } => {
+            json!({"kind":"scoped-residual-conversion","decision":decision(original),"theorem":key(theorem)})
+        }
+        GeometricProof::Transfer(theorem) => {
+            json!({"kind":"operation-transfer","theorem":key(theorem)})
+        }
+        GeometricProof::WholeResult(theorem) => {
+            json!({"kind":"whole-oriented-result","theorem":key(theorem)})
+        }
     }
 }
 fn size(size: &FeatureSizeLowerBound) -> Value {
     match size {
         FeatureSizeLowerBound::NoNeighbour => json!({"kind":"no-neighbour"}),
-        FeatureSizeLowerBound::Millimetres(value) => json!({"kind":"proved-lower-bound","mm":value.to_string()}),
+        FeatureSizeLowerBound::Millimetres(value) => {
+            json!({"kind":"proved-lower-bound","mm":value.to_string()})
+        }
     }
 }
 fn exception(exception: &LocalException<CertificateKey>) -> Value {
     let source = match &exception.source {
         ExceptionSource::KernelApproximation => json!({"kind":"kernel-approximation"}),
-        ExceptionSource::BoundedDecision { decision } => json!({"kind":"bounded-decision","decision":key(decision)}),
-        ExceptionSource::Import { file, source_uncertainty, acceptance } => json!({"kind":"import","file":key(file),
+        ExceptionSource::BoundedDecision { decision } => {
+            json!({"kind":"bounded-decision","decision":key(decision)})
+        }
+        ExceptionSource::Import {
+            file,
+            source_uncertainty,
+            acceptance,
+        } => json!({"kind":"import","file":key(file),
             "source_uncertainty":source_uncertainty.as_ref().map(bound),
             "acceptance":acceptance.as_ref().map(|a| json!({"file":key(&a.file),"limit":bound(&a.limit),"record":key(&a.record)}))}),
     };

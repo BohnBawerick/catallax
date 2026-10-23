@@ -435,7 +435,9 @@ fn rational_oblique_circle_keeps_its_swept_support_and_original_caps() {
                     let support = built
                         .model
                         .geom()
-                        .surface(face.surface).implicit().expect("analytic fixture support")
+                        .surface(face.surface)
+                        .implicit()
+                        .expect("analytic fixture support")
                         .substitute(2, &t.scale(&Real::from_i64(4)))
                         .substitute(0, &(&x + &t.scale(&Real::from_i64(3))));
                     let circle = (&x.pow_u32(2) + &y.pow_u32(2))

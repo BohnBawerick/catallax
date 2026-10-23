@@ -1,4 +1,4 @@
-//! Exact recipe-based features over the B-rep model.
+//! Recipe-based B-rep features with retained exact definitions.
 //!
 //! [`evaluate`] builds stock solids, sketches, extrusions, revolutions, elementary
 //! fillets, booleans, exact body patterns and mirrors.
@@ -6,9 +6,13 @@
 //! by a boolean. The model remains compatible with `catallax-measure` and
 //! `catallax-step`; the legacy CLI protocol is not extended.
 //!
-//! Body-copy placements may be algebraic. Feature constructors still refuse some
-//! algebraic placements, generated radii and elliptic cylinders explicitly;
-//! `docs/RECIPE.md` section 7.14 lists these unfinished legal-input cases.
+//! Body-copy placements may be algebraic.
+//! [`evaluate_certified`] additionally builds the checked inward elliptic-offset
+//! prism family with genuine spline geometry and a complete geometry-bound record.
+//! Its retained exact definition remains the target for later offsets and properties.
+//! Unsupported legal geometry keeps an explicit coverage refusal; a surface enum
+//! variant is not general feature or boolean coverage. `docs/RECIPE.md` section 7.14
+//! records the remaining legal-input coverage gaps.
 //!
 //! ```
 //! use catallax_features::evaluate;

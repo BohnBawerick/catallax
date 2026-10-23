@@ -12,6 +12,32 @@ Add elliptic-cylinder support using piece 2's chart and derivatives. Its area de
 
 Use certified closure and finite conic traces from piece 4. A parabola or hyperbola support is unbounded but a solid's face/edge domain is bounded; integrate that domain. Preserve seam and singularity treatment. Add algebraic placement invariance, open-conic trims and oblique circular extrusions to the independent tests before claiming feature coverage. Existing budget and accuracy failure policies remain unchanged and remain separate from PRD completion.
 
+## Original-target properties of certified offset prisms
+
+`elliptic_offset_prism_mass_properties(definition, axial, accuracy, dec)` and
+`elliptic_offset_prism_volume_area_centroid(...)` integrate the retained
+`EllipticOffsetDefinition` and exact axial interval. They measure the nominal
+product solid, not its fitted B-spline carrier or display mesh. The three-
+property path does not compute inertia. An empty interval denotes empty
+material; nonregular inward profiles refuse.
+
+The existing validated Taylor integrator encloses the exact principal-quarter
+normal-offset trace. Reflection symmetry supplies the whole profile; Green's
+formula supplies its area and second moments, and the trace speed supplies
+perimeter. Product-solid formulas give volume, total cap/side area, centroid
+and centroidal unit-density inertia in the original exact frame, then transport
+the tensor to model axes. No sampled fit or floating-point quadrature result
+becomes a property enclosure.
+
+These definition-level APIs do not themselves validate a body certificate.
+`CertifiedApplicationBody` binds them to a verified immutable body and target.
+Requested property widths stay independent of the carrier's local tolerance;
+the carrier error is not added to make a nominal-property request pass.
+Library accuracy marks retain their existing meaning; the opt-in manifest/4
+consumer reports `measure.accuracy-not-reached` rather than claiming a requested
+width it did not achieve.
+
+
 ## What this piece is for
 
 Piece 6 computes body mass properties, face areas and centroids, edge lengths and half-arc-length points, and body and face axis-aligned bounds. Results are proven enclosures with exact rational ends for the geometry as built.
@@ -38,7 +64,7 @@ For a body `b` and its material `M` (the closure of the open set its shells boun
 - **edge length and midpoint**: trimmed arc length and its half-arc-length point;
 - **bounds**: inclusive axis-aligned limits for the exact body or face, without display padding.
 
-The body is measured as built. When the body carries marks (it was built through not-exact decisions), the enclosures are proven for that body, which may differ from the true answer within those marks (`JUDGE-INTERFACE.md`, ND10). This piece does not add the body's marks to its answer; they stay on the body, and the front end reports both.
+The model-based APIs below measure the body as built. When that body carries marks (it was built through not-exact decisions), the enclosures are proven for that body, which may differ from the true answer within those marks (`JUDGE-INTERFACE.md`, ND10). This piece does not add the body's marks to its answer; they stay on the body, and the front end reports both. The certified-prism APIs above instead measure the explicitly retained original target and keep its represented-model error separate.
 
 An `Empty` body has volume and area exactly 0 (`lo = hi = 0`), centroid `None` and inertia `None`.
 A `Solid` body whose faces lie on planes, circular or elliptic cylinders, cones, spheres or tori, and whose edges lie on curves that piece 4 can trace, is measured. That covers every supported primitive and boolean result; uncovered surfaces retain `measure.unsupported-surface`.

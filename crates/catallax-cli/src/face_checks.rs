@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::time::Instant;
 
+use crate::recipe_edit::ScalarEdit;
 use catallax_field::measurement::{CentrePath, FaceDefinition, MeasurementOptions, measure_face};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_recipe::{Number, OriginPattern, Recipe};
@@ -12,7 +13,6 @@ use catallax_shapes::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use crate::recipe_edit::ScalarEdit;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

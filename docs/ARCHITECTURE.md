@@ -219,7 +219,7 @@ Completion requires a feature chain through both kernels, with complete exact/ex
 
 Adopt a certified polynomial or rational B-spline surface beside the immutable exact feature definition, option A below. The spline is the represented geometry of the B-rep face. The definition remains the target for construction, error proofs and later features. Keep existing analytic reductions exact. For the first offset, use a cubic spline cross-section extruded exactly along the cylinder axis, a tensor-product surface of degrees 3 and 1. This also gives general fillets and blends a common candidate representation without making triangles the model.
 
-The owner approved carrier A and the PRD case-1 widening on 2026-10-23, together with the amendment to [the composable error ruling](#composable-geometric-error-decision-of-2026-10-22). The whole-result certificate now records exact regions and every permitted local exception. A fitted face within its recorded tolerance and caps does not also need refinement below a universal 1 nm bound. This docs-only change supplies the representation contract; construction, certificate enforcement and measuring-stick extensions remain implementation work.
+The owner approved carrier A and the PRD case-1 widening on 2026-10-23, together with the amendment to [the composable error ruling](#composable-geometric-error-decision-of-2026-10-22). The whole-result certificate records exact regions and every permitted local exception. A fitted face within its recorded tolerance and caps does not also need refinement below a universal 1 nm bound. The ruling supplies the representation contract; the implemented first family and its remaining coverage boundaries are listed below.
 
 The owner decided the geometry-creation tolerance at 1 nm on 22 October, as PLAN sections 3.1 and 15 record. Keep that value for sameness and decisions. Local approximation caps, property accuracy and display/export settings have their own declared scopes; none enlarges the decision gap.
 
@@ -338,9 +338,48 @@ The owner approved the replacement of [PRD section 3.1 item 1](PRD.md#31-agreeme
 
 The section's introductory agreement sentence now refers to those scoped bounds rather than a universal 1 nm difference. Item 2 retains the strict 1 nm decision-gap rule. Measurement, comparison and STEP use the amended composable-error policy above; an existing exchange promising a stronger bound remains unchanged until a versioned contract explicitly adopts the new policy. [PLAN section 14 item 3](PLAN.md#14-proposed-prd-changes) records this decision.
 
-### Observed baseline and evidence for this ruling
+### Implemented first-family coverage
 
-Source observations below are at `046f426b8f42a08a32a7ae88f579dd32482b273e`. Tests were read for their assertions, not executed for this docs-only ruling. Design requirements above must not be read as implemented behaviour.
+The opt-in `features::evaluate_certified` path constructs the prescribed inward
+elliptic-offset prism from the public recipe source. The side is a checked
+`Surface::BSpline`; both cap disks share its real spline boundary curves.
+The opaque body record binds recipe revision, retained original target,
+representation, complete physical regions, local exceptions and decide-once
+evidence. Verification rechecks actual geometry, local caps, finite trims,
+material correspondence and topology, not only evidence hashes or marks.
+The [feature regressions](../crates/catallax-features/tests/certified_prism.rs)
+cover the second offset from the original definition, axial planar trim,
+edited origins, empty erosion, nonregular rejection and forged/stale records.
+
+Shapes and intersection consumers no longer assume every surface or curve has
+a global polynomial: analytic equations remain available, while splines use
+checked finite preimages, tangents, normals, ordering and traces. General
+spline surface-pair isolation is still uncovered. The shared
+`topology::SplinePrism` geometry view checks the represented solid independently
+of its recipe-bound certificate.
+
+Display meshes use shared adaptive ring grids, complete cap fans and ruled
+side strips with represented-model chord/rounding bounds. Requested properties
+integrate the retained exact normal-offset law, not the fitted carrier.
+`field::CertifiedPrismField` answers genuine nominal signed distance, including
+axis/medial, side, cap and corner branches. The spline STEP exporter shares its
+rounded surface/edge controls, proves closed C1 joins and cap compatibility,
+and refuses if its finite-decimal file bound exceeds the requested accuracy.
+Output-to-model and composed output-to-definition errors remain separate.
+
+`app::build_certified` exposes the immutable body, optional display and stable
+origin/name tables. The approved opt-in
+[`certified-recipe/1` exchange](VERIFY-INTERFACE.md#certified-recipe-bodies-opt-in)
+uses unchanged request/1 and nested recipe/3, but returns manifest/4 with actual
+spline tags, complete evidence, requested consumers and a separately rebuilt
+scalar edit. The public example exercises that full path. Existing adapters
+retain their contracts. Outward offsets, general spline booleans, rolling
+fillets and policy enforcement across every feature remain separate coverage;
+this family does not imply their completion.
+
+### Historical baseline and evidence for the ruling
+
+The following snapshot is at `046f426b8f42a08a32a7ae88f579dd32482b273e`, before the first-family implementation above. Tests were read for their assertions, not executed for the original docs-only ruling. This table records the design's starting point, not current spline coverage.
 
 | Observed behaviour | Inspected code and tests |
 | --- | --- |

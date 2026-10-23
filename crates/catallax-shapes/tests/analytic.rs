@@ -334,7 +334,13 @@ blind_test!(case_12_expanded_polynomials_without_rescaling, {
         ),
     ];
     for (s, expected) in cases {
-        assert_eq!(s.implicit().expect("analytic fixture support").into_rational().unwrap(), expected);
+        assert_eq!(
+            s.implicit()
+                .expect("analytic fixture support")
+                .into_rational()
+                .unwrap(),
+            expected
+        );
     }
     for (point, expected) in [
         (p("4", "0", "0"), "0"),
@@ -344,7 +350,12 @@ blind_test!(case_12_expanded_polynomials_without_rescaling, {
         (p("3", "0", "0"), "-35"),
     ] {
         assert_eq!(
-            torus().implicit().expect("analytic fixture support").rational().unwrap().eval(&xyz(&point)),
+            torus()
+                .implicit()
+                .expect("analytic fixture support")
+                .rational()
+                .unwrap()
+                .eval(&xyz(&point)),
             r(expected)
         );
     }
@@ -382,24 +393,34 @@ blind_test!(cases_13_14_15_transform_and_gradients, {
         r("0")
     );
     vector_eq(
-        &sphere("3").gradient(&p("1", "2", "2").to_real()).expect("analytic fixture gradient"),
+        &sphere("3")
+            .gradient(&p("1", "2", "2").to_real())
+            .expect("analytic fixture gradient"),
         &v("2", "4", "4"),
     );
     vector_eq(
-        &plane().gradient(&p("7", "-8", "9").to_real()).expect("analytic fixture gradient"),
+        &plane()
+            .gradient(&p("7", "-8", "9").to_real())
+            .expect("analytic fixture gradient"),
         &v("0", "0", "2"),
     );
     vector_eq(
-        &cone().gradient(&p("0", "0", "0").to_real()).expect("analytic fixture gradient"),
+        &cone()
+            .gradient(&p("0", "0", "0").to_real())
+            .expect("analytic fixture gradient"),
         &v("0", "0", "0"),
     );
     vector_eq(
-        &cylinder("5").gradient(&p("3", "4", "7").to_real()).expect("analytic fixture gradient"),
+        &cylinder("5")
+            .gradient(&p("3", "4", "7").to_real())
+            .expect("analytic fixture gradient"),
         &v("6", "8", "0"),
     );
     // f=(q+8)^2-36(x²+y²); grad=(4x(q-10),4y(q-10),4z(q+8)).
     vector_eq(
-        &torus().gradient(&p("3", "0", "1").to_real()).expect("analytic fixture gradient"),
+        &torus()
+            .gradient(&p("3", "0", "1").to_real())
+            .expect("analytic fixture gradient"),
         &v("0", "0", "72"),
     );
     let mut rng = Rng(0x213);
@@ -410,14 +431,24 @@ blind_test!(cases_13_14_15_transform_and_gradients, {
             let expected = implicit_oracle(&surface, &point);
             let moved = surface.transformed(&pose);
             assert_eq!(
-                oq(&surface.implicit().expect("analytic fixture support").rational().unwrap().eval(&xyz(&point))),
+                oq(&surface
+                    .implicit()
+                    .expect("analytic fixture support")
+                    .rational()
+                    .unwrap()
+                    .eval(&xyz(&point))),
                 expected
             );
             assert_eq!(
-                oq(&moved.implicit().expect("analytic fixture support").rational().unwrap().eval(&xyz(&pose
-                    .apply_point(&point.to_real())
-                    .as_rational()
-                    .unwrap()))),
+                oq(&moved
+                    .implicit()
+                    .expect("analytic fixture support")
+                    .rational()
+                    .unwrap()
+                    .eval(&xyz(&pose
+                        .apply_point(&point.to_real())
+                        .as_rational()
+                        .unwrap()))),
                 expected
             );
             assert!(moved.transformed(&pose.inverse()).same_definition(&surface));

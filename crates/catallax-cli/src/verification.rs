@@ -67,6 +67,17 @@ fn refused(code: &str, detail: impl ToString) -> Value {
         "refusal":{"code":code,"detail":detail.to_string(),"step":null,"stage":null}})
 }
 
+fn request_refused(request: &Request, code: &str, detail: impl ToString) -> Value {
+    if request.format == "catallax-request/1"
+        && request.source == "recipe"
+        && crate::certified_recipe::is_problem(&request.problem)
+    {
+        crate::certified_recipe::refused(code, detail)
+    } else {
+        refused(code, detail)
+    }
+}
+
 /// Answers one request and publishes a deterministic manifest plus timing.
 /// A panic remains an internal error, never a geometric refusal.
 pub fn answer(request: &Request) -> std::io::Result<Value> {
@@ -95,14 +106,15 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
     let mut manifest = match result {
         Ok(result) => result?,
         Err(_) => {
-            let mut value = refused("cli.internal-error", "kernel panicked");
+            let mut value = request_refused(request, "cli.internal-error", "kernel panicked");
             value["status"] = json!("internal-error");
             value
         }
     };
     if work.exhausted && manifest["status"] != "internal-error" {
         let display_diagnostics = manifest.get("display_diagnostics").cloned();
-        manifest = refused(
+        manifest = request_refused(
+            request,
             "numbers.operation-budget",
             "operation work allowance exhausted",
         );
@@ -195,6 +207,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             let mut value: Value = serde_json::from_str(&crate::render_manifest(&manifest))?;
             value["format"] = json!("catallax-manifest/3");
             Ok(value)
+        }
+        "recipe" if crate::certified_recipe::is_problem(&request.problem) => {
+            crate::certified_recipe::evaluate(&request.problem, &request.out)
         }
         "recipe" | "compare" | "field" => {
             let display_started = Instant::now();
@@ -324,7 +339,12 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             };
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
-            let summary = crate::result_summary(&built.model, built.result, &mut dec, crate::SummaryExchange::Analytic);
+            let summary = crate::result_summary(
+                &built.model,
+                built.result,
+                &mut dec,
+                crate::SummaryExchange::Analytic,
+            );
             span.finish(&dec, summary.as_ref().err(), None);
             let summary = match summary {
                 Ok(summary) => summary,

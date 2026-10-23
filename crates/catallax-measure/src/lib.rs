@@ -40,11 +40,11 @@ mod edge;
 mod engine;
 pub use bounds::BoundingBox;
 mod integrate;
+mod offset_prism;
 mod planar;
 mod ring;
 mod surface;
 mod torus;
-mod offset_prism;
 
 pub use offset_prism::{
     elliptic_offset_prism_mass_properties, elliptic_offset_prism_volume_area_centroid,

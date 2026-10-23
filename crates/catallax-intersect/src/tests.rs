@@ -469,8 +469,14 @@ fn quartic_charts_cover_every_regular_branch_family() {
                 let j = ch.exact_jets(&t, 1);
                 let derivative = Vector3::new(j[1][0].clone(), j[1][1].clone(), j[1][2].clone());
                 let tangent = g
-                    .surface(a).gradient(&point).expect("analytic fixture gradient")
-                    .cross(&g.surface(b).gradient(&point).expect("analytic fixture gradient"));
+                    .surface(a)
+                    .gradient(&point)
+                    .expect("analytic fixture gradient")
+                    .cross(
+                        &g.surface(b)
+                            .gradient(&point)
+                            .expect("analytic fixture gradient"),
+                    );
                 assert!(matches!(
                     d.sign(&derivative.dot(&tangent)),
                     Outcome::Proven(StrictSign::Positive)

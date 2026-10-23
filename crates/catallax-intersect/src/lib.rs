@@ -314,7 +314,10 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
             let [lo, hi] = curve.domain();
             let first = curve.point_at(&lo.clone().into(), dec)?;
             let last = curve.point_at(&hi.clone().into(), dec)?;
-            Ok(math::sign(&last.minus(&first).norm_squared(), dec)? == catallax_numbers::Sign::Zero)
+            Ok(
+                math::sign(&last.minus(&first).norm_squared(), dec)?
+                    == catallax_numbers::Sign::Zero,
+            )
         }
         CurveForm::Branch => {
             let plan = query::validate(geom, c, dec)?.expect("intersection branch");

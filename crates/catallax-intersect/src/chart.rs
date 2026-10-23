@@ -424,7 +424,10 @@ pub(super) fn spline_span(
         }
         expression
     };
-    let [x, y, z, w] = curve.span_polynomials(span, dec)?.each_ref().map(polynomial);
+    let [x, y, z, w] = curve
+        .span_polynomials(span, dec)?
+        .each_ref()
+        .map(polynomial);
     if matches!(w.0.as_ref(), Node::Constant(value, _)
         if value.rational_ref().is_some_and(|q| q == &Rational::one()))
     {
@@ -595,7 +598,10 @@ pub(super) fn offset_profile_quarter(
 ) -> Result<[E; 3], Refusal> {
     use catallax_shapes::{OffsetSide, Surface};
     if quarter >= 4 {
-        return Err(Refusal::new("intersect.offset-quarter", "profile quarter must be in 0..4"));
+        return Err(Refusal::new(
+            "intersect.offset-quarter",
+            "profile quarter must be in 0..4",
+        ));
     }
     dec.check_deadline()?;
     let Surface::EllipticCylinder(original) = definition.original() else {
@@ -626,7 +632,11 @@ pub(super) fn offset_profile_quarter(
     let (c, s) = rotate_quarter(E::integer(1) - square, E::integer(2) * t, quarter);
     let mut x = a.clone() * c.clone() / denominator.clone();
     let mut y = b.clone() * s.clone() / denominator;
-    if !definition.distance().rational_ref().is_some_and(Rational::is_zero) {
+    if !definition
+        .distance()
+        .rational_ref()
+        .is_some_and(Rational::is_zero)
+    {
         let d = E::constant(match definition.side() {
             OffsetSide::Outward => definition.distance().clone(),
             OffsetSide::Inward => -definition.distance(),
@@ -647,13 +657,21 @@ pub(super) fn offset_profile_quarter(
             Some(E::constant(origin[i].clone()))
         };
         for (coefficient, expression) in [(major[i], &x), (minor[i], &y)] {
-            if coefficient.rational_ref().is_some_and(Rational::is_zero) { continue; }
-            let term = if coefficient.rational_ref().is_some_and(|r| r == &Rational::one()) {
+            if coefficient.rational_ref().is_some_and(Rational::is_zero) {
+                continue;
+            }
+            let term = if coefficient
+                .rational_ref()
+                .is_some_and(|r| r == &Rational::one())
+            {
                 expression.clone()
             } else {
                 E::constant(coefficient.clone()) * expression.clone()
             };
-            value = Some(match value { Some(value) => value + term, None => term });
+            value = Some(match value {
+                Some(value) => value + term,
+                None => term,
+            });
         }
         value.unwrap_or_else(|| E::integer(0))
     }))

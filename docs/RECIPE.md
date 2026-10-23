@@ -1140,6 +1140,31 @@ cargo run --release -p catallax-app --example build -- recipe.json display.obj
 
 The bracket fixture exercises a flush plate/flange union, a boss and bore, four holes and a cross-plane slot. Its tests edit the flange height, pick the resulting faces through their triangles, retain merged origins, and check edge names and certified polylines. The application still needs its backend and UI integration before this repository's entry becomes a SolidDraft editing session.
 
+### 6.4 Opt-in certified offset application entry
+
+`catallax_app::build_certified(&recipe, optional_mesh_options, &mut decider)`
+uses `catallax_features::evaluate_certified` without changing ordinary recipe
+evaluation. The first family is the regular inward normal offset of the
+approved right elliptic-cylinder prism, including certified axial planar
+trims and a second offset from the retained original definition. The represented
+side and shared cap boundaries are real B-splines, not renamed ellipses.
+Outward offsets and general spline booleans remain explicit coverage gaps.
+
+`CertifiedApplicationBody` privately binds its verified `CertifiedBuilt`,
+optional display answer/refusal and names to one immutable snapshot. A failed
+requested display leaves the valid body available. Its `mass_properties` and
+`volume_area_centroid` methods measure the original exact target only when
+requested, with accuracy independent of the carrier's local fit tolerance.
+References persist through complete origins and edge names, not handle indices.
+
+The [certified verification wrapper](VERIFY-INTERFACE.md#certified-recipe-bodies-opt-in)
+contains unchanged recipe/3 and requests display, original-target properties,
+field points, certified STEP and a separate scalar-edit rebuild. Only this
+opt-in produces manifest/4 with genuine spline tags and complete scoped
+certificate/evidence records. Ordinary application builds, SolidDraft conversion
+and legacy exchange contracts are unchanged.
+
+
 
 ## 7. Decision record and remaining open items
 

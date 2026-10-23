@@ -83,7 +83,12 @@ fn inventory(model: &Model, body: BodyId) -> NumberSize {
             if !seen_surfaces.insert(surface) {
                 continue;
             }
-            result.polynomial(model.geom().implicit(surface).expect("analytic benchmark support"));
+            result.polynomial(
+                model
+                    .geom()
+                    .implicit(surface)
+                    .expect("analytic benchmark support"),
+            );
             match model.geom().surface(surface) {
                 Surface::Plane(s) => {
                     result.point(&s.origin);
@@ -129,7 +134,12 @@ fn inventory(model: &Model, body: BodyId) -> NumberSize {
             if !seen_curves.insert(curve) {
                 continue;
             }
-            for equation in model.geom().curve(curve).equations(model.geom()).expect("analytic benchmark curve") {
+            for equation in model
+                .geom()
+                .curve(curve)
+                .equations(model.geom())
+                .expect("analytic benchmark curve")
+            {
                 result.polynomial(&equation);
             }
             match model.geom().curve(curve) {

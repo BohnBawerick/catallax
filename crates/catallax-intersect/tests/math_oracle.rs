@@ -51,7 +51,11 @@ fn surface_fixture_residual_smoke() {
             match part {
                 Part::Point(p) => {
                     check(&p);
-                    let cross = case.a.gradient(&p).expect("analytic fixture gradient").cross(&case.b.gradient(&p).expect("analytic fixture gradient"));
+                    let cross = case
+                        .a
+                        .gradient(&p)
+                        .expect("analytic fixture gradient")
+                        .cross(&case.b.gradient(&p).expect("analytic fixture gradient"));
                     singular(&cross);
                 }
                 Part::Curve {
@@ -61,7 +65,13 @@ fn surface_fixture_residual_smoke() {
                 } => {
                     for p in nodes {
                         check(&p);
-                        singular(&case.a.gradient(&p).expect("analytic fixture gradient").cross(&case.b.gradient(&p).expect("analytic fixture gradient")));
+                        singular(
+                            &case
+                                .a
+                                .gradient(&p)
+                                .expect("analytic fixture gradient")
+                                .cross(&case.b.gradient(&p).expect("analytic fixture gradient")),
+                        );
                     }
                     match shape {
                         Shape::Analytic(curve) => {
@@ -93,7 +103,12 @@ fn surface_fixture_residual_smoke() {
                                         .a
                                         .gradient(&witness)
                                         .expect("analytic fixture gradient")
-                                        .cross(&case.b.gradient(&witness).expect("analytic fixture gradient"))
+                                        .cross(
+                                            &case
+                                                .b
+                                                .gradient(&witness)
+                                                .expect("analytic fixture gradient")
+                                        )
                                         .norm_squared()
                                 )
                                 .lo()
@@ -116,7 +131,11 @@ fn curve_hit_fixture_residual_smoke() {
         if let curves::Hits::Meets(points) = case.expected {
             for (point, _) in points {
                 residual(g.implicit(s).expect("analytic fixture support"), &point);
-                for equation in g.curve(c).equations(&g).expect("analytic fixture equations") {
+                for equation in g
+                    .curve(c)
+                    .equations(&g)
+                    .expect("analytic fixture equations")
+                {
                     residual(&equation, &point);
                 }
             }

@@ -564,8 +564,10 @@ impl SplineCurveParameter<'_> {
         }
         let domain = self.curve.domain();
         if self.curve.is_closed() == Some(true) {
-            if math::sign(&(&self.value - &Real::from_rational(domain[0].clone())), dec)?
-                == Sign::Zero
+            if math::sign(
+                &(&self.value - &Real::from_rational(domain[0].clone())),
+                dec,
+            )? == Sign::Zero
             {
                 arriving = Some(self.curve.first_on_span(
                     self.curve.control_count() - 1,
@@ -573,8 +575,10 @@ impl SplineCurveParameter<'_> {
                     dec,
                 )?);
             }
-            if math::sign(&(&self.value - &Real::from_rational(domain[1].clone())), dec)?
-                == Sign::Zero
+            if math::sign(
+                &(&self.value - &Real::from_rational(domain[1].clone())),
+                dec,
+            )? == Sign::Zero
             {
                 leaving = Some(self.curve.first_on_span(
                     self.curve.degree(),
@@ -692,9 +696,9 @@ impl BSplineCurve {
         dec: &Decider,
     ) -> Result<Point3, Refusal> {
         if let Some(transport) = self.transport() {
-            return Ok(transport.pose.apply_point(
-                &transport.source.point_on_span(span, parameter, dec)?,
-            ));
+            return Ok(transport
+                .pose
+                .apply_point(&transport.source.point_on_span(span, parameter, dec)?));
         }
         let p = self.span_polynomials(span, dec)?;
         let denominator = p[3].eval_real(std::slice::from_ref(parameter));
@@ -711,9 +715,9 @@ impl BSplineCurve {
         dec: &Decider,
     ) -> Result<crate::Vector3, Refusal> {
         if let Some(transport) = self.transport() {
-            return Ok(transport.pose.apply_vector(
-                &transport.source.first_on_span(span, parameter, dec)?,
-            ));
+            return Ok(transport
+                .pose
+                .apply_vector(&transport.source.first_on_span(span, parameter, dec)?));
         }
         let p = self.span_polynomials(span, dec)?;
         let denominator = p[3].eval_real(std::slice::from_ref(parameter));

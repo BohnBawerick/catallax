@@ -20,7 +20,7 @@ It builds the primitive solids that questions name (block, cylinder, sphere, con
 The vocabulary carries curved geometry from the first commit (DESIGN.md, R6). A face lies on any surface, an edge on any curve, and a vertex at any point definition, including the meeting point of three curved surfaces.
 Nothing in this piece assumes planar faces, straight edges, vertices where three planes meet, or a loop that is the "outer" boundary.
 
-Coordinates are a cache (DESIGN.md, R4). A vertex holds a `PointId`, an edge a `CurveId`, a face a `SurfaceId`. No type of this piece has a coordinate field, and this piece makes no geometric decision: its builders work in exact rationals and its check reads recorded facts.
+Coordinates are a cache (DESIGN.md, R4). A vertex holds a `PointId`, an edge a `CurveId`, and a face a `SurfaceId`; arena entities have no coordinate fields. Primitive builders use exact definitions and the legacy structural check reads recorded facts. The separate checked spline-prism view below also proves geometric incidence and orientation under the caller's decider.
 
 ## Number types
 
@@ -32,6 +32,26 @@ Coordinates are a cache (DESIGN.md, R4). A vertex holds a `PointId`, an edge a `
 | Marks carried by a body | `MarkLog` (piece 1) | The record of every not-exact decision behind the body |
 
 This piece holds no `Real`, `Ball`, `Interval` or `f64` value of its own.
+
+## Checked spline-prism geometry
+
+`SplinePrism::check(model, body, &mut Decider)` returns an immutable borrowed
+view of the first represented spline solid. It requires one material lump,
+one shell, one complete checked convex spline side and two complete planar
+cap disks. The physical boundary has two shared closed ring edges and no
+vertices; artificial parameter seams are not model edges.
+
+The view checks actual shared boundary data, cap planes, finite axial domains,
+opposite edge uses, face senses and outward material orientation. Partial
+covers, voids, detached caps and forged seam assertions refuse. This is stronger
+than reading incidence facts from the arena. Mesh and spline STEP consumers
+reuse it rather than interpreting a diagnostic mark as permission to publish.
+
+This geometric view does not bind a body to a recipe revision, original target
+or local-tolerance settings. The feature producer's opaque `BodyCertificate`
+supplies that complete checked association, including both changed cap domains
+and the side. Neither proof replaces the other.
+
 
 ## The model
 

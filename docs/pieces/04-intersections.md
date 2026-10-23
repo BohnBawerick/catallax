@@ -40,6 +40,27 @@ Preserve nappe selectors, shared root correlations and construction incidences t
 
 Use independent section equations to check torus cuts with irrational squared radii, parabola orientation and both hyperbola branches. Test that a point on the opposite branch fails membership and that an open component cannot become a ring edge. Add irrational axis-length ratios to the CC6 cases when their coverage lands. A high-degree algebraic expression must take the shared proof path, not a rational-only special-case refusal.
 
+## Finite spline curves and explicit coverage
+
+The `BSpline` curve form retains real finite spline geometry, not the original
+ellipse's implicit equations. Membership recovers a checked unique finite
+preimage. Ordering and finite traces use its actual parameter domain, including
+closed seam identification; endpoint queries preserve both arriving and
+leaving tangents at a knot. A zero polynomial cannot stand for missing curve
+equations.
+
+The first spline support's producer implements certified axial planar trimming
+by retaining the exact target and rebuilding the finite product solid. This
+does not implement general spline/spline or spline/analytic intersection
+isolation: unsupported pairs retain an explicit coverage refusal.
+
+`trace_elliptic_offset_quarter` traces the retained exact normal-offset law on
+the principal quarter `0 <= theta <= pi/2` for nominal property integration.
+It is not a trace of the fitted boundary. The fitter's centred quarter charts
+and their finite spline parameters have a different phase; callers must not
+substitute one for the other.
+
+
 ## What this piece is for
 
 Piece 4 answers "where do these meet?" exactly, for the surfaces of the first milestone: planes, cylinders and spheres, in every pair and every pose.

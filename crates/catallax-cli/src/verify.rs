@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 json!({"name":"catallax-verify","request":"catallax-request/1",
                 "response":"catallax-response/1","manifest":"catallax-manifest/3",
                 "operation_log":"catallax-operation-log/1","question":"catallax-question/1",
-                "sources":["question","recipe","field","compare"],"default_work":catallax_cli::verification::DEFAULT_WORK,
+                "sources":["question","recipe","field","compare","name-edit"],"default_work":catallax_cli::verification::DEFAULT_WORK,
                 "kernel":catallax_cli::about()})
             );
         }

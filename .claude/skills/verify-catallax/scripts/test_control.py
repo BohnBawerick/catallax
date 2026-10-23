@@ -162,5 +162,27 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(case['compare']['manifest']['comparison']['verdict'], 'unresolved')
         self.assertEqual(case['step_check']['code'], 'step.no-export')
 
+    def test_scoreboard_rebuilds_after_edit_and_reports_feature_waits(self):
+        targets = self.out / 'targets'
+        targets.mkdir()
+        recipe = json.loads((EXAMPLES / 'recipe.json').read_text())
+        (targets / 'part.json').write_text(json.dumps(recipe))
+        specification = {'format': 'catallax-part-edits/1', 'cases': {
+            'part.json': [{'step': 'box', 'path': ['size', 2], 'value': '7'}]}}
+        (targets / 'edit-checks.json').write_text(json.dumps(specification))
+        result = self.command('parts', targets, '--binary', BINARY, '--out', self.out / 'edited')
+        check = result['cases'][0]['edit_check']
+        self.assertEqual(check['status'], 'passed', check)
+        self.assertEqual(check['brep']['faces_checked'], 6)
+        self.assertEqual(check['brep']['edges_checked'], 12)
+        recipe['steps'].append({'id': 'offset', 'op': 'offset', 'body': 'box', 'distance': '1'})
+        recipe['result'] = 'offset'
+        (targets / 'part.json').write_text(json.dumps(recipe))
+        result = self.command('parts', targets, '--binary', BINARY, '--out', self.out / 'waiting')
+        check = result['cases'][0]['edit_check']
+        self.assertEqual(check['status'], 'waiting', check)
+        self.assertEqual(check['waiting'][0]['refusal']['step'], 'offset')
+        self.assertEqual(check['waiting'][0]['refusal']['operation'], 'offset')
+
 if __name__ == '__main__':
     unittest.main()

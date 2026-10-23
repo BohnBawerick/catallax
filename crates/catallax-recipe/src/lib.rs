@@ -45,6 +45,7 @@ mod names;
 mod number;
 mod operation;
 mod recipe;
+mod stock;
 mod text;
 
 pub use ids::{ElementId, IdError, StepId};
@@ -59,3 +60,4 @@ pub use operation::{
     SweepOrientation, ThickenSide, Turn, ValueKind,
 };
 pub use recipe::{FORMAT, Recipe, RecipeError, Step};
+pub use stock::CanonicalStock;

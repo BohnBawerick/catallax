@@ -642,7 +642,7 @@ impl Builder<'_> {
             Location::Indeterminate => return Ok(unknown),
             Location::Boundary => (),
         }
-        match plan.leaves[face.leaf].on_face(&face.origin.role, &p, dec)? {
+        match plan.leaves[face.leaf].on_face(plan.definition_role(id), &p, dec)? {
             Some(false) => return Ok(absent),
             None => return Ok(unknown),
             Some(true) => (),

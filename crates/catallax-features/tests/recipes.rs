@@ -85,6 +85,30 @@ fn merged_coplanar_faces_keep_both_creating_steps() {
             .any(|o| o.step.as_str() == "b" && o.role == Role::End)
     );
     assert!(origins.windows(2).all(|w| w[0].key() < w[1].key()));
+    for origin in origins {
+        assert_eq!(
+            built.model.faces_with_origin(built.result, origin),
+            vec![top]
+        );
+    }
+    let b_top = Origin {
+        step: StepId::new("b").unwrap(),
+        role: Role::End,
+    };
+    let b_front = Origin {
+        step: StepId::new("b").unwrap(),
+        role: Role::Side {
+            segment: ElementId::new("bottom").unwrap(),
+            path: None,
+        },
+    };
+    let saved = catallax_recipe::EdgeName::new(b_top, b_front).unwrap();
+    let resolved = built.model.edges_with_name(built.result, &saved);
+    assert_eq!(resolved.len(), 1);
+    assert_ne!(
+        built.model.edge_name(built.result, resolved[0]),
+        Some(saved)
+    );
     assert_eq!(
         built
             .model
@@ -202,6 +226,11 @@ fn subtracting_a_blind_slot_splits_faces_without_renaming_them() {
         built.model.face_origins(tops[0]),
         built.model.face_origins(tops[1])
     );
+    let origin = Origin {
+        step: StepId::new("base").unwrap(),
+        role: Role::End,
+    };
+    assert_eq!(built.model.faces_with_origin(built.result, &origin), tops);
     assert!(
         built
             .model

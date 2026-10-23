@@ -152,6 +152,46 @@ impl Model {
         self.face_origins.get(&face).map_or(&[], Vec::as_slice)
     }
 
+    /// Rewrites a body's provenance without changing its geometry or incidence.
+    /// Call before publishing a newly built body. Shared faces retain this rewrite.
+    pub fn map_face_origins(&mut self, body: BodyId, mut map: impl FnMut(&Origin) -> Origin) {
+        for face in self.faces_of_body(body) {
+            if let Some(origins) = self.face_origins.get_mut(&face) {
+                for origin in origins.iter_mut() {
+                    *origin = map(origin);
+                }
+                origins.sort();
+                origins.dedup();
+            }
+        }
+    }
+
+    /// Resolves an origin on the result, including every split piece and a
+    /// merged face whose origin set contains it.
+    pub fn faces_with_origin(&self, body: BodyId, origin: &Origin) -> Vec<FaceId> {
+        self.unique_faces(body)
+            .filter(|f| self.face_origins(*f).contains(origin))
+            .collect()
+    }
+
+    /// Resolves a saved edge name against the complete incident origin sets.
+    /// A merge can change a face's first origin without losing this reference.
+    pub fn edges_with_name(&self, body: BodyId, name: &EdgeName) -> Vec<EdgeId> {
+        let [a, b] = name.between();
+        self.edges_of_body(body).into_iter().filter(|edge| {
+            let mut faces = self.unique_faces(body).filter(|f| {
+                self.face(*f).loops.iter().any(|lp| {
+                    matches!(self.loop_(*lp), Loop::Coedges(cs) if cs.iter().any(|c| self.coedge(*c).edge == *edge))
+                })
+            });
+            let (Some(first), Some(second)) = (faces.next(), faces.next()) else { return false; };
+            if faces.next().is_some() { return false; }
+            let first = self.face_origins(first);
+            let second = self.face_origins(second);
+            (first.contains(a) && second.contains(b)) || (first.contains(b) && second.contains(a))
+        }).collect()
+    }
+
     /// Names an edge by the first origin of its two incident faces.
     /// Returns `None` for unnamed geometry or a pair with equal first origins.
     pub fn edge_name(&self, body: BodyId, edge: EdgeId) -> Option<EdgeName> {

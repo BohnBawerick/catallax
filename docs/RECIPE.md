@@ -333,7 +333,7 @@ Sketch, extrude and revolve remain the main way users build parts. Stock solids 
 | `cone` | `base_radius: rb`, `top_radius: rt`, `height: h`, `pose` | `0 <= z <= h`, `x² + y² <= (rb + (rt-rb)z/h)²` |
 | `torus` | `major: R`, `minor: r`, `pose` | `(sqrt(x²+y²)-R)² + z² <= r²` |
 
-The cone definition includes capped expanding and contracting frusta, the top apex at `rt = 0`, and the cylinder at `rb = rt`. The current B-rep builder still refuses equal radii, even though that geometry is possible. The field evaluator accepts the cylinder definition; this does not change the B-rep builder. Ring tori require `0 < r < R`, so the equivalent quartic has no extra solid branch.
+The cone definition includes capped expanding and contracting frusta, the top apex at `rt = 0`, and the cylinder at `rb = rt`. Both recipe evaluators use the cylinder definition at equal radii. Ring tori require `0 < r < R`, so the equivalent quartic has no extra solid branch.
 
 Impossible inputs:
 
@@ -368,7 +368,9 @@ For example, a sphere's face is `{"step":"ball","role":{"side":{"segment":"wall"
 - A torus is a circle meridian `wall`, centred at radial distance `R`, revolved through 360 degrees.
 - A cone is its axial trapezoid or triangle revolved through 360 degrees. The sloped meridian generates `side.wall`. The lower and upper radial meridians generate the named `start` and `end` disks. An expansion to generic revolve must map those radial-segment side origins to these cap origins before exposing the stock result. The axis generates no face.
 
-This remains a naming obligation on the eventual canonical feature expansion. The current B-rep feature evaluator preserves explicitly authored sweep origins but does not yet certify stock-to-feature equivalence or perform the cone-cap origin remapping. The field evaluator does not implement sketch, extrude or revolve.
+`catallax_recipe::CanonicalStock` supplies these exact sketch/sweep definitions and their explicit origin correspondence. `catallax_features::evaluate_canonical_stock` and `catallax_field::Plan::compile_canonical_stock` build them with the stock step's public names. The B-rep retains the original stock definition; the field keeps generated domain roles separate from public names, so remapping a cone cap does not change its trim or sampling predicate. Ordinary stock evaluation keeps its direct analytic builders. Generic authored revolutions still use `side.segment` for radial meridians, without implicit renaming.
+
+`CanonicalStock::new` returns `Result<Option<CanonicalStock>, Refusal>`: non-stock operations yield `Ok(None)`, and stock dimensions violating section 4.0 refuse with `recipe.impossible-stock`. This guard is necessary because a negative extrusion length or a meridian on the other side of its axis can be a legal generic feature but not the requested stock solid. Placement validity remains checked by the evaluators. Direct stock refusal codes are unchanged.
 
 
 ### 4.1 Extrude

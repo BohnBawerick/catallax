@@ -18,7 +18,7 @@ pub struct Built {
     pub result: BodyId,
     /// Every body-producing step, in canonical step-id order.
     pub bodies: BTreeMap<StepId, BodyId>,
-    definition: Arc<Recipe>,
+    pub(crate) definition: Arc<Recipe>,
 }
 
 impl Built {

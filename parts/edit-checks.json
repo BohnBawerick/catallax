@@ -1,0 +1,8 @@
+{
+  "format": "catallax-part-edits/1",
+  "cases": {
+    "P1-bracket.json": [{"step": "boss", "path": ["radius"], "value": "9"}],
+    "P2-collar.json": [{"step": "collar", "path": ["distance"], "value": "0.75"}],
+    "P4-shelled-tray.json": [{"step": "tray", "path": ["thickness"], "value": "1.5"}]
+  }
+}

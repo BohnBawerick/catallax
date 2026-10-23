@@ -6,6 +6,7 @@
 
 mod face_checks;
 mod manifest;
+mod name_checks;
 mod question;
 pub mod verification;
 

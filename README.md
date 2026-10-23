@@ -133,7 +133,7 @@ or a finite cylindrical fillet between two monotone end curves, the mesher joins
 the existing edge samples in angular order. Every strip triangle passes the same
 orientation, chord and requested-control checks. Other trims or controls needing
 interior vertices use the periodic triangulator. Toroidal bands use a bounded
-minor-angle chart and local certified frame/trigonometric caches. A face-local
+minor-angle chart and the shared certified surface sampler. A face-local
 diagonal cannot reuse another face's interior chord between boundary vertices;
 the mesher refines that chord on the analytic face instead.
 Bounds include replacement of boundary vertices and binary64 coordinate

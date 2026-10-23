@@ -264,9 +264,6 @@ impl Chart {
                     minor,
                 ]
             }
-            Surface::EllipticCylinder(s) => {
-                [&upper(&s.major_sq.sqrt())? * &tau2, zero.clone(), zero]
-            }
             _ => unreachable!(),
         })
     }

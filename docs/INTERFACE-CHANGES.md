@@ -901,3 +901,13 @@ Curved-face triangulation also records interior chords between boundary vertices
 Why: P3 previously refused mesh closure at adjacent cylinder strips. Exact convex torus fillets displayed but traversed unnecessary periodic copies and repeated certified angular evaluations. The native application regression now exercises P3's four cylinder blends and torus blend, face picking roles, shared-edge incidence and radius-edit names.
 
 Migration: no exact model, fillet construction, API, naming, tolerance, work allowance, manifest or STEP-option changes. General curved-boundary acceleration remains separate work.
+
+## 2026-10-24: bounded display bands reuse the shared certified evaluator
+
+Pieces: display mesh
+
+Change: a bounded torus band restricts its face-owned chart in place and uses the shared outward-rounded display evaluator with the existing ball fallback. This supersedes the separate band-local frame and angular cache described in the preceding exact-fillet display entry. The merged shared-rail ear guard and cross-face interior-chord ownership check are both retained.
+
+Why: integrating the curved-display work must not bypass its certified sampler or duplicate cached definitions and chart copies.
+
+Migration: no public API, exact geometry, face or edge IDs, default 0.01 mm tolerance, vertex limit, arithmetic allowance, manifest or STEP changes.

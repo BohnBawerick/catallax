@@ -116,6 +116,7 @@ impl Cell {
 struct Constraint {
     terms: Vec<([u32; 3], Interval)>,
     support: catallax_numbers::RealPoly,
+    linear: Option<([Rational; 3], Rational)>,
 }
 impl Constraint {
     fn range(&self, p: &[Interval; 3]) -> Interval {
@@ -136,11 +137,38 @@ impl Constraint {
                 sum + t
             })
     }
+
+    fn interior_sign(
+        &self,
+        chart: &Chart,
+        cell: &Cell,
+        corners: &mut Option<[RPoint3; 4]>,
+    ) -> Option<catallax_numbers::Sign> {
+        let (normal, constant) = self.linear.as_ref()?;
+        if !chart.corner_signs_suffice(normal) {
+            return None;
+        }
+        let corners = corners.get_or_insert_with(|| cell.corners().map(|uv| chart.point(&uv)));
+        let mut positive = false;
+        let mut negative = false;
+        for p in corners {
+            let value =
+                constant.clone() + &normal[0] * &p.x + &normal[1] * &p.y + &normal[2] * &p.z;
+            positive |= value > q(0);
+            negative |= value < q(0);
+        }
+        match (positive, negative) {
+            (true, false) => Some(catallax_numbers::Sign::Positive),
+            (false, true) => Some(catallax_numbers::Sign::Negative),
+            _ => None,
+        }
+    }
 }
 struct Patch {
     chart: Chart,
     faces: Vec<usize>,
     coincident: Vec<Vec<bool>>,
+    group: usize,
 }
 struct Builder<'a> {
     plan: &'a Plan,
@@ -215,7 +243,28 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
                     crate::geometry::enclose(&c, 128, dec)?.to_interval(),
                 ));
             }
-            constraints.push(Constraint { terms, support });
+            let linear = c.polynomial.rational().and_then(|p| {
+                let mut normal = [q(0), q(0), q(0)];
+                let mut constant = q(0);
+                for (m, coefficient) in p.terms() {
+                    let degree: u32 = m.exponents().iter().sum();
+                    if degree > 1 {
+                        return None;
+                    }
+                    if degree == 0 {
+                        constant = constant + coefficient;
+                    } else {
+                        let axis = m.exponents().iter().position(|&e| e == 1).unwrap();
+                        normal[axis] = &normal[axis] + &coefficient;
+                    }
+                }
+                Some((normal, constant))
+            });
+            constraints.push(Constraint {
+                terms,
+                support,
+                linear,
+            });
         }
         builder.constraints.push(constraints);
     }
@@ -237,8 +286,14 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
             groups.push(vec![i]);
         }
     }
+    let source_boxes: Vec<_> = plan
+        .leaves
+        .iter()
+        .map(|leaf| leaf.display_box(dec))
+        .collect::<Result<_, _>>()?;
     let mut patches = Vec::new();
-    for faces in groups {
+    let mut face_work: Vec<(usize, usize, u32)> = groups.iter().map(|g| (g[0], 0, 0)).collect();
+    for (group, faces) in groups.into_iter().enumerate() {
         let support = &plan.faces[faces[0]].support;
         let mut coincident = Vec::new();
         for constraints in &builder.constraints {
@@ -251,6 +306,7 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
         for chart in Chart::all(&plan.faces[faces[0]].surface, &bound)? {
             patches.push(Patch {
                 chart,
+                group,
                 faces: faces.clone(),
                 coincident: coincident.clone(),
             });
@@ -267,19 +323,37 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
         while let Some((id, cell)) = stack.pop() {
             dec.check_deadline()?;
             builder.mesh.cells += 1;
+            let work = &mut face_work[patches[id].group];
+            work.1 += 1;
+            work.2 = work.2.max(cell.depth);
             if builder.mesh.cells > options.max_cells || cell.depth > 64 {
                 return Err(failure(
                     "field.display-budget",
                     format!(
-                        "refinement limit: {} cells, depth {}, support {:?}",
-                        builder.mesh.cells, cell.depth, plan.faces[patches[id].faces[0]].origin
+                        "refinement limit: {} cells; per support (origin, cells, maximum depth): {:?}",
+                        builder.mesh.cells,
+                        face_work
+                            .iter()
+                            .map(|(face, cells, depth)| (&plan.faces[*face].origin, *cells, *depth))
+                            .collect::<Vec<_>>()
                     ),
                 ));
             }
             let patch = &patches[id];
-            let cover = patch.chart.cover(&cell);
             let point = patch.chart.point(&cell.centre());
-            let (location, stable) = builder.classify(patch, &cover, &point, dec)?;
+            let cover = patch.chart.cover(&cell, &point);
+            if patch.faces.iter().all(|&face| {
+                source_boxes[plan.faces[face].leaf]
+                    .as_ref()
+                    .is_some_and(|bounds| {
+                        (0..3).any(|i| {
+                            cover[i].hi() < bounds[i].lo() || cover[i].lo() > bounds[i].hi()
+                        })
+                    })
+            }) {
+                continue;
+            }
+            let (location, stable) = builder.classify(patch, &cell, &cover, &point, dec)?;
             if matches!(location, Location::Inside | Location::Outside) {
                 continue;
             }
@@ -287,19 +361,16 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
             let small = diameter <= options.tolerance.mul_pow2(-1);
             if stable || small {
                 let mut present = None;
+                let mut absent = true;
                 for &face in &patch.faces {
-                    let state = plan
-                        .face_query_checked(FaceId(face), &point, &mut builder.workspace, dec)?
-                        .state;
-                    if state == FaceState::OnFace {
-                        present = Some(face);
+                    let query = builder.face_at(face, &point, stable, dec)?;
+                    if query.state == FaceState::OnFace {
+                        present = Some((face, query.direction));
                         break;
                     }
-                    if stable && state == FaceState::Indeterminate {
-                        break;
-                    }
+                    absent &= query.state == FaceState::NotOnFace;
                 }
-                if let Some(face) = present {
+                if let Some((face, direction)) = present {
                     let chord = patch.chart.chord(&cell);
                     if (stable && chord <= options.tolerance.mul_pow2(-1)) || small {
                         builder.emit(
@@ -307,23 +378,14 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
                             &cell,
                             face,
                             if stable { chord } else { diameter },
-                            dec,
+                            direction,
                         )?;
                         continue;
                     }
-                } else if stable {
-                    // A sign-stable patch has constant trim membership. An exact
-                    // absence is valid only if every candidate settles absent.
-                    let mut absent = true;
-                    for &face in &patch.faces {
-                        absent &= plan
-                            .face_query_checked(FaceId(face), &point, &mut builder.workspace, dec)?
-                            .state
-                            == FaceState::NotOnFace;
-                    }
-                    if absent {
-                        continue;
-                    }
+                } else if stable && absent {
+                    // Only the open cell is classified. Closed surviving
+                    // neighbours cover its aligned trim edges without area.
+                    continue;
                 }
                 if small {
                     deferred.push((id, cell, cover));
@@ -363,15 +425,101 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
     Ok(builder.mesh)
 }
 impl Builder<'_> {
+    fn ray_at(
+        &mut self,
+        point: &[Rational; 3],
+        direction: &catallax_shapes::Vector3,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        self.workspace.rays.clear();
+        for (slot, instruction) in self.plan.instructions.iter().enumerate() {
+            let location = self.locations[slot].0;
+            let location = if matches!(location, Location::Inside | Location::Outside) {
+                // Strict regional classification is locally constant at the
+                // cell's interior witness, including under an infinitesimal ray.
+                location
+            } else {
+                match *instruction {
+                    Instruction::Empty => Location::Outside,
+                    Instruction::Leaf(i) => self.plan.leaves[i].ray(point, direction, dec)?,
+                    Instruction::Boolean { kind, a, b } => {
+                        crate::combine(kind, self.workspace.rays[a], self.workspace.rays[b])
+                    }
+                }
+            };
+            self.workspace.rays.push(location);
+        }
+        Ok(self.workspace.rays[self.plan.root])
+    }
+
+    fn face_at(
+        &mut self,
+        id: usize,
+        point: &RPoint3,
+        stable: bool,
+        dec: &mut Decider,
+    ) -> Result<crate::FaceQuery, Refusal> {
+        use crate::{Direction, FaceQuery};
+        let absent = FaceQuery {
+            state: FaceState::NotOnFace,
+            direction: Direction::Undefined,
+        };
+        let unknown = FaceQuery {
+            state: FaceState::Indeterminate,
+            direction: Direction::Ambiguous,
+        };
+        let plan = self.plan;
+        let face = &plan.faces[id];
+        let p = [point.x.clone(), point.y.clone(), point.z.clone()];
+        let slot = plan.leaf_registers[face.leaf].expect("live display support");
+        let location = match self.locations[slot].0 {
+            Location::Indeterminate => plan.leaves[face.leaf].location(&p, dec)?,
+            location => location,
+        };
+        match location {
+            Location::Inside | Location::Outside => return Ok(absent),
+            Location::Indeterminate => return Ok(unknown),
+            Location::Boundary => (),
+        }
+        match plan.leaves[face.leaf].on_face(&face.origin.role, &p, dec)? {
+            Some(false) => return Ok(absent),
+            None => return Ok(unknown),
+            Some(true) => (),
+        }
+        let n = crate::normal(face, &p);
+        if crate::geometry::sign(&n.norm_squared(), dec)? == catallax_numbers::Sign::Zero {
+            return Ok(unknown);
+        }
+        let minus_n = n.scaled(&catallax_numbers::Real::from_i64(-1));
+        let plus = self.ray_at(&p, &n, dec)?;
+        let minus = self.ray_at(&p, &minus_n, dec)?;
+        let n = match (plus, minus) {
+            (Location::Outside, Location::Inside) => n,
+            (Location::Inside, Location::Outside) => minus_n,
+            (Location::Inside, Location::Inside) | (Location::Outside, Location::Outside)
+                if stable =>
+            {
+                return Ok(absent);
+            }
+            _ => return Ok(unknown),
+        };
+        Ok(FaceQuery {
+            state: FaceState::OnFace,
+            direction: crate::unit_direction(n, dec)?,
+        })
+    }
+
     fn classify(
         &mut self,
         patch: &Patch,
+        cell: &Cell,
         cover: &[Ball; 3],
         point: &RPoint3,
         dec: &mut Decider,
     ) -> Result<(Location, bool), Refusal> {
         self.locations.clear();
         let intervals = cover.each_ref().map(Ball::to_interval);
+        let mut corners = None;
         for instruction in &self.plan.instructions {
             let value = match *instruction {
                 Instruction::Empty => (Location::Outside, true),
@@ -383,9 +531,20 @@ impl Builder<'_> {
                             continue;
                         }
                         let range = c.range(&intervals);
-                        stable &= !range.contains_zero();
+                        let sign = range
+                            .sign()
+                            .map(|s| match s {
+                                catallax_numbers::StrictSign::Positive => {
+                                    catallax_numbers::Sign::Positive
+                                }
+                                catallax_numbers::StrictSign::Negative => {
+                                    catallax_numbers::Sign::Negative
+                                }
+                            })
+                            .or_else(|| c.interior_sign(&patch.chart, cell, &mut corners));
+                        stable &= sign.is_some();
                         if matches!(self.plan.leaves[i], crate::geometry::Leaf::Primitive(_))
-                            && range.lo() > 0.0
+                            && sign == Some(catallax_numbers::Sign::Positive)
                         {
                             outside = true;
                             break;
@@ -425,7 +584,7 @@ impl Builder<'_> {
         cell: &Cell,
         face: usize,
         error: Rational,
-        dec: &mut Decider,
+        direction: crate::Direction,
     ) -> Result<(), Refusal> {
         let mut indices = [0; 4];
         let mut rounding = q(0);
@@ -468,11 +627,6 @@ impl Builder<'_> {
                 "coordinate rounding exceeds the certified display tolerance",
             ));
         }
-        let point = patch.chart.point(&cell.centre());
-        let direction = self
-            .plan
-            .face_query_checked(FaceId(face), &point, &mut self.workspace, dec)?
-            .direction;
         let [a, b, c] = [indices[0], indices[1], indices[2]].map(|i| self.mesh.positions[i]);
         let u = std::array::from_fn::<_, 3, _>(|i| b[i] - a[i]);
         let v = std::array::from_fn::<_, 3, _>(|i| c[i] - a[i]);

@@ -339,6 +339,8 @@ def pair(args):
                 step_files = [out / str(index) / str(repeat) / str(side) / 'answer.step' for side in (0, 1)]
                 row['same_answer'] = comparable(responses[0]['manifest']) == comparable(responses[1]['manifest']) and all(r['manifest'].get('status') != 'internal-error' for r in responses.values())
                 row['same_step'] = [p.read_bytes() if p.exists() else None for p in step_files][0] == [p.read_bytes() if p.exists() else None for p in step_files][1]
+                display_files = [out / str(index) / str(repeat) / str(side) / 'display.obj' for side in (0, 1)]
+                row['same_display'] = [p.read_bytes() if p.exists() else None for p in display_files][0] == [p.read_bytes() if p.exists() else None for p in display_files][1]
                 samples.append(row)
                 atomic(out / 'pairs.json', samples)
     finally:
@@ -349,7 +351,7 @@ def pair(args):
     for index in range(len(items)):
         subset = [s for s in measured if s['index'] == index]
         cases.append({'index': index, 'baseline_median_ms': statistics.median(s['0'] for s in subset), 'candidate_median_ms': statistics.median(s['1'] for s in subset), 'median_delta_ms': statistics.median(s['1'] - s['0'] for s in subset)})
-    return {'pairs': len(measured), 'equal': all(s['same_answer'] and s['same_step'] for s in samples), 'median_delta_ms': statistics.median(s['1'] - s['0'] for s in measured), 'cases': cases, 'samples': str(out / 'pairs.json')}
+    return {'pairs': len(measured), 'equal': all(s['same_answer'] and s['same_step'] and s['same_display'] for s in samples), 'median_delta_ms': statistics.median(s['1'] - s['0'] for s in measured), 'cases': cases, 'samples': str(out / 'pairs.json')}
 
 
 def legacy(args):

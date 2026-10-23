@@ -10,7 +10,7 @@ Build with `cargo build --release -p catallax-cli --bins`. `catallax-verify abou
 {"format":"catallax-request/1","source":"question","problem":{"format":"exact-brep-question/2","id":"box","operands":{"a":{"shape":"block","size":["1","2","3"]}},"steps":[],"result":"a"},"out":"/tmp/box-proof","max_work":100000000}
 ```
 
-All fields except `max_work` are required. Unknown envelope fields are invalid. `out` names an owned artifact directory; the command replaces `manifest.json`, `operations.json`, `question.json` and any `answer.step` there. A refusal removes stale STEP. Never assign the same output directory to concurrent requests. `max_work` is an unsigned 64-bit integer; zero is valid and refuses on the first work checkpoint. The default is 100,000,000.
+All fields except `max_work` are required. Unknown envelope fields are invalid. `out` names an owned artifact directory; the command replaces `manifest.json`, `operations.json`, `question.json`, `answer.step` and `display.obj` there. A refusal removes stale geometry artifacts. Never assign the same output directory to concurrent requests. `max_work` is an unsigned 64-bit integer; zero is valid and refuses on the first work checkpoint. The default is 100,000,000.
 
 Sources:
 
@@ -19,9 +19,51 @@ Sources:
 | `question` | `exact-brep-question/2` | Full geometric manifest and optional STEP. Parse all legacy fields, but ignore `limits.deadline_ms` during evaluation. |
 | `recipe` | `catallax-recipe/3` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. |
 | `compare` | `catallax-recipe/3` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
-| `field` | `catallax-recipe/3` | Independently compile the field plan. Return candidate source-face count and whether expression identities prove emptiness. No B-rep builder, STEP, sampling or volume measurement. Unsupported operations retain their `field.*` refusal codes. |
+| `field` | `catallax-recipe/3` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations retain their `field.*` refusal codes, with no display fallback. |
 
 A new source implements one evaluation adapter returning a manifest. External corpus adapters export Python `load(Path)` and yield `{"source":...,"problem":...}` records. These adapters are trusted executable code selected explicitly with `--adapter`. Data files cannot select executable adapters.
+
+### Field display
+
+`field` runs the field's own `catallax_field::display::mesh_plan` path. The CLI
+does not dispatch on feature kinds or obtain a B-rep answer. A future field
+feature supplies its definition and certified native display path through the
+field library; the verification adapter does not change.
+
+An answered request writes `display.obj`, including an empty mesh for a proven
+empty result. Its manifest adds `face_measurements`, format
+`catallax-face-measurements/1`, with empty `faces`, null `edit` and `display`:
+
+| Display field | Meaning |
+| --- | --- |
+| `first_mesh_ms` | Elapsed request recipe processing, field compilation and native meshing, through the first complete display mesh. Same start and completion boundary as the B-rep face-check clock. |
+| `file` | `display.obj`, the actual binary64 display geometry. |
+| `vertices`, `triangles` | Actual mesh counts. |
+| `chord_tolerance_mm` | Requested display tolerance, currently 0.01 mm. |
+| `deviation_bound_mm` | Proven two-sided upper distance between the mesh and the field-defined result boundary, including trim coverage and coordinate rounding. Exact rational string in millimetres. |
+| `coverage` | Diagnostic description of that certificate. |
+| `cells` | Deterministic visited parameter-cell count. |
+
+The clock excludes writing OBJ, response transport and UI presentation, just
+as the B-rep clock excludes summary, export and presentation. This is not
+time to a rendered application frame. The display bound is not a whole-face
+fillet construction measurement; empty `faces` does not certify a fillet.
+`exact` describes the field definition, not the triangle approximation.
+
+Meshing adds an executed field `display` operation. Invalid controls refuse
+with `field.display-options`; unsupported native charts or exact frames use
+`field.display-unsupported`; missing compact bounds use
+`field.display-unbounded`; resource/refinement limits use
+`field.display-budget`; coordinate range or rounding failures use
+`field.display-precision`. Numeric refusals propagate. Every refusal removes
+`display.obj` and `answer.step`. The field still refuses unimplemented fillets
+with `field.unsupported-operation` at compilation. No partial mesh, B-rep
+fallback or sampled deviation estimate is published.
+
+The driver accepts `--source field` for recipe inputs. `compare` excludes
+`first_mesh_ms` but compares display certificates, work for identical builds,
+strict `display.obj` bytes and strict STEP bytes.
+
 
 ### Building without measurement
 
@@ -68,7 +110,7 @@ The surface vocabulary is `plane`, `cylinder`, `elliptic-cylinder`, `cone`, `sph
 | `sequence` | Zero-based position in execution order. |
 | `kernel` | `brep` or `field`, the implementation that executed the step. |
 | `id` | Original operand or recipe step ID. Publication stages reuse the result ID. |
-| `operation` | Recipe operation name, question shape or boolean kind, or `measure`, `summarize`, `step`, `face_measure`. |
+| `operation` | Recipe operation name, question shape or boolean kind, or `measure`, `summarize`, `step`, `face_measure`, `display`. |
 | `status` | `answered`, `refused`, or `interrupted` when unwinding prevented completion. |
 | `decisions` | Counts from that operation's executing decider, or null for interruption. `total`, `filter`, `refined`, `exact`, `coincident_exact`, `coincident_separation`, `coincident_fact`, `not_exact`, `refused` retain the numeric library's meanings. `max_bits_high_water` is that decider's cumulative precision high-water mark, not a local maximum. |
 | `work` | Complete-request counters `before`, `after` and their difference `used`. Observing them charges no work. |

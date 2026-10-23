@@ -122,6 +122,23 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(report['cases'][0]['response']['manifest']['comparison']['verdict'], 'agree')
         self.assertFalse(list((self.out / 'compare').rglob('answer.step')))
 
+    def test_field_display_comparison_checks_obj_bytes_but_not_clock(self):
+        for name in ('field-a', 'field-b'):
+            result = self.command('run', EXAMPLES / 'recipe.json', '--source', 'field',
+                                  '--binary', BINARY, '--out', self.out / name)
+            self.assertEqual(result['outcomes'], {'answered': 1})
+        report = json.loads((self.out / 'field-b/run.json').read_text())
+        case = report['cases'][0]
+        directory = Path(case['path'])
+        display = case['response']['manifest']['face_measurements']['display']
+        self.assertTrue((directory / display['file']).exists())
+        self.assertFalse((directory / 'answer.step').exists())
+        self.command('compare', self.out / 'field-a/run.json', self.out / 'field-b/run.json')
+        obj = directory / display['file']
+        obj.write_bytes(obj.read_bytes() + b'# changed display\\n')
+        diff = self.command('compare', self.out / 'field-a/run.json', self.out / 'field-b/run.json', code=1)
+        self.assertEqual(diff['failures'][0]['cause'], 'display-bytes')
+
     def test_exported_question_keeps_its_allowance_in_batch_replay(self):
         question = json.loads((EXAMPLES / 'block.json').read_text())
         exported = self.out / 'question.json'

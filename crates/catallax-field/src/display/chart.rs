@@ -208,10 +208,24 @@ impl Chart {
         let [x, y, z] = p;
         RPoint3::new(x, y, z)
     }
-    pub(super) fn cover(&self, cell: &Cell) -> [Ball; 3] {
+    /// A linear world constraint is affine on a plane. On a cylinder it is
+    /// affine in height and monotone in the quarter-circle coordinate when
+    /// at most one radial frame coefficient is nonzero. Its corner values
+    /// then certify the open cell; zero endpoint pairs certify aligned edges.
+    pub(super) fn corner_signs_suffice(&self, normal: &[Rational; 3]) -> bool {
+        match self.kind {
+            Kind::Plane => true,
+            Kind::Cylinder => {
+                let dot =
+                    |axis: usize| (0..3).fold(q(0), |s, i| s + &self.frame[axis][i] * &normal[i]);
+                dot(0).is_zero() || dot(1).is_zero()
+            }
+            _ => false,
+        }
+    }
+    pub(super) fn cover(&self, cell: &Cell, p: &RPoint3) -> [Ball; 3] {
         // Coordinate-wise derivative bounds avoid widening directions that the
         // chart does not move, especially plane/plane and cylinder/cap trims.
-        let p = self.point(&cell.centre());
         let span = cell.span();
         let mut radii = [q(0), q(0), q(0)];
         for (i, radius) in radii.iter_mut().enumerate() {
@@ -225,10 +239,10 @@ impl Chart {
             };
             *radius = (&lu * &span[0] + &lv * &span[1]).mul_pow2(-1);
         }
-        let coordinates = [p.x, p.y, p.z];
+        let coordinates = [&p.x, &p.y, &p.z];
         std::array::from_fn(|i| {
-            Ball::from_rational(&(&coordinates[i] - &radii[i]), 128)
-                .hull(&Ball::from_rational(&(&coordinates[i] + &radii[i]), 128))
+            Ball::from_rational(&(coordinates[i] - &radii[i]), 128)
+                .hull(&Ball::from_rational(&(coordinates[i] + &radii[i]), 128))
         })
     }
     pub(super) fn chord(&self, cell: &Cell) -> Rational {

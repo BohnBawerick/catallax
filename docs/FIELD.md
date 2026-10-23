@@ -2,7 +2,7 @@
 
 `catallax-field` compiles `catallax-recipe/3` stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided through-all cuts, full and rational-frame partial revolutions, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`, so both kernels use the same intersection, tangency and nesting rules and refusal codes. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
 
-This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Regional pruning, meshing, fillets, field-only features, FEA and application integration are not implemented.
+This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. Fillets, field-only features, FEA and application integration are not implemented.
 
 ## Shared algebraic definitions
 
@@ -163,6 +163,83 @@ with `converged=false`, never an invented precision. Non-compact or degenerate
 chart covers and invalid controls return `field.face-measurement`; numeric,
 intersection and exact trim-query refusals propagate. No B-rep fillet or offset
 is constructed, and no tolerance cap or merge policy is applied.
+
+## Definition-native display
+
+`catallax_field::display::mesh_plan` consumes a compiled `Plan`, `Options` and
+the caller's `Decider`. It never constructs or meshes a B-rep. The returned
+`Mesh` contains binary64 positions, triangles tagged with field `FaceId`s,
+visited-cell work and a proven two-sided `max_deviation` in millimetres.
+`Mesh::write_obj` writes the display artifact. It is not an exportable solid,
+and adaptive trim cells and differing refinement levels need not sew watertight.
+
+The default tolerance is 0.01 mm, with at most one million distinct vertices
+and two million visited parameter cells. Plane, cylinder, cone, sphere and
+ring-torus charts use rational unit frames and dimensions. Unsupported frames
+and surfaces return `field.display-unsupported`. A result without a certified
+compact domain returns `field.display-unbounded`; invalid controls return
+`field.display-options`. Limits and unresolved refinement return
+`field.display-budget`, with visited cells and maximum depth per support.
+Coordinate range or rounding failures return `field.display-precision`.
+No refusal switches to the B-rep.
+
+### Coverage and deviation proof
+
+Primitive dimensions, profile bounds, sweep extents and exact rigid transforms
+give a result bounding sphere. Union takes the larger finite bound,
+intersection takes either available bound, and subtraction keeps its target's.
+The display covers every candidate support within that sphere. Coincident
+supports share a chart cover, so coactive recipe names do not duplicate area.
+
+Each source leaf also supplies a conservative spatial box from its dimensions,
+profile and sweep. Cells outside every coactive source box are rejected before
+trim queries. These are defining bounds, not fitted boxes or sampled extents.
+
+Circular coordinates use rational quarter-circle charts
+`((1-t²)/(1+t²), 2t/(1+t²))`. Their speed is at most 2 and their acceleration
+norm at most 8. Products give uniform first- and second-derivative bounds for
+each supported surface. For a parameter rectangle with spans `du,dv`, linear
+triangle interpolation differs from its exact chart by at most
+`(Huu*du² + 2*Huv*du*dv + Hvv*dv²)/8`. Exact conversion residuals add the
+binary64 vertex-rounding error. These bounds cover whole triangles, not samples.
+
+Outward polynomial ranges determine which leaf constraints can change sign
+over a chart cell. Identical supporting constraints remain exactly zero.
+Exact leaf membership, field face membership and result-oriented normal queries
+settle sign-stable cells. A sample is used only after this regional proof.
+Boundary queries reuse regional strict interior/exterior classifications,
+which remain constant under a sufficiently small ray from the cell's interior
+witness. Only boundary or unresolved registers need the field's exact
+infinitesimal ray predicates. Opposite proven interior/exterior rays establish
+a genuine boundary point and orient its normal. No metric calculation on
+unrelated leaves is needed to prove that boundary point.
+
+
+A plane constraint on a planar chart is affine. Its four exact corner values
+prove a strict sign on the open rectangle when they are weakly of one sign
+and not all zero. Zero endpoint pairs classify aligned edges exactly.
+On a cylindrical chart the same argument applies when at most one radial
+frame coefficient is nonzero, because that quarter-circle coordinate is
+monotone and height is affine. Other cases retain interval refinement.
+No arbitrary near-zero value is treated as an aligned edge.
+
+Open cell interiors are disjoint. Their shared edges have no area, and the
+closure of an exposed open patch covers its limiting edge points without
+adding another area patch. A regularised solid's boundary is the closure of
+its exposed two-dimensional support patches. Thus rejecting an absent open
+cell does not lose an isolated trim edge, and emitting the closed triangles
+does not double count area at an aligned cell edge.
+
+Unsettled trim cells shrink to less than half the requested tolerance in
+spatial L1 diameter. A certified surviving boundary point then bounds the
+whole displayed cell from the definition and covers every possible boundary
+point in that cell. A cell without such a witness may be omitted only when
+an existing mesh vertex is proved within the requested tolerance of its
+entire spatial cover. Otherwise it is refined or refused. This also prevents
+an unseen small component from silently disappearing. The union of accepted
+cells and certified vertex covers gives the two-sided boundary distance bound.
+This display certificate is distinct from whole-face feature-definition
+measurements and does not establish a 100 nm fillet construction tolerance.
 
 ## Determinism and storage
 

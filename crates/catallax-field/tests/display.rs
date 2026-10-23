@@ -135,3 +135,35 @@ fn native_mesh_is_identical_across_independent_workers() {
         });
     }
 }
+
+#[test]
+fn p1_plate_bottom_keeps_its_area_within_the_native_display_budget() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P1-bracket.json")).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let mesh = mesh_plan(&plan, &Options::default(), &mut Decider::default()).unwrap();
+    let selected = plan
+        .select(&catallax_recipe::Origin {
+            step: id("plate"),
+            role: catallax_recipe::Role::Side {
+                segment: catallax_recipe::ElementId::new("bottom").unwrap(),
+                path: None,
+            },
+        })
+        .unwrap();
+    let mut area = 0.0;
+    for triangle in &mesh.triangles {
+        if triangle.face != selected {
+            continue;
+        }
+        let [a, b, c] = triangle.vertices.map(|i| mesh.positions[i]);
+        for p in [a, b, c] {
+            assert!(p[1].abs() <= 0.01);
+            assert!(p[0] >= -0.01 && p[0] <= 60.01 && p[2] >= -0.01 && p[2] <= 5.01);
+        }
+        area += ((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0])).abs() * 0.5;
+    }
+    assert!(
+        (area - 300.0).abs() <= 2.0,
+        "lost or double-counted plate-bottom area: {area}"
+    );
+}

@@ -160,17 +160,18 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
 .hero__lede .status-chip { margin-top: 10px; }
 .manifesto .section__label { flex-wrap: wrap; }
 
-/* Lineage ---------------------------------------------------------------- */
-.lineage__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: clamp(32px, 5vw, 96px); align-items: start; margin-top: clamp(36px, 5vw, 72px); }
-.lineage__copy p:not(.label) { max-width: 32rem; margin: 0; }
-.lineage__copy p + p { margin-top: 20px; }
-.lineage__lede { color: var(--bone); font-size: clamp(1.15rem, 1.6vw, 1.45rem); line-height: 1.35; letter-spacing: -0.015em; }
-.lineage__plain { color: var(--slate); font-size: 15px; }
-.lineage__copy .btn { margin-top: 36px; }
-.lineage__list { list-style: none; padding: 0; margin: 18px 0 0; border-top: 1px solid var(--steel); }
-.lineage__list li { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--steel); }
-.lineage__list span { color: var(--oxide); font: 500 11.5px/1.6 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
-.lineage__list b { color: var(--bone); font-weight: 500; font-size: 15px; line-height: 1.5; }
+/* Why this is free, special thanks: copy beside a keyed list --------------- */
+.why__grid, .thanks__grid { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: clamp(32px, 5vw, 96px); align-items: start; margin-top: clamp(36px, 5vw, 72px); }
+.why__copy p:not(.label), .thanks__copy p:not(.label) { max-width: 32rem; margin: 0; }
+.why__copy p:not(.label) + p, .thanks__copy p:not(.label) + p { margin-top: 20px; }
+.why__lede, .thanks__lede { color: var(--bone); font-size: clamp(1.15rem, 1.6vw, 1.45rem); line-height: 1.35; letter-spacing: -0.015em; }
+.why__plain, .thanks__plain { color: var(--slate); font-size: 15px; }
+.why__copy .btn { margin-top: 36px; }
+.why__list, .thanks__list { list-style: none; padding: 0; margin: 18px 0 0; border-top: 1px solid var(--steel); }
+.why__list li, .thanks__list li { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--steel); }
+.why__list span, .thanks__list span { color: var(--oxide); font: 500 11.5px/1.6 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.why__list b, .thanks__list b { color: var(--bone); font-weight: 500; font-size: 15px; line-height: 1.5; }
+.thanks { border-top: 1px solid var(--steel); }
 
 /* Marquee ---------------------------------------------------------------- */
 .marquee { border-block: 1px solid var(--steel); overflow: hidden; padding: 22px 0; }
@@ -353,8 +354,8 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
   .hud--br { display: none; }
 }
 @media (max-width: 900px) {
-  .lineage__grid, .support__grid, .application__status { grid-template-columns: 1fr; }
-  .lineage__list li { grid-template-columns: 1fr; gap: 6px; }
+  .why__grid, .thanks__grid, .support__grid, .application__status { grid-template-columns: 1fr; }
+  .why__list li, .thanks__list li { grid-template-columns: 1fr; gap: 6px; }
   .hero__copy { bottom: 48px; }
   .hud--tr { top: 96px; }
   .hud--bl { bottom: auto; top: 84px; right: 50%; transform: translateX(50%); justify-items: center; }

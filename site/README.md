@@ -18,7 +18,7 @@ Keep Catallax's works-today list beside the shared sponsorship links. Name only 
 
 The SolidDraft image is real application output, not interface artwork. `media/soliddraft-bracket-a3.svg` is an unmodified copy of the committed CLI drawing fixture at the revision recorded in `evidence.json`. Its source exit test invokes `soliddraft draw bracket.json --template iso-a3` with a fixed `SOURCE_DATE_EPOCH` and compares the SVG byte for byte. It was not regenerated for the site and is not evidence of Catallax integration. Keep the backend caption, source revision and checksum when replacing it.
 
-Both projects use the same GitHub Sponsors and Ko-fi links. Keep the Fornjot attribution and non-affiliation statement, the open-to-kernel-work contact and the custom domain.
+Both projects use the same GitHub Sponsors and Ko-fi links. The manifesto from the repository README opens the page. Keep the special-thanks section near the bottom, with the Fornjot non-affiliation statement and links only to work the repository actually cites, the open-to-kernel-work contact, the plain link to https://zigrawbohnbawerick.org/ and the custom domain. Never claim the paid apps fund the work.
 
 ## Evidence and video capture
 

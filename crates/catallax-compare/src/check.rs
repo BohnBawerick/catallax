@@ -797,7 +797,7 @@ pub(crate) fn run(
         }
         let source = id.index();
         let origin = &field.faces()[source].origin;
-        let query = match field.face_query_checked(id, &p, &mut storage, &mut dec) {
+        let query = match field.closed_face_query_checked(id, &p, &mut storage, &mut dec) {
             Ok(query) => query,
             Err(error) => {
                 sampling_failed.set(true);
@@ -838,7 +838,7 @@ pub(crate) fn run(
             let coactive = if index == source {
                 query
             } else {
-                match field.face_query_checked(candidate, &p, &mut storage, &mut dec) {
+                match field.closed_face_query_checked(candidate, &p, &mut storage, &mut dec) {
                     Ok(query) => query,
                     Err(error) => {
                         sampling_failed.set(true);

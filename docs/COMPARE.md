@@ -28,6 +28,13 @@ preferred witness falls back to the complete field registry.
 
 The reverse pass generates rational stock-boundary and feature-boundary candidates independently of the B-rep mesh. `Plan::visit_feature_candidates` uses the field's stored profile and sweep definitions, including signed and oblique extrusion, rational-frame full/partial revolution and through-all walls. Through-all sampling uses a conservative field-result bounding box propagated through the expression tree, not artificial tool caps or a B-rep bound. Certified field face queries discard removed candidates and retain unresolved trimming. Each surviving sample first tries an exact rational support witness and checks it against the matching trimmed B-rep face. If that projection misses the trim, `catallax_measure::distance::PreparedFace` refines certified analytic chart boxes and admits exact rational or algebraic witnesses through the boundary-loop predicate. Lower certificates cover every retained cell; upper certificates use only admitted face points. These queries change neither kernel's generated geometry.
 
+Reverse named-face checks use `Plan::closed_face_query_checked` to refine
+transverse trim contacts and planar fans. Exact support sectors can prove a
+surviving named patch approaches the point, or prove the old patch consumed.
+Tangencies, singular supports and ambiguous source partitions remain
+conservative. A finite proximity bound alone never discharges a missing name
+or normal proof.
+
 Origin comparisons use canonical sets from `Model::face_origins`. A maximal merged face can contain different creating origins on adjacent patches, so the check collects the locally witnessed names over that face rather than requiring every name at every point. Field normal enclosures and exact B-rep gradients check outward direction at the reverse witnesses. Sharp mesh vertices do not acquire fabricated unique normals. Missing origin or direction coverage stays unresolved.
 
 `Report::sampled_distance_upper` is the maximum checked distance upper, including forward mesh error. `None` means at least one checked distance remains unbounded. The verification CLI publishes it as `comparison.sampled_distance_upper_mm`. It is a sampled bound, not a whole-part Hausdorff certificate. See [trimmed minimum distances](FIELD.md#trimmed-minimum-distances) for the shared interval engine and the independent trim adapters.

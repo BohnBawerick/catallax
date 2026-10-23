@@ -18,7 +18,7 @@ mod chart;
 mod diagnostics;
 pub(crate) mod membership;
 use boolean::{Boolean, Germ, State};
-use chart::Chart;
+use chart::{Chart, Pullback};
 use diagnostics::Snapshot;
 pub use diagnostics::{Cost, Diagnostics, FaceWork, SupportWork};
 
@@ -232,6 +232,7 @@ struct Patch {
     chart: Chart,
     faces: Vec<usize>,
     coincident: Vec<Vec<bool>>,
+    pullbacks: Vec<Vec<Option<Pullback>>>,
     group: usize,
     // A proved location is constant on this open parameter rectangle. A child's
     // open interior lies inside it, so descendants reuse the proof, not a sample.
@@ -515,6 +516,27 @@ fn mesh_plan_inner(
                 chart.restrict(&boxes);
             }
             let mut cuts = chart.cuts(&builder.constraints);
+            let mut chart_coincident = coincident.clone();
+            let mut pullbacks = Vec::new();
+            for (i, constraints) in builder.constraints.iter().enumerate() {
+                let mut row = Vec::new();
+                for (j, constraint) in constraints.iter().enumerate() {
+                    let restriction = constraint
+                        .polynomial
+                        .as_ref()
+                        .map(|p| chart.pullback(p, dec))
+                        .transpose()?;
+                    if let Some(restriction) = &restriction {
+                        chart_coincident[i][j] |= restriction.is_zero();
+                        let rails = restriction.cuts(&chart.domain, dec)?;
+                        for axis in 0..2 {
+                            cuts[axis].extend(rails[axis].iter().cloned());
+                        }
+                    }
+                    row.push(restriction);
+                }
+                pullbacks.push(row);
+            }
             let radial = if chart.is_disk() {
                 let catallax_shapes::Surface::Plane(plane) = &plan.faces[faces[0]].surface else {
                     unreachable!("disk chart belongs to a plane")
@@ -530,8 +552,6 @@ fn mesh_plan_inner(
                         cuts[1].push(root);
                     }
                 }
-                cuts[1].sort();
-                cuts[1].dedup();
                 radial
             } else {
                 builder
@@ -540,11 +560,16 @@ fn mesh_plan_inner(
                     .map(|c| vec![None; c.len()])
                     .collect()
             };
+            for axis in &mut cuts {
+                axis.sort();
+                axis.dedup();
+            }
             patches.push(Patch {
                 chart,
                 group,
                 faces: faces.clone(),
-                coincident: coincident.clone(),
+                coincident: chart_coincident,
+                pullbacks,
                 regions: vec![None; plan.leaves.len()],
                 cuts,
                 radial,
@@ -989,7 +1014,9 @@ impl Builder<'_> {
             {
                 return Ok(absent);
             }
-            _ => return Ok(unknown),
+            _ => {
+                return plan.closed_face_query_checked(FaceId(id), point, &mut self.workspace, dec);
+            }
         };
         Ok(FaceQuery {
             state: FaceState::OnFace,
@@ -1057,7 +1084,7 @@ impl Builder<'_> {
                             continue;
                         }
                         let range = c.range(cover);
-                        let sign = range
+                        let mut sign = range
                             .sign()
                             .map(|s| match s {
                                 catallax_numbers::StrictSign::Positive => {
@@ -1075,6 +1102,11 @@ impl Builder<'_> {
                                     patch.radial[i][j].as_ref(),
                                 )
                             });
+                        if sign.is_none()
+                            && let Some(restriction) = &patch.pullbacks[i][j]
+                        {
+                            sign = restriction.sign(cell, dec)?;
+                        }
                         stable &= sign.is_some();
                         if matches!(
                             self.plan.leaves[i],

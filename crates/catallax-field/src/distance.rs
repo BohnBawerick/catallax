@@ -7,6 +7,8 @@ use catallax_shapes::{
     distance::{self, Bounds, Domain, Membership, Options},
 };
 
+mod contact;
+
 fn coordinates(p: &Point3) -> [Real; 3] {
     [p.x.clone(), p.y.clone(), p.z.clone()]
 }

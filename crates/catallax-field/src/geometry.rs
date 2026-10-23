@@ -718,10 +718,6 @@ impl Leaf {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
-        let mut role = role;
-        while let Role::Copy { of, .. } = role {
-            role = &of.role;
-        }
         match self {
             Self::Primitive(_) => Ok(Some(true)),
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),

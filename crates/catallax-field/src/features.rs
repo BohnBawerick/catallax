@@ -671,6 +671,10 @@ impl Feature {
         p: &Point3,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
         let alias = self
             .fillet
             .as_ref()
@@ -1437,3 +1441,7 @@ fn sample_rotate(
         .plus(&radial.scaled(cosine))
         .plus(&axis.cross(&radial).scaled(sine_over_axis_length))
 }
+
+#[cfg(test)]
+#[path = "features/distance_tests.rs"]
+mod distance_tests;

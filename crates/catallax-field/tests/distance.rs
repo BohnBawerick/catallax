@@ -118,3 +118,31 @@ fn a_buried_tangent_source_cannot_supply_a_face_distance_witness() {
     assert!(answer.upper.is_none(), "{answer:?}");
     assert!(!answer.converged);
 }
+
+#[test]
+fn discarded_copy_alias_cannot_supply_a_distance_witness() {
+    let recipe = recipe(vec![
+        json!({"id":"seed","op":"sphere","radius":"1","pose":pose("0")}),
+        json!({"id":"reflected","op":"mirror","body":"seed","plane":{"point":["0","0","0"],"normal":["1","0","0"]},"keep_original":false}),
+        json!({"id":"image","op":"mirror","body":"reflected","plane":{"point":["0","0","0"],"normal":["1","0","0"]},"keep_original":false}),
+    ]);
+    let mut dec = Decider::default();
+    let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+    let named = |step: &str| {
+        plan.faces()
+            .iter()
+            .find(|f| f.origin.step.as_str() == step)
+            .map(|f| plan.select(&f.origin).unwrap())
+            .unwrap()
+    };
+    let prepared = plan.prepare_distances(&mut dec).unwrap();
+    let error = prepared
+        .point_to_face(named("seed"), &point(2, 0, 0), &controls(), &mut dec)
+        .unwrap_err();
+    assert_eq!(error.code, "field.face-id");
+    let image = prepared
+        .point_to_face(named("image"), &point(2, 0, 0), &controls(), &mut dec)
+        .unwrap();
+    assert_eq!(image.lower, Rational::one());
+    assert_eq!(image.upper, Some(Rational::one()));
+}

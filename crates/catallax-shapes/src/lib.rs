@@ -7,9 +7,9 @@
 //! The contract is `docs/pieces/02-shapes.md`.
 
 mod curve;
-mod isometry;
 /// Certified minimum-distance bounds on trimmed analytic carriers.
 pub mod distance;
+mod isometry;
 mod math;
 mod point;
 mod pose;

@@ -26,7 +26,7 @@ Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four ratio
 | Block, cylinder, sphere, cone frustum, ring torus | Both builds, display vertices, independent exact field samples, trimmed-face projections, names and directions |
 | Unite, subtract, intersect | Same two-way path wherever both kernels build and mesh the recipe; unresolved Boolean query bounds remain unresolved |
 | Sketch, extrude, extrude-through, revolve | Same two-way path for the shared rational support subset, including profile holes and segment aliases; specific unfinished frame/surface refusals stay unresolved |
-| Linear/circular body patterns and mirrors | Same two-way path, including nested copy origins and transformed stock/feature candidates; planar cases agree, while curved sweep and Boolean distance uppers retain their existing unresolved status |
+| Linear/circular body patterns and mirrors | Same two-way path, including nested copy origins and transformed stock/feature candidates; rational-placement curved copies use independently admitted trimmed-face witnesses, while algebraic-only sampling and numeric refusals remain unresolved |
 | Path, hole, fillet, chamfer, shell, offset, thicken, draft, sweep, loft, STEP import | Not comparable: neither recipe adapter implements the operation |
 | Lattice, gyroid, smooth blend, mesh import | Not comparable: the field implementation is missing; a B-rep implementation is not planned |
 

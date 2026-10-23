@@ -6,7 +6,7 @@ This is original MIT code. Fidget supplied design ideas, notably fixed-order tap
 
 ## Shared algebraic definitions
 
-The evaluator uses the 2026-10-22 shared algebraic foundation, including the existing profile-sweep consumers. Rational definitions retain the existing arithmetic path. This migration adds no recipe operation or elliptic-cylinder metric coverage; the public distance/result distinctions below continue to apply.
+The evaluator uses the 2026-10-22 shared algebraic foundation, including the existing profile-sweep consumers. Rational definitions retain the existing arithmetic path. That foundation migration added no recipe operation or elliptic-cylinder metric coverage; the trimmed-distance API below now supplies certified metric bounds on valid analytic definitions.
 
 Store the same exact `Surface`, `RealPoly`, frame and dimension definitions as B-rep. Widen polynomial constraints, gradients and cached ray coefficients together. Keep the rational sign path for rational coefficients; use the shared decider for algebraic signs, zero coefficients and support comparisons. Normalising a polynomial by its first syntactic coefficient is invalid if that expression might be zero. Certify the first nonzero coefficient before division. Equal support equations do not remove nappe or trim constraints. Definition keys may permit safe work sharing, but unequal expression keys cannot prove different sets.
 
@@ -129,12 +129,21 @@ ray proofs. Interval constraint signs prove constant trim membership over cells.
 Buried tangent sources cannot supply witnesses at isolated contacts; nearby
 open-face witnesses approach their surviving closed trim boundaries.
 Neither adapter uses display triangles as its distance proof.
+Only face entries owned by the compiled result receive distance domains.
+Reusing a coincident evaluation leaf does not reactivate discarded copy names;
+such registry-only handles report `field.face-id` from the distance API.
 
 `Options::width` requests an enclosure width, not geometric acceptance.
 `max_cells` limits refinement. Exhaustion returns the attained bounds with
 `converged=false`; `upper=None` means no admitted witness was established.
 `face_to_face` measures the minimum distance, not Hausdorff distance. These queries
 do not replace `measurement::measure_face` or its whole-face definition metric.
+
+Analytic query coverage does not add missing recipe emitters. Oblique circular
+extrusion still reports `features.unsupported-elliptic-cylinder`. The elliptic
+distance regressions construct exact B-rep circle loops and an independent
+native profile/sweep definition directly; they check the Euclidean metric and
+the excluded extension beyond the end trim without enabling that recipe feature.
 
 The sampled comparison uses prepared field bounds when the residual alone has
 no finite upper, and prepared B-rep bounds when a support projection misses its

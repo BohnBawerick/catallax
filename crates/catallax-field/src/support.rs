@@ -11,6 +11,7 @@ enum Kind {
     Cone,
     Sphere,
     Torus,
+    EllipticCylinder,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct Support {
@@ -51,6 +52,7 @@ impl Support {
                 s.major.clone(),
                 s.minor.clone(),
             ),
+            Surface::EllipticCylinder(s) => return Self::elliptic(s),
             _ => unreachable!("feature analytic support"),
         };
         let factor = if matches!(kind, Kind::Cone) {
@@ -81,6 +83,35 @@ impl Support {
             exact,
         }
     }
+    fn elliptic(surface: &catallax_shapes::EllipticCylinder) -> Self {
+        // Pack the two scaled transverse vectors into the existing ten-value
+        // cache. b*(||[x/a,y/b]||-1) is 1-Lipschitz for a >= b, so its
+        // absolute value is a lower bound, never an affine-stretched distance.
+        let major = surface.major_dir.scaled(
+            &(Real::one() / (&surface.major_dir.norm_squared() * &surface.major_sq).sqrt()),
+        );
+        let minor = surface.axis.cross(&surface.major_dir);
+        let minor =
+            minor.scaled(&(Real::one() / (&minor.norm_squared() * &surface.minor_sq).sqrt()));
+        let exact = [
+            surface.origin.x.clone(),
+            surface.origin.y.clone(),
+            surface.origin.z.clone(),
+            major.x,
+            major.y,
+            major.z,
+            minor.x,
+            minor.y,
+            minor.z,
+            surface.minor_sq.sqrt(),
+        ];
+        Self {
+            kind: Kind::EllipticCylinder,
+            balls: rational_balls(Kind::EllipticCylinder, &exact),
+            fast: exact.each_ref().map(Real::to_f64),
+            exact,
+        }
+    }
     pub fn transform(&mut self, pose: &Isometry) {
         let origin = pose.apply_point(&Point3::new(
             self.exact[0].clone(),
@@ -98,7 +129,17 @@ impl Support {
         self.exact[3] = axis.x;
         self.exact[4] = axis.y;
         self.exact[5] = axis.z;
-        // A certified rigid motion preserves the defining axis norm and dimensions.
+        if matches!(self.kind, Kind::EllipticCylinder) {
+            let minor = pose.apply_vector(&Vector3::new(
+                self.exact[6].clone(),
+                self.exact[7].clone(),
+                self.exact[8].clone(),
+            ));
+            self.exact[6] = minor.x;
+            self.exact[7] = minor.y;
+            self.exact[8] = minor.z;
+        }
+        // A certified rigid motion preserves vector norms and dimension scalars.
         self.balls = rational_balls(self.kind, &self.exact);
         let radius = self.fast[7];
         self.fast = self.exact.each_ref().map(Real::to_f64);
@@ -134,6 +175,15 @@ impl Support {
         let d: [T; 3] = std::array::from_fn(|i| p[i].sub(&q[i]));
         let norm = |p: &[T; 3]| p[0].square().add(&p[1].square()).add(&p[2].square()).sqrt();
         let abs = |x: T| x.max(&x.neg());
+        if matches!(self.kind, Kind::EllipticCylinder) {
+            let dot = |offset| {
+                d[0].mul(&q[offset])
+                    .add(&d[1].mul(&q[offset + 1]))
+                    .add(&d[2].mul(&q[offset + 2]))
+            };
+            let rho = dot(3).square().add(&dot(6).square()).sqrt();
+            return abs(rho.sub(&T::integer(1))).mul(&q[9]);
+        }
         if matches!(self.kind, Kind::Sphere) {
             return abs(norm(&d).sub(&q[7]));
         }

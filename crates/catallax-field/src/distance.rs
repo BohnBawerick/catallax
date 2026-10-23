@@ -148,7 +148,7 @@ impl Plan {
             constraint_supports.push(supports);
         }
         for face in &self.faces {
-            if self.leaf_registers[face.leaf].is_none() {
+            if !face.in_result || self.leaf_registers[face.leaf].is_none() {
                 domains.push(None);
                 coincident.push(Vec::new());
                 continue;
@@ -340,7 +340,9 @@ impl Prepared<'_> {
         self.domains
             .get(id.0)
             .and_then(Option::as_ref)
-            .ok_or_else(|| Refusal::new("field.face-id", "distance face is absent from this plan"))
+            .ok_or_else(|| {
+                Refusal::new("field.face-id", "distance face is absent from this result")
+            })
     }
     /// Certified point-to-face distance, including the face's closed trim loops.
     pub fn point_to_face(

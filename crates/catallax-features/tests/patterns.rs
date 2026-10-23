@@ -17,7 +17,14 @@ fn seed() -> Vec<Value> {
     ]
 }
 fn build(recipe: &Recipe) -> Built {
-    let built = evaluate(recipe, &mut Decider::default()).unwrap();
+    let (built, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        evaluate(recipe, &mut Decider::default())
+    });
+    assert!(
+        !work.exhausted,
+        "copy construction exhausted the request allowance"
+    );
+    let built = built.unwrap();
     assert_eq!(built.model.check(built.result), vec![]);
     built
 }
@@ -328,4 +335,76 @@ fn curved_copies_retain_source_supports_mass_names_and_step_bytes() {
             assert_eq!(step(&built), step(&build(&recipe)));
         }
     }
+}
+
+#[test]
+fn disjoint_algebraic_placements_do_not_intersect_their_unbounded_supports() {
+    let mut source = seed();
+    source[0]["plane"]["translation"] = json!(["3", "0", "0"]);
+    let recipe = recipe(
+        source,
+        json!({"id":"copies","op":"pattern","body":"seed","layout":{"circular":{
+            "axis":{"point":["0","0","0"],"direction":["0","0","7"]},"angle":"45","count":2
+        }}}),
+    );
+    let built = build(&recipe);
+    assert_eq!(built.model.counts(built.result).lumps, 2);
+    assert_eq!(built.model.counts(built.result).faces, 12);
+    assert!(volume(&built).contains(&Rational::from_i64(12)));
+    assert_eq!(step(&built), step(&build(&recipe)));
+}
+
+#[test]
+fn p5_countersink_body_pattern_builds_with_each_copy_named() {
+    let mut recipe = Recipe::parse(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
+    let end = recipe
+        .steps
+        .iter()
+        .position(|step| step.id.as_str() == "hole-pattern")
+        .unwrap();
+    recipe.steps.truncate(end + 1);
+    recipe.result = StepId::new("hole-pattern").unwrap();
+    let built = build(&recipe);
+    assert_eq!(built.model.counts(built.result).lumps, 4);
+    let expected = Ball::pi(192) * Ball::from_rational(&Rational::parse("464/3").unwrap(), 192);
+    let measured = volume(&built);
+    assert!(measured.lo <= expected.lo() && measured.hi >= expected.hi());
+    let source = built.bodies[&StepId::new("countersink").unwrap()];
+    let map = match &recipe.steps[end].op {
+        catallax_recipe::Operation::Pattern { layout, .. } => layout,
+        _ => unreachable!(),
+    };
+    for instance in 0..4 {
+        let placement =
+            catallax_features::pattern_placement(map, instance, &mut Decider::default()).unwrap();
+        for face in built.model.faces_of_body(source) {
+            let origins = built
+                .model
+                .face_origins(face)
+                .iter()
+                .map(|origin| catallax_features::copy_origin(&recipe.result, instance, origin))
+                .collect::<Vec<_>>();
+            let copy = built
+                .model
+                .faces_of_body(built.result)
+                .into_iter()
+                .find(|f| {
+                    origins
+                        .iter()
+                        .all(|o| built.model.face_origins(*f).contains(o))
+                })
+                .unwrap();
+            assert!(
+                built
+                    .model
+                    .geom()
+                    .surface(built.model.face(copy).surface)
+                    .same_definition(
+                        &placement
+                            .surface(built.model.geom().surface(built.model.face(face).surface))
+                    )
+            );
+        }
+    }
+    assert_eq!(step(&built), step(&build(&recipe)));
 }

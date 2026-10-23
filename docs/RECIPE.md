@@ -767,6 +767,8 @@ Explicit start segments keep correspondence independent of geometric nearest-poi
 
 Both recipe evaluators apply these placements as exact isometries of the seed definitions, then use the ordinary regularised union. Circular placements use certified algebraic sine and cosine, not rounded pose parameters. B-rep copies retain analytic dimensions, remap intersection and meeting definitions, and transport proven incidences. A copy is never a fitted replacement surface.
 
+For disjoint B-rep copies, the existing certified body-bounds query supplies an enclosing seed box. Exact placements propagate that enclosure. Strict separation from every prior copy proves that union can retain the existing lumps directly, without intersecting their unbounded supports. Touching or overlapping boxes use the ordinary Boolean path. Bounds are proof-only; their enclosure width never moves geometry or changes a tolerance.
+
 Choices:
 
 - **A pattern copies a body, and a boolean applies it.** To pattern a cut, pattern its tool and subtract once. Every step keeps one definition, and the field kernel can repeat its domain for a pattern of tools almost for free. The alternative is a feature pattern that reruns an earlier step at each copy. That is closer to how SolidWorks users think, but every copy would need its references resolved again, which is a second naming problem.

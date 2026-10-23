@@ -1,12 +1,13 @@
 //! Exact recipe-based features over the B-rep model.
 //!
-//! [`evaluate`] builds stock solids, sketches, extrusions, revolutions and booleans.
+//! [`evaluate`] builds stock solids, sketches, extrusions, revolutions, booleans,
+//! exact body patterns and mirrors.
 //! Every returned face has canonical recipe origins, including faces split or merged
 //! by a boolean. The model remains compatible with `catallax-measure` and
 //! `catallax-step`; the legacy CLI protocol is not extended.
 //!
-//! Exact analytic frames are rational in this implementation. Unsupported algebraic
-//! placements, generated radii and elliptic cylinders have explicit refusal codes;
+//! Body-copy placements may be algebraic. Feature constructors still refuse some
+//! algebraic placements, generated radii and elliptic cylinders explicitly;
 //! `docs/RECIPE.md` section 7.14 lists these unfinished legal-input cases.
 //!
 //! ```

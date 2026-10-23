@@ -294,7 +294,7 @@ impl HoleTool {
             Surface::Cylinder(Cylinder {
                 origin: self.at_depth(&band.depth[0]),
                 axis: self.axis.clone(),
-                radius: band.radius[0].clone(),
+                radius_sq: band.radius[0].square(),
                 ref_dir: self.reference.clone(),
             })
         } else {

@@ -70,7 +70,7 @@ fn face_box(
                     return Ok(None);
                 }
                 let expected = match &surface {
-                    Surface::Cylinder(s) => s.radius.square(),
+                    Surface::Cylinder(s) => s.radius_sq.clone(),
                     Surface::Cone(s) => {
                         let axial = c.center.minus(&s.apex).dot(&s.axis);
                         if sign(&axial, dec, "boolean.bound-ambiguous")? == Sign::Negative {

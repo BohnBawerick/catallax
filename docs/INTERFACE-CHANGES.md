@@ -822,7 +822,6 @@ propagate. Comparison accuracies, numeric budgets, recipe construction, STEP
 output and whole-face definition measurements are unchanged. Previous curved
 extrusion, revolution, round-Boolean and small planar-Boolean perturbation
 limitation tests now require agreement with finite sampled bounds.
-
 ## 2026-10-23: named drill tools and versioned extrusion end conditions
 
 Pieces: recipe, features, field, compare, verification CLI

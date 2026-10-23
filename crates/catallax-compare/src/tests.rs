@@ -216,7 +216,7 @@ fn unsupported_operations_are_all_reported() {
     let recipe = recipe(vec![
         block("a", "2", "0"),
         json!({"id":"offset","op":"offset","body":"a","distance":"1"}),
-        json!({"id":"mirror","op":"mirror","body":"offset","plane":{"point":["0","0","0"],"normal":["1","0","0"]},"keep_original":false}),
+        json!({"id":"draft","op":"draft","body":"offset","faces":[{"face":{"step":"a","role":"end"}}],"pull":["0","0","1"],"neutral":{"point":["0","0","0"],"normal":["0","0","1"]},"angle":"5"}),
     ]);
     let report = check(&recipe);
     assert_eq!(report.verdict, Verdict::Unresolved);
@@ -226,7 +226,7 @@ fn unsupported_operations_are_all_reported() {
             .iter()
             .map(|o| o.operation.as_str())
             .collect::<Vec<_>>(),
-        ["offset", "mirror"]
+        ["offset", "draft"]
     );
 }
 #[test]
@@ -651,4 +651,74 @@ fn an_exhausted_mesh_allowance_stays_unresolved_without_partial_queries() {
             .iter()
             .all(|f| matches!(f.reason, Reason::Unresolved(_)))
     );
+}
+
+#[test]
+fn copied_and_reflected_features_preserve_comparison_certainty() {
+    let feature = vec![
+        json!({"id":"profile","op":"sketch","plane":pose("2"),"loops":[[
+            {"kind":"line","id":"a","to":["1","0"]},{"kind":"line","id":"b","to":["1","1"]},{"kind":"line","id":"c","to":["0","1"]},{"kind":"line","id":"d","to":["0","0"]}
+        ]]}),
+        json!({"id":"seed","op":"extrude","profile":"profile","distance":"1"}),
+    ];
+    let cylinder = vec![
+        json!({"id":"profile","op":"sketch","plane":pose("2"),"loops":[[
+            {"kind":"circle","id":"wall","centre":["0","0"],"radius":"1/2"}
+        ]]}),
+        json!({"id":"seed","op":"extrude","profile":"profile","distance":"1"}),
+    ];
+    let revolution = vec![
+        json!({"id":"profile","op":"sketch","plane":pose("2"),"loops":[[
+            {"kind":"line","id":"a","to":["2","0"]},{"kind":"line","id":"b","to":["2","1"]},{"kind":"line","id":"c","to":["1","1"]},{"kind":"line","id":"d","to":["1","0"]}
+        ]]}),
+        json!({"id":"seed","op":"revolve","profile":"profile","axis":{"point":["2","0","0"],"direction":["0","1","0"]},"angle":"90"}),
+    ];
+    for (steps, expected) in [
+        (vec![block("seed", "1", "2")], Verdict::Agree),
+        (feature, Verdict::Agree),
+        (cylinder, Verdict::Unresolved),
+        (revolution, Verdict::Unresolved),
+    ] {
+        for operation in [
+            json!({"id":"copies","op":"pattern","body":"seed","layout":{"linear":{"vector":["3","0","0"],"count":3}}}),
+            json!({"id":"copies","op":"pattern","body":"seed","layout":{"circular":{"axis":{"point":["0","0","0"],"direction":["0","0","5"]},"angle":"90","count":4}}}),
+            json!({"id":"copies","op":"mirror","body":"seed","plane":{"point":["0","0","0"],"normal":["2","3","0"]},"keep_original":false}),
+        ] {
+            let mut steps = steps.clone();
+            steps.push(operation);
+            let report = check(&recipe(steps));
+            assert_eq!(report.verdict, expected, "{report:?}");
+        }
+    }
+}
+
+#[test]
+fn a_numeric_refusal_during_copy_comparison_is_not_a_kernel_panic() {
+    let part = recipe(vec![
+        json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[
+            {"kind":"line","id":"radius","to":["1","0"]},
+            {"kind":"line","id":"wall","to":["1","4"]},
+            {"kind":"line","id":"top","to":["0","4"]},
+            {"kind":"line","id":"axis","to":["0","0"]}
+        ]]}),
+        json!({"id":"seed","op":"revolve","profile":"profile","axis":{"point":["0","0","0"],"direction":["0","1","0"]},"angle":"360"}),
+        json!({"id":"copies","op":"pattern","body":"seed","layout":{"linear":{"vector":["4","0","0"],"count":3}}}),
+    ]);
+    let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        check_with_options(&part, &Options::default())
+    });
+    assert!(matches!(
+        report.verdict,
+        Verdict::Agree | Verdict::Unresolved
+    ));
+    if work.exhausted {
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| matches!(&finding.reason,
+            Reason::Unresolved(reason) if reason.contains("numbers.operation-budget")))
+        );
+    }
 }

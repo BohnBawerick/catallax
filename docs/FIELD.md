@@ -1,6 +1,6 @@
 # Analytic field kernel
 
-`catallax-field` compiles `catallax-recipe/3` stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided through-all cuts, full and rational-frame partial revolutions, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`, so both kernels use the same intersection, tangency and nesting rules and refusal codes. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
+`catallax-field` compiles `catallax-recipe/3` stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided through-all cuts, full and rational-frame partial revolutions, linear and circular body patterns, plane mirrors, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`, so both kernels use the same intersection, tangency and nesting rules and refusal codes. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
 
 This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. Fillets, field-only features, FEA and application integration are not implemented.
 
@@ -59,6 +59,15 @@ Extrusion projects a query along its defining vector back into the sketch plane,
 Full turns omit cap names and axis segments that sweep no area. At 180 degrees, caps connected along an axis segment expose both `start` and `end` names over the merged domain. Consecutive collinear or cocircular segments expose every merged segment origin over the maximal side domain. Face queries check that domain as well as the supporting equation, including the correct branch of a revolved surface.
 
 The supported rational subset and `features.unsupported-*` refusals match [RECIPE.md section 7.14](RECIPE.md#714-b-rep-feature-geometry-bugs). Legal algebraic placements, non-cardinal cap frames, elliptic cylinders and generated irrational surface radii remain explicit unfinished geometry, not impossible inputs.
+
+### Patterns and mirrors
+
+Each copy composes an exact inverse isometry into the seed leaves' metric and trim evaluators. Supporting surfaces, constraints, gradients, display caches and names move together. A circular pattern uses `k * angle` about the authored axis, not a total angle or a rounded quaternion. Reflection uses the rational plane formula for normals of any nonzero length. Isometries preserve primitive distance formulas and sweep residual bounds; a union of copies still has Boolean residual semantics.
+
+Copy zero keeps its origins. Later pattern copies and mirror images wrap each source origin with their creating step and `copy.instance`. Every copied subgraph reads a snapshot of its seed's face candidates, independent of evaluation-leaf sharing. The registry retains removed candidates, but selectable ownership follows the actual result body. Thus coincident copies keep all authored names, while a symmetric mirror without its original exposes only the image's wrapped names.
+
+Feature-pattern editing saves ordinary operations through `catallax_app::pattern::expand_feature`; the field compiler needs no feature-pattern opcode. The rational candidate-sampling APIs still report their algebraic-placement limitation when a transformed candidate has no native rational coordinates. That limitation does not round the field's geometry or change its proven query semantics.
+
 
 ## Exact signs and surface directions
 

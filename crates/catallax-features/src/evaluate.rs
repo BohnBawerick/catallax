@@ -2,9 +2,10 @@
 
 use crate::{Profile, extrude, revolve};
 use catallax_boolean::{BoolOp, boolean};
-use catallax_numbers::{Ball, Decider, Rational, Refusal};
+use catallax_measure::BoundingBox;
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe, RecipeError, StepId};
-use catallax_shapes::{RPoint3, RVector3};
+use catallax_shapes::{Isometry, RPoint3, RVector3};
 use catallax_topology::{BodyId, BodyKind, Model};
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
@@ -90,6 +91,54 @@ fn profile_radius(profile: &Profile) -> Rational {
         .unwrap_or_else(Rational::zero)
 }
 
+fn transformed_bounds(
+    bounds: &BoundingBox,
+    map: &Isometry,
+    dec: &mut Decider,
+) -> Result<BoundingBox, Refusal> {
+    let local = std::array::from_fn::<_, 3, _>(|i| {
+        Ball::from_rational(&bounds.min[i], 128).hull(&Ball::from_rational(&bounds.max[i], 128))
+    });
+    let mut enclose = |value: &Real| {
+        if let Some(value) = value.rational_ref() {
+            Ok(Ball::from_rational(value, 128))
+        } else {
+            dec.enclose_budgeted_at(value, 128)
+        }
+    };
+    let translation = [&map.translation.x, &map.translation.y, &map.translation.z];
+    let mut min = std::array::from_fn(|_| Rational::zero());
+    let mut max = min.clone();
+    for i in 0..3 {
+        let mut coordinate = enclose(translation[i])?;
+        for (j, local) in local.iter().enumerate() {
+            coordinate = &coordinate + &(enclose(&map.matrix()[i][j])? * local.clone());
+        }
+        min[i] = coordinate.lo();
+        max[i] = coordinate.hi();
+    }
+    Ok(BoundingBox { min, max })
+}
+
+fn separated(a: &BoundingBox, b: &BoundingBox) -> bool {
+    (0..3).any(|i| a.max[i] < b.min[i] || b.max[i] < a.min[i])
+}
+
+// Strictly separated enclosing boxes prove that regularised union is just the
+// disjoint collection of the existing immutable lumps. No support intersection
+// or replacement geometry is needed, and contact never takes this path.
+fn unite_separated(model: &mut Model, a: BodyId, b: BodyId) -> BodyId {
+    let mut result = model.body(a).clone();
+    result.lumps.extend_from_slice(&model.body(b).lumps);
+    result.marks.extend(&model.body(b).marks);
+    result.kind = if result.lumps.is_empty() {
+        BodyKind::Empty
+    } else {
+        BodyKind::Solid
+    };
+    model.add_body(result)
+}
+
 fn through(
     model: &mut Model,
     profile: &Profile,
@@ -140,7 +189,7 @@ fn through(
         .body)
 }
 
-/// Builds sketches, extrusions, revolutions, through-all cuts and explicit booleans.
+/// Builds stock solids, sketches, extrusions, revolutions, cuts, booleans, patterns and mirrors.
 /// Other recipe operations retain their unfinished-operation refusal, not a partial body.
 pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError> {
     recipe.check().map_err(BuildError::Recipe)?;
@@ -241,6 +290,110 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                             .body
                     };
                     BodyValue { body, radius }
+                }
+                Operation::Pattern { body, layout } => {
+                    // Validate even count-one and empty patterns before set identities.
+                    crate::pattern_placement(layout, 0, dec)?;
+                    let source = &bodies[body];
+                    let mut body = source.body;
+                    let mut radius = source.radius.clone();
+                    let source_bounds = if layout.count() > 1 {
+                        catallax_measure::bounding_box(
+                            model,
+                            source.body,
+                            &Default::default(),
+                            dec,
+                        )?
+                        .value
+                    } else {
+                        None
+                    };
+                    let mut placed_bounds = source_bounds.iter().cloned().collect::<Vec<_>>();
+                    for instance in 1..layout.count() {
+                        let map = crate::pattern_placement(layout, instance, dec)?;
+                        let shift = [&map.translation.x, &map.translation.y, &map.translation.z]
+                            .into_iter()
+                            .try_fold(Rational::zero(), |sum, v| {
+                                let b = dec.enclose_at(v, 128)?;
+                                Ok::<_, Refusal>(sum + b.lo().abs().max(b.hi().abs()))
+                            })?;
+                        radius = radius.max(&source.radius + &shift);
+                        let copy = catallax_topology::transformed_body(
+                            model,
+                            source.body,
+                            &map,
+                            |origin| crate::copy_origin(&step.id, instance, origin),
+                        );
+                        let copy_bounds = source_bounds
+                            .as_ref()
+                            .map(|bounds| transformed_bounds(bounds, &map, dec))
+                            .transpose()?;
+                        body = if copy_bounds.as_ref().is_some_and(|copy| {
+                            placed_bounds.iter().all(|prior| separated(prior, copy))
+                        }) {
+                            unite_separated(model, body, copy)
+                        } else {
+                            boolean(model, body, copy, BoolOp::Unite, dec)
+                                .map_err(|e| e.refusal)?
+                                .body
+                        };
+                        if let Some(bounds) = copy_bounds {
+                            placed_bounds.push(bounds);
+                        }
+                    }
+                    BodyValue { body, radius }
+                }
+                Operation::Mirror {
+                    body,
+                    plane,
+                    keep_original,
+                } => {
+                    let map = crate::mirror_placement(plane)?;
+                    let source = &bodies[body];
+                    let source_bounds = if *keep_original {
+                        catallax_measure::bounding_box(
+                            model,
+                            source.body,
+                            &Default::default(),
+                            dec,
+                        )?
+                        .value
+                    } else {
+                        None
+                    };
+                    let shift = [&map.translation.x, &map.translation.y, &map.translation.z]
+                        .into_iter()
+                        .try_fold(Rational::zero(), |sum, v| {
+                            let b = dec.enclose_at(v, 128)?;
+                            Ok::<_, Refusal>(sum + b.lo().abs().max(b.hi().abs()))
+                        })?;
+                    let copy =
+                        catallax_topology::transformed_body(model, source.body, &map, |origin| {
+                            crate::copy_origin(&step.id, 1, origin)
+                        });
+                    let body = if *keep_original {
+                        let copy_bounds = source_bounds
+                            .as_ref()
+                            .map(|bounds| transformed_bounds(bounds, &map, dec))
+                            .transpose()?;
+                        if source_bounds
+                            .as_ref()
+                            .zip(copy_bounds.as_ref())
+                            .is_some_and(|(a, b)| separated(a, b))
+                        {
+                            unite_separated(model, source.body, copy)
+                        } else {
+                            boolean(model, source.body, copy, BoolOp::Unite, dec)
+                                .map_err(|e| e.refusal)?
+                                .body
+                        }
+                    } else {
+                        copy
+                    };
+                    BodyValue {
+                        body,
+                        radius: &source.radius + &shift,
+                    }
                 }
                 _ => {
                     return Err(Refusal::new(

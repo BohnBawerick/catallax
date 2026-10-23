@@ -183,7 +183,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Block{..}|Operation::Cylinder{..}|Operation::Sphere{..}|
             Operation::Cone{..}|Operation::Torus{..}|Operation::Boolean{..}|
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
-            Operation::Revolve{..}=>return None,
+            Operation::Revolve{..}|Operation::Pattern{..}|Operation::Mirror{..}=>return None,
             Operation::Path{..}=>"neither kernel evaluates recipe paths",
             Operation::Hole{..}=>"neither kernel evaluates recipe holes",
             Operation::Fillet{..}=>"neither kernel evaluates recipe fillets",
@@ -194,8 +194,6 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Draft{..}=>"neither kernel evaluates recipe draft",
             Operation::Sweep{..}=>"neither kernel evaluates recipe sweeps",
             Operation::Loft{..}=>"neither kernel evaluates recipe lofts",
-            Operation::Pattern{..}=>"neither kernel evaluates recipe patterns",
-            Operation::Mirror{..}=>"neither kernel evaluates recipe mirroring",
             Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",
             Operation::Gyroid{..}=>"field gyroid evaluation is not implemented; B-rep gyroid evaluation is not planned",
             Operation::SmoothBlend{..}=>"field smooth blending is not implemented; B-rep smooth blending is not planned",
@@ -267,6 +265,37 @@ fn distance_finding(
         );
     }
 }
+// A rounded display corner need not lie on any finite sweep support patch.
+// Its exact topological endpoint is only a candidate: the independent field
+// must prove it is on the result boundary before it supplies a distance upper bound.
+fn endpoint_distance(
+    model: &catallax_topology::Model,
+    field: &Plan,
+    vertices: &BTreeSet<catallax_topology::VertexId>,
+    point: &RPoint3,
+    storage: &mut Workspace,
+    dec: &mut Decider,
+) -> Result<Option<Rational>, Refusal> {
+    let mut upper: Option<Rational> = None;
+    for vertex in vertices {
+        let Some(candidate) = model
+            .geom()
+            .position(model.vertex(*vertex).point)
+            .as_rational()
+        else {
+            continue;
+        };
+        if field.proven_checked(&candidate, storage, dec)?.location == Location::Boundary {
+            let distance = norm(&point.minus(&candidate)).hi();
+            upper = Some(match upper {
+                Some(old) => old.min(distance),
+                None => distance,
+            });
+        }
+    }
+    Ok(upper)
+}
+
 pub(crate) fn run(
     revision: &Revision,
     recipe: &Recipe,
@@ -409,6 +438,20 @@ pub(crate) fn run(
             }
         }
     }
+    let mut endpoints = BTreeMap::<usize, BTreeSet<catallax_topology::VertexId>>::new();
+    for boundary in &mesh.edges {
+        let edge = model.edge(boundary.edge);
+        for (index, vertex) in boundary
+            .vertices
+            .first()
+            .copied()
+            .zip(edge.start)
+            .into_iter()
+            .chain(boundary.vertices.last().copied().zip(edge.end))
+        {
+            endpoints.entry(index).or_default().insert(vertex);
+        }
+    }
     let mut selected = BTreeSet::new();
     let mut sample_points = vec![None; mesh.faces.len()];
     let mut storage = Workspace::default();
@@ -455,6 +498,16 @@ pub(crate) fn run(
             && upper.as_ref().is_some_and(|h| h <= &options.accuracy)
         {
             continue;
+        }
+        if let Some(vertices) = endpoints.get(&i) {
+            match endpoint_distance(&model, &field, vertices, &p, &mut storage, &mut dec) {
+                Ok(Some(distance)) if &distance + &error <= options.accuracy => continue,
+                Err(error) => whole_failure(
+                    &mut report,
+                    format!("field endpoint witness {}: {}", error.code, error.detail),
+                ),
+                _ => (),
+            }
         }
         let names: Vec<Vec<Origin>> = incident[i]
             .iter()
@@ -522,7 +575,11 @@ pub(crate) fn run(
     let width = options.accuracy.mul_pow2(-20);
     let mut observed: BTreeMap<usize, BTreeSet<Origin>> = BTreeMap::new();
     let mut oriented = BTreeSet::new();
+    let sampling_failed = std::cell::Cell::new(false);
     let mut check_sample = |p: RPoint3, origin: &Origin| {
+        if sampling_failed.get() {
+            return;
+        }
         if options
             .region
             .as_ref()
@@ -531,9 +588,21 @@ pub(crate) fn run(
             return;
         }
         let (id, source) = registry[origin];
-        let query = field
-            .face_query(id, &p, &mut storage)
-            .expect("selected field face");
+        let query = match field.face_query_checked(id, &p, &mut storage, &mut dec) {
+            Ok(query) => query,
+            Err(error) => {
+                sampling_failed.set(true);
+                unresolved(
+                    &mut report,
+                    Pass::Reverse,
+                    &p,
+                    vec![],
+                    vec![origin.clone()],
+                    format!("field face query {}: {}", error.code, error.detail),
+                );
+                return;
+            }
+        };
         match query.state {
             FaceState::NotOnFace => return,
             FaceState::OnFace => (),
@@ -556,9 +625,22 @@ pub(crate) fn run(
             let coactive = if index == source {
                 query
             } else {
-                field
-                    .face_query(registry[&face.origin].0, &p, &mut storage)
-                    .unwrap()
+                match field.face_query_checked(registry[&face.origin].0, &p, &mut storage, &mut dec)
+                {
+                    Ok(query) => query,
+                    Err(error) => {
+                        sampling_failed.set(true);
+                        unresolved(
+                            &mut report,
+                            Pass::Reverse,
+                            &p,
+                            vec![],
+                            vec![face.origin.clone()],
+                            format!("coactive field face query {}: {}", error.code, error.detail),
+                        );
+                        return;
+                    }
+                }
             };
             match coactive.state {
                 FaceState::OnFace => {
@@ -747,14 +829,29 @@ pub(crate) fn run(
             );
         }
     };
-    crate::sample::visit(recipe, options.divisions, revision, &mut check_sample);
+    let primitive_sampling = crate::sample::visit(
+        recipe,
+        &field,
+        options.divisions,
+        revision,
+        &mut check_sample,
+    );
     let feature_sampling = field.visit_feature_candidates(options.divisions, |p, origin| {
         if revision.is_cancelled() {
             return false;
         }
         check_sample(p, origin);
-        !revision.is_cancelled()
+        !revision.is_cancelled() && !sampling_failed.get()
     });
+    if let Err(error) = primitive_sampling {
+        whole_failure(
+            &mut report,
+            format!(
+                "primitive boundary sampling {}: {}",
+                error.code, error.detail
+            ),
+        );
+    }
     if let Err(error) = feature_sampling {
         whole_failure(
             &mut report,

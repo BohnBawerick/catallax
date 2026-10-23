@@ -9,7 +9,7 @@ use crate::{
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Axis, Origin, Role, StepId};
 use catallax_shapes::{
-    Cone, Cylinder, Plane, Point3, Pose, RPoint3, RVector3, Sphere, Surface, Torus, Vector3,
+    Cone, Cylinder, Isometry, Plane, Point3, RPoint3, RVector3, Sphere, Surface, Torus, Vector3,
 };
 
 #[derive(Clone, Debug)]
@@ -27,7 +27,7 @@ enum Sweep {
 #[derive(Clone, Debug)]
 pub(crate) struct Feature {
     loops: Vec<Vec<Edge>>,
-    inverse: Pose,
+    inverse: Isometry,
     sweep: Sweep,
     axis_norm: Rational,
     merge_caps: Vec<usize>,
@@ -531,7 +531,7 @@ impl Feature {
         }
         Self {
             loops: profile.loops.clone(),
-            inverse: profile.pose.inverse(),
+            inverse: Isometry::from(&profile.pose.inverse()),
             fast: FastProfile::new(profile, &sweep, &axis_norm),
             axis_norm,
             merge_caps,
@@ -540,7 +540,7 @@ impl Feature {
             supports,
         }
     }
-    pub fn transform(&mut self, pose: &Pose) {
+    pub fn transform(&mut self, pose: &Isometry) {
         self.inverse = pose.inverse().then(&self.inverse);
         self.fast.matrix = geometry::fast_matrix(&self.inverse);
         self.fast.translation = geometry::fast_translation(&self.inverse);
@@ -1198,9 +1198,17 @@ impl Feature {
         result: &crate::samples::Bounds,
         visit: &mut impl FnMut(RPoint3) -> bool,
     ) -> Result<bool, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
         use crate::samples::{circle, fraction};
         let pose = self.inverse.inverse();
-        if pose.rotation.rational_matrix().is_none()
+        if pose
+            .matrix()
+            .iter()
+            .flatten()
+            .any(|v| v.rational_ref().is_none())
             || pose.translation.rational_components().is_none()
         {
             return Err(crate::samples::placement_error());

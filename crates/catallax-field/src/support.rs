@@ -2,7 +2,7 @@
 
 use crate::metric::{PRECISION, Scalar};
 use catallax_numbers::{Ball, Decider, Real, Refusal};
-use catallax_shapes::{Point3, Pose, Surface, Vector3};
+use catallax_shapes::{Isometry, Point3, Surface, Vector3};
 
 #[derive(Clone, Copy, Debug)]
 enum Kind {
@@ -73,7 +73,7 @@ impl Support {
             exact,
         }
     }
-    pub fn transform(&mut self, pose: &Pose) {
+    pub fn transform(&mut self, pose: &Isometry) {
         let origin = pose.apply_point(&Point3::new(
             self.exact[0].clone(),
             self.exact[1].clone(),

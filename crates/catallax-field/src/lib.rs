@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, RealPoly, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Operation, Origin, Recipe};
-use catallax_shapes::{Pose, RPoint3, RVector3, Surface, Vector3};
+use catallax_shapes::{Isometry, Pose, RPoint3, RVector3, Surface, Vector3};
 
 use metric::{PRECISION, Scalar};
 
@@ -117,6 +117,7 @@ pub struct Face {
     support: RealPoly,
     gradient: [RealPoly; 3],
     leaf: usize,
+    in_result: bool,
 }
 
 /// Handle into one plan's immutable face registry. Not a persistent recipe name.
@@ -216,9 +217,11 @@ impl Plan {
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
+        let mut step_faces: BTreeMap<catallax_recipe::StepId, Vec<usize>> = BTreeMap::new();
         for step in &recipe.steps {
             let span =
                 catallax_numbers::OperationSpan::begin("field", &step.id, step.op.name(), dec);
+            let first_face = plan.faces.len();
             let result = (|| -> Result<Option<usize>, Refusal> {
                 let node = match &step.op {
                     Operation::Sketch { plane, loops } => {
@@ -273,6 +276,38 @@ impl Plan {
                         )?;
                         plan.feature(built, dec)?
                     }
+                    Operation::Pattern { body, layout } => {
+                        catallax_features::pattern_placement(layout, 0, dec)?;
+                        let source = steps[body];
+                        let mut result = source;
+                        for instance in 1..layout.count() {
+                            let map = catallax_features::pattern_placement(layout, instance, dec)?;
+                            let copy = plan.copy(
+                                source,
+                                &step_faces[body],
+                                &map,
+                                &step.id,
+                                instance,
+                                dec,
+                            )?;
+                            result = plan.boolean(BooleanKind::Union, result, copy, dec)?;
+                        }
+                        result
+                    }
+                    Operation::Mirror {
+                        body,
+                        plane,
+                        keep_original,
+                    } => {
+                        let map = catallax_features::mirror_placement(plane)?;
+                        let source = steps[body];
+                        let copy = plan.copy(source, &step_faces[body], &map, &step.id, 1, dec)?;
+                        if *keep_original {
+                            plan.boolean(BooleanKind::Union, source, copy, dec)?
+                        } else {
+                            copy
+                        }
+                    }
                     _ => {
                         let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
                         plan.leaf(leaf, faces, dec)?
@@ -282,10 +317,32 @@ impl Plan {
             })();
             span.finish(dec, result.as_ref().err(), None);
             if let Some(node) = result? {
+                let mut faces = match &step.op {
+                    Operation::Boolean { target, tool, .. } => step_faces[target]
+                        .iter()
+                        .chain(&step_faces[tool])
+                        .copied()
+                        .collect(),
+                    Operation::ExtrudeThrough { target, .. } => step_faces[target].clone(),
+                    Operation::Pattern { body, .. }
+                    | Operation::Mirror {
+                        body,
+                        keep_original: true,
+                        ..
+                    } => step_faces[body].clone(),
+                    _ => Vec::new(),
+                };
+                faces.extend(first_face..plan.faces.len());
+                faces.sort_unstable();
+                faces.dedup();
+                step_faces.insert(step.id.clone(), faces);
                 steps.insert(step.id.clone(), node);
             }
         }
         plan.root = steps[&recipe.result];
+        for id in &step_faces[&recipe.result] {
+            plan.faces[*id].in_result = true;
+        }
         plan.compact();
         Ok(plan)
     }
@@ -338,14 +395,65 @@ impl Plan {
     /// Applies an exact rigid motion without changing the recipe or metric.
     pub fn transformed(&self, pose: &Pose, dec: &mut Decider) -> Result<Self, Refusal> {
         let pose = Pose::new(pose.rotation.clone(), pose.translation.clone(), dec)?;
+        let map = Isometry::from(&pose);
         let mut result = self.clone();
         for leaf in &mut result.leaves {
-            leaf.transform(&pose);
+            leaf.transform(&map);
         }
         for face in &mut result.faces {
             geometry::face_geometry(face, face.surface.transformed(&pose), dec)?;
         }
         Ok(result)
+    }
+
+    fn copy(
+        &mut self,
+        source: usize,
+        source_faces: &[usize],
+        map: &Isometry,
+        step: &catallax_recipe::StepId,
+        instance: u32,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let end = source + 1;
+        let mut live = vec![false; end];
+        live[source] = true;
+        for i in (0..end).rev() {
+            if live[i]
+                && let Instruction::Boolean { a, b, .. } = self.instructions[i]
+            {
+                live[a] = true;
+                live[b] = true;
+            }
+        }
+        let mut remap = vec![0; end];
+        for i in 1..end {
+            if !live[i] {
+                continue;
+            }
+            remap[i] = match self.instructions[i] {
+                Instruction::Empty => 0,
+                Instruction::Boolean { kind, a, b } => {
+                    self.boolean(kind, remap[a], remap[b], dec)?
+                }
+                Instruction::Leaf(id) => {
+                    let mut leaf = self.leaves[id].clone();
+                    leaf.transform(map);
+                    let mut faces = source_faces
+                        .iter()
+                        .map(|i| &self.faces[*i])
+                        .filter(|f| f.leaf == id)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    for face in &mut faces {
+                        geometry::face_geometry(face, map.surface(&face.surface), dec)?;
+                        face.origin = catallax_features::copy_origin(step, instance, &face.origin);
+                    }
+                    self.leaf(leaf, faces, dec)?
+                }
+            };
+        }
+        Ok(remap[source])
     }
 
     fn boolean(
@@ -533,8 +641,9 @@ impl Plan {
         let mut location = storage.locations[self.root];
         storage.active.clear();
         for (id, face) in self.faces.iter().enumerate() {
-            if self.leaf_registers[face.leaf]
-                .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
+            if face.in_result
+                && self.leaf_registers[face.leaf]
+                    .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
                 && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
                 && self.leaves[face.leaf].on_face(&face.origin.role, &coordinates, dec)?
                     != Some(false)
@@ -740,7 +849,7 @@ impl Plan {
             state: FaceState::NotOnFace,
             direction: Direction::Undefined,
         };
-        if self.leaf_registers[face.leaf].is_none() {
+        if !face.in_result || self.leaf_registers[face.leaf].is_none() {
             return Ok(absent);
         }
         if polynomial_sign(&face.polynomial, &p, dec)? != Sign::Zero {

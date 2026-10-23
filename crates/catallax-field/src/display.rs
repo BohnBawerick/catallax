@@ -337,7 +337,7 @@ fn mesh_plan_inner(
     }
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for (i, face) in plan.faces.iter().enumerate() {
-        if plan.leaf_registers[face.leaf].is_none() {
+        if !face.in_result || plan.leaf_registers[face.leaf].is_none() {
             continue;
         }
         let mut found = None;

@@ -765,6 +765,10 @@ Explicit start segments keep correspondence independent of geometric nearest-poi
 
 **Impossible.** `n = 0`. A zero axis direction.
 
+Both recipe evaluators apply these placements as exact isometries of the seed definitions, then use the ordinary regularised union. Circular placements use certified algebraic sine and cosine, not rounded pose parameters. B-rep copies retain analytic dimensions, remap intersection and meeting definitions, and transport proven incidences. A copy is never a fitted replacement surface.
+
+For disjoint B-rep copies, the existing certified body-bounds query supplies an enclosing seed box. Exact placements propagate that enclosure. Strict separation from every prior copy proves that union can retain the existing lumps directly, without intersecting their unbounded supports. Touching or overlapping boxes use the ordinary Boolean path. Bounds are proof-only; their enclosure width never moves geometry or changes a tolerance.
+
 Choices:
 
 - **A pattern copies a body, and a boolean applies it.** To pattern a cut, pattern its tool and subtract once. Every step keeps one definition, and the field kernel can repeat its domain for a pattern of tools almost for free. The alternative is a feature pattern that reruns an earlier step at each copy. That is closer to how SolidWorks users think, but every copy would need its references resolved again, which is a second naming problem.
@@ -780,6 +784,10 @@ The editor allocates and saves a unique step id for each instance operation unde
 
 An unresolved or ambiguous reference fails the expanded recipe as usual. Any geometry refusal is the underlying operation's refusal. Expansion has no extra impossible-geometry rule. A compact kernel-level feature-pattern opcode would need a new schema and the same explicit binding rules. Expansion costs file size; it avoids an undocumented per-copy binding language. It is buildable for exactly representable instances as those operations land. General circular placements can produce algebraic parameters outside the current non-sketch input schema; an exact construction extension is required before claiming all feature-pattern placements.
 
+`catallax_app::pattern::expand_feature` implements saved expansion for the existing stock, sketch, path, sweep-feature and reference-bearing operation schemas. The editor supplies an ordered source graph and a `FeatureInstance` for each placement. Its `steps` map supplies every saved instance id; `inputs` explicitly binds external body, profile and path reads; `origins` explicitly binds external creating steps, including unchanged origins. Internal creators use the instance's `steps` map. A target-changing instance binds its original target input to the preceding instance's saved result. The returned value is an ordinary checked recipe, without an extra opcode or hidden binding record.
+
+The edit transforms model-space points, directions, reference `near` points and nested origins before saving. Reflection preserves sketch segment ids, supplies the corresponding extrusion direction, and reverses revolution axes. Reflected stock-box references exchange the local `x_min` and `x_max` roles when the saved proper frame requires that exchange. Missing bindings, conflicting ids and invalid ordering return `pattern.expansion` without changing the source recipe. Parameters without a provably rational spelling in this schema return `pattern.expansion-exact-parameter`; they are not rounded. These are edit or implementation failures, not new impossible-geometry rules.
+
 ### 4.14 Mirror
 
 | Parameter | Value |
@@ -793,6 +801,8 @@ An unresolved or ambiguous reference fails the expanded recipe as usual. Any geo
 **Names.** Faces of `S` keep their origins. Faces of `M(S)` are `{"copy": {"instance": 1, "of": <origin>}}`.
 
 **Impossible.** `m = 0`.
+
+Both evaluators use the rational reflection formula directly, without normalising the plane normal. B-rep copies reverse loop traversal, preserve outward surface normals and retain all source definitions and incidence proofs. The field composes the inverse isometry into each source evaluator and transforms its independent face registry. `keep_original: false` removes the original's selectable origins even when the reflected geometry coincides with the seed.
 
 ### 4.15 Lattice
 

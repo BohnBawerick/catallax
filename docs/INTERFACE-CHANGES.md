@@ -725,3 +725,24 @@ Pieces: numbers, field, verification CLI
 Change: `current_operation_work` reads accepted request work without charging it; outside a budget it returns zero work and no exhaustion. `FaceId::index` exposes the owning field registry index. `mesh_plan_reported` retains `Diagnostics`, `Cost`, `FaceWork` and `SupportWork` for an executed display prefix, including refusals. Field verification manifests add `catallax-display-diagnostics/1` with per-support cells, maximum depth, decisions and work, and per-face boundary-query costs.
 Why: an exhausted shared numeric allowance must retain which face/support work consumed it, without changing the geometry's allowance.
 Migration: no existing signature, tolerance, allowance or refusal code changes. Diagnostic reads perform no geometric query and consume no work. Shared support costs include face query costs and must not be added to them. Numeric-budget refusal manifests preserve only these observations, never partial geometry or display certificates. Work fields are zero outside a request budget.
+
+## 2026-10-23: exact body patterns, mirrors and saved feature instances
+
+Pieces: shapes, topology, features, field, comparison, application
+Change: `Isometry` adds exact translations, rational-degree axis rotations, rational-plane reflections, composition, inversion and definition mapping. `transformed_body` copies topology and remaps analytic and derived definitions while transporting proven incidences. The B-rep and field recipe evaluators now implement `pattern` and `mirror`; `pattern_placement`, `mirror_placement` and `copy_origin` share their placements and naming rules. `catallax_app::pattern::{FeatureInstance, expand_feature}` saves explicitly bound feature graphs as ordinary recipe steps.
+Why: body copies must retain exact definitions and per-copy names, while a feature edit must persist its actual operation order and reference bindings.
+Migration: existing recipe/3 syntax, `Pose`, scalar queries, STEP options and work allowances are unchanged. New geometric-domain refusals are `pattern.zero-count`, `pattern.zero-axis` and `mirror.zero-normal`; the placement helper also rejects an out-of-range index with `pattern.instance`. Expansion failures use `pattern.expansion` or `pattern.expansion-exact-parameter`, without modifying the source recipe or rounding algebraic parameters. Editors supply durable instance step ids and explicit external input and origin maps, then persist the returned recipe. Face candidates remain in the field registry, but result ownership prevents unused coincident aliases from becoming selectable. Copied primitive comparison samples follow nested placements; algebraic coordinates that the rational sampling API cannot represent report `compare.sample-algebraic-placement` rather than a fabricated comparison.
+
+## 2026-10-23: certified separation for body-copy unions
+
+Pieces: features, measure
+Change: feature evaluation reuses the existing certified `bounding_box` query for a pattern's seed and for mirrors that retain the original. Exact affine enclosure propagation and strict box separation can prove copies disjoint, in which case union retains their immutable lumps directly. Other copies still use the existing Boolean engine.
+Why: disjoint trimmed bodies need no intersection of their unbounded carriers. Avoiding those intersections removes needless branch-tracing refusals and request-work exhaustion.
+Migration: no query signature, geometric tolerance, work allowance or existing Boolean operation changes. Enclosures prove separation only; loose or touching boxes never prove a geometric contact or move a face.
+
+## 2026-10-23: comparison sampling propagates numeric refusals
+
+Pieces: comparison, verification CLI
+Change: reverse comparison sampling uses the checked field-query API and records numeric refusals as unresolved observations instead of unwrapping them. Feature sampling stops on the first such failure. Request-wide exhaustion still returns `numbers.operation-budget` from the verification CLI.
+Why: a valid field face handle does not guarantee that a trim or orientation proof fits the caller's arithmetic allowance.
+Migration: no interface signature, tolerance, work allowance or successful answer changes. Callers receive the existing unresolved or numeric-budget outcome instead of `cli.internal-error` when a comparison exhausts its proof allowance.

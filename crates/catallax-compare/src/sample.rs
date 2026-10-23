@@ -36,14 +36,82 @@ fn placement(pose: &catallax_recipe::Pose) -> Pose {
     Pose::from_rational(rotation, RVector3::new(x, y, z))
 }
 
-/// Calls `visit` for each independently generated supporting-face candidate.
-/// Membership in the result is always established separately by the field query.
+fn copy_map(
+    origin: &Origin,
+    recipe: &Recipe,
+    dec: &mut catallax_numbers::Decider,
+    placements: &mut std::collections::BTreeMap<
+        (catallax_recipe::StepId, u32),
+        catallax_shapes::Isometry,
+    >,
+) -> Result<(Origin, Option<catallax_shapes::Isometry>), catallax_numbers::Refusal> {
+    let Role::Copy { instance, of } = &origin.role else {
+        return Ok((origin.clone(), None));
+    };
+    let (source, inner) = copy_map(of, recipe, dec, placements)?;
+    let outer = match placements.entry((origin.step.clone(), *instance)) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            let step = recipe.step(&origin.step).expect("compiled copy creator");
+            let map = match &step.op {
+                Operation::Pattern { layout, .. } => {
+                    catallax_features::pattern_placement(layout, *instance, dec)?
+                }
+                Operation::Mirror { plane, .. } => catallax_features::mirror_placement(plane)?,
+                _ => unreachable!("copy origin belongs to a pattern or mirror"),
+            };
+            entry.insert(map)
+        }
+    };
+    Ok((
+        source,
+        Some(inner.map_or_else(|| outer.clone(), |inner| inner.then(outer))),
+    ))
+}
+
+/// Samples every named primitive copy, including nested reflections.
 pub(crate) fn visit(
     recipe: &Recipe,
+    field: &catallax_field::Plan,
     n: u32,
     revision: &Revision,
     mut visit: impl FnMut(RPoint3, &Origin),
-) {
+) -> Result<(), catallax_numbers::Refusal> {
+    let mut dec = catallax_numbers::Decider::default();
+    let mut copies = std::collections::BTreeMap::<Origin, Vec<_>>::new();
+    let mut placements = std::collections::BTreeMap::new();
+    for face in field.faces() {
+        let (source, map) = copy_map(&face.origin, recipe, &mut dec, &mut placements)?;
+        copies.entry(source).or_default().push((&face.origin, map));
+    }
+    let mut failure = None;
+    stock(recipe, n, revision, |point, origin| {
+        if failure.is_some() {
+            return;
+        }
+        for (name, map) in copies.get(origin).into_iter().flatten() {
+            let point = match map {
+                Some(map) => match map.apply_rational_point(&point) {
+                    Some(point) => point,
+                    None => {
+                        failure = Some(catallax_numbers::Refusal::new(
+                            "compare.sample-algebraic-placement",
+                            "primitive copy sampling needs an exact rational placement",
+                        ));
+                        return;
+                    }
+                },
+                None => point.clone(),
+            };
+            visit(point, name);
+        }
+    });
+    failure.map_or(Ok(()), Err)
+}
+
+/// Calls `visit` for each independently generated supporting-face candidate.
+/// Membership in the result is always established separately by the field query.
+fn stock(recipe: &Recipe, n: u32, revision: &Revision, mut visit: impl FnMut(RPoint3, &Origin)) {
     let angular = circle(n);
     for step in &recipe.steps {
         if revision.is_cancelled() {

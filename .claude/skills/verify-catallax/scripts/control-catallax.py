@@ -392,6 +392,47 @@ def legacy(args):
     return result
 
 
+def part_edit_check(worker, problem, changes, relative, out, max_work):
+    edited = json.loads(json.dumps(problem))
+    for edit in changes:
+        step = next((s for s in edited['steps'] if s['id'] == edit['step']), None)
+        if step is None:
+            raise ValueError(f'{relative}: edit names unknown step {edit["step"]}')
+        if not edit['path']:
+            raise ValueError(f'{relative}: edit path is empty')
+        target = step
+        try:
+            for key in edit['path'][:-1]:
+                target = target[key]
+            key = edit['path'][-1]
+            previous = target[key]
+        except (KeyError, IndexError, TypeError) as error:
+            raise ValueError(f'{relative}: invalid edit path') from error
+        if not isinstance(previous, str) or not isinstance(edit['value'], str):
+            raise ValueError(f'{relative}: edit must replace an exact numeric parameter')
+        target[key] = edit['value']
+    dest = out / 'cases' / relative.removesuffix('.json') / 'edit'
+    dest.mkdir(parents=True, exist_ok=True)
+    request = {'format': CONTRACT, 'source': 'name-edit',
+               'problem': {'format': 'catallax-name-edit/1', 'recipe': problem,
+                           'edited_recipe': edited},
+               'max_work': max_work, 'out': str(dest)}
+    atomic(dest / 'request.json', request)
+    response = worker.answer(request)
+    atomic(dest / 'response.json', response)
+    check = response['manifest'].get('name_edit', {
+        'status': 'waiting', 'code': 'names.request-required',
+        'refusal': response['manifest'].get('refusal')})
+    if 'name_edit' not in response['manifest']:
+        blocked = next((op for op in response['operation_log']['operations']
+                        if op.get('refusal')), None)
+        if blocked:
+            check['blocked_operation'] = {key: blocked[key]
+                                          for key in ('kernel', 'id', 'operation', 'refusal')}
+    check['edits'] = changes
+    return check
+
+
 def parts(args):
     root = Path(args.inputs).resolve()
     edit_file = root / 'edit-checks.json'
@@ -407,6 +448,12 @@ def parts(args):
     unknown_edits = set(edits) - {file.relative_to(root).as_posix() for file in files}
     if unknown_edits:
         raise ValueError(f'edit checks name absent recipes: {sorted(unknown_edits)}')
+    problems = []
+    for file in files:
+        problem = json.loads(file.read_text())
+        if problem.get('format') != 'catallax-recipe/3':
+            raise ValueError(f'{file}: target must be catallax-recipe/3')
+        problems.append((file, file.relative_to(root).as_posix(), problem))
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     identity = file_hash(args.binary)
@@ -414,13 +461,16 @@ def parts(args):
     report = {'format': 'catallax-parts/1', 'binary_sha256': identity,
               'timing': {'cached': False, 'core': args.core, 'load_average': os.getloadavg(),
                          'claim': 'shared-machine observations, not quiet-core latency proof'},
-              'max_work': args.max_work, 'cases': []}
+              'max_work': args.max_work, 'status': 'running', 'edit_checks': {}, 'cases': []}
     try:
-        for file in files:
-            problem = json.loads(file.read_text())
-            if problem.get('format') != 'catallax-recipe/3':
-                raise ValueError(f'{file}: target must be catallax-recipe/3')
-            relative = file.relative_to(root).as_posix()
+        # Exact name rebuilds do not depend on display or sampled comparison.
+        # Persist every configured check before either can delay unrelated rows.
+        for _, relative, problem in problems:
+            if relative in edits:
+                report['edit_checks'][relative] = part_edit_check(
+                    worker, problem, edits[relative], relative, out, args.max_work)
+                atomic(out / 'parts.json', report)
+        for file, relative, problem in problems:
             case = {'recipe_file': relative, 'sha256': file_hash(file), 'name': problem['name']}
             for source in ('recipe', 'field', 'compare'):
                 dest = out / 'cases' / relative.removesuffix('.json') / source
@@ -431,40 +481,8 @@ def parts(args):
                 response = worker.answer(request)
                 atomic(dest / 'response.json', response)
                 case[source] = response
-            if relative in edits:
-                edited = json.loads(json.dumps(problem))
-                for edit in edits[relative]:
-                    step = next((s for s in edited['steps'] if s['id'] == edit['step']), None)
-                    if step is None:
-                        raise ValueError(f'{relative}: edit names unknown step {edit["step"]}')
-                    if not edit['path']:
-                        raise ValueError(f'{relative}: edit path is empty')
-                    target = step
-                    try:
-                        for key in edit['path'][:-1]:
-                            target = target[key]
-                        key = edit['path'][-1]
-                        previous = target[key]
-                    except (KeyError, IndexError, TypeError) as error:
-                        raise ValueError(f'{relative}: invalid edit path') from error
-                    if not isinstance(previous, str) or not isinstance(edit['value'], str):
-                        raise ValueError(f'{relative}: edit must replace an exact numeric parameter')
-                    target[key] = edit['value']
-                dest = out / 'cases' / relative.removesuffix('.json') / 'edit'
-                dest.mkdir(parents=True, exist_ok=True)
-                request = {'format': CONTRACT, 'source': 'name-edit',
-                           'problem': {'format': 'catallax-name-edit/1', 'recipe': problem,
-                                       'edited_recipe': edited},
-                           'max_work': args.max_work, 'out': str(dest)}
-                atomic(dest / 'request.json', request)
-                response = worker.answer(request)
-                atomic(dest / 'response.json', response)
-                case['edit_check'] = response['manifest'].get('name_edit', {
-                    'status': 'waiting', 'code': 'names.request-required',
-                    'refusal': response['manifest'].get('refusal')})
-                case['edit_check']['edits'] = edits[relative]
-            else:
-                case['edit_check'] = {'status': 'not-run', 'code': 'names.no-edit-specified'}
+            case['edit_check'] = report['edit_checks'].get(relative, {
+                'status': 'not-run', 'code': 'names.no-edit-specified'})
             brep = case['recipe']['manifest']
             step = out / 'cases' / relative.removesuffix('.json') / 'recipe' / 'answer.step'
             if step.exists() and brep.get('step'):
@@ -486,6 +504,10 @@ def parts(args):
             case['application_check'] = {'status': 'not-run', 'code': 'parts.application-loop-required'}
             report['cases'].append(case)
             atomic(out / 'parts.json', report)
+    except BaseException:
+        report['status'] = 'interrupted'
+        atomic(out / 'parts.json', report)
+        raise
     finally:
         worker.close()
     report['crashes'] = sum(c[s]['manifest'].get('status') in ('internal-error', 'invalid-question')
@@ -494,6 +516,7 @@ def parts(args):
                                              for c in report['cases'])
     report['step_failures'] = sum(c['step_check']['status'] == 'failed' for c in report['cases'])
     report['edit_failures'] = sum(c['edit_check']['status'] in ('failed', 'invalid') for c in report['cases'])
+    report['status'] = 'completed'
     atomic(out / 'parts.json', report)
     return report
 

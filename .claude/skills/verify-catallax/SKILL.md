@@ -39,6 +39,8 @@ Each completed request includes `operation_log` and writes `operations.json` plu
 
 Run `"$DRIVER" parts parts --binary target/release/catallax-verify --out "$PROOF/parts" --max-work 1000000 --json` for the target scoreboard. It runs B-rep, field and sampled comparison independently, including unsupported recipes. `parts/edit-checks.json` adds complete P1/P2/P4 parameter rebuilds and face/edge name resolution; inspect `edit_check.status` and its feature waits. Field registry lookup is not a boundary certificate. For real STEP imports pass `--occt-python` pointing at a scratch environment with `cadquery-ocp`. Inspect every refusal and `step_check`; missing bindings and absent exports are not passing checks. A passing import does not prove volume deviation, SolidDraft interaction or complete target-part acceptance. See `parts/README.md` and the protocol for the recorded dimensions and remaining gates.
 
+Configured edits checkpoint in top-level `edit_checks` before display work; finished geometry rows also carry `edit_check`. Inspect report `status` before claiming the full scoreboard completed. Budget-limited checks retain their first `blocked_operation`.
+
 ## Evidence
 
 Keep proof outside the repository. Capture the command, doctor output, exit code, `config.json`, `inputs.json`, `run.json`, per-case request/response/manifest/STEP files and matched-pair samples. Check the files themselves, including STEP presence or removal. A response alone does not prove the artifact side effect.

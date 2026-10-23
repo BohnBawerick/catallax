@@ -755,6 +755,8 @@ Change: `CanonicalStock` supplies exact stock-to-sketch/sweep definitions and co
 
 The opt-in `name-edit` adapter accepts `catallax-name-edit/1` with original and edited recipes. It rebuilds both kernels and reports surviving result-face origins and physical-edge references, missing names, unnamed entities and feature waits. Field registry lookup is labelled separately from boundary proof. `parts/edit-checks.json` specifies P1, P2 and P4 edits; scoreboard rows add `edit_check`, and failed or invalid edits increment `edit_failures`.
 
+Configured checks persist in a top-level `edit_checks` prepass before display or sampled comparison. Report `status` distinguishes running, completed and interrupted coverage. A budget refusal retains its first blocked operation without increasing the allowance. Geometry rows still carry their individual `edit_check`.
+
 Matched-pair timing artifacts record `load_average_before` and `load_average_after` on each pair, beside the pinned-core and alternating-order configuration.
 
 Why: persistent references depend on definitions and incidence, not topology arena positions, dimensions or evaluation-tape handles.

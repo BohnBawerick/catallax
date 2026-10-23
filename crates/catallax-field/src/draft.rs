@@ -92,6 +92,38 @@ fn clamp(value: Real, dec: &mut Decider) -> Result<Real, Refusal> {
 }
 
 impl Region {
+    /// Resolve a current binding to the nearest complete cached definition name.
+    /// Peeling to the original creator would conflate older copy instances.
+    pub(crate) fn source_origin<'a>(&self, origin: &'a Origin) -> Option<&'a Origin> {
+        let mut current = origin;
+        loop {
+            let present = match &self.cell {
+                Cell::Planar(cell) => cell
+                    .supports
+                    .iter()
+                    .any(|support| support.origins.contains(current)),
+                Cell::Polyhedral(cell) => {
+                    cell.faces.iter().any(|face| face.origins.contains(current))
+                }
+                Cell::Round(cell) => {
+                    cell.origins.contains(current)
+                        || cell
+                            .caps
+                            .iter()
+                            .flatten()
+                            .any(|(_, names)| names.contains(current))
+                }
+            };
+            if present {
+                return Some(current);
+            }
+            let catallax_recipe::Role::Copy { of, .. } = &current.role else {
+                return None;
+            };
+            current = of;
+        }
+    }
+
     fn new(cell: Cell, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut edges = BTreeSet::new();
         let mut include = |cycles: &[Vec<usize>]| {
@@ -536,17 +568,132 @@ impl Region {
         if inside { -best.sqrt() } else { best.sqrt() }
     }
 }
+struct Candidates {
+    components: Vec<Cell>,
+    source_faces: Vec<Vec<usize>>,
+}
+
+fn physical_sources(
+    skin: &catallax_features::draft::arrangement::Skin,
+    faces: &[Face],
+    source_faces: &[usize],
+) -> Vec<Vec<usize>> {
+    skin.patches
+        .iter()
+        .map(|patch| {
+            source_faces
+                .iter()
+                .copied()
+                .filter(|f| patch.origins.contains(&faces[*f].origin))
+                .collect()
+        })
+        .collect()
+}
+
+/// Cached geometry keeps its definition names. A whole-body copy adds a common
+/// outer copy prefix; use the nearest matching suffix, not the original creator,
+/// so previously distinct copy instances never acquire one another's names.
+pub(crate) fn remap_skin_origins(
+    skin: &mut catallax_features::draft::arrangement::Skin,
+    public: &[&Origin],
+) -> Result<(), Refusal> {
+    let mut bindings = std::collections::BTreeMap::<&Origin, (usize, BTreeSet<&Origin>)>::new();
+    for origin in public {
+        let mut current = *origin;
+        let mut depth = 0;
+        loop {
+            let binding = bindings
+                .entry(current)
+                .or_insert_with(|| (depth, BTreeSet::new()));
+            if depth < binding.0 {
+                binding.0 = depth;
+                binding.1.clear();
+            }
+            if depth == binding.0 {
+                binding.1.insert(*origin);
+            }
+            let catallax_recipe::Role::Copy { of, .. } = &current.role else {
+                break;
+            };
+            current = of;
+            depth += 1;
+        }
+    }
+    for patch in &mut skin.patches {
+        let mut names = BTreeSet::new();
+        for origin in &patch.origins {
+            let binding = bindings.get(origin).ok_or_else(|| {
+                Refusal::new(
+                    "draft.missing-source-origin",
+                    "cached source patch has no current named binding",
+                )
+            })?;
+            names.extend(binding.1.iter().map(|name| (**name).clone()));
+        }
+        patch.origins = names.into_iter().collect();
+    }
+    Ok(())
+}
+
+fn selected_patches(
+    skin: &catallax_features::draft::arrangement::Skin,
+    faces: &[Face],
+    source_faces: &[usize],
+    selected: &mut BTreeSet<usize>,
+) -> BTreeSet<usize> {
+    let patches: BTreeSet<_> = skin
+        .patches
+        .iter()
+        .enumerate()
+        .filter_map(|(i, patch)| {
+            selected
+                .iter()
+                .any(|f| patch.origins.contains(&faces[*f].origin))
+                .then_some(i)
+        })
+        .collect();
+    for i in &patches {
+        for f in source_faces {
+            if skin.patches[*i].origins.contains(&faces[*f].origin) {
+                selected.insert(*f);
+            }
+        }
+    }
+    patches
+}
 
 impl Plan {
     /// Returns distinct connected material interiors, not a convex decomposition.
     fn draft_cells(
         &self,
-        leaf: usize,
+        source: (
+            Option<usize>,
+            Option<&catallax_features::draft::arrangement::Skin>,
+        ),
         source_faces: &[usize],
         selected: &mut BTreeSet<usize>,
         definition: &DraftDefinition,
         dec: &mut Decider,
-    ) -> Result<Vec<Cell>, Refusal> {
+    ) -> Result<Candidates, Refusal> {
+        let (leaf, boundary) = source;
+        if let Some(skin) = boundary {
+            if skin.patches.is_empty() {
+                return Ok(Candidates {
+                    components: Vec::new(),
+                    source_faces: Vec::new(),
+                });
+            }
+            let patches = selected_patches(skin, &self.faces, source_faces, selected);
+            return Ok(Candidates {
+                components: skin
+                    .draft(&patches, definition, dec)?
+                    .into_iter()
+                    .map(|cell| Cell::Polyhedral(Box::new(cell)))
+                    .collect(),
+                source_faces: physical_sources(skin, &self.faces, source_faces),
+            });
+        }
+        let leaf = leaf.expect("a source is either a leaf or an extracted boundary");
         let planar = source_faces
             .iter()
             .all(|f| matches!(self.faces[*f].surface, Surface::Plane(_)));
@@ -562,9 +709,13 @@ impl Plan {
                     .map(|f| &self.faces[*f].origin)
                     .collect();
                 let skin = match &self.leaves[leaf] {
-                    geometry::Leaf::Feature(f) => f.planar_skin(&origins, dec)?,
+                    geometry::Leaf::Feature(f) => f.planar_skin(&origins, None, dec)?,
                     geometry::Leaf::Draft(region) => match &region.cell {
-                        Cell::Polyhedral(c) => c.skin(),
+                        Cell::Polyhedral(c) => {
+                            let mut skin = c.skin();
+                            remap_skin_origins(&mut skin, &origins)?;
+                            skin
+                        }
                         _ => {
                             return Err(Refusal::new(
                                 "draft.unsupported-arrangement",
@@ -579,43 +730,46 @@ impl Plan {
                         ));
                     }
                 };
-                let mut patches = BTreeSet::new();
-                for (i, patch) in skin.patches.iter().enumerate() {
-                    if selected
-                        .iter()
-                        .any(|f| patch.origins.contains(&self.faces[*f].origin))
-                    {
-                        patches.insert(i);
-                        for f in source_faces {
-                            if patch.origins.contains(&self.faces[*f].origin) {
-                                selected.insert(*f);
-                            }
-                        }
-                    }
-                }
-                return Ok(skin
-                    .draft(&patches, definition, dec)?
-                    .into_iter()
-                    .map(|c| Cell::Polyhedral(Box::new(c)))
-                    .collect());
+                let patches = selected_patches(&skin, &self.faces, source_faces, selected);
+                return Ok(Candidates {
+                    components: skin
+                        .draft(&patches, definition, dec)?
+                        .into_iter()
+                        .map(|cell| Cell::Polyhedral(Box::new(cell)))
+                        .collect(),
+                    source_faces: physical_sources(&skin, &self.faces, source_faces),
+                });
             }
         }
         // A convex carrier has only one physical patch. Its aliases all move
         // together; coplanar disconnected patches took the skin path above.
-        for face in source_faces {
-            if selected.iter().any(|s| {
-                self.faces[*face]
+        let mut groups: Vec<Vec<usize>> = Vec::new();
+        for f in source_faces {
+            if let Some(group) = groups.iter_mut().find(|group| {
+                self.faces[group[0]]
                     .support
-                    .same_definition(&self.faces[*s].support)
+                    .same_definition(&self.faces[*f].support)
             }) {
-                selected.insert(*face);
+                group.push(*f);
+            } else {
+                groups.push(vec![*f]);
+            }
+        }
+        for group in &groups {
+            if group.iter().any(|f| selected.contains(f)) {
+                selected.extend(group.iter().copied());
             }
         }
         let mut planes = Vec::new();
         let mut cylinder = None;
         let witness = self.leaves[leaf].draft_witness()?;
-        for f in source_faces {
+        for group in &groups {
+            let f = &group[0];
             let face = &self.faces[*f];
+            let origins: Vec<_> = group
+                .iter()
+                .map(|f| self.faces[*f].origin.clone())
+                .collect();
             let mut surface = face.surface.clone();
             if let Surface::Plane(plane) = &mut surface {
                 let side = geometry::sign(&witness.minus(&plane.origin).dot(&plane.normal), dec)?;
@@ -633,10 +787,7 @@ impl Plan {
                 surface = definition.support(&surface, true, dec)?.surface;
             }
             match surface {
-                Surface::Plane(plane) => planes.push(PlanePatch {
-                    plane,
-                    origins: vec![face.origin.clone()],
-                }),
+                Surface::Plane(plane) => planes.push(PlanePatch { plane, origins }),
                 Surface::Cylinder(_) | Surface::Cone(_) => {
                     let Surface::Cylinder(c) = &face.surface else {
                         return Err(Refusal::new(
@@ -650,7 +801,7 @@ impl Plan {
                             "mixed curved supports need oriented curved cells",
                         ));
                     }
-                    cylinder = Some((c.clone(), vec![face.origin.clone()]));
+                    cylinder = Some((c.clone(), origins));
                 }
                 _ => {
                     return Err(Refusal::new(
@@ -683,27 +834,41 @@ impl Plan {
                 )
             })?)
         };
-        Ok(vec![cell])
+        Ok(Candidates {
+            components: vec![cell],
+            source_faces: groups,
+        })
     }
 
     pub(crate) fn draft(
         &mut self,
-        source: (usize, &[usize]),
+        source: (
+            usize,
+            &[usize],
+            Option<&catallax_features::draft::arrangement::Skin>,
+        ),
         refs: &[FaceRef],
         definition: &DraftDefinition,
         keep_regions: Option<&[catallax_recipe::Point3]>,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        let (source, source_faces) = source;
-        let Instruction::Leaf(leaf) = self.instructions[source] else {
-            if source == 0 && refs.is_empty() {
-                return Ok(0);
-            }
-            return Err(Refusal::new(
-                "draft.unsupported-arrangement",
-                "field draft needs the boundary of its Boolean input",
-            ));
+        let (source, source_faces, boundary) = source;
+        let actual_faces = boundary.map(|skin| {
+            source_faces
+                .iter()
+                .copied()
+                .filter(|f| {
+                    skin.patches
+                        .iter()
+                        .any(|patch| patch.origins.contains(&self.faces[*f].origin))
+                })
+                .collect::<Vec<_>>()
+        });
+        let source_faces = actual_faces.as_deref().unwrap_or(source_faces);
+        let leaf = match self.instructions[source] {
+            Instruction::Leaf(leaf) => Some(leaf),
+            _ => None,
         };
         let mut selected = BTreeSet::new();
         for reference in refs {
@@ -726,7 +891,16 @@ impl Plan {
             }
             selected.extend(matches);
         }
-        let components = self.draft_cells(leaf, source_faces, &mut selected, definition, dec)?;
+        let Candidates {
+            components,
+            source_faces: physical_sources,
+        } = self.draft_cells(
+            (leaf, boundary),
+            source_faces,
+            &mut selected,
+            definition,
+            dec,
+        )?;
         let mut retained = vec![false; components.len()];
         if let Some(points) = keep_regions {
             for p in points {
@@ -802,14 +976,19 @@ impl Plan {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let removed: BTreeSet<_> = source_faces
-            .iter()
-            .filter_map(|f| {
-                let origin = &self.faces[*f].origin;
-                (!surviving.contains(origin)).then(|| vec![origin.clone()])
-            })
-            .collect();
-        for source in removed {
+        for group in physical_sources {
+            if !group
+                .iter()
+                .all(|f| !surviving.contains(&self.faces[*f].origin))
+            {
+                continue;
+            }
+            let source = group
+                .iter()
+                .map(|f| self.faces[*f].origin.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
             self.consumed.push(catallax_features::ConsumedFace {
                 step: step.clone(),
                 source,

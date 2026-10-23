@@ -11,6 +11,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 // Carrier and canonical vertex set identify the incident cell/face pairs.
 type FacetOwners = BTreeMap<(usize, Vec<usize>), Vec<(usize, usize)>>;
+type Classifier = fn(&Point3, &mut Decider) -> Result<bool, Refusal>;
+type OriginResolver = fn(&Point3, &Vector3, &mut Decider) -> Result<Vec<Origin>, Refusal>;
 
 /// One oriented input patch; holes have the opposite loop winding.
 #[derive(Clone, Debug)]
@@ -337,7 +339,33 @@ fn join(parent: &mut [usize], a: usize, b: usize) {
     parent[a.max(b)] = a.min(b);
 }
 
+fn cell_witness(vertices: &[Point3], cell: &Cell, dec: &mut Decider) -> Result<Point3, Refusal> {
+    let (sum, count) = cell
+        .faces
+        .iter()
+        .flat_map(|f| &f.cycle)
+        .fold((Vector3::zero(), 0_usize), |(sum, n), v| {
+            (sum.plus(&vertices[*v].minus(&Point3::origin())), n + 1)
+        });
+    reduced_point(
+        Point3::origin().plus(&sum.scaled(&(&Real::one() / &Real::from_i64(count as i64)))),
+        dec,
+    )
+}
+
 impl Skin {
+    /// Exact membership of a carrier-interior point in a source patch.
+    /// Arrangement facet interiors cannot lie on the patch's trim edges.
+    pub fn contains_patch(
+        &self,
+        patch: &Patch,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        Ok(sign(&value(&patch.plane, point), dec)? == Sign::Zero
+            && patch_winding(patch, &self.vertices, point, dec)? != 0)
+    }
+
     /// Rebuilds all candidate cells, discards swallowed patches and separates
     /// connected interiors. Neutral-plane or explicit retention is applied by
     /// the caller to these components, never to individual convex pieces.
@@ -347,6 +375,38 @@ impl Skin {
         definition: &DraftDefinition,
         dec: &mut Decider,
     ) -> Result<Vec<Polyhedron>, Refusal> {
+        self.arrange::<Classifier, OriginResolver>(Some((selected, definition)), None, dec)
+    }
+
+    /// Extracts the physical boundary of a bounded regular solid whose carriers
+    /// occur in this skin. The classifier labels full-dimensional cells; the
+    /// resolver supplies surviving input origins on each outward boundary tile.
+    /// Construction-box faces are never allowed to become output faces.
+    pub fn partition<C, R>(
+        &self,
+        classify: C,
+        resolve: R,
+        dec: &mut Decider,
+    ) -> Result<Vec<Polyhedron>, Refusal>
+    where
+        C: FnMut(&Point3, &mut Decider) -> Result<bool, Refusal>,
+        R: FnMut(&Point3, &Vector3, &mut Decider) -> Result<Vec<Origin>, Refusal>,
+    {
+        self.arrange(None, Some((classify, resolve)), dec)
+    }
+
+    fn arrange<C, R>(
+        &self,
+        replacement: Option<(&BTreeSet<usize>, &DraftDefinition)>,
+        mut classified: Option<(C, R)>,
+        dec: &mut Decider,
+    ) -> Result<Vec<Polyhedron>, Refusal>
+    where
+        C: FnMut(&Point3, &mut Decider) -> Result<bool, Refusal>,
+        R: FnMut(&Point3, &Vector3, &mut Decider) -> Result<Vec<Origin>, Refusal>,
+    {
+        let empty = BTreeSet::new();
+        let selected = replacement.map_or(&empty, |(selected, _)| selected);
         let mut patches = self.patches.clone();
         for (i, patch) in patches.iter_mut().enumerate() {
             if sign(
@@ -359,7 +419,9 @@ impl Skin {
                 }
             }
             if selected.contains(&i) {
-                let Surface::Plane(plane) = definition
+                let Surface::Plane(plane) = replacement
+                    .expect("a selection is supplied only with its draft law")
+                    .1
                     .support(&Surface::Plane(patch.plane.clone()), true, dec)?
                     .surface
                 else {
@@ -372,6 +434,41 @@ impl Skin {
         for (f, patch) in patches.iter().enumerate() {
             for i in patch.loops.iter().flatten() {
                 incident[*i].insert(f);
+            }
+        }
+        // Arrangement subdivisions may leave degree-two points on a physical
+        // edge. They are not vertex fans and must not constrain its new line.
+        let mut redundant = BTreeSet::new();
+        for (i, faces) in incident.iter().enumerate() {
+            if faces.len() != 2 || !faces.iter().any(|f| selected.contains(f)) {
+                continue;
+            }
+            let mut straight = true;
+            for face in faces {
+                for cycle in &patches[*face].loops {
+                    if let Some(j) = cycle.iter().position(|v| *v == i) {
+                        let a = &self.vertices[cycle[(j + cycle.len() - 1) % cycle.len()]];
+                        let b = &self.vertices[i];
+                        let c = &self.vertices[cycle[(j + 1) % cycle.len()]];
+                        if sign(&b.minus(a).cross(&c.minus(b)).norm_squared(), dec)? != Sign::Zero {
+                            straight = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if straight {
+                redundant.insert(i);
+            }
+        }
+        if !redundant.is_empty() {
+            for patch in &mut patches {
+                for cycle in &mut patch.loops {
+                    cycle.retain(|v| !redundant.contains(v));
+                }
+            }
+            for i in redundant {
+                incident[i].clear();
             }
         }
         let mut moved = self.vertices.clone();
@@ -552,7 +649,7 @@ impl Skin {
             let q = centre(&vertices, &facet.cycle);
             let mut positive = BTreeSet::new();
             let mut negative = BTreeSet::new();
-            if let Some(raw) = carriers.get(&support) {
+            if let Some(raw) = carriers.get(&support).filter(|_| classified.is_none()) {
                 for i in raw {
                     let patch = &patches[*i];
                     let winding = patch_winding(patch, &moved, &q, dec)?;
@@ -589,26 +686,55 @@ impl Skin {
         }
         let mut winding = vec![None; exterior + 1];
         winding[exterior] = Some(0_i32);
-        let mut queue = VecDeque::from([exterior]);
-        while let Some(at) = queue.pop_front() {
-            for i in &adjacent[at] {
-                let face = &interfaces[*i];
-                let (to, delta) = if at == face.from {
-                    (face.to, -face.delta)
-                } else {
-                    (face.from, face.delta)
-                };
-                let next = winding[at].expect("queued label") + delta;
-                if let Some(previous) = winding[to] {
-                    if previous != next {
-                        return Err(failure(
-                            "draft.contradictory-orientation",
-                            "candidate patch winding is path dependent",
-                        ));
+        let mut witnesses = if classified.is_some() {
+            vec![None; exterior]
+        } else {
+            Vec::new()
+        };
+        if let Some((classify, resolve)) = &mut classified {
+            for (i, cell) in cells.iter().enumerate() {
+                let witness = cell_witness(&vertices, cell, dec)?;
+                let inside = classify(&witness, dec)?;
+                winding[i] = Some(i32::from(inside));
+                if inside {
+                    witnesses[i] = Some(witness);
+                }
+            }
+            for interface in &mut interfaces {
+                let from = winding[interface.from] == Some(1);
+                let to = winding[interface.to] == Some(1);
+                if from == to {
+                    continue;
+                }
+                let facet = &interface.facet;
+                let normal = planes[facet.support].normal.scaled(&Real::from_i64(
+                    if facet.same_sense == from { 1 } else { -1 },
+                ));
+                interface.origins = resolve(&centre(&vertices, &facet.cycle), &normal, dec)?;
+                interface.delta = i32::from(from) - i32::from(to);
+            }
+        } else {
+            let mut queue = VecDeque::from([exterior]);
+            while let Some(at) = queue.pop_front() {
+                for i in &adjacent[at] {
+                    let face = &interfaces[*i];
+                    let (to, delta) = if at == face.from {
+                        (face.to, -face.delta)
+                    } else {
+                        (face.from, face.delta)
+                    };
+                    let next = winding[at].expect("queued label") + delta;
+                    if let Some(previous) = winding[to] {
+                        if previous != next {
+                            return Err(failure(
+                                "draft.contradictory-orientation",
+                                "candidate patch winding is path dependent",
+                            ));
+                        }
+                    } else {
+                        winding[to] = Some(next);
+                        queue.push_back(to);
                     }
-                } else {
-                    winding[to] = Some(next);
-                    queue.push_back(to);
                 }
             }
         }
@@ -750,18 +876,11 @@ impl Skin {
             let terms = component
                 .into_iter()
                 .map(|i| -> Result<ConvexTerm, Refusal> {
-                    let (sum, count) = cells[i]
-                        .faces
-                        .iter()
-                        .flat_map(|f| &f.cycle)
-                        .fold((Vector3::zero(), 0_usize), |(sum, n), v| {
-                            (sum.plus(&vertices[*v].minus(&Point3::origin())), n + 1)
-                        });
-                    let witness = reduced_point(
-                        Point3::origin()
-                            .plus(&sum.scaled(&(&Real::one() / &Real::from_i64(count as i64)))),
-                        dec,
-                    )?;
+                    let witness = if let Some(point) = witnesses.get_mut(i).and_then(Option::take) {
+                        point
+                    } else {
+                        cell_witness(&vertices, &cells[i], dec)?
+                    };
                     Ok(ConvexTerm {
                         sides: cells[i]
                             .faces
@@ -779,7 +898,7 @@ impl Skin {
                 terms,
             });
         }
-        if result.is_empty() {
+        if result.is_empty() && replacement.is_some() {
             return Err(failure(
                 "draft.reversed-solid",
                 "replaced boundary has no full-dimensional material cell",

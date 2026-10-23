@@ -27,6 +27,56 @@ fn recipe(mut steps: Vec<Json>, draft: Json) -> Recipe {
     steps.push(draft);
     Recipe::parse(&json!({"format":"catallax-recipe/3","name":"draft regression","steps":steps,"result":"drafted"}).to_string()).unwrap()
 }
+
+#[test]
+fn disconnected_coplanar_faces_do_not_share_only_their_role_names() {
+    let mut left = block()[0].clone();
+    left["id"] = json!("left");
+    left["size"] = json!(["2", "2", "8"]);
+    let mut right = left.clone();
+    right["id"] = json!("right");
+    right["pose"]["translation"] = json!(["6", "0", "0"]);
+    let mut bridge = block()[0].clone();
+    bridge["id"] = json!("bridge");
+    bridge["size"] = json!(["8", "2", "1"]);
+    let steps = vec![
+        left,
+        right,
+        bridge,
+        json!({"id":"arms","op":"boolean","kind":"union","target":"left","tool":"right"}),
+        json!({"id":"source","op":"boolean","kind":"union","target":"arms","tool":"bridge"}),
+    ];
+    let mut draft = operation("floor");
+    draft["body"] = json!("source");
+    draft["faces"] = json!([{"face":{"step":"bridge","role":"end"}}]);
+    draft["pull"] = json!(["1", "0", "0"]);
+    draft["neutral"]["normal"] = json!(["1", "0", "0"]);
+    draft["angle"] = json!("-45");
+    let recipe = recipe(steps, draft);
+    let field = Plan::compile(&recipe).unwrap();
+    for (creator, own, other) in [
+        ("left", ["1", "1", "8"], ["7", "1", "8"]),
+        ("right", ["7", "1", "8"], ["1", "1", "8"]),
+    ] {
+        let origin = serde_json::from_value(json!({"step":creator,"role":"end"})).unwrap();
+        let id = field.select(&origin).unwrap();
+        assert_eq!(
+            field
+                .face_query(id, &point(own), &mut Workspace::default())
+                .unwrap()
+                .state,
+            catallax_field::FaceState::OnFace
+        );
+        assert_eq!(
+            field
+                .face_query(id, &point(other), &mut Workspace::default())
+                .unwrap()
+                .state,
+            catallax_field::FaceState::NotOnFace
+        );
+    }
+}
+
 fn both(recipe: &Recipe, cases: &[([&str; 3], Location)]) {
     let mut brep = evaluate(recipe, &mut Decider::default()).unwrap();
     assert!(brep.model.check(brep.result).is_empty());
@@ -72,6 +122,295 @@ fn split_u(keep: Option<Json>) -> Recipe {
         draft["keep_regions"] = keep;
     }
     recipe(steps, draft)
+}
+#[test]
+fn redrafting_a_mirrored_nonconvex_definition_keeps_its_copy_binding() {
+    let mut document = serde_json::to_value(split_u(None)).unwrap();
+    document["steps"][2]["angle"] = json!("-45");
+    let source: catallax_recipe::Origin =
+        serde_json::from_value(document["steps"][2]["faces"][0]["face"].clone()).unwrap();
+    let copied = catallax_features::copy_origin(
+        &catallax_recipe::StepId::new("reflected").unwrap(),
+        1,
+        &source,
+    );
+    document["steps"].as_array_mut().unwrap().push(json!({
+        "id":"reflected","op":"mirror","body":"drafted","keep_original":false,
+        "plane":{"point":["0","0","0"],"normal":["1","0","0"]}
+    }));
+    document["steps"].as_array_mut().unwrap().push(json!({
+        "id":"redrafted","op":"draft","body":"reflected","faces":[{"face":copied}],
+        "pull":["-1","0","0"],"neutral":{"point":["0","0","0"],"normal":["1","0","0"]},
+        "angle":"0"
+    }));
+    document["result"] = json!("redrafted");
+    let recipe = Recipe::parse(&document.to_string()).unwrap();
+    both(
+        &recipe,
+        &[
+            (["-4", "-1", "1/2"], Location::Inside),
+            (["-4", "-1", "4"], Location::Outside),
+            (["-1", "-1", "4"], Location::Inside),
+            (["-7", "-1", "4"], Location::Inside),
+        ],
+    );
+    let field = Plan::compile(&recipe).unwrap();
+    let query = field
+        .face_query(
+            field.select(&copied).unwrap(),
+            &point(["-4", "-1", "1"]),
+            &mut Workspace::default(),
+        )
+        .unwrap();
+    assert_eq!(query.state, catallax_field::FaceState::OnFace);
+}
+
+#[test]
+fn coincident_cylindrical_sources_draft_once_and_keep_both_origin_bindings() {
+    let mut steps = cylinder("8");
+    let mut alias = steps[0].clone();
+    alias["id"] = json!("alias");
+    steps.push(alias);
+    steps.push(json!({"id":"source","op":"boolean","kind":"union","target":"base","tool":"alias"}));
+    let mut draft = operation("wall");
+    draft["body"] = json!("source");
+    let recipe = recipe(steps, draft);
+    both(
+        &recipe,
+        &[
+            (["4", "0", "3"], Location::Inside),
+            (["5", "0", "3"], Location::Boundary),
+            (["6", "0", "3"], Location::Outside),
+        ],
+    );
+    let field = Plan::compile(&recipe).unwrap();
+    for creator in ["base", "alias"] {
+        let origin = serde_json::from_value(json!({
+            "step":creator,"role":{"side":{"segment":"wall"}}
+        }))
+        .unwrap();
+        let query = field
+            .face_query(
+                field.select(&origin).unwrap(),
+                &point(["5", "0", "3"]),
+                &mut Workspace::default(),
+            )
+            .unwrap();
+        assert_eq!(query.state, catallax_field::FaceState::OnFace);
+    }
+}
+
+fn boolean_cut_u(through: bool) -> Recipe {
+    let mut base = block()[0].clone();
+    base["size"] = json!(["8", "2", "8"]);
+    base["pose"]["translation"] = json!(["0", "-2", "0"]);
+    let mut steps = vec![base];
+    let mut draft = operation("floor");
+    if through {
+        steps.push(json!({
+            "id":"notch-profile","op":"sketch",
+            "plane":{"rotation":["1","1","0","0"],"translation":["0","0","0"]},
+            "loops":[[
+                {"kind":"line","id":"floor","to":["6","1"]},
+                {"kind":"line","id":"a","to":["6","9"]},
+                {"kind":"line","id":"b","to":["2","9"]},
+                {"kind":"line","id":"c","to":["2","1"]}
+            ]]
+        }));
+        steps.push(
+            json!({"id":"source","op":"extrude_through","target":"base","profile":"notch-profile"}),
+        );
+        draft["faces"][0]["face"]["step"] = json!("source");
+    } else {
+        let mut notch = block()[0].clone();
+        notch["id"] = json!("notch");
+        notch["size"] = json!(["4", "4", "8"]);
+        notch["pose"]["translation"] = json!(["2", "-3", "1"]);
+        steps.push(notch);
+        steps.push(
+            json!({"id":"source","op":"boolean","kind":"subtract","target":"base","tool":"notch"}),
+        );
+        draft["faces"][0]["face"] = json!({"step":"notch","role":"start"});
+    }
+    draft["body"] = json!("source");
+    draft["pull"] = json!(["1", "0", "0"]);
+    draft["neutral"]["normal"] = json!(["1", "0", "0"]);
+    recipe(steps, draft)
+}
+
+#[test]
+fn coactive_origins_do_not_move_a_disconnected_piece_with_only_the_alias() {
+    let mut seed = block()[0].clone();
+    seed["id"] = json!("seed");
+    seed["size"] = json!(["14", "8", "4"]);
+    let mut left = block()[0].clone();
+    left["id"] = json!("left");
+    left["size"] = json!(["6", "8", "4"]);
+    let mut tool = block()[0].clone();
+    tool["id"] = json!("tool");
+    tool["size"] = json!(["4", "10", "6"]);
+    tool["pose"]["translation"] = json!(["6", "-1", "-1"]);
+    let steps = vec![
+        seed,
+        left,
+        tool,
+        json!({"id":"split","op":"boolean","kind":"subtract","target":"seed","tool":"tool"}),
+        json!({"id":"source","op":"boolean","kind":"union","target":"left","tool":"split"}),
+    ];
+    let mut draft = operation("x_max");
+    draft["body"] = json!("source");
+    draft["faces"] = json!([{"face":{"step":"left","role":"end"}}]);
+    draft["pull"] = json!(["1", "0", "0"]);
+    draft["neutral"]["normal"] = json!(["1", "0", "0"]);
+    draft["keep_regions"] = json!([["1", "4", "1"], ["11", "4", "1"]]);
+    let recipe = recipe(steps, draft);
+    both(
+        &recipe,
+        &[
+            (["1", "4", "2"], Location::Inside),
+            (["1", "4", "7/2"], Location::Outside),
+            (["11", "4", "7/2"], Location::Inside),
+            (["11", "4", "4"], Location::Boundary),
+        ],
+    );
+    let field = Plan::compile(&recipe).unwrap();
+    let query = field.proven(&point(["11", "4", "5"]), &mut Workspace::default());
+    assert!(matches!(query.value, Value::TrueDistance(interval) if interval.contains(1.0)));
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    let expected: std::collections::BTreeSet<_> = built
+        .consumed
+        .iter()
+        .map(|event| (&event.source, &event.by))
+        .collect();
+    let actual: std::collections::BTreeSet<_> = field
+        .consumed_faces()
+        .iter()
+        .map(|event| (&event.source, &event.by))
+        .collect();
+    assert_eq!(
+        actual, expected,
+        "consumption retains the complete physical source origin set"
+    );
+}
+
+#[test]
+fn boolean_boundary_draft_preserves_named_creators_despite_shared_geometry() {
+    for reflected in [false, true] {
+        let mut masked = block()[0].clone();
+        masked["id"] = json!("masked");
+        let mut gate = block()[0].clone();
+        gate["id"] = json!("gate");
+        gate["size"] = json!(["1", "1", "1"]);
+        gate["pose"]["translation"] = json!(["40", "40", "40"]);
+        let mut steps = block();
+        steps.extend([
+            masked,
+            gate,
+            json!({"id":"masked-result","op":"boolean","kind":"intersect","target":"masked","tool":"gate"}),
+            json!({"id":"source","op":"boolean","kind":"union","target":"base","tool":"masked-result"}),
+        ]);
+        let mut draft = operation("x_max");
+        draft["body"] = json!("source");
+        let base: catallax_recipe::Origin =
+            serde_json::from_value(draft["faces"][0]["face"].clone()).unwrap();
+        let mut masked = base.clone();
+        masked.step = catallax_recipe::StepId::new("masked").unwrap();
+        let (base, masked) = if reflected {
+            steps.push(json!({
+                "id":"reflected","op":"mirror","body":"source","keep_original":false,
+                "plane":{"point":["0","0","0"],"normal":["1","0","0"]}
+            }));
+            draft["body"] = json!("reflected");
+            let id = catallax_recipe::StepId::new("reflected").unwrap();
+            (
+                catallax_features::copy_origin(&id, 1, &base),
+                catallax_features::copy_origin(&id, 1, &masked),
+            )
+        } else {
+            (base, masked)
+        };
+        draft["faces"][0]["face"] = serde_json::to_value(&base).unwrap();
+        let recipe = recipe(steps, draft);
+        let (inside, boundary, outside) = if reflected {
+            (["-4", "4", "3"], ["-5", "4", "3"], ["-6", "4", "3"])
+        } else {
+            (["4", "4", "3"], ["5", "4", "3"], ["6", "4", "3"])
+        };
+        both(
+            &recipe,
+            &[
+                (inside, Location::Inside),
+                (boundary, Location::Boundary),
+                (outside, Location::Outside),
+            ],
+        );
+        let field = Plan::compile(&recipe).unwrap();
+        for (origin, expected) in [
+            (&base, catallax_field::FaceState::OnFace),
+            (&masked, catallax_field::FaceState::NotOnFace),
+        ] {
+            let query = field
+                .face_query(
+                    field.select(origin).unwrap(),
+                    &point(boundary),
+                    &mut Workspace::default(),
+                )
+                .unwrap();
+            assert_eq!(query.state, expected, "{origin:?}");
+        }
+        assert!(
+            field.consumed_faces().is_empty(),
+            "already-absent masked operands must not become draft consumption"
+        );
+    }
+}
+
+#[test]
+fn a_boolean_cut_input_rebuilds_and_drafts_its_actual_trimmed_boundary() {
+    let recipe = boolean_cut_u(false);
+    both(
+        &recipe,
+        &[
+            (["1", "-1", "4"], Location::Inside),
+            (["7", "-1", "4"], Location::Outside),
+            (["4", "-1", "1/2"], Location::Outside),
+        ],
+    );
+    let field = Plan::compile(&recipe).unwrap();
+    let query = field.proven(&point(["3", "-1", "-1"]), &mut Workspace::default());
+    assert!(
+        matches!(query.value, Value::TrueDistance(interval) if interval.contains(2_f64.sqrt()))
+    );
+    let notch = catallax_recipe::StepId::new("notch").unwrap();
+    assert!(field.consumed_faces().iter().any(|event| {
+        event
+            .source
+            .iter()
+            .any(|origin| origin.step == notch && origin.role == Role::Start)
+    }));
+}
+
+#[test]
+fn through_cut_source_clipping_never_publishes_construction_caps() {
+    let recipe = boolean_cut_u(true);
+    both(
+        &recipe,
+        &[
+            (["1", "-1", "4"], Location::Inside),
+            (["7", "-1", "4"], Location::Outside),
+            (["1", "-3", "4"], Location::Outside),
+        ],
+    );
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    assert_eq!(built.model.counts(built.result).faces, 6);
+    let field = Plan::compile(&recipe).unwrap();
+    let query = field.proven(&point(["1", "-3", "4"]), &mut Workspace::default());
+    assert!(matches!(query.value, Value::TrueDistance(interval) if interval.contains(1.0)));
+    assert!(field.consumed_faces().iter().any(|event| {
+        event.source.iter().any(
+            |origin| matches!(&origin.role, Role::Side{segment,..} if segment.to_string()=="floor"),
+        )
+    }));
 }
 
 #[test]

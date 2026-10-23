@@ -76,16 +76,34 @@ impl Feature {
     pub(crate) fn planar_skin(
         &self,
         origins: &[&Origin],
+        through_bound: Option<&Rational>,
         dec: &mut Decider,
     ) -> Result<catallax_features::draft::arrangement::Skin, Refusal> {
         use catallax_features::draft::arrangement::{Patch, Skin};
-        let Sweep::Extrude {
-            vector,
-            through: false,
-        } = &self.sweep
-        else {
+        let Sweep::Extrude { vector, through } = &self.sweep else {
             return Err(bad("draft.unsupported-arrangement"));
         };
+        let (offset, extent) = if *through {
+            let bound = through_bound.ok_or_else(|| bad("draft.unsupported-arrangement"))?;
+            let mut height = Rational::zero();
+            for corner in 0..8 {
+                let [x, y, z] = [0, 1, 2].map(|axis| {
+                    if corner & (1 << axis) == 0 {
+                        -bound
+                    } else {
+                        bound.clone()
+                    }
+                });
+                let local = self.inverse.apply_point(&RPoint3::new(x, y, z).to_real());
+                let ball = geometry::enclose(&local.z, 128, dec)?;
+                height = height.max(ball.lo().abs().max(ball.hi().abs()));
+            }
+            let k = (height + Rational::one()) / vector.z.abs();
+            (vector.scaled(&(-&k)), vector.scaled(&(&k + &k)))
+        } else {
+            (RVector3::zero(), vector.clone())
+        };
+        let vector = &extent;
         if self.fillet.is_some() || self.loops.iter().flatten().any(|e| e.circle.is_some()) {
             return Err(bad("draft.unsupported-arrangement"));
         }
@@ -129,16 +147,18 @@ impl Feature {
             let follows = (area.sign() == desired) == (vector.z.sign() == Sign::Positive);
             let start = vertices.len();
             for edge in edges {
-                vertices.push(placement.apply_point(&point(&edge.start).to_real()));
+                vertices.push(placement.apply_point(&point(&edge.start).plus(&offset).to_real()));
             }
             for edge in edges {
-                vertices.push(placement.apply_point(&point(&edge.start).plus(vector).to_real()));
+                vertices.push(
+                    placement.apply_point(&point(&edge.start).plus(&offset).plus(vector).to_real()),
+                );
             }
             let mut cap: Vec<_> = (start..start + edges.len()).collect();
             if area.sign() != desired {
                 cap.reverse();
             }
-            caps.push((depth, cap));
+            caps.push((depth, index, cap));
             for (i, edge) in edges.iter().enumerate() {
                 let j = (i + 1) % edges.len();
                 let mut normal = point(&edge.end)
@@ -148,7 +168,10 @@ impl Feature {
                 if !follows {
                     normal = normal.scaled(&Real::from_i64(-1));
                 }
-                let names=origins.iter().filter(|o|matches!(source_role(o),Role::Side{segment,..} if edge.ids.contains(segment))).map(|o|(**o).clone()).collect();
+                let names: Vec<Origin> = origins.iter().filter(|o|matches!(source_role(o),Role::Side{segment,..} if edge.ids.contains(segment))).map(|o|(**o).clone()).collect();
+                if names.is_empty() {
+                    return Err(bad("draft.missing-source-origin"));
+                }
                 patches.push(Patch {
                     plane: Plane {
                         origin: vertices[start + i].clone(),
@@ -165,7 +188,7 @@ impl Feature {
                 });
             }
         }
-        caps.sort_by_key(|(depth, _)| *depth);
+        caps.sort_by_key(|(depth, index, _)| (*depth, *index));
         let normal = placement.apply_vector(&Vector3::new(
             Real::zero(),
             Real::zero(),
@@ -177,33 +200,50 @@ impl Feature {
         ));
         let reference =
             placement.apply_vector(&Vector3::new(Real::one(), Real::zero(), Real::zero()));
-        let mut start_loops = Vec::new();
-        let mut end_loops = Vec::new();
-        for (_, cycle) in caps {
-            let count = cycle.len();
-            end_loops.push(cycle.iter().map(|i| i + count).collect());
-            start_loops.push(cycle);
+        let origin = placement.apply_point(&Point3::origin().plus(&offset.to_real()));
+        for (depth, index, outer) in &caps {
+            if depth % 2 != 0 {
+                continue;
+            }
+            let mut start_loops = vec![outer.clone()];
+            for (hole_depth, hole_index, hole) in &caps {
+                if *hole_depth == depth + 1
+                    && profile::loop_location(
+                        &self.loops[*index],
+                        &profile::real(&self.loops[*hole_index][0].start),
+                        dec,
+                    )? == Location::Inside
+                {
+                    start_loops.push(hole.clone());
+                }
+            }
+            let end_loops = start_loops
+                .iter()
+                .map(|cycle| {
+                    let count = cycle.len();
+                    cycle.iter().map(|i| i + count).collect()
+                })
+                .collect();
+            patches.push(Patch {
+                plane: Plane {
+                    origin: origin.clone(),
+                    normal: normal.scaled(&Real::from_i64(-1)),
+                    ref_dir: reference.clone(),
+                },
+                loops: start_loops,
+                origins: named(&Role::Start),
+            });
+            patches.push(Patch {
+                plane: Plane {
+                    origin: origin.plus(&sweep),
+                    normal: normal.clone(),
+                    ref_dir: reference.clone(),
+                },
+                loops: end_loops,
+                origins: named(&Role::End),
+            });
         }
-        let origin = placement.apply_point(&Point3::origin());
-        patches.push(Patch {
-            plane: Plane {
-                origin: origin.clone(),
-                normal: normal.scaled(&Real::from_i64(-1)),
-                ref_dir: reference.clone(),
-            },
-            loops: start_loops,
-            origins: named(&Role::Start),
-        });
-        patches.push(Patch {
-            plane: Plane {
-                origin: origin.plus(&sweep),
-                normal,
-                ref_dir: reference,
-            },
-            loops: end_loops,
-            origins: named(&Role::End),
-        });
-        if patches.iter().any(|p| p.origins.is_empty()) {
+        if !through && patches.iter().any(|p| p.origins.is_empty()) {
             return Err(bad("draft.missing-source-origin"));
         }
         Ok(Skin { vertices, patches })

@@ -26,6 +26,8 @@ Add cross-kernel fixtures for 45-degree revolve, extrusion along `[1,0,1]`, obli
 | `Plan::transformed` | Compose a validated exact rigid pose into supports, constraints, metric placements and face records using the caller's decider. |
 | `Plan::prepare_distances` | Prepare reusable compact analytic chart covers from recipe bounds and trim predicates. No B-rep is built. |
 | `distance::Prepared::{point_to_face, face_to_face, point_to_boundary}` | Outward-rounded minimum-distance bounds with exact admitted witnesses, an explicit convergence flag and deterministic refinement limits. |
+| `Plan::visit_candidates` | Definition-native rational candidates paired with their current `FaceId`. Visit completion and point membership are separate claims. |
+| `Plan::result_face` | Current candidate handle at a registry index; construction history and unused leaves return `None`. |
 | `Value::TrueDistance` | Enclosure of true signed Euclidean distance to a primitive or analytic draft boundary, including certified unions of retained components. Negative inside. |
 | `Value::Residual` | Enclosure of a sweep support residual or a min/max Boolean expression without a distance certificate. It is not Euclidean distance. |
 | `DistanceBound` | Bounds on unsigned geometric distance to the result boundary, separate from the field value. Infinity means unbounded, not a measured tolerance. |
@@ -53,6 +55,19 @@ For an enclosed residual `[lo, hi]`, the lower distance bound is zero if the enc
 These lower bounds alone support certified exclusion and filtering, not proximity or clearance below a threshold. Prepared trimmed-face queries supply finite upper bounds from certified points on surviving faces. A small residual still does not prove closeness, and neither API constructs offsets or certifies a 1 nm hand-off.
 
 Analytic draft cells measure distance to their surviving trimmed facets and edges, or to the axial meridian and cap disks. Internal plane-subdivision seams are not boundary geometry. Retained connected interior components have no hidden shared facet. Outside all components, the nearest boundary belongs to one of them. Inside one component, a segment to another component crosses the containing component's boundary first. Their signed minimum is therefore true Euclidean distance. The compiler records this certificate only for the separated components proved by draft, and preserves it through tape compaction and rigid copies. An arbitrary Boolean union gets no such certificate.
+
+### Boolean draft input
+
+The field reconstructs a planar draft input from its own definitions before moving its carriers. A temporary named expression preserves differently named creators even when the evaluation tape shares their equal geometry. Each Boolean subexpression propagates origins only where it has a surviving boundary. Exact plane-cell labels recover physical patches; connected coplanar patches union their origins. This does not rewrite historical recipe operands or expose their hidden construction faces.
+
+Through-all tools receive construction clips outside a conservative finite source domain. No such cap may survive on the reconstructed boundary. Moved degree-two subdivision points do not constrain a physical edge as extra vertex fans. Swallowed-face history retains the complete physical source origin set. Cached geometry resolves current copy bindings through the nearest complete origin suffix, preserving older instance distinctions.
+
+### Boundary candidate identity
+
+One origin can label several trimmed pieces on different supports. Native candidate visitors carry the exact face-registry handle, not a name that the consumer must resolve back to one representative. Comparison retains every current candidate for a shared origin and queries the candidate belonging to each sample. Replaced faces are sampled through their current primitive, sweep or draft definition, never through a historical primitive constructor.
+
+Draft trim and sampling domains match complete origins rather than roles alone. Disconnected coplanar faces from different creators can both have role `end` without acquiring one another's domains. Handles remain local to the immutable plan; only recipe origins are persistent names.
+
 
 ### Profile sweep certificates
 

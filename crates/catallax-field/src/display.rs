@@ -967,7 +967,7 @@ impl Builder<'_> {
         let role = plan.definition_role(id);
         let on_face = match &self.classifiers[face.leaf] {
             Some(classifier) => Some(classifier.on_face(role, &p)),
-            None => plan.leaves[face.leaf].on_face(role, &p, dec)?,
+            None => plan.leaves[face.leaf].on_face(&face.origin, role, &p, dec)?,
         };
         match on_face {
             Some(false) => return Ok(absent),

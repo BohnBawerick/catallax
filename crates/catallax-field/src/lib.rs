@@ -14,6 +14,7 @@ pub mod display;
 /// Certified trimmed-face and boundary minimum-distance queries.
 pub mod distance;
 mod draft;
+mod draft_source;
 mod features;
 mod fillet;
 mod geometry;
@@ -401,8 +402,18 @@ impl Plan {
                             angle.value(),
                             dec,
                         )?;
+                        let boundary = if steps[body] == 0 {
+                            Some(catallax_features::draft::arrangement::Skin {
+                                vertices: Vec::new(),
+                                patches: Vec::new(),
+                            })
+                        } else if matches!(plan.instructions[steps[body]], Instruction::Leaf(_)) {
+                            None
+                        } else {
+                            Some(plan.draft_source_skin(recipe, body, &steps, &step_faces, dec)?)
+                        };
                         plan.draft(
-                            (steps[body], &step_faces[body]),
+                            (steps[body], &step_faces[body], boundary.as_ref()),
                             faces,
                             &definition,
                             keep_regions.as_deref(),
@@ -865,6 +876,13 @@ impl Plan {
     pub fn faces(&self) -> &[Face] {
         &self.faces
     }
+    /// Handle for a current result candidate at a face-registry index.
+    /// History and unused entries return `None`; Boolean trim membership still
+    /// requires [`Self::face_query`]. Split names can have several such handles.
+    pub fn result_face(&self, index: usize) -> Option<FaceId> {
+        let face = self.faces.get(index)?;
+        (face.in_result && self.leaf_registers[face.leaf].is_some()).then_some(FaceId(index))
+    }
 
     /// Resolves a stable recipe name without depending on tape indices.
     /// When a support is replaced without changing its origin, the result's
@@ -980,8 +998,12 @@ impl Plan {
                 && self.leaf_registers[face.leaf]
                     .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
                 && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
-                && self.leaves[face.leaf].on_face(self.definition_role(id), &coordinates, dec)?
-                    != Some(false)
+                && self.leaves[face.leaf].on_face(
+                    &face.origin,
+                    self.definition_role(id),
+                    &coordinates,
+                    dec,
+                )? != Some(false)
             {
                 storage.active.push(id);
             }
@@ -1255,7 +1277,7 @@ impl Plan {
             }
             Location::Boundary => (),
         }
-        match self.leaves[face.leaf].on_face(self.definition_role(id.0), &p, dec)? {
+        match self.leaves[face.leaf].on_face(&face.origin, self.definition_role(id.0), &p, dec)? {
             Some(false) => return Ok(absent),
             None => {
                 return Ok(FaceQuery {

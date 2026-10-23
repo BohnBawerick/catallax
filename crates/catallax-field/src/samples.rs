@@ -1,11 +1,11 @@
 //! Query-only sampling support. These bounds and candidates never build geometry.
 use crate::{
-    Instruction, Plan,
+    FaceId, Instruction, Plan,
     draft::{Cell, Region},
     geometry::Leaf,
 };
 use catallax_numbers::{Decider, Rational, Real, Refusal};
-use catallax_recipe::{BooleanKind, Origin, Role};
+use catallax_recipe::{BooleanKind, Origin};
 use catallax_shapes::{Isometry, Point3, RPoint3, RVector3, Vector3};
 
 pub(crate) type Bounds = [[Rational; 2]; 3];
@@ -58,80 +58,89 @@ pub(crate) fn circle(n: u32) -> Vec<[Rational; 2]> {
     points
 }
 impl Plan {
-    /// Visits rational supporting-face candidates for sketch features and analytic drafts.
-    /// Stock-solid candidates are not included. Candidates are independent of
-    /// B-rep construction and display meshes; use `face_query` to establish
-    /// surviving boundary membership, names and orientation before accepting one.
+    /// Visits rational candidates from current primitive, sweep and draft definitions.
+    /// Each point carries its exact registry handle: one origin can have pieces
+    /// on different supports. No historical primitive is sampled in place of a
+    /// replacement definition. Use `face_query` to establish actual membership.
     /// `divisions` is in 1..=64. Returning false from `visit` stops cooperatively
     /// and returns `Ok(false)`, never a claim that all candidates were visited.
     /// Through-all walls are sampled over a conservative bound on the field
     /// result, not an arbitrary finite replacement for the unbounded tool.
     /// An algebraic placement without a native rational frame returns
     /// `field.sample-algebraic-placement`; no candidate coordinates are rounded.
-    pub fn visit_feature_candidates(
+    pub fn visit_candidates(
         &self,
         divisions: u32,
-        mut visit: impl FnMut(RPoint3, &Origin) -> bool,
+        mut visit: impl FnMut(RPoint3, FaceId) -> bool,
     ) -> Result<bool, Refusal> {
         if !(1..=64).contains(&divisions) {
             return Err(Refusal::new(
                 "field.sample-options",
-                "feature sampling divisions must be in 1..=64",
+                "sampling divisions must be in 1..=64",
             ));
         }
-        if !self.faces.iter().any(|face| {
+        let has_derived = self.faces.iter().any(|face| {
             face.in_result
                 && self.leaf_registers[face.leaf].is_some()
                 && matches!(self.leaves[face.leaf], Leaf::Feature(_) | Leaf::Draft(_))
-        }) {
-            return Ok(true);
-        }
+        });
         if self.is_proven_empty() {
             return Ok(true);
         }
-        let mut bounds: Vec<Option<Bounds>> = Vec::with_capacity(self.instructions.len());
-        for instruction in &self.instructions {
-            let b = match *instruction {
-                Instruction::Empty => Some(std::array::from_fn(|_| {
-                    [Rational::zero(), Rational::zero()]
-                })),
-                Instruction::Leaf(i) => match &self.leaves[i] {
-                    Leaf::Primitive(p) => Some(p.sample_bounds()?),
-                    Leaf::Feature(f) => f.sample_bounds()?,
-                    Leaf::Cell(c) => c.sample_bounds()?,
-                    Leaf::Draft(region) => Some(region.sample_bounds()?),
-                },
-                Instruction::Boolean { kind, a, b } => match kind {
-                    BooleanKind::Subtract => bounds[a].clone(),
-                    BooleanKind::Union => match (&bounds[a], &bounds[b]) {
-                        (Some(a), Some(b)) => Some(std::array::from_fn(|i| {
-                            [
-                                a[i][0].clone().min(b[i][0].clone()),
-                                a[i][1].clone().max(b[i][1].clone()),
-                            ]
-                        })),
-                        _ => None,
+        let mut bounds: Vec<Option<Bounds>> = Vec::with_capacity(if has_derived {
+            self.instructions.len()
+        } else {
+            0
+        });
+        if has_derived {
+            for instruction in &self.instructions {
+                let b = match *instruction {
+                    Instruction::Empty => Some(std::array::from_fn(|_| {
+                        [Rational::zero(), Rational::zero()]
+                    })),
+                    Instruction::Leaf(i) => match &self.leaves[i] {
+                        Leaf::Primitive(p) => Some(p.sample_bounds()?),
+                        Leaf::Feature(f) => f.sample_bounds()?,
+                        Leaf::Cell(c) => c.sample_bounds()?,
+                        Leaf::Draft(region) => Some(region.sample_bounds()?),
                     },
-                    BooleanKind::Intersect => match (&bounds[a], &bounds[b]) {
-                        (Some(a), Some(b)) => Some(std::array::from_fn(|i| {
-                            [
-                                a[i][0].clone().max(b[i][0].clone()),
-                                a[i][1].clone().min(b[i][1].clone()),
-                            ]
-                        })),
-                        (Some(a), None) | (None, Some(a)) => Some(a.clone()),
-                        (None, None) => None,
+                    Instruction::Boolean { kind, a, b } => match kind {
+                        BooleanKind::Subtract => bounds[a].clone(),
+                        BooleanKind::Union => match (&bounds[a], &bounds[b]) {
+                            (Some(a), Some(b)) => Some(std::array::from_fn(|i| {
+                                [
+                                    a[i][0].clone().min(b[i][0].clone()),
+                                    a[i][1].clone().max(b[i][1].clone()),
+                                ]
+                            })),
+                            _ => None,
+                        },
+                        BooleanKind::Intersect => match (&bounds[a], &bounds[b]) {
+                            (Some(a), Some(b)) => Some(std::array::from_fn(|i| {
+                                [
+                                    a[i][0].clone().max(b[i][0].clone()),
+                                    a[i][1].clone().min(b[i][1].clone()),
+                                ]
+                            })),
+                            (Some(a), None) | (None, Some(a)) => Some(a.clone()),
+                            (None, None) => None,
+                        },
                     },
-                },
-            };
-            bounds.push(b);
+                };
+                bounds.push(b);
+            }
         }
-        let result = bounds[self.root].as_ref().ok_or_else(|| {
-            Refusal::new(
-                "field.sample-unbounded",
-                "result has no finite feature sampling bound",
-            )
-        })?;
+        let result = if has_derived {
+            Some(bounds[self.root].as_ref().ok_or_else(|| {
+                Refusal::new(
+                    "field.sample-unbounded",
+                    "result has no finite feature sampling bound",
+                )
+            })?)
+        } else {
+            None
+        };
+        let angular = std::cell::OnceCell::new();
         for (index, face) in self.faces.iter().enumerate() {
             if !face.in_result || self.leaf_registers[face.leaf].is_none() {
                 continue;
@@ -140,15 +149,20 @@ impl Plan {
                 Leaf::Feature(feature) => feature.sample_candidates(
                     self.definition_role(index),
                     divisions,
-                    result,
-                    &mut |p| visit(p, &face.origin),
+                    result.expect("derived candidates have a finite sampling bound"),
+                    &mut |p| visit(p, FaceId(index)),
                 )?,
                 Leaf::Draft(region) => {
-                    region.sample_candidates(self.definition_role(index), divisions, &mut |p| {
-                        visit(p, &face.origin)
+                    region.sample_candidates(&face.origin, divisions, &mut |p| {
+                        visit(p, FaceId(index))
                     })?
                 }
-                Leaf::Primitive(_) => true,
+                Leaf::Primitive(primitive) => primitive.sample_candidates(
+                    self.definition_role(index),
+                    divisions,
+                    &angular,
+                    &mut |p| visit(p, FaceId(index)),
+                )?,
             };
             if !complete {
                 return Ok(false);
@@ -181,31 +195,24 @@ fn native_vector(vector: &Vector3, dec: &mut Decider) -> Result<RVector3, Refusa
     ))
 }
 
-fn unwrapped(mut role: &Role) -> &Role {
-    while let Role::Copy { of, .. } = role {
-        role = &of.role;
-    }
-    role
-}
-
-fn has_role(origins: &[Origin], role: &Role) -> bool {
-    origins
-        .iter()
-        .any(|origin| unwrapped(&origin.role) == unwrapped(role))
-}
-
 impl Region {
     fn sample_candidates(
         &self,
-        role: &Role,
+        binding: &Origin,
         divisions: u32,
         visit: &mut impl FnMut(RPoint3) -> bool,
     ) -> Result<bool, Refusal> {
+        let source = self.source_origin(binding).ok_or_else(|| {
+            Refusal::new(
+                "field.draft-sample-origin",
+                "result origin has no cached draft definition",
+            )
+        })?;
         let mut dec = Decider::default();
         match &self.cell {
             Cell::Planar(cell) => {
                 for (support, cycle) in cell.supports.iter().zip(&cell.cycles) {
-                    if cycle.is_empty() || !has_role(&support.origins, role) {
+                    if cycle.is_empty() || !support.origins.contains(source) {
                         continue;
                     }
                     let vertices = cycle
@@ -234,7 +241,7 @@ impl Region {
             Cell::Polyhedral(cell) => {
                 let mut matched = false;
                 for face in &cell.faces {
-                    if !has_role(&face.origins, role) {
+                    if !face.origins.contains(source) {
                         continue;
                     }
                     matched = true;
@@ -282,7 +289,7 @@ impl Region {
                     native_scalar(&cell.radii[1], &mut dec)?,
                 ];
                 let angular = circle(divisions);
-                if has_role(&cell.origins, role) {
+                if cell.origins.contains(source) {
                     for i in 0..divisions {
                         let t = fraction(i, divisions);
                         let height = &heights[0] + &(&t * &(&heights[1] - &heights[0]));
@@ -304,7 +311,7 @@ impl Region {
                     let Some((_, origins)) = &cell.caps[i] else {
                         continue;
                     };
-                    if !has_role(origins, role) {
+                    if !origins.contains(source) {
                         continue;
                     }
                     let centre = origin.plus(&axis.scaled(&heights[i]));

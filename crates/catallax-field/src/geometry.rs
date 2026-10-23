@@ -796,6 +796,7 @@ impl Leaf {
     }
     pub fn on_face(
         &self,
+        origin: &Origin,
         role: &Role,
         p: &[Rational; 3],
         dec: &mut Decider,
@@ -803,6 +804,9 @@ impl Leaf {
         match self {
             Self::Primitive(_) => Ok(Some(true)),
             Self::Draft(region) => {
+                let Some(origin) = region.source_origin(origin) else {
+                    return Ok(Some(false));
+                };
                 if let crate::draft::Cell::Polyhedral(poly) = &region.cell {
                     let point = Point3::new(
                         p[0].clone().into(),
@@ -810,14 +814,7 @@ impl Leaf {
                         p[2].clone().into(),
                     );
                     for face in &poly.faces {
-                        let matches = face.origins.iter().any(|o| {
-                            let mut source = &o.role;
-                            while let Role::Copy { of, .. } = source {
-                                source = &of.role;
-                            }
-                            source == role
-                        });
-                        if matches && poly.on_face(face, &point, None, dec)? {
+                        if face.origins.contains(origin) && poly.on_face(face, &point, None, dec)? {
                             return Ok(Some(true));
                         }
                     }
@@ -884,6 +881,122 @@ impl Leaf {
 }
 
 impl Primitive {
+    pub(crate) fn sample_candidates(
+        &self,
+        role: &Role,
+        n: u32,
+        angular: &std::cell::OnceCell<Vec<[Rational; 2]>>,
+        visit: &mut impl FnMut(RPoint3) -> bool,
+    ) -> Result<bool, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
+        let placement = self.inverse.inverse();
+        let mut emit = |xyz: [Rational; 3]| -> Result<bool, Refusal> {
+            let [x, y, z] = xyz;
+            let point = placement
+                .apply_rational_point(&RPoint3::new(x, y, z))
+                .ok_or_else(crate::samples::placement_error)?;
+            Ok(visit(point))
+        };
+        let invalid = || {
+            Refusal::new(
+                "field.sample-role",
+                "registry role has no native primitive chart",
+            )
+        };
+        let p = &self.parameters;
+        if self.kind == Kind::Block {
+            let (axis, upper) = match role {
+                Role::Start => (2, false),
+                Role::End => (2, true),
+                Role::Side { segment, .. } => match segment.as_str() {
+                    "x_min" => (0, false),
+                    "x_max" => (0, true),
+                    "y_min" => (1, false),
+                    "y_max" => (1, true),
+                    _ => return Err(invalid()),
+                },
+                _ => return Err(invalid()),
+            };
+            for i in 0..n {
+                for j in 0..n {
+                    let mut xyz = std::array::from_fn(|_| Rational::zero());
+                    xyz[axis] = if upper {
+                        p[axis].clone()
+                    } else {
+                        Rational::zero()
+                    };
+                    xyz[(axis + 1) % 3] = &p[(axis + 1) % 3] * &crate::samples::fraction(i, n);
+                    xyz[(axis + 2) % 3] = &p[(axis + 2) % 3] * &crate::samples::fraction(j, n);
+                    if !emit(xyz)? {
+                        return Ok(false);
+                    }
+                }
+            }
+            return Ok(true);
+        }
+        let angular = angular.get_or_init(|| crate::samples::circle(n));
+        let wall = matches!(role, Role::Side { segment, .. } if segment.as_str() == "wall");
+        match self.kind {
+            Kind::Round => {
+                if wall {
+                    for i in 0..n {
+                        let h = crate::samples::fraction(i, n);
+                        let radius = &p[0] + &(&(&p[1] - &p[0]) * &h);
+                        for [x, y] in angular {
+                            if !emit([&radius * x, &radius * y, &p[2] * &h])? {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                } else {
+                    let (radius, z) = match role {
+                        Role::Start => (&p[0], Rational::zero()),
+                        Role::End => (&p[1], p[2].clone()),
+                        _ => return Err(invalid()),
+                    };
+                    if !radius.is_zero() {
+                        for i in 0..n {
+                            let rho = radius * &crate::samples::fraction(i, n);
+                            for [x, y] in angular {
+                                if !emit([&rho * x, &rho * y, z.clone()])? {
+                                    return Ok(false);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Kind::Sphere if wall => {
+                for [c, s] in angular {
+                    if c <= &Rational::zero() {
+                        continue;
+                    }
+                    let radius = &p[0] * c;
+                    for [x, y] in angular {
+                        if !emit([&radius * x, &radius * y, &p[0] * s])? {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+            Kind::Torus if wall => {
+                for [c, s] in angular {
+                    let radius = &p[0] + &(&p[1] * c);
+                    for [x, y] in angular {
+                        if !emit([&radius * x, &radius * y, &p[1] * s])? {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+            _ => return Err(invalid()),
+        }
+        Ok(true)
+    }
+
     pub(crate) fn sample_bounds(&self) -> Result<crate::samples::Bounds, Refusal> {
         let zero = Rational::zero();
         let p = &self.parameters;

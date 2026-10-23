@@ -114,8 +114,8 @@ fn canonical_features_keep_stock_face_edge_and_vertex_names_in_both_kernels() {
             assert_eq!(expected, actual, "{value}");
             let mut witnessed = std::collections::BTreeSet::new();
             canonical_field
-                .visit_feature_candidates(2, |point, origin| {
-                    let id = canonical_field.select(origin).unwrap();
+                .visit_candidates(2, |point, id| {
+                    let origin = &canonical_field.faces()[id.index()].origin;
                     if canonical_field
                         .face_query(id, &point, &mut Workspace::default())
                         .unwrap()
@@ -345,13 +345,10 @@ fn pattern_and_nested_mirror_copies_resolve_canonical_stock_names() {
                     }
                     let mut witnessed = BTreeSet::new();
                     source_field
-                        .visit_feature_candidates(1, |point, origin| {
+                        .visit_candidates(1, |point, id| {
+                            let origin = &source_field.faces()[id.index()].origin;
                             if source_field
-                                .face_query(
-                                    source_field.select(origin).unwrap(),
-                                    &point,
-                                    &mut Workspace::default(),
-                                )
+                                .face_query(id, &point, &mut Workspace::default())
                                 .unwrap()
                                 .state
                                 == FaceState::OnFace
@@ -398,7 +395,8 @@ fn pattern_and_nested_mirror_copies_resolve_canonical_stock_names() {
                     // belonging only to the seed or an unkept mirror input.
                     let mut sampled = BTreeSet::new();
                     field
-                        .visit_feature_candidates(1, |_, origin| {
+                        .visit_candidates(1, |_, id| {
+                            let origin = &field.faces()[id.index()].origin;
                             assert_eq!(
                                 built.model.faces_with_origin(built.result, origin).len(),
                                 1,

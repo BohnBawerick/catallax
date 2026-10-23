@@ -444,17 +444,12 @@ pub(crate) fn run(
             return revision.publish(report);
         }
     };
-    let registry: BTreeMap<_, _> = field
-        .faces()
-        .iter()
-        .enumerate()
-        .map(|(i, face)| {
-            (
-                face.origin.clone(),
-                (field.select(&face.origin).unwrap(), i),
-            )
-        })
-        .collect();
+    let mut registry = BTreeMap::<Origin, Vec<catallax_field::FaceId>>::new();
+    for (index, face) in field.faces().iter().enumerate() {
+        if let Some(id) = field.result_face(index) {
+            registry.entry(face.origin.clone()).or_default().push(id);
+        }
+    }
     let mut groups = Vec::with_capacity(supports.len());
     for source in &supports {
         let mut group = Vec::new();
@@ -648,26 +643,29 @@ pub(crate) fn run(
             // trim-checked field boundary point instead of treating it as distance.
             'witness: for &face in &incident[i] {
                 for origin in &face_origins[face] {
-                    let Some(&(id, source)) = registry.get(origin) else {
+                    let Some(candidates) = registry.get(origin) else {
                         continue;
                     };
-                    let Ok(q) = self::witness(
-                        &field.faces()[source].surface,
-                        &supports[source],
-                        &p,
-                        &width,
-                        &mut dec,
-                    ) else {
-                        continue;
-                    };
-                    let candidate = norm(&q.minus(&p)).hi() + error.clone();
-                    if candidate <= options.accuracy
-                        && field
-                            .face_query_checked(id, &q, &mut storage, &mut dec)
-                            .is_ok_and(|q| q.state == FaceState::OnFace)
-                    {
-                        upper = Some(candidate);
-                        break 'witness;
+                    for &id in candidates {
+                        let source = id.index();
+                        let Ok(q) = self::witness(
+                            &field.faces()[source].surface,
+                            &supports[source],
+                            &p,
+                            &width,
+                            &mut dec,
+                        ) else {
+                            continue;
+                        };
+                        let candidate = norm(&q.minus(&p)).hi() + error.clone();
+                        if candidate <= options.accuracy
+                            && field
+                                .face_query_checked(id, &q, &mut storage, &mut dec)
+                                .is_ok_and(|q| q.state == FaceState::OnFace)
+                        {
+                            upper = Some(candidate);
+                            break 'witness;
+                        }
                     }
                 }
             }
@@ -787,7 +785,7 @@ pub(crate) fn run(
     > = (0..mesh.faces.len()).map(|_| None).collect();
     let sampling_failed = std::cell::Cell::new(false);
     let mut sample_refusal = None;
-    let mut check_sample = |p: RPoint3, origin: &Origin| {
+    let mut check_sample = |p: RPoint3, id: catallax_field::FaceId| {
         if sampling_failed.get() {
             return;
         }
@@ -798,7 +796,8 @@ pub(crate) fn run(
         {
             return;
         }
-        let (id, source) = registry[origin];
+        let source = id.index();
+        let origin = &field.faces()[source].origin;
         let query = match field.face_query_checked(id, &p, &mut storage, &mut dec) {
             Ok(query) => query,
             Err(error) => {
@@ -833,12 +832,14 @@ pub(crate) fn run(
         report.reverse_samples += 1;
         let mut origins = BTreeSet::new();
         for &index in &groups[source] {
+            let Some(candidate) = field.result_face(index) else {
+                continue;
+            };
             let face = &field.faces()[index];
             let coactive = if index == source {
                 query
             } else {
-                match field.face_query_checked(registry[&face.origin].0, &p, &mut storage, &mut dec)
-                {
+                match field.face_query_checked(candidate, &p, &mut storage, &mut dec) {
                     Ok(query) => query,
                     Err(error) => {
                         sampling_failed.set(true);
@@ -1090,18 +1091,11 @@ pub(crate) fn run(
             );
         }
     };
-    let primitive_sampling = crate::sample::visit(
-        recipe,
-        &field,
-        options.divisions,
-        revision,
-        &mut check_sample,
-    );
-    let feature_sampling = field.visit_feature_candidates(options.divisions, |p, origin| {
+    let sampling = field.visit_candidates(options.divisions, |p, id| {
         if revision.is_cancelled() {
             return false;
         }
-        check_sample(p, origin);
+        check_sample(p, id);
         !revision.is_cancelled() && !sampling_failed.get()
     });
     if let Some(refusal) = sample_refusal {
@@ -1112,16 +1106,7 @@ pub(crate) fn run(
         report.refusal = Some(refusal);
         return revision.publish(report);
     }
-    if let Err(error) = primitive_sampling {
-        whole_failure(
-            &mut report,
-            format!(
-                "primitive boundary sampling {}: {}",
-                error.code, error.detail
-            ),
-        );
-    }
-    if let Err(error) = feature_sampling {
+    if let Err(error) = sampling {
         whole_failure(
             &mut report,
             format!("field boundary sampling {}: {}", error.code, error.detail),

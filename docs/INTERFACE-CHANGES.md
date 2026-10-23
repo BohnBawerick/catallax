@@ -1043,3 +1043,29 @@ Coverage added: nonconvex line-bounded planar skins whose incident replacement c
 Prior art: [OCCT draft modification](https://occt3d.com/dev/doc/refman/html/class_draft___modification.html) separates replacement surfaces, curves and points, but [its public topology-preserving restriction](https://occt3d.com/dev/doc/refman/html/class_b_rep_offset_a_p_i___draft_angle.html) cannot implement swallowed faces. [Shapiro and Vossler's arrangement treatment](https://spatial.engr.wisc.edu/wp-content/uploads/sites/715/2014/04/0000-4.pdf) motivates explicit cell labels. Patch-local provenance avoids assigning every coplanar source name to every output patch. No code is copied.
 
 Migration: no recipe version, public callback signature, tolerance or budget changes. Consumers of `Value` can receive a certified `TrueDistance` for a separated draft-component union that previously had only residual semantics.
+
+## 2026-10-24: Boolean-input planar draft and scoped origins
+
+Pieces: features, field, comparison
+
+Change: `Skin::partition` labels exact planar cells through a definition-native classifier and resolves surviving source origins on outward boundary tiles. The field builds a temporary named source expression independently of B-rep topology. Equal geometric leaves do not collapse distinct creating-step scopes. Boolean boundary provenance, copied expressions and finite clips of through-all tools reconstruct the actual input boundary before drafting it; construction caps cannot become output faces.
+
+Physical source origin sets stay grouped in consumed-face history. Selecting a merged face does not move a disconnected patch merely because it shares one alias. Cached draft definitions bind to the nearest current copy suffix instead of erasing older instance distinctions. Coincident cylindrical aliases are drafted once with all their bindings.
+
+Coverage added: planar Boolean and through-cut inputs under the finite moved-fan restrictions above. Mixed curved input arrangements, filtered references and singular or non-simple nonconvex moved fans remain explicit unfinished coverage. The full P1 build prerequisite is unchanged.
+
+Migration: no recipe, tolerance, work-allowance or STEP-option changes. This supersedes the Boolean-input field limitation recorded above, not the remaining curved/fan limits.
+
+## 2026-10-24: current-definition boundary candidate handles
+
+Pieces: field, comparison
+
+Change: replace `Plan::visit_feature_candidates` with `Plan::visit_candidates`. Its callback receives `(RPoint3, FaceId)` and covers current primitive, sweep and draft definitions. `Plan::result_face(index)` retrieves a current registry candidate; history and unused entries return `None`. A shared origin may have multiple candidates on different supports. Comparison preserves these handles for reverse samples and tries every current support for a named forward witness.
+
+The obsolete recipe-primitive sampler is removed. Modified faces no longer inherit a historical cutter grid that can place probes on their new sharp edges. Draft trim and sampling predicates match complete origins, not just identically spelled roles from different creators. The native primitive charts retain exact rational positions and share their angular samples within one visit.
+
+Why: a drafted neighbour can split while keeping its origin, and only one piece may move with a merged alias. A single name-to-surface representative loses valid coverage. Same-role coplanar patches also need separate trimmed domains.
+
+Prior art: [OCCT shape history](https://occt3d.com/dev/doc/refman/html/class_b_rep_tools___history.html) distinguishes a source's ancestry from the list of geometric shapes modified from it. Candidate handles preserve that one-to-many distinction without making new recipe names. No source code is copied.
+
+Migration: candidate visitors query the supplied handle directly and read its origin from `plan.faces()[id.index()]`. The old callback and sampler are removed, not retained as aliases. All repository callers are migrated. Primitive frame failures now use the field sampling error namespace. Numeric proof policy, cooperative stop, comparison accuracy and coverage requirements are unchanged.

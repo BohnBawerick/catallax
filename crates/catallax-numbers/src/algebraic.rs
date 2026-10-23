@@ -168,15 +168,72 @@ pub struct RealRoot {
 }
 
 pub(crate) fn isolate(p: &UPoly, work: &mut Work) -> Result<Vec<RealRoot>, &'static str> {
-    work.poly(p, p)?;
-    let factors = p.square_free_factors_checked(&|| work.check_deadline())?;
+    if p.degree() == Some(0) {
+        work.check_deadline()?;
+        return Ok(Vec::new());
+    }
+    if let [constant, linear] = p.coefficients() {
+        work.exact(constant, linear, true)?;
+        return Ok(vec![RealRoot {
+            value: Algebraic::from_rational((-constant) / linear.clone()),
+            multiplicity: 1,
+        }]);
+    }
+    // A quadratic's discriminant certifies multiplicity and rational roots
+    // directly, without a dense square-free GCD or divisor enumeration.
+    if p.degree() == Some(2) {
+        match quadratic_roots(p, work)? {
+            QuadraticRoots::Nonreal => return Ok(Vec::new()),
+            QuadraticRoots::Repeated(root) => {
+                return Ok(vec![RealRoot {
+                    value: Algebraic::from_rational(root),
+                    multiplicity: 2,
+                }]);
+            }
+            QuadraticRoots::Rational(lower, upper) => {
+                return Ok(vec![
+                    RealRoot {
+                        value: Algebraic::from_rational(lower),
+                        multiplicity: 1,
+                    },
+                    RealRoot {
+                        value: Algebraic::from_rational(upper),
+                        multiplicity: 1,
+                    },
+                ]);
+            }
+            QuadraticRoots::Irrational(_) => {}
+        }
+    }
     let mut roots = Vec::new();
-    for (f, multiplicity) in factors {
-        for value in isolate_square_free(&f, work)? {
-            roots.push(RealRoot {
-                value,
-                multiplicity,
-            });
+    if p.degree() == Some(2) {
+        // A nonsquare discriminant proves both roots simple without a GCD.
+        roots.extend(
+            isolate_square_free(p, work)?
+                .into_iter()
+                .map(|value| RealRoot {
+                    value,
+                    multiplicity: 1,
+                }),
+        );
+    } else {
+        // Rootless intersection probes need no square-free or cubic factorization.
+        // An inconclusive exclusion leaves the ordinary isolator responsible.
+        if p.degree() == Some(4)
+            && !p.coefficients()[0].is_zero()
+            && bounded_exact(work, |work| quartic_has_no_real_roots(p, work))? == Some(true)
+        {
+            return Ok(Vec::new());
+        }
+        work.poly(p, p)?;
+        let factors = p.square_free_factors_checked(&|| work.check_deadline())?;
+        for (f, multiplicity) in factors {
+            for value in isolate_square_free(&f, work)? {
+                roots.push(RealRoot {
+                    value,
+                    multiplicity,
+                });
+            }
         }
     }
     // Disjoint intervals are required across factors, not just within each factor.
@@ -355,14 +412,16 @@ fn quadratics_for_sum(
         UPoly::new(vec![t, w, Rational::one()]),
     ]))
 }
-fn isolate_quadratic(
-    polynomial: &UPoly,
-    target: &Rational,
-    output: &mut Vec<Algebraic>,
-    work: &mut Work,
-) -> Result<bool, &'static str> {
+enum QuadraticRoots {
+    Nonreal,
+    Repeated(Rational),
+    Rational(Rational, Rational),
+    Irrational(Rational),
+}
+
+fn quadratic_roots(polynomial: &UPoly, work: &mut Work) -> Result<QuadraticRoots, &'static str> {
     let [c, b, a] = polynomial.coefficients() else {
-        unreachable!("quadratic isolator requires degree two");
+        unreachable!("quadratic solver requires degree two");
     };
     work.exact(b, b, true)?;
     let squared = b * b;
@@ -371,31 +430,60 @@ fn isolate_quadratic(
     work.exact(&squared, &product, false)?;
     let discriminant = squared - product;
     if discriminant.sign() == Sign::Negative {
-        return Ok(true);
+        return Ok(QuadraticRoots::Nonreal);
     }
     let center = -b;
     let denominator = a.mul_pow2(1);
-    if let Some(root) = crate::quadratic::rational_sqrt(&discriminant, work)? {
-        work.exact(&center, &root, false)?;
-        let lower = &center - &root;
-        work.exact(&lower, &denominator, true)?;
-        let lower = Algebraic::from_rational(&lower / &denominator);
-        if root.is_zero() {
-            output.push(lower);
+    if discriminant.is_zero() {
+        work.exact(&center, &denominator, true)?;
+        return Ok(QuadraticRoots::Repeated(&center / &denominator));
+    }
+    let Some(root) = crate::quadratic::rational_sqrt(&discriminant, work)? else {
+        return Ok(QuadraticRoots::Irrational(discriminant));
+    };
+    work.exact(&center, &root, false)?;
+    let lower = &center - &root;
+    work.exact(&lower, &denominator, true)?;
+    let mut lower = &lower / &denominator;
+    work.exact(&center, &root, false)?;
+    let upper = &center + &root;
+    work.exact(&upper, &denominator, true)?;
+    let mut upper = &upper / &denominator;
+    if lower > upper {
+        std::mem::swap(&mut lower, &mut upper);
+    }
+    Ok(QuadraticRoots::Rational(lower, upper))
+}
+
+fn isolate_quadratic(
+    polynomial: &UPoly,
+    target: &Rational,
+    output: &mut Vec<Algebraic>,
+    work: &mut Work,
+) -> Result<bool, &'static str> {
+    let [_, b, a] = polynomial.coefficients() else {
+        unreachable!("quadratic isolator requires degree two");
+    };
+    let discriminant = match quadratic_roots(polynomial, work)? {
+        QuadraticRoots::Nonreal => return Ok(true),
+        QuadraticRoots::Repeated(root) => {
+            output.push(Algebraic::from_rational(root));
             return Ok(true);
         }
-        work.exact(&center, &root, false)?;
-        let upper = &center + &root;
-        work.exact(&upper, &denominator, true)?;
-        output.extend([lower, Algebraic::from_rational(&upper / &denominator)]);
-        return Ok(true);
-    }
+        QuadraticRoots::Rational(lower, upper) => {
+            output.extend([
+                Algebraic::from_rational(lower),
+                Algebraic::from_rational(upper),
+            ]);
+            return Ok(true);
+        }
+        QuadraticRoots::Irrational(discriminant) => discriminant,
+    };
+    let center = -b;
+    let denominator = a.mul_pow2(1);
     if work.policy.max_precision_bits == 0 {
         return Ok(false);
     }
-    // Ordinary separated roots already have cheap Descartes/Newton brackets.
-    // Use the closed form when the magnitude guard cannot separate branches,
-    // rather than replacing otherwise satisfactory isolating intervals.
     let scale = &center.abs() + &denominator.abs();
     work.exact(&scale, &scale, true)?;
     let guard = NEWTON_GUARD_BITS.min(i64::from(work.policy.max_precision_bits));
@@ -469,9 +557,19 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
         result.push(Algebraic::from_rational(Rational::zero()));
         remaining = UPoly::new(remaining.coefficients()[1..].to_vec());
     }
-    let integers = remaining.primitive_integer_checked(&|| work.check_deadline())?;
-    let candidates = rational_candidates(&integers, work)?;
-    let rational_complete = candidates.is_some();
+    // A nonsquare discriminant proves that no rational root needs recovery.
+    let irrational_quadratic = remaining.degree() == Some(2)
+        && matches!(
+            quadratic_roots(&remaining, work)?,
+            QuadraticRoots::Irrational(_)
+        );
+    let candidates = if irrational_quadratic {
+        None
+    } else {
+        let integers = remaining.primitive_integer_checked(&|| work.check_deadline())?;
+        rational_candidates(&integers, work)?
+    };
+    let rational_complete = irrational_quadratic || candidates.is_some();
     if let Some(candidates) = candidates {
         for r in candidates {
             if filtered_sign(&remaining, &r, work)? == Sign::Zero {
@@ -508,7 +606,7 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
     let q = integers.last().unwrap().abs();
     let target = Rational::new(Integer::one(), (&q * &q).mul_pow2(2)).unwrap();
     if remaining.degree() == Some(2)
-        && !rational_complete
+        && (!rational_complete || irrational_quadratic)
         && isolate_quadratic(&primitive, &target, &mut result, work)?
     {
         return Ok(result);
@@ -742,6 +840,30 @@ pub(crate) fn eval_ball_checked(
         value = &value + &c;
     }
     Ok(value)
+}
+
+// Descartes' zero-variation certificate also excludes repeated real roots.
+// The caller's numeric suballowance bounds this optional filter.
+fn quartic_has_no_real_roots(p: &UPoly, work: &mut Work) -> Result<bool, &'static str> {
+    let bound = root_bound(p, work)?;
+    let mut pending = vec![(-&bound, Rational::zero()), (Rational::zero(), bound)];
+    while let Some((lo, hi)) = pending.pop() {
+        let variations = descartes_variations(p, &lo, &hi, work)?;
+        if variations == 0 {
+            continue;
+        }
+        if variations == 1 {
+            return Ok(false);
+        }
+        work.exact(&lo, &hi, false)?;
+        let mid = (&lo + &hi).mul_pow2(-1);
+        if filtered_sign(p, &mid, work)? == Sign::Zero {
+            return Ok(false);
+        }
+        pending.push((mid.clone(), hi));
+        pending.push((lo, mid));
+    }
+    Ok(true)
 }
 
 // If |a_i/a_n| <= 2^(h(n-i)), then for |x| >= 2^(h+1) the

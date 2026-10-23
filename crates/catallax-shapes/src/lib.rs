@@ -15,6 +15,7 @@ mod offset_chart;
 mod offset_sweep;
 mod point;
 mod pose;
+mod spline_surface;
 mod store;
 mod surface;
 mod vector;
@@ -32,6 +33,7 @@ pub use offset_chart::EllipticOffsetChart;
 pub use offset_sweep::{OffsetSweepProof, certify_elliptic_offset_sweep};
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
+pub use spline_surface::{SplinePointParameters, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
 pub use surface::{
     Cone, Cylinder, EllipticCylinder, ParamKind, Plane, Sphere, Surface, SurfaceKind, Torus,

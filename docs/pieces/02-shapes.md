@@ -110,6 +110,23 @@ the regular branch, convex embedding and a recomputed two-way position bound.
 The field measuring stick uses this same geometric checker. This local proof
 does not establish cap domains, complete body topology or recipe identity.
 
+`SplineSurface::from_offset` owns the immutable checked sweep definition and
+shares its carrier. `parameters_at` returns an exact finite incidence witness
+with `SplinePointParameters` for its point, tangents and outward normal;
+outside-domain points return `None`, while numeric failures propagate.
+`cross_section_side` classifies the represented convex profile after axial
+projection, not membership in a finite body. A bounded Bernstein interval
+filter proves whole-span negative tangent half-planes or a positive outside
+witness; uncertain contact falls through to exact incidence and side proofs.
+No interval ambiguity becomes coincidence or a larger modelling tolerance.
+
+Rigid transport retains the canonical checked source plus the composed exact
+pose. Inverse queries map back through `Pose::inverse`; resulting points,
+tangents and normals map forward. Repeated poses compose against the same
+source rather than re-solving dependent world-coordinate equations or making
+the previous posed controls a new target. The posed carrier remains available
+for geometric consumers. This local support proof still authorizes no body.
+
 The spline data and `fit_elliptic_offset` candidate do not add an analytic kind
 or authorize a body. Topological use also requires checked shared boundaries,
 finite domains, regularity, material correspondence and local certificates.

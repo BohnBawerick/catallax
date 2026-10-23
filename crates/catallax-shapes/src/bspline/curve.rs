@@ -262,6 +262,7 @@ impl BSplineCurve {
         parameter: [&Rational; 2],
         precision: u32,
         dec: &Decider,
+        row: &mut Vec<[Ball; 4]>,
     ) -> Result<[[Ball; 4]; N], Refusal> {
         dec.check_deadline()?;
         if precision == 0 || precision > dec.policy().max_precision_bits {
@@ -277,7 +278,6 @@ impl BSplineCurve {
                 "curve box leaves the finite knot domain",
             ));
         }
-        let mut row = Vec::with_capacity(self.degree() + 1);
         let mut values: [Option<[Ball; 4]>; N] = [const { None }; N];
         for (order, value) in values.iter_mut().enumerate() {
             *value = Some(match self.net(order) {
@@ -288,7 +288,7 @@ impl BSplineCurve {
                     parameter,
                     precision,
                     dec,
-                    &mut row,
+                    row,
                 )?,
                 None => std::array::from_fn(|_| zero(precision)),
             });
@@ -307,7 +307,8 @@ impl BSplineCurve {
         precision: u32,
         dec: &Decider,
     ) -> Result<[Ball; 3], Refusal> {
-        let [value] = self.homogeneous(parameter, precision, dec)?;
+        let mut row = Vec::with_capacity(self.degree() + 1);
+        let [value] = self.homogeneous(parameter, precision, dec, &mut row)?;
         cartesian(&value, &self.denominator(&value[3], precision, dec)?)
     }
     /// Position and first/second derivatives over a finite exact parameter interval.
@@ -317,7 +318,8 @@ impl BSplineCurve {
         precision: u32,
         dec: &Decider,
     ) -> Result<BSplineCurveJet, Refusal> {
-        let [p, d, dd] = self.homogeneous(parameter, precision, dec)?;
+        let mut row = Vec::with_capacity(self.degree() + 1);
+        let [p, d, dd] = self.homogeneous(parameter, precision, dec, &mut row)?;
         let denominator = self.denominator(&p[3], precision, dec)?;
         let value = cartesian(&p, &denominator)?;
         let derivative = |i: usize| {
@@ -342,6 +344,30 @@ impl BSplineCurve {
             first,
             second,
         })
+    }
+    /// Reuses the span workspace and evaluates no unrequested second derivative.
+    pub(crate) fn first_box_reusing(
+        &self,
+        parameter: [&Rational; 2],
+        precision: u32,
+        dec: &Decider,
+        row: &mut Vec<[Ball; 4]>,
+    ) -> Result<[[Ball; 3]; 2], Refusal> {
+        let [p, d] = self.homogeneous(parameter, precision, dec, row)?;
+        let denominator = self.denominator(&p[3], precision, dec)?;
+        let value = cartesian(&p, &denominator)?;
+        let first = if self.weight_bound().1.is_some() {
+            cartesian(&d, &denominator)?
+        } else {
+            let derivative = |i: usize| {
+                let correction = &value[i] * &d[3];
+                (&d[i] - &correction)
+                    .checked_div(&denominator)
+                    .ok_or_else(|| invalid("unresolved positive curve denominator"))
+            };
+            [derivative(0)?, derivative(1)?, derivative(2)?]
+        };
+        Ok([value, first])
     }
     /// Exact rigidly transformed curve, without transforming unrelated surface controls.
     pub fn transformed(&self, pose: &Pose) -> Self {

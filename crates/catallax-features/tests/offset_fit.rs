@@ -20,6 +20,18 @@ fn definition(distance: &str) -> EllipticOffsetDefinition {
     .unwrap();
     EllipticOffsetDefinition::new(original, r(distance).into(), &mut dec).unwrap()
 }
+fn rational_source_definition(dec: &mut Decider) -> EllipticOffsetDefinition {
+    let original = EllipticCylinder::new(
+        Point3::origin(),
+        Vector3::new(3.into(), 0.into(), 4.into()),
+        Vector3::new(0.into(), 1.into(), 0.into()),
+        4.into(),
+        r("64/25").into(),
+        dec,
+    )
+    .unwrap();
+    EllipticOffsetDefinition::new(original, r("-1/4").into(), dec).unwrap()
+}
 fn ball(value: &Rational) -> Ball {
     Ball::from_rational(value, 128)
 }
@@ -178,16 +190,7 @@ fn independently_measured_sweep_rejects_wrong_side_detached_column_and_forged_se
 fn fitted_algebraic_boundary_recovers_exact_non_dyadic_parameter_without_elimination() {
     use catallax_shapes::{BSplineCurve, SplineBoundary};
     let mut dec = Decider::default();
-    let original = EllipticCylinder::new(
-        Point3::origin(),
-        Vector3::new(Real::from_i64(3), Real::zero(), Real::from_i64(4)),
-        Vector3::new(Real::zero(), Real::one(), Real::zero()),
-        Real::from_i64(4),
-        r("64/25").into(),
-        &mut dec,
-    )
-    .unwrap();
-    let definition = EllipticOffsetDefinition::new(original, r("-1/4").into(), &mut dec).unwrap();
+    let definition = rational_source_definition(&mut dec);
     let (result, work) = with_operation_budget(100_000_000, || {
         let fit = fit_elliptic_offset(
             &definition,
@@ -215,6 +218,126 @@ fn fitted_algebraic_boundary_recovers_exact_non_dyadic_parameter_without_elimina
             let actual = dec.enclose(component, &r("1e-12"))?;
             assert!(actual.lo() <= expected.hi() && actual.hi() >= expected.lo());
         }
+        Ok::<_, catallax_numbers::Refusal>(())
+    });
+    result.unwrap();
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn checked_finite_spline_support_has_exact_incidence_outward_side_and_rigid_transport() {
+    use catallax_numbers::{Outcome, Sign, StrictSign};
+    use catallax_shapes::{Pose, Rotation, SplineSurface, certify_elliptic_offset_sweep};
+    let mut dec = Decider::default();
+    let definition = rational_source_definition(&mut dec);
+    let (result, work) = with_operation_budget(100_000_000, || {
+        let fit = fit_elliptic_offset(
+            &definition,
+            [r("9/4").into(), r("23/4").into()],
+            &r("0.0001"),
+            &mut dec,
+        )?;
+        let proof = certify_elliptic_offset_sweep(
+            &fit.surface,
+            &definition,
+            [&fit.axial[0], &fit.axial[1]],
+            &mut dec,
+        )?;
+        let support = SplineSurface::from_offset(proof);
+        let u = Real::from_rational(r("1/3"));
+        let v = Real::from_rational(r("1/3"));
+        let base = support.lower_edge().point_at(&u, &mut dec)?;
+        let point = base.plus(&support.axis().scaled(&(&v * support.height())));
+        let inverse = support
+            .parameters_at(&point, &mut dec)
+            .expect("finite incidence proof")
+            .expect("finite represented point");
+        assert!(dec.compare(inverse.u(), &u).is_coincident());
+        assert!(dec.compare(inverse.v(), &v).is_coincident());
+        let rebuilt = inverse.point(&dec)?;
+        for (a, b) in [&rebuilt.x, &rebuilt.y, &rebuilt.z]
+            .into_iter()
+            .zip([&point.x, &point.y, &point.z])
+        {
+            assert!(dec.compare(a, b).is_coincident());
+        }
+        let normal = inverse.normal(&dec)?;
+        assert!(
+            dec.compare(&normal.dot(support.axis()), &Real::zero())
+                .is_coincident()
+        );
+        let centre = support
+            .frame()
+            .0
+            .plus(&support.axis().scaled(&Real::from_i64(4)));
+        assert!(matches!(
+            dec.sign(&normal.dot(&point.minus(&centre))),
+            Outcome::Proven(StrictSign::Positive)
+        ));
+        assert_eq!(
+            support
+                .cross_section_side(&centre, &mut dec)
+                .expect("interior side proof"),
+            Sign::Negative
+        );
+        let outside = centre.plus(&Vector3::new(0.into(), 3.into(), 0.into()));
+        assert_eq!(
+            support
+                .cross_section_side(&outside, &mut dec)
+                .expect("exterior side proof"),
+            Sign::Positive
+        );
+        assert_eq!(
+            support
+                .cross_section_side(&point, &mut dec)
+                .expect("boundary side proof"),
+            Sign::Zero
+        );
+        let near_outside = point.plus(&normal.scaled(&r("0.000001").into()));
+        assert_eq!(
+            support
+                .cross_section_side(&near_outside, &mut dec)
+                .expect("near exterior side proof"),
+            Sign::Positive
+        );
+        let beyond_cap = point.plus(
+            &support
+                .axis()
+                .scaled(&(support.height() * &Real::from_i64(2))),
+        );
+        assert!(
+            support
+                .parameters_at(&beyond_cap, &mut dec)
+                .expect("finite cap exclusion")
+                .is_none()
+        );
+        let pose = Pose::new(
+            Rotation::from_quaternion(r("1"), r("1"), r("1"), r("1")).unwrap(),
+            Vector3::new(17.into(), (-4).into(), 9.into()),
+            &mut dec,
+        )?;
+        let moved = support.transformed(&pose);
+        let moved_point = pose.apply_point(&point);
+        let inverse = moved
+            .parameters_at(&moved_point, &mut dec)
+            .expect("transported incidence proof")
+            .expect("rigidly transported point");
+        assert!(dec.compare(inverse.u(), &u).is_coincident());
+        assert!(dec.compare(inverse.v(), &v).is_coincident());
+        let moved_normal = inverse.normal(&dec)?;
+        let expected = pose.apply_vector(&normal);
+        for (a, b) in [&moved_normal.x, &moved_normal.y, &moved_normal.z]
+            .into_iter()
+            .zip([&expected.x, &expected.y, &expected.z])
+        {
+            assert!(dec.compare(a, b).is_coincident());
+        }
+        assert_eq!(
+            moved
+                .cross_section_side(&pose.apply_point(&centre), &mut dec)
+                .expect("transported interior side proof"),
+            Sign::Negative
+        );
         Ok::<_, catallax_numbers::Refusal>(())
     });
     result.unwrap();

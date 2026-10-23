@@ -368,7 +368,7 @@ For example, a sphere's face is `{"step":"ball","role":{"side":{"segment":"wall"
 - A torus is a circle meridian `wall`, centred at radial distance `R`, revolved through 360 degrees.
 - A cone is its axial trapezoid or triangle revolved through 360 degrees. The sloped meridian generates `side.wall`. The lower and upper radial meridians generate the named `start` and `end` disks. An expansion to generic revolve must map those radial-segment side origins to these cap origins before exposing the stock result. The axis generates no face.
 
-This remains a naming obligation on the eventual canonical feature expansion. The current B-rep feature evaluator preserves explicitly authored sweep origins but does not yet certify stock-to-feature equivalence or perform the cone-cap origin remapping. The field evaluator does not implement sketch, extrude or revolve.
+`catallax_recipe::CanonicalStock` supplies these exact sketch/sweep definitions and their explicit origin correspondence. `catallax_features::evaluate_canonical_stock` and `catallax_field::Plan::compile_canonical_stock` build them with the stock step's public names. The B-rep retains the original stock definition; the field keeps generated domain roles separate from public names, so remapping a cone cap does not change its trim or sampling predicate. Ordinary stock evaluation keeps its direct analytic builders. Generic authored revolutions still use `side.segment` for radial meridians, without implicit renaming.
 
 
 ### 4.1 Extrude

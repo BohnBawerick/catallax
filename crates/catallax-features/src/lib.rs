@@ -43,3 +43,4 @@ pub use extrude::extrude;
 pub use placement::{copy_origin, mirror_placement, pattern_placement};
 pub use profile::Profile;
 pub use revolve::revolve;
+pub use stock::evaluate_canonical_stock;

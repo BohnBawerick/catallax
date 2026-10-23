@@ -126,14 +126,17 @@ impl Plan {
                 "result has no finite feature sampling bound",
             )
         })?;
-        for face in &self.faces {
+        for (index, face) in self.faces.iter().enumerate() {
             if !face.in_result || self.leaf_registers[face.leaf].is_none() {
                 continue;
             }
             if let Leaf::Feature(feature) = &self.leaves[face.leaf]
-                && !feature.sample_candidates(&face.origin.role, divisions, result, &mut |p| {
-                    visit(p, &face.origin)
-                })?
+                && !feature.sample_candidates(
+                    self.definition_role(index),
+                    divisions,
+                    result,
+                    &mut |p| visit(p, &face.origin),
+                )?
             {
                 return Ok(false);
             }

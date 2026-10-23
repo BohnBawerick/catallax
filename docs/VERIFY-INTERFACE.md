@@ -20,8 +20,17 @@ Sources:
 | `recipe` | `catallax-recipe/3` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. |
 | `compare` | `catallax-recipe/3` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
 | `field` | `catallax-recipe/3` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations retain their `field.*` refusal codes, with no display fallback. |
+| `name-edit` | `catallax-name-edit/1` | Rebuild `recipe` and `edited_recipe`, resolve every original result-face origin and physical-edge name, and check the independently compiled field registries. Report `name_edit`; no STEP or display. |
 
 A new source implements one evaluation adapter returning a manifest. External corpus adapters export Python `load(Path)` and yield `{"source":...,"problem":...}` records. These adapters are trusted executable code selected explicitly with `--adapter`. Data files cannot select executable adapters.
+
+### Parameter-edit names
+
+`catallax-name-edit/1` contains `format`, `recipe` and `edited_recipe`, both complete recipes. Result and ordered step IDs and operation kinds must stay fixed. An unchanged input is `names.no-edit`. All four builds share the request's unchanged deterministic allowance.
+
+`name_edit.status` is `passed`, `failed`, `waiting` or `invalid`. Face references resolve by origin containment, including split pieces and merged origin sets. Edge references resolve against both incident faces' complete origin sets, not arena handles or only their current first origins. Missing references and unnamed physical entities fail the check. The report counts checked faces and edges and lists missing names. Field coverage is explicit: result-face origins resolve in each independent definition registry, not a proof of surviving boundary domains. Sampled geometry comparison remains a separate check.
+
+A build refusal reports `waiting` with kernel, before/after phase, refusal code and detail. B-rep refusals include the exact step ID and operation, so a shell or chamfer still being built cannot become a passing edit check. Invalid envelopes and structural recipes report `invalid`.
 
 ### Field display
 
@@ -304,8 +313,10 @@ Use an allowed core from `doctor`, or omit `--core`. Install `cadquery-ocp` in a
 
 `parts` reads every recipe recursively in filename order and writes `parts.json` with format `catallax-parts/1`. Each row retains the relative `recipe_file`, SHA-256, name, and complete independent `recipe`, `field` and `compare` responses, including work, wall time, refusal codes and operation logs. All three adapters run even if one refuses. The report is checkpointed after each completed row; its request, response, manifest, log, portable question and any STEP remain under `cases/`. Runs are fresh, not cached.
 
+`parts/edit-checks.json`, format `catallax-part-edits/1`, is a specification rather than a recipe. Its `cases` map relative recipe filenames to edits with `step`, a nonempty `path` of object keys or array indices inside that step, and an exact numeric string `value`. The report rebuilds the complete edited recipe through `name-edit`, saves its full exchange artifacts under `edit/`, and adds `edit_check` to the row. P1 changes boss radius 8 to 9; P2 changes chamfer setback 1 to 0.75; P4 changes shell thickness 2 to 1.5. Other rows report `names.no-edit-specified`. `edit_failures` counts failed or invalid checks and makes the command exit nonzero. Waiting checks stay visible without claiming the roadmap exit.
+
 For each exported STEP, a separate process opens the file in OpenCASCADE, transfers its roots, checks validity without repair, compares unique face count and records imported volume. The STEP hash and binding version accompany the result. `step_check.status=passed` covers import, topology and face count only. The recipe adapter does not measure kernel volume; `volume_comparison` explicitly reports `step.kernel-volume-unmeasured`. No volume-deviation or full target-part acceptance claim follows from a passing import. No STEP is `step.no-export` with its build refusal, not a silently skipped part.
 
-The report labels machine load and affinity. Shared-machine observations are not quiet-core speed evidence. `application_check` remains `parts.application-loop-required`; the scoreboard does not pretend to have edited a part in SolidDraft. Sampled comparison still is not a global geometric certificate. Nonzero exit reports invalid input, internal error, proven comparison disagreement or a failed STEP import; ordinary coverage refusals and unresolved comparisons stay visible without making report generation fail.
+The report labels machine load and affinity. Shared-machine observations are not quiet-core speed evidence. `application_check` remains `parts.application-loop-required`; the scoreboard does not pretend to have edited a part in SolidDraft. Sampled comparison still is not a global geometric certificate. Nonzero exit reports invalid input, internal error, proven comparison disagreement, a failed STEP import or a failed/invalid name edit; ordinary coverage refusals, waiting edits and unresolved comparisons stay visible without making report generation fail.
 
 `.github/workflows/parts.yml` runs this report on `main` and relevant pull requests at a fixed 1,000,000-unit allowance and uploads the full bundle, even on failure. It is a diagnostic workflow separate from the full-suite `check` gate. Checkpoint reports use the same explicit allowance so a coverage refusal is never mistaken for impossible geometry.

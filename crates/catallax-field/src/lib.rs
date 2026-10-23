@@ -192,6 +192,9 @@ pub struct Plan {
     faces: Vec<Face>,
     root: usize,
     leaf_registers: Vec<Option<usize>>,
+    // Only explicit canonical expansions rename roles; domain predicates retain
+    // the generated feature role, independently of the public stock name.
+    definition_roles: BTreeMap<usize, catallax_recipe::Role>,
 }
 
 impl Plan {
@@ -214,6 +217,7 @@ impl Plan {
             faces: vec![],
             root: 0,
             leaf_registers: vec![],
+            definition_roles: BTreeMap::new(),
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
@@ -345,6 +349,34 @@ impl Plan {
         }
         plan.compact();
         Ok(plan)
+    }
+
+    /// Compiles a stock solid through its canonical sketch and sweep, with the
+    /// same public origins as the direct analytic compiler.
+    pub fn compile_canonical_stock(
+        operation: &Operation,
+        step: &catallax_recipe::StepId,
+        dec: &mut Decider,
+    ) -> Result<Option<Self>, Refusal> {
+        let Some(expansion) = catallax_recipe::CanonicalStock::new(operation, step) else {
+            return Ok(None);
+        };
+        let mut plan = Self::compile_checked(expansion.recipe(), dec)?;
+        for (index, face) in plan.faces.iter_mut().enumerate() {
+            let origin = expansion.origin(&face.origin);
+            if origin != &face.origin {
+                plan.definition_roles
+                    .insert(index, face.origin.role.clone());
+                face.origin = origin.clone();
+            }
+        }
+        Ok(Some(plan))
+    }
+
+    fn definition_role(&self, face: usize) -> &catallax_recipe::Role {
+        self.definition_roles
+            .get(&face)
+            .unwrap_or(&self.faces[face].origin.role)
     }
 
     fn feature(
@@ -645,7 +677,7 @@ impl Plan {
                 && self.leaf_registers[face.leaf]
                     .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
                 && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
-                && self.leaves[face.leaf].on_face(&face.origin.role, &coordinates, dec)?
+                && self.leaves[face.leaf].on_face(self.definition_role(id), &coordinates, dec)?
                     != Some(false)
             {
                 storage.active.push(id);
@@ -865,7 +897,7 @@ impl Plan {
             }
             Location::Boundary => (),
         }
-        match self.leaves[face.leaf].on_face(&face.origin.role, &p, dec)? {
+        match self.leaves[face.leaf].on_face(self.definition_role(id.0), &p, dec)? {
             Some(false) => return Ok(absent),
             None => {
                 return Ok(FaceQuery {

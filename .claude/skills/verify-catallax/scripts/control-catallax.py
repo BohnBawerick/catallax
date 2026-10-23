@@ -27,7 +27,7 @@ signal.signal(signal.SIGINT, interrupt)
 signal.signal(signal.SIGTERM, interrupt)
 
 CONTRACT = 'catallax-request/1'
-TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'field': 1000, 'compare': 2000}
+TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'field': 1000, 'compare': 2000, 'name-edit': 1000}
 
 
 def canonical(value):
@@ -78,7 +78,7 @@ def load(paths, source, adapter=None):
                 elif fmt == 'catallax-question/1':
                     if set(value) != {'format', 'source', 'problem', 'max_work'}:
                         raise ValueError(f'{file}: invalid exported question fields')
-                    if value['source'] not in ('question', 'recipe', 'field', 'compare'):
+                    if value['source'] not in ('question', 'recipe', 'field', 'compare', 'name-edit'):
                         raise ValueError(f'{file}: unknown exported question source')
                     if type(value['max_work']) is not int or not 0 <= value['max_work'] <= 2**64 - 1:
                         raise ValueError(f'{file}: exported max_work must be an unsigned 64-bit integer')
@@ -93,6 +93,8 @@ def load(paths, source, adapter=None):
 def classification(item):
     problem = item['problem']
     kind = item['source']
+    if kind == 'name-edit':
+        problem = problem['edited_recipe']
     if kind == 'question':
         kind = 'boolean' if problem.get('steps') else 'stock'
     operations = sorted({s.get('op', '?') for s in problem.get('steps', [])})
@@ -236,6 +238,7 @@ def summarize(report):
     groups, slow, issues = {}, [], {}
     crashes = 0
     disagreements = 0
+    edit_failures = 0
     for case in report['cases']:
         response = case['response']
         manifest = response['manifest']
@@ -247,6 +250,12 @@ def summarize(report):
             disagreements += comparison['verdict'] == 'disagree'
             for finding in comparison['findings']:
                 issues.setdefault(finding['code'], []).append(case['key'])
+        elif manifest.get('name_edit'):
+            edit = manifest['name_edit']
+            cause = edit['code']
+            edit_failures += edit['status'] in ('failed', 'invalid')
+            if edit['status'] != 'passed':
+                issues.setdefault(cause, []).append(case['key'])
         elif manifest.get('refusal'):
             issues.setdefault(cause, []).append(case['key'])
         groups[cause] = groups.get(cause, 0) + 1
@@ -260,7 +269,7 @@ def summarize(report):
     for case in slow:
         label = case['group'] + '/' + case['phase'] + '/' + case['cause']
         performance.setdefault(label, []).append(case['key'])
-    return {'cases': len(report['cases']), 'elapsed_ms': report['elapsed_ms'], 'cache_hits': sum(c['cache_hit'] for c in report['cases']), 'outcomes': groups, 'issue_groups': issues, 'crashes': crashes, 'comparison_disagreements': disagreements, 'performance_groups': performance, 'slow': sorted(slow, key=lambda c: -c['wall_ms'])}
+    return {'cases': len(report['cases']), 'elapsed_ms': report['elapsed_ms'], 'cache_hits': sum(c['cache_hit'] for c in report['cases']), 'outcomes': groups, 'issue_groups': issues, 'crashes': crashes, 'comparison_disagreements': disagreements, 'edit_failures': edit_failures, 'performance_groups': performance, 'slow': sorted(slow, key=lambda c: -c['wall_ms'])}
 
 
 def comparable(manifest):
@@ -327,7 +336,8 @@ def pair(args):
     try:
         for index, item in enumerate(items):
             for repeat in range(args.repeats + 1):
-                row = {'index': index, 'repeat': repeat, 'warmup': repeat == 0}
+                row = {'index': index, 'repeat': repeat, 'warmup': repeat == 0,
+                       'load_average_before': os.getloadavg()}
                 responses = {}
                 for side in ((0, 1) if repeat % 2 == 0 else (1, 0)):
                     dest = out / str(index) / str(repeat) / str(side)
@@ -336,6 +346,7 @@ def pair(args):
                     atomic(dest / 'response.json', response)
                     row[str(side)] = response['wall_ms']
                     responses[side] = response
+                row['load_average_after'] = os.getloadavg()
                 step_files = [out / str(index) / str(repeat) / str(side) / 'answer.step' for side in (0, 1)]
                 row['same_answer'] = comparable(responses[0]['manifest']) == comparable(responses[1]['manifest']) and all(r['manifest'].get('status') != 'internal-error' for r in responses.values())
                 row['same_step'] = [p.read_bytes() if p.exists() else None for p in step_files][0] == [p.read_bytes() if p.exists() else None for p in step_files][1]
@@ -383,9 +394,19 @@ def legacy(args):
 
 def parts(args):
     root = Path(args.inputs).resolve()
-    files = sorted(root.rglob('*.json'))
+    edit_file = root / 'edit-checks.json'
+    edits = {}
+    if edit_file.exists():
+        specification = json.loads(edit_file.read_text())
+        if specification.get('format') != 'catallax-part-edits/1':
+            raise ValueError(f'{edit_file}: expected catallax-part-edits/1')
+        edits = specification['cases']
+    files = sorted(file for file in root.rglob('*.json') if file != edit_file)
     if not files:
         raise ValueError('no target recipes found')
+    unknown_edits = set(edits) - {file.relative_to(root).as_posix() for file in files}
+    if unknown_edits:
+        raise ValueError(f'edit checks name absent recipes: {sorted(unknown_edits)}')
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     identity = file_hash(args.binary)
@@ -410,6 +431,40 @@ def parts(args):
                 response = worker.answer(request)
                 atomic(dest / 'response.json', response)
                 case[source] = response
+            if relative in edits:
+                edited = json.loads(json.dumps(problem))
+                for edit in edits[relative]:
+                    step = next((s for s in edited['steps'] if s['id'] == edit['step']), None)
+                    if step is None:
+                        raise ValueError(f'{relative}: edit names unknown step {edit["step"]}')
+                    if not edit['path']:
+                        raise ValueError(f'{relative}: edit path is empty')
+                    target = step
+                    try:
+                        for key in edit['path'][:-1]:
+                            target = target[key]
+                        key = edit['path'][-1]
+                        previous = target[key]
+                    except (KeyError, IndexError, TypeError) as error:
+                        raise ValueError(f'{relative}: invalid edit path') from error
+                    if not isinstance(previous, str) or not isinstance(edit['value'], str):
+                        raise ValueError(f'{relative}: edit must replace an exact numeric parameter')
+                    target[key] = edit['value']
+                dest = out / 'cases' / relative.removesuffix('.json') / 'edit'
+                dest.mkdir(parents=True, exist_ok=True)
+                request = {'format': CONTRACT, 'source': 'name-edit',
+                           'problem': {'format': 'catallax-name-edit/1', 'recipe': problem,
+                                       'edited_recipe': edited},
+                           'max_work': args.max_work, 'out': str(dest)}
+                atomic(dest / 'request.json', request)
+                response = worker.answer(request)
+                atomic(dest / 'response.json', response)
+                case['edit_check'] = response['manifest'].get('name_edit', {
+                    'status': 'waiting', 'code': 'names.request-required',
+                    'refusal': response['manifest'].get('refusal')})
+                case['edit_check']['edits'] = edits[relative]
+            else:
+                case['edit_check'] = {'status': 'not-run', 'code': 'names.no-edit-specified'}
             brep = case['recipe']['manifest']
             step = out / 'cases' / relative.removesuffix('.json') / 'recipe' / 'answer.step'
             if step.exists() and brep.get('step'):
@@ -426,8 +481,8 @@ def parts(args):
             else:
                 case['step_check'] = {'status': 'not-run', 'code': 'step.no-export',
                                       'refusal': brep.get('refusal')}
-            # Building in SolidDraft, editing names and volume error transfer are
-            # separate acceptance gates. This report never infers them from samples.
+            # SolidDraft interaction and volume error transfer remain separate
+            # acceptance gates; name resolution is exercised above without a UI.
             case['application_check'] = {'status': 'not-run', 'code': 'parts.application-loop-required'}
             report['cases'].append(case)
             atomic(out / 'parts.json', report)
@@ -438,6 +493,7 @@ def parts(args):
     report['comparison_disagreements'] = sum(c['compare']['manifest'].get('comparison', {}).get('verdict') == 'disagree'
                                              for c in report['cases'])
     report['step_failures'] = sum(c['step_check']['status'] == 'failed' for c in report['cases'])
+    report['edit_failures'] = sum(c['edit_check']['status'] in ('failed', 'invalid') for c in report['cases'])
     atomic(out / 'parts.json', report)
     return report
 
@@ -509,7 +565,7 @@ def main():
         else:
             result = {'policy': 'workers close on command exit; evidence is never removed', 'evidence_exists': Path(args.out).exists(), 'dry_run': args.dry_run}
         print(json.dumps(result, indent=None if args.json else 2, sort_keys=True))
-        return 1 if result.get('equal') is False or result.get('crashes', 0) or result.get('comparison_disagreements', 0) or result.get('step_failures', 0) else 0
+        return 1 if result.get('equal') is False or result.get('crashes', 0) or result.get('comparison_disagreements', 0) or result.get('step_failures', 0) or result.get('edit_failures', 0) else 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(json.dumps({'error': str(error), 'action': 'retain evidence, run doctor, then resume using the same --out'}), file=sys.stderr)
         return 2

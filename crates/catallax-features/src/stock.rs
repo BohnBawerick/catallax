@@ -142,3 +142,29 @@ pub(crate) fn build(
             .fold(Rational::zero(), |a, n| a + n.value().abs());
     Ok(Some((body, bound)))
 }
+
+/// Builds the canonical sketch/extrude or sketch/revolve equivalent of a stock
+/// operation, applying its explicit origin correspondence before publishing it.
+/// The ordinary evaluator retains the direct analytic stock builders.
+pub fn evaluate_canonical_stock(
+    operation: &Operation,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<Option<crate::Built>, crate::BuildError> {
+    let Some(expansion) = catallax_recipe::CanonicalStock::new(operation, step) else {
+        return Ok(None);
+    };
+    let mut built = crate::evaluate(expansion.recipe(), dec)?;
+    built
+        .model
+        .map_face_origins(built.result, |o| expansion.origin(o).clone());
+    built.definition = std::sync::Arc::new(catallax_recipe::Recipe::new(
+        "canonical stock feature",
+        vec![catallax_recipe::Step {
+            id: step.clone(),
+            op: operation.clone(),
+        }],
+        step.clone(),
+    ));
+    Ok(Some(built))
+}

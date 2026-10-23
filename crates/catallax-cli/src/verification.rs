@@ -14,7 +14,7 @@ pub const DEFAULT_WORK: u64 = 100_000_000;
 pub struct Request {
     /// Must be `catallax-request/1`.
     pub format: String,
-    /// `question`, `recipe`, or `compare`.
+    /// `question`, `recipe`, `field`, `compare`, or `name-edit`.
     pub source: String,
     /// Original question or recipe object.
     pub problem: Value,
@@ -175,6 +175,12 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         return Ok(value);
     }
     match request.source.as_str() {
+        "name-edit" => {
+            let report = crate::name_checks::check(&request.problem);
+            Ok(json!({"format":"catallax-manifest/3",
+                "status":if report["status"] == "invalid" {"invalid-question"} else {"answered"},
+                "exact":false,"marks":[],"refusal":null,"step":null,"name_edit":report}))
+        }
         "question" => {
             let text = serde_json::to_string(&request.problem)?;
             let manifest = match crate::parse_question(&text) {
@@ -373,7 +379,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         _ => {
             let mut value = refused(
                 "cli.invalid-source",
-                "use question, recipe, field, or compare",
+                "use question, recipe, field, compare, or name-edit",
             );
             value["status"] = json!("invalid-question");
             Ok(value)

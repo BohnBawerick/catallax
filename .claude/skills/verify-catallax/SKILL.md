@@ -37,7 +37,7 @@ For timing use `pair INPUT --baseline BASE_BINARY --candidate CANDIDATE_BINARY -
 
 Each completed request includes `operation_log` and writes `operations.json` plus a portable `question.json`. Replay the latter with `catallax-verify replay QUESTION --out DIR`, or pass it to the driver's `run`. Both preserve its original work allowance. Compare manifests, STEP bytes and work; exclude operation `wall_ms` when comparing logs.
 
-Run `"$DRIVER" parts parts --binary target/release/catallax-verify --out "$PROOF/parts" --max-work 1000000 --json` for the target scoreboard. It runs B-rep, field and sampled comparison independently, including unsupported recipes. For real STEP imports pass `--occt-python` pointing at a scratch environment with `cadquery-ocp`. Inspect every refusal and `step_check`; missing bindings and absent exports are not passing checks. A passing import does not prove volume deviation, application edits or complete target-part acceptance. See `parts/README.md` and the protocol for the recorded dimensions and remaining gates.
+Run `"$DRIVER" parts parts --binary target/release/catallax-verify --out "$PROOF/parts" --max-work 1000000 --json` for the target scoreboard. It runs B-rep, field and sampled comparison independently, including unsupported recipes. `parts/edit-checks.json` adds complete P1/P2/P4 parameter rebuilds and face/edge name resolution; inspect `edit_check.status` and its feature waits. Field registry lookup is not a boundary certificate. For real STEP imports pass `--occt-python` pointing at a scratch environment with `cadquery-ocp`. Inspect every refusal and `step_check`; missing bindings and absent exports are not passing checks. A passing import does not prove volume deviation, SolidDraft interaction or complete target-part acceptance. See `parts/README.md` and the protocol for the recorded dimensions and remaining gates.
 
 ## Evidence
 
@@ -51,7 +51,7 @@ Run `"$DRIVER" cleanup --out "$PROOF" --dry-run --json`, then `"$DRIVER" cleanup
 
 ## Helpers
 
-`control-catallax.py --help` is the canonical interface. Built-in source adapters cover question/2, recipe/3, independent field compilation, sampled comparison and portable question/1 replay. A trusted custom Python module passed with `--adapter` exports `load(Path)` yielding source/problem objects; it cannot change the kernel's exchange semantics.
+`control-catallax.py --help` is the canonical interface. Built-in source adapters cover question/2, recipe/3, independent field compilation, sampled comparison, opt-in `name-edit` wrappers and portable question/1 replay. A trusted custom Python module passed with `--adapter` exports `load(Path)` yielding source/problem objects; it cannot change the kernel's exchange semantics.
 
 Run `python3 -B -m unittest discover -s .claude/skills/verify-catallax/scripts -p 'test_*.py' -v` after building to verify the driver against real commands. Set `CATALLAX_VERIFY_BINARY` to test a preserved executable.
 

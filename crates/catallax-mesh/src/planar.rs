@@ -1,6 +1,6 @@
 //! Planar trims need exact predicates before positions are rounded for display.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::Plane;
@@ -11,7 +11,75 @@ use crate::{
     edges::Boundaries, failure,
 };
 
-type Point = [Real; 2];
+#[derive(Clone)]
+struct Point {
+    coordinates: [Real; 2],
+    bounds: [[f64; 2]; 2],
+}
+
+impl std::ops::Index<usize> for Point {
+    type Output = Real;
+    fn index(&self, axis: usize) -> &Real {
+        &self.coordinates[axis]
+    }
+}
+
+fn difference(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
+    [(a[0] - b[1]).next_down(), (a[1] - b[0]).next_up()]
+}
+
+fn product(a: [f64; 2], b: [f64; 2]) -> Option<[f64; 2]> {
+    let values = [a[0] * b[0], a[0] * b[1], a[1] * b[0], a[1] * b[1]];
+    if values.iter().any(|v| v.is_nan()) {
+        return None;
+    }
+    Some([
+        values
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min)
+            .next_down(),
+        values
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max)
+            .next_up(),
+    ])
+}
+
+fn filtered_turn(a: &Point, b: &Point, c: &Point) -> Option<Sign> {
+    let ab = std::array::from_fn::<_, 2, _>(|i| difference(b.bounds[i], a.bounds[i]));
+    let ac = std::array::from_fn::<_, 2, _>(|i| difference(c.bounds[i], a.bounds[i]));
+    let determinant = difference(product(ab[0], ac[1])?, product(ab[1], ac[0])?);
+    if determinant[0] > 0.0 {
+        Some(Sign::Positive)
+    } else if determinant[1] < 0.0 {
+        Some(Sign::Negative)
+    } else {
+        None
+    }
+}
+
+fn dec_bounds(value: &Real, dec: &Decider) -> Result<[f64; 2], Refusal> {
+    let ball = dec.enclose_at(value, chart::BITS)?;
+    Ok([
+        ball.lo().to_f64_nearest().next_down(),
+        ball.hi().to_f64_nearest().next_up(),
+    ])
+}
+
+#[derive(Clone, Copy)]
+struct CandidateVertex {
+    position: spade::Point2<f64>,
+    index: usize,
+}
+
+impl spade::HasPosition for CandidateVertex {
+    type Scalar = f64;
+    fn position(&self) -> spade::Point2<f64> {
+        self.position
+    }
+}
 
 fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     match dec.sign(value) {
@@ -34,6 +102,12 @@ struct Polygon<'a> {
 
 impl Polygon<'_> {
     fn turn(&mut self, a: usize, b: usize, c: usize) -> Result<Sign, Refusal> {
+        if a == b || b == c || a == c {
+            return Ok(Sign::Zero);
+        }
+        if let Some(value) = filtered_turn(&self.points[&a], &self.points[&b], &self.points[&c]) {
+            return Ok(value);
+        }
         sign(
             &cross(&self.points[&a], &self.points[&b], &self.points[&c]),
             self.dec,
@@ -110,6 +184,202 @@ impl Polygon<'_> {
         })
     }
 
+    fn coordinate_order(&mut self, a: usize, b: usize, axis: usize) -> Result<Sign, Refusal> {
+        let (a, b) = (&self.points[&a], &self.points[&b]);
+        if a.bounds[axis][1] < b.bounds[axis][0] {
+            Ok(Sign::Negative)
+        } else if a.bounds[axis][0] > b.bounds[axis][1] {
+            Ok(Sign::Positive)
+        } else {
+            sign(&(&a[axis] - &b[axis]), self.dec)
+        }
+    }
+
+    fn hull(
+        &mut self,
+        positions: &[[f64; 3]],
+        axes: [usize; 2],
+    ) -> Result<Option<BTreeSet<(usize, usize)>>, Refusal> {
+        let mut order: Vec<_> = self.points.keys().copied().collect();
+        order.sort_unstable_by(|&a, &b| {
+            positions[a][axes[0]]
+                .total_cmp(&positions[b][axes[0]])
+                .then_with(|| positions[a][axes[1]].total_cmp(&positions[b][axes[1]]))
+                .then_with(|| a.cmp(&b))
+        });
+        // Floating sorting is only a proposal; certify its exact lexicographic order.
+        for pair in order.windows(2) {
+            let x = self.coordinate_order(pair[0], pair[1], 0)?;
+            if x == Sign::Positive
+                || (x == Sign::Zero
+                    && self.coordinate_order(pair[0], pair[1], 1)? != Sign::Negative)
+            {
+                return Ok(None);
+            }
+        }
+        let mut hull = Vec::with_capacity(order.len() * 2);
+        for &index in &order {
+            while hull.len() >= 2
+                && self.turn(hull[hull.len() - 2], hull[hull.len() - 1], index)? == Sign::Negative
+            {
+                hull.pop();
+            }
+            hull.push(index);
+        }
+        let lower = hull.len();
+        for &index in order.iter().rev().skip(1) {
+            while hull.len() > lower
+                && self.turn(hull[hull.len() - 2], hull[hull.len() - 1], index)? == Sign::Negative
+            {
+                hull.pop();
+            }
+            hull.push(index);
+        }
+        hull.pop();
+        let edges: BTreeSet<_> = (0..hull.len())
+            .map(|i| {
+                let (a, b) = (hull[i], hull[(i + 1) % hull.len()]);
+                (a.min(b), a.max(b))
+            })
+            .collect();
+        Ok((hull.len() >= 3 && edges.len() == hull.len()).then_some(edges))
+    }
+
+    fn candidate(
+        &mut self,
+        loops: &[Vec<usize>],
+        face: FaceId,
+        positions: &[[f64; 3]],
+        axes: [usize; 2],
+    ) -> Result<Option<Vec<Triangle>>, Refusal> {
+        use spade::Triangulation;
+        let mut cdt = spade::ConstrainedDelaunayTriangulation::<CandidateVertex>::new();
+        let mut handles = BTreeMap::new();
+        for &index in self.points.keys() {
+            self.dec.check_deadline()?;
+            let p = positions[index];
+            let previous_count = cdt.num_vertices();
+            let Ok(handle) = cdt.insert(CandidateVertex {
+                position: spade::Point2::new(p[axes[0]], p[axes[1]]),
+                index,
+            }) else {
+                return Ok(None);
+            };
+            if cdt.num_vertices() == previous_count {
+                return Ok(None);
+            }
+            handles.insert(index, handle);
+        }
+        let mut boundary = BTreeSet::new();
+        for ring in loops {
+            for i in 0..ring.len() {
+                self.dec.check_deadline()?;
+                let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+                if a == b || boundary.contains(&(b, a)) || !boundary.insert((a, b)) {
+                    return Ok(None);
+                }
+                if !cdt.can_add_constraint(handles[&a], handles[&b]) {
+                    return Ok(None);
+                }
+                cdt.add_constraint(handles[&a], handles[&b]);
+            }
+        }
+        let Some(expected_hull) = self.hull(positions, axes)? else {
+            return Ok(None);
+        };
+        let mut labels = vec![None; cdt.num_all_faces()];
+        let mut queue = VecDeque::new();
+        let mut group = Vec::new();
+        for start in cdt.inner_faces() {
+            if labels[start.index()].is_some() {
+                continue;
+            }
+            group.clear();
+            queue.push_back(start.fix());
+            labels[start.index()] = Some(false);
+            let mut seed = None;
+            while let Some(current) = queue.pop_front() {
+                group.push(current.index());
+                for edge in cdt.face(current).adjacent_edges() {
+                    if edge.is_constraint_edge() {
+                        let pair = (edge.from().data().index, edge.to().data().index);
+                        let left = if boundary.contains(&pair) {
+                            true
+                        } else if boundary.contains(&(pair.1, pair.0)) {
+                            false
+                        } else {
+                            return Ok(None);
+                        };
+                        if seed.is_some_and(|value| value != left) {
+                            return Ok(None);
+                        }
+                        seed = Some(left);
+                    } else if let Some(other) = edge.rev().face().as_inner()
+                        && labels[other.index()].is_none()
+                    {
+                        labels[other.index()] = Some(false);
+                        queue.push_back(other.fix());
+                    }
+                }
+            }
+            for index in &group {
+                labels[*index] = Some(seed.unwrap_or(false));
+            }
+        }
+        let mut triangles = Vec::new();
+        let mut incidence = BTreeMap::<(usize, usize), (usize, isize)>::new();
+        let mut actual_hull = BTreeSet::new();
+        for triangle in cdt.inner_faces() {
+            let vertices = triangle.vertices().map(|vertex| vertex.data().index);
+            if self.turn(vertices[0], vertices[1], vertices[2])? != Sign::Positive {
+                return Ok(None);
+            }
+            for edge in triangle.adjacent_edges() {
+                if edge.rev().face().as_inner().is_none() {
+                    let (a, b) = (edge.from().data().index, edge.to().data().index);
+                    actual_hull.insert((a.min(b), a.max(b)));
+                }
+            }
+            if labels[triangle.index()] != Some(true) {
+                continue;
+            }
+            for i in 0..3 {
+                let (a, b) = (vertices[i], vertices[(i + 1) % 3]);
+                let uses = incidence.entry((a.min(b), a.max(b))).or_default();
+                uses.0 += 1;
+                uses.1 += if a < b { 1 } else { -1 };
+            }
+            triangles.push(Triangle { vertices, face });
+        }
+        // Certify the entire disk embedding, including triangles outside the
+        // trims: a convex exact hull and positive triangles rule out overlaps.
+        if actual_hull != expected_hull {
+            return Ok(None);
+        }
+        // Positive exact triangles with precisely the oriented input boundary
+        // have the same winding function as the trims. Float CDT coordinates
+        // propose connectivity only; neither orientation nor incidence is trusted.
+        for (&(a, b), &(count, winding)) in &incidence {
+            let expected = if boundary.contains(&(a, b)) {
+                (1, 1)
+            } else if boundary.contains(&(b, a)) {
+                (1, -1)
+            } else {
+                (2, 0)
+            };
+            if (count, winding) != expected {
+                return Ok(None);
+            }
+        }
+        if boundary
+            .iter()
+            .any(|&(a, b)| !incidence.contains_key(&(a.min(b), a.max(b))))
+        {
+            return Ok(None);
+        }
+        Ok(Some(triangles))
+    }
+
     fn bridge(
         &mut self,
         ring: &mut Vec<usize>,
@@ -143,9 +413,17 @@ impl Polygon<'_> {
                 if !clear {
                     continue;
                 }
-                let midpoint = std::array::from_fn(|k| {
+                let coordinates = std::array::from_fn(|k| {
                     (&self.points[&a][k] + &self.points[&b][k]) / Real::from(2)
                 });
+                let bounds = coordinates
+                    .each_ref()
+                    .map(|value| dec_bounds(value, self.dec));
+                let [x, y] = bounds;
+                let midpoint = Point {
+                    coordinates,
+                    bounds: [x?, y?],
+                };
                 let mut inside = false;
                 for boundary in loops {
                     inside ^= self.contains(boundary, &midpoint)?;
@@ -412,6 +690,7 @@ pub(crate) fn build(
     // A planar support is affine. Convex interpolation of endpoint residuals
     // bounds every point of a triangle, including strips collapsed by binary64.
     let mut error = Rational::zero();
+    let mut projected = BTreeMap::new();
     for (&index, p) in &points {
         let balls = [
             dec.enclose_at(&p[0], chart::BITS)?,
@@ -419,55 +698,71 @@ pub(crate) fn build(
             dec.enclose_at(&p[2], chart::BITS)?,
         ];
         error = error.max(chart::residual(&boundaries.mesh.positions[index], &balls));
+        projected.insert(
+            index,
+            Point {
+                coordinates: axes.map(|a| p[a].clone()),
+                bounds: axes.map(|a| {
+                    [
+                        balls[a].lo().to_f64_nearest().next_down(),
+                        balls[a].hi().to_f64_nearest().next_up(),
+                    ]
+                }),
+            },
+        );
     }
     if error > options.chord_tolerance {
         return Err(failure("planar position rounding exceeds chord tolerance"));
     }
     let mut polygon = Polygon {
-        points: points
-            .iter()
-            .map(|(&i, p)| (i, axes.map(|a| p[a].clone())))
-            .collect(),
+        points: projected,
         dec,
     };
-    let mut outer = Vec::new();
-    let mut holes = Vec::new();
-    let areas: Vec<_> = loops.iter().map(|ring| polygon.area(ring)).collect();
-    for (i, area) in areas.iter().enumerate() {
-        match sign(area, polygon.dec)? {
-            Sign::Positive => outer.push(i),
-            Sign::Negative => holes.push(i),
-            Sign::Zero => return Err(failure("zero-area planar boundary")),
-        }
-    }
-    let mut assigned = BTreeMap::<usize, Vec<usize>>::new();
-    for hole in holes {
-        let p = polygon.points[&loops[hole][0]].clone();
-        let mut owner: Option<usize> = None;
-        for &candidate in &outer {
-            if polygon.contains(&loops[candidate], &p)?
-                && (owner.is_none()
-                    || sign(&(&areas[candidate] - &areas[owner.unwrap()]), polygon.dec)?
-                        == Sign::Negative)
-            {
-                owner = Some(candidate);
+    let mut triangles = if let Some(triangles) =
+        polygon.candidate(&loops, face, &boundaries.mesh.positions, axes)?
+    {
+        triangles
+    } else {
+        let mut outer = Vec::new();
+        let mut holes = Vec::new();
+        let areas: Vec<_> = loops.iter().map(|ring| polygon.area(ring)).collect();
+        for (i, area) in areas.iter().enumerate() {
+            match sign(area, polygon.dec)? {
+                Sign::Positive => outer.push(i),
+                Sign::Negative => holes.push(i),
+                Sign::Zero => return Err(failure("zero-area planar boundary")),
             }
         }
-        assigned
-            .entry(owner.ok_or_else(|| failure("planar hole has no outer boundary"))?)
-            .or_default()
-            .push(hole);
-    }
-    let mut triangles = Vec::new();
-    for i in outer {
-        let mut ring = loops[i].clone();
-        if let Some(holes) = assigned.get(&i) {
-            for &hole in holes {
-                polygon.bridge(&mut ring, &loops[hole], &loops)?;
+        let mut assigned = BTreeMap::<usize, Vec<usize>>::new();
+        for hole in holes {
+            let p = polygon.points[&loops[hole][0]].clone();
+            let mut owner: Option<usize> = None;
+            for &candidate in &outer {
+                if polygon.contains(&loops[candidate], &p)?
+                    && (owner.is_none()
+                        || sign(&(&areas[candidate] - &areas[owner.unwrap()]), polygon.dec)?
+                            == Sign::Negative)
+                {
+                    owner = Some(candidate);
+                }
             }
+            assigned
+                .entry(owner.ok_or_else(|| failure("planar hole has no outer boundary"))?)
+                .or_default()
+                .push(hole);
         }
-        polygon.clip(ring, face, &mut triangles)?;
-    }
+        let mut triangles = Vec::new();
+        for i in outer {
+            let mut ring = loops[i].clone();
+            if let Some(holes) = assigned.get(&i) {
+                for &hole in holes {
+                    polygon.bridge(&mut ring, &loops[hole], &loops)?;
+                }
+            }
+            polygon.clip(ring, face, &mut triangles)?;
+        }
+        triangles
+    };
     error = error.max(refine(
         &mut triangles,
         &mut points,

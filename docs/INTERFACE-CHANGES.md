@@ -694,6 +694,11 @@ Exact planar trims retain their incidence through shared dyadic edge refinement.
 before display rounding, including samples introduced by length controls.
 The aspect bound is `None` when rounding collapses a facet to zero area; requested
 aspect and angular controls then appear as unavailable rather than finite bounds.
+Planar triangulation proposes indexed CDT connectivity, then certifies the exact
+convex hull, every triangle orientation and the oriented trim-boundary incidence.
+Collapsed or uncertified proposals retain the exact trim clipper. Outward-rounded
+binary64 interval filters accept only proven signs; inconclusive predicates use
+`Real` arithmetic.
 
 Why: applications need exact geometric summaries and explicit display guarantees,
 not quantities inferred from triangles or controls silently discarded.

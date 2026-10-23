@@ -822,3 +822,46 @@ propagate. Comparison accuracies, numeric budgets, recipe construction, STEP
 output and whole-face definition measurements are unchanged. Previous curved
 extrusion, revolution, round-Boolean and small planar-Boolean perturbation
 limitation tests now require agreement with finite sampled bounds.
+## 2026-10-23: named drill tools and versioned extrusion end conditions
+
+Pieces: recipe, features, field, compare, verification CLI
+Change: `Operation::ExtrudeThrough` gains optional `side: Option<ThroughSide>`; `ThroughSide` has `Both`, `Forward` and `Backward`. `Operation` gains `ExtrudeTo` and `ExtrudeNext`. The reader explicitly accepts `FORMAT_V4` alongside `FORMAT`, rejects version 4 end-condition syntax in version 3, and preserves the stored version when writing. Both kernels evaluate named holes and one-sided through-all cuts. `catallax_features::hole::HoleTool` exposes definition-native axial bands; `end_condition::Capped` exposes the planar first-hit reduction used independently by B-rep and field. Non-planar limiting boundaries remain an explicit implementation gap.
+Why: RECIPE sections 4.1.1, 4.1.2 and 4.3 define these operations, their trimmed caps, discontinuity curtains and stable origins.
+Migration: exhaustive operation matches handle both new variants and the optional through side; callers creating version 3 through steps use `side: None`. Version 4 authors set the format explicitly. Existing version 3 canonical recipes and verification exchange formats are unchanged. New impossible-input refusals are `hole.non-positive-diameter`, `hole.non-positive-depth`, `hole.non-positive-head-depth`, `hole.zero-direction`, `hole.invalid-angle`, `hole.head-too-small` and `extrude.no-finite-cap`. Runtime reference resolution uses `recipe.missing-reference` and `recipe.ambiguous-reference`; unsupported non-planar reductions use `features.unsupported-limit-surface`, never `extrude.no-finite-cap`. Internal arrangement inconsistencies use `features.limit-arrangement`.
+
+Drill-band cylinder supports and certified finite-band bounds use native `Cylinder::radius_sq`. Analytic-cell copies keep their infallible exact isometries inside the fallible field leaf-transform API. Prepared field distances classify these cells by their exact constraint conjunction, including algebraic points and one-sided ray germs.
+
+## 2026-10-23: comparison queries propagate their original refusal
+
+Pieces: compare, verification CLI
+Change: `Report` gains `refusal: Option<catallax_numbers::Refusal>`. A failed field face or coactive-face query stops further reverse queries and publishes its original refusal instead of panicking. The verification adapter returns that code and detail; a whole-request numeric-budget refusal still takes precedence.
+Why: the first P5 countersink exhausted its unchanged request allowance inside reverse face queries and previously became `verify.internal-error`.
+Migration: report constructors initialise `refusal`; adapters propagate a present refusal without converting it to a proven disagreement or internal error. No allowance or tolerance changes.
+
+## 2026-10-23: blind short-head ledges keep the floor origin
+
+Pieces: recipe, features, field
+Change: a blind hole with a head can structurally reference `floor` even with a cone tip. The planar annulus at blind depth between an unfinished head and the narrower cone tip carries that origin. Its point set is unchanged.
+Why: a legal short countersink or counterbore can leave this ledge; the earlier flat-tip-only structural rule gave it no usable name.
+Migration: no new role or alias. Existing through-hole floor references remain invalid.
+
+## 2026-10-23: primitive rational-angle defining polynomials
+
+Pieces: numbers, features, field
+Change: non-quadratic rational-degree sine/cosine definitions use the primitive real cyclotomic polynomial, selected by exact coprime angle order. Existing closed forms remain unchanged. The public API, exact values and allowances do not change.
+Why: standard 118-degree drill tips and 82-degree countersinks previously spent most of their request allowance constructing unrelated Chebyshev conjugates. The smaller definition reduces that construction cost but does not complete the subsequent Boolean proof.
+Migration: none. These standard-angle hole builds still refuse cleanly with `numbers.operation-budget`; they are unfinished coverage awaiting geometric quadric classification and construction-intent facts, not impossible geometry.
+
+## 2026-10-23: drill and capped-sweep cells compose with exact copies
+
+Pieces: field, comparison
+Change: analytic drill and planar first-hit cells transport their constraints and finite sample-sphere centres through the shared exact `Isometry`, including reflections. Reverse comparison retains checked field queries and cancellation from body-copy integration while preserving the original query refusal in `Report::refusal`.
+Why: named holes and capped sweeps must remain valid inputs to the newly available body pattern and mirror operations.
+Migration: none; dimensions, work allowances and query result contracts are unchanged.
+
+## 2026-10-23: saved first-hit feature instances
+
+Pieces: application, features
+Change: `expand_feature` transports explicit directions for `extrude_to` and `extrude_next`, supplies the mapped authored normal for reflected default directions, and reuses explicit input/origin binding for target and limit references.
+Why: a saved reflected capped extrusion must query its reflected target along the original physical sweep direction, not the repaired sketch frame's opposite normal.
+Migration: no schema change; save the ordinary version 4 steps returned by expansion.

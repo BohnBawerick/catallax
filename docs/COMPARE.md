@@ -38,14 +38,15 @@ Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four ratio
 |---|---|
 | Block, cylinder, sphere, cone frustum, ring torus | Both builds, display vertices, independent exact field samples, trimmed-face projections, names and directions |
 | Unite, subtract, intersect | Same two-way path wherever both kernels build and mesh the recipe; unresolved Boolean query bounds remain unresolved |
-| Sketch, extrude, extrude-through, revolve | Same two-way path for the shared rational support subset, including profile holes and segment aliases; specific unfinished frame/surface refusals stay unresolved |
+| Sketch, extrude, two-sided/one-sided extrude-through, revolve | Same two-way path for the shared rational support subset, including profile holes and segment aliases; specific unfinished frame/surface refusals stay unresolved |
 | Linear/circular body patterns and mirrors | Same two-way path, including nested copy origins and transformed stock/feature candidates; rational-placement curved copies use independently admitted trimmed-face witnesses, while algebraic-only sampling and numeric refusals remain unresolved |
-| Path, hole, fillet, chamfer, shell, offset, thicken, draft, sweep, loft, STEP import | Not comparable: neither recipe adapter implements the operation |
+| Named hole, elementary fillet, extrude-to, extrude-next | Both adapters build supported analytic bands, strips and planar first-hit caps; unfinished domains and budget refusals remain visible |
+| Path, chamfer, shell, offset, thicken, draft, sweep, loft, STEP import | Not comparable: neither recipe adapter implements the operation |
 | Lattice, gyroid, smooth blend, mesh import | Not comparable: the field implementation is missing; a B-rep implementation is not planned |
 
 Every unsupported step is returned with its operation-specific reason, not only the first step. Builds, meshes and query proofs that fail stay unresolved. A proven discrepancy takes precedence over unresolved observations, which remain in the report. Exact expression identities and opposite coincident primitive halfspaces can certify agreement of two empty results without boundary samples. General emptiness is not inferred from missing samples.
 
-Named field queries are fallible even when their handles are valid. A numeric refusal in reverse sampling records its code as an unresolved observation and stops that sampling phase; it is never an internal panic or evidence that a face disappeared. The verification CLI discards a request whose shared work allowance is exhausted and returns `numbers.operation-budget`, rather than publishing partial comparison results.
+A field face-query refusal during reverse sampling is retained in `Report::refusal` and propagated by the verification adapter. It is not a panic, an internal error or evidence of disagreement. Numeric-budget exhaustion keeps its original code and the caller's allowance. Checked queries use the caller's proof policy, and feature sampling stops on the first failure.
 
 ### Coplanar booleans and repeated operands
 

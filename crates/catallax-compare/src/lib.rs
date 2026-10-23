@@ -3,7 +3,7 @@
 //! query is used. See `docs/PLAN.md` for coverage and measured costs.
 #![forbid(unsafe_code)]
 
-use catallax_numbers::{Interval, Rational};
+use catallax_numbers::{Interval, Rational, Refusal};
 use catallax_recipe::{Origin, Recipe, StepId};
 use catallax_shapes::RPoint3;
 use std::sync::{Arc, Mutex};
@@ -137,6 +137,8 @@ pub struct Report {
     pub findings: Vec<Finding>,
     /// Every unsupported operation, in recipe order.
     pub not_comparable: Vec<NotComparable>,
+    /// Original kernel refusal, when a query prevented completion.
+    pub refusal: Option<Refusal>,
 }
 
 #[derive(Default)]

@@ -17,6 +17,7 @@
 //! decision shares, containment timings and reachable stored-number growth.
 //! Add `-- --case 10` to run one numbered fixture, or `-- --case 44` for a chain.
 
+mod bounds;
 mod containment;
 mod curve_pair;
 mod fast_region;

@@ -177,3 +177,43 @@ fn canonical_cone_cap_distance_uses_its_generated_trim_role() {
     assert_eq!(answer.lower, Rational::one());
     assert_eq!(answer.upper, Some(Rational::one()));
 }
+
+#[test]
+fn drilled_wall_distance_admits_the_surviving_algebraic_radial_witness() {
+    let recipe = recipe(vec![
+        json!({"id":"stock","op":"block","size":["10","10","10"],"pose":pose("-5")}),
+        json!({"id":"drill","op":"hole","target":"stock","at":[{"id":"centre","point":["0","5","0"],"direction":["0","0","1"]}],"diameter":"2","depth":"through","tip":"flat"}),
+    ]);
+    let mut dec = Decider::default();
+    let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+    let wall = plan
+        .faces()
+        .iter()
+        .find(|f| {
+            matches!(
+                f.origin.role,
+                Role::Hole {
+                    part: catallax_recipe::HolePart::Wall,
+                    ..
+                }
+            )
+        })
+        .map(|f| plan.select(&f.origin).unwrap())
+        .unwrap();
+    let options = controls();
+    let answer = plan
+        .prepare_distances(&mut dec)
+        .unwrap()
+        .point_to_face(wall, &point(2, 7, 5), &options, &mut dec)
+        .unwrap();
+    let expected = dec
+        .enclose_at(&(Real::from_i64(8).sqrt() - Real::one()), 128)
+        .unwrap();
+    let upper = answer
+        .upper
+        .as_ref()
+        .expect("surviving drilled-wall witness");
+    assert!(answer.lower <= expected.hi(), "{answer:?}");
+    assert!(upper >= &expected.lo(), "{answer:?}");
+    assert!(upper - &answer.lower <= options.width, "{answer:?}");
+}

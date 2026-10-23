@@ -1,12 +1,13 @@
-//! Rational-degree angles selected by exact Chebyshev root order.
+//! Rational-degree angles selected by exact real cyclotomic root order.
 
 use crate::{Decider, Integer, Rational, Real, Refusal, UPoly, algebraic, decider::Work};
 
 /// Exact sine and cosine of a rational angle in degrees, in that order.
 ///
 /// Reduction and sector selection use integer arithmetic. Non-quadratic values
-/// retain a certified root of a rational Chebyshev polynomial. Construction and
-/// isolation share the caller's deterministic per-decision work allowance.
+/// retain a certified root of the real cyclotomic polynomial for the primitive
+/// angle, rather than a larger Chebyshev equation containing unrelated roots.
+/// Construction and isolation share the caller's deterministic work allowance.
 pub fn sin_cos_degrees(angle: &Rational, dec: &mut Decider) -> Result<[Real; 2], Refusal> {
     dec.angle_degrees(angle)
 }
@@ -65,7 +66,7 @@ pub(crate) fn construct(angle: &Rational, work: &mut Work) -> Result<[Real; 2], 
         }
     } else {
         let turn = &acute / &Rational::from_i64(180);
-        let degree = turn
+        let denominator = turn
             .denominator()
             .to_i64()
             .and_then(|n| usize::try_from(n).ok())
@@ -75,31 +76,35 @@ pub(crate) fn construct(angle: &Rational, work: &mut Work) -> Result<[Real; 2], 
             .to_i64()
             .and_then(|n| usize::try_from(n).ok())
             .ok_or("numbers.budget-exhausted")?;
-        // Reserve before allocating or visiting a degree-sized polynomial.
-        work.charge((degree as u64).saturating_mul(degree as u64))?;
-        let two_x = UPoly::new(vec![Rational::zero(), Rational::from_i64(2)]);
-        let mut previous = UPoly::constant(Rational::one());
-        let mut current = UPoly::x();
-        for _ in 1..degree {
-            work.poly(&two_x, &current)?;
-            let product = &two_x * &current;
-            work.poly(&product, &previous)?;
-            let next = &product - &previous;
-            previous = current;
-            current = next;
-        }
-        let parity = numerator % 2;
-        let constant = UPoly::constant(Rational::from_i64(if parity == 0 { 1 } else { -1 }));
-        work.poly(&current, &constant)?;
-        let polynomial = &current - &constant;
+        let (order, numerator) = if numerator % 2 == 0 {
+            (denominator, numerator / 2)
+        } else {
+            (
+                denominator
+                    .checked_mul(2)
+                    .ok_or("numbers.budget-exhausted")?,
+                numerator,
+            )
+        };
+        // Reserve before allocating degree-sized polynomials or visiting indices.
+        work.charge((order as u64).saturating_mul(order as u64))?;
+        let polynomial = real_cyclotomic(order, work)?;
         let roots = algebraic::isolate(&polynomial, work)?;
-        // T_n(cos(k*pi/n)) = (-1)^k. Cosine decreases on [0, pi],
-        // so the k with the chosen parity run in reverse root order.
-        let largest = degree - (degree % 2 != parity) as usize;
-        let index = (largest - numerator) / 2;
-        if roots.len() != (largest - parity) / 2 + 1 {
+        let mut count = 0;
+        let mut index = 0;
+        for j in 1..=order / 2 {
+            if coprime(j, order) {
+                count += 1;
+                if j > numerator {
+                    index += 1;
+                }
+            }
+        }
+        if roots.len() != count || index >= count {
             return Err("numbers.root-not-certified");
         }
+        // Primitive j in (0,n/2) give all conjugates. Cosine decreases with j,
+        // so the chosen primitive numerator has this exact ascending root index.
         let cosine = Real::from_algebraic(roots[index].value.clone());
         let sine = (&Real::one() - &cosine.square()).sqrt();
         [sine, cosine]
@@ -109,4 +114,89 @@ pub(crate) fn construct(angle: &Rational, work: &mut Work) -> Result<[Real; 2], 
         if negative_sine { -sine } else { sine },
         if negative_cosine { -cosine } else { cosine },
     ])
+}
+
+fn coprime(mut a: usize, mut b: usize) -> bool {
+    while b != 0 {
+        let remainder = a % b;
+        a = b;
+        b = remainder;
+    }
+    a == 1
+}
+fn mobius(mut n: usize) -> i64 {
+    let mut sign = 1;
+    let mut p = 2;
+    while p <= n / p {
+        if n.is_multiple_of(p) {
+            n /= p;
+            if n.is_multiple_of(p) {
+                return 0;
+            }
+            sign = -sign;
+        }
+        p += 1;
+    }
+    if n > 1 { -sign } else { sign }
+}
+fn real_cyclotomic(order: usize, work: &mut Work) -> Result<UPoly, &'static str> {
+    // Phi_n(z) = product_(d|n) (z^d-1)^mu(n/d).
+    let mut numerator = UPoly::constant(Rational::one());
+    let mut denominator = numerator.clone();
+    for d in 1..=order {
+        if !order.is_multiple_of(d) {
+            continue;
+        }
+        let power = mobius(order / d);
+        if power == 0 {
+            continue;
+        }
+        work.charge(d as u64 + 1)?;
+        let mut coefficients = vec![Rational::zero(); d + 1];
+        coefficients[0] = -Rational::one();
+        coefficients[d] = Rational::one();
+        let factor = UPoly::new(coefficients);
+        let product = if power > 0 {
+            &mut numerator
+        } else {
+            &mut denominator
+        };
+        work.poly(product, &factor)?;
+        *product = &*product * &factor;
+    }
+    work.poly(&numerator, &denominator)?;
+    let (cyclotomic, remainder) = numerator
+        .div_rem_checked(&denominator, &|| work.check_deadline())?
+        .ok_or("numbers.root-not-certified")?;
+    let degree = cyclotomic.degree().ok_or("numbers.root-not-certified")?;
+    if !remainder.is_zero() || degree % 2 != 0 {
+        return Err("numbers.root-not-certified");
+    }
+    let half = degree / 2;
+    let coefficients = cyclotomic.coefficients();
+    // Phi_n(z)/z^half is a_k + sum a_(k+j)(z^j+z^-j).
+    // D_0=2, D_1=2x, D_(j+1)=2x D_j-D_(j-1) therefore gives
+    // its polynomial in x=cos(2*pi*j/n), of degree phi(n)/2.
+    let two_x = UPoly::new(vec![Rational::zero(), Rational::from_i64(2)]);
+    let mut previous = UPoly::constant(Rational::from_i64(2));
+    let mut current = two_x.clone();
+    let mut result = UPoly::constant(coefficients[half].clone());
+    for j in 1..=half {
+        let coefficient = &coefficients[half + j];
+        if !coefficient.is_zero() {
+            work.poly(&current, &UPoly::constant(coefficient.clone()))?;
+            let term = current.scale(coefficient);
+            work.poly(&result, &term)?;
+            result = &result + &term;
+        }
+        if j < half {
+            work.poly(&two_x, &current)?;
+            let product = &two_x * &current;
+            work.poly(&product, &previous)?;
+            let next = &product - &previous;
+            previous = current;
+            current = next;
+        }
+    }
+    Ok(result)
 }

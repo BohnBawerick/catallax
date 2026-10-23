@@ -111,6 +111,31 @@ pub enum Operation {
         /// Tool direction; the sketch normal when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
+        /// Which half of the sweep to cut; version 4 only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        side: Option<ThroughSide>,
+    },
+    /// A body-valued prism capped by the first positive hit on selected trimmed faces.
+    ExtrudeTo {
+        /// Body supplying the limiting faces.
+        target: StepId,
+        /// Sketch region to sweep.
+        profile: StepId,
+        /// Sweep direction; the sketch normal when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        /// The selected trimmed faces.
+        limit: FaceRef,
+    },
+    /// A body-valued prism capped by the first positive material crossing.
+    ExtrudeNext {
+        /// Body supplying the limiting boundary.
+        target: StepId,
+        /// Sketch region to sweep.
+        profile: StepId,
+        /// Sweep direction; the sketch normal when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
     },
     /// A profile turned about an axis in its plane.
     Revolve {
@@ -311,6 +336,8 @@ impl Operation {
             Operation::Path { .. } => "path",
             Operation::Extrude { .. } => "extrude",
             Operation::ExtrudeThrough { .. } => "extrude_through",
+            Operation::ExtrudeTo { .. } => "extrude_to",
+            Operation::ExtrudeNext { .. } => "extrude_next",
             Operation::Revolve { .. } => "revolve",
             Operation::Hole { .. } => "hole",
             Operation::Boolean { .. } => "boolean",
@@ -360,6 +387,12 @@ impl Operation {
             }
             Operation::ExtrudeThrough {
                 target, profile, ..
+            }
+            | Operation::ExtrudeTo {
+                target, profile, ..
+            }
+            | Operation::ExtrudeNext {
+                target, profile, ..
             } => vec![(target, Body), (profile, Profile)],
             Operation::Hole { target, .. } => vec![(target, Body)],
             Operation::Boolean { target, tool, .. }
@@ -397,6 +430,18 @@ impl Operation {
             _ => vec![],
         }
     }
+}
+
+/// The side of an unbounded profile tool, relative to its authored sketch plane.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThroughSide {
+    /// Both directions, with no physical end cap.
+    Both,
+    /// Nonnegative line parameters along the sweep direction.
+    Forward,
+    /// Nonpositive line parameters along the sweep direction.
+    Backward,
 }
 
 /// A closed chain of sketch segments. Each segment starts where the previous one ends,

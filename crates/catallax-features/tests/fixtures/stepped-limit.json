@@ -1,0 +1,16 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Two trimmed limit levels with an interior curtain",
+  "steps": [
+    {"id":"sections","op":"sketch","plane":{"rotation":["1","1","0","0"],"translation":["0","4","0"]},"loops":[
+      [{"kind":"line","id":"near-bottom","to":["1","5"]},{"kind":"line","id":"near-right","to":["1","6"]},{"kind":"line","id":"near-top","to":["0","6"]},{"kind":"line","id":"near-left","to":["0","5"]}],
+      [{"kind":"line","id":"far-bottom","to":["2","10"]},{"kind":"line","id":"far-right","to":["2","11"]},{"kind":"line","id":"far-top","to":["1","11"]},{"kind":"line","id":"far-left","to":["1","10"]}]
+    ]},
+    {"id":"obstacles","op":"extrude","profile":"sections","distance":"2"},
+    {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+      {"kind":"line","id":"a","to":["3/2","5/2"]},{"kind":"line","id":"b","to":["3/2","7/2"]},{"kind":"line","id":"c","to":["1/2","7/2"]},{"kind":"line","id":"d","to":["1/2","5/2"]}
+    ]]},
+    {"id":"cap","op":"extrude_to","target":"obstacles","profile":"profile","limit":{"face":{"step":"obstacles"}}}
+  ],
+  "result":"cap"
+}

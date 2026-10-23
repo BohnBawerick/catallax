@@ -1,10 +1,10 @@
 # Catallax recipe language
 
-Version 4 specification, format `catallax-recipe/4`. The released data model and evaluators still read version 3. Version 4 below is an implementation contract, not a claim that its schema or operations have landed. [PRD.md](PRD.md) sections 2, 4 and 10 step 3 ask for this document.
+Version 4 specification, format `catallax-recipe/4`. The reader accepts versions 3 and 4 explicitly. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other version 4 additions below remain implementation contracts, not shipped operations. [PRD.md](PRD.md) sections 2, 4 and 10 step 3 ask for this document.
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
-The crate `catallax-recipe` holds the data model: the types, their canonical JSON text and the checks that need no geometry. `catallax-field` evaluates stock solids, sketch sweeps, elementary fillet regions and booleans, with the certified queries described in [FIELD.md](FIELD.md). `catallax-features::evaluate` builds named B-rep stock solids, sketches, extrusions, revolutions, through-all cuts, elementary cylinder and torus fillet strips, and booleans. Its current rational analytic representation leaves the legal-input bugs in section 7.14 open. The two evaluators do not yet cover the whole language.
+The crate `catallax-recipe` holds the data model: the types, their canonical JSON text and the checks that need no geometry. Both evaluators build stock solids, sketches, signed extrusions, revolutions, through-all cuts, named holes and booleans. Exact elementary fillets construct cylinder and torus strips in B-rep and independent fillet regions in the field. Bounded face/next extrusions currently reduce planar target boundaries to an exact projected arrangement, including trimmed hits, reference disambiguation and interior curtains; non-planar target limits remain an implementation gap. The field's certified queries are described in [FIELD.md](FIELD.md). Section 7.14 lists inherited feature geometry gaps. Neither evaluator covers the whole language.
 
 The exchange contract in [JUDGE-INTERFACE.md](JUDGE-INTERFACE.md) is unchanged. Its question format stays the way the independent tester talks to the B-rep half. The recipe language sits beside it and does not replace it.
 
@@ -487,10 +487,12 @@ The result is `S −* (T_1 ∪ T_2 ∪ ...)`, one tool per placement.
 | `counterbore_wall`, `counterbore_floor` | the counterbore's cylinder and its flat floor at `hc` |
 | `countersink` | the countersink cone |
 | `wall` | the cylinder of diameter `D` |
-| `floor` | the flat floor at `h`, flat tip only |
+| `floor` | the flat floor at `h` for a flat tip, or the planar annular ledge at `h` where the head's remaining radius exceeds the cone tip's starting radius |
 | `tip` | the point cone, cone tip only |
 
 A part exists only where it bounds the result. `entry` appears only where material lies above the placement point within `r0` of the axis. Faces of `S` keep their origins. The structural check rejects parts a hole cannot make, such as `floor` on a through hole.
+
+For a blind hole whose countersink or counterbore has not narrowed to `D/2` at `h`, the cone tip still starts at radius `D/2` as defined above. The planar annulus between those radii carries `floor`, including when `tip` is a cone. This records the naming decision without changing the tool's point set.
 
 **Impossible.** `D <= 0`, `h <= 0`, `w = 0`. `α` or `β` outside `(0, 180)`. `Dc <= D`, `Dk <= D` or `hc <= 0`, where the head would have no width or no depth.
 
@@ -500,7 +502,9 @@ Choices:
 - **Placements are points and directions, not positions on a named face.** A hole then depends on no face's frame, and moving the face does not move the hole by surprise. The alternative is a face reference plus 2D coordinates. The hole would follow its face, but the language would need a rule for each face's 2D frame.
 - **One step holds several placements, each with an id.** A bolt circle is one feature, and deleting one hole keeps the others' names. The alternative is one step per hole. That is simpler, but a bolt circle of twelve holes becomes twelve steps.
 
-The B-rep boolean path now builds coaxial cylindrical countersinks and apex-cut cone cases. This does not yet implement the named hole operation or its full placement and origin-set rules; general cone/torus poses remain unfinished.
+Both kernels implement the named hole operation from these axial bands, including through holes, flat and conical blind tips, counterbores, countersinks and their surviving origins. The B-rep uses finite construction caps excluded by the target's defining bound. Strictly disjoint parallel tools can be subtracted as one compound; other placements are subtracted successively. The field compiles the same defining bands into independent analytic cells, not a B-rep. Inherited general cone/torus intersection gaps remain unfinished work.
+
+Standard 118-degree blind drill points and 82-degree countersinks remain exact algebraic definitions. Their current Boolean builds exhaust the unchanged request allowance; this is unfinished classification/intent coverage, not impossible geometry and not permission to approximate the angles. Planar first-hit extrusions are implemented; non-planar limits remain a separate unfinished reduction.
 
 ### 4.4 Boolean
 
@@ -1055,7 +1059,7 @@ Version 2 added the five stock-solid operations and singleton singular-vertex na
 
 Version 4 changes loft correspondence and segment-count handling, sharp-join thicken semantics, path corner acceptance and fillet/chamfer overflow semantics and draft region retention. It adds solved sketch roots, helix/spline paths, one-sided through-all, bounded face/next extrusions, reference-only scan values, blend overflow modes and draft kept-region picks. `shell` now states its regularisation and empty-kept-set case explicitly. The version bump prevents an old reader from silently producing the old arc-length loft or rejecting the newly defined geometry.
 
-Do not relabel every version 3 recipe mechanically. Unchanged operations can migrate after reference validation. A loft containing arcs or unequal authored segmentation needs explicit review of correspondence; preserve the old version when its old solid is intended. Thicken edits involving sharp joins need review of the sectors and new `round` roles. The no-refresh `near` rule and split-ID policy govern new editing actions, not a rewrite of old saved ids. The interpreter and schema update will be a separate implementation change; version 3 fixtures, code and exchange-contract formats remain unchanged in this documentation decision.
+Do not relabel every version 3 recipe mechanically. Unchanged operations can migrate after reference validation. A loft containing arcs or unequal authored segmentation needs explicit review of correspondence; preserve the old version when its old solid is intended. Thicken edits involving sharp joins need review of the sectors and new `round` roles. The no-refresh `near` rule and split-ID policy govern new editing actions, not a rewrite of old saved ids. The reader now accepts version 4 end-condition syntax without changing version 3 fixtures, canonical output or exchange-contract formats. Schema and interpreter work for the other version 4 additions remains separate.
 
 
 Choices:

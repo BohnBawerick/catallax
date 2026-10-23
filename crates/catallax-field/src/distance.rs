@@ -13,7 +13,7 @@ fn coordinates(p: &Point3) -> [Real; 3] {
 fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
     match leaf {
         geometry::Leaf::Feature(f) => f.classify(p, dec),
-        geometry::Leaf::Primitive(_) => {
+        geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let p = coordinates(p);
             for c in leaf.constraints() {
@@ -52,7 +52,7 @@ fn ray(
                 continue;
             }
             found = true;
-            if matches!(leaf, geometry::Leaf::Primitive(_)) {
+            if matches!(leaf, geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_)) {
                 if sign == Sign::Positive {
                     return Ok(Location::Outside);
                 }
@@ -87,7 +87,7 @@ fn ray(
         }
         boundary |= !found;
     }
-    if matches!(leaf, geometry::Leaf::Primitive(_)) {
+    if matches!(leaf, geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_)) {
         Ok(if boundary {
             Location::Boundary
         } else {

@@ -829,7 +829,7 @@ Change: `Operation::ExtrudeThrough` gains optional `side: Option<ThroughSide>`; 
 Why: RECIPE sections 4.1.1, 4.1.2 and 4.3 define these operations, their trimmed caps, discontinuity curtains and stable origins.
 Migration: exhaustive operation matches handle both new variants and the optional through side; callers creating version 3 through steps use `side: None`. Version 4 authors set the format explicitly. Existing version 3 canonical recipes and verification exchange formats are unchanged. New impossible-input refusals are `hole.non-positive-diameter`, `hole.non-positive-depth`, `hole.non-positive-head-depth`, `hole.zero-direction`, `hole.invalid-angle`, `hole.head-too-small` and `extrude.no-finite-cap`. Runtime reference resolution uses `recipe.missing-reference` and `recipe.ambiguous-reference`; unsupported non-planar reductions use `features.unsupported-limit-surface`, never `extrude.no-finite-cap`. Internal arrangement inconsistencies use `features.limit-arrangement`.
 
-Drill-band cylinder supports and certified finite-band bounds use native `Cylinder::radius_sq`. Analytic-cell copies keep their infallible exact isometries inside the fallible field leaf-transform API.
+Drill-band cylinder supports and certified finite-band bounds use native `Cylinder::radius_sq`. Analytic-cell copies keep their infallible exact isometries inside the fallible field leaf-transform API. Prepared field distances classify these cells by their exact constraint conjunction, including algebraic points and one-sided ray germs.
 
 ## 2026-10-23: comparison queries propagate their original refusal
 

@@ -103,6 +103,7 @@ fn native_elliptic_cylinder_distances_use_the_metric_and_closed_sweep_trim() {
         faces,
         root: 0,
         leaf_registers: vec![Some(0)],
+        definition_roles: Default::default(),
     };
     let id = plan.select(&plan.faces[0].origin).unwrap();
     let prepared = plan.prepare_distances(&mut dec).unwrap();

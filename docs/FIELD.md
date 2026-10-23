@@ -132,6 +132,8 @@ Neither adapter uses display triangles as its distance proof.
 Only face entries owned by the compiled result receive distance domains.
 Reusing a coincident evaluation leaf does not reactivate discarded copy names;
 such registry-only handles report `field.face-id` from the distance API.
+Canonical public names retain the plan's generated-domain role for trim
+predicates; renaming a revolved cone cap does not turn it into an angular cap.
 
 `Options::width` requests an enclosure width, not geometric acceptance.
 `max_cells` limits refinement. Exhaustion returns the attained bounds with

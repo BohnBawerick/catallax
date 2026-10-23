@@ -146,3 +146,34 @@ fn discarded_copy_alias_cannot_supply_a_distance_witness() {
     assert_eq!(image.lower, Rational::one());
     assert_eq!(image.upper, Some(Rational::one()));
 }
+
+#[test]
+fn canonical_cone_cap_distance_uses_its_generated_trim_role() {
+    let recipe = recipe(vec![
+        json!({"id":"stock","op":"cone","base_radius":"1","top_radius":"1/2","height":"1","pose":pose("0")}),
+    ]);
+    let step = &recipe.steps[0];
+    let mut dec = Decider::default();
+    let plan = Plan::compile_canonical_stock(&step.op, &step.id, &mut dec)
+        .unwrap()
+        .unwrap();
+    let cap = plan
+        .faces()
+        .iter()
+        .find(|face| face.origin.role == Role::End)
+        .map(|face| plan.select(&face.origin).unwrap())
+        .unwrap();
+    let target = RPoint3::new(
+        Rational::zero(),
+        Rational::from_ratio(1, 4).unwrap(),
+        Rational::from_i64(2),
+    )
+    .to_real();
+    let answer = plan
+        .prepare_distances(&mut dec)
+        .unwrap()
+        .point_to_face(cap, &target, &controls(), &mut dec)
+        .unwrap();
+    assert_eq!(answer.lower, Rational::one());
+    assert_eq!(answer.upper, Some(Rational::one()));
+}

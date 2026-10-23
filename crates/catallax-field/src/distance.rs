@@ -183,7 +183,7 @@ impl Prepared<'_> {
             return Ok(false);
         }
         if let geometry::Leaf::Feature(f) = leaf
-            && !f.on_face_point(&face.origin.role, p, dec)?
+            && !f.on_face_point(self.plan.definition_role(id), p, dec)?
         {
             return Ok(false);
         }

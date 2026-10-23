@@ -155,6 +155,12 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
         }
         | ExtrudeThrough {
             profile, direction, ..
+        }
+        | ExtrudeTo {
+            profile, direction, ..
+        }
+        | ExtrudeNext {
+            profile, direction, ..
         } => {
             if let Some(direction) = direction {
                 v(direction)?;

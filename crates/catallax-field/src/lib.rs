@@ -544,7 +544,9 @@ impl Plan {
                         .chain(&step_faces[tool])
                         .copied()
                         .collect(),
-                    Operation::ExtrudeThrough { target, .. } => step_faces[target].clone(),
+                    Operation::ExtrudeThrough { target, .. } | Operation::Hole { target, .. } => {
+                        step_faces[target].clone()
+                    }
                     Operation::Pattern { body, .. }
                     | Operation::Fillet { body, .. }
                     | Operation::Mirror {

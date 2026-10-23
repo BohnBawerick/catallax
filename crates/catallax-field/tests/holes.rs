@@ -83,4 +83,15 @@ fn mirrored_drill_cells_keep_their_cut_and_wrapped_floor() {
         .state,
         FaceState::OnFace
     );
+    let cap=plan.faces().iter().find(|face|matches!(&face.origin.role,Role::Copy{instance:1,of} if of.step.as_str()=="stock" && of.role==Role::End)).expect("a drilled body's surviving target cap must be copied");
+    assert_eq!(
+        plan.face_query(
+            plan.select(&cap.origin).unwrap(),
+            &point("-4", "0", "10"),
+            &mut workspace
+        )
+        .unwrap()
+        .state,
+        FaceState::OnFace
+    );
 }

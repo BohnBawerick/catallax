@@ -183,3 +183,50 @@ fn a_rational_composite_of_algebraic_rotations_saves_without_rounding() {
     .value;
     assert!(mass.volume.contains(&Rational::from_i64(144)));
 }
+
+#[test]
+fn reflected_first_hit_features_preserve_direction_and_limit_bindings() {
+    for operation in ["extrude_to", "extrude_next"] {
+        let mut value: serde_json::Value = serde_json::from_str(&source().to_text()).unwrap();
+        value["format"] = json!("catallax-recipe/4");
+        value["steps"][2] = json!({"id":"cut","op":operation,"target":"base","profile":"profile"});
+        if operation == "extrude_to" {
+            value["steps"][2]["limit"] = json!({"face":{"step":"base","role":"end"}});
+        }
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let copy = FeatureInstance {
+            placement: Isometry::reflection(
+                &RPoint3::origin(),
+                &RVector3::new(0.into(), 0.into(), 1.into()),
+            )
+            .unwrap(),
+            steps: BTreeMap::from([
+                (id("base"), id("base1")),
+                (id("profile"), id("profile1")),
+                (id("cut"), id("cut1")),
+            ]),
+            inputs: BTreeMap::new(),
+            origins: BTreeMap::new(),
+        };
+        let expanded = expand_feature(
+            &recipe,
+            &[id("base"), id("profile"), id("cut")],
+            &id("cut"),
+            &[copy],
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let saved = Recipe::parse(&expanded.to_text()).unwrap();
+        let built = evaluate(&saved, &mut Decider::default()).unwrap();
+        let mass = catallax_measure::mass_properties(
+            &built.model,
+            built.result,
+            &Default::default(),
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .value;
+        assert!(mass.volume.contains(&Rational::from_i64(3)));
+        assert!(mass.centroid.unwrap()[2].contains(&Rational::parse("-3/2").unwrap()));
+    }
+}

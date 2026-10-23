@@ -64,6 +64,8 @@ Cells use the minimum unsigned distance to their supporting analytic surfaces, s
 
 Exact body copies map cell constraints and finite sample-sphere centres with `Isometry`, including plane reflection. Radii and metric bounds are unchanged by these orthogonal maps. Copied face records retain their wrapped recipe origins.
 
+A hole's result snapshot includes target-face candidates as well as drill parts. Subsequent copies therefore retain wrapped origins for unchanged target faces; candidate membership still requires the exact surviving-domain query.
+
 Full turns omit cap names and axis segments that sweep no area. At 180 degrees, caps connected along an axis segment expose both `start` and `end` names over the merged domain. Consecutive collinear or cocircular segments expose every merged segment origin over the maximal side domain. Face queries check that domain as well as the supporting equation, including the correct branch of a revolved surface.
 
 The supported rational subset and `features.unsupported-*` refusals match [RECIPE.md section 7.14](RECIPE.md#714-b-rep-feature-geometry-bugs). Legal algebraic placements, non-cardinal cap frames, elliptic cylinders and generated irrational surface radii remain explicit unfinished geometry, not impossible inputs.

@@ -30,7 +30,8 @@ fn as_cell(plan: &mut Plan, step: &str) {
         .filter(|f| f.leaf == leaf)
         .map(|f| f.surface.clone())
         .collect();
-    plan.leaves[leaf] = crate::geometry::Leaf::Cell(crate::geometry::Cell::new(surfaces, radius));
+    plan.leaves[leaf] =
+        crate::geometry::Leaf::Cell(crate::geometry::Cell::new(surfaces, radius).unwrap());
 }
 
 fn covers(
@@ -100,7 +101,8 @@ fn disjoint_cell_does_not_split_a_planar_face_by_its_other_constraints() {
     // The same finite box represented by an analytic inequality cell. Its
     // z>=1 constraint excludes the entire z=0 cap of a, even though its x<=0
     // and y<=0 constraints change sign across that cap.
-    plan.leaves[leaf] = crate::geometry::Leaf::Cell(crate::geometry::Cell::new(surfaces, radius));
+    plan.leaves[leaf] =
+        crate::geometry::Leaf::Cell(crate::geometry::Cell::new(surfaces, radius).unwrap());
     let mesh = default_mesh(&plan);
     assert!(mesh.max_deviation <= Options::default().tolerance);
     let count = mesh

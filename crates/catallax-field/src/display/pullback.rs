@@ -312,7 +312,7 @@ mod tests {
             for chart in Chart::all(&surface, &q(20)).unwrap() {
                 assert!(
                     chart
-                        .pullback(surface.implicit().rational().unwrap(), &mut dec)
+                        .pullback(surface.implicit().unwrap().rational().unwrap(), &mut dec)
                         .unwrap()
                         .is_zero()
                 );

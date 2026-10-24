@@ -205,8 +205,11 @@ impl ChamferDefinition {
         let Some(bounds) = self.region_box(vertices, dec)? else {
             return Ok(false);
         };
+        let Some(polynomial) = surface.implicit() else {
+            return Ok(false);
+        };
         let mut value = Ball::from_rational(&Rational::zero(), 128);
-        for (monomial, coefficient) in surface.implicit().terms() {
+        for (monomial, coefficient) in polynomial.terms() {
             let mut term = dec.enclose_budgeted_at(&coefficient, 128)?;
             for (exponent, coordinate) in monomial.exponents().iter().zip(&bounds) {
                 if *exponent != 0 {

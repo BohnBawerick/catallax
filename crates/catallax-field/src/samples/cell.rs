@@ -508,7 +508,7 @@ mod tests {
             };
             assert!(curved(&surface, &bounds, &[], 3, &mut emit).unwrap());
             assert!(!points.is_empty(), "{:?}", surface.kind());
-            let implicit = surface.implicit();
+            let implicit = surface.implicit().expect("analytic sample carrier");
             let poly = implicit.rational().unwrap();
             for p in points {
                 assert!(

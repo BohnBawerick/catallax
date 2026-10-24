@@ -838,3 +838,28 @@ fn root_list_proofs_share_a_request_without_merging_distinct_root_sets() {
     assert!(matches!(answer, Outcome::Refused(_)));
     assert!(next_request.exhausted);
 }
+
+#[test]
+fn translated_integer_quadratic_keeps_both_roots_with_a_small_budget() {
+    let polynomial = poly(&[9998, -200, 1]);
+    let mut decider = Decider::new(BudgetPolicy {
+        max_precision_bits: 1,
+        max_work: 4096,
+    });
+    let values = roots(&mut decider, &polynomial);
+    assert_eq!(values.len(), 2);
+    for (index, root) in values.into_iter().enumerate() {
+        assert_eq!(root.multiplicity, 1);
+        let offset = Real::from_algebraic(root.value) - real("100");
+        assert!(
+            Decider::default()
+                .sign(&(&offset * &offset - real("2")))
+                .is_coincident()
+        );
+        proven_sign(
+            &mut Decider::default(),
+            &offset,
+            if index == 0 { -1 } else { 1 },
+        );
+    }
+}

@@ -288,6 +288,13 @@ multiplicities, per-decision cold work and deadline checks. The request retains
 the certificate data, not only a marker waiving another arithmetic reservation.
 Failed or partial isolation is not recorded.
 
+On complete rational-search branches, a small integer quadratic may obtain its
+Descartes variations directly from the three exact transformed coefficients.
+Integer admission proves all intermediates fit the native signed arithmetic;
+it is not a geometric tolerance or a sign estimate. Other inputs retain the
+filtered Taylor-shift predicate and its exact fallback. The zero/one-variation
+proof rules and coarse interval selectors are unchanged.
+
 
 ### Statistics
 

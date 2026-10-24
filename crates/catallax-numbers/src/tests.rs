@@ -1454,3 +1454,30 @@ fn algebraic_coefficient_quadratics_keep_order_multiplicity_and_domains() {
         RealPoly::from_terms(1, vec![(vec![1], real("-1").sqrt()), (vec![0], real("1"))]);
     assert!(undefined.real_roots(&mut Decider::default()).is_err());
 }
+
+#[test]
+fn optional_identities_leave_system_proof_work_available() {
+    let x = MPoly::var(2, 0);
+    let y = MPoly::var(2, 1);
+    let one = MPoly::constant(2, q("1"));
+    let system =
+        Arc::new(PolySystem::new(vec![&(&x * &x) + &(&(&y * &y) - &one), &x - &y]).unwrap());
+    let bounds = RootBox::new(vec![q("1/2"), q("1/2")], vec![q("1"), q("1")]).unwrap();
+    let Outcome::Proven(BoxRoots::One(root)) = Decider::default().certify_root(&system, &bounds)
+    else {
+        panic!("positive circle/diagonal root must certify");
+    };
+    let [_, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    // Every summand is positive. The formal method cannot use the system's
+    // constraints, so declining it must leave work for a certified sign filter.
+    let value = (&root.coordinate(0) + &cosine + real("3").sqrt() + real("5").sqrt()).pow_u32(12);
+    let (answer, work) = with_operation_budget(100_000, || {
+        let mut dec = Decider::default();
+        for _ in 0..10 {
+            assert_eq!(dec.rational_identity(&value).unwrap(), None);
+        }
+        dec.sign(&value)
+    });
+    assert_eq!(answer.proven(), Some(&StrictSign::Positive));
+    assert!(!work.exhausted);
+}

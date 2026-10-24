@@ -13,6 +13,7 @@ const LIMIT: &str = "identity-size-limit";
 const MAX_TERMS: usize = 128;
 const MAX_FACTORS: usize = 64;
 const MAX_NODES: usize = 512;
+const MAX_WORK: u64 = 10_000;
 type Polynomial = BTreeMap<Vec<usize>, Rational>;
 
 #[derive(Clone)]
@@ -332,17 +333,28 @@ impl<'a> Identity<'a, '_> {
 }
 
 pub(crate) fn rational(value: &Real, work: &mut Work) -> Result<Option<Rational>, &'static str> {
+    // Quadratic towers and pinned system coordinates have their own proof
+    // methods. Formal expansion cannot use a system's defining relations; do
+    // not spend their allowance on that inconclusive route. Immutable metadata
+    // makes this dispatch independent of cache history and expression depth.
+    if value.node.identity_atoms != 1 && value.rational_ref().is_none() {
+        return Ok(None);
+    }
+    let decision_limit = work.policy.max_work;
+    let allowance = MAX_WORK.min(decision_limit.saturating_sub(work.used) / 8);
+    work.policy.max_work = work.used + allowance;
     let mut identity = Identity {
         atoms: vec![],
         cache: HashMap::new(),
         work,
         rewrites: 0,
     };
-    let result = identity.visit(value);
-
+    let result = identity
+        .visit(value)
+        .and_then(|value| ratio(&value, identity.work));
+    work.policy.max_work = decision_limit;
     match result {
-        Ok(value) => ratio(&value, work),
-        Err(LIMIT) => Ok(None),
-        Err(error) => Err(error),
+        Err(LIMIT | "numbers.budget-exhausted") => Ok(None),
+        other => other,
     }
 }

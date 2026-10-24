@@ -60,6 +60,8 @@ pub(crate) struct Exporter<'a> {
     curves: BTreeMap<CurveId, Option<Rc<Curve>>>,
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
     report: StepReport,
+    face_errors: BTreeMap<FaceId, Rational>,
+    edge_errors: BTreeMap<EdgeId, Rational>,
 }
 
 impl<'a> Exporter<'a> {
@@ -72,7 +74,21 @@ impl<'a> Exporter<'a> {
             curves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             report: StepReport::default(),
+            face_errors: BTreeMap::new(),
+            edge_errors: BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn regularizations(
+        mut self,
+        records: Vec<crate::StepRegularization>,
+        face_errors: BTreeMap<FaceId, Rational>,
+        edge_errors: BTreeMap<EdgeId, Rational>,
+    ) -> Self {
+        self.report.regularizations = records;
+        self.face_errors = face_errors;
+        self.edge_errors = edge_errors;
+        self
     }
 
     fn digits(&self) -> u32 {
@@ -397,7 +413,7 @@ impl<'a> Exporter<'a> {
             } else {
                 arc_error(&curve, &start, &end)
             };
-            self.deviation(error);
+            self.deviation(error + self.edge_errors.get(&id).cloned().unwrap_or_default());
             (curve.id, bounds, source.sense == Sense::Same)
         } else {
             let from = source.start.map(|v| self.model.vertex(v).point);
@@ -695,7 +711,9 @@ impl<'a> Exporter<'a> {
                     .max((&bounds[i][1] - &surface.origin[i][0]).abs())
             })
         });
-        let error = &surface.base_error + &(&surface.extent_error * &extent);
+        let error = &surface.base_error
+            + &(&surface.extent_error * &extent)
+            + self.face_errors.get(&id).cloned().unwrap_or_default();
         let surface_id = surface.id;
         self.deviation(error);
         self.report.faces += 1;

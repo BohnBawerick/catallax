@@ -156,6 +156,31 @@ No `PCURVE`, `SURFACE_CURVE` or `SEAM_CURVE` is written (ND5).
 
 Here `e1`, `e2` and `e3` are the surface's frame (piece 2). These choices put the added entities on the seams of `JUDGE-INTERFACE.md`.
 
+#### Decimal-collapsed planar wire gaps
+
+An exact planar face can have two disjoint wires whose straight edges become
+overlapping segments after decimal rounding. Keeping those separate wires would
+write invalid topology. The exporter may reconnect them when one written segment
+is strictly contained in the other, their travels oppose, and the two neighbouring
+faces have parallel exact planar supports and coincident written supports.
+The actual rounded line carriers, not just their endpoints, must coincide.
+
+The gap is a constant translation between parallel exact lines. Its exact rational
+L1 width bounds the Euclidean displacement over the entire removed ribbon and the
+neighbouring face's change of support. That bound must not exceed either the
+requested `curve_tolerance` or the unchanged 1 nm modelling tolerance. The two
+wires become one and the parallel neighbouring faces become one. Split edges and
+merged-face rounding errors include the displacement bound. No geometry checker,
+sampling, increased tolerance or model-side merge participates in export.
+
+`StepReport.regularizations` records each reconnection's face, edge pair,
+neighbouring face pair and proven `max_deviation`. The report's topology counts
+describe the file, which can now have fewer faces than the unchanged exact model.
+The seam/ring `added_edges` and `added_vertices` counters retain their meanings.
+Files with separated written wires follow the original writer and keep their
+bytes. Other classes of export regularization are not implied by this rule.
+
+
 ### Geometry
 
 Directions are written as unit vectors: the exact direction divided by its exact length, rounded.
@@ -208,7 +233,7 @@ The export refuses with `step.budget-exhausted` and writes nothing when the budg
 ## Writing
 
 `write_step(model, bodies, options, dec, out)` builds the whole file first and writes it to `out` only when everything succeeded, so a refusal writes nothing. An error from `out` is refused with `step.io-error`, whose detail is the error's text; the bytes already written are then undefined.
-The returned `StepReport` counts what the file holds: `solids` (items of `#16` other than `#17`), `faces`, `edges` (`EDGE_CURVE` entities) and `vertices` (`VERTEX_POINT` entities), each including what was added, and `added_vertices`, `added_edges`, `approximated_curves` and `max_deviation`.
+The returned `StepReport` counts what the file holds: `solids` (items of `#16` other than `#17`), `faces`, `edges` (`EDGE_CURVE` entities) and `vertices` (`VERTEX_POINT` entities), each including what was added, and `added_vertices`, `added_edges`, `approximated_curves`, `max_deviation` and the per-gap `regularizations` records.
 
 ## How this piece uses the earlier pieces
 

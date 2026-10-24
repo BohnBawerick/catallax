@@ -79,6 +79,11 @@ jobs:
       - run: target/release/catallax-verify about
       - name: Verification driver
         run: python3 -B -m unittest discover -s .claude/skills/verify-catallax/scripts -p 'test_*.py' -v
+      - name: OpenCASCADE STEP regressions
+        run: |
+          python3 -m venv "$RUNNER_TEMP/occt"
+          "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
+          "$RUNNER_TEMP/occt/bin/python" -B -m unittest discover -s tools/step-regressions -v
       - run: cargo test --workspace --release --doc
 
   check:

@@ -402,6 +402,20 @@ Configured name-edit checks run and checkpoint before display or sampled compari
 
 For each exported STEP, a separate process opens the file in OpenCASCADE, transfers its roots, checks validity without repair, compares unique face count and records imported volume. The STEP hash and binding version accompany the result. `step_check.status=passed` covers import, topology and face count only. The recipe adapter does not measure kernel volume; `volume_comparison` explicitly reports `step.kernel-volume-unmeasured`. No volume-deviation or full target-part acceptance claim follows from a passing import. No STEP is `step.no-export` with its build refusal, not a silently skipped part.
 
+For a decimal-collapsed planar wire gap, the exact model and its manifest counts
+stay unchanged while STEP topology is reconnected within the existing tolerance.
+Only such exports also write `step-regularizations.json`, format
+`catallax-step-regularizations/1`. It records the file's `faces`, `edges`,
+`vertices`, total `max_deviation_mm` and a `regularizations` array of model face,
+edge and merged-face handles with each whole-gap displacement bound.
+Bounds in this diagnostic sidecar are exact rational strings. The scoreboard
+uses its exported face count for native import, otherwise the model face count.
+Stale sidecars are removed with stale geometry on rebuild or refusal.
+The standalone OpenCASCADE regressions in `tools/step-regressions` run in the
+required `check` workflow, including the captured slot cut, its earlier union
+prefixes, axis/order variants and resolvable-gap controls.
+
+
 The report labels machine load and affinity. Shared-machine observations are not quiet-core speed evidence. `application_check` remains `parts.application-loop-required`; the scoreboard does not pretend to have edited a part in SolidDraft. Sampled comparison still is not a global geometric certificate. Nonzero exit reports invalid input, internal error, proven comparison disagreement, a failed STEP import or a failed/invalid name edit; ordinary coverage refusals, waiting edits and unresolved comparisons stay visible without making report generation fail.
 
 `.github/workflows/parts.yml` runs this report on `main` and relevant pull requests at a fixed 1,000,000-unit allowance and uploads the full bundle, even on failure. It is a diagnostic workflow separate from the full-suite `check` gate. Checkpoint reports use the same explicit allowance so a coverage refusal is never mistaken for impossible geometry.

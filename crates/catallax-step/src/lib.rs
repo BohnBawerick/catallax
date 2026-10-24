@@ -15,6 +15,7 @@ mod export;
 mod fit;
 mod graph;
 mod number;
+mod regularize;
 
 pub use certified_spline::{CertifiedSplineStepOptions, write_spline_prism_step};
 
@@ -39,6 +40,19 @@ impl Default for StepOptions {
     }
 }
 
+/// A straight wire gap eliminated only in the exported topology.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct StepRegularization {
+    /// Model face whose two decimal-rounded boundary wires overlap.
+    pub face: catallax_topology::FaceId,
+    /// Outer and contained inner straight edges bounding the collapsed ribbon.
+    pub edges: [catallax_topology::EdgeId; 2],
+    /// Parallel neighbouring faces joined across that ribbon.
+    pub merged_faces: [catallax_topology::FaceId; 2],
+    /// Proven whole-ribbon displacement bound in millimetres.
+    pub max_deviation: Rational,
+}
+
 /// What an export wrote and how far it is from the exact model.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct StepReport {
@@ -58,6 +72,8 @@ pub struct StepReport {
     pub edges: usize,
     /// Vertices written.
     pub vertices: usize,
+    /// Export-only topology changes, each with its own certified displacement.
+    pub regularizations: Vec<StepRegularization>,
 }
 
 /// Writes `bodies` as one STEP AP242 file to `out`.
@@ -68,7 +84,14 @@ pub fn write_step<W: Write>(
     dec: &mut Decider,
     out: &mut W,
 ) -> Answered<StepReport> {
-    let answer = export::Exporter::new(model, options, dec).build(bodies)?;
+    let prepared = regularize::prepare(model, bodies, options, dec)?;
+    let answer = if let Some(prepared) = prepared {
+        export::Exporter::new(&prepared.model, options, dec)
+            .regularizations(prepared.records, prepared.face_errors, prepared.edge_errors)
+            .build(&prepared.bodies)?
+    } else {
+        export::Exporter::new(model, options, dec).build(bodies)?
+    };
     let (file, report) = answer.value;
     out.write_all(file.as_bytes())
         .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;

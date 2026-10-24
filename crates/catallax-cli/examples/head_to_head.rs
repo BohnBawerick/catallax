@@ -157,10 +157,10 @@ fn consumers(built: Option<&Built>, out: &Path, limit: u64) -> io::Result<Value>
             &mut step_bytes,
         )
     });
+    export["expected_faces"] = json!(step.as_ref().map(|answer| answer.value.faces));
     if step.is_some() {
         fs::write(out.join("answer.step"), step_bytes)?;
     }
-    export["expected_faces"] = json!(built.model.faces_of_body(built.result).len());
     Ok(json!({"display":display,"measurement":measurement,"step":export}))
 }
 

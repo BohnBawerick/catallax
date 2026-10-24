@@ -20,7 +20,7 @@ use std::{
 };
 
 const PRECISION: u32 = 128;
-const TERMS: usize = 6;
+const TERMS: usize = 10;
 const EXPONENTS: [[usize; 3]; 10] = [
     [0, 0, 0],
     [1, 0, 0],

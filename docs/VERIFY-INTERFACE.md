@@ -52,6 +52,8 @@ An answered nonempty request writes `answer.step`. `stand_in.field_properties`, 
 
 `step.surface_envelopes` counts the massless surface model; `step.solids` and `stand_in.mass_bodies` count only unit-density proxies. Consumers must sum solid volume properties without integrating surface-envelope faces. A closed-shell integration API does not itself guarantee that distinction. No material or density metadata is exported. Density-aware option B is future-only work.
 
+The stand-in adapter writes 32 significant digits and still requires complete exported-property inclusion in the field enclosures. This precision choice is local to `catallax-stand-in/1`; ordinary recipe STEP output retains its existing default and bytes.
+
 Region substitution must be a proven outer envelope. Negative lattice occurrences in Boolean subtraction are unfinished stand-in coverage and refuse with `field.stand-in-envelope-coverage`, rather than erasing material from the envelope. Refinement-budget refusals retain full-domain moment bounds and report the reached widths where a positive field volume is already certified.
 
 This is an explicit output adapter. Ordinary application recipe edits do not measure field mass, compare kernels, or collect proof timings.

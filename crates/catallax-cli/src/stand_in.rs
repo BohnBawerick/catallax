@@ -143,6 +143,7 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
     }
     let options = catallax_step::StepOptions {
         product_name: format!("{} field stand-in", recipe.name),
+        significant_digits: 32,
         ..Default::default()
     };
     let span =

@@ -264,12 +264,26 @@ impl Plan {
                     Operation::Offset { body, distance } => {
                         plan.distance_offset(steps[body], distance.value(), &step.id, dec)?
                     }
-                    Operation::Shell { body, open, thickness } => {
+                    Operation::Shell {
+                        body,
+                        open,
+                        thickness,
+                    } => {
                         plan.distance_shell(steps[body], open, thickness.value(), &step.id, dec)?
                     }
-                    Operation::Thicken { body, faces, thickness, side } => {
-                        plan.distance_thicken(steps[body], faces, thickness.value(), *side, &step.id, dec)?
-                    }
+                    Operation::Thicken {
+                        body,
+                        faces,
+                        thickness,
+                        side,
+                    } => plan.distance_thicken(
+                        steps[body],
+                        faces,
+                        thickness.value(),
+                        *side,
+                        &step.id,
+                        dec,
+                    )?,
                     Operation::Extrude {
                         profile,
                         distance,
@@ -985,7 +999,9 @@ impl Plan {
     pub fn select(&self, origin: &Origin) -> Option<FaceId> {
         self.faces
             .iter()
-            .position(|f| &f.origin == origin && f.in_result && self.leaf_registers[f.leaf].is_some())
+            .position(|f| {
+                &f.origin == origin && f.in_result && self.leaf_registers[f.leaf].is_some()
+            })
             .or_else(|| self.faces.iter().position(|f| &f.origin == origin))
             .map(FaceId)
     }

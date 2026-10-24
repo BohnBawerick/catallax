@@ -34,14 +34,20 @@ fn same(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
 fn coordinates(p: &Point3) -> Vector3 {
     Vector3::new(p.x.clone(), p.y.clone(), p.z.clone())
 }
-fn intersection(a: &Plane, b: &Plane, c: &Plane, dec: &mut Decider) -> Result<Option<Point3>, Refusal> {
+fn intersection(
+    a: &Plane,
+    b: &Plane,
+    c: &Plane,
+    dec: &mut Decider,
+) -> Result<Option<Point3>, Refusal> {
     let bc = b.normal.cross(&c.normal);
     let determinant = a.normal.dot(&bc);
     if sign(&determinant, dec)? == Sign::Zero {
         return Ok(None);
     }
     let h = |p: &Plane| coordinates(&p.origin).dot(&p.normal);
-    let v = bc.scaled(&h(a))
+    let v = bc
+        .scaled(&h(a))
         .plus(&c.normal.cross(&a.normal).scaled(&h(b)))
         .plus(&a.normal.cross(&b.normal).scaled(&h(c)))
         .scaled(&(&Real::one() / &determinant));
@@ -55,9 +61,20 @@ impl ConvexCell {
         for mut face in faces {
             let mut duplicate = None;
             for (i, other) in unique.iter().enumerate() {
-                if sign(&face.plane.normal.cross(&other.plane.normal).norm_squared(), dec)? == Sign::Zero
+                if sign(
+                    &face.plane.normal.cross(&other.plane.normal).norm_squared(),
+                    dec,
+                )? == Sign::Zero
                     && sign(&face.plane.normal.dot(&other.plane.normal), dec)? == Sign::Positive
-                    && sign(&face.plane.origin.minus(&other.plane.origin).dot(&other.plane.normal), dec)? == Sign::Zero {
+                    && sign(
+                        &face
+                            .plane
+                            .origin
+                            .minus(&other.plane.origin)
+                            .dot(&other.plane.normal),
+                        dec,
+                    )? == Sign::Zero
+                {
                     duplicate = Some(i);
                     break;
                 }
@@ -78,12 +95,16 @@ impl ConvexCell {
             dec.check_deadline()?;
             for j in i + 1..faces.len() {
                 for k in j + 1..faces.len() {
-                    let Some(p) = intersection(&faces[i].plane, &faces[j].plane, &faces[k].plane, dec)? else {
+                    let Some(p) =
+                        intersection(&faces[i].plane, &faces[j].plane, &faces[k].plane, dec)?
+                    else {
                         continue;
                     };
                     let mut inside = true;
                     for face in &faces {
-                        if sign(&p.minus(&face.plane.origin).dot(&face.plane.normal), dec)? == Sign::Positive {
+                        if sign(&p.minus(&face.plane.origin).dot(&face.plane.normal), dec)?
+                            == Sign::Positive
+                        {
                             inside = false;
                             break;
                         }
@@ -120,7 +141,11 @@ impl ConvexCell {
             }
         }
         if !full_dimension {
-            return Ok(Self { faces, points: Vec::new(), polygons: Vec::new() });
+            return Ok(Self {
+                faces,
+                points: Vec::new(),
+                polygons: Vec::new(),
+            });
         }
         let mut polygons = Vec::with_capacity(faces.len());
         for face in &faces {
@@ -145,7 +170,8 @@ impl ConvexCell {
             let half = |p: &Point3, dec: &mut Decider| -> Result<bool, Refusal> {
                 let q = p.minus(&centre);
                 let y = sign(&q.dot(&v), dec)?;
-                Ok(y == Sign::Positive || (y == Sign::Zero && sign(&q.dot(u), dec)? != Sign::Negative))
+                Ok(y == Sign::Positive
+                    || (y == Sign::Zero && sign(&q.dot(u), dec)? != Sign::Negative))
             };
             // Fallible insertion ordering keeps every angular comparison exact.
             for i in 1..ids.len() {
@@ -158,35 +184,58 @@ impl ConvexCell {
                     let before = if ha != hb {
                         hb
                     } else {
-                        sign(&a.minus(&centre).cross(&b.minus(&centre)).dot(&face.plane.normal), dec)? == Sign::Negative
+                        sign(
+                            &a.minus(&centre)
+                                .cross(&b.minus(&centre))
+                                .dot(&face.plane.normal),
+                            dec,
+                        )? == Sign::Negative
                     };
-                    if !before { break; }
+                    if !before {
+                        break;
+                    }
                     ids.swap(j - 1, j);
                     j -= 1;
                 }
             }
             polygons.push(ids);
         }
-        Ok(Self { faces, points, polygons })
+        Ok(Self {
+            faces,
+            points,
+            polygons,
+        })
     }
 
     /// Whether regularisation removes the entire cell.
-    pub fn is_empty(&self) -> bool { self.points.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.points.is_empty()
+    }
 
     /// Exact vertices, used for containment and projection proofs.
-    pub fn vertices(&self) -> &[Point3] { &self.points }
+    pub fn vertices(&self) -> &[Point3] {
+        &self.points
+    }
 
     /// Builds one shared edge per arrangement segment. Redundant planes vanish.
     pub fn build(&self, model: &mut Model) -> BodyId {
-        if self.is_empty() { return catallax_topology::empty(model); }
-        let vertices: Vec<_> = self.points.iter().map(|p| {
-            let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
-            model.add_vertex(Vertex { point })
-        }).collect();
+        if self.is_empty() {
+            return catallax_topology::empty(model);
+        }
+        let vertices: Vec<_> = self
+            .points
+            .iter()
+            .map(|p| {
+                let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
+                model.add_vertex(Vertex { point })
+            })
+            .collect();
         let mut edges = BTreeMap::new();
         let mut faces = Vec::new();
         for (face, polygon) in self.faces.iter().zip(&self.polygons) {
-            if polygon.is_empty() { continue; }
+            if polygon.is_empty() {
+                continue;
+            }
             let mut path = Vec::with_capacity(polygon.len());
             for i in 0..polygon.len() {
                 let a = polygon[i];
@@ -197,16 +246,32 @@ impl ConvexCell {
                         origin: self.points[key.0].clone(),
                         dir: self.points[key.1].minus(&self.points[key.0]),
                     }));
-                    model.add_edge(Edge { curve, sense: Sense::Same,
-                        start: Some(vertices[key.0]), end: Some(vertices[key.1]) })
+                    model.add_edge(Edge {
+                        curve,
+                        sense: Sense::Same,
+                        start: Some(vertices[key.0]),
+                        end: Some(vertices[key.1]),
+                    })
                 });
                 path.push((edge, if a < b { Sense::Same } else { Sense::Reversed }));
             }
-            faces.push(crate::extrude::face(model, Surface::Plane(face.plane.clone()), Sense::Same,
-                vec![path], None, face.origins.clone()));
+            faces.push(crate::extrude::face(
+                model,
+                Surface::Plane(face.plane.clone()),
+                Sense::Same,
+                vec![path],
+                None,
+                face.origins.clone(),
+            ));
         }
         let shell = model.add_shell(Shell { faces });
-        let lump = model.add_lump(Lump { shells: vec![shell] });
-        model.add_body(Body { kind: BodyKind::Solid, lumps: vec![lump], marks: Default::default() })
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        model.add_body(Body {
+            kind: BodyKind::Solid,
+            lumps: vec![lump],
+            marks: Default::default(),
+        })
     }
 }

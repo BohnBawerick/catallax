@@ -1094,10 +1094,16 @@ pub(crate) fn run(
         check_sample(p, id);
         !revision.is_cancelled() && !sampling_failed.get()
     });
-    let distance_sampling = if recipe.steps.iter().any(|step| matches!(step.op,
-        Operation::Offset { .. } | Operation::Shell { .. } | Operation::Thicken { .. })) {
+    let distance_sampling = if recipe.steps.iter().any(|step| {
+        matches!(
+            step.op,
+            Operation::Offset { .. } | Operation::Shell { .. } | Operation::Thicken { .. }
+        )
+    }) {
         field.visit_distance_candidates(options.divisions, |p, origin| {
-            if revision.is_cancelled() { return false; }
+            if revision.is_cancelled() {
+                return false;
+            }
             check_sample(p, origin);
             !revision.is_cancelled() && !sampling_failed.get()
         })
@@ -1121,7 +1127,10 @@ pub(crate) fn run(
     if let Err(error) = distance_sampling {
         whole_failure(
             &mut report,
-            format!("distance-feature boundary sampling {}: {}", error.code, error.detail),
+            format!(
+                "distance-feature boundary sampling {}: {}",
+                error.code, error.detail
+            ),
         );
     }
     if revision.is_cancelled() {

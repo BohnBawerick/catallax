@@ -311,15 +311,28 @@ impl Feature {
     }
 
     pub(crate) fn convex_planes(&self, dec: &mut Decider) -> Result<Option<Vec<Plane>>, Refusal> {
-        let Sweep::Extrude { vector, through: false } = &self.sweep else { return Ok(None); };
-        if self.fillet.is_some() || self.loops.len() != 1 || self.loops[0].iter().any(|e| e.circle.is_some()) {
+        let Sweep::Extrude {
+            vector,
+            through: false,
+        } = &self.sweep
+        else {
+            return Ok(None);
+        };
+        if self.fillet.is_some()
+            || self.loops.len() != 1
+            || self.loops[0].iter().any(|e| e.circle.is_some())
+        {
             return Ok(None);
         }
         let map = self.inverse.inverse();
         let mut vertices = Vec::with_capacity(self.loops[0].len() * 2);
         let mut centre = Vector3::zero();
         for edge in &self.loops[0] {
-            let p = RPoint3::new(edge.start[0].clone(), edge.start[1].clone(), Rational::zero());
+            let p = RPoint3::new(
+                edge.start[0].clone(),
+                edge.start[1].clone(),
+                Rational::zero(),
+            );
             let end = p.plus(vector);
             for p in [p, end] {
                 let p = map.apply_point(&p.to_real());
@@ -331,7 +344,9 @@ impl Feature {
         let centre = Point3::new(centre.x, centre.y, centre.z);
         let mut planes = Vec::with_capacity(self.constraints.len());
         for constraint in &self.constraints {
-            let Surface::Plane(plane) = constraint.surface() else { return Ok(None); };
+            let Surface::Plane(plane) = constraint.surface() else {
+                return Ok(None);
+            };
             let mut plane = plane.clone();
             match geometry::sign(&centre.minus(&plane.origin).dot(&plane.normal), dec)? {
                 Sign::Positive => plane.normal = plane.normal.scaled(&Real::from_i64(-1)),
@@ -339,7 +354,9 @@ impl Feature {
                 Sign::Negative => (),
             }
             for p in &vertices {
-                if geometry::sign(&p.minus(&plane.origin).dot(&plane.normal), dec)? == Sign::Positive {
+                if geometry::sign(&p.minus(&plane.origin).dot(&plane.normal), dec)?
+                    == Sign::Positive
+                {
                     return Ok(None);
                 }
             }

@@ -179,6 +179,15 @@ alone do not identify the selected coplanar tile.
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
 
+## Distance features
+
+Offset, shell and thicken compile their analytic reductions from the field's own constraints and face registry. No B-rep builder is called. The exact family and refusal boundaries are listed in [RECIPE.md section 7.15](RECIPE.md#715-distance-feature-coverage). Boolean and cell values remain labelled residuals; a successful compilation does not turn them into true-distance formulas.
+
+`Plan::select` prefers a live result support carrying an origin before falling back to an older registry candidate. An offset can therefore keep an origin while replacing its support, without resolving a later face query to the discarded input surface.
+
+`Plan::visit_distance_candidates` is a query-only sampling API for comparison tooling. It splits rational planar grids at field-native leaf bounds and cylindrical rational charts at result-box crossings. This supplies candidates for narrow shell rims, inner walls and short clipped cylinder patches that a fixed primitive grid can miss. Every candidate still needs the ordinary exact trim, origin and normal checks. A root enclosure chooses a rational sample; it never becomes a geometric acceptance tolerance or a boundary approximation. Compilation and point evaluation do not run this sampler.
+
+
 ## Trimmed minimum distances
 
 `catallax_shapes::distance` bounds minimum distance on planes, cylinders, cones,

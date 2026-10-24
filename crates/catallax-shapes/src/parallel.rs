@@ -20,14 +20,15 @@ impl Surface {
         if math::sign(distance, dec)? == Sign::Zero {
             return Ok(Some(self.clone()));
         }
-        let positive = |value: &Real, dec: &mut Decider| {
-            math::sign(value, dec).map(|s| s == Sign::Positive)
-        };
+        let positive =
+            |value: &Real, dec: &mut Decider| math::sign(value, dec).map(|s| s == Sign::Positive);
         Ok(Some(match self {
             Self::Plane(plane) => {
                 let mut plane = plane.clone();
                 let length = math::exact_sqrt(&plane.normal.norm_squared());
-                plane.origin = plane.origin.plus(&plane.normal.scaled(&(distance / &length)));
+                plane.origin = plane
+                    .origin
+                    .plus(&plane.normal.scaled(&(distance / &length)));
                 Self::Plane(plane)
             }
             Self::Cylinder(cylinder) => {

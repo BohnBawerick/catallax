@@ -1,0 +1,70 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "wall-front",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "8",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "-4"
+        ]
+      }
+    },
+    {
+      "id": "limit",
+      "op": "sphere",
+      "radius": "5/2",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "clipped",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "stock",
+      "tool": "limit"
+    },
+    {
+      "id": "result",
+      "body": "clipped",
+      "op": "thicken",
+      "faces": [
+        {
+          "face": {
+            "step": "stock",
+            "role": {
+              "side": {
+                "segment": "wall"
+              }
+            }
+          }
+        }
+      ],
+      "thickness": "1/5",
+      "side": "front"
+    }
+  ],
+  "result": "result"
+}

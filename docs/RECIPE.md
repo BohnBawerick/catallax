@@ -1152,6 +1152,59 @@ cargo run --release -p catallax-app --example build -- recipe.json display.obj
 
 The bracket fixture exercises a flush plate/flange union, a boss and bore, four holes and a cross-plane slot. Its tests edit the flange height, pick the resulting faces through their triangles, retain merged origins, and check edge names and certified polylines. The application still needs its backend and UI integration before this repository's entry becomes a SolidDraft editing session.
 
+#### Evaluated prefixes
+
+`catallax_features::evaluate_incremental(&recipe, prefix, &mut decider)` returns an
+opaque `EvaluationCheckpoint`. Pass `None` for the first build, then consume the
+previous checkpoint with `Some(checkpoint)` on the next edit. `checkpoint.built()`
+borrows the exact model, named bodies and immutable recipe definition.
+`checkpoint.into_built()` takes that build and discards continuation metadata.
+
+The checkpoint retains profiles, body bounds, construction facts and feature
+definitions, not just the last body's mesh. Every saved step must match the
+leading input steps, including order, IDs and operation parameters. A mismatch,
+shorter recipe, changed format or changed numeric policy rebuilds from the start.
+Changing the part's name, description or requested result does not invalidate the
+prefix. The complete recipe is still structurally checked before geometry runs.
+
+Only the suffix spends the current request's work allowance. Prefix proofs were
+paid for in the earlier request. Numeric limits are not increased. A failed
+suffix publishes no partial checkpoint. The caller owns checkpoint retention.
+Keep earlier checkpoints to restart before an edited feature. Cloning explicitly
+copies the model for an independent undo or branch snapshot, while consuming a
+checkpoint moves its model without that copy. Certified evaluation remains a
+separate entry and cannot supply an ordinary checkpoint.
+
+`catallax_app::build_incremental(&recipe, prefix, &mesh_options, &mut decider)`
+returns `IncrementalApplicationBody` with `checkpoint`, `display` and `names`.
+The application checks topology and derives display from `checkpoint.built()`.
+SolidDraft can keep the checkpoint with its body handle, then pass it into the
+next merged recipe. Conversion and backend integration stay on the caller's
+side. Neither build entry requests measurement or comparison. Diagnostic timing
+remains opt-in through the existing operation recorder.
+
+The public 320 by 20 by 10 mm benchmark cuts thirty 2 by 4 mm holes, either at the
+same position or ten millimetres apart:
+
+```sh
+cargo bench -p catallax-features --bench rebuild -- --assert-budget
+cargo bench -p catallax-features --bench rebuild -- --incremental --display --assert-budget --verify
+cargo bench -p catallax-features --bench rebuild -- --distinct --incremental --verify
+cargo bench -p catallax-features --bench rebuild -- --fact-counterfactual
+```
+
+The optional assertions keep the 1,000 ms edit budget and the repeated-cut
+cut-30/cut-2 ratio at 1.5, comparing the same ten-face operand complexity.
+Cut 1 starts from six-face stock and is reported separately.
+`--verify` compares each prefix's STEP bytes and named
+body handles with a full build. `--fact-counterfactual` compares the old graph
+walk and the indexed query over the same retained facts. `--recipe` prints either
+public recipe for the verification CLI. To include the application entry's
+checking, meshing and picking names, run its existing display benchmark with
+`--incremental INPUT.json OUTPUT_DIRECTORY REPETITIONS`. Timings and comparisons
+belong to these benchmarks, not the part-construction path.
+
+
 ### 6.4 Opt-in certified offset application entry
 
 `catallax_app::build_certified(&recipe, optional_mesh_options, &mut decider)`

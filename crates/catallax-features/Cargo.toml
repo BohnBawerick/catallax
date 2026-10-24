@@ -25,3 +25,7 @@ catallax-step.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "rebuild"
+harness = false

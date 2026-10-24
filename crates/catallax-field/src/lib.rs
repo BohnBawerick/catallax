@@ -13,6 +13,8 @@ mod certified_prism;
 pub mod display;
 /// Certified trimmed-face and boundary minimum-distance queries.
 pub mod distance;
+mod draft;
+mod draft_source;
 mod features;
 mod fillet;
 mod geometry;
@@ -26,7 +28,7 @@ mod profile;
 mod samples;
 mod support;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, RealPoly, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Operation, Origin, Recipe};
@@ -201,9 +203,19 @@ pub struct Plan {
     // Only explicit canonical expansions rename roles; domain predicates retain
     // the generated feature role, independently of the public stock name.
     definition_roles: BTreeMap<usize, catallax_recipe::Role>,
+    consumed: Vec<catallax_features::ConsumedFace>,
+    // Certified unions of distinct connected interior components, with no
+    // hidden shared facet. Their signed minimum is a true Euclidean distance.
+    separated_unions: BTreeSet<usize>,
 }
 
 impl Plan {
+    /// Removed-face provenance from draft operations, in recipe order.
+    /// These records never make a vanished face selectable.
+    pub fn consumed_faces(&self) -> &[catallax_features::ConsumedFace] {
+        &self.consumed
+    }
+
     /// Compiles stock solids, sketch sweeps and regularised booleans.
     /// Unsupported operations and impossible dimensions report a stable refusal.
     /// Sketch validation is shared with features; no B-rep builder is called.
@@ -224,6 +236,8 @@ impl Plan {
             root: 0,
             leaf_registers: vec![],
             definition_roles: BTreeMap::new(),
+            consumed: Vec::new(),
+            separated_unions: BTreeSet::new(),
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
@@ -372,6 +386,47 @@ impl Plan {
                         } else {
                             copy
                         }
+                    }
+                    Operation::Draft {
+                        body,
+                        faces,
+                        pull,
+                        neutral,
+                        angle,
+                        keep_regions,
+                    } => {
+                        let [x, y, z] = pull.0.each_ref().map(|n| n.value().clone());
+                        let definition = catallax_features::draft::DraftDefinition::new(
+                            RVector3::new(x, y, z).to_real(),
+                            catallax_features::draft::neutral_plane(neutral),
+                            angle.value(),
+                            dec,
+                        )?;
+                        let filtered_planar = faces.iter().any(|reference| {
+                            !reference.touching.is_empty() || reference.near.is_some()
+                        }) && step_faces[body].iter().all(|f| {
+                            matches!(plan.faces[*f].surface, catallax_shapes::Surface::Plane(_))
+                        });
+                        let boundary = if steps[body] == 0 {
+                            Some(catallax_features::draft::arrangement::Skin {
+                                vertices: Vec::new(),
+                                patches: Vec::new(),
+                            })
+                        } else if matches!(plan.instructions[steps[body]], Instruction::Leaf(_))
+                            && !filtered_planar
+                        {
+                            None
+                        } else {
+                            Some(plan.draft_source_skin(recipe, body, &steps, &step_faces, dec)?)
+                        };
+                        plan.draft(
+                            (steps[body], &step_faces[body], boundary.as_ref()),
+                            faces,
+                            &definition,
+                            keep_regions.as_deref(),
+                            &step.id,
+                            dec,
+                        )?
                     }
                     Operation::Fillet {
                         body,
@@ -736,6 +791,9 @@ impl Plan {
                     self.leaf(leaf, faces, dec)?
                 }
             };
+            if self.separated_unions.contains(&i) {
+                self.separated_unions.insert(remap[i]);
+            }
         }
         Ok(remap[source])
     }
@@ -804,6 +862,12 @@ impl Plan {
             };
             tape.push(instruction);
         }
+        self.separated_unions = self
+            .separated_unions
+            .iter()
+            .filter(|i| live[**i])
+            .map(|i| remap[*i])
+            .collect();
         self.root = remap[self.root];
         self.instructions = tape;
     }
@@ -819,12 +883,22 @@ impl Plan {
     pub fn faces(&self) -> &[Face] {
         &self.faces
     }
+    /// Handle for a current result candidate at a face-registry index.
+    /// History and unused entries return `None`; Boolean trim membership still
+    /// requires [`Self::face_query`]. Split names can have several such handles.
+    pub fn result_face(&self, index: usize) -> Option<FaceId> {
+        let face = self.faces.get(index)?;
+        (face.in_result && self.leaf_registers[face.leaf].is_some()).then_some(FaceId(index))
+    }
 
     /// Resolves a stable recipe name without depending on tape indices.
+    /// When a support is replaced without changing its origin, the result's
+    /// candidate takes precedence over the retained construction-history entry.
     pub fn select(&self, origin: &Origin) -> Option<FaceId> {
         self.faces
             .iter()
-            .position(|f| &f.origin == origin)
+            .position(|f| f.in_result && &f.origin == origin)
+            .or_else(|| self.faces.iter().position(|f| &f.origin == origin))
             .map(FaceId)
     }
 
@@ -861,7 +935,8 @@ impl Plan {
         }
         Ok(Approximate {
             value: storage.fast[self.root],
-            true_distance_formula: matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance()),
+            true_distance_formula: matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
+                || self.separated_unions.contains(&self.root),
         })
     }
 
@@ -921,7 +996,8 @@ impl Plan {
             storage.values.push(value);
             storage.locations.push(location);
         }
-        let primitive = matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance());
+        let true_distance = matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
+            || self.separated_unions.contains(&self.root);
         let mut location = storage.locations[self.root];
         storage.active.clear();
         for (id, face) in self.faces.iter().enumerate() {
@@ -929,8 +1005,12 @@ impl Plan {
                 && self.leaf_registers[face.leaf]
                     .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
                 && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
-                && self.leaves[face.leaf].on_face(self.definition_role(id), &coordinates, dec)?
-                    != Some(false)
+                && self.leaves[face.leaf].on_face(
+                    &face.origin,
+                    self.definition_role(id),
+                    &coordinates,
+                    dec,
+                )? != Some(false)
             {
                 storage.active.push(id);
             }
@@ -951,14 +1031,14 @@ impl Plan {
         let absolute = unsigned(enclosure);
         let distance = if location == Location::Boundary {
             Interval::point(0.0).unwrap()
-        } else if primitive {
+        } else if true_distance {
             absolute
         } else {
             Interval::new(absolute.lo(), f64::INFINITY).unwrap()
         };
         Ok(Query {
             location,
-            value: if primitive {
+            value: if true_distance {
                 Value::TrueDistance(enclosure)
             } else {
                 Value::Residual(enclosure)
@@ -1194,6 +1274,15 @@ impl Plan {
         if polynomial_sign(&face.polynomial, &p, dec)? != Sign::Zero {
             return Ok(absent);
         }
+        if matches!(self.instructions[self.root], Instruction::Leaf(i) if i == face.leaf)
+            && let geometry::Leaf::Draft(region) = &self.leaves[face.leaf]
+            && let Some(n) = region.interior_normal(&face.origin, &p, dec)?
+        {
+            return Ok(FaceQuery {
+                state: FaceState::OnFace,
+                direction: unit_direction(n, dec)?,
+            });
+        }
         match self.leaves[face.leaf].location(&p, dec)? {
             Location::Inside | Location::Outside => return Ok(absent),
             Location::Indeterminate => {
@@ -1204,7 +1293,7 @@ impl Plan {
             }
             Location::Boundary => (),
         }
-        match self.leaves[face.leaf].on_face(self.definition_role(id.0), &p, dec)? {
+        match self.leaves[face.leaf].on_face(&face.origin, self.definition_role(id.0), &p, dec)? {
             Some(false) => return Ok(absent),
             None => {
                 return Ok(FaceQuery {
@@ -1214,11 +1303,13 @@ impl Plan {
             }
             Some(true) => (),
         }
-        let query = self.proven_checked(point, storage, dec)?;
-        if matches!(query.location, Location::Inside | Location::Outside) {
-            return Ok(absent);
-        }
+        // For a sole result leaf, the membership and trim proofs above already
+        // prove result ownership. A face query needs no distance evaluation.
         if !matches!(self.instructions[self.root], Instruction::Leaf(_)) {
+            let query = self.proven_checked(point, storage, dec)?;
+            if matches!(query.location, Location::Inside | Location::Outside) {
+                return Ok(absent);
+            }
             for &other in &storage.active {
                 if !same_support(face, &self.faces[other], dec)? {
                     return Ok(FaceQuery {

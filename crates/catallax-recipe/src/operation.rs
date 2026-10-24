@@ -232,6 +232,10 @@ pub enum Operation {
         neutral: Plane,
         /// Draft angle in degrees, in `(-90, 90)`.
         angle: Number,
+        /// Saved interior points selecting retained components instead of the
+        /// neutral-plane rule. An explicit empty list selects the empty result.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        keep_regions: Option<Vec<Point3>>,
     },
     /// A profile carried along a path.
     Sweep {

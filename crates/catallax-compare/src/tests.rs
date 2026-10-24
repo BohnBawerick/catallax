@@ -39,6 +39,54 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
     controller.latest().unwrap()
 }
 #[test]
+fn drafted_stock_cut_samples_the_current_definition_not_its_old_cutter_grid() {
+    let mut base = block("base", "8", "0");
+    base["size"] = json!(["8", "2", "8"]);
+    base["pose"]["translation"] = json!(["0", "-2", "0"]);
+    let mut notch = block("notch", "4", "2");
+    notch["size"] = json!(["4", "4", "8"]);
+    notch["pose"]["translation"] = json!(["2", "-3", "1"]);
+    let part = recipe(vec![
+        base,
+        notch,
+        json!({"id":"source","op":"boolean","kind":"subtract","target":"base","tool":"notch"}),
+        json!({
+            "id":"drafted","op":"draft","body":"source",
+            "faces":[{"face":{"step":"notch","role":"start"}}],"pull":["1","0","0"],
+            "neutral":{"point":["0","0","0"],"normal":["1","0","0"]},"angle":"45"
+        }),
+    ]);
+    let report = check_with_options(&part, &Options::default());
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+}
+
+#[test]
+fn drafted_split_origins_cover_each_remaining_geometric_support() {
+    let mut seed = block("seed", "8", "0");
+    seed["size"] = json!(["14", "8", "4"]);
+    let mut left = block("left", "8", "0");
+    left["size"] = json!(["6", "8", "4"]);
+    let mut tool = block("tool", "4", "6");
+    tool["size"] = json!(["4", "10", "6"]);
+    tool["pose"]["translation"] = json!(["6", "-1", "-1"]);
+    let part = recipe(vec![
+        seed,
+        left,
+        tool,
+        json!({"id":"split","op":"boolean","kind":"subtract","target":"seed","tool":"tool"}),
+        json!({"id":"source","op":"boolean","kind":"union","target":"left","tool":"split"}),
+        json!({
+            "id":"drafted","op":"draft","body":"source",
+            "faces":[{"face":{"step":"left","role":"end"}}],"pull":["1","0","0"],
+            "neutral":{"point":["0","0","0"],"normal":["1","0","0"]},"angle":"45",
+            "keep_regions":[["1","4","1"],["11","4","1"]]
+        }),
+    ]);
+    let report = check_with_options(&part, &Options::default());
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+}
+
+#[test]
 fn rational_bisector_arc_with_irrational_radius_agrees() {
     let part = recipe(vec![
         json!({"id":"profile","op":"sketch","plane":pose("0"),"loops":[[
@@ -263,7 +311,7 @@ fn unsupported_operations_are_all_reported() {
     let recipe = recipe(vec![
         block("a", "2", "0"),
         json!({"id":"offset","op":"offset","body":"a","distance":"1"}),
-        json!({"id":"draft","op":"draft","body":"offset","faces":[{"face":{"step":"a","role":"end"}}],"pull":["0","0","1"],"neutral":{"point":["0","0","0"],"normal":["0","0","1"]},"angle":"5"}),
+        json!({"id":"thicken","op":"thicken","body":"offset","faces":[{"face":{"step":"a","role":"end"}}],"thickness":"1","side":"front"}),
     ]);
     let report = check(&recipe);
     assert_eq!(report.verdict, Verdict::Unresolved);
@@ -273,7 +321,7 @@ fn unsupported_operations_are_all_reported() {
             .iter()
             .map(|o| o.operation.as_str())
             .collect::<Vec<_>>(),
-        ["offset", "draft"]
+        ["offset", "thicken"]
     );
 }
 #[test]

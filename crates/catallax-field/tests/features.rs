@@ -761,7 +761,7 @@ fn algebraic_rigid_frames_preserve_sweep_trims_germs_and_complete_answers() {
             .transformed(&pose, &mut dec)
             .unwrap();
         check(&plan, &cases);
-        let refusal = plan.visit_feature_candidates(2, |_, _| true).unwrap_err();
+        let refusal = plan.visit_candidates(2, |_, _| true).unwrap_err();
         assert_eq!(refusal.code, "field.sample-algebraic-placement");
         if index == 0 {
             assert_eq!(

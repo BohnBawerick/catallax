@@ -484,8 +484,17 @@ pub(crate) fn ray_location(
     direction: &Vector3,
     dec: &mut Decider,
 ) -> Result<Location, Refusal> {
+    ray_constraints(&leaf.constraints, point, direction, dec)
+}
+
+pub(crate) fn ray_constraints(
+    constraints: &[Constraint],
+    point: &[Rational; 3],
+    direction: &Vector3,
+    dec: &mut Decider,
+) -> Result<Location, Refusal> {
     let mut boundary = false;
-    for poly in &leaf.constraints {
+    for poly in constraints {
         let value = if let (Terms::Rational(terms), Some(direction)) =
             (&poly.terms, direction.rational_components())
         {
@@ -553,6 +562,7 @@ pub(crate) enum Leaf {
     Primitive(Primitive),
     Feature(crate::features::Feature),
     Cell(Cell),
+    Draft(crate::draft::Region),
 }
 impl Leaf {
     pub(crate) fn constraints(&self) -> &[Constraint] {
@@ -560,23 +570,23 @@ impl Leaf {
             Self::Primitive(a) => &a.constraints,
             Self::Feature(a) => &a.constraints,
             Self::Cell(a) => &a.constraints,
+            Self::Draft(a) => &a.constraints,
         }
     }
 
     pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
-        if let Self::Cell(a) = self {
-            let Some(radius) = a.display_radius(dec)? else {
-                return Ok(None);
-            };
-            return Ok(Some(std::array::from_fn(|_| {
-                Ball::from_rational(&(-&radius), 128).hull(&Ball::from_rational(&radius, 128))
-            })));
-        }
-        let Self::Primitive(a) = self else {
-            let Self::Feature(a) = self else {
-                unreachable!()
-            };
-            return a.display_box(dec);
+        let a = match self {
+            Self::Primitive(a) => a,
+            Self::Feature(a) => return a.display_box(dec),
+            Self::Draft(a) => return a.display_box(dec).map(Some),
+            Self::Cell(a) => {
+                let Some(radius) = a.display_radius(dec)? else {
+                    return Ok(None);
+                };
+                return Ok(Some(std::array::from_fn(|_| {
+                    Ball::from_rational(&(-&radius), 128).hull(&Ball::from_rational(&radius, 128))
+                })));
+            }
         };
         let zero = Rational::zero();
         let bounds = match a.kind {
@@ -599,14 +609,11 @@ impl Leaf {
     }
 
     pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
-        if let Self::Cell(a) = self {
-            return a.display_radius(dec);
-        }
-        let Self::Primitive(a) = self else {
-            let Self::Feature(a) = self else {
-                unreachable!()
-            };
-            return a.display_radius(dec);
+        let a = match self {
+            Self::Primitive(a) => a,
+            Self::Feature(a) => return a.display_radius(dec),
+            Self::Draft(a) => return a.display_radius(dec).map(Some),
+            Self::Cell(a) => return a.display_radius(dec),
         };
         let local = match a.kind {
             Kind::Block | Kind::Round => a
@@ -659,16 +666,18 @@ impl Leaf {
             Self::Primitive(a) => a.transform(pose),
             Self::Feature(a) => a.transform(pose),
             Self::Cell(a) => a.transform(pose),
+            Self::Draft(a) => a.transform(pose),
         }
     }
     pub fn true_distance(&self) -> bool {
-        matches!(self, Self::Primitive(_))
+        matches!(self, Self::Primitive(_) | Self::Draft(_))
     }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         match self {
             Self::Primitive(a) => a.location(p, dec),
             Self::Feature(a) => a.location(p, dec),
             Self::Cell(a) => a.location(p, dec),
+            Self::Draft(a) => a.location(p, dec),
         }
     }
     pub fn proven_distance(
@@ -681,6 +690,7 @@ impl Leaf {
             Self::Primitive(a) => a.proven_distance(p, l, dec),
             Self::Feature(a) => a.proven_distance(p, l, dec),
             Self::Cell(a) => a.proven_distance(p, l, dec),
+            Self::Draft(a) => a.proven_distance(p, l, dec),
         }
     }
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
@@ -688,6 +698,7 @@ impl Leaf {
             Self::Primitive(a) => a.fast_distance(p),
             Self::Feature(a) => a.fast_distance(p),
             Self::Cell(a) => a.fast_distance(p),
+            Self::Draft(a) => a.fast_distance(p),
         }
     }
     /// Collects every zero constraint when local membership changes are planar.
@@ -698,11 +709,35 @@ impl Leaf {
         planes: &mut Vec<Vector3>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
-        let constraints = match self {
-            Self::Primitive(a) => &a.constraints,
-            Self::Feature(a) => &a.constraints,
-            Self::Cell(a) => &a.constraints,
-        };
+        if let Self::Draft(region) = self
+            && let crate::draft::Cell::Polyhedral(poly) = &region.cell
+        {
+            let point = Point3::new(
+                p[0].clone().into(),
+                p[1].clone().into(),
+                p[2].clone().into(),
+            );
+            let mut found = false;
+            for face in &poly.faces {
+                if !poly.on_face(face, &point, None, dec)? {
+                    continue;
+                }
+                let normal = poly.plane(face).normal;
+                let mut duplicate = false;
+                for existing in planes.iter() {
+                    if sign(&normal.cross(existing).norm_squared(), dec)? == Sign::Zero {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if !duplicate {
+                    planes.push(normal);
+                }
+                found = true;
+            }
+            return Ok(found);
+        }
+        let constraints = self.constraints();
         let mut found = false;
         for constraint in constraints {
             if crate::polynomial_sign(&constraint.polynomial, p, dec)? != Sign::Zero {
@@ -736,23 +771,256 @@ impl Leaf {
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
+            Self::Draft(a) => {
+                if matches!(a.cell, crate::draft::Cell::Polyhedral(_)) {
+                    let point = Point3::new(
+                        p[0].clone().into(),
+                        p[1].clone().into(),
+                        p[2].clone().into(),
+                    );
+                    a.classify(&point, Some(d), dec)
+                } else {
+                    ray_constraints(&a.constraints, p, d, dec)
+                }
+            }
         }
     }
     pub fn on_face(
         &self,
+        origin: &Origin,
         role: &Role,
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
         match self {
             Self::Primitive(_) => Ok(Some(true)),
+            Self::Draft(region) => {
+                if matches!(region.cell, crate::draft::Cell::Polyhedral(_)) {
+                    let point = Point3::new(
+                        p[0].clone().into(),
+                        p[1].clone().into(),
+                        p[2].clone().into(),
+                    );
+                    region.on_face_point(origin, &point, dec).map(Some)
+                } else {
+                    Ok(Some(region.source_origin(origin).is_some()))
+                }
+            }
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),
             Self::Cell(_) => Ok(Some(true)),
+        }
+    }
+
+    pub(crate) fn draft_witness(&self, dec: &mut Decider) -> Result<Point3, Refusal> {
+        match self {
+            Self::Primitive(p) => {
+                let half = Rational::from_ratio(1, 2).expect("nonzero denominator");
+                let coordinates = match p.kind {
+                    Kind::Block => p.parameters.each_ref().map(|x| x * &half),
+                    Kind::Round => [Rational::zero(), Rational::zero(), &p.parameters[2] * &half],
+                    _ => {
+                        return Err(Refusal::new(
+                            "draft.unsupported-surface",
+                            "draft source is not a planar or cylindrical cell",
+                        ));
+                    }
+                };
+                let [x, y, z] = coordinates;
+                Ok(p.inverse
+                    .inverse()
+                    .apply_point(&RPoint3::new(x, y, z).to_real()))
+            }
+            Self::Feature(feature) => feature.draft_witness(),
+            Self::Cell(cell) => {
+                if let Some(capped) = &cell.capped {
+                    return capped.interior_witness(dec);
+                }
+                let supports = cell
+                    .constraints
+                    .iter()
+                    .map(|constraint| {
+                        let Surface::Plane(plane) = &constraint.surface else {
+                            return Err(Refusal::new(
+                                "draft.unsupported-arrangement",
+                                "curved analytic source cells need a strict interior construction",
+                            ));
+                        };
+                        Ok(catallax_features::draft::cell::PlanePatch {
+                            plane: plane.clone(),
+                            origins: Vec::new(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let cell = catallax_features::draft::cell::PlanarCell::new(supports, dec)?
+                    .ok_or_else(|| {
+                        Refusal::new(
+                            "draft.unsupported-arrangement",
+                            "source halfspaces have no full-dimensional cell",
+                        )
+                    })?;
+                let sum = cell.vertices.iter().fold(Vector3::zero(), |sum, p| {
+                    sum.plus(&p.minus(&Point3::origin()))
+                });
+                Ok(Point3::origin()
+                    .plus(&sum.scaled(&(Real::one() / Real::from_i64(cell.vertices.len() as i64)))))
+            }
+            Self::Draft(region) => Ok(match &region.cell {
+                crate::draft::Cell::Planar(cell) => {
+                    let sum = cell.vertices.iter().fold(Vector3::zero(), |sum, p| {
+                        sum.plus(&p.minus(&Point3::origin()))
+                    });
+                    Point3::origin().plus(
+                        &sum.scaled(&(&Real::one() / &Real::from_i64(cell.vertices.len() as i64))),
+                    )
+                }
+                crate::draft::Cell::Round(cell) => cell.origin.plus(
+                    &cell
+                        .axis
+                        .scaled(&((&cell.heights[0] + &cell.heights[1]) / Real::from_i64(2))),
+                ),
+                crate::draft::Cell::Polyhedral(poly) => poly.terms[0].witness.clone(),
+            }),
+        }
+    }
+
+    pub(crate) fn certify_planar_convexity(&self, dec: &mut Decider) -> Result<(), Refusal> {
+        match self {
+            Self::Primitive(p) if p.kind == Kind::Block => Ok(()),
+            Self::Draft(region) if matches!(region.cell, crate::draft::Cell::Planar(_)) => Ok(()),
+            Self::Cell(cell)
+                if cell
+                    .constraints
+                    .iter()
+                    .all(|c| matches!(c.surface, Surface::Plane(_))) =>
+            {
+                Ok(())
+            }
+            Self::Feature(feature) => feature.certify_planar_convexity(dec),
+            _ => Err(Refusal::new(
+                "draft.unsupported-arrangement",
+                "source is not a certified planar convex cell",
+            )),
         }
     }
 }
 
 impl Primitive {
+    pub(crate) fn sample_candidates(
+        &self,
+        role: &Role,
+        n: u32,
+        angular: &std::cell::OnceCell<Vec<[Rational; 2]>>,
+        visit: &mut impl FnMut(RPoint3) -> bool,
+    ) -> Result<bool, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
+        let placement = self.inverse.inverse();
+        let mut emit = |xyz: [Rational; 3]| -> Result<bool, Refusal> {
+            let [x, y, z] = xyz;
+            let point = placement
+                .apply_rational_point(&RPoint3::new(x, y, z))
+                .ok_or_else(crate::samples::placement_error)?;
+            Ok(visit(point))
+        };
+        let invalid = || {
+            Refusal::new(
+                "field.sample-role",
+                "registry role has no native primitive chart",
+            )
+        };
+        let p = &self.parameters;
+        if self.kind == Kind::Block {
+            let (axis, upper) = match role {
+                Role::Start => (2, false),
+                Role::End => (2, true),
+                Role::Side { segment, .. } => match segment.as_str() {
+                    "x_min" => (0, false),
+                    "x_max" => (0, true),
+                    "y_min" => (1, false),
+                    "y_max" => (1, true),
+                    _ => return Err(invalid()),
+                },
+                _ => return Err(invalid()),
+            };
+            for i in 0..n {
+                for j in 0..n {
+                    let mut xyz = std::array::from_fn(|_| Rational::zero());
+                    xyz[axis] = if upper {
+                        p[axis].clone()
+                    } else {
+                        Rational::zero()
+                    };
+                    xyz[(axis + 1) % 3] = &p[(axis + 1) % 3] * &crate::samples::fraction(i, n);
+                    xyz[(axis + 2) % 3] = &p[(axis + 2) % 3] * &crate::samples::fraction(j, n);
+                    if !emit(xyz)? {
+                        return Ok(false);
+                    }
+                }
+            }
+            return Ok(true);
+        }
+        let angular = angular.get_or_init(|| crate::samples::circle(n));
+        let wall = matches!(role, Role::Side { segment, .. } if segment.as_str() == "wall");
+        match self.kind {
+            Kind::Round => {
+                if wall {
+                    for i in 0..n {
+                        let h = crate::samples::fraction(i, n);
+                        let radius = &p[0] + &(&(&p[1] - &p[0]) * &h);
+                        for [x, y] in angular {
+                            if !emit([&radius * x, &radius * y, &p[2] * &h])? {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                } else {
+                    let (radius, z) = match role {
+                        Role::Start => (&p[0], Rational::zero()),
+                        Role::End => (&p[1], p[2].clone()),
+                        _ => return Err(invalid()),
+                    };
+                    if !radius.is_zero() {
+                        for i in 0..n {
+                            let rho = radius * &crate::samples::fraction(i, n);
+                            for [x, y] in angular {
+                                if !emit([&rho * x, &rho * y, z.clone()])? {
+                                    return Ok(false);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Kind::Sphere if wall => {
+                for [c, s] in angular {
+                    if c <= &Rational::zero() {
+                        continue;
+                    }
+                    let radius = &p[0] * c;
+                    for [x, y] in angular {
+                        if !emit([&radius * x, &radius * y, &p[0] * s])? {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+            Kind::Torus if wall => {
+                for [c, s] in angular {
+                    let radius = &p[0] + &(&p[1] * c);
+                    for [x, y] in angular {
+                        if !emit([&radius * x, &radius * y, &p[1] * s])? {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+            _ => return Err(invalid()),
+        }
+        Ok(true)
+    }
+
     pub(crate) fn sample_bounds(&self) -> Result<crate::samples::Bounds, Refusal> {
         let zero = Rational::zero();
         let p = &self.parameters;
@@ -865,9 +1133,27 @@ pub(crate) struct Cell {
     fast: Vec<Vec<([u32; 3], f64)>>,
     center: Point3,
     radius: Option<Rational>,
+    capped: Option<Box<catallax_features::draft::capped::CappedCylinder>>,
 }
 
 impl Cell {
+    pub(crate) fn from_capped(
+        capped: Box<catallax_features::draft::capped::CappedCylinder>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let radius = capped.bound_radius(dec)?;
+        let mut cell = Self::new(Vec::from(capped.surfaces()), Some(radius))?;
+        cell.capped = Some(capped);
+        Ok(cell)
+    }
+    pub(crate) fn capped_chart(&self) -> Option<&catallax_features::draft::capped::CappedCylinder> {
+        self.capped.as_deref()
+    }
+    pub(crate) fn support_index(&self, polynomial: &RealPoly) -> Option<usize> {
+        self.constraints
+            .iter()
+            .position(|c| c.polynomial.same_definition(polynomial))
+    }
     pub(crate) fn sample_bounds(&self) -> Result<Option<crate::samples::Bounds>, Refusal> {
         let Some(radius) = &self.radius else {
             return Ok(None);
@@ -907,6 +1193,7 @@ impl Cell {
             fast,
             center: Point3::origin(),
             radius,
+            capped: None,
         })
     }
     fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
@@ -1003,6 +1290,10 @@ impl Cell {
             .map(Some)
     }
     fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
+        let capped = self.capped.take().map(|mut capped| {
+            capped.transform(pose);
+            capped
+        });
         let surfaces = self
             .constraints
             .iter()
@@ -1011,6 +1302,7 @@ impl Cell {
         let center = pose.apply_point(&self.center);
         *self = Self::new(surfaces, self.radius.clone())?;
         self.center = center;
+        self.capped = capped;
         Ok(())
     }
 }

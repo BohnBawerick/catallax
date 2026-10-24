@@ -214,10 +214,20 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
             p(&mut plane.point)?;
             v(&mut plane.normal)?;
         }
-        Draft { pull, neutral, .. } => {
+        Draft {
+            pull,
+            neutral,
+            keep_regions,
+            ..
+        } => {
             v(pull)?;
             p(&mut neutral.point)?;
             v(&mut neutral.normal)?;
+            if let Some(points) = keep_regions {
+                for point in points {
+                    p(point)?;
+                }
+            }
         }
         Boolean { .. }
         | Fillet { .. }

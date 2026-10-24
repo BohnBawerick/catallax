@@ -674,7 +674,7 @@ Projection sectors preserve the existing normal sweep on smooth faces and straig
 
 `D_F = { x + s (cos θ ŵ − sin θ m̂(x)) : x on ν, s real }`.
 
-A positive angle tilts the face into the material on the `+w` side of `N`. A plane turns about its neutral line, and a cylinder parallel to `w` becomes a cone with half-angle `θ`. The result is the solid bounded like `S`, with each chosen face's surface replaced by `D_F`, and each neighbouring face extended or trimmed along its own surface to meet it. Section 4.10.1 defines material selection when the arrangement changes. Swallowed neighbours disappear; old adjacency is not a constraint.
+A positive angle tilts the face into the material on the `+w` side of `N`. A plane turns about its neutral line, and a cylinder parallel to `w` becomes a cone with half-angle `θ` when the neutral plane's normal is parallel to `w`. The result is the solid bounded like `S`, with each chosen face's surface replaced by `D_F`, and each neighbouring face extended or trimmed along its own surface to meet it. Section 4.10.1 defines material selection when the arrangement changes. Swallowed neighbours disappear; old adjacency is not a constraint.
 
 **Names.** None made. Drafted faces keep their origins (rule 5).
 

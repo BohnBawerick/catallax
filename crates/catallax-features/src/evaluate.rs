@@ -20,6 +20,8 @@ pub struct Built {
     pub bodies: BTreeMap<StepId, BodyId>,
     /// Generating definitions of every elementary fillet and named copy in build order.
     pub fillets: Vec<crate::fillet::FilletDefinition>,
+    /// Canonical removed-face history from draft operations, not selectable names.
+    pub consumed: Vec<crate::ConsumedFace>,
     pub(crate) definition: Arc<Recipe>,
 }
 
@@ -271,6 +273,7 @@ fn evaluate_impl(
     let mut profiles = BTreeMap::new();
     let mut bodies: BTreeMap<StepId, BodyValue> = BTreeMap::new();
     let mut fillets = Vec::new();
+    let mut consumed = Vec::new();
     for step in &recipe.steps {
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
         let mut build = |model: &mut Model,
@@ -485,6 +488,33 @@ fn evaluate_impl(
                     };
                     BodyValue { body, radius }
                 }
+                Operation::Draft {
+                    body,
+                    faces,
+                    pull,
+                    neutral,
+                    angle,
+                    keep_regions,
+                } => {
+                    let definition = crate::draft::DraftDefinition::new(
+                        vector(pull).to_real(),
+                        crate::draft::neutral_plane(neutral),
+                        angle.value(),
+                        dec,
+                    )?;
+                    let target = &bodies[body];
+                    let (body, history, radius) = crate::draft_build::build(
+                        model,
+                        target.body,
+                        faces,
+                        &definition,
+                        keep_regions.as_deref(),
+                        &step.id,
+                        dec,
+                    )?;
+                    consumed.extend(history);
+                    BodyValue { body, radius }
+                }
                 Operation::Fillet {
                     body,
                     edges,
@@ -681,5 +711,6 @@ fn evaluate_impl(
         definition: certification
             .and_then(|context| context.snapshot())
             .unwrap_or_else(|| Arc::new(recipe.clone())),
+        consumed,
     })
 }

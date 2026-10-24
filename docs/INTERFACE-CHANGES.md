@@ -999,3 +999,137 @@ Pieces: 1, 4, 5
 Change: `Decider::rational_identity(&Real)` optionally proves a rational constant using only bounded rational-function identities over shared definitions, after domain validation. An unrecorded complete line on a cone generator now refuses with `intersect.partial-containment-required`, because only half the line belongs to the retained nappe.
 Why: circular-section adjacency needs cheap exact zero proofs before interval refinement, while full generator containment would discard the cone domain.
 Migration: callers may use the optional identity before existing certified fallbacks; `None` proves nothing. Curve/surface consumers must preserve the new named refusal when partial containment is required. Existing recorded incidence remains authoritative. No budget, tolerance or file format changes.
+
+## 2026-10-24: analytic draft cells
+
+Pieces: recipe, features, field, application, comparison
+
+Change: `Draft` accepts optional `keep_regions`. Omission keeps neutral-plane-connected material; an explicit empty list selects no material; nonempty lists select components by strict interior membership. Existing version-3 recipes serialize without a new property. Feature-pattern placement transforms saved region points along with the pull and neutral plane.
+
+`DraftDefinition` retains exact pull, neutral plane and algebraic angle values. Plane replacements follow the neutral-line generators. Pull-parallel cylinders reduce to a single cone nappe only when the neutral normal is parallel to pull. Oblique cylindrical neutral planes return `draft.unsupported-oblique-neutral`, an unfinished-coverage refusal, not an impossible-input refusal. The neutral-curve definition is unchanged.
+
+The cell constructors rebuild convex planar arrangements from exact support intersections instead of preserving old adjacency. Redundant and zero-area patches disappear. Axial round cells trim their caps or replace a swallowed cap with the cone apex, without adding a face. Surviving faces retain their source origins. `Built::consumed` and `Plan::consumed_faces` expose removed-face provenance separately from selectable names. Field name lookup prefers the result's replacement candidate when the origin also occurs in construction history.
+
+The field compiles the same analytic definitions without constructing B-rep topology. Its cell distance uses projection to trimmed planar facets and their edges, or projection to the round cell's meridian and cap disks. Comparison now attempts draft builds instead of classifying every draft operation as unsupported.
+
+Coverage: convex planar cells and axial cylindrical cells with complete perpendicular caps. Nonconvex, mixed curved and Boolean-input arrangements and filtered field face references still have explicit unfinished-coverage refusals. These constructors do not by themselves complete roadmap item 19 or establish the drafted P1 latency and comparison exits.
+
+Prior art: [OpenCASCADE's cylindrical draft construction](https://github.com/Open-Cascade-SAS/OCCT/blob/master/src/ModelingAlgorithms/TKOffset/Draft/Draft_Modification_1.cxx) explicitly checks neutral-normal/pull parallelism before reducing to a cone. Its topology-preserving restriction is not adopted for swallowed planar neighbours or round caps. No source code is copied.
+
+Migration: callers matching `Operation::Draft` exhaustively must bind or ignore `keep_regions`. No version, budget, tolerance, legacy question or STEP-option change.
+
+## 2026-10-24: native analytic draft sampling
+
+Pieces: features, field, compare
+
+Change: `Plan::visit_feature_candidates` also visits exact rational points on surviving draft facets, cone walls and cap disks. The points come from the field definition, not B-rep vertices or display meshes. Copy roles resolve to the same source patch. Algebraic placements without rational candidates retain `field.sample-algebraic-placement`.
+
+Draft support construction preserves material sense against the source radial normal for oblique planar neutral planes. A neutral orientation without that proof returns the legal unfinished-coverage refusal `draft.unsupported-neutral-orientation`. Exact rational reduction removes common algebraic scales from plane normals, unit directions, cone slopes and apex expressions; neither the surface sets nor budgets change.
+
+Why: comparison requires independent reverse samples on the replacement patches. Unreduced but rational support coefficients unnecessarily exhaust later exact predicates.
+
+Migration: no signature, format, tolerance or work-allowance changes. Candidate visitors may now receive draft points through the existing callback and early-stop contract.
+
+## 2026-10-24: oriented planar draft components
+
+Pieces: features, field, compare
+
+Change: `draft::arrangement` adds exact skin patches, planar subdivisions and connected material components. B-rep source wires and field sweep definitions independently supply the input skin. Exact patch winding labels the new plane arrangement; retained components determine the final topology. Connected coplanar patches merge their origins, while disconnected coplanar patches retain distinct source names. Removed-face history is computed across all retained components, so a surviving split face is not reported as consumed.
+
+The field preserves a true-distance certificate for unions of the separated components established by draft. Ordinary Boolean unions remain residuals. Compaction and rigid copies retain the certificate. Native samples and distance queries use surviving trimmed patches, not internal subdivision seams.
+
+Coverage added: nonconvex line-bounded planar skins whose incident replacement carriers have consistent finite intersections. Non-simple or singular moved vertex fans still report explicit unfinished coverage; convex planar cells retain their direct support-intersection path. Mixed curved and Boolean-input field arrangements remain unfinished. This entry corrects the narrower planar coverage recorded above; it does not claim the full P1 latency exit.
+
+Prior art: [OCCT draft modification](https://occt3d.com/dev/doc/refman/html/class_draft___modification.html) separates replacement surfaces, curves and points, but [its public topology-preserving restriction](https://occt3d.com/dev/doc/refman/html/class_b_rep_offset_a_p_i___draft_angle.html) cannot implement swallowed faces. [Shapiro and Vossler's arrangement treatment](https://spatial.engr.wisc.edu/wp-content/uploads/sites/715/2014/04/0000-4.pdf) motivates explicit cell labels. Patch-local provenance avoids assigning every coplanar source name to every output patch. No code is copied.
+
+Migration: no recipe version, public callback signature, tolerance or budget changes. Consumers of `Value` can receive a certified `TrueDistance` for a separated draft-component union that previously had only residual semantics.
+
+## 2026-10-24: Boolean-input planar draft and scoped origins
+
+Pieces: features, field, comparison
+
+Change: `Skin::partition` labels exact planar cells through a definition-native classifier and resolves surviving source origins on outward boundary tiles. The field builds a temporary named source expression independently of B-rep topology. Equal geometric leaves do not collapse distinct creating-step scopes. Boolean boundary provenance, copied expressions and finite clips of through-all tools reconstruct the actual input boundary before drafting it; construction caps cannot become output faces.
+
+Physical source origin sets stay grouped in consumed-face history. Selecting a merged face does not move a disconnected patch merely because it shares one alias. Cached draft definitions bind to the nearest current copy suffix instead of erasing older instance distinctions. Coincident cylindrical aliases are drafted once with all their bindings.
+
+Coverage added: planar Boolean and through-cut inputs under the finite moved-fan restrictions above. Mixed curved input arrangements, filtered references and singular or non-simple nonconvex moved fans remain explicit unfinished coverage. The full P1 build prerequisite is unchanged.
+
+Migration: no recipe, tolerance, work-allowance or STEP-option changes. This supersedes the Boolean-input field limitation recorded above, not the remaining curved/fan limits.
+
+## 2026-10-24: current-definition boundary candidate handles
+
+Pieces: field, comparison
+
+Change: replace `Plan::visit_feature_candidates` with `Plan::visit_candidates`. Its callback receives `(RPoint3, FaceId)` and covers current primitive, sweep and draft definitions. `Plan::result_face(index)` retrieves a current registry candidate; history and unused entries return `None`. A shared origin may have multiple candidates on different supports. Comparison preserves these handles for reverse samples and tries every current support for a named forward witness.
+
+The obsolete recipe-primitive sampler is removed. Modified faces no longer inherit a historical cutter grid that can place probes on their new sharp edges. Draft trim and sampling predicates match complete origins, not just identically spelled roles from different creators. The native primitive charts retain exact rational positions and share their angular samples within one visit.
+
+Why: a drafted neighbour can split while keeping its origin, and only one piece may move with a merged alias. A single name-to-surface representative loses valid coverage. Same-role coplanar patches also need separate trimmed domains.
+
+Prior art: [OCCT shape history](https://occt3d.com/dev/doc/refman/html/class_b_rep_tools___history.html) distinguishes a source's ancestry from the list of geometric shapes modified from it. Candidate handles preserve that one-to-many distinction without making new recipe names. No source code is copied.
+
+Migration: candidate visitors query the supplied handle directly and read its origin from `plan.faces()[id.index()]`. The old callback and sampler are removed, not retained as aliases. All repository callers are migrated. Primitive frame failures now use the field sampling error namespace. Numeric proof policy, cooperative stop, comparison accuracy and coverage requirements are unchanged.
+
+## 2026-10-24: direct draft face proofs
+
+Pieces: field
+
+Change: named-face queries on a sole result leaf no longer compute the field's full distance. Exact leaf membership and named trim already prove result ownership. A point strictly inside a published polyhedral draft boundary tile also uses its stored outward plane normal directly. Points on tile edges retain the existing ray proof. Boolean results retain their global ownership and coactive-support checks.
+
+Why: comparison asks for named boundary membership and direction at many points. Repeating trimmed-boundary distance and whole-cell ray calculations for a certified facet interior does not strengthen either answer.
+
+Migration: no public signature, answer format, tolerance or work-allowance changes.
+
+## 2026-10-24: draft integration with trimmed minimum distances
+
+Pieces: field, comparison
+
+Change: prepared field distances classify analytic draft regions at algebraic chart points and normal germs. Draft-face witnesses must lie in the complete named source domain, not merely on another boundary patch with the same carrier. Cached convex tile inequalities reject chart cells outside that domain. Aliases share the physical tile caches. Forward comparison keeps every current candidate when ordering minimum-distance witnesses.
+
+Bounded all-planar constraint leaves obtain strict draft witnesses from exact support intersections. The candidate visitor retains the merged base's coverage for analytic drill and capped-extrusion constraint leaves; it does not generate new reverse points for those leaves.
+
+Prior art: [OCCT's face classifier](https://occt3d.com/dev/doc/refman/html/class_b_rep_class___f_classifier.html) classifies against a face's wires and distinguishes rejection from carrier membership. This implementation uses exact native tile predicates and outward interval exclusion, without a tolerance-based classifier or copied source.
+
+Migration: no public query signature, minimum-distance width, cell limit, comparison accuracy or work allowance changes. Unconverged bounds retain their existing explicit status.
+
+## 2026-10-24: physical draft references and axial separation
+
+Pieces: features, field
+
+Change: `Skin::resolve_faces` applies face patterns and shared-edge adjacency before comparing exact distances to closed planar trims. Projection inside a face and nearest points on its outer or hole edges use the same exact squared-distance order. Ties return `recipe.ambiguous-reference`; missing faces and swallowed-cap picks return `recipe.missing-reference`. Physical selection precedes alias expansion. Both kernels reuse their extracted skin for selection and construction.
+
+`Skin::is_convex` retains the direct support-intersection construction for convex Boolean inputs and filtered references. This avoids imposing moved-fan restrictions on their non-simple vertices.
+
+`RoundCell::certified_disjoint` proves axial or radial separation from exact height intervals and affine radii. The B-rep adapter no longer assembles intersecting drafted round cells as independent untrimmed lumps. Such cells need a reconstructed curved arrangement and retain `draft.unsupported-arrangement`; this is not an impossible-input classification. Separated axial cells retain their existing construction. Mixed curved field inputs and filtered curved references remain unfinished.
+
+Why: coactive names can label disconnected pieces, and adding draft can make originally disjoint cylindrical components intersect. Neither shared ancestry nor source separation proves the replacement topology.
+
+Migration: no new origins, recipe version, approximation tolerance or work-allowance changes. Face-reference errors use the recipe namespace. This supersedes the planar filtered-reference limitation recorded above, not the remaining curved or non-simple nonconvex limits.
+
+## 2026-10-24: identity draft reductions and neutral-section area
+
+Pieces: features, field
+
+Change: a plane coincident with its neutral plane retains its carrier when the authored generators are tangent to it. Axial cylindrical draft at zero angle retains the cylinder when the neutral plane is transverse to its axis, including oblique neutral curves. Missing parallel neutrals and zero-angle generators that sweep only lines retain typed refusals.
+
+Round-cell retention tests the area of the neutral section, not whether the neutral plane intersects the finite axis segment. Exact end-disk extrema of the neutral-plane functional prove interior cuts; a non-axial tangency contributes no area. Axial sections retain the positive-radius cap rule.
+
+Why: a transverse neutral can cut a cylinder away from its finite axis, and an identity surface replacement can have a coincident neutral. Neither is impossible geometry. Nonzero-angle oblique cylindrical carriers remain unfinished derived-surface work.
+
+Migration: no new origins, schema, tolerance or work allowance. The implementation-gap assertion for oblique cylinders was removed; material retention, tangency and dimension-collapse regressions replace it.
+
+## 2026-10-24: planar draft caps on cylindrical neighbours
+
+Pieces: features, field
+
+Change: `draft::capped::CappedCylinder` retains an unchanged cylinder and two opposing planar cap definitions. Exact affine heights define its disk footprint, strict material, neutral-section area and finite enclosure. A cap intersection can remove part of that footprint without introducing a cap or origin.
+
+`cap_curve` and `FootprintBoundary` construct native circles, ellipses, chord endpoints and tangent contacts. The B-rep assembles their shared topology directly; the provisional enclosing-solid Boolean construction was removed. Tangent cap contact uses one side wire, preserving a manifold convex boundary.
+
+The field publishes an independent bounded analytic cell with residual distance semantics. Native charts survive rigid copies and supply current face candidates by support polynomial. Its strict witness also supports later drafts whose footprint excludes the cylinder axis.
+
+Integration: draft region construction, rigid copies, prepared planar trims and native cap cells propagate the merged fallible analytic-constraint API. Evaluated definitions retain upstream certification snapshots alongside draft consumption history.
+
+Limits: multiple interacting curved cells, other mixed support families and general curved reference disambiguation remain unfinished. The rational candidate interface still refuses genuinely algebraic placements. Successful geometry and STEP import do not imply an interactive comparison-budget pass.
+
+Migration: no new recipe version, face origins, approximation tolerance or work allowance.

@@ -13,6 +13,7 @@ These are `catallax-recipe/3` inputs for the roadmap's P0–P5 scoreboard. Dimen
 | `P0/general-cone.json` | Two frusta, radii 5 to 2 over height 10. Second translation 2,1,1 and quaternion 2,1,1,0. Union. |
 | `P0/general-torus.json` | Two tori, major radius 8 and tube radius 2. Second translation 1,2,1 and quaternion 2,1,1,0. Union. |
 | `P1-bracket.json` | Plate 60×40×5 extruded from a rectangle; flush flange 60×5×25 above z=5. Boss radius 8, height 10, at 30,25,5; through bore radius 4. Four radius-2 bolts at x=10/50, y=12/32. Flange slot spans x=20..40, z=15..21, with radius-3 ends. Eight overlapping drill cuts plus a straight middle cut preserve the rounded slot and exercise the subtraction chain. |
+| `P1-drafted-bracket.json` | Complete P1 construction with the flange's `right` wall drafted inward 45 degrees about z=5 before the plate/flange union. The right wall runs from x=60 at z=5 to x=35 at z=30. The boss, bore, bolt holes and rounded slot are unchanged. |
 | `P2-collar.json` | Rectangle spanning radii 6..12 and axial positions 0..12, revolved 360 degrees about y. Both outer circular edges have 1×1 chamfers. |
 | `P3-filleted-boss.json` | Block 40×30×10, boss radius 8 and height 12 at 20,15,10. Concave junction fillet radius 2, then the four convex top block edges radius 1. |
 | `P4-shelled-tray.json` | Centred 40×30×12 block, inward wall thickness 2 and top face open. Intersect with a centred radius-23 cylinder extending from z=-1 to 13 to round its four corners. |

@@ -255,7 +255,8 @@ mod tests {
                         let role = plan.definition_role(face_index);
                         assert_eq!(
                             Some(native.on_face(role, &point)),
-                            leaf.on_face(role, &point, &mut dec).unwrap(),
+                            leaf.on_face(&plan.faces[face_index].origin, role, &point, &mut dec)
+                                .unwrap(),
                         );
                     }
                     for direction in &directions {

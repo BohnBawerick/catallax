@@ -9,7 +9,6 @@ use catallax_shapes::RPoint3;
 use std::sync::{Arc, Mutex};
 
 mod check;
-mod sample;
 
 /// Closed model-space edit region, in millimetres.
 #[derive(Clone, Debug, PartialEq, Eq)]

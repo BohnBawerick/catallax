@@ -1,22 +1,10 @@
 //! Polynomial carrier integrals with exact, possibly algebraic, trim endpoints.
 
-use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
+use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::{Curve, Point3};
 
-use super::{Polynomial, Program, Work, scale, sqrt, trigonometric_inputs};
-use crate::integrate::Checked;
+use super::{Analytic, Angle, Polynomial, Program, Value, scale, sqrt, trigonometric_inputs};
 use crate::planar::{components, direction};
-
-struct Angle {
-    cosine: Real,
-    sine: Real,
-    wrap: bool,
-}
-
-pub(super) struct Integral {
-    angle: Option<Angle>,
-    values: Vec<(Rational, Real)>,
-}
 
 fn sign(value: &Real, dec: &mut Decider) -> Result<Option<Sign>, Refusal> {
     Ok(match dec.sign(value) {
@@ -54,44 +42,6 @@ fn monomial(from: &[Real; 2], to: &[Real; 2], cosine: u32, sine: u32) -> (Ration
     }
 }
 
-impl Integral {
-    pub(super) fn evaluate(&self, work: &mut Work) -> Checked<Vec<Ball>> {
-        let angle = if self
-            .values
-            .iter()
-            .any(|(coefficient, _)| !coefficient.is_zero())
-        {
-            let angle = self.angle.as_ref().unwrap();
-            let cosine = work.real(&angle.cosine)?;
-            let sine = work.real(&angle.sine)?;
-            let swept = crate::integrate::angle(&cosine, &sine, work)?;
-            Some(if angle.wrap {
-                let pi = work.pi()?;
-                let two = work.rational(&Rational::from_i64(2))?;
-                let period = work.mul(&pi, &two)?;
-                work.add(&swept, &period)?
-            } else {
-                swept
-            })
-        } else {
-            None
-        };
-        self.values
-            .iter()
-            .map(|(coefficient, endpoint)| {
-                let endpoint = work.real(endpoint)?;
-                if coefficient.is_zero() {
-                    Ok(endpoint)
-                } else {
-                    let coefficient = work.rational(coefficient)?;
-                    let swept = work.mul(&coefficient, angle.as_ref().unwrap())?;
-                    work.add(&swept, &endpoint)
-                }
-            })
-            .collect()
-    }
-}
-
 impl Program {
     pub(super) fn algebraic_endpoints(
         &self,
@@ -100,7 +50,7 @@ impl Program {
         to: &Point3,
         constants: &[Option<Rational>],
         dec: &mut Decider,
-    ) -> Result<Option<Integral>, Refusal> {
+    ) -> Result<Option<Analytic>, Refusal> {
         let mut inputs = Vec::with_capacity(6);
         let mut angle = None;
         let (start, end) = match curve {
@@ -183,8 +133,8 @@ impl Program {
                     return Ok(None);
                 }
                 angle = Some(Angle {
-                    cosine,
-                    sine,
+                    cosine: Value::Algebraic(cosine),
+                    sine: Value::Algebraic(sine),
                     wrap: cosine_sign != Sign::Negative && sine_sign == Sign::Negative,
                 });
                 (start, end)
@@ -216,9 +166,72 @@ impl Program {
                     swept = swept + coefficient * &a;
                     endpoint = endpoint + Real::from(coefficient.clone()) * e;
                 }
-                (swept, endpoint)
+                (swept, Value::Algebraic(endpoint))
             })
             .collect();
-        Ok(Some(Integral { angle, values }))
+        Ok(Some(Analytic {
+            angle,
+            integrals: values,
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::integrate::Work;
+    use crate::surface::{self, Property};
+    use catallax_numbers::{Ball, BudgetPolicy};
+    use catallax_shapes::{Circle, Plane, RPoint3, RVector3, Surface};
+
+    #[test]
+    fn algebraic_circle_endpoints_keep_the_complementary_long_sweep() {
+        let point = |x: i64, y: i64, z: i64| RPoint3::new(x.into(), y.into(), z.into());
+        let vector = |x: i64, y: i64, z: i64| RVector3::new(x.into(), y.into(), z.into());
+        let mut dec = Decider::default();
+        let plane = Surface::Plane(
+            Plane::new(
+                point(0, 0, 0).into(),
+                vector(0, 0, 1).into(),
+                vector(1, 0, 0).into(),
+                &mut dec,
+            )
+            .unwrap(),
+        );
+        let circle = Curve::Circle(
+            Circle::new(
+                point(0, 0, 0).into(),
+                vector(0, 0, 1).into(),
+                Real::from_i64(2),
+                vector(1, 1, 0).into(),
+                &mut dec,
+            )
+            .unwrap(),
+        );
+        let program = surface::compile(
+            &plane,
+            &point(0, 0, 0),
+            Property::Area,
+            false,
+            &vector(0, 0, 1).to_real(),
+        )
+        .unwrap()
+        .boundary;
+        let root = Real::from_i64(2).sqrt();
+        let a = Point3::new(root.clone(), Real::zero(), Real::zero());
+        let b = Point3::new(Real::zero(), root, Real::zero());
+        for (from, to, multiple) in [(&a, &b, 1), (&b, &a, 3)] {
+            let integral = program
+                .analytic_reduced(&circle, from, to, &mut dec)
+                .unwrap()
+                .unwrap();
+            let policy = BudgetPolicy::default();
+            let mut work = Work::new(&policy, 128, policy.max_work, &dec).unwrap();
+            let actual = integral.evaluate(&mut work).unwrap().remove(0);
+            let expected = &Ball::pi(512)
+                * &Ball::from_rational(&Rational::from_ratio(multiple, 2).unwrap(), 512);
+            assert!(actual.lo() <= expected.lo() && actual.hi() >= expected.hi());
+            assert!(actual.hi() - actual.lo() <= Rational::parse("1e-30").unwrap());
+        }
     }
 }

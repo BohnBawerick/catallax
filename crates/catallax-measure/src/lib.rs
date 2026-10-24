@@ -9,6 +9,10 @@
 //! and polynomial forms on rationally framed line, circle and ellipse arcs use
 //! exact antiderivatives. Other arcs use piece 4's certified traces and degree-19
 //! Taylor quadrature with a degree-20 whole-panel remainder.
+//! Distance-feature queries also reduce exact rational construction constants
+//! and use algebraic trim endpoints. Certified meridian/parallel torus
+//! rectangles use product antiderivatives, including long-arc and complement
+//! corrections. Uncovered finite curved distance trims retain a typed refusal.
 //! Straight cone generators ending at the apex have identically zero boundary
 //! integrands; their exact zero avoids a removable radial-frame singularity.
 //!

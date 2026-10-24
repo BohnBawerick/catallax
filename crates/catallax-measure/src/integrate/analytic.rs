@@ -9,7 +9,7 @@ use catallax_shapes::{Curve, RPoint3, RVector3};
 
 use super::{Checked, Node, Program, Work};
 use crate::planar::{components, direction, sqrt};
-use catallax_numbers::{Ball, Rational, Sign};
+use catallax_numbers::{Ball, Rational, Real, Sign};
 
 mod endpoints;
 mod reduced;
@@ -129,19 +129,14 @@ impl Sweep {
         square > radial || (square == radial && !self.contains(&[-b / a.clone(), -c / a]))
     }
 
-    fn angle(&self, work: &mut Work) -> Checked<Ball> {
+    fn angle(&self) -> Angle {
         let dot = &self.from[0] * &self.to[0] + &self.from[1] * &self.to[1];
         let cross = &self.from[0] * &self.to[1] - &self.from[1] * &self.to[0];
-        let cosine = work.rational(&dot)?;
-        let sine = work.rational(&cross)?;
-        let angle = super::angle(&cosine, &sine, work)?;
-        if dot >= Rational::zero() && cross.sign() == Sign::Negative {
-            let pi = work.pi()?;
-            let two = work.rational(&Rational::from_i64(2))?;
-            let period = work.mul(&pi, &two)?;
-            work.add(&angle, &period)
-        } else {
-            Ok(angle)
+        let wrap = dot >= Rational::zero() && cross.sign() == Sign::Negative;
+        Angle {
+            cosine: Value::Rational(dot),
+            sine: Value::Rational(cross),
+            wrap,
         }
     }
 
@@ -175,31 +170,62 @@ impl Sweep {
     }
 }
 
-pub(crate) struct Analytic(Form);
+pub(crate) struct Analytic {
+    angle: Option<Angle>,
+    integrals: Vec<(Rational, Value)>,
+}
 
-enum Form {
-    Rational {
-        sweep: Option<Sweep>,
-        integrals: Vec<[Rational; 2]>,
-    },
-    Algebraic(endpoints::Integral),
+enum Value {
+    Rational(Rational),
+    Algebraic(Real),
+}
+
+impl Value {
+    fn evaluate(&self, work: &mut Work) -> Checked<Ball> {
+        match self {
+            Self::Rational(value) => work.rational(value),
+            Self::Algebraic(value) => work.real(value),
+        }
+    }
+}
+
+struct Angle {
+    cosine: Value,
+    sine: Value,
+    wrap: bool,
+}
+
+impl Angle {
+    fn evaluate(&self, work: &mut Work) -> Checked<Ball> {
+        let cosine = self.cosine.evaluate(work)?;
+        let sine = self.sine.evaluate(work)?;
+        let angle = super::angle(&cosine, &sine, work)?;
+        if self.wrap {
+            let pi = work.pi()?;
+            let two = work.rational(&Rational::from_i64(2))?;
+            let period = work.mul(&pi, &two)?;
+            work.add(&angle, &period)
+        } else {
+            Ok(angle)
+        }
+    }
 }
 
 impl Analytic {
     pub(crate) fn evaluate(&self, work: &mut Work) -> Checked<Vec<Ball>> {
-        let (sweep, integrals) = match &self.0 {
-            Form::Rational { sweep, integrals } => (sweep, integrals),
-            Form::Algebraic(integral) => return integral.evaluate(work),
-        };
-        let angle = if integrals.iter().any(|i| !i[0].is_zero()) {
-            Some(sweep.as_ref().unwrap().angle(work)?)
+        let angle = if self
+            .integrals
+            .iter()
+            .any(|(coefficient, _)| !coefficient.is_zero())
+        {
+            Some(self.angle.as_ref().unwrap().evaluate(work)?)
         } else {
             None
         };
-        integrals
+        self.integrals
             .iter()
-            .map(|[coefficient, endpoint]| {
-                let endpoint = work.rational(endpoint)?;
+            .map(|(coefficient, endpoint)| {
+                let endpoint = endpoint.evaluate(work)?;
                 if coefficient.is_zero() {
                     Ok(endpoint)
                 } else {
@@ -291,7 +317,7 @@ impl Program {
             _ => return None,
         };
         let values = self.substitute(&inputs, constants, sweep.as_ref())?;
-        let integrals = self
+        let integrals: Vec<_> = self
             .outputs
             .iter()
             .map(|i| {
@@ -309,10 +335,19 @@ impl Program {
                         *sum = &*sum + &(coefficient * &value);
                     }
                 }
-                result
+                let [coefficient, endpoint] = result;
+                (coefficient, Value::Rational(endpoint))
             })
             .collect();
-        Some(Analytic(Form::Rational { sweep, integrals }))
+        let angle = if integrals
+            .iter()
+            .any(|(coefficient, _)| !coefficient.is_zero())
+        {
+            sweep.map(|sweep| sweep.angle())
+        } else {
+            None
+        };
+        Some(Analytic { angle, integrals })
     }
 
     fn substitute(

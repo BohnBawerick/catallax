@@ -16,6 +16,7 @@ pub(crate) struct TraceCache {
     curves: HashMap<EdgeId, std::sync::Arc<CurveTrace>>,
     failed_gauges: BTreeSet<GaugeAttempt>,
     reuse_gauges: bool,
+    torus_rectangles: HashMap<FaceId, Option<std::sync::Arc<crate::torus::rectangle::Domain>>>,
 }
 
 impl TraceCache {
@@ -61,7 +62,8 @@ struct Curved<'a> {
     sense: Sense,
     boundaries: Vec<Vec<Arc<'a>>>,
     compiled: Vec<Compiled>,
-    torus: Option<Box<crate::torus::Programs>>,
+    torus: Option<crate::torus::Programs>,
+    rectangle: Option<std::sync::Arc<crate::torus::rectangle::Domain>>,
     analytic_only: bool,
 }
 
@@ -247,10 +249,26 @@ pub(crate) fn measure(
         let surface = model.geom().surface(face.surface);
         let closed = face.loops.is_empty();
         let analytic_only = finite_distance_face(model, id);
-        let torus = match surface {
-            Surface::Torus(t) if !closed => {
-                Some(Box::new(crate::torus::compile(t, anchor, property)))
+        let rectangle = match surface {
+            Surface::Torus(torus) if analytic_only => {
+                let domain = match traces.torus_rectangles.entry(id) {
+                    Entry::Occupied(entry) => entry.into_mut(),
+                    Entry::Vacant(entry) => entry.insert(
+                        crate::torus::rectangle::prepare(model, id, torus, dec)?
+                            .map(std::sync::Arc::new),
+                    ),
+                };
+                domain.clone()
             }
+            _ => None,
+        };
+        let torus = match surface {
+            Surface::Torus(t) if !closed => Some(crate::torus::compile(
+                t,
+                anchor,
+                property,
+                rectangle.is_some(),
+            )),
             _ => None,
         };
         let compiled = surface::compile(
@@ -267,7 +285,12 @@ pub(crate) fn measure(
             )
         })?;
         let mut boundaries = Vec::new();
-        for id in &face.loops {
+        let loops = if rectangle.is_some() {
+            &[][..]
+        } else {
+            &face.loops
+        };
+        for id in loops {
             let mut arcs = Vec::new();
             match model.loop_(*id) {
                 Loop::Vertex(v) => {
@@ -422,6 +445,7 @@ pub(crate) fn measure(
             boundaries,
             compiled: vec![compiled],
             torus,
+            rectangle,
             analytic_only,
         }));
     }
@@ -690,7 +714,25 @@ fn integrate_face(
     work: &mut Work,
 ) -> Result<Vec<Ball>, Stop> {
     if let Some(torus) = &face.torus {
-        return integrate_torus(face, torus, indices, depth, rectangle, work);
+        return match torus {
+            crate::torus::Programs::Boundary(programs) => {
+                integrate_torus(face, programs, indices, depth, rectangle, work)
+            }
+            crate::torus::Programs::Rectangle(programs) => {
+                let domain = face.rectangle.as_ref().unwrap();
+                let extras = domain.extras(work)?;
+                let zero = work.rational(&Rational::zero())?;
+                let mut sums =
+                    programs
+                        .integral
+                        .point(&[zero.clone(), zero.clone(), zero], &extras, work)?;
+                let orientation = work.rational(&Rational::from_i64(domain.orientation))?;
+                for sum in &mut sums {
+                    *sum = work.mul(sum, &orientation)?;
+                }
+                finish_torus(face, sums, &programs.full, &programs.indices, indices, work)
+            }
+        };
     }
     let zero = work.rational(&Rational::zero())?;
     let sense = work.rational(&planar::sign(face.sense))?;
@@ -841,7 +883,7 @@ fn gauge(surface: &Surface, index: usize) -> Vector3 {
 
 fn integrate_torus(
     face: &Curved<'_>,
-    programs: &crate::torus::Programs,
+    programs: &crate::torus::Boundary,
     indices: &[usize],
     depth: u32,
     rectangle: bool,
@@ -953,19 +995,29 @@ fn integrate_torus(
             *sum = work.add(sum, &correction)?;
         }
     }
+    finish_torus(face, sums, &programs.full, &programs.indices, indices, work)
+}
+
+fn finish_torus(
+    face: &Curved<'_>,
+    mut sums: Vec<Ball>,
+    full: &crate::integrate::Program,
+    source_indices: &[usize],
+    indices: &[usize],
+    work: &mut Work,
+) -> Result<Vec<Ball>, Stop> {
     let sense = work.rational(&planar::sign(face.sense))?;
     for sum in &mut sums {
         *sum = work.mul(sum, &sense)?;
     }
+    let zero = work.rational(&Rational::zero())?;
     let pi = work.pi()?;
-    let full = programs
-        .full
-        .point(&[zero.clone(), zero.clone(), zero], &[pi], work)?;
+    let full = full.point(&[zero.clone(), zero.clone(), zero], &[pi], work)?;
     correct_whole_surface(&mut sums, &full, 0, work)?;
     indices
         .iter()
         .map(|i| {
-            let value = &sums[programs.indices.iter().position(|j| i == j).unwrap()];
+            let value = &sums[source_indices.iter().position(|j| i == j).unwrap()];
             if *i == 0 {
                 Ok(value.clone())
             } else {

@@ -190,12 +190,10 @@ fn shelled_tray_algebraic_corner_trims_prove_mass_and_inertia() {
         &raw_x2 + &raw_y2,
     ];
     let tensor = mass.inertia.unwrap();
-    for i in 0..3 {
-        for j in 0..3 {
-            contains(
-                &tensor[i][j],
-                &if i == j { expected[i].clone() } else { b(0) },
-            );
+    let zero = b(0);
+    for (i, row) in tensor.iter().enumerate() {
+        for (j, value) in row.iter().enumerate() {
+            contains(value, if i == j { &expected[i] } else { &zero });
         }
     }
 }

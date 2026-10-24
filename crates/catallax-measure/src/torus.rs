@@ -8,7 +8,20 @@ use catallax_numbers::Rational;
 use catallax_shapes::{RPoint3, Torus};
 use std::collections::BTreeMap;
 
-pub(crate) struct Programs {
+pub(crate) mod rectangle;
+
+pub(crate) enum Programs {
+    Boundary(Box<Boundary>),
+    Rectangle(Box<Rectangle>),
+}
+
+pub(crate) struct Rectangle {
+    pub(crate) integral: Program,
+    pub(crate) full: Program,
+    pub(crate) indices: Vec<usize>,
+}
+
+pub(crate) struct Boundary {
     pub(crate) boundary: Program,
     pub(crate) angular_derivative: Program,
     pub(crate) coordinates: Program,
@@ -177,10 +190,17 @@ fn dot<'a>(a: [Expr<'a>; 3], b: [Expr<'a>; 3]) -> Expr<'a> {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Programs {
+pub(crate) fn compile(
+    torus: &Torus,
+    anchor: &RPoint3,
+    property: Property,
+    rectangle: bool,
+) -> Programs {
     let b = Builder::default();
-    let q = std::array::from_fn::<_, 3, _>(|i| b.input(i) - b.exact(components(&torus.center)[i]));
-    let dq = std::array::from_fn::<_, 3, _>(|i| b.input(i + 3));
+    let q = (!rectangle).then(|| {
+        std::array::from_fn::<_, 3, _>(|i| b.input(i) - b.exact(components(&torus.center)[i]))
+    });
+    let dq = (!rectangle).then(|| std::array::from_fn::<_, 3, _>(|i| b.input(i + 3)));
     let unit = |v: &catallax_shapes::Vector3| {
         let norm = b.exact(&v.norm_squared()).sqrt();
         direction(v).map(|c| b.exact(c) / norm)
@@ -192,22 +212,28 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
         axis[2] * first[0] - axis[0] * first[2],
         axis[0] * first[1] - axis[1] * first[0],
     ];
-    let x = dot(q, first);
-    let y = dot(q, second);
-    let z = dot(q, axis);
-    let dx = dot(dq, first);
-    let dy = dot(dq, second);
-    let dz = dot(dq, axis);
-    let rho = (x.square() + y.square()).sqrt();
+    let radial = q.zip(dq).map(|(q, dq)| {
+        let x = dot(q, first);
+        let y = dot(q, second);
+        let z = dot(q, axis);
+        let dx = dot(dq, first);
+        let dy = dot(dq, second);
+        let dz = dot(dq, axis);
+        let rho = (x.square() + y.square()).sqrt();
+        (x, y, z, dx, dy, dz, rho)
+    });
     let major = b.exact(&torus.major);
     let minor = b.exact(&torus.minor);
-    let cu = x / rho;
-    let su = y / rho;
-    let cv = (rho - major) / minor;
-    let sv = z / minor;
-    let du = (x * dy - y * dx) / rho.square();
-    let drho = (x * dx + y * dy) / rho;
-    let dv = ((rho - major) * dz - z * drho) / minor.square();
+    let angular = radial.map(|(x, y, z, dx, dy, dz, rho)| {
+        let cu = x / rho;
+        let su = y / rho;
+        let cv = (rho - major) / minor;
+        let sv = z / minor;
+        let du = (x * dy - y * dx) / rho.square();
+        let drho = (x * dx + y * dy) / rho;
+        let dv = ((rho - major) * dz - z * drho) / minor.square();
+        [cu, su, cv, sv, du, dv]
+    });
     let variables = std::array::from_fn::<_, 4, _>(|i| Polynomial::variable(&b, i));
     let constant = |e| Polynomial::constant(&b, e);
     let er = std::array::from_fn::<_, 3, _>(|i| {
@@ -269,8 +295,43 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
     };
     let mut forms = Vec::new();
     let mut corrections = Vec::new();
-    let mut parallels = Vec::with_capacity(indices.len());
+    let mut parallels = Vec::with_capacity(if rectangle { 0 } else { indices.len() });
     for index in &indices {
+        if rectangle {
+            let mut integral = b.k(0);
+            for (powers, coefficient) in &polynomials[*index].terms {
+                let u = evaluate_primitive(
+                    &b,
+                    [powers[0], powers[1]],
+                    b.input(8),
+                    b.input(9),
+                    b.input(14),
+                ) - evaluate_primitive(
+                    &b,
+                    [powers[0], powers[1]],
+                    b.input(6),
+                    b.input(7),
+                    b.k(0),
+                );
+                let v = evaluate_primitive(
+                    &b,
+                    [powers[2], powers[3]],
+                    b.input(12),
+                    b.input(13),
+                    b.input(15),
+                ) - evaluate_primitive(
+                    &b,
+                    [powers[2], powers[3]],
+                    b.input(10),
+                    b.input(11),
+                    b.k(0),
+                );
+                integral = integral + *coefficient * u * v;
+            }
+            forms.push(integral);
+            continue;
+        }
+        let [cu, su, cv, sv, du, _] = angular.unwrap();
         let mut h = b.k(0);
         let mut g = b.k(0);
         let mut parallel = b.k(0);
@@ -322,14 +383,24 @@ pub(crate) fn compile(torus: &Torus, anchor: &RPoint3, property: Property) -> Pr
             full[i + 2] = whole_area * origin[i];
         }
     }
-    Programs {
-        boundary: b.finish(&forms),
-        angular_derivative: b.finish(&[dv]),
-        coordinates: b.finish(&[cu, su, cv, sv]),
-        correction: b.finish(&corrections),
-        parallel: b.finish(&parallels),
-        full: b.finish(&indices.iter().map(|i| full[*i]).collect::<Vec<_>>()),
-        indices,
+    let full = b.finish(&indices.iter().map(|i| full[*i]).collect::<Vec<_>>());
+    if rectangle {
+        Programs::Rectangle(Box::new(Rectangle {
+            integral: b.finish(&forms),
+            full,
+            indices,
+        }))
+    } else {
+        let [cu, su, cv, sv, _, dv] = angular.unwrap();
+        Programs::Boundary(Box::new(Boundary {
+            boundary: b.finish(&forms),
+            angular_derivative: b.finish(&[dv]),
+            coordinates: b.finish(&[cu, su, cv, sv]),
+            correction: b.finish(&corrections),
+            parallel: b.finish(&parallels),
+            full,
+            indices,
+        }))
     }
 }
 

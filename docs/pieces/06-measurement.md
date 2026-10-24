@@ -120,6 +120,14 @@ swept-angle enclosures contribute numerical width. The complete oriented
 boundary is required. A spherical gauge's denominator must stay positive on
 each closed integration arc, even when its numerator is zero.
 
+Torus distance faces with one four-circle meridian/parallel rectangle use
+products of exact trigonometric antiderivatives. The supports, constant-angle
+edges, opposite traversal directions and swept-angle branches are certified
+from their definitions, not sampled. This includes long arcs and rectangles
+crossing parameter seams. The existing whole-torus correction retains the
+complement region and reversed material sense. Other finite torus trims retain
+the typed refusal.
+
 Finite curved distance faces without a complete supported antiderivative retain
 `measure.budget-exhausted`. Surface incidence and distance certificates do not
 stand in for a property integral. The work allowance, accuracy, centroid

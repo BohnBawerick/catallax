@@ -1365,3 +1365,10 @@ Pieces: measure and features
 Change: finite distance-feature faces with complete supported antiderivatives now answer volume, area, centroid and centroidal inertia. Exact coefficient reduction recovers rational analytic carriers behind algebraic construction expressions. Polynomial line, circle and ellipse forms accept exact algebraic trim endpoints as well as rational endpoints. Spherical gauges retain whole-arc pole checks. Uncovered finite curved trims still return `measure.budget-exhausted`.
 Why: geometric distance and incidence proofs are separate from property integrals. Exact boundary reductions prove the rounded-box normal sectors and the clipped shelled-tray properties without generic quadrature or relaxed tolerances.
 Migration: no public signature, recipe, exchange format, work limit or accuracy changes. Existing primitive and Boolean-only measurement paths remain unchanged. Measurement is still an explicit query, not extra work during part construction.
+
+## 2026-10-24: analytic rectangular torus distance sectors
+
+Pieces: measure
+Change: finite torus distance faces bounded by one four-circle meridian/parallel rectangle use closed-form product antiderivatives for area, volume, centroid and inertia. Exact support and traversal proofs retain long sweeps, parameter-seam crossings, the whole-torus complement and reversed material sense. Other finite torus trims keep the existing typed refusal.
+Why: a normal-sector rectangle has a separable trigonometric flux polynomial, so generic lifted-angle quadrature is unnecessary.
+Migration: no public API, work allowance or accuracy changes. Whole supports, full rings and primitive/Boolean-only torus measurements keep their existing integral paths. Geometry proofs are cached only within a measurement request; part construction does no new work.

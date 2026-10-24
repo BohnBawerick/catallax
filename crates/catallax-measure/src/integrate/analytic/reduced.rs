@@ -3,7 +3,7 @@
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{Circle, Curve, Ellipse, Line, Point3, RPoint3, RVector3, Vector3};
 
-use super::{Analytic, Form, Node, Program};
+use super::{Analytic, Node, Program};
 
 fn value(value: &Real, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
     match value.as_rational() {
@@ -125,9 +125,7 @@ impl Program {
         if let (Some(from), Some(to)) = (rational_from, rational_to) {
             Ok(self.analytic_rational(&curve, &from, &to, &constants))
         } else {
-            Ok(self
-                .algebraic_endpoints(&curve, from, to, &constants, dec)?
-                .map(|integral| Analytic(Form::Algebraic(integral))))
+            self.algebraic_endpoints(&curve, from, to, &constants, dec)
         }
     }
 }

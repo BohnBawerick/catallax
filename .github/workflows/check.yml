@@ -106,6 +106,7 @@ jobs:
     uses: ./.github/workflows/release-evidence.yml
     with:
       replay_summary: ${{ inputs.replay_summary }}
+      historical_replay: ${{ inputs.release_dry_run }}
 
   release-dry-run:
     if: github.event_name == 'workflow_dispatch' && inputs.release_dry_run

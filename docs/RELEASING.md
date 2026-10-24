@@ -85,7 +85,7 @@ gh-axi workflow run release.yml -R BohnBawerick/catallax \
   --ref main --field "evidence_run=$EVIDENCE_RUN"
 ```
 
-`workflow_dispatch` has no publish switch. It always builds and attests the same files, and never creates a GitHub Release or pushes a tag. Only a tag-push event can enter the publishing job. Dry runs deliberately skip the main-ancestry, milestone-note and green-main gates, so release preparation can be exercised before a milestone is complete; evidence must still match the exact tested commit.
+`workflow_dispatch` has no publish switch. It always builds and attests the same files, and never creates a GitHub Release or pushes a tag. Only a tag-push event can enter the publishing job. Dry runs skip the main-ancestry, milestone-note and green-main gates, so release preparation can be exercised before a milestone is complete.
 
 For a branch introducing or changing the release workflows, GitHub cannot dispatch a new workflow file until that file exists on the default branch. The existing `check.yml` provides the bootstrap entry point and runs the full suite too:
 
@@ -95,7 +95,7 @@ gh-axi workflow run check.yml -R BohnBawerick/catallax \
   --field "replay_summary=$SUMMARY"
 ```
 
-This first generates commit-bound evidence, then calls the reusable release workflow with that same run's artifact. All build failures remain failures. A dry run is not a release.
+This first generates the scoreboard at the tested commit, then calls the reusable release workflow with that same run's artifact. A non-publishing dry run may reuse a previously measured replay aggregate after a mechanical rebase or CI-only change. Its original `candidate_sha` remains in the attached JSON and logs; it is not relabelled as a replay of the dry-run commit. The scoreboard must still match the current commit and recipe hashes. Ordinary standalone `release-evidence.yml` dispatch and every tag-push release require exact-commit replay evidence. Before a real release, run a fresh replay on final `main` after the queue lands. All build failures remain failures. A dry run is not a release.
 
 ## Cut a release
 
@@ -112,6 +112,6 @@ The workflow first creates a draft release with all verified files, then makes i
 
 ## Tool maintenance
 
-Update the cargo-dist version in `dist-workspace.toml` and its install-action entry in `release-build.yml` together. `ci = []` is deliberate: cargo-dist owns platform archives, while the checked-in workflows own exact-commit evidence, milestone gates, SBOM generation, universal assembly and the non-publishing dispatch path. The reusable builder has no release-publishing permission. Only the tag wrapper has a contents-write publish job. Upstream [universal binary support](https://github.com/axodotdev/cargo-dist/issues/77) is still open, so `universal.py` joins the macOS slices. Like cargo-dist's generated workflow, the assembly job invokes cargo-cyclonedx explicitly; `dist build --artifacts=global` alone declares the SBOM but does not generate it. GitHub's [generated release notes](https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes) supply the merged-PR list.
+Update the cargo-dist version in `dist-workspace.toml` and both pinned upstream installer URLs in `release-build.yml` together. The workflow uses cargo-dist's GitHub release installers rather than assuming every GitHub release is also published to crates.io. `ci = []` is deliberate: cargo-dist owns platform archives, while the checked-in workflows own evidence, milestone gates, SBOM generation, universal assembly and the non-publishing dispatch path. The reusable builder has no release-publishing permission. Only the tag wrapper has a contents-write publish job. Upstream [universal binary support](https://github.com/axodotdev/cargo-dist/issues/77) is still open, so `universal.py` joins the macOS slices. Like cargo-dist's generated workflow, assembly invokes cargo-cyclonedx explicitly; `dist build --artifacts=global` alone declares the SBOM but does not generate it. GitHub's [generated release notes](https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes) supply the merged-PR list.
 
 After changing this machinery, run the policy tests and actionlint, then exercise the entire dry run. A plan-only or Linux-only build does not prove the release works.

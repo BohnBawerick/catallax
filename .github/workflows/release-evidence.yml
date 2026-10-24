@@ -12,6 +12,11 @@ on:
       replay_summary:
         required: true
         type: string
+      historical_replay:
+        description: Reuse recorded replay evidence only for a non-publishing dry run
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -24,18 +29,22 @@ jobs:
   evidence:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      HISTORICAL_REPLAY: ${{ inputs.historical_replay || false }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Accept only complete public replay aggregates for this commit
+      - name: Validate the public replay aggregate and retain its source commit
         env:
           REPLAY_SUMMARY: ${{ inputs.replay_summary }}
         run: |
           mkdir -p "$RUNNER_TEMP/release-evidence"
           printf '%s\n' "$REPLAY_SUMMARY" > "$RUNNER_TEMP/release-evidence/replay-summary.json"
+          flags=()
+          if [[ "$HISTORICAL_REPLAY" == true ]]; then flags+=(--allow-historical-replay); fi
           python3 -B tools/release/release.py check-replay \
-            "$RUNNER_TEMP/release-evidence/replay-summary.json" --commit "$GITHUB_SHA"
+            "$RUNNER_TEMP/release-evidence/replay-summary.json" --commit "$GITHUB_SHA" "${flags[@]}"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release -p catallax-cli --bin catallax-verify
@@ -49,7 +58,9 @@ jobs:
             --binary target/release/catallax-verify --out "$RUNNER_TEMP/parts" \
             --max-work 1000000 --occt-python "$RUNNER_TEMP/occt/bin/python" --json
           cp "$RUNNER_TEMP/parts/parts.json" "$RUNNER_TEMP/release-evidence/target-parts.json"
-          python3 -B tools/release/release.py check-evidence "$RUNNER_TEMP/release-evidence" --commit "$GITHUB_SHA"
+          flags=()
+          if [[ "$HISTORICAL_REPLAY" == true ]]; then flags+=(--allow-historical-replay); fi
+          python3 -B tools/release/release.py check-evidence "$RUNNER_TEMP/release-evidence" --commit "$GITHUB_SHA" "${flags[@]}"
       - uses: actions/upload-artifact@v4
         with:
           name: release-evidence-${{ github.sha }}

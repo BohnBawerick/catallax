@@ -22,6 +22,14 @@ class ReplayPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "selected commit"):
             check_summary(self.summary(), "c" * 40)
 
+    def test_historical_dry_run_retains_source_and_still_requires_equality(self):
+        summary = self.summary()
+        result = check_summary(summary, "c" * 40, allow_historical=True)
+        self.assertEqual(result["candidate_sha"], "b" * 40)
+        summary["comparisons"][COMPARISONS[0]]["equal"] = False
+        with self.assertRaisesRegex(ValueError, "comparison differs"):
+            check_summary(summary, "c" * 40, allow_historical=True)
+
     def test_reject_incomplete_cached_and_crashed_runs(self):
         for field, value in (("cases", 476), ("manifest_cases", 476), ("cache_hits", 1), ("crashes", 1)):
             with self.subTest(field=field):

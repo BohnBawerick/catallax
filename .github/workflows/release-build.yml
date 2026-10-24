@@ -71,7 +71,11 @@ jobs:
           path: ${{ runner.temp }}/evidence
           run-id: ${{ steps.evidence.outputs.run }}
           github-token: ${{ github.token }}
-      - run: python3 -B tools/release/release.py check-evidence "$RUNNER_TEMP/evidence" --commit "$GITHUB_SHA"
+      - name: Check evidence, requiring exact replay for tag publication
+        run: |
+          flags=()
+          if [[ "$GITHUB_EVENT_NAME" != push ]]; then flags+=(--allow-historical-replay); fi
+          python3 -B tools/release/release.py check-evidence "$RUNNER_TEMP/evidence" --commit "$GITHUB_SHA" "${flags[@]}"
 
   build:
     needs: plan
@@ -100,9 +104,17 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-dist@0.33.1
+      - name: Install pinned cargo-dist on Unix
+        if: runner.os != 'Windows'
+        env:
+          CARGO_DIST_UNMANAGED_INSTALL: ${{ runner.temp }}/cargo-dist
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.33.1/cargo-dist-installer.sh | sh
+      - name: Install pinned cargo-dist on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CARGO_DIST_UNMANAGED_INSTALL: ${{ runner.temp }}/cargo-dist
+        run: irm https://github.com/axodotdev/cargo-dist/releases/download/v0.33.1/cargo-dist-installer.ps1 | iex
       - name: Build platform archives with cargo-dist
         env:
           TARGET: ${{ matrix.target }}
@@ -191,7 +203,9 @@ jobs:
       - name: Check complete assets and checksum every release file
         run: |
           rm -f target/distrib/sha256.sum target/distrib/dist-manifest.json
-          python3 -B tools/release/release.py check-evidence target/distrib --commit "$GITHUB_SHA"
+          flags=()
+          if [[ "$GITHUB_EVENT_NAME" != push ]]; then flags+=(--allow-historical-replay); fi
+          python3 -B tools/release/release.py check-evidence target/distrib --commit "$GITHUB_SHA" "${flags[@]}"
           python3 -B tools/release/release.py checksums target/distrib
           (cd target/distrib && sha256sum --check SHA256SUMS)
       - name: Attest every release file, including SBOM, evidence, notes and SHA256SUMS

@@ -40,11 +40,12 @@ def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
 
-def check_summary(summary, commit):
+def check_summary(summary, commit, allow_historical=False):
     require(set(summary) == {"format", "base_sha", "candidate_sha", "runs", "comparisons"}, "unexpected replay fields")
     require(summary["format"] == "catallax-release-replay/1", "unsupported replay summary")
     require(re.fullmatch(r"[0-9a-f]{40}", summary["base_sha"]), "invalid baseline commit")
-    require(summary["candidate_sha"] == commit, "replay is not from the selected commit")
+    require(re.fullmatch(r"[0-9a-f]{40}", summary["candidate_sha"]), "invalid candidate commit")
+    require(allow_historical or summary["candidate_sha"] == commit, "replay is not from the selected commit")
     require(set(summary["runs"]) == set(LABELS), "need baseline and candidate at 1, 2 and 4 workers")
     for name, row in summary["runs"].items():
         require(set(row) == {"cases", "cache_hits", "crashes", "manifest_cases", "outcomes", "work_total", "elapsed_ms", "binary_sha256"}, "unexpected run fields")
@@ -100,8 +101,8 @@ def replay_summary(args):
     print(f"477 manifests and strict STEP bytes equal; public aggregate written to {args.out}")
 
 
-def check_evidence(directory, commit):
-    check_summary(read_json(directory / "replay-summary.json"), commit)
+def check_evidence(directory, commit, allow_historical=False):
+    replay = check_summary(read_json(directory / "replay-summary.json"), commit, allow_historical)
     scoreboard = read_json(directory / "target-parts.json")
     require(scoreboard["format"] == "catallax-parts/1" and scoreboard["status"] == "completed", "incomplete scoreboard")
     require(scoreboard["max_work"] == 1_000_000, "scoreboard allowance changed")
@@ -114,7 +115,7 @@ def check_evidence(directory, commit):
             require(row[source]["manifest"]["kernel"]["commit"] == commit, "scoreboard is not from the selected commit")
         if row["recipe"]["manifest"].get("step"):
             require(row["step_check"]["status"] == "passed", "STEP import was not checked")
-    print(f"Evidence matches {commit}: 477 replays, {len(recipes)} target recipes")
+    print(f"Scoreboard matches {commit}; replay describes {replay['candidate_sha']}: 477 replays, {len(recipes)} target recipes")
 
 
 def prepare(args):
@@ -154,9 +155,11 @@ def main():
     p = commands.add_parser("check-replay")
     p.add_argument("summary", type=Path)
     p.add_argument("--commit", required=True)
+    p.add_argument("--allow-historical-replay", action="store_true", help="non-publishing dry runs only; retain the recorded replay source commit")
     p = commands.add_parser("check-evidence")
     p.add_argument("directory", type=Path)
     p.add_argument("--commit", required=True)
+    p.add_argument("--allow-historical-replay", action="store_true", help="non-publishing dry runs only; scoreboard must still match --commit")
     p = commands.add_parser("prepare")
     p.add_argument("--publish", action="store_true")
     p.add_argument("--tag", default="")
@@ -166,10 +169,10 @@ def main():
     if args.command == "replay-summary":
         replay_summary(args)
     elif args.command == "check-replay":
-        check_summary(read_json(args.summary), args.commit)
-        print("Replay summary is complete and commit-matched")
+        summary = check_summary(read_json(args.summary), args.commit, args.allow_historical_replay)
+        print(f"Replay summary complete: source {summary['candidate_sha']}, selected commit {args.commit}")
     elif args.command == "check-evidence":
-        check_evidence(args.directory, args.commit)
+        check_evidence(args.directory, args.commit, args.allow_historical_replay)
     elif args.command == "prepare":
         prepare(args)
     else:

@@ -1358,3 +1358,60 @@ fn strongly_curved_shared_rails_do_not_emit_boundary_only_ears() {
         }
     }
 }
+
+#[test]
+fn planar_cached_enclosures_preserve_exact_triangulation_and_fall_back_when_wide() {
+    let mut model = Model::new();
+    let body = topology::cylinder(&mut model, 2.into(), 4.into(), &pose(0, 0, 0)).unwrap();
+    let options = MeshOptions::default();
+    let mut dec = Decider::default();
+    let charts: BTreeMap<_, _> = model
+        .faces_of_body(body)
+        .into_iter()
+        .map(|face| {
+            let chart =
+                crate::chart::Chart::new(model.geom().surface(model.face(face).surface), &dec)
+                    .unwrap();
+            (face, chart)
+        })
+        .collect();
+    let (&face, chart) = charts
+        .iter()
+        .find(|(_, chart)| matches!(chart.surface, Surface::Plane(_)))
+        .unwrap();
+    let Surface::Plane(plane) = &chart.surface else {
+        unreachable!()
+    };
+    let mut build = |cache: u8| {
+        let mut boundaries =
+            crate::edges::sample(&model, body, &charts, &options, &mut dec).unwrap();
+        if cache == 0 {
+            boundaries.enclosed_positions.clear();
+        } else if cache == 1 {
+            for balls in boundaries.enclosed_positions.values_mut() {
+                for ball in balls {
+                    *ball = ball.with_precision(1);
+                }
+            }
+        }
+        crate::planar::build(&model, face, plane, &mut boundaries, &options, &mut dec).unwrap();
+        assert!(boundaries.mesh.faces[0].max_chord_error <= options.chord_tolerance);
+        boundaries.mesh
+    };
+    let exact = build(0);
+    for actual in [build(1), build(2)] {
+        assert_eq!(actual.positions, exact.positions);
+        assert_eq!(
+            actual
+                .triangles
+                .iter()
+                .map(|t| t.vertices)
+                .collect::<Vec<_>>(),
+            exact
+                .triangles
+                .iter()
+                .map(|t| t.vertices)
+                .collect::<Vec<_>>()
+        );
+    }
+}

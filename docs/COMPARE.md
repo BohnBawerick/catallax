@@ -34,6 +34,22 @@ Origin comparisons use canonical sets from `Model::face_origins`. A maximal merg
 
 Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four rational intervals per sampling parameter interval, and minimum normal cosine 999/1000. These are sampled display checks, not a global Hausdorff certificate or the finer 1 nm pre-export check. Raising `divisions` increases independent reverse sampling. A closed rational `Region` restricts both passes; forward selection pads the box by the local mesh error. A scope with no two-way samples stays unresolved. A merged-face origin whose extent cannot be established within the region stays unresolved rather than causing a remote naming change to fail the local check. The library still rebuilds and meshes the complete B-rep, so regional rechecks reduce query work, not build cost. Cancellation is cooperative between kernel calls and individual samples; existing build and meshing calls are not interrupted internally.
 
+### Planar cap enclosure reuse
+
+Planar meshing retains the certified coordinate balls already computed for shared
+edge samples. Its projected orientation filters reuse those balls, and rail-ear
+centroids use their affine interval combination instead of re-evaluating the
+algebraic trace expressions. The exact sample expressions remain available for
+ambiguous predicates and subsequent edge-length refinement.
+
+Cached enclosures are accepted only when they certify the requested coordinate
+rounding bound. Missing or overly wide enclosures fall back to the original exact
+evaluation. Triangulation certification, closed-trim witnesses, comparison
+accuracy and work allowances are unchanged. This applies to planar trims
+generally, including drafted caps, without treating their support residuals as
+true distances.
+
+
 | Recipe operations | Comparison coverage |
 |---|---|
 | Block, cylinder, sphere, cone frustum, ring torus | Both builds, display vertices, independent exact field samples, trimmed-face projections, names and directions |

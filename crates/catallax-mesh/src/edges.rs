@@ -52,6 +52,10 @@ pub(crate) struct Boundaries {
     pub(crate) edges: BTreeMap<EdgeId, usize>,
     pub(crate) vertices: BTreeMap<VertexId, usize>,
     pub(crate) exact_positions: BTreeMap<usize, Point3>,
+    /// Certified enclosures of the exact points behind shared boundary vertices,
+    /// as proved when they were sampled. Planar trims reuse them instead of
+    /// re-enclosing algebraic trace expressions.
+    pub(crate) enclosed_positions: BTreeMap<usize, [Ball; 3]>,
     pub(crate) rails: Rails,
     pub(crate) marks: MarkLog,
 }
@@ -71,10 +75,12 @@ impl Boundaries {
             .map(|x| dec.enclose_at(x, BITS))
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
-        let p = chart::position(&xyz.try_into().unwrap())?;
+        let xyz: [Ball; 3] = xyz.try_into().unwrap();
+        let p = chart::position(&xyz)?;
         let index = self.mesh.positions.len();
         self.mesh.positions.push(p);
         self.vertices.insert(id, index);
+        self.enclosed_positions.insert(index, xyz);
         Ok(index)
     }
 }
@@ -120,6 +126,7 @@ struct Sampler<'a> {
     indices: &'a mut Vec<usize>,
     error: &'a mut Rational,
     exact_positions: Option<&'a mut BTreeMap<usize, Point3>>,
+    enclosed_positions: &'a mut BTreeMap<usize, [Ball; 3]>,
 }
 
 impl Sampler<'_> {
@@ -246,6 +253,7 @@ impl Sampler<'_> {
         self.positions.push(middle);
         if let Some(points) = &mut self.exact_positions {
             points.insert(index, self.piece.evaluate_exact(&mid, self.dec)?);
+            self.enclosed_positions.insert(index, middle_values.clone());
         }
         self.segment(
             lo,
@@ -278,6 +286,7 @@ pub(crate) fn sample(
         edges: BTreeMap::new(),
         vertices: BTreeMap::new(),
         exact_positions: BTreeMap::new(),
+        enclosed_positions: BTreeMap::new(),
         rails: Rails::default(),
         marks: model.body(body).marks.clone(),
     };
@@ -332,6 +341,9 @@ pub(crate) fn sample(
                 result
                     .exact_positions
                     .insert(index, pieces[0].evaluate_exact(&Rational::zero(), dec)?);
+                result
+                    .enclosed_positions
+                    .insert(index, initial_values.clone().unwrap());
             }
             index
         };
@@ -361,6 +373,7 @@ pub(crate) fn sample(
                     result
                         .exact_positions
                         .insert(index, piece.evaluate_exact(&Rational::one(), dec)?);
+                    result.enclosed_positions.insert(index, last_values.clone());
                 }
                 index
             };
@@ -374,6 +387,7 @@ pub(crate) fn sample(
                 indices: &mut indices,
                 error: &mut error,
                 exact_positions: planar.then_some(&mut result.exact_positions),
+                enclosed_positions: &mut result.enclosed_positions,
             }
             .segment(
                 Rational::zero(),

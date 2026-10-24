@@ -38,6 +38,31 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
     );
     controller.latest().unwrap()
 }
+
+#[test]
+fn slanted_planar_caps_compare_within_the_standard_work_allowance() {
+    let part = recipe(vec![
+        json!({"id":"base","op":"cylinder","radius":"1","height":"4","pose":pose("0")}),
+        json!({
+            "id":"drafted","op":"draft","body":"base",
+            "faces":[{"face":{"step":"base","role":"end"}}],"pull":["-1","0","1"],
+            "neutral":{"point":["0","0","0"],"normal":["1","0","0"]},"angle":"0"
+        }),
+    ]);
+    let options = Options::default();
+    let (report, work) =
+        catallax_numbers::with_operation_budget(1_000_000, || check_with_options(&part, &options));
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+    assert!(!work.exhausted, "{work:?}");
+    assert!(report.findings.is_empty(), "{report:?}");
+    assert!(
+        report
+            .sampled_distance_upper
+            .as_ref()
+            .is_some_and(|upper| upper <= &options.accuracy),
+        "{report:?}"
+    );
+}
 #[test]
 fn drafted_stock_cut_samples_the_current_definition_not_its_old_cutter_grid() {
     let mut base = block("base", "8", "0");

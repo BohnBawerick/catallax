@@ -12,7 +12,7 @@ use catallax_numbers::{
 };
 use catallax_shapes::{
     Circle, Curve, CurveId, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3, PointDef,
-    Position, SurfaceId,
+    Position, Surface, SurfaceId,
 };
 use std::sync::Arc;
 
@@ -346,6 +346,67 @@ fn compare(
     }
     compare_locations(&la, &lb, dec)
 }
+// These residuals are constant around the complete circle. Keeping squared
+// radii avoids adjoining an unnecessary square root to the coefficient field.
+fn circular_section(
+    geom: &GeomStore,
+    c: CurveId,
+    s: SurfaceId,
+    form: &CurveForm,
+    dec: &mut Decider,
+) -> Result<Option<CurveSurface>, Refusal> {
+    let CurveForm::Circle {
+        center,
+        normal,
+        radius_sq,
+        ..
+    } = form
+    else {
+        return Ok(None);
+    };
+    let surface = geom.surface(s);
+    if center.as_rational().is_some()
+        && normal.as_rational().is_some()
+        && radius_sq.rational_ref().is_some()
+        && surface.has_rational_definition()
+    {
+        // Preserve the existing native rational solver and its work accounting.
+        return Ok(None);
+    }
+    let residual = if let Surface::Plane(plane) = surface {
+        if sign(&normal.cross(&plane.normal).norm_squared(), dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        center.minus(&plane.origin).dot(&plane.normal)
+    } else {
+        if !matches!(surface, Surface::Cylinder(_) | Surface::Cone(_))
+            || !geom
+                .facts()
+                .holds(FactKind::Coaxial, GeomKey::Curve(c), GeomKey::Surface(s))
+        {
+            return Ok(None);
+        }
+        dec.note_fact_decision();
+        match surface {
+            Surface::Cylinder(cylinder) => radius_sq - &cylinder.radius_sq,
+            Surface::Cone(cone) => {
+                let height = center.minus(&cone.apex).dot(&cone.axis);
+                if sign(&height, dec)? == Sign::Negative {
+                    return Ok(Some(CurveSurface::Disjoint));
+                }
+                radius_sq
+                    - &(&cone.slope.square() * &(&height.square() / &cone.axis.norm_squared()))
+            }
+            _ => unreachable!("circular carrier checked above"),
+        }
+    };
+    Ok(Some(if sign(&residual, dec)? == Sign::Zero {
+        CurveSurface::Contained
+    } else {
+        CurveSurface::Disjoint
+    }))
+}
+
 pub(super) fn intersect(
     geom: &mut GeomStore,
     c: CurveId,
@@ -361,6 +422,9 @@ pub(super) fn intersect(
         return Ok(Answer::exact(CurveSurface::Contained));
     }
     let form = query::form(geom, c, dec)?;
+    if let Some(answer) = circular_section(geom, c, s, &form, dec)? {
+        return Ok(Answer::exact(answer));
+    }
     let equations = carrier_equations(geom, c, &form, dec)?;
     let implicit = geom.implicit(s).ok_or_else(|| {
         Refusal::new(

@@ -175,6 +175,15 @@ pub(crate) fn intersect(
         for &fb in &second {
             let sa = model.face(fa).surface;
             let sb = model.face(fb).surface;
+            // Algebraic supports can meet far outside their finite trims. Use
+            // the certified section bounds before constructing those branches;
+            // an overlapping box leaves the ordinary intersection path intact.
+            if (!model.geom().surface(sa).has_rational_definition()
+                || !model.geom().surface(sb).has_rational_definition())
+                && crate::bounds::disjoint(model, fa, fb, dec)?
+            {
+                continue;
+            }
             let pair = if let Some(value) = pairs.get(&(sa, sb)) {
                 value.clone()
             } else {

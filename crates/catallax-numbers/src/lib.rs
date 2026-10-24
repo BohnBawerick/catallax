@@ -17,6 +17,7 @@ mod decider;
 mod facts;
 mod generator;
 mod height;
+mod identity;
 mod integer;
 mod interval;
 mod marks;

@@ -1340,3 +1340,108 @@ fn singleton_zero_certificates_do_not_require_elimination() {
         })
     ));
 }
+
+#[test]
+fn shared_algebraic_rational_identities_preserve_domains_and_small_gaps() {
+    let [sine, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    let slope = sine / (Real::one() + cosine);
+    let radius = real("3");
+    let depth = &radius / &slope;
+    // A formal rational identity holds for every defined nonzero slope, without
+    // eliminating its high-degree algebraic generator or approximating the gap.
+    let reconstructed = &slope * &(&depth + &real("4") - real("4"));
+    let zero = &reconstructed - &radius;
+    let (answer, work) = with_operation_budget(100_000_000, || Decider::default().sign(&zero));
+    assert!(answer.is_coincident(), "{answer:?} {work:?}");
+    assert!(!work.exhausted);
+    for epsilon in ["1e-30", "-1e-30"] {
+        let result = Decider::default().sign(&(&zero + &real(epsilon)));
+        assert_eq!(
+            result.proven(),
+            Some(&if epsilon.starts_with('-') {
+                StrictSign::Negative
+            } else {
+                StrictSign::Positive
+            }),
+            "{result:?}"
+        );
+    }
+    for undefined in [
+        &zero / &zero,
+        &zero * &(Real::one() / Real::zero()).pow_u32(0),
+        &zero * &real("-1").sqrt(),
+    ] {
+        assert!(matches!(
+            Decider::default().sign(&undefined),
+            Outcome::Refused(_)
+        ));
+    }
+    let (answer, work) = with_operation_budget(0, || Decider::default().sign(&zero));
+    assert!(matches!(answer, Outcome::Refused(_)));
+    assert!(work.exhausted);
+}
+
+#[test]
+fn algebraic_coefficient_quadratics_keep_order_multiplicity_and_domains() {
+    let [sine, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    let a = sine / (Real::one() + cosine);
+    for scale in [Real::one(), real("-3")] {
+        let polynomial = RealPoly::from_terms(
+            1,
+            vec![(vec![2], &scale * &a), (vec![0], -&(&scale * &a.square()))],
+        );
+        let (roots, work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::default();
+            let roots = polynomial.real_roots(&mut dec).unwrap();
+            assert_eq!(roots.len(), 2);
+            assert_eq!(dec.sign(&roots[0]).proven(), Some(&StrictSign::Negative));
+            assert_eq!(dec.sign(&roots[1]).proven(), Some(&StrictSign::Positive));
+            for root in &roots {
+                let outcome = dec.sign(&polynomial.eval_real(std::slice::from_ref(root)));
+                assert!(
+                    outcome.is_coincident(),
+                    "{outcome:?} {:?}",
+                    current_operation_work()
+                );
+            }
+            roots
+        });
+        assert_eq!(roots.len(), 2);
+        assert!(!work.exhausted);
+    }
+    for (terms, count) in [
+        (
+            vec![(vec![1], a.clone()), (vec![0], -&(&a * &real("3")))],
+            1,
+        ),
+        (
+            vec![
+                (vec![2], a.clone()),
+                (vec![1], -&(&a * &real("6"))),
+                (vec![0], &a * &real("9")),
+            ],
+            1,
+        ),
+        (vec![(vec![2], a.clone()), (vec![0], a.clone())], 0),
+        (vec![(vec![0], a.clone())], 0),
+    ] {
+        let polynomial = RealPoly::from_terms(1, terms);
+        let roots = polynomial.real_roots(&mut Decider::default()).unwrap();
+        assert_eq!(roots.len(), count);
+        if count == 1 {
+            assert!(
+                Decider::default()
+                    .sign(&(&roots[0] - &real("3")))
+                    .is_coincident()
+            );
+        }
+    }
+    let polynomial = RealPoly::from_terms(1, vec![(vec![1], a), (vec![0], real("1"))]);
+    let (result, work) =
+        with_operation_budget(0, || polynomial.real_roots(&mut Decider::default()));
+    assert!(result.is_err());
+    assert!(work.exhausted);
+    let undefined =
+        RealPoly::from_terms(1, vec![(vec![1], real("-1").sqrt()), (vec![0], real("1"))]);
+    assert!(undefined.real_roots(&mut Decider::default()).is_err());
+}

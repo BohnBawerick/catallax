@@ -186,6 +186,82 @@ fn coaxial_facts_keep_squared_radius_equality_and_separation_distinct() {
 }
 
 #[test]
+fn algebraic_circular_sections_keep_radius_gaps_and_cone_nappes_distinct() {
+    use catallax_shapes::Cone;
+    for (height, radius_sq, expected) in [
+        (1, 2, CurveSurface::Contained),
+        (1, 3, CurveSurface::Disjoint),
+        (-1, 2, CurveSurface::Disjoint),
+    ] {
+        let mut g = GeomStore::new();
+        let cone = g.add_surface(Surface::Cone(Cone {
+            apex: p(0, 0, 0).to_real(),
+            axis: v(0, 0, 3).to_real(),
+            slope: Real::from_i64(2).sqrt(),
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        let circle = g.add_curve(Curve::Circle(Circle {
+            center: p(0, 0, height).to_real(),
+            normal: v(0, 0, -2).to_real(),
+            radius_sq: Real::from_i64(radius_sq),
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        g.record_fact(Fact {
+            kind: FactKind::Coaxial,
+            a: GeomKey::Curve(circle),
+            b: GeomKey::Surface(cone),
+            at: None,
+            origin: FactOrigin::Construction("test.circular-section"),
+        });
+        let answer = intersect_curve_surface(&mut g, circle, cone, &mut dec()).unwrap();
+        assert!(answer.is_exact());
+        assert_eq!(answer.value, expected);
+        assert_eq!(g.point_count(), 0);
+    }
+    for different_radius in [false, true] {
+        let mut g = GeomStore::new();
+        let cylinder = g.add_surface(Surface::Cylinder(Cylinder {
+            origin: p(0, 0, 0).to_real(),
+            axis: v(0, 0, 3).to_real(),
+            radius_sq: r(2).into(),
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        let circle = g.add_curve(Curve::Circle(Circle {
+            center: catallax_shapes::Point3::new(
+                Real::zero(),
+                Real::zero(),
+                Real::from_i64(2).sqrt(),
+            ),
+            normal: v(0, 0, -2).to_real(),
+            radius_sq: if different_radius {
+                Real::from(r(2) + Rational::parse("1e-30").unwrap())
+            } else {
+                r(2).into()
+            },
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        g.record_fact(Fact {
+            kind: FactKind::Coaxial,
+            a: GeomKey::Curve(circle),
+            b: GeomKey::Surface(cylinder),
+            at: None,
+            origin: FactOrigin::Construction("test.circular-section"),
+        });
+        let answer = intersect_curve_surface(&mut g, circle, cylinder, &mut dec()).unwrap();
+        assert!(answer.is_exact());
+        assert_eq!(
+            answer.value,
+            if different_radius {
+                CurveSurface::Disjoint
+            } else {
+                CurveSurface::Contained
+            }
+        );
+        assert_eq!(g.point_count(), 0);
+    }
+}
+
+#[test]
 fn curve_surface_tangent_facts_are_local_and_reused() {
     let mut g = GeomStore::new();
     let torus = g.add_surface(Surface::Torus(catallax_shapes::Torus {

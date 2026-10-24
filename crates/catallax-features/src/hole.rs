@@ -213,7 +213,11 @@ impl HoleTool {
             } else {
                 h.clone()
             };
-            let end_radius = if let Some(k) = &head_slope {
+            let end_radius = if complete && head_slope.is_some() {
+                // This station was defined by (entry - r) / k. Retain its
+                // defining radius rather than rediscovering the same ring.
+                r.clone()
+            } else if let Some(k) = &head_slope {
                 &entry - &(&end * k)
             } else {
                 entry.clone()
@@ -300,7 +304,11 @@ impl HoleTool {
         } else {
             let slope = &difference / &(&band.depth[1] - &band.depth[0]);
             Surface::Cone(Cone {
-                apex: self.at_depth(&(&band.depth[0] + &(&band.radius[0] / &slope))),
+                apex: if band.radius[1].rational_ref().is_some_and(Rational::is_zero) {
+                    self.at_depth(&band.depth[1])
+                } else {
+                    self.at_depth(&(&band.depth[0] + &(&band.radius[0] / &slope)))
+                },
                 axis: self.axis.scaled(&Real::from_i64(-1)),
                 slope,
                 ref_dir: self.reference.clone(),

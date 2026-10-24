@@ -272,9 +272,12 @@ impl Decider {
                     }
                 }
             }
-            let reduction = crate::tower::rational(x, &mut work).and_then(|value| match value {
+            let reduction = crate::identity::rational(x, &mut work).and_then(|value| match value {
                 Some(value) => Ok(Some(value)),
-                None => crate::generator::rational(x, &mut work),
+                None => crate::tower::rational(x, &mut work).and_then(|value| match value {
+                    Some(value) => Ok(Some(value)),
+                    None => crate::generator::rational(x, &mut work),
+                }),
             });
             reduction.map_err(|code| Refusal::new(code, "rational coefficient reduction stopped"))
         })();
@@ -709,15 +712,22 @@ impl Decider {
                     }
                     if !tried_exact {
                         tried_exact = true;
-                        let exact = crate::tower::sign(x, work).and_then(|sign| match sign {
-                            Some(s) => Ok(Some(s)),
-                            None => crate::quadratic::sign(x, work).and_then(|sign| match sign {
-                                Some(s) => Ok(Some(s)),
+                        let exact =
+                            crate::identity::rational(x, work).and_then(|value| match value {
+                                Some(value) => Ok(Some(value.sign())),
                                 None => {
-                                    crate::generator::rational(x, work).map(|r| r.map(|r| r.sign()))
+                                    crate::tower::sign(x, work).and_then(|sign| match sign {
+                                        Some(s) => Ok(Some(s)),
+                                        None => crate::quadratic::sign(x, work).and_then(|sign| {
+                                            match sign {
+                                                Some(s) => Ok(Some(s)),
+                                                None => crate::generator::rational(x, work)
+                                                    .map(|r| r.map(|r| r.sign())),
+                                            }
+                                        }),
+                                    })
                                 }
-                            }),
-                        });
+                            });
                         match exact {
                             Ok(Some(Sign::Zero)) => return coincident(ZeroProof::Algebraic),
                             Ok(Some(s)) => {
@@ -1246,6 +1256,9 @@ fn zero_proof(x: &Real, b: &Ball, w: &mut Work) -> Result<bool, &'static str> {
     if let Some(r) = &x.node.rational {
         w.exact(r, r, false)?;
         return Ok(r.is_zero());
+    }
+    if let Some(value) = crate::identity::rational(x, w)? {
+        return Ok(value.is_zero());
     }
     if let Some(sign) = crate::tower::sign(x, w)? {
         return Ok(sign == Sign::Zero);

@@ -1,6 +1,8 @@
 //! Polynomials over exact algebraic expressions, with a rational arithmetic path.
 
-use crate::{Ball, Decider, Integer, MPoly, Monomial, Outcome, Rational, Real, Refusal};
+use crate::{
+    Ball, Decider, Integer, MPoly, Monomial, Outcome, Rational, Real, Refusal, Sign, StrictSign,
+};
 use std::collections::BTreeMap;
 
 /// A fixed-variable polynomial whose coefficient definitions retain shared roots.
@@ -267,8 +269,9 @@ impl RealPoly {
 
     /// Distinct real roots of a univariate polynomial in increasing order.
     ///
-    /// Rational coefficients use the existing rational solver. Otherwise lower
-    /// shared coefficient definitions to rational equations, isolate candidates,
+    /// Rational coefficients use the existing rational solver. Linear and
+    /// quadratic algebraic equations retain their exact closed definitions.
+    /// Higher degrees lower shared coefficient definitions to rational equations, isolate candidates,
     /// and certify every candidate in the original equation. Root domains and
     /// conjugate choices are never inferred from an eliminated equation alone.
     pub fn real_roots(&self, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
@@ -279,11 +282,49 @@ impl RealPoly {
         for (_, coefficient) in self.terms() {
             dec.enclose(&coefficient, &Rational::one())?;
         }
-        if self.is_zero(dec)? {
+        let Some(degree) = self.total_degree(dec)? else {
             return Err(Refusal::new(
                 "numbers.zero-polynomial",
                 "every real number is a root",
             ));
+        };
+        if degree <= 2 {
+            let mut coefficients = [Real::zero(), Real::zero(), Real::zero()];
+            for (m, coefficient) in self.terms() {
+                if m.exponents()[0] <= degree {
+                    coefficients[m.exponents()[0] as usize] = coefficient;
+                }
+            }
+            let [c, b, a] = coefficients;
+            if degree == 0 {
+                return Ok(vec![]);
+            }
+            if degree == 1 {
+                return Ok(vec![-c / b]);
+            }
+            let discriminant = &b.square() - &(&Real::from_i64(4) * &(&a * &c));
+            let sign = |value: &Real, dec: &mut Decider| match dec.sign(value) {
+                Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+                Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+                Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
+                Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+                Outcome::Refused(r) => Err(r),
+            };
+            let denominator = &Real::from_i64(2) * &a;
+            return match sign(&discriminant, dec)? {
+                Sign::Negative => Ok(vec![]),
+                Sign::Zero => Ok(vec![-b / denominator]),
+                Sign::Positive => {
+                    let root = discriminant.sqrt();
+                    let lower = &(-&b) - &root;
+                    let upper = &(-&b) + &root;
+                    let mut roots = vec![&lower / &denominator, &upper / &denominator];
+                    if sign(&a, dec)? == Sign::Negative {
+                        roots.swap(0, 1);
+                    }
+                    Ok(roots)
+                }
+            };
         }
         let eliminant = dec.real_poly_eliminant(self)?;
         let candidates = root_values(dec.real_roots(&eliminant))?;

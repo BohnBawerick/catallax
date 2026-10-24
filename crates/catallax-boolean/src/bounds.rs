@@ -6,8 +6,8 @@ use crate::{
     geometry::sign,
     region::{Location, locate},
 };
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
-use catallax_shapes::{Curve, Point3, PointDef, Surface};
+use catallax_numbers::{Ball, Decider, FactKind, Rational, Real, Refusal, Sign};
+use catallax_shapes::{Curve, GeomKey, Point3, PointDef, Surface};
 use catallax_topology::{FaceId, Loop, Model};
 
 fn enclose(x: &Real, dec: &mut Decider) -> Result<Ball, Refusal> {
@@ -49,8 +49,12 @@ fn face_box(
                 let PointDef::Explicit(p) = model.geom().point(model.vertex(*v).point) else {
                     return Ok(None);
                 };
+                let same_apex = !surface.has_rational_definition()
+                    && p.x.same_definition(&origin.x)
+                    && p.y.same_definition(&origin.y)
+                    && p.z.same_definition(&origin.z);
                 if !matches!(&surface, Surface::Cone(_))
-                    || !zero(&p.minus(origin).norm_squared(), dec)?
+                    || (!same_apex && !zero(&p.minus(origin).norm_squared(), dec)?)
                 {
                     return Ok(None);
                 }
@@ -64,24 +68,42 @@ fn face_box(
                 let Curve::Circle(c) = model.geom().curve(edge.curve) else {
                     return Ok(None);
                 };
-                if !zero(&c.center.minus(origin).cross(axis).norm_squared(), dec)?
-                    || !zero(&c.normal.cross(axis).norm_squared(), dec)?
-                {
-                    return Ok(None);
-                }
-                let expected = match &surface {
-                    Surface::Cylinder(s) => s.radius_sq.clone(),
-                    Surface::Cone(s) => {
-                        let axial = c.center.minus(&s.apex).dot(&s.axis);
-                        if sign(&axial, dec, "boolean.bound-ambiguous")? == Sign::Negative {
-                            return Ok(None);
-                        }
-                        &s.slope.square() * &(&axial.square() / &s.axis.norm_squared())
+                // Incidence on a circular carrier and coaxiality already prove
+                // this entire ring is its section, including the retained nappe.
+                // Keep the cheap rational path and avoid eliminating algebraic
+                // construction identities that the producer has recorded.
+                let constructed_section = !surface.has_rational_definition()
+                    && [FactKind::Incident, FactKind::Coaxial]
+                        .into_iter()
+                        .all(|kind| {
+                            model.geom().facts().holds(
+                                kind,
+                                GeomKey::Curve(edge.curve),
+                                GeomKey::Surface(model.face(face).surface),
+                            )
+                        });
+                if constructed_section {
+                    dec.note_fact_decision();
+                } else {
+                    if !zero(&c.center.minus(origin).cross(axis).norm_squared(), dec)?
+                        || !zero(&c.normal.cross(axis).norm_squared(), dec)?
+                    {
+                        return Ok(None);
                     }
-                    _ => unreachable!(),
-                };
-                if !zero(&(&expected - &c.radius_sq), dec)? {
-                    return Ok(None);
+                    let expected = match &surface {
+                        Surface::Cylinder(s) => s.radius_sq.clone(),
+                        Surface::Cone(s) => {
+                            let axial = c.center.minus(&s.apex).dot(&s.axis);
+                            if sign(&axial, dec, "boolean.bound-ambiguous")? == Sign::Negative {
+                                return Ok(None);
+                            }
+                            &s.slope.square() * &(&axial.square() / &s.axis.norm_squared())
+                        }
+                        _ => unreachable!(),
+                    };
+                    if !zero(&(&expected - &c.radius_sq), dec)? {
+                        return Ok(None);
+                    }
                 }
                 let radius = if let Some(q) = c.radius_sq.rational_ref() {
                     if *q == Rational::one() {

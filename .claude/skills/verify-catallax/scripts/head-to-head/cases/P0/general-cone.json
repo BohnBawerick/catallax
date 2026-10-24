@@ -1,0 +1,182 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P0/general-cone.json",
+  "recipe_sha256": "000878f341c57fe032aa2223991b97573f25baacf15fb1074e8f1458b90fcca6",
+  "edit": {
+    "step": "a",
+    "path": [
+      "height"
+    ],
+    "value": "12"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "10",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "x_dir": [
+              1,
+              0,
+              0
+            ],
+            "y_dir": [
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              5.0,
+              0
+            ],
+            [
+              2.0,
+              "edit_value"
+            ],
+            [
+              0,
+              "edit_value"
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.revolve",
+        "params": {
+          "axis": "Z",
+          "angle": "360 deg",
+          "operation": "new",
+          "name": "a",
+          "body_name": "a"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "x_dir": [
+              1,
+              0,
+              0
+            ],
+            "y_dir": [
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              5.0,
+              0
+            ],
+            [
+              2.0,
+              10.0
+            ],
+            [
+              0,
+              10.0
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.revolve",
+        "params": {
+          "axis": "Z",
+          "angle": "360 deg",
+          "operation": "new",
+          "name": "b",
+          "body_name": "b"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "b"
+          ],
+          "axis": [
+            0.7071067811865475,
+            0.7071067811865475,
+            0.0
+          ],
+          "angle": "70.52877936550931 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "b"
+          ],
+          "translate": [
+            2.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "a",
+          "tools": [
+            "b"
+          ],
+          "operation": "join"
+        }
+      }
+    ],
+    "body": "a",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "12"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

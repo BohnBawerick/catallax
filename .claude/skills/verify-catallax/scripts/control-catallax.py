@@ -563,6 +563,19 @@ def main():
     p.add_argument('--max-work', type=int, default=100_000_000)
     p.add_argument('--core', type=int, help='one pinned CPU for the worker')
     p.add_argument('--occt-python', default=sys.executable, help='Python with cadquery-ocp installed; unavailable binding is reported as not run')
+    p = commands.add_parser('head-to-head-reference', help='download and verify the pinned released SolidCraft binary outside the repository')
+    p.add_argument('--out', required=True)
+    p = commands.add_parser('head-to-head', help='development-only pinned target-part matched pairs against released SolidCraft')
+    p.add_argument('inputs', help='fixed target recipe directory, normally parts/')
+    p.add_argument('--binary', required=True, help='release examples/head_to_head, not the runtime CLI')
+    p.add_argument('--reference', required=True, help='checksum-verified released solidcraft-cli')
+    p.add_argument('--out', required=True)
+    p.add_argument('--core', required=True, type=int)
+    p.add_argument('--max-work', type=int, default=1_000_000)
+    p.add_argument('--repeats', type=int, default=3)
+    p.add_argument('--timeout', type=float, default=120)
+    p.add_argument('--part', action='append', help='exact case filename, repeat to select several; default all P0–P5')
+    p.add_argument('--occt-python', default=sys.executable)
     for p in commands.choices.values():
         p.add_argument('--json', action='store_true', help='emit stable machine-readable JSON')
     args = parser.parse_args()
@@ -587,10 +600,18 @@ def main():
             result = legacy(args)
         elif args.command == 'parts':
             result = parts(args)
+        elif args.command == 'head-to-head-reference':
+            from head_to_head import fetch_reference
+            result = fetch_reference(args.out)
+        elif args.command == 'head-to-head':
+            from head_to_head import benchmark
+            if args.timeout <= 0:
+                raise ValueError('--timeout must be positive')
+            result = benchmark(args)
         else:
             result = {'policy': 'workers close on command exit; evidence is never removed', 'evidence_exists': Path(args.out).exists(), 'dry_run': args.dry_run}
         print(json.dumps(result, indent=None if args.json else 2, sort_keys=True))
-        return 1 if result.get('equal') is False or result.get('crashes', 0) or result.get('comparison_disagreements', 0) or result.get('step_failures', 0) or result.get('edit_failures', 0) else 0
+        return 1 if result.get('equal') is False or result.get('crashes', 0) or result.get('comparison_disagreements', 0) or result.get('step_failures', 0) or result.get('edit_failures', 0) or result.get('correctness_failures', 0) else 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(json.dumps({'error': str(error), 'action': 'retain evidence, run doctor, then resume using the same --out'}), file=sys.stderr)
         return 2

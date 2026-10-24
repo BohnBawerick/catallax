@@ -1,0 +1,90 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P0/near-miss.json",
+  "recipe_sha256": "1cd0ed3c4607ac300a8f3739aa1c06e5994ce50ffbd5535eb670f03c591c0ab5",
+  "edit": {
+    "step": "a",
+    "path": [
+      "height"
+    ],
+    "value": "12"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "10",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 5.0,
+          "height": "edit_value",
+          "operation": "new",
+          "name": "a",
+          "body_name": "a"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 5.0,
+          "height": 10.0,
+          "operation": "new",
+          "name": "b",
+          "body_name": "b"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "b"
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "angle": "106.26020470831196 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "b"
+          ],
+          "translate": [
+            10.0000001,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "a",
+          "tools": [
+            "b"
+          ],
+          "operation": "join"
+        }
+      }
+    ],
+    "body": "a",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "12"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

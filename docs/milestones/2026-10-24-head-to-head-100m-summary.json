@@ -1,0 +1,3385 @@
+{
+  "correctness_rechecks_sha256": "e52fc17e7f8f225fa4cf137a20428aee5fbd0f484f43bedd4262f76de35b7d9c",
+  "format": "catallax-head-to-head-summary/1",
+  "measured_commit": "74bf31a8fae4e2d814cc9a4224dee401621401de",
+  "property_rechecks_sha256": "851581e2c5c3a1af66ab5243a25d092824d0d538b60c0f0a7c368443aca832a6",
+  "raw_sha256": "87a9de7ed50e4f81b9605c726f0a68569981606f367c5118d5206bed2a03521b",
+  "rows": [
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 246.86981299999997,
+      "build_median_ms": 87.610444,
+      "display_median_ms": 158.964256,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 856.244089,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/block-sphere.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 1103.113902,
+      "work": [
+        11564356,
+        11564356,
+        11564356
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 251.534738,
+      "build_median_ms": 90.99711500000001,
+      "display_median_ms": 160.537623,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 1490.086718,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/block-sphere.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 1749.605587,
+      "work": [
+        11428222,
+        11428222,
+        11428222
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 652.853,
+      "build_median_ms": 621.8299999999999,
+      "display_median_ms": 30.737,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 137.356,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        4,
+        4,
+        4
+      ],
+      "part": "P0/block-sphere.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 790.789,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 9
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 671.986,
+      "build_median_ms": 641.62,
+      "display_median_ms": 30.599,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 131.787,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        4,
+        4,
+        4
+      ],
+      "part": "P0/block-sphere.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 800.7719999999999,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 9
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": 6581.088145,
+      "build_median_ms": 1025.857961,
+      "display_median_ms": 5555.230184,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 33494.581927,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        7,
+        7,
+        7
+      ],
+      "part": "P0/crossing-pipes.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 40075.670072,
+      "work": [
+        66504742,
+        66504742,
+        66504742
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        6,
+        6,
+        6
+      ],
+      "part": "P0/crossing-pipes.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "work-exhausted": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 499.999899,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          },
+          {
+            "refusal_ms": 489.859578,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          },
+          {
+            "refusal_ms": 519.072425,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        499.999899,
+        489.859578,
+        519.072425
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        99995335,
+        99995335,
+        99995335
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": 18976.822,
+      "build_median_ms": 14374.451000000001,
+      "display_median_ms": 4604.11,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 32033.305,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        13,
+        13,
+        13
+      ],
+      "part": "P0/crossing-pipes.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 51366.846000000005,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 6
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": 10529.747,
+      "build_median_ms": 7953.801,
+      "display_median_ms": 2581.761,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 16667.864,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        13,
+        13,
+        13
+      ],
+      "part": "P0/crossing-pipes.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 27178.25,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 12
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 56.993884,
+      "build_median_ms": 2.9133560000000003,
+      "display_median_ms": 54.080528,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 1.055001,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/equal-cylinder-sphere.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 58.020929,
+      "work": [
+        2725,
+        2725,
+        2725
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 178.46974799999998,
+      "build_median_ms": 12.396042,
+      "display_median_ms": 166.073706,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 1.269555,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/equal-cylinder-sphere.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 179.73930299999998,
+      "work": [
+        137476,
+        137476,
+        137476
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 168.994,
+      "build_median_ms": 155.752,
+      "display_median_ms": 13.242,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 40.13,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        4,
+        4,
+        4
+      ],
+      "part": "P0/equal-cylinder-sphere.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 209.339,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 6
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "solidcraft",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        null,
+        null,
+        null
+      ],
+      "part": "P0/equal-cylinder-sphere.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "command-failed": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 5223.231273994315,
+            "status": "command-failed"
+          },
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 5223.961911993683,
+            "status": "command-failed"
+          },
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 5272.670072008623,
+            "status": "command-failed"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        5223.231273994315,
+        5223.961911993683,
+        5272.670072008623
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        2,
+        2,
+        2
+      ],
+      "part": "P0/general-cone.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 0.711436,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.745066,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 13.257403,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        0.711436,
+        0.745066,
+        13.257403
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        466,
+        466,
+        466
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        2,
+        2,
+        2
+      ],
+      "part": "P0/general-cone.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 0.428174,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.481618,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.49985899999999994,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        0.428174,
+        0.481618,
+        0.49985899999999994
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        466,
+        466,
+        466
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": 2153.091,
+      "build_median_ms": 1342.69,
+      "display_median_ms": 810.401,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 3385.705,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P0/general-cone.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 5538.796,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 15
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": 2345.607,
+      "build_median_ms": 1539.452,
+      "display_median_ms": 808.023,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 3288.147,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        7,
+        7,
+        7
+      ],
+      "part": "P0/general-cone.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 5633.754,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 15
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        2,
+        2,
+        2
+      ],
+      "part": "P0/general-torus.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 12.850932,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.29516299999999995,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 12.199824,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        12.850932,
+        0.29516299999999995,
+        12.199824
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        2,
+        2,
+        2
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        2,
+        2,
+        2
+      ],
+      "part": "P0/general-torus.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 0.14992799999999998,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.129594,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.15087,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        0.14992799999999998,
+        0.129594,
+        0.15087
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        2,
+        2,
+        2
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": 14957.265000000001,
+      "build_median_ms": 10245.095000000001,
+      "display_median_ms": 4641.607,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 26097.508,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P0/general-torus.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 41069.882,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 15
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": 14853.144,
+      "build_median_ms": 10248.544,
+      "display_median_ms": 4560.906,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 22708.984,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P0/general-torus.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 37574.998999999996,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 15
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 109.14246800000001,
+      "build_median_ms": 14.93182,
+      "display_median_ms": 94.518961,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 1.336576,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/line-tangent.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 110.42922100000001,
+      "work": [
+        400616,
+        400616,
+        400616
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 108.51028000000001,
+      "build_median_ms": 16.957718,
+      "display_median_ms": 91.55256200000001,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 1.2982609999999999,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/line-tangent.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 109.808541,
+      "work": [
+        489718,
+        489718,
+        489718
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 77.78899999999999,
+      "build_median_ms": 61.620999999999995,
+      "display_median_ms": 16.168,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 62.804,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        4,
+        4,
+        4
+      ],
+      "part": "P0/line-tangent.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 139.858,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 6
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 597.086,
+      "build_median_ms": 581.211,
+      "display_median_ms": 15.875,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 61.125,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        4,
+        4,
+        4
+      ],
+      "part": "P0/line-tangent.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 658.211,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 6
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 115.25273499999999,
+      "build_median_ms": 4.89141,
+      "display_median_ms": 110.361325,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 1.410456,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/near-miss.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 116.68501499999999,
+      "work": [
+        3692,
+        3692,
+        3692
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 109.73852399999998,
+      "build_median_ms": 4.504822000000001,
+      "display_median_ms": 105.22896499999999,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 1.441516,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/near-miss.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 111.13762899999999,
+      "work": [
+        3529,
+        3529,
+        3529
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 81.925,
+      "build_median_ms": 61.652,
+      "display_median_ms": 20.273,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 62.915,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P0/near-miss.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 144.84,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 12
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 602.02,
+      "build_median_ms": 585.78,
+      "display_median_ms": 15.8,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 60.55,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P0/near-miss.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 661.163,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 6
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 189.689666,
+      "build_median_ms": 111.636898,
+      "display_median_ms": 77.92297300000001,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 2500.561459,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/seam.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 2690.251125,
+      "work": [
+        19151641,
+        19151641,
+        19151641
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": 1846.128928,
+      "build_median_ms": 105.925017,
+      "display_median_ms": 1740.767735,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 2192.767055,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        3,
+        3,
+        3
+      ],
+      "part": "P0/seam.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 4039.4598069999997,
+      "work": [
+        18821185,
+        18821185,
+        18821185
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 66.002,
+      "build_median_ms": 51.912,
+      "display_median_ms": 13.473,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 59.189,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P0/seam.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 123.48400000000001,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 9
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 74.38,
+      "build_median_ms": 57.318,
+      "display_median_ms": 16.985,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 70.419,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P0/seam.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 144.74,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 15
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        22,
+        22,
+        22
+      ],
+      "part": "P1-bracket.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "work-exhausted": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 1384.986461,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          },
+          {
+            "refusal_ms": 1343.794979,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          },
+          {
+            "refusal_ms": 1348.68652,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        1384.986461,
+        1343.794979,
+        1348.68652
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        99989121,
+        99989121,
+        99989121
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        24,
+        24,
+        24
+      ],
+      "part": "P1-bracket.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "work-exhausted": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 1435.068231,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          },
+          {
+            "refusal_ms": 1453.505335,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          },
+          {
+            "refusal_ms": 1432.730895,
+            "refusal_upper_bound_ms": null,
+            "status": "work-exhausted"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        1435.068231,
+        1453.505335,
+        1432.730895
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        99993496,
+        99993496,
+        99993496
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "solidcraft",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        null,
+        null,
+        null
+      ],
+      "part": "P1-bracket.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "command-failed": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 11297.91503600427,
+            "status": "command-failed"
+          },
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 11192.418957987684,
+            "status": "command-failed"
+          },
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 11236.86592800368,
+            "status": "command-failed"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        11297.91503600427,
+        11192.418957987684,
+        11236.86592800368
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 3,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        null,
+        null,
+        null
+      ],
+      "part": "P1-bracket.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "not-run": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        2,
+        2,
+        2
+      ],
+      "part": "P2-collar.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 0.5041950000000001,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.253195,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.260421,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        0.5041950000000001,
+        0.253195,
+        0.260421
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        403,
+        403,
+        403
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        2,
+        2,
+        2
+      ],
+      "part": "P2-collar.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 0.22547499999999998,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.11687499999999999,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.137101,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        0.22547499999999998,
+        0.11687499999999999,
+        0.137101
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        403,
+        403,
+        403
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 93.29899999999999,
+      "build_median_ms": 76.621,
+      "display_median_ms": 16.843,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 66.433,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        2,
+        2,
+        2
+      ],
+      "part": "P2-collar.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 159.732,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 6
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 74.087,
+      "build_median_ms": 56.936,
+      "display_median_ms": 17.014,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 63.596,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        1,
+        1,
+        1
+      ],
+      "part": "P2-collar.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 137.683,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 6
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 137.59104,
+      "build_median_ms": 10.500956,
+      "display_median_ms": 127.09008399999999,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 4.441320999999999,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P3-filleted-boss.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 142.366535,
+      "work": [
+        25577,
+        25577,
+        25577
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 164.746463,
+      "build_median_ms": 10.354090999999999,
+      "display_median_ms": 154.392372,
+      "engine": "catallax",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 4.781020000000001,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        5,
+        5,
+        5
+      ],
+      "part": "P3-filleted-boss.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
+      "with_requested_measurement_median_ms": 169.80989300000002,
+      "work": [
+        27019,
+        27019,
+        27019
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 960.252,
+      "build_median_ms": 942.716,
+      "display_median_ms": 17.673,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 519.464,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        6,
+        6,
+        6
+      ],
+      "part": "P3-filleted-boss.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 1479.716,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 9
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 939.63,
+      "build_median_ms": 915.935,
+      "display_median_ms": 23.695,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 534.441,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        2,
+        2,
+        2
+      ],
+      "part": "P3-filleted-boss.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 1474.6100000000001,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 9
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        1,
+        1,
+        1
+      ],
+      "part": "P4-shelled-tray.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 0.203901,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.391542,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.210005,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        0.203901,
+        0.391542,
+        0.210005
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        0,
+        0,
+        0
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        1,
+        1,
+        1
+      ],
+      "part": "P4-shelled-tray.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 0.092389,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.11399,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 0.084506,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        0.092389,
+        0.11399,
+        0.084506
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        0,
+        0,
+        0
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 150.97,
+      "build_median_ms": 149.09,
+      "display_median_ms": 1.955,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 7.959,
+      "membership_checked": 3,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        6,
+        6,
+        6
+      ],
+      "part": "P4-shelled-tray.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 158.918,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 9
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 3,
+      "build_and_display_median_ms": 150.25300000000001,
+      "build_median_ms": 148.228,
+      "display_median_ms": 2.0,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 0,
+      "measurement_median_ms": 8.044,
+      "membership_checked": 3,
+      "names_checked": 3,
+      "names_passed": 3,
+      "operations_rebuilt": [
+        4,
+        4,
+        4
+      ],
+      "part": "P4-shelled-tray.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "answered": 3
+        },
+        "display": {
+          "answered": 3
+        },
+        "measurement": {
+          "answered": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 3,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": 158.228,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 9
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        7,
+        7,
+        7
+      ],
+      "part": "P5-flanged-housing.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 119.380362,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 117.692278,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 115.941789,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        119.380362,
+        117.692278,
+        115.941789
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        1176197,
+        1176197,
+        1176197
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "catallax",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        7,
+        7,
+        7
+      ],
+      "part": "P5-flanged-housing.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "refused": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": 115.099711,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 116.883769,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          },
+          {
+            "refusal_ms": 119.579722,
+            "refusal_upper_bound_ms": null,
+            "status": "refused"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        115.099711,
+        116.883769,
+        119.579722
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        1176197,
+        1176197,
+        1176197
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "solidcraft",
+      "failed_rebuilds": 3,
+      "incomplete": 0,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": null,
+      "names_passed": null,
+      "operations_rebuilt": [
+        null,
+        null,
+        null
+      ],
+      "part": "P5-flanged-housing.json",
+      "phase": "construction",
+      "phase_outcomes": {
+        "build": {
+          "command-failed": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 5975.61254799075,
+            "status": "command-failed"
+          },
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 5975.90086699347,
+            "status": "command-failed"
+          },
+          {
+            "refusal_ms": null,
+            "refusal_upper_bound_ms": 6026.383898992208,
+            "status": "command-failed"
+          }
+        ],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        5975.61254799075,
+        5975.90086699347,
+        6026.383898992208
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    },
+    {
+      "build_and_display_budget_ms": 1000,
+      "build_and_display_budget_passes": 0,
+      "build_and_display_median_ms": null,
+      "build_median_ms": null,
+      "display_median_ms": null,
+      "engine": "solidcraft",
+      "failed_rebuilds": 0,
+      "incomplete": 3,
+      "measurement_median_ms": null,
+      "membership_checked": 0,
+      "names_checked": 0,
+      "names_passed": 0,
+      "operations_rebuilt": [
+        null,
+        null,
+        null
+      ],
+      "part": "P5-flanged-housing.json",
+      "phase": "edit",
+      "phase_outcomes": {
+        "build": {
+          "not-run": 3
+        },
+        "display": {
+          "not-run": 3
+        },
+        "measurement": {
+          "not-run": 3
+        }
+      },
+      "phase_refusals": {
+        "build": [],
+        "display": [],
+        "measurement": []
+      },
+      "properties_checked": 0,
+      "refusal_ms": [
+        null,
+        null,
+        null
+      ],
+      "refusal_upper_bound_ms": [
+        null,
+        null,
+        null
+      ],
+      "samples": 3,
+      "step_checked": 0,
+      "step_opened": 0,
+      "step_passed": 0,
+      "with_requested_measurement_median_ms": null,
+      "work": [
+        null,
+        null,
+        null
+      ],
+      "wrong_membership": 0,
+      "wrong_properties": 0
+    }
+  ]
+}

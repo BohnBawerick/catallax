@@ -1,0 +1,794 @@
+{
+  "checker_sha256": "ebb965c1bd71b9140a285df214da052381b449f053d61cdf64087c4c830bd920",
+  "format": "catallax-head-to-head-property-recheck/1",
+  "oracles": {
+    "P2-collar.json": {
+      "construction": {
+        "binding": "OCP",
+        "numeric_comparison": {
+          "absolute": 1e-06,
+          "relative": 1e-08,
+          "scope": "diagnostic double-precision comparison, not a kernel acceptance tolerance"
+        },
+        "oracle": {
+          "area": 1944.81494524403,
+          "centroid": [
+            -9.919564963063936e-16,
+            6.0,
+            -6.824280762322979e-16
+          ],
+          "relative_integration_estimates": {
+            "area": 4.458307361632003e-16,
+            "volume": 4.458307361632003e-16
+          },
+          "volume": 3998.2002504686093
+        },
+        "oracle_source": "independent OpenCASCADE construction from fixed target dimensions",
+        "step": {
+          "reason": "no exported STEP",
+          "status": "not-run"
+        },
+        "version": "8.0.1.1"
+      },
+      "edit": {
+        "binding": "OCP",
+        "numeric_comparison": {
+          "absolute": 1e-06,
+          "relative": 1e-08,
+          "scope": "diagnostic double-precision comparison, not a kernel acceptance tolerance"
+        },
+        "oracle": {
+          "area": 1968.0372026712823,
+          "centroid": [
+            -7.786993040866291e-16,
+            6.000000000000001,
+            -1.69261802239919e-16
+          ],
+          "relative_integration_estimates": {
+            "area": 3.8911445565336227e-16,
+            "volume": 5.654319433712919e-16
+          },
+          "volume": 4029.9761511627316
+        },
+        "oracle_source": "independent OpenCASCADE construction from fixed target dimensions",
+        "step": {
+          "reason": "no exported STEP",
+          "status": "not-run"
+        },
+        "version": "8.0.1.1"
+      }
+    },
+    "P3-filleted-boss.json": {
+      "construction": {
+        "binding": "OCP",
+        "numeric_comparison": {
+          "absolute": 1e-06,
+          "relative": 1e-08,
+          "scope": "diagnostic double-precision comparison, not a kernel acceptance tolerance"
+        },
+        "oracle": {
+          "area": 4301.1619509648035,
+          "centroid": [
+            20.000000000000455,
+            15.000000000000004,
+            6.846759374074459
+          ],
+          "relative_integration_estimates": {
+            "area": 2.591715201854397e-16,
+            "volume": 6.993828377128351e-16
+          },
+          "volume": 14428.640126020273
+        },
+        "oracle_source": "independent OpenCASCADE construction from fixed target dimensions",
+        "step": {
+          "reason": "no exported STEP",
+          "status": "not-run"
+        },
+        "version": "8.0.1.1"
+      },
+      "edit": {
+        "binding": "OCP",
+        "numeric_comparison": {
+          "absolute": 1e-06,
+          "relative": 1e-08,
+          "scope": "diagnostic double-precision comparison, not a kernel acceptance tolerance"
+        },
+        "oracle": {
+          "area": 4291.375745602445,
+          "centroid": [
+            20.000000000000462,
+            15.000000000000005,
+            6.853888581992038
+          ],
+          "relative_integration_estimates": {
+            "area": 1.01554260460738e-15,
+            "volume": 2.3102592014024554e-16
+          },
+          "volume": 14455.207561799974
+        },
+        "oracle_source": "independent OpenCASCADE construction from fixed target dimensions",
+        "step": {
+          "reason": "no exported STEP",
+          "status": "not-run"
+        },
+        "version": "8.0.1.1"
+      }
+    }
+  },
+  "raw_sha256": "87a9de7ed50e4f81b9605c726f0a68569981606f367c5118d5206bed2a03521b",
+  "reason": "OCP 8 exports TopoDS.Edge, not Edge_s. Fresh independent property construction only; original timings, STEP and membership observations are not overwritten.",
+  "records": [
+    {
+      "claimed_properties": {
+        "reason": "both requested properties and independent values required",
+        "status": "not-run"
+      },
+      "engine": "catallax",
+      "part": "P2-collar.json",
+      "sample": 0,
+      "variant": "construction",
+      "warmup": true
+    },
+    {
+      "claimed_properties": {
+        "reason": "both requested properties and independent values required",
+        "status": "not-run"
+      },
+      "engine": "catallax",
+      "part": "P2-collar.json",
+      "sample": 0,
+      "variant": "edit",
+      "warmup": true
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 3998.206270908975,
+            "component": null,
+            "diagnostic_allowance": 3.998200250468609e-05,
+            "independent": 3998.2002504686093,
+            "property": "volume"
+          },
+          {
+            "claimed": 1944.7640512134358,
+            "component": null,
+            "diagnostic_allowance": 1.94481494524403e-05,
+            "independent": 1944.81494524403,
+            "property": "area"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P2-collar.json",
+      "sample": 0,
+      "variant": "construction",
+      "warmup": true
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 4029.974334048511,
+            "component": null,
+            "diagnostic_allowance": 4.029976151162732e-05,
+            "independent": 4029.9761511627316,
+            "property": "volume"
+          },
+          {
+            "claimed": 1967.9860466447612,
+            "component": null,
+            "diagnostic_allowance": 1.9680372026712823e-05,
+            "independent": 1968.0372026712823,
+            "property": "area"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P2-collar.json",
+      "sample": 0,
+      "variant": "edit",
+      "warmup": true
+    },
+    {
+      "claimed_properties": {
+        "reason": "both requested properties and independent values required",
+        "status": "not-run"
+      },
+      "engine": "catallax",
+      "part": "P2-collar.json",
+      "sample": 1,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "reason": "both requested properties and independent values required",
+        "status": "not-run"
+      },
+      "engine": "catallax",
+      "part": "P2-collar.json",
+      "sample": 1,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 3998.206270908975,
+            "component": null,
+            "diagnostic_allowance": 3.998200250468609e-05,
+            "independent": 3998.2002504686093,
+            "property": "volume"
+          },
+          {
+            "claimed": 1944.7640512134358,
+            "component": null,
+            "diagnostic_allowance": 1.94481494524403e-05,
+            "independent": 1944.81494524403,
+            "property": "area"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P2-collar.json",
+      "sample": 1,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 4029.974334048511,
+            "component": null,
+            "diagnostic_allowance": 4.029976151162732e-05,
+            "independent": 4029.9761511627316,
+            "property": "volume"
+          },
+          {
+            "claimed": 1967.9860466447612,
+            "component": null,
+            "diagnostic_allowance": 1.9680372026712823e-05,
+            "independent": 1968.0372026712823,
+            "property": "area"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P2-collar.json",
+      "sample": 1,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "reason": "both requested properties and independent values required",
+        "status": "not-run"
+      },
+      "engine": "catallax",
+      "part": "P2-collar.json",
+      "sample": 2,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "reason": "both requested properties and independent values required",
+        "status": "not-run"
+      },
+      "engine": "catallax",
+      "part": "P2-collar.json",
+      "sample": 2,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 3998.206270908975,
+            "component": null,
+            "diagnostic_allowance": 3.998200250468609e-05,
+            "independent": 3998.2002504686093,
+            "property": "volume"
+          },
+          {
+            "claimed": 1944.7640512134358,
+            "component": null,
+            "diagnostic_allowance": 1.94481494524403e-05,
+            "independent": 1944.81494524403,
+            "property": "area"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P2-collar.json",
+      "sample": 2,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 4029.974334048511,
+            "component": null,
+            "diagnostic_allowance": 4.029976151162732e-05,
+            "independent": 4029.9761511627316,
+            "property": "volume"
+          },
+          {
+            "claimed": 1967.9860466447612,
+            "component": null,
+            "diagnostic_allowance": 1.9680372026712823e-05,
+            "independent": 1968.0372026712823,
+            "property": "area"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P2-collar.json",
+      "sample": 2,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "reason": "both requested properties and independent values required",
+        "status": "not-run"
+      },
+      "engine": "catallax",
+      "part": "P2-collar.json",
+      "sample": 3,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "reason": "both requested properties and independent values required",
+        "status": "not-run"
+      },
+      "engine": "catallax",
+      "part": "P2-collar.json",
+      "sample": 3,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 3998.206270908975,
+            "component": null,
+            "diagnostic_allowance": 3.998200250468609e-05,
+            "independent": 3998.2002504686093,
+            "property": "volume"
+          },
+          {
+            "claimed": 1944.7640512134358,
+            "component": null,
+            "diagnostic_allowance": 1.94481494524403e-05,
+            "independent": 1944.81494524403,
+            "property": "area"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P2-collar.json",
+      "sample": 3,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 4029.974334048511,
+            "component": null,
+            "diagnostic_allowance": 4.029976151162732e-05,
+            "independent": 4029.9761511627316,
+            "property": "volume"
+          },
+          {
+            "claimed": 1967.9860466447612,
+            "component": null,
+            "diagnostic_allowance": 1.9680372026712823e-05,
+            "independent": 1968.0372026712823,
+            "property": "area"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P2-collar.json",
+      "sample": 3,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "passed",
+        "wrong_answers": []
+      },
+      "engine": "catallax",
+      "part": "P3-filleted-boss.json",
+      "sample": 0,
+      "variant": "construction",
+      "warmup": true
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "passed",
+        "wrong_answers": []
+      },
+      "engine": "catallax",
+      "part": "P3-filleted-boss.json",
+      "sample": 0,
+      "variant": "edit",
+      "warmup": true
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 14428.575795978853,
+            "component": null,
+            "diagnostic_allowance": 0.00014428640126020273,
+            "independent": 14428.640126020273,
+            "property": "volume"
+          },
+          {
+            "claimed": 4301.150083099548,
+            "component": null,
+            "diagnostic_allowance": 4.3011619509648034e-05,
+            "independent": 4301.1619509648035,
+            "property": "area"
+          },
+          {
+            "claimed": 6.846718214279957,
+            "component": 2,
+            "diagnostic_allowance": 1e-06,
+            "independent": 6.846759374074459,
+            "property": "centroid"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P3-filleted-boss.json",
+      "sample": 0,
+      "variant": "construction",
+      "warmup": true
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 14455.16231787832,
+            "component": null,
+            "diagnostic_allowance": 0.00014455207561799976,
+            "independent": 14455.207561799974,
+            "property": "volume"
+          },
+          {
+            "claimed": 4291.360104742322,
+            "component": null,
+            "diagnostic_allowance": 4.291375745602445e-05,
+            "independent": 4291.375745602445,
+            "property": "area"
+          },
+          {
+            "claimed": 6.8538533373325095,
+            "component": 2,
+            "diagnostic_allowance": 1e-06,
+            "independent": 6.853888581992038,
+            "property": "centroid"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P3-filleted-boss.json",
+      "sample": 0,
+      "variant": "edit",
+      "warmup": true
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "passed",
+        "wrong_answers": []
+      },
+      "engine": "catallax",
+      "part": "P3-filleted-boss.json",
+      "sample": 1,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "passed",
+        "wrong_answers": []
+      },
+      "engine": "catallax",
+      "part": "P3-filleted-boss.json",
+      "sample": 1,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 14428.575795978853,
+            "component": null,
+            "diagnostic_allowance": 0.00014428640126020273,
+            "independent": 14428.640126020273,
+            "property": "volume"
+          },
+          {
+            "claimed": 4301.150083099548,
+            "component": null,
+            "diagnostic_allowance": 4.3011619509648034e-05,
+            "independent": 4301.1619509648035,
+            "property": "area"
+          },
+          {
+            "claimed": 6.846718214279957,
+            "component": 2,
+            "diagnostic_allowance": 1e-06,
+            "independent": 6.846759374074459,
+            "property": "centroid"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P3-filleted-boss.json",
+      "sample": 1,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 14455.16231787832,
+            "component": null,
+            "diagnostic_allowance": 0.00014455207561799976,
+            "independent": 14455.207561799974,
+            "property": "volume"
+          },
+          {
+            "claimed": 4291.360104742322,
+            "component": null,
+            "diagnostic_allowance": 4.291375745602445e-05,
+            "independent": 4291.375745602445,
+            "property": "area"
+          },
+          {
+            "claimed": 6.8538533373325095,
+            "component": 2,
+            "diagnostic_allowance": 1e-06,
+            "independent": 6.853888581992038,
+            "property": "centroid"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P3-filleted-boss.json",
+      "sample": 1,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "passed",
+        "wrong_answers": []
+      },
+      "engine": "catallax",
+      "part": "P3-filleted-boss.json",
+      "sample": 2,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "passed",
+        "wrong_answers": []
+      },
+      "engine": "catallax",
+      "part": "P3-filleted-boss.json",
+      "sample": 2,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 14428.575795978853,
+            "component": null,
+            "diagnostic_allowance": 0.00014428640126020273,
+            "independent": 14428.640126020273,
+            "property": "volume"
+          },
+          {
+            "claimed": 4301.150083099548,
+            "component": null,
+            "diagnostic_allowance": 4.3011619509648034e-05,
+            "independent": 4301.1619509648035,
+            "property": "area"
+          },
+          {
+            "claimed": 6.846718214279957,
+            "component": 2,
+            "diagnostic_allowance": 1e-06,
+            "independent": 6.846759374074459,
+            "property": "centroid"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P3-filleted-boss.json",
+      "sample": 2,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 14455.16231787832,
+            "component": null,
+            "diagnostic_allowance": 0.00014455207561799976,
+            "independent": 14455.207561799974,
+            "property": "volume"
+          },
+          {
+            "claimed": 4291.360104742322,
+            "component": null,
+            "diagnostic_allowance": 4.291375745602445e-05,
+            "independent": 4291.375745602445,
+            "property": "area"
+          },
+          {
+            "claimed": 6.8538533373325095,
+            "component": 2,
+            "diagnostic_allowance": 1e-06,
+            "independent": 6.853888581992038,
+            "property": "centroid"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P3-filleted-boss.json",
+      "sample": 2,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "passed",
+        "wrong_answers": []
+      },
+      "engine": "catallax",
+      "part": "P3-filleted-boss.json",
+      "sample": 3,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "passed",
+        "wrong_answers": []
+      },
+      "engine": "catallax",
+      "part": "P3-filleted-boss.json",
+      "sample": 3,
+      "variant": "edit",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 14428.575795978853,
+            "component": null,
+            "diagnostic_allowance": 0.00014428640126020273,
+            "independent": 14428.640126020273,
+            "property": "volume"
+          },
+          {
+            "claimed": 4301.150083099548,
+            "component": null,
+            "diagnostic_allowance": 4.3011619509648034e-05,
+            "independent": 4301.1619509648035,
+            "property": "area"
+          },
+          {
+            "claimed": 6.846718214279957,
+            "component": 2,
+            "diagnostic_allowance": 1e-06,
+            "independent": 6.846759374074459,
+            "property": "centroid"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P3-filleted-boss.json",
+      "sample": 3,
+      "variant": "construction",
+      "warmup": false
+    },
+    {
+      "claimed_properties": {
+        "scope": "numeric independent-oracle check; passing is not a certificate",
+        "status": "failed",
+        "wrong_answers": [
+          {
+            "claimed": 14455.16231787832,
+            "component": null,
+            "diagnostic_allowance": 0.00014455207561799976,
+            "independent": 14455.207561799974,
+            "property": "volume"
+          },
+          {
+            "claimed": 4291.360104742322,
+            "component": null,
+            "diagnostic_allowance": 4.291375745602445e-05,
+            "independent": 4291.375745602445,
+            "property": "area"
+          },
+          {
+            "claimed": 6.8538533373325095,
+            "component": 2,
+            "diagnostic_allowance": 1e-06,
+            "independent": 6.853888581992038,
+            "property": "centroid"
+          }
+        ]
+      },
+      "engine": "solidcraft",
+      "part": "P3-filleted-boss.json",
+      "sample": 3,
+      "variant": "edit",
+      "warmup": false
+    }
+  ]
+}

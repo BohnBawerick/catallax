@@ -1,0 +1,90 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P0/general-torus.json",
+  "recipe_sha256": "84b4df0906f02f7be0fc6a2e3903cab74f4c2920b21dcc62818d54953af72bee",
+  "edit": {
+    "step": "a",
+    "path": [
+      "major"
+    ],
+    "value": "9"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "8",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "solid.torus",
+        "params": {
+          "major": "edit_value",
+          "minor": 2.0,
+          "operation": "new",
+          "name": "a",
+          "body_name": "a"
+        }
+      },
+      {
+        "command": "solid.torus",
+        "params": {
+          "major": 8.0,
+          "minor": 2.0,
+          "operation": "new",
+          "name": "b",
+          "body_name": "b"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "b"
+          ],
+          "axis": [
+            0.7071067811865475,
+            0.7071067811865475,
+            0.0
+          ],
+          "angle": "70.52877936550931 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "b"
+          ],
+          "translate": [
+            1.0,
+            2.0,
+            1.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "a",
+          "tools": [
+            "b"
+          ],
+          "operation": "join"
+        }
+      }
+    ],
+    "body": "a",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "9"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

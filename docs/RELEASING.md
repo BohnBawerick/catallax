@@ -44,6 +44,10 @@ Verify an individual download with `gh attestation verify FILE --repo BohnBaweri
 
 Measurement, comparisons and evidence aggregation live in scripts and CI. None runs in the kernel's part-building path or adds work to a user edit. Never increase a work allowance or loosen a tolerance to make a release gate pass.
 
+For an `X.Y.0` milestone release, use the previous release tag as the replay baseline. When no earlier release exists, use the main commit immediately before the version-and-milestone-note merge, the release commit's first parent. That first-release merge must change only release metadata and documentation, not kernel code or recipes. Record the selected baseline and why in the milestone review. Per-change preservation replays remain the cumulative evidence for the kernel work preceding that baseline.
+
+The current aggregate requires equal outcomes, manifests and STEP bytes across builds. It cannot accept a refusal becoming an answer, even when every earlier successful answer is preserved. Do not relabel an older replay or hide those upgrades to pass the gate. A later milestone with upgrades against its previous release needs an explicitly reviewed evidence-policy change before release; this baseline policy does not waive the aggregate check.
+
 ## Generate the replay aggregate
 
 Use the [verification skill](../.claude/skills/verify-catallax/SKILL.md) on the designated replay machine. Raw inputs and per-case artifacts remain there; do not upload them to GitHub, name them in public notes or commit them. `BASELINE`, `CANDIDATE`, `INPUTS` and `PROOF` below are local runtime paths selected by the operator.

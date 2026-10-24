@@ -6,6 +6,7 @@ from html import escape
 import json
 import math
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,28 @@ sys.path.insert(0, str(SCRIPTS))
 from head_to_head import DATA, sha, summarize
 
 ENGINES = ('catallax', 'solidcraft', 'cadquery', 'smlibpy', 'pali_ijo')
+
+
+def render_index(source, index, check=False):
+    data = json.loads(source.read_text())
+    rows = summarize({'engines': ENGINES, 'pairs': data['observations']})
+    parts = {row['part'] for row in rows}
+    completed = sum(all(any(row['engine'] == 'catallax' and row['part'] == part
+                            and row['phase'] == phase and row['samples'] > 0
+                            and row['build_median_ms'] is not None for row in rows)
+                        for phase in ('construction', 'edit')) for part in parts)
+    paragraph = ('<p class="bench__foot" id="comparison-summary">'
+                 '<a href="comparison.html">The five-tool comparison</a> records completed construction and parameter rebuilds '
+                 f'in every measured sample for {completed} of {len(parts)} Catallax targets; correctness checks are reported separately.</p>')
+    original = index.read_text()
+    generated, count = re.subn(r'<p class="bench__foot" id="comparison-summary">[^\n]*</p>', paragraph, original)
+    if count != 1:
+        raise ValueError('index.html must have exactly one comparison-summary paragraph')
+    if check:
+        if generated != original:
+            raise SystemExit('index.html comparison summary is stale; run site/render/comparison.py')
+    else:
+        index.write_text(generated)
 
 
 def import_run(path, destination):
@@ -47,11 +70,33 @@ def import_run(path, destination):
                            'sha256': report['reference']['binary_sha256'], 'source': report['reference']['source'],
                            'kernel': 'released SolidCraft', 'license': report['reference']['license']},
              **report['tools']}
+    phase_keys = ('status', 'wall_ms', 'work', 'work_limit', 'operations_rebuilt',
+                  'refusal_ms', 'refusal_upper_bound_ms', 'claimed', 'expected_faces')
+    check_keys = ('status', 'oracle', 'oracle_source', 'numeric_comparison', 'property_coverage',
+                  'claimed_properties', 'step', 'membership', 'step_sha256', 'binding', 'version')
+    observations = []
+    for pair in report['pairs']:
+        observation = {key: pair[key] for key in ('part', 'sample', 'warmup', 'order', 'load_average_before', 'load_average_after')}
+        observation['engines'] = {}
+        for engine, result in pair['engines'].items():
+            public = {'status': result['status'], 'variants': {}}
+            public['edit_survival'] = {key: value for key, value in result.get('edit_survival', {}).items()
+                                       if key in ('status', 'missing', 'unnamed', 'coverage', 'reason')}
+            for label, variant in result.get('variants', {}).items():
+                public_variant = {}
+                for phase in ('build', 'display', 'measurement', 'step'):
+                    public_variant[phase] = {key: value for key, value in variant.get(phase, {}).items() if key in phase_keys}
+                public_variant['correctness'] = {key: value for key, value in variant.get('correctness', {}).items() if key in check_keys}
+                public['variants'][label] = public_variant
+            observation['engines'][engine] = public
+        observations.append(observation)
     # No local paths, subprocess commands or private input names are published.
     result = {'format': 'catallax-site-comparison/1', 'raw_sha256': sha(path),
               'source_revision': report['source_revision'], 'tools': tools,
               'dart_version': config['dart']['version'], 'checker_version': config['checker']['version'],
-              'host': report['host'], 'timing': report['timing'], 'summary': summarize(report),
+              'host': report['host'], 'timing': report['timing'],
+              'observations': observations,
+              'installation_hashes': {key: value for key, value in report['installation'].items() if key.endswith('_sha256')},
               'load_average_range': [min(p[k][0] for p in report['pairs'] for k in ('load_average_before','load_average_after')),
                                      max(p[k][0] for p in report['pairs'] for k in ('load_average_before','load_average_after'))],
               'case_sha256': {p.relative_to(DATA).as_posix(): committed_sha(p) for p in sorted((DATA/'cases').rglob('*.json'))},
@@ -62,7 +107,7 @@ def import_run(path, destination):
 
 def render(source, output):
     data = json.loads(source.read_text())
-    rows = data['summary']
+    rows = summarize({'engines': ENGINES, 'pairs': data['observations']})
     tools = data['tools']
     def text(value):
         return escape(str(value), quote=True)
@@ -152,7 +197,8 @@ if __name__ == '__main__':
     parser.add_argument('--import-run', type=Path)
     parser.add_argument('--results', type=Path, default=ROOT/'site/comparison-results.json')
     parser.add_argument('--output', type=Path, default=ROOT/'site/comparison.html')
-    parser.add_argument('--check', action='store_true', help='fail if the committed page differs from generated results')
+    parser.add_argument('--index', type=Path, default=ROOT/'site/index.html')
+    parser.add_argument('--check', action='store_true', help='fail if the generated page or homepage summary differs from results')
     args = parser.parse_args()
     if args.check and args.import_run:
         parser.error('--check cannot import a run')
@@ -164,6 +210,8 @@ if __name__ == '__main__':
             render(args.results, generated)
             if generated.read_bytes() != args.output.read_bytes():
                 raise SystemExit('comparison.html is stale; run site/render/comparison.py')
-        print('comparison.html matches committed results')
+        render_index(args.results, args.index, check=True)
+        print('comparison.html and index summary match committed results')
     else:
         render(args.results, args.output)
+        render_index(args.results, args.index)

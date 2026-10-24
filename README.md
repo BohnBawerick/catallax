@@ -40,6 +40,8 @@ In design: one modelling tolerance defines sameness, separate from display and e
 
 The code is early, and supported operations can still refuse. Measure it by its results, not the length of its roadmap.
 
+The [five-tool target-part comparison](https://kernel.zigrawbohnbawerick.org/comparison.html) records pinned versions, construction and edit timings, and per-part correctness checks.
+
 - `catallax-numbers` supplies exact arithmetic, certified enclosures and decisions, polynomial roots, construction facts and marks. The shared algebraic foundation adds `RealPoly` and certified sine/cosine construction for rational-degree angles.
 - `catallax-shapes` stores exact algebraic placements and analytic dimensions, including elliptic-cylinder definitions, with proven parameter enclosures. Derived points retain their definitions. These definitions do not imply complete recipe coverage for every kind.
 - `catallax-topology` builds blocks, cylinders, spheres, cones and tori in append-only curved topology and checks structural faults.

@@ -84,6 +84,8 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/occt"
           "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
           "$RUNNER_TEMP/occt/bin/python" -B -m unittest discover -s tools/step-regressions -v
+      - name: Generated comparison page
+        run: python3 -B site/render/comparison.py --check
       - run: cargo test --workspace --release --doc
 
   check:

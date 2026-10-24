@@ -52,8 +52,9 @@ Third-party files retain their own terms; see `THIRD-PARTY.txt`.
 ```sh
 python3 -B site/render/comparison.py --import-run /tmp/h2h/five-tools/head-to-head.json
 python3 -B site/render/comparison.py
+python3 -B site/render/comparison.py --check
 ```
 
-The generator refuses incomplete target coverage, missing engines or a different machine class. The log-scale speed bars, per-part correctness table and per-tool target-range table all come from those committed rows. `comparison.css` uses the existing brand tokens and fonts. Preview `/comparison.html` at desktop and phone widths and exercise its target selector.
+The generator refuses incomplete target coverage, missing engines or a different machine class. The log-scale speed bars, per-part correctness table and per-tool target-range table all come from committed per-sample observations. It also updates the homepage's `comparison-summary` paragraph with Catallax's count of targets whose construction and edit completed in every measured sample, without changing the historical table. `--check` rejects a stale page or homepage summary. `comparison.css` uses the existing brand tokens and fonts. Preview `/comparison.html` at desktop and phone widths and exercise its target selector.
 
 The page states that OpenCASCADE is both a competitor and the STEP importer. Properties and expected membership use independent analytic definitions, with unavailable property formulas explicitly unmeasured. Pinned releases, the Pali Ijo source-distribution exception, rebuild modes, failed phases and name-check limits remain visible. See the [rerun guide](../.claude/skills/verify-catallax/scripts/head-to-head/README.md) for preparation and commands.

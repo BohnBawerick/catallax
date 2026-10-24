@@ -127,11 +127,12 @@ fn planar_box(
 fn face_box(
     model: &mut Model,
     face: FaceId,
+    planar: bool,
     dec: &mut Decider,
 ) -> Result<Option<[Ball; 3]>, Refusal> {
     let surface = model.geom().surface(model.face(face).surface).clone();
     let (origin, axis, reference) = match &surface {
-        Surface::Plane(plane) => return planar_box(model, face, plane, dec),
+        Surface::Plane(plane) if planar => return planar_box(model, face, plane, dec),
         Surface::Sphere(s) => return sphere_box(&s.center, &s.radius, dec).map(Some),
         Surface::Torus(s) => return sphere_box(&s.center, &(&s.major + &s.minor), dec).map(Some),
         Surface::Cylinder(s) => (&s.origin, &s.axis, &s.ref_dir),
@@ -239,10 +240,19 @@ fn face_box(
     Ok(Some(std::array::from_fn(|i| a[i].hull(&b[i]))))
 }
 
-#[derive(Default)]
-pub(crate) struct FaceBounds(BTreeMap<FaceId, Option<[Ball; 3]>>);
+pub(crate) struct FaceBounds {
+    algebraic: bool,
+    boxes: BTreeMap<FaceId, Option<[Ball; 3]>>,
+}
 
 impl FaceBounds {
+    pub(crate) fn new(algebraic: bool) -> Self {
+        Self {
+            algebraic,
+            boxes: BTreeMap::new(),
+        }
+    }
+
     pub(crate) fn disjoint(
         &mut self,
         model: &mut Model,
@@ -251,15 +261,27 @@ impl FaceBounds {
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
         for (bounded, other) in [(a, b), (b, a)] {
-            if let std::collections::btree_map::Entry::Vacant(entry) = self.0.entry(bounded) {
-                entry.insert(face_box(model, bounded, dec)?);
-            }
-            if let Some(bounds) = self.0.get(&bounded).expect("cached face bounds") {
+            // Retain the native rational fallback and its accounting. Broader
+            // finite-plane bounds and memoization belong to the algebraic
+            // construction path that performs support pruning up front.
+            let bounds = if self.algebraic {
+                if let std::collections::btree_map::Entry::Vacant(entry) = self.boxes.entry(bounded)
+                {
+                    entry.insert(face_box(model, bounded, true, dec)?);
+                }
+                self.boxes
+                    .get(&bounded)
+                    .expect("cached face bounds")
+                    .clone()
+            } else {
+                face_box(model, bounded, false, dec)?
+            };
+            if let Some(bounds) = bounds {
                 let Some(polynomial) = model.geom().surface(model.face(other).surface).implicit()
                 else {
                     continue;
                 };
-                let value = polynomial.eval_ball(bounds, dec)?;
+                let value = polynomial.eval_ball(&bounds, dec)?;
                 if !value.contains_zero() {
                     return Ok(true);
                 }
@@ -291,7 +313,7 @@ mod tests {
             })
             .unwrap();
         let mut dec = Decider::default();
-        let mut bounds = FaceBounds::default();
+        let mut bounds = FaceBounds::new(true);
         for (x, excluded) in [(3, true), (2, false), (1, false)] {
             let surface = model.geom_mut().add_surface(Surface::Plane(Plane {
                 origin: Point3::new(Real::from_i64(x), Real::zero(), Real::zero()),

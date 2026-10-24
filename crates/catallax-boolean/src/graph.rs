@@ -160,7 +160,7 @@ pub(crate) fn intersect(
             .surface(model.face(*face).surface)
             .has_rational_definition()
     });
-    let mut bounds = crate::bounds::FaceBounds::default();
+    let mut bounds = crate::bounds::FaceBounds::new(algebraic);
     let mut pool = Vec::new();
     let mut points = Vec::new();
     let mut mandatory = BTreeSet::new();

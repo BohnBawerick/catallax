@@ -226,10 +226,18 @@ boundary, surviving intermediate boundaries and a result-material transition
 in one such sector prove an open named patch approaching the contact.
 Exhausting the sectors can instead prove
 the selected patch absent, including a consumed sharp circle. Distinct source
-roles sharing a carrier, tangent or singular supports and larger curved fans
-remain unresolved. An isolated buried tangency cannot supply this proof.
-Draft tile domains retain their ordinary named-face proof: carrier sectors
-alone do not identify the selected coplanar tile.
+roles sharing a carrier and singular supports remain unresolved.
+
+At a tangent seam, transverse trim signs can instead make the other tangent
+supports irrelevant. Universal Boolean bounds leave their signs unknown and
+prove an open source patch approaches the contact. Exact enclosure of a complete
+ring-torus tube in a tangent plane, coaxial cylinder or coaxial sphere also fixes
+strict carrier signs away from their contact circle. Meridional departure is
+proved separately; tangent-plane samples alone never decide those signs.
+The source leaf must have one Boolean polarity, and every intermediate named
+boundary must survive. Other tangencies and larger curved fans remain unresolved.
+An isolated buried tangency cannot donate a named patch. Draft tile domains retain
+their ordinary named-face proof; carrier sectors do not identify a coplanar tile.
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
 

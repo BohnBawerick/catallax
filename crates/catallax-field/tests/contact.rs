@@ -156,3 +156,66 @@ fn fractional_bevel_and_cap_both_own_the_contact_circle() {
             .any(|n| matches!(&n.role,Role::Side{segment,..} if segment.as_str()=="bottom"))
     );
 }
+
+#[test]
+fn circular_offset_tangent_rails_keep_both_incident_names() {
+    let plan = Plan::compile(&recipe(vec![
+        json!({"id":"stock","op":"cylinder","radius":"2","height":"4","pose":pose("0")}),
+        json!({"id":"parallel","op":"offset","body":"stock","distance":"1/5"}),
+    ]))
+    .unwrap();
+    for (p, component) in [(["11/5", "0", "0"], 0), (["2", "0", "-1/5"], 2)] {
+        let [x, y, z] = p.map(|v| catallax_numbers::Rational::parse(v).unwrap());
+        let point = RPoint3::new(x, y, z);
+        let mut names = Vec::new();
+        for face in plan.faces() {
+            let query = plan
+                .closed_face_query_checked(
+                    plan.select(&face.origin).unwrap(),
+                    &point,
+                    &mut Workspace::default(),
+                    &mut Decider::default(),
+                )
+                .unwrap();
+            if query.state != FaceState::OnFace {
+                continue;
+            }
+            let Direction::Unique(normal) = query.direction else {
+                panic!("{query:?}")
+            };
+            assert!(normal[component].contains(if component == 0 { 1.0 } else { -1.0 }));
+            if !names.contains(&face.origin) {
+                names.push(face.origin.clone());
+            }
+        }
+        assert_eq!(names.len(), 2, "{p:?}: {names:?}");
+        assert!(names.iter().any(|o| matches!(o.role, Role::Round { .. })));
+        assert!(names.iter().any(|o| o.step.as_str() == "stock"));
+    }
+}
+
+#[test]
+fn tangent_offset_cells_cannot_donate_a_buried_named_patch() {
+    let plan = Plan::compile(&recipe(vec![
+        json!({"id":"outer","op":"sphere","radius":"3/2","pose":pose("0")}),
+        json!({"id":"outer_parallel","op":"offset","body":"outer","distance":"1/2"}),
+        json!({"id":"inner","op":"sphere","radius":"1/2","pose":pose("1")}),
+        json!({"id":"inner_parallel","op":"offset","body":"inner","distance":"1/2"}),
+        json!({"id":"result","op":"boolean","kind":"union","target":"outer_parallel","tool":"inner_parallel"}),
+    ])).unwrap();
+    let origin = &plan
+        .faces()
+        .iter()
+        .find(|f| f.origin.step.as_str() == "inner")
+        .unwrap()
+        .origin;
+    let query = plan
+        .closed_face_query_checked(
+            plan.select(origin).unwrap(),
+            &RPoint3::new(2.into(), 0.into(), 0.into()),
+            &mut Workspace::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_ne!(query.state, FaceState::OnFace);
+}

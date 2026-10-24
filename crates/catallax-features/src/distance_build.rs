@@ -235,12 +235,12 @@ pub(crate) fn offset(
             None => catallax_topology::empty(model),
         });
     }
+    if direction == Sign::Positive
+        && let Some(skin) = crate::circular_build::skin(model, body, dec)?
+    {
+        return crate::circular_build::outward(model, &skin, distance, step, dec);
+    }
     if let Some(skin) = cylindrical(model, body, dec)? {
-        if direction == Sign::Positive {
-            return Err(bad(
-                "outward cylinder offsets require toroidal cap-edge joins",
-            ));
-        }
         return Ok(match skin.eroded(&(-distance), dec)? {
             Some(skin) => cylinder(model, &skin),
             None => catallax_topology::empty(model),
@@ -320,6 +320,25 @@ pub(crate) fn shell(
             Err(e) => return Err(e),
         };
         let cavity = crate::cone_build::build(model, &cavity);
+        return Ok(catallax_boolean::boolean(
+            model,
+            body,
+            cavity,
+            catallax_boolean::BoolOp::Subtract,
+            dec,
+        )
+        .map_err(|e| e.refusal)?
+        .body);
+    }
+    if let Some(skin) = crate::circular_build::skin(model, body, dec)? {
+        let selected = skin.select(open)?;
+        if selected.iter().all(|v| *v) {
+            return Ok(catallax_topology::empty(model));
+        }
+        let Some(cavity) = skin.cavity(&selected, thickness, step, dec)? else {
+            return Ok(body);
+        };
+        let cavity = crate::cone_build::sections(model, &cavity.faces, &cavity.boundaries, None);
         return Ok(catallax_boolean::boolean(
             model,
             body,
@@ -444,6 +463,21 @@ pub(crate) fn thicken(
         let [index] = indices.as_slice() else {
             return Err(bad(
                 "sharp selected conical joins require their projection normal sectors",
+            ));
+        };
+        let sweep = skin.face_sweep(*index, thickness, side, step, dec)?;
+        return crate::cone_build::sweep(model, &sweep, dec);
+    }
+    if let Some(skin) = crate::circular_build::skin(model, body, dec)? {
+        let selected = skin.select(refs)?;
+        let indices: Vec<_> = selected
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| v.then_some(i))
+            .collect();
+        let [index] = indices.as_slice() else {
+            return Err(bad(
+                "sharp selected circular joins require their projection normal sectors",
             ));
         };
         let sweep = skin.face_sweep(*index, thickness, side, step, dec)?;

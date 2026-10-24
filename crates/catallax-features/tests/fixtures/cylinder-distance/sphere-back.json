@@ -1,0 +1,65 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "sphere-back",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "limit",
+      "op": "sphere",
+      "radius": "5/2",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "clipped",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "stock",
+      "tool": "limit"
+    },
+    {
+      "id": "result",
+      "op": "thicken",
+      "body": "clipped",
+      "faces": [
+        {
+          "face": {
+            "step": "limit"
+          }
+        }
+      ],
+      "thickness": "1/5",
+      "side": "back"
+    }
+  ],
+  "result": "result"
+}

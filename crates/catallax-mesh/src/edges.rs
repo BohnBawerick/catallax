@@ -11,6 +11,20 @@ use crate::{
     failure,
 };
 
+// Planar predicates retain exact expression graphs for every boundary sample,
+// not just a binary64 vertex. Bound those graphs before materialising them.
+const MAX_EXACT_SAMPLES: usize = 4096;
+
+fn reserve_exact_sample(points: &BTreeMap<usize, Point3>) -> Result<(), Refusal> {
+    if points.len() >= MAX_EXACT_SAMPLES {
+        return Err(Refusal::new(
+            "mesh.resource-limit",
+            "display exhausted its 4096 exact boundary sample allowance",
+        ));
+    }
+    Ok(())
+}
+
 /// Membership in shared topological polylines, independent of chart copies.
 #[derive(Default)]
 pub(crate) struct Rails {
@@ -249,6 +263,7 @@ impl Sampler<'_> {
         let index = self.positions.len();
         self.positions.push(middle);
         if let Some(points) = &mut self.exact_positions {
+            reserve_exact_sample(points)?;
             points.insert(index, self.piece.evaluate_exact(&mid, self.dec)?);
         }
         self.segment(
@@ -334,6 +349,7 @@ pub(crate) fn sample(
             let index = result.mesh.positions.len();
             result.mesh.positions.push(p);
             if planar {
+                reserve_exact_sample(&result.exact_positions)?;
                 result
                     .exact_positions
                     .insert(index, pieces[0].evaluate_exact(&Rational::zero(), dec)?);
@@ -363,6 +379,7 @@ pub(crate) fn sample(
                 let index = result.mesh.positions.len();
                 result.mesh.positions.push(p);
                 if planar {
+                    reserve_exact_sample(&result.exact_positions)?;
                     result
                         .exact_positions
                         .insert(index, piece.evaluate_exact(&Rational::one(), dec)?);

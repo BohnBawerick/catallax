@@ -32,12 +32,17 @@ pub(crate) struct RegionCache {
     traces: HashMap<EdgeId, CurveTrace>,
     coordinates: HashMap<(PointId, u32), [Ball; 3]>,
 }
+// Numeric precision is not a stack or subdivision allowance. Exhaustion must
+// not be retried at a higher precision with a still deeper recursion tree.
+const MAX_SAMPLE_DEPTH: u32 = 32;
+const MAX_SAMPLE_CELLS: usize = 4096;
 
 struct Sampling<'a> {
     piece: &'a TracePiece,
     projection: &'a Projection,
     queries: &'a [Box2],
     bits: u32,
+    remaining: &'a mut usize,
     dec: &'a mut Decider,
 }
 
@@ -49,6 +54,13 @@ impl Sampling<'_> {
         depth: u32,
         out: &mut Vec<Segment>,
     ) -> Result<(), Refusal> {
+        if *self.remaining == 0 {
+            return Err(refusal(
+                "boolean.sampling-budget",
+                "face membership exhausted its deterministic sampling cell allowance",
+            ));
+        }
+        *self.remaining -= 1;
         let piece = self.piece;
         let projection = self.projection;
         let queries = self.queries;
@@ -119,6 +131,12 @@ impl Sampling<'_> {
             return Err(refusal(
                 "boolean.classify-ambiguous",
                 "a trace midpoint has no separated chart at this precision",
+            ));
+        }
+        if depth >= MAX_SAMPLE_DEPTH {
+            return Err(refusal(
+                "boolean.sampling-budget",
+                "face membership exhausted its stack-safe subdivision allowance",
             ));
         }
         if depth >= bits {
@@ -198,6 +216,7 @@ fn build(
     dec: &mut Decider,
 ) -> Result<Vec<Vec<(Point2, Point2)>>, Refusal> {
     let mut polygons = Vec::new();
+    let mut remaining = MAX_SAMPLE_CELLS;
     for &loop_id in loops {
         let Loop::Coedges(coedges) = model.loop_(loop_id) else {
             continue;
@@ -227,6 +246,7 @@ fn build(
                     projection,
                     queries,
                     bits,
+                    remaining: &mut remaining,
                     dec,
                 }
                 .sample(

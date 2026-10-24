@@ -159,3 +159,15 @@ budgets and the piece 1 contract are unchanged.
 ## Verification limits
 
 Comparison 01 observed 32 passing blind contract tests, two passing independent oracle checks and 16 passing implementation unit tests. One blind test failed an assertion and two did not complete within their observation windows. The follow-up corrects the test's undrained statistics call, adds deep-precision enclosure and GMP dyadic-normalization regressions, and restores both formerly unfinished contracts to default CI. All public signatures, proof methods and deterministic work charges are unchanged. A single local run does not prove cross-machine determinism.
+
+## Shared identities and algebraic projection
+
+The standard-hole regressions use exact cyclotomic angle definitions, not decimal substitutes. A bounded formal rational-function reduction treats algebraic leaves as opaque values and applies only polynomial identities and the defined relation `sqrt(r)^2 = r`. It proves constants by proportional numerator and denominator polynomials; failure never proves nonzero or algebraic independence. Domain validation precedes cancellation. Tests retain hidden division-by-zero and negative-square-root refusals, signed gaps of `1e-30`, and zero-work refusal.
+
+Univariate algebraic-coefficient equations of degree at most two retain their closed exact roots after certifying degree, discriminant and leading sign. Rational equations still use the rational root isolator. Tests independently check root residuals, order with negative leading coefficients, repeated and nonreal roots, linear and constant equations, undefined coefficients and exhausted requests.
+
+The optional formal pass has its own smaller work reservation and dispatches from immutable definition-kind metadata. Pure quadratic expressions retain the tower path; pinned system coordinates retain their system solver, whose defining relations are unavailable to a formal polynomial expansion. The positive circle/diagonal system regression mixes a coordinate with a general angle definition, repeats optional identity attempts, then requires a certified positive sign within the original small request allowance. This guards against spending earlier answers' work on an inconclusive auxiliary method.
+
+Native quartic definitions retain the pre-existing generator/tower dispatch as well. The independent quartic regression uses the certificate `alpha^4-alpha-1=0`, raises its residual to the sixteenth power, repeats optional attempts and still requires exact zero within 100,000 request work units. An opaque expansion must not preempt the method that can use the defining polynomial.
+
+The formal helper counts newly entered nodes before descending, including ancestors not yet in its memo. Matching opaque atom definitions is iterative, work charged and separately bounded. Two public regressions use 1,024-level expressions under 3,000 request work units: direct traversal must decline while leaving a positive sign filter available, and two independently constructed square-root radicands must decline without recursive definition matching consuming the request.

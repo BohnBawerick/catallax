@@ -1007,6 +1007,25 @@ pub(super) fn construct(
                     );
                 }
             }
+            // A circular component remains a circular section when its exact
+            // definition needs an intersection witness. GeomStore can infer
+            // this from Curve::Circle incidence, but cannot inspect this plan.
+            if matches!(spec.form, CurveForm::Circle { .. }) {
+                for surface in [a, b] {
+                    if matches!(
+                        geom.surface(surface),
+                        Surface::Cylinder(_) | Surface::Cone(_)
+                    ) {
+                        record(
+                            geom,
+                            FactKind::Coaxial,
+                            GeomKey::Curve(curve),
+                            GeomKey::Surface(surface),
+                            None,
+                        );
+                    }
+                }
+            }
             if let Some(witness) = witness {
                 record(
                     geom,

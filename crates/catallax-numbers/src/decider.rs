@@ -238,6 +238,48 @@ impl Decider {
             StrictSign::Positive => StrictOrder::Greater,
         })
     }
+    /// Attempts only a bounded rational-function identity over shared real
+    /// definitions, after validating the domain. `None` is inconclusive. This
+    /// does not construct annihilators or assume algebraic independence.
+    pub fn rational_identity(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
+        self.stats.decisions += 1;
+        self.check_deadline()?;
+        if !crate::identity::eligible(x) {
+            // Declining an optional method makes no definedness claim. Leave
+            // domain validation to the existing method that can use this kind
+            // of definition, rather than evaluating it twice.
+            return Ok(None);
+        }
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = (|| {
+            if !x.node.fast_defined {
+                match evaluate(
+                    x,
+                    64u32.min(self.policy.max_precision_bits),
+                    &mut work,
+                    false,
+                ) {
+                    Ok(_) => {}
+                    Err(EvalError::Pending(_)) => return Ok(None),
+                    Err(EvalError::Domain(error)) => return Err(error),
+                    Err(EvalError::Limit(code)) => {
+                        return Err(Refusal::new(code, "identity domain proof stopped"));
+                    }
+                }
+            }
+            crate::identity::rational(x, &mut work)
+                .map_err(|code| Refusal::new(code, "rational identity proof stopped"))
+        })();
+        self.account(&work);
+        self.check_deadline()?;
+        match &result {
+            Ok(Some(_)) => self.stats.exact += 1,
+            Err(_) => self.stats.refused += 1,
+            Ok(None) => {}
+        }
+        result
+    }
+
     /// Attempts an exact rational coefficient reduction. `None` is inconclusive,
     /// not a proof of irrationality or definedness. Domain and resource failures
     /// retain their numeric reasons; original expression definitions are unchanged.
@@ -272,9 +314,12 @@ impl Decider {
                     }
                 }
             }
-            let reduction = crate::tower::rational(x, &mut work).and_then(|value| match value {
+            let reduction = crate::identity::rational(x, &mut work).and_then(|value| match value {
                 Some(value) => Ok(Some(value)),
-                None => crate::generator::rational(x, &mut work),
+                None => crate::tower::rational(x, &mut work).and_then(|value| match value {
+                    Some(value) => Ok(Some(value)),
+                    None => crate::generator::rational(x, &mut work),
+                }),
             });
             reduction.map_err(|code| Refusal::new(code, "rational coefficient reduction stopped"))
         })();
@@ -709,15 +754,22 @@ impl Decider {
                     }
                     if !tried_exact {
                         tried_exact = true;
-                        let exact = crate::tower::sign(x, work).and_then(|sign| match sign {
-                            Some(s) => Ok(Some(s)),
-                            None => crate::quadratic::sign(x, work).and_then(|sign| match sign {
-                                Some(s) => Ok(Some(s)),
+                        let exact =
+                            crate::identity::rational(x, work).and_then(|value| match value {
+                                Some(value) => Ok(Some(value.sign())),
                                 None => {
-                                    crate::generator::rational(x, work).map(|r| r.map(|r| r.sign()))
+                                    crate::tower::sign(x, work).and_then(|sign| match sign {
+                                        Some(s) => Ok(Some(s)),
+                                        None => crate::quadratic::sign(x, work).and_then(|sign| {
+                                            match sign {
+                                                Some(s) => Ok(Some(s)),
+                                                None => crate::generator::rational(x, work)
+                                                    .map(|r| r.map(|r| r.sign())),
+                                            }
+                                        }),
+                                    })
                                 }
-                            }),
-                        });
+                            });
                         match exact {
                             Ok(Some(Sign::Zero)) => return coincident(ZeroProof::Algebraic),
                             Ok(Some(s)) => {
@@ -1246,6 +1298,9 @@ fn zero_proof(x: &Real, b: &Ball, w: &mut Work) -> Result<bool, &'static str> {
     if let Some(r) = &x.node.rational {
         w.exact(r, r, false)?;
         return Ok(r.is_zero());
+    }
+    if let Some(value) = crate::identity::rational(x, w)? {
+        return Ok(value.is_zero());
     }
     if let Some(sign) = crate::tower::sign(x, w)? {
         return Ok(sign == Sign::Zero);

@@ -518,16 +518,20 @@ fn comparison_query_exhaustion_is_a_budget_refusal_not_an_internal_error() {
     fs::remove_dir_all(dir).unwrap();
 }
 
-/// Unfinished Boolean coverage, not impossible geometry. Geometric quadric
-/// classification and construction intent must settle these without relaxing work.
+/// Standard algebraic drill angles retain exact construction intent within the
+/// existing whole-request allowance, including summary and STEP export.
 #[test]
-fn standard_hole_angles_refuse_cleanly_at_the_existing_request_allowance() {
+fn standard_hole_angles_build_at_the_existing_request_allowance() {
     use catallax_cli::verification::{Request, answer};
     for (tip, head) in [
         (json!({"cone":"118"}), None),
         (
             json!("flat"),
             Some(json!({"countersink":{"diameter":"8","angle":"82"}})),
+        ),
+        (
+            json!("flat"),
+            Some(json!({"countersink":{"diameter":"8","angle":"100"}})),
         ),
     ] {
         let dir = std::env::temp_dir().join(format!(
@@ -550,12 +554,12 @@ fn standard_hole_angles_refuse_cleanly_at_the_existing_request_allowance() {
             max_work: 100_000_000,
         })
         .unwrap();
-        assert_eq!(response["manifest"]["status"], "refused", "{response}");
-        assert_eq!(
-            response["manifest"]["refusal"]["code"], "numbers.operation-budget",
-            "{response}"
-        );
-        assert!(!dir.join("answer.step").exists());
+        assert_eq!(response["manifest"]["status"], "answered", "{response}");
+        assert_eq!(response["manifest"]["exact"], true, "{response}");
+        assert_eq!(response["manifest"]["marks"], json!([]));
+        assert_eq!(response["work"]["exhausted"], false, "{response}");
+        assert!(dir.join("answer.step").is_file());
+        assert!(fs::metadata(dir.join("answer.step")).unwrap().len() > 0);
         fs::remove_dir_all(dir).unwrap();
     }
 }

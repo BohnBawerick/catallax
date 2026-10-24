@@ -186,6 +186,187 @@ fn coaxial_facts_keep_squared_radius_equality_and_separation_distinct() {
 }
 
 #[test]
+fn algebraic_circular_sections_keep_radius_gaps_and_cone_nappes_distinct() {
+    use catallax_shapes::Cone;
+    for (height, radius_sq, expected) in [
+        (1, 2, CurveSurface::Contained),
+        (1, 3, CurveSurface::Disjoint),
+        (-1, 2, CurveSurface::Disjoint),
+    ] {
+        let mut g = GeomStore::new();
+        let cone = g.add_surface(Surface::Cone(Cone {
+            apex: p(0, 0, 0).to_real(),
+            axis: v(0, 0, 3).to_real(),
+            slope: Real::from_i64(2).sqrt(),
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        let circle = g.add_curve(Curve::Circle(Circle {
+            center: p(0, 0, height).to_real(),
+            normal: v(0, 0, -2).to_real(),
+            radius_sq: Real::from_i64(radius_sq),
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        g.record_fact(Fact {
+            kind: FactKind::Coaxial,
+            a: GeomKey::Curve(circle),
+            b: GeomKey::Surface(cone),
+            at: None,
+            origin: FactOrigin::Construction("test.circular-section"),
+        });
+        let answer = intersect_curve_surface(&mut g, circle, cone, &mut dec()).unwrap();
+        assert!(answer.is_exact());
+        assert_eq!(answer.value, expected);
+        assert_eq!(g.point_count(), 0);
+    }
+    for different_radius in [false, true] {
+        let mut g = GeomStore::new();
+        let cylinder = g.add_surface(Surface::Cylinder(Cylinder {
+            origin: p(0, 0, 0).to_real(),
+            axis: v(0, 0, 3).to_real(),
+            radius_sq: r(2).into(),
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        let circle = g.add_curve(Curve::Circle(Circle {
+            center: catallax_shapes::Point3::new(
+                Real::zero(),
+                Real::zero(),
+                Real::from_i64(2).sqrt(),
+            ),
+            normal: v(0, 0, -2).to_real(),
+            radius_sq: if different_radius {
+                Real::from(r(2) + Rational::parse("1e-30").unwrap())
+            } else {
+                r(2).into()
+            },
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        g.record_fact(Fact {
+            kind: FactKind::Coaxial,
+            a: GeomKey::Curve(circle),
+            b: GeomKey::Surface(cylinder),
+            at: None,
+            origin: FactOrigin::Construction("test.circular-section"),
+        });
+        let answer = intersect_curve_surface(&mut g, circle, cylinder, &mut dec()).unwrap();
+        assert!(answer.is_exact());
+        assert_eq!(
+            answer.value,
+            if different_radius {
+                CurveSurface::Disjoint
+            } else {
+                CurveSurface::Contained
+            }
+        );
+        assert_eq!(g.point_count(), 0);
+    }
+}
+
+#[test]
+fn witness_backed_circular_sections_retain_their_carrier_axis() {
+    let mut g = GeomStore::new();
+    let cone = g.add_surface(Surface::Cone(catallax_shapes::Cone {
+        apex: p(0, 0, 0).to_real(),
+        axis: v(0, 0, 1).to_real(),
+        slope: Real::from_i64(2).sqrt(),
+        ref_dir: v(1, 0, 0).to_real(),
+    }));
+    let cap = plane(&mut g, p(0, 0, 1), v(0, 0, 1), v(1, 0, 0));
+    let circle = curve(&components(&mut g, cone, cap, &mut dec())[0]);
+    assert!(matches!(g.curve(circle), Curve::Intersection(_)));
+    assert!(g.facts().holds(
+        FactKind::Coaxial,
+        GeomKey::Curve(circle),
+        GeomKey::Surface(cone)
+    ));
+    let cylinder = g.add_surface(Surface::Cylinder(Cylinder {
+        origin: p(0, 0, 0).to_real(),
+        axis: v(0, 0, 3).to_real(),
+        radius_sq: r(2).into(),
+        ref_dir: v(1, 0, 0).to_real(),
+    }));
+    g.record_fact(Fact {
+        kind: FactKind::Coaxial,
+        a: GeomKey::Surface(cone),
+        b: GeomKey::Surface(cylinder),
+        at: None,
+        origin: FactOrigin::Construction("test.shared-axis"),
+    });
+    let points = g.point_count();
+    let answer = intersect_curve_surface(&mut g, circle, cylinder, &mut dec()).unwrap();
+    assert!(answer.is_exact());
+    assert_eq!(answer.value, CurveSurface::Contained);
+    assert_eq!(g.point_count(), points);
+}
+
+#[test]
+fn algebraic_line_hits_share_their_parameter_and_honor_the_cone_nappe() {
+    for angle in [82, 100] {
+        let [sine, cosine] = catallax_numbers::sin_cos_degrees(&r(angle), &mut dec()).unwrap();
+        let slope = sine / (Real::one() + cosine);
+        for height in [-1, 1] {
+            let mut g = GeomStore::new();
+            let cone = g.add_surface(Surface::Cone(catallax_shapes::Cone {
+                apex: p(0, 0, 0).to_real(),
+                axis: v(0, 0, 3).to_real(),
+                slope: slope.clone(),
+                ref_dir: v(1, 0, 0).to_real(),
+            }));
+            let line = g.add_curve(Curve::Line(Line {
+                origin: p(0, 0, height).to_real(),
+                dir: v(2, 0, 0).to_real(),
+            }));
+            let (answer, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+                intersect_curve_surface(&mut g, line, cone, &mut dec())
+            });
+            let answer = answer.unwrap_or_else(|e| panic!("{e}: {work:?}"));
+            assert!(!work.exhausted);
+            assert!(answer.is_exact());
+            if height < 0 {
+                assert_eq!(answer.value, CurveSurface::Disjoint);
+                assert_eq!(g.point_count(), 0);
+            } else {
+                let CurveSurface::Meets(hits) = answer.value else {
+                    panic!("two exact crossings required")
+                };
+                assert_eq!(hits.len(), 2);
+                for (hit, want) in hits
+                    .iter()
+                    .zip([StrictSign::Negative, StrictSign::Positive])
+                {
+                    assert_eq!(hit.contact, Contact::Crossing);
+                    let point = g.position(hit.point);
+                    assert_eq!(dec().sign(&point.x).proven(), Some(&want));
+                    assert!(
+                        dec()
+                            .sign(&(&point.x.square() - &slope.square()))
+                            .is_coincident()
+                    );
+                    point_equal(
+                        &Point3::new(Real::zero(), point.y, point.z),
+                        &p(0, 0, 1).to_real(),
+                        &mut dec(),
+                    );
+                }
+            }
+        }
+        let mut g = GeomStore::new();
+        let cone = g.add_surface(Surface::Cone(catallax_shapes::Cone {
+            apex: p(0, 0, 0).to_real(),
+            axis: v(0, 0, 1).to_real(),
+            slope: slope.clone(),
+            ref_dir: v(1, 0, 0).to_real(),
+        }));
+        let generator = g.add_curve(Curve::Line(Line {
+            origin: p(0, 0, 0).to_real(),
+            dir: catallax_shapes::Vector3::new(slope, Real::zero(), Real::one()),
+        }));
+        let refusal = intersect_curve_surface(&mut g, generator, cone, &mut dec()).unwrap_err();
+        assert_eq!(refusal.code, "intersect.partial-containment-required");
+        assert_eq!(g.point_count(), 0);
+    }
+}
+
+#[test]
 fn curve_surface_tangent_facts_are_local_and_reused() {
     let mut g = GeomStore::new();
     let torus = g.add_surface(Surface::Torus(catallax_shapes::Torus {

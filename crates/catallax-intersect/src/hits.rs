@@ -12,7 +12,7 @@ use catallax_numbers::{
 };
 use catallax_shapes::{
     Circle, Curve, CurveId, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3, PointDef,
-    Position, SurfaceId,
+    Position, Surface, SurfaceId,
 };
 use std::sync::Arc;
 
@@ -346,6 +346,144 @@ fn compare(
     }
     compare_locations(&la, &lb, dec)
 }
+// These residuals are constant around the complete circle. Keeping squared
+// radii avoids adjoining an unnecessary square root to the coefficient field.
+fn circular_section(
+    geom: &GeomStore,
+    c: CurveId,
+    s: SurfaceId,
+    form: &CurveForm,
+    dec: &mut Decider,
+) -> Result<Option<CurveSurface>, Refusal> {
+    let CurveForm::Circle {
+        center,
+        normal,
+        radius_sq,
+        ..
+    } = form
+    else {
+        return Ok(None);
+    };
+    let surface = geom.surface(s);
+    if center.as_rational().is_some()
+        && normal.as_rational().is_some()
+        && radius_sq.rational_ref().is_some()
+        && surface.has_rational_definition()
+    {
+        // Preserve the existing native rational solver and its work accounting.
+        return Ok(None);
+    }
+    let residual = if let Surface::Plane(plane) = surface {
+        if sign(&normal.cross(&plane.normal).norm_squared(), dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        center.minus(&plane.origin).dot(&plane.normal)
+    } else {
+        if !matches!(surface, Surface::Cylinder(_) | Surface::Cone(_))
+            || !geom
+                .facts()
+                .holds(FactKind::Coaxial, GeomKey::Curve(c), GeomKey::Surface(s))
+        {
+            return Ok(None);
+        }
+        dec.note_fact_decision();
+        match surface {
+            Surface::Cylinder(cylinder) => radius_sq - &cylinder.radius_sq,
+            Surface::Cone(cone) => {
+                let height = center.minus(&cone.apex).dot(&cone.axis);
+                if sign(&height, dec)? == Sign::Negative {
+                    return Ok(Some(CurveSurface::Disjoint));
+                }
+                radius_sq
+                    - &(&cone.slope.square() * &(&height.square() / &cone.axis.norm_squared()))
+            }
+            _ => unreachable!("circular carrier checked above"),
+        }
+    };
+    Ok(Some(if sign(&residual, dec)? == Sign::Zero {
+        CurveSurface::Contained
+    } else {
+        CurveSurface::Disjoint
+    }))
+}
+
+// A line already supplies a separating parameter. Eliminating x, y and z
+// independently loses that correlation and needlessly eliminates coefficients.
+fn algebraic_line(
+    origin: &Point3,
+    direction: &catallax_shapes::Vector3,
+    surface: &Surface,
+    implicit: &RealPoly,
+    dec: &mut Decider,
+) -> Result<Solutions, Refusal> {
+    // Substitute into a rotational carrier in its defining frame. Expanding a
+    // translated cone in world coordinates first obscures its shared axial
+    // expressions and then requires eliminating the same identities again.
+    let rotational = match surface {
+        Surface::Cone(cone) => Some((&cone.apex, &cone.axis, Some(&cone.slope), None)),
+        Surface::Cylinder(cylinder) => Some((
+            &cylinder.origin,
+            &cylinder.axis,
+            None,
+            Some(&cylinder.radius_sq),
+        )),
+        _ => None,
+    };
+    let polynomial = if let Some((center, axis, slope, radius_sq)) = rotational {
+        let offset = origin.minus(center);
+        let perpendicular = offset.cross(axis);
+        let velocity = direction.cross(axis);
+        let mut a = velocity.norm_squared();
+        let mut b = &Real::from_i64(2) * &perpendicular.dot(&velocity);
+        let mut c = perpendicular.norm_squared();
+        if let Some(slope) = slope {
+            let height = offset.dot(axis);
+            let rate = direction.dot(axis);
+            let squared = slope.square();
+            a = &a - &(&squared * &rate.square());
+            b = &b - &(&Real::from_i64(2) * &(&squared * &(&height * &rate)));
+            c = &c - &(&squared * &height.square());
+        } else if let Some(radius_sq) = radius_sq {
+            c = &c - &(radius_sq * &axis.norm_squared());
+        }
+        RealPoly::from_terms(1, vec![(vec![0], c), (vec![1], b), (vec![2], a)])
+    } else {
+        let coordinates: [RealPoly; 3] = std::array::from_fn(|axis| {
+            let origin = [&origin.x, &origin.y, &origin.z];
+            let direction = [&direction.x, &direction.y, &direction.z];
+            RealPoly::from_terms(
+                1,
+                vec![
+                    (vec![0], origin[axis].clone()),
+                    (vec![1], direction[axis].clone()),
+                ],
+            )
+        });
+        let mut polynomial = RealPoly::zero(1);
+        for (monomial, coefficient) in implicit.terms() {
+            dec.check_deadline()?;
+            let mut term = RealPoly::constant(1, coefficient);
+            for (axis, power) in monomial.exponents().iter().enumerate() {
+                if *power != 0 {
+                    term = &term * &coordinates[axis].pow_u32(*power);
+                }
+            }
+            polynomial = &polynomial + &term;
+        }
+        polynomial
+    };
+    if polynomial.is_zero(dec)? {
+        return Ok(Solutions::Contained);
+    }
+    let roots = polynomial.real_roots(dec)?;
+    let mut points = Vec::with_capacity(roots.len());
+    for root in roots {
+        dec.check_deadline()?;
+        points.push(origin.plus(&direction.scaled(&root)));
+    }
+    Ok(Solutions::Points(points))
+}
+
 pub(super) fn intersect(
     geom: &mut GeomStore,
     c: CurveId,
@@ -361,15 +499,30 @@ pub(super) fn intersect(
         return Ok(Answer::exact(CurveSurface::Contained));
     }
     let form = query::form(geom, c, dec)?;
-    let equations = carrier_equations(geom, c, &form, dec)?;
+    if let Some(answer) = circular_section(geom, c, s, &form, dec)? {
+        return Ok(Answer::exact(answer));
+    }
     let implicit = geom.implicit(s).ok_or_else(|| {
         Refusal::new(
             "intersect.parametric-surface",
             "this intersection needs a finite parametric surface solver",
         )
     })?;
-    let solutions = solve::intersections(&equations, implicit, dec)?;
+    let solutions = if !geom.surface(s).has_rational_definition()
+        && let CurveForm::Line { origin, dir } = &form
+    {
+        algebraic_line(origin, dir, geom.surface(s), implicit, dec)?
+    } else {
+        let equations = carrier_equations(geom, c, &form, dec)?;
+        solve::intersections(&equations, implicit, dec)?
+    };
     let Solutions::Points(points) = solutions else {
+        if matches!(geom.surface(s), Surface::Cone(_)) && matches!(form, CurveForm::Line { .. }) {
+            return Err(Refusal::new(
+                "intersect.partial-containment-required",
+                "a complete generator line is only partly on the cone's retained nappe",
+            ));
+        }
         return Ok(Answer::exact(CurveSurface::Contained));
     };
     let mut marks = MarkLog::new();

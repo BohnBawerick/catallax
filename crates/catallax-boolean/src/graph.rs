@@ -154,6 +154,13 @@ pub(crate) fn intersect(
     }
     let first = model.faces_of_body(a);
     let second = model.faces_of_body(b);
+    let algebraic = first.iter().chain(&second).any(|face| {
+        !model
+            .geom()
+            .surface(model.face(*face).surface)
+            .has_rational_definition()
+    });
+    let mut bounds = crate::bounds::FaceBounds::new(algebraic);
     let mut pool = Vec::new();
     let mut points = Vec::new();
     let mut mandatory = BTreeSet::new();
@@ -175,6 +182,12 @@ pub(crate) fn intersect(
         for &fb in &second {
             let sa = model.face(fa).surface;
             let sb = model.face(fb).surface;
+            // Algebraic supports can meet far outside their finite trims. Use
+            // the certified section bounds before constructing those branches;
+            // an overlapping box leaves the ordinary intersection path intact.
+            if algebraic && bounds.disjoint(model, fa, fb, dec)? {
+                continue;
+            }
             let pair = if let Some(value) = pairs.get(&(sa, sb)) {
                 value.clone()
             } else {
@@ -182,7 +195,7 @@ pub(crate) fn intersect(
                     Ok(answer) => answer,
                     Err(refusal) => {
                         if refusal.code == "intersect.traced-pair-required"
-                            && crate::bounds::disjoint(model, fa, fb, dec)?
+                            && bounds.disjoint(model, fa, fb, dec)?
                         {
                             // This proves only this trimmed pair disjoint. Never
                             // cache it as a statement about the whole supports.

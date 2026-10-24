@@ -29,6 +29,11 @@ pub(crate) struct Node {
     pub coarse: Option<Ball>,
     pub rational: Option<Rational>,
     pub fast_defined: bool,
+    // Construction metadata for routing an optional proof method: bit 0 means
+    // an algebraic leaf outside the native quadratic/quartic routes; bit 1
+    // means a pinned system coordinate. This
+    // records definition kinds only and never proves a value or a domain.
+    pub identity_atoms: u8,
 }
 impl Real {
     /// Zero.
@@ -248,6 +253,19 @@ impl Real {
         rational: Option<Rational>,
         fast_defined: bool,
     ) -> Self {
+        let identity_atoms = match &expr {
+            Expr::Algebraic(a) => u8::from(matches!(&a.repr,
+                crate::algebraic::AlgebraicRepr::Root(root)
+                    if root.polynomial.degree().is_some_and(|degree| degree == 3 || degree > 4))),
+            Expr::Coordinate(..) => 2,
+            Expr::Neg(a) | Expr::Sqrt(a) | Expr::Square(a) | Expr::Pow(a, _) => {
+                a.node.identity_atoms
+            }
+            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => {
+                a.node.identity_atoms | b.node.identity_atoms
+            }
+            Expr::Rational(_) => 0,
+        };
         let coarse = rational
             .as_ref()
             .map(|r| Ball::from_rational(r, 1))
@@ -270,6 +288,7 @@ impl Real {
                 coarse,
                 rational,
                 fast_defined,
+                identity_atoms,
             }),
         }
     }

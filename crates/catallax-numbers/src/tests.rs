@@ -1340,3 +1340,207 @@ fn singleton_zero_certificates_do_not_require_elimination() {
         })
     ));
 }
+
+#[test]
+fn shared_algebraic_rational_identities_preserve_domains_and_small_gaps() {
+    let [sine, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    let slope = sine / (Real::one() + cosine);
+    let radius = real("3");
+    let depth = &radius / &slope;
+    // A formal rational identity holds for every defined nonzero slope, without
+    // eliminating its high-degree algebraic generator or approximating the gap.
+    let reconstructed = &slope * &(&depth + &real("4") - real("4"));
+    let zero = &reconstructed - &radius;
+    assert_eq!(
+        Decider::default().rational_identity(&zero).unwrap(),
+        Some(q("0"))
+    );
+    assert_eq!(Decider::default().rational_identity(&slope).unwrap(), None);
+    let (answer, work) = with_operation_budget(100_000_000, || Decider::default().sign(&zero));
+    assert!(answer.is_coincident(), "{answer:?} {work:?}");
+    assert!(!work.exhausted);
+    for epsilon in ["1e-30", "-1e-30"] {
+        let result = Decider::default().sign(&(&zero + &real(epsilon)));
+        assert_eq!(
+            result.proven(),
+            Some(&if epsilon.starts_with('-') {
+                StrictSign::Negative
+            } else {
+                StrictSign::Positive
+            }),
+            "{result:?}"
+        );
+    }
+    for undefined in [
+        &zero / &zero,
+        &zero * &(Real::one() / Real::zero()).pow_u32(0),
+        &zero * &real("-1").sqrt(),
+    ] {
+        assert!(Decider::default().rational_identity(&undefined).is_err());
+        assert!(matches!(
+            Decider::default().sign(&undefined),
+            Outcome::Refused(_)
+        ));
+    }
+    let (answer, work) = with_operation_budget(0, || Decider::default().sign(&zero));
+    assert!(matches!(answer, Outcome::Refused(_)));
+    assert!(work.exhausted);
+    let (answer, work) = with_operation_budget(0, || Decider::default().rational_identity(&zero));
+    assert!(answer.is_err());
+    assert!(work.exhausted);
+}
+
+#[test]
+fn algebraic_coefficient_quadratics_keep_order_multiplicity_and_domains() {
+    let [sine, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    let a = sine / (Real::one() + cosine);
+    for scale in [Real::one(), real("-3")] {
+        let polynomial = RealPoly::from_terms(
+            1,
+            vec![(vec![2], &scale * &a), (vec![0], -&(&scale * &a.square()))],
+        );
+        let (roots, work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::default();
+            let roots = polynomial.real_roots(&mut dec).unwrap();
+            assert_eq!(roots.len(), 2);
+            assert_eq!(dec.sign(&roots[0]).proven(), Some(&StrictSign::Negative));
+            assert_eq!(dec.sign(&roots[1]).proven(), Some(&StrictSign::Positive));
+            for root in &roots {
+                let outcome = dec.sign(&polynomial.eval_real(std::slice::from_ref(root)));
+                assert!(
+                    outcome.is_coincident(),
+                    "{outcome:?} {:?}",
+                    current_operation_work()
+                );
+            }
+            roots
+        });
+        assert_eq!(roots.len(), 2);
+        assert!(!work.exhausted);
+    }
+    for (terms, count) in [
+        (
+            vec![(vec![1], a.clone()), (vec![0], -&(&a * &real("3")))],
+            1,
+        ),
+        (
+            vec![
+                (vec![2], a.clone()),
+                (vec![1], -&(&a * &real("6"))),
+                (vec![0], &a * &real("9")),
+            ],
+            1,
+        ),
+        (vec![(vec![2], a.clone()), (vec![0], a.clone())], 0),
+        (vec![(vec![0], a.clone())], 0),
+    ] {
+        let polynomial = RealPoly::from_terms(1, terms);
+        let roots = polynomial.real_roots(&mut Decider::default()).unwrap();
+        assert_eq!(roots.len(), count);
+        if count == 1 {
+            assert!(
+                Decider::default()
+                    .sign(&(&roots[0] - &real("3")))
+                    .is_coincident()
+            );
+        }
+    }
+    let polynomial = RealPoly::from_terms(1, vec![(vec![1], a), (vec![0], real("1"))]);
+    let (result, work) =
+        with_operation_budget(0, || polynomial.real_roots(&mut Decider::default()));
+    assert!(result.is_err());
+    assert!(work.exhausted);
+    let undefined =
+        RealPoly::from_terms(1, vec![(vec![1], real("-1").sqrt()), (vec![0], real("1"))]);
+    assert!(undefined.real_roots(&mut Decider::default()).is_err());
+}
+
+#[test]
+fn optional_identities_leave_system_proof_work_available() {
+    let x = MPoly::var(2, 0);
+    let y = MPoly::var(2, 1);
+    let one = MPoly::constant(2, q("1"));
+    let system =
+        Arc::new(PolySystem::new(vec![&(&x * &x) + &(&(&y * &y) - &one), &x - &y]).unwrap());
+    let bounds = RootBox::new(vec![q("1/2"), q("1/2")], vec![q("1"), q("1")]).unwrap();
+    let Outcome::Proven(BoxRoots::One(root)) = Decider::default().certify_root(&system, &bounds)
+    else {
+        panic!("positive circle/diagonal root must certify");
+    };
+    let [_, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    // Every summand is positive. The formal method cannot use the system's
+    // constraints, so declining it must leave work for a certified sign filter.
+    let value = (&root.coordinate(0) + &cosine + real("3").sqrt() + real("5").sqrt()).pow_u32(12);
+    let (answer, work) = with_operation_budget(100_000, || {
+        let mut dec = Decider::default();
+        for _ in 0..10 {
+            assert_eq!(dec.rational_identity(&value).unwrap(), None);
+        }
+        dec.sign(&value)
+    });
+    assert_eq!(answer.proven(), Some(&StrictSign::Positive));
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn optional_identities_leave_native_quartic_proof_work_available() {
+    let polynomial = UPoly::new(vec![q("-1"), q("-1"), q("0"), q("0"), q("1")]);
+    let Outcome::Proven(roots) = Decider::default().real_roots(&polynomial) else {
+        panic!("quartic roots must isolate");
+    };
+    let alpha = Real::from_algebraic(roots.last().unwrap().value.clone());
+    // P(alpha)=0 by its certificate, so every positive power is zero. The
+    // existing generator method uses that relation; formal opaque expansion
+    // cannot. Repeated optional attempts must leave its proof work available.
+    let zero = (alpha.pow_u32(4) - alpha - real("1")).pow_u32(16);
+    let (answer, work) = with_operation_budget(100_000, || {
+        let mut dec = Decider::default();
+        for _ in 0..20 {
+            if let Some(value) = dec.rational_identity(&zero).unwrap() {
+                assert!(value.is_zero());
+            }
+        }
+        dec.sign(&zero)
+    });
+    assert!(answer.is_coincident(), "{answer:?} {work:?}");
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn deep_optional_identity_declines_before_spending_the_request() {
+    let [_, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    let mut values = vec![cosine];
+    for _ in 0..1024 {
+        values.push(values.last().unwrap() + &Real::zero());
+    }
+    let (answer, work) = with_operation_budget(3_000, || {
+        let mut dec = Decider::default();
+        let value = values.last().unwrap();
+        assert_eq!(dec.rational_identity(value).unwrap(), None);
+        dec.sign(value)
+    });
+    assert_eq!(answer.proven(), Some(&StrictSign::Positive));
+    assert!(!work.exhausted);
+    // Retain the ancestors until their parents are dropped, avoiding a deep
+    // destructor chain in the test itself.
+    while values.pop().is_some() {}
+}
+
+#[test]
+fn opaque_atom_matching_also_obeys_the_optional_work_bound() {
+    let [_, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    let mut a = vec![cosine.clone()];
+    let mut b = vec![cosine];
+    for _ in 0..1024 {
+        a.push(a.last().unwrap() + &Real::zero());
+        b.push(b.last().unwrap() + &Real::zero());
+    }
+    let zero = a.last().unwrap().sqrt() - b.last().unwrap().sqrt();
+    let (answer, work) =
+        with_operation_budget(3_000, || Decider::default().rational_identity(&zero));
+    assert_eq!(answer.unwrap(), None);
+    assert!(!work.exhausted);
+    drop(zero);
+    while a.pop().is_some() {}
+    while b.pop().is_some() {}
+}

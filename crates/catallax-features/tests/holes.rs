@@ -187,3 +187,189 @@ fn entry_and_wall_merge_into_one_physical_cylinder_with_both_origins() {
         "{parts:?}"
     );
 }
+
+#[test]
+fn standard_angles_preserve_exact_names_and_independent_point_sets() {
+    use catallax_boolean::{Containment, classify_point};
+    use catallax_field::{Location, Plan, Workspace};
+    use catallax_numbers::with_operation_budget;
+    use catallax_shapes::RPoint3;
+
+    for (tip, head, probes) in [
+        (
+            json!({"cone":"118"}),
+            None,
+            vec![
+                ("1/2", "17/4", false),
+                ("3/4", "17/4", true),
+                ("0", "19/4", true),
+            ],
+        ),
+        (
+            json!("flat"),
+            Some(json!({"countersink":{"diameter":"8","angle":"82"}})),
+            vec![("3", "1", false), ("7/2", "1", true), ("0", "17/4", true)],
+        ),
+        (
+            json!("flat"),
+            Some(json!({"countersink":{"diameter":"8","angle":"100"}})),
+            vec![("5/2", "1", false), ("3", "1", true), ("0", "17/4", true)],
+        ),
+    ] {
+        let recipe = recipe(json!({"blind":"4"}), tip, head);
+        let (built, work) =
+            with_operation_budget(100_000_000, || evaluate(&recipe, &mut Decider::default()));
+        let mut built = built.unwrap_or_else(|e| panic!("{e}: {work:?}"));
+        assert!(!work.exhausted);
+        assert!(built.model.check(built.result).is_empty());
+        assert!(built.model.body(built.result).marks.is_empty());
+        let plan = Plan::compile(&recipe).unwrap();
+        let mut workspace = Workspace::default();
+        // Independent meridian inequalities: tan(59°) is between 3/2 and 2,
+        // tan(41°) between 4/5 and 1, and tan(50°) between 1 and 5/4.
+        for (x, z, material) in probes
+            .into_iter()
+            .chain([("1/2", "2", false), ("9/2", "2", true)])
+        {
+            let p = RPoint3::new(
+                Rational::parse(x).unwrap(),
+                Rational::zero(),
+                Rational::parse(z).unwrap(),
+            );
+            let answer =
+                classify_point(&mut built.model, built.result, &p, &mut Decider::default());
+            assert_eq!(
+                answer.proven(),
+                Some(&if material {
+                    Containment::Inside
+                } else {
+                    Containment::Outside
+                }),
+                "{x}, {z}: {answer:?}"
+            );
+            assert_eq!(
+                plan.proven(&p, &mut workspace).location,
+                if material {
+                    Location::Inside
+                } else {
+                    Location::Outside
+                }
+            );
+        }
+        assert!(
+            built
+                .model
+                .faces_of_body(built.result)
+                .iter()
+                .all(|f| !built.model.face_origins(*f).is_empty())
+        );
+    }
+}
+
+#[test]
+fn algebraic_short_head_retains_its_real_annular_floor() {
+    for angle in ["82", "100"] {
+        let recipe = recipe(
+            json!({"blind":"1"}),
+            json!({"cone":"118"}),
+            Some(json!({"countersink":{"diameter":"8","angle":angle}})),
+        );
+        let (built, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            evaluate(&recipe, &mut Decider::default())
+        });
+        let built = built.unwrap_or_else(|e| panic!("{angle} degree short head: {e}: {work:?}"));
+        assert!(!work.exhausted);
+        assert!(built.model.check(built.result).is_empty());
+        let floors: Vec<_> = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .filter(|f| {
+                built.model.face_origins(*f).iter().any(|o| {
+                    matches!(
+                        o.role,
+                        Role::Hole {
+                            part: HolePart::Floor,
+                            ..
+                        }
+                    )
+                })
+            })
+            .collect();
+        assert_eq!(floors.len(), 1);
+        assert_eq!(built.model.face(floors[0]).loops.len(), 2);
+    }
+}
+
+#[test]
+fn standard_angles_survive_scaled_rotated_nonunit_placements() {
+    use catallax_boolean::{Containment, classify_point};
+    use catallax_field::{Location, Plan, Workspace};
+    use catallax_shapes::RPoint3;
+    let q = |s: &str| Rational::parse(s).unwrap();
+    for scale in ["1/1000", "1", "1000"] {
+        let scale = q(scale);
+        let scaled = |n: i64| (&scale * &Rational::from_i64(n)).to_string();
+        for (tip, head) in [
+            (json!({"cone":"118"}), None),
+            (
+                json!("flat"),
+                Some(json!({"countersink":{"diameter":scaled(8),"angle":"82"}})),
+            ),
+            (
+                json!("flat"),
+                Some(json!({"countersink":{"diameter":scaled(8),"angle":"100"}})),
+            ),
+        ] {
+            let original = recipe(json!({"blind":scaled(4)}), tip, head);
+            let mut value: Value = serde_json::from_str(&original.to_text()).unwrap();
+            value["steps"][0]["size"] = json!([scaled(10), scaled(10), scaled(10)]);
+            // (x,y,z) -> (x,-z,y) + (7,11,-13), an exact rigid move.
+            value["steps"][0]["pose"] = json!({"rotation":["1","1","0","0"],"translation":[(q("7")-&scale*&q("5")).to_string(),"11",(q("-13")-&scale*&q("5")).to_string()]});
+            value["steps"][1]["diameter"] = json!(scaled(2));
+            value["steps"][1]["at"][0]["point"] = json!(["7", "11", "-13"]);
+            value["steps"][1]["at"][0]["direction"] = json!(["0", "-2", "0"]);
+            let case = value["steps"][1].to_string();
+            let definition = Recipe::parse(&value.to_string()).unwrap();
+            let (built, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+                evaluate(&definition, &mut Decider::default())
+            });
+            let mut built =
+                built.unwrap_or_else(|e| panic!("scale {scale}, {case}: {e}: {work:?}"));
+            assert!(!work.exhausted);
+            assert!(built.model.check(built.result).is_empty());
+            assert!(built.model.body(built.result).marks.is_empty());
+            let field = Plan::compile(&definition).unwrap();
+            let mut workspace = Workspace::default();
+            for (radius, material) in [("1/2", false), ("9/2", true)] {
+                let point = RPoint3::new(
+                    q("7") + &scale * &q(radius),
+                    q("11") - &scale * &q("2"),
+                    q("-13"),
+                );
+                assert_eq!(
+                    classify_point(
+                        &mut built.model,
+                        built.result,
+                        &point,
+                        &mut Decider::default()
+                    )
+                    .proven(),
+                    Some(&if material {
+                        Containment::Inside
+                    } else {
+                        Containment::Outside
+                    })
+                );
+                assert_eq!(
+                    field.proven(&point, &mut workspace).location,
+                    if material {
+                        Location::Inside
+                    } else {
+                        Location::Outside
+                    }
+                );
+            }
+        }
+    }
+}

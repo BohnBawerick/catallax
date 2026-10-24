@@ -487,9 +487,12 @@ def parts(args):
                 'status': 'not-run', 'code': 'names.no-edit-specified'})
             brep = case['recipe']['manifest']
             step = out / 'cases' / relative.removesuffix('.json') / 'recipe' / 'answer.step'
+            regularizations = step.with_name('step-regularizations.json')
+            step_faces = (json.loads(regularizations.read_text())['faces'] if regularizations.exists()
+                          else brep.get('result', {}).get('faces'))
             if step.exists() and brep.get('step'):
                 command = [args.occt_python, str(Path(__file__).with_name('check-step.py')),
-                           str(step), str(brep['result']['faces'])]
+                           str(step), str(step_faces)]
                 check = subprocess.run(command, capture_output=True, text=True)
                 atomic(step.parent / 'step-check-process.json',
                        {'exit': check.returncode, 'stdout': check.stdout, 'stderr': check.stderr})

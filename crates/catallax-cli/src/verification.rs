@@ -388,6 +388,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                                 .map(|mark| crate::mark_entry(mark, None)),
                         );
                         let report = answer.value;
+                        crate::write_step_regularizations(&request.out, &report)?;
                         step = json!({"file":"answer.step","max_deviation":report.max_deviation.to_decimal_bounds(40).1,
                             "approximated_curves":report.approximated_curves,"added_vertices":report.added_vertices,"added_edges":report.added_edges});
                     }

@@ -110,7 +110,7 @@ fn answer_with_deadline(
 /// Creates the output directory and removes stale geometry artifacts.
 pub fn prepare_output(out_dir: &Path) -> io::Result<()> {
     fs::create_dir_all(out_dir)?;
-    for name in ["answer.step", "display.obj"] {
+    for name in ["answer.step", "display.obj", "step-regularizations.json"] {
         match fs::remove_file(out_dir.join(name)) {
             Ok(()) => (),
             Err(error) if error.kind() == io::ErrorKind::NotFound => (),
@@ -118,6 +118,36 @@ pub fn prepare_output(out_dir: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+pub(crate) fn write_step_regularizations(
+    out_dir: &Path,
+    report: &catallax_step::StepReport,
+) -> io::Result<()> {
+    if report.regularizations.is_empty() {
+        return Ok(());
+    }
+    let records: Vec<_> = report
+        .regularizations
+        .iter()
+        .map(|record| {
+            serde_json::json!({
+                "face": record.face.index(),
+                "edges": record.edges.map(|edge| edge.index()),
+                "merged_faces": record.merged_faces.map(|face| face.index()),
+                "max_deviation_mm": record.max_deviation.to_string(),
+            })
+        })
+        .collect();
+    fs::write(
+        out_dir.join("step-regularizations.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "format": "catallax-step-regularizations/1",
+            "faces": report.faces, "edges": report.edges, "vertices": report.vertices,
+            "max_deviation_mm": report.max_deviation.to_string(),
+            "regularizations": records,
+        }))?,
+    )
 }
 
 /// Makes an invalid-question or internal-error manifest.
@@ -493,6 +523,7 @@ fn evaluate(
         match exported {
             Ok(answer) => {
                 let report = answer.value;
+                write_step_regularizations(out_dir, &report)?;
                 manifest
                     .marks
                     .extend(answer.marks.iter().map(|mark| mark_entry(mark, None)));

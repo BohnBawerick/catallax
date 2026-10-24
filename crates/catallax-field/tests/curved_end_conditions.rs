@@ -199,23 +199,51 @@ fn native_plan_dispatch_classifies_curved_entry_exit_and_selected_end_faces() {
                 recipe.name
             );
         }
-        let face = plan
-            .select(&catallax_recipe::Origin {
-                step: id("cap"),
-                role: Role::End,
-            })
-            .unwrap();
+        let end_origin = catallax_recipe::Origin {
+            step: id("cap"),
+            role: Role::End,
+        };
+        // Several construction supports carry End. Native handles retain those
+        // supports; face_query deliberately resolves their named union.
+        let faces: Vec<_> = plan
+            .faces()
+            .iter()
+            .enumerate()
+            .filter(|(_, face)| face.origin == end_origin)
+            .filter_map(|(index, _)| plan.result_face(index))
+            .collect();
+        assert!(!faces.is_empty());
+        let endpoint = point(end).to_real();
+        let mut incident_supports = 0;
+        let mut dec = Decider::default();
+        for face in faces {
+            assert_eq!(
+                plan.face_query(face, &point(end), &mut workspace)
+                    .unwrap()
+                    .state,
+                FaceState::OnFace
+            );
+            let residual = plan.faces()[face.index()]
+                .surface
+                .implicit()
+                .expect("analytic cap support")
+                .eval_real(&[endpoint.x.clone(), endpoint.y.clone(), endpoint.z.clone()]);
+            match dec.sign(&residual) {
+                catallax_numbers::Outcome::ProvenCoincident(_) => incident_supports += 1,
+                catallax_numbers::Outcome::Proven(_) => (),
+                other => panic!("uncertified end-support incidence: {other:?}"),
+            }
+            assert_eq!(
+                plan.face_query(face, &point(inside), &mut workspace)
+                    .unwrap()
+                    .state,
+                FaceState::NotOnFace
+            );
+        }
         assert_eq!(
-            plan.face_query(face, &point(end), &mut workspace)
-                .unwrap()
-                .state,
-            FaceState::OnFace
-        );
-        assert_eq!(
-            plan.face_query(face, &point(inside), &mut workspace)
-                .unwrap()
-                .state,
-            FaceState::NotOnFace
+            incident_supports, 1,
+            "{} must retain the unique physical end",
+            recipe.name
         );
     }
 }

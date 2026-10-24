@@ -67,10 +67,15 @@ impl CurvedField {
             return Ok(Location::Outside);
         }
         let surface = self.cap.definition().scene().surface();
-        let value =
-            surface
-                .implicit()
-                .eval_real(&[point.x.clone(), point.y.clone(), point.z.clone()]);
+        let value = surface
+            .implicit()
+            .ok_or_else(|| {
+                Refusal::new(
+                    "field.curved-limit-unresolved",
+                    "limiting carrier has no implicit polynomial",
+                )
+            })?
+            .eval_real(&[point.x.clone(), point.y.clone(), point.z.clone()]);
         let value = sign(&value, dec)?;
         match self.cap.definition().branch() {
             Branch::Exit if value == Sign::Positive => return Ok(Location::Outside),
@@ -80,6 +85,12 @@ impl CurvedField {
                 }
                 let derivative = surface
                     .gradient(&point)
+                    .ok_or_else(|| {
+                        Refusal::new(
+                            "field.curved-limit-unresolved",
+                            "limiting carrier has no analytic gradient",
+                        )
+                    })?
                     .dot(&self.cap.definition().frame().direction);
                 if sign(&derivative, dec)? != Sign::Negative {
                     return Ok(Location::Outside);
@@ -107,7 +118,13 @@ impl CurvedField {
             roles.push(Role::Start);
         }
         let surface = self.cap.definition().scene().surface();
-        if sign(&surface.implicit().eval_real(&[p.x, p.y, p.z]), dec)? == Sign::Zero {
+        let polynomial = surface.implicit().ok_or_else(|| {
+            Refusal::new(
+                "field.curved-limit-unresolved",
+                "limiting carrier has no implicit polynomial",
+            )
+        })?;
+        if sign(&polynomial.eval_real(&[p.x, p.y, p.z]), dec)? == Sign::Zero {
             roles.push(Role::End);
         }
         for (i, (x, [lo, hi])) in [&u, &v]

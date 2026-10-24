@@ -31,7 +31,7 @@ pub(super) struct Certificate {
     pub extent: Rational,
 }
 
-pub(super) fn coefficients(surface: &Surface, frame: &Frame) -> [RealPoly; 3] {
+pub(super) fn coefficients(surface: &Surface, frame: &Frame) -> Result<[RealPoly; 3], Refusal> {
     // Variables are u,v,t. Substitution retains coefficients and root selectors.
     let vars: [RealPoly; 3] = std::array::from_fn(|i| RealPoly::var(3, i));
     let o = [&frame.origin.x, &frame.origin.y, &frame.origin.z];
@@ -45,14 +45,17 @@ pub(super) fn coefficients(surface: &Surface, frame: &Frame) -> [RealPoly; 3] {
             + vars[2].scale(w[i])
     });
     let mut polynomial = RealPoly::zero(3);
-    for (m, coefficient) in surface.implicit().terms() {
+    let implicit = surface
+        .implicit()
+        .ok_or_else(|| coverage("limiting carrier has no implicit polynomial"))?;
+    for (m, coefficient) in implicit.terms() {
         let mut term = RealPoly::constant(3, coefficient);
         for (i, coordinate) in coordinates.iter().enumerate() {
             term = term * coordinate.pow_u32(m.exponents()[i]);
         }
         polynomial = polynomial + term;
     }
-    std::array::from_fn(|k| {
+    Ok(std::array::from_fn(|k| {
         RealPoly::from_terms(
             2,
             polynomial
@@ -62,7 +65,7 @@ pub(super) fn coefficients(surface: &Surface, frame: &Frame) -> [RealPoly; 3] {
                 .map(|(m, c)| (m.exponents()[..2].to_vec(), c))
                 .collect(),
         )
-    })
+    }))
 }
 
 pub(super) fn certify(
@@ -93,7 +96,7 @@ pub(super) fn certify(
             ));
         }
     }
-    let [c, b, a] = coefficients(&scene.surface, frame);
+    let [c, b, a] = coefficients(&scene.surface, frame)?;
     if a.total_degree(dec)? != Some(0) {
         return Err(coverage("ray equation is not a constant-leading quadratic"));
     }
@@ -159,6 +162,7 @@ pub(super) fn certify(
     for trim in &scene.trims {
         let value = Surface::Plane(trim.clone())
             .implicit()
+            .ok_or_else(|| coverage("stock trim has no implicit polynomial"))?
             .eval_ball(&world, dec)?;
         if value.hi().sign() != Sign::Negative {
             return Err(coverage(
@@ -166,11 +170,21 @@ pub(super) fn certify(
             ));
         }
     }
-    let at_origin = scene.surface.gradient(&frame.origin).dot(&frame.direction);
+    let at_origin = scene
+        .surface
+        .gradient(&frame.origin)
+        .ok_or_else(|| coverage("limiting carrier has no analytic gradient"))?
+        .dot(&frame.direction);
     let normal = scene
         .surface
         .gradient(&frame.origin.plus(&frame.direction))
-        .minus(&scene.surface.gradient(&frame.origin));
+        .ok_or_else(|| coverage("limiting carrier has no analytic gradient"))?
+        .minus(
+            &scene
+                .surface
+                .gradient(&frame.origin)
+                .ok_or_else(|| coverage("limiting carrier has no analytic gradient"))?,
+        );
     // grad(F).w = b(q)+2*a*t, and its world gradient is 2 Q w.
     let norm = normal.norm_squared();
     if sign(&norm, dec)? != Sign::Positive {

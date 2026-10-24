@@ -73,6 +73,7 @@ fn first_entries_exits_and_raw_direction_scaling_keep_exact_spherical_roots() {
             .scene()
             .surface()
             .implicit()
+            .expect("stock quadric support")
             .eval_real(&[point.x, point.y, point.z]);
         equal(&residual, &Real::zero(), &mut dec);
     }

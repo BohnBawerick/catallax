@@ -271,7 +271,7 @@ impl CurvedCapped {
             }
         }
         let [c, b, a] =
-            projected::coefficients(&self.scene.surface, &self.frame).map(|p| p.eval_real(q));
+            projected::coefficients(&self.scene.surface, &self.frame)?.map(|p| p.eval_real(q));
         let d = &b * &b - (&a * &c) * Real::from_i64(4);
         // Construction already proves d>0 and a>0 over the complete domain.
         let root = d.sqrt();

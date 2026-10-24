@@ -7,6 +7,7 @@ use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe, RecipeError, Role, StepId, ThroughSide};
 use catallax_shapes::{Isometry, RPoint3, RVector3};
 use catallax_topology::{BodyId, BodyKind, Model};
+use im::OrdMap;
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
 /// A complete build. Intermediate input bodies remain immutable and queryable.
@@ -72,16 +73,15 @@ impl fmt::Display for BuildError {
 }
 impl std::error::Error for BuildError {}
 
-/// An owned evaluated prefix. Consume it to append steps without copying its model.
+/// An immutable evaluated prefix. Cloning shares its state in constant time.
 ///
-/// Keep one per body. Explicit cloning retains an independent undo/branch snapshot
-/// and copies its model. The model is only exposed immutably so later edits cannot
-/// change the meaning of the saved prefix.
+/// Keep one per body for undo, branches and concurrent queries. Continuing a
+/// clone copies only modified store paths, leaving saved models unchanged.
 #[derive(Clone, Debug)]
 pub struct EvaluationCheckpoint {
-    built: Built,
-    profiles: BTreeMap<StepId, Profile>,
-    radii: BTreeMap<StepId, Rational>,
+    built: Arc<Built>,
+    profiles: OrdMap<StepId, Profile>,
+    bodies: OrdMap<StepId, BodyValue>,
     policy: BudgetPolicy,
 }
 
@@ -91,25 +91,17 @@ impl EvaluationCheckpoint {
         &self.built
     }
 
-    /// Takes the build without copying it, discarding continuation metadata.
+    /// Takes the build, sharing model stores if other checkpoints still retain it.
     pub fn into_built(self) -> Built {
-        self.built
+        Arc::unwrap_or_clone(self.built)
     }
 
     fn into_state(self) -> EvaluationState {
-        let built = self.built;
-        let mut radii = self.radii;
+        let built = Arc::unwrap_or_clone(self.built);
         EvaluationState {
             model: built.model,
             profiles: self.profiles,
-            bodies: built
-                .bodies
-                .into_iter()
-                .map(|(id, body)| {
-                    let radius = radii.remove(&id).expect("checkpoint body radius");
-                    (id, BodyValue { body, radius })
-                })
-                .collect(),
+            bodies: self.bodies,
             fillets: built.fillets,
             consumed: built.consumed,
             chamfers: built.chamfers,
@@ -121,8 +113,8 @@ impl EvaluationCheckpoint {
 #[derive(Default)]
 struct EvaluationState {
     model: Model,
-    profiles: BTreeMap<StepId, Profile>,
-    bodies: BTreeMap<StepId, BodyValue>,
+    profiles: OrdMap<StepId, Profile>,
+    bodies: OrdMap<StepId, BodyValue>,
     fillets: Vec<crate::fillet::FilletDefinition>,
     consumed: Vec<crate::ConsumedFace>,
     chamfers: Vec<crate::chamfer::ChamferDefinition>,
@@ -147,6 +139,7 @@ impl EvaluationState {
         }
     }
 }
+#[derive(Clone, Debug)]
 struct BodyValue {
     body: BodyId,
     // A certified bounding sphere about model-space zero, not a fitted box.
@@ -363,15 +356,11 @@ pub fn evaluate_incremental(
     };
     let mut state = evaluate_impl(recipe, None, state, start, dec)?;
     let profiles = std::mem::take(&mut state.profiles);
-    let radii = state
-        .bodies
-        .iter()
-        .map(|(id, body)| (id.clone(), body.radius.clone()))
-        .collect();
+    let bodies = state.bodies.clone();
     Ok(EvaluationCheckpoint {
-        built: state.finish(Arc::new(recipe.clone())),
+        built: Arc::new(state.finish(Arc::new(recipe.clone()))),
         profiles,
-        radii,
+        bodies,
         policy: *dec.policy(),
     })
 }

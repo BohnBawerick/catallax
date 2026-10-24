@@ -1170,20 +1170,29 @@ prefix. The complete recipe is still structurally checked before geometry runs.
 Only the suffix spends the current request's work allowance. Prefix proofs were
 paid for in the earlier request. Numeric limits are not increased. A failed
 suffix publishes no partial checkpoint. The caller owns checkpoint retention.
-Keep earlier checkpoints to restart before an edited feature. Cloning explicitly
-copies the model for an independent undo or branch snapshot, while consuming a
-checkpoint moves its model without that copy. Certified evaluation remains a
-separate entry and cannot supply an ordinary checkpoint.
+Keep earlier checkpoints to restart before an edited feature. `checkpoint.clone()`
+is an immutable fork with constant-time shared ownership, not a deep model copy.
+Geometry and topology arenas, construction facts and their closure indexes,
+incidence and provenance use persistent ordered stores. A continuation copies
+changed tree paths and bounded chunks, without dropping historical entities or
+facts. Profile and body-bound maps also share unchanged entries. Public `Built`
+metadata and recipe validation still scale with recipe size; this is not a claim
+that evaluating every possible suffix takes constant time.
+Certified evaluation remains a separate entry and cannot supply an ordinary
+checkpoint.
 
 `catallax_app::build_incremental(&recipe, prefix, &mesh_options, &mut decider)`
 returns `IncrementalApplicationBody` with `checkpoint`, `display` and `names`.
 The application checks topology and derives display from `checkpoint.built()`.
 It honors the same aggregate application work guard and caller-owned allowance
 as `build`; prefix reuse does not reset or enlarge either limit.
-SolidDraft can keep the checkpoint with its body handle, then pass it into the
-next merged recipe. Conversion and backend integration stay on the caller's
-side. Neither build entry requests measurement or comparison. Diagnostic timing
-remains opt-in through the existing operation recorder.
+SolidDraft should keep the checkpoint with each body handle and pass
+`Some(saved.clone())` into the next merged recipe. Keep `saved` for undo, redo,
+branch edits and concurrent exact queries. A failed continuation leaves it usable.
+`into_built()` also keeps retained checkpoints isolated if the extracted model
+is later changed. Conversion and backend integration stay on the caller's side.
+Neither build entry requests measurement or comparison. Diagnostic timing remains
+opt-in through the existing operation recorder.
 
 The public 320 by 20 by 10 mm benchmark cuts thirty 2 by 4 mm holes, either at the
 same position or ten millimetres apart:
@@ -1192,12 +1201,19 @@ same position or ten millimetres apart:
 cargo bench -p catallax-features --bench rebuild -- --assert-budget
 cargo bench -p catallax-features --bench rebuild -- --incremental --display --assert-budget --verify
 cargo bench -p catallax-features --bench rebuild -- --distinct --incremental --verify
+cargo bench -p catallax-features --bench rebuild -- --fork --display --assert-budget --verify
 cargo bench -p catallax-features --bench rebuild -- --fact-counterfactual
 ```
 
 The optional assertions keep the 1,000 ms edit budget and the repeated-cut
 cut-30/cut-2 ratio at 1.5, comparing the same ten-face operand complexity.
 Cut 1 starts from six-face stock and is reported separately.
+`--fork` retains every earlier checkpoint and continues a clone for each of the
+thirty cuts. Each row's `fork_ms` is the median of five clone samples immediately
+before that cut, excluding destruction; `wall_ms` measures its continuation and
+optional display separately. Thus cut 1 forks stock and cut 30 forks the
+twenty-nine-cut prefix. `--verify` also re-exports retained undo bodies after all
+edits and requires their original STEP bytes.
 `--verify` compares each prefix's STEP bytes and named
 body handles with a full build. `--fact-counterfactual` compares the old graph
 walk and the indexed query over the same retained facts. `--recipe` prints either

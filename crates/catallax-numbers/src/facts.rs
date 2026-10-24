@@ -1,6 +1,7 @@
 //! Recorded construction facts.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use im::{OrdMap, OrdSet, Vector};
+use std::collections::{BTreeSet, VecDeque};
 
 use crate::ZeroProof;
 
@@ -47,12 +48,12 @@ pub struct Fact<K> {
 
 /// Append-only, deterministic store of facts.
 #[derive(Clone, Debug)]
-pub struct FactBook<K> {
-    facts: Vec<Fact<K>>,
-    keys: BTreeSet<(FactKind, K, K, Option<K>)>,
-    edges: BTreeMap<(FactKind, K), BTreeSet<K>>,
-    classes: BTreeMap<(FactKind, K), usize>,
-    components: Vec<Component>,
+pub struct FactBook<K: Clone + Ord> {
+    facts: Vector<Fact<K>>,
+    keys: OrdSet<(FactKind, K, K, Option<K>)>,
+    edges: OrdMap<(FactKind, K), OrdSet<K>>,
+    classes: OrdMap<(FactKind, K), usize>,
+    components: Vector<Component>,
 }
 
 // Union by size bounds the read-only root walk. Incidence edges name roots,
@@ -61,8 +62,8 @@ pub struct FactBook<K> {
 struct Component {
     parent: usize,
     size: usize,
-    outgoing: BTreeSet<usize>,
-    incoming: BTreeSet<usize>,
+    outgoing: OrdSet<usize>,
+    incoming: OrdSet<usize>,
 }
 
 impl<K: Copy + Ord> Default for FactBook<K> {
@@ -75,11 +76,11 @@ impl<K: Copy + Ord> FactBook<K> {
     /// An empty book.
     pub fn new() -> Self {
         Self {
-            facts: Vec::new(),
-            keys: BTreeSet::new(),
-            edges: BTreeMap::new(),
-            classes: BTreeMap::new(),
-            components: Vec::new(),
+            facts: Vector::new(),
+            keys: OrdSet::new(),
+            edges: OrdMap::new(),
+            classes: OrdMap::new(),
+            components: Vector::new(),
         }
     }
 
@@ -94,7 +95,7 @@ impl<K: Copy + Ord> FactBook<K> {
         } else {
             (fact.a, fact.b)
         };
-        if !self.keys.insert((fact.kind, a, b, fact.at)) {
+        if self.keys.insert((fact.kind, a, b, fact.at)).is_some() {
             return false;
         }
         if fact.kind == FactKind::Tangent {
@@ -121,7 +122,7 @@ impl<K: Copy + Ord> FactBook<K> {
                 self.unite(a, b);
             }
         }
-        self.facts.push(fact);
+        self.facts.push_back(fact);
         true
     }
 
@@ -184,11 +185,11 @@ impl<K: Copy + Ord> FactBook<K> {
             return self.root(node);
         }
         let node = self.components.len();
-        self.components.push(Component {
+        self.components.push_back(Component {
             parent: node,
             size: 1,
-            outgoing: BTreeSet::new(),
-            incoming: BTreeSet::new(),
+            outgoing: OrdSet::new(),
+            incoming: OrdSet::new(),
         });
         self.classes.insert((kind, key), node);
         node
@@ -232,7 +233,7 @@ impl<K: Copy + Ord> FactBook<K> {
     }
 
     /// All facts in recording order.
-    pub fn iter(&self) -> std::slice::Iter<'_, Fact<K>> {
+    pub fn iter(&self) -> im::vector::Iter<'_, Fact<K>> {
         self.facts.iter()
     }
 

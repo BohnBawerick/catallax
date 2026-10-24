@@ -1,5 +1,6 @@
 //! The model: write-once arenas of topology over a geometry store.
 
+use im::{OrdMap, Vector};
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_recipe::{EdgeName, Origin, VertexName};
@@ -54,10 +55,10 @@ pub struct Model {
     shells: Arena<Shell>,
     lumps: Arena<Lump>,
     bodies: Arena<Body>,
-    edge_coedges: Vec<Vec<CoedgeId>>,
-    coedge_owners: Vec<Option<(LoopId, FaceId)>>,
-    face_origins: BTreeMap<FaceId, Vec<Origin>>,
-    edge_constructions: BTreeMap<EdgeId, Vec<EdgeName>>,
+    edge_coedges: Vector<Vec<CoedgeId>>,
+    coedge_owners: Vector<Option<(LoopId, FaceId)>>,
+    face_origins: OrdMap<FaceId, Vec<Origin>>,
+    edge_constructions: OrdMap<EdgeId, Vec<EdgeName>>,
 }
 
 impl Model {
@@ -89,7 +90,7 @@ impl Model {
             self.vertex(v);
         }
         let id = self.edges.push(e);
-        self.edge_coedges.push(Vec::new());
+        self.edge_coedges.push_back(Vec::new());
         id
     }
 
@@ -99,7 +100,7 @@ impl Model {
         let edge = c.edge;
         let id = self.coedges.push(c);
         self.edge_coedges[edge.index() as usize].push(id);
-        self.coedge_owners.push(None);
+        self.coedge_owners.push_back(None);
         id
     }
 
@@ -223,14 +224,8 @@ impl Model {
         if names.is_empty() {
             return;
         }
-        let stored = match self.edge_constructions.entry(edge) {
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(names),
-            std::collections::btree_map::Entry::Occupied(entry) => {
-                let stored = entry.into_mut();
-                stored.append(&mut names);
-                stored
-            }
-        };
+        let stored = self.edge_constructions.entry(edge).or_default();
+        stored.append(&mut names);
         stored.sort_by(|a, b| a.between().cmp(b.between()));
         stored.dedup();
     }

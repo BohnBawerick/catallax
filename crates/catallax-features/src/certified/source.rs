@@ -7,7 +7,7 @@ use catallax_numbers::{Decider, MPoly, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, ElementId, Operation, Origin, Recipe, Role, StepId};
 use catallax_shapes::{EllipticCylinder, RPoint3, RVector3, Surface, Vector3};
 use catallax_topology::{BodyId, Model};
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub(super) struct PrismSource {
@@ -141,7 +141,7 @@ pub(super) fn axial_box(
 pub(super) fn recognize(
     recipe: &Recipe,
     input: &StepId,
-    profiles: &BTreeMap<StepId, Profile>,
+    profiles: &im::OrdMap<StepId, Profile>,
     model: &Model,
     body: BodyId,
     dec: &mut Decider,

@@ -165,23 +165,44 @@ fn main() {
     let flag = |name| std::env::args().any(|arg| arg == name);
     let distinct = flag("--distinct");
     let recipe = recipe(distinct);
+    let fork = flag("--fork");
     if flag("--recipe") {
         print!("{}", recipe.to_text());
         return;
     }
     let expected_faces = if distinct { 126 } else { 10 };
-    let built = if flag("--incremental") {
+    let built = if flag("--incremental") || fork {
         let mut prefix = recipe.clone();
         prefix.steps.truncate(2);
         prefix.result = StepId::new("base").unwrap();
         let mut checkpoint = evaluate_incremental(&prefix, None, &mut Decider::default()).unwrap();
+        let mut retained = Vec::new();
+        let mut undo_bytes = Vec::new();
         for cut in 1..=30 {
             let mut edited = recipe.clone();
             edited.steps.truncate(2 + 3 * cut);
             edited.result = StepId::new(format!("cut{cut}")).unwrap();
+            let mut fork_ms = Vec::new();
+            let next = if fork {
+                for _ in 0..5 {
+                    let start = Instant::now();
+                    let snapshot = black_box(checkpoint.clone());
+                    fork_ms.push(start.elapsed().as_secs_f64() * 1000.0);
+                    drop(snapshot);
+                }
+                fork_ms.sort_by(f64::total_cmp);
+                let next = checkpoint.clone();
+                if flag("--verify") {
+                    undo_bytes.push(export(checkpoint.built()));
+                }
+                retained.push(checkpoint);
+                next
+            } else {
+                checkpoint
+            };
             let start = Instant::now();
             checkpoint =
-                evaluate_incremental(&edited, Some(checkpoint), &mut Decider::default()).unwrap();
+                evaluate_incremental(&edited, Some(next), &mut Decider::default()).unwrap();
             let built = checkpoint.built();
             assert!(built.model.check(built.result).is_empty());
             if flag("--display") {
@@ -196,8 +217,8 @@ fn main() {
             let elapsed = start.elapsed().as_secs_f64() * 1000.0;
             println!(
                 "{}",
-                json!({"mode":"incremental","distinct":distinct,"cut":cut,
-                "display":flag("--display"),"wall_ms":elapsed})
+                json!({"mode":if fork {"fork"} else {"incremental"},"distinct":distinct,"cut":cut,
+                "fork_ms":fork_ms.get(2),"display":flag("--display"),"wall_ms":elapsed})
             );
             if flag("--assert-budget") {
                 assert!(elapsed < 1000.0, "cut{cut}: {elapsed} ms");
@@ -206,6 +227,11 @@ fn main() {
                 let full = evaluate(&edited, &mut Decider::default()).unwrap();
                 assert_eq!(export(built), export(&full), "cut{cut}");
                 assert_eq!(built.bodies, full.bodies);
+            }
+        }
+        if flag("--verify") {
+            for (saved, expected) in retained.iter().zip(undo_bytes) {
+                assert_eq!(export(saved.built()), expected, "retained undo model");
             }
         }
         checkpoint.into_built()

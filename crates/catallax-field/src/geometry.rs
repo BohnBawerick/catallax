@@ -524,6 +524,67 @@ pub(crate) fn ray_constraints(
         Location::Inside
     })
 }
+
+/// Exact positive-infinitesimal classification along p + u*t + v*t^2.
+pub(crate) fn parabolic_constraints(
+    constraints: &[Constraint],
+    point: &[Rational; 3],
+    tangent: &Vector3,
+    quadratic: &Vector3,
+    dec: &mut Decider,
+) -> Result<Location, Refusal> {
+    let p = point.clone().map(Real::from);
+    let u = [&tangent.x, &tangent.y, &tangent.z];
+    let v = [&quadratic.x, &quadratic.y, &quadratic.z];
+    let mut boundary = false;
+    for constraint in constraints {
+        let mut coefficients: [Real; 9] = std::array::from_fn(|_| Real::zero());
+        for (monomial, coefficient) in constraint.polynomial.terms() {
+            let exponents: [u32; 3] = monomial.exponents().try_into().expect("three coordinates");
+            if exponents.iter().sum::<u32>() > 4 {
+                return Ok(Location::Indeterminate);
+            }
+            let mut term: [Real; 9] = std::array::from_fn(|_| Real::zero());
+            term[0] = coefficient;
+            let mut degree = 0;
+            for axis in 0..3 {
+                for _ in 0..exponents[axis] {
+                    for i in (0..=degree + 2).rev() {
+                        let mut value = &term[i] * &p[axis];
+                        if i > 0 {
+                            value = value + &term[i - 1] * u[axis];
+                        }
+                        if i > 1 {
+                            value = value + &term[i - 2] * v[axis];
+                        }
+                        term[i] = value;
+                    }
+                    degree += 2;
+                }
+            }
+            for i in 0..=degree {
+                coefficients[i] = &coefficients[i] + &term[i];
+            }
+        }
+        let mut leading = Sign::Zero;
+        for coefficient in coefficients {
+            leading = sign(&coefficient, dec)?;
+            if leading != Sign::Zero {
+                break;
+            }
+        }
+        match leading {
+            Sign::Positive => return Ok(Location::Outside),
+            Sign::Zero => boundary = true,
+            Sign::Negative => (),
+        }
+    }
+    Ok(if boundary {
+        Location::Boundary
+    } else {
+        Location::Inside
+    })
+}
 fn rational_ray_coefficients(
     terms: &[([u32; 3], Rational)],
     point: &[Rational; 3],

@@ -78,6 +78,10 @@ mod profile;
 pub mod radial;
 mod revolve;
 mod rounded_polyhedron;
+/// Selected convex planar sheets and their bounded analytic projection sectors.
+pub mod sharp_planar;
+/// Sharp selected-face normal images and their exact projection sectors.
+pub mod sharp_thicken;
 /// Envelope stand-in bodies for field-only features (PRD section 7).
 pub mod stand_in;
 mod stock;

@@ -138,6 +138,34 @@ fn same_faces(a: &SectionEdge, b: &SectionEdge) -> bool {
     a.faces_of_first == b.faces_of_first && a.faces_of_second == b.faces_of_second
 }
 
+// A failed pruning probe must not change the carrier/point definitions chosen
+// by the ordinary graph. The append-only model snapshot shares its history;
+// all optional witnesses and support meetings stay private to this probe.
+fn boundaries_apart(model: &Model, first: &[FaceId], second: &[FaceId], dec: &mut Decider) -> bool {
+    let mut probe = model.clone();
+    let mut bounds = crate::bounds::FaceBounds::new(false);
+    let mut pairs = BTreeMap::new();
+    for &a in first {
+        for &b in second {
+            if bounds.excludes(&mut probe, a, b, dec) {
+                continue;
+            }
+            let surfaces = (probe.face(a).surface, probe.face(b).surface);
+            let disjoint = *pairs.entry(surfaces).or_insert_with(|| {
+                intersect_surfaces(probe.geom_mut(), surfaces.0, surfaces.1, dec).is_ok_and(
+                    |answer| {
+                        answer.marks.is_empty() && matches!(answer.value, SurfacePair::Disjoint)
+                    },
+                )
+            });
+            if !disjoint {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 pub(crate) fn intersect(
     model: &mut Model,
     a: BodyId,
@@ -161,6 +189,16 @@ pub(crate) fn intersect(
             .surface(model.face(*face).surface)
             .has_rational_definition()
     });
+    if !algebraic && boundaries_apart(model, &first, &second, dec) {
+        return Ok(Answer::exact(IntersectionGraph {
+            a,
+            b,
+            edges: Vec::new(),
+            points: Vec::new(),
+            singular: BTreeSet::new(),
+            marks: MarkLog::new(),
+        }));
+    }
     let mut bounds = crate::bounds::FaceBounds::new(algebraic);
     let mut regions = RegionCache::default();
     let mut pool = Vec::new();
@@ -184,12 +222,7 @@ pub(crate) fn intersect(
         for &fb in &second {
             let sa = model.face(fa).surface;
             let sb = model.face(fb).surface;
-            // Finite trims can be apart even when their carriers meet.
-            // Do not pool remote carrier branches: subsequent curve cuts
-            // otherwise redo intersection work across accumulated pieces.
-            if (algebraic && bounds.disjoint(model, fa, fb, dec)?)
-                || bounds.excludes(model, fa, fb, dec)
-            {
+            if algebraic && bounds.disjoint(model, fa, fb, dec)? {
                 continue;
             }
             let pair = if let Some(value) = pairs.get(&(sa, sb)) {

@@ -1351,3 +1351,11 @@ Change: The explicit `catallax-stand-in/1` adapter writes 32 significant digits 
 Why: Once field inertia reaches its unchanged 1e-9 width, 17-digit STEP rounding can exceed the retained field enclosures. Tightening the exchange removes that error without widening a field or surrogate bound.
 Migration: No input or format change. Ordinary recipe STEP options and bytes are unchanged. The adapter still refuses unless every exported property enclosure fits the original field bounds.
 
+
+## 2026-10-24: lattice bounds in distance-feature queries
+
+Pieces: field and query-only comparison
+Change: Periodic lattice leaves report no finite bound to the distance-feature candidate visitor, matching the general candidate and display-bound policies. CSG propagation recovers finite bounds from the clipping region.
+Why: The lattice definition is unbounded before clipping; its empty analytic constraint list is not a bounded convex cell.
+Migration: No public signature, part-construction, point-classification, geometry-limit or exchange-policy change. Candidate generation remains an explicit query and retains caller cancellation.
+

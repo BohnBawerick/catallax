@@ -173,10 +173,28 @@ impl RoundCell {
         Ok(sign(&(d.cross(&self.axis).norm_squared() - radius.square()), dec)? == Sign::Negative)
     }
 
-    /// The neutral plane must cut a positive-radius section, not only an apex.
+    /// A neutral section has area if it cuts the interior, or is a nonzero cap.
     pub fn anchored(&self, neutral: &Plane, dec: &mut Decider) -> Result<bool, Refusal> {
-        let h = neutral.origin.minus(&self.origin).dot(&neutral.normal)
-            / self.axis.dot(&neutral.normal);
+        let normal_rate = self.axis.dot(&neutral.normal);
+        let lateral = neutral.normal.minus(&self.axis.scaled(&normal_rate));
+        let lateral_squared = lateral.norm_squared();
+        if sign(&lateral_squared, dec)? != Sign::Zero {
+            // The extrema of n·(p-N) on each end disk are centre ± |n_perp|r.
+            // Both are affine in height, so their global extrema occur at ends.
+            // A non-axial tangency contributes only a point or generator, no area.
+            let spread_rate = lateral_squared.sqrt();
+            let offset = self.origin.minus(&neutral.origin).dot(&neutral.normal);
+            let mut below = false;
+            let mut above = false;
+            for i in 0..2 {
+                let centre = &offset + &(&normal_rate * &self.heights[i]);
+                let spread = &spread_rate * &self.radii[i];
+                below |= sign(&(&centre - &spread), dec)? == Sign::Negative;
+                above |= sign(&(&centre + &spread), dec)? == Sign::Positive;
+            }
+            return Ok(below && above);
+        }
+        let h = neutral.origin.minus(&self.origin).dot(&neutral.normal) / normal_rate;
         if sign(&(&h - &self.heights[0]), dec)? == Sign::Negative
             || sign(&(&self.heights[1] - &h), dec)? == Sign::Negative
         {

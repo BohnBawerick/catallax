@@ -868,17 +868,69 @@ fn explicit_region_picks_override_default_and_reject_boundary_or_exterior() {
     }
 }
 #[test]
-fn an_oblique_cylindrical_neutral_is_unfinished_not_an_impossible_input() {
-    let mut draft = operation("wall");
-    draft["neutral"]["normal"] = json!(["-1", "0", "10"]);
-    let recipe = recipe(cylinder("8"), draft);
-    assert!(
-        matches!(evaluate(&recipe,&mut Decider::default()),Err(BuildError::Geometry{refusal,..}) if refusal.code=="draft.unsupported-oblique-neutral")
-    );
-    assert_eq!(
-        Plan::compile(&recipe).unwrap_err().code,
-        "draft.unsupported-oblique-neutral"
-    );
+fn a_coincident_neutral_plane_with_tangent_generators_preserves_material() {
+    for (pull, angle) in [(["1", "0", "0"], "0"), (["1", "0", "1"], "45")] {
+        let mut draft = operation("unused");
+        draft["faces"] = json!([{"face":{"step":"base","role":"end"}}]);
+        draft["pull"] = json!(pull);
+        draft["neutral"]["point"] = json!(["0", "0", "4"]);
+        draft["angle"] = json!(angle);
+        both(
+            &recipe(block(), draft),
+            &[
+                (["4", "4", "2"], Location::Inside),
+                (["4", "4", "4"], Location::Boundary),
+                (["4", "4", "5"], Location::Outside),
+            ],
+        );
+    }
+}
+
+#[test]
+fn oblique_zero_angle_cylinder_retention_uses_area_not_an_axis_intersection() {
+    for (neutral_height, kept) in [("5", true), ("12", false)] {
+        let mut draft = operation("wall");
+        draft["angle"] = json!("0");
+        draft["neutral"] = json!({"point":["0","0",neutral_height],"normal":["1","0","1"]});
+        let recipe = recipe(cylinder("8"), draft);
+        both(
+            &recipe,
+            &[
+                (
+                    ["7", "0", "3"],
+                    if kept {
+                        Location::Inside
+                    } else {
+                        Location::Outside
+                    },
+                ),
+                (["9", "0", "3"], Location::Outside),
+            ],
+        );
+        let brep = evaluate(&recipe, &mut Decider::default()).unwrap();
+        assert_eq!(
+            brep.model.body(brep.result).kind == catallax_topology::BodyKind::Empty,
+            !kept
+        );
+        assert_eq!(Plan::compile(&recipe).unwrap().is_proven_empty(), !kept);
+    }
+}
+
+#[test]
+fn a_parallel_axial_neutral_must_meet_the_cylinder_and_sweep_a_surface() {
+    for (offset, code) in [
+        ("9", "draft.missing-neutral"),
+        ("8", "draft.degenerate-support"),
+        ("0", "draft.degenerate-support"),
+    ] {
+        let mut draft = operation("wall");
+        draft["angle"] = json!("0");
+        draft["neutral"] = json!({"point":[offset,"0","0"],"normal":["1","0","0"]});
+        let recipe = recipe(cylinder("8"), draft);
+        assert!(matches!(evaluate(&recipe, &mut Decider::default()),
+            Err(BuildError::Geometry { refusal, .. }) if refusal.code == code));
+        assert_eq!(Plan::compile(&recipe).unwrap_err().code, code);
+    }
 }
 
 #[test]

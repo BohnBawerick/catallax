@@ -154,17 +154,45 @@ impl DraftDefinition {
                         "non-axial cylindrical draft needs a derived ruled support",
                     ));
                 }
+                let normal_rate = self.pull.dot(&self.neutral.normal);
+                let zero_angle = sign(&self.sine, dec)? == Sign::Zero;
+                if sign(&normal_rate, dec)? == Sign::Zero {
+                    let offset = self
+                        .neutral
+                        .origin
+                        .minus(&cylinder.origin)
+                        .dot(&self.neutral.normal);
+                    if sign(
+                        &(offset.square()
+                            - &cylinder.radius_sq * &self.neutral.normal.norm_squared()),
+                        dec,
+                    )? == Sign::Positive
+                    {
+                        return Err(Refusal::new(
+                            "draft.missing-neutral",
+                            "selected cylindrical support misses the neutral plane",
+                        ));
+                    }
+                    if zero_angle {
+                        return Err(Refusal::new(
+                            "draft.degenerate-support",
+                            "axial neutral generators at zero angle sweep only lines",
+                        ));
+                    }
+                }
+                // At zero angle every axial generator meeting N reproduces
+                // the original cylinder, even when its neutral curve is oblique.
+                if zero_angle {
+                    return Ok(DraftSupport {
+                        surface: source.clone(),
+                        same_sense,
+                    });
+                }
                 if sign(&self.neutral.normal.cross(&self.pull).norm_squared(), dec)? != Sign::Zero {
                     return Err(Refusal::new(
                         "draft.unsupported-oblique-neutral",
                         "an oblique cylindrical neutral curve does not reduce to an exact cone",
                     ));
-                }
-                if sign(&self.sine, dec)? == Sign::Zero {
-                    return Ok(DraftSupport {
-                        surface: source.clone(),
-                        same_sense,
-                    });
                 }
                 let radius = reduced(cylinder.radius_sq.sqrt(), dec)?;
                 let centre = cylinder.origin.plus(
@@ -174,7 +202,7 @@ impl DraftDefinition {
                             .origin
                             .minus(&cylinder.origin)
                             .dot(&self.neutral.normal)
-                            / &self.pull.dot(&self.neutral.normal)),
+                            / &normal_rate),
                     ),
                 );
                 let signed_sine = if same_sense {
@@ -238,9 +266,21 @@ impl DraftDefinition {
                 "selected face normal is parallel to pull on its neutral curve",
             ));
         }
+        let generator = self
+            .pull
+            .scaled(&self.cosine)
+            .minus(&unit(&radial, dec)?.scaled(&self.sine));
         let line = normal.cross(&self.neutral.normal);
         if sign(&line.norm_squared(), dec)? == Sign::Zero {
             let separation = self.neutral.origin.minus(&plane.origin).dot(&normal);
+            if sign(&separation, dec)? == Sign::Zero
+                && sign(&normal.dot(&generator), dec)? == Sign::Zero
+            {
+                return Ok(DraftSupport {
+                    surface: Surface::Plane(plane.clone()),
+                    same_sense,
+                });
+            }
             return Err(if sign(&separation, dec)? == Sign::Zero {
                 Refusal::new(
                     "draft.degenerate-neutral",
@@ -268,10 +308,6 @@ impl DraftDefinition {
                     / &across.norm_squared()),
             ),
         );
-        let generator = self
-            .pull
-            .scaled(&self.cosine)
-            .minus(&unit(&radial, dec)?.scaled(&self.sine));
         let mut outward = generator.cross(&line);
         if sign(&outward.norm_squared(), dec)? == Sign::Zero {
             return Err(Refusal::new(

@@ -425,7 +425,9 @@ impl PlanarThicken {
                         Sign::Positive => Sense::Same,
                         Sign::Negative => Sense::Reversed,
                         Sign::Zero => {
-                            return Err(bad("a selected edge has no regular angular normal sector"));
+                            return Err(bad(
+                                "a selected edge has no regular angular normal sector",
+                            ));
                         }
                     };
                     let caps = [*a, *b].map(|v| {

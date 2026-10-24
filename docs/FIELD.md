@@ -224,12 +224,21 @@ It visits every open sector in the selected carrier's tangent plane and uses
 exact normal perturbations that preserve every other support sign. A source
 boundary, surviving intermediate boundaries and a result-material transition
 in one such sector prove an open named patch approaching the contact.
-Exhausting the sectors can instead prove
-the selected patch absent, including a consumed sharp circle. Distinct source
-roles sharing a carrier, tangent or singular supports and larger curved fans
-remain unresolved. An isolated buried tangency cannot supply this proof.
-Draft tile domains retain their ordinary named-face proof: carrier sectors
-alone do not identify the selected coplanar tile.
+Exhausting the transverse sectors can instead prove the selected patch absent,
+including a consumed sharp circle. Separated second-order normal graphs also
+admit tangent patches through exact polynomial parabolic germs. These are
+presence witnesses; failure to find one does not prove absence. Distinct source
+roles sharing a carrier, singular supports and unseparated higher-order contacts
+remain unresolved. An isolated buried tangency cannot supply a surviving-patch
+witness. Draft tile domains retain their ordinary named-face proof: carrier
+sectors alone do not identify the selected coplanar tile.
+
+Strict `Inside` or `Outside` at a retained historical boundary node excludes
+that named patch before contact analysis. Alternative ownership paths must all
+be excluded; `Boundary` and `Indeterminate` never prove presence. Rotational
+projection sectors retain their clipped node before union with adjacent normal
+images, so a later boundary cannot restore a buried part of their full carrier.
+The exclusion reuses existing tape locations and changes no geometric predicate.
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
 

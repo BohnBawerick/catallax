@@ -1472,6 +1472,9 @@ impl Plan {
             if matches!(query.location, Location::Inside | Location::Outside) {
                 return Ok(absent);
             }
+            if self.domain_excludes_point(face.domain, &storage.locations, &mut storage.domains) {
+                return Ok(absent);
+            }
             for &other in &storage.active {
                 if !same_support(face, &self.faces[other], dec)? {
                     return Ok(FaceQuery {

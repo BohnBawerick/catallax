@@ -156,3 +156,34 @@ fn fractional_bevel_and_cap_both_own_the_contact_circle() {
             .any(|n| matches!(&n.role,Role::Side{segment,..} if segment.as_str()=="bottom"))
     );
 }
+
+#[test]
+fn symmetric_cylinder_does_not_restore_buried_front_round_meridians() {
+    let recipe = Recipe::parse(include_str!(
+        "../../catallax-features/tests/fixtures/sharp-thicken/cylinder-symmetric.json"
+    ))
+    .unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let round = plan
+        .faces()
+        .iter()
+        .find(|f| f.origin.step.as_str() == "front" && matches!(f.origin.role, Role::Round { .. }))
+        .unwrap();
+    let id = plan.select(&round.origin).unwrap();
+    for (coordinates, expected) in [
+        (["7/4", "0", "4"], FaceState::NotOnFace),
+        (["2", "0", "15/4"], FaceState::NotOnFace),
+        (["43/20", "0", "21/5"], FaceState::OnFace),
+    ] {
+        let [x, y, z] = coordinates.map(|s| catallax_numbers::Rational::parse(s).unwrap());
+        let query = plan
+            .closed_face_query_checked(
+                id,
+                &RPoint3::new(x, y, z),
+                &mut Workspace::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+        assert_eq!(query.state, expected, "at {coordinates:?}: {query:?}");
+    }
+}

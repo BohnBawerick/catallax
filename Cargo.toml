@@ -45,3 +45,8 @@ missing_docs = "warn"
 
 [workspace.lints.clippy]
 float_cmp = "warn"
+
+# cargo-dist's packaging profile, separate from development and test builds.
+[profile.dist]
+inherits = "release"
+lto = "thin"

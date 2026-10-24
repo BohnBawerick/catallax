@@ -1,0 +1,65 @@
+name: release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      replay_summary:
+        description: Public JSON from tools/release/release.py replay-summary
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      replay_summary:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+
+jobs:
+  evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Accept only complete public replay aggregates for this commit
+        env:
+          REPLAY_SUMMARY: ${{ inputs.replay_summary }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-evidence"
+          printf '%s\n' "$REPLAY_SUMMARY" > "$RUNNER_TEMP/release-evidence/replay-summary.json"
+          python3 -B tools/release/release.py check-replay \
+            "$RUNNER_TEMP/release-evidence/replay-summary.json" --commit "$GITHUB_SHA"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked --release -p catallax-cli --bin catallax-verify
+      - name: Install independent STEP checker
+        run: |
+          python3 -m venv "$RUNNER_TEMP/occt"
+          "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
+      - name: Generate target-part scoreboard at the release commit
+        run: |
+          python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py parts parts \
+            --binary target/release/catallax-verify --out "$RUNNER_TEMP/parts" \
+            --max-work 1000000 --occt-python "$RUNNER_TEMP/occt/bin/python" --json
+          cp "$RUNNER_TEMP/parts/parts.json" "$RUNNER_TEMP/release-evidence/target-parts.json"
+          python3 -B tools/release/release.py check-evidence "$RUNNER_TEMP/release-evidence" --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/release-evidence/*
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-target-parts-detail
+          path: ${{ runner.temp }}/parts
+          if-no-files-found: ignore
+          retention-days: 14

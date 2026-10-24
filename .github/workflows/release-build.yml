@@ -1,0 +1,207 @@
+name: build release artifacts
+
+on:
+  workflow_call:
+    inputs:
+      evidence_run:
+        required: false
+        default: ""
+        type: string
+    outputs:
+      tag:
+        value: ${{ jobs.plan.outputs.tag }}
+      alpha:
+        value: ${{ jobs.plan.outputs.alpha }}
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "2"
+
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+      alpha: ${{ steps.prepare.outputs.alpha }}
+      evidence_run: ${{ steps.evidence.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate tag, main ancestry, version and milestone note
+        id: prepare
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT" == push ]]; then
+            python3 -B tools/release/release.py prepare --publish --tag "$GITHUB_REF_NAME"
+          else
+            python3 -B tools/release/release.py prepare
+          fi
+      - name: Require green full-suite CI on the tagged commit
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=1" \
+            --jq '.workflow_runs | length' | python3 -c 'import sys; assert int(sys.stdin.read()) > 0, "No green check.yml run on tagged commit"'
+      - name: Locate commit-matched evidence
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_RUN: ${{ inputs.evidence_run }}
+        run: |
+          if [[ -z "$EVIDENCE_RUN" ]]; then
+            EVIDENCE_RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release-evidence.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=1" --jq '.workflow_runs[0].id // empty')
+          fi
+          [[ "$EVIDENCE_RUN" =~ ^[0-9]+$ ]] || { echo 'Generate release evidence for this exact commit first'; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$EVIDENCE_RUN" > "$RUNNER_TEMP/evidence-run.json"
+          python3 -c 'import json,os; r=json.load(open(os.environ["RUNNER_TEMP"]+"/evidence-run.json")); assert r["head_sha"] == os.environ["GITHUB_SHA"], "Evidence run commit differs"'
+          echo "run=$EVIDENCE_RUN" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/evidence
+          run-id: ${{ steps.evidence.outputs.run }}
+          github-token: ${{ github.token }}
+      - run: python3 -B tools/release/release.py check-evidence "$RUNNER_TEMP/evidence" --commit "$GITHUB_SHA"
+
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-dist@0.33.1
+      - name: Build platform archives with cargo-dist
+        env:
+          TARGET: ${{ matrix.target }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: dist build --artifacts=local --target "$TARGET" --tag "$TAG" --output-format=json
+      - name: Exercise packaged command-line programs
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          python3 -B tools/release/smoke.py "target/distrib/catallax-cli-$TARGET"*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platform-${{ matrix.target }}
+          path: |
+            target/distrib/*.tar.xz
+            target/distrib/*.zip
+          if-no-files-found: error
+
+  universal:
+    needs: build
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: platform-*-apple-darwin
+          path: ${{ runner.temp }}/archives
+          merge-multiple: true
+      - name: Combine and exercise both macOS architectures
+        run: python3 -B tools/release/universal.py "$RUNNER_TEMP/archives"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platform-universal2-apple-darwin
+          path: ${{ runner.temp }}/archives/*universal2*.tar.xz
+          if-no-files-found: error
+
+  assemble:
+    needs: [plan, build, universal]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: platform-*
+          path: target/distrib
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: target/distrib
+          run-id: ${{ needs.plan.outputs.evidence_run }}
+          github-token: ${{ github.token }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-dist@0.33.1,cargo-cyclonedx@0.5.9
+      - name: Generate dependency SBOM with cargo-dist and CycloneDX
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: dist build --artifacts=global --tag "$TAG" --output-format=json
+      - name: Generate release notes from merged pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          ALPHA: ${{ needs.plan.outputs.alpha }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+            --jq .body > "$RUNNER_TEMP/generated-notes.md"
+          python3 -B tools/release/notes.py "$RUNNER_TEMP/generated-notes.md" target/distrib/RELEASE_NOTES.md --tag "$TAG" --alpha "$ALPHA"
+      - name: Check complete assets and checksum every release file
+        run: |
+          rm -f target/distrib/sha256.sum target/distrib/dist-manifest.json
+          python3 -B tools/release/release.py check-evidence target/distrib --commit "$GITHUB_SHA"
+          python3 -B tools/release/release.py checksums target/distrib
+          (cd target/distrib && sha256sum --check SHA256SUMS)
+      - name: Attest every release file, including SBOM, evidence, notes and SHA256SUMS
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: target/distrib/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: target/distrib/*
+          if-no-files-found: error
+          retention-days: 90
+      - name: Record non-publishing dry-run result
+        if: github.event_name != 'push'
+        run: echo "Dry run built, smoke-checked, checksummed and attested all release files. No GitHub Release was created." >> "$GITHUB_STEP_SUMMARY"
+

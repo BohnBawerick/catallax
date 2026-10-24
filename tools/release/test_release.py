@@ -14,9 +14,11 @@ class ReplayPolicyTests(unittest.TestCase):
                 "candidate_sha": "b" * 40, "runs": {name: copy.deepcopy(run) for name in LABELS},
                 "comparisons": {name: {"cases": 477, "equal": True, "failures": []} for name in COMPARISONS}}
 
-    def test_complete_replay_accepts_ordinary_refusals(self):
+    def test_outcome_totals_must_cover_all_manifest_cases(self):
         summary = self.summary()
-        self.assertEqual(check_summary(summary, "b" * 40), summary)
+        summary["runs"]["candidate-w1"]["outcomes"]["answered"] -= 1
+        with self.assertRaisesRegex(ValueError, "incomplete replay outcomes"):
+            check_summary(summary, "b" * 40)
 
     def test_stale_commit_cannot_release(self):
         with self.assertRaisesRegex(ValueError, "selected commit"):

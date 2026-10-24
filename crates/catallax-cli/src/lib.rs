@@ -8,6 +8,7 @@ mod certified_recipe;
 mod face_checks;
 mod manifest;
 mod name_checks;
+mod printing;
 mod question;
 mod recipe_edit;
 pub mod verification;
@@ -110,7 +111,12 @@ fn answer_with_deadline(
 /// Creates the output directory and removes stale geometry artifacts.
 pub fn prepare_output(out_dir: &Path) -> io::Result<()> {
     fs::create_dir_all(out_dir)?;
-    for name in ["answer.step", "display.obj", "step-regularizations.json"] {
+    for name in [
+        "answer.step",
+        "display.obj",
+        "print.stl",
+        "step-regularizations.json",
+    ] {
         match fs::remove_file(out_dir.join(name)) {
             Ok(()) => (),
             Err(error) if error.kind() == io::ErrorKind::NotFound => (),

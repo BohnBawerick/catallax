@@ -24,8 +24,10 @@ struct Beam {
     start: [Rational; 3],
     direction: [Rational; 3],
     length_sq: Rational,
-    lo: [Rational; 3],
-    hi: [Rational; 3],
+    interval_start: [Interval; 3],
+    interval_direction: [Interval; 3],
+    interval_length_sq: Interval,
+    interval_bounds: [Interval; 3],
     fast_start: [f64; 3],
     fast_direction: [f64; 3],
     fast_length_sq: f64,
@@ -34,15 +36,18 @@ struct Beam {
 }
 
 #[derive(Clone, Debug)]
+struct Linear {
+    from: [Rational; 3],
+    direction: [Rational; 3],
+    length_sq: Rational,
+    start: Rational,
+    end: Rational,
+}
+
+#[derive(Clone, Debug)]
 enum GradeDef {
     Constant(Rational),
-    Linear {
-        from: [Rational; 3],
-        direction: [Rational; 3],
-        length_sq: Rational,
-        start: Rational,
-        end: Rational,
-    },
+    Linear(Box<Linear>),
 }
 
 /// Whether a box is proven inside, proven outside, or unresolved.
@@ -62,7 +67,6 @@ pub(crate) struct Lattice {
     rotation: [[Rational; 3]; 3],
     inverse_rotation: [[Rational; 3]; 3],
     translation: [Rational; 3],
-    fast_rotation: [[f64; 3]; 3],
     fast_inverse: [[f64; 3]; 3],
     fast_translation: [f64; 3],
     size: Rational,
@@ -131,9 +135,6 @@ fn clamp01(t: Interval) -> Interval {
         Interval::point(1.0).unwrap(),
     )
 }
-fn point(p: &[Rational; 3]) -> RPoint3 {
-    RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone())
-}
 
 impl Lattice {
     /// Compiles the leaf. Impossible parameters refuse with `lattice.*` codes.
@@ -160,17 +161,26 @@ impl Lattice {
                     std::array::from_fn(|i| start[i].clone().min(end[i].clone()));
                 let hi: [Rational; 3] =
                     std::array::from_fn(|i| start[i].clone().max(end[i].clone()));
+                let length_sq = rational_dot(&direction, &direction);
                 Beam {
                     fast_start: start.each_ref().map(f),
                     fast_direction: direction.each_ref().map(f),
-                    fast_length_sq: f(&rational_dot(&direction, &direction)),
+                    fast_length_sq: f(&length_sq),
                     fast_lo: lo.each_ref().map(|r| f(r).next_down()),
                     fast_hi: hi.each_ref().map(|r| f(r).next_up()),
-                    length_sq: rational_dot(&direction, &direction),
+                    interval_start: start.each_ref().map(Interval::from_rational),
+                    interval_direction: direction.each_ref().map(Interval::from_rational),
+                    interval_length_sq: Interval::from_rational(&length_sq),
+                    interval_bounds: std::array::from_fn(|i| {
+                        Interval::new(
+                            Interval::from_rational(&lo[i]).lo(),
+                            Interval::from_rational(&hi[i]).hi(),
+                        )
+                        .unwrap()
+                    }),
+                    length_sq,
                     start,
                     direction,
-                    lo,
-                    hi,
                 }
             })
             .collect();
@@ -220,20 +230,19 @@ impl Lattice {
                         )
                     })?;
                 (
-                    GradeDef::Linear {
+                    GradeDef::Linear(Box::new(Linear {
                         from,
                         direction,
                         length_sq,
                         start: start.value().clone(),
                         end: end.value().clone(),
-                    },
+                    })),
                     lipschitz,
                 )
             }
             Grade::Distance { .. } => unreachable!("validate refuses distance grades"),
         };
         Ok(Self {
-            fast_rotation: fast_matrix(&rotation),
             fast_inverse: fast_matrix(&inverse_rotation),
             fast_translation: translation.each_ref().map(f),
             rotation,
@@ -259,11 +268,6 @@ impl Lattice {
         self.beams.is_empty()
     }
 
-    /// Smallest and largest radius of the grade.
-    pub(crate) fn radius_range(&self) -> &[Rational; 2] {
-        &self.radius_range
-    }
-
     fn local(&self, p: &[Rational; 3]) -> [Rational; 3] {
         let shifted: [Rational; 3] = std::array::from_fn(|i| &p[i] - &self.translation[i]);
         apply(&self.inverse_rotation, &shifted)
@@ -275,13 +279,14 @@ impl Lattice {
     fn radius(&self, p: &[Rational; 3]) -> Rational {
         match &self.grade {
             GradeDef::Constant(r) => r.clone(),
-            GradeDef::Linear {
-                from,
-                direction,
-                length_sq,
-                start,
-                end,
-            } => {
+            GradeDef::Linear(linear) => {
+                let Linear {
+                    from,
+                    direction,
+                    length_sq,
+                    start,
+                    end,
+                } = linear.as_ref();
                 let rel: [Rational; 3] = std::array::from_fn(|i| &p[i] - &from[i]);
                 let t = rational_dot(&rel, direction)
                     .checked_div(length_sq)
@@ -294,16 +299,17 @@ impl Lattice {
     fn fast_radius(&self, p: [f64; 3]) -> f64 {
         match &self.grade {
             GradeDef::Constant(r) => f(r),
-            GradeDef::Linear {
-                from,
-                direction,
-                length_sq,
-                start,
-                end,
-            } => {
+            GradeDef::Linear(linear) => {
+                let Linear {
+                    from,
+                    direction,
+                    length_sq,
+                    start,
+                    end,
+                } = linear.as_ref();
                 let rel: [f64; 3] = std::array::from_fn(|i| p[i] - f(&from[i]));
                 let t = dot(&rel, &direction.each_ref().map(f)) / f(length_sq);
-                let t = t.max(0.0).min(1.0);
+                let t = t.clamp(0.0, 1.0);
                 f(start) + t * (f(end) - f(start))
             }
         }
@@ -311,13 +317,14 @@ impl Lattice {
     fn interval_radius(&self, p: &[Interval; 3]) -> Interval {
         match &self.grade {
             GradeDef::Constant(r) => Interval::from_rational(r),
-            GradeDef::Linear {
-                from,
-                direction,
-                length_sq,
-                start,
-                end,
-            } => {
+            GradeDef::Linear(linear) => {
+                let Linear {
+                    from,
+                    direction,
+                    length_sq,
+                    start,
+                    end,
+                } = linear.as_ref();
                 let rel: [Interval; 3] =
                     std::array::from_fn(|i| p[i] - Interval::from_rational(&from[i]));
                 let t = (0..3).fold(Interval::point(0.0).unwrap(), |s, i| {
@@ -331,12 +338,12 @@ impl Lattice {
     }
 
     /// Exact squared distance to the nearest beam, with every nearest beam's
-    /// foot vector `local - foot` and clamp parameter.
+    /// foot vector `local - foot`.
     fn nearest(
         &self,
         local: &[Rational; 3],
         collect_feet: bool,
-    ) -> Option<(Rational, Vec<([Rational; 3], Rational)>)> {
+    ) -> Option<(Rational, Vec<[Rational; 3]>)> {
         let base: [Rational; 3] =
             std::array::from_fn(|i| Rational::from_integer((&local[i] / &self.size).floor()));
         let mut best: Option<Rational> = None;
@@ -360,15 +367,15 @@ impl Lattice {
                         match &best {
                             Some(b) if d > *b => continue,
                             Some(b) if d == *b => {
-                                if collect_feet && !feet.contains(&(foot.clone(), t.clone())) {
-                                    feet.push((foot, t));
+                                if collect_feet && !feet.contains(&foot) {
+                                    feet.push(foot);
                                 }
                             }
                             _ => {
                                 best = Some(d);
                                 feet.clear();
                                 if collect_feet {
-                                    feet.push((foot, t));
+                                    feet.push(foot);
                                 }
                             }
                         }
@@ -436,9 +443,8 @@ impl Lattice {
                         }
                         let w: [f64; 3] =
                             std::array::from_fn(|i| local[i] - shift[i] - beam.fast_start[i]);
-                        let t = (dot(&w, &beam.fast_direction) / beam.fast_length_sq)
-                            .max(0.0)
-                            .min(1.0);
+                        let t =
+                            (dot(&w, &beam.fast_direction) / beam.fast_length_sq).clamp(0.0, 1.0);
                         let foot: [f64; 3] =
                             std::array::from_fn(|i| w[i] - t * beam.fast_direction[i]);
                         let d = dot(&foot, &foot);
@@ -453,49 +459,6 @@ impl Lattice {
             return f64::INFINITY;
         }
         (Scalar::sqrt(&best) - self.fast_radius(p)) / self.fast_lipschitz
-    }
-
-    /// Outward (unnormalised) boundary direction at a boundary point, or
-    /// `None` on a crease between equidistant beams or at a grade clamp.
-    pub(crate) fn normal(&self, p: &[Rational; 3]) -> Option<Vector3> {
-        let local = self.local(p);
-        let (distance_sq, feet) = self.nearest(&local, true)?;
-        if feet.len() != 1 || distance_sq.is_zero() {
-            return None;
-        }
-        let foot = apply(&self.rotation, &feet[0].0);
-        let GradeDef::Linear {
-            from,
-            direction,
-            length_sq,
-            start,
-            end,
-        } = &self.grade
-        else {
-            return Some(Vector3::new(
-                Real::from(foot[0].clone()),
-                Real::from(foot[1].clone()),
-                Real::from(foot[2].clone()),
-            ));
-        };
-        let rel: [Rational; 3] = std::array::from_fn(|i| &p[i] - &from[i]);
-        let t = rational_dot(&rel, direction)
-            .checked_div(length_sq)
-            .expect("distinct grade points");
-        if t <= q(0) || t >= q(1) {
-            return None;
-        }
-        // ∇(β - ρ) = foot/|foot| - s·direction with s = (end - start)/|direction|².
-        // The same direction is foot - |foot|·s·direction, which keeps one root.
-        let scale = (end - start)
-            .checked_div(length_sq)
-            .expect("distinct grade points");
-        let length = Real::from(distance_sq).sqrt();
-        Some(Vector3::new(
-            &Real::from(foot[0].clone()) - &(&length * &Real::from(&scale * &direction[0])),
-            &Real::from(foot[1].clone()) - &(&length * &Real::from(&scale * &direction[1])),
-            &Real::from(foot[2].clone()) - &(&length * &Real::from(&scale * &direction[2])),
-        ))
     }
 
     /// Positive-infinitesimal ray classification from a rational point.
@@ -513,18 +476,14 @@ impl Lattice {
         let (_, feet) = self
             .nearest(&local, true)
             .expect("boundary point has a nearest beam");
-        let world_feet: Vec<[Rational; 3]> = feet
-            .iter()
-            .map(|(foot, _)| apply(&self.rotation, foot))
-            .collect();
         // Along d, β changes at the smallest rate (foot · d)/|foot| over the
         // nearest beams, and every nearest foot has length ρ(p) > 0. The sign of
         // the rate of β - ρ is therefore the sign of min(foot · d) - ρ·(dρ/ds).
         let mut rate: Option<Real> = None;
-        for foot in &world_feet {
-            let candidate = &(&Real::from(foot[0].clone()) * &d.x)
-                + &(&(&Real::from(foot[1].clone()) * &d.y)
-                    + &(&Real::from(foot[2].clone()) * &d.z));
+        for foot in &feet {
+            let [x, y, z] = apply(&self.rotation, foot);
+            let candidate =
+                &(&Real::from(x) * &d.x) + &(&(&Real::from(y) * &d.y) + &(&Real::from(z) * &d.z));
             rate = Some(match rate {
                 None => candidate,
                 Some(previous) => match dec.compare(&candidate, &previous) {
@@ -541,14 +500,14 @@ impl Lattice {
             });
         }
         let mut rate = rate.expect("at least one nearest beam");
-        if let GradeDef::Linear {
-            from,
-            direction,
-            length_sq,
-            start,
-            end,
-        } = &self.grade
-        {
+        if let GradeDef::Linear(linear) = &self.grade {
+            let Linear {
+                from,
+                direction,
+                length_sq,
+                start,
+                end,
+            } = linear.as_ref();
             let rel: [Rational; 3] = std::array::from_fn(|i| &p[i] - &from[i]);
             let t = rational_dot(&rel, direction)
                 .checked_div(length_sq)
@@ -613,14 +572,13 @@ impl Lattice {
         let shifted = apply(&m, &self.translation);
         self.translation = std::array::from_fn(|i| &shifted[i] + &t[i]);
         self.inverse_rotation = transpose(&rotation);
-        self.fast_rotation = fast_matrix(&rotation);
         self.fast_inverse = fast_matrix(&self.inverse_rotation);
         self.fast_translation = self.translation.each_ref().map(f);
         self.rotation = rotation;
-        if let GradeDef::Linear {
-            from, direction, ..
-        } = &mut self.grade
-        {
+        if let GradeDef::Linear(linear) = &mut self.grade {
+            let Linear {
+                from, direction, ..
+            } = linear.as_mut();
             let moved = apply(&m, from);
             *from = std::array::from_fn(|i| &moved[i] + &t[i]);
             *direction = apply(&m, direction);
@@ -630,9 +588,17 @@ impl Lattice {
 
     /// Interval classification of a world box. Candidate beams come from the
     /// cells the box can reach once grown by the largest radius.
-    pub(crate) fn box_state(&self, world: &[Interval; 3]) -> BoxState {
+    pub(crate) fn box_state(
+        &self,
+        world: &[Interval; 3],
+        dec: &mut Decider,
+    ) -> Result<BoxState, Refusal> {
         if self.beams.is_empty() {
-            return BoxState::Outside;
+            return Ok(BoxState::Outside);
+        }
+        let cover = &self.size * &q(2 + 4 * self.overhang_cells);
+        if self.radius_range[0] > cover {
+            return Ok(BoxState::Inside);
         }
         let shifted: [Interval; 3] =
             std::array::from_fn(|i| world[i] - Interval::from_rational(&self.translation[i]));
@@ -640,70 +606,62 @@ impl Lattice {
         let radius = self.interval_radius(world);
         let radius_sq = radius.square();
         let r_hi = radius.hi();
-        let a = self.fast_size;
-        let margin = self.overhang_cells + 1;
-        let range: [[i64; 2]; 3] = std::array::from_fn(|i| {
-            [
-                ((local[i].lo() - r_hi) / a).floor() as i64 - margin,
-                ((local[i].hi() + r_hi) / a).floor() as i64 + margin,
-            ]
-        });
+        let size = Interval::from_rational(&self.size);
+        if size.lo() <= 0.0 || !r_hi.is_finite() {
+            return Ok(BoxState::Unknown);
+        }
+        let margin = self.overhang_cells as f64 + 1.0;
+        let mut range = [[0i64; 2]; 3];
+        for i in 0..3 {
+            let cells = (local[i] + Interval::new(-r_hi, r_hi).unwrap()) / size;
+            let lo = cells.lo().floor() - margin;
+            let hi = cells.hi().ceil() + margin;
+            // Conversion must not saturate an index and discard candidate beams.
+            if !lo.is_finite() || !hi.is_finite() || lo <= i64::MIN as f64 || hi >= i64::MAX as f64
+            {
+                return Ok(BoxState::Unknown);
+            }
+            range[i] = [lo as i64, hi as i64];
+        }
         let mut outside = true;
         for kx in range[0][0]..=range[0][1] {
             for ky in range[1][0]..=range[1][1] {
                 for kz in range[2][0]..=range[2][1] {
-                    let shift = [kx as f64 * a, ky as f64 * a, kz as f64 * a];
+                    let cell: [Interval; 3] = std::array::from_fn(|i| {
+                        local[i] - size * Interval::from_rational(&q([kx, ky, kz][i]))
+                    });
                     for beam in &self.beams {
-                        let mut misses = false;
-                        for i in 0..3 {
-                            let lo = beam.fast_lo[i] + shift[i] - r_hi - a * 1e-9;
-                            let hi = beam.fast_hi[i] + shift[i] + r_hi + a * 1e-9;
-                            if local[i].hi() < lo || local[i].lo() > hi {
-                                misses = true;
-                                break;
-                            }
-                        }
-                        if misses {
+                        dec.check_deadline()?;
+                        let inflation = Interval::new(-r_hi, r_hi).unwrap();
+                        if (0..3).any(|i| {
+                            let beam_bound = beam.interval_bounds[i] + inflation;
+                            cell[i].hi() < beam_bound.lo() || cell[i].lo() > beam_bound.hi()
+                        }) {
                             continue;
                         }
-                        let w: [Interval; 3] = std::array::from_fn(|i| {
-                            local[i]
-                                - Interval::from_rational(&beam.start[i])
-                                - Interval::from_rational(&(&self.size * &q([kx, ky, kz][i])))
-                        });
+                        let w: [Interval; 3] =
+                            std::array::from_fn(|i| cell[i] - beam.interval_start[i]);
                         let t = (0..3).fold(Interval::point(0.0).unwrap(), |s, i| {
-                            s + w[i] * Interval::from_rational(&beam.direction[i])
-                        }) / Interval::from_rational(&beam.length_sq);
+                            s + w[i] * beam.interval_direction[i]
+                        }) / beam.interval_length_sq;
                         let t = clamp01(t);
-                        let foot: [Interval; 3] = std::array::from_fn(|i| {
-                            w[i] - t * Interval::from_rational(&beam.direction[i])
-                        });
+                        let foot: [Interval; 3] =
+                            std::array::from_fn(|i| w[i] - t * beam.interval_direction[i]);
                         let d_sq = foot[0].square() + foot[1].square() + foot[2].square();
                         if d_sq.hi() < radius_sq.lo() {
-                            return BoxState::Inside;
+                            return Ok(BoxState::Inside);
                         }
-                        if !(d_sq.lo() > radius_sq.hi()) {
+                        if d_sq.lo() <= radius_sq.hi() {
                             outside = false;
                         }
                     }
                 }
             }
         }
-        if outside {
+        Ok(if outside {
             BoxState::Outside
         } else {
             BoxState::Unknown
-        }
-    }
-
-    /// Interval residual bound for the nearest-support attribution of display triangles.
-    pub(crate) fn fast_residual(&self, p: [f64; 3]) -> f64 {
-        self.fast_distance(p).abs() * self.fast_lipschitz
-    }
-
-    /// World point of a local rational point, for tests and witnesses.
-    pub(crate) fn world(&self, local: &[Rational; 3]) -> RPoint3 {
-        let rotated = apply(&self.rotation, local);
-        point(&std::array::from_fn(|i| &rotated[i] + &self.translation[i]))
+        })
     }
 }

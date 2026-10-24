@@ -187,6 +187,10 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         return Ok(value);
     }
     match request.source.as_str() {
+        "print" => crate::printing::evaluate(&request.problem, &request.out),
+        "field" if request.problem["format"] == "catallax-print/1" => {
+            crate::printing::evaluate(&request.problem, &request.out)
+        }
         "name-edit" => {
             let report = crate::name_checks::check(&request.problem);
             Ok(json!({"format":"catallax-manifest/3",

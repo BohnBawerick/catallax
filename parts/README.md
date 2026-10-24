@@ -1,6 +1,6 @@
 # Target parts
 
-These are `catallax-recipe/3` inputs for the roadmap's P0–P5 scoreboard. Dimensions are millimetres, exact decimal or rational strings. P0 is eight separate recipes so an early refusal cannot hide another hard-case family. P1–P5 are complete intended recipes, not reduced substitutes for operations the kernel cannot build yet.
+These are `catallax-recipe/3` inputs for the roadmap's P0–P6 scoreboard. Dimensions are millimetres, exact decimal or rational strings. P0 is eight separate recipes so an early refusal cannot hide another hard-case family. P1–P6 are complete intended recipes, not reduced substitutes for operations the kernel cannot build yet.
 
 | Input | Fixed dimensions and construction |
 | --- | --- |
@@ -18,12 +18,26 @@ These are `catallax-recipe/3` inputs for the roadmap's P0–P5 scoreboard. Dimen
 | `P3-filleted-boss.json` | Block 40×30×10, boss radius 8 and height 12 at 20,15,10. Concave junction fillet radius 2, then the four convex top block edges radius 1. |
 | `P4-shelled-tray.json` | Centred 40×30×12 block, inward wall thickness 2 and top face open. Intersect with a centred radius-23 cylinder extending from z=-1 to 13 to round its four corners. |
 | `P5-flanged-housing.json` | Stepped profile revolved about y. Inner radius 8, body outer radius 12 and height 30; flange radius 22 and thickness 5. A diameter-4 through cutter with diameter-8, 90-degree countersink is circular-patterned four times at 90 degrees on radius 17. Subtract the patterned cutters, then fillet the flange/body junction with radius 2. |
+| `P6-lattice-bracket.json` | L bracket within 12×8×8, 3 mm legs and a 1 mm enclosing shell. Cubic infill has 2 mm cells and radius 0.3; its region roots 0.25 into the cavity walls. A radius-0.5 through hole crosses the base. The shell is an explicit subtraction of the documented cavity, so this part does not depend on the separate shell feature. |
 
 Stock quaternions are homogeneous and normalized by the existing exact placement code. Recipes keep operation IDs and origin references fixed. Do not rename them to accommodate a kernel failure. Change dimensions only as a reviewed corpus revision, with a new report and an explanation of why the old input was wrong.
 
 `holes/P1-bolt-holes.json` and `holes/P5-countersinks.json` isolate the named-hole feature gates with the same fixed P1/P5 dimensions. They are not completed target parts: P1's slot chain remains in the full bracket, and P5's pattern and junction fillet remain in the full housing. The hole cases use one placement group rather than replacing the pattern operation's acceptance test.
 
 Run the same report on `parts/holes` to measure these feature gates in both kernels. Application timings still require an actual `catallax-app` build; the scoreboard does not infer them from kernel construction. Paired timing evidence records load averages before and after every AB/BA pair.
+
+For P6 print output, embed the complete recipe in a `catallax-print/1` wrapper with an explicit `tolerance`, then pass that wrapper to the verification driver's `run`. For example:
+
+```sh
+jq -n --slurpfile r parts/P6-lattice-bracket.json \
+  '{format:"catallax-print/1",recipe:$r[0],tolerance:"0.5"}' > /tmp/P6-print.json
+python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py run /tmp/P6-print.json \
+  --binary target/release/catallax-verify --out /tmp/P6-print-proof --json
+```
+
+The tolerance is an explicit print setting in millimetres, not a change to modelling tolerance or the scoreboard's allowance. An answered request writes `print.stl` and the matching `display.obj`. A printable mesh alone does not complete P6's mass-equivalent STEP stand-in gate.
+
+For a scoreboard that also retains direct field print artifacts, add `--print-tolerance 0.5` to `parts`. Every row then includes a separate `print` response. Unsupported print definitions keep their refusal instead of borrowing the B-rep mesh.
 
 ## Run the report
 

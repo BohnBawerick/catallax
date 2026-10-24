@@ -388,6 +388,9 @@ pub(crate) fn fast_translation(inverse: &Isometry) -> [f64; 3] {
 }
 
 impl Primitive {
+    pub(crate) fn inverse_placement(&self) -> &Isometry {
+        &self.inverse
+    }
     pub fn same_geometry(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
         Ok(self.kind == other.kind
             && self.parameters == other.parameters
@@ -566,7 +569,7 @@ pub(crate) enum Leaf {
     Feature(crate::features::Feature),
     Cell(Cell),
     Draft(crate::draft::Region),
-    Lattice(crate::lattice::Lattice),
+    Lattice(Box<crate::lattice::Lattice>),
 }
 impl Leaf {
     pub(crate) fn constraints(&self) -> &[Constraint] {

@@ -532,3 +532,39 @@ fn captured_slot_cut_answers_with_the_default_work_allowance() {
     assert!(directory.join("answer.step").is_file());
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn refused_print_request_removes_the_previous_print_and_display_artifacts() {
+    use catallax_cli::verification::{Request, answer};
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-print-transition-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let recipe: Value = serde_json::from_str(include_str!(
+        "../../../.claude/skills/verify-catallax/references/examples/recipe.json"
+    ))
+    .unwrap();
+    let mut request = Request {
+        format: "catallax-request/1".into(),
+        source: "print".into(),
+        problem: json!({"format":"catallax-print/1","recipe":recipe,"tolerance":"1"}),
+        out: dir.clone(),
+        max_work: 100_000_000,
+    };
+    let first = answer(&request).unwrap();
+    assert_eq!(first["manifest"]["status"], "answered", "{first}");
+    assert!(dir.join("print.stl").exists());
+    assert!(dir.join("display.obj").exists());
+    assert!(!dir.join("answer.step").exists());
+    request.max_work = 0;
+    let refused = answer(&request).unwrap();
+    assert_eq!(
+        refused["manifest"]["refusal"]["code"],
+        "numbers.operation-budget"
+    );
+    assert!(!dir.join("print.stl").exists());
+    assert!(!dir.join("display.obj").exists());
+    assert!(!dir.join("answer.step").exists());
+    fs::remove_dir_all(dir).unwrap();
+}

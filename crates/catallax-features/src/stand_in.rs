@@ -69,7 +69,7 @@ fn mat_vec(a: &[[Rational; 3]; 3], v: &[Rational; 3]) -> [Rational; 3] {
 /// Keeps about 36 significant bits of a positive double as a dyadic rational.
 /// Uses only exponent arithmetic, so it is the same on every platform.
 fn dyadic(x: f64) -> Rational {
-    if !(x > 0.0) || !x.is_finite() {
+    if !x.is_finite() || x <= 0.0 {
         return q(0);
     }
     let exponent = (x.to_bits() >> 52) as i64 - 1023;
@@ -114,20 +114,21 @@ fn jacobi(m: [[f64; 3]; 3]) -> ([f64; 3], [[f64; 3]; 3]) {
             let t = if theta == 0.0 { 1.0 } else { t };
             let c = 1.0 / (t * t + 1.0).sqrt();
             let s = t * c;
-            for k in 0..3 {
-                let (akp, akr) = (a[k][p], a[k][r]);
-                a[k][p] = c * akp - s * akr;
-                a[k][r] = s * akp + c * akr;
+            for row in &mut a {
+                let (akp, akr) = (row[p], row[r]);
+                row[p] = c * akp - s * akr;
+                row[r] = s * akp + c * akr;
             }
-            for k in 0..3 {
-                let (apk, ark) = (a[p][k], a[r][k]);
-                a[p][k] = c * apk - s * ark;
-                a[r][k] = s * apk + c * ark;
+            let (before, after) = a.split_at_mut(r);
+            for (apk, ark) in before[p].iter_mut().zip(&mut after[0]) {
+                let (old_p, old_r) = (*apk, *ark);
+                *apk = c * old_p - s * old_r;
+                *ark = s * old_p + c * old_r;
             }
-            for k in 0..3 {
-                let (vkp, vkr) = (v[k][p], v[k][r]);
-                v[k][p] = c * vkp - s * vkr;
-                v[k][r] = s * vkp + c * vkr;
+            for row in &mut v {
+                let (vkp, vkr) = (row[p], row[r]);
+                row[p] = c * vkp - s * vkr;
+                row[r] = s * vkp + c * vkr;
             }
         }
     }
@@ -363,8 +364,8 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
     let mut local_inertia = zero33();
     for block in &blocks {
         let m = block.mass();
-        for i in 0..3 {
-            first[i] = &first[i] + &(&m * &block.offset[i]);
+        for (i, value) in first.iter_mut().enumerate() {
+            *value = &*value + &(&m * &block.offset[i]);
         }
         volume = volume + m;
         add33(&mut local_inertia, &block.inertia());
@@ -378,9 +379,9 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
     });
     let inertia = mat_mul(&r, &mat_mul(&local_inertia, &rt));
     let mut residual = q(0);
-    for i in 0..3 {
-        for j in 0..3 {
-            residual = residual.max((&inertia[i][j] - &target.inertia[i][j]).abs());
+    for (i, row) in inertia.iter().enumerate() {
+        for (j, value) in row.iter().enumerate() {
+            residual = residual.max((value - &target.inertia[i][j]).abs());
         }
     }
     let mut bodies = Vec::with_capacity(blocks.len());

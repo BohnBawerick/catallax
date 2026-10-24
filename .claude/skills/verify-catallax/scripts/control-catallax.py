@@ -74,13 +74,17 @@ def load(paths, source, adapter=None):
                 elif fmt == 'exact-brep-question/2':
                     problems.append({'source': 'question', 'problem': value})
                 elif fmt in ('catallax-recipe/3', 'catallax-recipe/4'):
-                    problems.append({'source': source if source in ('compare', 'field') else 'recipe', 'problem': value})
+                    problems.append({'source': source if source in ('compare', 'field', 'print') else 'recipe', 'problem': value})
                 elif fmt == 'catallax-certified-recipe/1':
                     problems.append({'source': 'recipe', 'problem': value})
+                elif fmt == 'catallax-print/1':
+                    if source not in ('auto', 'field', 'print'):
+                        raise ValueError(f'{file}: print wrappers require the print or field source')
+                    problems.append({'source': 'field' if source == 'field' else 'print', 'problem': value})
                 elif fmt == 'catallax-question/1':
                     if set(value) != {'format', 'source', 'problem', 'max_work'}:
                         raise ValueError(f'{file}: invalid exported question fields')
-                    if value['source'] not in ('question', 'recipe', 'field', 'compare', 'name-edit'):
+                    if value['source'] not in ('question', 'recipe', 'field', 'print', 'compare', 'name-edit'):
                         raise ValueError(f'{file}: unknown exported question source')
                     if type(value['max_work']) is not int or not 0 <= value['max_work'] <= 2**64 - 1:
                         raise ValueError(f'{file}: exported max_work must be an unsigned 64-bit integer')
@@ -97,6 +101,10 @@ def classification(item):
     kind = item['source']
     if kind == 'name-edit':
         problem = problem['edited_recipe']
+    if kind == 'print':
+        kind = 'field'
+    if problem.get('format') == 'catallax-print/1':
+        problem = problem['recipe']
     if kind == 'question':
         kind = 'boolean' if problem.get('steps') else 'stock'
     operations = sorted({s.get('op', '?') for s in problem.get('steps', [])})
@@ -312,6 +320,11 @@ def compare(left, right):
                 and (Path(x['path']) / 'display.obj').read_bytes() != (Path(y['path']) / 'display.obj').read_bytes()
             ):
                 cause = 'display-bytes'
+            elif (Path(x['path']) / 'print.stl').exists() != (Path(y['path']) / 'print.stl').exists() or (
+                (Path(x['path']) / 'print.stl').exists()
+                and (Path(x['path']) / 'print.stl').read_bytes() != (Path(y['path']) / 'print.stl').read_bytes()
+            ):
+                cause = 'print-bytes'
         if cause:
             failures.append({'index': i, 'id': x['id'], 'cause': cause, 'left': x['path'], 'right': y['path']})
     return {'equal': not failures, 'cases': len(a['cases']), 'failures': failures}
@@ -464,6 +477,8 @@ def parts(args):
               'timing': {'cached': False, 'core': args.core, 'load_average': os.getloadavg(),
                          'claim': 'shared-machine observations, not quiet-core latency proof'},
               'max_work': args.max_work, 'status': 'running', 'edit_checks': {}, 'cases': []}
+    if args.print_tolerance is not None:
+        report['print_tolerance_mm'] = args.print_tolerance
     try:
         # Exact name rebuilds do not depend on display or sampled comparison.
         # Persist every configured check before either can delay unrelated rows.
@@ -474,10 +489,13 @@ def parts(args):
                 atomic(out / 'parts.json', report)
         for file, relative, problem in problems:
             case = {'recipe_file': relative, 'sha256': file_hash(file), 'name': problem['name']}
-            for source in ('recipe', 'field', 'compare'):
+            sources = ('recipe', 'field', 'compare') + (('print',) if args.print_tolerance is not None else ())
+            for source in sources:
                 dest = out / 'cases' / relative.removesuffix('.json') / source
                 dest.mkdir(parents=True, exist_ok=True)
-                request = {'format': CONTRACT, 'source': source, 'problem': problem,
+                request_problem = ({'format': 'catallax-print/1', 'recipe': problem,
+                                    'tolerance': args.print_tolerance} if source == 'print' else problem)
+                request = {'format': CONTRACT, 'source': source, 'problem': request_problem,
                            'max_work': args.max_work, 'out': str(dest)}
                 atomic(dest / 'request.json', request)
                 response = worker.answer(request)
@@ -545,7 +563,7 @@ def main():
             p.add_argument('--binary', required=True)
         if name != 'legacy':
             p.add_argument('--max-work', type=int, default=100_000_000)
-            p.add_argument('--source', choices=['auto', 'recipe', 'field', 'compare'], default='auto')
+            p.add_argument('--source', choices=['auto', 'recipe', 'field', 'print', 'compare'], default='auto')
             p.add_argument('--adapter', help='trusted Python file exporting load(Path) -> source/problem records')
         if name == 'run':
             p.add_argument('--workers', type=int, choices=range(1, 65), default=1)
@@ -566,6 +584,7 @@ def main():
     p.add_argument('--max-work', type=int, default=100_000_000)
     p.add_argument('--core', type=int, help='one pinned CPU for the worker')
     p.add_argument('--occt-python', default=sys.executable, help='Python with cadquery-ocp installed; unavailable binding is reported as not run')
+    p.add_argument('--print-tolerance', help='also build direct field STL/OBJ at this exact millimetre output tolerance')
     p = commands.add_parser('head-to-head-reference', help='download and verify the pinned released SolidCraft binary outside the repository')
     p.add_argument('--out', required=True)
     p = commands.add_parser('head-to-head', help='development-only pinned target-part comparison against released tools')

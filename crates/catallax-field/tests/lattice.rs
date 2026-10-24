@@ -1,3 +1,4 @@
+//! Exact periodic beam membership regressions.
 use catallax_field::{Location, Plan, Workspace};
 use catallax_numbers::{Decider, Rational};
 use catallax_recipe::Recipe;
@@ -40,4 +41,30 @@ fn periodic_cell_indices_are_not_limited_to_machine_integers() {
     let mut storage = Workspace::default();
     let point = RPoint3::new(&offset + &q("2"), q("1"), q("2"));
     assert_eq!(plan.proven(&point, &mut storage).location, Location::Inside);
+}
+
+#[test]
+fn linear_radius_is_read_at_the_query_point_and_clamped() {
+    let recipe = Recipe::parse(r#"{
+        "format":"catallax-recipe/3","name":"graded beams",
+        "steps":[
+            {"id":"region","op":"block","size":["4","4","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+            {"id":"beams","op":"lattice","region":"region","cell":"cubic","size":"2","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},
+             "radius":{"linear":{"from":["0","0","0"],"to":["0","1","0"],"start":"0.2","end":"0.6"}}}
+        ],"result":"beams"
+    }"#).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let mut storage = Workspace::default();
+    for (y, expected) in [
+        ("0.25", Location::Inside),
+        ("1/3", Location::Boundary),
+        ("3", Location::Outside),
+    ] {
+        let point = RPoint3::new(q("1"), q(y), q("2"));
+        assert_eq!(
+            plan.proven(&point, &mut storage).location,
+            expected,
+            "y={y}"
+        );
+    }
 }

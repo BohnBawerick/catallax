@@ -29,6 +29,8 @@ pub mod measurement;
 mod metric;
 mod offset_spline;
 mod planar;
+/// Watertight certified print meshes built directly from the field.
+pub mod printing;
 mod profile;
 mod samples;
 mod support;
@@ -674,7 +676,8 @@ impl Plan {
                         if lattice.is_empty() {
                             0
                         } else {
-                            let beams = plan.leaf(geometry::Leaf::Lattice(lattice), vec![], dec)?;
+                            let beams =
+                                plan.leaf(geometry::Leaf::Lattice(Box::new(lattice)), vec![], dec)?;
                             plan.boolean(BooleanKind::Intersect, steps[region], beams, dec)?
                         }
                     }

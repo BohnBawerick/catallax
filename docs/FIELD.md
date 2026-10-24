@@ -4,7 +4,19 @@
 
 This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, FEA and application integration are not implemented.
 
-Lattice point queries compile the periodic beam definitions of RECIPE section 4.15, intersected with the region. Constant and linear grades use exact rational squared-distance classification and a labelled Lipschitz-scaled residual, not true distance. Cell indices retain arbitrary precision. Distance grades and reflected frames are unfinished coverage. Lattice display and STEP publication currently refuse explicitly: the support-chart display omits beam surfaces, and the solid region alone does not match the lattice's mass properties. Printable field export and a complete stand-in remain required for PLAN item 20.
+Lattice point queries compile the periodic beam definitions of RECIPE section 4.15, intersected with the region. Constant and linear grades use exact rational squared-distance classification and a labelled Lipschitz-scaled residual, not true distance. Cell indices retain arbitrary precision. Distance grades and reflected frames are unfinished coverage. The support-chart display cannot cover periodic beams; the separate `printing::mesh_plan` path produces their watertight STL and OBJ outputs directly from the field. STEP publication still refuses an envelope-only lattice because it does not match the field's mass properties.
+
+## Watertight field printing
+
+`catallax_field::printing::mesh_plan` accepts a plan, explicit output tolerance, cell and vertex limits, and the caller's decider. It supports primitive solid cells, analytic constraint cells and periodic beams composed by the existing Boolean tape. Other leaf definitions refuse with `field.print-coverage`; no B-rep builder is used.
+
+Interval classification excludes boxes proven wholly inside or outside. Primitive queries use their local frame before evaluating squared radii, avoiding cancellation from expanded world-coordinate polynomials. Beam intervals use cached coefficients and outward-rounded expanded beam bounds. The Boolean traversal skips operands that cannot change a proven result.
+
+Every remaining boundary box reaches one common grid size `h`. Six conforming Kuhn tetrahedra divide each grid cube. Exact corner membership supplies the crossing edges, whose midpoints define the triangles. A crossing between material and non-material supplies a real boundary witness in that cube. Every unresolved cube must be a mixed cube or a direct neighbour of one; otherwise the algorithm refines rather than dropping the unresolved geometry. The resulting two-sided boundary distance is at most `4h`, which must not exceed the requested output tolerance. This is a distance certificate, not a claim of topology equivalence to features smaller than that tolerance.
+
+Before publication, every mesh edge must have two oppositely oriented incident facets and every vertex link must be one cycle. STL coordinates are admitted only when exactly representable in binary32, so file rounding adds no unreported error. `write_stl` writes unit outward normals; `write_obj` writes the same vertices and facets for display. Neither output claims the support-chart registry's face-picking metadata. The original recipe remains the definition.
+
+The verification CLI accepts `catallax-print/1` through `print`, or through `field` when an explicit print wrapper is supplied. See [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing). P6's enclosing shell uses explicit region Booleans, not a substitute implementation of the separate shell operation.
 
 ## Shared algebraic definitions
 

@@ -253,6 +253,48 @@ impl FaceBounds {
         }
     }
 
+    pub(crate) fn separated(
+        &mut self,
+        model: &mut Model,
+        a: FaceId,
+        b: FaceId,
+        dec: &mut Decider,
+    ) -> bool {
+        for face in [a, b] {
+            if let std::collections::btree_map::Entry::Vacant(entry) = self.boxes.entry(face) {
+                // Bounds are optional pruning proofs. Unsupported or unsettled
+                // trims retain the ordinary intersection path.
+                entry.insert(face_box(model, face, true, dec).ok().flatten());
+            }
+        }
+        let (Some(a), Some(b)) = (&self.boxes[&a], &self.boxes[&b]) else {
+            return false;
+        };
+        (0..3).any(|i| a[i].hi() < b[i].lo() || b[i].hi() < a[i].lo())
+    }
+
+    pub(crate) fn excludes(
+        &mut self,
+        model: &mut Model,
+        a: FaceId,
+        b: FaceId,
+        dec: &mut Decider,
+    ) -> bool {
+        if self.separated(model, a, b, dec) {
+            return true;
+        }
+        for (bounded, other) in [(a, b), (b, a)] {
+            if let Some(bounds) = &self.boxes[&bounded]
+                && let Some(polynomial) = model.geom().surface(model.face(other).surface).implicit()
+                && let Ok(value) = polynomial.eval_ball(bounds, dec)
+                && !value.contains_zero()
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(crate) fn disjoint(
         &mut self,
         model: &mut Model,
@@ -296,6 +338,33 @@ mod tests {
     use super::*;
     use catallax_shapes::{Pose, Vector3};
     use catallax_topology::{Face, Sense, cylinder};
+
+    #[test]
+    fn coincident_caps_prune_only_strictly_separated_finite_trims() {
+        let r = Rational::from_i64;
+        let mut model = Model::new();
+        let first = cylinder(&mut model, r(2), r(3), &Pose::identity()).unwrap();
+        let cap = model.faces_of_body(first)[0];
+        let mut bounds = FaceBounds::new(false);
+        let mut dec = Decider::default();
+        for (x, separated) in [(5, true), (4, false), (3, false), (0, false)] {
+            let mut pose = Pose::identity();
+            pose.translation.x = Real::from_i64(x);
+            let other = cylinder(&mut model, r(2), r(3), &pose).unwrap();
+            let other_cap = model.faces_of_body(other)[0];
+            assert_eq!(
+                bounds.separated(&mut model, cap, other_cap, &mut dec),
+                separated,
+                "cap offset {x}"
+            );
+        }
+        let unbounded = model.add_face(Face {
+            surface: model.face(cap).surface,
+            sense: model.face(cap).sense,
+            loops: vec![],
+        });
+        assert!(!bounds.separated(&mut model, cap, unbounded, &mut dec));
+    }
 
     #[test]
     fn planar_bounds_exclude_only_supports_outside_the_finite_disk() {

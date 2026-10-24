@@ -184,10 +184,12 @@ pub(crate) fn intersect(
         for &fb in &second {
             let sa = model.face(fa).surface;
             let sb = model.face(fb).surface;
-            // Algebraic supports can meet far outside their finite trims. Use
-            // the certified section bounds before constructing those branches;
-            // an overlapping box leaves the ordinary intersection path intact.
-            if algebraic && bounds.disjoint(model, fa, fb, dec)? {
+            // Finite trims can be apart even when their carriers meet.
+            // Do not pool remote carrier branches: subsequent curve cuts
+            // otherwise redo intersection work across accumulated pieces.
+            if (algebraic && bounds.disjoint(model, fa, fb, dec)?)
+                || bounds.excludes(model, fa, fb, dec)
+            {
                 continue;
             }
             let pair = if let Some(value) = pairs.get(&(sa, sb)) {

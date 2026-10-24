@@ -1578,3 +1578,22 @@ Why: enlarged sharp cylindrical supports are not true-distance joins. At their s
 Migration: no recipe, exchange format, geometric tolerance, output accuracy or work allowance changes. Noncoaxial, nonconvex, partial, oblique and horn/spindle joins retain typed coverage refusals. Sharp multi-face thicken is unchanged. Existing full-ring property integrals measure covered new faces without adding measurement work to part construction.
 
 Prior art: [OCCT arc joins](https://occt3d.com/dev/doc/refman/html/class_b_rep_offset_a_p_i___make_offset_shape.html) distinguish face parallels, edge pipes and vertex spheres. [SMLib's rolling-ball sheets](https://smlibpy.classcad.ch/docs/surfaces/) and [Patrikalakis, Maekawa and Cho's pipe-surface discussion](https://web.mit.edu/hyperbook/Patrikalakis-Maekawa-Cho/node210.html) separate carrier construction from local and global trimming. These distinctions motivate the finite normal-domain and complete circular-tube proofs here; no source code is copied.
+
+## 2026-10-25: exclude remote finite trims before boolean carrier cuts
+
+Pieces: 5, application
+
+Change: rational face pairs also use cached, certified finite bounds before
+constructing support meetings. Strictly separated enclosing boxes or a support
+polynomial whose enclosure excludes zero prove a pair irrelevant. Missing or
+unsettled optional bounds retain the existing intersection path. Imprinting,
+classification, sewing and naming are unchanged.
+
+Why: remote coplanar caps and plane-cylinder supports populated one global
+carrier pool. Each appended disjoint piece caused those remote carriers to be
+cut against all accumulated surfaces and each other again.
+
+Migration: none. Public signatures, requested-result display, tolerances and
+work allowances are unchanged. Application builds already consume only the
+requested result, not every intermediate body's display. A regression now
+checks that an unused body's display refusal cannot reject a valid result.

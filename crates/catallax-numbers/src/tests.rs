@@ -1481,3 +1481,27 @@ fn optional_identities_leave_system_proof_work_available() {
     assert_eq!(answer.proven(), Some(&StrictSign::Positive));
     assert!(!work.exhausted);
 }
+
+#[test]
+fn optional_identities_leave_native_quartic_proof_work_available() {
+    let polynomial = UPoly::new(vec![q("-1"), q("-1"), q("0"), q("0"), q("1")]);
+    let Outcome::Proven(roots) = Decider::default().real_roots(&polynomial) else {
+        panic!("quartic roots must isolate");
+    };
+    let alpha = Real::from_algebraic(roots.last().unwrap().value.clone());
+    // P(alpha)=0 by its certificate, so every positive power is zero. The
+    // existing generator method uses that relation; formal opaque expansion
+    // cannot. Repeated optional attempts must leave its proof work available.
+    let zero = (alpha.pow_u32(4) - alpha - real("1")).pow_u32(16);
+    let (answer, work) = with_operation_budget(100_000, || {
+        let mut dec = Decider::default();
+        for _ in 0..20 {
+            if let Some(value) = dec.rational_identity(&zero).unwrap() {
+                assert!(value.is_zero());
+            }
+        }
+        dec.sign(&zero)
+    });
+    assert!(answer.is_coincident(), "{answer:?} {work:?}");
+    assert!(!work.exhausted);
+}

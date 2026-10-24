@@ -30,7 +30,8 @@ pub(crate) struct Node {
     pub rational: Option<Rational>,
     pub fast_defined: bool,
     // Construction metadata for routing an optional proof method: bit 0 means
-    // a general algebraic leaf; bit 1 means a pinned system coordinate. This
+    // an algebraic leaf outside the native quadratic/quartic routes; bit 1
+    // means a pinned system coordinate. This
     // records definition kinds only and never proves a value or a domain.
     pub identity_atoms: u8,
 }
@@ -255,7 +256,7 @@ impl Real {
         let identity_atoms = match &expr {
             Expr::Algebraic(a) => u8::from(matches!(&a.repr,
                 crate::algebraic::AlgebraicRepr::Root(root)
-                    if root.polynomial.degree().is_some_and(|degree| degree > 2))),
+                    if root.polynomial.degree().is_some_and(|degree| degree == 3 || degree > 4))),
             Expr::Coordinate(..) => 2,
             Expr::Neg(a) | Expr::Sqrt(a) | Expr::Square(a) | Expr::Pow(a, _) => {
                 a.node.identity_atoms

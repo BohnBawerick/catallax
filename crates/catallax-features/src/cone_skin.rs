@@ -174,14 +174,14 @@ impl ConeSkin {
             return Ok(None);
         };
         let axis = unit(&cone.axis, dec)?;
-        if let Some((c, _)) = &cylinder {
-            if sign(&c.axis.cross(&axis).norm_squared(), dec)? != Sign::Zero
-                || sign(&c.origin.minus(&cone.apex).cross(&axis).norm_squared(), dec)? != Sign::Zero
-            {
-                return Err(bad(
-                    "noncoaxial cone-cylinder joins need a traced trim arrangement",
-                ));
-            }
+        if let Some((c, _)) = &cylinder
+            && (sign(&c.axis.cross(&axis).norm_squared(), dec)? != Sign::Zero
+                || sign(&c.origin.minus(&cone.apex).cross(&axis).norm_squared(), dec)?
+                    != Sign::Zero)
+        {
+            return Err(bad(
+                "noncoaxial cone-cylinder joins need a traced trim arrangement",
+            ));
         }
         let mut ignored = Vec::new();
         for (surface, origins) in surfaces {

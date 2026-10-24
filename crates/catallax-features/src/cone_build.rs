@@ -132,8 +132,17 @@ pub(crate) fn skin(
 }
 
 pub(crate) fn build(model: &mut Model, skin: &ConeSkin) -> BodyId {
-    let mut paths = vec![Vec::new(); skin.faces.len()];
-    for boundary in &skin.boundaries {
+    sections(model, &skin.faces, &skin.boundaries, skin.apex.as_ref())
+}
+
+pub(crate) fn sections(
+    model: &mut Model,
+    faces: &[crate::cone_skin::ConeFace],
+    boundaries: &[crate::cone_skin::ConeBoundary],
+    tip: Option<&(catallax_shapes::Point3, usize)>,
+) -> BodyId {
+    let mut paths = vec![Vec::new(); faces.len()];
+    for boundary in boundaries {
         let curve = model.geom_mut().add_curve(boundary.curve.clone());
         let edge = model.add_edge(Edge {
             curve,
@@ -144,12 +153,11 @@ pub(crate) fn build(model: &mut Model, skin: &ConeSkin) -> BodyId {
         paths[boundary.faces[0]].push(vec![(edge, Sense::Reversed)]);
         paths[boundary.faces[1]].push(vec![(edge, Sense::Same)]);
     }
-    let apex = skin.apex.as_ref().map(|(p, face)| {
+    let apex = tip.map(|(p, face)| {
         let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
         (model.add_vertex(Vertex { point }), *face)
     });
-    let faces = skin
-        .faces
+    let faces = faces
         .iter()
         .zip(paths)
         .enumerate()
@@ -180,14 +188,23 @@ pub(crate) fn sweep(
     sweep: &crate::cone_sweep::ConeSweep,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
-    let mut rings = Vec::new();
-    let mut vertices = Vec::new();
+    let mut rings = Vec::with_capacity(sweep.vertices.len());
+    let mut vertices = Vec::with_capacity(sweep.vertices.len());
     for (i, point) in sweep.vertices.iter().enumerate() {
         if crate::profile::sign(&point[0], dec)? == catallax_numbers::Sign::Zero {
-            let point = model
-                .geom_mut()
-                .add_point(PointDef::Explicit(sweep.circle(i).center));
-            vertices.push(Some(model.add_vertex(Vertex { point })));
+            let vertex = if sweep
+                .faces
+                .iter()
+                .any(|f| f.ends.contains(&i) && !matches!(f.surface, Surface::Plane(_)))
+            {
+                let point = model
+                    .geom_mut()
+                    .add_point(PointDef::Explicit(sweep.circle(i).center));
+                Some(model.add_vertex(Vertex { point }))
+            } else {
+                None
+            };
+            vertices.push(vertex);
             rings.push(None);
         } else {
             vertices.push(None);

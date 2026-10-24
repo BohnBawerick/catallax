@@ -354,6 +354,11 @@ pub(super) fn visit(
         .flat_map(|leaf| leaf.constraints())
         .filter_map(|c| c.reference_point()?.as_rational())
         .collect();
+    let conical = plan.faces.iter().any(|face| {
+        face.in_result
+            && plan.leaf_registers[face.leaf].is_some()
+            && matches!(face.surface, Surface::Cone(_))
+    });
     for (index, face) in plan.faces.iter().enumerate() {
         let Some(id) = plan.result_face(index) else {
             continue;
@@ -361,6 +366,19 @@ pub(super) fn visit(
         // Native drafted cap charts own their candidate traversal. This pass
         // supplements the other analytic conjunctions, without duplicating it.
         if !matches!(&plan.leaves[face.leaf], Leaf::Cell(cell) if cell.capped_chart().is_none()) {
+            continue;
+        }
+        if conical && let Surface::Torus(torus) = &face.surface {
+            if !crate::distance_samples::torus_candidates(
+                plan,
+                torus,
+                bounds,
+                divisions,
+                &mut Decider::default(),
+                &mut |p| visit(p, id),
+            )? {
+                return Ok(false);
+            }
             continue;
         }
         let mut callback = |p| visit(p, id);

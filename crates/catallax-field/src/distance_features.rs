@@ -249,6 +249,26 @@ impl Plan {
         }
         Ok(node)
     }
+    fn cone_pieces(
+        &mut self,
+        mut node: usize,
+        pieces: Vec<catallax_features::cone_sweep::ConeDistancePiece>,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        for piece in pieces {
+            let piece = match piece {
+                catallax_features::cone_sweep::ConeDistancePiece::Sweep(s) => {
+                    self.cone_sweep(&s, bound, dec)?
+                }
+                catallax_features::cone_sweep::ConeDistancePiece::Round(surface, origins) => {
+                    self.radial_leaf(surface, origins, bound, dec)?
+                }
+            };
+            node = self.boolean(BooleanKind::Union, node, piece, dec)?;
+        }
+        Ok(node)
+    }
     fn planar_skin(&self, node: usize, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
         let mut stack = vec![node];
         let mut faces = Vec::new();
@@ -419,9 +439,12 @@ impl Plan {
         }
         if let Some(skin) = self.cone_skin(node, dec)? {
             if d > &Rational::zero() {
-                return Err(bad(
-                    "outward conical offsets need circular-edge rolls and tip sectors",
-                ));
+                return self.cone_pieces(
+                    node,
+                    skin.outward_pieces(&d.clone().into(), step, dec)?,
+                    &bound,
+                    dec,
+                );
             }
             return match skin.eroded(&Real::from(-d), dec)? {
                 Some(skin) => self.cone_leaf(skin, &bound, dec),

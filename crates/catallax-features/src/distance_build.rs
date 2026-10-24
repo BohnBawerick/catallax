@@ -248,9 +248,7 @@ pub(crate) fn offset(
     }
     if let Some(skin) = crate::cone_build::skin(model, body, dec)? {
         if direction == Sign::Positive {
-            return Err(bad(
-                "outward conical offsets need circular-edge rolls and tip sectors",
-            ));
+            return crate::cone_rounded::build(model, &skin, distance, step, dec);
         }
         return Ok(match skin.eroded(&(-distance), dec)? {
             Some(skin) => crate::cone_build::build(model, &skin),

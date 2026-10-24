@@ -11,6 +11,10 @@ fn conical_offsets_shells_and_sweeps_agree_without_direction_or_origin_findings(
         include_str!("../../catallax-features/tests/fixtures/cone-distance/thicken-front.json"),
         include_str!("../../catallax-features/tests/fixtures/cone-distance/thicken-back.json"),
         include_str!("../../catallax-features/tests/fixtures/cone-distance/shell-open-wide.json"),
+        include_str!("../../catallax-features/tests/fixtures/cone-distance/coaxial-inward.json"),
+        include_str!("../../catallax-features/tests/fixtures/cone-distance/oblique-inward.json"),
+        include_str!("../../catallax-features/tests/fixtures/cone-distance/frustum-outward.json"),
+        include_str!("../../catallax-features/tests/fixtures/cone-distance/thicken-cap-front.json"),
     ] {
         let recipe = Recipe::parse(text).unwrap();
         let controller = Controller::default();

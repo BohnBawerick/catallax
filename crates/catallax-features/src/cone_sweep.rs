@@ -165,18 +165,6 @@ impl ConeSkin {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<ConeSweep, Refusal> {
-        self.sweep_face(selected, thickness, side, step, false, dec)
-    }
-
-    fn sweep_face(
-        &self,
-        selected: usize,
-        thickness: &Real,
-        side: ThickenSide,
-        step: &StepId,
-        tip_sector: bool,
-        dec: &mut Decider,
-    ) -> Result<ConeSweep, Refusal> {
         let f = &self.faces[selected];
         let front = matches!(side, ThickenSide::Front);
         let delta = if front { thickness.clone() } else { -thickness };
@@ -204,15 +192,10 @@ impl ConeSkin {
         };
         match &f.surface {
             Surface::Cone(c) => {
-                let has_tip = self.apex.as_ref().is_some_and(|a| a.1 == selected);
-                if boundaries.len() + usize::from(has_tip) != 2 || (has_tip && !tip_sector) {
+                if boundaries.len() != 2 || self.apex.as_ref().is_some_and(|a| a.1 == selected) {
                     return Err(bad("a cone-tip sweep needs its spherical normal sector"));
                 }
-                let mut points = if has_tip {
-                    vec![[Real::zero(), Real::zero()]]
-                } else {
-                    Vec::new()
-                };
+                let mut points = Vec::new();
                 for b in &boundaries {
                     let Curve::Circle(circle) = &b.curve else {
                         return Err(bad(
@@ -241,8 +224,8 @@ impl ConeSkin {
                         return Err(bad("a conical normal sweep reaches its radial fold"));
                     }
                 }
-                let lower_rim = if has_tip { Vec::new() } else { rim(0)? };
-                let upper_rim = rim(usize::from(!has_tip))?;
+                let lower_rim = rim(0)?;
+                let upper_rim = rim(1)?;
                 let (vertices, names) = if front {
                     (
                         vec![
@@ -325,5 +308,104 @@ impl ConeSkin {
                 "a selected cylindrical neighbour uses the complete cylinder sweep definition",
             )),
         }
+    }
+}
+
+/// One exact nearest-point stratum of an outward conical distance body.
+#[derive(Clone, Debug)]
+pub enum ConeDistancePiece {
+    /// Finite positive normal image of an input face.
+    Sweep(ConeSweep),
+    /// Complete circular edge-distance tube, with exposed sectors selected by union.
+    Round(Surface, Vec<Origin>),
+}
+
+impl ConeSkin {
+    /// Decomposes outward frustum distance by nearest face and circular edge.
+    /// This lets the field compile the solid independently of the B-rep's
+    /// directly assembled torus normal sectors. Cone tips remain unproved.
+    pub fn outward_pieces(
+        &self,
+        distance: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Vec<ConeDistancePiece>, Refusal> {
+        use catallax_shapes::Torus;
+        if self.apex.is_some() {
+            return Err(bad(
+                "outward cone tips need a verified mesh of the spherical/conical meeting circle",
+            ));
+        }
+        if self
+            .faces
+            .iter()
+            .any(|f| matches!(f.surface, Surface::Cylinder(_)))
+        {
+            return Err(bad(
+                "outward cylindrical neighbours need their circular-edge join arrangement",
+            ));
+        }
+        let mut pieces = Vec::new();
+        for (i, f) in self.faces.iter().enumerate() {
+            let mut sweep = self.face_sweep(i, distance, ThickenSide::Front, step, dec)?;
+            for patch in &mut sweep.faces {
+                if patch
+                    .origins
+                    .iter()
+                    .any(|o| matches!(o.role, Role::Offset { .. }))
+                {
+                    patch.origins = f.origins.clone();
+                } else if patch
+                    .origins
+                    .iter()
+                    .any(|o| matches!(o.role, Role::Rim { .. }))
+                {
+                    patch.origins.clear();
+                }
+            }
+            pieces.push(ConeDistancePiece::Sweep(sweep));
+        }
+        for boundary in &self.boundaries {
+            let Curve::Circle(circle) = &boundary.curve else {
+                return Err(bad(
+                    "elliptic conical edges need a certified non-toroidal distance carrier",
+                ));
+            };
+            if sign(&circle.normal.cross(&self.axis).norm_squared(), dec)? != Sign::Zero {
+                return Err(bad(
+                    "an outward conical edge needs a perpendicular circular section",
+                ));
+            }
+            let radius = reduced(circle.radius_sq.sqrt(), dec)?;
+            if sign(&(&radius - distance), dec)? != Sign::Positive {
+                return Err(Refusal::new(
+                    "offset.spindle-carrier",
+                    "the circular-edge distance tube reaches a horn or spindle torus",
+                ));
+            }
+            let a = self.faces[boundary.faces[0]]
+                .origins
+                .first()
+                .ok_or_else(|| bad("a conical edge needs named incident faces"))?;
+            let b = self.faces[boundary.faces[1]]
+                .origins
+                .first()
+                .ok_or_else(|| bad("a conical edge needs named incident faces"))?;
+            let edge = EdgeName::new(a.clone(), b.clone()).map_err(|e| bad(&e.to_string()))?;
+            pieces.push(ConeDistancePiece::Round(
+                Surface::Torus(Torus {
+                    center: circle.center.clone(),
+                    axis: self.axis.clone(),
+                    major: radius,
+                    minor: distance.clone(),
+                    ref_dir: circle.ref_dir.clone(),
+                }),
+                vec![Origin {
+                    step: step.clone(),
+                    role: Role::Round { edge },
+                }],
+            ));
+        }
+        Ok(pieces)
     }
 }

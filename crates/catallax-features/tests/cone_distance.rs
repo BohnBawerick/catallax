@@ -223,3 +223,116 @@ fn oblique_cone_plane_offsets_keep_a_native_ellipse_and_finite_nappe() {
             ))
     );
 }
+
+#[test]
+fn outward_frustum_rounds_both_circular_edges_at_true_distance() {
+    let recipe =
+        Recipe::parse(include_str!("fixtures/cone-distance/frustum-outward.json")).unwrap();
+    locations(
+        &recipe,
+        &[
+            (["27/10", "0", "2"], Location::Inside),
+            (["11/4", "0", "2"], Location::Boundary),
+            (["14/5", "0", "2"], Location::Outside),
+            (["103/25", "0", "-4/25"], Location::Boundary),
+            (["411/100", "0", "-4/25"], Location::Inside),
+            (["413/100", "0", "-4/25"], Location::Outside),
+            (["0", "0", "-1/5"], Location::Boundary),
+            (["0", "0", "21/5"], Location::Boundary),
+        ],
+    );
+    let built = build(&recipe);
+    assert_eq!(
+        built
+            .model
+            .faces_of_body(built.result)
+            .iter()
+            .filter(|f| matches!(
+                built.model.geom().surface(built.model.face(**f).surface),
+                Surface::Torus(_)
+            ))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn outward_cone_tips_keep_a_typed_coverage_refusal() {
+    let recipe = Recipe::parse(include_str!("fixtures/cone-distance/tip-outward.json")).unwrap();
+    let catallax_features::BuildError::Geometry { refusal, .. } =
+        evaluate(&recipe, &mut Decider::default()).unwrap_err()
+    else {
+        panic!("expected a geometric coverage refusal");
+    };
+    assert_eq!(refusal.code, "distance.cone-domain");
+    assert_eq!(
+        Plan::compile(&recipe).unwrap_err().code,
+        "distance.cone-domain"
+    );
+}
+
+#[test]
+fn conical_cap_thickening_sweeps_only_the_selected_disk() {
+    for (side, z) in [("front", "41/10"), ("back", "39/10")] {
+        let recipe = recipe(
+            cone("1"),
+            json!({"id":"result","op":"thicken","body":"stock","faces":[{"face":{"step":"stock","role":"end"}}],"thickness":"1/5","side":side}),
+        );
+        locations(
+            &recipe,
+            &[
+                (["9/10", "0", z], Location::Inside),
+                (["101/100", "0", z], Location::Outside),
+                (["0", "0", "7/2"], Location::Outside),
+            ],
+        );
+    }
+}
+
+#[test]
+fn inward_offsets_remove_swallowed_small_caps_without_an_invented_face() {
+    for distance in ["-1/2", "-3/5"] {
+        let stock = json!({"id":"stock","op":"cone","base_radius":"13/4","top_radius":"1/4","height":"4","pose":pose()});
+        let recipe = recipe(
+            stock,
+            json!({"id":"result","op":"offset","body":"stock","distance":distance}),
+        );
+        locations(
+            &recipe,
+            &[
+                (["1/10", "0", "3"], Location::Inside),
+                (["0", "0", "18/5"], Location::Outside),
+                (["0", "0", "9/2"], Location::Outside),
+            ],
+        );
+        let built = build(&recipe);
+        assert_eq!(built.model.faces_of_body(built.result).len(), 2);
+        assert_eq!(built.model.vertices_of_body(built.result).len(), 1);
+        assert!(built.model.faces_of_body(built.result).iter().all(|f| {
+            built
+                .model
+                .face_origins(*f)
+                .iter()
+                .all(|o| o.role != catallax_recipe::Role::End)
+        }));
+    }
+}
+
+#[test]
+fn a_cap_on_the_coaxial_transition_drops_the_zero_height_cylinder_band() {
+    let mut value: Value =
+        serde_json::from_str(include_str!("fixtures/cone-distance/coaxial-inward.json")).unwrap();
+    value["steps"].as_array_mut().unwrap().last_mut().unwrap()["distance"] = json!("-3/2");
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    locations(
+        &recipe,
+        &[
+            (["0", "0", "2"], Location::Inside),
+            (["1", "0", "5/2"], Location::Boundary),
+            (["0", "0", "13/5"], Location::Outside),
+        ],
+    );
+    let built = build(&recipe);
+    assert_eq!(built.model.faces_of_body(built.result).len(), 3);
+    assert_eq!(built.model.edges_of_body(built.result).len(), 2);
+}

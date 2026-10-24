@@ -331,10 +331,30 @@ fn algebraic_quadratic_cuts(
     use catallax_numbers::{Real, Sign};
     let [c, b, a] = coefficients;
     if let (Some(a), Some(b), Some(c)) = (a.rational_ref(), b.rational_ref(), c.rational_ref()) {
-        roots(a, b, c, cuts);
+        let discriminant = b * b - Rational::from_i64(4) * a.clone() * c.clone();
+        if !a.is_zero()
+            && let Some(root) = crate::profile::sqrt(&discriminant)
+        {
+            for q in [
+                (-b + root.clone()) / (Rational::from_i64(2) * a.clone()),
+                (-b - root) / (Rational::from_i64(2) * a.clone()),
+            ] {
+                if q > Rational::zero() && q < Rational::one() {
+                    cuts.push(q);
+                }
+            }
+        } else {
+            roots(a, b, c, cuts);
+        }
         return Ok(());
     }
     let mut add = |value: Real, dec: &mut Decider| -> Result<(), Refusal> {
+        if let Some(q) = dec.rational_value(&value)? {
+            if q > Rational::zero() && q < Rational::one() {
+                cuts.push(q);
+            }
+            return Ok(());
+        }
         let interval = dec.enclose_budgeted_at(&value, 128)?;
         for q in [interval.lo(), interval.hi()] {
             if q > Rational::zero() && q < Rational::one() {
@@ -443,6 +463,176 @@ fn plane_polar_candidates(
             let point = origin.plus(&delta.scaled(&t));
             if within(&point, bounds) && !visit(point) {
                 return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+fn torus_meridian_cuts(
+    plan: &Plan,
+    torus: &catallax_shapes::Torus,
+    axis: &Vector3,
+    radial: &Vector3,
+    quarter: usize,
+    cuts: &mut Vec<Rational>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    use catallax_numbers::{Real, Sign};
+    let mut add = |a: Real, b: Real, c: Real, dec: &mut Decider| {
+        let (cosine, sine) = match quarter {
+            0 => (b, c),
+            1 => (c, -b),
+            2 => (-b, -c),
+            _ => (-c, b),
+        };
+        algebraic_quadratic_cuts(
+            [&a + &cosine, &Real::from_i64(2) * &sine, &a - &cosine],
+            cuts,
+            dec,
+        )
+    };
+    for (leaf, register) in plan.leaves.iter().zip(&plan.leaf_registers) {
+        if register.is_none() {
+            continue;
+        }
+        for constraint in leaf.constraints() {
+            let coaxial = |origin: &Point3,
+                           direction: &Vector3,
+                           dec: &mut Decider|
+             -> Result<bool, Refusal> {
+                Ok(crate::geometry::sign(
+                    &origin.minus(&torus.center).cross(axis).norm_squared(),
+                    dec,
+                )? == Sign::Zero
+                    && crate::geometry::sign(&direction.cross(axis).norm_squared(), dec)?
+                        == Sign::Zero)
+            };
+            match constraint.surface() {
+                Surface::Plane(p) => {
+                    let a = &torus.center.minus(&p.origin).dot(&p.normal)
+                        + &(&torus.major * &radial.dot(&p.normal));
+                    add(
+                        a,
+                        &torus.minor * &radial.dot(&p.normal),
+                        &torus.minor * &axis.dot(&p.normal),
+                        dec,
+                    )?;
+                }
+                Surface::Cone(c) if coaxial(&c.apex, &c.axis, dec)? => {
+                    let h = torus.center.minus(&c.apex).dot(axis);
+                    let k = &c.slope
+                        * &Real::from_i64(
+                            if crate::geometry::sign(&c.axis.dot(axis), dec)? == Sign::Negative {
+                                -1
+                            } else {
+                                1
+                            },
+                        );
+                    for side in [-1, 1] {
+                        let k = &k * &Real::from_i64(side);
+                        add(
+                            &torus.major - &(&k * &h),
+                            torus.minor.clone(),
+                            -(&k * &torus.minor),
+                            dec,
+                        )?;
+                    }
+                }
+                Surface::Cylinder(c) if coaxial(&c.origin, &c.axis, dec)? => {
+                    add(
+                        &torus.major - &c.radius(),
+                        torus.minor.clone(),
+                        Real::zero(),
+                        dec,
+                    )?;
+                }
+                Surface::Sphere(s)
+                    if crate::geometry::sign(
+                        &s.center.minus(&torus.center).cross(axis).norm_squared(),
+                        dec,
+                    )? == Sign::Zero =>
+                {
+                    let h = torus.center.minus(&s.center).dot(axis);
+                    let a = &(&torus.major.square() + &torus.minor.square())
+                        + &(&h.square() - &s.radius.square());
+                    add(
+                        a,
+                        &(&Real::from_i64(2) * &torus.minor) * &torus.major,
+                        &(&Real::from_i64(2) * &torus.minor) * &h,
+                        dec,
+                    )?;
+                }
+                Surface::Torus(t) if coaxial(&t.center, &t.axis, dec)? => {
+                    let h = torus.center.minus(&t.center).dot(axis);
+                    let radius = &torus.major - &t.major;
+                    let a = &(&radius.square() + &torus.minor.square())
+                        + &(&h.square() - &t.minor.square());
+                    add(
+                        a,
+                        &(&Real::from_i64(2) * &torus.minor) * &radius,
+                        &(&Real::from_i64(2) * &torus.minor) * &h,
+                        dec,
+                    )?;
+                }
+                _ => (),
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn torus_candidates(
+    plan: &Plan,
+    torus: &catallax_shapes::Torus,
+    bounds: &Bounds,
+    n: u32,
+    dec: &mut Decider,
+    visit: &mut impl FnMut(RPoint3) -> bool,
+) -> Result<bool, Refusal> {
+    let [u, v, axis] = frame(&torus.axis, &torus.ref_dir)?;
+    let origin = torus.center.as_rational().ok_or_else(placement_error)?;
+    let major = torus.major.rational_ref().ok_or_else(placement_error)?;
+    let minor = torus.minor.rational_ref().ok_or_else(placement_error)?;
+    let real_axis = axis.clone().to_real();
+    for direction in circle(n) {
+        let radial = u.scaled(&direction[0]).plus(&v.scaled(&direction[1]));
+        let real_radial = radial.clone().to_real();
+        for quarter in 0..4 {
+            let mut cuts = vec![Rational::zero(), Rational::one()];
+            for j in 1..n {
+                cuts.push(Rational::from_ratio(j.into(), n.into()).unwrap());
+            }
+            torus_meridian_cuts(
+                plan,
+                torus,
+                &real_axis,
+                &real_radial,
+                quarter,
+                &mut cuts,
+                dec,
+            )?;
+            cuts.sort();
+            cuts.dedup();
+            // Search open meridian cells, not their shared G1 contact circles.
+            // Membership, origin and direction certification remain unchanged.
+            for pair in cuts.windows(2) {
+                let t = (&pair[0] + &pair[1]) / Rational::from_i64(2);
+                let denominator = Rational::one() + &t * &t;
+                let cosine = (Rational::one() - &t * &t) / denominator.clone();
+                let sine = Rational::from_i64(2) * t / denominator;
+                let (cosine, sine) = match quarter {
+                    0 => (cosine, sine),
+                    1 => (-sine, cosine),
+                    2 => (-cosine, -sine),
+                    _ => (sine, -cosine),
+                };
+                let p = origin
+                    .plus(&radial.scaled(&(major + &(minor * &cosine))))
+                    .plus(&axis.scaled(&(minor * &sine)));
+                if within(&p, bounds) && !visit(p) {
+                    return Ok(false);
+                }
             }
         }
     }
@@ -590,6 +780,12 @@ impl Plan {
                     }
                 }
                 Surface::Torus(torus) => {
+                    if conical {
+                        if !torus_candidates(self, torus, result, divisions, &mut dec, &mut emit)? {
+                            return Ok(false);
+                        }
+                        continue;
+                    }
                     let [u, v, axis] = frame(&torus.axis, &torus.ref_dir)?;
                     let origin = torus.center.as_rational().ok_or_else(placement_error)?;
                     let major = torus.major.rational_ref().ok_or_else(placement_error)?;

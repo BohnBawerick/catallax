@@ -40,6 +40,7 @@ mod certified;
 pub mod chamfer;
 mod chamfer_build;
 mod cone_build;
+mod cone_rounded;
 /// Exact complete conical cells and analytic meeting sections.
 pub mod cone_skin;
 /// Finite rotational normal sweeps of conical bands and circular caps.

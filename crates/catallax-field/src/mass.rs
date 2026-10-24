@@ -5,7 +5,7 @@
 //! replaces those contributions, never samples away an unresolved region.
 
 use crate::{Plan, geometry, lattice::BoxState, metric::Kind, printing::Classifier};
-use catallax_features::stand_in::MassTarget;
+use catallax_features::stand_in::{MassTarget, StandInBodies};
 use catallax_measure::{Accuracy as QuantityAccuracy, Enclosure};
 use catallax_numbers::{Decider, Interval, Rational, Refusal, Sign};
 use catallax_shapes::Surface;
@@ -67,7 +67,90 @@ impl Properties {
                 (0..3).all(|i| (0..3).all(|j| tensor[i][j].contains(&target.inertia[i][j])))
             })
     }
+    /// Whether every exchanged surrogate property stays inside the field bounds.
+    pub fn encloses(&self, target: &SurrogateProperties) -> bool {
+        fn contains(outer: &Enclosure, inner: &Enclosure) -> bool {
+            outer.lo <= inner.lo && inner.hi <= outer.hi
+        }
+        contains(&self.volume, &target.volume)
+            && self
+                .centroid
+                .as_ref()
+                .is_some_and(|c| (0..3).all(|i| contains(&c[i], &target.centroid[i])))
+            && self.inertia.as_ref().is_some_and(|inertia| {
+                (0..3).all(|i| (0..3).all(|j| contains(&inertia[i][j], &target.inertia[i][j])))
+            })
+    }
 }
+
+/// Unit-density proxy moments after a bounded convex-body exchange deviation.
+#[derive(Clone, Debug)]
+pub struct SurrogateProperties {
+    /// Proxy volume enclosure.
+    pub volume: Enclosure,
+    /// Proxy centre-of-gravity enclosures.
+    pub centroid: [Enclosure; 3],
+    /// Proxy centroidal inertia enclosures.
+    pub inertia: [[Enclosure; 3]; 3],
+}
+
+/// Encloses the exchange of the solver's convex boxes, independently of a mesh.
+///
+/// Both convex bodies fit a cube of side `2(radius + deviation)`. Monotonicity
+/// of the Steiner coefficients bounds each outer parallel layer by the cube's
+/// layer. Twice that bound covers the symmetric difference. Integrating its
+/// coordinate bounds covers volume, first and second moments; division by a
+/// positive volume lower bound then covers the translated centroid and inertia.
+pub fn surrogate_properties(
+    surrogate: &StandInBodies,
+    deviation: &Rational,
+) -> Result<SurrogateProperties, Refusal> {
+    if deviation.sign() == Sign::Negative {
+        return Err(failure(
+            "field.surrogate-deviation",
+            "exchange deviation must be nonnegative",
+        ));
+    }
+    let radius = &surrogate.support_radius + deviation;
+    let diameter = radius.mul_pow2(1);
+    let square = deviation * deviation;
+    let layer =
+        &(&(&q(6) * &(&diameter * &diameter)) * deviation) + &(&(&q(12) * &diameter) * &square);
+    let layer = &layer + &(&q(8) * &(&square * deviation));
+    let difference = &layer * &q(2 * surrogate.bodies.len() as i64);
+    let mass = &surrogate.achieved.volume;
+    let lower = mass - &difference;
+    if lower.sign() != Sign::Positive {
+        return Err(failure(
+            "field.surrogate-deviation",
+            "exchange uncertainty does not preserve a positive proxy volume",
+        ));
+    }
+    let upper = mass + &difference;
+    let centroid_error = (&difference * &radius)
+        .checked_div(&lower)
+        .expect("positive volume lower bound");
+    let second_error = &difference * &(&radius * &radius);
+    let shifted_error = &upper * &(&centroid_error * &centroid_error);
+    let inertia_error = (&second_error + &shifted_error).mul_pow2(1);
+    Ok(SurrogateProperties {
+        volume: Enclosure {
+            lo: lower,
+            hi: upper,
+        },
+        centroid: std::array::from_fn(|i| Enclosure {
+            lo: &surrogate.achieved.centroid[i] - &centroid_error,
+            hi: &surrogate.achieved.centroid[i] + &centroid_error,
+        }),
+        inertia: std::array::from_fn(|i| {
+            std::array::from_fn(|j| Enclosure {
+                lo: &surrogate.achieved.inertia[i][j] - &inertia_error,
+                hi: &surrogate.achieved.inertia[i][j] + &inertia_error,
+            })
+        }),
+    })
+}
+
 fn q(n: i64) -> Rational {
     Rational::from_i64(n)
 }
@@ -118,10 +201,47 @@ fn valid(accuracy: &QuantityAccuracy) -> bool {
     accuracy.relative.sign() != Sign::Negative && accuracy.absolute.sign() != Sign::Negative
 }
 
+/// Checks that replacing lattice material by its region is an outer envelope.
+/// Subtraction reverses containment, so negative lattice occurrences need a
+/// separate lower-envelope construction and are not covered by that exchange.
+pub fn check_region_envelope(plan: &Plan) -> Result<(), Refusal> {
+    use crate::Instruction;
+    let mut signs = vec![0u8; plan.instructions.len()];
+    signs[plan.root] = 1;
+    // Compiled tape operands precede their Boolean instruction.
+    for node in (0..plan.instructions.len()).rev() {
+        let sign = signs[node];
+        if sign == 0 {
+            continue;
+        }
+        match plan.instructions[node] {
+            Instruction::Leaf(leaf)
+                if sign & 2 != 0 && matches!(plan.leaves[leaf], geometry::Leaf::Lattice(_)) =>
+            {
+                return Err(failure(
+                    "field.stand-in-envelope-coverage",
+                    "region substitution is not an outer-envelope proof for a negative lattice operand",
+                ));
+            }
+            Instruction::Boolean { kind, a, b } => {
+                signs[a] |= sign;
+                signs[b] |= if kind == catallax_recipe::BooleanKind::Subtract {
+                    ((sign & 1) << 1) | ((sign & 2) >> 1)
+                } else {
+                    sign
+                };
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 struct Cell {
     bounds: Bounds,
     volume: Rational,
+    priority: Rational,
     serial: u64,
 }
 impl PartialEq for Cell {
@@ -137,8 +257,8 @@ impl PartialOrd for Cell {
 }
 impl Ord for Cell {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.volume
-            .cmp(&other.volume)
+        self.priority
+            .cmp(&other.priority)
             .then_with(|| other.serial.cmp(&self.serial))
     }
 }
@@ -397,13 +517,13 @@ struct Integration<'a> {
 }
 impl Integration<'_> {
     fn admit(&mut self, bounds: Bounds, dec: &mut Decider) -> Result<(), Refusal> {
-        self.cells += 1;
-        if self.cells > self.max_cells {
+        if self.cells == self.max_cells {
             return Err(failure(
                 "field.mass-budget",
                 "field moment cell limit reached before the requested Accuracy",
             ));
         }
+        self.cells += 1;
         let cover = std::array::from_fn(|i| {
             Interval::new(
                 Interval::from_rational(&bounds[i][0]).lo(),
@@ -421,20 +541,53 @@ impl Integration<'_> {
             return Ok(());
         }
         let volume = (0..3).fold(q(1), |v, i| &v * &(&bounds[i][1] - &bounds[i][0]));
-        let cell = Cell {
+        let mut cell = Cell {
             bounds,
             volume,
+            priority: q(0),
             serial: self.serial,
         };
         self.serial += 1;
-        self.totals.update(
-            &Contribution::new(&cell, &self.anchor, state == BoxState::Inside),
-            false,
-        );
+        let contribution = Contribution::new(&cell, &self.anchor, state == BoxState::Inside);
+        self.totals.update(&contribution, false);
         if state == BoxState::Unknown {
+            // Refine the largest unresolved coordinate-moment enclosure,
+            // rather than treating equal-volume boxes as equally important.
+            cell.priority = contribution
+                .lo
+                .iter()
+                .zip(&contribution.hi)
+                .map(|(lo, hi)| hi - lo)
+                .max()
+                .expect("ten coordinate moments");
             self.pending.push(cell);
         }
         Ok(())
+    }
+    fn budget_failure(&self) -> Refusal {
+        let detail = if let Some(properties) = self.totals.properties(&self.anchor, self.cells) {
+            let centroid = properties
+                .centroid
+                .as_ref()
+                .map(|c| c.iter().map(Enclosure::width).max().unwrap());
+            let inertia = properties
+                .inertia
+                .as_ref()
+                .map(|m| m.iter().flatten().map(Enclosure::width).max().unwrap());
+            format!(
+                "{} classified cells; reached volume width {} mm3, maximum centroid width {:?} mm, maximum inertia width {:?} mm5; requested Accuracy not reached",
+                self.cells,
+                properties.volume.width(),
+                centroid.map(|q| q.to_string()),
+                inertia.map(|q| q.to_string())
+            )
+        } else {
+            format!(
+                "{} classified cells; positive field volume is not yet certified",
+                self.cells
+            )
+        };
+        failure("field.mass-budget", detail)
     }
 }
 /// Integrates the original field to the requested property widths.
@@ -482,18 +635,17 @@ pub fn properties(
         if plan.leaf_registers[face.leaf].is_none() {
             continue;
         }
-        if let Surface::Plane(plane) = &face.surface {
-            if let (Some(normal), Some(origin)) =
+        if let Surface::Plane(plane) = &face.surface
+            && let (Some(normal), Some(origin)) =
                 (plane.normal.as_rational(), plane.origin.as_rational())
-            {
-                let normal = [normal.x, normal.y, normal.z];
-                let origin = [origin.x, origin.y, origin.z];
-                if normal.iter().filter(|n| !n.is_zero()).count() == 1 {
-                    let axis = normal.iter().position(|n| !n.is_zero()).unwrap();
-                    let coordinate = &origin[axis];
-                    if coordinate > &bounds[axis][0] && coordinate < &bounds[axis][1] {
-                        axes[axis].insert(coordinate.clone());
-                    }
+        {
+            let normal = [normal.x, normal.y, normal.z];
+            let origin = [origin.x, origin.y, origin.z];
+            if normal.iter().filter(|n| !n.is_zero()).count() == 1 {
+                let axis = normal.iter().position(|n| !n.is_zero()).unwrap();
+                let coordinate = &origin[axis];
+                if coordinate > &bounds[axis][0] && coordinate < &bounds[axis][1] {
+                    axes[axis].insert(coordinate.clone());
                 }
             }
         }
@@ -555,6 +707,13 @@ pub fn properties(
             ));
         }
         for _ in 0..128 {
+            if !integration.pending.is_empty()
+                && integration.cells.saturating_add(2) > integration.max_cells
+            {
+                // Keep the parent's complete enclosure until both children
+                // can be admitted, including on a resource-limit refusal.
+                return Err(integration.budget_failure());
+            }
             let Some(cell) = integration.pending.pop() else {
                 break;
             };

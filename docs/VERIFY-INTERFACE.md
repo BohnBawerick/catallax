@@ -18,6 +18,7 @@ Sources:
 | --- | --- | --- |
 | `question` | `exact-brep-question/2` | Full geometric manifest and optional STEP. Parse all legacy fields, but ignore `limits.deadline_ms` during evaluation. |
 | `recipe` | `catallax-recipe/3`, `catallax-recipe/4` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. |
+| `recipe` | `catallax-stand-in/1` | Explicit field-moment measurement and an opt-in massless surface envelope plus unit-density STEP solids. This does not convert the field boundary to B-rep. |
 | `compare` | `catallax-recipe/3`, `catallax-recipe/4` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
 | `field` | `catallax-recipe/3`, `catallax-recipe/4` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
 | `print` | `catallax-print/1`, or an unwrapped recipe using default print options | Independently build a watertight field mesh. Write binary `print.stl` and matching `display.obj`, with a two-sided output-distance bound. No B-rep construction or STEP output. |
@@ -34,6 +35,27 @@ The manifest's `printing` object records the actual file, units, facet and verte
 The mesher covers analytic primitive/constraint cells, periodic beams and their Boolean combinations. Unsupported definitions, unresolved exact corner membership, work exhaustion, incomplete boundary coverage and non-representable binary32 coordinates refuse explicitly. No partial STL is published. The explicit tolerance controls output approximation only; it does not enlarge a modelling tolerance. The driver retains the existing field timing target for print requests and compares STL bytes as well as manifests and OBJ.
 
 `parts --print-tolerance 0.5` adds a separate `print` request and response to every target row, keeping that explicit output tolerance in the report. Without the option, the existing three-adapter scoreboard is unchanged. The allowance is shared only within each request and remains the caller's supplied `max_work`.
+
+### Field mass stand-ins
+
+`catallax-stand-in/1` contains `format`, a complete `recipe`, and required per-quantity `accuracy`:
+
+```json
+{"volume":{"relative":"0","absolute":"1e-9"},"centroid":{"relative":"0","absolute":"1e-9"},"inertia":{"relative":"0","absolute":"1e-9"}}
+```
+
+These are explicit measurement requests in mm³, mm and unit-density mm⁵, using the existing `Accuracy` width rule. Optional `max_cells` defaults to 2,000,000. Unknown fields, including density and material settings, are invalid. The request retains the ordinary complete-operation work allowance.
+
+The field integrates coordinate-moment enclosures independently of print meshes. A closed-form one/two-box proposal must match exact target volume and centroid, remain below 1e-9 mm⁵ target inertia residual, and fit wholly inside the field's proven enclosures after STEP rounding. A failed comparison refuses with the reached residual or the unmet enclosure. No envelope-only substitute is published.
+
+An answered nonempty request writes `answer.step`. `stand_in.field_properties`, format `catallax-field-mass/1`, contains rational `lo`/`hi` endpoints for the original field's volume, centroid and full centroidal inertia tensor. `field_accuracy` records the request. `surrogate_properties` contains exact model properties; `exported_property_bounds` additionally covers STEP exchange deviation. `within_field_enclosures` is true only after interval inclusion. The top-level `exact` is false because this is a mass stand-in, not a boundary conversion.
+
+`step.surface_envelopes` counts the massless surface model; `step.solids` and `stand_in.mass_bodies` count only unit-density proxies. Consumers must sum solid volume properties without integrating surface-envelope faces. A closed-shell integration API does not itself guarantee that distinction. No material or density metadata is exported. Density-aware option B is future-only work.
+
+Region substitution must be a proven outer envelope. Negative lattice occurrences in Boolean subtraction are unfinished stand-in coverage and refuse with `field.stand-in-envelope-coverage`, rather than erasing material from the envelope. Refinement-budget refusals retain full-domain moment bounds and report the reached widths where a positive field volume is already certified.
+
+This is an explicit output adapter. Ordinary application recipe edits do not measure field mass, compare kernels, or collect proof timings.
+
 
 ### Parameter-edit names
 

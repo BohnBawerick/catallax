@@ -84,6 +84,9 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
         Ok(plan) => plan,
         Err(error) => return Ok(refused(error.code, error.detail)),
     };
+    if let Err(error) = mass::check_region_envelope(&plan) {
+        return Ok(refused(error.code, error.detail));
+    }
     let span =
         catallax_numbers::OperationSpan::begin("field", &recipe.result, "mass-properties", &dec);
     let measured = mass::properties(
@@ -119,6 +122,16 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
         Ok(surrogate) => surrogate,
         Err(error) => return Ok(refused(error.code, error.detail)),
     };
+    let inertia_limit = Rational::from_ratio(1, 1_000_000_000).expect("nonzero denominator");
+    if surrogate.inertia_residual >= inertia_limit {
+        return Ok(refused(
+            "stand-in.inertia-not-matched",
+            format!(
+                "closed-form surrogate inertia residual {} exceeds the strict 1e-9 mm5 comparison",
+                surrogate.inertia_residual
+            ),
+        ));
+    }
     if !measured.contains(&surrogate.achieved) {
         return Ok(refused(
             "stand-in.properties-not-matched",
@@ -151,6 +164,16 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
         Ok(exported) => exported,
         Err(error) => return Ok(refused(error.code, error.detail)),
     };
+    let exchanged = match mass::surrogate_properties(&surrogate, &exported.value.max_deviation) {
+        Ok(properties) => properties,
+        Err(error) => return Ok(refused(error.code, error.detail)),
+    };
+    if !measured.encloses(&exchanged) {
+        return Ok(refused(
+            "stand-in.exchange-not-enclosed",
+            "STEP-rounded surrogate property bounds exceed the original field enclosures",
+        ));
+    }
     let marks: Vec<_> = exported
         .marks
         .iter()
@@ -165,7 +188,10 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
             "field_accuracy":{"volume":accuracy(&requested.volume),"centroid":accuracy(&requested.centroid),"inertia":accuracy(&requested.inertia)},
             "field_properties":field_properties,
             "surrogate_properties":{"volume":surrogate.achieved.volume.to_string(),"centroid":scalars(&surrogate.achieved.centroid),
-                "inertia":surrogate.achieved.inertia.each_ref().map(|row|scalars(row))},
+                "inertia":surrogate.achieved.inertia.each_ref().map(scalars)},
+            "exported_property_bounds":{"volume":bound(&exchanged.volume),
+                "centroid":exchanged.centroid.each_ref().map(bound),
+                "inertia":exchanged.inertia.each_ref().map(|row|row.each_ref().map(bound))},
             "inertia_residual":surrogate.inertia_residual.to_string()}}),
     )
 }

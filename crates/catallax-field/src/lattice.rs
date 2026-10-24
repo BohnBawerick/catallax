@@ -148,7 +148,7 @@ fn periodic_distance(coordinate: Interval) -> Interval {
     }
     let low = coordinate.lo().floor();
     let high = coordinate.hi().floor();
-    if low == high {
+    if low as i64 == high as i64 {
         let fraction = coordinate - Interval::point(low).unwrap();
         let distance = imin(fraction, Interval::point(1.0).unwrap() - fraction);
         imax(Interval::point(0.0).unwrap(), imin(distance, half))

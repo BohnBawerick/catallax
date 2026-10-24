@@ -4,7 +4,7 @@
 
 This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, FEA and application integration are not implemented.
 
-Lattice point queries compile the periodic beam definitions of RECIPE section 4.15, intersected with the region. Constant and linear grades use exact rational squared-distance classification and a labelled Lipschitz-scaled residual, not true distance. Cell indices retain arbitrary precision. Distance grades and reflected frames are unfinished coverage. The support-chart display cannot cover periodic beams; the separate `printing::mesh_plan` path produces their watertight STL and OBJ outputs directly from the field. STEP publication still refuses an envelope-only lattice because it does not match the field's mass properties.
+Lattice point queries compile the periodic beam definitions of RECIPE section 4.15, intersected with the region. Constant and linear grades use exact rational squared-distance classification and a labelled Lipschitz-scaled residual, not true distance. Cell indices retain arbitrary precision. Distance grades and reflected frames are unfinished coverage. The support-chart display cannot cover periodic beams; the separate `printing::mesh_plan` path produces their watertight STL and OBJ outputs directly from the field. Ordinary solid-only STEP refuses an envelope-only lattice. The explicit stand-in exchange below keeps surface-envelope and mass geometry separate.
 
 ## Watertight field printing
 
@@ -17,6 +17,29 @@ Every remaining boundary box reaches one common grid size `h`. Six conforming Ku
 Before publication, every mesh edge must have two oppositely oriented incident facets and every vertex link must be one cycle. STL coordinates are admitted only when exactly representable in binary32, so file rounding adds no unreported error. `write_stl` writes unit outward normals; `write_obj` writes the same vertices and facets for display. Neither output claims the support-chart registry's face-picking metadata. The original recipe remains the definition.
 
 The verification CLI accepts `catallax-print/1` through `print`, or through `field` when an explicit print wrapper is supplied. See [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing). P6's enclosing shell uses explicit region Booleans, not a substitute implementation of the separate shell operation.
+
+## Field moments and mass stand-ins
+
+`catallax_field::mass::properties` measures the original field definition, not a print mesh. It accepts separate `Accuracy` values for volume, centroid and centroidal inertia, a classified-cell limit, and the caller's decider. Units are mm³, mm and mm⁵ for unit density. Existing `catallax_measure::Accuracy` width semantics and defaults are unchanged.
+
+Admitted boxes contribute exact rational coordinate moments. Each unresolved box admits any density between zero and one, giving outward bounds on volume, first moments and second moments. Refinement replaces those contributions. Exact axis-aligned source planes partition the initial domain, and closed-box admission ignores only zero-volume boundaries. Rational interval propagation encloses division by volume and translation to the centroid. Zero volume has no centroid or inertia. Requested widths must all be reached; exhaustion refuses instead of changing an accuracy or discarding unresolved material.
+
+Refinement prioritises each box's largest unresolved coordinate-moment enclosure. At a cell limit it retains the parent's complete enclosure and reports the reached property widths; it does not leave a partly integrated replacement in the proof.
+
+The rational surrogate target integrates the admitted material plus half the density of each unresolved box. It is a physical positive-density estimate inside the moment enclosures, not a measurement of STL facets. Cubic cells use the exact reduction to three periodic grid-line families; generic cell templates retain their segment evaluator.
+
+The opt-in `catallax-stand-in/1` verification wrapper constructs one central unit-density box or a symmetric pair in rationalised principal axes. Cross-axis second moments determine two dimensions directly; exact volume determines the third, and the parallel-axis theorem determines pair separation. No satellite-mass convergence loop is used. Exact achieved properties and the principal-frame residual are checked before export. Targets not represented within the strict 1e-9 mm⁵ inertia comparison refuse with the achieved residual.
+
+STEP contains a `SHELL_BASED_SURFACE_MODEL` envelope and separate `MANIFOLD_SOLID_BREP` proxy bodies under a mixed `SHAPE_REPRESENTATION`. The envelope is surface geometry, not another mass solid. Sum volume properties over the proxy solids only. Surface-envelope faces must not enter that integration, even when an importing library can integrate a closed shell. No density or material property is attached. These bodies are mass proxies, not printable lattice geometry or a boundary conversion.
+
+The exchange-deviation bound also propagates through convex-box symmetric-difference bounds to volume, centroid and inertia enclosures. Every exported proxy enclosure must lie wholly inside the original field enclosure. A point estimate alone cannot certify STEP rounding.
+
+The region-substitution envelope is covered only for positive lattice occurrences. A negative lattice operand in subtraction reverses containment and refuses with `field.stand-in-envelope-coverage`; the field itself can still classify and measure that definition. Mass proxy bodies are not clearance geometry and need not reproduce the envelope's outline.
+
+Option A is this massless-envelope, unit-density exchange. Density-weighted interior bodies and material/density metadata, option B, are future work and are not accepted by this wrapper. Measurement runs only when explicitly requested; ordinary recipe construction does not integrate field moments or run comparison/timing tools.
+
+Prior art informed the separation rather than supplying code: [nTop's simplified body representation](https://support.ntop.com/hc/en-us/articles/7170769142291-How-to-export-a-Simplified-Body-Representation-of-Implicit-as-a-CAD-part), [OCCT's unit-density volume-property contract](https://occt3d.com/dev/doc/refman/html/class_b_rep_g_prop.html), and [SMLib's geometry-native mass integration](https://smlibpy.classcad.ch/docs/analysis). Field interval exclusion follows the independent-evaluation approach discussed by [Fidget](https://www.mattkeeter.com/projects/fidget/) and [libfive](https://libfive.com/), without using their implementations.
+
 
 ## Shared algebraic definitions
 

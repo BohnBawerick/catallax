@@ -1,18 +1,15 @@
-//! Mass stand-in bodies for field-only features.
+//! Unit-density stand-in bodies for field-only features.
 //!
-//! PRD section 7 and PLAN.md section 15 decide that the B-rep carries a
-//! field-only lattice as its outer envelope plus bodies matching the mass,
-//! centre of gravity and inertia the field measured. This module builds those
-//! bodies from a rational mass target: up to seven exact blocks, symmetric pairs
-//! on the rationalised principal axes and one block at the centroid.
+//! Principal second moments determine two box dimensions directly. Volume
+//! determines the third. A symmetric pair adds the remaining second moment
+//! through the parallel-axis theorem, without a mass-convergence iteration.
 //!
-//! Volume and centroid match the target exactly. The inertia tensor matches up
-//! to a reported residual: the principal frame is a rational quaternion near the
-//! exact eigenframe, and block self-inertia enters the mass solve through a
-//! fixed-point iteration. Every number in the model is rational, so the bodies
-//! are deterministic and STEP-exact.
+//! Rationalised principal axes and certified square-root midpoints propose
+//! rational geometry. Its achieved inertia and residual are evaluated exactly;
+//! callers must check the residual and the original field enclosures before
+//! publishing. Decimal STEP rounding is a separate exchange error.
 
-use catallax_numbers::{Rational, Refusal, Sign};
+use catallax_numbers::{Ball, Rational, Refusal, Sign};
 use catallax_shapes::{Pose, RVector3, Rotation};
 use catallax_topology::{BodyId, Model};
 
@@ -30,12 +27,14 @@ pub struct MassTarget {
 /// The built stand-in and its exact achieved properties.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StandInBodies {
-    /// The blocks, centre block first, then the pairs in axis order.
+    /// One central block or a symmetric pair in deterministic construction order.
     pub bodies: Vec<BodyId>,
     /// Exact unit-density properties of the blocks together.
     pub achieved: MassTarget,
     /// Largest absolute difference between achieved and target inertia components.
     pub inertia_residual: Rational,
+    /// Conservative Euclidean support radius about the reported centroid.
+    pub support_radius: Rational,
 }
 
 fn q(n: i64) -> Rational {
@@ -81,18 +80,6 @@ fn dyadic(x: f64) -> Rational {
     };
     let n = scaled.round() as i64;
     Rational::from_i64(n).mul_pow2(-shift)
-}
-
-/// Deterministic cube root by Newton steps on doubles. No platform `cbrt`.
-fn cbrt(x: f64) -> f64 {
-    if x <= 0.0 {
-        return 0.0;
-    }
-    let mut y = f64::from_bits(x.to_bits() / 3 + 0x2a9f_7893_0000_0000);
-    for _ in 0..40 {
-        y = (2.0 * y + x / (y * y)) / 3.0;
-    }
-    y
 }
 
 /// Cyclic Jacobi eigen-decomposition of a symmetric 3x3 matrix in doubles.
@@ -225,36 +212,59 @@ impl Block {
     }
 }
 
-/// Blocks follow the target's aspect ratio. Two dyadic sides fix the shape;
-/// the third side closes its volume exactly.
-fn sides_for(
-    mass: &Rational,
-    along: usize,
-    aspect: &[Rational; 3],
-) -> Result<[Rational; 3], Refusal> {
-    let aspect_volume = &(&aspect[0] * &aspect[1]) * &aspect[2];
-    let scale = dyadic(cbrt(mass.to_f64_nearest() / aspect_volume.to_f64_nearest()));
-    if scale.is_zero() {
-        return Err(Refusal::new(
-            "stand-in.numeric-range",
-            "surrogate dimensions exceed the finite numeric solve range",
-        ));
+struct Layout {
+    first: Block,
+    second: Option<Block>,
+}
+impl Layout {
+    fn blocks(&self) -> impl Iterator<Item = &Block> {
+        std::iter::once(&self.first).chain(self.second.as_ref())
     }
-    let mut sides = std::array::from_fn(|i| {
-        if i == along {
-            q(0)
-        } else {
-            &scale * &aspect[i]
+}
+struct Candidate {
+    layout: Layout,
+    inertia: [[Rational; 3]; 3],
+    residual: Rational,
+}
+impl Candidate {
+    fn new(
+        layout: Layout,
+        r: &[[Rational; 3]; 3],
+        rt: &[[Rational; 3]; 3],
+        target: &MassTarget,
+    ) -> Self {
+        let mut local = zero33();
+        for block in layout.blocks() {
+            add33(&mut local, &block.inertia());
         }
-    });
-    let product = &sides[(along + 1) % 3] * &sides[(along + 2) % 3];
-    sides[along] = mass
-        .checked_div(&product)
-        .expect("positive surrogate sides");
-    Ok(sides)
+        let inertia = mat_mul(r, &mat_mul(&local, rt));
+        let mut residual = q(0);
+        for (i, row) in inertia.iter().enumerate() {
+            for (j, value) in row.iter().enumerate() {
+                residual = residual.max((value - &target.inertia[i][j]).abs());
+            }
+        }
+        Self {
+            layout,
+            inertia,
+            residual,
+        }
+    }
+}
+fn square_root(value: &Rational) -> Result<Rational, Refusal> {
+    Ball::from_rational(value, 192)
+        .sqrt()
+        .map(|root| root.mid())
+        .ok_or_else(|| {
+            Refusal::new(
+                "stand-in.nonphysical-target",
+                "a nonnegative spatial second moment is required",
+            )
+        })
 }
 
-/// Builds the stand-in blocks into `model` and returns their exact properties.
+/// Builds a closed-form proposal and reports its exact achieved properties.
+/// A proposal outside the caller's property enclosures must not be exported.
 pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<StandInBodies, Refusal> {
     if target.volume.sign() != Sign::Positive {
         return Err(Refusal::new(
@@ -264,6 +274,12 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
     }
     let f: [[f64; 3]; 3] =
         std::array::from_fn(|i| std::array::from_fn(|j| target.inertia[i][j].to_f64_nearest()));
+    if f.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(Refusal::new(
+            "stand-in.numeric-range",
+            "principal axes exceed the finite numeric proposal range",
+        ));
+    }
     let (_, axes) = jacobi(f);
     let [w, x, y, z] = dyadic_quaternion(quaternion(&axes));
     let rotation = Rotation::from_quaternion(w, x, y, z)?;
@@ -274,167 +290,104 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
         std::array::from_fn(|i| std::array::from_fn(|j| m[i][j].clone()))
     };
     let rt = transpose(&r);
-    // Target second moments in the principal frame: P_x = integral of x^2.
     let local = mat_mul(&rt, &mat_mul(&target.inertia, &r));
-    let d = [
-        local[0][0].clone(),
-        local[1][1].clone(),
-        local[2][2].clone(),
-    ];
-    let p: [Rational; 3] = std::array::from_fn(|i| {
+    let variance: [Rational; 3] = std::array::from_fn(|i| {
         let (j, k) = ((i + 1) % 3, (i + 2) % 3);
-        (&(&d[j] + &d[k]) - &d[i]).mul_pow2(-1)
+        (&(&local[j][j] + &local[k][k]) - &local[i][i])
+            .mul_pow2(-1)
+            .checked_div(&target.volume)
+            .expect("positive volume")
     });
-    let v = &target.volume;
-    let aspect: [Rational; 3] =
-        std::array::from_fn(|i| dyadic((p[i].to_f64_nearest() / v.to_f64_nearest()).sqrt()));
-    if aspect.iter().any(Rational::is_zero) {
+    if variance.iter().any(|value| value.sign() != Sign::Positive) {
         return Err(Refusal::new(
-            "stand-in.numeric-range",
-            "a positive spatial mass target is required in every principal direction",
+            "stand-in.nonphysical-target",
+            "positive spatial second moments are required",
         ));
     }
-    // Satellite distances: dyadic numbers near the gyration radius, grown until
-    // the masses stay positive and the blocks are apart.
-    let mut distances: [Rational; 3] = std::array::from_fn(|i| {
-        if p[i].sign() == Sign::Positive {
-            dyadic((6.0 * p[i].to_f64_nearest() / v.to_f64_nearest()).sqrt())
-        } else {
-            q(1)
-        }
-    });
-    let mut blocks = Vec::new();
-    for _attempt in 0..64 {
-        let mut masses = [q(0), q(0), q(0)];
-        let mut centre_mass = v.clone();
-        let mut previous_masses: Option<[Rational; 3]> = None;
-        let mut candidate: Vec<Block> = Vec::new();
-        // Quantise each proposed satellite mass, then close the centre mass
-        // exactly. This bounds denominator growth without pretending that the
-        // resulting inertia residual is zero.
-        for _round in 0..64 {
-            // Self inertia of the current blocks, expressed as second moments.
-            let mut own = zero33();
-            for block in &candidate {
-                let shape = Block {
+    let full_sides = [
+        square_root(&(&variance[0] * &q(12)))?,
+        square_root(&(&variance[1] * &q(12)))?,
+        square_root(&(&variance[2] * &q(12)))?,
+    ];
+    let mut best: Option<Candidate> = None;
+    for axis in 0..3 {
+        let product = &full_sides[(axis + 1) % 3] * &full_sides[(axis + 2) % 3];
+        let mut sides = full_sides.clone();
+        sides[axis] = target.volume.checked_div(&product).expect("positive sides");
+        let one = Candidate::new(
+            Layout {
+                first: Block {
                     offset: zero3(),
-                    sides: block.sides.clone(),
-                };
-                add33(&mut own, &shape.inertia());
-            }
-            let own_p: [Rational; 3] = std::array::from_fn(|i| {
-                let (j, k) = ((i + 1) % 3, (i + 2) % 3);
-                (&(&own[j][j] + &own[k][k]) - &own[i][i]).mul_pow2(-1)
-            });
-            let next: [Rational; 3] = std::array::from_fn(|i| {
-                let remaining = &p[i] - &own_p[i];
-                if remaining.sign() == Sign::Positive {
-                    remaining
-                        .checked_div(&(&distances[i] * &distances[i]).mul_pow2(1))
-                        .expect("positive distance")
-                } else {
-                    q(0)
-                }
-            });
-            let mut next = next.map(|mass| dyadic(mass.to_f64_nearest()));
-            // The compact-box limit has a slowly contracting fixed point.
-            // A safeguarded Aitken step accelerates a decreasing sequence
-            // without increasing the iteration or arithmetic budgets.
-            if let Some(previous) = &previous_masses {
-                for axis in 0..3 {
-                    if next[axis] <= masses[axis] && masses[axis] <= previous[axis] {
-                        let delta = &next[axis] - &masses[axis];
-                        let denominator = &delta - &(&masses[axis] - &previous[axis]);
-                        if let Some(correction) = (&delta * &delta).checked_div(&denominator) {
-                            let accelerated = &next[axis] - &correction;
-                            if accelerated.sign() != Sign::Negative && accelerated < next[axis] {
-                                next[axis] = dyadic(accelerated.to_f64_nearest());
-                            }
-                        }
-                    }
-                }
-            }
-            let next_centre = v - &(&(&next[0] + &next[1]) + &next[2]).mul_pow2(1);
-            let settled = next == masses && next_centre == centre_mass && !candidate.is_empty();
-            previous_masses = Some(masses.clone());
-            masses = next;
-            centre_mass = next_centre;
-            if centre_mass.sign() != Sign::Positive {
-                break;
-            }
-            candidate = vec![Block {
-                offset: zero3(),
-                sides: sides_for(&centre_mass, 0, &aspect)?,
-            }];
-            for axis in 0..3 {
-                if masses[axis].is_zero() {
-                    continue;
-                }
-                for sign in [-1, 1] {
-                    let mut offset = zero3();
-                    offset[axis] = &distances[axis] * &q(sign);
-                    candidate.push(Block {
-                        offset,
-                        sides: sides_for(&masses[axis], axis, &aspect)?,
-                    });
-                }
-            }
-            if settled {
-                break;
-            }
+                    sides: sides.clone(),
+                },
+                second: None,
+            },
+            &r,
+            &rt,
+            target,
+        );
+        if best
+            .as_ref()
+            .is_none_or(|best| one.residual < best.residual)
+        {
+            best = Some(one);
         }
-        let apart = centre_mass.sign() == Sign::Positive
-            && candidate.iter().enumerate().all(|(i, a)| {
-                candidate.iter().skip(i + 1).all(|b| {
-                    (0..3).any(|axis| {
-                        let gap = (&a.offset[axis] - &b.offset[axis]).abs();
-                        gap > (&a.sides[axis] + &b.sides[axis]).mul_pow2(-1)
-                    })
-                })
-            });
-        if apart {
-            blocks = candidate;
+        if best.as_ref().is_some_and(|best| best.residual.is_zero()) {
             break;
         }
-        for distance in &mut distances {
-            *distance = distance.mul_pow2(1);
+
+        // Each box has half the volume. Cross-axis variances are fixed by its
+        // sides; the separation supplies the remaining variance on this axis.
+        sides[axis] = sides[axis].mul_pow2(-1);
+        let own = (&sides[axis] * &sides[axis])
+            .checked_div(&q(12))
+            .expect("nonzero denominator");
+        let separation2 = &variance[axis] - &own;
+        if separation2.sign() == Sign::Negative {
+            continue;
+        }
+        let separation = square_root(&separation2)?;
+        if separation.mul_pow2(1) < sides[axis] {
+            continue;
+        }
+        let mut offset = zero3();
+        offset[axis] = separation;
+        let opposite = offset.each_ref().map(|value| -value);
+        let pair = Candidate::new(
+            Layout {
+                first: Block {
+                    offset,
+                    sides: sides.clone(),
+                },
+                second: Some(Block {
+                    offset: opposite,
+                    sides,
+                }),
+            },
+            &r,
+            &rt,
+            target,
+        );
+        if best
+            .as_ref()
+            .is_none_or(|best| pair.residual < best.residual)
+        {
+            best = Some(pair);
         }
     }
-    if blocks.is_empty() {
-        return Err(Refusal::new(
-            "stand-in.unsolved",
-            "no block arrangement reproduced the mass target",
-        ));
-    }
-    // Exact achieved properties in model axes.
-    let mut volume = q(0);
-    let mut first = zero3();
-    let mut local_inertia = zero33();
-    for block in &blocks {
-        let m = block.mass();
-        for (i, value) in first.iter_mut().enumerate() {
-            *value = &*value + &(&m * &block.offset[i]);
-        }
-        volume = volume + m;
-        add33(&mut local_inertia, &block.inertia());
-    }
-    let shift = mat_vec(&r, &first);
-    let centroid: [Rational; 3] = std::array::from_fn(|i| {
-        &target.centroid[i]
-            + &shift[i]
-                .checked_div(&volume)
-                .expect("positive stand-in volume")
-    });
-    let inertia = mat_mul(&r, &mat_mul(&local_inertia, &rt));
-    let mut residual = q(0);
-    for (i, row) in inertia.iter().enumerate() {
-        for (j, value) in row.iter().enumerate() {
-            residual = residual.max((value - &target.inertia[i][j]).abs());
-        }
-    }
-    let mut bodies = Vec::with_capacity(blocks.len());
-    for block in &blocks {
+    let Candidate {
+        layout,
+        inertia,
+        residual,
+    } = best.expect("three positive single-box proposals");
+    let mut bodies = Vec::with_capacity(1 + usize::from(layout.second.is_some()));
+    let mut support_radius = q(0);
+    for block in layout.blocks() {
         let half: [Rational; 3] = std::array::from_fn(|i| block.sides[i].mul_pow2(-1));
+        // A rational rotation preserves Euclidean distance; the local L1 norm
+        // bounds the support radius without an additional square root.
+        let radius = (0..3).fold(q(0), |sum, i| &(&sum + &block.offset[i].abs()) + &half[i]);
+        support_radius = support_radius.max(radius);
         let corner: [Rational; 3] = std::array::from_fn(|i| &block.offset[i] - &half[i]);
         let world = mat_vec(&r, &corner);
         let translation = RVector3::new(
@@ -448,11 +401,12 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
     Ok(StandInBodies {
         bodies,
         achieved: MassTarget {
-            volume,
-            centroid,
+            volume: target.volume.clone(),
+            centroid: target.centroid.clone(),
             inertia,
         },
         inertia_residual: residual,
+        support_radius,
     })
 }
 

@@ -68,3 +68,43 @@ fn linear_radius_is_read_at_the_query_point_and_clamped() {
         );
     }
 }
+
+#[test]
+fn cubic_grid_line_reduction_matches_periodic_segments_across_negative_cells() {
+    let mut recipe = serde_json::json!({
+        "format":"catallax-recipe/3","name":"cubic equivalence",
+        "steps":[
+            {"id":"region","op":"block","size":["8","8","8"],
+             "pose":{"rotation":["1","0","0","0"],"translation":["-4","-4","-4"]}},
+            {"id":"beams","op":"lattice","region":"region","cell":"cubic","size":"2",
+             "frame":{"rotation":["3","0","0","1"],"translation":["0.25","-0.5","0.75"]},
+             "radius":{"constant":"0.25"}}],"result":"beams"
+    });
+    let cubic = Plan::compile(&Recipe::parse(&recipe.to_string()).unwrap()).unwrap();
+    recipe["steps"][1]["cell"] = serde_json::json!({"custom":{
+        "nodes":[["0","0","0"],["1","0","0"],["0","1","0"],["0","0","1"]],
+        "beams":[[0,1],[0,2],[0,3]]
+    }});
+    let generic = Plan::compile(&Recipe::parse(&recipe.to_string()).unwrap()).unwrap();
+    let values = [
+        "-2.25", "-2", "-1.75", "-1", "-0.25", "0", "0.25", "1", "1.75", "2", "2.25",
+    ]
+    .map(q);
+    let mut a = Workspace::default();
+    let mut b = Workspace::default();
+    for index in 0..48 {
+        let x = &values[index % 8];
+        let y = &values[index / 8];
+        let z = &values[index * 7 % values.len()];
+        let point = RPoint3::new(
+            &(&(&q("0.8") * x) - &(&q("0.6") * y)) + &q("0.25"),
+            &(&(&q("0.6") * x) + &(&q("0.8") * y)) - &q("0.5"),
+            z + &q("0.75"),
+        );
+        assert_eq!(
+            cubic.proven(&point, &mut a).location,
+            generic.proven(&point, &mut b).location,
+            "local {x},{y},{z}"
+        );
+    }
+}

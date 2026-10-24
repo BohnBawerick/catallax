@@ -508,9 +508,7 @@ pub(super) fn intersect(
             "this intersection needs a finite parametric surface solver",
         )
     })?;
-    let solutions = if !geom.surface(s).has_rational_definition()
-        && let CurveForm::Line { origin, dir } = &form
-    {
+    let solutions = if let CurveForm::Line { origin, dir } = &form {
         algebraic_line(origin, dir, geom.surface(s), implicit, dec)?
     } else {
         let equations = carrier_equations(geom, c, &form, dec)?;

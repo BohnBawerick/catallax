@@ -1505,3 +1505,42 @@ fn optional_identities_leave_native_quartic_proof_work_available() {
     assert!(answer.is_coincident(), "{answer:?} {work:?}");
     assert!(!work.exhausted);
 }
+
+#[test]
+fn deep_optional_identity_declines_before_spending_the_request() {
+    let [_, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    let mut values = vec![cosine];
+    for _ in 0..1024 {
+        values.push(values.last().unwrap() + &Real::zero());
+    }
+    let (answer, work) = with_operation_budget(3_000, || {
+        let mut dec = Decider::default();
+        let value = values.last().unwrap();
+        assert_eq!(dec.rational_identity(value).unwrap(), None);
+        dec.sign(value)
+    });
+    assert_eq!(answer.proven(), Some(&StrictSign::Positive));
+    assert!(!work.exhausted);
+    // Retain the ancestors until their parents are dropped, avoiding a deep
+    // destructor chain in the test itself.
+    while values.pop().is_some() {}
+}
+
+#[test]
+fn opaque_atom_matching_also_obeys_the_optional_work_bound() {
+    let [_, cosine] = sin_cos_degrees(&q("82"), &mut Decider::default()).unwrap();
+    let mut a = vec![cosine.clone()];
+    let mut b = vec![cosine];
+    for _ in 0..1024 {
+        a.push(a.last().unwrap() + &Real::zero());
+        b.push(b.last().unwrap() + &Real::zero());
+    }
+    let zero = a.last().unwrap().sqrt() - b.last().unwrap().sqrt();
+    let (answer, work) =
+        with_operation_budget(3_000, || Decider::default().rational_identity(&zero));
+    assert_eq!(answer.unwrap(), None);
+    assert!(!work.exhausted);
+    drop(zero);
+    while a.pop().is_some() {}
+    while b.pop().is_some() {}
+}

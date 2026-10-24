@@ -16,6 +16,66 @@ const MAX_NODES: usize = 512;
 const MAX_WORK: u64 = 10_000;
 type Polynomial = BTreeMap<Vec<usize>, Rational>;
 
+// Definition matching is also bounded and iterative. An opaque square-root
+// atom can contain a deep radicand even when the expanded polynomial is small.
+fn same_definition(a: &Real, b: &Real, work: &mut Work) -> Result<bool, &'static str> {
+    let mut pending = vec![(a, b)];
+    let mut visited = 0;
+    while let Some((a, b)) = pending.pop() {
+        work.charge(1)?;
+        if visited >= MAX_NODES {
+            return Err(LIMIT);
+        }
+        visited += 1;
+        if a.same_node(b) {
+            continue;
+        }
+        if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
+            work.exact(a, b, false)?;
+            if a != b {
+                return Ok(false);
+            }
+            continue;
+        }
+        match (&a.node.expr, &b.node.expr) {
+            (Expr::Algebraic(a), Expr::Algebraic(b)) => {
+                let (
+                    crate::algebraic::AlgebraicRepr::Root(a),
+                    crate::algebraic::AlgebraicRepr::Root(b),
+                ) = (&a.repr, &b.repr)
+                else {
+                    return Ok(false);
+                };
+                if Arc::ptr_eq(a, b) {
+                    continue;
+                }
+                let (ac, bc) = (a.polynomial.coefficients(), b.polynomial.coefficients());
+                if ac.len() != bc.len() {
+                    return Ok(false);
+                }
+                for (a, b) in ac.iter().zip(bc).chain([(&a.lo, &b.lo), (&a.hi, &b.hi)]) {
+                    work.exact(a, b, false)?;
+                    if a != b {
+                        return Ok(false);
+                    }
+                }
+            }
+            (Expr::Neg(a), Expr::Neg(b))
+            | (Expr::Sqrt(a), Expr::Sqrt(b))
+            | (Expr::Square(a), Expr::Square(b)) => pending.push((a, b)),
+            (Expr::Pow(a, n), Expr::Pow(b, m)) if n == m => pending.push((a, b)),
+            (Expr::Add(a, b), Expr::Add(c, d))
+            | (Expr::Sub(a, b), Expr::Sub(c, d))
+            | (Expr::Mul(a, b), Expr::Mul(c, d))
+            | (Expr::Div(a, b), Expr::Div(c, d)) => {
+                pending.extend([(a, c), (b, d)]);
+            }
+            _ => return Ok(false),
+        }
+    }
+    Ok(true)
+}
+
 #[derive(Clone)]
 struct Fraction {
     numerator: Polynomial,
@@ -193,6 +253,7 @@ struct Identity<'a, 'w> {
     cache: HashMap<*const crate::real::Node, Fraction>,
     work: &'w mut Work,
     rewrites: usize,
+    nodes: usize,
 }
 
 impl<'a> Identity<'a, '_> {
@@ -257,9 +318,12 @@ impl<'a> Identity<'a, '_> {
         if let Some(result) = self.cache.get(&key) {
             return Ok(result.clone());
         }
-        if self.cache.len() >= MAX_NODES {
+        if self.nodes >= MAX_NODES {
             return Err(LIMIT);
         }
+        // Count before descending: unfinished ancestors are not yet cached.
+        // A deep chain must obey the same bound as a wide expression DAG.
+        self.nodes += 1;
         let result = if let Some(rational) = value.rational_ref() {
             self.work.exact(rational, rational, false)?;
             Fraction::constant(rational.clone())
@@ -270,7 +334,7 @@ impl<'a> Identity<'a, '_> {
                     let mut index = None;
                     for (i, atom) in self.atoms.iter().enumerate() {
                         self.work.charge(1)?;
-                        if atom.same_definition(value) {
+                        if same_definition(atom, value, self.work)? {
                             index = Some(i);
                             break;
                         }
@@ -352,6 +416,7 @@ pub(crate) fn rational(value: &Real, work: &mut Work) -> Result<Option<Rational>
         cache: HashMap::new(),
         work,
         rewrites: 0,
+        nodes: 0,
     };
     let result = identity
         .visit(value)

@@ -219,12 +219,14 @@ pub fn build_incremental(
     options: &MeshOptions,
     decider: &mut Decider,
 ) -> Result<IncrementalApplicationBody, Error> {
-    let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
-    let (display, names) = display_and_names(checkpoint.built(), options, decider)?;
-    Ok(IncrementalApplicationBody {
-        checkpoint,
-        display,
-        names,
+    bounded_build(|| {
+        let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
+        let (display, names) = display_and_names(checkpoint.built(), options, decider)?;
+        Ok(IncrementalApplicationBody {
+            checkpoint,
+            display,
+            names,
+        })
     })
 }
 

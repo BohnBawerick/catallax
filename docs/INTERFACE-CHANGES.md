@@ -1435,6 +1435,8 @@ immutable `Built` view and retains profiles, body bounds and feature definitions
 Step, format or numeric-policy mismatches rebuild from the start. Application
 `build_incremental` adds the existing topology check, display and picking names
 without copying the checkpoint's model. Existing build signatures remain valid.
+The incremental entry also preserves the existing aggregate application work
+guard and any explicit caller-owned allowance.
 
 Why: replaying every earlier boolean made edit cost grow with the feature tree.
 Separately, negative fact queries repeatedly traversed equivalent historical

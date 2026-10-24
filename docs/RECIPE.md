@@ -1178,6 +1178,8 @@ separate entry and cannot supply an ordinary checkpoint.
 `catallax_app::build_incremental(&recipe, prefix, &mesh_options, &mut decider)`
 returns `IncrementalApplicationBody` with `checkpoint`, `display` and `names`.
 The application checks topology and derives display from `checkpoint.built()`.
+It honors the same aggregate application work guard and caller-owned allowance
+as `build`; prefix reuse does not reset or enlarge either limit.
 SolidDraft can keep the checkpoint with its body handle, then pass it into the
 next merged recipe. Conversion and backend integration stay on the caller's
 side. Neither build entry requests measurement or comparison. Diagnostic timing

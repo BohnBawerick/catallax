@@ -390,11 +390,12 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
         <li><span>Solids</span><b>Blocks, cylinders, spheres, cones and tori. Exact, by definition.</b></li>
         <li><span>Booleans</span><b>Unite, subtract and intersect on plane, cylinder and sphere pairs, plus closed-form cone and torus cases.</b></li>
         <li><span>Sketches</span><b>Exact line, arc and circle profiles with holes, signed extrusions, rational-frame revolutions and through-all cuts. Operation-derived face and edge names.</b></li>
+        <li><span>Chamfers</span><b>Exact named planar strips and conical rings, with equal or ordered unequal setbacks. Independent field construction; general corner and neighbour continuation remain unfinished.</b></li>
         <li><span>Measure</span><b>Volume, area and centroid with proven bounds.</b></li>
         <li><span>Output</span><b>STEP AP242 with a proven deviation report. Display meshes with proven chord error.</b></li>
         <li><span>Field</span><b>Recipe solids, sketches, extrusions, rational-frame revolutions and booleans. Certified distance bounds and a sampled two-way B-rep check, not a whole-model proof.</b></li>
       </ul>
-      <p class="works__not">Not yet: fillets, chamfers, shell, offset, draft, sweep, loft, patterns, mirror, STEP import or SolidDraft integration. General algebraic frames and some valid cone, torus and near-tangent cases still refuse. Some operations take seconds; click-speed rebuilds remain in design. <a href="https://github.com/BohnBawerick/catallax#what-works-today">The full list, with caveats</a>.</p>
+      <p class="works__not">Not yet: general fillets, chamfer continuation, shell, offset, draft, sweep, loft, patterns, mirror, STEP import or SolidDraft integration. General algebraic frames and some valid cone, torus and near-tangent cases still refuse. Some operations take seconds; click-speed rebuilds remain in design. <a href="https://github.com/BohnBawerick/catallax#what-works-today">The full list, with caveats</a>.</p>
       <p class="works__not">Kept rules: no unsafe code; derived geometry stored by definition; a proven answer is never wrong. Only impossible geometry is an acceptable final refusal. Refusals of possible geometry are unfinished work, not exclusions from the goal.</p>
     </div>
   </div>

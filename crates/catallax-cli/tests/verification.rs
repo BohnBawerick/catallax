@@ -322,7 +322,8 @@ fn unsupported_field_feature_removes_previous_display_without_brep_fallback() {
     let response = answer(&Request {
         format: "catallax-request/1".into(),
         source: "field".into(),
-        problem: serde_json::from_str(include_str!("../../../parts/P2-collar.json")).unwrap(),
+        // A shell exercises an unsupported compile step and artifact cleanup.
+        problem: serde_json::from_str(include_str!("../../../parts/P4-shelled-tray.json")).unwrap(),
         out: dir.clone(),
         max_work: 100_000_000,
     })

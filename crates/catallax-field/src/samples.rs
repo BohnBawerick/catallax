@@ -8,6 +8,8 @@ use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Origin};
 use catallax_shapes::{Isometry, Point3, RPoint3, RVector3, Vector3};
 
+mod cell;
+
 pub(crate) type Bounds = [[Rational; 2]; 3];
 
 pub(crate) fn transform(bounds: &Bounds, pose: &Isometry) -> Result<Bounds, Refusal> {
@@ -58,7 +60,7 @@ pub(crate) fn circle(n: u32) -> Vec<[Rational; 2]> {
     points
 }
 impl Plan {
-    /// Visits rational candidates from current primitive, sweep and draft definitions.
+    /// Visits rational candidates from current primitive, sweep, draft and cell definitions.
     /// Each point carries its exact registry handle: one origin can have pieces
     /// on different supports. No historical primitive is sampled in place of a
     /// replacement definition. Use `face_query` to establish actual membership.
@@ -82,8 +84,10 @@ impl Plan {
         let has_derived = self.faces.iter().any(|face| {
             face.in_result
                 && self.leaf_registers[face.leaf].is_some()
-                && (matches!(self.leaves[face.leaf], Leaf::Feature(_) | Leaf::Draft(_))
-                    || matches!(&self.leaves[face.leaf], Leaf::Cell(cell) if cell.capped_chart().is_some()))
+                && matches!(
+                    self.leaves[face.leaf],
+                    Leaf::Feature(_) | Leaf::Draft(_) | Leaf::Cell(_)
+                )
         });
         if self.is_proven_empty() {
             return Ok(true);
@@ -189,7 +193,15 @@ impl Plan {
                 return Ok(false);
             }
         }
-        Ok(true)
+        // Keep the existing feature traversal and cooperative cancellation order.
+        // Cell candidates are a separate, definition-native pass. They are not
+        // boundary certificates; callers must use the same face queries as for
+        // all other candidate sources.
+        if let Some(result) = result {
+            cell::visit(self, divisions, result, &mut visit)
+        } else {
+            Ok(true)
+        }
     }
 }
 

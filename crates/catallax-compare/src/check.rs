@@ -192,9 +192,8 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
             Operation::ExtrudeTo{..}|Operation::ExtrudeNext{..}|
             Operation::Revolve{..}|Operation::Hole{..}|Operation::Pattern{..}|Operation::Mirror{..}|
-            Operation::Fillet{..}|Operation::Draft{..}=>return None,
+            Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}=>return None,
             Operation::Path{..}=>"neither kernel evaluates recipe paths",
-            Operation::Chamfer{..}=>"neither kernel evaluates recipe chamfers",
             Operation::Shell{..}=>"neither kernel evaluates recipe shelling",
             Operation::Offset{..}=>"neither kernel evaluates recipe offsets",
             Operation::Thicken{..}=>"neither kernel evaluates recipe thickening",
@@ -798,7 +797,7 @@ pub(crate) fn run(
         }
         let source = id.index();
         let origin = &field.faces()[source].origin;
-        let query = match field.face_query_checked(id, &p, &mut storage, &mut dec) {
+        let query = match field.closed_face_query_checked(id, &p, &mut storage, &mut dec) {
             Ok(query) => query,
             Err(error) => {
                 sampling_failed.set(true);
@@ -839,7 +838,7 @@ pub(crate) fn run(
             let coactive = if index == source {
                 query
             } else {
-                match field.face_query_checked(candidate, &p, &mut storage, &mut dec) {
+                match field.closed_face_query_checked(candidate, &p, &mut storage, &mut dec) {
                     Ok(query) => query,
                     Err(error) => {
                         sampling_failed.set(true);

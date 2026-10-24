@@ -18,7 +18,7 @@ mod chart;
 mod diagnostics;
 pub(crate) mod membership;
 use boolean::{Boolean, Germ, State};
-use chart::Chart;
+use chart::{Chart, Pullback};
 use diagnostics::Snapshot;
 pub use diagnostics::{Cost, Diagnostics, FaceWork, SupportWork};
 
@@ -232,6 +232,7 @@ struct Patch {
     chart: Chart,
     faces: Vec<usize>,
     coincident: Vec<Vec<bool>>,
+    pullbacks: Vec<Vec<Option<Pullback>>>,
     group: usize,
     // A proved location is constant on this open parameter rectangle. A child's
     // open interior lies inside it, so descendants reuse the proof, not a sample.
@@ -530,8 +531,6 @@ fn mesh_plan_inner(
                         cuts[1].push(root);
                     }
                 }
-                cuts[1].sort();
-                cuts[1].dedup();
                 radial
             } else {
                 builder
@@ -540,11 +539,16 @@ fn mesh_plan_inner(
                     .map(|c| vec![None; c.len()])
                     .collect()
             };
+            for axis in &mut cuts {
+                axis.sort();
+                axis.dedup();
+            }
             patches.push(Patch {
                 chart,
                 group,
                 faces: faces.clone(),
                 coincident: coincident.clone(),
+                pullbacks: Vec::new(),
                 regions: vec![None; plan.leaves.len()],
                 cuts,
                 radial,
@@ -558,6 +562,33 @@ fn mesh_plan_inner(
                 shared_sides: shared_sides.clone(),
                 last_states: None,
             });
+        }
+    }
+    // Validate every chart before preparing exact restrictions. A later
+    // unsupported support must not pay for unusable earlier pullbacks.
+    for patch in &mut patches {
+        for (i, constraints) in builder.constraints.iter().enumerate() {
+            let mut row = Vec::new();
+            for (j, constraint) in constraints.iter().enumerate() {
+                let restriction = constraint
+                    .polynomial
+                    .as_ref()
+                    .map(|p| patch.chart.pullback(p, dec))
+                    .transpose()?;
+                if let Some(restriction) = &restriction {
+                    patch.coincident[i][j] |= restriction.is_zero();
+                    let rails = restriction.cuts(&patch.chart.domain, dec)?;
+                    for (cuts, rails) in patch.cuts.iter_mut().zip(rails) {
+                        cuts.extend(rails);
+                    }
+                }
+                row.push(restriction);
+            }
+            patch.pullbacks.push(row);
+        }
+        for axis in &mut patch.cuts {
+            axis.sort();
+            axis.dedup();
         }
     }
     let mut stack: Vec<_> = patches
@@ -989,7 +1020,9 @@ impl Builder<'_> {
             {
                 return Ok(absent);
             }
-            _ => return Ok(unknown),
+            _ => {
+                return plan.closed_face_query_checked(FaceId(id), point, &mut self.workspace, dec);
+            }
         };
         Ok(FaceQuery {
             state: FaceState::OnFace,
@@ -1057,7 +1090,7 @@ impl Builder<'_> {
                             continue;
                         }
                         let range = c.range(cover);
-                        let sign = range
+                        let mut sign = range
                             .sign()
                             .map(|s| match s {
                                 catallax_numbers::StrictSign::Positive => {
@@ -1075,9 +1108,16 @@ impl Builder<'_> {
                                     patch.radial[i][j].as_ref(),
                                 )
                             });
+                        if sign.is_none()
+                            && let Some(restriction) = &patch.pullbacks[i][j]
+                        {
+                            sign = restriction.sign(cell, dec)?;
+                        }
                         stable &= sign.is_some();
-                        if matches!(self.plan.leaves[i], crate::geometry::Leaf::Primitive(_))
-                            && sign == Some(catallax_numbers::Sign::Positive)
+                        if matches!(
+                            self.plan.leaves[i],
+                            crate::geometry::Leaf::Primitive(_) | crate::geometry::Leaf::Cell(_)
+                        ) && sign == Some(catallax_numbers::Sign::Positive)
                         {
                             outside = true;
                             break;
@@ -1328,3 +1368,6 @@ impl Builder<'_> {
         false
     }
 }
+
+#[cfg(test)]
+mod cell_tests;

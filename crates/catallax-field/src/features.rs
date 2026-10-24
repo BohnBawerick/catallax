@@ -28,6 +28,7 @@ enum Sweep {
 #[derive(Clone, Debug)]
 pub(crate) struct Feature {
     loops: Vec<Vec<Edge>>,
+    convex_revolve: Option<(Sign, i64)>,
     inverse: Isometry,
     sweep: Sweep,
     axis_norm: Rational,
@@ -36,6 +37,7 @@ pub(crate) struct Feature {
     pub(crate) constraints: Vec<geometry::Constraint>,
     fast: FastProfile,
     pub(crate) fillet: Option<Box<catallax_features::fillet::FilletDefinition>>,
+    pub(crate) chamfer: Option<Box<catallax_features::chamfer::ChamferDefinition>>,
 }
 fn bad(code: &'static str) -> Refusal {
     Refusal::new(
@@ -773,6 +775,7 @@ impl Feature {
         }
         Ok(Self {
             loops: profile.loops.clone(),
+            convex_revolve: convex_revolve(profile, &sweep),
             inverse: Isometry::from(&profile.pose.inverse()),
             fast: FastProfile::new(profile, &sweep, &axis_norm),
             axis_norm,
@@ -781,10 +784,14 @@ impl Feature {
             constraints,
             supports,
             fillet: None,
+            chamfer: None,
         })
     }
     pub fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
         if let Some(definition) = &mut self.fillet {
+            definition.transform(pose)?;
+        }
+        if let Some(definition) = &mut self.chamfer {
             definition.transform(pose)?;
         }
         self.inverse = pose.inverse().then(&self.inverse);
@@ -817,6 +824,9 @@ impl Feature {
     }
     pub(crate) fn classify(&self, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
         let local = self.inverse.apply_point(p);
+        if let Some((location, _)) = self.convex_revolve_query(&local, dec)? {
+            return Ok(location);
+        }
         match &self.sweep {
             Sweep::Extrude { vector, through } => {
                 let t = &local.z / &Real::from(vector.z.clone());
@@ -896,6 +906,62 @@ impl Feature {
             }
         }
     }
+    // A full revolution of a convex line polygon is an intersection of
+    // oriented section half-planes evaluated at its unique radial preimage.
+    // Compare A*sqrt(D)+B by sign and squaring, avoiding root isolation at
+    // every rounded display vertex. The convexity and one-sided-axis proofs
+    // are cached from the immutable profile, and other profiles use the
+    // general winding evaluator.
+    fn convex_revolve_query(
+        &self,
+        local: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<(Location, Vec<usize>)>, Refusal> {
+        let Some((winding, radial_sign)) = self.convex_revolve else {
+            return Ok(None);
+        };
+        dec.check_deadline()?;
+        let Sweep::Revolve { origin, axis, .. } = &self.sweep else {
+            return Ok(None);
+        };
+        let origin_real = origin.to_real();
+        let axis_real = axis.to_real();
+        let norm = Real::from(self.axis_norm.clone());
+        let v = local.minus(&origin_real);
+        let t = v.dot(&axis_real) / norm.clone();
+        let base = origin_real.plus(&axis_real.scaled(&t));
+        let cross = axis_real.cross(&v).z;
+        let radicand = cross.square() / norm.square() + local.z.square() / norm;
+        let mut boundary = Vec::new();
+        for (i, edge) in self.loops[0].iter().enumerate() {
+            let d = profile::sub(&edge.end, &edge.start);
+            let a =
+                Real::from((&d[0] * &axis.x + &d[1] * &axis.y) * Rational::from_i64(radial_sign));
+            let b = &Real::from(d[0].clone()) * &(&base.y - &Real::from(edge.start[1].clone()))
+                - &Real::from(d[1].clone()) * &(&base.x - &Real::from(edge.start[0].clone()));
+            let side = radical_sign(&a, &b, &radicand, dec)?;
+            if side != winding && side != Sign::Zero {
+                return Ok(Some((Location::Outside, Vec::new())));
+            }
+            if side == Sign::Zero {
+                let axis_edge = [&edge.start, &edge.end]
+                    .iter()
+                    .all(|p| axis.cross(&point(p).minus(origin)).z.is_zero());
+                if !axis_edge {
+                    boundary.push(i);
+                }
+            }
+        }
+        Ok(Some((
+            if boundary.is_empty() {
+                Location::Inside
+            } else {
+                Location::Boundary
+            },
+            boundary,
+        )))
+    }
+
     pub fn on_face(
         &self,
         role: &Role,
@@ -930,8 +996,24 @@ impl Feature {
                 segment: catallax_recipe::ElementId::new("blend").expect("fixed section id"),
                 path: None,
             });
+        let alias = alias.or_else(|| {
+            self.chamfer
+                .as_ref()
+                .filter(|f| &f.origin.role == role)
+                .map(|_| Role::Side {
+                    segment: catallax_recipe::ElementId::new("bevel").expect("fixed section id"),
+                    path: None,
+                })
+        });
         let role = alias.as_ref().unwrap_or(role);
         let local = self.inverse.apply_point(p);
+        if let Role::Side { segment, .. } = role
+            && let Some((_, boundary)) = self.convex_revolve_query(&local, dec)?
+        {
+            return Ok(boundary
+                .into_iter()
+                .any(|i| self.loops[0][i].ids.contains(segment)));
+        }
         let norm = &self.axis_norm;
         let merge_caps = &self.merge_caps;
         match &self.sweep {
@@ -1153,6 +1235,75 @@ impl Feature {
         }
         if inside { -residual } else { residual }
     }
+}
+
+// The constructor has already validated the loops. A single straight loop
+// is convex exactly when every vertex lies in every oriented edge half-plane.
+fn convex_revolve(profile: &Profile, sweep: &Sweep) -> Option<(Sign, i64)> {
+    let Sweep::Revolve {
+        origin,
+        axis,
+        angle: 360,
+    } = sweep
+    else {
+        return None;
+    };
+    let [edges] = profile.loops.as_slice() else {
+        return None;
+    };
+    if edges.len() < 3 || edges.iter().any(|edge| edge.circle.is_some()) {
+        return None;
+    }
+    let area = edges.iter().fold(Rational::zero(), |area, e| {
+        area + profile::cross(&e.start, &e.end)
+    });
+    let winding = area.sign();
+    if winding == Sign::Zero {
+        return None;
+    }
+    let mut radial = None;
+    for edge in edges {
+        let d = profile::sub(&edge.end, &edge.start);
+        for other in edges {
+            let s = profile::cross(&d, &profile::sub(&other.start, &edge.start)).sign();
+            if s != Sign::Zero && s != winding {
+                return None;
+            }
+        }
+        let s = axis.cross(&point(&edge.start).minus(origin)).z.sign();
+        if s != Sign::Zero {
+            if radial.is_some_and(|r| r != s) {
+                return None;
+            }
+            radial = Some(s);
+        }
+    }
+    Some((winding, if radial? == Sign::Positive { 1 } else { -1 }))
+}
+
+fn radical_sign(a: &Real, b: &Real, d: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    let sa = geometry::sign(a, dec)?;
+    let sb = geometry::sign(b, dec)?;
+    if sa == Sign::Zero {
+        return Ok(sb);
+    }
+    if sb == Sign::Zero {
+        return Ok(if geometry::sign(d, dec)? == Sign::Zero {
+            Sign::Zero
+        } else {
+            sa
+        });
+    }
+    if sa == sb {
+        return Ok(sa);
+    }
+    Ok(
+        match geometry::sign(&(&a.square() * d - b.square()), dec)? {
+            Sign::Positive => sa,
+            Sign::Negative => sb,
+            Sign::Zero => Sign::Zero,
+        },
+    )
 }
 
 fn sqrt_real(n: &Real, dec: &mut Decider) -> Result<Real, Refusal> {
@@ -1488,6 +1639,15 @@ impl Feature {
                 segment: catallax_recipe::ElementId::new("blend").expect("fixed section id"),
                 path: None,
             });
+        let alias = alias.or_else(|| {
+            self.chamfer
+                .as_ref()
+                .filter(|f| &f.origin.role == role)
+                .map(|_| Role::Side {
+                    segment: catallax_recipe::ElementId::new("bevel").expect("fixed section id"),
+                    path: None,
+                })
+        });
         let role = alias.as_ref().unwrap_or(role);
         use crate::samples::{circle, fraction};
         let pose = self.inverse.inverse();

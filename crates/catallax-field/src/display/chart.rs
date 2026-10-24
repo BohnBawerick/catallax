@@ -5,6 +5,10 @@ use catallax_shapes::{RPoint3, RVector3, Surface, Vector3};
 
 use super::{Cell, failure};
 
+#[path = "pullback.rs"]
+mod pullback;
+pub(super) use pullback::Pullback;
+
 fn q(n: i64) -> Rational {
     Rational::from_i64(n)
 }

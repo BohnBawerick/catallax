@@ -25,6 +25,7 @@ Add cross-kernel fixtures for 45-degree revolve, extrusion along `[1,0,1]`, obli
 | `Plan::proven`, `proven_checked` | Exact rational/algebraic predicates, outward-rounded binary-ball evaluation and explicit result semantics. Input coordinates are exact `RPoint3` values in millimetres; the checked variant propagates numeric refusals under the caller's policy. |
 | `Plan::transformed` | Compose a validated exact rigid pose into supports, constraints, metric placements and face records using the caller's decider. |
 | `Plan::prepare_distances` | Prepare reusable compact analytic chart covers from recipe bounds and trim predicates. No B-rep is built. |
+| `Plan::closed_face_query_checked` | Refine named-face membership at a closed trim contact using certified transverse support sectors; preserve numeric refusals and unresolved tangencies. |
 | `distance::Prepared::{point_to_face, face_to_face, point_to_boundary}` | Outward-rounded minimum-distance bounds with exact admitted witnesses, an explicit convergence flag and deterministic refinement limits. |
 | `Plan::visit_candidates` | Definition-native rational candidates paired with their current `FaceId`. Visit completion and point membership are separate claims. |
 | `Plan::result_face` | Current candidate handle at a registry index; construction history and unused leaves return `None`. |
@@ -163,6 +164,18 @@ Normals come from exact supporting-surface gradients, not finite differences. In
 `Plan::faces` is an immutable source-face registry outside the optimised tape. It holds each recipe `Origin` and exact world-space `Surface`. `select` resolves an origin, not an instruction index. Geometrically identical leaves may share evaluation work without sharing or losing their names. A union of identical solids keeps both sets of selectable origins. Subtraction can fold to empty without deleting its source names from the registry.
 
 Registry entries are candidates, not a claim that all their geometry survives. `face_query` checks the supporting equation, source primitive domain, result classification and orientation. It returns `NotOnFace` for removed or out-of-trim points. Distinct active supporting surfaces at a Boolean trim intersection can return `Indeterminate`; mere contact with a support is not proof of a surviving face patch. Primitive edge/corner incidence remains selectable with an ambiguous normal. Coactive names on a common surviving support provide the merged face's origin set. This crate does not construct maximal B-rep faces, edge graphs or split components.
+
+`closed_face_query_checked` refines an indeterminate named-face query when the
+active arrangement consists of two transverse smooth supports or exact planes.
+It visits every open sector in the selected carrier's tangent plane and uses
+exact normal perturbations that preserve every other support sign. A source
+boundary and a result-material transition in one such sector prove an open
+named patch approaching the contact. Exhausting the sectors can instead prove
+the selected patch absent, including a consumed sharp circle. Distinct source
+roles sharing a carrier, tangent or singular supports and larger curved fans
+remain unresolved. An isolated buried tangency cannot supply this proof.
+Draft tile domains retain their ordinary named-face proof: carrier sectors
+alone do not identify the selected coplanar tile.
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
 
@@ -437,6 +450,21 @@ A constraint proved equal to a coaxial cylinder restricts
 to `A*r²+B`; exact radial endpoint signs classify its open cells, and rational
 roots become subdivision cuts. This equality is established from the complete
 support definitions, not fitted from samples.
+
+Rational chart coordinates also restrict each rational trim polynomial exactly
+to the parameter rectangle. Clearing products of `1+t²` preserves signs because
+these denominators are strictly positive. Identically zero restrictions prove
+coincidence on the chart. Tensor-product Bernstein coefficients certify strict
+signs on an open rectangle, including aligned zero edges. Proposed rational
+linear or quadratic parameter rails are checked against every coefficient in
+the other parameter before becoming subdivision cuts. Higher-degree or
+unsettled restrictions retain the existing certified subdivision path.
+
+One proven-positive regional constraint excludes an analytic `Cell`, which is
+an intersection of inequalities, just as it excludes a primitive. Profile
+`Feature` leaves retain winding-based classification; an arbitrary positive
+support does not exclude a concave profile. All these regional proofs retain
+the existing tolerance, vertex, cell and request-work controls.
 
 For a radial cell, the emitted triangles form the chord trapezoid of an
 annular sector, or a fan when the inner radius is zero. Every point of that

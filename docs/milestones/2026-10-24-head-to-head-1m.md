@@ -2,6 +2,8 @@
 
 This first run measures commit `74bf31a8fae4e2d814cc9a4224dee401621401de`, based on `94ee7ebe72c986cf8944646b55d2643079962583`, against released SolidCraft v0.21.0. Each Catallax phase has a fixed allowance of 1,000,000 deterministic work units. This is the documented scoreboard setting, not the exchange's 100,000,000-unit default. The allowance is not increased to turn a refusal into a passing row.
 
+This is a snapshot of that named commit. Later `main` feature merges, including elementary chamfer construction, are not retroactively measured by these rows.
+
 Construction answers are not complete interactive results. Catallax constructs four of thirteen targets and their edits at this allowance. Every attempted Catallax display exhausts its own allowance, so none of these rows proves a completed displayed edit. Five target constructions exhaust work; the general cone and torus, P2 chamfer and P4 shell return typed coverage refusals. The reference constructs eleven targets; P1 and P5 fail in native Boolean commands, and its equal-cylinder/sphere edit also fails. Failed targets are retained rather than replaced by prefixes.
 
 One warmup and three measured alternating pairs run on pinned core 0, with one thread. The host exposes 24 allowed cores and reports Linux under WSL2. Pair-start one-minute load averages range from 0.291 to 1.700; all before/after load triples remain in the raw data. These are pinned shared-machine observations, not an idle-host speed claim. Correctness checks occur outside the timing window.

@@ -1,10 +1,11 @@
-//! Closed named-patch incidence at certified transverse support contacts.
+//! Closed named-patch incidence at certified transverse and tangent contacts.
 //!
 //! Two independent smooth supports have local coordinates given by their
 //! defining polynomials. Their open sign sectors therefore exhaust a
 //! neighbourhood, including curved approaches to the contact. The same is
-//! true for an exact plane arrangement. Tangencies and larger curved fans are
-//! deliberately left unresolved rather than inferred from tangent samples.
+//! true for an exact plane arrangement. Tangent contacts additionally require
+//! strict second-order graph separation and source/result ownership witnesses.
+//! Higher-order or singular contacts remain unresolved.
 
 use crate::{Direction, FaceId, FaceQuery, FaceState, Location, Plan, Workspace, geometry};
 use catallax_numbers::{Decider, Rational, Real, RealPoly, Refusal, Sign};
@@ -114,8 +115,8 @@ fn tangent_sectors(
 
 impl Plan {
     /// Tests the closure of a named surviving face, refining the ordinary face
-    /// query with exact transverse-contact sectors. Tangencies, singularities,
-    /// ambiguous source partitions and larger curved fans remain indeterminate.
+    /// query with exact transverse sectors or separated second-order graphs.
+    /// Singularities, ambiguous source partitions and unproved contacts stay indeterminate.
     /// Draft tile domains retain the ordinary named-face proof unchanged.
     pub fn closed_face_query_checked(
         &self,
@@ -199,7 +200,7 @@ impl Plan {
             }
         }
         if active.len() > 2 && !planar {
-            return Ok(unknown());
+            return self.parabolic_contact_query(id, &p, &active, dec);
         }
         let mut own = None;
         for (i, (support, normal)) in active.iter().enumerate() {
@@ -208,9 +209,7 @@ impl Plan {
             }
             for (_, other) in &active[i + 1..] {
                 if geometry::sign(&normal.cross(other).norm_squared(), dec)? == Sign::Zero {
-                    // Distinct tangent supports may enclose thin curved sectors
-                    // invisible in their common tangent plane.
-                    return Ok(unknown());
+                    return self.parabolic_contact_query(id, &p, &active, dec);
                 }
             }
         }
@@ -300,5 +299,188 @@ impl Plan {
             state: FaceState::OnFace,
             direction,
         })
+    }
+
+    // A second-order blow-up separates a round from its tangent planar
+    // continuation. Strict signs of every other support certify an open patch
+    // between the two paths by the implicit function theorem. An isolated
+    // buried tangency has no such source-and-result boundary witness.
+    fn parabolic_contact_query(
+        &self,
+        id: FaceId,
+        p: &[Rational; 3],
+        active: &[(RealPoly, Vector3)],
+        dec: &mut Decider,
+    ) -> Result<FaceQuery, Refusal> {
+        let face = &self.faces[id.0];
+        let n = crate::normal(face, p);
+        let xyz = p.clone().map(Real::from);
+        let mut others = Vec::new();
+        let mut graphs = Vec::new();
+        let mut own = None;
+        for (support, normal) in active {
+            if geometry::sign(&normal.cross(&n).norm_squared(), dec)? != Sign::Zero {
+                others.push(normal.clone());
+            } else {
+                let gradient = std::array::from_fn::<_, 3, _>(|i| support.partial(i));
+                let g = Vector3::new(
+                    gradient[0].eval_real(&xyz),
+                    gradient[1].eval_real(&xyz),
+                    gradient[2].eval_real(&xyz),
+                );
+                if support.equals(&face.support, dec)? {
+                    own = Some(graphs.len());
+                }
+                graphs.push((gradient, g.dot(&n)));
+            }
+        }
+        let Some(own) = own else {
+            return Ok(unknown());
+        };
+        let mut sectors = tangent_sectors(&n, &others, dec)?;
+        if others.is_empty() {
+            sectors.clear();
+            for axis in 0..3 {
+                let [x, y, z] =
+                    std::array::from_fn(|i| Rational::from_i64(if i == axis { 1 } else { 0 }));
+                let tangent = n.cross(&RVector3::new(x, y, z).to_real());
+                if geometry::sign(&tangent.norm_squared(), dec)? != Sign::Zero {
+                    sectors.push(tangent);
+                }
+            }
+        }
+        let mut orientation = 0;
+        let mut tape = Vec::new();
+        let mut opposite = Vec::new();
+        let mut domains = Vec::new();
+        let mut heights = Vec::with_capacity(graphs.len());
+        for tangent in sectors {
+            let d = [&tangent.x, &tangent.y, &tangent.z];
+            heights.clear();
+            for (gradient, slope) in &graphs {
+                let mut quadratic = Real::zero();
+                for i in 0..3 {
+                    for j in 0..3 {
+                        quadratic =
+                            quadratic + d[i] * d[j] * gradient[i].partial(j).eval_real(&xyz);
+                    }
+                }
+                heights.push(-quadratic / (slope * &Real::from_i64(2)));
+            }
+            let mut e = Real::one();
+            let mut separated = true;
+            for (i, height) in heights.iter().enumerate() {
+                if i == own {
+                    continue;
+                }
+                let difference = height - &heights[own];
+                if geometry::sign(&difference, dec)? == Sign::Zero {
+                    separated = false;
+                    break;
+                }
+                let distance = magnitude(&difference, dec)? / Real::from_i64(3);
+                if geometry::sign(&(&distance - &e), dec)? == Sign::Negative {
+                    e = distance;
+                }
+            }
+            if !separated {
+                continue;
+            }
+            let plus = n.scaled(&(&heights[own] + &e));
+            let minus = n.scaled(&(&heights[own] - &e));
+            let sides = [
+                self.parabolic_ray(p, &tangent, &plus, &mut tape, dec)?,
+                self.parabolic_ray(p, &tangent, &minus, &mut opposite, dec)?,
+            ];
+            let slot = self.leaf_registers[face.leaf].expect("a live contact source");
+            if !matches!(
+                [tape[slot], opposite[slot]],
+                [Location::Inside, Location::Outside] | [Location::Outside, Location::Inside]
+            ) {
+                continue;
+            }
+            if self.domain_state(face.domain, &tape, &opposite, &mut domains) != FaceState::OnFace {
+                continue;
+            }
+            match sides {
+                [Location::Outside, Location::Inside] => orientation |= 1,
+                [Location::Inside, Location::Outside] => orientation |= 2,
+                _ => (),
+            }
+        }
+        if orientation == 0 {
+            return Ok(unknown());
+        }
+        // A single-polarity source cannot reverse orientation on an unvisited
+        // tangent sector. Mixed-polarity reuse retains an ambiguous normal.
+        let mut polarity = vec![0u8; self.instructions.len()];
+        polarity[self.root] = 1;
+        for node in (0..self.instructions.len()).rev() {
+            if let crate::Instruction::Boolean { kind, a, b } = self.instructions[node] {
+                let sign = polarity[node];
+                polarity[a] |= sign;
+                polarity[b] |= if kind == catallax_recipe::BooleanKind::Subtract {
+                    ((sign & 1) << 1) | ((sign & 2) >> 1)
+                } else {
+                    sign
+                };
+            }
+        }
+        let slot = self.leaf_registers[face.leaf].expect("a live contact source");
+        let direction = if orientation == polarity[slot] && orientation != 3 {
+            crate::unit_direction(
+                if orientation == 1 {
+                    n
+                } else {
+                    n.scaled(&Real::from_i64(-1))
+                },
+                dec,
+            )?
+        } else {
+            Direction::Ambiguous
+        };
+        Ok(FaceQuery {
+            state: FaceState::OnFace,
+            direction,
+        })
+    }
+
+    fn parabolic_ray(
+        &self,
+        p: &[Rational; 3],
+        tangent: &Vector3,
+        quadratic: &Vector3,
+        tape: &mut Vec<Location>,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        tape.clear();
+        for instruction in &self.instructions {
+            let location = match *instruction {
+                crate::Instruction::Empty => Location::Outside,
+                crate::Instruction::Leaf(i) => {
+                    let leaf = &self.leaves[i];
+                    let location = leaf.location(p, dec)?;
+                    if matches!(location, Location::Inside | Location::Outside) {
+                        location
+                    } else if matches!(leaf, geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_))
+                    {
+                        geometry::parabolic_constraints(
+                            leaf.constraints(),
+                            p,
+                            tangent,
+                            quadratic,
+                            dec,
+                        )?
+                    } else {
+                        Location::Indeterminate
+                    }
+                }
+                crate::Instruction::Boolean { kind, a, b } => {
+                    crate::combine(kind, tape[a], tape[b])
+                }
+            };
+            tape.push(location);
+        }
+        Ok(tape[self.root])
     }
 }

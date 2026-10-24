@@ -102,6 +102,49 @@ impl ConvexCell {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        Self::new(self.sweep_faces(selected, thickness, side, step, dec)?, dec)
+    }
+
+    pub(crate) fn sharp_sweep(
+        &self,
+        selected: usize,
+        thickness: &Real,
+        side: ThickenSide,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let mut faces = self.sweep_faces(selected, thickness, side, step, dec)?;
+        for face in &mut faces {
+            let plane = &mut face.plane;
+            for value in [
+                &mut plane.origin.x,
+                &mut plane.origin.y,
+                &mut plane.origin.z,
+                &mut plane.normal.x,
+                &mut plane.normal.y,
+                &mut plane.normal.z,
+                &mut plane.ref_dir.x,
+                &mut plane.ref_dir.y,
+                &mut plane.ref_dir.z,
+            ] {
+                if value.rational_ref().is_none()
+                    && let Some(q) = dec.rational_value(value)?
+                {
+                    *value = q.into();
+                }
+            }
+        }
+        Self::new(faces, dec)
+    }
+
+    fn sweep_faces(
+        &self,
+        selected: usize,
+        thickness: &Real,
+        side: ThickenSide,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Vec<PlaneFace>, Refusal> {
         let face = &self.faces[selected];
         let base = &face.plane;
         let positive = matches!(side, ThickenSide::Front);
@@ -165,7 +208,7 @@ impl ConvexCell {
                 origins,
             });
         }
-        Self::new(faces, dec)
+        Ok(faces)
     }
 
     /// Proves a complete input vertex inventory lies in every oriented halfspace.

@@ -983,6 +983,7 @@ fn evaluate_impl(
                         &thickness.value().clone().into(),
                         *side,
                         &step.id,
+                        recipe.format == catallax_recipe::FORMAT_V4,
                         dec,
                     )?;
                     BodyValue {

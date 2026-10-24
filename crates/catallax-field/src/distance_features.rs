@@ -269,6 +269,44 @@ impl Plan {
         }
         Ok(node)
     }
+    fn rotational_thicken(
+        &mut self,
+        definition: &catallax_features::sharp_thicken::RotationalThicken,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let mut result = 0;
+        for sweep in &definition.sweeps {
+            let node = self.cone_sweep(sweep, bound, dec)?;
+            result = self.boolean(BooleanKind::Union, result, node, dec)?;
+        }
+        for join in &definition.joins {
+            let mut node =
+                self.radial_leaf(join.surface.clone(), vec![join.origin.clone()], bound, dec)?;
+            for (surface, reversed) in &join.cuts {
+                let leaf = self.leaf(
+                    geometry::Leaf::Cell(geometry::Cell::new(
+                        vec![surface.clone()],
+                        Some(bound.clone()),
+                    )?),
+                    Vec::new(),
+                    dec,
+                )?;
+                node = self.boolean(
+                    if *reversed {
+                        BooleanKind::Intersect
+                    } else {
+                        BooleanKind::Subtract
+                    },
+                    node,
+                    leaf,
+                    dec,
+                )?;
+            }
+            result = self.boolean(BooleanKind::Union, result, node, dec)?;
+        }
+        Ok(result)
+    }
     fn planar_skin(&self, node: usize, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
         let mut stack = vec![node];
         let mut faces = Vec::new();
@@ -550,6 +588,7 @@ impl Plan {
         let cavity = self.distance_cell(cavity, bound, dec)?;
         self.boolean(BooleanKind::Subtract, node, cavity, dec)
     }
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn distance_thicken(
         &mut self,
         node: usize,
@@ -557,6 +596,7 @@ impl Plan {
         t: &Rational,
         side: ThickenSide,
         step: &StepId,
+        sharp_joins: bool,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
         positive(&t.clone().into(), dec)?;
@@ -592,9 +632,20 @@ impl Plan {
                 .filter_map(|(i, v)| v.then_some(i))
                 .collect();
             let [index] = indices.as_slice() else {
-                return Err(bad(
-                    "selected cylinder joins require their projection normal sectors",
-                ));
+                if !sharp_joins {
+                    return Err(bad(
+                        "selected cylinder joins require their projection normal sectors",
+                    ));
+                }
+                let definition = catallax_features::sharp_thicken::RotationalThicken::cylindrical(
+                    &skin,
+                    &selected,
+                    &t.clone().into(),
+                    side,
+                    step,
+                    dec,
+                )?;
+                return self.rotational_thicken(&definition, &bound, dec);
             };
             let band = skin.thicken(*index, &t.clone().into(), side, step, dec)?;
             let outer = self.cylinder_leaf(band.outer, &bound, dec)?;
@@ -613,9 +664,20 @@ impl Plan {
                 .filter_map(|(i, v)| v.then_some(i))
                 .collect();
             let [index] = indices.as_slice() else {
-                return Err(bad(
-                    "sharp selected conical joins require their projection normal sectors",
-                ));
+                if !sharp_joins {
+                    return Err(bad(
+                        "sharp selected conical joins require their projection normal sectors",
+                    ));
+                }
+                let definition = catallax_features::sharp_thicken::RotationalThicken::conical(
+                    &skin,
+                    &selected,
+                    &t.clone().into(),
+                    side,
+                    step,
+                    dec,
+                )?;
+                return self.rotational_thicken(&definition, &bound, dec);
             };
             let sweep = skin.face_sweep(*index, &t.clone().into(), side, step, dec)?;
             return self.cone_sweep(&sweep, &bound, dec);
@@ -628,9 +690,35 @@ impl Plan {
             .filter_map(|(i, v)| v.then_some(i))
             .collect();
         let [index] = indices.as_slice() else {
-            return Err(bad(
-                "sharp selected joins require their projection normal sectors",
-            ));
+            if !sharp_joins {
+                return Err(bad(
+                    "sharp selected joins require their projection normal sectors",
+                ));
+            }
+            let definition = catallax_features::sharp_planar::PlanarThicken::new(cell, selected)?;
+            let (prisms, sectors) = definition.pieces(&t.clone().into(), side, step, dec)?;
+            let mut result = 0;
+            for prism in prisms {
+                let node = self.distance_cell(prism, bound.clone(), dec)?;
+                result = self.boolean(BooleanKind::Union, result, node, dec)?;
+            }
+            for sector in sectors {
+                let mut surfaces = Vec::new();
+                let mut faces = Vec::new();
+                for (surface, origins) in sector.supports {
+                    for origin in origins {
+                        faces.push(geometry::face(surface.clone(), origin, dec)?);
+                    }
+                    surfaces.push(surface);
+                }
+                let node = self.leaf(
+                    geometry::Leaf::Cell(geometry::Cell::new(surfaces, Some(bound.clone()))?),
+                    faces,
+                    dec,
+                )?;
+                result = self.boolean(BooleanKind::Union, result, node, dec)?;
+            }
+            return Ok(result);
         };
         self.distance_cell(
             cell.face_sweep(*index, &t.clone().into(), side, step, dec)?,

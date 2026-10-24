@@ -288,6 +288,7 @@ impl Plan {
             result = self.boolean(BooleanKind::Union, result, node, dec)?;
         }
         for join in &definition.joins {
+            let first_face = self.faces.len();
             let mut node =
                 self.radial_leaf(join.surface.clone(), vec![join.origin.clone()], bound, dec)?;
             for (surface, reversed) in &join.cuts {
@@ -309,6 +310,16 @@ impl Plan {
                     leaf,
                     dec,
                 )?;
+            }
+            // Keep the clipped sector's ownership before adjacent images can
+            // contribute a different boundary on the same full torus carrier.
+            for face in first_face..self.faces.len() {
+                let domain = self.domains.len();
+                self.domains.push(crate::ownership::Domain::Boundary {
+                    node,
+                    parent: self.faces[face].domain,
+                });
+                self.faces[face].domain = domain;
             }
             result = self.boolean(BooleanKind::Union, result, node, dec)?;
         }

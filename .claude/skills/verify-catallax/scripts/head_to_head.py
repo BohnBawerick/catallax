@@ -221,6 +221,14 @@ def benchmark(args):
     pin = json.loads((DATA / 'reference.json').read_text())
     if sha(args.reference) != pin['binary_sha256']:
         raise ValueError('reference executable does not match the pinned released binary')
+    engines = ['catallax', 'solidcraft']
+    tools = {}
+    if getattr(args, 'tool_runtime', None):
+        from external_tools import runtime
+        args.external_runtime = runtime(args.tool_runtime)
+        args.occt_python = args.external_runtime['checker']
+        tools = args.external_runtime['tools']
+        engines.extend(tools)
     root = Path(args.inputs).resolve()
     cases = sorted((DATA / 'cases').rglob('*.json'))
     if args.part:
@@ -232,11 +240,17 @@ def benchmark(args):
     if (out / 'head-to-head.json').exists():
         raise ValueError('use a fresh output directory; never mix measured runs')
     report = {'format': 'catallax-head-to-head/1', 'status': 'running', 'reference': pin,
+              'tools': tools, 'engines': engines,
+              'installation': getattr(args, 'external_runtime', None),
+              'source_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'binary_sha256': sha(args.binary), 'host': {'system': platform.platform(), 'cpu': platform.processor(),
+              'cpu_model': next((line.split(':', 1)[1].strip() for line in Path('/proc/cpuinfo').read_text().splitlines() if line.startswith('model name')), platform.processor()),
+              'machine_class': getattr(args, 'machine_class', 'unspecified'),
               'affinity': sorted(os.sched_getaffinity(0))},
-              'timing': {'core': args.core, 'order': 'alternating AB/BA', 'warmups': 1, 'measured_pairs': args.repeats,
+              'timing': {'core': args.core, 'order': 'rotating tool order, reversed on odd samples' if tools else 'alternating AB/BA',
+                 'warmups': 1, 'measured_pairs': args.repeats,
                  'threads': 1, 'max_work_per_catallax_phase': args.max_work, 'timeout_seconds_per_engine': args.timeout,
-                 'claim': 'shared-machine pinned-core observations; startup/checker/export costs not silently subtracted'}, 'pairs': []}
+                 'claim': 'pinned-core observations; startup/checker/export costs not silently subtracted'}, 'pairs': []}
     save(out / 'head-to-head.json', report)
     try:
         for path in cases:
@@ -246,7 +260,10 @@ def benchmark(args):
                 raise ValueError(f'{case["recipe"]}: recipe changed since reference script was authored')
             recipe = json.loads(recipe_path.read_text())
             for index in range(args.repeats + 1):
-                order = ['catallax', 'solidcraft'] if index % 2 == 0 else ['solidcraft', 'catallax']
+                offset = index % len(engines)
+                order = engines[offset:] + engines[:offset]
+                if tools and index % 2:
+                    order.reverse()
                 pair = {'part': case['recipe'], 'sample': index, 'warmup': index == 0,
                         'order': order, 'load_average_before': os.getloadavg(), 'engines': {}}
                 for engine in order:
@@ -254,8 +271,11 @@ def benchmark(args):
                     directory.mkdir(parents=True, exist_ok=True)
                     if engine == 'catallax':
                         result = catallax(case, recipe, Path(args.binary).resolve(), directory, args)
-                    else:
+                    elif engine == 'solidcraft':
                         result = solidcraft(case, Path(args.reference).resolve(), directory, args)
+                    else:
+                        from external_tools import external
+                        result = external(engine, path, case, directory, args)
                     pair['engines'][engine] = result
                 pair['load_average_after'] = os.getloadavg()
                 # Checks are outside the matched timing window and retained even for refusals.
@@ -287,8 +307,8 @@ def benchmark(args):
 def summarize(report):
     rows = []
     for part in sorted({p['part'] for p in report['pairs']}):
-        for engine in ('catallax', 'solidcraft'):
-            pairs = [p['engines'][engine] for p in report['pairs'] if p['part'] == part and not p['warmup']]
+        for engine in report.get('engines', sorted({e for p in report['pairs'] for e in p['engines']}, key=lambda e: (e != 'catallax', e))):
+            pairs = [p['engines'][engine] for p in report['pairs'] if p['part'] == part and not p['warmup'] and engine in p['engines']]
             for label in ('construction', 'edit'):
                 variants = [p.get('variants', {}).get(label, {}) for p in pairs]
                 row = {'part': part, 'engine': engine, 'phase': label, 'samples': len(pairs)}
@@ -320,9 +340,12 @@ def summarize(report):
                 row['refusal_upper_bound_ms'] = [v.get('build', {}).get('refusal_upper_bound_ms') for v in variants]
                 row['failed_rebuilds'] = sum(v.get('build', {}).get('status') in ('refused', 'work-exhausted', 'command-failed') for v in variants)
                 row['incomplete'] = sum(p['status'] == 'incomplete' or v.get('build', {}).get('status') in ('incomplete', 'not-run') for p, v in zip(pairs, variants))
+                row['not_expressible'] = sum(v.get('build', {}).get('status') == 'not-expressible' for v in variants)
                 row['wrong_properties'] = sum(len(v.get('correctness', {}).get('claimed_properties', {}).get('wrong_answers', [])) for v in variants)
                 row['wrong_membership'] = sum(len(v.get('correctness', {}).get('membership', {}).get('wrong', [])) for v in variants)
                 row['properties_checked'] = sum(v.get('correctness', {}).get('claimed_properties', {}).get('status') in ('passed','failed') for v in variants)
+                row['membership_points_checked'] = sum(v.get('correctness', {}).get('membership', {}).get('checked', 0) for v in variants)
+                row['membership_boundary_unresolved'] = sum(v.get('correctness', {}).get('membership', {}).get('boundary_unresolved', 0) for v in variants)
                 row['membership_checked'] = sum(v.get('correctness', {}).get('membership', {}).get('status') in ('passed','failed') for v in variants)
                 row['step_passed'] = sum(v.get('correctness', {}).get('step', {}).get('status') == 'passed' for v in variants)
                 row['step_opened'] = sum(v.get('correctness', {}).get('step', {}).get('opened') is True for v in variants)
@@ -335,10 +358,10 @@ def summarize(report):
 
 def markdown(report):
     lines = ['# Target-part head-to-head', '',
-             f'Reference release {report["reference"]["version"]}. One warmup and {report["timing"]["measured_pairs"]} alternating matched pairs per part on core {report["timing"]["core"]}.', '',
-             'Shared-machine observations. See raw JSON for load averages, work, operations rebuilt, failures, STEP checks and every property discrepancy.', '',
-             '| Part | Tool | Variant | Build ms | Display/export ms | Measurement ms | Refusal ms | Failed rebuilds | Incomplete | Property errors / checked | Membership errors / checked | STEP opened / checked / full pass | Names passed / checked |',
-             '| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | --- | --- | --- | --- |']
+             f'Reference release {report["reference"]["version"]}. One warmup and {report["timing"]["measured_pairs"]} measured samples per tool and part on core {report["timing"]["core"]}. Order: {report["timing"]["order"]}.', '',
+             'See raw JSON for machine class, load averages, work, operations rebuilt, failures, STEP checks and every property discrepancy.', '',
+             '| Part | Tool | Variant | Build ms | Display/export ms | Measurement ms | Refusal ms | Failed rebuilds | Incomplete | Not expressible | Property errors / checked sets | Membership errors / checked points | STEP opened / checked / full pass | Names passed / checked |',
+             '| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- | --- |']
     def number(value):
         return 'unmeasured' if value is None else f'{value:.3f}'
     def refusals(row):
@@ -355,7 +378,7 @@ def markdown(report):
         lines.append('| ' + ' | '.join([row['part'], row['engine'], row['phase'],
             *[number(row[k+'_median_ms']) for k in ('build','display','measurement')],
             refusals(row),
-            str(row['failed_rebuilds']), str(row['incomplete']), f'{row["wrong_properties"]} / {row["properties_checked"]}',
-            f'{row["wrong_membership"]} / {row["membership_checked"]}', f'{row["step_opened"]} / {row["step_checked"]} / {row["step_passed"]}',
+            str(row['failed_rebuilds']), str(row['incomplete']), str(row['not_expressible']), f'{row["wrong_properties"]} / {row["properties_checked"]}',
+            f'{row["wrong_membership"]} / {row["membership_points_checked"]}', f'{row["step_opened"]} / {row["step_checked"]} / {row["step_passed"]}',
             f'{row["names_passed"]} / {row["names_checked"]}' if row['names_passed'] is not None else 'not applicable']) + ' |')
     return '\n'.join(lines) + '\n'

@@ -1,0 +1,49 @@
+{
+  "format": "catallax-comparison-tools/1",
+  "python": "3.11",
+  "tools": {
+    "cadquery": {
+      "name": "CadQuery", "version": "2.6.1", "kernel": "OpenCASCADE 7.8.1",
+      "source": "https://github.com/CadQuery/cadquery", "license": "Apache-2.0",
+      "reason": "Released Python wheel, headless solid API, analytic primitives, fillets, shelling and STEP export.",
+      "url": "https://files.pythonhosted.org/packages/bd/48/3beda36afdc025679d727e52e7e37eb0b0c6c90e684d566419f49c972fd2/cadquery-2.6.1-py3-none-any.whl",
+      "sha256": "b3e476bd34553015e1ac7f019b288a48422821b67611f6d94f9fa0b4b1049d0c"
+    },
+    "smlibpy": {
+      "name": "smlibpy", "version": "0.4.0", "kernel": "SMLib bundled from NVIDIA usd-brep",
+      "source": "https://github.com/awv-informatik/smlibpy", "license": "MIT AND Apache-2.0 AND OFL-1.1",
+      "reason": "Public MIT Python tool with SMLib bundled under Apache-2.0; scriptable released Linux wheel. No closed-tool substitution.",
+      "url": "https://files.pythonhosted.org/packages/64/b7/724f9dd8f08eeceedfccb6eae6312c46d3f3f33bd9ac214be7f3eb7c2ebb/smlibpy-0.4.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "bac5100f00f36c501e7e0468a8c90bce2a0d6755c997db32f8499022129fe3ff"
+    },
+    "pali_ijo": {
+      "name": "Pali Ijo", "version": "0.1.2", "kernel": "Pali Ijo",
+      "source": "https://github.com/braydennilsen/PaliCAD/tree/main/packages/pali_ijo", "license": "MIT",
+      "revision": "6e41090d3659ef2055483aee8d622f6ea7d7f8ba",
+      "distribution": "Official source snapshot. Upstream publishes no GitHub releases and marks the package publish_to: none. Native benchmark executable compiled without kernel edits.",
+      "url": "https://codeload.github.com/braydennilsen/PaliCAD/tar.gz/6e41090d3659ef2055483aee8d622f6ea7d7f8ba",
+      "sha256": "965e96459f51b273667dd6804ed46244cf84999bc553be23254f80389191d3bc"
+    }
+  },
+  "ocp_competitor": {
+    "version": "7.8.1.1.post1",
+    "sha256": "0ff754db099da9a4285268cecf7740fef782567621480b007697c00e47f8fbde"
+  },
+  "checker": {
+    "name": "cadquery-ocp", "version": "8.0.1.1.0",
+    "url": "https://files.pythonhosted.org/packages/da/6a/a5b15c15b7f8f66fa7c6b97e4cbc611d74154c2f12587ee32dd1398054ce/cadquery_ocp-8.0.1.1.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+    "sha256": "f71c252b6ef475ed9fc52e3b582b06aff3f9c744fdf9f367eb3a739678b2ddaf"
+  },
+  "dart": {
+    "version": "3.13.7",
+    "url": "https://storage.googleapis.com/dart-archive/channels/stable/release/3.13.7/sdk/dartsdk-linux-x64-release.zip",
+    "sha256": "eb99aed266efbcb615c6ae21c12f52cfe935b9f208bccc5fea7f64c21e867229"
+  },
+  "research": [
+    "https://smlibpy.classcad.ch/docs/getting-started",
+    "https://smlibpy.classcad.ch/docs/kernel",
+    "https://pypi.org/project/smlibpy/0.4.0/",
+    "https://api.github.com/repos/braydennilsen/PaliCAD/releases",
+    "https://pub.dev/api/packages/pali_ijo"
+  ]
+}

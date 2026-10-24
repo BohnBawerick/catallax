@@ -43,6 +43,33 @@ class CorrectnessTests(unittest.TestCase):
         self.assertIsNone(row['build_and_display_median_ms'])
         self.assertEqual(row['phase_refusals']['display'][0]['refusal_ms'], 2)
 
+    def test_new_tool_refusal_does_not_become_zero_latency_or_checked_success(self):
+        report = {'engines': ['cadquery', 'pali_ijo'], 'pairs': [{
+            'part': 'P2-collar.json', 'warmup': False, 'engines': {
+                'cadquery': {'status': 'completed', 'variants': {'construction': {
+                    'build': {'status': 'answered', 'wall_ms': 2},
+                    'correctness': {'membership': {'status': 'failed', 'checked': 200,
+                                                  'boundary_unresolved': 16, 'wrong': [{}]}}}}},
+                'pali_ijo': {'status': 'completed', 'variants': {'construction': {
+                    'build': {'status': 'not-expressible'}}}}}}]}
+        rows = summarize(report)
+        cadquery, pali = rows[0], rows[2]
+        self.assertEqual(cadquery['membership_points_checked'], 200)
+        self.assertEqual(cadquery['wrong_membership'], 1)
+        self.assertIsNone(pali['build_median_ms'])
+        self.assertEqual(pali['not_expressible'], 1)
+        self.assertEqual(pali['failed_rebuilds'], 0)
+        self.assertEqual(pali['properties_checked'], 0)
+
+    def test_one_missing_sample_suppresses_successful_median(self):
+        report = {'engines': ['smlibpy'], 'pairs': [
+            {'part': 'P1-bracket.json', 'warmup': False, 'engines': {'smlibpy': {
+                'status': 'completed', 'variants': {'construction': {'build': build}}}}}
+            for build in ({'status': 'answered', 'wall_ms': 3}, {'status': 'command-failed'})]}
+        row = summarize(report)[0]
+        self.assertIsNone(row['build_median_ms'])
+        self.assertEqual(row['failed_rebuilds'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

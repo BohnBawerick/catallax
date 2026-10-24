@@ -44,3 +44,17 @@ Set `SITE_URL` to use another preview port. `capture.mjs` renders each frame det
 Check desktop and phone layouts with reduced motion both enabled and disabled. Confirm the hero shape controls, orbit drag, all anatomy layers, video playback, external links and the Perth clock. Keep browser screenshots and scratch output outside the repository.
 
 Third-party files retain their own terms; see `THIRD-PARTY.txt`.
+
+## Multi-tool comparison
+
+`comparison-results.json` is a public projection of a completed five-tool benchmark, not manually entered figures. Generate the page after importing quiet-host results:
+
+```sh
+python3 -B site/render/comparison.py --import-run /tmp/h2h/five-tools/head-to-head.json
+python3 -B site/render/comparison.py
+python3 -B site/render/comparison.py --check
+```
+
+The generator refuses incomplete target coverage, missing engines or a different machine class. The log-scale speed bars, per-part correctness table and per-tool target-range table all come from committed per-sample observations. It also updates the homepage's `comparison-summary` paragraph with Catallax's count of targets whose construction and edit completed in every measured sample, without changing the historical table. `--check` rejects a stale page or homepage summary. `comparison.css` uses the existing brand tokens and fonts. Preview `/comparison.html` at desktop and phone widths and exercise its target selector.
+
+The page states that OpenCASCADE is both a competitor and the STEP importer. Properties and expected membership use independent analytic definitions, with unavailable property formulas explicitly unmeasured. Pinned releases, the Pali Ijo source-distribution exception, rebuild modes, failed phases and name-check limits remain visible. See the [rerun guide](../.claude/skills/verify-catallax/scripts/head-to-head/README.md) for preparation and commands.

@@ -1,0 +1,42 @@
+.comparison-nav { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 26px var(--gutter); border-bottom: 1px solid var(--steel); }
+.comparison-nav > a { color: var(--bone); font-weight: 600; font-size: 22px; text-decoration: none; }
+.comparison-nav nav { display: flex; flex-wrap: wrap; gap: 24px; }
+.comparison-nav nav a { text-underline-offset: 5px; }
+.comparison { max-width: 1440px; padding: 70px var(--gutter) 50px; margin-inline: auto; }
+.comparison h1 { color: var(--bone); font-size: clamp(3.2rem, 7vw, 6rem); line-height: 1; letter-spacing: -.035em; margin: 0 0 28px; }
+.comparison .intro { font-size: clamp(20px, 2.1vw, 28px); line-height: 1.4; max-width: 55ch; color: var(--bone); }
+.comparison p { max-width: 74ch; }
+.comparison section[id] { margin-top: 90px; scroll-margin-top: 24px; }
+.comparison h2 { font-size: clamp(28px, 3.5vw, 45px); color: var(--bone); line-height: 1.15; letter-spacing: -.025em; margin: 0 0 22px; }
+.comparison h3 { font-size: 22px; color: var(--bone); margin: 36px 0 8px; }
+.comparison label { display: inline-block; margin: 0 14px 12px 0; }
+.comparison select { font: inherit; color: var(--bone); background: var(--graphite); border: 1px solid var(--slate); border-radius: 4px; padding: 10px 36px 10px 12px; max-width: 100%; }
+.comparison select:hover { border-color: var(--oxide); }
+.comparison a { text-underline-offset: 4px; }
+.comparison a:hover { color: var(--oxide); }
+.comparison .axis { font-size: 14px; color: var(--fog); }
+.table-scroll { overflow-x: auto; scrollbar-color: var(--slate) var(--graphite); border-block: 1px solid var(--steel); margin-top: 22px; }
+.comparison table { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
+.comparison th { font-weight: 600; color: var(--bone); }
+.comparison td, .comparison th { padding: 14px 18px; border-bottom: 1px solid var(--steel); vertical-align: top; font-size: 14px; }
+.comparison td:first-child, .comparison th:first-child { padding-left: 0; }
+.comparison thead th { white-space: nowrap; }
+.comparison tbody tr:last-child > * { border-bottom: 0; }
+.comparison tbody tr:hover { background: var(--graphite); }
+.comparison .timings { min-width: 650px; table-layout: fixed; }
+.comparison .timings th:first-child { width: 18%; }
+.bar-track { display: block; position: relative; height: 31px; background: var(--graphite); }
+.bar-fill { display: block; position: absolute; inset: 0 auto 0 0; background: var(--slate); min-width: 1px; opacity: .35; }
+.bar-fill.catallax { background: var(--oxide); }
+.bar-fill.solidcraft { background: var(--bone); }
+.bar-fill.cadquery { background: var(--datum); }
+.bar-fill.smlibpy { background: var(--signal); }
+.bar-fill.pali_ijo { background: var(--fog); }
+.bar-number { position: relative; display: block; padding: 4px 9px; color: var(--bone); font: 500 14px/23px var(--font-mono); }
+.timings small { display: block; margin-top: 5px; font-size: 12px; }
+.unmeasured { font-size: 14px; font-style: italic; }
+.versions code { overflow-wrap: anywhere; font: 12px var(--font-mono); }
+.comparison footer { margin-top: 90px; padding-top: 28px; border-top: 1px solid var(--steel); }
+.comparison footer code { overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; }
+[hidden] { display: none !important; }
+@media (max-width: 640px) { .comparison-nav { flex-direction: column; gap: 16px; } .comparison-nav nav { gap: 16px; font-size: 14px; } .comparison { padding-top: 44px; } .comparison section[id] { margin-top: 64px; } .comparison p { font-size: 16px; } }

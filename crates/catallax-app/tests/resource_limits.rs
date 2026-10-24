@@ -1,7 +1,10 @@
 //! Resource regressions run outside the test runner, including stack-aborting bugs.
 #![cfg(target_os = "linux")]
 
-use std::process::Command;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    process::Command,
+};
 
 use catallax_app::{Error, build_soliddraft};
 use catallax_mesh::MeshOptions;
@@ -59,6 +62,12 @@ fn huge_circle_finishes_under_process_caps() {
 }
 
 #[test]
+fn fine_chord_drawings_finish_under_process_caps() {
+    run_case("annulus-drawing");
+    run_case("bracket-drawing");
+}
+
+#[test]
 fn resource_child() {
     let Ok(case) = std::env::var(CASE_ENV) else {
         return;
@@ -77,11 +86,20 @@ fn resource_child() {
             {"id":"body","op":"extrude","profile":"circle","distance":10}
         ],"result":"body"});
     }
-    let result = build_soliddraft(
-        &input.to_string(),
-        &MeshOptions::default(),
-        &mut Decider::default(),
-    );
+    let mut options = MeshOptions::default();
+    if case == "annulus-drawing" {
+        input = json!({"format":"soliddraft-recipe/1","name":"annulus","steps":[
+            {"id":"outer_profile","op":"profile","plane":"XY","circle":{"center":[0,0],"radius":10}},
+            {"id":"outer","op":"extrude","profile":"outer_profile","distance":20},
+            {"id":"inner_profile","op":"profile","plane":{"base":"XY","origin":[0,0,-1]},"circle":{"center":[0,0],"radius":4}},
+            {"id":"inner","op":"extrude","profile":"inner_profile","distance":22},
+            {"id":"annulus","op":"boolean","kind":"subtract","target":"outer","tool":"inner"}
+        ],"result":"annulus"});
+        options.chord_tolerance = "3467565716752893/10000000000000000000".parse().unwrap();
+    } else if case == "bracket-drawing" {
+        options.chord_tolerance = "16158836963098553/10000000000000000000".parse().unwrap();
+    }
+    let result = build_soliddraft(&input.to_string(), &options, &mut Decider::default());
     match result {
         Ok(body) => {
             assert_ne!(
@@ -92,24 +110,54 @@ fn resource_child() {
             assert!(
                 mesh.faces
                     .iter()
-                    .all(|face| face.max_chord_error <= MeshOptions::default().chord_tolerance)
+                    .all(|face| face.max_chord_error <= options.chord_tolerance)
             );
+            assert!(
+                mesh.edges
+                    .iter()
+                    .all(|edge| edge.max_chord_error <= options.chord_tolerance)
+            );
+            if case.ends_with("-drawing") {
+                let expected: BTreeSet<_> = body
+                    .body
+                    .built
+                    .model
+                    .faces_of_body(body.body.built.result)
+                    .into_iter()
+                    .collect();
+                let actual: BTreeSet<_> = mesh.triangles.iter().map(|t| t.face).collect();
+                assert_eq!(actual, expected);
+                let mut incidence = BTreeMap::<_, (usize, i32)>::new();
+                for triangle in &mesh.triangles {
+                    for i in 0..3 {
+                        let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+                        let uses = incidence.entry((a.min(b), a.max(b))).or_default();
+                        uses.0 += 1;
+                        uses.1 += if a < b { 1 } else { -1 };
+                    }
+                }
+                assert!(incidence.values().all(|uses| *uses == (2, 0)));
+                for edge in &mesh.edges {
+                    for pair in edge.vertices.windows(2) {
+                        assert_eq!(
+                            incidence.get(&(pair[0].min(pair[1]), pair[0].max(pair[1]))),
+                            Some(&(2, 0))
+                        );
+                    }
+                }
+            }
             println!(
                 "answered {case}: {} vertices, {} triangles",
                 mesh.positions.len(),
                 mesh.triangles.len()
             );
         }
-        Err(error @ Error::Build(_)) if case != "ordinary" && case != "huge" => {
+        Err(error @ Error::Build(_)) if case.contains(':') => {
             assert_eq!(error.code(), "boolean.sampling-budget", "{error:?}");
             println!("refused {case}: {error:?}");
         }
-        Err(Error::ResourceLimit) if case != "ordinary" && case != "huge" => {
+        Err(Error::ResourceLimit) if case.contains(':') || case == "huge" => {
             println!("refused {case}: application.work-limit");
-        }
-        Err(Error::Display(error)) if case == "huge" => {
-            assert_eq!(error.code, "mesh.resource-limit", "{error:?}");
-            println!("refused {case}: {error:?}");
         }
         other => panic!("unexpected outcome for {case}: {other:?}"),
     }

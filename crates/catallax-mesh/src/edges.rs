@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use catallax_intersect::{TracePiece, trace};
-use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Refusal};
-use catallax_shapes::Point3;
+use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
@@ -11,18 +10,35 @@ use crate::{
     failure,
 };
 
-// Planar predicates retain exact expression graphs for every boundary sample,
-// not just a binary64 vertex. Bound those graphs before materialising them.
-const MAX_EXACT_SAMPLES: usize = 4096;
+// Keep the shared trace and parameter, not a separate exact expression graph
+// for every sample. Planar filters construct exact coordinates only on demand.
+#[derive(Clone)]
+pub(crate) enum Position {
+    Exact([Real; 3]),
+    Trace(Arc<TracePiece>, Rational),
+}
 
-fn reserve_exact_sample(points: &BTreeMap<usize, Point3>) -> Result<(), Refusal> {
-    if points.len() >= MAX_EXACT_SAMPLES {
-        return Err(Refusal::new(
-            "mesh.resource-limit",
-            "display exhausted its 4096 exact boundary sample allowance",
-        ));
+impl Position {
+    pub(crate) fn exact(&self, dec: &Decider) -> Result<[Real; 3], Refusal> {
+        match self {
+            Self::Exact(p) => Ok(p.clone()),
+            Self::Trace(piece, t) => {
+                let p = piece.evaluate_exact(t, dec)?;
+                Ok([p.x, p.y, p.z])
+            }
+        }
     }
-    Ok(())
+
+    pub(crate) fn enclose(&self, dec: &Decider) -> Result<[Ball; 3], Refusal> {
+        match self {
+            Self::Exact(p) => Ok([
+                dec.enclose_at(&p[0], BITS)?,
+                dec.enclose_at(&p[1], BITS)?,
+                dec.enclose_at(&p[2], BITS)?,
+            ]),
+            Self::Trace(piece, t) => piece.evaluate(&Ball::from_rational(t, BITS), dec),
+        }
+    }
 }
 
 /// Membership in shared topological polylines, independent of chart copies.
@@ -65,7 +81,7 @@ pub(crate) struct Boundaries {
     pub(crate) mesh: Mesh,
     pub(crate) edges: BTreeMap<EdgeId, usize>,
     pub(crate) vertices: BTreeMap<VertexId, usize>,
-    pub(crate) exact_positions: BTreeMap<usize, Point3>,
+    pub(crate) exact_positions: BTreeMap<usize, Position>,
     pub(crate) enclosures: BTreeMap<usize, [Ball; 3]>,
     pub(crate) rails: Rails,
     pub(crate) marks: MarkLog,
@@ -76,11 +92,13 @@ impl Boundaries {
         &mut self,
         model: &Model,
         id: VertexId,
+        options: &MeshOptions,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
         if let Some(&v) = self.vertices.get(&id) {
             return Ok(v);
         }
+        reserve_position(self.mesh.positions.len(), options)?;
         let point = model.geom().position(model.vertex(id).point);
         let xyz = [&point.x, &point.y, &point.z]
             .map(|x| dec.enclose_at(x, BITS))
@@ -92,6 +110,16 @@ impl Boundaries {
         self.vertices.insert(id, index);
         Ok(index)
     }
+}
+
+fn reserve_position(count: usize, options: &MeshOptions) -> Result<(), Refusal> {
+    if count >= options.max_vertices {
+        return Err(Refusal::new(
+            "mesh.resource-limit",
+            "boundary sampling reached max_vertices",
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) struct ChordProof {
@@ -127,14 +155,14 @@ pub(crate) fn trace_chord(
 }
 
 struct Sampler<'a> {
-    piece: &'a TracePiece,
+    piece: &'a Arc<TracePiece>,
     charts: &'a [&'a Chart],
     options: &'a MeshOptions,
     dec: &'a Decider,
     positions: &'a mut Vec<[f64; 3]>,
     indices: &'a mut Vec<usize>,
     error: &'a mut Rational,
-    exact_positions: Option<&'a mut BTreeMap<usize, Point3>>,
+    exact_positions: Option<&'a mut BTreeMap<usize, Position>>,
 }
 
 impl Sampler<'_> {
@@ -263,8 +291,7 @@ impl Sampler<'_> {
         let index = self.positions.len();
         self.positions.push(middle);
         if let Some(points) = &mut self.exact_positions {
-            reserve_exact_sample(points)?;
-            points.insert(index, self.piece.evaluate_exact(&mid, self.dec)?);
+            points.insert(index, Position::Trace(self.piece.clone(), mid.clone()));
         }
         self.segment(
             lo,
@@ -314,7 +341,7 @@ pub(crate) fn sample(
                     }
                 }
                 Loop::Vertex(v) => {
-                    result.vertex(model, *v, dec)?;
+                    result.vertex(model, *v, options, dec)?;
                 }
             }
         }
@@ -334,7 +361,13 @@ pub(crate) fn sample(
             dec,
         )?;
         result.marks.extend(&traced.marks);
-        let pieces = traced.value.pieces();
+        let pieces: Vec<_> = traced
+            .value
+            .pieces()
+            .iter()
+            .cloned()
+            .map(Arc::new)
+            .collect();
         let initial_values = pieces
             .first()
             .map(|piece| piece.evaluate(&Ball::from_rational(&Rational::zero(), BITS), dec))
@@ -343,21 +376,21 @@ pub(crate) fn sample(
             .iter()
             .any(|chart| matches!(chart.surface, catallax_shapes::Surface::Plane(_)));
         let first = if let Some(v) = from {
-            result.vertex(model, v, dec)?
+            result.vertex(model, v, options, dec)?
         } else {
+            reserve_position(result.mesh.positions.len(), options)?;
             let p = chart::position(initial_values.as_ref().unwrap())?;
             let index = result.mesh.positions.len();
             result.mesh.positions.push(p);
             if planar {
-                reserve_exact_sample(&result.exact_positions)?;
                 result
                     .exact_positions
-                    .insert(index, pieces[0].evaluate_exact(&Rational::zero(), dec)?);
+                    .insert(index, Position::Trace(pieces[0].clone(), Rational::zero()));
             }
             index
         };
         let end = if let Some(v) = to {
-            result.vertex(model, v, dec)?
+            result.vertex(model, v, options, dec)?
         } else {
             first
         };
@@ -375,14 +408,14 @@ pub(crate) fn sample(
             let last = if i + 1 == pieces.len() {
                 end
             } else {
+                reserve_position(result.mesh.positions.len(), options)?;
                 let p = chart::position(&last_values)?;
                 let index = result.mesh.positions.len();
                 result.mesh.positions.push(p);
                 if planar {
-                    reserve_exact_sample(&result.exact_positions)?;
                     result
                         .exact_positions
-                        .insert(index, piece.evaluate_exact(&Rational::one(), dec)?);
+                        .insert(index, Position::Trace(piece.clone(), Rational::one()));
                 }
                 index
             };

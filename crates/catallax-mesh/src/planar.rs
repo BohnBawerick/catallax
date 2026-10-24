@@ -8,19 +8,21 @@ use catallax_topology::{FaceId, Loop, Model, Sense};
 
 use crate::{
     FaceMesh, Mesh, MeshControl, MeshOptions, Triangle, UnavailableControl, chart,
-    edges::Boundaries, failure,
+    edges::{Boundaries, Position},
+    failure,
 };
 
 #[derive(Clone)]
 struct Point {
-    coordinates: [Real; 2],
+    position: Position,
+    axes: [usize; 2],
     bounds: [[f64; 2]; 2],
 }
 
-impl std::ops::Index<usize> for Point {
-    type Output = Real;
-    fn index(&self, axis: usize) -> &Real {
-        &self.coordinates[axis]
+impl Point {
+    fn exact(&self, dec: &Decider) -> Result<[Real; 2], Refusal> {
+        let p = self.position.exact(dec)?;
+        Ok(self.axes.map(|axis| p[axis].clone()))
     }
 }
 
@@ -91,8 +93,11 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     }
 }
 
-fn cross(a: &Point, b: &Point, c: &Point) -> Real {
-    (&b[0] - &a[0]) * (&c[1] - &a[1]) - (&b[1] - &a[1]) * (&c[0] - &a[0])
+fn cross(a: &Point, b: &Point, c: &Point, dec: &Decider) -> Result<Real, Refusal> {
+    let a = a.exact(dec)?;
+    let b = b.exact(dec)?;
+    let c = c.exact(dec)?;
+    Ok((&b[0] - &a[0]) * (&c[1] - &a[1]) - (&b[1] - &a[1]) * (&c[0] - &a[0]))
 }
 
 struct Polygon<'a> {
@@ -109,32 +114,43 @@ impl Polygon<'_> {
             return Ok(value);
         }
         sign(
-            &cross(&self.points[&a], &self.points[&b], &self.points[&c]),
+            &cross(
+                &self.points[&a],
+                &self.points[&b],
+                &self.points[&c],
+                self.dec,
+            )?,
             self.dec,
         )
     }
 
-    fn area(&self, ring: &[usize]) -> Real {
+    fn area(&self, ring: &[usize]) -> Result<Real, Refusal> {
         let origin = &self.points[&ring[0]];
-        ring.windows(2).skip(1).fold(Real::from(0), |s, edge| {
-            s + cross(origin, &self.points[&edge[0]], &self.points[&edge[1]])
+        ring.windows(2).skip(1).try_fold(Real::from(0), |s, edge| {
+            Ok(s + cross(
+                origin,
+                &self.points[&edge[0]],
+                &self.points[&edge[1]],
+                self.dec,
+            )?)
         })
     }
 
     fn contains(&mut self, ring: &[usize], p: &Point) -> Result<bool, Refusal> {
         let mut winding = 0i32;
+        let p_exact = p.exact(self.dec)?;
         for i in 0..ring.len() {
             let a = &self.points[&ring[i]];
             let b = &self.points[&ring[(i + 1) % ring.len()]];
-            let ay = sign(&(&a[1] - &p[1]), self.dec)?;
-            let by = sign(&(&b[1] - &p[1]), self.dec)?;
+            let ay = sign(&(&a.exact(self.dec)?[1] - &p_exact[1]), self.dec)?;
+            let by = sign(&(&b.exact(self.dec)?[1] - &p_exact[1]), self.dec)?;
             if ay != Sign::Positive && by == Sign::Positive {
-                if sign(&cross(a, b, p), self.dec)? == Sign::Positive {
+                if sign(&cross(a, b, p, self.dec)?, self.dec)? == Sign::Positive {
                     winding += 1;
                 }
             } else if ay == Sign::Positive
                 && by != Sign::Positive
-                && sign(&cross(a, b, p), self.dec)? == Sign::Negative
+                && sign(&cross(a, b, p, self.dec)?, self.dec)? == Sign::Negative
             {
                 winding -= 1;
             }
@@ -158,11 +174,15 @@ impl Polygon<'_> {
         }
         // Collinear disjoint segments do not obstruct a bridge.
         if [ab_c, ab_d, cd_a, cd_b].iter().all(|s| *s == Sign::Zero) {
+            let a = self.points[&a].exact(self.dec)?;
+            let b = self.points[&b].exact(self.dec)?;
+            let c = self.points[&c].exact(self.dec)?;
+            let d = self.points[&d].exact(self.dec)?;
             for axis in 0..2 {
-                let ac = sign(&(&self.points[&a][axis] - &self.points[&c][axis]), self.dec)?;
-                let ad = sign(&(&self.points[&a][axis] - &self.points[&d][axis]), self.dec)?;
-                let bc = sign(&(&self.points[&b][axis] - &self.points[&c][axis]), self.dec)?;
-                let bd = sign(&(&self.points[&b][axis] - &self.points[&d][axis]), self.dec)?;
+                let ac = sign(&(&a[axis] - &c[axis]), self.dec)?;
+                let ad = sign(&(&a[axis] - &d[axis]), self.dec)?;
+                let bc = sign(&(&b[axis] - &c[axis]), self.dec)?;
+                let bd = sign(&(&b[axis] - &d[axis]), self.dec)?;
                 if ac != Sign::Zero && ac == ad && ac == bc && ac == bd {
                     return Ok(false);
                 }
@@ -191,7 +211,10 @@ impl Polygon<'_> {
         } else if a.bounds[axis][0] > b.bounds[axis][1] {
             Ok(Sign::Positive)
         } else {
-            sign(&(&a[axis] - &b[axis]), self.dec)
+            sign(
+                &(&a.exact(self.dec)?[axis] - &b.exact(self.dec)?[axis]),
+                self.dec,
+            )
         }
     }
 
@@ -413,15 +436,20 @@ impl Polygon<'_> {
                 if !clear {
                     continue;
                 }
-                let coordinates = std::array::from_fn(|k| {
-                    (&self.points[&a][k] + &self.points[&b][k]) / Real::from(2)
-                });
+                let a = self.points[&a].exact(self.dec)?;
+                let b = self.points[&b].exact(self.dec)?;
+                let coordinates = std::array::from_fn(|k| (&a[k] + &b[k]) / Real::from(2));
                 let bounds = coordinates
                     .each_ref()
                     .map(|value| dec_bounds(value, self.dec));
                 let [x, y] = bounds;
                 let midpoint = Point {
-                    coordinates,
+                    position: Position::Exact([
+                        coordinates[0].clone(),
+                        coordinates[1].clone(),
+                        Real::zero(),
+                    ]),
+                    axes: [0, 1],
                     bounds: [x?, y?],
                 };
                 let mut inside = false;
@@ -495,7 +523,7 @@ impl Polygon<'_> {
 
 fn refine(
     triangles: &mut Vec<Triangle>,
-    points: &mut BTreeMap<usize, [Real; 3]>,
+    points: &mut BTreeMap<usize, Position>,
     loops: &[Vec<usize>],
     mesh: &mut Mesh,
     options: &MeshOptions,
@@ -541,7 +569,9 @@ fn refine(
         }
         let mut midpoints = BTreeMap::new();
         for (a, b) in pending {
-            let p = std::array::from_fn::<_, 3, _>(|i| &(&points[&a][i] + &points[&b][i]) * &half);
+            let pa = points[&a].exact(dec)?;
+            let pb = points[&b].exact(dec)?;
+            let p = std::array::from_fn::<_, 3, _>(|i| &(&pa[i] + &pb[i]) * &half);
             let balls = [
                 dec.enclose_at(&p[0], chart::BITS)?,
                 dec.enclose_at(&p[1], chart::BITS)?,
@@ -563,7 +593,7 @@ fn refine(
             }
             let index = mesh.positions.len();
             mesh.positions.push(position);
-            points.insert(index, p);
+            points.insert(index, Position::Exact(p));
             midpoints.insert((a, b), index);
         }
         let mut refined = Vec::with_capacity(triangles.len() + 2 * midpoints.len());
@@ -620,7 +650,7 @@ fn refine(
 
 fn split_rail_ears(
     triangles: &mut Vec<Triangle>,
-    points: &mut BTreeMap<usize, [Real; 3]>,
+    points: &mut BTreeMap<usize, Position>,
     rails: &crate::edges::Rails,
     mesh: &mut Mesh,
     options: &MeshOptions,
@@ -639,11 +669,13 @@ fn split_rail_ears(
             return Err(failure("planar rail-ear refinement reached max_vertices"));
         }
         let [a, b, c] = vertices;
+        let pa = points[&a].exact(dec)?;
+        let pb = points[&b].exact(dec)?;
+        let pc = points[&c].exact(dec)?;
         // The exact affine centroid lies strictly inside the already-certified
         // planar triangle. No shared boundary sample or segment is replaced.
-        let p = std::array::from_fn::<_, 3, _>(|axis| {
-            &(&(&points[&a][axis] + &points[&b][axis]) + &points[&c][axis]) * &third
-        });
+        let p =
+            std::array::from_fn::<_, 3, _>(|axis| &(&(&pa[axis] + &pb[axis]) + &pc[axis]) * &third);
         let balls = [
             dec.enclose_at(&p[0], chart::BITS)?,
             dec.enclose_at(&p[1], chart::BITS)?,
@@ -657,7 +689,7 @@ fn split_rail_ears(
         let index = mesh.positions.len();
         mesh.positions.push(position);
         if options.max_edge_length.is_some() {
-            points.insert(index, p);
+            points.insert(index, Position::Exact(p));
         }
         let face = triangles[i].face;
         triangles[i].vertices = [a, b, index];
@@ -702,7 +734,7 @@ pub(crate) fn build(
     if (direction == Sign::Negative) != (model.face(face).sense == Sense::Reversed) {
         axes.swap(0, 1);
     }
-    let mut points = BTreeMap::<usize, [Real; 3]>::new();
+    let mut points = BTreeMap::<usize, Position>::new();
     let mut loops = Vec::new();
     for &l in &model.face(face).loops {
         let Loop::Coedges(coedges) = model.loop_(l) else {
@@ -716,7 +748,7 @@ pub(crate) fn build(
             for v in [edge.start, edge.end].into_iter().flatten() {
                 points.entry(boundaries.vertices[&v]).or_insert_with(|| {
                     let p = model.geom().position(model.vertex(v).point);
-                    [p.x.clone(), p.y.clone(), p.z.clone()]
+                    Position::Exact([p.x.clone(), p.y.clone(), p.z.clone()])
                 });
             }
             for &index in sampled {
@@ -725,7 +757,7 @@ pub(crate) fn build(
                         .exact_positions
                         .get(&index)
                         .ok_or_else(|| failure("planar boundary lacks its exact trace sample"))?;
-                    entry.insert([p.x.clone(), p.y.clone(), p.z.clone()]);
+                    entry.insert(p.clone());
                 }
             }
             if coedge.sense == Sense::Same {
@@ -749,17 +781,14 @@ pub(crate) fn build(
     for (&index, p) in &points {
         let balls = match boundaries.enclosures.entry(index) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([
-                dec.enclose_at(&p[0], chart::BITS)?,
-                dec.enclose_at(&p[1], chart::BITS)?,
-                dec.enclose_at(&p[2], chart::BITS)?,
-            ]),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(p.enclose(dec)?),
         };
         error = error.max(chart::residual(&boundaries.mesh.positions[index], balls));
         projected.insert(
             index,
             Point {
-                coordinates: axes.map(|a| p[a].clone()),
+                position: p.clone(),
+                axes,
                 bounds: axes.map(|a| {
                     [
                         balls[a].lo().to_f64_nearest().next_down(),
@@ -783,7 +812,10 @@ pub(crate) fn build(
     } else {
         let mut outer = Vec::new();
         let mut holes = Vec::new();
-        let areas: Vec<_> = loops.iter().map(|ring| polygon.area(ring)).collect();
+        let areas: Vec<_> = loops
+            .iter()
+            .map(|ring| polygon.area(ring))
+            .collect::<Result<_, _>>()?;
         for (i, area) in areas.iter().enumerate() {
             match sign(area, polygon.dec)? {
                 Sign::Positive => outer.push(i),

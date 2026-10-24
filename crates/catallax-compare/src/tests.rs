@@ -307,24 +307,7 @@ fn a_remote_origin_change_on_a_merged_face_is_not_a_local_disagreement() {
     assert_eq!(report.verdict, Verdict::Unresolved, "{report:?}");
 }
 #[test]
-fn unsupported_operations_are_all_reported() {
-    let recipe = recipe(vec![
-        block("a", "2", "0"),
-        json!({"id":"offset","op":"offset","body":"a","distance":"1"}),
-        json!({"id":"thicken","op":"thicken","body":"offset","faces":[{"face":{"step":"a","role":"end"}}],"thickness":"1","side":"front"}),
-    ]);
-    let report = check(&recipe);
-    assert_eq!(report.verdict, Verdict::Unresolved);
-    assert_eq!(
-        report
-            .not_comparable
-            .iter()
-            .map(|o| o.operation.as_str())
-            .collect::<Vec<_>>(),
-        ["offset", "thicken"]
-    );
-}
-#[test]
+
 fn complete_reports_are_identical_across_one_two_and_four_workers() {
     let parts = [
         recipe(vec![

@@ -68,22 +68,6 @@ fn deleted_profile_identity_fails_even_when_geometry_is_unchanged() {
     );
 }
 #[test]
-fn unfinished_feature_reports_wait_with_step_and_operation() {
-    let mut before = block();
-    before["steps"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({"id":"tray","op":"shell","body":"stock","thickness":"1","open":[]}));
-    before["result"] = json!("tray");
-    let mut after = before.clone();
-    after["steps"][1]["thickness"] = json!("0.75");
-    let report = check(before, after);
-    let edit = &report["manifest"]["name_edit"];
-    assert_eq!(edit["status"], "waiting", "{report}");
-    assert_eq!(edit["waiting"][0]["refusal"]["step"], "tray");
-    assert_eq!(edit["waiting"][0]["refusal"]["operation"], "shell");
-}
-#[test]
 fn no_edit_cannot_pass_the_edit_gate() {
     let before = block();
     let mut after = before.clone();

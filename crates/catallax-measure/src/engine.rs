@@ -92,6 +92,33 @@ fn budget() -> Refusal {
     )
 }
 
+fn unproved_distance_integral(model: &Model, face: FaceId) -> bool {
+    let boundary = model.face(face);
+    if matches!(model.geom().surface(boundary.surface), Surface::Plane(_)) {
+        return false;
+    }
+    let distance_generated = model.face_origins(face).iter().any(|origin| {
+        let mut role = &origin.role;
+        while let catallax_recipe::Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
+        matches!(
+            role,
+            catallax_recipe::Role::Round { .. }
+                | catallax_recipe::Role::RoundCorner { .. }
+                | catallax_recipe::Role::Inner { .. }
+                | catallax_recipe::Role::Offset { .. }
+        )
+    });
+    distance_generated
+        && boundary.loops.iter().any(|lp| {
+            matches!(model.loop_(*lp), Loop::Coedges(cs) if cs.iter().any(|c| {
+                let edge = model.edge(model.coedge(*c).edge);
+                edge.start.is_some() || edge.end.is_some()
+            }))
+        })
+}
+
 pub(crate) fn measure(
     model: &Model,
     faces: &[FaceId],
@@ -101,6 +128,20 @@ pub(crate) fn measure(
     traces: &mut TraceCache,
     dec: &mut Decider,
 ) -> Answered<Vec<Enclosure>> {
+    // Whole analytic supports and full rings retain their existing integrals.
+    // Finite normal-sector trims need a separate property proof; geometric
+    // incidence and the offset's distance proof do not supply that integral.
+    // Refuse before entering unproved quadrature, rather than stalling or
+    // publishing a sampled property as a proven value.
+    if faces
+        .iter()
+        .any(|face| unproved_distance_integral(model, *face))
+    {
+        return Err(Refusal::new(
+            "measure.budget-exhausted",
+            "finite curved distance-feature trims have no proven property integral within this allowance",
+        ));
+    }
     let indices = match property {
         Property::Area => vec![0],
         Property::Volume => vec![1],

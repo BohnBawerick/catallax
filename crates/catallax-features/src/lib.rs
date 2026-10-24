@@ -1,7 +1,7 @@
 //! Recipe-based B-rep features with retained exact definitions.
 //!
 //! [`evaluate`] builds stock solids, sketches, extrusions, revolutions, elementary
-//! fillets and chamfers, booleans, exact body patterns and mirrors.
+//! fillets and chamfers, booleans, exact body patterns, mirrors and analytic distance features.
 //! Every returned face has canonical recipe origins, including faces split or merged
 //! by a boolean. The model remains compatible with `catallax-measure` and
 //! `catallax-step`; the legacy CLI protocol is not extended.
@@ -11,8 +11,8 @@
 //! prism family with genuine spline geometry and a complete geometry-bound record.
 //! Its retained exact definition remains the target for later offsets and properties.
 //! Unsupported legal geometry keeps an explicit coverage refusal; a surface enum
-//! variant is not general feature or boolean coverage. `docs/RECIPE.md` section 7.14
-//! records the remaining legal-input coverage gaps.
+//! variant is not general feature or boolean coverage. `docs/RECIPE.md` sections
+//! 7.14 and 7.15 record the remaining legal-input coverage gaps.
 //!
 //! ```
 //! use catallax_features::evaluate;
@@ -39,6 +39,9 @@ mod certified;
 /// Exact setback definitions retained beside their topology.
 pub mod chamfer;
 mod chamfer_build;
+/// Complete capped-cylinder distance and normal-sweep definitions.
+pub mod cylinder_skin;
+mod distance_build;
 /// Exact neutral-curve definitions for analytic draft supports.
 pub mod draft;
 mod draft_build;
@@ -54,8 +57,16 @@ mod fillet_build;
 pub mod hole;
 mod offset_fit;
 mod placement;
+mod planar_distance;
+/// Exact face, edge and vertex distance-neighbourhood definitions.
+pub mod polyhedral_offset;
+/// Exact bounded convex plane arrangements shared by the independent kernels.
+pub mod polyhedron;
 mod profile;
+/// Closed-skin radial distance and normal-sweep definitions.
+pub mod radial;
 mod revolve;
+mod rounded_polyhedron;
 mod stock;
 
 pub use certified::{BodyCertificate, CertificateKey, CertifiedBuilt, PrismTarget};

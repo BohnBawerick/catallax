@@ -772,6 +772,60 @@ fn evaluate_impl(
                         )?;
                     BodyValue { body, radius }
                 }
+                Operation::Offset { body, distance } => {
+                    let input = &bodies[body];
+                    let result = crate::distance_build::offset(
+                        model,
+                        input.body,
+                        &distance.value().clone().into(),
+                        &step.id,
+                        dec,
+                    )?;
+                    BodyValue {
+                        body: crate::distance_build::inherit_marks(model, input.body, result),
+                        radius: &input.radius + &distance.value().abs(),
+                    }
+                }
+                Operation::Shell {
+                    body,
+                    open,
+                    thickness,
+                } => {
+                    let input = &bodies[body];
+                    let result = crate::distance_build::shell(
+                        model,
+                        input.body,
+                        open,
+                        &thickness.value().clone().into(),
+                        &step.id,
+                        dec,
+                    )?;
+                    BodyValue {
+                        body: crate::distance_build::inherit_marks(model, input.body, result),
+                        radius: input.radius.clone(),
+                    }
+                }
+                Operation::Thicken {
+                    body,
+                    faces,
+                    thickness,
+                    side,
+                } => {
+                    let input = &bodies[body];
+                    let result = crate::distance_build::thicken(
+                        model,
+                        input.body,
+                        faces,
+                        &thickness.value().clone().into(),
+                        *side,
+                        &step.id,
+                        dec,
+                    )?;
+                    BodyValue {
+                        body: crate::distance_build::inherit_marks(model, input.body, result),
+                        radius: &input.radius + &thickness.value().abs(),
+                    }
+                }
                 _ => {
                     return Err(Refusal::new(
                         "features.unsupported-operation",

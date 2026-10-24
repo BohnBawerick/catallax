@@ -310,6 +310,60 @@ impl Feature {
         Ok(())
     }
 
+    pub(crate) fn convex_planes(&self, dec: &mut Decider) -> Result<Option<Vec<Plane>>, Refusal> {
+        let Sweep::Extrude {
+            vector,
+            through: false,
+        } = &self.sweep
+        else {
+            return Ok(None);
+        };
+        if self.fillet.is_some()
+            || self.loops.len() != 1
+            || self.loops[0].iter().any(|e| e.circle.is_some())
+        {
+            return Ok(None);
+        }
+        let map = self.inverse.inverse();
+        let mut vertices = Vec::with_capacity(self.loops[0].len() * 2);
+        let mut centre = Vector3::zero();
+        for edge in &self.loops[0] {
+            let p = RPoint3::new(
+                edge.start[0].clone(),
+                edge.start[1].clone(),
+                Rational::zero(),
+            );
+            let end = p.plus(vector);
+            for p in [p, end] {
+                let p = map.apply_point(&p.to_real());
+                centre = centre.plus(&Vector3::new(p.x.clone(), p.y.clone(), p.z.clone()));
+                vertices.push(p);
+            }
+        }
+        let centre = centre.scaled(&(&Real::one() / &Real::from_i64(vertices.len() as i64)));
+        let centre = Point3::new(centre.x, centre.y, centre.z);
+        let mut planes = Vec::with_capacity(self.constraints.len());
+        for constraint in &self.constraints {
+            let Surface::Plane(plane) = constraint.surface() else {
+                return Ok(None);
+            };
+            let mut plane = plane.clone();
+            match geometry::sign(&centre.minus(&plane.origin).dot(&plane.normal), dec)? {
+                Sign::Positive => plane.normal = plane.normal.scaled(&Real::from_i64(-1)),
+                Sign::Zero => return Ok(None),
+                Sign::Negative => (),
+            }
+            for p in &vertices {
+                if geometry::sign(&p.minus(&plane.origin).dot(&plane.normal), dec)?
+                    == Sign::Positive
+                {
+                    return Ok(None);
+                }
+            }
+            planes.push(plane);
+        }
+        Ok(Some(planes))
+    }
     pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
         let Sweep::Extrude { vector, through } = &self.sweep else {
             let radius = self.display_radius(dec)?.expect("finite revolve");

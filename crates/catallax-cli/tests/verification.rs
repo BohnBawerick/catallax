@@ -127,74 +127,50 @@ fn exported_recipe_replays_geometry_work_and_operation_outcomes() {
         "steps":[{"id":"base","op":"block","size":["4","5","6"],
         "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],
         "result":"base"});
-    for unsupported in [false, true] {
-        let mut problem = recipe.clone();
-        if unsupported {
-            problem["steps"].as_array_mut().unwrap().extend([
-                json!({"id":"offset","op":"offset","body":"base","distance":"1"}),
-                json!({"id":"later","op":"offset","body":"offset","distance":"1"}),
-            ]);
-            problem["result"] = json!("later");
-        }
-        let directory = root.join(unsupported.to_string());
-        let original = answer(&Request {
-            format: "catallax-request/1".into(),
-            source: "recipe".into(),
-            problem,
-            out: directory.clone(),
-            max_work: 12_345_678,
-        })
+    let directory = root.join("recipe");
+    let original = answer(&Request {
+        format: "catallax-request/1".into(),
+        source: "recipe".into(),
+        problem: recipe,
+        out: directory.clone(),
+        max_work: 12_345_678,
+    })
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .args([
+            "replay",
+            directory.join("question.json").to_str().unwrap(),
+            "--out",
+            directory.join("replay").to_str().unwrap(),
+        ])
+        .output()
         .unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
-            .args([
-                "replay",
-                directory.join("question.json").to_str().unwrap(),
-                "--out",
-                directory.join("replay").to_str().unwrap(),
-            ])
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let replay: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(original["manifest"], replay["manifest"]);
-        assert_eq!(original["work"], replay["work"]);
-        let mut logs = [
-            original["operation_log"].clone(),
-            replay["operation_log"].clone(),
-        ];
-        for log in &mut logs {
-            for operation in log["operations"].as_array_mut().unwrap() {
-                operation.as_object_mut().unwrap().remove("wall_ms");
-            }
-        }
-        assert_eq!(logs[0], logs[1]);
-        let operations = logs[0]["operations"].as_array().unwrap();
-        assert_eq!(operations[0]["id"], "base");
-        assert_eq!(operations[0]["status"], "answered");
-        if unsupported {
-            assert_eq!(
-                original["manifest"]["refusal"]["code"],
-                "features.unsupported-operation"
-            );
-            assert_eq!(operations[1]["id"], "offset");
-            assert_eq!(
-                operations[1]["refusal"]["code"],
-                "features.unsupported-operation"
-            );
-            assert!(!operations.iter().any(|entry| entry["id"] == "later"));
-            assert!(!directory.join("answer.step").exists());
-        } else {
-            assert_eq!(original["manifest"]["status"], "answered");
-            assert_eq!(
-                fs::read(directory.join("answer.step")).unwrap(),
-                fs::read(directory.join("replay/answer.step")).unwrap()
-            );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let replay: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(original["manifest"], replay["manifest"]);
+    assert_eq!(original["work"], replay["work"]);
+    let mut logs = [
+        original["operation_log"].clone(),
+        replay["operation_log"].clone(),
+    ];
+    for log in &mut logs {
+        for operation in log["operations"].as_array_mut().unwrap() {
+            operation.as_object_mut().unwrap().remove("wall_ms");
         }
     }
+    assert_eq!(logs[0], logs[1]);
+    let operations = logs[0]["operations"].as_array().unwrap();
+    assert_eq!(operations[0]["id"], "base");
+    assert_eq!(operations[0]["status"], "answered");
+    assert_eq!(original["manifest"]["status"], "answered");
+    assert_eq!(
+        fs::read(directory.join("answer.step")).unwrap(),
+        fs::read(directory.join("replay/answer.step")).unwrap()
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -304,42 +280,6 @@ fn declared_face_checks_survive_replay_and_report_radius_edit_origins() {
     assert_eq!(
         fs::read(dir.join("answer.step")).unwrap(),
         fs::read(dir.join("replay/answer.step")).unwrap()
-    );
-    fs::remove_dir_all(dir).unwrap();
-}
-
-#[test]
-fn unsupported_field_feature_removes_previous_display_without_brep_fallback() {
-    use catallax_cli::verification::{Request, answer};
-    let dir = std::env::temp_dir().join(format!(
-        "catallax-field-display-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("display.obj"), "stale display").unwrap();
-    fs::write(dir.join("answer.step"), "stale STEP").unwrap();
-    let response = answer(&Request {
-        format: "catallax-request/1".into(),
-        source: "field".into(),
-        // A shell exercises an unsupported compile step and artifact cleanup.
-        problem: serde_json::from_str(include_str!("../../../parts/P4-shelled-tray.json")).unwrap(),
-        out: dir.clone(),
-        max_work: 100_000_000,
-    })
-    .unwrap();
-    assert_eq!(
-        response["manifest"]["refusal"]["code"],
-        "field.unsupported-operation"
-    );
-    assert!(!dir.join("display.obj").exists());
-    assert!(!dir.join("answer.step").exists());
-    assert!(
-        response["operation_log"]["operations"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|operation| operation["kernel"] == "field")
     );
     fs::remove_dir_all(dir).unwrap();
 }

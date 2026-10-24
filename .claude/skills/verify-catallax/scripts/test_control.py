@@ -209,21 +209,7 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(result['outcomes'], {'numbers.operation-budget': 1})
         self.assertFalse(list((self.out / 'replay').rglob('answer.step')))
 
-    def test_scoreboard_reports_unsupported_steps_in_both_kernels(self):
-        targets = self.out / 'targets'
-        targets.mkdir()
-        recipe = json.loads((EXAMPLES / 'recipe.json').read_text())
-        recipe['steps'].append({'id': 'offset', 'op': 'offset', 'body': 'box', 'distance': '1'})
-        recipe['result'] = 'offset'
-        (targets / 'part.json').write_text(json.dumps(recipe))
-        result = self.command('parts', targets, '--binary', BINARY, '--out', self.out / 'scoreboard')
-        case = result['cases'][0]
-        self.assertEqual(case['recipe']['manifest']['refusal']['code'], 'features.unsupported-operation')
-        self.assertEqual(case['field']['manifest']['refusal']['code'], 'field.unsupported-operation')
-        self.assertEqual(case['compare']['manifest']['comparison']['verdict'], 'unresolved')
-        self.assertEqual(case['step_check']['code'], 'step.no-export')
-
-    def test_scoreboard_rebuilds_after_edit_and_reports_feature_waits(self):
+    def test_scoreboard_rebuilds_after_dimension_edit(self):
         targets = self.out / 'targets'
         targets.mkdir()
         recipe = json.loads((EXAMPLES / 'recipe.json').read_text())
@@ -236,14 +222,6 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(check['status'], 'passed', check)
         self.assertEqual(check['brep']['faces_checked'], 6)
         self.assertEqual(check['brep']['edges_checked'], 12)
-        recipe['steps'].append({'id': 'offset', 'op': 'offset', 'body': 'box', 'distance': '1'})
-        recipe['result'] = 'offset'
-        (targets / 'part.json').write_text(json.dumps(recipe))
-        result = self.command('parts', targets, '--binary', BINARY, '--out', self.out / 'waiting')
-        check = result['cases'][0]['edit_check']
-        self.assertEqual(check['status'], 'waiting', check)
-        self.assertEqual(check['waiting'][0]['refusal']['step'], 'offset')
-        self.assertEqual(check['waiting'][0]['refusal']['operation'], 'offset')
 
 if __name__ == '__main__':
     unittest.main()

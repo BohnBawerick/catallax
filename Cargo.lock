@@ -141,6 +141,7 @@ dependencies = [
  "catallax-boolean",
  "catallax-intersect",
  "catallax-numbers",
+ "catallax-recipe",
  "catallax-shapes",
  "catallax-topology",
  "rug",

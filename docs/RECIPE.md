@@ -1252,3 +1252,23 @@ Extrusion supports axis-aligned and Pythagorean directions whose unit vectors ar
 The language still specifies angles as rational degrees. A non-cardinal Pythagorean unit-circle point does not correspond to a rational number of degrees, so it has no exact input spelling in this schema. Supporting explicit rational cosine/sine pairs needs a separately versioned angle representation. No rounded degree value is treated as the exact Pythagorean angle.
 
 Inherited cone/torus boolean gaps and unresolved exact decisions remain unfinished kernel work too. These feature limits do not justify approximate geometry, extra impossible-input rules, or a claim that the complete PRD is implemented.
+
+### 7.15 Distance-feature coverage
+
+The ordinary B-rep evaluator and independent field compiler implement these exact reductions. They use the definitions in sections 4.7 to 4.9 without changing the recipe format.
+
+| Operation | Implemented input family |
+|---|---|
+| Offset | Convex planar solids, inward and outward; complete spheres and ring tori; complete perpendicular-capped cylinders inward. Zero distance preserves the input. A consumed inward result is empty. |
+| Shell | Convex planar solids with resolved open-face references; complete perpendicular-capped cylinders; complete spherical and ring-torus skins. Opening every face is empty. Opposing walls consuming the cavity preserves the solid. |
+| Thicken | One convex planar face; one complete cylindrical cap or wall; a complete spherical or ring-torus skin. Back sweeps regularise passage through the radial core rather than clipping to the original body. |
+
+A planar shell's fast path proves that its minimum kept-plane clearance has a witness in a kept trim. Otherwise the B-rep constructs the closed kept-polygon distance tubes, with semicircular edge rolls and spherical vertex lunes, before intersecting their union with the input. The field evaluates the corresponding face, edge and vertex definitions independently. An untrimmed support-plane clearance alone is never sufficient.
+
+Convex outward offsets directly assemble translated planar patches, cylindrical edge sectors and spherical vertex normal fans. These patches retain source face origins and use the section 4.8 round names. Repeated overlapping boolean unions are not needed to build that boundary.
+
+The certified entry retains its existing inward elliptic-offset prism family and signed definition, spline carrier and local error proof. Ordinary evaluation does not silently substitute this fitted representation. General spline envelopes and their finite meeting curves remain uncovered. No tolerance, approximation cap or deterministic work allowance changes.
+
+Legal geometry still refused includes nonconvex planar skins, general trimmed curved skins, outward cylindrical cap joins, cone-body offsets, sharp multi-face thicken selections and horn or spindle torus carriers. These are implementation gaps, not additional impossible-input rules. They report `distance.unsupported-envelope`, `distance.planar-domain`, `distance.cylinder-domain`, `offset.derived-carrier` or `offset.spindle-carrier` as applicable. A missing face reports `reference.lost-face`; a tied nearest planar face reports `reference.ambiguous-face`.
+
+Property integration is a separate coverage boundary. Finite curved distance-feature trims currently return `measure.budget-exhausted` before unproved quadrature. Geometry construction, field checking and STEP export remain usable. Exact planar integrals, whole analytic supports and full-ring reductions retain their existing paths. A valid exported offset is not a claim that its mass properties have been proved.

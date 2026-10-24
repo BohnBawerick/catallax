@@ -22,8 +22,9 @@ pub struct SweepFace {
     pub origins: Vec<Origin>,
 }
 
-/// A convex meridian polygon revolved about an exact axis.
-/// Convexity is in radius and axial height, not in three-dimensional space.
+/// A closed rotational sweep with exact meridian endpoints and oriented patches.
+/// The polygon constructor uses straight meridians; circular cells can retain
+/// spherical patches between the same exact endpoints.
 #[derive(Clone, Debug)]
 pub struct ConeSweep {
     /// Axis reference point.
@@ -32,7 +33,7 @@ pub struct ConeSweep {
     pub axis: Vector3,
     /// Perpendicular reference direction.
     pub reference: Vector3,
-    /// Counter-clockwise radius/height vertices.
+    /// Counter-clockwise radius/height endpoints of the physical patches.
     pub vertices: Vec<[Real; 2]>,
     /// Physical patches. Segments on the rotation axis are not faces.
     pub faces: Vec<SweepFace>,

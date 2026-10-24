@@ -300,6 +300,22 @@ incident witnesses before repeating the signed field query. This changes proof
 order, not acceptance: every early upper still comes from an exact surviving
 boundary point, and a miss retains the original distance and gap checks.
 
+The reverse pass keeps every native field candidate. If a selected B-rep face
+still lacks sampled origin or direction coverage, triangle centres supply
+additional search hints, not certificates. Each hint is projected onto the
+field's own carrier and must pass the same exact surviving-trim, B-rep distance,
+origin and direction checks. Names only order the search. This supplements
+finite sampling for thin Boolean faces without weakening any earlier finding.
+An exact trim-admitted zero-distance hit ends the distance search because no
+later candidate can improve it.
+
+An empty B-rep needs an independent field emptiness certificate, not a lack of
+boundary samples. `Plan::prove_empty` propagates native source boxes through
+the Boolean tape, then evaluates primitive polynomial enclosures over the whole
+result box. Strictly separated signs can prove exclusion. Unbounded boxes,
+unsupported classifiers and inconclusive enclosures remain unresolved. This is
+a query-only proof and adds no work to compilation or part construction.
+
 
 ## Whole-face definition measurements
 

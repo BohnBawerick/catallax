@@ -1,0 +1,62 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "oblique conical cap inward",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cone",
+      "base_radius": "4",
+      "top_radius": "1",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "cut",
+      "op": "block",
+      "size": [
+        "20",
+        "20",
+        "20"
+      ],
+      "pose": {
+        "rotation": [
+          "8",
+          "0",
+          "1",
+          "0"
+        ],
+        "translation": [
+          "-126/13",
+          "-10",
+          "58/13"
+        ]
+      }
+    },
+    {
+      "id": "clipped",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "stock",
+      "tool": "cut"
+    },
+    {
+      "id": "result",
+      "op": "offset",
+      "body": "clipped",
+      "distance": "-1/5"
+    }
+  ],
+  "result": "result"
+}

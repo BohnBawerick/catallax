@@ -1,0 +1,41 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "conical shell open wide",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cone",
+      "base_radius": "4",
+      "top_radius": "1",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "op": "shell",
+      "body": "stock",
+      "open": [
+        {
+          "face": {
+            "step": "stock",
+            "role": "start"
+          }
+        }
+      ],
+      "thickness": "1/5"
+    }
+  ],
+  "result": "result"
+}

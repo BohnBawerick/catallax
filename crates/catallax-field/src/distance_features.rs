@@ -95,6 +95,180 @@ impl Plan {
             dec,
         )
     }
+    fn cone_skin(
+        &self,
+        node: usize,
+        dec: &mut Decider,
+    ) -> Result<Option<catallax_features::cone_skin::ConeSkin>, Refusal> {
+        fn has_cone(plan: &Plan, node: usize) -> bool {
+            match plan.instructions[node] {
+                Instruction::Leaf(leaf) => plan.leaves[leaf]
+                    .constraints()
+                    .iter()
+                    .any(|c| matches!(c.surface(), Surface::Cone(_))),
+                Instruction::Boolean {
+                    kind: BooleanKind::Intersect,
+                    a,
+                    b,
+                } => has_cone(plan, a) || has_cone(plan, b),
+                _ => false,
+            }
+        }
+        if !has_cone(self, node) {
+            return Ok(None);
+        }
+        let mut stack = vec![node];
+        let mut surfaces = Vec::new();
+        while let Some(node) = stack.pop() {
+            match self.instructions[node] {
+                Instruction::Boolean {
+                    kind: BooleanKind::Intersect,
+                    a,
+                    b,
+                } => {
+                    stack.push(b);
+                    stack.push(a);
+                }
+                Instruction::Leaf(leaf)
+                    if !matches!(
+                        self.leaves[leaf],
+                        geometry::Leaf::Feature(_) | geometry::Leaf::Draft(_)
+                    ) =>
+                {
+                    for c in self.leaves[leaf].constraints() {
+                        let origins = self
+                            .faces
+                            .iter()
+                            .filter(|f| f.leaf == leaf && f.surface.same_definition(c.surface()))
+                            .map(|f| f.origin.clone())
+                            .collect();
+                        surfaces.push((c.surface().clone(), origins));
+                    }
+                }
+                _ => return Ok(None),
+            }
+        }
+        catallax_features::cone_skin::ConeSkin::new(&surfaces, dec)
+    }
+    fn cone_leaf(
+        &mut self,
+        skin: catallax_features::cone_skin::ConeSkin,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let mut faces = Vec::new();
+        for f in &skin.faces {
+            for origin in &f.origins {
+                faces.push(geometry::face(f.surface.clone(), origin.clone(), dec)?);
+            }
+        }
+        self.leaf(
+            geometry::Leaf::Cell(geometry::Cell::new(
+                skin.constraints(),
+                Some(bound.clone()),
+            )?),
+            faces,
+            dec,
+        )
+    }
+    fn cone_sweep(
+        &mut self,
+        sweep: &catallax_features::cone_sweep::ConeSweep,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        use catallax_numbers::Sign;
+        use catallax_shapes::{Cylinder, Plane};
+        // Strict auxiliary bounds have no exposed patch or physical origin.
+        let mut radius = Real::zero();
+        let mut lo = sweep.vertices[0][1].clone();
+        let mut hi = lo.clone();
+        for p in &sweep.vertices {
+            if geometry::sign(&(&p[0] - &radius), dec)? == Sign::Positive {
+                radius = p[0].clone();
+            }
+            if geometry::sign(&(&p[1] - &lo), dec)? == Sign::Negative {
+                lo = p[1].clone();
+            }
+            if geometry::sign(&(&p[1] - &hi), dec)? == Sign::Positive {
+                hi = p[1].clone();
+            }
+        }
+        let bounds = vec![
+            Surface::Cylinder(Cylinder {
+                origin: sweep.origin.clone(),
+                axis: sweep.axis.clone(),
+                radius_sq: (&radius + &Real::one()).square(),
+                ref_dir: sweep.reference.clone(),
+            }),
+            Surface::Plane(Plane {
+                origin: sweep.origin.plus(&sweep.axis.scaled(&(&lo - &Real::one()))),
+                normal: sweep.axis.scaled(&Real::from_i64(-1)),
+                ref_dir: sweep.reference.clone(),
+            }),
+            Surface::Plane(Plane {
+                origin: sweep.origin.plus(&sweep.axis.scaled(&(&hi + &Real::one()))),
+                normal: sweep.axis.clone(),
+                ref_dir: sweep.reference.clone(),
+            }),
+        ];
+        let mut node = self.leaf(
+            geometry::Leaf::Cell(geometry::Cell::new(bounds, Some(bound.clone()))?),
+            Vec::new(),
+            dec,
+        )?;
+        for f in &sweep.faces {
+            let mut surfaces = vec![f.surface.clone()];
+            if let Surface::Cone(c) = &f.surface {
+                surfaces.push(Surface::Plane(Plane {
+                    origin: c.apex.clone(),
+                    normal: c.axis.scaled(&Real::from_i64(-1)),
+                    ref_dir: c.ref_dir.clone(),
+                }));
+            }
+            let faces = f
+                .origins
+                .iter()
+                .map(|o| geometry::face(f.surface.clone(), o.clone(), dec))
+                .collect::<Result<_, _>>()?;
+            let leaf = self.leaf(
+                geometry::Leaf::Cell(geometry::Cell::new(surfaces, Some(bound.clone()))?),
+                faces,
+                dec,
+            )?;
+            node = self.boolean(
+                if f.reversed {
+                    BooleanKind::Subtract
+                } else {
+                    BooleanKind::Intersect
+                },
+                node,
+                leaf,
+                dec,
+            )?;
+        }
+        Ok(node)
+    }
+    fn cone_pieces(
+        &mut self,
+        mut node: usize,
+        pieces: Vec<catallax_features::cone_sweep::ConeDistancePiece>,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        for piece in pieces {
+            let piece = match piece {
+                catallax_features::cone_sweep::ConeDistancePiece::Sweep(s) => {
+                    self.cone_sweep(&s, bound, dec)?
+                }
+                catallax_features::cone_sweep::ConeDistancePiece::Round(surface, origins) => {
+                    self.radial_leaf(surface, origins, bound, dec)?
+                }
+            };
+            node = self.boolean(BooleanKind::Union, node, piece, dec)?;
+        }
+        Ok(node)
+    }
     fn planar_skin(&self, node: usize, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
         let mut stack = vec![node];
         let mut faces = Vec::new();
@@ -263,6 +437,20 @@ impl Plan {
                 None => Ok(0),
             };
         }
+        if let Some(skin) = self.cone_skin(node, dec)? {
+            if d > &Rational::zero() {
+                return self.cone_pieces(
+                    node,
+                    skin.outward_pieces(&d.clone().into(), step, dec)?,
+                    &bound,
+                    dec,
+                );
+            }
+            return match skin.eroded(&Real::from(-d), dec)? {
+                Some(skin) => self.cone_leaf(skin, &bound, dec),
+                None => Ok(0),
+            };
+        }
         let cell = self.planar_skin(node, dec)?;
         if d > &Rational::zero() {
             return self.unite_distance_pieces(
@@ -322,6 +510,19 @@ impl Plan {
                 return Ok(node);
             };
             let cavity = self.cylinder_leaf(cavity, &bound, dec)?;
+            return self.boolean(BooleanKind::Subtract, node, cavity, dec);
+        }
+        if let Some(skin) = self.cone_skin(node, dec)? {
+            let selected = skin.select(open)?;
+            if selected.iter().all(|v| *v) {
+                return Ok(0);
+            }
+            let cavity = match skin.cavity(&selected, &t.clone().into(), step, dec) {
+                Ok(Some(cavity)) => cavity,
+                Ok(None) => return Ok(node),
+                Err(e) => return Err(e),
+            };
+            let cavity = self.cone_leaf(cavity, &bound, dec)?;
             return self.boolean(BooleanKind::Subtract, node, cavity, dec);
         }
         let cell = self.planar_skin(node, dec)?;
@@ -403,6 +604,21 @@ impl Plan {
             } else {
                 Ok(outer)
             };
+        }
+        if let Some(skin) = self.cone_skin(node, dec)? {
+            let selected = skin.select(refs)?;
+            let indices: Vec<_> = selected
+                .iter()
+                .enumerate()
+                .filter_map(|(i, v)| v.then_some(i))
+                .collect();
+            let [index] = indices.as_slice() else {
+                return Err(bad(
+                    "sharp selected conical joins require their projection normal sectors",
+                ));
+            };
+            let sweep = skin.face_sweep(*index, &t.clone().into(), side, step, dec)?;
+            return self.cone_sweep(&sweep, &bound, dec);
         }
         let cell = self.planar_skin(node, dec)?;
         let selected = cell.select(refs, dec)?;

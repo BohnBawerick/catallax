@@ -39,6 +39,12 @@ mod certified;
 /// Exact setback definitions retained beside their topology.
 pub mod chamfer;
 mod chamfer_build;
+mod cone_build;
+mod cone_rounded;
+/// Exact complete conical cells and analytic meeting sections.
+pub mod cone_skin;
+/// Finite rotational normal sweeps of conical bands and circular caps.
+pub mod cone_sweep;
 /// Complete capped-cylinder distance and normal-sweep definitions.
 pub mod cylinder_skin;
 mod distance_build;

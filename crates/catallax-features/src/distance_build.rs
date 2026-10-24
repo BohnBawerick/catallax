@@ -246,6 +246,15 @@ pub(crate) fn offset(
             None => catallax_topology::empty(model),
         });
     }
+    if let Some(skin) = crate::cone_build::skin(model, body, dec)? {
+        if direction == Sign::Positive {
+            return crate::cone_rounded::build(model, &skin, distance, step, dec);
+        }
+        return Ok(match skin.eroded(&(-distance), dec)? {
+            Some(skin) => crate::cone_build::build(model, &skin),
+            None => catallax_topology::empty(model),
+        });
+    }
     let cell = convex(model, body, dec)?;
     if direction == Sign::Positive {
         let marks = model.body(body).marks.clone();
@@ -290,6 +299,27 @@ pub(crate) fn shell(
             return Ok(body);
         };
         let cavity = cylinder(model, &cavity);
+        return Ok(catallax_boolean::boolean(
+            model,
+            body,
+            cavity,
+            catallax_boolean::BoolOp::Subtract,
+            dec,
+        )
+        .map_err(|e| e.refusal)?
+        .body);
+    }
+    if let Some(skin) = crate::cone_build::skin(model, body, dec)? {
+        let selected = skin.select(open)?;
+        if selected.iter().all(|v| *v) {
+            return Ok(catallax_topology::empty(model));
+        }
+        let cavity = match skin.cavity(&selected, thickness, step, dec) {
+            Ok(Some(cavity)) => cavity,
+            Ok(None) => return Ok(body),
+            Err(e) => return Err(e),
+        };
+        let cavity = crate::cone_build::build(model, &cavity);
         return Ok(catallax_boolean::boolean(
             model,
             body,
@@ -403,6 +433,21 @@ pub(crate) fn thicken(
         } else {
             Ok(outer)
         };
+    }
+    if let Some(skin) = crate::cone_build::skin(model, body, dec)? {
+        let selected = skin.select(refs)?;
+        let indices: Vec<_> = selected
+            .iter()
+            .enumerate()
+            .filter_map(|(i, v)| v.then_some(i))
+            .collect();
+        let [index] = indices.as_slice() else {
+            return Err(bad(
+                "sharp selected conical joins require their projection normal sectors",
+            ));
+        };
+        let sweep = skin.face_sweep(*index, thickness, side, step, dec)?;
+        return crate::cone_build::sweep(model, &sweep, dec);
     }
     let cell = convex(model, body, dec)?;
     let selected = cell.select(refs, dec)?;

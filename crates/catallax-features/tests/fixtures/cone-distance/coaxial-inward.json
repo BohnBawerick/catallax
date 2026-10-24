@@ -1,0 +1,59 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "coaxial cone cylinder inward",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cone",
+      "base_radius": "1",
+      "top_radius": "4",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "limit",
+      "op": "cylinder",
+      "radius": "5/2",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "clipped",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "stock",
+      "tool": "limit"
+    },
+    {
+      "id": "result",
+      "op": "offset",
+      "body": "clipped",
+      "distance": "-1/5"
+    }
+  ],
+  "result": "result"
+}

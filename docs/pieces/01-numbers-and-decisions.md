@@ -280,6 +280,14 @@ Receipts are cleared on normal return and panic unwinding; they never transfer
 between requests or threads. `DecisionStats::work` retains per-decision
 accounting; `OperationWork::used` counts request-wide reservations and checkpoints.
 
+The request also retains complete nonlinear root lists across deciders and
+bounded-memo eviction. Their keys include the full polynomial and both
+`BudgetPolicy` limits: policy-bounded exact shortcuts can change the isolation
+certificate and its cold fee. Reuse preserves root values, ordering,
+multiplicities, per-decision cold work and deadline checks. The request retains
+the certificate data, not only a marker waiving another arithmetic reservation.
+Failed or partial isolation is not recorded.
+
 
 ### Statistics
 

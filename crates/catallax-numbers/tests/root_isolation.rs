@@ -768,3 +768,73 @@ fn reused_root_proofs_preserve_branch_precision_domain_and_local_limits() {
     answer.unwrap();
     assert!(!work.exhausted);
 }
+
+#[test]
+fn root_list_proofs_share_a_request_without_merging_distinct_root_sets() {
+    let simple = poly(&[-2, 0, 1]);
+    let repeated = &simple * &simple;
+    let polynomials = [simple, poly(&[-3, 0, 1]), repeated];
+    let cold_work = polynomials.each_ref().map(|polynomial| {
+        let mut decider = Decider::default();
+        let _ = roots(&mut decider, polynomial);
+        decider.take_stats().work
+    });
+    let (_, first_proofs) = with_operation_budget(100_000, || {
+        for polynomial in &polynomials {
+            let _ = roots(&mut Decider::default(), polynomial);
+        }
+    });
+    assert!(!first_proofs.exhausted);
+
+    let (answers, work) = with_operation_budget(first_proofs.used * 2, || {
+        let mut answers = Vec::with_capacity(3 * polynomials.len());
+        for _ in 0..3 {
+            for (index, polynomial) in polynomials.iter().enumerate() {
+                let mut decider = Decider::default();
+                let values = roots(&mut decider, polynomial);
+                assert_eq!(decider.take_stats().work, cold_work[index]);
+                answers.push((index, values));
+            }
+        }
+        let mut limited = Decider::new(BudgetPolicy {
+            max_work: 0,
+            ..BudgetPolicy::default()
+        });
+        assert!(matches!(
+            limited.real_roots(&polynomials[0]),
+            Outcome::Refused(error) if error.code == "numbers.budget-exhausted",
+        ));
+        let mut expired = Decider::default();
+        expired.set_deadline(Some(std::time::Instant::now()));
+        assert!(matches!(
+            expired.real_roots(&polynomials[0]),
+            Outcome::Refused(error) if error.code == "numbers.deadline",
+        ));
+        answers
+    });
+    assert!(!work.exhausted);
+    for (index, values) in answers {
+        assert_eq!(values.len(), 2);
+        for (position, root) in values.into_iter().enumerate() {
+            assert_eq!(root.multiplicity, if index == 2 { 2 } else { 1 });
+            let value = Real::from_algebraic(root.value);
+            let square = if index == 1 { real("3") } else { real("2") };
+            assert!(
+                Decider::default()
+                    .sign(&(&value * &value - square))
+                    .is_coincident()
+            );
+            proven_sign(
+                &mut Decider::default(),
+                &value,
+                if position == 0 { -1 } else { 1 },
+            );
+        }
+    }
+
+    let (answer, next_request) = with_operation_budget(cold_work[0] / 2, || {
+        Decider::default().real_roots(&polynomials[0])
+    });
+    assert!(matches!(answer, Outcome::Refused(_)));
+    assert!(next_request.exhausted);
+}

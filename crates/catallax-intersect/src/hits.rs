@@ -71,7 +71,6 @@ fn carrier_equations(
     geom: &GeomStore,
     c: CurveId,
     f: &CurveForm,
-    dec: &mut Decider,
 ) -> Result<Vec<RealPoly>, Refusal> {
     let curve = match f {
         CurveForm::Circle {
@@ -485,7 +484,7 @@ pub(super) fn intersect(
     let solutions = if let CurveForm::Line { origin, dir } = &form {
         algebraic_line(origin, dir, geom.surface(s), implicit, dec)?
     } else {
-        let equations = carrier_equations(geom, c, &form, dec)?;
+        let equations = carrier_equations(geom, c, &form)?;
         solve::intersections(&equations, implicit, dec)?
     };
     let Solutions::Points(points) = solutions else {

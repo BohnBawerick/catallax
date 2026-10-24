@@ -17,7 +17,7 @@ No release is scheduled by this machinery. A maintainer pushes a `vX.Y.Z` tag on
 | macOS x86_64 | `catallax-cli-x86_64-apple-darwin.tar.xz` |
 | Windows x64 | `catallax-cli-x86_64-pc-windows-msvc.zip` |
 
-Linux x86_64 builds on Ubuntu 22.04; aarch64 builds on Ubuntu 24.04. These are dynamically linked glibc builds, not musl binaries. Older glibc compatibility is not claimed. Platform jobs extract the archives and run the actual commands, build a block, export STEP and replay the portable question with identical STEP bytes. The universal job joins the two macOS builds with `lipo`, checks both slices and exercises each through `arch` on Apple Silicon with Rosetta.
+Linux x86_64 builds on Ubuntu 22.04; aarch64 builds on Ubuntu 24.04. These are dynamically linked glibc builds, not musl binaries. Older glibc compatibility is not claimed. Platform jobs extract the archives and run the actual commands, build a block, export STEP and replay the portable question with identical STEP bytes. The universal job joins the two macOS builds with `lipo`, checks both slices with `lipo FILE -verify_arch arm64 x86_64` and exercises each through `arch` on Apple Silicon with Rosetta.
 
 macOS downloads are not Developer ID signed or notarized. The universal executables use only the ad-hoc signature needed for Apple Silicon execution. Windows downloads are not Authenticode signed. GitHub provenance attestations do not replace platform code signing. No crates.io, package-manager or SolidDraft release is part of this workflow.
 

@@ -171,6 +171,70 @@ impl Region {
         Ok(None)
     }
 
+    /// Exact membership for algebraic chart points and their one-sided germs.
+    pub(crate) fn classify(
+        &self,
+        point: &Point3,
+        direction: Option<&Vector3>,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        if let Cell::Polyhedral(cell) = &self.cell {
+            return Ok(if !cell.contains(point, direction, dec)? {
+                Location::Outside
+            } else if cell.on_boundary(point, direction, dec)? {
+                Location::Boundary
+            } else {
+                Location::Inside
+            });
+        }
+        let point = [point.x.clone(), point.y.clone(), point.z.clone()];
+        let mut boundary = false;
+        for constraint in &self.constraints {
+            let sign = if let Some(direction) = direction {
+                let mut sign = Sign::Zero;
+                for coefficient in geometry::point_ray_coefficients(constraint, &point, direction) {
+                    sign = geometry::sign(&coefficient, dec)?;
+                    if sign != Sign::Zero {
+                        break;
+                    }
+                }
+                sign
+            } else {
+                geometry::sign(&constraint.polynomial.eval_real(&point), dec)?
+            };
+            match sign {
+                Sign::Positive => return Ok(Location::Outside),
+                Sign::Zero => boundary = true,
+                Sign::Negative => (),
+            }
+        }
+        Ok(if boundary {
+            Location::Boundary
+        } else {
+            Location::Inside
+        })
+    }
+
+    pub(crate) fn on_face_point(
+        &self,
+        origin: &Origin,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let Some(source) = self.source_origin(origin) else {
+            return Ok(false);
+        };
+        if let Cell::Polyhedral(cell) = &self.cell {
+            for face in &cell.faces {
+                if face.origins.contains(source) && cell.on_face(face, point, None, dec)? {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
     fn new(cell: Cell, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut edges = BTreeSet::new();
         let mut include = |cycles: &[Vec<usize>]| {
@@ -373,19 +437,13 @@ impl Region {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
-        if let Cell::Polyhedral(c) = &self.cell {
+        if matches!(self.cell, Cell::Polyhedral(_)) {
             let p = Point3::new(
                 p[0].clone().into(),
                 p[1].clone().into(),
                 p[2].clone().into(),
             );
-            return Ok(if !c.contains(&p, None, dec)? {
-                Location::Outside
-            } else if c.on_boundary(&p, None, dec)? {
-                Location::Boundary
-            } else {
-                Location::Inside
-            });
+            return self.classify(&p, None, dec);
         }
         let mut boundary = false;
         for constraint in &self.constraints {
@@ -809,7 +867,7 @@ impl Plan {
         }
         let mut planes = Vec::new();
         let mut cylinder = None;
-        let witness = self.leaves[leaf].draft_witness()?;
+        let witness = self.leaves[leaf].draft_witness(dec)?;
         for group in &groups {
             let f = &group[0];
             let face = &self.faces[*f];

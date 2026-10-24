@@ -54,6 +54,8 @@ fn disconnected_coplanar_faces_do_not_share_only_their_role_names() {
     draft["angle"] = json!("-45");
     let recipe = recipe(steps, draft);
     let field = Plan::compile(&recipe).unwrap();
+    let mut dec = Decider::default();
+    let distances = field.prepare_distances(&mut dec).unwrap();
     for (creator, own, other) in [
         ("left", ["1", "1", "8"], ["7", "1", "8"]),
         ("right", ["7", "1", "8"], ["1", "1", "8"]),
@@ -73,6 +75,26 @@ fn disconnected_coplanar_faces_do_not_share_only_their_role_names() {
                 .unwrap()
                 .state,
             catallax_field::FaceState::NotOnFace
+        );
+        // The support distance is zero; the closed named patch is 5 mm away.
+        let distance = distances
+            .point_to_face(
+                id,
+                &point(other).to_real(),
+                &catallax_shapes::distance::Options::default(),
+                &mut dec,
+            )
+            .unwrap();
+        assert!(
+            distance.lower <= Rational::from_i64(5),
+            "{creator}: {distance:?}"
+        );
+        assert!(
+            distance
+                .upper
+                .as_ref()
+                .is_some_and(|upper| upper >= &Rational::from_i64(5)),
+            "{creator}: {distance:?}"
         );
     }
 }

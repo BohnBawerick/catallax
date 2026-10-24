@@ -13,6 +13,7 @@ fn coordinates(p: &Point3) -> [Real; 3] {
 fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
     match leaf {
         geometry::Leaf::Feature(f) => f.classify(p, dec),
+        geometry::Leaf::Draft(region) => region.classify(p, None, dec),
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let p = coordinates(p);
@@ -37,6 +38,9 @@ fn ray(
     d: &Vector3,
     dec: &mut Decider,
 ) -> Result<Location, Refusal> {
+    if let geometry::Leaf::Draft(region) = leaf {
+        return region.classify(p, Some(d), dec);
+    }
     if let Some(p) = p.as_rational() {
         return leaf.ray(&[p.x, p.y, p.z], d, dec);
     }
@@ -98,12 +102,16 @@ fn ray(
     }
 }
 
+// A physical patch is the union of its convex tiles; each tile is a conjunction.
+type PlanarTrim = Vec<Vec<geometry::Constraint>>;
+
 /// Prepared field-native distance domains. Reuse across point queries on a plan.
 /// Face handles are valid only for the plan used to construct this object.
 pub struct Prepared<'a> {
     plan: &'a Plan,
     domains: Vec<Option<Domain>>,
     coincident: Vec<Vec<Vec<bool>>>,
+    planar_trims: Vec<Vec<PlanarTrim>>,
 }
 impl Plan {
     /// Prepares compact chart covers from recipe bounds, never from a B-rep mesh.
@@ -137,6 +145,7 @@ impl Plan {
         let mut domains = Vec::with_capacity(self.faces.len());
         let mut coincident = Vec::with_capacity(self.faces.len());
         let mut constraint_supports = Vec::with_capacity(self.leaves.len());
+        let mut planar_trims = Vec::with_capacity(self.leaves.len());
         for (i, leaf) in self.leaves.iter().enumerate() {
             let mut supports = Vec::new();
             if self.leaf_registers[i].is_some() {
@@ -145,6 +154,33 @@ impl Plan {
                     supports.push(geometry::support_geometry(&c.polynomial, dec)?.0);
                 }
             }
+            let mut trims = Vec::new();
+            if self.leaf_registers[i].is_some()
+                && let geometry::Leaf::Draft(region) = leaf
+                && let crate::draft::Cell::Polyhedral(poly) = &region.cell
+            {
+                for patch in &poly.faces {
+                    let normal = poly.plane(patch).normal;
+                    let mut tiles = Vec::with_capacity(patch.tiles.len());
+                    for tile in &patch.tiles {
+                        let mut sides = Vec::with_capacity(tile.len());
+                        for j in 0..tile.len() {
+                            let a = &poly.vertices[tile[j]];
+                            let edge = poly.vertices[tile[(j + 1) % tile.len()]].minus(a);
+                            sides.push(geometry::constraint(catallax_shapes::Surface::Plane(
+                                catallax_shapes::Plane {
+                                    origin: a.clone(),
+                                    normal: edge.cross(&normal),
+                                    ref_dir: edge,
+                                },
+                            )));
+                        }
+                        tiles.push(sides);
+                    }
+                    trims.push(tiles);
+                }
+            }
+            planar_trims.push(trims);
             constraint_supports.push(supports);
         }
         for face in &self.faces {
@@ -172,6 +208,7 @@ impl Plan {
             plan: self,
             domains,
             coincident,
+            planar_trims,
         })
     }
 }
@@ -184,6 +221,11 @@ impl Prepared<'_> {
         }
         if let geometry::Leaf::Feature(f) = leaf
             && !f.on_face_point(self.plan.definition_role(id), p, dec)?
+        {
+            return Ok(false);
+        }
+        if let geometry::Leaf::Draft(region) = leaf
+            && !region.on_face_point(&face.origin, p, dec)?
         {
             return Ok(false);
         }
@@ -312,6 +354,46 @@ impl Prepared<'_> {
                 witness: true,
                 excluded: false,
             });
+        }
+        let face = &self.plan.faces[id];
+        if let geometry::Leaf::Draft(region) = &self.plan.leaves[face.leaf]
+            && let crate::draft::Cell::Polyhedral(poly) = &region.cell
+        {
+            let source = region.source_origin(&face.origin);
+            let mut possible = false;
+            // Region constraints enumerate physical faces in this same order.
+            for ((patch, tiles), &same_carrier) in poly
+                .faces
+                .iter()
+                .zip(&self.planar_trims[face.leaf])
+                .zip(&self.coincident[id][face.leaf])
+            {
+                if !same_carrier || source.is_none_or(|source| !patch.origins.contains(source)) {
+                    continue;
+                }
+                for tile in tiles {
+                    let mut separated = false;
+                    for side in tile {
+                        if side.polynomial.eval_ball(cover, dec)?.lo() > Rational::zero() {
+                            separated = true;
+                            break;
+                        }
+                    }
+                    if !separated {
+                        possible = true;
+                        break;
+                    }
+                }
+                if possible {
+                    break;
+                }
+            }
+            if !possible {
+                return Ok(Membership {
+                    witness: false,
+                    excluded: true,
+                });
+            }
         }
         let mut stable = true;
         for (i, leaf) in self.plan.leaves.iter().enumerate() {

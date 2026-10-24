@@ -775,19 +775,13 @@ impl Leaf {
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
             Self::Draft(a) => {
-                if let crate::draft::Cell::Polyhedral(poly) = &a.cell {
+                if matches!(a.cell, crate::draft::Cell::Polyhedral(_)) {
                     let point = Point3::new(
                         p[0].clone().into(),
                         p[1].clone().into(),
                         p[2].clone().into(),
                     );
-                    Ok(if !poly.contains(&point, Some(d), dec)? {
-                        Location::Outside
-                    } else if poly.on_boundary(&point, Some(d), dec)? {
-                        Location::Boundary
-                    } else {
-                        Location::Inside
-                    })
+                    a.classify(&point, Some(d), dec)
                 } else {
                     ray_constraints(&a.constraints, p, d, dec)
                 }
@@ -804,23 +798,15 @@ impl Leaf {
         match self {
             Self::Primitive(_) => Ok(Some(true)),
             Self::Draft(region) => {
-                let Some(origin) = region.source_origin(origin) else {
-                    return Ok(Some(false));
-                };
-                if let crate::draft::Cell::Polyhedral(poly) = &region.cell {
+                if matches!(region.cell, crate::draft::Cell::Polyhedral(_)) {
                     let point = Point3::new(
                         p[0].clone().into(),
                         p[1].clone().into(),
                         p[2].clone().into(),
                     );
-                    for face in &poly.faces {
-                        if face.origins.contains(origin) && poly.on_face(face, &point, None, dec)? {
-                            return Ok(Some(true));
-                        }
-                    }
-                    Ok(Some(false))
+                    region.on_face_point(origin, &point, dec).map(Some)
                 } else {
-                    Ok(Some(true))
+                    Ok(Some(region.source_origin(origin).is_some()))
                 }
             }
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),
@@ -828,7 +814,7 @@ impl Leaf {
         }
     }
 
-    pub(crate) fn draft_witness(&self) -> Result<Point3, Refusal> {
+    pub(crate) fn draft_witness(&self, dec: &mut Decider) -> Result<Point3, Refusal> {
         match self {
             Self::Primitive(p) => {
                 let half = Rational::from_ratio(1, 2).expect("nonzero denominator");
@@ -848,6 +834,36 @@ impl Leaf {
                     .apply_point(&RPoint3::new(x, y, z).to_real()))
             }
             Self::Feature(feature) => feature.draft_witness(),
+            Self::Cell(cell) => {
+                let supports = cell
+                    .constraints
+                    .iter()
+                    .map(|constraint| {
+                        let Surface::Plane(plane) = &constraint.surface else {
+                            return Err(Refusal::new(
+                                "draft.unsupported-arrangement",
+                                "curved analytic source cells need a strict interior construction",
+                            ));
+                        };
+                        Ok(catallax_features::draft::cell::PlanePatch {
+                            plane: plane.clone(),
+                            origins: Vec::new(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let cell = catallax_features::draft::cell::PlanarCell::new(supports, dec)?
+                    .ok_or_else(|| {
+                        Refusal::new(
+                            "draft.unsupported-arrangement",
+                            "source halfspaces have no full-dimensional cell",
+                        )
+                    })?;
+                let sum = cell.vertices.iter().fold(Vector3::zero(), |sum, p| {
+                    sum.plus(&p.minus(&Point3::origin()))
+                });
+                Ok(Point3::origin()
+                    .plus(&sum.scaled(&(Real::one() / Real::from_i64(cell.vertices.len() as i64)))))
+            }
             Self::Draft(region) => Ok(match &region.cell {
                 crate::draft::Cell::Planar(cell) => {
                     let sum = cell.vertices.iter().fold(Vector3::zero(), |sum, p| {
@@ -871,6 +887,14 @@ impl Leaf {
         match self {
             Self::Primitive(p) if p.kind == Kind::Block => Ok(()),
             Self::Draft(region) if matches!(region.cell, crate::draft::Cell::Planar(_)) => Ok(()),
+            Self::Cell(cell)
+                if cell
+                    .constraints
+                    .iter()
+                    .all(|c| matches!(c.surface, Surface::Plane(_))) =>
+            {
+                Ok(())
+            }
             Self::Feature(feature) => feature.certify_planar_convexity(dec),
             _ => Err(Refusal::new(
                 "draft.unsupported-arrangement",

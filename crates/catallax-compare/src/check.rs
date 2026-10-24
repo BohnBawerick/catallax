@@ -192,7 +192,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
             Operation::ExtrudeTo{..}|Operation::ExtrudeNext{..}|
             Operation::Revolve{..}|Operation::Hole{..}|Operation::Pattern{..}|Operation::Mirror{..}|
-            Operation::Fillet{..}=>return None,
+            Operation::Fillet{..}|Operation::Draft{..}=>return None,
             Operation::Path{..}=>"neither kernel evaluates recipe paths",
             Operation::Chamfer{..}=>"neither kernel evaluates recipe chamfers",
             Operation::Shell{..}=>"neither kernel evaluates recipe shelling",
@@ -560,8 +560,8 @@ pub(crate) fn run(
         preferred.clear();
         for &index in &incident[i] {
             for origin in &face_origins[index] {
-                if let Some((id, _)) = registry.get(origin) {
-                    preferred.push(*id);
+                if let Some(candidates) = registry.get(origin) {
+                    preferred.extend(candidates.iter().copied());
                 }
             }
         }

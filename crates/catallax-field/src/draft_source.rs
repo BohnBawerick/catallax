@@ -247,8 +247,8 @@ impl Source {
                     crate::draft::remap_skin_origins(&mut skin, &origins)?;
                     skin
                 }
-                geometry::Leaf::Primitive(_) => {
-                    let witness = plan.leaves[leaf].draft_witness()?;
+                geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
+                    let witness = plan.leaves[leaf].draft_witness(dec)?;
                     let mut supports = Vec::new();
                     for face in faces
                         .iter()

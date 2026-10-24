@@ -75,6 +75,13 @@ polyhedral draft boundary tile also has that tile's stored outward plane
 normal. Tile edges retain the general ray proof; Boolean roots retain their
 global ownership and coactive-support checks.
 
+Prepared minimum-distance queries classify algebraic points and normal germs
+against the draft definition. Named polyhedral trims retain the complete
+cached origin, including copied bindings. Their convex tile inequalities also
+exclude interval chart cells outside that named patch, even when an unrelated
+coplanar face or edge crosses the same carrier. These query caches share the
+physical tile definitions across aliases; they do not build B-rep geometry.
+
 
 ### Profile sweep certificates
 

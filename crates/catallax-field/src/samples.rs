@@ -163,6 +163,7 @@ impl Plan {
                     &angular,
                     &mut |p| visit(p, FaceId(index)),
                 )?,
+                Leaf::Cell(_) => continue,
             };
             if !complete {
                 return Ok(false);

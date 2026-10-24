@@ -559,3 +559,31 @@ fn standard_hole_angles_refuse_cleanly_at_the_existing_request_allowance() {
         fs::remove_dir_all(dir).unwrap();
     }
 }
+
+#[test]
+fn captured_slot_cut_answers_with_the_default_work_allowance() {
+    use catallax_cli::verification::{Request, answer};
+    let captured: Value =
+        serde_json::from_str(include_str!("fixtures/soliddraft-slot-cut.json")).unwrap();
+    let directory = std::env::temp_dir().join(format!(
+        "catallax-slot-cut-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let response = answer(&Request {
+        format: "catallax-request/1".into(),
+        source: "recipe".into(),
+        problem: captured["problem"].clone(),
+        out: directory.clone(),
+        max_work: 100_000_000,
+    })
+    .unwrap();
+    assert_eq!(
+        response["manifest"]["status"], "answered",
+        "{}",
+        response["manifest"]
+    );
+    assert_eq!(response["manifest"]["result"]["kind"], "solid");
+    assert!(directory.join("answer.step").is_file());
+    fs::remove_dir_all(directory).unwrap();
+}

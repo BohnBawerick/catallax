@@ -632,6 +632,25 @@ impl Decider {
             return Outcome::Proven(s);
         }
         if stopped.is_none()
+            && x.node.fast_defined
+            && let Expr::Algebraic(value) = &x.node.expr
+            && let AlgebraicRepr::Root(root) = &value.repr
+        {
+            // The root lies strictly inside its certified interval. A zero
+            // endpoint still proves a strict sign without changing its enclosure.
+            let sign = if root.lo.sign() != Sign::Negative {
+                Some(StrictSign::Positive)
+            } else if root.hi.sign() != Sign::Positive {
+                Some(StrictSign::Negative)
+            } else {
+                None
+            };
+            if let Some(sign) = sign {
+                self.stats.exact += 1;
+                return Outcome::Proven(sign);
+            }
+        }
+        if stopped.is_none()
             && let Some(r) = &x.node.rational
         {
             if let Some(refusal) = unresolved(x, self.deadline)

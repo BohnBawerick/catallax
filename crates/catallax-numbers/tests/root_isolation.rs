@@ -493,3 +493,208 @@ fn bisection_prefixes_preserve_rounding_work_and_budget_boundaries() {
         }
     }
 }
+
+#[test]
+fn rootless_translated_quartic_fits_a_small_work_allowance() {
+    let left_center = r("100")
+        + Rational::new(
+            Integer::one(),
+            Integer::one().mul_pow2(127) - Integer::one(),
+        )
+        .unwrap();
+    let right_center = r("150")
+        + Rational::new(
+            Integer::from_i64(2),
+            Integer::one().mul_pow2(107) - Integer::one(),
+        )
+        .unwrap();
+    // Each factor is a square plus a positive constant, so no real roots exist.
+    let left = UPoly::new(vec![
+        &left_center * &left_center + r("7"),
+        -left_center.mul_pow2(1),
+        r("1"),
+    ]);
+    let right = UPoly::new(vec![
+        &right_center * &right_center + r("11"),
+        -right_center.mul_pow2(1),
+        r("1"),
+    ]);
+    let mut decider = Decider::new(BudgetPolicy {
+        max_work: 1_000_000,
+        ..BudgetPolicy::default()
+    });
+    assert!(roots(&mut decider, &(&left * &right)).is_empty());
+}
+
+#[test]
+fn clustered_real_quartic_still_uses_quadratic_factors() {
+    let center = r("100");
+    let square = r("1e-40");
+    let real_factor = UPoly::new(vec![
+        &center * &center - &r("2") * &square,
+        -center.mul_pow2(1),
+        r("1"),
+    ]);
+    let nonreal_factor = UPoly::new(vec![
+        &center * &center + &r("3") * &square,
+        -center.mul_pow2(1),
+        r("1"),
+    ]);
+    let polynomial = &real_factor * &nonreal_factor;
+    let result = measured_roots("clustered factored quartic", &polynomial);
+    assert_eq!(result.len(), 2);
+    let defining = UPoly::new(
+        real_factor
+            .primitive_integer()
+            .into_iter()
+            .map(Rational::from_integer)
+            .collect(),
+    );
+    for root in result {
+        assert_eq!(root.multiplicity, 1);
+        assert_eq!(root.value.defining_polynomial(), defining);
+        check_irrational_certificate(&root.value);
+    }
+}
+
+#[test]
+fn large_rational_quadratics_preserve_branches_order_and_multiplicity() {
+    let center = r("100")
+        + Rational::new(
+            Integer::one(),
+            Integer::one().mul_pow2(607) - Integer::one(),
+        )
+        .unwrap();
+    let gap = r("1e-40");
+    let scale = Rational::new(
+        Integer::one(),
+        Integer::one().mul_pow2(127) - Integer::one(),
+    )
+    .unwrap();
+    for scale in [scale.clone(), -scale] {
+        for sign in [-1, 0, 1] {
+            let polynomial = UPoly::new(
+                [
+                    &center * &center + Rational::from_i64(sign) * (&gap * &gap),
+                    -center.mul_pow2(1),
+                    r("1"),
+                ]
+                .into_iter()
+                .map(|coefficient| &coefficient * &scale)
+                .collect(),
+            );
+            let mut decider = Decider::new(BudgetPolicy {
+                max_precision_bits: 0,
+                max_work: 1_000_000,
+            });
+            let result = roots(&mut decider, &polynomial);
+            let actual: Vec<_> = result
+                .iter()
+                .map(|root| (root.value.as_rational().unwrap().clone(), root.multiplicity))
+                .collect();
+            let expected = match sign {
+                -1 => vec![(&center - &gap, 1), (&center + &gap, 1)],
+                0 => vec![(center.clone(), 2)],
+                1 => Vec::new(),
+                _ => unreachable!(),
+            };
+            assert_eq!(actual, expected);
+        }
+    }
+}
+
+#[test]
+fn large_scaled_linear_roots_need_only_exact_division() {
+    let scale = Rational::new(
+        Integer::one().mul_pow2(607) - Integer::one(),
+        Integer::one().mul_pow2(127) - Integer::one(),
+    )
+    .unwrap();
+    for scale in [scale.clone(), -scale] {
+        let polynomial = UPoly::new(vec![&r("19") * &scale, &r("7") * &scale]);
+        let mut decider = Decider::new(BudgetPolicy {
+            max_precision_bits: 0,
+            max_work: 1_000,
+        });
+        let result = roots(&mut decider, &polynomial);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].value.as_rational(), Some(&r("-19/7")));
+        assert_eq!(result[0].multiplicity, 1);
+        assert!(roots(&mut decider, &UPoly::new(vec![scale])).is_empty());
+    }
+}
+
+#[test]
+fn separated_irrational_quadratic_fits_a_small_work_allowance() {
+    let center = r("54")
+        + Rational::new(
+            Integer::one(),
+            Integer::one().mul_pow2(767) - Integer::one(),
+        )
+        .unwrap();
+    let polynomial = UPoly::new(vec![
+        &center * &center - r("2"),
+        -center.mul_pow2(1),
+        r("1"),
+    ]);
+    let mut decider = Decider::new(BudgetPolicy {
+        max_work: 1_000_000,
+        ..BudgetPolicy::default()
+    });
+    let result = roots(&mut decider, &polynomial);
+    assert_eq!(result.len(), 2);
+    assert!(result[0].value.isolating_interval().1 < result[1].value.isolating_interval().0);
+    for root in result {
+        assert_eq!(root.multiplicity, 1);
+        assert_eq!(root.value.defining_polynomial().degree(), Some(2));
+        check_irrational_certificate(&root.value);
+    }
+}
+
+#[test]
+fn bounded_trial_factorization_keeps_its_terminal_prime_certificate() {
+    for leading in [r("999983"), r("1018081")] {
+        let polynomial = UPoly::new(vec![
+            r("-2"),
+            r("2") * leading.clone() + r("3"),
+            -(r("3") * leading.clone()) - r("1"),
+            leading.clone(),
+        ]);
+        let mut decider = Decider::new(BudgetPolicy {
+            max_precision_bits: 0,
+            max_work: 100_000,
+        });
+        let result = roots(&mut decider, &polynomial);
+        let actual: Vec<_> = result
+            .iter()
+            .map(|root| (root.value.as_rational().unwrap().clone(), root.multiplicity))
+            .collect();
+        // 999983 is prime below 1000²; 1018081 = 1009² requires reconstruction.
+        assert_eq!(
+            actual,
+            vec![(&r("1") / &leading, 1), (r("1"), 1), (r("2"), 1)]
+        );
+    }
+}
+
+#[test]
+fn separated_quadratic_keeps_a_tiny_positive_root_under_cancellation() {
+    let polynomial = UPoly::new(vec![r("1000003"), r("-1e200"), r("1")]);
+    let mut decider = Decider::new(BudgetPolicy {
+        max_precision_bits: 512,
+        max_work: 1_000_000,
+    });
+    let result = roots(&mut decider, &polynomial);
+    assert_eq!(result.len(), 2);
+    assert!(result[0].value.isolating_interval().1 < result[1].value.isolating_interval().0);
+    for root in result {
+        assert_eq!(root.multiplicity, 1);
+        check_irrational_certificate(&root.value);
+        let value = Real::from_algebraic(root.value);
+        let mut sign_decider = Decider::new(BudgetPolicy {
+            max_precision_bits: 512,
+            max_work: 1_000,
+        });
+        proven_sign(&mut sign_decider, &value, 1);
+    }
+}

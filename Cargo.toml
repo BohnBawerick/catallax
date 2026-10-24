@@ -25,6 +25,7 @@ repository = "https://github.com/BohnBawerick/catallax"
 publish = false
 
 [workspace.dependencies]
+im = "15.1"
 catallax-numbers = { path = "crates/catallax-numbers" }
 catallax-shapes = { path = "crates/catallax-shapes" }
 catallax-topology = { path = "crates/catallax-topology" }

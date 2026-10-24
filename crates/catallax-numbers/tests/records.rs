@@ -101,6 +101,34 @@ blind_test!(hundred_thousand_facts_and_thousand_link_chains, {
     assert!(!book.holds(FactKind::Coaxial, 0, 100_001));
 });
 
+blind_test!(
+    forked_fact_closures_keep_independent_unions_and_incidence,
+    {
+        let mut original = FactBook::new();
+        for i in 0..300 {
+            original.record(fact(FactKind::Incident, i, i + 1, None));
+        }
+        let recorded = original.iter().copied().collect::<Vec<_>>();
+        let mut branch = original.clone();
+        branch.record(fact(FactKind::Coincident, 0, 300, None));
+        branch.record(fact(FactKind::Tangent, 4, 9, Some(20)));
+        assert!(branch.holds(FactKind::Incident, 300, 1));
+        assert!(!original.holds(FactKind::Incident, 300, 1));
+        assert!(!original.holds(FactKind::Tangent, 4, 9));
+        original.record(fact(FactKind::Parallel, 5, 7, None));
+        assert!(!branch.holds(FactKind::Parallel, 5, 7));
+        assert!(branch.holds(FactKind::Tangent, 4, 9));
+        assert_eq!(
+            original.iter().take(300).copied().collect::<Vec<_>>(),
+            recorded
+        );
+        assert_eq!(
+            branch.iter().take(300).copied().collect::<Vec<_>>(),
+            recorded
+        );
+    }
+);
+
 blind_test!(generated_fact_equivalence_matches_graph_reachability, {
     let mut rng = Rng(0xfac7);
     let mut book = FactBook::new();

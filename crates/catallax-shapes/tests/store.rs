@@ -59,6 +59,24 @@ blind_test!(case_45_arenas_handles_and_no_deduplication, {
 });
 
 blind_test!(
+    forks_across_arena_chunks_keep_old_handles_and_distinct_appends,
+    {
+        let mut arena = Arena::new();
+        let handles: Vec<_> = (0..300).map(|i| arena.push(i.to_string())).collect();
+        let mut fork = arena.clone();
+        let a = arena.push("original".to_owned());
+        let b = fork.push("branch".to_owned());
+        assert_eq!(a.index(), b.index());
+        assert_eq!(arena.get(a), "original");
+        assert_eq!(fork.get(b), "branch");
+        for (i, handle) in handles.into_iter().enumerate() {
+            assert_eq!(arena.get(handle), &i.to_string());
+            assert_eq!(fork.get(handle), &i.to_string());
+        }
+    }
+);
+
+blind_test!(
     case_47_fact_closure_precedes_deadlines_and_costs_one_decision,
     {
         let mut store = GeomStore::new();

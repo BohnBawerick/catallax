@@ -440,7 +440,7 @@ impl<'a> CertificationContext<'a> {
     pub fn offset(
         &mut self,
         model: &mut Model,
-        profiles: &BTreeMap<StepId, Profile>,
+        profiles: &im::OrdMap<StepId, Profile>,
         step: &StepId,
         input: (&StepId, BodyId, &Rational),
         signed_distance: &Rational,

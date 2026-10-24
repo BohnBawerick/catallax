@@ -131,3 +131,77 @@ fn cached_prefix_is_paid_once_and_invalid_suffix_still_refuses() {
         evaluate_incremental(&invalid, Some(checkpoint), &mut Decider::default()).unwrap_err();
     assert_eq!(full.to_string(), cached.to_string());
 }
+
+#[test]
+fn undo_and_independent_branches_keep_names_facts_definitions_and_step_bytes() {
+    let recipe = recipe();
+    let saved = prefix(&recipe, 2);
+    let before = export(saved.built());
+    let definition = saved.built().recipe().clone();
+    let bodies = saved.built().bodies.clone();
+    let facts: Vec<_> = saved.built().model.geom().facts().iter().copied().collect();
+    let names: Vec<_> = saved
+        .built()
+        .model
+        .faces_of_body(saved.built().result)
+        .into_iter()
+        .map(|face| (face, saved.built().model.face_origins(face).to_vec()))
+        .collect();
+    let edges: Vec<_> = saved
+        .built()
+        .model
+        .edges_of_body(saved.built().result)
+        .into_iter()
+        .map(|edge| {
+            (
+                edge,
+                saved.built().model.edge_name(saved.built().result, edge),
+            )
+        })
+        .collect();
+    let mut branch = recipe.clone();
+    if let catallax_recipe::Operation::Boolean { kind, .. } = &mut branch.steps[2].op {
+        *kind = catallax_recipe::BooleanKind::Union;
+    } else {
+        panic!("boolean cut");
+    }
+    std::thread::scope(|scope| {
+        let reader = scope.spawn(|| export(saved.built()));
+        assert_same(&recipe, saved.clone());
+        assert_same(&branch, saved.clone());
+        assert_eq!(reader.join().unwrap(), before);
+    });
+    assert_eq!(export(saved.built()), before);
+    assert_eq!(saved.built().recipe(), &definition);
+    assert_eq!(saved.built().bodies, bodies);
+    assert_eq!(
+        saved
+            .built()
+            .model
+            .geom()
+            .facts()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        facts
+    );
+    // Extracting and editing a public model cannot mutate the checkpoint either.
+    let mut extracted = saved.clone().into_built();
+    extracted
+        .model
+        .map_face_origins(extracted.result, |origin| {
+            let mut changed = origin.clone();
+            changed.step = StepId::new("other").unwrap();
+            changed
+        });
+    for (face, origins) in names {
+        assert_eq!(saved.built().model.face_origins(face), origins);
+    }
+    for (edge, name) in edges {
+        assert_eq!(
+            saved.built().model.edge_name(saved.built().result, edge),
+            name
+        );
+    }
+    assert_eq!(export(saved.built()), before);
+}

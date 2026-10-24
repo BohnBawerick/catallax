@@ -1,5 +1,6 @@
 //! Handles, write-once arenas and the geometry store.
 
+use im::Vector;
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -66,28 +67,30 @@ impl<T> fmt::Debug for Handle<T> {
     }
 }
 
-/// An append-only store. Entities never change once added.
+/// An append-only store. Clones share chunks; appending copies only the changed path.
 #[derive(Clone, Debug)]
-pub struct Arena<T> {
-    values: Vec<T>,
+pub struct Arena<T: Clone> {
+    values: Vector<T>,
 }
 
-impl<T> Default for Arena<T> {
+impl<T: Clone> Default for Arena<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> Arena<T> {
+impl<T: Clone> Arena<T> {
     /// An empty arena.
     pub fn new() -> Self {
-        Self { values: Vec::new() }
+        Self {
+            values: Vector::new(),
+        }
     }
 
     /// Adds an entity and returns its handle; handles are issued in order from 0.
     pub fn push(&mut self, value: T) -> Handle<T> {
         let index = u32::try_from(self.values.len()).expect("arena handle space exhausted");
-        self.values.push(value);
+        self.values.push_back(value);
         Handle {
             index,
             _kind: PhantomData,
@@ -158,8 +161,8 @@ pub struct GeomStore {
     curves: Arena<Curve>,
     points: Arena<PointDef>,
     facts: FactBook<GeomKey>,
-    implicits: Vec<Option<RealPoly>>,
-    approximate_points: Vec<[f64; 3]>,
+    implicits: Vector<Option<RealPoly>>,
+    approximate_points: Vector<[f64; 3]>,
 }
 
 impl GeomStore {
@@ -170,7 +173,7 @@ impl GeomStore {
 
     /// Adds a surface without searching unrelated geometry for relations.
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId {
-        self.implicits.push(s.implicit());
+        self.implicits.push_back(s.implicit());
         self.surfaces.push(s)
     }
 
@@ -223,7 +226,7 @@ impl GeomStore {
                 [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()]
             }
         };
-        self.approximate_points.push(approximate);
+        self.approximate_points.push_back(approximate);
         if let PointDef::Meet(m) = self.points.get(id) {
             let facts = &mut self.facts;
             let mut record = |object| {

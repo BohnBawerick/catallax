@@ -26,16 +26,7 @@ fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
             width = width.max(coarse_width.mul_pow2(-i64::from(bits.saturating_sub(64))));
         }
         let initial = coarse_width.as_ref().filter(|coarse| *coarse > &width);
-        // A translated/scaled carrier can need more than the initial filter
-        // without needing the full pre-elimination precision. Accept only a
-        // separated certified sign at this intermediate target as well.
-        let intermediate = coarse_width.as_ref().map(|coarse| coarse.mul_pow2(-32));
-        let intermediate = intermediate.as_ref().filter(|middle| *middle > &width);
-        for width in initial
-            .into_iter()
-            .chain(intermediate)
-            .chain(std::iter::once(&width))
-        {
+        for width in initial.into_iter().chain(std::iter::once(&width)) {
             let enclosure = dec.enclose(x, width)?;
             if let Some(value) = enclosure.sign() {
                 return Ok(match value {

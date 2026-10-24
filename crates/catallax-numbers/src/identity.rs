@@ -332,12 +332,16 @@ impl<'a> Identity<'a, '_> {
     }
 }
 
+pub(crate) fn eligible(value: &Real) -> bool {
+    value.node.identity_atoms == 1 || value.rational_ref().is_some()
+}
+
 pub(crate) fn rational(value: &Real, work: &mut Work) -> Result<Option<Rational>, &'static str> {
     // Quadratic towers and pinned system coordinates have their own proof
     // methods. Formal expansion cannot use a system's defining relations; do
     // not spend their allowance on that inconclusive route. Immutable metadata
     // makes this dispatch independent of cache history and expression depth.
-    if value.node.identity_atoms != 1 && value.rational_ref().is_none() {
+    if !eligible(value) {
         return Ok(None);
     }
     let decision_limit = work.policy.max_work;

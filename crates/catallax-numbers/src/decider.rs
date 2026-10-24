@@ -244,6 +244,12 @@ impl Decider {
     pub fn rational_identity(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
         self.stats.decisions += 1;
         self.check_deadline()?;
+        if !crate::identity::eligible(x) {
+            // Declining an optional method makes no definedness claim. Leave
+            // domain validation to the existing method that can use this kind
+            // of definition, rather than evaluating it twice.
+            return Ok(None);
+        }
         let mut work = Work::new(self.policy, self.deadline);
         let result = (|| {
             if !x.node.fast_defined {

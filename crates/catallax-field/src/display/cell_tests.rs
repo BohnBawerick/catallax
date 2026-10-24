@@ -220,3 +220,37 @@ fn analytic_cylinder_cell_displays_all_faces_with_default_controls() {
     assert_eq!(faces.len(), 3);
     assert!(!mesh.positions.is_empty());
 }
+
+#[test]
+fn cached_display_does_not_label_a_returning_carrier_with_a_buried_origin() {
+    let pose = |x: &str| json!({"rotation":["1","0","0","0"],"translation":[x,"0","0"]});
+    let recipe = Recipe::parse(
+        &json!({"format":catallax_recipe::FORMAT,"name":"display ownership","steps":[
+            {"id":"old","op":"block","size":["2","4","4"],"pose":pose("0")},
+            {"id":"cover","op":"block","size":["4","4","4"],"pose":pose("-1")},
+            {"id":"fresh","op":"block","size":["2","4","4"],"pose":pose("0")},
+            {"id":"hidden","op":"boolean","kind":"union","target":"old","tool":"cover"},
+            {"id":"result","op":"boolean","kind":"intersect","target":"hidden","tool":"fresh"}
+        ],"result":"result"})
+        .to_string(),
+    )
+    .unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let mesh = default_mesh(&plan);
+    let role = Role::Side {
+        segment: catallax_recipe::ElementId::new("x_max").unwrap(),
+        path: None,
+    };
+    assert!(covers(
+        &mesh,
+        &plan,
+        "fresh",
+        &role,
+        [2.into(), 2.into(), 2.into()],
+        0
+    ));
+    assert!(!mesh.triangles.iter().any(|triangle| {
+        let origin = &plan.faces[triangle.face.0].origin;
+        origin.step.as_str() == "old" && origin.role == role
+    }));
+}

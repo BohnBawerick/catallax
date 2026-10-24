@@ -208,12 +208,23 @@ Normals come from exact supporting-surface gradients, not finite differences. In
 
 Registry entries are candidates, not a claim that all their geometry survives. `face_query` checks the supporting equation, source primitive domain, result classification and orientation. It returns `NotOnFace` for removed or out-of-trim points. Distinct active supporting surfaces at a Boolean trim intersection can return `Indeterminate`; mere contact with a support is not proof of a surviving face patch. Primitive edge/corner incidence remains selectable with an ambiguous normal. Coactive names on a common surviving support provide the merged face's origin set. This crate does not construct maximal B-rep faces, edge graphs or split components.
 
+Named ownership also follows each intermediate Boolean result, not just the
+final boundary. A source patch buried or clipped away at one step cannot regain
+its name when a later operand supplies a coincident carrier. Shared boundary
+predicates retain alternative paths through reused operands; copies remap the
+seed snapshot's predicates with its geometry. Lattice clipping inherits the
+region snapshot's predicates rather than restarting from its source faces.
+Ordinary queries, closed-contact sectors and cached display membership use the
+same ownership rules. The scalar tape still shares equal geometry, and the
+B-rep builder is unchanged.
+
 `closed_face_query_checked` refines an indeterminate named-face query when the
 active arrangement consists of two transverse smooth supports or exact planes.
 It visits every open sector in the selected carrier's tangent plane and uses
 exact normal perturbations that preserve every other support sign. A source
-boundary and a result-material transition in one such sector prove an open
-named patch approaching the contact. Exhausting the sectors can instead prove
+boundary, surviving intermediate boundaries and a result-material transition
+in one such sector prove an open named patch approaching the contact.
+Exhausting the sectors can instead prove
 the selected patch absent, including a consumed sharp circle. Distinct source
 roles sharing a carrier, tangent or singular supports and larger curved fans
 remain unresolved. An isolated buried tangency cannot supply this proof.

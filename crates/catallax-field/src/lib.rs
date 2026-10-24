@@ -30,6 +30,7 @@ pub use certified_prism::CertifiedPrismField;
 pub mod measurement;
 mod metric;
 mod offset_spline;
+mod ownership;
 mod planar;
 /// Watertight certified print meshes built directly from the field.
 pub mod printing;
@@ -137,6 +138,7 @@ pub struct Face {
     gradient: [RealPoly; 3],
     leaf: usize,
     in_result: bool,
+    domain: usize,
 }
 
 /// Handle into one plan's immutable face registry. Not a persistent recipe name.
@@ -190,6 +192,8 @@ pub struct Workspace {
     values: Vec<Ball>,
     locations: Vec<Location>,
     rays: Vec<Location>,
+    opposite_rays: Vec<Location>,
+    domains: Vec<FaceState>,
     active: Vec<usize>,
     planes: Vec<Vector3>,
 }
@@ -218,6 +222,7 @@ pub struct Plan {
     // Certified unions of distinct connected interior components, with no
     // hidden shared facet. Their signed minimum is a true Euclidean distance.
     separated_unions: BTreeSet<usize>,
+    domains: Vec<ownership::Domain>,
 }
 
 impl Plan {
@@ -249,10 +254,12 @@ impl Plan {
             definition_roles: BTreeMap::new(),
             consumed: Vec::new(),
             separated_unions: BTreeSet::new(),
+            domains: vec![ownership::Domain::Source, ownership::Domain::Absent],
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
         let mut step_faces: BTreeMap<catallax_recipe::StepId, Vec<usize>> = BTreeMap::new();
+        let mut step_domains = ownership::Snapshots::new();
         for step in &recipe.steps {
             let span =
                 catallax_numbers::OperationSpan::begin("field", &step.id, step.op.name(), dec);
@@ -397,7 +404,7 @@ impl Plan {
                             let map = catallax_features::pattern_placement(layout, instance, dec)?;
                             let copy = plan.copy(
                                 source,
-                                &step_faces[body],
+                                (&step_faces[body], &step_domains[body]),
                                 &map,
                                 &step.id,
                                 instance,
@@ -414,7 +421,14 @@ impl Plan {
                     } => {
                         let map = catallax_features::mirror_placement(plane)?;
                         let source = steps[body];
-                        let copy = plan.copy(source, &step_faces[body], &map, &step.id, 1, dec)?;
+                        let copy = plan.copy(
+                            source,
+                            (&step_faces[body], &step_domains[body]),
+                            &map,
+                            &step.id,
+                            1,
+                            dec,
+                        )?;
                         if *keep_original {
                             plan.boolean(BooleanKind::Union, source, copy, dec)?
                         } else {
@@ -716,13 +730,20 @@ impl Plan {
                 faces.extend(first_face..plan.faces.len());
                 faces.sort_unstable();
                 faces.dedup();
+                let domains =
+                    plan.snapshot_domains(&step.op, node, &faces, &step_faces, &step_domains);
+                step_domains.insert(step.id.clone(), domains);
                 step_faces.insert(step.id.clone(), faces);
                 steps.insert(step.id.clone(), node);
             }
         }
         plan.root = steps[&recipe.result];
-        for id in &step_faces[&recipe.result] {
-            plan.faces[*id].in_result = true;
+        for (&id, &domain) in step_faces[&recipe.result]
+            .iter()
+            .zip(&step_domains[&recipe.result])
+        {
+            plan.faces[id].in_result = true;
+            plan.faces[id].domain = domain;
         }
         plan.compact();
         Ok(plan)
@@ -874,13 +895,15 @@ impl Plan {
     fn copy(
         &mut self,
         source: usize,
-        source_faces: &[usize],
+        source_faces: (&[usize], &[usize]),
         map: &Isometry,
         step: &catallax_recipe::StepId,
         instance: u32,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
+        let (source_faces, source_domains) = source_faces;
         let end = source + 1;
+        let first_face = self.faces.len();
         let mut live = vec![false; end];
         live[source] = true;
         for i in (0..end).rev() {
@@ -907,8 +930,13 @@ impl Plan {
                     let mut faces = source_faces
                         .iter()
                         .map(|i| &self.faces[*i])
-                        .filter(|f| f.leaf == id)
-                        .cloned()
+                        .enumerate()
+                        .filter(|(_, f)| f.leaf == id)
+                        .map(|(index, f)| {
+                            let mut face = f.clone();
+                            face.domain = source_domains[index];
+                            face
+                        })
                         .collect::<Vec<_>>();
                     for face in &mut faces {
                         geometry::face_geometry(face, map.surface(&face.surface), dec)?;
@@ -920,6 +948,11 @@ impl Plan {
             if self.separated_unions.contains(&i) {
                 self.separated_unions.insert(remap[i]);
             }
+        }
+        let mut copied = BTreeMap::new();
+        for face in first_face..self.faces.len() {
+            self.faces[face].domain =
+                self.copy_domain(self.faces[face].domain, &remap, &mut copied);
         }
         Ok(remap[source])
     }
@@ -995,6 +1028,7 @@ impl Plan {
             .map(|i| remap[*i])
             .collect();
         self.root = remap[self.root];
+        self.compact_domains(&live, &remap);
         self.instructions = tape;
     }
 
@@ -1394,7 +1428,7 @@ impl Plan {
             state: FaceState::NotOnFace,
             direction: Direction::Undefined,
         };
-        if !face.in_result || self.leaf_registers[face.leaf].is_none() {
+        if !face.in_result || face.domain == 1 || self.leaf_registers[face.leaf].is_none() {
             return Ok(absent);
         }
         if polynomial_sign(&face.polynomial, &p, dec)? != Sign::Zero {
@@ -1445,11 +1479,8 @@ impl Plan {
                 }
             }
         }
-        if let Some(n) = self.oriented_normal(face, &p, &mut storage.rays, dec)? {
-            return Ok(FaceQuery {
-                state: FaceState::OnFace,
-                direction: unit_direction(n, dec)?,
-            });
+        if let Some(query) = self.domain_normal(face, &p, storage, dec)? {
+            return Ok(query);
         }
         if matches!(self.instructions[self.root], Instruction::Leaf(i) if i == face.leaf) {
             return Ok(FaceQuery {

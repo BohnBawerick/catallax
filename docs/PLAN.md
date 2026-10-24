@@ -387,7 +387,11 @@ Numbered in priority order. The project owner picks from this list at each miles
 20. **First field-only feature.** Build. Deliverable: lattice inside a shell per RECIPE.md section 4.15, displayed and exported from the field. Exit: P6 exports a printable mesh, and the B-rep carries the PRD section 7 stand-in, the outer envelope plus bodies matching mass, centre of gravity and inertia. Starts for M5; completes when this exit is shown.
 21. **Milestone notes.** Build, recurring. Deliverable: a note under `docs/milestones/` when each milestone is reached. Exit: the note records the completed must-show list, and the same text went to sponsors.
 
-Sweeps, lofts and splines, then STEP import and editing, follow these in the build order.
+22. **IGES writer.** Build after the existing STEP writer work, independently of and before STEP and IGES import. Deliverable: IGES export from the exact surface definitions, as in the STEP AP242 writer, with a deviation report that bounds export rounding and any required approximation. Exit: exported files pass an OpenCASCADE read-back check for valid topology and expected face count, and the reported deviation stays within the requested export tolerance. Import support is not a prerequisite.
+
+OBJ export already exists in the mesh crate through [`Mesh::write_obj`](../crates/catallax-mesh/src/lib.rs); it is not a new writer task.
+
+Sweeps, lofts and splines, then STEP and IGES import and editing, follow these in the build order.
 
 ## 13. In-flight ledger
 

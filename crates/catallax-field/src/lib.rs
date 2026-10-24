@@ -22,6 +22,7 @@ mod end_condition;
 mod features;
 mod fillet;
 mod geometry;
+mod lattice;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
@@ -662,6 +663,21 @@ impl Plan {
                         }
                         plan.boolean(BooleanKind::Subtract, target, tool_node, dec)?
                     }
+                    Operation::Lattice {
+                        region,
+                        cell,
+                        size,
+                        frame,
+                        radius,
+                    } => {
+                        let lattice = lattice::Lattice::new(cell, size.value(), frame, radius)?;
+                        if lattice.is_empty() {
+                            0
+                        } else {
+                            let beams = plan.leaf(geometry::Leaf::Lattice(lattice), vec![], dec)?;
+                            plan.boolean(BooleanKind::Intersect, steps[region], beams, dec)?
+                        }
+                    }
                     _ => {
                         let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
                         plan.leaf(leaf, faces, dec)?
@@ -681,6 +697,7 @@ impl Plan {
                         step_faces[target].clone()
                     }
                     Operation::Shell { body, .. } => step_faces[body].clone(),
+                    Operation::Lattice { region, .. } => step_faces[region].clone(),
                     Operation::Pattern { body, .. }
                     | Operation::Fillet { body, .. }
                     | Operation::Chamfer { body, .. }

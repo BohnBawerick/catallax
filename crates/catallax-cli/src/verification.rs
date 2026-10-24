@@ -334,6 +334,12 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 }
                 Err(error) => return Ok(refused("cli.invalid-recipe", error)),
             };
+            if !built.stand_ins.is_empty() {
+                return Ok(refused(
+                    "field.stand-in-export",
+                    "the lattice envelope alone is not a mass-equivalent stand-in",
+                ));
+            }
             let measurements = if let Some(checks) = checks {
                 match checks.report(&recipe, &mut built, display_started, &mut dec) {
                     Ok(report) => Some(report),

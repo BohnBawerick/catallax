@@ -16,6 +16,11 @@ fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Loca
     match leaf {
         geometry::Leaf::Feature(f) => f.classify(p, dec),
         geometry::Leaf::Draft(region) => region.classify(p, None, dec),
+        geometry::Leaf::Lattice(lattice) => {
+            Ok(p.as_rational().map_or(Location::Indeterminate, |p| {
+                lattice.location(&[p.x, p.y, p.z])
+            }))
+        }
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let p = coordinates(p);
@@ -45,6 +50,9 @@ fn ray(
     }
     if let Some(p) = p.as_rational() {
         return leaf.ray(&[p.x, p.y, p.z], d, dec);
+    }
+    if matches!(leaf, geometry::Leaf::Lattice(_)) {
+        return Ok(Location::Indeterminate);
     }
     let xyz = coordinates(p);
     let mut boundary = false;

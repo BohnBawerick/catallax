@@ -55,6 +55,8 @@ pub mod fillet;
 mod fillet_build;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
+/// Lattice cell templates and parameter checks, shared with the field kernel.
+pub mod lattice;
 mod offset_fit;
 mod placement;
 mod planar_distance;
@@ -67,11 +69,13 @@ mod profile;
 pub mod radial;
 mod revolve;
 mod rounded_polyhedron;
+/// Envelope stand-in bodies for field-only features (PRD section 7).
+pub mod stand_in;
 mod stock;
 
 pub use certified::{BodyCertificate, CertificateKey, CertifiedBuilt, PrismTarget};
 pub use draft_build::ConsumedFace;
-pub use evaluate::{BuildError, Built, evaluate, evaluate_certified};
+pub use evaluate::{BuildError, Built, StandIn, evaluate, evaluate_certified};
 pub use extrude::extrude;
 pub use offset_fit::{EllipticOffsetFit, OffsetSpanBound, fit_elliptic_offset};
 pub use placement::{copy_origin, mirror_placement, pattern_placement};

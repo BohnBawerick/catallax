@@ -233,6 +233,11 @@ impl Source {
                 return Err(failure("a source leaf has no scoped face definitions"));
             }
             let part = match &plan.leaves[leaf] {
+                geometry::Leaf::Lattice(_) => {
+                    return Err(failure(
+                        "field-only beams are not planar draft source faces",
+                    ));
+                }
                 geometry::Leaf::Feature(feature) => {
                     feature.planar_skin(&origins, Some(bound), dec)?
                 }

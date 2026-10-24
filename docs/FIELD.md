@@ -2,7 +2,9 @@
 
 `catallax-field` compiles version 3 and version 4 recipe stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided and one-sided through-all cuts, full and rational-frame partial revolutions, named hole bands, planar first-hit face/next extrusions, linear and circular body patterns, plane mirrors, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`; hole meridians and planar first-hit arrangements likewise share definition-native compilers. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
 
-This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, field-only features, FEA and application integration are not implemented.
+This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, FEA and application integration are not implemented.
+
+Lattice point queries compile the periodic beam definitions of RECIPE section 4.15, intersected with the region. Constant and linear grades use exact rational squared-distance classification and a labelled Lipschitz-scaled residual, not true distance. Cell indices retain arbitrary precision. Distance grades and reflected frames are unfinished coverage. Lattice display and STEP publication currently refuse explicitly: the support-chart display omits beam surfaces, and the solid region alone does not match the lattice's mass properties. Printable field export and a complete stand-in remain required for PLAN item 20.
 
 ## Shared algebraic definitions
 

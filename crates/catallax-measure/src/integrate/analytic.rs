@@ -11,6 +11,9 @@ use super::{Checked, Node, Program, Work};
 use crate::planar::{components, direction, sqrt};
 use catallax_numbers::{Ball, Rational, Sign};
 
+mod endpoints;
+mod reduced;
+
 // cos(theta)^2 = 1 - sin(theta)^2, so the cosine degree is at most one.
 #[derive(Clone, Default)]
 struct Polynomial(BTreeMap<(u32, u32), Rational>);
@@ -172,19 +175,28 @@ impl Sweep {
     }
 }
 
-pub(crate) struct Analytic {
-    sweep: Option<Sweep>,
-    integrals: Vec<[Rational; 2]>,
+pub(crate) struct Analytic(Form);
+
+enum Form {
+    Rational {
+        sweep: Option<Sweep>,
+        integrals: Vec<[Rational; 2]>,
+    },
+    Algebraic(endpoints::Integral),
 }
 
 impl Analytic {
     pub(crate) fn evaluate(&self, work: &mut Work) -> Checked<Vec<Ball>> {
-        let angle = if self.integrals.iter().any(|i| !i[0].is_zero()) {
-            Some(self.sweep.as_ref().unwrap().angle(work)?)
+        let (sweep, integrals) = match &self.0 {
+            Form::Rational { sweep, integrals } => (sweep, integrals),
+            Form::Algebraic(integral) => return integral.evaluate(work),
+        };
+        let angle = if integrals.iter().any(|i| !i[0].is_zero()) {
+            Some(sweep.as_ref().unwrap().angle(work)?)
         } else {
             None
         };
-        self.integrals
+        integrals
             .iter()
             .map(|[coefficient, endpoint]| {
                 let endpoint = work.rational(endpoint)?;
@@ -202,6 +214,16 @@ impl Analytic {
 
 impl Program {
     pub(crate) fn analytic(&self, curve: &Curve, from: &RPoint3, to: &RPoint3) -> Option<Analytic> {
+        self.analytic_rational(curve, from, to, &[])
+    }
+
+    fn analytic_rational(
+        &self,
+        curve: &Curve,
+        from: &RPoint3,
+        to: &RPoint3,
+        constants: &[Option<Rational>],
+    ) -> Option<Analytic> {
         if from == to {
             return None;
         }
@@ -268,30 +290,7 @@ impl Program {
             }
             _ => return None,
         };
-        let mut values: Vec<Polynomial> = Vec::with_capacity(self.nodes.len());
-        for node in &self.nodes {
-            let value = match node {
-                Node::Constant(r) => Polynomial::constant(r.clone()),
-                Node::Exact(_) => return None,
-                Node::Input(i) => inputs.get(*i)?.clone(),
-                Node::Add(a, b) => values[*a].add(&values[*b]),
-                Node::Mul(a, b) => values[*a].mul(&values[*b]),
-                Node::Neg(a) => values[*a].scale(&Rational::from_i64(-1)),
-                Node::Div(a, b) | Node::GaugeDiv(a, b) => {
-                    if let Some(divisor) = values[*b].as_constant() {
-                        values[*a].scale(&divisor.recip()?)
-                    } else if values[*a].0.is_empty()
-                        && sweep.as_ref().is_some_and(|s| s.positive(&values[*b]))
-                    {
-                        Polynomial::default()
-                    } else {
-                        return None;
-                    }
-                }
-                Node::Sqrt(a) => Polynomial::constant(sqrt(&values[*a].as_constant()?)?),
-            };
-            values.push(value);
-        }
+        let values = self.substitute(&inputs, constants, sweep.as_ref())?;
         let integrals = self
             .outputs
             .iter()
@@ -313,7 +312,40 @@ impl Program {
                 result
             })
             .collect();
-        Some(Analytic { sweep, integrals })
+        Some(Analytic(Form::Rational { sweep, integrals }))
+    }
+
+    fn substitute(
+        &self,
+        inputs: &[Polynomial],
+        constants: &[Option<Rational>],
+        sweep: Option<&Sweep>,
+    ) -> Option<Vec<Polynomial>> {
+        let mut values: Vec<Polynomial> = Vec::with_capacity(self.nodes.len());
+        for node in &self.nodes {
+            let value = match node {
+                Node::Constant(r) => Polynomial::constant(r.clone()),
+                Node::Exact(i) => Polynomial::constant(constants.get(*i)?.as_ref()?.clone()),
+                Node::Input(i) => inputs.get(*i)?.clone(),
+                Node::Add(a, b) => values[*a].add(&values[*b]),
+                Node::Mul(a, b) => values[*a].mul(&values[*b]),
+                Node::Neg(a) => values[*a].scale(&Rational::from_i64(-1)),
+                Node::Div(a, b) | Node::GaugeDiv(a, b) => {
+                    if let Some(divisor) = values[*b].as_constant() {
+                        values[*a].scale(&divisor.recip()?)
+                    } else if values[*a].0.is_empty()
+                        && sweep.is_some_and(|s| s.positive(&values[*b]))
+                    {
+                        Polynomial::default()
+                    } else {
+                        return None;
+                    }
+                }
+                Node::Sqrt(a) => Polynomial::constant(sqrt(&values[*a].as_constant()?)?),
+            };
+            values.push(value);
+        }
+        Some(values)
     }
 }
 

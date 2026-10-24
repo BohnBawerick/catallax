@@ -7,7 +7,7 @@ use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
     EdgeMesh, Mesh, MeshOptions,
-    chart::{self, BITS, Chart, align, chord_bound},
+    chart::{self, BITS, Chart, align},
     failure,
 };
 
@@ -52,6 +52,7 @@ pub(crate) struct Boundaries {
     pub(crate) edges: BTreeMap<EdgeId, usize>,
     pub(crate) vertices: BTreeMap<VertexId, usize>,
     pub(crate) exact_positions: BTreeMap<usize, Point3>,
+    pub(crate) enclosures: BTreeMap<usize, [Ball; 3]>,
     pub(crate) rails: Rails,
     pub(crate) marks: MarkLog,
 }
@@ -205,7 +206,6 @@ impl Sampler<'_> {
             let a = chart.project(self.positions[first]);
             let b = align(chart.project(self.positions[last]), a, chart.periodic);
             let m = align(chart.project(middle), a, chart.periodic);
-            let hessian = chart.hessian(a[1].abs().max(b[1].abs()).max(m[1].abs()), self.dec)?;
             small &= (0..2).all(|i| !chart.periodic[i] || (b[i] - a[i]).abs() <= 0.125);
             if let Some(angle) = &self.options.angular_deviation {
                 let mut span = (crate::chart::q(b[0]) - crate::chart::q(a[0])).abs();
@@ -230,7 +230,11 @@ impl Sampler<'_> {
                     small &= span <= *angle;
                 }
             }
-            small &= chord_bound(&[a, b, m], &hessian) <= self.options.chord_tolerance.mul_pow2(-3);
+            small &= chart.edge_chord_within(
+                &[a, b, m],
+                &self.options.chord_tolerance.mul_pow2(-3),
+                self.dec,
+            )?;
         }
         if small {
             *self.error = self.error.clone().max(bound);
@@ -278,6 +282,7 @@ pub(crate) fn sample(
         edges: BTreeMap::new(),
         vertices: BTreeMap::new(),
         exact_positions: BTreeMap::new(),
+        enclosures: BTreeMap::new(),
         rails: Rails::default(),
         marks: model.body(body).marks.clone(),
     };

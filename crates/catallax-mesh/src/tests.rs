@@ -1358,3 +1358,60 @@ fn strongly_curved_shared_rails_do_not_emit_boundary_only_ears() {
         }
     }
 }
+
+#[test]
+fn cached_cone_edge_guards_keep_height_and_tolerance_distinct() {
+    let mut model = Model::new();
+    let body = topology::cone(
+        &mut model,
+        12.into(),
+        0.into(),
+        12.into(),
+        &Pose::identity(),
+    )
+    .unwrap();
+    let surface = model
+        .faces_of_body(body)
+        .into_iter()
+        .find_map(|face| {
+            let surface = model.geom().surface(model.face(face).surface);
+            matches!(surface, Surface::Cone(_)).then_some(surface)
+        })
+        .unwrap();
+    let dec = Decider::default();
+    let chart = crate::chart::Chart::new(surface, &dec).unwrap();
+    let short = [[0.0, 1.0], [0.125, 1.0], [0.0625, 1.0]];
+    let tall = short.map(|[u, _]| [u, 10.0]);
+    let loose = Rational::parse("1/10").unwrap();
+    let tight = Rational::parse("1/100").unwrap();
+    assert!(chart.edge_chord_within(&short, &loose, &dec).unwrap());
+    assert!(!chart.edge_chord_within(&tall, &loose, &dec).unwrap());
+    assert!(!chart.edge_chord_within(&short, &tight, &dec).unwrap());
+    assert!(chart.edge_chord_within(&short, &loose, &dec).unwrap());
+    // For slope one, height one and an eighth-turn span, the Taylor bound
+    // is tau² / 512. Its equality and a smaller rational threshold both
+    // overlap the binary64 filter and must keep distinct exact decisions.
+    let tau = catallax_numbers::Ball::pi_checked(crate::chart::BITS, &dec)
+        .unwrap()
+        .hi()
+        .mul_pow2(1);
+    let equality = (&tau * &tau).mul_pow2(-9);
+    let below = &equality - &equality.mul_pow2(-100);
+    assert!(chart.edge_chord_within(&short, &equality, &dec).unwrap());
+    assert!(!chart.edge_chord_within(&short, &below, &dec).unwrap());
+    assert!(chart.edge_chord_within(&short, &equality, &dec).unwrap());
+}
+
+#[test]
+fn uv_orientation_filters_preserve_strict_sides_at_binary64_limits() {
+    use crate::chart::positive_turn;
+    let a = [0.0, 0.0];
+    let b = [1.0, 1.0];
+    assert!(positive_turn(a, b, [1.0, 1.0_f64.next_up()]));
+    assert!(!positive_turn(a, b, [1.0, 1.0_f64.next_down()]));
+    assert!(!positive_turn(a, b, b));
+    let tiny = f64::from_bits(1);
+    assert!(positive_turn(a, [tiny, 0.0], [0.0, tiny]));
+    assert!(!positive_turn(a, [0.0, tiny], [tiny, 0.0]));
+    assert!(positive_turn([-f64::MAX, 0.0], [f64::MAX, 0.0], [0.0, 1.0]));
+}

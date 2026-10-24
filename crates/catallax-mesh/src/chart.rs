@@ -1,5 +1,11 @@
 //! Dyadic turns make translated periodic chart copies bit-identical.
 
+use std::{
+    borrow::Cow,
+    cell::{OnceCell, RefCell},
+    collections::BTreeMap,
+};
+
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal};
 use catallax_shapes::{Surface, Vector3};
 
@@ -62,6 +68,9 @@ pub(crate) struct Chart {
     evaluator: Option<crate::evaluate::Evaluator>,
     ellipse_radii: Option<[f64; 2]>,
     centers: [Option<f64>; 2],
+    hessian: OnceCell<[Rational; 3]>,
+    filtered_hessian: OnceCell<[Interval; 3]>,
+    guards: RefCell<BTreeMap<([u64; 4], Rational), bool>>,
 }
 
 impl Chart {
@@ -107,6 +116,9 @@ impl Chart {
             periodic,
             ellipse_radii: axes,
             centers: [None; 2],
+            hessian: OnceCell::new(),
+            filtered_hessian: OnceCell::new(),
+            guards: RefCell::new(BTreeMap::new()),
             normal_scale,
             origin,
             turn,
@@ -229,7 +241,28 @@ impl Chart {
     }
 
     /// Euclidean upper bounds on S_uu, S_uv and S_vv in this chart.
-    pub(crate) fn hessian(&self, vmax: f64, dec: &Decider) -> Result<[Rational; 3], Refusal> {
+    pub(crate) fn hessian(
+        &self,
+        vmax: f64,
+        dec: &Decider,
+    ) -> Result<Cow<'_, [Rational; 3]>, Refusal> {
+        if self.hessian.get().is_none() {
+            let bounds = self.build_hessian(1.0, dec)?;
+            let _ = self.hessian.set(bounds);
+        }
+        let bounds = self.hessian.get().unwrap();
+        if matches!(self.surface, Surface::Cone(_)) {
+            Ok(Cow::Owned([
+                &bounds[0] * &q(vmax.abs()),
+                bounds[1].clone(),
+                bounds[2].clone(),
+            ]))
+        } else {
+            Ok(Cow::Borrowed(bounds))
+        }
+    }
+
+    fn build_hessian(&self, vmax: f64, dec: &Decider) -> Result<[Rational; 3], Refusal> {
         if matches!(self.surface, Surface::Plane(_)) {
             return Ok(std::array::from_fn(|_| Rational::zero()));
         }
@@ -266,6 +299,50 @@ impl Chart {
             }
             _ => unreachable!(),
         })
+    }
+
+    /// Decides the existing edge UV guard, with exact fallback at the threshold.
+    pub(crate) fn edge_chord_within(
+        &self,
+        uvs: &[Uv; 3],
+        tolerance: &Rational,
+        dec: &Decider,
+    ) -> Result<bool, Refusal> {
+        let ranges: [[f64; 2]; 2] = std::array::from_fn(|i| {
+            [
+                uvs.iter().map(|uv| uv[i]).fold(f64::INFINITY, f64::min),
+                uvs.iter().map(|uv| uv[i]).fold(f64::NEG_INFINITY, f64::max),
+            ]
+        });
+        let vmax = ranges[1][0].abs().max(ranges[1][1].abs());
+        let hessian = self.hessian(vmax, dec)?;
+        let filtered = if matches!(self.surface, Surface::Cone(_)) {
+            hessian.each_ref().map(Interval::from_rational)
+        } else {
+            *self
+                .filtered_hessian
+                .get_or_init(|| hessian.each_ref().map(Interval::from_rational))
+        };
+        let bound = filtered_chord_bound(uvs, &filtered);
+        let limit = Interval::from_rational(tolerance);
+        if bound.is_finite() {
+            if bound.hi() <= limit.lo() {
+                return Ok(true);
+            }
+            if bound.lo() > limit.hi() {
+                return Ok(false);
+            }
+        }
+        // The face owns the immutable definition. Binary64 endpoint bits and
+        // the exact threshold identify every remaining input, including cone height.
+        let [u, v] = ranges.map(key);
+        let cache_key = ([u[0], u[1], v[0], v[1]], tolerance.clone());
+        if let Some(&result) = self.guards.borrow().get(&cache_key) {
+            return Ok(result);
+        }
+        let result = chord_bound(uvs, &hessian) <= *tolerance;
+        self.guards.borrow_mut().insert(cache_key, result);
+        Ok(result)
     }
 }
 
@@ -304,6 +381,22 @@ pub(crate) fn chord_bound(uvs: &[Uv], hessian: &[Rational; 3]) -> Rational {
         + &(&hessian[1] * u) * v * Rational::from_i64(2)
         + &(&hessian[2] * v) * v)
         .mul_pow2(-3)
+}
+
+/// Strict UV orientation; an inconclusive filter retains the rational predicate.
+pub(crate) fn positive_turn(a: Uv, b: Uv, c: Uv) -> bool {
+    let [p, q, r] = [a, b, c].map(|uv| uv.map(|x| Interval::point(x).unwrap()));
+    let determinant = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    if determinant.is_finite() {
+        if determinant.lo() > 0.0 {
+            return true;
+        }
+        if determinant.hi() <= 0.0 {
+            return false;
+        }
+    }
+    let [p, q, r] = [a, b, c].map(|uv| uv.map(self::q));
+    (&q[0] - &p[0]) * (&r[1] - &p[1]) - (&q[1] - &p[1]) * (&r[0] - &p[0]) > Rational::zero()
 }
 
 pub(crate) fn key(uv: Uv) -> [u64; 2] {

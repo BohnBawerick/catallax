@@ -176,9 +176,7 @@ fn stitch(
             samples
         };
         let uvs = samples.map(|p| p.uv);
-        let [p, q, r] = uvs.map(|uv| uv.map(chart::q));
-        let orientation = (&q[0] - &p[0]) * (&r[1] - &p[1]) - (&q[1] - &p[1]) * (&r[0] - &p[0]);
-        if orientation <= Rational::zero() {
+        if !chart::positive_turn(uvs[0], uvs[1], uvs[2]) {
             return Ok(false);
         }
         let error =

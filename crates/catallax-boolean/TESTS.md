@@ -67,6 +67,7 @@ The periodic-chart regression builds a closed polygon from independently lifted 
 | Marks and facts | `contract.rs`, `provenance.rs` | Stage marks in execution order, then first and second operand logs without deduplication; body and answer logs agree; required incidences have documented construction/proof provenance |
 | Nonmaximal operands | `maximal.rs` | Equator-split sphere, retraced slit, one-vertex cylinder rims, subdivided block edge; removal of redundant faces, edges and vertices without changing operands |
 | No rational point | `contract.rs` | Hand-built cylinder with no rational point refuses with `boolean.no-rational-point` |
+| Prepared face membership | `src/tests.rs` | Opposite spherical patches, pole chart changes, shared closed rims and planar cap, off-support rejection, cancellation after cache reuse |
 
 Per the `boolean-stage-statistics` ruling, reports use `dec.stats()` snapshots without resetting the caller. All fields except `max_bits` are stage-local counter increases. `max_bits` is the running maximum at the stage's end, so keep has zero counter increases but retains the preceding stage's precision maximum. Case 53 runs every listed pair operation with a fresh caller and with prior exact-number decisions, including a narrow enclosure of `sqrt(2)`, to catch lost totals and incorrect stage-local peaks.
 

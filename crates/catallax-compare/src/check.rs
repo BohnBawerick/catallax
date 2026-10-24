@@ -799,6 +799,7 @@ pub(crate) fn run(
     > = (0..mesh.faces.len()).map(|_| None).collect();
     let sampling_failed = std::cell::Cell::new(false);
     let mut sample_refusal = None;
+    let mut brep_queries = catallax_boolean::PreparedFaceQueries::new(&mut model);
     let mut check_sample = |candidate: ReverseCandidate| {
         if sampling_failed.get() {
             return false;
@@ -969,7 +970,7 @@ pub(crate) fn run(
                     continue;
                 }
             };
-            match catallax_boolean::face_contains(&mut model, face, &q, &mut dec) {
+            match brep_queries.contains(face, &q, &mut dec) {
                 Ok(true) => (),
                 Ok(false) => continue,
                 Err(e) => {
@@ -1004,15 +1005,15 @@ pub(crate) fn run(
             for &i in &candidates {
                 let prepared = brep_distance_domains[i].get_or_insert_with(|| {
                     catallax_measure::distance::PreparedFace::new(
-                        &model,
+                        brep_queries.model(),
                         mesh.faces[i].face,
                         &mut dec,
                     )
                 });
                 let distance = match prepared {
-                    Ok(prepared) => {
-                        prepared.point_to_face(&mut model, &p.to_real(), &controls, &mut dec)
-                    }
+                    Ok(prepared) => brep_queries.with_geometry(|model| {
+                        prepared.point_to_face(model, &p.to_real(), &controls, &mut dec)
+                    }),
                     Err(e) => Err(e.clone()),
                 };
                 match distance {
@@ -1090,7 +1091,7 @@ pub(crate) fn run(
             });
         }
         observed.entry(i).or_default().extend(origins);
-        let brep = model.face(face);
+        let brep = brep_queries.model().face(face);
         let brep_normal = match direction(&gradients[i], &q, brep.sense, &mut dec) {
             Ok(n) => n,
             Err(e) => {

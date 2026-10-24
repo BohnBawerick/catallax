@@ -299,6 +299,9 @@ After a required trimmed witness settles proximity, later mesh vertices try
 incident witnesses before repeating the signed field query. This changes proof
 order, not acceptance: every early upper still comes from an exact surviving
 boundary point, and a miss retains the original distance and gap checks.
+Reverse membership uses the model-bound `PreparedFaceQueries` batch described
+in [the Boolean query contract](pieces/05-boolean-engine.md#points-and-bodies).
+Its certified trace-box reuse is opt-in; construction keeps its existing query order.
 
 The reverse pass keeps every native field candidate. If a selected B-rep face
 still lacks sampled origin or direction coverage, triangle centres supply

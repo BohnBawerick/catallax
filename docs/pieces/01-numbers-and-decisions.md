@@ -270,6 +270,17 @@ The creator may refine this count (for example, square roots), but it must be de
 
 `BudgetPolicy::default()` is `max_precision_bits = 16384` and `max_work = 1_000_000_000`. These values may be retuned later by the architect; changes are logged in `INTERFACE-CHANGES.md`.
 
+`with_operation_budget` retains root-enclosure certificates already paid for in
+that request. The key includes the exact defining polynomial, original rational
+isolating interval and requested working precision. Reuse returns the same
+published ball without reserving its arithmetic again against the whole-request
+allowance. Cancellation checks and the per-decision cold-proof charge still
+apply. A cached certificate from an earlier request must be paid for again.
+Receipts are cleared on normal return and panic unwinding; they never transfer
+between requests or threads. `DecisionStats::work` retains per-decision
+accounting; `OperationWork::used` counts request-wide reservations and checkpoints.
+
+
 ### Statistics
 
 `DecisionStats` counts every decision a `Decider` has made, by how it ended:

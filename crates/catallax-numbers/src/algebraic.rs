@@ -50,7 +50,7 @@ pub(crate) struct AlgebraicRoot {
     pub polynomial: UPoly,
     pub lo: Rational,
     pub hi: Rational,
-    pub enclosures: Mutex<BTreeMap<u32, RootEnclosure>>,
+    pub enclosures: Mutex<BTreeMap<u32, Arc<RootEnclosure>>>,
 }
 #[derive(Debug)]
 pub(crate) struct RootEnclosure {

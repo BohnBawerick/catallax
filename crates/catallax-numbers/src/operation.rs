@@ -1,6 +1,12 @@
 //! Request-scoped deterministic accounting, independent of wall time.
 
-use std::cell::Cell;
+use crate::algebraic::{AlgebraicRoot, RootEnclosure};
+use std::{
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+    collections::BTreeMap,
+    sync::Arc,
+};
 
 #[derive(Clone, Copy)]
 struct State {
@@ -9,8 +15,40 @@ struct State {
     exhausted: bool,
 }
 
+struct RootProofKey {
+    root: Arc<AlgebraicRoot>,
+    precision: u32,
+}
+impl Ord for RootProofKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.precision
+            .cmp(&other.precision)
+            .then_with(|| {
+                self.root
+                    .polynomial
+                    .coefficients()
+                    .cmp(other.root.polynomial.coefficients())
+            })
+            .then_with(|| self.root.lo.cmp(&other.root.lo))
+            .then_with(|| self.root.hi.cmp(&other.root.hi))
+    }
+}
+impl PartialOrd for RootProofKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl PartialEq for RootProofKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl Eq for RootProofKey {}
+
 thread_local! {
     static ACTIVE: Cell<Option<State>> = const { Cell::new(None) };
+    static ROOT_PROOFS: RefCell<BTreeMap<RootProofKey, Arc<RootEnclosure>>> =
+        const { RefCell::new(BTreeMap::new()) };
 }
 
 /// Accounting for one complete operation, including all its deciders.
@@ -51,6 +89,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
     impl Drop for Reset {
         fn drop(&mut self) {
             ACTIVE.with(|slot| slot.set(None));
+            ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
         }
     }
     ACTIVE.with(|slot| {
@@ -61,6 +100,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
             exhausted: false,
         }));
     });
+    ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
     let _reset = Reset;
     let result = run();
     let state = ACTIVE.with(|slot| slot.get().unwrap());
@@ -94,4 +134,40 @@ pub(crate) fn exhausted() -> bool {
 
 pub(crate) fn used() -> u64 {
     ACTIVE.with(|slot| slot.get().map_or(0, |state| state.used))
+}
+
+/// Only a certificate already charged in this request may bypass another
+/// operation-wide reservation. Definition keys, not addresses or cache warmth,
+/// identify the same certified root and the same published precision.
+pub(crate) fn root_proof(root: &Arc<AlgebraicRoot>, precision: u32) -> Option<Arc<RootEnclosure>> {
+    if ACTIVE.with(|slot| slot.get().is_none()) {
+        return None;
+    }
+    ROOT_PROOFS.with(|proofs| {
+        proofs
+            .borrow()
+            .get(&RootProofKey {
+                root: root.clone(),
+                precision,
+            })
+            .cloned()
+    })
+}
+
+pub(crate) fn record_root_proof(
+    root: &Arc<AlgebraicRoot>,
+    precision: u32,
+    certificate: &Arc<RootEnclosure>,
+) {
+    if certificate.cost != 0 && ACTIVE.with(|slot| slot.get().is_some()) {
+        ROOT_PROOFS.with(|proofs| {
+            proofs.borrow_mut().insert(
+                RootProofKey {
+                    root: root.clone(),
+                    precision,
+                },
+                certificate.clone(),
+            );
+        });
+    }
 }

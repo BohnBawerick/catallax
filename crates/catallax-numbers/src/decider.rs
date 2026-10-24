@@ -908,6 +908,18 @@ impl Work {
             Ok(())
         }
     }
+    // Keep the per-decision cold-proof limit unchanged. The enclosing request
+    // already owns this exact certificate, so its arithmetic is not paid twice.
+    fn reuse_proof(&mut self, n: u64) -> Result<(), &'static str> {
+        self.check_deadline()?;
+        if n > self.policy.max_work.saturating_sub(self.used) {
+            Err("numbers.budget-exhausted")
+        } else {
+            self.used += n;
+            Ok(())
+        }
+    }
+
     pub fn exact(&mut self, a: &Rational, b: &Rational, mul: bool) -> Result<(), &'static str> {
         let a = limbs(a);
         let b = limbs(b);
@@ -1167,6 +1179,12 @@ fn enclose_algebraic(a: &Algebraic, p: u32, w: &mut Work) -> Result<Ball, &'stat
     match &a.repr {
         AlgebraicRepr::Rational(r) => Ok(Ball::from_rational(r, p)),
         AlgebraicRepr::Root(root) => {
+            if let Some(certificate) = crate::operation::root_proof(root, p)
+                && certificate.cost <= w.policy.max_work.saturating_sub(w.used)
+            {
+                w.reuse_proof(certificate.cost)?;
+                return Ok(certificate.ball.clone());
+            }
             let filter_precision = p.min(ROOT_SIGN_FILTER_BITS);
             let start = w.used;
             let (mut lo, mut hi, mut lower_sign) = {
@@ -1176,6 +1194,7 @@ fn enclose_algebraic(a: &Algebraic, p: u32, w: &mut Work) -> Result<Ball, &'stat
                     && certificate.cost <= allowance
                 {
                     w.charge(certificate.cost)?;
+                    crate::operation::record_root_proof(root, p, certificate);
                     return Ok(certificate.ball.clone());
                 }
                 if let Some((prefix_precision, prefix)) = cache.range(..p).next_back()
@@ -1222,17 +1241,18 @@ fn enclose_algebraic(a: &Algebraic, p: u32, w: &mut Work) -> Result<Ball, &'stat
                     }
                 }
             };
-            let certificate = RootEnclosure {
+            let certificate = Arc::new(RootEnclosure {
                 ball: ball.clone(),
                 cost: w.used - start,
                 lo,
                 hi,
                 lower_sign,
-            };
+            });
             let mut cache = root.enclosures.lock().unwrap();
             if cache.len() == 8 && !cache.contains_key(&p) {
                 cache.pop_first();
             }
+            crate::operation::record_root_proof(root, p, &certificate);
             cache.insert(p, certificate);
             Ok(ball)
         }

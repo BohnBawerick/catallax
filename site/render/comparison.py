@@ -6,7 +6,9 @@ from html import escape
 import json
 import math
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / '.claude/skills/verify-catallax/scripts'
@@ -31,6 +33,13 @@ def import_run(path, destination):
             raise ValueError('missing engine observations')
     if report['host'].get('machine_class') != 'quiet work PC':
         raise ValueError('publication timing must come from the designated quiet work PC')
+    revision = report['source_revision']
+    def committed_bytes(path):
+        relative = path.relative_to(ROOT).as_posix()
+        return subprocess.check_output(['git', 'show', f'{revision}:{relative}'], cwd=ROOT)
+    def committed_sha(path):
+        return hashlib.sha256(committed_bytes(path)).hexdigest()
+    config = json.loads(committed_bytes(DATA/'tools.json'))
     tools = {'catallax': {'name': 'Catallax', 'version': report['source_revision'],
                          'sha256': report['binary_sha256'], 'source': 'https://github.com/BohnBawerick/catallax',
                          'kernel': 'Catallax B-rep', 'license': 'MIT'},
@@ -41,11 +50,12 @@ def import_run(path, destination):
     # No local paths, subprocess commands or private input names are published.
     result = {'format': 'catallax-site-comparison/1', 'raw_sha256': sha(path),
               'source_revision': report['source_revision'], 'tools': tools,
+              'dart_version': config['dart']['version'], 'checker_version': config['checker']['version'],
               'host': report['host'], 'timing': report['timing'], 'summary': summarize(report),
               'load_average_range': [min(p[k][0] for p in report['pairs'] for k in ('load_average_before','load_average_after')),
                                      max(p[k][0] for p in report['pairs'] for k in ('load_average_before','load_average_after'))],
-              'case_sha256': {p.relative_to(DATA).as_posix(): sha(p) for p in sorted((DATA/'cases').rglob('*.json'))},
-              'script_sha256': {p.name: sha(p) for p in [SCRIPTS/'head_to_head.py', SCRIPTS/'external_tools.py',
+              'case_sha256': {p.relative_to(DATA).as_posix(): committed_sha(p) for p in sorted((DATA/'cases').rglob('*.json'))},
+              'script_sha256': {p.name: committed_sha(p) for p in [SCRIPTS/'head_to_head.py', SCRIPTS/'external_tools.py',
                                   *[DATA/f for f in ('targets.py','python_tools.py','pali_parts.dart','analytic.py','check.py','tools.json','requirements.lock')]]}}
     destination.write_text(json.dumps(result, sort_keys=True, indent=2, allow_nan=False)+'\n')
 
@@ -105,7 +115,8 @@ def render(source, output):
     versions = []
     for engine in ENGINES:
         pin = tools[engine]
-        versions.append('<tr>'+cell(tool(engine))+cell(text(pin['version']))+cell(text(pin['kernel']))+cell(f'<code>{text(pin.get("sha256",pin.get("archive_sha256","")))}</code>')+'</tr>')
+        version = pin['version'] + (' @ ' + pin['revision'][:12] if pin.get('revision') else '')
+        versions.append('<tr>'+cell(tool(engine))+cell(text(version))+cell(text(pin['kernel']))+cell(f'<code>{text(pin.get("sha256",pin.get("archive_sha256","")))}</code>')+'</tr>')
     features = []
     for engine in ENGINES:
         cells = [tool(engine)]
@@ -128,8 +139,8 @@ def render(source, output):
 <section id="correctness"><h2>What the answers passed</h2><p>The target selector also filters this table. Property cells are discrepancies / checked sets of volume, area and three centroid coordinates. Membership cells are wrong / checked points. STEP cells are opened / checked / full pass. Names are passed / checked edits. Zero checked is not a pass.</p><div class="table-scroll" tabindex="0" role="region" aria-label="Per-part correctness"><table><thead><tr><th>Part</th><th>Tool</th><th>Variant</th><th>Property errors / sets</th><th>Membership errors / points</th><th>STEP opened / checked / pass</th><th>Names</th><th>Failed builds</th><th>Incomplete</th><th>Not expressible</th></tr></thead><tbody>{''.join(checks)}</tbody></table></div></section>
 <section id="range"><h2>Target range by tool</h2><p>Completed construction and edit builds / attempted builds across measured samples. These counts cover only this workload, not each tool's complete feature set. A completed build can still fail the correctness checks above.</p><div class="table-scroll" tabindex="0" role="region" aria-label="Measured feature range"><table><thead><tr><th>Tool</th><th>P0 curved booleans</th><th>P1 bracket</th><th>P2 chamfers</th><th>P3 fillets</th><th>P4 shell</th><th>P5 housing</th></tr></thead><tbody>{''.join(features)}</tbody></table></div></section>
 <section id="method"><h2>Versions and method</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Tool versions"><table class="versions"><thead><tr><th>Tool</th><th>Version or revision</th><th>Kernel</th><th>Artifact SHA-256</th></tr></thead><tbody>{''.join(versions)}</tbody></table></div>
-<p>CadQuery was selected for its released headless Python API, solid primitives, blends, shells and STEP export. smlibpy is a public MIT Python tool bundling SMLib under Apache-2.0. Pali Ijo is MIT; upstream publishes no release archive or pub.dev package, so its official 0.1.2 source snapshot is pinned by commit and checksum and compiled with Dart {text(json.loads((DATA/'tools.json').read_text())['dart']['version'])}. No upstream code or assets are copied into this site or repository.</p>
-<p>OpenCASCADE is both CadQuery's modeling kernel and the STEP checker. The checker uses cadquery-ocp 8.0.1.1.0; CadQuery uses 7.8.1.1.post1. Properties and membership are checked against independently authored analytic definitions, not another kernel's constructed part. Four P0 curved-intersection families have analytic membership but no implemented property formula here: block-sphere, crossing-pipes, general-cone and general-torus. Their property cells remain unmeasured. The other nine families use elementary formulas and converged quadrature of smooth analytic fillet sections. Numerical diagnostics use the unchanged absolute 1e-6 or relative 1e-8 allowance, not a modeling tolerance or exactness certificate.</p>
+<p>CadQuery was selected for its released headless Python API, solid primitives, blends, shells and STEP export. smlibpy is a public MIT Python tool bundling SMLib under Apache-2.0. Pali Ijo is MIT; upstream publishes no release archive or pub.dev package, so its official 0.1.2 source snapshot is pinned by commit and checksum and compiled with Dart {text(data['dart_version'])}. No upstream code or assets are copied into this site or repository.</p>
+<p>OpenCASCADE is both CadQuery's modeling kernel and the STEP checker. The checker uses cadquery-ocp {text(data['checker_version'])}; CadQuery uses 7.8.1.1.post1. Properties and membership are checked against independently authored analytic definitions, not another kernel's constructed part. Four P0 curved-intersection families have analytic membership but no implemented property formula here: block-sphere, crossing-pipes, general-cone and general-torus. Their property cells remain unmeasured. P5's junction blend meets the countersink openings, so a complete trimmed-blend oracle is unavailable here; its properties and membership remain unmeasured rather than checking a full-torus approximation. The other eight families use elementary property formulas and converged quadrature of smooth analytic fillet sections. Numerical diagnostics use the unchanged absolute 1e-6 or relative 1e-8 allowance, not a modeling tolerance or exactness certificate.</p>
 <p>Membership samples a fixed 216-point grid against analytic solid predicates. Boundary points remain unresolved. Passing samples do not prove set equality. STEP is opened without repair and checked for topology validity and the producing tool's face count. Names check string survival, not semantic correspondence. CadQuery and smlibpy expose no persistent per-face/edge rebuild-name contract here; Pali Ijo's ancestry IDs are process-local, so those name checks are not run. Missing operations are not approximated and failed prefixes are not exported as answers.</p>
 <p>Tool order: {text(timing['order'])}. One-minute load averages ranged from {data['load_average_range'][0]:.2f} to {data['load_average_range'][1]:.2f}; the machine label alone does not prove an idle CPU. Process timeouts are incomplete, never geometric refusals. No ratios or general speed ranking are asserted. <a href="https://github.com/BohnBawerick/catallax/tree/main/.claude/skills/verify-catallax/scripts/head-to-head">Scripts, release pins and rerun commands</a>.</p></section>
 <footer><a href="/">Back to Catallax</a><p>Generated from <a href="comparison-results.json">comparison-results.json</a>. Raw run SHA-256: <code>{text(data['raw_sha256'])}</code>.</p></footer></main>
@@ -141,7 +152,18 @@ if __name__ == '__main__':
     parser.add_argument('--import-run', type=Path)
     parser.add_argument('--results', type=Path, default=ROOT/'site/comparison-results.json')
     parser.add_argument('--output', type=Path, default=ROOT/'site/comparison.html')
+    parser.add_argument('--check', action='store_true', help='fail if the committed page differs from generated results')
     args = parser.parse_args()
+    if args.check and args.import_run:
+        parser.error('--check cannot import a run')
     if args.import_run:
         import_run(args.import_run, args.results)
-    render(args.results, args.output)
+    if args.check:
+        with tempfile.TemporaryDirectory() as directory:
+            generated = Path(directory)/'comparison.html'
+            render(args.results, generated)
+            if generated.read_bytes() != args.output.read_bytes():
+                raise SystemExit('comparison.html is stale; run site/render/comparison.py')
+        print('comparison.html matches committed results')
+    else:
+        render(args.results, args.output)

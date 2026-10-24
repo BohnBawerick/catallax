@@ -13,7 +13,7 @@ def check(case, variant, step_path, expected_faces):
               'numeric_comparison': {'relative': 1e-8, 'absolute': 1e-6,
                  'scope': 'diagnostic double-precision comparison, not a kernel acceptance tolerance'}}
     if reference is None:
-        result['property_coverage'] = {'status': 'not-run', 'reason': 'no analytic property formula implemented for this intersecting curved P0 family'}
+        result['property_coverage'] = {'status': 'not-run', 'reason': 'no independent analytic property formula implemented for this complete target'}
     if step_path is None:
         result['step'] = {'status': 'not-run', 'reason': 'no exported STEP'}
         return result
@@ -51,6 +51,9 @@ def check(case, variant, step_path, expected_faces):
     result['step'] = {'status': 'passed' if valid and faces == expected_faces else 'failed',
                       'opened': True, 'roots': roots, 'valid': valid, 'faces': faces,
                       'expected_faces': expected_faces, 'face_count_matches': faces == expected_faces}
+    if implicit is None:
+        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate implemented for the complete trimmed P5 blend'}
+        return result
     # Same 6^3 sampling scheme as the original report, with analytic target bounds.
     axes = [[bounds[i]+(bounds[i+3]-bounds[i])*k/3 for k in range(-1, 5)] for i in range(3)]
     solids = [BRepClass3d_SolidClassifier(s) for s in entries(actual, TopAbs_SOLID)]

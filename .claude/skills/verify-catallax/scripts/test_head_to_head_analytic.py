@@ -45,14 +45,15 @@ class AnalyticTests(unittest.TestCase):
         self.assertAlmostEqual(small['volume'], 14428.6401260479, places=7)
         self.assertAlmostEqual(small['area'], 4301.1619509751, places=7)
 
-    def test_all_four_countersinks_are_empty_and_junction_round_is_filled(self):
-        case = {'recipe': 'P5-flanged-housing.json', 'edit': {'value': '2.5'}}
-        _, _, member = analytic.definition(case, 'construction')
-        for x, z in ((17, 0), (0, -17), (-17, 0), (0, 17)):
-            self.assertGreater(member((x, 2, z)), 0)
-        self.assertLess(member((13, 5.1, 0)), 0)
-        self.assertGreater(member((13, 7, 0)), 0)
-        self.assertGreater(member((0, 10, 0)), 0)
+    def test_rotated_curved_primitives_use_the_inverse_homogeneous_rotation(self):
+        cone = {'recipe': 'P0/general-cone.json', 'edit': {'value': '12'}}
+        torus = {'recipe': 'P0/general-torus.json', 'edit': {'value': '9'}}
+        _, _, in_cones = analytic.definition(cone, 'construction')
+        _, _, in_tori = analytic.definition(torus, 'construction')
+        self.assertLess(in_cones((2+10/3, 1-10/3, 1+5/3)), 0)
+        self.assertLess(in_tori((1+16/3, 2+8/3, 1-16/3)), 0)
+        self.assertGreater(in_cones((30, 30, 30)), 0)
+        self.assertGreater(in_tori((30, 30, 30)), 0)
 
 
 if __name__ == '__main__':

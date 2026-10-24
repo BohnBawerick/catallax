@@ -1,9 +1,11 @@
 """Independent scalar definitions. No CAD kernel imports or exported-body references.
 
-Property formulas cover nine target families. Four intersecting curved P0
-families have analytic membership but no property oracle here; report them as
-unmeasured, never as passing. Simpson quadrature integrates smooth elementary
-fillet sections, not meshes, with two resolutions checked against each other.
+Property formulas cover eight target families. Four intersecting curved P0
+families have analytic membership but no property oracle here. P5's junction
+fillet reaches the countersink openings; a full torus is not an exact reference
+for that trimmed blend. Its property and membership checks remain unmeasured.
+Simpson quadrature integrates smooth elementary fillet sections, not meshes,
+with two resolutions checked against each other.
 """
 import math
 from pathlib import Path
@@ -94,15 +96,6 @@ def properties(name, edit):
         v = 12*outer-(12-t)*inner
         m = 72*outer-(144-t*t)*inner/2
         return {'volume': v, 'area': 2*outer+12*perimeter+2*(70-4*t)*(12-t), 'centroid': [0, 0, m/v]}
-    if name.startswith('P5-'):
-        # Each hole is radius 2 for y=0..3 and radius y-1 for y=3..5.
-        hole_v = PI*(12+56/3)
-        hole_m = PI*(18+((5**4/4-2*5**3/3+5**2/2)-(3**4/4-2*3**3/3+3**2/2)))
-        dv, dm, da = fillet_add(12, edit or 2, 5)
-        v = PI*(420*5+80*25)-4*hole_v+dv
-        m = PI*(420*5*2.5+80*25*17.5)-4*hole_m+dm
-        a = PI*(2140+4*(-8+12*math.sqrt(2)))+da
-        return {'volume': v, 'area': a, 'centroid': [0, m/v, 0]}
     return None
 
 
@@ -181,13 +174,9 @@ def definition(case, label):
         fn = lambda p: max(box(p, (-20, -15, 0), (20, 15, 12)), -box(p, (-20+t, -15+t, t), (20-t, 15-t, 25)), cylinder(p, 23, 14, (0, 0, -1)))
         bounds = (-20, -15, 0, 20, 15, 12)
     elif name.startswith('P5-'):
-        def fn(p):
-            value = min(cylinder(p, 22, 5, axis=(0, 1, 0)), cylinder(p, 12, 30, axis=(0, 1, 0)), junction(p, 12, edit or 2, 5, axis=1))
-            value = max(value, -cylinder(p, 8, 30, axis=(0, 1, 0)))
-            for x, z in ((17, 0), (0, -17), (-17, 0), (0, 17)):
-                tool = min(cylinder(p, 2, 7, (x, 6, z), (0, -1, 0)), max(math.hypot(p[0]-x, p[2]-z)-(p[1]-1), 3-p[1], p[1]-5))
-                value = max(value, -tool)
-            return value
+        # The rolling blend meets the countersink openings at its flange contact.
+        # Do not substitute an untrimmed torus or a successful unfilleted prefix.
+        fn = None
         bounds = (-22, 0, -22, 22, 30, 22)
     else:
         raise ValueError(name)

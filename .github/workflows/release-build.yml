@@ -170,11 +170,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-dist@0.33.1,cargo-cyclonedx@0.5.9
-      - name: Generate dependency SBOM with cargo-dist and CycloneDX
-        env:
-          TAG: ${{ needs.plan.outputs.tag }}
-        run: dist build --artifacts=global --tag "$TAG" --output-format=json
+          tool: cargo-cyclonedx@0.5.9
+      - name: Generate dependency SBOM with CycloneDX
+        run: |
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH
+          cargo cyclonedx --format xml --target all --all --override-filename release-sbom.cdx
+          python3 -B tools/release/sbom.py crates/catallax-cli/release-sbom.cdx.xml \
+            target/distrib/catallax-cli.cdx.xml --commit "$GITHUB_SHA"
       - name: Generate release notes from merged pull requests
         env:
           GH_TOKEN: ${{ github.token }}

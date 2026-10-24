@@ -4,6 +4,7 @@ use crate::{Face, Instruction, Location, Plan, geometry, metric::PRECISION};
 use catallax_features::draft::{
     DraftDefinition,
     arrangement::Polyhedron,
+    capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
     round::RoundCell,
 };
@@ -673,8 +674,28 @@ impl Region {
         if inside { -best.sqrt() } else { best.sqrt() }
     }
 }
+enum Candidate {
+    Region(Cell),
+    Capped(Box<CappedCylinder>),
+}
+
+impl Candidate {
+    fn contains_interior(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        match self {
+            Self::Region(cell) => cell.contains_interior(p, dec),
+            Self::Capped(cell) => cell.contains_interior(p, dec),
+        }
+    }
+    fn anchored(&self, definition: &DraftDefinition, dec: &mut Decider) -> Result<bool, Refusal> {
+        match self {
+            Self::Region(cell) => cell.anchored(definition, dec),
+            Self::Capped(cell) => cell.anchored(&definition.neutral, dec),
+        }
+    }
+}
+
 struct Candidates {
-    components: Vec<Cell>,
+    components: Vec<Candidate>,
     source_faces: Vec<Vec<usize>>,
 }
 
@@ -827,7 +848,7 @@ impl Plan {
                     )
                 })?;
                 return Ok(Candidates {
-                    components: vec![Cell::Planar(cell)],
+                    components: vec![Candidate::Region(Cell::Planar(cell))],
                     source_faces: physical_sources(skin, &self.faces, source_faces),
                 });
             }
@@ -835,7 +856,7 @@ impl Plan {
                 components: skin
                     .draft(patches, definition, dec)?
                     .into_iter()
-                    .map(|cell| Cell::Polyhedral(Box::new(cell)))
+                    .map(|cell| Candidate::Region(Cell::Polyhedral(Box::new(cell))))
                     .collect(),
                 source_faces: physical_sources(skin, &self.faces, source_faces),
             });
@@ -882,7 +903,7 @@ impl Plan {
                     components: skin
                         .draft(&patches, definition, dec)?
                         .into_iter()
-                        .map(|cell| Cell::Polyhedral(Box::new(cell)))
+                        .map(|c| Candidate::Region(Cell::Polyhedral(Box::new(c))))
                         .collect(),
                     source_faces: physical_sources(&skin, &self.faces, source_faces),
                 });
@@ -942,13 +963,13 @@ impl Plan {
                             "selected field support is not an axial cylinder",
                         ));
                     };
-                    if !selected.contains(f) || cylinder.is_some() {
+                    if cylinder.is_some() {
                         return Err(Refusal::new(
                             "draft.unsupported-arrangement",
                             "mixed curved supports need oriented curved cells",
                         ));
                     }
-                    cylinder = Some((c.clone(), origins));
+                    cylinder = Some((c.clone(), origins, selected.contains(f)));
                 }
                 _ => {
                     return Err(Refusal::new(
@@ -958,7 +979,7 @@ impl Plan {
                 }
             }
         }
-        let cell = if let Some((c, origins)) = cylinder {
+        let cell = if let Some((c, origins, move_side)) = cylinder {
             let caps = planes
                 .into_iter()
                 .map(|p| (p.plane, p.origins))
@@ -970,16 +991,22 @@ impl Plan {
                         "axial field draft needs two complete cap planes",
                     )
                 })?;
-            Cell::Round(Box::new(RoundCell::new(
-                &c, origins, caps, definition, dec,
-            )?))
+            if move_side {
+                Candidate::Region(Cell::Round(Box::new(RoundCell::new(
+                    &c, origins, caps, definition, dec,
+                )?)))
+            } else {
+                Candidate::Capped(Box::new(CappedCylinder::new(c, origins, caps, dec)?))
+            }
         } else {
-            Cell::Planar(PlanarCell::new(planes, dec)?.ok_or_else(|| {
-                Refusal::new(
-                    "draft.reversed-solid",
-                    "replaced boundary has no full-dimensional material cell",
-                )
-            })?)
+            Candidate::Region(Cell::Planar(PlanarCell::new(planes, dec)?.ok_or_else(
+                || {
+                    Refusal::new(
+                        "draft.reversed-solid",
+                        "replaced boundary has no full-dimensional material cell",
+                    )
+                },
+            )?))
         };
         Ok(Candidates {
             components: vec![cell],
@@ -1081,6 +1108,8 @@ impl Plan {
             }
         }
         let mut surviving = BTreeSet::new();
+        let exact_distance_components =
+            components.iter().all(|c| matches!(c, Candidate::Region(_)));
         let mut result = 0;
         for (cell, keep) in components.into_iter().zip(retained) {
             if !keep {
@@ -1094,34 +1123,47 @@ impl Plan {
                 Ok(())
             };
             match &cell {
-                Cell::Planar(c) => {
+                Candidate::Region(Cell::Planar(c)) => {
                     for (s, cycle) in c.supports.iter().zip(&c.cycles) {
                         if !cycle.is_empty() {
                             add(Surface::Plane(s.plane.clone()), &s.origins)?;
                         }
                     }
                 }
-                Cell::Round(c) => {
+                Candidate::Region(Cell::Round(c)) => {
                     add(c.surface.clone(), &c.origins)?;
                     for (p, origins) in c.caps.iter().flatten() {
                         add(Surface::Plane(p.clone()), origins)?;
                     }
                 }
-                Cell::Polyhedral(c) => {
+                Candidate::Region(Cell::Polyhedral(c)) => {
                     for face in &c.faces {
                         add(Surface::Plane(c.plane(face)), &face.origins)?;
                     }
                 }
+                Candidate::Capped(c) => {
+                    add(Surface::Cylinder(c.cylinder.clone()), &c.origins)?;
+                    for (plane, origins) in &c.caps {
+                        add(Surface::Plane(plane.clone()), origins)?;
+                    }
+                }
             }
             surviving.extend(faces.iter().map(|f| f.origin.clone()));
-            let region = Region::new(cell, dec)?;
-            let register = self.leaf(geometry::Leaf::Draft(region), faces, dec)?;
+            let leaf = match cell {
+                Candidate::Region(cell) => geometry::Leaf::Draft(Region::new(cell, dec)?),
+                Candidate::Capped(cell) => {
+                    geometry::Leaf::Cell(geometry::Cell::from_capped(cell, dec)?)
+                }
+            };
+            let register = self.leaf(leaf, faces, dec)?;
             result = if result == 0 {
                 register
             } else {
                 let union =
                     self.boolean(catallax_recipe::BooleanKind::Union, result, register, dec)?;
-                self.separated_unions.insert(union);
+                if exact_distance_components {
+                    self.separated_unions.insert(union);
+                }
                 union
             };
         }

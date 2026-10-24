@@ -4,7 +4,7 @@ use crate::{
     draft::{Cell, Region},
     geometry::Leaf,
 };
-use catallax_numbers::{Decider, Rational, Real, Refusal};
+use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Origin};
 use catallax_shapes::{Isometry, Point3, RPoint3, RVector3, Vector3};
 
@@ -82,7 +82,8 @@ impl Plan {
         let has_derived = self.faces.iter().any(|face| {
             face.in_result
                 && self.leaf_registers[face.leaf].is_some()
-                && matches!(self.leaves[face.leaf], Leaf::Feature(_) | Leaf::Draft(_))
+                && (matches!(self.leaves[face.leaf], Leaf::Feature(_) | Leaf::Draft(_))
+                    || matches!(&self.leaves[face.leaf], Leaf::Cell(cell) if cell.capped_chart().is_some()))
         });
         if self.is_proven_empty() {
             return Ok(true);
@@ -141,6 +142,7 @@ impl Plan {
             None
         };
         let angular = std::cell::OnceCell::new();
+        let radial_grid = std::cell::OnceCell::new();
         for (index, face) in self.faces.iter().enumerate() {
             if !face.in_result || self.leaf_registers[face.leaf].is_none() {
                 continue;
@@ -163,7 +165,25 @@ impl Plan {
                     &angular,
                     &mut |p| visit(p, FaceId(index)),
                 )?,
-                Leaf::Cell(_) => continue,
+                Leaf::Cell(cell) => {
+                    let Some(capped) = cell.capped_chart() else {
+                        continue;
+                    };
+                    let support = cell.support_index(&face.polynomial).ok_or_else(|| {
+                        Refusal::new(
+                            "field.sample-support",
+                            "native cell face has no defining support",
+                        )
+                    })?;
+                    capped_candidates(
+                        capped,
+                        support,
+                        divisions,
+                        &angular,
+                        &radial_grid,
+                        &mut |p| visit(p, FaceId(index)),
+                    )?
+                }
             };
             if !complete {
                 return Ok(false);
@@ -186,6 +206,61 @@ fn native_point(point: &Point3, dec: &mut Decider) -> Result<RPoint3, Refusal> {
         native_scalar(&point.y, dec)?,
         native_scalar(&point.z, dec)?,
     ))
+}
+
+fn capped_candidates(
+    cell: &catallax_features::draft::capped::CappedCylinder,
+    support: usize,
+    divisions: u32,
+    angular: &std::cell::OnceCell<Vec<[Rational; 2]>>,
+    radial_grid: &std::cell::OnceCell<Vec<Rational>>,
+    visit: &mut impl FnMut(RPoint3) -> bool,
+) -> Result<bool, Refusal> {
+    let mut dec = Decider::default();
+    if support == 0 {
+        for direction in angular.get_or_init(|| circle(divisions)) {
+            let q = direction
+                .each_ref()
+                .map(|x| &cell.radius * &Real::from(x.clone()));
+            let heights = cell.heights_at(&q);
+            let span = &heights[1] - &heights[0];
+            if crate::geometry::sign(&span, &mut dec)? != Sign::Positive {
+                continue;
+            }
+            for i in 0..divisions {
+                let height = &heights[0] + &(&span * &Real::from(fraction(i, divisions)));
+                if !visit(native_point(&cell.point(&q, &height), &mut dec)?) {
+                    return Ok(false);
+                }
+            }
+        }
+    } else {
+        let grid = radial_grid.get_or_init(|| {
+            (0..divisions)
+                .map(|i| Rational::from_i64(2) * fraction(i, divisions) - Rational::one())
+                .collect()
+        });
+        for x in grid {
+            for y in grid {
+                if &(x * x) + &(y * y) >= Rational::one() {
+                    continue;
+                }
+                let q = [x, y].map(|x| &cell.radius * &Real::from(x.clone()));
+                let heights = cell.heights_at(&q);
+                if crate::geometry::sign(&(&heights[1] - &heights[0]), &mut dec)? != Sign::Positive
+                {
+                    continue;
+                }
+                if !visit(native_point(
+                    &cell.point(&q, &heights[support - 1]),
+                    &mut dec,
+                )?) {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    Ok(true)
 }
 
 fn native_vector(vector: &Vector3, dec: &mut Decider) -> Result<RVector3, Refusal> {

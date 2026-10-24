@@ -70,6 +70,19 @@ one split piece never moves another piece merely because it shares an alias.
 Convex extracted skins retain the direct halfspace path, including non-simple
 vertices that need no moved-fan construction.
 
+Drafted planar caps can extend and trim an unchanged cylindrical side. Their
+heights are affine over the exact radial disk; nonnegative thickness clips its
+footprint. Cap intersections are native circles or ellipses, with an exact chord
+or rim-contact vertex when required. A tangent contact joins the side's annular
+boundary into one wire rather than declaring a convex solid non-manifold.
+
+The independent field stores this family as a bounded analytic conjunction,
+not a true-distance certificate. Its native cap and side candidates use the
+same defining height laws. Rigid copies preserve that chart and its strict
+off-axis witness; candidates bind by the complete support polynomial, not roles.
+The rational-candidate API retains its algebraic-placement refusal. Multiple
+interacting curved components still need a reconstructed curved arrangement.
+
 ### Boundary candidate identity
 
 One origin can label several trimmed pieces on different supports. Native candidate visitors carry the exact face-registry handle, not a name that the consumer must resolve back to one representative. Comparison retains every current candidate for a shared origin and queries the candidate belonging to each sample. Replaced faces are sampled through their current primitive, sweep or draft definition, never through a historical primitive constructor.

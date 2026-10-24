@@ -835,6 +835,9 @@ impl Leaf {
             }
             Self::Feature(feature) => feature.draft_witness(),
             Self::Cell(cell) => {
+                if let Some(capped) = &cell.capped {
+                    return capped.interior_witness(dec);
+                }
                 let supports = cell
                     .constraints
                     .iter()
@@ -1133,9 +1136,27 @@ pub(crate) struct Cell {
     fast: Vec<Vec<([u32; 3], f64)>>,
     center: Point3,
     radius: Option<Rational>,
+    capped: Option<Box<catallax_features::draft::capped::CappedCylinder>>,
 }
 
 impl Cell {
+    pub(crate) fn from_capped(
+        capped: Box<catallax_features::draft::capped::CappedCylinder>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let radius = capped.bound_radius(dec)?;
+        let mut cell = Self::new(Vec::from(capped.surfaces()), Some(radius));
+        cell.capped = Some(capped);
+        Ok(cell)
+    }
+    pub(crate) fn capped_chart(&self) -> Option<&catallax_features::draft::capped::CappedCylinder> {
+        self.capped.as_deref()
+    }
+    pub(crate) fn support_index(&self, polynomial: &RealPoly) -> Option<usize> {
+        self.constraints
+            .iter()
+            .position(|c| c.polynomial.same_definition(polynomial))
+    }
     pub(crate) fn sample_bounds(&self) -> Result<Option<crate::samples::Bounds>, Refusal> {
         let Some(radius) = &self.radius else {
             return Ok(None);
@@ -1175,6 +1196,7 @@ impl Cell {
             fast,
             center: Point3::origin(),
             radius,
+            capped: None,
         })
     }
     fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
@@ -1271,6 +1293,10 @@ impl Cell {
             .map(Some)
     }
     fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
+        let capped = self.capped.take().map(|mut capped| {
+            capped.transform(pose);
+            capped
+        });
         let surfaces = self
             .constraints
             .iter()
@@ -1279,6 +1305,7 @@ impl Cell {
         let center = pose.apply_point(&self.center);
         *self = Self::new(surfaces, self.radius.clone())?;
         self.center = center;
+        self.capped = capped;
         Ok(())
     }
 }

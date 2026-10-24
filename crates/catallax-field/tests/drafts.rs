@@ -707,6 +707,86 @@ fn planar_draft_changes_material_and_measures_true_trimmed_distance() {
         assert!(q.distance.millimetres.hi() - q.distance.millimetres.lo() <= 1e-9);
     }
 }
+
+fn planar_cap_draft(pull: [&str; 3], neutral_x: &str) -> Json {
+    let mut draft = operation("unused");
+    draft["faces"] = json!([{"face":{"step":"base","role":"end"}}]);
+    draft["pull"] = json!(pull);
+    draft["neutral"] = json!({"point":[neutral_x,"0","0"],"normal":["1","0","0"]});
+    draft["angle"] = json!("0");
+    draft
+}
+
+#[test]
+fn a_drafted_plane_extends_and_trims_its_unchanged_cylindrical_neighbour() {
+    let recipe = recipe(cylinder("1"), planar_cap_draft(["-1", "0", "1"], "0"));
+    both(
+        &recipe,
+        &[
+            (["-3/4", "0", "9/2"], Location::Inside),
+            (["3/4", "0", "7/2"], Location::Outside),
+            (["-3/4", "0", "19/4"], Location::Boundary),
+            (["0", "0", "-1/10"], Location::Outside),
+            (["11/10", "0", "1"], Location::Outside),
+        ],
+    );
+    let sample = Plan::compile(&recipe)
+        .unwrap()
+        .proven(&point(["2", "0", "4"]), &mut Workspace::default());
+    // The nearest point is (1,0,3), not the nearest point on either carrier.
+    // A residual may be smaller, but must not masquerade as exact distance.
+    if let Value::TrueDistance(interval) = sample.value {
+        assert!(interval.contains(2_f64.sqrt()), "{sample:?}");
+    }
+    assert!(sample.distance.millimetres.lo() <= 2_f64.sqrt());
+}
+
+#[test]
+fn intersecting_cylindrical_caps_keep_only_the_positive_thickness_footprint() {
+    let mut draft = planar_cap_draft(["1", "0", "1"], "9/2");
+    draft["keep_regions"] = json!([["3/4", "0", "1/8"]]);
+    let source = recipe(cylinder("1"), draft);
+    let probes = [
+        (["3/4", "0", "1/8"], Location::Inside),
+        (["0", "0", "0"], Location::Outside),
+        (["3/4", "0", "1/2"], Location::Outside),
+        (["3/4", "0", "1/4"], Location::Boundary),
+        (["1/2", "0", "0"], Location::Boundary),
+    ];
+    both(&source, &probes);
+    for (neutral, retained) in [("3/5", true), ("1/2", false)] {
+        let mut document = serde_json::to_value(&source).unwrap();
+        let mut redraft = planar_cap_draft(["1", "0", "1"], neutral);
+        redraft["id"] = json!("redrafted");
+        redraft["body"] = json!("drafted");
+        document["steps"].as_array_mut().unwrap().push(redraft);
+        document["result"] = json!("redrafted");
+        let recipe = Recipe::parse(&document.to_string()).unwrap();
+        if retained {
+            both(&recipe, &probes);
+        } else {
+            both(&recipe, &[(["3/4", "0", "1/8"], Location::Outside)]);
+            assert!(Plan::compile(&recipe).unwrap().is_proven_empty());
+        }
+    }
+}
+#[test]
+fn convex_cap_rim_tangency_does_not_split_or_reverse_the_solid() {
+    let mut draft = planar_cap_draft(["1", "0", "1"], "3");
+    draft["keep_regions"] = json!([["0", "0", "1/2"]]);
+    both(
+        &recipe(cylinder("1"), draft),
+        &[
+            (["0", "0", "1/2"], Location::Inside),
+            (["-1", "0", "0"], Location::Boundary),
+            (["-1", "0", "1/10"], Location::Outside),
+            (["0", "0", "1"], Location::Boundary),
+            (["1", "0", "1"], Location::Boundary),
+            (["0", "0", "2"], Location::Outside),
+        ],
+    );
+}
+
 #[test]
 fn axial_cylinder_becomes_the_neutral_circle_cone() {
     let recipe = recipe(cylinder("8"), operation("wall"));

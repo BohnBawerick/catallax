@@ -3,6 +3,7 @@
 use crate::draft::{
     DraftDefinition,
     arrangement::{Patch, Polyhedron, Skin},
+    capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
     round::RoundCell,
 };
@@ -29,6 +30,7 @@ enum Cell {
     Planar(PlanarCell),
     Round(Box<RoundCell>),
     Polyhedral(Box<Polyhedron>),
+    Capped(Box<CappedCylinder>),
 }
 
 impl Cell {
@@ -37,6 +39,7 @@ impl Cell {
             Self::Planar(cell) => cell.contains_interior(point, dec),
             Self::Round(cell) => cell.contains_interior(point, dec),
             Self::Polyhedral(cell) => cell.contains_interior(point, dec),
+            Self::Capped(cell) => cell.contains_interior(point, dec),
         }
     }
 
@@ -45,6 +48,7 @@ impl Cell {
             Self::Planar(cell) => cell.anchored(&definition.neutral, dec),
             Self::Round(cell) => cell.anchored(&definition.neutral, dec),
             Self::Polyhedral(cell) => cell.anchored(&definition.neutral, dec),
+            Self::Capped(cell) => cell.anchored(&definition.neutral, dec),
         }
     }
 
@@ -67,6 +71,12 @@ impl Cell {
                 .faces
                 .iter()
                 .flat_map(|f| f.origins.iter().cloned())
+                .collect(),
+            Self::Capped(cell) => cell
+                .origins
+                .iter()
+                .chain(cell.caps.iter().flat_map(|(_, names)| names))
+                .cloned()
                 .collect(),
         }
     }
@@ -103,15 +113,17 @@ impl Cell {
                 }
                 Ok(bound)
             }
+            Self::Capped(cell) => cell.bound_radius(dec),
         }
     }
 
-    fn assemble(&self, model: &mut Model) -> BodyId {
-        match self {
+    fn assemble(&self, model: &mut Model, dec: &mut Decider) -> Result<BodyId, Refusal> {
+        Ok(match self {
             Self::Planar(cell) => assemble(model, cell),
             Self::Round(cell) => assemble_round(model, cell),
             Self::Polyhedral(cell) => assemble_polyhedral(model, cell),
-        }
+            Self::Capped(cell) => assemble_capped(model, cell, dec)?,
+        })
     }
 }
 
@@ -121,30 +133,33 @@ fn round(
     chosen: &BTreeSet<FaceId>,
     definition: &DraftDefinition,
     dec: &mut Decider,
-) -> Result<RoundCell, Refusal> {
+) -> Result<Cell, Refusal> {
     let mut cylinder = None;
     let mut caps = Vec::new();
     for face in faces {
         let f = model.face(*face);
         match model.geom().surface(f.surface) {
             Surface::Cylinder(c) if cylinder.is_none() && f.sense == Sense::Same => {
-                if !chosen.contains(face) {
-                    return Err(Refusal::new(
-                        "draft.unsupported-arrangement",
-                        "unchanged curved neighbours require mixed support cells",
-                    ));
-                }
-                cylinder = Some((c, model.face_origins(*face).to_vec()));
+                cylinder = Some((c, model.face_origins(*face).to_vec(), chosen.contains(face)));
             }
             Surface::Plane(p) => {
-                if chosen.contains(face) {
-                    definition.support(&Surface::Plane(p.clone()), f.sense == Sense::Same, dec)?;
-                    return Err(Refusal::new(
-                        "draft.unsupported-round-cap",
-                        "simultaneously drafted round caps require conic trimmed-cell construction",
-                    ));
-                }
-                let mut p = p.clone();
+                let mut p = if chosen.contains(face) {
+                    let support = definition.support(
+                        &Surface::Plane(p.clone()),
+                        f.sense == Sense::Same,
+                        dec,
+                    )?;
+                    let Surface::Plane(mut plane) = support.surface else {
+                        unreachable!("a drafted plane is planar")
+                    };
+                    if !support.same_sense {
+                        plane.normal = plane.normal.scaled(&Real::from_i64(-1));
+                    }
+                    caps.push((plane, model.face_origins(*face).to_vec()));
+                    continue;
+                } else {
+                    p.clone()
+                };
                 if f.sense == Sense::Reversed {
                     p.normal = p.normal.scaled(&Real::from_i64(-1));
                 }
@@ -158,7 +173,7 @@ fn round(
             }
         }
     }
-    let (cylinder, origins) = cylinder.ok_or_else(|| {
+    let (cylinder, origins, move_side) = cylinder.ok_or_else(|| {
         Refusal::new(
             "draft.unsupported-arrangement",
             "no axial cylindrical support",
@@ -170,7 +185,13 @@ fn round(
             "round-cell construction needs two complete planar caps",
         )
     })?;
-    RoundCell::new(cylinder, origins, caps, definition, dec)
+    if move_side {
+        RoundCell::new(cylinder, origins, caps, definition, dec)
+            .map(|cell| Cell::Round(Box::new(cell)))
+    } else {
+        CappedCylinder::new(cylinder.clone(), origins, caps, dec)
+            .map(|cell| Cell::Capped(Box::new(cell)))
+    }
 }
 
 fn assemble_round(model: &mut Model, cell: &RoundCell) -> BodyId {
@@ -229,6 +250,100 @@ fn assemble_round(model: &mut Model, cell: &RoundCell) -> BodyId {
         lumps: vec![lump],
         marks: Default::default(),
     })
+}
+
+fn assemble_capped(
+    model: &mut Model,
+    cell: &CappedCylinder,
+    dec: &mut Decider,
+) -> Result<BodyId, Refusal> {
+    use crate::draft::capped::FootprintBoundary;
+    let (vertices, chord) = match cell.footprint_boundary(dec)? {
+        FootprintBoundary::Closed => (None, None),
+        FootprintBoundary::Chord(q) => {
+            let points = q.each_ref().map(|q| cell.point(q, &cell.heights_at(q)[0]));
+            let curve = model.geom_mut().add_curve(Curve::Line(Line {
+                origin: points[0].clone(),
+                dir: points[1].minus(&points[0]),
+            }));
+            let vertices = points.map(|point| {
+                let point = model.geom_mut().add_point(PointDef::Explicit(point));
+                model.add_vertex(Vertex { point })
+            });
+            let edge = model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: Some(vertices[0]),
+                end: Some(vertices[1]),
+            });
+            (Some(vertices), Some(edge))
+        }
+        FootprintBoundary::Tangent(q) => {
+            let point = cell.point(&q, &cell.heights_at(&q)[0]);
+            let point = model.geom_mut().add_point(PointDef::Explicit(point));
+            let vertex = model.add_vertex(Vertex { point });
+            (Some([vertex, vertex]), None)
+        }
+    };
+    let right_handed = crate::draft::sign(&cell.u.cross(&cell.v).dot(&cell.axis), dec)?
+        == catallax_numbers::Sign::Positive;
+    let mut faces = Vec::with_capacity(3);
+    let mut side_arcs = Vec::with_capacity(2);
+    for i in 0..2 {
+        let curve = model.geom_mut().add_curve(cell.cap_curve(i, dec)?);
+        let edge = model.add_edge(Edge {
+            curve,
+            sense: Sense::Same,
+            start: vertices.map(|v| v[0]),
+            end: vertices.map(|v| v[1]),
+        });
+        let cap_sense = if (i == 1) == right_handed {
+            Sense::Same
+        } else {
+            Sense::Reversed
+        };
+        let side_sense = if cap_sense == Sense::Same {
+            Sense::Reversed
+        } else {
+            Sense::Same
+        };
+        let mut boundary = vec![(edge, cap_sense)];
+        if let Some(chord) = chord {
+            boundary.push((chord, side_sense));
+        }
+        faces.push(crate::extrude::face(
+            model,
+            Surface::Plane(cell.caps[i].0.clone()),
+            Sense::Same,
+            vec![boundary],
+            None,
+            cell.caps[i].1.clone(),
+        ));
+        side_arcs.push((edge, side_sense));
+    }
+    // A cap contact identifies the annulus ends: both arcs then form one wire.
+    let side_loops = if vertices.is_some() {
+        vec![side_arcs]
+    } else {
+        side_arcs.into_iter().map(|arc| vec![arc]).collect()
+    };
+    faces.push(crate::extrude::face(
+        model,
+        Surface::Cylinder(cell.cylinder.clone()),
+        Sense::Same,
+        side_loops,
+        None,
+        cell.origins.clone(),
+    ));
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    Ok(model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: Default::default(),
+    }))
 }
 
 fn selected(model: &Model, body: BodyId, refs: &[FaceRef]) -> Result<BTreeSet<FaceId>, Refusal> {
@@ -544,10 +659,14 @@ pub(crate) fn build(
                 ));
             }
             let faces = &model.shell(shells[0]).faces;
-            components.push(Cell::Round(Box::new(round(
-                model, faces, &chosen, definition, dec,
-            )?)));
+            components.push(round(model, faces, &chosen, definition, dec)?);
         }
+    }
+    if components.len() > 1 && components.iter().any(|c| matches!(c, Cell::Capped(_))) {
+        return Err(Refusal::new(
+            "draft.unsupported-arrangement",
+            "several plane-capped cylinders need a certified curved component arrangement",
+        ));
     }
     for (i, component) in components.iter().enumerate() {
         let Cell::Round(a) = component else {
@@ -608,7 +727,7 @@ pub(crate) fn build(
             continue;
         }
         radius = radius.max(cell.radius(dec)?);
-        let component = cell.assemble(model);
+        let component = cell.assemble(model, dec)?;
         result.lumps.extend_from_slice(&model.body(component).lumps);
     }
     for face in source_faces {

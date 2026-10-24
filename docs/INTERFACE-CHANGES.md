@@ -1372,3 +1372,33 @@ Pieces: measure
 Change: finite torus distance faces bounded by one four-circle meridian/parallel rectangle use closed-form product antiderivatives for area, volume, centroid and inertia. Exact support and traversal proofs retain long sweeps, parameter-seam crossings, the whole-torus complement and reversed material sense. Other finite torus trims keep the existing typed refusal.
 Why: a normal-sector rectangle has a separable trigonometric flux polynomial, so generic lifted-angle quadrature is unnecessary.
 Migration: no public API, work allowance or accuracy changes. Whole supports, full rings and primitive/Boolean-only torus measurements keep their existing integral paths. Geometry proofs are cached only within a measurement request; part construction does no new work.
+
+
+
+## 2026-10-24: field origins retain intermediate Boolean ownership
+
+Pieces: field, comparison, field display
+
+Change: named field queries retain the boundary predicates of intermediate
+Boolean results. Closed-contact sectors and cached display queries apply the
+same predicates. Copies preserve the seed snapshot's ownership independently
+of scalar geometry sharing.
+
+Why: testing only the source leaf and final boundary could restore a buried
+or clipped-away name when a later operand supplied a coincident carrier.
+The B-rep correctly omitted these names.
+
+Migration: no signature or format change. Consumers receive fewer spurious
+coactive origins. Legitimate surviving paths and coincident aliases remain
+selectable. B-rep geometry, STEP export, tolerances and work limits are unchanged.
+
+## 2026-10-24: retain region ownership through lattice clipping
+
+Pieces: field
+
+Change: lattice clipping inherits the region snapshot's named-face ownership,
+including predicates from earlier Boolean results.
+Why: retaining the region's source-face registry without its ownership predicates
+could restore a buried name on a surviving coincident cap.
+Migration: no public signature, geometry, tolerance, budget or B-rep change.
+The field-only lattice caller follows the same ownership rule as other trims.

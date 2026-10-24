@@ -993,6 +993,9 @@ impl Builder<'_> {
         };
         let plan = self.plan;
         let face = &plan.faces[id];
+        if face.domain == 1 {
+            return Ok(absent);
+        }
         let p = [point.x.clone(), point.y.clone(), point.z.clone()];
         let slot = plan.leaf_registers[face.leaf].expect("live display support");
         let location = match self.locations[slot].0 {
@@ -1021,6 +1024,9 @@ impl Builder<'_> {
         }
         let minus_n = n.scaled(&catallax_numbers::Real::from_i64(-1));
         let plus = self.ray_at(&p, &n, dec)?;
+        if face.domain != 0 {
+            std::mem::swap(&mut self.workspace.rays, &mut self.workspace.opposite_rays);
+        }
         let minus = self.ray_at(&p, &minus_n, dec)?;
         let n = match (plus, minus) {
             (Location::Outside, Location::Inside) => n,
@@ -1034,6 +1040,25 @@ impl Builder<'_> {
                 return plan.closed_face_query_checked(FaceId(id), point, &mut self.workspace, dec);
             }
         };
+        if face.domain != 0 {
+            match plan.domain_state(
+                face.domain,
+                &self.workspace.opposite_rays,
+                &self.workspace.rays,
+                &mut self.workspace.domains,
+            ) {
+                FaceState::NotOnFace => return Ok(absent),
+                FaceState::Indeterminate => {
+                    return plan.closed_face_query_checked(
+                        FaceId(id),
+                        point,
+                        &mut self.workspace,
+                        dec,
+                    );
+                }
+                FaceState::OnFace => (),
+            }
+        }
         Ok(FaceQuery {
             state: FaceState::OnFace,
             direction: crate::unit_direction(n, dec)?,

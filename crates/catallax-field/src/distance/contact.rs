@@ -230,6 +230,8 @@ impl Plan {
         let mut orientation = 0;
         let mut incomplete = false;
         let mut tape = Vec::new();
+        let mut opposite = Vec::new();
+        let mut domains = Vec::new();
         for tangent in sectors {
             dec.check_deadline()?;
             let Some(e) = epsilon(&others, &tangent, &n, dec)? else {
@@ -257,8 +259,16 @@ impl Plan {
             }
             let sides = [
                 self.ray(&p, &directions[0], &mut tape, dec)?,
-                self.ray(&p, &directions[1], &mut tape, dec)?,
+                self.ray(&p, &directions[1], &mut opposite, dec)?,
             ];
+            match self.domain_state(face.domain, &tape, &opposite, &mut domains) {
+                FaceState::NotOnFace => continue,
+                FaceState::Indeterminate => {
+                    incomplete = true;
+                    continue;
+                }
+                FaceState::OnFace => (),
+            }
             match sides {
                 [Location::Outside, Location::Inside] => orientation |= 1,
                 [Location::Inside, Location::Outside] => orientation |= 2,

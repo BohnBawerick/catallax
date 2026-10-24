@@ -261,6 +261,7 @@ pub(crate) fn compile(
                 gradient,
                 leaf: 0,
                 in_result: false,
+                domain: 0,
             });
         }
         constraints.push(constraint);
@@ -560,6 +561,7 @@ pub(crate) fn face(surface: Surface, origin: Origin, dec: &mut Decider) -> Resul
         gradient,
         leaf: 0,
         in_result: false,
+        domain: 0,
     })
 }
 

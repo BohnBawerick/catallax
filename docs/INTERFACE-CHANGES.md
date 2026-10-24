@@ -1414,3 +1414,5 @@ Why: translating a cone support alone neither proves a finite offset body nor su
 Migration: no recipe, exchange format, tolerance or work allowance changes. Unproved outward joins, concave skins, intersecting trims and conical folds retain typed refusals. The property-integration coverage boundary is unchanged.
 
 Prior art: [OpenCASCADE offset joins](https://dev.opencascade.org/doc/refman/html/class_b_rep_offset_a_p_i___make_offset_shape.html) distinguish extended supports from arc joins. [Truck's normal offsets](https://github.com/ricosjp/truck/blob/master/truck-geometry/src/decorators/offset/surface.rs) retain a parameter domain. These distinctions motivate separate finite-domain and join proofs here; no source code is copied.
+
+Change: conical distance comparisons add a separate planar polar candidate chart. Each ray splits at the field's own quadratic constraints, including circular and elliptic trim crossings. Every point still requires independent finite-trim, origin and direction certification. This resolves the narrow open conical shell rim without increasing work allowances or adding part-construction work.

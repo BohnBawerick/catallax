@@ -757,14 +757,24 @@ fn selected_patches(
                 .then_some(i)
         })
         .collect();
-    for i in &patches {
+    bind_patches(skin, &patches, faces, source_faces, selected);
+    patches
+}
+
+fn bind_patches(
+    skin: &catallax_features::draft::arrangement::Skin,
+    patches: &BTreeSet<usize>,
+    faces: &[Face],
+    source_faces: &[usize],
+    selected: &mut BTreeSet<usize>,
+) {
+    for i in patches {
         for f in source_faces {
             if skin.patches[*i].origins.contains(&faces[*f].origin) {
                 selected.insert(*f);
             }
         }
     }
-    patches
 }
 
 impl Plan {
@@ -773,7 +783,10 @@ impl Plan {
         &self,
         source: (
             Option<usize>,
-            Option<&catallax_features::draft::arrangement::Skin>,
+            Option<(
+                &catallax_features::draft::arrangement::Skin,
+                &BTreeSet<usize>,
+            )>,
         ),
         source_faces: &[usize],
         selected: &mut BTreeSet<usize>,
@@ -781,17 +794,46 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<Candidates, Refusal> {
         let (leaf, boundary) = source;
-        if let Some(skin) = boundary {
+        if let Some((skin, patches)) = boundary {
             if skin.patches.is_empty() {
                 return Ok(Candidates {
                     components: Vec::new(),
                     source_faces: Vec::new(),
                 });
             }
-            let patches = selected_patches(skin, &self.faces, source_faces, selected);
+            if skin.is_convex(dec)? {
+                let mut supports = Vec::with_capacity(skin.patches.len());
+                for (index, patch) in skin.patches.iter().enumerate() {
+                    let plane = if patches.contains(&index) {
+                        let Surface::Plane(plane) = definition
+                            .support(&Surface::Plane(patch.plane.clone()), true, dec)?
+                            .surface
+                        else {
+                            unreachable!("plane draft remains planar")
+                        };
+                        plane
+                    } else {
+                        patch.plane.clone()
+                    };
+                    supports.push(PlanePatch {
+                        plane,
+                        origins: patch.origins.clone(),
+                    });
+                }
+                let cell = PlanarCell::new(supports, dec)?.ok_or_else(|| {
+                    Refusal::new(
+                        "draft.reversed-solid",
+                        "replaced boundary has no full-dimensional material cell",
+                    )
+                })?;
+                return Ok(Candidates {
+                    components: vec![Cell::Planar(cell)],
+                    source_faces: physical_sources(skin, &self.faces, source_faces),
+                });
+            }
             return Ok(Candidates {
                 components: skin
-                    .draft(&patches, definition, dec)?
+                    .draft(patches, definition, dec)?
                     .into_iter()
                     .map(|cell| Cell::Polyhedral(Box::new(cell)))
                     .collect(),
@@ -976,31 +1018,39 @@ impl Plan {
             _ => None,
         };
         let mut selected = BTreeSet::new();
-        for reference in refs {
-            let matches: Vec<_> = source_faces
-                .iter()
-                .copied()
-                .filter(|f| reference.face.matches(&self.faces[*f].origin))
-                .collect();
-            if matches.is_empty() {
-                return Err(Refusal::new(
-                    "draft.lost-face",
-                    format!("no input face resolves {reference:?}"),
-                ));
+        let patches = if let Some(skin) = boundary {
+            let patches = skin.resolve_faces(refs, dec)?;
+            bind_patches(skin, &patches, &self.faces, source_faces, &mut selected);
+            Some(patches)
+        } else {
+            for reference in refs {
+                let matches: Vec<_> = source_faces
+                    .iter()
+                    .copied()
+                    .filter(|f| reference.face.matches(&self.faces[*f].origin))
+                    .collect();
+                if matches.is_empty() {
+                    return Err(Refusal::new(
+                        "recipe.missing-reference",
+                        format!("no input face resolves {reference:?}"),
+                    ));
+                }
+                if !reference.touching.is_empty() || (reference.near.is_some() && matches.len() > 1)
+                {
+                    return Err(Refusal::new(
+                        "draft.unsupported-reference",
+                        "curved field references need exact patch adjacency and distance",
+                    ));
+                }
+                selected.extend(matches);
             }
-            if !reference.touching.is_empty() || reference.near.is_some() {
-                return Err(Refusal::new(
-                    "draft.unsupported-reference",
-                    "filtered field references need exact patch adjacency and distance",
-                ));
-            }
-            selected.extend(matches);
-        }
+            None
+        };
         let Candidates {
             components,
             source_faces: physical_sources,
         } = self.draft_cells(
-            (leaf, boundary),
+            (leaf, boundary.zip(patches.as_ref())),
             source_faces,
             &mut selected,
             definition,

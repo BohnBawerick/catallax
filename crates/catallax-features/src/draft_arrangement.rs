@@ -366,6 +366,174 @@ impl Skin {
             && patch_winding(patch, &self.vertices, point, dec)? != 0)
     }
 
+    /// Whether every boundary vertex satisfies every material halfspace.
+    pub fn is_convex(&self, dec: &mut Decider) -> Result<bool, Refusal> {
+        for point in &self.vertices {
+            for patch in &self.patches {
+                if sign(&value(&patch.plane, point), dec)? == Sign::Positive {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    /// Resolve physical patches before expanding any coactive aliases.
+    /// Near points compare exact distances to closed trims, not carriers.
+    pub fn resolve_faces(
+        &self,
+        references: &[catallax_recipe::FaceRef],
+        dec: &mut Decider,
+    ) -> Result<BTreeSet<usize>, Refusal> {
+        let mut neighbours = Vec::new();
+        if references
+            .iter()
+            .any(|reference| !reference.touching.is_empty())
+        {
+            neighbours.resize_with(self.patches.len(), Vec::new);
+            let mut edges = BTreeMap::<_, Vec<usize>>::new();
+            for (index, patch) in self.patches.iter().enumerate() {
+                for cycle in &patch.loops {
+                    for i in 0..cycle.len() {
+                        let (a, b) = (cycle[i], cycle[(i + 1) % cycle.len()]);
+                        edges.entry((a.min(b), a.max(b))).or_default().push(index);
+                    }
+                }
+            }
+            for uses in edges.values() {
+                for &a in uses {
+                    for &b in uses {
+                        if a != b && !neighbours[a].contains(&b) {
+                            neighbours[a].push(b);
+                        }
+                    }
+                }
+            }
+        }
+        let mut selected = BTreeSet::new();
+        for reference in references {
+            let matches: Vec<_> = self
+                .patches
+                .iter()
+                .enumerate()
+                .filter_map(|(i, patch)| {
+                    (patch
+                        .origins
+                        .iter()
+                        .any(|origin| reference.face.matches(origin))
+                        && reference.touching.iter().all(|pattern| {
+                            neighbours[i].iter().any(|j| {
+                                self.patches[*j]
+                                    .origins
+                                    .iter()
+                                    .any(|origin| pattern.matches(origin))
+                            })
+                        }))
+                    .then_some(i)
+                })
+                .collect();
+            if matches.is_empty() {
+                return Err(Refusal::new(
+                    "recipe.missing-reference",
+                    format!("no input face resolves {reference:?}"),
+                ));
+            }
+            if let Some(near) = &reference.near
+                && matches.len() > 1
+            {
+                let [x, y, z] = near.0.each_ref().map(|n| Real::from(n.value().clone()));
+                let point = Point3::new(x, y, z);
+                let mut nearest: Option<(usize, Real)> = None;
+                let mut tied = false;
+                for index in matches {
+                    let distance =
+                        self.patch_distance_squared(&self.patches[index], &point, dec)?;
+                    let order = if let Some((_, previous)) = &nearest {
+                        sign(&(&distance - previous), dec)?
+                    } else {
+                        Sign::Negative
+                    };
+                    match order {
+                        Sign::Negative => {
+                            nearest = Some((index, distance));
+                            tied = false;
+                        }
+                        Sign::Zero => tied = true,
+                        Sign::Positive => (),
+                    }
+                }
+                if tied {
+                    return Err(Refusal::new(
+                        "recipe.ambiguous-reference",
+                        "near point has equal minimum distance to several trimmed faces",
+                    ));
+                }
+                selected.insert(nearest.expect("nonempty face matches").0);
+            } else {
+                selected.extend(matches);
+            }
+        }
+        Ok(selected)
+    }
+
+    fn patch_distance_squared(
+        &self,
+        patch: &Patch,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Real, Refusal> {
+        let norm = patch.plane.normal.norm_squared();
+        if sign(&norm, dec)? != Sign::Positive {
+            return Err(failure(
+                "draft.zero-face-normal",
+                "face carrier has a zero normal",
+            ));
+        }
+        let offset = value(&patch.plane, point);
+        let plane_distance = &offset.square() / &norm;
+        let projected = point.plus(&patch.plane.normal.scaled(&(-offset / norm)));
+        let mut edge_distance: Option<Real> = None;
+        for cycle in &patch.loops {
+            for i in 0..cycle.len() {
+                let a = &self.vertices[cycle[i]];
+                let edge = self.vertices[cycle[(i + 1) % cycle.len()]].minus(a);
+                let delta = point.minus(a);
+                let norm = edge.norm_squared();
+                let mut parameter = if sign(&norm, dec)? == Sign::Zero {
+                    Real::zero()
+                } else {
+                    delta.dot(&edge) / norm
+                };
+                if sign(&parameter, dec)? == Sign::Negative {
+                    parameter = Real::zero();
+                } else if sign(&(&parameter - &Real::one()), dec)? == Sign::Positive {
+                    parameter = Real::one();
+                }
+                let distance = delta.minus(&edge.scaled(&parameter)).norm_squared();
+                let replace = match &edge_distance {
+                    None => true,
+                    Some(previous) => sign(&(&distance - previous), dec)? == Sign::Negative,
+                };
+                if replace {
+                    edge_distance = Some(distance);
+                }
+            }
+        }
+        let edge_distance = edge_distance.ok_or_else(|| {
+            failure(
+                "draft.unsupported-arrangement",
+                "face has no finite trimmed boundary",
+            )
+        })?;
+        if sign(&(&edge_distance - &plane_distance), dec)? == Sign::Zero
+            || self.contains_patch(patch, &projected, dec)?
+        {
+            Ok(plane_distance)
+        } else {
+            Ok(edge_distance)
+        }
+    }
+
     /// Rebuilds all candidate cells, discards swallowed patches and separates
     /// connected interiors. Neutral-plane or explicit retention is applied by
     /// the caller to these components, never to individual convex pieces.

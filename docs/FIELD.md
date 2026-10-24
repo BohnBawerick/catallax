@@ -62,6 +62,14 @@ The field reconstructs a planar draft input from its own definitions before movi
 
 Through-all tools receive construction clips outside a conservative finite source domain. No such cap may survive on the reconstructed boundary. Moved degree-two subdivision points do not constrain a physical edge as extra vertex fans. Swallowed-face history retains the complete physical source origin set. Cached geometry resolves current copy bindings through the nearest complete origin suffix, preserving older instance distinctions.
 
+Planar draft references resolve physical patches before adding their coactive
+aliases. `touching` uses shared source edges; `near` compares exact squared
+distances to closed trimmed faces, including holes and edge minima. Topology
+filters run first, and equal nearest distances are reference errors. Selecting
+one split piece never moves another piece merely because it shares an alias.
+Convex extracted skins retain the direct halfspace path, including non-simple
+vertices that need no moved-fan construction.
+
 ### Boundary candidate identity
 
 One origin can label several trimmed pieces on different supports. Native candidate visitors carry the exact face-registry handle, not a name that the consumer must resolve back to one representative. Comparison retains every current candidate for a shared origin and queries the candidate belonging to each sample. Replaced faces are sampled through their current primitive, sweep or draft definition, never through a historical primitive constructor.

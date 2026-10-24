@@ -260,8 +260,7 @@ fn boolean_cut_u(through: bool) -> Recipe {
     recipe(steps, draft)
 }
 
-#[test]
-fn coactive_origins_do_not_move_a_disconnected_piece_with_only_the_alias() {
+fn coactive_split(reference: Json) -> Recipe {
     let mut seed = block()[0].clone();
     seed["id"] = json!("seed");
     seed["size"] = json!(["14", "8", "4"]);
@@ -281,11 +280,99 @@ fn coactive_origins_do_not_move_a_disconnected_piece_with_only_the_alias() {
     ];
     let mut draft = operation("x_max");
     draft["body"] = json!("source");
-    draft["faces"] = json!([{"face":{"step":"left","role":"end"}}]);
+    draft["faces"] = json!([reference]);
     draft["pull"] = json!(["1", "0", "0"]);
     draft["neutral"]["normal"] = json!(["1", "0", "0"]);
     draft["keep_regions"] = json!([["1", "4", "1"], ["11", "4", "1"]]);
-    let recipe = recipe(steps, draft);
+    recipe(steps, draft)
+}
+
+#[test]
+fn filtered_references_choose_physical_patches_before_expanding_aliases() {
+    for reference in [
+        json!({"face":{"step":"seed","role":"end"},"near":["1","4","4"]}),
+        json!({"face":{"step":"seed","role":"end"},"touching":[{"step":"left","role":{"side":{"segment":"x_min"}}}]}),
+        json!({"face":{"step":"seed","role":"end"},"touching":[{"step":"left","role":{"side":{"segment":"x_min"}}}],"near":["8","4","4"]}),
+    ] {
+        let recipe = coactive_split(reference);
+        both(
+            &recipe,
+            &[
+                (["1", "4", "2"], Location::Inside),
+                (["1", "4", "7/2"], Location::Outside),
+                (["11", "4", "7/2"], Location::Inside),
+                (["11", "4", "4"], Location::Boundary),
+            ],
+        );
+    }
+}
+
+#[test]
+fn nearest_face_uses_the_closed_trim_not_the_carrier_over_a_hole() {
+    let rings = [
+        [("0", "0"), ("8", "0"), ("8", "8"), ("0", "8")],
+        [("3", "3"), ("3", "5"), ("5", "5"), ("5", "3")],
+        [
+            ("7/2", "7/2"),
+            ("9/2", "7/2"),
+            ("9/2", "9/2"),
+            ("7/2", "9/2"),
+        ],
+    ];
+    let loops: Vec<Vec<Json>> = rings
+        .into_iter()
+        .enumerate()
+        .map(|(ring, points)| {
+            (0..4)
+                .map(|edge| {
+                    let (x, y) = points[(edge + 1) % 4];
+                    json!({"kind":"line","id":format!("l{ring}-e{edge}"),"to":[x,y]})
+                })
+                .collect()
+        })
+        .collect();
+    let steps = vec![
+        json!({"id":"profile","op":"sketch","plane":pose(),"loops":loops}),
+        json!({"id":"base","op":"extrude","profile":"profile","distance":"2"}),
+    ];
+    let mut draft = operation("unused");
+    draft["faces"] = json!([{"face":{"step":"base","role":"end"},"near":["4","4","2"]}]);
+    draft["pull"] = json!(["1", "0", "0"]);
+    draft["neutral"] = json!({"point":["4","0","0"],"normal":["1","0","0"]});
+    // Both caps share a carrier and origin. The frame cap is one unit away;
+    // the island cap contains the near point. Only the island must tilt.
+    both(
+        &recipe(steps, draft),
+        &[
+            (["1", "1", "21/10"], Location::Outside),
+            (["15/4", "4", "21/10"], Location::Inside),
+            (["17/4", "4", "19/10"], Location::Outside),
+        ],
+    );
+}
+
+#[test]
+fn exact_near_ties_and_self_alias_touching_are_reference_errors() {
+    for (reference, code) in [
+        (
+            json!({"face":{"step":"seed","role":"end"},"near":["8","4","4"]}),
+            "recipe.ambiguous-reference",
+        ),
+        (
+            json!({"face":{"step":"seed","role":"end"},"touching":[{"step":"left","role":"end"}]}),
+            "recipe.missing-reference",
+        ),
+    ] {
+        let recipe = coactive_split(reference);
+        assert!(matches!(evaluate(&recipe, &mut Decider::default()),
+                Err(BuildError::Geometry { refusal, .. }) if refusal.code == code));
+        assert_eq!(Plan::compile(&recipe).unwrap_err().code, code);
+    }
+}
+
+#[test]
+fn coactive_origins_do_not_move_a_disconnected_piece_with_only_the_alias() {
+    let recipe = coactive_split(json!({"face":{"step":"left","role":"end"}}));
     both(
         &recipe,
         &[
@@ -815,4 +902,157 @@ fn drafted_flange_unites_with_plate_inside_scoreboard_work_allowance() {
         );
     });
     assert!(!work.exhausted);
+}
+
+#[test]
+fn a_cavity_touching_the_exterior_is_not_a_manifold_draft_result() {
+    let mut document = serde_json::to_value(split_u(None)).unwrap();
+    for segment in document["steps"][0]["loops"][0].as_array_mut().unwrap() {
+        if segment["to"][1].as_str() == Some("8") {
+            segment["to"][1] = json!("2");
+        }
+    }
+    let draft = &mut document["steps"][2];
+    draft["faces"] = json!([
+        {"face":{"step":"base","role":{"side":{"segment":"e3"}}}},
+        {"face":{"step":"base","role":{"side":{"segment":"e5"}}}},
+    ]);
+    draft["pull"] = json!(["0", "0", "1"]);
+    draft["neutral"]["normal"] = json!(["0", "0", "1"]);
+    draft["angle"] = json!("-45");
+    let recipe = Recipe::parse(&document.to_string()).unwrap();
+    assert!(matches!(evaluate(&recipe, &mut Decider::default()),
+            Err(BuildError::Geometry { refusal, .. }) if refusal.code == "draft.self-touching-shell"));
+    assert_eq!(
+        Plan::compile(&recipe).unwrap_err().code,
+        "draft.self-touching-shell"
+    );
+}
+
+#[test]
+fn a_swallowed_cap_is_a_missing_reference_before_redraft_surface_checks() {
+    let source = recipe(cylinder("1"), operation("wall"));
+    let mut document = serde_json::to_value(source).unwrap();
+    let mut draft = operation("wall");
+    draft["id"] = json!("redrafted");
+    draft["body"] = json!("drafted");
+    draft["faces"] = json!([{"face":{"step":"base","role":"end"}}]);
+    document["steps"].as_array_mut().unwrap().push(draft);
+    document["result"] = json!("redrafted");
+    let recipe = Recipe::parse(&document.to_string()).unwrap();
+    assert!(matches!(evaluate(&recipe, &mut Decider::default()),
+            Err(BuildError::Geometry { refusal, .. }) if refusal.code == "recipe.missing-reference"));
+    assert_eq!(
+        Plan::compile(&recipe).unwrap_err().code,
+        "recipe.missing-reference"
+    );
+}
+
+fn round_pair_recipe(angle: &str, translation: [&str; 3], keep: Option<Json>) -> Recipe {
+    let mut left = cylinder("1").pop().unwrap();
+    left["id"] = json!("left");
+    let mut right = left.clone();
+    right["id"] = json!("right");
+    right["pose"]["translation"] = json!(translation);
+    let steps = vec![
+        left,
+        right,
+        json!({"id":"source","op":"boolean","kind":"union","target":"left","tool":"right"}),
+    ];
+    let mut draft = operation("wall");
+    draft["body"] = json!("source");
+    draft["faces"] = json!([
+        {"face":{"step":"left","role":{"side":{"segment":"wall"}}}},
+        {"face":{"step":"right","role":{"side":{"segment":"wall"}}}},
+    ]);
+    draft["angle"] = json!(angle);
+    if let Some(keep) = keep {
+        draft["keep_regions"] = keep;
+    }
+    recipe(steps, draft)
+}
+
+#[test]
+fn accepted_round_results_do_not_retain_overlapping_interior_components() {
+    let recipe = round_pair_recipe("-45", ["3", "0", "0"], None);
+    let Ok(mut built) = evaluate(&recipe, &mut Decider::default()) else {
+        // An unfinished arrangement may refuse, but may not prove an invalid body.
+        return;
+    };
+    for p in [["-3/2", "0", "1"], ["9/2", "0", "1"]] {
+        assert!(matches!(
+            classify_point(
+                &mut built.model,
+                built.result,
+                &point(p),
+                &mut Decider::default()
+            ),
+            Outcome::Proven(Containment::Inside)
+        ));
+    }
+    let source = built.model.body(built.result).clone();
+    let mut interiors = 0;
+    for &lump in &source.lumps {
+        let mut component = source.clone();
+        component.lumps.clear();
+        component.lumps.push(lump);
+        let body = built.model.add_body(component);
+        if matches!(
+            classify_point(
+                &mut built.model,
+                body,
+                &point(["3/2", "0", "1"]),
+                &mut Decider::default()
+            ),
+            Outcome::Proven(Containment::Inside)
+        ) {
+            interiors += 1;
+        }
+    }
+    assert!(
+        interiors <= 1,
+        "connected interior components cannot overlap"
+    );
+}
+
+#[test]
+fn separated_round_cells_survive_radial_and_axial_separation_proofs() {
+    for (recipe, inside, outside) in [
+        (
+            round_pair_recipe("45", ["3", "0", "0"], None),
+            [["0", "0", "1/2"], ["3", "0", "1/2"]],
+            ["3/2", "0", "1/2"],
+        ),
+        (
+            round_pair_recipe(
+                "-45",
+                ["0", "0", "10"],
+                Some(json!([["0", "0", "1"], ["0", "0", "11"]])),
+            ),
+            [["0", "0", "1"], ["0", "0", "11"]],
+            ["0", "0", "6"],
+        ),
+    ] {
+        let mut built = evaluate(&recipe, &mut Decider::default()).unwrap();
+        for p in inside {
+            assert!(matches!(
+                classify_point(
+                    &mut built.model,
+                    built.result,
+                    &point(p),
+                    &mut Decider::default()
+                ),
+                Outcome::Proven(Containment::Inside)
+            ));
+        }
+        assert!(matches!(
+            classify_point(
+                &mut built.model,
+                built.result,
+                &point(outside),
+                &mut Decider::default()
+            ),
+            Outcome::Proven(Containment::Outside)
+        ));
+    }
 }

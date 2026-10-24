@@ -117,6 +117,48 @@ impl RoundCell {
         self.origin.plus(&self.axis.scaled(&self.heights[index]))
     }
 
+    /// Proves closed separation for cells expressed along the same pull axis.
+    /// A false result requires a curved arrangement, not an untrimmed assembly.
+    pub fn certified_disjoint(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
+        if sign(&self.axis.cross(&other.axis).norm_squared(), dec)? != Sign::Zero
+            || sign(&self.axis.dot(&other.axis), dec)? != Sign::Positive
+        {
+            return Ok(false);
+        }
+        let delta = other.origin.minus(&self.origin);
+        let shift = delta.dot(&self.axis);
+        let other_lower = &other.heights[0] + &shift;
+        let lower = if sign(&(&other_lower - &self.heights[0]), dec)? == Sign::Positive {
+            other_lower
+        } else {
+            self.heights[0].clone()
+        };
+        let other_upper = &other.heights[1] + &shift;
+        let upper = if sign(&(&other_upper - &self.heights[1]), dec)? == Sign::Negative {
+            other_upper
+        } else {
+            self.heights[1].clone()
+        };
+        let span = &upper - &lower;
+        if sign(&span, dec)? == Sign::Negative {
+            return Ok(true);
+        }
+        let a_rate = (&self.radii[1] - &self.radii[0]) / (&self.heights[1] - &self.heights[0]);
+        let b_rate = (&other.radii[1] - &other.radii[0]) / (&other.heights[1] - &other.heights[0]);
+        let a_radius = &self.radii[0] + &(&a_rate * &(&lower - &self.heights[0]));
+        let b_height = &(&lower - &shift) - &other.heights[0];
+        let b_radius = &other.radii[0] + &(&b_rate * &b_height);
+        let lower_sum = &a_radius + &b_radius;
+        let upper_sum = &lower_sum + &((&a_rate + &b_rate) * span);
+        let maximum = if sign(&(&upper_sum - &lower_sum), dec)? == Sign::Positive {
+            upper_sum
+        } else {
+            lower_sum
+        };
+        let lateral = delta.minus(&self.axis.scaled(&shift));
+        Ok(sign(&(lateral.norm_squared() - maximum.square()), dec)? == Sign::Positive)
+    }
+
     /// Exact strict membership. A cone's other nappe is never included.
     pub fn contains_interior(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         let d = point.minus(&self.origin);

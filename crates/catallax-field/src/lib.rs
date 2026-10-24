@@ -402,12 +402,19 @@ impl Plan {
                             angle.value(),
                             dec,
                         )?;
+                        let filtered_planar = faces.iter().any(|reference| {
+                            !reference.touching.is_empty() || reference.near.is_some()
+                        }) && step_faces[body].iter().all(|f| {
+                            matches!(plan.faces[*f].surface, catallax_shapes::Surface::Plane(_))
+                        });
                         let boundary = if steps[body] == 0 {
                             Some(catallax_features::draft::arrangement::Skin {
                                 vertices: Vec::new(),
                                 patches: Vec::new(),
                             })
-                        } else if matches!(plan.instructions[steps[body]], Instruction::Leaf(_)) {
+                        } else if matches!(plan.instructions[steps[body]], Instruction::Leaf(_))
+                            && !filtered_planar
+                        {
                             None
                         } else {
                             Some(plan.draft_source_skin(recipe, body, &steps, &step_faces, dec)?)

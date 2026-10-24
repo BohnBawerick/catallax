@@ -5,9 +5,8 @@ use crate::draft::{
     arrangement::{Patch, Polyhedron, Skin},
     cell::{PlanarCell, PlanePatch},
     round::RoundCell,
-    sign,
 };
-use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_recipe::{FaceRef, Origin, StepId};
 use catallax_shapes::{Circle, Curve, Line, Point3, PointDef, Surface};
 use catallax_topology::{
@@ -268,7 +267,7 @@ fn selected(model: &Model, body: BodyId, refs: &[FaceRef]) -> Result<BTreeSet<Fa
         }
         if matches.is_empty() {
             return Err(Refusal::new(
-                "draft.lost-face",
+                "recipe.missing-reference",
                 format!("no input face resolves {reference:?}"),
             ));
         }
@@ -283,14 +282,24 @@ fn selected(model: &Model, body: BodyId, refs: &[FaceRef]) -> Result<BTreeSet<Fa
     Ok(result)
 }
 
-fn planar(
-    model: &Model,
-    faces: &[FaceId],
-    chosen: &BTreeSet<FaceId>,
-    definition: &DraftDefinition,
-    dec: &mut Decider,
-) -> Result<Vec<Cell>, Refusal> {
-    let mut original = Vec::with_capacity(faces.len());
+fn planar_skin(model: &Model, faces: &[FaceId]) -> Result<Skin, Refusal> {
+    let mut vertices = BTreeSet::new();
+    for face in faces {
+        for lp in &model.face(*face).loops {
+            if let Loop::Coedges(cs) = model.loop_(*lp) {
+                for c in cs {
+                    let edge = model.edge(model.coedge(*c).edge);
+                    vertices.extend([edge.start, edge.end].into_iter().flatten());
+                }
+            }
+        }
+    }
+    let indices: BTreeMap<_, _> = vertices.iter().enumerate().map(|(i, v)| (*v, i)).collect();
+    let points = vertices
+        .iter()
+        .map(|v| model.geom().position(model.vertex(*v).point))
+        .collect();
+    let mut patches = Vec::with_capacity(faces.len());
     for face in faces {
         let f = model.face(*face);
         let Surface::Plane(plane) = model.geom().surface(f.surface) else {
@@ -303,67 +312,8 @@ fn planar(
         if f.sense == Sense::Reversed {
             plane.normal = plane.normal.scaled(&Real::from_i64(-1));
         }
-        original.push(PlanePatch {
-            plane,
-            origins: model.face_origins(*face).to_vec(),
-        });
-    }
-    let mut vertices = BTreeSet::new();
-    for face in faces {
-        for lp in &model.face(*face).loops {
-            if let Loop::Coedges(cs) = model.loop_(*lp) {
-                for c in cs {
-                    let edge = model.edge(model.coedge(*c).edge);
-                    vertices.extend([edge.start, edge.end].into_iter().flatten());
-                }
-            }
-        }
-    }
-    let mut convex = true;
-    'convex: for vertex in &vertices {
-        let point = model.geom().position(model.vertex(*vertex).point);
-        for support in &original {
-            if sign(
-                &point
-                    .minus(&support.plane.origin)
-                    .dot(&support.plane.normal),
-                dec,
-            )? == Sign::Positive
-            {
-                convex = false;
-                break 'convex;
-            }
-        }
-    }
-    if convex {
-        for (face, support) in faces.iter().zip(&mut original) {
-            if chosen.contains(face) {
-                let Surface::Plane(plane) = definition
-                    .support(&Surface::Plane(support.plane.clone()), true, dec)?
-                    .surface
-                else {
-                    unreachable!("plane draft remains planar")
-                };
-                support.plane = plane;
-            }
-        }
-        let cell = PlanarCell::new(original, dec)?.ok_or_else(|| {
-            Refusal::new(
-                "draft.reversed-solid",
-                "replaced boundary has no full-dimensional material cell",
-            )
-        })?;
-        return Ok(vec![Cell::Planar(cell)]);
-    }
-    let indices: BTreeMap<_, _> = vertices.iter().enumerate().map(|(i, v)| (*v, i)).collect();
-    let points = vertices
-        .iter()
-        .map(|v| model.geom().position(model.vertex(*v).point))
-        .collect();
-    let mut patches = Vec::with_capacity(faces.len());
-    for (face, support) in faces.iter().zip(original) {
         let mut loops = Vec::new();
-        for lp in &model.face(*face).loops {
+        for lp in &f.loops {
             let Loop::Coedges(cs) = model.loop_(*lp) else {
                 return Err(Refusal::new(
                     "draft.unsupported-arrangement",
@@ -396,22 +346,51 @@ fn planar(
             loops.push(cycle);
         }
         patches.push(Patch {
-            plane: support.plane,
-            origins: support.origins,
+            plane,
+            origins: model.face_origins(*face).to_vec(),
             loops,
         });
     }
-    let selected = faces
-        .iter()
-        .enumerate()
-        .filter_map(|(i, f)| chosen.contains(f).then_some(i))
-        .collect();
-    Skin {
+    Ok(Skin {
         vertices: points,
         patches,
+    })
+}
+
+fn planar(
+    skin: &Skin,
+    chosen: &BTreeSet<usize>,
+    definition: &DraftDefinition,
+    dec: &mut Decider,
+) -> Result<Vec<Cell>, Refusal> {
+    if skin.is_convex(dec)? {
+        let mut original = Vec::with_capacity(skin.patches.len());
+        for (index, patch) in skin.patches.iter().enumerate() {
+            let plane = if chosen.contains(&index) {
+                let Surface::Plane(plane) = definition
+                    .support(&Surface::Plane(patch.plane.clone()), true, dec)?
+                    .surface
+                else {
+                    unreachable!("plane draft remains planar")
+                };
+                plane
+            } else {
+                patch.plane.clone()
+            };
+            original.push(PlanePatch {
+                plane,
+                origins: patch.origins.clone(),
+            });
+        }
+        let cell = PlanarCell::new(original, dec)?.ok_or_else(|| {
+            Refusal::new(
+                "draft.reversed-solid",
+                "replaced boundary has no full-dimensional material cell",
+            )
+        })?;
+        return Ok(vec![Cell::Planar(cell)]);
     }
-    .draft(&selected, definition, dec)
-    .map(|cells| {
+    skin.draft(chosen, definition, dec).map(|cells| {
         cells
             .into_iter()
             .map(|c| Cell::Polyhedral(Box::new(c)))
@@ -539,20 +518,22 @@ pub(crate) fn build(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<ConsumedFace>, Rational), Refusal> {
-    let chosen = selected(model, body, refs)?;
-    let input = model.body(body).clone();
     let source_faces = model.faces_of_body(body);
-    let mut components = if !source_faces.is_empty()
+    let (chosen, mut components) = if !source_faces.is_empty()
         && source_faces.iter().all(|f| {
             matches!(
                 model.geom().surface(model.face(*f).surface),
                 Surface::Plane(_)
             )
         }) {
-        planar(model, &source_faces, &chosen, definition, dec)?
+        let skin = planar_skin(model, &source_faces)?;
+        let selected = skin.resolve_faces(refs, dec)?;
+        let chosen = selected.iter().map(|i| source_faces[*i]).collect();
+        (chosen, planar(&skin, &selected, definition, dec)?)
     } else {
-        Vec::new()
+        (selected(model, body, refs)?, Vec::new())
     };
+    let input = model.body(body).clone();
     if components.is_empty() && !source_faces.is_empty() {
         for lump in &input.lumps {
             let shells = &model.lump(*lump).shells;
@@ -566,6 +547,21 @@ pub(crate) fn build(
             components.push(Cell::Round(Box::new(round(
                 model, faces, &chosen, definition, dec,
             )?)));
+        }
+    }
+    for (i, component) in components.iter().enumerate() {
+        let Cell::Round(a) = component else {
+            continue;
+        };
+        for other in &components[..i] {
+            if let Cell::Round(b) = other
+                && !a.certified_disjoint(b, dec)?
+            {
+                return Err(Refusal::new(
+                    "draft.unsupported-arrangement",
+                    "intersecting round cells need reconstructed curved boundary patches",
+                ));
+            }
         }
     }
     let needs_maximal = components.iter().any(|c| matches!(c, Cell::Polyhedral(_)));

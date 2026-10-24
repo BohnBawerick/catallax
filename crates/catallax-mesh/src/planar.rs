@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
+use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::Plane;
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
@@ -621,12 +621,14 @@ fn refine(
 fn split_rail_ears(
     triangles: &mut Vec<Triangle>,
     points: &mut BTreeMap<usize, [Real; 3]>,
+    enclosed: &BTreeMap<usize, [Ball; 3]>,
     rails: &crate::edges::Rails,
     mesh: &mut Mesh,
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<Rational, Refusal> {
     let third = Real::from(Rational::from_ratio(1, 3).unwrap());
+    let third_ball = Ball::from_rational(&Rational::from_ratio(1, 3).unwrap(), chart::BITS);
     let mut error = Rational::zero();
     let original = triangles.len();
     for i in 0..original {
@@ -641,22 +643,51 @@ fn split_rail_ears(
         let [a, b, c] = vertices;
         // The exact affine centroid lies strictly inside the already-certified
         // planar triangle. No shared boundary sample or segment is replaced.
-        let p = std::array::from_fn::<_, 3, _>(|axis| {
-            &(&(&points[&a][axis] + &points[&b][axis]) + &points[&c][axis]) * &third
-        });
-        let balls = [
-            dec.enclose_at(&p[0], chart::BITS)?,
-            dec.enclose_at(&p[1], chart::BITS)?,
-            dec.enclose_at(&p[2], chart::BITS)?,
-        ];
-        let position = chart::position(&balls)?;
-        error = error.max(chart::residual(&position, &balls));
+        let exact = |axis| &(&(&points[&a][axis] + &points[&b][axis]) + &points[&c][axis]) * &third;
+        // Affine interval arithmetic reuses the certified rail samples. If its
+        // enclosure is too wide, evaluate the original exact expression.
+        let cached = if let [Some(a), Some(b), Some(c)] = vertices.map(|v| enclosed.get(&v)) {
+            Some(std::array::from_fn(|axis| {
+                &(&(&a[axis] + &b[axis]) + &c[axis]) * &third_ball
+            }))
+        } else {
+            None
+        };
+        let mut p: [Option<Real>; 3] = [None, None, None];
+        let mut balls = cached
+            .map(|balls| balls.map(Some))
+            .unwrap_or([None, None, None]);
+        for axis in 0..3 {
+            // Preserve rounding at ties and cancellation, without discarding
+            // usable enclosures of the other coordinates.
+            if balls[axis]
+                .as_ref()
+                .is_some_and(|ball| ball.lo().to_f64_nearest() == ball.hi().to_f64_nearest())
+            {
+                continue;
+            }
+            balls[axis] = Some(dec.enclose_at(p[axis].insert(exact(axis)), chart::BITS)?);
+        }
+        let mut balls = balls.map(Option::unwrap);
+        let mut position = chart::position(&balls)?;
+        let mut rounding = chart::residual(&position, &balls);
+        if rounding > options.chord_tolerance {
+            for axis in 0..3 {
+                if p[axis].is_none() {
+                    balls[axis] = dec.enclose_at(p[axis].insert(exact(axis)), chart::BITS)?;
+                }
+            }
+            position = chart::position(&balls)?;
+            rounding = chart::residual(&position, &balls);
+        }
+        error = error.max(rounding);
         if error > options.chord_tolerance {
             return Err(failure("planar rail-ear rounding exceeds chord tolerance"));
         }
         let index = mesh.positions.len();
         mesh.positions.push(position);
         if options.max_edge_length.is_some() {
+            let p = std::array::from_fn(|axis| p[axis].take().unwrap_or_else(|| exact(axis)));
             points.insert(index, p);
         }
         let face = triangles[i].face;
@@ -824,6 +855,7 @@ pub(crate) fn build(
     error = error.max(split_rail_ears(
         &mut triangles,
         &mut points,
+        &boundaries.enclosures,
         &boundaries.rails,
         &mut boundaries.mesh,
         options,

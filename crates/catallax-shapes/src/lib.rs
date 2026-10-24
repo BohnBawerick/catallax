@@ -16,6 +16,7 @@ mod math;
 mod offset;
 mod offset_chart;
 mod offset_sweep;
+mod parallel;
 mod point;
 mod pose;
 mod spline_surface;

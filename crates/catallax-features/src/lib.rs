@@ -42,6 +42,8 @@ mod chamfer_build;
 /// Exact neutral-curve definitions for analytic draft supports.
 pub mod draft;
 mod draft_build;
+/// Complete capped-cylinder distance and normal-sweep definitions.
+pub mod cylinder_skin;
 mod edge_blend;
 /// Definition-native first-hit limits and their exact boundary assembly.
 pub mod end_condition;
@@ -53,9 +55,18 @@ mod fillet_build;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
 mod offset_fit;
+mod planar_distance;
+/// Exact bounded convex plane arrangements shared by the independent kernels.
+pub mod polyhedron;
+/// Exact face, edge and vertex distance-neighbourhood definitions.
+pub mod polyhedral_offset;
+mod distance_build;
 mod placement;
 mod profile;
+/// Closed-skin radial distance and normal-sweep definitions.
+pub mod radial;
 mod revolve;
+mod rounded_polyhedron;
 mod stock;
 
 pub use certified::{BodyCertificate, CertificateKey, CertifiedBuilt, PrismTarget};

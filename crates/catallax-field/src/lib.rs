@@ -16,6 +16,8 @@ pub mod display;
 pub mod distance;
 mod draft;
 mod draft_source;
+mod distance_features;
+mod distance_samples;
 mod end_condition;
 mod features;
 mod fillet;
@@ -258,6 +260,15 @@ impl Plan {
                     }
                     Operation::Boolean { kind, target, tool } => {
                         plan.boolean(*kind, steps[target], steps[tool], dec)?
+                    }
+                    Operation::Offset { body, distance } => {
+                        plan.distance_offset(steps[body], distance.value(), &step.id, dec)?
+                    }
+                    Operation::Shell { body, open, thickness } => {
+                        plan.distance_shell(steps[body], open, thickness.value(), &step.id, dec)?
+                    }
+                    Operation::Thicken { body, faces, thickness, side } => {
+                        plan.distance_thicken(steps[body], faces, thickness.value(), *side, &step.id, dec)?
                     }
                     Operation::Extrude {
                         profile,
@@ -655,6 +666,7 @@ impl Plan {
                     Operation::ExtrudeThrough { target, .. } | Operation::Hole { target, .. } => {
                         step_faces[target].clone()
                     }
+                    Operation::Shell { body, .. } => step_faces[body].clone(),
                     Operation::Pattern { body, .. }
                     | Operation::Fillet { body, .. }
                     | Operation::Chamfer { body, .. }
@@ -969,13 +981,11 @@ impl Plan {
         (face.in_result && self.leaf_registers[face.leaf].is_some()).then_some(FaceId(index))
     }
 
-    /// Resolves a stable recipe name without depending on tape indices.
-    /// When a support is replaced without changing its origin, the result's
-    /// candidate takes precedence over the retained construction-history entry.
+    /// Resolves a stable recipe name, preferring its surviving replacement support.
     pub fn select(&self, origin: &Origin) -> Option<FaceId> {
         self.faces
             .iter()
-            .position(|f| f.in_result && &f.origin == origin)
+            .position(|f| &f.origin == origin && f.in_result && self.leaf_registers[f.leaf].is_some())
             .or_else(|| self.faces.iter().position(|f| &f.origin == origin))
             .map(FaceId)
     }

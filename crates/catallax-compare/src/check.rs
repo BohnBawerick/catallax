@@ -192,11 +192,8 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Sketch{..}|Operation::Extrude{..}|Operation::ExtrudeThrough{..}|
             Operation::ExtrudeTo{..}|Operation::ExtrudeNext{..}|
             Operation::Revolve{..}|Operation::Hole{..}|Operation::Pattern{..}|Operation::Mirror{..}|
-            Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}=>return None,
+            Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}|Operation::Shell{..}|Operation::Offset{..}|Operation::Thicken{..}=>return None,
             Operation::Path{..}=>"neither kernel evaluates recipe paths",
-            Operation::Shell{..}=>"neither kernel evaluates recipe shelling",
-            Operation::Offset{..}=>"neither kernel evaluates recipe offsets",
-            Operation::Thicken{..}=>"neither kernel evaluates recipe thickening",
             Operation::Sweep{..}=>"neither kernel evaluates recipe sweeps",
             Operation::Loft{..}=>"neither kernel evaluates recipe lofts",
             Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",
@@ -1097,6 +1094,16 @@ pub(crate) fn run(
         check_sample(p, id);
         !revision.is_cancelled() && !sampling_failed.get()
     });
+    let distance_sampling = if recipe.steps.iter().any(|step| matches!(step.op,
+        Operation::Offset { .. } | Operation::Shell { .. } | Operation::Thicken { .. })) {
+        field.visit_distance_candidates(options.divisions, |p, origin| {
+            if revision.is_cancelled() { return false; }
+            check_sample(p, origin);
+            !revision.is_cancelled() && !sampling_failed.get()
+        })
+    } else {
+        Ok(true)
+    };
     if let Some(refusal) = sample_refusal {
         whole_failure(
             &mut report,
@@ -1109,6 +1116,12 @@ pub(crate) fn run(
         whole_failure(
             &mut report,
             format!("field boundary sampling {}: {}", error.code, error.detail),
+        );
+    }
+    if let Err(error) = distance_sampling {
+        whole_failure(
+            &mut report,
+            format!("distance-feature boundary sampling {}: {}", error.code, error.detail),
         );
     }
     if revision.is_cancelled() {

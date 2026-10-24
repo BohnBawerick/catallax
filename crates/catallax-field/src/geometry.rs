@@ -105,6 +105,9 @@ pub(crate) fn constraint(surface: Surface) -> Result<Constraint, Refusal> {
     })
 }
 impl Constraint {
+    pub(crate) fn surface(&self) -> &Surface {
+        &self.surface
+    }
     pub(crate) fn reference_point(&self) -> Option<&Point3> {
         match &self.surface {
             Surface::Plane(s) => Some(&s.origin),

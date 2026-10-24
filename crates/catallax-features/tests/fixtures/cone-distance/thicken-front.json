@@ -1,0 +1,46 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "conical wall front",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cone",
+      "base_radius": "4",
+      "top_radius": "1",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "op": "thicken",
+      "body": "stock",
+      "faces": [
+        {
+          "face": {
+            "step": "stock",
+            "role": {
+              "side": {
+                "segment": "wall"
+              }
+            }
+          }
+        }
+      ],
+      "side": "front",
+      "thickness": "1/5"
+    }
+  ],
+  "result": "result"
+}

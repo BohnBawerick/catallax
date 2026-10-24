@@ -1,0 +1,33 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "frustum-inward",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cone",
+      "base_radius": "4",
+      "top_radius": "1",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "op": "offset",
+      "body": "stock",
+      "distance": "-1/5"
+    }
+  ],
+  "result": "result"
+}

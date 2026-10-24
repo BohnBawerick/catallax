@@ -68,6 +68,24 @@ fn leaf_bound(leaf: &Leaf, dec: &mut Decider) -> Result<Option<Bounds>, Refusal>
         .iter()
         .map(|c| (c.surface().clone(), Vec::new()))
         .collect();
+    if surfaces.iter().any(|(s, _)| matches!(s, Surface::Cone(_))) {
+        match catallax_features::cone_skin::ConeSkin::new(&surfaces, dec) {
+            Ok(Some(skin)) => {
+                let exact = skin.bounds(dec)?;
+                let mut result = std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
+                for i in 0..3 {
+                    result[i] = [
+                        real_bound(&exact[i][0], dec)?[0].clone(),
+                        real_bound(&exact[i][1], dec)?[1].clone(),
+                    ];
+                }
+                return Ok(Some(result));
+            }
+            Ok(None) => (),
+            Err(e) if e.code == "distance.cone-domain" => (),
+            Err(e) => return Err(e),
+        }
+    }
     if let Some(skin) = catallax_features::cylinder_skin::CylinderSkin::new(&surfaces, dec)? {
         let axis = &skin.cylinder.axis;
         let norm = axis.norm_squared();
@@ -248,6 +266,63 @@ fn cylinder_candidates(
     Ok(true)
 }
 
+fn cone_candidates(
+    surface: &catallax_shapes::Cone,
+    bounds: &Bounds,
+    leaves: &[Leaf],
+    active: &[Option<usize>],
+    n: u32,
+    visit: &mut impl FnMut(RPoint3) -> bool,
+) -> Result<bool, Refusal> {
+    let [u, v, axis] = frame(&surface.axis, &surface.ref_dir)?;
+    let apex = surface.apex.as_rational().ok_or_else(placement_error)?;
+    let slope = surface.slope.rational_ref().ok_or_else(placement_error)?;
+    let mut axial = [Rational::zero(), Rational::zero()];
+    for corner in 0..8 {
+        let [x, y, z] = std::array::from_fn(|i| bounds[i][(corner >> i) & 1].clone());
+        let h = RPoint3::new(x, y, z).minus(&apex).dot(&axis);
+        axial[1] = axial[1].clone().max(h);
+    }
+    axial[0] = Rational::zero();
+    if axial[1].is_zero() {
+        return Ok(true);
+    }
+    for direction in circle(n) {
+        let radial = u.scaled(&direction[0]).plus(&v.scaled(&direction[1]));
+        let generator = axis.plus(&radial.scaled(slope));
+        let delta = generator.scaled(&axial[1]).to_real();
+        let mut cuts = vec![Rational::zero(), Rational::one()];
+        for j in 1..n {
+            cuts.push(Rational::from_ratio(j.into(), n.into()).unwrap());
+        }
+        for (leaf, register) in leaves.iter().zip(active) {
+            if register.is_none() {
+                continue;
+            }
+            for constraint in leaf.constraints() {
+                let point = [apex.x.clone(), apex.y.clone(), apex.z.clone()];
+                if let Some(c) =
+                    crate::geometry::native_ray_coefficients(constraint, &point, &delta)
+                    && c[3].is_zero()
+                    && c[4].is_zero()
+                {
+                    roots(&c[2], &c[1], &c[0], &mut cuts);
+                }
+            }
+        }
+        cuts.sort();
+        cuts.dedup();
+        for pair in cuts.windows(2) {
+            let h = &axial[1] * &((&pair[0] + &pair[1]) / Rational::from_i64(2));
+            let p = apex.plus(&generator.scaled(&h));
+            if within(&p, bounds) && !visit(p) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 impl Plan {
     /// Visits additional rational candidates for distance-feature results. Plane
     /// grids split at field-native leaf bounds; cylinders split their exact
@@ -344,6 +419,18 @@ impl Plan {
                 }
                 Surface::Cylinder(cylinder) => {
                     if !cylinder_candidates(cylinder, result, divisions, &mut emit)? {
+                        return Ok(false);
+                    }
+                }
+                Surface::Cone(cone) => {
+                    if !cone_candidates(
+                        cone,
+                        result,
+                        &self.leaves,
+                        &self.leaf_registers,
+                        divisions,
+                        &mut emit,
+                    )? {
                         return Ok(false);
                     }
                 }

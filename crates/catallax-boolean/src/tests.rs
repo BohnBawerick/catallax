@@ -60,6 +60,65 @@ fn operation(
 }
 
 #[test]
+fn prepared_face_queries_keep_opposite_spherical_patches_and_closed_rims_distinct() {
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let stock = sphere(&mut model, r(2), &Pose::identity()).unwrap();
+    let clip = block(&mut model, [r(6), r(6), r(3)], &pose(-3, -3, 0)).unwrap();
+    let top = boolean(&mut model, stock, clip, BoolOp::Intersect, &mut dec)
+        .unwrap()
+        .body;
+    let bottom = boolean(&mut model, stock, clip, BoolOp::Subtract, &mut dec)
+        .unwrap()
+        .body;
+    let faces = [top, bottom].map(|body| {
+        model
+            .faces_of_body(body)
+            .into_iter()
+            .find(|face| {
+                matches!(
+                    model.geom().surface(model.face(*face).surface),
+                    catallax_shapes::Surface::Sphere(_)
+                )
+            })
+            .unwrap()
+    });
+    let cap = model
+        .faces_of_body(top)
+        .into_iter()
+        .find(|face| {
+            matches!(
+                model.geom().surface(model.face(*face).surface),
+                catallax_shapes::Surface::Plane(_)
+            )
+        })
+        .unwrap();
+    let mut queries = crate::PreparedFaceQueries::new(&mut model);
+    for (face, north) in faces.into_iter().zip([true, false]) {
+        assert_eq!(
+            queries.contains(face, &point(0, 0, 2), &mut dec).unwrap(),
+            north
+        );
+        assert_eq!(
+            queries.contains(face, &point(0, 0, -2), &mut dec).unwrap(),
+            !north
+        );
+        assert!(queries.contains(face, &point(2, 0, 0), &mut dec).unwrap());
+        assert!(!queries.contains(face, &point(0, 0, 0), &mut dec).unwrap());
+    }
+    assert!(queries.contains(cap, &point(0, 0, 0), &mut dec).unwrap());
+    assert!(!queries.contains(cap, &point(3, 0, 0), &mut dec).unwrap());
+    dec.set_deadline(Some(std::time::Instant::now()));
+    assert_eq!(
+        queries
+            .contains(faces[0], &point(0, 0, 2), &mut dec)
+            .unwrap_err()
+            .code,
+        "numbers.deadline",
+    );
+}
+
+#[test]
 fn primitive_containment_separates_exact_near_boundary_points() {
     let mut model = Model::new();
     let mut dec = Decider::default();

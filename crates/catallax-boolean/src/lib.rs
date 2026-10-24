@@ -20,6 +20,7 @@
 mod bounds;
 mod containment;
 mod curve_pair;
+mod face_queries;
 mod fast_region;
 mod geometry;
 mod germ;
@@ -45,6 +46,8 @@ pub use stages::{
 use catallax_numbers::{Answered, Decider, DecisionStats, MarkLog, Outcome, Refusal};
 use catallax_shapes::{Point3, RPoint3};
 use catallax_topology::{Body, BodyId, BodyKind, FaceId, Model};
+
+pub use face_queries::PreparedFaceQueries;
 
 /// A boolean operation.
 #[non_exhaustive]
@@ -259,6 +262,21 @@ pub fn face_contains<P: Clone + Into<Point3>>(
     point: &P,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
+    face_contains_with(model, face, point, dec, region::locate)
+}
+
+fn face_contains_with<P: Clone + Into<Point3>>(
+    model: &mut Model,
+    face: FaceId,
+    point: &P,
+    dec: &mut Decider,
+    locate: impl FnOnce(
+        &mut Model,
+        FaceId,
+        catallax_shapes::PointId,
+        &mut Decider,
+    ) -> Result<region::Location, Refusal>,
+) -> Result<bool, Refusal> {
     let surface = model.face(face).surface;
     let point: Point3 = point.clone().into();
     if let catallax_shapes::Surface::Cone(cone) = model.geom().surface(surface)
@@ -286,7 +304,7 @@ pub fn face_contains<P: Clone + Into<Point3>>(
         return Ok(inside);
     }
     Ok(!matches!(
-        region::locate(model, face, p, dec)?,
+        locate(model, face, p, dec)?,
         region::Location::Outside
     ))
 }

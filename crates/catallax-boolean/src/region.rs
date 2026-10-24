@@ -25,11 +25,30 @@ struct Segment {
     end: Box2,
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct ProjectionKey {
+    surface: catallax_shapes::SurfaceId,
+    choice: i64,
+    edge: EdgeId,
+    piece: usize,
+    bits: u32,
+    from: Rational,
+    to: Rational,
+}
+type TraceEnclosures = std::collections::BTreeMap<ProjectionKey, Option<Box2>>;
+const MAX_TRACE_BOXES: usize = 4096;
+
+#[derive(Default)]
+struct TraceCache {
+    curves: HashMap<EdgeId, CurveTrace>,
+    boxes: TraceEnclosures,
+}
+
 /// Proofs prepared during a batch of queries against one append-only model.
 /// The owner must not reuse this workspace with another model or decider.
 #[derive(Default)]
 pub(crate) struct RegionCache {
-    traces: HashMap<EdgeId, CurveTrace>,
+    traces: TraceCache,
     coordinates: HashMap<(PointId, u32), [Ball; 3]>,
 }
 
@@ -38,20 +57,63 @@ pub(crate) struct RegionCache {
 const MAX_SAMPLE_CELLS: usize = 4096;
 
 struct SamplingWork<'a> {
-    traces: &'a mut HashMap<EdgeId, CurveTrace>,
+    traces: &'a mut TraceCache,
     remaining: usize,
 }
 
-struct Sampling<'a> {
+struct Sampling<'a, const CACHE: bool> {
     piece: &'a TracePiece,
+    edge: EdgeId,
+    index: usize,
+    enclosures: &'a mut TraceEnclosures,
     projection: &'a Projection,
+    chart: Option<(catallax_shapes::SurfaceId, i64)>,
     queries: &'a [Box2],
     bits: u32,
     remaining: &'a mut usize,
     dec: &'a mut Decider,
 }
 
-impl Sampling<'_> {
+impl<const CACHE: bool> Sampling<'_, CACHE> {
+    fn project(
+        &mut self,
+        parameter: Ball,
+        from: &Rational,
+        to: &Rational,
+    ) -> Result<Option<Box2>, Refusal> {
+        if !CACHE {
+            return self
+                .projection
+                .project_certified(&self.piece.evaluate(&parameter, self.dec)?, self.dec);
+        }
+        self.dec.check_deadline()?;
+        let room = self.enclosures.len() < MAX_TRACE_BOXES;
+        let (surface, choice) = self
+            .chart
+            .expect("prepared projections retain their chart identity");
+        let key = ProjectionKey {
+            surface,
+            choice,
+            edge: self.edge,
+            piece: self.index,
+            bits: self.bits,
+            from: from.clone(),
+            to: to.clone(),
+        };
+        match self.enclosures.entry(key) {
+            std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.get().clone()),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let value = self
+                    .projection
+                    .project_certified(&self.piece.evaluate(&parameter, self.dec)?, self.dec)?;
+                if room {
+                    Ok(entry.insert(value).clone())
+                } else {
+                    Ok(value)
+                }
+            }
+        }
+    }
     fn sample(
         &mut self,
         from: Rational,
@@ -84,19 +146,15 @@ impl Sampling<'_> {
             ));
         }
         *self.remaining -= 1;
-        let piece = self.piece;
         let projection = self.projection;
         let queries = self.queries;
         let bits = self.bits;
-        let dec = &mut *self.dec;
         let parameter = ball(from, to, bits);
-        let projected = projection.project_certified(&piece.evaluate(&parameter, dec)?, dec)?;
+        let projected = self.project(parameter, from, to)?;
         let mid = (from + to).mul_pow2(-1);
         if let Some(mut entire) = projected {
-            let start = projection
-                .project_certified(&piece.evaluate(&Ball::from_rational(from, bits), dec)?, dec)?;
-            let end = projection
-                .project_certified(&piece.evaluate(&Ball::from_rational(to, bits), dec)?, dec)?;
+            let start = self.project(Ball::from_rational(from, bits), from, from)?;
+            let end = self.project(Ball::from_rational(to, bits), to, to)?;
             if let (Some(mut start), Some(mut end)) = (start, end) {
                 if projection.periodic() {
                     align(&mut start, &entire);
@@ -110,9 +168,9 @@ impl Sampling<'_> {
                     let disjoint = if projection.periodic() {
                         let mut q = query.clone();
                         align(&mut q, &entire);
-                        separated(&entire, &q, dec)?
+                        separated(&entire, &q, self.dec)?
                     } else {
-                        separated(&entire, query, dec)?
+                        separated(&entire, query, self.dec)?
                     };
                     if !disjoint {
                         clear = false;
@@ -123,10 +181,7 @@ impl Sampling<'_> {
                     out.push(Segment { entire, start, end });
                     return Ok(None);
                 }
-                let Some(mut middle) = projection.project_certified(
-                    &piece.evaluate(&Ball::from_rational(&mid, bits), dec)?,
-                    dec,
-                )?
+                let Some(mut middle) = self.project(Ball::from_rational(&mid, bits), &mid, &mid)?
                 else {
                     return Err(refusal(
                         "boolean.classify-ambiguous",
@@ -145,8 +200,8 @@ impl Sampling<'_> {
                     ));
                 }
             }
-        } else if projection
-            .project_certified(&piece.evaluate(&Ball::from_rational(&mid, bits), dec)?, dec)?
+        } else if self
+            .project(Ball::from_rational(&mid, bits), &mid, &mid)?
             .is_none()
         {
             return Err(refusal(
@@ -220,15 +275,16 @@ fn polygon(segments: &mut [Segment], periodic: bool) -> Result<Vec<(Point2, Poin
         .collect())
 }
 
-fn build(
+fn build<const CACHE: bool>(
     model: &Model,
     loops: &[LoopId],
-    projection: &Projection,
+    projection: (&Projection, Option<(catallax_shapes::SurfaceId, i64)>),
     queries: &[Box2],
     bits: u32,
     work: &mut SamplingWork<'_>,
     dec: &mut Decider,
 ) -> Result<Vec<Vec<(Point2, Point2)>>, Refusal> {
+    let (projection, chart) = projection;
     let mut polygons = Vec::new();
     for &loop_id in loops {
         let Loop::Coedges(coedges) = model.loop_(loop_id) else {
@@ -238,7 +294,7 @@ fn build(
         for &coedge_id in coedges {
             let coedge = model.coedge(coedge_id);
             let edge = model.edge(coedge.edge);
-            let traced = match work.traces.entry(coedge.edge) {
+            let traced = match work.traces.curves.entry(coedge.edge) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
                     let (from, to) = natural_ends(model, coedge.edge);
@@ -253,10 +309,14 @@ fn build(
                 }
             };
             let mut edge_segments = Vec::new();
-            for piece in traced.pieces() {
-                Sampling {
+            for (index, piece) in traced.pieces().iter().enumerate() {
+                Sampling::<CACHE> {
                     piece,
+                    edge: coedge.edge,
+                    index,
+                    enclosures: &mut work.traces.boxes,
                     projection,
+                    chart,
                     queries,
                     bits,
                     remaining: &mut work.remaining,
@@ -347,6 +407,36 @@ impl RegionCache {
         point: PointId,
         dec: &mut Decider,
     ) -> Result<Vec<i64>, Refusal> {
+        self.signatures_with::<false>(model, surface, loop_groups, point, dec, None)
+    }
+
+    pub(crate) fn signatures_prepared(
+        &mut self,
+        model: &Model,
+        surface: catallax_shapes::SurfaceId,
+        loop_groups: &[Vec<LoopId>],
+        point: PointId,
+        dec: &mut Decider,
+    ) -> Result<Vec<i64>, Refusal> {
+        self.signatures_with::<true>(
+            model,
+            model.geom().surface(surface),
+            loop_groups,
+            point,
+            dec,
+            Some(surface),
+        )
+    }
+
+    fn signatures_with<const CACHE: bool>(
+        &mut self,
+        model: &Model,
+        surface: &Surface,
+        loop_groups: &[Vec<LoopId>],
+        point: PointId,
+        dec: &mut Decider,
+        surface_id: Option<catallax_shapes::SurfaceId>,
+    ) -> Result<Vec<i64>, Refusal> {
         dec.check_deadline()?;
         if let Surface::Torus(torus) = surface
             && let Some(signature) =
@@ -408,12 +498,19 @@ impl RegionCache {
                     };
                     queries.push(projected);
                 }
-                let polygons =
-                    match build(model, &loops, &projection, &queries, bits, &mut work, dec) {
-                        Ok(p) => p,
-                        Err(e) if e.code == "boolean.classify-ambiguous" => break,
-                        Err(e) => return Err(e),
-                    };
+                let polygons = match build::<CACHE>(
+                    model,
+                    &loops,
+                    (&projection, surface_id.map(|id| (id, i64::from(choice)))),
+                    &queries,
+                    bits,
+                    &mut work,
+                    dec,
+                ) {
+                    Ok(p) => p,
+                    Err(e) if e.code == "boolean.classify-ambiguous" => break,
+                    Err(e) => return Err(e),
+                };
                 let query = queries[0].clone().map(|b| b.mid());
                 let reference = queries.get(1).map(|q| q.clone().map(|b| b.mid()));
                 let mut offset = 0;
@@ -454,6 +551,28 @@ impl RegionCache {
         point: PointId,
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
+        self.locate_with::<true>(model, face, point, dec, None)
+    }
+
+    pub(crate) fn locate_prepared(
+        &mut self,
+        model: &mut Model,
+        face: FaceId,
+        point: PointId,
+        dec: &mut Decider,
+        targets: &mut std::collections::BTreeMap<FaceId, Vec<i64>>,
+    ) -> Result<Location, Refusal> {
+        self.locate_with::<false>(model, face, point, dec, Some(targets))
+    }
+
+    fn locate_with<const PROBE: bool>(
+        &mut self,
+        model: &mut Model,
+        face: FaceId,
+        point: PointId,
+        dec: &mut Decider,
+        targets: Option<&mut std::collections::BTreeMap<FaceId, Vec<i64>>>,
+    ) -> Result<Location, Refusal> {
         dec.check_deadline()?;
         let f = model.face(face).clone();
         if f.loops.is_empty() {
@@ -491,14 +610,19 @@ impl RegionCache {
                 }
             }
         }
-        if !matches!(model.geom().surface(f.surface), Surface::Torus(_))
+        if PROBE
+            && !matches!(model.geom().surface(f.surface), Surface::Torus(_))
             && let Some(location) = crate::probed_region::locate(model, face, point, dec)?
         {
             return Ok(location);
         }
         let surface = model.geom().surface(f.surface).clone();
         let groups = vec![f.loops.clone()];
-        let value = self.signatures(model, &surface, &groups, point, dec)?;
+        let value = if PROBE {
+            self.signatures(model, &surface, &groups, point, dec)?
+        } else {
+            self.signatures_prepared(model, f.surface, &groups, point, dec)?
+        };
         if matches!(surface, Surface::Sphere(_) | Surface::Torus(_)) {
             let barriers: Vec<EdgeId> = f
                 .loops
@@ -508,11 +632,26 @@ impl RegionCache {
                     Loop::Vertex(_) => Vec::new(),
                 })
                 .collect();
-            let target =
+            let mut compute = || {
                 crate::points::left_probe(model, face, &barriers, dec, |model, p, _, dec| {
-                    Ok(Some(self.signatures(model, &surface, &groups, p, dec)?))
-                })?;
-            if value == target {
+                    Ok(Some(if PROBE {
+                        self.signatures(model, &surface, &groups, p, dec)?
+                    } else {
+                        self.signatures_prepared(model, f.surface, &groups, p, dec)?
+                    }))
+                })
+            };
+            let fresh;
+            let target = if let Some(targets) = targets {
+                match targets.entry(face) {
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::btree_map::Entry::Vacant(entry) => entry.insert(compute()?),
+                }
+            } else {
+                fresh = compute()?;
+                &fresh
+            };
+            if &value == target {
                 return Ok(Location::Inside);
             }
             if matches!(surface, Surface::Torus(_)) || (value[0] - target[0]).abs() == 1 {

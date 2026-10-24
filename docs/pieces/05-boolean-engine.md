@@ -178,9 +178,26 @@ An `Empty` body gives `Proven(Outside)` for every point. The method is the creat
 `face_point(model, face, dec)` returns a rational point strictly inside a face: on the face's surface, in the face, and on none of its edges or vertices. Rational points are dense on every surface the builders make, because their frames are rational and orthonormal. A face on a hand-built surface with no rational point near it is refused with `boolean.no-rational-point`. It never carries marks: a decision that ends `NotExact` while proving the point inside the face makes it try another candidate, and when none is left it refuses with `boolean.no-rational-point`.
 The point may also lie on another face, including at an isolated touching point or on a tangent line between touching lumps, when that contact is not an edge or vertex of this face. A caller needing a positive distance from every other face checks the point and finds another when that check fails.
 
+`PreparedFaceQueries::new(&mut model)` provides repeated exact trimmed-face
+membership within one `Decider`, numeric policy and operation-budget scope.
+It reuses certified boundary traces, projected interval boxes and spherical
+reference windings. Every query still proves exact support and closed-trim
+membership. A homotopy proof must separate the query from the enclosed boundary;
+points on a closed rim use exact incidence checks. Exact surface probes remain
+available when the chart proof is unresolved. Numeric refusals do not reset the
+allowance.
+
+The projected-box key includes the exact model surface and chart choice, edge,
+trace piece, parameter interval and precision. The cache retains at most 4096
+entries; a full cache computes further boxes without storing them. Cancellation
+is checked on hits. Drop the batch before leaving its budget scope or changing
+existing geometry or topology. Auxiliary query geometry may be appended.
+Ordinary construction and single-point queries retain their previous proof order.
+
+
 ## Decisions, outcomes and marks
 
-- Every geometric decision goes through piece 2, piece 4 or the `Decider`. No decision reads a cached coordinate. No angle enters a decision (DESIGN.md, R8).
+- Every geometric decision goes through piece 2, piece 4 or the `Decider`. A rounded display coordinate is not an exact predicate. No angle enters a decision (DESIGN.md, R8).
 - A `NotExact` outcome in intersect, imprint or sew is accepted with a mark built with `Mark::from_not_exact`, with the bound kind of the piece that returned it, only when its degenerate branch needs no fact that is not already true: a contact treated as tangent, and a hit that piece 4 merged or made tangent (its facts hold). Every other degenerate branch (two points treated as one point, a point treated as on a curve or surface, two curves or surfaces treated as the same, and a hit piece 4 kept on a branch, which carries no incidence on its curve) would need sew to record an `Incident` or `Coincident` fact that no proof gives. DESIGN.md R5 forbids that, so the operation refuses: with `boolean.imprint-ambiguous` in intersect and imprint, and with `boolean.merge-ambiguous` in sew. It never picks a side from cached coordinates.
 - Probe constructions retain their exact point/curve-to-plane incidences, and a `ProvenCoincident` side query may supply a point-to-surface fact with that proof's provenance. An unmarked, complete surface-pair answer containing one curve, together with proven incidence on both supports, proves incidence on that curve. With multiple components, membership of the supports does not choose a branch. Auxiliary probe planes and their derived sections remain valid predicate facts, but do not seed subsequent probes; curves used as inputs to construct a probe plane remain eligible seeds.
 - In classify, a containment that cannot be decided is a refusal with `boolean.classify-ambiguous`: there is no degenerate class to take.

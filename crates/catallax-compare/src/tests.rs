@@ -39,6 +39,49 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
     controller.latest().unwrap()
 }
 #[test]
+fn thin_boolean_faces_receive_trim_checked_reverse_samples() {
+    let part = recipe(vec![
+        block("stock", "4", "0"),
+        block("tool", "4", "3999/1000"),
+        json!({"id":"result","op":"boolean","kind":"intersect","target":"stock","tool":"tool"}),
+    ]);
+    let report = check_with_options(&part, &Options::default());
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+    assert!(
+        report
+            .sampled_distance_upper
+            .as_ref()
+            .is_some_and(|upper| { upper <= &Options::default().accuracy }),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn empty_comparison_requires_a_whole_field_exclusion_not_missing_samples() {
+    let part = |x: &str| {
+        recipe(vec![
+            block("stock", "8", "0"),
+            block("cut", "4", "1"),
+            json!({"id":"small","op":"cylinder","radius":"1/4","height":"1",
+            "pose":{"rotation":["1","0","0","0"],"translation":[x,"2","2"]}}),
+            json!({"id":"cut_stock","op":"boolean","kind":"subtract","target":"stock","tool":"cut"}),
+            json!({"id":"result","op":"boolean","kind":"intersect","target":"cut_stock","tool":"small"}),
+        ])
+    };
+    let empty = part("2");
+    assert!(
+        !catallax_field::Plan::compile(&empty)
+            .unwrap()
+            .is_proven_empty()
+    );
+    let report = check_with_options(&empty, &Options::default());
+    assert_eq!(report.verdict, Verdict::Agree, "{report:?}");
+    assert_eq!((report.forward_vertices, report.reverse_samples), (0, 0));
+    let protruding = catallax_field::Plan::compile(&part("4750001/1000000")).unwrap();
+    assert!(!protruding.prove_empty(&mut Decider::default()).unwrap());
+}
+
+#[test]
 fn drafted_stock_cut_samples_the_current_definition_not_its_old_cutter_grid() {
     let mut base = block("base", "8", "0");
     base["size"] = json!(["8", "2", "8"]);

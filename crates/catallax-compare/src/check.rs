@@ -233,6 +233,14 @@ fn whole_failure(report: &mut Report, reason: impl Into<String>) {
         reason,
     );
 }
+enum ReverseCandidate {
+    Native(RPoint3, catallax_field::FaceId),
+    Coverage {
+        face: usize,
+        triangle: usize,
+        source: catallax_field::FaceId,
+    },
+}
 struct FieldWitness {
     point: Point3,
     remaining: Rational,
@@ -491,12 +499,22 @@ pub(crate) fn run(
             return revision.publish(report);
         }
     };
-    if model.body(result).kind == catallax_topology::BodyKind::Empty
-        && field.is_proven_empty()
-        && report.findings.is_empty()
-    {
-        report.verdict = Verdict::Agree;
-        return revision.publish(report);
+    if model.body(result).kind == catallax_topology::BodyKind::Empty && report.findings.is_empty() {
+        match field.prove_empty(&mut dec) {
+            Ok(true) => {
+                report.verdict = Verdict::Agree;
+                return revision.publish(report);
+            }
+            Ok(false) => (),
+            Err(error) => {
+                whole_failure(
+                    &mut report,
+                    format!("field empty-result proof {}: {}", error.code, error.detail),
+                );
+                report.refusal = Some(error);
+                return revision.publish(report);
+            }
+        }
     }
     let face_origins: Vec<_> = mesh
         .faces
@@ -781,16 +799,58 @@ pub(crate) fn run(
     > = (0..mesh.faces.len()).map(|_| None).collect();
     let sampling_failed = std::cell::Cell::new(false);
     let mut sample_refusal = None;
-    let mut check_sample = |p: RPoint3, id: catallax_field::FaceId| {
+    let mut brep_queries = catallax_boolean::PreparedFaceQueries::new(&mut model);
+    let mut check_sample = |candidate: ReverseCandidate| {
         if sampling_failed.get() {
-            return;
+            return false;
         }
+        let (p, id) = match candidate {
+            ReverseCandidate::Native(p, id) => (p, id),
+            ReverseCandidate::Coverage {
+                face,
+                triangle,
+                source,
+            } => {
+                if !selected.contains(&face)
+                    || (oriented.contains(&face)
+                        && observed.get(&face).is_some_and(|names| {
+                            names.contains(&field.faces()[source.index()].origin)
+                        }))
+                {
+                    return false;
+                }
+                // The display triangle supplies only a search hint. The point
+                // comes from the independent field carrier, and still needs
+                // surviving-trim, distance, origin and direction certificates.
+                let vertices = mesh.triangles[triangle]
+                    .vertices
+                    .map(|v| mesh.positions[v].map(|x| Rational::from_f64_exact(x).unwrap()));
+                let [x, y, z] = std::array::from_fn(|j| {
+                    (&(&vertices[0][j] + &vertices[1][j]) + &vertices[2][j]) / r(3)
+                });
+                let hint = RPoint3::new(x, y, z);
+                match catallax_boolean::surface_witness(
+                    &field.faces()[source.index()].surface,
+                    &hint.to_real(),
+                    &width,
+                    &mut dec,
+                ) {
+                    Ok(Some(p)) => (p, source),
+                    Ok(None) => return true,
+                    Err(error) => {
+                        sampling_failed.set(true);
+                        sample_refusal = Some(error);
+                        return false;
+                    }
+                }
+            }
+        };
         if options
             .region
             .as_ref()
             .is_some_and(|b| !b.contains(&p, &r(0)))
         {
-            return;
+            return true;
         }
         let source = id.index();
         let origin = &field.faces()[source].origin;
@@ -807,11 +867,11 @@ pub(crate) fn run(
                     format!("field face query {}: {}", error.code, error.detail),
                 );
                 sample_refusal = Some(error);
-                return;
+                return false;
             }
         };
         match query.state {
-            FaceState::NotOnFace => return,
+            FaceState::NotOnFace => return true,
             FaceState::OnFace => (),
             _ => {
                 unresolved(
@@ -822,7 +882,7 @@ pub(crate) fn run(
                     vec![origin.clone()],
                     "field trim membership is indeterminate",
                 );
-                return;
+                return true;
             }
         }
         report.reverse_samples += 1;
@@ -848,7 +908,7 @@ pub(crate) fn run(
                             format!("coactive field face query {}: {}", error.code, error.detail),
                         );
                         sample_refusal = Some(error);
-                        return;
+                        return false;
                     }
                 }
             };
@@ -891,7 +951,7 @@ pub(crate) fn run(
         let mut projection_errors = Vec::new();
         for &i in &candidates {
             if revision.is_cancelled() {
-                return;
+                return false;
             }
             let face = mesh.faces[i].face;
             let surface = &surfaces[i];
@@ -910,7 +970,7 @@ pub(crate) fn run(
                     continue;
                 }
             };
-            match catallax_boolean::face_contains(&mut model, face, &q, &mut dec) {
+            match brep_queries.contains(face, &q, &mut dec) {
                 Ok(true) => (),
                 Ok(false) => continue,
                 Err(e) => {
@@ -921,6 +981,14 @@ pub(crate) fn run(
             let upper = norm(&p.minus(&q)).hi();
             if closest.as_ref().is_none_or(|(best, _, _)| upper < *best) {
                 closest = Some((upper, i, q.to_real()));
+            }
+            // A trim-admitted exact hit attains the universal distance lower
+            // bound. Later candidates cannot improve it or win an equal tie.
+            if closest
+                .as_ref()
+                .is_some_and(|(upper, _, _)| upper.is_zero())
+            {
+                break;
             }
         }
         if closest.is_none()
@@ -937,15 +1005,15 @@ pub(crate) fn run(
             for &i in &candidates {
                 let prepared = brep_distance_domains[i].get_or_insert_with(|| {
                     catallax_measure::distance::PreparedFace::new(
-                        &model,
+                        brep_queries.model(),
                         mesh.faces[i].face,
                         &mut dec,
                     )
                 });
                 let distance = match prepared {
-                    Ok(prepared) => {
-                        prepared.point_to_face(&mut model, &p.to_real(), &controls, &mut dec)
-                    }
+                    Ok(prepared) => brep_queries.with_geometry(|model| {
+                        prepared.point_to_face(model, &p.to_real(), &controls, &mut dec)
+                    }),
                     Err(e) => Err(e.clone()),
                 };
                 match distance {
@@ -1003,10 +1071,10 @@ pub(crate) fn run(
                     projection_errors.join("; "),
                 );
             }
-            return;
+            return true;
         };
         if upper > options.accuracy {
-            return;
+            return true;
         }
         selected.insert(i);
         sample_points[i].get_or_insert_with(|| p.clone());
@@ -1023,7 +1091,7 @@ pub(crate) fn run(
             });
         }
         observed.entry(i).or_default().extend(origins);
-        let brep = model.face(face);
+        let brep = brep_queries.model().face(face);
         let brep_normal = match direction(&gradients[i], &q, brep.sense, &mut dec) {
             Ok(n) => n,
             Err(e) => {
@@ -1035,7 +1103,7 @@ pub(crate) fn run(
                     vec![origin.clone()],
                     format!("{}: {}", e.code, e.detail),
                 );
-                return;
+                return true;
             }
         };
         if let (Direction::Unique(field_normal), Some(brep_normal)) = (query.direction, brep_normal)
@@ -1051,7 +1119,7 @@ pub(crate) fn run(
                         vec![origin.clone()],
                         "normal enclosure is unbounded",
                     );
-                    return;
+                    return true;
                 };
                 dot = dot + (&brep_normal[j] * &n);
             }
@@ -1086,12 +1154,13 @@ pub(crate) fn run(
                 "surface direction is not unique and certified",
             );
         }
+        true
     };
     let sampling = field.visit_candidates(options.divisions, |p, id| {
         if revision.is_cancelled() {
             return false;
         }
-        check_sample(p, id);
+        check_sample(ReverseCandidate::Native(p, id));
         !revision.is_cancelled() && !sampling_failed.get()
     });
     let distance_sampling = if recipe.steps.iter().any(|step| {
@@ -1104,12 +1173,35 @@ pub(crate) fn run(
             if revision.is_cancelled() {
                 return false;
             }
-            check_sample(p, id);
+            check_sample(ReverseCandidate::Native(p, id));
             !revision.is_cancelled() && !sampling_failed.get()
         })
     } else {
         Ok(true)
     };
+    if sampling.is_ok() && distance_sampling.is_ok() && !sampling_failed.get() {
+        for (face, patch) in mesh.faces.iter().enumerate() {
+            for origin in &face_origins[face] {
+                let Some(sources) = registry.get(origin) else {
+                    continue;
+                };
+                for &source in sources {
+                    for triangle in patch.triangles.clone() {
+                        if revision.is_cancelled() {
+                            return Completion::Cancelled;
+                        }
+                        if !check_sample(ReverseCandidate::Coverage {
+                            face,
+                            triangle,
+                            source,
+                        }) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
     if let Some(refusal) = sample_refusal {
         whole_failure(
             &mut report,

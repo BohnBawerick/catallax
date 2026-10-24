@@ -255,6 +255,32 @@ pub(super) fn intersections(
     crate::algebraic_solve::intersections(equations, surface, dec)
 }
 
+fn rur_points(
+    polynomial: &UPoly,
+    y: &UPoly,
+    z: &UPoly,
+    a: &Rational,
+    b: &Rational,
+    dec: &mut Decider,
+) -> Result<Solutions, Refusal> {
+    let roots = match dec.real_roots(polynomial) {
+        Outcome::Proven(roots) => roots,
+        Outcome::Refused(error) => return Err(error),
+        _ => unreachable!("complete root list"),
+    };
+    let points = roots
+        .into_iter()
+        .map(|root| {
+            let t = Real::from_algebraic(root.value);
+            let y = y.eval_real(&t);
+            let z = z.eval_real(&t);
+            let x = t - &real(a) * &y - &real(b) * &z;
+            Point3::new(x, y, z)
+        })
+        .collect();
+    Ok(Solutions::Points(points))
+}
+
 fn rational_intersections(
     equations: &[RealPoly],
     surface: &MPoly,
@@ -270,8 +296,34 @@ fn rational_intersections(
             .collect();
         let basis = groebner(curve.clone());
         let surface = P::from_mpoly(surface, &a, &b);
-        if reduce(surface.clone(), &basis).0.is_empty() {
+        let residual = reduce(surface.clone(), &basis);
+        if residual.0.is_empty() {
             return Ok(Solutions::Contained);
+        }
+        if basis.len() == 2
+            && let (Some(y), Some(z)) = (
+                basis.iter().find_map(|p| p.coordinate(0)),
+                basis.iter().find_map(|p| p.coordinate(1)),
+            )
+            && y.degree().is_none_or(|degree| degree <= 1)
+            && z.degree().is_none_or(|degree| degree <= 1)
+        {
+            // The carrier already proves y and z affine in the same RUR
+            // separator. Skip the redundant finite-coordinate projections,
+            // but retain its root polynomial and coordinate expressions:
+            // another line parameter can change measured enclosure bounds.
+            let polynomial = residual
+                .monic()
+                .univariate()
+                .expect("an affine carrier eliminates y and z");
+            if polynomial.degree().is_none_or(|degree| degree == 0) {
+                return Ok(Solutions::Points(vec![]));
+            }
+            let square_free = polynomial
+                .div_rem(&polynomial.gcd(&polynomial.derivative()))
+                .unwrap()
+                .0;
+            return rur_points(&square_free, &y, &z, &a, &b, dec);
         }
         let mut equations = curve;
         equations.push(surface);
@@ -316,22 +368,7 @@ fn rational_intersections(
         let y = radical.iter().find_map(|p| p.coordinate(0));
         let z = radical.iter().find_map(|p| p.coordinate(1));
         if let (Some(y), Some(z)) = (y, z) {
-            let roots = match dec.real_roots(&square_free) {
-                Outcome::Proven(r) => r,
-                Outcome::Refused(e) => return Err(e),
-                _ => unreachable!("complete root list"),
-            };
-            let points = roots
-                .into_iter()
-                .map(|root| {
-                    let t = Real::from_algebraic(root.value);
-                    let y = y.eval_real(&t);
-                    let z = z.eval_real(&t);
-                    let x = t - &real(&a) * &y - &real(&b) * &z;
-                    Point3::new(x, y, z)
-                })
-                .collect();
-            return Ok(Solutions::Points(points));
+            return rur_points(&square_free, &y, &z, &a, &b, dec);
         }
         // Only finitely many linear projections identify two distinct complex
         // solutions. This rational moment-curve family eventually separates them.

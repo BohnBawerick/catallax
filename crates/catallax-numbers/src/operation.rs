@@ -1,10 +1,14 @@
 //! Request-scoped deterministic accounting, independent of wall time.
 
-use crate::algebraic::{AlgebraicRoot, RootEnclosure};
+use crate::{
+    BudgetPolicy, UPoly,
+    algebraic::{AlgebraicRoot, RootEnclosure},
+    decider::CachedRoots,
+};
 use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     sync::Arc,
 };
 
@@ -45,9 +49,13 @@ impl PartialEq for RootProofKey {
 }
 impl Eq for RootProofKey {}
 
+type RootListProofs = BTreeMap<(u32, u64), HashMap<Arc<UPoly>, Arc<CachedRoots>>>;
+
 thread_local! {
     static ACTIVE: Cell<Option<State>> = const { Cell::new(None) };
     static ROOT_PROOFS: RefCell<BTreeMap<RootProofKey, Arc<RootEnclosure>>> =
+        const { RefCell::new(BTreeMap::new()) };
+    static ROOT_LIST_PROOFS: RefCell<RootListProofs> =
         const { RefCell::new(BTreeMap::new()) };
 }
 
@@ -96,6 +104,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
         fn drop(&mut self) {
             ACTIVE.with(|slot| slot.set(None));
             ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+            ROOT_LIST_PROOFS.with(|proofs| proofs.borrow_mut().clear());
         }
     }
     ACTIVE.with(|slot| {
@@ -107,6 +116,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
         }));
     });
     ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+    ROOT_LIST_PROOFS.with(|proofs| proofs.borrow_mut().clear());
     let _reset = Reset;
     let result = run();
     let state = ACTIVE.with(|slot| slot.get().unwrap());
@@ -174,6 +184,40 @@ pub(crate) fn record_root_proof(
                 },
                 certificate.clone(),
             );
+        });
+    }
+}
+
+// Policy-bounded exact shortcuts can change isolation certificates and cold
+// fees. Reuse a complete root list only for the same polynomial and policy.
+pub(crate) fn root_list_proof(
+    polynomial: &UPoly,
+    policy: BudgetPolicy,
+) -> Option<Arc<CachedRoots>> {
+    if ACTIVE.with(|slot| slot.get().is_none()) {
+        return None;
+    }
+    ROOT_LIST_PROOFS.with(|proofs| {
+        proofs
+            .borrow()
+            .get(&(policy.max_precision_bits, policy.max_work))
+            .and_then(|polynomials| polynomials.get(polynomial))
+            .cloned()
+    })
+}
+
+pub(crate) fn record_root_list_proof(
+    polynomial: &Arc<UPoly>,
+    policy: BudgetPolicy,
+    certificate: &Arc<CachedRoots>,
+) {
+    if ACTIVE.with(|slot| slot.get().is_some()) {
+        ROOT_LIST_PROOFS.with(|proofs| {
+            proofs
+                .borrow_mut()
+                .entry((policy.max_precision_bits, policy.max_work))
+                .or_default()
+                .insert(polynomial.clone(), certificate.clone());
         });
     }
 }

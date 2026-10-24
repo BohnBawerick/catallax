@@ -280,6 +280,21 @@ Receipts are cleared on normal return and panic unwinding; they never transfer
 between requests or threads. `DecisionStats::work` retains per-decision
 accounting; `OperationWork::used` counts request-wide reservations and checkpoints.
 
+The request also retains complete nonlinear root lists across deciders and
+bounded-memo eviction. Their keys include the full polynomial and both
+`BudgetPolicy` limits: policy-bounded exact shortcuts can change the isolation
+certificate and its cold fee. Reuse preserves root values, ordering,
+multiplicities, per-decision cold work and deadline checks. The request retains
+the certificate data, not only a marker waiving another arithmetic reservation.
+Failed or partial isolation is not recorded.
+
+On complete rational-search branches, a small integer quadratic may obtain its
+Descartes variations directly from the three exact transformed coefficients.
+Integer admission proves all intermediates fit the native signed arithmetic;
+it is not a geometric tolerance or a sign estimate. Other inputs retain the
+filtered Taylor-shift predicate and its exact fallback. The zero/one-variation
+proof rules and coarse interval selectors are unchanged.
+
 
 ### Statistics
 

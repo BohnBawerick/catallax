@@ -165,7 +165,8 @@ pub struct DecisionStats {
 const ROOT_CACHE_ENTRIES: usize = 128;
 
 #[derive(Debug)]
-struct CachedRoots {
+pub(crate) struct CachedRoots {
+    polynomial: Arc<UPoly>,
     roots: Vec<RealRoot>,
     work: u64,
 }
@@ -176,7 +177,7 @@ pub struct Decider {
     policy: BudgetPolicy,
     deadline: Option<Instant>,
     stats: DecisionStats,
-    root_cache: HashMap<Arc<UPoly>, CachedRoots>,
+    root_cache: HashMap<Arc<UPoly>, Arc<CachedRoots>>,
     root_cache_order: VecDeque<Arc<UPoly>>,
 }
 impl Default for Decider {
@@ -546,15 +547,26 @@ impl Decider {
         // Linear roots need only one rational division; memoize the nonlinear
         // isolation certificates that geometry predicates repeatedly request.
         let memoize = p.degree().is_some_and(|degree| degree > 1);
-        let cached = if memoize {
-            self.root_cache.get(p)
+        let (cached, already_paid) = if memoize {
+            if let Some(certificate) = crate::operation::root_list_proof(p, self.policy) {
+                (Some(certificate), true)
+            } else {
+                (self.root_cache.get(p).cloned(), false)
+            }
         } else {
-            None
+            (None, false)
         };
         let cache_hit = cached.is_some();
-        let result = match cached {
+        let result = match cached.as_ref() {
             // Certificate reuse must not change per-decision work or budgets.
-            Some(cached) => work.charge(cached.work).map(|()| cached.roots.clone()),
+            Some(cached) => {
+                let reservation = if already_paid {
+                    work.reuse_proof(cached.work)
+                } else {
+                    work.charge(cached.work)
+                };
+                reservation.map(|()| cached.roots.clone())
+            }
             None => algebraic::isolate(p, &mut work),
         };
         self.account(&work);
@@ -563,22 +575,33 @@ impl Decider {
         }
         match result {
             Ok(roots) => {
-                if memoize && !cache_hit {
-                    if self.root_cache.len() == ROOT_CACHE_ENTRIES {
-                        let oldest = self.root_cache_order.pop_front().unwrap();
-                        self.root_cache.remove(oldest.as_ref());
-                    }
-                    let key = Arc::new(p.clone());
-                    self.root_cache_order.push_back(key.clone());
-                    self.root_cache.insert(
-                        key,
-                        CachedRoots {
+                if memoize {
+                    let certificate = cached.unwrap_or_else(|| {
+                        Arc::new(CachedRoots {
+                            polynomial: Arc::new(p.clone()),
                             roots: roots.clone(),
                             work: work.used,
-                        },
-                    );
-                    if self.expired() {
-                        return self.refused(deadline());
+                        })
+                    });
+                    if !cache_hit {
+                        if self.root_cache.len() == ROOT_CACHE_ENTRIES {
+                            let oldest = self.root_cache_order.pop_front().unwrap();
+                            self.root_cache.remove(oldest.as_ref());
+                        }
+                        self.root_cache_order
+                            .push_back(certificate.polynomial.clone());
+                        self.root_cache
+                            .insert(certificate.polynomial.clone(), certificate.clone());
+                        if self.expired() {
+                            return self.refused(deadline());
+                        }
+                    }
+                    if !already_paid {
+                        crate::operation::record_root_list_proof(
+                            &certificate.polynomial,
+                            self.policy,
+                            &certificate,
+                        );
                     }
                 }
                 self.stats.exact += 1;

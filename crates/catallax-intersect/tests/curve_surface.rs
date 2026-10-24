@@ -366,3 +366,87 @@ blind_test!(case_47_limited_and_expired_curve_surface_answers, {
         check(&c, &n(1), &Pose::identity(), expired(), Mode::Deadline);
     }
 });
+
+blind_test!(
+    line_component_intersections_do_not_depend_on_witness_offset,
+    {
+        let mut geom = GeomStore::new();
+        let curve = Carrier::Branch {
+            a: axis_plane(1, n(0)),
+            b: Box::new(axis_plane(2, n(0))),
+            witness: Point3::new(n(1).mul_pow2(65_536).into(), rr(0), rr(0)),
+        }
+        .add(&mut geom);
+        let CurveForm::Line { origin, .. } =
+            curve_form(&geom, curve, &mut Decider::default()).unwrap()
+        else {
+            panic!("two intersecting planes have a line carrier");
+        };
+        coincident(
+            Decider::default().sign(
+                &origin
+                    .minus(&geom.curve(curve).parameter_origin(&geom))
+                    .norm_squared(),
+            ),
+        );
+        let surface = geom.add_surface(sphere(pi([0, 0, 0]), n(1)));
+        let mut decider = Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 2048,
+        });
+        let CurveSurface::Meets(hits) = exact(intersect_curve_surface(
+            &mut geom,
+            curve,
+            surface,
+            &mut decider,
+        )) else {
+            panic!("the plane intersection crosses the unit sphere twice");
+        };
+        assert_eq!(hits.len(), 2);
+        for (hit, x) in hits.iter().zip([-1, 1]) {
+            assert_eq!(hit.contact, Contact::Crossing);
+            let expected = explicit(&mut geom, pi([x, 0, 0]));
+            coincident(geom.same_point(hit.point, expected, &mut Decider::default()));
+        }
+    }
+);
+
+blind_test!(line_meeting_coordinate_bounds_ignore_parameter_scale, {
+    let directions = [
+        Vector3::new(rr(3), rr(1), rr(0)),
+        Vector3::new(rr(1), Real::from_rational(n(1) / n(3)), rr(0)),
+    ];
+    let mut expected = None;
+    for direction in directions {
+        let mut geom = GeomStore::new();
+        let curve = geom.add_curve(Curve::Line(Line {
+            origin: Point3::origin(),
+            dir: direction,
+        }));
+        let surface = geom.add_surface(sphere(pi([0, 0, 0]), n(1)));
+        let CurveSurface::Meets(hits) = exact(intersect_curve_surface(
+            &mut geom,
+            curve,
+            surface,
+            &mut Decider::default(),
+        )) else {
+            panic!("the line crosses the unit sphere twice");
+        };
+        assert_eq!(hits.len(), 2);
+        let bounds: Vec<_> = hits
+            .iter()
+            .map(|hit| {
+                let point = geom.position(hit.point);
+                [&point.x, &point.y, &point.z].map(|value| {
+                    let ball = Decider::default().enclose_at(value, 128).unwrap();
+                    (ball.lo(), ball.hi())
+                })
+            })
+            .collect();
+        if let Some(expected) = &expected {
+            assert_eq!(&bounds, expected);
+        } else {
+            expected = Some(bounds);
+        }
+    }
+});

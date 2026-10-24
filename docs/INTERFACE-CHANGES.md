@@ -1454,3 +1454,91 @@ paid for when constructed. Full evaluation, certified evaluation, recipe and
 manifest formats, STEP options, tolerances and budgets are unchanged. Public
 repeated-cut and distinct-hole benchmarks contain timing, strict-budget checks,
 per-prefix STEP comparisons and the same-facts query counterfactual.
+
+## 2026-10-24: reduce validated line carriers before intersection elimination
+
+Pieces: 5
+
+Change: curve–surface intersections use the existing univariate line solver for
+validated line carriers against rational as well as algebraic implicit targets.
+Selected-component, cone-nappe, contact and hit-ordering checks are retained.
+Other carriers keep the existing multivariate solver.
+
+Why: a constructed line already supplies a separating parameter; eliminating
+its world coordinates again discards that degree-reduction certificate.
+
+Migration: none. Public signatures, branch acceptance rules and work allowances
+are unchanged.
+
+## 2026-10-24: keep construction-frame elimination private
+
+Pieces: 4
+
+Change: the univariate line solver keeps the selected carrier's construction
+frame instead of importing a possibly larger witness field. Public
+`curve_form` line origins remain the regular witness required by piece 4.
+Component-domain, cone-nappe, contact and ordering checks are unchanged.
+
+Why: an offset along a known line can inflate polynomial coefficients without
+changing the line or its intersections.
+
+Migration: none. Public forms, signatures, work allowances and tolerance rules
+are unchanged. The earlier entry, “reduce validated line carriers before
+intersection elimination”, also describes piece 4, not piece 5.
+
+## 2026-10-25: request-owned complete nonlinear root lists
+
+Pieces: 1
+
+Change: a complete numeric request retains successfully paid nonlinear
+root-isolation certificates across deciders and bounded-memo eviction. Exact
+keys include every polynomial coefficient and both local policy limits.
+Published roots, their order and multiplicities, local cold work and deadline
+checks are preserved. Both request proof tables clear on return and unwinding.
+
+Why: geometry predicates repeatedly requested the same complete root sets
+through fresh deciders and reserved their cold isolation arithmetic again.
+The request now shares the actual immutable certificate, not a budget-only
+receipt that would require recomputation after memo eviction.
+
+Migration: none. Public signatures, root definitions, work allowances and
+tolerance rules are unchanged. Whole-request work may decrease.
+
+## 2026-10-25: exact small-quadratic Descartes signs
+
+Pieces: 1
+
+Change: complete rational-search branches can evaluate the three transformed
+quadratic coefficients with exact native integers instead of allocating
+generic interval Taylor shifts. Admission bounds every input to 20 bits and
+every intermediate to signed 63 bits. Other coefficients, fractional endpoints,
+zero working-precision caps and policy-bounded reconstruction retain the
+existing filtered/exact isolator.
+
+Why: Descartes needs coefficient signs, not a generic polynomial object, when
+the exact three-coefficient transform already fits one-limb arithmetic.
+
+Migration: none. Public signatures, root-selection proofs, tolerance rules and
+work allowances are unchanged. Arithmetic work may decrease.
+
+## 2026-10-25: preserve rational RUR meeting definitions
+
+Pieces: 4, 6, 7
+
+Change: this corrects “reduce validated line carriers before intersection
+elimination” and “keep construction-frame elimination private”. Rational targets
+retain the existing RUR separator, primitive-root polynomial and coordinate
+expressions. When the carrier basis proves both transverse coordinates affine,
+the solver omits redundant finite-coordinate projections. Algebraic targets
+retain their existing witness-frame line construction; the private solver form
+is removed.
+
+Why: forward substitution through a different exact line parameter could loosen
+centroid enclosures and STEP deviation bounds even when the meeting positions
+were proven coincident and the STEP bytes were unchanged. Preserving the
+published certificate requires preserving the construction, not just its value.
+
+Migration: none. Public signatures, component guards, work allowances and
+tolerance rules are unchanged. The earlier line-carrier entry concerns piece 4,
+not piece 5.
+

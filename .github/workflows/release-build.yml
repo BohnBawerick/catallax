@@ -158,8 +158,35 @@ jobs:
           path: ${{ runner.temp }}/archives/*universal2*.tar.xz
           if-no-files-found: error
 
+  notes:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # GitHub's generate-notes endpoint requires write even though it saves nothing.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Generate release notes from merged pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          ALPHA: ${{ needs.plan.outputs.alpha }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+            --jq .body > "$RUNNER_TEMP/generated-notes.md"
+          python3 -B tools/release/notes.py "$RUNNER_TEMP/generated-notes.md" "$RUNNER_TEMP/RELEASE_NOTES.md" --tag "$TAG" --alpha "$ALPHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/RELEASE_NOTES.md
+          if-no-files-found: error
+
   assemble:
-    needs: [plan, build, universal]
+    needs: [plan, build, universal, notes]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -179,6 +206,10 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@v4
         with:
+          name: release-notes
+          path: target/distrib
+      - uses: actions/download-artifact@v4
+        with:
           name: release-evidence-${{ github.sha }}
           path: target/distrib
           run-id: ${{ needs.plan.outputs.evidence_run }}
@@ -194,16 +225,6 @@ jobs:
           cargo cyclonedx --format xml --target all --all --override-filename release-sbom.cdx
           python3 -B tools/release/sbom.py crates/catallax-cli/release-sbom.cdx.xml \
             target/distrib/catallax-cli.cdx.xml --commit "$GITHUB_SHA"
-      - name: Generate release notes from merged pull requests
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.plan.outputs.tag }}
-          ALPHA: ${{ needs.plan.outputs.alpha }}
-        run: |
-          gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
-            --jq .body > "$RUNNER_TEMP/generated-notes.md"
-          python3 -B tools/release/notes.py "$RUNNER_TEMP/generated-notes.md" target/distrib/RELEASE_NOTES.md --tag "$TAG" --alpha "$ALPHA"
       - name: Check complete assets and checksum every release file
         run: |
           rm -f target/distrib/sha256.sum target/distrib/dist-manifest.json

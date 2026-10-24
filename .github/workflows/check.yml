@@ -113,7 +113,7 @@ jobs:
     needs: release-evidence
     uses: ./.github/workflows/release-build.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       id-token: write
       attestations: write

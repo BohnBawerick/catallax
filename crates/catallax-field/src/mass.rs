@@ -1,8 +1,8 @@
 //! Certified unit-density moments of the field, independent of print meshes.
 //!
-//! Exact box moments cover admitted material. Unresolved boxes admit densities
-//! in [0,1]; their coordinate moments give outward rational bounds. Refinement
-//! replaces those contributions, never samples away an unresolved region.
+//! Analytic columns use exact inner antiderivatives and certified Taylor
+//! remainders. Other definitions use exact admitted-box moments and unresolved
+//! densities in [0,1]. Neither method samples away an unresolved region.
 
 use crate::{Plan, geometry, lattice::BoxState, metric::Kind, printing::Classifier};
 use catallax_features::stand_in::{MassTarget, StandInBodies};
@@ -13,6 +13,8 @@ use std::{
     cmp::Ordering,
     collections::{BTreeSet, BinaryHeap},
 };
+
+mod columns;
 
 type Bounds = [[Rational; 2]; 3];
 const PAIRS: [(usize, usize); 6] = [(0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2)];
@@ -30,7 +32,7 @@ pub struct Accuracy {
 /// Deterministic integration resource control.
 #[derive(Clone, Debug)]
 pub struct Options {
-    /// Maximum classified boxes, including the initial plane partition.
+    /// Maximum classified boxes or analytic intervals, including initial partitions.
     pub max_cells: usize,
 }
 impl Default for Options {
@@ -49,10 +51,10 @@ pub struct Properties {
     pub centroid: Option<[Enclosure; 3]>,
     /// True field centroidal inertia; absent exactly for zero volume.
     pub inertia: Option<[[Enclosure; 3]; 3]>,
-    /// Moments of the admitted material plus half of each unresolved box.
-    /// This positive-density estimate is not measured from a print mesh.
+    /// Rational coordinate-moment proposal enclosed by the integration bounds.
+    /// This estimate is independent of any print mesh.
     pub estimate: Option<MassTarget>,
-    /// Total classified boxes.
+    /// Total classified boxes or analytic intervals.
     pub cells: usize,
 }
 impl Properties {
@@ -627,6 +629,9 @@ pub fn properties(
             estimate: None,
             cells: 0,
         });
+    }
+    if let Some(properties) = columns::properties(plan, &bounds, accuracy, options, dec) {
+        return properties;
     }
     let anchor = std::array::from_fn(|i| (&bounds[i][0] + &bounds[i][1]).mul_pow2(-1));
     let mut axes: [BTreeSet<Rational>; 3] =

@@ -291,6 +291,24 @@ impl Lattice {
         self.beams.is_empty()
     }
 
+    /// Parameters of a constant cubic grid aligned with the model axes.
+    pub(crate) fn axis_cubic_grid(&self) -> Option<([Rational; 3], Rational, Rational)> {
+        if !self.cubic {
+            return None;
+        }
+        let GradeDef::Constant(radius) = &self.grade else {
+            return None;
+        };
+        for row in &self.rotation {
+            if row.iter().filter(|v| !v.is_zero()).count() != 1
+                || !row.iter().any(|v| v.abs() == q(1))
+            {
+                return None;
+            }
+        }
+        Some((self.translation.clone(), self.size.clone(), radius.clone()))
+    }
+
     fn local(&self, p: &[Rational; 3]) -> [Rational; 3] {
         let shifted: [Rational; 3] = std::array::from_fn(|i| &p[i] - &self.translation[i]);
         apply(&self.inverse_rotation, &shifted)

@@ -11,6 +11,7 @@ mod name_checks;
 mod printing;
 mod question;
 mod recipe_edit;
+mod stand_in;
 pub mod verification;
 
 pub use manifest::{

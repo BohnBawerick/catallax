@@ -23,6 +23,8 @@ mod features;
 mod fillet;
 mod geometry;
 mod lattice;
+/// Certified field-only volume, centroid and inertia queries.
+pub mod mass;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;

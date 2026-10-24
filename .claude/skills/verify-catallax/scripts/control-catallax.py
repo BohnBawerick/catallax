@@ -77,6 +77,10 @@ def load(paths, source, adapter=None):
                     problems.append({'source': source if source in ('compare', 'field', 'print') else 'recipe', 'problem': value})
                 elif fmt == 'catallax-certified-recipe/1':
                     problems.append({'source': 'recipe', 'problem': value})
+                elif fmt == 'catallax-stand-in/1':
+                    if source not in ('auto', 'recipe'):
+                        raise ValueError(f'{file}: stand-in wrappers require the recipe source')
+                    problems.append({'source': 'recipe', 'problem': value})
                 elif fmt == 'catallax-print/1':
                     if source not in ('auto', 'field', 'print'):
                         raise ValueError(f'{file}: print wrappers require the print or field source')
@@ -103,7 +107,7 @@ def classification(item):
         problem = problem['edited_recipe']
     if kind == 'print':
         kind = 'field'
-    if problem.get('format') == 'catallax-print/1':
+    if problem.get('format') in ('catallax-print/1', 'catallax-stand-in/1'):
         problem = problem['recipe']
     if kind == 'question':
         kind = 'boolean' if problem.get('steps') else 'stock'

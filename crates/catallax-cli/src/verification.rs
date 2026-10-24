@@ -212,6 +212,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             value["format"] = json!("catallax-manifest/3");
             Ok(value)
         }
+        "recipe" if request.problem["format"] == "catallax-stand-in/1" => {
+            crate::stand_in::evaluate(&request.problem, &request.out)
+        }
         "recipe" if crate::certified_recipe::is_problem(&request.problem) => {
             crate::certified_recipe::evaluate(&request.problem, &request.out)
         }

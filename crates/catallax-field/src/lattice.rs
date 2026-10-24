@@ -72,6 +72,7 @@ pub(crate) struct Lattice {
     size: Rational,
     fast_size: f64,
     beams: Vec<Beam>,
+    cubic: bool,
     span: i64,
     order: Vec<i64>,
     overhang_cells: i64,
@@ -134,6 +135,27 @@ fn clamp01(t: Interval) -> Interval {
         imax(t, Interval::point(0.0).unwrap()),
         Interval::point(1.0).unwrap(),
     )
+}
+
+fn periodic_distance(coordinate: Interval) -> Interval {
+    let half = Interval::point(0.5).unwrap();
+    if !coordinate.lo().is_finite()
+        || !coordinate.hi().is_finite()
+        || coordinate.hi() - coordinate.lo() >= 1.0
+        || coordinate.lo().abs().max(coordinate.hi().abs()) > 4_503_599_627_370_496.0
+    {
+        return Interval::new(0.0, 0.5).unwrap();
+    }
+    let low = coordinate.lo().floor();
+    let high = coordinate.hi().floor();
+    if low == high {
+        let fraction = coordinate - Interval::point(low).unwrap();
+        let distance = imin(fraction, Interval::point(1.0).unwrap() - fraction);
+        imax(Interval::point(0.0).unwrap(), imin(distance, half))
+    } else {
+        let delta = coordinate - Interval::point(high).unwrap();
+        Interval::new(0.0, delta.lo().abs().max(delta.hi().abs()).min(0.5)).unwrap()
+    }
 }
 
 impl Lattice {
@@ -243,6 +265,7 @@ impl Lattice {
             Grade::Distance { .. } => unreachable!("validate refuses distance grades"),
         };
         Ok(Self {
+            cubic: matches!(cell, LatticeCell::Cubic),
             fast_inverse: fast_matrix(&inverse_rotation),
             fast_translation: translation.each_ref().map(f),
             rotation,
@@ -344,6 +367,18 @@ impl Lattice {
         local: &[Rational; 3],
         collect_feet: bool,
     ) -> Option<(Rational, Vec<[Rational; 3]>)> {
+        if self.cubic && !collect_feet {
+            let distances: [Rational; 3] = std::array::from_fn(|i| {
+                let cell = Rational::from_integer((&local[i] / &self.size).floor());
+                let remainder = &local[i] - &(&cell * &self.size);
+                let distance = remainder.clone().min(&self.size - &remainder);
+                &distance * &distance
+            });
+            let squared = (&distances[0] + &distances[1])
+                .min(&distances[0] + &distances[2])
+                .min(&distances[1] + &distances[2]);
+            return Some((squared, Vec::new()));
+        }
         let base: [Rational; 3] =
             std::array::from_fn(|i| Rational::from_integer((&local[i] / &self.size).floor()));
         let mut best: Option<Rational> = None;
@@ -421,6 +456,17 @@ impl Lattice {
     /// Tentative `(β - ρ) / L` in binary64, with the software square root.
     pub(crate) fn fast_distance(&self, p: [f64; 3]) -> f64 {
         let local = self.fast_local(p);
+        if self.cubic {
+            let distances: [f64; 3] = std::array::from_fn(|i| {
+                let remainder = local[i] - (local[i] / self.fast_size).floor() * self.fast_size;
+                let distance = remainder.min(self.fast_size - remainder);
+                distance * distance
+            });
+            let squared = (distances[0] + distances[1])
+                .min(distances[0] + distances[2])
+                .min(distances[1] + distances[2]);
+            return (Scalar::sqrt(&squared) - self.fast_radius(p)) / self.fast_lipschitz;
+        }
         let mut best = f64::INFINITY;
         let base: [i64; 3] = std::array::from_fn(|i| (local[i] / self.fast_size).floor() as i64);
         for &dx in &self.order {
@@ -593,6 +639,7 @@ impl Lattice {
         world: &[Interval; 3],
         dec: &mut Decider,
     ) -> Result<BoxState, Refusal> {
+        dec.check_deadline()?;
         if self.beams.is_empty() {
             return Ok(BoxState::Outside);
         }
@@ -609,6 +656,24 @@ impl Lattice {
         let size = Interval::from_rational(&self.size);
         if size.lo() <= 0.0 || !r_hi.is_finite() {
             return Ok(BoxState::Unknown);
+        }
+        if self.cubic {
+            // The cubic beam set is exactly the three families of grid lines.
+            let distances = local.map(|coordinate| periodic_distance(coordinate / size) * size);
+            let squared = imin(
+                distances[0].square() + distances[1].square(),
+                imin(
+                    distances[0].square() + distances[2].square(),
+                    distances[1].square() + distances[2].square(),
+                ),
+            );
+            return Ok(if squared.hi() < radius_sq.lo() {
+                BoxState::Inside
+            } else if squared.lo() > radius_sq.hi() {
+                BoxState::Outside
+            } else {
+                BoxState::Unknown
+            });
         }
         let margin = self.overhang_cells as f64 + 1.0;
         let mut range = [[0i64; 2]; 3];

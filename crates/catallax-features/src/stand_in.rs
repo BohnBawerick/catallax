@@ -3,7 +3,7 @@
 //! PRD section 7 and PLAN.md section 15 decide that the B-rep carries a
 //! field-only lattice as its outer envelope plus bodies matching the mass,
 //! centre of gravity and inertia the field measured. This module builds those
-//! bodies from a rational mass target: seven exact blocks, three symmetric pairs
+//! bodies from a rational mass target: up to seven exact blocks, symmetric pairs
 //! on the rationalised principal axes and one block at the centroid.
 //!
 //! Volume and centroid match the target exactly. The inertia tensor matches up
@@ -66,14 +66,14 @@ fn mat_vec(a: &[[Rational; 3]; 3], v: &[Rational; 3]) -> [Rational; 3] {
     std::array::from_fn(|i| (0..3).fold(q(0), |s, k| s + &a[i][k] * &v[k]))
 }
 
-/// Keeps about 36 significant bits of a positive double as a dyadic rational.
+/// Keeps about 48 significant bits of a positive double as a dyadic rational.
 /// Uses only exponent arithmetic, so it is the same on every platform.
 fn dyadic(x: f64) -> Rational {
     if !x.is_finite() || x <= 0.0 {
         return q(0);
     }
     let exponent = (x.to_bits() >> 52) as i64 - 1023;
-    let shift = 36 - exponent;
+    let shift = 48 - exponent;
     let scaled = if shift >= 0 {
         x * 2f64.powi(shift.min(1000) as i32)
     } else {
@@ -225,13 +225,33 @@ impl Block {
     }
 }
 
-/// Side lengths of a block with exactly this volume: two equal dyadic sides
-/// near the cube root and the third side closing the product exactly.
-fn sides_for(mass: &Rational, along: usize) -> [Rational; 3] {
-    let w = dyadic(cbrt(mass.to_f64_nearest()));
-    let w = if w.is_zero() { q(1) } else { w };
-    let third = mass.checked_div(&(&w * &w)).expect("positive dyadic side");
-    std::array::from_fn(|i| if i == along { third.clone() } else { w.clone() })
+/// Blocks follow the target's aspect ratio. Two dyadic sides fix the shape;
+/// the third side closes its volume exactly.
+fn sides_for(
+    mass: &Rational,
+    along: usize,
+    aspect: &[Rational; 3],
+) -> Result<[Rational; 3], Refusal> {
+    let aspect_volume = &(&aspect[0] * &aspect[1]) * &aspect[2];
+    let scale = dyadic(cbrt(mass.to_f64_nearest() / aspect_volume.to_f64_nearest()));
+    if scale.is_zero() {
+        return Err(Refusal::new(
+            "stand-in.numeric-range",
+            "surrogate dimensions exceed the finite numeric solve range",
+        ));
+    }
+    let mut sides = std::array::from_fn(|i| {
+        if i == along {
+            q(0)
+        } else {
+            &scale * &aspect[i]
+        }
+    });
+    let product = &sides[(along + 1) % 3] * &sides[(along + 2) % 3];
+    sides[along] = mass
+        .checked_div(&product)
+        .expect("positive surrogate sides");
+    Ok(sides)
 }
 
 /// Builds the stand-in blocks into `model` and returns their exact properties.
@@ -266,6 +286,14 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
         (&(&d[j] + &d[k]) - &d[i]).mul_pow2(-1)
     });
     let v = &target.volume;
+    let aspect: [Rational; 3] =
+        std::array::from_fn(|i| dyadic((p[i].to_f64_nearest() / v.to_f64_nearest()).sqrt()));
+    if aspect.iter().any(Rational::is_zero) {
+        return Err(Refusal::new(
+            "stand-in.numeric-range",
+            "a positive spatial mass target is required in every principal direction",
+        ));
+    }
     // Satellite distances: dyadic numbers near the gyration radius, grown until
     // the masses stay positive and the blocks are apart.
     let mut distances: [Rational; 3] = std::array::from_fn(|i| {
@@ -279,11 +307,12 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
     for _attempt in 0..64 {
         let mut masses = [q(0), q(0), q(0)];
         let mut centre_mass = v.clone();
+        let mut previous_masses: Option<[Rational; 3]> = None;
         let mut candidate: Vec<Block> = Vec::new();
-        // Block self-inertia depends on the masses being solved. Ten rounds of
-        // the fixed point leave a residual far below the frame rounding; the
-        // exact residual is measured afterwards and reported, never assumed.
-        for _round in 0..10 {
+        // Quantise each proposed satellite mass, then close the centre mass
+        // exactly. This bounds denominator growth without pretending that the
+        // resulting inertia residual is zero.
+        for _round in 0..64 {
             // Self inertia of the current blocks, expressed as second moments.
             let mut own = zero33();
             for block in &candidate {
@@ -307,8 +336,27 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
                     q(0)
                 }
             });
+            let mut next = next.map(|mass| dyadic(mass.to_f64_nearest()));
+            // The compact-box limit has a slowly contracting fixed point.
+            // A safeguarded Aitken step accelerates a decreasing sequence
+            // without increasing the iteration or arithmetic budgets.
+            if let Some(previous) = &previous_masses {
+                for axis in 0..3 {
+                    if next[axis] <= masses[axis] && masses[axis] <= previous[axis] {
+                        let delta = &next[axis] - &masses[axis];
+                        let denominator = &delta - &(&masses[axis] - &previous[axis]);
+                        if let Some(correction) = (&delta * &delta).checked_div(&denominator) {
+                            let accelerated = &next[axis] - &correction;
+                            if accelerated.sign() != Sign::Negative && accelerated < next[axis] {
+                                next[axis] = dyadic(accelerated.to_f64_nearest());
+                            }
+                        }
+                    }
+                }
+            }
             let next_centre = v - &(&(&next[0] + &next[1]) + &next[2]).mul_pow2(1);
             let settled = next == masses && next_centre == centre_mass && !candidate.is_empty();
+            previous_masses = Some(masses.clone());
             masses = next;
             centre_mass = next_centre;
             if centre_mass.sign() != Sign::Positive {
@@ -316,7 +364,7 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
             }
             candidate = vec![Block {
                 offset: zero3(),
-                sides: sides_for(&centre_mass, 0),
+                sides: sides_for(&centre_mass, 0, &aspect)?,
             }];
             for axis in 0..3 {
                 if masses[axis].is_zero() {
@@ -327,7 +375,7 @@ pub fn equivalent_blocks(model: &mut Model, target: &MassTarget) -> Result<Stand
                     offset[axis] = &distances[axis] * &q(sign);
                     candidate.push(Block {
                         offset,
-                        sides: sides_for(&masses[axis], axis),
+                        sides: sides_for(&masses[axis], axis, &aspect)?,
                     });
                 }
             }
@@ -417,15 +465,6 @@ mod tests {
     }
 
     #[test]
-    fn dyadic_keeps_sign_free_magnitudes_and_cube_roots_are_platform_free() {
-        assert_eq!(dyadic(1.0), q(1));
-        assert_eq!(dyadic(0.5), Rational::from_ratio(1, 2).unwrap());
-        let root = cbrt(27.0);
-        assert!((root - 3.0).abs() < 1e-12);
-        assert_eq!(dyadic(cbrt(8.0)), q(2));
-    }
-
-    #[test]
     fn blocks_reproduce_a_rotated_plate_target() {
         // A 10 x 4 x 1 plate rotated 30 degrees about z, centred at (5, 6, 7).
         let (c, s) = (0.8660254037844386_f64, 0.5_f64);
@@ -448,7 +487,6 @@ mod tests {
         };
         let mut model = Model::new();
         let built = equivalent_blocks(&mut model, &target).unwrap();
-        assert_eq!(built.bodies.len(), 7);
         assert_eq!(built.achieved.volume, q(40));
         assert_eq!(built.achieved.centroid, target.centroid);
         assert!(

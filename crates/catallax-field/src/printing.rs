@@ -179,14 +179,14 @@ enum Definition {
     Cell(Vec<Terms>),
     Lattice,
 }
-struct Classifier<'a> {
+pub(crate) struct Classifier<'a> {
     plan: &'a Plan,
     definitions: Vec<Definition>,
     states: Vec<Option<BoxState>>,
     pending: Vec<usize>,
 }
 impl<'a> Classifier<'a> {
-    fn new(plan: &'a Plan, dec: &mut Decider) -> Result<Self, Refusal> {
+    pub(crate) fn new(plan: &'a Plan, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut definitions = Vec::with_capacity(plan.leaves.len());
         for leaf in &plan.leaves {
             match leaf {
@@ -246,6 +246,14 @@ impl<'a> Classifier<'a> {
         })
     }
     fn classify(&mut self, xyz: &[Interval; 3], dec: &mut Decider) -> Result<BoxState, Refusal> {
+        self.classify_with(xyz, dec, |_| None)
+    }
+    pub(crate) fn classify_with(
+        &mut self,
+        xyz: &[Interval; 3],
+        dec: &mut Decider,
+        mut exact_leaf: impl FnMut(usize) -> Option<BoxState>,
+    ) -> Result<BoxState, Refusal> {
         use BoxState::*;
         charge(dec)?;
         self.states.fill(None);
@@ -258,31 +266,37 @@ impl<'a> Classifier<'a> {
             }
             let state = match self.plan.instructions[node] {
                 Instruction::Empty => Outside,
-                Instruction::Leaf(i) => match &self.definitions[i] {
-                    Definition::Primitive(primitive) => primitive.classify(xyz),
-                    Definition::Lattice => {
-                        let geometry::Leaf::Lattice(lattice) = &self.plan.leaves[i] else {
-                            unreachable!("compiled lattice")
-                        };
-                        lattice.box_state(xyz, dec)?
-                    }
-                    Definition::Cell(supports) => {
-                        let mut inside = true;
-                        let mut outside = false;
-                        for support in supports {
-                            let bound = range(support, xyz);
-                            outside |= bound.lo() > 0.0;
-                            inside &= bound.hi() < 0.0;
+                Instruction::Leaf(i) => {
+                    if let Some(state) = exact_leaf(i) {
+                        state
+                    } else {
+                        match &self.definitions[i] {
+                            Definition::Primitive(primitive) => primitive.classify(xyz),
+                            Definition::Lattice => {
+                                let geometry::Leaf::Lattice(lattice) = &self.plan.leaves[i] else {
+                                    unreachable!("compiled lattice")
+                                };
+                                lattice.box_state(xyz, dec)?
+                            }
+                            Definition::Cell(supports) => {
+                                let mut inside = true;
+                                let mut outside = false;
+                                for support in supports {
+                                    let bound = range(support, xyz);
+                                    outside |= bound.lo() > 0.0;
+                                    inside &= bound.hi() < 0.0;
+                                }
+                                if outside {
+                                    Outside
+                                } else if inside {
+                                    Inside
+                                } else {
+                                    Unknown
+                                }
+                            }
                         }
-                        if outside {
-                            Outside
-                        } else if inside {
-                            Inside
-                        } else {
-                            Unknown
-                        }
                     }
-                },
+                }
                 Instruction::Boolean { kind, a, b } => {
                     let Some(left) = self.states[a] else {
                         self.pending.push(a);
@@ -343,7 +357,7 @@ impl<'a> Classifier<'a> {
         }
     }
 }
-fn bounds(plan: &Plan, dec: &mut Decider) -> Result<[[Rational; 2]; 3], Refusal> {
+pub(crate) fn bounds(plan: &Plan, dec: &mut Decider) -> Result<[[Rational; 2]; 3], Refusal> {
     let mut tape: Vec<Option<[[Rational; 2]; 3]>> = Vec::with_capacity(plan.instructions.len());
     for instruction in &plan.instructions {
         let bound = match *instruction {

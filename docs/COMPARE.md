@@ -43,18 +43,18 @@ Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four ratio
 
 ### Planar cap enclosure reuse
 
-Planar meshing retains the certified coordinate balls already computed for shared
-edge samples. Its projected orientation filters reuse those balls, and rail-ear
-centroids use their affine interval combination instead of re-evaluating the
-algebraic trace expressions. The exact sample expressions remain available for
-ambiguous predicates and subsequent edge-length refinement.
+Planar meshing caches exact coordinate enclosures for shared boundary samples.
+Rail-ear centroids reuse those enclosures in the general evaluator's original
+addition and multiplication order. Syntactically rational subexpressions still
+use exact evaluation, preserving its rational-folding shortcuts. This retains
+the same coordinate balls, rounded mesh positions and face error bounds rather
+than accepting a different approximation within the chord tolerance.
 
-Cached enclosures are accepted only when they certify the requested coordinate
-rounding bound. Missing or overly wide enclosures fall back to the original exact
-evaluation. Triangulation certification, closed-trim witnesses, comparison
-accuracy and work allowances are unchanged. This applies to planar trims
-generally, including drafted caps, without treating their support residuals as
-true distances.
+Missing or different-precision enclosures use the original exact expression.
+Exact sample expressions remain available for predicates and optional
+edge-length refinement. Triangulation certification, closed-trim witnesses,
+comparison accuracy and work allowances are unchanged. No support residual is
+promoted to a true distance.
 
 
 | Recipe operations | Comparison coverage |

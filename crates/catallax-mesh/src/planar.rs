@@ -618,6 +618,38 @@ fn refine(
     ))
 }
 
+fn centroid_coordinate(
+    points: [&Real; 3],
+    enclosures: Option<[&Ball; 3]>,
+    third: &Real,
+    third_ball: &Ball,
+    dec: &Decider,
+) -> Result<(Real, Ball), Refusal> {
+    let ab = points[0] + points[1];
+    let sum = &ab + points[2];
+    let centroid = &sum * third;
+    let Some([a, b, c]) =
+        enclosures.filter(|balls| balls.iter().all(|ball| ball.precision() == chart::BITS))
+    else {
+        let ball = dec.enclose_at(&centroid, chart::BITS)?;
+        return Ok((centroid, ball));
+    };
+    // Match the general evaluator's expression order and rational-subtree
+    // shortcuts. The inputs are its exact, same-precision cached enclosures,
+    // not independently evaluated trace balls or rounded mesh coordinates.
+    let ball = if centroid.rational_ref().is_some() {
+        dec.enclose_at(&centroid, chart::BITS)?
+    } else {
+        let ab_ball = if ab.rational_ref().is_some() {
+            dec.enclose_at(&ab, chart::BITS)?
+        } else {
+            a + b
+        };
+        &(&ab_ball + c) * third_ball
+    };
+    Ok((centroid, ball))
+}
+
 fn split_rail_ears(
     triangles: &mut Vec<Triangle>,
     points: &mut BTreeMap<usize, [Real; 3]>,
@@ -640,57 +672,40 @@ fn split_rail_ears(
         if mesh.positions.len() >= options.max_vertices {
             return Err(failure("planar rail-ear refinement reached max_vertices"));
         }
-        let [a, b, c] = vertices;
-        // The exact affine centroid lies strictly inside the already-certified
-        // planar triangle. No shared boundary sample or segment is replaced.
-        let exact = |axis| &(&(&points[&a][axis] + &points[&b][axis]) + &points[&c][axis]) * &third;
-        // Affine interval arithmetic reuses the certified rail samples. If its
-        // enclosure is too wide, evaluate the original exact expression.
-        let cached = if let [Some(a), Some(b), Some(c)] = vertices.map(|v| enclosed.get(&v)) {
-            Some(std::array::from_fn(|axis| {
-                &(&(&a[axis] + &b[axis]) + &c[axis]) * &third_ball
-            }))
+        // Preserve the original exact affine centroid, including every
+        // working-precision rounding decision in its enclosure.
+        let enclosed = vertices.map(|v| enclosed.get(&v));
+        let enclosures = if let [Some(a), Some(b), Some(c)] = enclosed {
+            Some([a, b, c])
         } else {
             None
         };
-        let mut p: [Option<Real>; 3] = [None, None, None];
-        let mut balls = cached
-            .map(|balls| balls.map(Some))
-            .unwrap_or([None, None, None]);
-        for axis in 0..3 {
-            // Preserve rounding at ties and cancellation, without discarding
-            // usable enclosures of the other coordinates.
-            if balls[axis]
-                .as_ref()
-                .is_some_and(|ball| ball.lo().to_f64_nearest() == ball.hi().to_f64_nearest())
-            {
-                continue;
-            }
-            balls[axis] = Some(dec.enclose_at(p[axis].insert(exact(axis)), chart::BITS)?);
-        }
-        let mut balls = balls.map(Option::unwrap);
-        let mut position = chart::position(&balls)?;
-        let mut rounding = chart::residual(&position, &balls);
-        if rounding > options.chord_tolerance {
-            for axis in 0..3 {
-                if p[axis].is_none() {
-                    balls[axis] = dec.enclose_at(p[axis].insert(exact(axis)), chart::BITS)?;
-                }
-            }
-            position = chart::position(&balls)?;
-            rounding = chart::residual(&position, &balls);
-        }
-        error = error.max(rounding);
+        let [x, y, z] = std::array::from_fn(|axis| {
+            centroid_coordinate(
+                vertices.map(|v| &points[&v][axis]),
+                enclosures.map(|balls| balls.map(|ball| &ball[axis])),
+                &third,
+                &third_ball,
+                dec,
+            )
+        });
+        let (x, bx) = x?;
+        let (y, by) = y?;
+        let (z, bz) = z?;
+        let p = [x, y, z];
+        let balls = [bx, by, bz];
+        let position = chart::position(&balls)?;
+        error = error.max(chart::residual(&position, &balls));
         if error > options.chord_tolerance {
             return Err(failure("planar rail-ear rounding exceeds chord tolerance"));
         }
         let index = mesh.positions.len();
         mesh.positions.push(position);
         if options.max_edge_length.is_some() {
-            let p = std::array::from_fn(|axis| p[axis].take().unwrap_or_else(|| exact(axis)));
             points.insert(index, p);
         }
         let face = triangles[i].face;
+        let [a, b, c] = vertices;
         triangles[i].vertices = [a, b, index];
         triangles.push(Triangle {
             vertices: [b, c, index],
@@ -927,4 +942,39 @@ pub(crate) fn build(
             .filter(|_| angular_reached),
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cached_centroids_keep_general_enclosures_at_cancellation_and_rounding_boundaries() {
+        let dec = Decider::default();
+        let third = Real::from(Rational::from_ratio(1, 3).unwrap());
+        let third_ball = dec.enclose_at(&third, chart::BITS).unwrap();
+        let root = Real::from(2).sqrt();
+        let huge = &root * &Real::from(Rational::parse("1e40").unwrap());
+        let tie = Real::from(&Rational::one() + &Rational::one().mul_pow2(-53));
+        for points in [
+            [Real::from(1), Real::from(2), root.clone()],
+            [root.clone(), Real::from(3).sqrt(), Real::from(5).sqrt()],
+            [root.clone(), -&root, Real::one()],
+            [huge.clone(), -&huge, root.clone()],
+            [&tie * &Real::from(3), Real::zero(), Real::zero()],
+        ] {
+            let exact = &(&(&points[0] + &points[1]) + &points[2]) * &third;
+            let expected = dec.enclose_at(&exact, chart::BITS).unwrap();
+            let cached = points
+                .each_ref()
+                .map(|p| dec.enclose_at(p, chart::BITS).unwrap());
+            let coarse = cached.each_ref().map(|ball| ball.with_precision(32));
+            for enclosures in [None, Some(cached.each_ref()), Some(coarse.each_ref())] {
+                let (_, actual) =
+                    centroid_coordinate(points.each_ref(), enclosures, &third, &third_ball, &dec)
+                        .unwrap();
+                assert_eq!((actual.lo(), actual.hi()), (expected.lo(), expected.hi()));
+            }
+        }
+    }
 }

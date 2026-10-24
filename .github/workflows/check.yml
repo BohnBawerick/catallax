@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_dry_run:
+        description: Build and attest every release artifact without publishing
+        type: boolean
+        default: false
+      replay_summary:
+        description: Public replay aggregate for this exact commit, required for release_dry_run
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -31,6 +40,8 @@ jobs:
       - run: cargo fmt --all --check
       - name: Edge hunt
         run: python3 -B -m unittest discover -s tools/edge-hunt -v
+      - name: Release evidence policy
+        run: python3 -B -m unittest discover -s tools/release -p 'test_*.py' -v
 
   clippy:
     runs-on: ubuntu-latest
@@ -88,9 +99,30 @@ jobs:
         run: python3 -B site/render/comparison.py --check
       - run: cargo test --workspace --release --doc
 
+  # check.yml already exists on main, so it can dispatch a new reusable release
+  # workflow on a branch before that workflow has landed on main.
+  release-evidence:
+    if: github.event_name == 'workflow_dispatch' && (inputs.release_dry_run || inputs.replay_summary != '')
+    uses: ./.github/workflows/release-evidence.yml
+    with:
+      replay_summary: ${{ inputs.replay_summary }}
+      historical_replay: ${{ inputs.release_dry_run }}
+
+  release-dry-run:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_dry_run
+    needs: release-evidence
+    uses: ./.github/workflows/release-build.yml
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    with:
+      evidence_run: ${{ format('{0}', github.run_id) }}
+
   check:
     if: always()
-    needs: [fmt, clippy, build, tests]
+    needs: [fmt, clippy, build, tests, release-evidence, release-dry-run]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -101,7 +133,9 @@ jobs:
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ["RESULTS"])
-          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
+          optional = {"release-evidence", "release-dry-run"}
+          failed = {name: job["result"] for name, job in results.items()
+                    if job["result"] != "success" and not (name in optional and job["result"] == "skipped")}
           if failed:
               raise SystemExit(f"Required checks did not pass: {failed}")
           print("Format, clippy, both binaries, release tests and doc tests passed")

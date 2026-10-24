@@ -1,0 +1,59 @@
+name: milestone release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      evidence_run:
+        description: Successful evidence workflow run for this exact commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  artifacts:
+    uses: ./.github/workflows/release-build.yml
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    with:
+      evidence_run: ${{ inputs.evidence_run || '' }}
+
+  publish:
+    if: github.event_name == 'push'
+    needs: artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: release
+      - name: Create release only after all builds and evidence pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.artifacts.outputs.tag }}
+          ALPHA: ${{ needs.artifacts.outputs.alpha }}
+        run: |
+          cd release
+          sha256sum --check SHA256SUMS
+          flags=()
+          title="Catallax $TAG"
+          if [[ "$ALPHA" == true ]]; then
+            flags+=(--prerelease)
+            title="$title alpha"
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --draft --title "$title" --notes-file RELEASE_NOTES.md "${flags[@]}" ./*
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

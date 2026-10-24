@@ -378,17 +378,10 @@ impl FaceBuilder<'_> {
             }
         }
         let point = self.chart.canonical(point);
-        let lifted = align(point, center, self.chart.periodic).map(chart::q);
-        let triangle = uvs.map(|uv| uv.map(chart::q));
-        // Strict exact orientation against every side certifies an interior
-        // chart point, rather than a rounded point on the shared polyline.
-        let inside = (0..3).all(|i| {
-            let a = &triangle[i];
-            let b = &triangle[(i + 1) % 3];
-            &(&(&b[0] - &a[0]) * &(&lifted[1] - &a[1]))
-                - &(&(&b[1] - &a[1]) * &(&lifted[0] - &a[0]))
-                > Rational::zero()
-        });
+        let lifted = align(point, center, self.chart.periodic);
+        // Strict orientation certifies an interior chart point, rather than a
+        // rounded point on the shared polyline. Uncertain filters remain exact.
+        let inside = (0..3).all(|i| chart::positive_turn(uvs[i], uvs[(i + 1) % 3], lifted));
         if !inside {
             return Err(failure(
                 "shared-rail ear has no interior point at chart precision",
@@ -632,7 +625,7 @@ fn face_mesh(
         prior_chords,
         bounds,
         filtered_hessian: hessian.each_ref().map(Interval::from_rational),
-        hessian,
+        hessian: hessian.into_owned(),
         dec,
     };
     builder.boundary(&segments, face.sense)?;

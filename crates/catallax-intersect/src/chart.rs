@@ -541,23 +541,45 @@ pub(super) fn interval_jets(
         .then_some(result))
 }
 
+// Point evaluation needs no Taylor coefficient vectors. Retain the order-zero
+// recurrence's exact expression definitions, including its zero/reciprocal nodes.
+fn exact_value(
+    e: &E,
+    parameter: &Real,
+    zero: &Real,
+    one: &Real,
+    dec: &Decider,
+    cache: &mut HashMap<usize, Real>,
+) -> Result<Real, Refusal> {
+    dec.check_deadline()?;
+    let key = Arc::as_ptr(&e.0) as usize;
+    if let Some(value) = cache.get(&key) {
+        return Ok(value.clone());
+    }
+    let mut child = |e| exact_value(e, parameter, zero, one, dec, cache);
+    let value = match e.0.as_ref() {
+        Node::T => parameter.clone(),
+        Node::Constant(value, _) => value.clone(),
+        Node::Add(a, b) => child(a)? + child(b)?,
+        Node::Neg(a) => zero - &child(a)?,
+        Node::Mul(a, b) => zero + &(child(a)? * child(b)?),
+        Node::Div(a, b) => child(a)? * (one / &child(b)?),
+        Node::Sqrt(a) => child(a)?.sqrt(),
+    };
+    cache.insert(key, value.clone());
+    Ok(value)
+}
+
 pub(super) fn exact_position(
     coords: &[E; 3],
     t: &Rational,
     dec: &Decider,
 ) -> Result<Point3, Refusal> {
     let parameter = Real::from(t.clone());
+    let zero = Real::zero();
+    let one = Real::one();
     let mut cache = HashMap::new();
-    let mut coordinate = |e| {
-        jets(e, &parameter, 0, 0, Some(dec), &mut cache)
-            .map(|values| values[0].clone())
-            .map_err(|error| match error {
-                JetError::Deadline(refusal) => refusal,
-                JetError::Split => {
-                    Refusal::new("intersection.trace", "exact trace point is singular")
-                }
-            })
-    };
+    let mut coordinate = |e| exact_value(e, &parameter, &zero, &one, dec, &mut cache);
     Ok(Point3::new(
         coordinate(&coords[0])?,
         coordinate(&coords[1])?,

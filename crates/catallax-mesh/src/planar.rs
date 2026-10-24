@@ -747,12 +747,15 @@ pub(crate) fn build(
     let mut error = Rational::zero();
     let mut projected = BTreeMap::new();
     for (&index, p) in &points {
-        let balls = [
-            dec.enclose_at(&p[0], chart::BITS)?,
-            dec.enclose_at(&p[1], chart::BITS)?,
-            dec.enclose_at(&p[2], chart::BITS)?,
-        ];
-        error = error.max(chart::residual(&boundaries.mesh.positions[index], &balls));
+        let balls = match boundaries.enclosures.entry(index) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert([
+                dec.enclose_at(&p[0], chart::BITS)?,
+                dec.enclose_at(&p[1], chart::BITS)?,
+                dec.enclose_at(&p[2], chart::BITS)?,
+            ]),
+        };
+        error = error.max(chart::residual(&boundaries.mesh.positions[index], balls));
         projected.insert(
             index,
             Point {

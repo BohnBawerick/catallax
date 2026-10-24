@@ -1,0 +1,85 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Unfinished spherical silhouette crossing",
+  "description": "The rectangular profile crosses a silhouette. This requires another certified branch arrangement and must refuse without geometry.",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "3",
+              "-1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "3",
+              "1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-3",
+              "1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-3",
+              "-1/2"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "target",
+      "op": "sphere",
+      "radius": "2",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "5"
+        ]
+      }
+    },
+    {
+      "id": "cap",
+      "op": "extrude_next",
+      "target": "target",
+      "profile": "profile"
+    }
+  ],
+  "result": "cap"
+}

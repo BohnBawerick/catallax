@@ -4,7 +4,7 @@ Version 4 specification, format `catallax-recipe/4`. The reader accepts versions
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
-The crate `catallax-recipe` holds the data model: the types, their canonical JSON text and the checks that need no geometry. Both evaluators build stock solids, sketches, signed extrusions, revolutions, through-all cuts, named holes and booleans. Exact elementary fillets construct cylinder and torus strips in B-rep and independent fillet regions in the field. Bounded face/next extrusions currently reduce planar target boundaries to an exact projected arrangement, including trimmed hits, reference disambiguation and interior curtains; non-planar target limits remain an implementation gap. The field's certified queries are described in [FIELD.md](FIELD.md). Section 7.14 lists inherited feature geometry gaps. Neither evaluator covers the whole language.
+The crate `catallax-recipe` holds the data model: the types, their canonical JSON text and the checks that need no geometry. Both evaluators build stock solids, sketches, signed extrusions, revolutions, through-all cuts, named holes and booleans. Exact elementary fillets construct cylinder and torus strips in B-rep and independent fillet regions in the field. Bounded face/next extrusions currently reduce planar target boundaries to an exact projected arrangement, including trimmed hits, reference disambiguation and interior curtains; a single stock sphere, cylinder or cone also supports a uniformly separated curved cap over one rectangular sketch. Other non-planar target limits remain an implementation gap. The field's certified queries are described in [FIELD.md](FIELD.md). Section 7.14 lists inherited feature geometry gaps. Neither evaluator covers the whole language.
 
 The exchange contract in [JUDGE-INTERFACE.md](JUDGE-INTERFACE.md) is unchanged. Its question format stays the way the independent tester talks to the B-rep half. The recipe language sits beside it and does not replace it.
 
@@ -441,6 +441,10 @@ A zero direction or `w · n = 0` is impossible. Missing reference matches are re
 
 Using trimmed faces and the first positive hit makes cavities and several intersections deterministic. Using an untrimmed support could cap against an extension the user did not select. An unbounded body-valued extrusion is excluded by the bounded-body type; through-all remains an operation on a bounded target.
 
+The curved implementation covers one authored axis-aligned rectangle in its sketch chart against one stock sphere, cylinder or cone/frustum. Exact outward enclosures certify a strictly positive quadratic coefficient and discriminant over the entire rectangle, a uniform entry or exit state at the start, positive finite roots, and separation from all stock cap trims. The raw authored direction and exact placement are retained. Both `extrude_to` on the stock wall and `extrude_next` use the certified first branch. B-rep construction intersects or subtracts finite analytic construction cells; the field independently compiles those defining cells without reading topology. Every surviving face belongs to the extrusion.
+
+Silhouettes, tangencies, a changing entry/exit branch, trim crossings, nonrectangular profiles, other carriers and general target graphs still need more coverage. `features.unsupported-curved-limit` reports an unfinished proof, not an impossible end condition. Selected stock planar caps still require the separate planar reduction; no untrimmed wall extension substitutes for a selected face. Public recipe fixtures are in `crates/catallax-features/tests/fixtures/curved-limits`.
+
 ### 4.2 Revolve
 
 | Parameter | Value |
@@ -504,7 +508,7 @@ Choices:
 
 Both kernels implement the named hole operation from these axial bands, including through holes, flat and conical blind tips, counterbores, countersinks and their surviving origins. The B-rep uses finite construction caps excluded by the target's defining bound. Strictly disjoint parallel tools can be subtracted as one compound; other placements are subtracted successively. The field compiles the same defining bands into independent analytic cells, not a B-rep. Inherited general cone/torus intersection gaps remain unfinished work.
 
-Standard 118-degree blind drill points and 82- and 100-degree countersinks build as exact algebraic definitions within the unchanged 100,000,000 request allowance. Construction retains the defining meridian stations and coaxial circular sections, including real annular floors when a head is shorter than its transition depth. Planar first-hit extrusions are implemented; non-planar limits remain a separate unfinished reduction.
+Standard 118-degree blind drill points and 82- and 100-degree countersinks build as exact algebraic definitions within the unchanged 100,000,000 request allowance. Construction retains the defining meridian stations and coaxial circular sections, including real annular floors when a head is shorter than its transition depth. Planar first-hit extrusions and separated single-branch stock-quadric caps are implemented; general non-planar limits remain an unfinished reduction.
 
 ### 4.4 Boolean
 

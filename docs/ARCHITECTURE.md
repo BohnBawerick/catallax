@@ -181,6 +181,12 @@ Implement certificate arithmetic using exact rationals and outward enclosures of
 
 The verification CLI owns allocation, charging, defaults and cancellation. Account for conversion, transfer, local measurement and certificate verification as well as the original decision. Exhaustion enlarges neither `tau` nor any local cap. Interrupted work cannot publish a partial certificate. Wall time cannot choose branches or acceptance bounds. Caches and parallel work must preserve deterministic outcomes, evidence order and logical work allowances. A tighter budget may produce a certified bounded answer or a refusal; it cannot justify an unproved answer.
 
+### Separated curved extrusion limits
+
+`catallax-features::end_condition::curved` retains the authored rectangular chart, exact stock quadric and a certified first-root branch. Whole-domain discriminant, start-state and finite-trim separation proofs precede construction. The B-rep builds the resulting finite analytic cells with the existing Boolean engine, including a finite midpoint clipper for the entry branch. The field tape compiles the same immutable construction definitions into its own analytic cells; it neither builds nor queries B-rep topology. `CurvedField` additionally exposes independent polynomial/derivative-sign point queries. Residuals remain residuals, and display/nearest-face certificates still come from their existing consumers.
+
+The planar projected arrangement remains unchanged. The curved path currently accepts one rectangular sketch and one stock sphere, cylinder or cone; unresolved silhouettes, tangencies, trim crossings and branch changes return specific coverage refusals. These restrictions are proved over the domain, not inferred from samples. Public integration fixtures and tests exercise the recipe dispatcher and independent field, application and comparison paths.
+
 ### Observed baseline and evidence
 
 The following are source observations at `b66c5fd73b38eacbe7d2be54de92b8264fa23eac`, not claims that the new policy is enforced. The named tests were inspected for their assertions; this decision does not report a fresh execution of those tests.

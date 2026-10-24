@@ -1,0 +1,85 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "sphere entry first hit",
+  "description": "Public exact rectangular first-hit cap on a stock quadric; no silhouette or trim crossing.",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "1/2",
+              "-1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "1/2",
+              "1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-1/2",
+              "1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-1/2",
+              "-1/2"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "target",
+      "op": "sphere",
+      "radius": "2",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "5"
+        ]
+      }
+    },
+    {
+      "id": "cap",
+      "op": "extrude_next",
+      "target": "target",
+      "profile": "profile"
+    }
+  ],
+  "result": "cap"
+}

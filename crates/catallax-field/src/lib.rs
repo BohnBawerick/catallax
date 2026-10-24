@@ -16,6 +16,7 @@ pub mod display;
 pub mod distance;
 mod draft;
 mod draft_source;
+mod end_condition;
 mod features;
 mod fillet;
 mod geometry;
@@ -28,6 +29,8 @@ mod planar;
 mod profile;
 mod samples;
 mod support;
+
+pub use end_condition::CurvedField;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -481,52 +484,74 @@ impl Plan {
                         } else {
                             None
                         };
-                        let cap = catallax_features::end_condition::Capped::compile(
-                            recipe,
-                            target,
-                            profile,
-                            direction.as_ref(),
-                            limit,
-                            dec,
-                        )?;
-                        let built = features::Feature::extrude(
-                            &profiles[profile],
-                            &step.id,
-                            None,
-                            direction.as_ref(),
-                            false,
-                            dec,
-                        )?;
-                        let tool = plan.feature(built, dec)?;
-                        let mut envelope = 0;
-                        for cell in cap.cells.iter().filter(|c| c.active) {
-                            let planes = cap.cell_planes(cell, dec)?;
-                            let mut faces = Vec::new();
-                            for (plane, role) in &planes {
-                                if let Some(role) = role {
-                                    faces.push(geometry::face(
-                                        Surface::Plane(plane.clone()),
-                                        Origin {
-                                            step: step.id.clone(),
-                                            role: role.clone(),
-                                        },
-                                        dec,
-                                    )?);
-                                }
-                            }
-                            let surfaces =
-                                planes.into_iter().map(|(p, _)| Surface::Plane(p)).collect();
-                            let node = plan.leaf(
-                                geometry::Leaf::Cell(geometry::Cell::new(
-                                    surfaces,
-                                    Some(cap.column_radius.clone()),
-                                )?),
-                                faces,
+                        if !profiles[profile].loops.is_empty()
+                            && matches!(
+                                recipe.step(target).map(|s| &s.op),
+                                Some(
+                                    Operation::Sphere { .. }
+                                        | Operation::Cylinder { .. }
+                                        | Operation::Cone { .. }
+                                )
+                            )
+                        {
+                            let cap =
+                                catallax_features::end_condition::curved::AuthoredCap::compile(
+                                    recipe,
+                                    target,
+                                    profile,
+                                    direction.as_ref(),
+                                    limit,
+                                    dec,
+                                )?;
+                            plan.curved_cap(&cap, &step.id, dec)?
+                        } else {
+                            let cap = catallax_features::end_condition::Capped::compile(
+                                recipe,
+                                target,
+                                profile,
+                                direction.as_ref(),
+                                limit,
                                 dec,
                             )?;
-                            envelope = plan.boolean(BooleanKind::Union, envelope, node, dec)?;
+                            let built = features::Feature::extrude(
+                                &profiles[profile],
+                                &step.id,
+                                None,
+                                direction.as_ref(),
+                                false,
+                                dec,
+                            )?;
+                            let tool = plan.feature(built, dec)?;
+                            let mut envelope = 0;
+                            for cell in cap.cells.iter().filter(|c| c.active) {
+                                let planes = cap.cell_planes(cell, dec)?;
+                                let mut faces = Vec::new();
+                                for (plane, role) in &planes {
+                                    if let Some(role) = role {
+                                        faces.push(geometry::face(
+                                            Surface::Plane(plane.clone()),
+                                            Origin {
+                                                step: step.id.clone(),
+                                                role: role.clone(),
+                                            },
+                                            dec,
+                                        )?);
+                                    }
+                                }
+                                let surfaces =
+                                    planes.into_iter().map(|(p, _)| Surface::Plane(p)).collect();
+                                let node = plan.leaf(
+                                    geometry::Leaf::Cell(geometry::Cell::new(
+                                        surfaces,
+                                        Some(cap.column_radius.clone()),
+                                    )?),
+                                    faces,
+                                    dec,
+                                )?;
+                                envelope = plan.boolean(BooleanKind::Union, envelope, node, dec)?;
+                            }
+                            plan.boolean(BooleanKind::Intersect, tool, envelope, dec)?
                         }
-                        plan.boolean(BooleanKind::Intersect, tool, envelope, dec)?
                     }
                     Operation::Hole {
                         target,
@@ -710,6 +735,33 @@ impl Plan {
                 "hole target has no certified finite bound",
             )
         })
+    }
+
+    fn curved_cap(
+        &mut self,
+        cap: &catallax_features::end_condition::curved::AuthoredCap,
+        step: &catallax_recipe::StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let cells = cap.definition().construction(cap.side_ids(), dec)?;
+        let mut leaf = |cell: &catallax_features::end_condition::curved::ConvexCell| -> Result<usize, Refusal> {
+            let faces = cell.surfaces().iter().zip(cell.roles()).map(|(surface, role)| {
+                geometry::face(surface.clone(), Origin { step: step.clone(), role: role.clone() }, dec)
+            }).collect::<Result<Vec<_>, _>>()?;
+            self.leaf(
+                geometry::Leaf::Cell(geometry::Cell::new(cell.surfaces().to_vec(), Some(cell.radius().clone()))?),
+                faces, dec,
+            )
+        };
+        let column = leaf(&cells.column)?;
+        let target = leaf(&cells.target)?;
+        let clipper = cells.clipper.as_ref().map(&mut leaf).transpose()?;
+        if let Some(clipper) = clipper {
+            let slab = self.boolean(BooleanKind::Intersect, column, clipper, dec)?;
+            self.boolean(BooleanKind::Subtract, slab, target, dec)
+        } else {
+            self.boolean(BooleanKind::Intersect, column, target, dec)
+        }
     }
 
     fn feature(

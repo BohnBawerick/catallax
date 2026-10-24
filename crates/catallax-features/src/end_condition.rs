@@ -1252,3 +1252,6 @@ impl Capped {
         .body)
     }
 }
+
+/// Exact single-branch curved limits and their independent construction cells.
+pub mod curved;

@@ -319,6 +319,31 @@ pub(crate) fn comparison_witness(
     dec: &mut Decider,
 ) -> Result<Option<RPoint3>, Refusal> {
     match surface {
+        Surface::Sphere(s) => {
+            // Choose the stereographic pole opposite the target hemisphere.
+            // The denominator is radius + |axial displacement|, including for
+            // rounded targets just off a pole. This path supplies a witness;
+            // callers still check trim membership and its measured distance.
+            let d = target.minus(&s.center);
+            let sense = if crate::geometry::sign(&d.z, dec, "boolean.imprint-ambiguous")?
+                == Sign::Positive
+            {
+                -1
+            } else {
+                1
+            };
+            let pole = unit(2).scaled(&Real::from_i64(sense));
+            let denominator = &s.radius - &d.dot(&pole);
+            let x = dec.enclose(&(&d.x / &denominator), width)?.mid();
+            let y = dec.enclose(&(&d.y / &denominator), width)?.mid();
+            let norm = &x * &x + &y * &y;
+            let factor = &s.radius / &Real::from(Rational::one() + norm.clone());
+            let radial = unit(0)
+                .scaled(&Real::from(r(2) * x))
+                .plus(&unit(1).scaled(&Real::from(r(2) * y)))
+                .plus(&pole.scaled(&Real::from(norm - Rational::one())));
+            Ok(s.center.plus(&radial.scaled(&factor)).as_rational())
+        }
         Surface::Cone(s) => {
             let (Some(apex), Some(axis), Some(reference), Some(slope)) = (
                 s.apex.as_rational(),

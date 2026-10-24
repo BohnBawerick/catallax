@@ -15,7 +15,7 @@ pub use certified::{CertifiedApplicationBody, build_certified};
 
 use std::{collections::BTreeMap, fmt};
 
-use catallax_features::{BuildError, Built, evaluate};
+use catallax_features::{BuildError, Built, EvaluationCheckpoint, evaluate, evaluate_incremental};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
 use catallax_numbers::{Answer, Decider, Refusal, operation_budget_active, with_operation_budget};
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
@@ -56,6 +56,17 @@ pub struct ApplicationBody {
     /// Shared positions, face-labelled triangles and edge polylines. Marks are retained.
     pub display: Answer<Mesh>,
     /// The names behind every result picking handle.
+    pub names: Names,
+}
+
+/// An application body whose exact evaluation can be consumed by the next edit.
+#[derive(Clone, Debug)]
+pub struct IncrementalApplicationBody {
+    /// Owned prefix. Read its exact result through [`EvaluationCheckpoint::built`].
+    pub checkpoint: EvaluationCheckpoint,
+    /// Display approximation of that result.
+    pub display: Answer<Mesh>,
+    /// Picking names of that result.
     pub names: Names,
 }
 
@@ -192,6 +203,38 @@ fn build_inner(
     decider: &mut Decider,
 ) -> Result<ApplicationBody, Error> {
     let built = evaluate(recipe, decider).map_err(Error::Build)?;
+    let (display, names) = display_and_names(&built, options, decider)?;
+    Ok(ApplicationBody {
+        built,
+        display,
+        names,
+    })
+}
+
+/// Resumes an unchanged prefix, then checks and meshes only the requested result.
+/// A prefix mismatch rebuilds from the start, as in [`evaluate_incremental`].
+pub fn build_incremental(
+    recipe: &Recipe,
+    prefix: Option<EvaluationCheckpoint>,
+    options: &MeshOptions,
+    decider: &mut Decider,
+) -> Result<IncrementalApplicationBody, Error> {
+    bounded_build(|| {
+        let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
+        let (display, names) = display_and_names(checkpoint.built(), options, decider)?;
+        Ok(IncrementalApplicationBody {
+            checkpoint,
+            display,
+            names,
+        })
+    })
+}
+
+fn display_and_names(
+    built: &Built,
+    options: &MeshOptions,
+    decider: &mut Decider,
+) -> Result<(Answer<Mesh>, Names), Error> {
     let faults = built.model.check(built.result);
     if !faults.is_empty() {
         return Err(Error::InvalidBody(faults));
@@ -199,11 +242,7 @@ fn build_inner(
     let display =
         mesh_body(&built.model, built.result, options, decider).map_err(Error::Display)?;
     let names = result_names(&built.model, built.result);
-    Ok(ApplicationBody {
-        built,
-        display,
-        names,
-    })
+    Ok((display, names))
 }
 
 fn result_names(model: &Model, body: BodyId) -> Names {

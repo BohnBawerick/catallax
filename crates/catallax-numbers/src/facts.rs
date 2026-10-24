@@ -51,6 +51,18 @@ pub struct FactBook<K> {
     facts: Vec<Fact<K>>,
     keys: BTreeSet<(FactKind, K, K, Option<K>)>,
     edges: BTreeMap<(FactKind, K), BTreeSet<K>>,
+    classes: BTreeMap<(FactKind, K), usize>,
+    components: Vec<Component>,
+}
+
+// Union by size bounds the read-only root walk. Incidence edges name roots,
+// not all historical copies of an equivalent geometric object.
+#[derive(Clone, Debug)]
+struct Component {
+    parent: usize,
+    size: usize,
+    outgoing: BTreeSet<usize>,
+    incoming: BTreeSet<usize>,
 }
 
 impl<K: Copy + Ord> Default for FactBook<K> {
@@ -66,6 +78,8 @@ impl<K: Copy + Ord> FactBook<K> {
             facts: Vec::new(),
             keys: BTreeSet::new(),
             edges: BTreeMap::new(),
+            classes: BTreeMap::new(),
+            components: Vec::new(),
         }
     }
 
@@ -83,15 +97,29 @@ impl<K: Copy + Ord> FactBook<K> {
         if !self.keys.insert((fact.kind, a, b, fact.at)) {
             return false;
         }
-        self.edges
-            .entry((fact.kind, fact.a))
-            .or_default()
-            .insert(fact.b);
-        if symmetric {
+        if fact.kind == FactKind::Tangent {
+            self.edges
+                .entry((fact.kind, fact.a))
+                .or_default()
+                .insert(fact.b);
             self.edges
                 .entry((fact.kind, fact.b))
                 .or_default()
                 .insert(fact.a);
+        }
+        match fact.kind {
+            FactKind::Tangent => {}
+            FactKind::Incident => {
+                let a = self.component(FactKind::Coincident, fact.a);
+                let b = self.component(FactKind::Coincident, fact.b);
+                self.components[a].outgoing.insert(b);
+                self.components[b].incoming.insert(a);
+            }
+            kind => {
+                let a = self.component(kind, fact.a);
+                let b = self.component(kind, fact.b);
+                self.unite(a, b);
+            }
         }
         self.facts.push(fact);
         true
@@ -108,36 +136,91 @@ impl<K: Copy + Ord> FactBook<K> {
         if kind != FactKind::Incident && a == b {
             return true;
         }
-        if let Some(neighbors) = self.edges.get(&(kind, a)) {
-            if neighbors.contains(&b) {
-                return true;
-            }
-        } else if kind != FactKind::Incident || !self.edges.contains_key(&(FactKind::Coincident, a))
-        {
+        let relation = if kind == FactKind::Incident {
+            FactKind::Coincident
+        } else {
+            kind
+        };
+        let (Some(&a), Some(&b)) = (
+            self.classes.get(&(relation, a)),
+            self.classes.get(&(relation, b)),
+        ) else {
+            return false;
+        };
+        let (a, b) = (self.root(a), self.root(b));
+        if kind != FactKind::Incident {
+            return a == b;
+        }
+        if self.components[a].outgoing.contains(&b) {
+            return true;
+        }
+        if self.components[a].outgoing.is_empty() {
             return false;
         }
-        let mut seen = BTreeSet::new();
-        let mut queue = VecDeque::from([(a, false)]);
-        seen.insert((a, false));
-        while let Some((key, incident)) = queue.pop_front() {
-            for edge_kind in [kind, FactKind::Coincident] {
-                if edge_kind != kind && kind != FactKind::Incident {
-                    continue;
+        let mut seen = BTreeSet::from([a]);
+        let mut queue = VecDeque::from([a]);
+        while let Some(key) = queue.pop_front() {
+            for &next in &self.components[key].outgoing {
+                if next == b {
+                    return true;
                 }
-                if let Some(neighbors) = self.edges.get(&(edge_kind, key)) {
-                    for next in neighbors {
-                        let used = incident || edge_kind == FactKind::Incident;
-                        if *next == b && (kind != FactKind::Incident || used) {
-                            return true;
-                        }
-                        if seen.insert((*next, used)) {
-                            queue.push_back((*next, used));
-                        }
-                    }
+                if seen.insert(next) {
+                    queue.push_back(next);
                 }
             }
         }
         false
+    }
+
+    fn root(&self, mut node: usize) -> usize {
+        while self.components[node].parent != node {
+            node = self.components[node].parent;
+        }
+        node
+    }
+
+    fn component(&mut self, kind: FactKind, key: K) -> usize {
+        if let Some(&node) = self.classes.get(&(kind, key)) {
+            return self.root(node);
+        }
+        let node = self.components.len();
+        self.components.push(Component {
+            parent: node,
+            size: 1,
+            outgoing: BTreeSet::new(),
+            incoming: BTreeSet::new(),
+        });
+        self.classes.insert((kind, key), node);
+        node
+    }
+
+    fn unite(&mut self, mut a: usize, mut b: usize) {
+        if a == b {
+            return;
+        }
+        if self.components[a].size < self.components[b].size {
+            std::mem::swap(&mut a, &mut b);
+        }
+        self.components[b].parent = a;
+        self.components[a].size += self.components[b].size;
+        // Rewire both directions so later queries never scan dead members.
+        // An incidence within a merged class remains a real directed self edge.
+        let outgoing = std::mem::take(&mut self.components[b].outgoing);
+        let incoming = std::mem::take(&mut self.components[b].incoming);
+        for next in outgoing {
+            let next = self.root(next);
+            self.components[next].incoming.remove(&b);
+            self.components[next].incoming.insert(a);
+            self.components[a].outgoing.insert(next);
+        }
+        for previous in incoming {
+            let previous = self.root(previous);
+            self.components[previous].outgoing.remove(&b);
+            self.components[previous].outgoing.insert(a);
+            self.components[a].incoming.insert(previous);
+        }
+        self.components[a].outgoing.remove(&b);
+        self.components[a].incoming.remove(&b);
     }
 
     /// Facts that name `key` as `a`, `b` or `at`, in recording order.

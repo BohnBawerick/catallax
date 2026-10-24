@@ -81,7 +81,10 @@ mod stock;
 
 pub use certified::{BodyCertificate, CertificateKey, CertifiedBuilt, PrismTarget};
 pub use draft_build::ConsumedFace;
-pub use evaluate::{BuildError, Built, StandIn, evaluate, evaluate_certified};
+pub use evaluate::{
+    BuildError, Built, EvaluationCheckpoint, StandIn, evaluate, evaluate_certified,
+    evaluate_incremental,
+};
 pub use extrude::extrude;
 pub use offset_fit::{EllipticOffsetFit, OffsetSpanBound, fit_elliptic_offset};
 pub use placement::{copy_origin, mirror_placement, pattern_placement};

@@ -3,7 +3,7 @@
 use crate::{Profile, extrude, revolve};
 use catallax_boolean::{BoolOp, boolean};
 use catallax_measure::BoundingBox;
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
+use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe, RecipeError, Role, StepId, ThroughSide};
 use catallax_shapes::{Isometry, RPoint3, RVector3};
 use catallax_topology::{BodyId, BodyKind, Model};
@@ -72,6 +72,81 @@ impl fmt::Display for BuildError {
 }
 impl std::error::Error for BuildError {}
 
+/// An owned evaluated prefix. Consume it to append steps without copying its model.
+///
+/// Keep one per body. Explicit cloning retains an independent undo/branch snapshot
+/// and copies its model. The model is only exposed immutably so later edits cannot
+/// change the meaning of the saved prefix.
+#[derive(Clone, Debug)]
+pub struct EvaluationCheckpoint {
+    built: Built,
+    profiles: BTreeMap<StepId, Profile>,
+    radii: BTreeMap<StepId, Rational>,
+    policy: BudgetPolicy,
+}
+
+impl EvaluationCheckpoint {
+    /// The exact body, intermediate bodies and definitions at this checkpoint.
+    pub fn built(&self) -> &Built {
+        &self.built
+    }
+
+    /// Takes the build without copying it, discarding continuation metadata.
+    pub fn into_built(self) -> Built {
+        self.built
+    }
+
+    fn into_state(self) -> EvaluationState {
+        let built = self.built;
+        let mut radii = self.radii;
+        EvaluationState {
+            model: built.model,
+            profiles: self.profiles,
+            bodies: built
+                .bodies
+                .into_iter()
+                .map(|(id, body)| {
+                    let radius = radii.remove(&id).expect("checkpoint body radius");
+                    (id, BodyValue { body, radius })
+                })
+                .collect(),
+            fillets: built.fillets,
+            consumed: built.consumed,
+            chamfers: built.chamfers,
+            stand_ins: built.stand_ins,
+        }
+    }
+}
+
+#[derive(Default)]
+struct EvaluationState {
+    model: Model,
+    profiles: BTreeMap<StepId, Profile>,
+    bodies: BTreeMap<StepId, BodyValue>,
+    fillets: Vec<crate::fillet::FilletDefinition>,
+    consumed: Vec<crate::ConsumedFace>,
+    chamfers: Vec<crate::chamfer::ChamferDefinition>,
+    stand_ins: Vec<StandIn>,
+}
+
+impl EvaluationState {
+    fn finish(self, definition: Arc<Recipe>) -> Built {
+        Built {
+            result: self.bodies[&definition.result].body,
+            model: self.model,
+            bodies: self
+                .bodies
+                .into_iter()
+                .map(|(id, value)| (id, value.body))
+                .collect(),
+            fillets: self.fillets,
+            consumed: self.consumed,
+            chamfers: self.chamfers,
+            stand_ins: self.stand_ins,
+            definition,
+        }
+    }
+}
 struct BodyValue {
     body: BodyId,
     // A certified bounding sphere about model-space zero, not a fitted box.
@@ -258,7 +333,47 @@ fn through(
 /// cuts, booleans, patterns and mirrors.
 /// Other recipe operations retain their unfinished-operation refusal, not a partial body.
 pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError> {
-    evaluate_impl(recipe, None, dec)
+    evaluate_impl(recipe, None, EvaluationState::default(), 0, dec)
+        .map(|state| state.finish(Arc::new(recipe.clone())))
+}
+
+/// Evaluates only the suffix after a matching checkpoint.
+///
+/// Prefix equality includes step order, IDs and every operation parameter.
+/// A changed/removed prefix step, format or numeric policy discards the checkpoint
+/// and rebuilds from the start. Recipe metadata and result selection may change.
+/// Only executed suffix work is charged to the current request; cached prefix
+/// proofs were charged when that checkpoint was built. Certified builds are not
+/// accepted as checkpoints. Failures return no partial checkpoint.
+pub fn evaluate_incremental(
+    recipe: &Recipe,
+    prefix: Option<EvaluationCheckpoint>,
+    dec: &mut Decider,
+) -> Result<EvaluationCheckpoint, BuildError> {
+    let (state, start) = match prefix {
+        Some(prefix)
+            if prefix.policy == *dec.policy()
+                && prefix.built.recipe().format == recipe.format
+                && recipe.steps.starts_with(&prefix.built.recipe().steps) =>
+        {
+            let start = prefix.built.recipe().steps.len();
+            (prefix.into_state(), start)
+        }
+        _ => (EvaluationState::default(), 0),
+    };
+    let mut state = evaluate_impl(recipe, None, state, start, dec)?;
+    let profiles = std::mem::take(&mut state.profiles);
+    let radii = state
+        .bodies
+        .iter()
+        .map(|(id, body)| (id.clone(), body.radius.clone()))
+        .collect();
+    Ok(EvaluationCheckpoint {
+        built: state.finish(Arc::new(recipe.clone())),
+        profiles,
+        radii,
+        policy: *dec.policy(),
+    })
 }
 
 /// Opts into the recorded 1 nm modelling policy and the first complete bounded
@@ -268,7 +383,18 @@ pub fn evaluate_certified(
     dec: &mut Decider,
 ) -> Result<crate::CertifiedBuilt, BuildError> {
     let mut certification = crate::certified::CertificationContext::new(recipe);
-    let built = evaluate_impl(recipe, Some(&mut certification), dec)?;
+    let state = evaluate_impl(
+        recipe,
+        Some(&mut certification),
+        EvaluationState::default(),
+        0,
+        dec,
+    )?;
+    let built = state.finish(
+        certification
+            .snapshot()
+            .unwrap_or_else(|| Arc::new(recipe.clone())),
+    );
     certification
         .finish(built, dec)
         .map_err(|refusal| BuildError::Geometry {
@@ -280,17 +406,21 @@ pub fn evaluate_certified(
 fn evaluate_impl(
     recipe: &Recipe,
     mut certification: Option<&mut crate::certified::CertificationContext<'_>>,
+    state: EvaluationState,
+    start: usize,
     dec: &mut Decider,
-) -> Result<Built, BuildError> {
+) -> Result<EvaluationState, BuildError> {
     recipe.check().map_err(BuildError::Recipe)?;
-    let mut model = Model::new();
-    let mut profiles = BTreeMap::new();
-    let mut bodies: BTreeMap<StepId, BodyValue> = BTreeMap::new();
-    let mut fillets = Vec::new();
-    let mut consumed = Vec::new();
-    let mut chamfers = Vec::new();
-    let mut stand_ins = Vec::new();
-    for step in &recipe.steps {
+    let EvaluationState {
+        mut model,
+        mut profiles,
+        mut bodies,
+        mut fillets,
+        mut consumed,
+        mut chamfers,
+        mut stand_ins,
+    } = state;
+    for step in &recipe.steps[start..] {
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
         let mut build = |model: &mut Model,
                          dec: &mut Decider|
@@ -897,20 +1027,13 @@ fn evaluate_impl(
             refusal,
         })?;
     }
-    let result = bodies[&recipe.result].body;
-    Ok(Built {
+    Ok(EvaluationState {
         model,
-        result,
-        bodies: bodies
-            .into_iter()
-            .map(|(id, value)| (id, value.body))
-            .collect(),
+        profiles,
+        bodies,
         fillets,
-        chamfers,
-        definition: certification
-            .and_then(|context| context.snapshot())
-            .unwrap_or_else(|| Arc::new(recipe.clone())),
         consumed,
+        chamfers,
         stand_ins,
     })
 }

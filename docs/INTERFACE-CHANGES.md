@@ -992,3 +992,10 @@ Pieces: shapes, Boolean filters, features and field
 Change: analytic `distance::Domain::new` and `distance::project` return `shapes.distance-uncovered` for finite B-spline supports rather than assuming a global analytic frame. The bounded-face exclusion filter uses an implicit equation only when one exists. Definition-native drill and capped-sweep cells propagate fallible constraint construction through their exact isometry API.
 Why: the independently landed analytic-distance and feature consumers must retain their coverage guarantees when the genuine spline kind is present.
 Migration: generic trimmed analytic distance charts do not yet cover represented spline faces. Use the separately certified original-target prism field for its nominal true-distance contract; do not substitute that definition for represented-face distance. An unavailable analytic exclusion proof falls through to the existing intersection path and never proves disjointness. Existing analytic definitions, numeric allowances and output accuracies are unchanged.
+
+## 2026-10-24: bounded shared identities and cone generator containment
+
+Pieces: 1, 4, 5
+Change: `Decider::rational_identity(&Real)` optionally proves a rational constant using only bounded rational-function identities over shared definitions, after domain validation. An unrecorded complete line on a cone generator now refuses with `intersect.partial-containment-required`, because only half the line belongs to the retained nappe.
+Why: circular-section adjacency needs cheap exact zero proofs before interval refinement, while full generator containment would discard the cone domain.
+Migration: callers may use the optional identity before existing certified fallbacks; `None` proves nothing. Curve/surface consumers must preserve the new named refusal when partial containment is required. Existing recorded incidence remains authoritative. No budget, tolerance or file format changes.

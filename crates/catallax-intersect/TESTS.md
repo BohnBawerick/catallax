@@ -77,3 +77,9 @@ The benchmark prints elapsed nanoseconds, decision counts, fact and filter share
 The original benchmark currently panics when it tries to expose an analytic circle's mathematically rational parameter origin through `Real::as_rational()`. Comparison 04 retains all measurements before that panic and measures the four remaining query groups in scratch with their exact fixture origins. The report distinguishes that benchmark assumption from an intersection failure; the production benchmark is unchanged.
 
 Without `CATALLAX_INTERSECT_BENCH=1`, the benchmark prints its activation command and exits without exercising intersection operations. This target also remains inert during `cargo test --all-targets`.
+
+## Algebraic circular sections and line parameters
+
+Focused regressions check coaxial circle/carrier containment against a distinct squared radius separated by `1e-30`, nonunit axes and the rejected cone nappe. Witness-backed circular intersections must retain their carrier-axis fact. Algebraic line/cone hits retain one shared line parameter, with two ordered exact crossings on the accepted nappe and none on the opposite nappe. A full generator line requires partial containment and must refuse rather than claim the entire line lies on a half-cone.
+
+Feature tests build the 118-degree drill point and 82- and 100-degree countersinks under 100,000,000 work units, checking topology, named faces and independently derived material probes against B-rep and field evaluators. They include a real short-head annular floor and exact rotated, translated, nonunit placements at scales `1/1000`, `1` and `1000`. Finite planar bounds have a separate tangent/inside/outside disk-support regression; overlap never proves a meeting.

@@ -159,3 +159,9 @@ budgets and the piece 1 contract are unchanged.
 ## Verification limits
 
 Comparison 01 observed 32 passing blind contract tests, two passing independent oracle checks and 16 passing implementation unit tests. One blind test failed an assertion and two did not complete within their observation windows. The follow-up corrects the test's undrained statistics call, adds deep-precision enclosure and GMP dyadic-normalization regressions, and restores both formerly unfinished contracts to default CI. All public signatures, proof methods and deterministic work charges are unchanged. A single local run does not prove cross-machine determinism.
+
+## Shared identities and algebraic projection
+
+The standard-hole regressions use exact cyclotomic angle definitions, not decimal substitutes. A bounded formal rational-function reduction treats algebraic leaves as opaque values and applies only polynomial identities and the defined relation `sqrt(r)^2 = r`. It proves constants by proportional numerator and denominator polynomials; failure never proves nonzero or algebraic independence. Domain validation precedes cancellation. Tests retain hidden division-by-zero and negative-square-root refusals, signed gaps of `1e-30`, and zero-work refusal.
+
+Univariate algebraic-coefficient equations of degree at most two retain their closed exact roots after certifying degree, discriminant and leading sign. Rational equations still use the rational root isolator. Tests independently check root residuals, order with negative leading coefficients, repeated and nonreal roots, linear and constant equations, undefined coefficients and exhausted requests.

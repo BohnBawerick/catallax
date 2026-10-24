@@ -504,7 +504,7 @@ Choices:
 
 Both kernels implement the named hole operation from these axial bands, including through holes, flat and conical blind tips, counterbores, countersinks and their surviving origins. The B-rep uses finite construction caps excluded by the target's defining bound. Strictly disjoint parallel tools can be subtracted as one compound; other placements are subtracted successively. The field compiles the same defining bands into independent analytic cells, not a B-rep. Inherited general cone/torus intersection gaps remain unfinished work.
 
-Standard 118-degree blind drill points and 82-degree countersinks remain exact algebraic definitions. Their current Boolean builds exhaust the unchanged request allowance; this is unfinished classification/intent coverage, not impossible geometry and not permission to approximate the angles. Planar first-hit extrusions are implemented; non-planar limits remain a separate unfinished reduction.
+Standard 118-degree blind drill points and 82- and 100-degree countersinks build as exact algebraic definitions within the unchanged 100,000,000 request allowance. Construction retains the defining meridian stations and coaxial circular sections, including real annular floors when a head is shorter than its transition depth. Planar first-hit extrusions are implemented; non-planar limits remain a separate unfinished reduction.
 
 ### 4.4 Boolean
 

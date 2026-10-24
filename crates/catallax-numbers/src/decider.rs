@@ -238,6 +238,42 @@ impl Decider {
             StrictSign::Positive => StrictOrder::Greater,
         })
     }
+    /// Attempts only a bounded rational-function identity over shared real
+    /// definitions, after validating the domain. `None` is inconclusive. This
+    /// does not construct annihilators or assume algebraic independence.
+    pub fn rational_identity(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
+        self.stats.decisions += 1;
+        self.check_deadline()?;
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = (|| {
+            if !x.node.fast_defined {
+                match evaluate(
+                    x,
+                    64u32.min(self.policy.max_precision_bits),
+                    &mut work,
+                    false,
+                ) {
+                    Ok(_) => {}
+                    Err(EvalError::Pending(_)) => return Ok(None),
+                    Err(EvalError::Domain(error)) => return Err(error),
+                    Err(EvalError::Limit(code)) => {
+                        return Err(Refusal::new(code, "identity domain proof stopped"));
+                    }
+                }
+            }
+            crate::identity::rational(x, &mut work)
+                .map_err(|code| Refusal::new(code, "rational identity proof stopped"))
+        })();
+        self.account(&work);
+        self.check_deadline()?;
+        match &result {
+            Ok(Some(_)) => self.stats.exact += 1,
+            Err(_) => self.stats.refused += 1,
+            Ok(None) => {}
+        }
+        result
+    }
+
     /// Attempts an exact rational coefficient reduction. `None` is inconclusive,
     /// not a proof of irrationality or definedness. Domain and resource failures
     /// retain their numeric reasons; original expression definitions are unchanged.

@@ -552,7 +552,7 @@ fn search<T>(
                 }
                 match crate::probe_path::adjacent(
                     model,
-                    &surface,
+                    f.surface,
                     (point, &p, edge.curve),
                     &candidate,
                     &inward,

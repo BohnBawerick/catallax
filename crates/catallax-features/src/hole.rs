@@ -1,12 +1,15 @@
 //! Exact meridians and named tools for recipe holes.
 
 use catallax_numbers::{
-    Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign, sin_cos_degrees,
+    Decider, Fact, FactKind, FactOrigin, Outcome, Rational, Real, Refusal, Sign, StrictSign,
+    sin_cos_degrees,
 };
 use catallax_recipe::{
     HoleDepth, HoleHead, HolePart, HolePlacement, HoleTip, Origin, Role, StepId,
 };
-use catallax_shapes::{Circle, Cone, Curve, Cylinder, Plane, Point3, PointDef, Surface, Vector3};
+use catallax_shapes::{
+    Circle, Cone, Curve, Cylinder, GeomKey, Plane, Point3, PointDef, Surface, Vector3,
+};
 use catallax_topology::{Body, BodyId, BodyKind, Edge, Lump, Model, Sense, Shell, Vertex};
 
 /// One positive-height cylindrical or conical band of a drill tool.
@@ -346,13 +349,28 @@ impl HoleTool {
                 })
                 .collect()
         };
-        let ring = |model: &mut Model, depth: &Real, radius: &Real| {
+        let mut anchor = None;
+        let mut ring = |model: &mut Model, depth: &Real, radius: &Real| {
             let curve = model.geom_mut().add_curve(Curve::Circle(Circle {
                 center: self.at_depth(depth),
                 normal: self.axis.clone(),
                 radius_sq: radius.square(),
                 ref_dir: self.reference.clone(),
             }));
+            // Every station is constructed on this tool's axis. A real annular
+            // floor can separate the lateral carriers, so their shared-edge
+            // incidence graph alone does not retain this relation.
+            if let Some(anchor) = anchor {
+                model.geom_mut().record_fact(Fact {
+                    kind: FactKind::Coaxial,
+                    a: GeomKey::Curve(anchor),
+                    b: GeomKey::Curve(curve),
+                    at: None,
+                    origin: FactOrigin::Construction("hole coaxial stations"),
+                });
+            } else {
+                anchor = Some(curve);
+            }
             model.add_edge(Edge {
                 curve,
                 sense: Sense::Same,

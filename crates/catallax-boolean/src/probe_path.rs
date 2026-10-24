@@ -3,11 +3,19 @@
 
 use crate::geometry::{natural_ends, on_arc, r, sign, unit};
 use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
-use catallax_shapes::{Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, Vector3};
+use catallax_shapes::{
+    Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, SurfaceId, Vector3,
+};
 use catallax_topology::{EdgeId, Model};
 
 fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     if x.as_rational().is_none() && x.approx().sign().is_none() {
+        // Refining a formally zero shared expression cannot separate its sign.
+        // Establish its domain and try that bounded identity before requesting
+        // a tiny interval. Failure to reduce leaves both existing filters intact.
+        if let Some(value) = dec.rational_identity(x)? {
+            return Ok(value.sign());
+        }
         // Try the cached interval's width first: a modest enclosure often
         // separates a sign before the finer pre-elimination target is needed.
         // Both stages are filters; a ball containing zero proves nothing.
@@ -18,7 +26,16 @@ fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
             width = width.max(coarse_width.mul_pow2(-i64::from(bits.saturating_sub(64))));
         }
         let initial = coarse_width.as_ref().filter(|coarse| *coarse > &width);
-        for width in initial.into_iter().chain(std::iter::once(&width)) {
+        // A translated/scaled carrier can need more than the initial filter
+        // without needing the full pre-elimination precision. Accept only a
+        // separated certified sign at this intermediate target as well.
+        let intermediate = coarse_width.as_ref().map(|coarse| coarse.mul_pow2(-32));
+        let intermediate = intermediate.as_ref().filter(|middle| *middle > &width);
+        for width in initial
+            .into_iter()
+            .chain(intermediate)
+            .chain(std::iter::once(&width))
+        {
             let enclosure = dec.enclose(x, width)?;
             if let Some(value) = enclosure.sign() {
                 return Ok(match value {
@@ -121,6 +138,7 @@ impl P {
 struct Path {
     numerators: [P; 3],
     denominator: P,
+    axial: Option<P>,
 }
 fn vector(v: &Vector3) -> [&Real; 3] {
     [&v.x, &v.y, &v.z]
@@ -140,6 +158,7 @@ fn linear_map(origin: &Point3, terms: &[(&Vector3, P)], denominator: P) -> Path 
     Path {
         numerators,
         denominator,
+        axial: None,
     }
 }
 fn parameter(point: &Point3, origin: &Point3, direction: &Vector3) -> Real {
@@ -227,11 +246,13 @@ fn paths(
                 let denominator = P::constant(rr.clone()).add(&square);
                 let radial = P::constant(rr.clone()).sub(&square);
                 let cross = a.scale(rr * Real::from_i64(2));
-                result.push(linear_map(
+                let mut path = linear_map(
                     &s.origin,
                     &[(&b, radial), (&v, cross), (&s.axis, h.mul(&denominator))],
                     denominator,
-                ));
+                );
+                path.axial = Some(h);
+                result.push(path);
             }
             result
         }
@@ -266,7 +287,7 @@ fn paths(
                 let denominator = one.add(&square);
                 let radial = h.mul(&one.sub(&square)).scale(s.slope.clone());
                 let cross = h.mul(&angular).scale(&Real::from_i64(2) * &s.slope);
-                result.push(linear_map(
+                let mut path = linear_map(
                     &s.apex,
                     &[
                         (&u.scaled(&Real::from_i64(side)), radial),
@@ -274,7 +295,9 @@ fn paths(
                         (&axis, h.mul(&denominator)),
                     ],
                     denominator,
-                ));
+                );
+                path.axial = Some(h.clone());
+                result.push(path);
             }
             result
         }
@@ -435,7 +458,7 @@ fn straight_contact(equation: &RealPoly, p: &Point3, q: &Point3, degree: u32) ->
 /// The source position is an exact arc probe on the supplied source curve.
 pub(crate) fn adjacent(
     model: &Model,
-    surface: &Surface,
+    surface_id: SurfaceId,
     source: (PointId, &Point3, CurveId),
     q: &Point3,
     left: &Vector3,
@@ -443,6 +466,7 @@ pub(crate) fn adjacent(
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let (source, p, source_curve) = source;
+    let surface = model.geom().surface(surface_id);
     let carrier = surface.implicit().ok_or_else(|| {
         catallax_numbers::Refusal::new(
             "boolean.parametric-query",
@@ -491,6 +515,40 @@ pub(crate) fn adjacent(
         for &edge_id in barriers {
             let edge = model.edge(edge_id);
             let curve = model.geom().curve(edge.curve);
+            // On a rotational carrier, a complete incident coaxial circle is
+            // an axial level set. Preserve the chart's defining height rather
+            // than expand its world-coordinate circle equations and rediscover
+            // their cancellations. A failed exclusion proves nothing.
+            if !surface.has_rational_definition()
+                && let (Some(axial), Curve::Circle(circle)) = (&path.axial, curve)
+                && [FactKind::Incident, FactKind::Coaxial]
+                    .into_iter()
+                    .all(|kind| {
+                        model.geom().facts().holds(
+                            kind,
+                            GeomKey::Curve(edge.curve),
+                            GeomKey::Surface(surface_id),
+                        )
+                    })
+            {
+                let height = match surface {
+                    Surface::Cylinder(s) => parameter(&circle.center, &s.origin, &s.axis),
+                    Surface::Cone(s) => {
+                        let axis = &s.axis;
+                        circle.center.minus(&s.apex).dot(axis)
+                            / crate::points::root(&axis.norm_squared())
+                    }
+                    _ => unreachable!("only rotational paths retain axial coordinates"),
+                };
+                let mut separation = axial.sub(&P::constant(height));
+                if edge.curve == source_curve {
+                    separation.0[0] = Real::zero();
+                }
+                if separation.excludes_zero(dec)? {
+                    dec.note_fact_decision();
+                    continue;
+                }
+            }
             let mut equations: Vec<_> = curve.equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
                 .iter()
                 .enumerate()

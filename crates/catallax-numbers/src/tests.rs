@@ -1351,6 +1351,11 @@ fn shared_algebraic_rational_identities_preserve_domains_and_small_gaps() {
     // eliminating its high-degree algebraic generator or approximating the gap.
     let reconstructed = &slope * &(&depth + &real("4") - real("4"));
     let zero = &reconstructed - &radius;
+    assert_eq!(
+        Decider::default().rational_identity(&zero).unwrap(),
+        Some(q("0"))
+    );
+    assert_eq!(Decider::default().rational_identity(&slope).unwrap(), None);
     let (answer, work) = with_operation_budget(100_000_000, || Decider::default().sign(&zero));
     assert!(answer.is_coincident(), "{answer:?} {work:?}");
     assert!(!work.exhausted);
@@ -1371,6 +1376,7 @@ fn shared_algebraic_rational_identities_preserve_domains_and_small_gaps() {
         &zero * &(Real::one() / Real::zero()).pow_u32(0),
         &zero * &real("-1").sqrt(),
     ] {
+        assert!(Decider::default().rational_identity(&undefined).is_err());
         assert!(matches!(
             Decider::default().sign(&undefined),
             Outcome::Refused(_)
@@ -1378,6 +1384,9 @@ fn shared_algebraic_rational_identities_preserve_domains_and_small_gaps() {
     }
     let (answer, work) = with_operation_budget(0, || Decider::default().sign(&zero));
     assert!(matches!(answer, Outcome::Refused(_)));
+    assert!(work.exhausted);
+    let (answer, work) = with_operation_budget(0, || Decider::default().rational_identity(&zero));
+    assert!(answer.is_err());
     assert!(work.exhausted);
 }
 

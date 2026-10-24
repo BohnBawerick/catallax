@@ -7,39 +7,67 @@ use catallax_recipe::BooleanKind;
 type Box3 = [[Rational; 2]; 3];
 
 #[derive(Clone)]
-enum Cover {
-    Empty,
-    Finite(Box3),
-    Unbounded,
+struct Cover {
+    empty: bool,
+    bounds: Option<Box3>,
 }
 impl Cover {
+    const EMPTY: Self = Self {
+        empty: true,
+        bounds: None,
+    };
+    const UNBOUNDED: Self = Self {
+        empty: false,
+        bounds: None,
+    };
+
+    fn finite(bounds: Box3) -> Self {
+        Self {
+            empty: false,
+            bounds: Some(bounds),
+        }
+    }
+
     fn boolean(kind: BooleanKind, a: &Self, b: &Self) -> Self {
-        use Cover::*;
-        match (kind, a, b) {
-            (BooleanKind::Subtract, _, _) => a.clone(),
-            (BooleanKind::Union, Empty, _) => b.clone(),
-            (BooleanKind::Union, _, Empty) => a.clone(),
-            (BooleanKind::Union, Finite(a), Finite(b)) => Finite(std::array::from_fn(|i| {
-                [
-                    a[i][0].clone().min(b[i][0].clone()),
-                    a[i][1].clone().max(b[i][1].clone()),
-                ]
-            })),
-            (BooleanKind::Union, _, _) => Unbounded,
-            (BooleanKind::Intersect, Empty, _) | (BooleanKind::Intersect, _, Empty) => Empty,
-            (BooleanKind::Intersect, Unbounded, _) => b.clone(),
-            (BooleanKind::Intersect, _, Unbounded) => a.clone(),
-            (BooleanKind::Intersect, Finite(a), Finite(b)) => {
-                let bounds: Box3 = std::array::from_fn(|i| {
-                    [
-                        a[i][0].clone().max(b[i][0].clone()),
-                        a[i][1].clone().min(b[i][1].clone()),
-                    ]
-                });
-                if bounds.iter().any(|[lo, hi]| lo > hi) {
-                    Empty
-                } else {
-                    Finite(bounds)
+        match kind {
+            BooleanKind::Subtract => a.clone(),
+            BooleanKind::Union => {
+                if a.empty {
+                    return b.clone();
+                }
+                if b.empty {
+                    return a.clone();
+                }
+                match (&a.bounds, &b.bounds) {
+                    (Some(a), Some(b)) => Self::finite(std::array::from_fn(|i| {
+                        [
+                            a[i][0].clone().min(b[i][0].clone()),
+                            a[i][1].clone().max(b[i][1].clone()),
+                        ]
+                    })),
+                    _ => Self::UNBOUNDED,
+                }
+            }
+            BooleanKind::Intersect => {
+                if a.empty || b.empty {
+                    return Self::EMPTY;
+                }
+                match (&a.bounds, &b.bounds) {
+                    (None, _) => b.clone(),
+                    (_, None) => a.clone(),
+                    (Some(a), Some(b)) => {
+                        let bounds: Box3 = std::array::from_fn(|i| {
+                            [
+                                a[i][0].clone().max(b[i][0].clone()),
+                                a[i][1].clone().min(b[i][1].clone()),
+                            ]
+                        });
+                        if bounds.iter().any(|[lo, hi]| lo > hi) {
+                            Self::EMPTY
+                        } else {
+                            Self::finite(bounds)
+                        }
+                    }
                 }
             }
         }
@@ -77,22 +105,25 @@ impl Plan {
         for instruction in &self.instructions {
             dec.check_deadline()?;
             covers.push(match *instruction {
-                Instruction::Empty => Cover::Empty,
+                Instruction::Empty => Cover::EMPTY,
                 Instruction::Leaf(i) => self.leaves[i]
                     .display_box(dec)?
-                    .map_or(Cover::Unbounded, |b| {
-                        Cover::Finite(b.map(|v| [v.lo(), v.hi()]))
+                    .map_or(Cover::UNBOUNDED, |b| {
+                        Cover::finite(b.map(|v| [v.lo(), v.hi()]))
                     }),
                 Instruction::Boolean { kind, a, b } => Cover::boolean(kind, &covers[a], &covers[b]),
             });
         }
-        let bounds = match &covers[self.root] {
-            Cover::Empty => return Ok(true),
-            Cover::Unbounded => return Ok(false),
-            Cover::Finite(bounds) => bounds
-                .each_ref()
-                .map(|[lo, hi]| Ball::from_rational(lo, 128).hull(&Ball::from_rational(hi, 128))),
+        let cover = &covers[self.root];
+        if cover.empty {
+            return Ok(true);
+        }
+        let Some(bounds) = &cover.bounds else {
+            return Ok(false);
         };
+        let bounds = bounds
+            .each_ref()
+            .map(|[lo, hi]| Ball::from_rational(lo, 128).hull(&Ball::from_rational(hi, 128)));
         let mut states = Vec::with_capacity(self.instructions.len());
         for instruction in &self.instructions {
             dec.check_deadline()?;

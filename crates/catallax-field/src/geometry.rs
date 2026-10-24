@@ -388,6 +388,9 @@ pub(crate) fn fast_translation(inverse: &Isometry) -> [f64; 3] {
 }
 
 impl Primitive {
+    pub(crate) fn inverse_placement(&self) -> &Isometry {
+        &self.inverse
+    }
     pub fn same_geometry(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
         Ok(self.kind == other.kind
             && self.parameters == other.parameters
@@ -566,6 +569,7 @@ pub(crate) enum Leaf {
     Feature(crate::features::Feature),
     Cell(Cell),
     Draft(crate::draft::Region),
+    Lattice(Box<crate::lattice::Lattice>),
 }
 impl Leaf {
     pub(crate) fn constraints(&self) -> &[Constraint] {
@@ -574,6 +578,7 @@ impl Leaf {
             Self::Feature(a) => &a.constraints,
             Self::Cell(a) => &a.constraints,
             Self::Draft(a) => &a.constraints,
+            Self::Lattice(_) => &[],
         }
     }
 
@@ -582,6 +587,7 @@ impl Leaf {
             Self::Primitive(a) => a,
             Self::Feature(a) => return a.display_box(dec),
             Self::Draft(a) => return a.display_box(dec).map(Some),
+            Self::Lattice(_) => return Ok(None),
             Self::Cell(a) => {
                 let Some(radius) = a.display_radius(dec)? else {
                     return Ok(None);
@@ -617,6 +623,7 @@ impl Leaf {
             Self::Feature(a) => return a.display_radius(dec),
             Self::Draft(a) => return a.display_radius(dec).map(Some),
             Self::Cell(a) => return a.display_radius(dec),
+            Self::Lattice(_) => return Ok(None),
         };
         let local = match a.kind {
             Kind::Block | Kind::Round => a
@@ -670,6 +677,7 @@ impl Leaf {
             Self::Feature(a) => a.transform(pose),
             Self::Cell(a) => a.transform(pose),
             Self::Draft(a) => a.transform(pose),
+            Self::Lattice(a) => a.transform(pose),
         }
     }
     pub fn true_distance(&self) -> bool {
@@ -681,6 +689,7 @@ impl Leaf {
             Self::Feature(a) => a.location(p, dec),
             Self::Cell(a) => a.location(p, dec),
             Self::Draft(a) => a.location(p, dec),
+            Self::Lattice(a) => Ok(a.location(p)),
         }
     }
     pub fn proven_distance(
@@ -694,6 +703,7 @@ impl Leaf {
             Self::Feature(a) => a.proven_distance(p, l, dec),
             Self::Cell(a) => a.proven_distance(p, l, dec),
             Self::Draft(a) => a.proven_distance(p, l, dec),
+            Self::Lattice(a) => Ok(a.proven_distance(p, l)),
         }
     }
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
@@ -702,6 +712,7 @@ impl Leaf {
             Self::Feature(a) => a.fast_distance(p),
             Self::Cell(a) => a.fast_distance(p),
             Self::Draft(a) => a.fast_distance(p),
+            Self::Lattice(a) => a.fast_distance(p),
         }
     }
     /// Collects every zero constraint when local membership changes are planar.
@@ -774,6 +785,7 @@ impl Leaf {
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
+            Self::Lattice(a) => a.ray(p, d, dec),
             Self::Draft(a) => {
                 if matches!(a.cell, crate::draft::Cell::Polyhedral(_)) {
                     let point = Point3::new(
@@ -811,6 +823,7 @@ impl Leaf {
             }
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),
             Self::Cell(_) => Ok(Some(true)),
+            Self::Lattice(a) => Ok(Some(a.location(p) == Location::Boundary)),
         }
     }
 
@@ -867,6 +880,10 @@ impl Leaf {
                 Ok(Point3::origin()
                     .plus(&sum.scaled(&(Real::one() / Real::from_i64(cell.vertices.len() as i64)))))
             }
+            Self::Lattice(_) => Err(Refusal::new(
+                "draft.unsupported-surface",
+                "lattice beams are field-only, not draft source faces",
+            )),
             Self::Draft(region) => Ok(match &region.cell {
                 crate::draft::Cell::Planar(cell) => {
                     let sum = cell.vertices.iter().fold(Vector3::zero(), |sum, p| {

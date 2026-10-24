@@ -743,7 +743,23 @@ impl<'a> Exporter<'a> {
             .add("CLOSED_SHELL", vec![text("''"), refs(faces)]))
     }
 
-    pub(crate) fn build(mut self, bodies: &[BodyId]) -> Answered<(String, StepReport)> {
+    pub(crate) fn build(self, bodies: &[BodyId]) -> Answered<(String, StepReport)> {
+        self.build_parts(bodies, None)
+    }
+
+    pub(crate) fn build_stand_in(
+        self,
+        envelope: BodyId,
+        bodies: &[BodyId],
+    ) -> Answered<(String, StepReport)> {
+        self.build_parts(bodies, Some(envelope))
+    }
+
+    fn build_parts(
+        mut self,
+        bodies: &[BodyId],
+        envelope: Option<BodyId>,
+    ) -> Answered<(String, StepReport)> {
         let mut solids = Vec::new();
         for id in bodies {
             let body = self.model.body(*id);
@@ -757,8 +773,17 @@ impl<'a> Exporter<'a> {
                 let mut topology = Topology::default();
                 let outer = self.shell(lump.shells[0], false, &mut topology)?;
                 let solid = if lump.shells.len() == 1 {
-                    self.graph
-                        .add("MANIFOLD_SOLID_BREP", vec![text("''"), outer.into()])
+                    self.graph.add(
+                        "MANIFOLD_SOLID_BREP",
+                        vec![
+                            text(if envelope.is_some() {
+                                "'unit-density mass surrogate'"
+                            } else {
+                                "''"
+                            }),
+                            outer.into(),
+                        ],
+                    )
                 } else {
                     let mut voids = Vec::new();
                     for shell in &lump.shells[1..] {
@@ -777,6 +802,26 @@ impl<'a> Exporter<'a> {
                 self.report.solids += 1;
             }
         }
+        if let Some(envelope) = envelope {
+            let body = self.model.body(envelope);
+            if body.kind != BodyKind::Solid {
+                return Err(Refusal::new(
+                    "step.not-solid",
+                    "the source envelope must be a solid before surface-only export",
+                ));
+            }
+            let mut shells = Vec::new();
+            for lump in &body.lumps {
+                let mut topology = Topology::default();
+                for (index, shell) in self.model.lump(*lump).shells.iter().enumerate() {
+                    shells.push(self.shell(*shell, index != 0, &mut topology)?);
+                }
+            }
+            solids.push(self.graph.add(
+                "SHELL_BASED_SURFACE_MODEL",
+                vec![text("'massless field envelope'"), refs(shells)],
+            ));
+        }
         let uncertainty = self
             .options
             .curve_tolerance
@@ -784,7 +829,11 @@ impl<'a> Exporter<'a> {
             .max(self.report.max_deviation.clone());
         let uncertainty = number::decimal(&uncertainty.to_decimal_bounds(self.digits()).1);
         let mut output = self.graph.write(&solids, |numbers| {
-            header(&self.options.product_name, numbers, &uncertainty)
+            if envelope.is_some() {
+                stand_in_header(&self.options.product_name, numbers, &uncertainty)
+            } else {
+                header(&self.options.product_name, numbers, &uncertainty)
+            }
         });
         output.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
         let mut answer = Answer::exact((output, self.report));
@@ -832,6 +881,24 @@ fn include_bounds(bounds: &mut Option<Bounds>, other: &Bounds) {
 }
 
 pub(crate) fn header(product_name: &str, solids: &[usize], uncertainty: &str) -> String {
+    representation_header(
+        product_name,
+        solids,
+        uncertainty,
+        "ADVANCED_BREP_SHAPE_REPRESENTATION",
+    )
+}
+
+fn stand_in_header(product_name: &str, items: &[usize], uncertainty: &str) -> String {
+    representation_header(product_name, items, uncertainty, "SHAPE_REPRESENTATION")
+}
+
+fn representation_header(
+    product_name: &str,
+    solids: &[usize],
+    uncertainty: &str,
+    representation: &str,
+) -> String {
     let name = string(product_name);
     let filename = string(&format!("{product_name}.step"));
     let mut items = String::from("#17");
@@ -839,7 +906,7 @@ pub(crate) fn header(product_name: &str, solids: &[usize], uncertainty: &str) ->
         write!(items, ",#{id}").unwrap();
     }
     format!(
-        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('catallax export'),'2;1');\nFILE_NAME({filename},'1970-01-01T00:00:00',(''),(''),'catallax','catallax','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {{ 1 0 10303 442 1 1 4 }}'));\nENDSEC;\nDATA;\n#1=APPLICATION_CONTEXT('managed model based 3d engineering');\n#2=APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2014,#1);\n#3=PRODUCT_CONTEXT('',#1,'mechanical');\n#4=PRODUCT({name},{name},'',(#3));\n#5=PRODUCT_DEFINITION_FORMATION('','',#4);\n#6=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');\n#7=PRODUCT_DEFINITION('design','',#5,#6);\n#8=PRODUCT_DEFINITION_SHAPE('','',#7);\n#9=SHAPE_DEFINITION_REPRESENTATION(#8,#16);\n#10=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n#11=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));\n#12=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());\n#13=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({uncertainty}),#10,'distance_accuracy_value','maximum deviation from the exact model');\n#14=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#13))GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#11,#12))REPRESENTATION_CONTEXT('',''));\n#15=PRODUCT_RELATED_PRODUCT_CATEGORY('part',$,(#4));\n#16=ADVANCED_BREP_SHAPE_REPRESENTATION({name},({items}),#14);\n#17=AXIS2_PLACEMENT_3D('',#18,#19,#20);\n#18=CARTESIAN_POINT('',(0.,0.,0.));\n#19=DIRECTION('',(0.,0.,1.));\n#20=DIRECTION('',(1.,0.,0.));\n"
+        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('catallax export'),'2;1');\nFILE_NAME({filename},'1970-01-01T00:00:00',(''),(''),'catallax','catallax','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {{ 1 0 10303 442 1 1 4 }}'));\nENDSEC;\nDATA;\n#1=APPLICATION_CONTEXT('managed model based 3d engineering');\n#2=APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2014,#1);\n#3=PRODUCT_CONTEXT('',#1,'mechanical');\n#4=PRODUCT({name},{name},'',(#3));\n#5=PRODUCT_DEFINITION_FORMATION('','',#4);\n#6=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');\n#7=PRODUCT_DEFINITION('design','',#5,#6);\n#8=PRODUCT_DEFINITION_SHAPE('','',#7);\n#9=SHAPE_DEFINITION_REPRESENTATION(#8,#16);\n#10=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n#11=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));\n#12=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());\n#13=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({uncertainty}),#10,'distance_accuracy_value','maximum deviation from the exact model');\n#14=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#13))GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#11,#12))REPRESENTATION_CONTEXT('',''));\n#15=PRODUCT_RELATED_PRODUCT_CATEGORY('part',$,(#4));\n#16={representation}({name},({items}),#14);\n#17=AXIS2_PLACEMENT_3D('',#18,#19,#20);\n#18=CARTESIAN_POINT('',(0.,0.,0.));\n#19=DIRECTION('',(0.,0.,1.));\n#20=DIRECTION('',(1.,0.,0.));\n"
     )
 }
 

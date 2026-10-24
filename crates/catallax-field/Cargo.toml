@@ -12,6 +12,7 @@ catallax-numbers.workspace = true
 catallax-recipe.workspace = true
 catallax-shapes.workspace = true
 catallax-features.workspace = true
+catallax-measure.workspace = true
 catallax-topology.workspace = true
 catallax-boolean.workspace = true
 catallax-intersect.workspace = true

@@ -101,5 +101,26 @@ pub fn write_step<W: Write>(
     })
 }
 
+/// Writes a massless surface envelope and separately selected unit-density
+/// surrogate solids. This opt-in representation contains no material metadata.
+/// Ordinary [`write_step`] remains the solid-only exchange.
+pub fn write_stand_in_step<W: Write>(
+    model: &Model,
+    envelope: BodyId,
+    bodies: &[BodyId],
+    options: &StepOptions,
+    dec: &mut Decider,
+    out: &mut W,
+) -> Answered<StepReport> {
+    let answer = export::Exporter::new(model, options, dec).build_stand_in(envelope, bodies)?;
+    let (file, report) = answer.value;
+    out.write_all(file.as_bytes())
+        .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
+    Ok(catallax_numbers::Answer {
+        value: report,
+        marks: answer.marks,
+    })
+}
+
 #[cfg(test)]
 mod tests;

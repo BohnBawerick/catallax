@@ -118,6 +118,7 @@ dependencies = [
  "catallax-boolean",
  "catallax-features",
  "catallax-intersect",
+ "catallax-measure",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",

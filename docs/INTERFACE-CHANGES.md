@@ -1335,3 +1335,27 @@ Migration: consumers of the non-exhaustive application error type must retain
 `application.work-limit` as a resource refusal. Callers with an explicit
 operation budget keep control of their request allowance. There is no recipe,
 manifest or STEP format migration.
+
+## 2026-10-24: analytic columns for certified field moments
+
+Pieces: field, CLI stand-in exchange
+Change: Constant axis-aligned cubic grids with Boolean axis boxes and z-parallel cylinders can use certified analytic-column integration. `mass::Options::max_cells` and `Properties::cells` count classified boxes or analytic intervals, including initial partitions. The rational estimate is a moment proposal, with exact surrogate and exchange enclosure checks still required.
+Why: Voxel boundary uncertainty alone does not reach strict inertia widths efficiently. Inner antiderivatives and interval Taylor remainders reduce the integration dimension without using print geometry.
+Migration: No caller or format change. Requested Accuracy values, defaults, work allowances and the strict 1e-9 stand-in inertia comparison are unchanged. Other field definitions retain box integration. Measurements remain explicit queries, not part-build work.
+
+
+## 2026-10-24: stand-in exchange precision
+
+Pieces: CLI stand-in exchange
+Change: The explicit `catallax-stand-in/1` adapter writes 32 significant digits instead of inheriting ordinary STEP's 17-digit default.
+Why: Once field inertia reaches its unchanged 1e-9 width, 17-digit STEP rounding can exceed the retained field enclosures. Tightening the exchange removes that error without widening a field or surrogate bound.
+Migration: No input or format change. Ordinary recipe STEP options and bytes are unchanged. The adapter still refuses unless every exported property enclosure fits the original field bounds.
+
+
+## 2026-10-24: lattice bounds in distance-feature queries
+
+Pieces: field and query-only comparison
+Change: Periodic lattice leaves report no finite bound to the distance-feature candidate visitor, matching the general candidate and display-bound policies. CSG propagation recovers finite bounds from the clipping region.
+Why: The lattice definition is unbounded before clipping; its empty analytic constraint list is not a bounded convex cell.
+Migration: No public signature, part-construction, point-classification, geometry-limit or exchange-policy change. Candidate generation remains an explicit query and retains caller cancellation.
+

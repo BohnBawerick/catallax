@@ -24,7 +24,19 @@ pub struct Built {
     pub consumed: Vec<crate::ConsumedFace>,
     /// Generating definitions of every elementary chamfer and named copy.
     pub chamfers: Vec<crate::chamfer::ChamferDefinition>,
+    /// Field-only steps the B-rep carries as their region envelope, in build order.
+    /// The field kernel supplies the matching mass bodies; see [`crate::stand_in`].
+    pub stand_ins: Vec<StandIn>,
     pub(crate) definition: Arc<Recipe>,
+}
+
+/// A field-only step whose B-rep body is the envelope of its region.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct StandIn {
+    /// The field-only step.
+    pub step: StepId,
+    /// The region step whose body stands in for it.
+    pub region: StepId,
 }
 
 impl Built {
@@ -277,6 +289,7 @@ fn evaluate_impl(
     let mut fillets = Vec::new();
     let mut consumed = Vec::new();
     let mut chamfers = Vec::new();
+    let mut stand_ins = Vec::new();
     for step in &recipe.steps {
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
         let mut build = |model: &mut Model,
@@ -757,6 +770,27 @@ fn evaluate_impl(
                         radius: &source.radius + &shift,
                     }
                 }
+                Operation::Lattice {
+                    region,
+                    cell,
+                    size,
+                    radius,
+                    ..
+                } => {
+                    // The lattice is field-only. The B-rep carries the PRD section 7
+                    // stand-in: the region is the outer envelope, and the field kernel
+                    // adds bodies matching mass, centre of gravity and inertia.
+                    crate::lattice::validate(cell, size.value(), radius)?;
+                    let source = &bodies[region];
+                    stand_ins.push(StandIn {
+                        step: step.id.clone(),
+                        region: region.clone(),
+                    });
+                    BodyValue {
+                        body: source.body,
+                        radius: source.radius.clone(),
+                    }
+                }
                 Operation::Offset { body, distance } if certification.is_some() => {
                     let input = &bodies[body];
                     let (body, radius) = certification
@@ -877,5 +911,6 @@ fn evaluate_impl(
             .and_then(|context| context.snapshot())
             .unwrap_or_else(|| Arc::new(recipe.clone())),
         consumed,
+        stand_ins,
     })
 }

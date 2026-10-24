@@ -187,6 +187,10 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         return Ok(value);
     }
     match request.source.as_str() {
+        "print" => crate::printing::evaluate(&request.problem, &request.out),
+        "field" if request.problem["format"] == "catallax-print/1" => {
+            crate::printing::evaluate(&request.problem, &request.out)
+        }
         "name-edit" => {
             let report = crate::name_checks::check(&request.problem);
             Ok(json!({"format":"catallax-manifest/3",
@@ -207,6 +211,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             let mut value: Value = serde_json::from_str(&crate::render_manifest(&manifest))?;
             value["format"] = json!("catallax-manifest/3");
             Ok(value)
+        }
+        "recipe" if request.problem["format"] == "catallax-stand-in/1" => {
+            crate::stand_in::evaluate(&request.problem, &request.out)
         }
         "recipe" if crate::certified_recipe::is_problem(&request.problem) => {
             crate::certified_recipe::evaluate(&request.problem, &request.out)
@@ -334,6 +341,12 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 }
                 Err(error) => return Ok(refused("cli.invalid-recipe", error)),
             };
+            if !built.stand_ins.is_empty() {
+                return Ok(refused(
+                    "field.stand-in-export",
+                    "the lattice envelope alone is not a mass-equivalent stand-in",
+                ));
+            }
             let measurements = if let Some(checks) = checks {
                 match checks.report(&recipe, &mut built, display_started, &mut dec) {
                     Ok(report) => Some(report),

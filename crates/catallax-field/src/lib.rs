@@ -22,12 +22,17 @@ mod end_condition;
 mod features;
 mod fillet;
 mod geometry;
+mod lattice;
+/// Certified field-only volume, centroid and inertia queries.
+pub mod mass;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
 mod metric;
 mod offset_spline;
 mod planar;
+/// Watertight certified print meshes built directly from the field.
+pub mod printing;
 mod profile;
 mod samples;
 mod support;
@@ -662,6 +667,22 @@ impl Plan {
                         }
                         plan.boolean(BooleanKind::Subtract, target, tool_node, dec)?
                     }
+                    Operation::Lattice {
+                        region,
+                        cell,
+                        size,
+                        frame,
+                        radius,
+                    } => {
+                        let lattice = lattice::Lattice::new(cell, size.value(), frame, radius)?;
+                        if lattice.is_empty() {
+                            0
+                        } else {
+                            let beams =
+                                plan.leaf(geometry::Leaf::Lattice(Box::new(lattice)), vec![], dec)?;
+                            plan.boolean(BooleanKind::Intersect, steps[region], beams, dec)?
+                        }
+                    }
                     _ => {
                         let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
                         plan.leaf(leaf, faces, dec)?
@@ -681,6 +702,7 @@ impl Plan {
                         step_faces[target].clone()
                     }
                     Operation::Shell { body, .. } => step_faces[body].clone(),
+                    Operation::Lattice { region, .. } => step_faces[region].clone(),
                     Operation::Pattern { body, .. }
                     | Operation::Fillet { body, .. }
                     | Operation::Chamfer { body, .. }

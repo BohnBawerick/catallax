@@ -2,7 +2,50 @@
 
 `catallax-field` compiles version 3 and version 4 recipe stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided and one-sided through-all cuts, full and rational-frame partial revolutions, named hole bands, planar first-hit face/next extrusions, linear and circular body patterns, plane mirrors, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`; hole meridians and planar first-hit arrangements likewise share definition-native compilers. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
 
-This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, field-only features, FEA and application integration are not implemented.
+This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, FEA and application integration are not implemented.
+
+Lattice point queries compile the periodic beam definitions of RECIPE section 4.15, intersected with the region. Constant and linear grades use exact rational squared-distance classification and a labelled Lipschitz-scaled residual, not true distance. Cell indices retain arbitrary precision. Distance grades and reflected frames are unfinished coverage. The support-chart display cannot cover periodic beams; the separate `printing::mesh_plan` path produces their watertight STL and OBJ outputs directly from the field. Ordinary solid-only STEP refuses an envelope-only lattice. The explicit stand-in exchange below keeps surface-envelope and mass geometry separate.
+
+## Watertight field printing
+
+`catallax_field::printing::mesh_plan` accepts a plan, explicit output tolerance, cell and vertex limits, and the caller's decider. It supports primitive solid cells, analytic constraint cells and periodic beams composed by the existing Boolean tape. Other leaf definitions refuse with `field.print-coverage`; no B-rep builder is used.
+
+Interval classification excludes boxes proven wholly inside or outside. Primitive queries use their local frame before evaluating squared radii, avoiding cancellation from expanded world-coordinate polynomials. Beam intervals use cached coefficients and outward-rounded expanded beam bounds. The Boolean traversal skips operands that cannot change a proven result.
+
+Every remaining boundary box reaches one common grid size `h`. Six conforming Kuhn tetrahedra divide each grid cube. Exact corner membership supplies the crossing edges, whose midpoints define the triangles. A crossing between material and non-material supplies a real boundary witness in that cube. Every unresolved cube must be a mixed cube or a direct neighbour of one; otherwise the algorithm refines rather than dropping the unresolved geometry. The resulting two-sided boundary distance is at most `4h`, which must not exceed the requested output tolerance. This is a distance certificate, not a claim of topology equivalence to features smaller than that tolerance.
+
+Before publication, every mesh edge must have two oppositely oriented incident facets and every vertex link must be one cycle. STL coordinates are admitted only when exactly representable in binary32, so file rounding adds no unreported error. `write_stl` writes unit outward normals; `write_obj` writes the same vertices and facets for display. Neither output claims the support-chart registry's face-picking metadata. The original recipe remains the definition.
+
+The verification CLI accepts `catallax-print/1` through `print`, or through `field` when an explicit print wrapper is supplied. See [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing). P6's enclosing shell uses explicit region Booleans, not a substitute implementation of the separate shell operation.
+
+## Field moments and mass stand-ins
+
+`catallax_field::mass::properties` measures the original field definition, not a print mesh. It accepts separate `Accuracy` values for volume, centroid and centroidal inertia, a classified-cell limit, and the caller's decider. Units are mm³, mm and mm⁵ for unit density. Existing `catallax_measure::Accuracy` width semantics and defaults are unchanged.
+
+Constant cubic grids aligned with the model axes, Boolean axis boxes and z-parallel cylinders use analytic columns. Each nearest-grid sector has `0 <= u <= v <= size/2`. Its lattice is the union of vertical disks `u² + v² <= radius²` and horizontal intervals with half-height `sqrt(radius² - u²)`. Certified endpoint ordering partitions the Boolean definition into admitted columns. Inner-coordinate antiderivatives are exact; the remaining coordinate uses eighth-order Taylor integration with an interval ninth-derivative remainder.
+
+Consecutive admitted intervals and adjacent bands with identical membership are merged before differentiation. Interior subdivision walls cancel symbolically rather than introducing false interval dependencies. Every Taylor enclosure is intersected with an independent material-density box enclosure before refinement priority is chosen. Unproved endpoint order retains the complete density enclosure and subdivides; it never assumes a trim topology.
+
+Other definitions retain admitted-box integration. Admitted boxes contribute exact rational coordinate moments. Each unresolved box admits any density between zero and one, giving outward bounds on volume, first moments and second moments. Exact axis-aligned source planes partition the initial domain, and closed-box admission ignores only zero-volume boundaries.
+
+Both methods prioritise the largest unresolved coordinate-moment enclosure and propagate rational bounds through division by volume and translation to the centroid. Zero volume has no centroid or inertia. The cell limit counts classified boxes or analytic intervals, including initial partitions. Every requested width must be reached; refinement exhaustion reports reached bounds instead of changing an accuracy or discarding unresolved material. If the initial partition cannot be completed, no full-domain property enclosure is reported.
+
+The rational surrogate target is a coordinate-moment proposal inside the integration enclosures, not a measurement of STL facets. The box method integrates admitted material plus half the density of each unresolved box; analytic columns use moment midpoints. Exact achieved surrogate properties still need separate enclosure-inclusion checks. Cubic cells use the reduction to three periodic grid-line families; generic cell templates retain their segment evaluator.
+
+The opt-in `catallax-stand-in/1` verification wrapper constructs one central unit-density box or a symmetric pair in rationalised principal axes. Cross-axis second moments determine two dimensions directly; exact volume determines the third, and the parallel-axis theorem determines pair separation. No satellite-mass convergence loop is used. Exact achieved properties and the principal-frame residual are checked before export. Targets not represented within the strict 1e-9 mm⁵ inertia comparison refuse with the achieved residual.
+
+STEP contains a `SHELL_BASED_SURFACE_MODEL` envelope and separate `MANIFOLD_SOLID_BREP` proxy bodies under a mixed `SHAPE_REPRESENTATION`. The envelope is surface geometry, not another mass solid. Sum volume properties over the proxy solids only. Surface-envelope faces must not enter that integration, even when an importing library can integrate a closed shell. No density or material property is attached. These bodies are mass proxies, not printable lattice geometry or a boundary conversion.
+
+The exchange-deviation bound also propagates through convex-box symmetric-difference bounds to volume, centroid and inertia enclosures. Every exported proxy enclosure must lie wholly inside the original field enclosure. A point estimate alone cannot certify STEP rounding. This opt-in adapter writes 32 significant digits rather than weakening the inertia allowance; ordinary STEP export keeps its existing 17-digit default.
+
+The region-substitution envelope is covered only for positive lattice occurrences. A negative lattice operand in subtraction reverses containment and refuses with `field.stand-in-envelope-coverage`; the field itself can still classify and measure that definition. Mass proxy bodies are not clearance geometry and need not reproduce the envelope's outline.
+
+Option A is this massless-envelope, unit-density exchange. Density-weighted interior bodies and material/density metadata, option B, are future work and are not accepted by this wrapper. Measurement runs only when explicitly requested; ordinary recipe construction does not integrate field moments or run comparison/timing tools.
+
+Prior art informed the separation rather than supplying code: [nTop's simplified body representation](https://support.ntop.com/hc/en-us/articles/7170769142291-How-to-export-a-Simplified-Body-Representation-of-Implicit-as-a-CAD-part), [OCCT's unit-density volume-property contract](https://occt3d.com/dev/doc/refman/html/class_b_rep_g_prop.html), and [SMLib's geometry-native mass integration](https://smlibpy.classcad.ch/docs/analysis). Field interval exclusion follows the independent-evaluation approach discussed by [Fidget](https://www.mattkeeter.com/projects/fidget/) and [libfive](https://libfive.com/), without using their implementations.
+
+Analytic column integration follows the dimension-reduction idea in [Saye's implicit quadrature](https://math.lbl.gov/saye/research-quad.html). Its Taylor remainder uses interval derivatives, not convergence between two sampled answers. [Taylor models](https://www.tuhh.de/ti3/rump/intlab/demos/html/dtaylormodel.html) motivate preserving dependencies, and [Johansson's rigorous integration](https://arxiv.org/html/1802.07942) motivates retaining a direct enclosure beside a higher-order certificate. No external quadrature implementation or runtime dependency is included.
+
 
 ## Shared algebraic definitions
 

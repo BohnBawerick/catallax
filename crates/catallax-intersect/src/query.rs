@@ -42,25 +42,6 @@ pub(super) fn validate(
     }
 }
 pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<CurveForm, Refusal> {
-    selected_form(geom, c, dec, true)
-}
-
-// Elimination need not inherit a witness's larger coefficient field. The public
-// closed form above still uses the witness as its line origin.
-pub(super) fn solver_form(
-    geom: &GeomStore,
-    c: CurveId,
-    dec: &mut Decider,
-) -> Result<CurveForm, Refusal> {
-    selected_form(geom, c, dec, false)
-}
-
-fn selected_form(
-    geom: &GeomStore,
-    c: CurveId,
-    dec: &mut Decider,
-    witness_line_origin: bool,
-) -> Result<CurveForm, Refusal> {
     let p = validate(geom, c, dec)?;
     Ok(match geom.curve(c) {
         Curve::Line(l) => CurveForm::Line {
@@ -97,7 +78,7 @@ fn selected_form(
                 0
             };
             let mut form = plan.curves[index].form.clone();
-            if witness_line_origin && let CurveForm::Line { origin, .. } = &mut form {
+            if let CurveForm::Line { origin, .. } = &mut form {
                 *origin = point.unwrap_or_else(|| geom.position(i.witness));
             }
             form

@@ -410,3 +410,43 @@ blind_test!(
         }
     }
 );
+
+blind_test!(line_meeting_coordinate_bounds_ignore_parameter_scale, {
+    let directions = [
+        Vector3::new(rr(3), rr(1), rr(0)),
+        Vector3::new(rr(1), Real::from_rational(n(1) / n(3)), rr(0)),
+    ];
+    let mut expected = None;
+    for direction in directions {
+        let mut geom = GeomStore::new();
+        let curve = geom.add_curve(Curve::Line(Line {
+            origin: Point3::origin(),
+            dir: direction,
+        }));
+        let surface = geom.add_surface(sphere(pi([0, 0, 0]), n(1)));
+        let CurveSurface::Meets(hits) = exact(intersect_curve_surface(
+            &mut geom,
+            curve,
+            surface,
+            &mut Decider::default(),
+        )) else {
+            panic!("the line crosses the unit sphere twice");
+        };
+        assert_eq!(hits.len(), 2);
+        let bounds: Vec<_> = hits
+            .iter()
+            .map(|hit| {
+                let point = geom.position(hit.point);
+                [&point.x, &point.y, &point.z].map(|value| {
+                    let ball = Decider::default().enclose_at(value, 128).unwrap();
+                    (ball.lo(), ball.hi())
+                })
+            })
+            .collect();
+        if let Some(expected) = &expected {
+            assert_eq!(&bounds, expected);
+        } else {
+            expected = Some(bounds);
+        }
+    }
+});

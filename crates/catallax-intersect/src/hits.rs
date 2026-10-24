@@ -11,8 +11,8 @@ use catallax_numbers::{
     Rational, Real, RealPoly, Refusal, Sign,
 };
 use catallax_shapes::{
-    Circle, Curve, CurveId, Ellipse, GeomKey, GeomStore, Meet, MeetOf, Point3, PointDef, Position,
-    Surface, SurfaceId,
+    Circle, Curve, CurveId, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3, PointDef,
+    Position, Surface, SurfaceId,
 };
 use std::sync::Arc;
 
@@ -71,8 +71,35 @@ fn carrier_equations(
     geom: &GeomStore,
     c: CurveId,
     f: &CurveForm,
+    dec: &mut Decider,
 ) -> Result<Vec<RealPoly>, Refusal> {
     let curve = match f {
+        CurveForm::Line { origin, dir } => {
+            let mut rational_origin = origin.as_rational();
+            if rational_origin.is_none()
+                && let Some(plan) = query::validate(geom, c, dec)?
+            {
+                for spec in &plan.curves {
+                    if let CurveForm::Line {
+                        origin,
+                        dir: canonical,
+                    } = &spec.form
+                        && sign(&canonical.dot(dir), dec)? == Sign::Positive
+                    {
+                        rational_origin = origin.as_rational();
+                        if rational_origin.is_some() {
+                            break;
+                        }
+                    }
+                }
+            }
+            rational_origin.map(|origin| {
+                Curve::Line(Line {
+                    origin: origin.to_real(),
+                    dir: dir.clone(),
+                })
+            })
+        }
         CurveForm::Circle {
             center,
             normal,
@@ -471,7 +498,7 @@ pub(super) fn intersect(
         dec.note_fact_decision();
         return Ok(Answer::exact(CurveSurface::Contained));
     }
-    let form = query::solver_form(geom, c, dec)?;
+    let form = query::form(geom, c, dec)?;
     if let Some(answer) = circular_section(geom, c, s, &form, dec)? {
         return Ok(Answer::exact(answer));
     }
@@ -481,10 +508,12 @@ pub(super) fn intersect(
             "this intersection needs a finite parametric surface solver",
         )
     })?;
-    let solutions = if let CurveForm::Line { origin, dir } = &form {
+    let solutions = if !geom.surface(s).has_rational_definition()
+        && let CurveForm::Line { origin, dir } = &form
+    {
         algebraic_line(origin, dir, geom.surface(s), implicit, dec)?
     } else {
-        let equations = carrier_equations(geom, c, &form)?;
+        let equations = carrier_equations(geom, c, &form, dec)?;
         solve::intersections(&equations, implicit, dec)?
     };
     let Solutions::Points(points) = solutions else {

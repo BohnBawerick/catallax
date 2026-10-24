@@ -184,6 +184,13 @@ non-watertight mesh is returned as a successful answer. A caller-supplied
 wall-clock deadline can still cancel meshing through `Decider`; the default
 library decider has no deadline.
 
+Application entries `catallax_app::build`, `build_soliddraft` and `build_certified`
+share a 20,000,000-unit aggregate arithmetic allowance for construction and
+display unless the caller already owns an operation budget. Default exhaustion
+returns `application.work-limit` without a body. An explicit caller allowance is
+never reset or enlarged by a nested build. This work limit is separate from the
+display sample/vertex limits and from all geometric tolerances.
+
 
 ## Where to start
 

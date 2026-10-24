@@ -104,6 +104,9 @@ fn resource_child() {
             assert_eq!(error.code(), "boolean.sampling-budget", "{error:?}");
             println!("refused {case}: {error:?}");
         }
+        Err(Error::ResourceLimit) if case != "ordinary" && case != "huge" => {
+            println!("refused {case}: application.work-limit");
+        }
         Err(Error::Display(error)) if case == "huge" => {
             assert_eq!(error.code, "mesh.resource-limit", "{error:?}");
             println!("refused {case}: {error:?}");

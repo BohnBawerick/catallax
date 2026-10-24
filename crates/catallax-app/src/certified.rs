@@ -83,14 +83,16 @@ pub fn build_certified(
     display: Option<&MeshOptions>,
     dec: &mut Decider,
 ) -> Result<CertifiedApplicationBody, Error> {
-    let built = evaluate_certified(recipe, dec).map_err(Error::Build)?;
-    let represented = built.built();
-    let display =
-        display.map(|options| mesh_body(&represented.model, represented.result, options, dec));
-    let names = result_names(&represented.model, represented.result);
-    Ok(CertifiedApplicationBody {
-        built,
-        display,
-        names,
+    crate::bounded_build(|| {
+        let built = evaluate_certified(recipe, dec).map_err(Error::Build)?;
+        let represented = built.built();
+        let display =
+            display.map(|options| mesh_body(&represented.model, represented.result, options, dec));
+        let names = result_names(&represented.model, represented.result);
+        Ok(CertifiedApplicationBody {
+            built,
+            display,
+            names,
+        })
     })
 }

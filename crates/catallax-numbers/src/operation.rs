@@ -60,6 +60,12 @@ pub struct OperationWork {
     pub exhausted: bool,
 }
 
+/// Whether the caller already owns a request-scoped work allowance.
+/// Consumers must not replace it with a fresh allowance for a nested build.
+pub fn operation_budget_active() -> bool {
+    ACTIVE.with(|slot| slot.get().is_some())
+}
+
 /// Observes accepted work in the current request without charging it.
 /// Outside a request budget both counters are zero/false.
 pub fn current_operation_work() -> OperationWork {

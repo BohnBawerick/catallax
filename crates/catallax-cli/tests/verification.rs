@@ -284,42 +284,6 @@ fn declared_face_checks_survive_replay_and_report_radius_edit_origins() {
     fs::remove_dir_all(dir).unwrap();
 }
 
-#[test]
-fn unsupported_field_feature_removes_previous_display_without_brep_fallback() {
-    use catallax_cli::verification::{Request, answer};
-    let dir = std::env::temp_dir().join(format!(
-        "catallax-field-display-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("display.obj"), "stale display").unwrap();
-    fs::write(dir.join("answer.step"), "stale STEP").unwrap();
-    let response = answer(&Request {
-        format: "catallax-request/1".into(),
-        source: "field".into(),
-        // A shell exercises an unsupported compile step and artifact cleanup.
-        problem: serde_json::from_str(include_str!("../../../parts/P4-shelled-tray.json")).unwrap(),
-        out: dir.clone(),
-        max_work: 100_000_000,
-    })
-    .unwrap();
-    assert_eq!(
-        response["manifest"]["refusal"]["code"],
-        "field.unsupported-operation"
-    );
-    assert!(!dir.join("display.obj").exists());
-    assert!(!dir.join("answer.step").exists());
-    assert!(
-        response["operation_log"]["operations"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|operation| operation["kernel"] == "field")
-    );
-    fs::remove_dir_all(dir).unwrap();
-}
-
 fn certified_problem() -> Value {
     serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),

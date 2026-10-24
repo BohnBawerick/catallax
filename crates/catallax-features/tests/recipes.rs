@@ -105,10 +105,6 @@ fn merged_coplanar_faces_keep_both_creating_steps() {
     let saved = catallax_recipe::EdgeName::new(b_top, b_front).unwrap();
     let resolved = built.model.edges_with_name(built.result, &saved);
     assert_eq!(resolved.len(), 1);
-    assert_ne!(
-        built.model.edge_name(built.result, resolved[0]),
-        Some(saved)
-    );
     assert_eq!(
         built
             .model
@@ -116,6 +112,108 @@ fn merged_coplanar_faces_keep_both_creating_steps() {
             .faces,
         6
     );
+}
+
+#[test]
+fn cylinder_rim_names_follow_their_makers_when_coplanar_caps_separate() {
+    use catallax_recipe::EdgeName;
+    let source: Value = serde_json::from_str(include_str!("../../../parts/P0/seam.json")).unwrap();
+    for ids in [["a", "b"], ["later", "earlier"]] {
+        let mut recipe = source.clone();
+        recipe["steps"][0]["id"] = json!(ids[0]);
+        recipe["steps"][1]["id"] = json!(ids[1]);
+        recipe["steps"][2]["target"] = json!(ids[0]);
+        recipe["steps"][2]["tool"] = json!(ids[1]);
+        let before = build(recipe["steps"].as_array().unwrap().clone(), "joined");
+        for id in ids {
+            let rim = EdgeName::new(
+                Origin {
+                    step: StepId::new(id).unwrap(),
+                    role: Role::End,
+                },
+                Origin {
+                    step: StepId::new(id).unwrap(),
+                    role: Role::Side {
+                        segment: ElementId::new("wall").unwrap(),
+                        path: None,
+                    },
+                },
+            )
+            .unwrap();
+            let edges = before.model.edges_with_name(before.result, &rim);
+            assert_eq!(edges.len(), 1);
+            assert_eq!(before.model.edge_name(before.result, edges[0]), Some(rim));
+        }
+        let names: Vec<_> = before
+            .model
+            .edges_of_body(before.result)
+            .into_iter()
+            .map(|edge| before.model.edge_name(before.result, edge).unwrap())
+            .collect();
+        let copied_origin = |origin: &Origin| Origin {
+            step: StepId::new("copies").unwrap(),
+            role: Role::Copy {
+                instance: 1,
+                of: Box::new(origin.clone()),
+            },
+        };
+        let mut copied_model = before.model.clone();
+        let reflection = catallax_shapes::Isometry::reflection(
+            &catallax_shapes::RPoint3::origin(),
+            &catallax_shapes::RVector3::new(1.into(), 0.into(), 0.into()),
+        )
+        .unwrap();
+        let copied = catallax_topology::transformed_body(
+            &mut copied_model,
+            before.result,
+            &reflection,
+            copied_origin,
+        );
+        for name in &names {
+            let [a, b] = name.between();
+            let expected = EdgeName::new(copied_origin(a), copied_origin(b)).unwrap();
+            let resolved = copied_model.edges_with_name(copied, &expected);
+            assert!(!resolved.is_empty(), "{expected:?}");
+            for edge in resolved {
+                assert_eq!(copied_model.edge_name(copied, edge), Some(expected.clone()));
+            }
+        }
+        for changed in [0, 1] {
+            for height in ["8", "12"] {
+                let mut edited = recipe.clone();
+                edited["steps"][changed]["height"] = json!(height);
+                let after = build(edited["steps"].as_array().unwrap().clone(), "joined");
+                for name in &names {
+                    assert!(
+                        !after.model.edges_with_name(after.result, name).is_empty(),
+                        "{name:?}"
+                    );
+                }
+                let vanished = EdgeName::new(
+                    Origin {
+                        step: StepId::new(ids[changed]).unwrap(),
+                        role: Role::End,
+                    },
+                    Origin {
+                        step: StepId::new(ids[1 - changed]).unwrap(),
+                        role: Role::Side {
+                            segment: ElementId::new("wall").unwrap(),
+                            path: None,
+                        },
+                    },
+                )
+                .unwrap();
+                if height == "12" {
+                    assert!(
+                        after
+                            .model
+                            .edges_with_name(after.result, &vanished)
+                            .is_empty()
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[test]

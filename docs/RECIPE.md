@@ -228,12 +228,16 @@ The set of a face depends only on the recipe and on the point set each step make
 
 ### 3.3 Edge and vertex names
 
-An edge lies between two faces. Its **edge name** is the pair of the first origin of each face, in canonical order:
+An edge lies between two faces. Its **edge name** is a pair of their origins, in canonical order:
 
 ```json
 { "between": [ { "step": "base", "role": "end" },
                { "step": "base", "role": { "side": { "segment": "top" } } } ] }
 ```
+
+Keep the incident origin pair from the edge's construction before merging faces. Splitting an edge carries its construction names to the pieces; merging edge pieces unions those names. Pick the first canonical construction name whose two origins still belong to opposite incident faces. If no construction name applies, use the first origin of each incident face. Exact copies and origin remapping also map the construction names. This history changes neither geometry nor maximal topology.
+
+For example, two cylinders with coplanar tops produce a merged cap with both `a:end` and `b:end`. The exposed rim of cylinder `b` keeps `b:end` / `b:wall`, not the cap's lexically first `a:end` / `b:wall`. Raising cylinder `a` then separates the caps without losing cylinder `b`'s rim name. A pair whose faces no longer meet still does not resolve. Construction history does not make every old reference valid after a topology change.
 
 A **vertex name** lists the first origin of each face that meets at the vertex, in canonical order. Ordinary vertices have at least two origins. A singular vertex such as a cone apex has one, the wall's origin. The list is never empty and never repeats an origin.
 

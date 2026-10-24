@@ -7,7 +7,7 @@ use crate::points::curve_sample;
 use crate::stages::{Imprinted, Selection};
 use catallax_intersect::{Component, SurfacePair, intersect_surfaces, same_curve, tangent_at};
 use catallax_numbers::{Answer, Answered, Decider, MarkLog, Outcome, Refusal, Sign};
-use catallax_recipe::Origin;
+use catallax_recipe::{EdgeName, Origin};
 use catallax_shapes::{Curve, CurveId, GeomKey, PointId, SurfaceId};
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, Face, FaceId, Loop, Lump, Model, Sense, Shell, Vertex,
@@ -63,6 +63,7 @@ struct EdgeData {
     to: Option<usize>,
     faces: [usize; 2],
     active: bool,
+    constructions: Vec<EdgeName>,
 }
 fn use_ends(edge: &EdgeData, sense: Sense) -> (Option<usize>, Option<usize>) {
     if sense == Sense::Same {
@@ -428,6 +429,8 @@ fn maximal_edges(
             if singular(model, &edges[first], points[&vertex], faces, nodes, dec)? {
                 continue;
             }
+            let mut constructions = std::mem::take(&mut edges[first].constructions);
+            constructions.append(&mut edges[second].constructions);
             let a = edges[first].clone();
             let b = edges[second].clone();
             let from = if a.from == Some(vertex) { a.to } else { a.from };
@@ -445,6 +448,7 @@ fn maximal_edges(
                 to,
                 faces: a.faces,
                 active: true,
+                constructions,
             });
             let mut replacements = 0;
             for face in faces.iter_mut() {
@@ -693,6 +697,22 @@ fn rebuild(
         let mut pair = [face_for_use[&h], face_for_use[&partner]];
         pair.sort();
         let index = edges.len();
+        let a = &original[u.face].origins;
+        let b = &original[uses[partner].face].origins;
+        let mut constructions: Vec<_> = model
+            .edge_constructions(u.edge)
+            .iter()
+            .filter(|name| {
+                let [x, y] = name.between();
+                (a.contains(x) && b.contains(y)) || (a.contains(y) && b.contains(x))
+            })
+            .cloned()
+            .collect();
+        if constructions.is_empty()
+            && let (Some(a), Some(b)) = (a.first(), b.first())
+        {
+            constructions.extend(EdgeName::new(a.clone(), b.clone()).ok());
+        }
         edges.push(EdgeData {
             curve: edge.curve,
             sense: edge.sense,
@@ -700,6 +720,7 @@ fn rebuild(
             to,
             faces: pair,
             active: true,
+            constructions,
         });
         edge_for_use.insert(h, index);
         edge_for_use.insert(partner, index);
@@ -727,7 +748,7 @@ fn rebuild(
         }
     }
     let mut stored_edges = BTreeMap::new();
-    for (i, edge) in edges.iter().enumerate() {
+    for (i, edge) in edges.iter_mut().enumerate() {
         if !edge.active {
             continue;
         }
@@ -740,15 +761,14 @@ fn rebuild(
                 GeomKey::Curve(edge.curve),
             );
         }
-        stored_edges.insert(
-            i,
-            model.add_edge(Edge {
-                curve: edge.curve,
-                sense: edge.sense,
-                start,
-                end,
-            }),
-        );
+        let stored = model.add_edge(Edge {
+            curve: edge.curve,
+            sense: edge.sense,
+            start,
+            end,
+        });
+        model.record_edge_constructions(stored, std::mem::take(&mut edge.constructions));
+        stored_edges.insert(i, stored);
     }
     let mut stored_faces = Vec::new();
     for face in &faces {

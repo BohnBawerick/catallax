@@ -6,6 +6,9 @@ fn block() -> Value {
     json!({"format":"catallax-recipe/3","name":"edit","steps":[{"id":"stock","op":"block","size":["4","5","6"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"stock"})
 }
 fn check(before: Value, after: Value) -> Value {
+    check_with_work(before, after, 1_000_000)
+}
+fn check_with_work(before: Value, after: Value, max_work: u64) -> Value {
     let dir = std::env::temp_dir().join(format!(
         "catallax-name-edit-{}-{:?}",
         std::process::id(),
@@ -16,7 +19,7 @@ fn check(before: Value, after: Value) -> Value {
         source: "name-edit".into(),
         problem: json!({"format":"catallax-name-edit/1","recipe":before,"edited_recipe":after}),
         out: dir.clone(),
-        max_work: 1_000_000,
+        max_work,
     })
     .unwrap();
     std::fs::remove_dir_all(dir).unwrap();
@@ -89,4 +92,29 @@ fn no_edit_cannot_pass_the_edit_gate() {
         let report = check(before.clone(), after.clone());
         assert_eq!(report["manifest"]["name_edit"]["code"], "names.no-edit");
     }
+}
+
+#[test]
+fn seam_height_edit_keeps_names_when_merged_caps_separate() {
+    let before: Value = serde_json::from_str(include_str!("../../../parts/P0/seam.json")).unwrap();
+    let mut after = before.clone();
+    after["steps"][0]["height"] = json!("12");
+    let report = check_with_work(before, after, 100_000_000);
+    assert_eq!(
+        report["manifest"]["name_edit"]["status"], "passed",
+        "{report}"
+    );
+}
+
+#[test]
+fn collar_chamfer_parameter_edit_keeps_faces_and_edges_in_both_kernels() {
+    let before: Value =
+        serde_json::from_str(include_str!("../../../parts/P2-collar.json")).unwrap();
+    let mut after = before.clone();
+    after["steps"][2]["distance"] = json!("0.75");
+    let report = check_with_work(before, after, 100_000_000);
+    assert_eq!(
+        report["manifest"]["name_edit"]["status"], "passed",
+        "{report}"
+    );
 }

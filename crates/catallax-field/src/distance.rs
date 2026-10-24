@@ -173,7 +173,7 @@ impl Plan {
                                     normal: edge.cross(&normal),
                                     ref_dir: edge,
                                 },
-                            )));
+                            ))?);
                         }
                         tiles.push(sides);
                     }

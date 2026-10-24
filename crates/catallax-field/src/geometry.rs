@@ -666,10 +666,7 @@ impl Leaf {
             Self::Primitive(a) => a.transform(pose),
             Self::Feature(a) => a.transform(pose),
             Self::Cell(a) => a.transform(pose),
-            Self::Draft(a) => {
-                a.transform(pose);
-                Ok(())
-            }
+            Self::Draft(a) => a.transform(pose),
         }
     }
     pub fn true_distance(&self) -> bool {
@@ -1145,7 +1142,7 @@ impl Cell {
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let radius = capped.bound_radius(dec)?;
-        let mut cell = Self::new(Vec::from(capped.surfaces()), Some(radius));
+        let mut cell = Self::new(Vec::from(capped.surfaces()), Some(radius))?;
         cell.capped = Some(capped);
         Ok(cell)
     }

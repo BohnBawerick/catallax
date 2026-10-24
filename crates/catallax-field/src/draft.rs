@@ -263,7 +263,7 @@ impl Region {
             fast,
             bounds: None,
         };
-        result.refresh_constraints();
+        result.refresh_constraints()?;
         result.bounds = Some(result.display_box(dec)?.map(|b| [b.lo(), b.hi()]));
         Ok(result)
     }
@@ -293,25 +293,27 @@ impl Region {
             },
         }
     }
-    fn refresh_constraints(&mut self) {
+    fn refresh_constraints(&mut self) -> Result<(), Refusal> {
         self.constraints.clear();
         match &self.cell {
-            Cell::Planar(cell) => self.constraints.extend(
-                cell.supports
-                    .iter()
-                    .map(|s| geometry::constraint(Surface::Plane(s.plane.clone()))),
-            ),
-            Cell::Polyhedral(c) => self.constraints.extend(
-                c.faces
-                    .iter()
-                    .map(|f| geometry::constraint(Surface::Plane(c.plane(f)))),
-            ),
+            Cell::Planar(cell) => {
+                for support in &cell.supports {
+                    self.constraints
+                        .push(geometry::constraint(Surface::Plane(support.plane.clone()))?);
+                }
+            }
+            Cell::Polyhedral(cell) => {
+                for face in &cell.faces {
+                    self.constraints
+                        .push(geometry::constraint(Surface::Plane(cell.plane(face)))?);
+                }
+            }
             Cell::Round(cell) => {
                 self.constraints
-                    .push(geometry::constraint(cell.surface.clone()));
+                    .push(geometry::constraint(cell.surface.clone())?);
                 for (plane, _) in cell.caps.iter().flatten() {
                     self.constraints
-                        .push(geometry::constraint(Surface::Plane(plane.clone())));
+                        .push(geometry::constraint(Surface::Plane(plane.clone()))?);
                 }
                 if let Surface::Cone(cone) = &cell.surface {
                     self.constraints
@@ -319,10 +321,11 @@ impl Region {
                             origin: cone.apex.clone(),
                             normal: cone.axis.scaled(&Real::from_i64(-1)),
                             ref_dir: cone.ref_dir.clone(),
-                        })));
+                        }))?);
                 }
             }
         }
+        Ok(())
     }
     pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
         let mut bounds: Option<[Ball; 3]> = None;
@@ -378,7 +381,7 @@ impl Region {
             .clone()
             .ok_or_else(crate::samples::placement_error)
     }
-    pub(crate) fn transform(&mut self, map: &Isometry) {
+    pub(crate) fn transform(&mut self, map: &Isometry) -> Result<(), Refusal> {
         match &mut self.cell {
             Cell::Planar(cell) => {
                 for p in &mut cell.vertices {
@@ -431,7 +434,7 @@ impl Region {
             .as_ref()
             .and_then(|bounds| crate::samples::transform(bounds, map).ok());
         self.fast = Self::fast_geometry(&self.cell);
-        self.refresh_constraints();
+        self.refresh_constraints()
     }
     pub(crate) fn location(
         &self,

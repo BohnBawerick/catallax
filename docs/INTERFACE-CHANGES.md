@@ -1128,6 +1128,8 @@ Change: `draft::capped::CappedCylinder` retains an unchanged cylinder and two op
 
 The field publishes an independent bounded analytic cell with residual distance semantics. Native charts survive rigid copies and supply current face candidates by support polynomial. Its strict witness also supports later drafts whose footprint excludes the cylinder axis.
 
+Integration: draft region construction, rigid copies, prepared planar trims and native cap cells propagate the merged fallible analytic-constraint API. Evaluated definitions retain upstream certification snapshots alongside draft consumption history.
+
 Limits: multiple interacting curved cells, other mixed support families and general curved reference disambiguation remain unfinished. The rational candidate interface still refuses genuinely algebraic placements. Successful geometry and STEP import do not imply an interactive comparison-budget pass.
 
 Migration: no new recipe version, face origins, approximation tolerance or work allowance.

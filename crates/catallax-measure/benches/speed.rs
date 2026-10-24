@@ -117,6 +117,14 @@ fn main() {
         ),
         ("steinmetz", fixtures::steinmetz(&Pose::identity())),
         ("half-torus", fixtures::half_torus()),
+        (
+            "torus-sector",
+            fixtures::torus_rectangle(false, &Pose::identity()),
+        ),
+        (
+            "torus-sector-long",
+            fixtures::torus_rectangle(true, &Pose::identity()),
+        ),
         ("coplanar-split", fixtures::coplanar_split_block()),
     ] {
         cases.push((name, model, body));

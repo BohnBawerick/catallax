@@ -2,7 +2,7 @@
 
 use catallax_intersect::{CurveTrace, trace};
 use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal};
-use catallax_shapes::{Point3, RPoint3, RVector3, Surface, Vector3};
+use catallax_shapes::{Circle, Curve, Ellipse, Line, Point3, RPoint3, RVector3, Surface, Vector3};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 
@@ -16,6 +16,7 @@ pub(crate) struct TraceCache {
     curves: HashMap<EdgeId, std::sync::Arc<CurveTrace>>,
     failed_gauges: BTreeSet<GaugeAttempt>,
     reuse_gauges: bool,
+    torus_rectangles: HashMap<FaceId, Option<std::sync::Arc<crate::torus::rectangle::Domain>>>,
 }
 
 impl TraceCache {
@@ -61,7 +62,9 @@ struct Curved<'a> {
     sense: Sense,
     boundaries: Vec<Vec<Arc<'a>>>,
     compiled: Vec<Compiled>,
-    torus: Option<Box<crate::torus::Programs>>,
+    torus: Option<crate::torus::Programs>,
+    rectangle: Option<std::sync::Arc<crate::torus::rectangle::Domain>>,
+    analytic_only: bool,
 }
 
 enum Prepared<'a> {
@@ -92,12 +95,22 @@ fn budget() -> Refusal {
     )
 }
 
-fn unproved_distance_integral(model: &Model, face: FaceId) -> bool {
+fn finite_distance_face(model: &Model, face: FaceId) -> bool {
     let boundary = model.face(face);
     if matches!(model.geom().surface(boundary.surface), Surface::Plane(_)) {
         return false;
     }
-    let distance_generated = model.face_origins(face).iter().any(|origin| {
+    distance_generated(model, face)
+        && boundary.loops.iter().any(|lp| {
+            matches!(model.loop_(*lp), Loop::Coedges(cs) if cs.iter().any(|c| {
+                let edge = model.edge(model.coedge(*c).edge);
+                edge.start.is_some() || edge.end.is_some()
+            }))
+        })
+}
+
+fn distance_generated(model: &Model, face: FaceId) -> bool {
+    model.face_origins(face).iter().any(|origin| {
         let mut role = &origin.role;
         while let catallax_recipe::Role::Copy { of, .. } = role {
             role = &of.role;
@@ -109,14 +122,49 @@ fn unproved_distance_integral(model: &Model, face: FaceId) -> bool {
                 | catallax_recipe::Role::Inner { .. }
                 | catallax_recipe::Role::Offset { .. }
         )
-    });
-    distance_generated
-        && boundary.loops.iter().any(|lp| {
-            matches!(model.loop_(*lp), Loop::Coedges(cs) if cs.iter().any(|c| {
-                let edge = model.edge(model.coedge(*c).edge);
-                edge.start.is_some() || edge.end.is_some()
-            }))
-        })
+    })
+}
+
+fn analytic_carrier(
+    model: &Model,
+    curve: catallax_shapes::CurveId,
+    dec: &mut Decider,
+) -> Result<Option<Curve>, Refusal> {
+    if !matches!(model.geom().curve(curve), Curve::Intersection(_)) {
+        return Ok(None);
+    }
+    Ok(Some(
+        match catallax_intersect::curve_form(model.geom(), curve, dec)? {
+            catallax_intersect::CurveForm::Line { origin, dir } => {
+                Curve::Line(Line { origin, dir })
+            }
+            catallax_intersect::CurveForm::Circle {
+                center,
+                normal,
+                radius_sq,
+                ref_dir,
+            } => Curve::Circle(Circle {
+                center,
+                normal,
+                radius_sq,
+                ref_dir,
+            }),
+            catallax_intersect::CurveForm::Ellipse {
+                center,
+                normal,
+                major_dir,
+                major_sq,
+                minor_sq,
+            } => Curve::Ellipse(Ellipse {
+                center,
+                normal,
+                major_dir,
+                major_sq,
+                minor_sq,
+            }),
+            _ => return Ok(None),
+        },
+    ))
 }
 
 pub(crate) fn measure(
@@ -128,20 +176,6 @@ pub(crate) fn measure(
     traces: &mut TraceCache,
     dec: &mut Decider,
 ) -> Answered<Vec<Enclosure>> {
-    // Whole analytic supports and full rings retain their existing integrals.
-    // Finite normal-sector trims need a separate property proof; geometric
-    // incidence and the offset's distance proof do not supply that integral.
-    // Refuse before entering unproved quadrature, rather than stalling or
-    // publishing a sampled property as a proven value.
-    if faces
-        .iter()
-        .any(|face| unproved_distance_integral(model, *face))
-    {
-        return Err(Refusal::new(
-            "measure.budget-exhausted",
-            "finite curved distance-feature trims have no proven property integral within this allowance",
-        ));
-    }
     let indices = match property {
         Property::Area => vec![0],
         Property::Volume => vec![1],
@@ -157,6 +191,7 @@ pub(crate) fn measure(
     }
     let mut exact: [Rational; 5] = std::array::from_fn(|_| Rational::zero());
     let mut pending = Vec::new();
+    let reduce_distance = faces.iter().any(|face| distance_generated(model, *face));
     for id in faces {
         if let Some(planar) = planar::face(model, *id, anchor, property) {
             match property {
@@ -213,10 +248,27 @@ pub(crate) fn measure(
         let face = model.face(id);
         let surface = model.geom().surface(face.surface);
         let closed = face.loops.is_empty();
-        let torus = match surface {
-            Surface::Torus(t) if !closed => {
-                Some(Box::new(crate::torus::compile(t, anchor, property)))
+        let analytic_only = finite_distance_face(model, id);
+        let rectangle = match surface {
+            Surface::Torus(torus) if analytic_only => {
+                let domain = match traces.torus_rectangles.entry(id) {
+                    Entry::Occupied(entry) => entry.into_mut(),
+                    Entry::Vacant(entry) => entry.insert(
+                        crate::torus::rectangle::prepare(model, id, torus, dec)?
+                            .map(std::sync::Arc::new),
+                    ),
+                };
+                domain.clone()
             }
+            _ => None,
+        };
+        let torus = match surface {
+            Surface::Torus(t) if !closed => Some(crate::torus::compile(
+                t,
+                anchor,
+                property,
+                rectangle.is_some(),
+            )),
             _ => None,
         };
         let compiled = surface::compile(
@@ -233,7 +285,12 @@ pub(crate) fn measure(
             )
         })?;
         let mut boundaries = Vec::new();
-        for id in &face.loops {
+        let loops = if rectangle.is_some() {
+            &[][..]
+        } else {
+            &face.loops
+        };
+        for id in loops {
             let mut arcs = Vec::new();
             match model.loop_(*id) {
                 Loop::Vertex(v) => {
@@ -296,32 +353,63 @@ pub(crate) fn measure(
                             } else {
                                 None
                             };
-                        let integral = if torus.is_none() && exact.is_none() && analytic.is_none() {
-                            from.zip(to).and_then(|(from, to)| {
-                                match (model.geom().point(from), model.geom().point(to)) {
-                                    (
-                                        catallax_shapes::PointDef::Explicit(from),
-                                        catallax_shapes::PointDef::Explicit(to),
-                                    ) => from.as_rational().zip(to.as_rational()).and_then(
-                                        |(from, to)| {
-                                            compiled.boundary.analytic(
-                                                model.geom().curve(edge.curve),
-                                                &from,
-                                                &to,
-                                            )
-                                        },
-                                    ),
-                                    _ => None,
-                                }
-                            })
-                        } else {
-                            None
-                        };
+                        let mut integral =
+                            if torus.is_none() && exact.is_none() && analytic.is_none() {
+                                from.zip(to).and_then(|(from, to)| {
+                                    match (model.geom().point(from), model.geom().point(to)) {
+                                        (
+                                            catallax_shapes::PointDef::Explicit(from),
+                                            catallax_shapes::PointDef::Explicit(to),
+                                        ) => from.as_rational().zip(to.as_rational()).and_then(
+                                            |(from, to)| {
+                                                compiled.boundary.analytic(
+                                                    model.geom().curve(edge.curve),
+                                                    &from,
+                                                    &to,
+                                                )
+                                            },
+                                        ),
+                                        _ => None,
+                                    }
+                                })
+                            } else {
+                                None
+                            };
+                        if reduce_distance
+                            && torus.is_none()
+                            && exact.is_none()
+                            && analytic.is_none()
+                            && integral.is_none()
+                            && let Some((from, to)) = from.zip(to)
+                        {
+                            let carrier = analytic_carrier(model, edge.curve, dec)?;
+                            integral = compiled.boundary.analytic_reduced(
+                                carrier.as_ref().unwrap_or(model.geom().curve(edge.curve)),
+                                &model.geom().position(from),
+                                &model.geom().position(to),
+                                dec,
+                            )?;
+                        }
+                        // Admit a finite distance trim only with a complete
+                        // antiderivative. Incidence alone proves no integral.
+                        if analytic_only
+                            && exact.is_none()
+                            && analytic.is_none()
+                            && integral.is_none()
+                            && meridian.is_none()
+                            && parallel.is_none()
+                        {
+                            return Err(Refusal::new(
+                                "measure.budget-exhausted",
+                                "finite curved distance-feature trim has no proven analytic property integral",
+                            ));
+                        }
                         let trace = if exact.is_none()
                             && analytic.is_none()
                             && meridian.is_none()
                             && parallel.is_none()
-                            && (integral.is_none() || matches!(surface, Surface::Sphere(_)))
+                            && (integral.is_none()
+                                || (matches!(surface, Surface::Sphere(_)) && !analytic_only))
                         {
                             let traced = match traces.curves.entry(c.edge) {
                                 Entry::Occupied(entry) => entry.into_mut(),
@@ -357,6 +445,8 @@ pub(crate) fn measure(
             boundaries,
             compiled: vec![compiled],
             torus,
+            rectangle,
+            analytic_only,
         }));
     }
     let mut best = None;
@@ -537,12 +627,14 @@ fn evaluate(
             }
             Prepared::Curved(face) => {
                 let mut answer = None;
-                let candidates =
-                    if matches!(face.surface, Surface::Sphere(_)) && !face.boundaries.is_empty() {
-                        6
-                    } else {
-                        1
-                    };
+                let candidates = if matches!(face.surface, Surface::Sphere(_))
+                    && !face.boundaries.is_empty()
+                    && !face.analytic_only
+                {
+                    6
+                } else {
+                    1
+                };
                 let cacheable = cache.reuse_gauges
                     && candidates == 6
                     && !matches!(property, Property::SecondMoment(_, _))
@@ -622,7 +714,25 @@ fn integrate_face(
     work: &mut Work,
 ) -> Result<Vec<Ball>, Stop> {
     if let Some(torus) = &face.torus {
-        return integrate_torus(face, torus, indices, depth, rectangle, work);
+        return match torus {
+            crate::torus::Programs::Boundary(programs) => {
+                integrate_torus(face, programs, indices, depth, rectangle, work)
+            }
+            crate::torus::Programs::Rectangle(programs) => {
+                let domain = face.rectangle.as_ref().unwrap();
+                let extras = domain.extras(work)?;
+                let zero = work.rational(&Rational::zero())?;
+                let mut sums =
+                    programs
+                        .integral
+                        .point(&[zero.clone(), zero.clone(), zero], &extras, work)?;
+                let orientation = work.rational(&Rational::from_i64(domain.orientation))?;
+                for sum in &mut sums {
+                    *sum = work.mul(sum, &orientation)?;
+                }
+                finish_torus(face, sums, &programs.full, &programs.indices, indices, work)
+            }
+        };
     }
     let zero = work.rational(&Rational::zero())?;
     let sense = work.rational(&planar::sign(face.sense))?;
@@ -773,7 +883,7 @@ fn gauge(surface: &Surface, index: usize) -> Vector3 {
 
 fn integrate_torus(
     face: &Curved<'_>,
-    programs: &crate::torus::Programs,
+    programs: &crate::torus::Boundary,
     indices: &[usize],
     depth: u32,
     rectangle: bool,
@@ -885,19 +995,29 @@ fn integrate_torus(
             *sum = work.add(sum, &correction)?;
         }
     }
+    finish_torus(face, sums, &programs.full, &programs.indices, indices, work)
+}
+
+fn finish_torus(
+    face: &Curved<'_>,
+    mut sums: Vec<Ball>,
+    full: &crate::integrate::Program,
+    source_indices: &[usize],
+    indices: &[usize],
+    work: &mut Work,
+) -> Result<Vec<Ball>, Stop> {
     let sense = work.rational(&planar::sign(face.sense))?;
     for sum in &mut sums {
         *sum = work.mul(sum, &sense)?;
     }
+    let zero = work.rational(&Rational::zero())?;
     let pi = work.pi()?;
-    let full = programs
-        .full
-        .point(&[zero.clone(), zero.clone(), zero], &[pi], work)?;
+    let full = full.point(&[zero.clone(), zero.clone(), zero], &[pi], work)?;
     correct_whole_surface(&mut sums, &full, 0, work)?;
     indices
         .iter()
         .map(|i| {
-            let value = &sums[programs.indices.iter().position(|j| i == j).unwrap()];
+            let value = &sums[source_indices.iter().position(|j| i == j).unwrap()];
             if *i == 0 {
                 Ok(value.clone())
             } else {

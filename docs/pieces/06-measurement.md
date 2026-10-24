@@ -106,6 +106,34 @@ Two traps decide whether such a method is right:
 
 Complete torus parallel circles use the exact Fourier mean of the boundary form over the azimuth, rather than traced quadrature around a full period. On a certified cone generator through the apex, `q × dq = 0` makes all five boundary forms identically zero; that proof removes the apparent `1/z` endpoint singularity. Neither path substitutes a sampled integral or drops a nonzero boundary term.
 
+### Finite distance-feature trims
+
+Offset, shell, thicken and rounded-face property requests first retain the
+existing integral paths. Additional exact antiderivatives recover rational
+carrier constants from algebraic construction definitions through
+`Decider::rational_value`. This includes square-root normalizations of rational
+frames; it never replaces an irrational value with an approximate rational.
+
+Polynomial boundary forms on these line, circle and ellipse carriers integrate
+exactly at rational or algebraic trim endpoints. Only certified endpoint and
+swept-angle enclosures contribute numerical width. The complete oriented
+boundary is required. A spherical gauge's denominator must stay positive on
+each closed integration arc, even when its numerator is zero.
+
+Torus distance faces with one four-circle meridian/parallel rectangle use
+products of exact trigonometric antiderivatives. The supports, constant-angle
+edges, opposite traversal directions and swept-angle branches are certified
+from their definitions, not sampled. This includes long arcs and rectangles
+crossing parameter seams. The existing whole-torus correction retains the
+complement region and reversed material sense. Other finite torus trims retain
+the typed refusal.
+
+Finite curved distance faces without a complete supported antiderivative retain
+`measure.budget-exhausted`. Surface incidence and distance certificates do not
+stand in for a property integral. The work allowance, accuracy, centroid
+separation and inertia parallel-axis rules above are unchanged.
+
+
 ## How this piece uses the earlier pieces
 
 - **Outcomes.** Every function returns `Answered`. Refusals from geometry, tracing and exact trim membership pass through unchanged.

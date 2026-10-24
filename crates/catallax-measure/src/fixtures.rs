@@ -613,3 +613,70 @@ pub(super) fn coplanar_split_block() -> (Model, BodyId) {
     assert!(model.check(body).is_empty(), "{:?}", model.check(body));
     (model, body)
 }
+
+pub(super) fn torus_rectangle(long: bool, pose: &Pose) -> (Model, BodyId) {
+    let sy = if long { -1 } else { 1 };
+    let torus = Surface::Torus(
+        catallax_shapes::Torus::new(
+            p(0, 0, 0).into(),
+            v(0, 0, 1).into(),
+            r(3).into(),
+            r(1).into(),
+            v(0, 1, 0).into(),
+            &mut catallax_numbers::Decider::default(),
+        )
+        .unwrap(),
+    );
+    let surfaces = vec![
+        torus,
+        plane(p(0, 0, 0), v(0, 0, -1), v(1, 0, 0)),
+        plane(p(0, 0, 1), v(0, 0, 1), v(1, 0, 0)),
+        plane(p(0, 0, 0), v(0, -1, 0), v(1, 0, 0)),
+        plane(p(0, 0, 0), v(-sy, 0, 0), v(0, 0, 1)),
+    ];
+    let points = vec![
+        p(4, 0, 0),
+        p(0, sy * 4, 0),
+        p(0, sy * 3, 1),
+        p(3, 0, 1),
+        p(0, 0, 0),
+        p(0, 0, 1),
+    ];
+    let curves = vec![
+        (circle(p(0, 0, 0), v(0, 0, 1), v(1, 0, 0), 16), 0, 1),
+        (circle(p(0, sy * 3, 0), v(sy, 0, 0), v(0, sy, 0), 1), 1, 2),
+        (circle(p(0, 0, 1), v(0, 0, 1), v(1, 0, 0), 9), 3, 2),
+        (circle(p(3, 0, 0), v(0, -1, 0), v(1, 0, 0), 1), 0, 3),
+        (line(&points[4], &points[0]), 4, 0),
+        (line(&points[4], &points[1]), 4, 1),
+        (line(&points[5], &points[3]), 5, 3),
+        (line(&points[5], &points[2]), 5, 2),
+        (line(&points[4], &points[5]), 4, 5),
+    ];
+    let (s, n) = (Sense::Same, Sense::Reversed);
+    let faces = vec![
+        (0, vec![vec![(0, s), (1, s), (2, n), (3, n)]]),
+        (1, vec![vec![(5, s), (0, n), (4, n)]]),
+        (2, vec![vec![(6, s), (2, s), (7, n)]]),
+        (3, vec![vec![(4, s), (3, s), (6, n), (8, n)]]),
+        (4, vec![vec![(8, s), (7, s), (1, n), (5, n)]]),
+    ];
+    let (mut model, body) = sketch(points, surfaces, curves, faces, pose);
+    let mut faces = model.faces_of_body(body);
+    let source = catallax_recipe::Origin {
+        step: catallax_recipe::StepId::new("source").unwrap(),
+        role: catallax_recipe::Role::End,
+    };
+    faces[0] = model.add_named_face(
+        model.face(faces[0]).clone(),
+        vec![catallax_recipe::Origin {
+            step: catallax_recipe::StepId::new("offset").unwrap(),
+            role: catallax_recipe::Role::Offset {
+                of: Box::new(source),
+            },
+        }],
+    );
+    let body = finish(&mut model, faces);
+    assert!(model.check(body).is_empty(), "{:?}", model.check(body));
+    (model, body)
+}

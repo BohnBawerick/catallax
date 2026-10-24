@@ -247,12 +247,17 @@ fn outward_polyhedral_offset_rounds_edges_and_vertices_at_true_distance() {
             (["-1", "4", "3"], Location::Boundary),
         ],
     );
-    let refused = catallax_measure::mass_properties(
+    let measured = catallax_measure::mass_properties(
         &built.model,
         built.result,
         &Default::default(),
         &mut Decider::default(),
     )
-    .unwrap_err();
-    assert_eq!(refused.code, "measure.budget-exhausted");
+    .unwrap();
+    assert!(measured.marks.is_empty(), "{:?}", measured.marks);
+    let expected = catallax_numbers::Ball::from_rational(&Rational::from_i64(856), 512)
+        + catallax_numbers::Ball::pi(512)
+            * catallax_numbers::Ball::from_rational(&Rational::from_ratio(76, 3).unwrap(), 512);
+    assert!(measured.value.volume.lo <= expected.lo());
+    assert!(measured.value.volume.hi >= expected.hi());
 }

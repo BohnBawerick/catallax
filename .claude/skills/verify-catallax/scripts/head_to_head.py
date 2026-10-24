@@ -292,9 +292,17 @@ def summarize(report):
             for label in ('construction', 'edit'):
                 variants = [p.get('variants', {}).get(label, {}) for p in pairs]
                 row = {'part': part, 'engine': engine, 'phase': label, 'samples': len(pairs)}
+                row['phase_refusals'] = {}
+                row['phase_outcomes'] = {}
                 for phase in ('build', 'display', 'measurement'):
-                    values = [v.get(phase, {}).get('wall_ms') for v in variants]
+                    phases = [v.get(phase, {}) for v in variants]
+                    values = [p.get('wall_ms') if p.get('status') == 'answered' else None for p in phases]
                     row[phase+'_median_ms'] = statistics.median(values) if values and all(v is not None for v in values) else None
+                    row['phase_outcomes'][phase] = {status: sum(p.get('status', 'not-run') == status for p in phases)
+                                                    for status in sorted({p.get('status', 'not-run') for p in phases})}
+                    row['phase_refusals'][phase] = [
+                        {key: p.get(key) for key in ('status', 'refusal_ms', 'refusal_upper_bound_ms')}
+                        for p in phases if p.get('refusal_ms') is not None or p.get('refusal_upper_bound_ms') is not None]
                 waits = []
                 queries = []
                 for variant in variants:
@@ -326,13 +334,24 @@ def markdown(report):
     lines = ['# Target-part head-to-head', '',
              f'Reference release {report["reference"]["version"]}. One warmup and {report["timing"]["measured_pairs"]} alternating matched pairs per part on core {report["timing"]["core"]}.', '',
              'Shared-machine observations. See raw JSON for load averages, work, operations rebuilt, failures, STEP checks and every property discrepancy.', '',
-             '| Part | Tool | Variant | Build ms | Display/export ms | Measurement ms | Failed rebuilds | Incomplete | Property errors / checked | Membership errors | STEP passes | Name passes |',
-             '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |']
+             '| Part | Tool | Variant | Build ms | Display/export ms | Measurement ms | Refusal ms | Failed rebuilds | Incomplete | Property errors / checked | Membership errors / checked | STEP passes | Name passes |',
+             '| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | --- | --- | ---: | ---: |']
     def number(value):
         return 'unmeasured' if value is None else f'{value:.3f}'
+    def refusals(row):
+        values = []
+        for phase, samples in row['phase_refusals'].items():
+            exact = [s['refusal_ms'] for s in samples if s['refusal_ms'] is not None]
+            upper = [s['refusal_upper_bound_ms'] for s in samples if s['refusal_upper_bound_ms'] is not None]
+            if exact:
+                values.append(f'{phase} {statistics.median(exact):.3f}')
+            if upper:
+                values.append(f'{phase} upper bound {statistics.median(upper):.3f}')
+        return '; '.join(values) or 'none observed'
     for row in report['summary']:
         lines.append('| ' + ' | '.join([row['part'], row['engine'], row['phase'],
             *[number(row[k+'_median_ms']) for k in ('build','display','measurement')],
+            refusals(row),
             str(row['failed_rebuilds']), str(row['incomplete']), f'{row["wrong_properties"]} / {row["properties_checked"]}',
-            f'{row["wrong_membership"]} / {row["membership_checked"]}', str(row['step_passed']), str(row['names_passed'])]) + ' |')
+            f'{row["wrong_membership"]} / {row["membership_checked"]}', str(row['step_passed']), str(row['names_passed']) if row['names_passed'] is not None else 'not applicable']) + ' |')
     return '\n'.join(lines) + '\n'

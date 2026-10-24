@@ -32,6 +32,17 @@ class CorrectnessTests(unittest.TestCase):
         self.assertEqual(row['properties_checked'], 0)
         self.assertEqual(row['step_passed'], 0)
 
+    def test_fast_refusal_is_not_a_successful_display_latency(self):
+        engine = {'status': 'completed', 'variants': {'construction': {
+            'build': {'status': 'answered', 'wall_ms': 1},
+            'display': {'status': 'work-exhausted', 'wall_ms': 2, 'refusal_ms': 2}}}}
+        report = {'pairs': [{'part': 'P0/example.json', 'warmup': False,
+                            'engines': {'catallax': engine, 'solidcraft': engine}}]}
+        row = summarize(report)[0]
+        self.assertIsNone(row['display_median_ms'])
+        self.assertIsNone(row['build_and_display_median_ms'])
+        self.assertEqual(row['phase_refusals']['display'][0]['refusal_ms'], 2)
+
 
 if __name__ == '__main__':
     unittest.main()

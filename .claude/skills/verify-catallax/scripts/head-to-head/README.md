@@ -34,6 +34,8 @@ SolidCraft uses the pinned release's `run --results --timings --profile`. Constr
 
 Failures retain stderr and the command's whole-process refusal upper bound when the release does not emit per-command timings. They do not invent a refusal-only timer or call a timeout a refusal. Failed display or measurement does not erase a completed build. Warmup rows remain in the data but never enter the medians. Order alternates on one pinned core, with `RAYON_NUM_THREADS=1`, and each pair records load averages before and after. Correctness checks run after that timing window. Shared-machine results are not quiet-core latency claims. Timings from failed or incomplete phases are not replaced by zero.
 
+Successful-phase medians require every measured sample to answer that phase. A fast display or measurement refusal appears in the separate refusal column, never as a successful mesh or query time. Raw rows keep each phase's outcome and refusal latency even when no successful median exists.
+
 ## Correctness and coverage
 
 `check.py` constructs the targets independently in OpenCASCADE from their dimensions. It does not import either tool's result as its reference. For P1, two round slot ends plus the straight bridge give the same capsule as the overlapping cutters in the recipe. P4's planar inward shell is constructed by subtracting its exact rectangular cavity before applying the cylindrical corner trim. P5 uses the same four through holes, countersinks and junction round. The independent construction must pass topology validation before its properties are used.

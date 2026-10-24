@@ -698,3 +698,73 @@ fn separated_quadratic_keeps_a_tiny_positive_root_under_cancellation() {
         proven_sign(&mut sign_decider, &value, 1);
     }
 }
+
+#[test]
+fn root_enclosure_proofs_are_reused_only_inside_the_current_request() {
+    let polynomial = poly(&[-2, 0, 1]);
+    let values: Vec<_> = (0..64)
+        .map(|_| {
+            Real::from_algebraic(
+                roots(&mut Decider::default(), &polynomial)
+                    .pop()
+                    .unwrap()
+                    .value,
+            )
+        })
+        .collect();
+    let (answer, work) = with_operation_budget(20_000, || -> Result<(), Refusal> {
+        for value in &values {
+            let ball = Decider::default().enclose_budgeted_at(value, 64)?;
+            assert!(oq(&ball.lo()) > 0);
+            assert!(oq(&ball.lo()).square() < 2 && oq(&ball.hi()).square() > 2);
+        }
+        Ok(())
+    });
+    answer.unwrap();
+    assert!(!work.exhausted);
+
+    let (answer, work) = with_operation_budget(100, || {
+        Decider::default().enclose_budgeted_at(&values[0], 64)
+    });
+    assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+}
+
+#[test]
+fn reused_root_proofs_preserve_branch_precision_domain_and_local_limits() {
+    let roots = roots(&mut Decider::default(), &poly(&[-2, 0, 1]));
+    let negative = Real::from_algebraic(roots[0].value.clone());
+    let positive = Real::from_algebraic(roots[1].value.clone());
+    let (answer, work) = with_operation_budget(100_000, || -> Result<(), Refusal> {
+        let mut dec = Decider::default();
+        let a = dec.enclose_budgeted_at(&positive, 64)?;
+        let b = dec.enclose_budgeted_at(&negative, 64)?;
+        assert!(oq(&a.lo()) > 0 && oq(&b.hi()) < 0);
+        let fine = dec.enclose_budgeted_at(&positive, 128)?;
+        assert_eq!(fine.precision(), 128);
+        assert!(oq(&fine.lo()).square() < 2 && oq(&fine.hi()).square() > 2);
+        assert!(fine.hi() - fine.lo() <= Rational::one().mul_pow2(-125));
+
+        let mut limited = Decider::new(BudgetPolicy {
+            max_work: 100,
+            max_precision_bits: 128,
+        });
+        assert_eq!(
+            limited.enclose_budgeted_at(&positive, 64).unwrap_err().code,
+            "numbers.budget-exhausted",
+        );
+        let invalid = &positive * &real("0") + real("-1").sqrt().pow_u32(0);
+        assert_eq!(
+            dec.enclose_at(&invalid, 64).unwrap_err().code,
+            "numbers.sqrt-of-negative",
+        );
+        dec.set_deadline(Some(std::time::Instant::now()));
+        assert_eq!(
+            dec.enclose_at(&positive, 64).unwrap_err().code,
+            "numbers.deadline",
+        );
+        Ok(())
+    });
+    answer.unwrap();
+    assert!(!work.exhausted);
+}

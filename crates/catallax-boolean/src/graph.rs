@@ -3,7 +3,7 @@
 
 use crate::geometry::{canonical_point, coincident, on_arc, refusal};
 use crate::points::curve_sample;
-use crate::region::{Location, locate};
+use crate::region::{Location, RegionCache};
 use crate::stages::{IntersectionGraph, SectionEdge};
 use catallax_intersect::{
     Component, CurveSurface, Cyclic, SurfacePair, curve_is_closed, cyclic_order,
@@ -118,6 +118,7 @@ pub(crate) fn containing_faces(
     model: &mut Model,
     faces: &[FaceId],
     point: PointId,
+    regions: &mut RegionCache,
     dec: &mut Decider,
 ) -> Result<Vec<FaceId>, Refusal> {
     let mut result = Vec::new();
@@ -125,7 +126,7 @@ pub(crate) fn containing_faces(
         if coincident(
             model.geom().side(model.face(face).surface, point, dec),
             "boolean.imprint-ambiguous",
-        )? && locate(model, face, point, dec)? != Location::Outside
+        )? && regions.locate(model, face, point, dec)? != Location::Outside
         {
             result.push(face);
         }
@@ -161,6 +162,7 @@ pub(crate) fn intersect(
             .has_rational_definition()
     });
     let mut bounds = crate::bounds::FaceBounds::new(algebraic);
+    let mut regions = RegionCache::default();
     let mut pool = Vec::new();
     let mut points = Vec::new();
     let mut mandatory = BTreeSet::new();
@@ -308,8 +310,8 @@ pub(crate) fn intersect(
         point_faces.insert(
             point,
             (
-                containing_faces(model, &first, point, dec)?,
-                containing_faces(model, &second, point, dec)?,
+                containing_faces(model, &first, point, &mut regions, dec)?,
+                containing_faces(model, &second, point, &mut regions, dec)?,
             ),
         );
     }
@@ -340,8 +342,8 @@ pub(crate) fn intersect(
         let mut pieces: Vec<SectionEdge> = Vec::new();
         for (start, end) in arcs {
             let sample = curve_sample(model, curve, start, end, dec)?;
-            let faces_of_first = containing_faces(model, &first, sample, dec)?;
-            let faces_of_second = containing_faces(model, &second, sample, dec)?;
+            let faces_of_first = containing_faces(model, &first, sample, &mut regions, dec)?;
+            let faces_of_second = containing_faces(model, &second, sample, &mut regions, dec)?;
             if faces_of_first.is_empty() || faces_of_second.is_empty() {
                 continue;
             }

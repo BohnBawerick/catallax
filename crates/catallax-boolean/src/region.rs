@@ -25,6 +25,14 @@ struct Segment {
     end: Box2,
 }
 
+/// Proofs prepared during a batch of queries against one append-only model.
+/// The owner must not reuse this workspace with another model or decider.
+#[derive(Default)]
+pub(crate) struct RegionCache {
+    traces: HashMap<EdgeId, CurveTrace>,
+    coordinates: HashMap<(PointId, u32), [Ball; 3]>,
+}
+
 struct Sampling<'a> {
     piece: &'a TracePiece,
     projection: &'a Projection,
@@ -297,6 +305,209 @@ fn reference(
     ))
 }
 
+impl RegionCache {
+    pub(crate) fn signatures(
+        &mut self,
+        model: &Model,
+        surface: &Surface,
+        loop_groups: &[Vec<LoopId>],
+        point: PointId,
+        dec: &mut Decider,
+    ) -> Result<Vec<i64>, Refusal> {
+        dec.check_deadline()?;
+        if let Surface::Torus(torus) = surface
+            && let Some(signature) =
+                crate::torus_region::signature(model, torus, loop_groups, point, dec)?
+        {
+            return Ok(signature);
+        }
+        let mut direct = Vec::with_capacity(loop_groups.len());
+        for group in loop_groups {
+            if let Some(value) = crate::fast_region::signature(model, surface, group, point, dec)? {
+                direct.push(value);
+            } else {
+                break;
+            }
+        }
+        if direct.len() == loop_groups.len() {
+            return Ok(direct);
+        }
+        let loops: Vec<_> = loop_groups.iter().flatten().copied().collect();
+        let reference = reference(model, surface, &loops, dec)?;
+        let limit = dec.policy().max_precision_bits.max(1);
+        let mut bits = limit.min(128);
+        loop {
+            let width = Rational::one().mul_pow2(-i64::from(bits / 2));
+            let coordinates = match self.coordinates.entry((point, bits)) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    entry.insert(model.geom().enclose_point(point, &width, dec)?)
+                }
+            };
+            let choices = if matches!(surface, Surface::Sphere(_)) {
+                crate::geometry::DIRECTION_ATTEMPTS
+            } else {
+                1
+            };
+            for choice in 0..choices {
+                let projection = Projection::new(surface, i64::from(choice))?;
+                if let Some(pole) = projection.pole_point()
+                    && !off_carriers(model, &loops, &pole, dec)?
+                {
+                    continue;
+                }
+                let Some(query) = projection.project_certified(coordinates, dec)? else {
+                    continue;
+                };
+                let mut queries = vec![query];
+                if let Some(p) = &reference {
+                    let coordinates = [
+                        dec.enclose_at(&p.x, bits)?,
+                        dec.enclose_at(&p.y, bits)?,
+                        dec.enclose_at(&p.z, bits)?,
+                    ];
+                    let Some(projected) = projection.project_certified(&coordinates, dec)? else {
+                        continue;
+                    };
+                    queries.push(projected);
+                }
+                let polygons = match build(
+                    model,
+                    &loops,
+                    &projection,
+                    &queries,
+                    bits,
+                    &mut self.traces,
+                    dec,
+                ) {
+                    Ok(p) => p,
+                    Err(e) if e.code == "boolean.classify-ambiguous" => break,
+                    Err(e) => return Err(e),
+                };
+                let query = queries[0].clone().map(|b| b.mid());
+                let reference = queries.get(1).map(|q| q.clone().map(|b| b.mid()));
+                let mut offset = 0;
+                let mut result = Vec::new();
+                for group in loop_groups {
+                    let end = offset
+                        + group
+                            .iter()
+                            .filter(|l| matches!(model.loop_(**l), Loop::Coedges(_)))
+                            .count();
+                    let mut value = 0;
+                    for polygon in &polygons[offset..end] {
+                        value += winding(polygon, &query, projection.periodic(), dec)?;
+                        if let Some(reference) = &reference {
+                            value -= winding(polygon, reference, false, dec)?;
+                        }
+                    }
+                    result.push(value);
+                    offset = end;
+                }
+                return Ok(result);
+            }
+            if bits == limit {
+                break;
+            }
+            bits = bits.saturating_mul(2).min(limit);
+        }
+        Err(refusal(
+            "boolean.classify-ambiguous",
+            "no certified chart separated the boundary from the query",
+        ))
+    }
+
+    pub(crate) fn locate(
+        &mut self,
+        model: &mut Model,
+        face: FaceId,
+        point: PointId,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        dec.check_deadline()?;
+        let f = model.face(face).clone();
+        if f.loops.is_empty() {
+            return Ok(Location::Inside);
+        }
+        if let Some(location) = crate::fast_region::locate(model, face, point, dec)? {
+            return Ok(location);
+        }
+        for &l in &f.loops {
+            match model.loop_(l) {
+                Loop::Vertex(v) => {
+                    if crate::geometry::coincident(
+                        model.geom().same_point(model.vertex(*v).point, point, dec),
+                        "boolean.classify-ambiguous",
+                    )? {
+                        return Ok(Location::Boundary);
+                    }
+                }
+                Loop::Coedges(cs) => {
+                    for &c in cs {
+                        let e = model.coedge(c).edge;
+                        let (a, b) = natural_ends(model, e);
+                        if on_arc(
+                            model,
+                            model.edge(e).curve,
+                            a,
+                            b,
+                            point,
+                            dec,
+                            "boolean.classify-ambiguous",
+                        )? {
+                            return Ok(Location::Boundary);
+                        }
+                    }
+                }
+            }
+        }
+        if !matches!(model.geom().surface(f.surface), Surface::Torus(_))
+            && let Some(location) = crate::probed_region::locate(model, face, point, dec)?
+        {
+            return Ok(location);
+        }
+        let surface = model.geom().surface(f.surface).clone();
+        let groups = vec![f.loops.clone()];
+        let value = self.signatures(model, &surface, &groups, point, dec)?;
+        if matches!(surface, Surface::Sphere(_) | Surface::Torus(_)) {
+            let barriers: Vec<EdgeId> = f
+                .loops
+                .iter()
+                .flat_map(|l| match model.loop_(*l) {
+                    Loop::Coedges(cs) => cs.iter().map(|c| model.coedge(*c).edge).collect(),
+                    Loop::Vertex(_) => Vec::new(),
+                })
+                .collect();
+            let target =
+                crate::points::left_probe(model, face, &barriers, dec, |model, p, _, dec| {
+                    Ok(Some(self.signatures(model, &surface, &groups, p, dec)?))
+                })?;
+            if value == target {
+                return Ok(Location::Inside);
+            }
+            if matches!(surface, Surface::Torus(_)) || (value[0] - target[0]).abs() == 1 {
+                return Ok(Location::Outside);
+            }
+        } else {
+            let value = if f.sense == Sense::Same {
+                value[0]
+            } else {
+                -value[0]
+            };
+            if value == 1 {
+                return Ok(Location::Inside);
+            }
+            if value == 0 {
+                return Ok(Location::Outside);
+            }
+        }
+        Err(refusal(
+            "boolean.classify-ambiguous",
+            "boundary winding does not certify a unit face region",
+        ))
+    }
+}
+
 pub(crate) fn signatures(
     model: &Model,
     surface: &Surface,
@@ -304,95 +515,7 @@ pub(crate) fn signatures(
     point: PointId,
     dec: &mut Decider,
 ) -> Result<Vec<i64>, Refusal> {
-    if let Surface::Torus(torus) = surface
-        && let Some(signature) =
-            crate::torus_region::signature(model, torus, loop_groups, point, dec)?
-    {
-        return Ok(signature);
-    }
-    let mut direct = Vec::with_capacity(loop_groups.len());
-    for group in loop_groups {
-        if let Some(value) = crate::fast_region::signature(model, surface, group, point, dec)? {
-            direct.push(value);
-        } else {
-            break;
-        }
-    }
-    if direct.len() == loop_groups.len() {
-        return Ok(direct);
-    }
-    let loops: Vec<_> = loop_groups.iter().flatten().copied().collect();
-    let reference = reference(model, surface, &loops, dec)?;
-    let mut traces = HashMap::new();
-    let limit = dec.policy().max_precision_bits.max(1);
-    let mut bits = limit.min(128);
-    loop {
-        let width = Rational::one().mul_pow2(-i64::from(bits / 2));
-        let coordinates = model.geom().enclose_point(point, &width, dec)?;
-        let choices = if matches!(surface, Surface::Sphere(_)) {
-            crate::geometry::DIRECTION_ATTEMPTS
-        } else {
-            1
-        };
-        for choice in 0..choices {
-            let projection = Projection::new(surface, i64::from(choice))?;
-            if let Some(pole) = projection.pole_point()
-                && !off_carriers(model, &loops, &pole, dec)?
-            {
-                continue;
-            }
-            let Some(query) = projection.project_certified(&coordinates, dec)? else {
-                continue;
-            };
-            let mut queries = vec![query];
-            if let Some(p) = &reference {
-                let coordinates = [
-                    dec.enclose_at(&p.x, bits)?,
-                    dec.enclose_at(&p.y, bits)?,
-                    dec.enclose_at(&p.z, bits)?,
-                ];
-                let Some(projected) = projection.project_certified(&coordinates, dec)? else {
-                    continue;
-                };
-                queries.push(projected);
-            }
-            let polygons = match build(model, &loops, &projection, &queries, bits, &mut traces, dec)
-            {
-                Ok(p) => p,
-                Err(e) if e.code == "boolean.classify-ambiguous" => break,
-                Err(e) => return Err(e),
-            };
-            let query = queries[0].clone().map(|b| b.mid());
-            let reference = queries.get(1).map(|q| q.clone().map(|b| b.mid()));
-            let mut offset = 0;
-            let mut result = Vec::new();
-            for group in loop_groups {
-                let end = offset
-                    + group
-                        .iter()
-                        .filter(|l| matches!(model.loop_(**l), Loop::Coedges(_)))
-                        .count();
-                let mut value = 0;
-                for polygon in &polygons[offset..end] {
-                    value += winding(polygon, &query, projection.periodic(), dec)?;
-                    if let Some(reference) = &reference {
-                        value -= winding(polygon, reference, false, dec)?;
-                    }
-                }
-                result.push(value);
-                offset = end;
-            }
-            return Ok(result);
-        }
-        if bits == limit {
-            break;
-        }
-        bits = bits.saturating_mul(2).min(limit);
-    }
-    Err(refusal(
-        "boolean.classify-ambiguous",
-        "no certified chart separated the boundary from the query",
-    ))
+    RegionCache::default().signatures(model, surface, loop_groups, point, dec)
 }
 
 pub(crate) fn locate(
@@ -401,85 +524,7 @@ pub(crate) fn locate(
     point: PointId,
     dec: &mut Decider,
 ) -> Result<Location, Refusal> {
-    let f = model.face(face).clone();
-    if f.loops.is_empty() {
-        return Ok(Location::Inside);
-    }
-    if let Some(location) = crate::fast_region::locate(model, face, point, dec)? {
-        return Ok(location);
-    }
-    for &l in &f.loops {
-        match model.loop_(l) {
-            Loop::Vertex(v) => {
-                if crate::geometry::coincident(
-                    model.geom().same_point(model.vertex(*v).point, point, dec),
-                    "boolean.classify-ambiguous",
-                )? {
-                    return Ok(Location::Boundary);
-                }
-            }
-            Loop::Coedges(cs) => {
-                for &c in cs {
-                    let e = model.coedge(c).edge;
-                    let (a, b) = natural_ends(model, e);
-                    if on_arc(
-                        model,
-                        model.edge(e).curve,
-                        a,
-                        b,
-                        point,
-                        dec,
-                        "boolean.classify-ambiguous",
-                    )? {
-                        return Ok(Location::Boundary);
-                    }
-                }
-            }
-        }
-    }
-    if !matches!(model.geom().surface(f.surface), Surface::Torus(_))
-        && let Some(location) = crate::probed_region::locate(model, face, point, dec)?
-    {
-        return Ok(location);
-    }
-    let surface = model.geom().surface(f.surface).clone();
-    let groups = vec![f.loops.clone()];
-    let value = signatures(model, &surface, &groups, point, dec)?;
-    if matches!(surface, Surface::Sphere(_) | Surface::Torus(_)) {
-        let barriers: Vec<EdgeId> = f
-            .loops
-            .iter()
-            .flat_map(|l| match model.loop_(*l) {
-                Loop::Coedges(cs) => cs.iter().map(|c| model.coedge(*c).edge).collect(),
-                Loop::Vertex(_) => Vec::new(),
-            })
-            .collect();
-        let target = crate::points::left_probe(model, face, &barriers, dec, |model, p, _, dec| {
-            Ok(Some(signatures(model, &surface, &groups, p, dec)?))
-        })?;
-        if value == target {
-            return Ok(Location::Inside);
-        }
-        if matches!(surface, Surface::Torus(_)) || (value[0] - target[0]).abs() == 1 {
-            return Ok(Location::Outside);
-        }
-    } else {
-        let value = if f.sense == Sense::Same {
-            value[0]
-        } else {
-            -value[0]
-        };
-        if value == 1 {
-            return Ok(Location::Inside);
-        }
-        if value == 0 {
-            return Ok(Location::Outside);
-        }
-    }
-    Err(refusal(
-        "boolean.classify-ambiguous",
-        "boundary winding does not certify a unit face region",
-    ))
+    RegionCache::default().locate(model, face, point, dec)
 }
 
 #[cfg(test)]
@@ -511,5 +556,86 @@ mod tests {
                 -1,
             );
         }
+    }
+
+    #[test]
+    fn prepared_carrier_queries_keep_distinct_windings_and_honor_cancellation() {
+        use catallax_numbers::Real;
+        use catallax_shapes::{PointDef, Pose, RVector3, Rotation};
+        use catallax_topology::cylinder;
+
+        let mut model = Model::new();
+        let mut dec = Decider::default();
+        let first = cylinder(
+            &mut model,
+            Rational::from_i64(3),
+            Rational::from_i64(5),
+            &Pose::identity(),
+        )
+        .unwrap();
+        let carrier = model
+            .faces_of_body(first)
+            .into_iter()
+            .find_map(|face| {
+                let id = model.face(face).surface;
+                matches!(model.geom().surface(id), Surface::Cylinder(_)).then_some(id)
+            })
+            .unwrap();
+        let pose = Pose::new(
+            Rotation::identity(),
+            RVector3::new(Rational::from_i64(2), Rational::zero(), Rational::zero()).into(),
+            &mut dec,
+        )
+        .unwrap();
+        let second = cylinder(
+            &mut model,
+            Rational::from_i64(3),
+            Rational::from_i64(5),
+            &pose,
+        )
+        .unwrap();
+        let result = crate::boolean(&mut model, first, second, crate::BoolOp::Subtract, &mut dec)
+            .unwrap()
+            .body;
+        let face = model
+            .faces_of_body(result)
+            .into_iter()
+            .find(|&face| model.face(face).surface == carrier)
+            .unwrap();
+        let groups = [model.face(face).loops.clone()];
+        let surface = model.geom().surface(carrier).clone();
+        let mut prepared = RegionCache::default();
+        for ([x, y, z], expected) in [
+            ([-3, 0, 2], 1),
+            ([3, 0, 2], 0),
+            ([-3, 0, -1], 0),
+            ([0, 3, 2], 1),
+        ] {
+            let point = model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+                Real::from_i64(x),
+                Real::from_i64(y),
+                Real::from_i64(z),
+            )));
+            assert_eq!(
+                prepared
+                    .signatures(&model, &surface, &groups, point, &mut dec)
+                    .unwrap(),
+                vec![expected],
+                "query {x},{y},{z}",
+            );
+        }
+        dec.set_deadline(Some(std::time::Instant::now()));
+        let point = model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+            Real::from_i64(-3),
+            Real::zero(),
+            Real::from_i64(2),
+        )));
+        assert_eq!(
+            prepared
+                .signatures(&model, &surface, &groups, point, &mut dec)
+                .unwrap_err()
+                .code,
+            "numbers.deadline",
+        );
     }
 }

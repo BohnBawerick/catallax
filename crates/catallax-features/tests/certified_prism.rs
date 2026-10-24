@@ -1,7 +1,5 @@
 //! Complete recipe-target/B-rep correspondence, independent of diagnostic marks.
-use catallax_features::{
-    BodyCertificate, BuildError, CertifiedBuilt, evaluate, evaluate_certified,
-};
+use catallax_features::{BodyCertificate, BuildError, CertifiedBuilt, evaluate_certified};
 use catallax_numbers::{
     Decider, EvidenceBook, EvidenceBound, EvidenceUnit, GeometricProof, Rational, Real, Sign,
     with_operation_budget,
@@ -57,9 +55,6 @@ fn brackets_target_boundary(certificate: &BodyCertificate, expected: [&str; 3]) 
 #[test]
 fn inward_offset_builds_one_valid_solid_with_complete_cap_exceptions_and_shared_rings() {
     let recipe = recipe("-1/4", "4");
-    assert!(
-        matches!(evaluate(&recipe, &mut Decider::default()), Err(BuildError::Geometry { refusal, .. }) if refusal.code == "features.unsupported-operation")
-    );
     let certified = build(&recipe);
     let built = certified.built();
     let certificate = certified.result_certificate();

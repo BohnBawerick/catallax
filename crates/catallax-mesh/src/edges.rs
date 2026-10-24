@@ -188,7 +188,14 @@ impl Sampler<'_> {
                     span = &span * &self.dec.enclose_at(&ratio, BITS)?.hi();
                 }
                 if !matches!(chart.surface, catallax_shapes::Surface::Plane(_)) {
-                    small &= span * Rational::from_i64(16) <= *angle;
+                    let span = span * Rational::from_i64(16);
+                    let span =
+                        if matches!(chart.surface, catallax_shapes::Surface::EllipticCylinder(_)) {
+                            &span * &chart.normal_scale
+                        } else {
+                            span
+                        };
+                    small &= span <= *angle;
                 }
             }
             small &= chord_bound(&[a, b, m], &hessian) <= self.options.chord_tolerance.mul_pow2(-3);

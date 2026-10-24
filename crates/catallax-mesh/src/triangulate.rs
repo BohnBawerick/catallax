@@ -39,6 +39,7 @@ struct FaceBuilder<'a> {
     errors: Vec<Rational>,
     filtered_errors: Vec<Interval>,
     interior_left: BTreeSet<(usize, usize)>,
+    prior_chords: &'a BTreeSet<(usize, usize)>,
     bounds: [[f64; 2]; 2],
     hessian: [Rational; 3],
     filtered_hessian: [Interval; 3],
@@ -208,6 +209,8 @@ impl FaceBuilder<'_> {
 
     fn grid(&mut self) -> Result<(), Refusal> {
         let widths = self.bounds.map(|b| b[1] - b[0]);
+        let bounded_torus =
+            matches!(self.chart.surface, Surface::Torus(_)) && !self.chart.periodic[1];
         let mut counts = [1usize; 2];
         for (i, count) in counts.iter_mut().enumerate() {
             if self.chart.periodic[i] {
@@ -226,12 +229,14 @@ impl FaceBuilder<'_> {
             let v = &self.hessian[2] * &chart::q(dv) * chart::q(dv);
             let dimension = if u >= v { 0 } else { 1 };
             // A cone's mixed derivative also needs axial subdivisions.
-            let dimension =
-                if !self.hessian[1].is_zero() && counts[dimension] > counts[1 - dimension] * 2 {
-                    1 - dimension
-                } else {
-                    dimension
-                };
+            let dimension = if !bounded_torus
+                && !self.hessian[1].is_zero()
+                && counts[dimension] > counts[1 - dimension] * 2
+            {
+                1 - dimension
+            } else {
+                dimension
+            };
             counts[dimension] = counts[dimension]
                 .checked_mul(2)
                 .ok_or_else(|| failure("grid size overflow"))?;
@@ -428,6 +433,28 @@ impl FaceBuilder<'_> {
                     pending.insert(key(point), point);
                     continue;
                 }
+                // A face-local diagonal must not become a second shared edge.
+                // Two incident faces can otherwise emit the same boundary-only
+                // triangle in opposite directions, producing four edge uses.
+                let mut split = false;
+                for edge in f.adjacent_edges() {
+                    let a = *edge.from().data();
+                    let b = *edge.to().data();
+                    if !edge.is_constraint_edge()
+                        && self
+                            .prior_chords
+                            .contains(&(a.mesh.min(b.mesh), a.mesh.max(b.mesh)))
+                    {
+                        let midpoint = self
+                            .chart
+                            .canonical([(a.uv.x + b.uv.x) * 0.5, (a.uv.y + b.uv.y) * 0.5]);
+                        pending.insert(key(midpoint), midpoint);
+                        split = true;
+                    }
+                }
+                if split {
+                    continue;
+                }
                 let residual = nodes.iter().map(|n| &self.errors[n.error]).max().unwrap();
                 let filtered_residual = nodes
                     .iter()
@@ -526,12 +553,18 @@ impl FaceBuilder<'_> {
 fn face_mesh(
     model: &Model,
     face_id: FaceId,
-    chart: &Chart,
+    chart: &mut Chart,
     boundaries: &mut Boundaries,
     options: &MeshOptions,
+    prior_chords: &BTreeSet<(usize, usize)>,
     dec: &Decider,
 ) -> Result<(), Refusal> {
     let face = model.face(face_id);
+    if let Some(center) =
+        crate::bounded::minor_angle_center(model, face_id, chart, boundaries, dec)?
+    {
+        chart.restrict(1, center);
+    }
     let mut segments = Vec::new();
     let mut projected = Vec::new();
     for &l in &face.loops {
@@ -596,6 +629,7 @@ fn face_mesh(
         errors: Vec::new(),
         filtered_errors: Vec::new(),
         interior_left: BTreeSet::new(),
+        prior_chords,
         bounds,
         filtered_hessian: hessian.each_ref().map(Interval::from_rational),
         hessian,
@@ -766,18 +800,54 @@ pub(crate) fn build(
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     let faces = model.faces_of_body(body);
-    let charts = faces
+    let mut charts = faces
         .iter()
         .map(|&f| Ok((f, regular_chart(model, f, options, dec)?)))
         .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
     let mut boundaries = edges::sample(model, body, &charts, options, dec)?;
+    let boundary_limit = boundaries.mesh.positions.len();
+    let mut prior_chords = BTreeSet::new();
     for face in faces {
+        let start = boundaries.mesh.triangles.len();
         if let Surface::Plane(plane) = &charts[&face].surface {
             crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
                 |e| Refusal::new(e.code, format!("face {}: {}", face.index(), e.detail)),
             )?;
         } else {
-            face_mesh(model, face, &charts[&face], &mut boundaries, options, dec)?;
+            let strip = matches!(
+                charts[&face].surface,
+                Surface::Cylinder(_) | Surface::EllipticCylinder(_)
+            ) && crate::ruled::build(
+                model,
+                face,
+                &charts[&face],
+                &mut boundaries,
+                options,
+                dec,
+            )?;
+            if !strip {
+                face_mesh(
+                    model,
+                    face,
+                    charts.get_mut(&face).unwrap(),
+                    &mut boundaries,
+                    options,
+                    &prior_chords,
+                    dec,
+                )?;
+            }
+        }
+        let mut once = BTreeSet::new();
+        for triangle in &boundaries.mesh.triangles[start..] {
+            for i in 0..3 {
+                let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+                if a < boundary_limit && b < boundary_limit {
+                    let pair = (a.min(b), a.max(b));
+                    if !once.insert(pair) {
+                        prior_chords.insert(pair);
+                    }
+                }
+            }
         }
     }
     check_closed(&boundaries.mesh)?;

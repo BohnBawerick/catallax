@@ -55,11 +55,13 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 pub(crate) struct Chart {
     pub(crate) surface: Surface,
     pub(crate) periodic: [bool; 2],
+    pub(crate) normal_scale: Rational,
     origin: [f64; 3],
     frame: [[f64; 3]; 3],
     turn: Option<Ball>,
     evaluator: Option<crate::evaluate::Evaluator>,
     ellipse_radii: Option<[f64; 2]>,
+    centers: [Option<f64>; 2],
 }
 
 impl Chart {
@@ -84,6 +86,17 @@ impl Chart {
         if !origin.iter().all(|v| v.is_finite()) {
             return Err(failure("surface origin exceeds binary64"));
         }
+        let (axes, normal_scale) = if let Surface::EllipticCylinder(s) = surface {
+            let major = dec.enclose_at(&s.major_sq.sqrt(), BITS)?;
+            let minor = dec.enclose_at(&s.minor_sq.sqrt(), BITS)?;
+            let axes = [midpoint(&major), midpoint(&minor)];
+            if axes.iter().any(|x| !x.is_finite() || *x <= 0.0) || minor.lo() <= Rational::zero() {
+                return Err(failure("ellipse axes exceed display coordinate precision"));
+            }
+            (Some(axes), major.hi() / minor.lo())
+        } else {
+            (None, Rational::one())
+        };
         let turn = if matches!(surface, Surface::Plane(_)) {
             None
         } else {
@@ -92,6 +105,9 @@ impl Chart {
         Ok(Self {
             surface: surface.clone(),
             periodic,
+            ellipse_radii: axes,
+            centers: [None; 2],
+            normal_scale,
             origin,
             turn,
             evaluator: if matches!(surface, Surface::Plane(_)) {
@@ -99,20 +115,17 @@ impl Chart {
             } else {
                 Some(crate::evaluate::Evaluator::new(surface, dec)?)
             },
-            ellipse_radii: if let Surface::EllipticCylinder(s) = surface {
-                Some([
-                    midpoint(&dec.enclose_at(&s.major_sq.sqrt(), BITS)?),
-                    midpoint(&dec.enclose_at(&s.minor_sq.sqrt(), BITS)?),
-                ])
-            } else {
-                None
-            },
             frame: [
                 unit(reference, dec)?,
                 unit(&axis.cross(reference), dec)?,
                 unit(axis, dec)?,
             ],
         })
+    }
+
+    pub(crate) fn restrict(&mut self, dimension: usize, center: f64) {
+        self.periodic[dimension] = false;
+        self.centers[dimension] = Some(center);
     }
 
     pub(crate) fn project(&self, p: [f64; 3]) -> Uv {
@@ -136,7 +149,13 @@ impl Chart {
             Surface::Torus(s) => angle(z, libm::sqrt(x * x + y * y) - s.major.to_f64()),
             _ => z,
         };
-        [u, v]
+        let mut uv = [u, v];
+        for (value, center) in uv.iter_mut().zip(self.centers) {
+            if let Some(center) = center {
+                *value += libm::round(center - *value);
+            }
+        }
+        uv
     }
 
     pub(crate) fn canonical(&self, mut uv: Uv) -> Uv {
@@ -226,6 +245,9 @@ impl Chart {
         Ok(match &self.surface {
             Surface::Plane(_) => [zero.clone(), zero.clone(), zero],
             Surface::Cylinder(s) => [&upper(&s.radius())? * &tau2, zero.clone(), zero],
+            Surface::EllipticCylinder(s) => {
+                [&upper(&s.major_sq.sqrt())? * &tau2, zero.clone(), zero]
+            }
             Surface::Cone(s) => {
                 let slope = upper(&s.slope)?;
                 [&(&slope * &q(vmax.abs())) * &tau2, &slope * &tau, zero]
@@ -241,9 +263,6 @@ impl Chart {
                     minor.clone(),
                     minor,
                 ]
-            }
-            Surface::EllipticCylinder(s) => {
-                [&upper(&s.major_sq.sqrt())? * &tau2, zero.clone(), zero]
             }
             _ => unreachable!(),
         })

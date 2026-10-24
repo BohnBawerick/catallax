@@ -879,3 +879,45 @@ Pieces: 4, display mesh, application
 Change: `TracePiece::taylor_interval` returns optional outward-rounded binary64 Taylor enclosures through the requested order. `None` requests the existing ball path; deadline errors still propagate. Immutable trace constants retain a binary64 enclosure; nonrational constants derive it at 128-bit working precision, and ball enclosures remain precision-specific. Display charts now include elliptic cylinders and filter evaluation, chord and aspect bounds before exact-rational or ball fallback. Fillet cylinder carriers retain exact squared radii, and display coefficients obtain radii through the definition accessor.
 Why: repeated high-precision evaluation and incremental UV insertion blocked display latency. Shared-rail ears also created coincident sliver triangles between exact fillet strips.
 Migration: existing trace and meshing callers need no API changes. Filter callers must handle `None` with the existing certified path. Display triangle counts, indices and conservative reported bounds may change within the requested certificate. The 0.01 mm default, vertex and work limits, exact B-rep, question formats and STEP definitions are unchanged.
+
+## 2026-10-24: elliptic-cylinder display coverage
+
+Pieces: display mesh
+
+Change: elliptic cylinders now use their exact periodic/linear chart through the existing shared-edge display path. Inverse projection scales the transverse coordinates by the semi-axes. The major semi-axis bounds chart acceleration; the major/minor ratio bounds normal rotation. Facet-normal and edge-length controls retain their existing certificate semantics. Two angularly monotone boundary loops can form an axial triangle strip without interior samples; every candidate triangle must pass the existing chord and quality bounds, or the periodic triangulator supplies refinement.
+
+Why: SolidDraft must display all six analytic support kinds without replacing exact geometry. Finite parabola and hyperbola edges already use certified traces; new closed-solid regressions exercise both forms alongside elliptic caps, oblique circular caps and rigid placements.
+
+Migration: no API, face or edge picking IDs, recipe role, tolerance, budget, manifest or STEP changes. Edge polylines still contain the single shared vertex sequence used by adjacent faces. Display bounds remain bounds against the analytic definition, not a claim that polygonal trims equal curved trims.
+
+## 2026-10-24: exact fillet display strips and shared-chord ownership
+
+Pieces: display mesh, application regression coverage
+
+Change: finite cylindrical fillets use the same certified ruled-strip triangulation as elliptic cylinders, retaining every shared end-curve sample. Toroidal bands lift the minor angle into a nonperiodic interval selected by their oriented loops. Certified frame and angular evaluations are cached locally for that band; grid dimensions follow the weighted curvature terms rather than the cone's aspect heuristic. The existing half-tolerance grid reserve and mandatory triangle/edge certificates are unchanged.
+
+Curved-face triangulation also records interior chords between boundary vertices in face order. A later face refines an unconstrained chord already owned by another face. Shared B-rep polylines remain fixed. This prevents adjacent cylinder fillets from publishing opposite copies of a boundary-only triangle and giving their interior diagonal four uses.
+
+Why: P3 previously refused mesh closure at adjacent cylinder strips. Exact convex torus fillets displayed but traversed unnecessary periodic copies and repeated certified angular evaluations. The native application regression now exercises P3's four cylinder blends and torus blend, face picking roles, shared-edge incidence and radius-edit names.
+
+Migration: no exact model, fillet construction, API, naming, tolerance, work allowance, manifest or STEP-option changes. General curved-boundary acceleration remains separate work.
+
+## 2026-10-24: bounded display bands reuse the shared certified evaluator
+
+Pieces: display mesh
+
+Change: a bounded torus band restricts its face-owned chart in place and uses the shared outward-rounded display evaluator with the existing ball fallback. This supersedes the separate band-local frame and angular cache described in the preceding exact-fillet display entry. The merged shared-rail ear guard and cross-face interior-chord ownership check are both retained.
+
+Why: integrating the curved-display work must not bypass its certified sampler or duplicate cached definitions and chart copies.
+
+Migration: no public API, exact geometry, face or edge IDs, default 0.01 mm tolerance, vertex limit, arithmetic allowance, manifest or STEP changes.
+
+## 2026-10-24: ruled display strips share the certified sampling filter
+
+Pieces: display mesh
+
+Change: ruled cylinder and elliptic-cylinder strips certify their existing boundary coordinates through the shared display sampler, including its ball fallback, instead of unconditionally rebuilding ball evaluations. Shared polylines and candidate triangle coordinates are unchanged; conservative reported residual bounds may change.
+
+Why: the new-kind path must reuse the merged certified evaluator rather than introduce avoidable high-precision work.
+
+Migration: no public API, exact geometry, picking IDs, requested controls, tolerance, vertex or work allowances, manifest or STEP changes.

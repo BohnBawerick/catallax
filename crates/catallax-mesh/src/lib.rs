@@ -10,11 +10,13 @@ use std::{io::Write, ops::Range};
 use catallax_numbers::{Answered, Decider, Rational, Refusal};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 
+mod bounded;
 mod chart;
 mod controls;
 mod edges;
 mod evaluate;
 mod planar;
+mod ruled;
 mod triangulate;
 
 /// Display meshing controls. Lengths use the model's millimetres.

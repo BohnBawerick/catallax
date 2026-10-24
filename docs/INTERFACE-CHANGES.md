@@ -1261,3 +1261,10 @@ Migration: callers must certify candidate trim membership, origin sets and direc
 Change: property queries on finite curved distance-feature trims return `measure.budget-exhausted` before entering uncovered quadrature. Exact planes, whole analytic supports and full-ring reductions retain their existing integrals. The measurement crate uses typed recipe provenance to identify this property-proof boundary, including copied distance faces.
 Why: an offset's distance and incidence proofs do not prove its volume or moment integral. A typed refusal preserves the valid geometric result without a stalled property request.
 Migration: treat this refusal as unfinished property coverage, not invalid geometry or permission to accept a sampled value. No work limit, accuracy, modelling tolerance or approximation cap is relaxed.
+
+## 2026-10-24: distance candidates retain current support handles
+
+Pieces: field and comparison
+Change: the distance-feature visitor uses the current-definition `(RPoint3, FaceId)` callback contract, matching `Plan::visit_candidates`. Native draft-region bounds remain available to the query-only sampler. Constructing a distance feature from a draft region still requires a retained trim proof; its constraints alone are not assumed to define a convex intersection.
+Why: an origin can survive on several replacement supports, and a retained region can contain multiple material cells.
+Migration: certify the emitted handle directly and read its origin from the field registry. No compatibility alias, recipe format, tolerance or work allowance changes.

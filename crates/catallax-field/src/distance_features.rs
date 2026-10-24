@@ -27,6 +27,9 @@ impl Plan {
         let Instruction::Leaf(leaf) = self.instructions[node] else {
             return None;
         };
+        if matches!(self.leaves[leaf], geometry::Leaf::Draft(_)) {
+            return None;
+        }
         let [constraint] = self.leaves[leaf].constraints() else {
             return None;
         };
@@ -52,7 +55,10 @@ impl Plan {
         let Instruction::Leaf(leaf) = self.instructions[node] else {
             return Ok(None);
         };
-        if matches!(self.leaves[leaf], geometry::Leaf::Feature(_)) {
+        if matches!(
+            self.leaves[leaf],
+            geometry::Leaf::Feature(_) | geometry::Leaf::Draft(_)
+        ) {
             return Ok(None);
         }
         let surfaces: Vec<_> = self.leaves[leaf]
@@ -103,6 +109,11 @@ impl Plan {
                     stack.push(a);
                 }
                 Instruction::Leaf(leaf) => {
+                    if matches!(self.leaves[leaf], geometry::Leaf::Draft(_)) {
+                        return Err(bad(
+                            "a draft region needs its retained trimmed boundary before distance construction",
+                        ));
+                    }
                     if let geometry::Leaf::Feature(feature) = &self.leaves[leaf] {
                         let Some(planes) = feature.convex_planes(dec)? else {
                             return Err(bad(

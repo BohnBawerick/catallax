@@ -185,8 +185,7 @@ Offset, shell and thicken compile their analytic reductions from the field's own
 
 `Plan::select` prefers a live result support carrying an origin before falling back to an older registry candidate. An offset can therefore keep an origin while replacing its support, without resolving a later face query to the discarded input surface.
 
-`Plan::visit_distance_candidates` is a query-only sampling API for comparison tooling. It splits rational planar grids at field-native leaf bounds and cylindrical rational charts at result-box crossings. This supplies candidates for narrow shell rims, inner walls and short clipped cylinder patches that a fixed primitive grid can miss. Every candidate still needs the ordinary exact trim, origin and normal checks. A root enclosure chooses a rational sample; it never becomes a geometric acceptance tolerance or a boundary approximation. Compilation and point evaluation do not run this sampler.
-
+`Plan::visit_distance_candidates` is a query-only sampling API for comparison tooling. Its callback receives `(RPoint3, FaceId)` and the caller checks that exact current candidate, rather than resolving a possibly shared origin again. It splits rational planar grids at field-native leaf bounds and cylindrical rational charts at result-box crossings. This supplies candidates for narrow shell rims, inner walls and short clipped cylinder patches that a fixed primitive grid can miss. Every candidate still needs the ordinary exact trim, origin and normal checks. A root enclosure chooses a rational sample; it never becomes a geometric acceptance tolerance or a boundary approximation. Compilation and point evaluation do not run this sampler.
 
 ## Trimmed minimum distances
 

@@ -1100,11 +1100,11 @@ pub(crate) fn run(
             Operation::Offset { .. } | Operation::Shell { .. } | Operation::Thicken { .. }
         )
     }) {
-        field.visit_distance_candidates(options.divisions, |p, origin| {
+        field.visit_distance_candidates(options.divisions, |p, id| {
             if revision.is_cancelled() {
                 return false;
             }
-            check_sample(p, origin);
+            check_sample(p, id);
             !revision.is_cancelled() && !sampling_failed.get()
         })
     } else {

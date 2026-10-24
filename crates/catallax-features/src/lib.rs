@@ -39,12 +39,12 @@ mod certified;
 /// Exact setback definitions retained beside their topology.
 pub mod chamfer;
 mod chamfer_build;
-/// Exact neutral-curve definitions for analytic draft supports.
-pub mod draft;
-mod draft_build;
 /// Complete capped-cylinder distance and normal-sweep definitions.
 pub mod cylinder_skin;
 mod distance_build;
+/// Exact neutral-curve definitions for analytic draft supports.
+pub mod draft;
+mod draft_build;
 mod edge_blend;
 /// Definition-native first-hit limits and their exact boundary assembly.
 pub mod end_condition;

@@ -1,11 +1,11 @@
 //! Query-only candidates for distance features. No part-construction path calls this module.
 
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
-use catallax_recipe::{BooleanKind, Origin};
+use catallax_recipe::BooleanKind;
 use catallax_shapes::{Point3, RPoint3, RVector3, Surface, Vector3};
 
 use crate::{
-    Instruction, Plan,
+    FaceId, Instruction, Plan,
     geometry::Leaf,
     samples::{Bounds, circle, fraction, placement_error},
 };
@@ -40,6 +40,7 @@ fn leaf_bound(leaf: &Leaf, dec: &mut Decider) -> Result<Option<Bounds>, Refusal>
     match leaf {
         Leaf::Primitive(p) => return p.sample_bounds().map(Some),
         Leaf::Feature(f) => return f.sample_bounds(),
+        Leaf::Draft(region) => return region.sample_bounds().map(Some),
         Leaf::Cell(_) => (),
     }
     let constraints = leaf.constraints();
@@ -255,7 +256,7 @@ impl Plan {
     pub fn visit_distance_candidates(
         &self,
         divisions: u32,
-        mut visit: impl FnMut(RPoint3, &Origin) -> bool,
+        mut visit: impl FnMut(RPoint3, FaceId) -> bool,
     ) -> Result<bool, Refusal> {
         if !(1..=64).contains(&divisions) {
             return Err(Refusal::new(
@@ -307,11 +308,11 @@ impl Plan {
             cuts[i].sort();
             cuts[i].dedup();
         }
-        for face in &self.faces {
+        for (index, face) in self.faces.iter().enumerate() {
             if !face.in_result || self.leaf_registers[face.leaf].is_none() {
                 continue;
             }
-            let mut emit = |p| visit(p, &face.origin);
+            let mut emit = |p| visit(p, FaceId(index));
             match &face.surface {
                 Surface::Plane(plane) => {
                     let origin = plane.origin.as_rational().ok_or_else(placement_error)?;

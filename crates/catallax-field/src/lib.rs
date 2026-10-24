@@ -14,10 +14,10 @@ mod chamfer;
 pub mod display;
 /// Certified trimmed-face and boundary minimum-distance queries.
 pub mod distance;
-mod draft;
-mod draft_source;
 mod distance_features;
 mod distance_samples;
+mod draft;
+mod draft_source;
 mod end_condition;
 mod features;
 mod fillet;

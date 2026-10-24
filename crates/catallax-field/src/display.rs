@@ -516,27 +516,6 @@ fn mesh_plan_inner(
                 chart.restrict(&boxes);
             }
             let mut cuts = chart.cuts(&builder.constraints);
-            let mut chart_coincident = coincident.clone();
-            let mut pullbacks = Vec::new();
-            for (i, constraints) in builder.constraints.iter().enumerate() {
-                let mut row = Vec::new();
-                for (j, constraint) in constraints.iter().enumerate() {
-                    let restriction = constraint
-                        .polynomial
-                        .as_ref()
-                        .map(|p| chart.pullback(p, dec))
-                        .transpose()?;
-                    if let Some(restriction) = &restriction {
-                        chart_coincident[i][j] |= restriction.is_zero();
-                        let rails = restriction.cuts(&chart.domain, dec)?;
-                        for axis in 0..2 {
-                            cuts[axis].extend(rails[axis].iter().cloned());
-                        }
-                    }
-                    row.push(restriction);
-                }
-                pullbacks.push(row);
-            }
             let radial = if chart.is_disk() {
                 let catallax_shapes::Surface::Plane(plane) = &plan.faces[faces[0]].surface else {
                     unreachable!("disk chart belongs to a plane")
@@ -568,8 +547,8 @@ fn mesh_plan_inner(
                 chart,
                 group,
                 faces: faces.clone(),
-                coincident: chart_coincident,
-                pullbacks,
+                coincident: coincident.clone(),
+                pullbacks: Vec::new(),
                 regions: vec![None; plan.leaves.len()],
                 cuts,
                 radial,
@@ -583,6 +562,33 @@ fn mesh_plan_inner(
                 shared_sides: shared_sides.clone(),
                 last_states: None,
             });
+        }
+    }
+    // Validate every chart before preparing exact restrictions. A later
+    // unsupported support must not pay for unusable earlier pullbacks.
+    for patch in &mut patches {
+        for (i, constraints) in builder.constraints.iter().enumerate() {
+            let mut row = Vec::new();
+            for (j, constraint) in constraints.iter().enumerate() {
+                let restriction = constraint
+                    .polynomial
+                    .as_ref()
+                    .map(|p| patch.chart.pullback(p, dec))
+                    .transpose()?;
+                if let Some(restriction) = &restriction {
+                    patch.coincident[i][j] |= restriction.is_zero();
+                    let rails = restriction.cuts(&patch.chart.domain, dec)?;
+                    for (cuts, rails) in patch.cuts.iter_mut().zip(rails) {
+                        cuts.extend(rails);
+                    }
+                }
+                row.push(restriction);
+            }
+            patch.pullbacks.push(row);
+        }
+        for axis in &mut patch.cuts {
+            axis.sort();
+            axis.dedup();
         }
     }
     let mut stack: Vec<_> = patches

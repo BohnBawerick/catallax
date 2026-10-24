@@ -253,7 +253,7 @@ fn off_carriers(
             for &c in cs {
                 let curve = model.edge(model.coedge(c).edge).curve;
                 let mut apart = false;
-                for equation in model.geom().curve(curve).equations(model.geom()) {
+                for equation in model.geom().curve(curve).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
                     if sign(
                         &equation.eval_real(&coordinates),
                         dec,

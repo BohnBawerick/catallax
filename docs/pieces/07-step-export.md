@@ -20,6 +20,40 @@ These STEP entity definitions are documented by STEP Tools for [linear extrusion
 
 Open curves must have finite edge endpoints. Existing ring handling applies only after piece 4 proves closure. Keep the existing entity sequence and bytes for the successful rational corpus during conic preparation. The new geometry must not change manifest kind tags or `JUDGE-INTERFACE.md`. The existing tolerance/report policy below remains the baseline; this migration does not settle the separate PRD-wide 1 nm enforcement gap.
 
+## Certified spline-prism export
+
+`write_spline_prism_step(model, body, &CertifiedSplineStepOptions, dec, out)`
+is the separate exporter for the checked first spline-prism family. It uses
+`SplinePrism::check` before constructing the file and writes a genuine
+degree-(3,1) `B_SPLINE_SURFACE_WITH_KNOTS`, two shared degree-3 boundary curves
+and planar cap faces. Surface rows and edge curves share the same rounded
+controls. Model face names are `face_<handle>`; export-only ring vertices are
+reported separately from the model's vertex-free topology.
+
+The finite decimal construction uses an exact rational integer-direction frame,
+common rounded Hermite endpoints and tangents, and an exact sweep vector.
+Shared knot lengths retain exact incidence and C1 joins, including periodic
+closure. The exporter rechecks regular convex embedding and cap compatibility
+after rounding. Its whole-domain two-way file-to-model bound includes every
+control displacement and covers the complete product solid; it is not a
+sample maximum. Other frames/knot formats remain explicit coverage gaps.
+
+`file_tolerance` is a nonnegative required bound in mm.
+`decimal_places` controls the common origin grid, not a promise that every
+coefficient has that many decimals: exact directions and knot lengths can
+require more. A coarse grid or an unproved bound refuses before writing bytes,
+including `step.tolerance-not-reached`; the exporter never enlarges the request.
+`StepReport.max_deviation` concerns the represented model only. The certified
+application exchange separately composes it with the body's proved
+model-to-definition bound and binds both to physical regions.
+
+The existing `write_step` contract, analytic entity ordering and retained
+legacy bytes below are unchanged. It must not relabel a spline as an ellipse
+or silently use this new export contract. Independent native STEP import checks
+topology separately from the exact finite-decimal proof. An external kernel's
+nonadaptive volume estimate is not a certified property enclosure.
+
+
 ## What this piece is for
 
 Piece 7 writes bodies as STEP AP242 files (ISO 10303-21 text) that other kernels read as valid solids. It is the outbound half of conversion at the border (DESIGN.md): exact geometry becomes ordinary STEP entities, and the export proves and reports the largest distance between what it wrote and the exact model.
@@ -138,9 +172,9 @@ Directions are written as unit vectors: the exact direction divided by its exact
 | an ellipse form | `ELLIPSE('',#a,sqrt(major_sq),sqrt(minor_sq))`, placed at `center`, axis `normal`, reference `major_dir` |
 | a branch form | one `B_SPLINE_CURVE_WITH_KNOTS` per edge, below |
 
-A placement is `AXIS2_PLACEMENT_3D('',#location,#axis,#ref)` with a `CARTESIAN_POINT` and two `DIRECTION` entities of its own. Each `LINE`, `VECTOR`, placement and B-spline has its own points and directions; nothing below a curve or surface entity is shared.
+In the retained analytic `write_step` path, a placement is `AXIS2_PLACEMENT_3D('',#location,#axis,#ref)` with a `CARTESIAN_POINT` and two `DIRECTION` entities of its own. Each `LINE`, `VECTOR`, placement and fitted branch B-spline has its own points and directions; nothing below a curve or surface entity is shared. The separate certified spline-prism exporter above deliberately shares its surface-boundary controls.
 One curve entity is written per `CurveId` with a closed form, and shared by all edges on it. One surface entity is written per `SurfaceId`.
-So every surface keeps its analytic form (ND7), its seam stays where the model has it, and analytic curves stay analytic even when they are intersection curves with irrational data.
+Thus analytic supports keep their analytic form (ND7), their seams stay where the model has them, and analytic curves stay analytic even when they are intersection curves with irrational data. The separate spline path exports the actual spline rather than an analytic proxy.
 
 **Branches.** An edge on a curve with no closed form is written as one non-rational `B_SPLINE_CURVE_WITH_KNOTS('',degree,(#cp1,...),.UNSPECIFIED.,<closed>,.F.,(multiplicities),(knots),.UNSPECIFIED.)`, fitted to piece 4's `trace` of the edge's arc in the edge's direction. It is clamped (its end knots have multiplicity `degree + 1`), its first and last control points are the written points of the edge's start and end vertices (the same decimals), `<closed>` is `.T.` exactly when they are the same vertex, and the `EDGE_CURVE`'s `same_sense` is `.T.`. Degree, knots and control points are the creator's choice, within the deviation rule. Each B-spline counts in `approximated_curves`.
 

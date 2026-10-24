@@ -1,13 +1,17 @@
-//! Application entry for named, exact B-rep builds and their display approximations.
+//! Application entries for named B-rep builds and their display approximations.
 //!
 //! [`build`] accepts Catallax recipes. [`build_soliddraft`] first converts the
 //! application's JSON format. No SolidDraft backend or external checkout is needed.
+//! [`build_certified`] adds geometry-bound inward offset prisms, optional display
+//! and original-definition properties without changing the exact build entry.
 //! Handles belong to the returned model, not to a later rebuild. Store origins and
 //! names for persistent references; do not persist numeric handles.
 
+mod certified;
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
 pub mod soliddraft;
+pub use certified::{CertifiedApplicationBody, build_certified};
 
 use std::{collections::BTreeMap, fmt};
 
@@ -15,7 +19,7 @@ use catallax_features::{BuildError, Built, evaluate};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
 use catallax_numbers::{Answer, Decider, Refusal};
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
-use catallax_topology::{EdgeId, FaceId, VertexId};
+use catallax_topology::{BodyId, EdgeId, FaceId, Model, VertexId};
 
 /// Names of every entity in the result, keyed by that build's picking handles.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -164,9 +168,16 @@ pub fn build(
     }
     let display =
         mesh_body(&built.model, built.result, options, decider).map_err(Error::Display)?;
-    let model = &built.model;
-    let body = built.result;
-    let names = Names {
+    let names = result_names(&built.model, built.result);
+    Ok(ApplicationBody {
+        built,
+        display,
+        names,
+    })
+}
+
+fn result_names(model: &Model, body: BodyId) -> Names {
+    Names {
         faces: model
             .faces_of_body(body)
             .into_iter()
@@ -182,12 +193,7 @@ pub fn build(
             .into_iter()
             .map(|vertex| (vertex, model.vertex_name(body, vertex)))
             .collect(),
-    };
-    Ok(ApplicationBody {
-        built,
-        display,
-        names,
-    })
+    }
 }
 
 /// A SolidDraft build, with the conversion's original-tag to step-id table.

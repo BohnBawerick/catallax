@@ -14,6 +14,13 @@ Add `RealPoly`, a polynomial in a fixed number of variables with `Real` coeffici
 
 `rational() -> Option<&MPoly>` borrows the rational backend without copying coefficients; `into_rational() -> Option<MPoly>` consumes it. `total_degree`, `is_zero`, `equals`, `resultant` and `real_roots` accept the caller's mutable decider; `eval_ball` accepts its enclosure context. `Decider::rational_value` can certify a rational value for a correlated algebraic expression. Its `None` result is inconclusive and must not be used as an irrationality or domain certificate.
 
+`RealPoly::gcd` takes two univariate polynomials and the caller's mutable
+decider. It returns their monic greatest common divisor in the existing exact
+coefficient field, with `gcd(0, 0) = 0`. It validates all coefficient domains
+before a constant shortcut and certifies algebraically zero leading terms.
+The sparse Euclidean remainder path does not eliminate algebraic coefficients
+into a larger rational polynomial; numeric refusals and work limits propagate.
+
 A syntactic term bound is not the mathematical degree. Algebraically zero coefficients may remain until a decider proves zero. Degree selection, leading-coefficient division, polynomial equality and zero-polynomial tests must therefore be certified operations; no caller may use list length or expression identity as those proofs. `RealPoly` has no mathematical `Eq`, `Ord` or `Hash`. Enclosure evaluation includes coefficient error as well as input error, using the caller's precision and decision policy.
 
 For non-rational coefficients, solvers must either operate in a certified common algebraic extension or lower the expression graph to rational polynomial equations with auxiliary variables and certified root/domain selectors. Lowering retains shared leaves and their correlations, positive square-root choices and nonzero divisors. Elimination gives candidate roots; it must not admit other conjugates or denominator zeros. Certify and order candidates against the original equations and component selectors. Rational `UPoly`, `MPoly`, `PolySystem` and `IsolatedRoot` keep their current contracts. Lifted systems need their own certificates when singular; the existing nonsingular `IsolatedRoot` constructor cannot certify them by assertion.
@@ -21,6 +28,24 @@ For non-rational coefficients, solvers must either operate in a certified common
 Add a shared budgeted `sin_cos_degrees(angle: &Rational, dec: &mut Decider) -> Result<[Real; 2], Refusal>`, returning sine then cosine. Reduce the exact angle modulo 360, select the intended roots of unity using exact sector/root certificates, and retain those certified algebraic values. Standard rational/quadratic angles use exact fast paths. No floating-point trigonometry or rationalised answer is allowed. Arbitrary rational degree angles may have high algebraic degree; failure to construct their certificate is a temporary coverage/resource failure, never impossible geometry. General `sin(Real)` and `cos(Real)` are not introduced. Continuous trigonometric chart evaluation remains in `Ball`.
 
 Use the existing deterministic work policy for coefficient validation, root selection and elimination. A failed proof keeps its `numbers.*` reason. Cache reuse must preserve outcomes and deterministic work charges across cold/warm and serial/parallel runs. The alternative of eagerly replacing every expression by one isolated number simplifies arithmetic boundaries but pays elimination before it is needed and loses shared construction identities.
+
+## Geometric proof records
+
+`ModellingTolerance::default()` records `1/1_000_000` mm before proof work starts. Its value has no mutation API. `check` accepts only nonnegative millimetre bounds strictly below that value. Equality refuses with `numbers.geometric-gap-exceeded`; negative bounds and other units refuse with `numbers.geometric-gap-unproven`. This setting is not an export accuracy or an entity-local approximation cap.
+
+`EvidenceBound` holds an exact rational upper bound and an `EvidenceUnit`. `enclose_magnitude` uses the caller's decider to enclose a shared `Real`, retaining the caller's declared units without converting a residual into geometry. `add` adds nonnegative bounds with matching units. The geometric caller must prove that addition is the appropriate transfer rule.
+
+`CertificateIdentity<K>` names the immutable recipe revision, representation, exact target and complete `CertificateScope<K>`. Scopes distinguish a whole-result cover, complete named entities, finite parameter boxes and individual queries. `GeometricEvidence<K>` retains that binding, an optional geometric bound, `GeometricProof<K>`, ordered dependencies and `ProofContext<K>` with producing piece, step and stage. A missing metric bound is not zero displacement. A conversion additionally retains `DecisionEvidence<K>` with its original code, residual enclosure, units, affected entities and selected branch. An `Approximation` proof names the retained exact definition and its correspondence theorem.
+
+`GapCertificate<K>` is a scoped metric claim under the strict 1 nm decision or legacy-output rule. `GeometricCertificate<K>` instead lists every `RegionCertificate<K>` in a complete exact/exception cover, converted bounded choices and a whole-result evidence root. An exact region requires zero-displacement evidence. Every changed region, including an exact support with a moved trim, needs a `LocalException<K>`. An optional uniform metric summary needs its own complete oriented proof; it is not another sub-1-nm gate or a maximum inferred from face bounds.
+
+`LocalToleranceSettings::default()` records a 100 nm kernel-fit target, inclusive 1 micrometre kernel cap and inclusive 10 micrometre import cap. `LocalException` records the attained enclosure, source, applicable limit and neighbouring edge/face size lower bounds. Both tenth-of-feature limits also apply. `NoNeighbour` explicitly claims absence; the geometric verifier must check adjacency rather than use it for an unknown size. A fit above target but within every hard limit passes arithmetic checking and reports `kernel_target_met=false`. An import's declared source uncertainty is separate from its file-geometry deviation; a looser limit requires a file-specific `ImportToleranceAcceptance` whose authorisation the consumer verifies. Decision-only exceptions retain the strict 1 nm rule and cannot be relabelled as fits.
+
+`EvidenceBook<K>` is append-only and ordered by stable definition keys. Equal shared records deduplicate; conflicting keys refuse. `check_gap_structure` checks a gap's binding, units, strict cap, domain and reachable dependency graph. `check_structure` checks a whole-result certificate against the caller's actual region inventory, including every exception's source and feature-size caps, converted decisions, identities and reachable proofs. Missing dependencies, cycles, stale domains, unlisted changed regions and unproved metric summaries refuse. Neither method verifies geometric theorems, adjacency, topology, coverage or material orientation. Public records and structural success do not authorise publication; the geometric consumer verifies those obligations against immutable definitions. No mark-log heuristic supplies that proof.
+
+`DecisionBook<K>` records a `RecordedChoice<K>` containing the chosen branch and supporting evidence key. `decide_once` calls its closure only for an unsettled key and checks cancellation before lookup and after a new decision. Failed or interrupted decisions record no choice. `record` accepts an identical repeated choice and refuses a conflicting branch or evidence key. Consumers must validate imported evidence before trusting it. Keys include immutable definition revisions, operands, scope and branch selectors, never pointer addresses or worker completion order. Iteration is in canonical key order.
+
+Record and graph operations use the existing decider cancellation checkpoints and request work accounting. There is no second allowance, and no numeric decision path or legacy `Answer::is_exact` behavior changes merely because these types exist.
 
 ## What this piece is for
 
@@ -297,10 +322,12 @@ A mark is the record of one "not exact" answer, carried on results.
 | `numbers.zero-polynomial` | `real_roots` of the zero polynomial |
 | `numbers.root-not-certified` | `certify_root` could prove neither one root nor no root |
 | `numbers.deadline` | The operation's wall-clock deadline passed |
+| `numbers.geometric-gap-unproven` | Missing or invalid geometric evidence, units, binding, scope or dependencies; a geometric consumer also uses it for an unproved conversion or theorem |
+| `numbers.geometric-gap-exceeded` | The available certified geometric upper bound is greater than or equal to the strict recorded modelling cap; this does not prove the true gap exceeds the cap |
 
 ## Exact public interface
 
-The crate re-exports all of these at its root. Arithmetic operators are implemented for owned values and for references (`&a + &b`) unless noted. Everything listed is `pub`; fields not listed are private.
+The crate re-exports the certificate APIs above and the numeric baseline below at its root. Arithmetic operators are implemented for owned values and for references (`&a + &b`) unless noted. Fields not listed are private.
 
 ```rust
 // Exact integers and rationals
@@ -811,4 +838,4 @@ The numbers are written to the benchmark output so later runs can be compared.
 
 - Points, vectors, surfaces, curves and poses (piece 2).
 - Finding candidate boxes for system roots (piece 4).
-- Any tolerance. This piece has none.
+- Geometric residual conversions, topology and whole-solid theorem verification. This piece records the modelling setting and proof claims and checks their arithmetic and dependency structure.

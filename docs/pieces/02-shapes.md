@@ -25,9 +25,9 @@ Analytic constructors take the target field types and a final `&mut Decider`, re
 
 Remove `PartialEq`, `Eq` and `Hash` from definitions containing `Real`, including `Rotation`, `Pose`, analytic structs, `Surface` and `Curve`. Handles and kind tags retain their traits; rational input structs retain theirs. Geometry equality belongs to `same_surface`, `same_point` and piece 4's `same_curve`, using facts then exact decisions. An expression or construction key can prove identity for cache reuse, but unequal keys cannot prove different geometry. Do not compare independent algebraic roots by their isolating intervals or polynomial text.
 
-`Surface::implicit()`, `GeomStore::implicit()` and `Curve::equations()` return `RealPoly` or `Vec<RealPoly>`. Preserve the exact scaling of every formula below. For rational defining data, construct the existing polynomial without avoidable square roots, so it converts back to the identical `MPoly`. An algebraic expression that happens to be rational need not be detected by the cheap conversion. Gradients and rigid-transform identities hold for all validated algebraic points. `same_surface` retains the listed geometric criteria, evaluated through the decider when quantities are non-rational. Its rational fast path retains the existing no-decision result. For elliptic cylinders, compare axis lines and the transverse quadratic forms, including their eigenvalues and eigendirections; reference directions are geometric for an ellipse. Equality of proportional implicit polynomials alone does not prove equality of selected nappes or trimmed domains.
+`Surface::implicit()` returns `Option<RealPoly>`, `GeomStore::implicit()` returns a cached `Option<&RealPoly>`, and `Curve::equations()` returns `Option<Vec<RealPoly>>`. Existing analytic definitions return `Some` with the exact scaling of every formula below. Parametric spline supports return `None`, never a zero polynomial or an equation for the original target. For rational defining data, construct the existing polynomial without avoidable square roots, so it converts back to the identical `MPoly`. An algebraic expression that happens to be rational need not be detected by the cheap conversion. Analytic gradients and rigid-transform identities hold for all validated algebraic points. `same_surface` retains the listed geometric criteria, evaluated through the decider when quantities are non-rational. Its rational fast path retains the existing no-decision result. For elliptic cylinders, compare axis lines and the transverse quadratic forms, including their eigenvalues and eigendirections; reference directions are geometric for an ellipse. Equality of proportional implicit polynomials alone does not prove equality of selected nappes or trimmed domains.
 
-Chart evaluation must enclose algebraic constants through piece 1 under the caller's policy. Add a final `&Decider` argument and an outer `Result<_, Refusal>` to `Surface::{evaluate, derivatives, parameters_of}` and `Curve::evaluate`; preserve each method's existing inner return type and input-precision/containment rules. A `parameters_of` seam/domain ambiguity remains `Ok(None)`, distinct from an enclosure failure. `implicit`, `gradient`, `transformed` and `parameter_origin` still only build exact expressions and need no decision context. This prevents unbudgeted coefficient refinement or hidden rationalisation in measurement, meshing and export.
+Chart evaluation must enclose algebraic constants through piece 1 under the caller's policy. Add a final `&Decider` argument and an outer `Result<_, Refusal>` to `Surface::{evaluate, derivatives, parameters_of}` and `Curve::evaluate`; preserve each method's existing inner return type and input-precision/containment rules. A `parameters_of` seam/domain ambiguity remains `Ok(None)`, distinct from an enclosure failure. `implicit`, analytic `gradient`, `transformed` and `parameter_origin` only build exact expressions and need no decision context. `gradient` returns `Option<Vector3>`; `normal_at(point, &mut Decider)` and `GeomStore::normal(surface, point, &mut Decider)` return `Result<Vector3, Refusal>` and prove finite spline incidence before returning a parametric normal. This prevents unbudgeted coefficient refinement or hidden rationalisation in measurement, meshing and export.
 
 ### Poses and explicit points
 
@@ -62,6 +62,95 @@ Let `e3 = axis / |axis|`, `e1 = major_dir / |major_dir|`, `e2 = e3 x e1`, `d = x
 For a circle of radius `r` in a plane with unit normal `n`, extruded along unit direction `e`, nonzero `n . e`, the transverse ellipse has squared semi-axes `r^2` and `r^2 (n . e)^2`. A major direction is `n x e` when nonzero. If they are parallel, use `Cylinder`. The original start/end planes trim this carrier obliquely; replacing them by perpendicular caps would change the solid. Build the carrier and trims from the same profile/sweep definition and retain its recipe origins.
 
 No unrestricted `Quadric`, `Extruded` or `Revolved` surface variant is added in this foundation. The analytic reductions cover line extrusion, circular-arc extrusion, meridional line revolution and ring circular-arc revolution. Other valid patches remain named implementation gaps until their domain-aware carrier and full consumer support land. In particular, `shapes.torus-self-intersecting` describes an invalid whole ring torus; it is not evidence that every trimmed circular revolution with that carrier is impossible.
+
+### Elliptic-offset definition records
+
+`EllipticOffsetDefinition::new(original: EllipticCylinder, signed_distance: Real, dec: &mut Decider)` validates and retains an immutable copy of the original support and the exact offset expression. Positive distance selects `OffsetSide::Outward`, negative distance selects `Inward`, and zero retains the original support. `original()` returns the exact `Surface`; `distance()` returns the nonnegative `Real` magnitude required by the field measuring stick's offset definition. `side()` retains the branch that unsigned distance alone cannot distinguish.
+
+The record is intent, not a new `Surface` variant, fitted carrier, finite trimmed face or geometric certificate. Inward offsets still require domain, branch and regularity proofs before construction. This interface does not itself construct an approximated face or change the six existing surface kinds.
+
+### Explicit spline data and exact offset charts
+
+`BSplineSurface::new` validates a finite tensor-product carrier: positive degrees,
+expanded nondecreasing rational knots, clamped endpoints, rectangular exact
+`Point3` controls and positive exact `Real` weights. Controls are u-major and
+v-minor. Internal multiplicity cannot exceed the degree. The carrier shares
+immutable data and caches its homogeneous derivative nets and positive weight
+lower bound; construction alone does not establish a regular or injective face.
+
+`jet` encloses position, first derivatives and second derivatives on a binary
+parameter box, including the hull of one-sided values at internal knots.
+`jet_box` accepts an exact rational parameter rectangle, so non-dyadic finite
+endpoints remain usable without treating outward rounding as an invalid domain.
+Out-of-domain requests still refuse rather than clamp. Both methods use the
+caller's precision and work policy. `transformed` applies a validated rigid
+motion to exact controls while sharing knots and weights.
+
+`BSplineCurve` validates standalone finite clamped positive-weight curve data
+or shares an exact `SplineBoundary` view of a surface. Boundary views reuse the
+same controls and weights; they do not fit a second curve. Position and first
+and second parameter derivatives include rational-weight quotient terms and
+knot-side hulls. Exact point preimages use coordinate-polynomial common factors
+in the existing coefficient field, rejecting points outside the finite curve.
+`SplineCurveParameter` binds the recovered parameter to its checked span.
+It is an incidence witness, not a uniqueness proof for an unchecked
+self-intersecting curve; constant or unresolved preimages refuse.
+
+`EllipticOffsetDefinition::chart` retains algebraic quarter charts of the exact
+signed normal offset. `point_and_tangent` returns exact positions and tangents;
+`hermite_error_bound` proves a uniform cubic-interpolation position bound from
+interval fourth derivatives over a complete span. Adjacent quarters share their
+position and parameter speed, including closure. An inward chart alone is not
+proof that the selected erosion branch is regular.
+
+`certify_elliptic_offset_sweep` returns an opaque `OffsetSweepProof` bound to
+the immutable carrier, original signed definition and finite axial interval.
+It checks the complete span cover, interpolation and shared periodic seams,
+the regular branch, convex embedding and a recomputed two-way position bound.
+The field measuring stick uses this same geometric checker. This local proof
+does not establish cap domains, complete body topology or recipe identity.
+
+`SplineSurface::from_offset` owns the immutable checked sweep definition and
+shares its carrier. `parameters_at` returns an exact finite incidence witness
+with `SplinePointParameters` for its point, tangents and outward normal;
+outside-domain points return `None`, while numeric failures propagate.
+`cross_section_side` classifies the represented convex profile after axial
+projection, not membership in a finite body. A bounded Bernstein interval
+filter proves whole-span negative tangent half-planes or a positive outside
+witness; uncertain contact falls through to exact incidence and side proofs.
+No interval ambiguity becomes coincidence or a larger modelling tolerance.
+
+Exact isometric transport retains the canonical checked source and composed
+`Isometry`, including reflections. Inverse queries map back through its exact
+inverse; points, tangents and material-outward normals map forward. Repeated
+motions compose against the same source rather than re-solving dependent world
+equations or making posed controls a new target. Reflected normals are the
+mapped source normals, not an uncorrected cross product of reflected tangents.
+The existing proper-`Pose` APIs and pose schema remain unchanged. Local support
+transport preserves its metric bound but still authorizes no recipe-bound body.
+
+The spline data and `fit_elliptic_offset` candidate do not add an analytic kind
+or authorize a body. Topological use also requires checked shared boundaries,
+finite domains, regularity, material correspondence and local certificates.
+
+### Checked spline B-rep supports
+
+`Surface::BSpline` holds the checked `SplineSurface` support, and
+`Curve::BSpline` holds real finite `BSplineCurve` geometry, including shared
+surface-boundary views. The six analytic kinds retain their equations and
+fast paths. A raw spline or an `OffsetSweepProof` alone still authorizes no
+published body.
+
+The first support has a finite periodic `u` domain and finite `v` domain,
+reported as `PeriodicFinite` and `Finite`. Exact inverse queries require a
+unique finite preimage; a self-crossing or ambiguous preimage is not silently
+selected. At knots, curve consumers retain arriving and leaving tangents.
+Closed seams use one canonical parameter rather than creating a model edge.
+Supported side and incidence queries use this checked finite chart. Consumers
+requiring a global polynomial must handle `None` with an explicit coverage
+refusal; they must not use a target ellipse as the spline's geometry.
+
+
 
 ### Acceptance of the migration
 
@@ -741,5 +830,5 @@ The numbers are written to the benchmark output so later runs can be compared.
 - Intersecting surfaces and curves with each other, finding meeting points, choosing branches, and ordering points along curves (piece 4).
 - Whether a point on a cone's carrier lies on the nappe; callers test the sign of `(p - apex) . axis`.
 - Faces, edges and every other topology (piece 3).
-- Free-form surfaces, fillet and offset surfaces. They come later as new variants of the non-exhaustive enums.
-- Any tolerance. This piece has none.
+- Free-form, fillet and offset surface carriers. They come later as new variants of the non-exhaustive enums; the elliptic-offset intent record above does not add a carrier.
+- Geometric tolerance acceptance. Shapes retain exact definitions; geometric consumers own their scoped conversion and certificate proofs.

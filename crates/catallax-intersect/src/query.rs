@@ -8,7 +8,8 @@ use catallax_numbers::{
     Ball, Decider, FactKind, Outcome, Rational, Real, Refusal, Sign, StrictOrder, StrictSign,
 };
 use catallax_shapes::{
-    Apart, Curve, CurveId, GeomKey, GeomStore, Point3, PointId, Surface, Vector3,
+    Apart, BSplineCurve, Curve, CurveId, GeomKey, GeomStore, Point3, PointId, SplineCurveParameter,
+    Surface, Vector3,
 };
 use std::sync::Arc;
 
@@ -18,7 +19,7 @@ pub(super) fn validate(
     dec: &mut Decider,
 ) -> Result<Option<Arc<Plan>>, Refusal> {
     match geom.curve(c) {
-        Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_) => Ok(None),
+        Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_) | Curve::BSpline(_) => Ok(None),
         Curve::Intersection(i) => {
             if !crate::supports(
                 geom.surface(i.surfaces[0]).kind(),
@@ -60,6 +61,7 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
             major_sq: real(&l.major_sq),
             minor_sq: real(&l.minor_sq),
         },
+        Curve::BSpline(curve) => CurveForm::BSpline(curve.clone()),
         Curve::Intersection(i) => {
             let plan = p.unwrap();
             if plan.frame.is_some() {
@@ -316,6 +318,12 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             proof: catallax_numbers::ZeroProof::Algebraic,
         });
     }
+    if matches!(geom.curve(a), Curve::BSpline(_)) || matches!(geom.curve(b), Curve::BSpline(_)) {
+        return Outcome::Refused(Refusal::new(
+            "intersect.parametric-coincidence",
+            "different spline definitions require a finite curve-equivalence proof",
+        ));
+    }
     let fa = match carrier(geom, a, dec) {
         Ok(f) => f,
         Err(e) => return Outcome::Refused(e),
@@ -525,6 +533,18 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         _ => Outcome::Proven(Apart),
     }
 }
+pub(super) fn spline_parameter<'a>(
+    curve: &'a BSplineCurve,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<SplineCurveParameter<'a>, Refusal> {
+    curve.unique_parameter_of(point, dec)?.ok_or_else(|| {
+        Refusal::new(
+            "intersect.spline-parameter",
+            "point is not on the finite spline curve",
+        )
+    })
+}
 pub(super) fn order(
     geom: &GeomStore,
     c: CurveId,
@@ -532,6 +552,31 @@ pub(super) fn order(
     q: PointId,
     dec: &mut Decider,
 ) -> Outcome<StrictOrder> {
+    if let Curve::BSpline(curve) = geom.curve(c) {
+        let parameters = (|| -> Result<(Real, Real), Refusal> {
+            if crate::curve_is_closed(geom, c, dec)? {
+                return Err(Refusal::new(
+                    "intersect.spline-parameter",
+                    "linear order requires an open spline curve",
+                ));
+            }
+            Ok((
+                spline_parameter(curve, &geom.position(p), dec)?
+                    .value()
+                    .clone(),
+                spline_parameter(curve, &geom.position(q), dec)?
+                    .value()
+                    .clone(),
+            ))
+        })();
+        return match parameters {
+            Ok((a, b)) => dec.sign(&(b - a)).map(|sign| match sign {
+                StrictSign::Positive => StrictOrder::Less,
+                StrictSign::Negative => StrictOrder::Greater,
+            }),
+            Err(error) => Outcome::Refused(error),
+        };
+    }
     let dir = match carrier(geom, c, dec) {
         Ok(CurveForm::Line { dir, .. }) => dir,
         Ok(
@@ -567,6 +612,12 @@ pub(super) fn charts(
     let f = form(geom, c, dec)?;
     if matches!(f, CurveForm::Branch) {
         chart::branch_charts(geom, c, &plan.unwrap(), dec)
+    } else if matches!(f, CurveForm::BSpline(_)) {
+        Err(Refusal::new(
+            "intersect.spline-chart",
+            "finite spline tracing requires explicit knot-span ranges",
+        )
+        .into())
     } else {
         Ok(chart::form_charts(&f))
     }
@@ -599,6 +650,27 @@ pub(super) fn cyclic(
         }
         CurveForm::Line { .. } | CurveForm::Parabola { .. } | CurveForm::Hyperbola { .. } => {
             panic!("cyclic order requires closed curve")
+        }
+        CurveForm::BSpline(curve) => {
+            let result = (|| -> Result<Real, Refusal> {
+                if !crate::curve_is_closed(geom, c, dec)? {
+                    return Err(Refusal::new(
+                        "intersect.spline-parameter",
+                        "cyclic order requires a closed spline curve",
+                    ));
+                }
+                let a = spline_parameter(&curve, &p, dec)?.value().clone();
+                let b = spline_parameter(&curve, &q, dec)?.value().clone();
+                let d = spline_parameter(&curve, &rp, dec)?.value().clone();
+                Ok((&b - &a) * ((&d - &a) * (&d - &b)))
+            })();
+            match result {
+                Ok(value) => dec.sign(&value).map(|sign| match sign {
+                    StrictSign::Positive => Cyclic::Forward,
+                    StrictSign::Negative => Cyclic::Backward,
+                }),
+                Err(error) => Outcome::Refused(error),
+            }
         }
         CurveForm::Branch => {
             let result = (|| -> Result<Outcome<Cyclic>, Failure> {
@@ -649,6 +721,9 @@ pub(super) fn tangent(
 ) -> Result<[Vector3; 2], Refusal> {
     validate(geom, c, dec)?;
     let position = geom.position(p);
+    if let Curve::BSpline(curve) = geom.curve(c) {
+        return spline_parameter(curve, &position, dec)?.tangents(dec);
+    }
     if let Curve::Intersection(i) = geom.curve(c) {
         // Tangency is local to its recorded component, not the entire pair.
         let tangent = geom.facts().iter().any(|f| {
@@ -677,8 +752,8 @@ pub(super) fn tangent(
         } else {
             let cross = geom
                 .surface(i.surfaces[0])
-                .gradient(&position)
-                .cross(&geom.surface(i.surfaces[1]).gradient(&position));
+                .normal_at(&position, dec)?
+                .cross(&geom.surface(i.surfaces[1]).normal_at(&position, dec)?);
             for component in [&cross.x, &cross.y, &cross.z] {
                 if sign(component, dec)? != Sign::Zero {
                     regular = true;
@@ -768,5 +843,6 @@ fn analytic_tangent(form: CurveForm, position: &Point3) -> Vector3 {
             u.scaled(&derivative).plus(&v)
         }
         CurveForm::Branch => unreachable!("traced branch tangent"),
+        CurveForm::BSpline(_) => unreachable!("finite spline tangent dispatched by preimage"),
     }
 }

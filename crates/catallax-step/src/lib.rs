@@ -10,10 +10,13 @@ use std::io::Write;
 use catallax_numbers::{Answered, Decider, Rational};
 use catallax_topology::{BodyId, Model};
 
+mod certified_spline;
 mod export;
 mod fit;
 mod graph;
 mod number;
+
+pub use certified_spline::{CertifiedSplineStepOptions, write_spline_prism_step};
 
 /// Export options.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

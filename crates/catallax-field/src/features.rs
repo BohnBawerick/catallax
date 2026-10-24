@@ -9,7 +9,8 @@ use crate::{
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Axis, Origin, Role, StepId};
 use catallax_shapes::{
-    Cone, Cylinder, Isometry, Plane, Point3, RPoint3, RVector3, Sphere, Surface, Torus, Vector3,
+    Cone, Cylinder, EllipticCylinder, Isometry, Plane, Point3, RPoint3, RVector3, Sphere, Surface,
+    Torus, Vector3,
 };
 
 #[derive(Clone, Debug)]
@@ -184,15 +185,24 @@ impl Feature {
         let mut faces = Vec::new();
         for edge in profile.loops.iter().flatten() {
             let surface = if let Some((c, r, _)) = &edge.circle {
-                if !v.cross(&normal).is_zero() {
-                    return Err(bad("features.unsupported-elliptic-cylinder"));
+                let major_dir = normal.cross(&v);
+                if major_dir.is_zero() {
+                    Surface::Cylinder(Cylinder {
+                        origin: profile.world(c).into(),
+                        axis: normal.clone().into(),
+                        radius_sq: r.clone().into(),
+                        ref_dir: profile.world(&edge.start).minus(&profile.world(c)).into(),
+                    })
+                } else {
+                    let height = v.dot(&normal);
+                    Surface::EllipticCylinder(EllipticCylinder {
+                        origin: profile.world(c).into(),
+                        axis: v.clone().into(),
+                        major_dir: major_dir.into(),
+                        major_sq: r.clone().into(),
+                        minor_sq: (r * &(&height * &height) / v.norm_squared()).into(),
+                    })
                 }
-                Surface::Cylinder(Cylinder {
-                    origin: profile.world(c).into(),
-                    axis: normal.clone().into(),
-                    radius_sq: r.clone().into(),
-                    ref_dir: profile.world(&edge.start).minus(&profile.world(c)).into(),
-                })
             } else {
                 Surface::Plane(Plane {
                     origin: profile.world(&edge.start).into(),
@@ -232,7 +242,7 @@ impl Feature {
             through,
         };
         Ok(Some((
-            Self::new(profile, sweep, &faces, Rational::zero(), Vec::new()),
+            Self::new(profile, sweep, &faces, Rational::zero(), Vec::new())?,
             faces,
         )))
     }
@@ -502,7 +512,7 @@ impl Feature {
             angle,
         };
         Ok(Some((
-            Self::new(profile, sweep, &faces, norm, merge_caps),
+            Self::new(profile, sweep, &faces, norm, merge_caps)?,
             faces,
         )))
     }
@@ -512,7 +522,7 @@ impl Feature {
         faces: &[Face],
         axis_norm: Rational,
         merge_caps: Vec<usize>,
-    ) -> Self {
+    ) -> Result<Self, Refusal> {
         let mut constraints = Vec::new();
         let mut supports = Vec::new();
         for face in faces {
@@ -520,11 +530,11 @@ impl Feature {
                 .iter()
                 .any(|c: &geometry::Constraint| c.polynomial.same_definition(&face.polynomial))
             {
-                constraints.push(geometry::constraint(face.surface.clone()));
+                constraints.push(geometry::constraint(face.surface.clone())?);
                 supports.push(Support::new(&face.surface));
             }
         }
-        Self {
+        Ok(Self {
             loops: profile.loops.clone(),
             inverse: Isometry::from(&profile.pose.inverse()),
             fast: FastProfile::new(profile, &sweep, &axis_norm),
@@ -534,7 +544,7 @@ impl Feature {
             constraints,
             supports,
             fillet: None,
-        }
+        })
     }
     pub fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
         if let Some(definition) = &mut self.fillet {
@@ -548,7 +558,7 @@ impl Feature {
             support.transform(pose);
         }
         for constraint in &mut self.constraints {
-            constraint.transform(pose);
+            constraint.transform(pose)?;
         }
         Ok(())
     }

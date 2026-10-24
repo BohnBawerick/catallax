@@ -332,17 +332,19 @@ fn exact_polynomials_and_gradients_under_poses() {
     let points = [p(5, 7, 1), p(3, 4, 7), p(3, 4, -10), p(1, 2, 2), p(4, 0, 0)];
     for (surface, point) in surfaces.iter().zip(points.iter()) {
         assert_eq!(
-            surface.implicit().rational().unwrap().eval(&[
-                point.x.clone(),
-                point.y.clone(),
-                point.z.clone()
-            ]),
+            surface
+                .implicit()
+                .expect("analytic fixture support")
+                .rational()
+                .unwrap()
+                .eval(&[point.x.clone(), point.y.clone(), point.z.clone()]),
             Rational::zero()
         );
     }
     assert_eq!(
         surfaces[1]
             .implicit()
+            .expect("analytic fixture support")
             .rational()
             .unwrap()
             .eval(&[1.into(), 1.into(), 1.into()]),
@@ -351,6 +353,7 @@ fn exact_polynomials_and_gradients_under_poses() {
     assert_eq!(
         surfaces[4]
             .implicit()
+            .expect("analytic fixture support")
             .rational()
             .unwrap()
             .eval(&[0.into(), 0.into(), 0.into()]),
@@ -359,6 +362,7 @@ fn exact_polynomials_and_gradients_under_poses() {
     assert_eq!(
         surfaces[4]
             .implicit()
+            .expect("analytic fixture support")
             .rational()
             .unwrap()
             .eval(&[3.into(), 0.into(), 0.into()]),
@@ -378,29 +382,37 @@ fn exact_polynomials_and_gradients_under_poses() {
             assert_eq!(
                 moved
                     .implicit()
+                    .expect("analytic fixture support")
                     .rational()
                     .unwrap()
                     .eval(&[image.x, image.y, image.z]),
-                surface.implicit().rational().unwrap().eval(&[
-                    point.x.clone(),
-                    point.y.clone(),
-                    point.z.clone()
-                ])
+                surface
+                    .implicit()
+                    .expect("analytic fixture support")
+                    .rational()
+                    .unwrap()
+                    .eval(&[point.x.clone(), point.y.clone(), point.z.clone()])
             );
-            let gradient = surface.gradient(&point.to_real());
+            let gradient = surface
+                .gradient(&point.to_real())
+                .expect("analytic fixture gradient");
             for (axis, coordinate) in [gradient.x, gradient.y, gradient.z].into_iter().enumerate() {
                 assert_eq!(
                     coordinate.as_rational().unwrap(),
-                    surface.implicit().partial(axis).rational().unwrap().eval(&[
-                        point.x.clone(),
-                        point.y.clone(),
-                        point.z.clone()
-                    ])
+                    surface
+                        .implicit()
+                        .expect("analytic fixture support")
+                        .partial(axis)
+                        .rational()
+                        .unwrap()
+                        .eval(&[point.x.clone(), point.y.clone(), point.z.clone()])
                 );
             }
         }
     }
-    let g = surfaces[3].gradient(&p(1, 2, 2).to_real());
+    let g = surfaces[3]
+        .gradient(&p(1, 2, 2).to_real())
+        .expect("analytic fixture gradient");
     assert_eq!(
         [g.x.as_rational(), g.y.as_rational(), g.z.as_rational()],
         [Some(2.into()), Some(4.into()), Some(4.into())]
@@ -448,7 +460,9 @@ fn sides_near_carriers_and_scaled_placed_families() {
                     s.major = &s.major * &real_scale;
                     s.minor = &s.minor * &real_scale;
                 }
-                Surface::EllipticCylinder(_) => unreachable!("stock-family fixtures"),
+                Surface::EllipticCylinder(_) | Surface::BSpline(_) => {
+                    unreachable!("stock-family fixtures")
+                }
             }
             let local = match kind {
                 0 => RPoint3::new(5.into(), 7.into(), Rational::one() + e.clone()),
@@ -506,6 +520,7 @@ fn curve_equations_origins_and_membership() {
     let z = MPoly::var(3, 2);
     assert_eq!(
         line.equations(&store)
+            .expect("analytic fixture equations")
             .into_iter()
             .map(|p| p.into_rational().unwrap())
             .collect::<Vec<_>>(),
@@ -611,9 +626,9 @@ fn closed_and_isolated_positions_and_refusal_propagation() {
     ));
     let system = Arc::new(
         PolySystem::new(vec![
-            store.implicit(s).into_rational().unwrap(),
-            store.implicit(s1).into_rational().unwrap(),
-            store.implicit(s2).into_rational().unwrap(),
+            store.implicit(s).unwrap().rational().unwrap().clone(),
+            store.implicit(s1).unwrap().rational().unwrap().clone(),
+            store.implicit(s2).unwrap().rational().unwrap().clone(),
         ])
         .unwrap(),
     );

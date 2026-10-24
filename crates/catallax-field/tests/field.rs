@@ -302,6 +302,7 @@ fn primitive_boundaries_agree_with_independent_exact_shape_definitions() {
             assert_eq!(
                 surface
                     .implicit()
+                    .expect("analytic fixture support")
                     .rational()
                     .unwrap()
                     .eval(&[p.x.clone(), p.y.clone(), p.z.clone()])

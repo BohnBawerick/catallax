@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+mod certified_prism;
 /// Definition-native, certified display approximations. No B-rep is constructed.
 pub mod display;
 /// Certified trimmed-face and boundary minimum-distance queries.
@@ -15,9 +16,11 @@ pub mod distance;
 mod features;
 mod fillet;
 mod geometry;
+pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
 mod metric;
+mod offset_spline;
 mod planar;
 mod profile;
 mod samples;
@@ -316,7 +319,7 @@ impl Plan {
                                 dec,
                             )?;
                             let cap = plan.leaf(
-                                geometry::Leaf::Cell(geometry::Cell::new(vec![plane], None)),
+                                geometry::Leaf::Cell(geometry::Cell::new(vec![plane], None)?),
                                 vec![face],
                                 dec,
                             )?;
@@ -437,7 +440,7 @@ impl Plan {
                                 geometry::Leaf::Cell(geometry::Cell::new(
                                     surfaces,
                                     Some(cap.column_radius.clone()),
-                                )),
+                                )?),
                                 faces,
                                 dec,
                             )?;
@@ -519,7 +522,7 @@ impl Plan {
                                     geometry::Leaf::Cell(geometry::Cell::new(
                                         vec![lower, upper, side],
                                         Some(radius),
-                                    )),
+                                    )?),
                                     faces,
                                     dec,
                                 )?;

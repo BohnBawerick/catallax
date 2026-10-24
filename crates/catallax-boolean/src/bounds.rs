@@ -129,7 +129,10 @@ pub(crate) fn disjoint(
 ) -> Result<bool, Refusal> {
     for (bounded, other) in [(a, b), (b, a)] {
         if let Some(bounds) = face_box(model, bounded, dec)? {
-            let polynomial = model.geom().surface(model.face(other).surface).implicit();
+            let Some(polynomial) = model.geom().surface(model.face(other).surface).implicit()
+            else {
+                continue;
+            };
             let value = polynomial.eval_ball(&bounds, dec)?;
             if !value.contains_zero() {
                 return Ok(true);

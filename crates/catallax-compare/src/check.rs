@@ -61,7 +61,12 @@ fn divide(a: Ball, b: Ball) -> Result<Ball, Refusal> {
     })
 }
 fn support(surface: &Surface, dec: &mut Decider) -> Result<RealPoly, Refusal> {
-    let polynomial = surface.implicit();
+    let polynomial = surface.implicit().ok_or_else(|| {
+        Refusal::new(
+            "compare.parametric-support",
+            "support comparison needs a finite parametric correspondence solver",
+        )
+    })?;
     for (_, coefficient) in polynomial.terms() {
         if sign(&coefficient, dec)? != Sign::Zero {
             return Ok(polynomial.scale(&(&Real::one() / &coefficient)));
@@ -513,7 +518,17 @@ pub(crate) fn run(
         .iter()
         .map(|f| model.geom().surface(model.face(f.face).surface).clone())
         .collect();
-    let polynomials: Vec<_> = surfaces.iter().map(Surface::implicit).collect();
+    let Some(polynomials) = surfaces
+        .iter()
+        .map(Surface::implicit)
+        .collect::<Option<Vec<_>>>()
+    else {
+        whole_failure(
+            &mut report,
+            "surface comparison needs a finite parametric correspondence solver",
+        );
+        return revision.publish(report);
+    };
     let gradients: Vec<[_; 3]> = polynomials
         .iter()
         .map(|p| std::array::from_fn(|i| p.partial(i)))

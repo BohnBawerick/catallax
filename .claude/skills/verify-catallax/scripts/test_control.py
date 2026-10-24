@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Real-command regression tests for the verification driver."""
+import copy
 import json
 import os
+from fractions import Fraction
 from pathlib import Path
 import subprocess
 import tempfile
@@ -87,6 +89,65 @@ class DriverTests(unittest.TestCase):
         self.command('cleanup', '--out', self.out, '--dry-run')
         self.command('cleanup', '--out', self.out)
         self.assertTrue((self.out / '1/run.json').exists())
+
+    def test_certified_original_target_and_artifacts_agree_across_workers(self):
+        original = json.loads((EXAMPLES / 'certified-recipe.json').read_text())
+        second = copy.deepcopy(original)
+        second['recipe']['steps'].append(
+            {'id': 'second', 'op': 'offset', 'body': 'offset', 'distance': '-1/4'})
+        second['recipe']['result'] = 'second'
+        trimmed = copy.deepcopy(original)
+        trimmed['recipe']['steps'].extend([
+            {'id': 'trim_window', 'op': 'block', 'size': ['8', '8', '1'],
+             'pose': {'rotation': ['3', '0', '1', '0'], 'translation': ['-7/5', '-4', '24/5']}},
+            {'id': 'trimmed', 'op': 'boolean', 'kind': 'intersect',
+             'target': 'offset', 'tool': 'trim_window'},
+            {'id': 'after_trim', 'op': 'offset', 'body': 'trimmed', 'distance': '-1/4'},
+        ])
+        trimmed['recipe']['result'] = 'after_trim'
+        trimmed['field_points'][0] = ['21/10', '0', '14/5']
+        empty = copy.deepcopy(original)
+        empty['recipe']['steps'][-1]['distance'] = '-2'
+        inputs = self.out / 'certified-inputs'
+        inputs.mkdir()
+        for name, problem in [('offset', original), ('second', second), ('trimmed', trimmed), ('empty', empty)]:
+            (inputs / f'{name}.json').write_text(json.dumps(problem))
+        for workers in (1, 2, 4):
+            output = self.out / f'certified-{workers}'
+            result = self.command('run', inputs, '--binary', BINARY, '--workers', workers,
+                                  '--fresh', '--out', output)
+            self.assertEqual(result['outcomes'], {'answered': 4})
+            run = json.loads((output / 'run.json').read_text())
+            for case in run['cases']:
+                response = case['response']
+                manifest = response['manifest']
+                self.assertFalse(response['work']['exhausted'])
+                self.assertEqual(manifest['format'], 'catallax-manifest/4')
+                for consumer in ('display', 'properties', 'field', 'step', 'edit'):
+                    self.assertEqual(manifest[consumer]['status'], 'answered', manifest[consumer])
+                point = manifest['field']['points'][0]
+                target = manifest['certificate']['retained_target']
+                if target['empty']:
+                    self.assertEqual(manifest['result']['kind'], 'empty')
+                    self.assertEqual(point['location'], 'outside')
+                    self.assertEqual(point['value']['mm'], {'lo': 'infinity', 'hi': 'infinity'})
+                else:
+                    self.assertEqual(manifest['result']['faces_by_kind'], {'bspline': 1, 'plane': 2})
+                    self.assertEqual((manifest['result']['edges'], manifest['result']['vertices']), (2, 0))
+                    self.assertEqual(point['location'], 'inside')
+                    expected = (Fraction(-1, 4) if Fraction(point['point'][0]) == Fraction(21, 10) else
+                                Fraction(-8, 5) + Fraction(target['distance_mm']))
+                    interval = point['value']['mm']
+                    self.assertLessEqual(Fraction(interval['lo']), expected)
+                    self.assertGreaterEqual(Fraction(interval['hi']), expected)
+                    expected_refs = {('face', item['face']) for item in manifest['names']['faces']}
+                    expected_refs.update(('edge', item['edge']) for item in manifest['names']['edges']
+                                         if item['name'] is not None)
+                    actual_refs = {(item['kind'], item['old_handle']) for item in manifest['edit']['resolved']}
+                    self.assertEqual(actual_refs, expected_refs)
+                    self.assertTrue(all(match['status'] == 'resolved' for match in manifest['edit']['resolved']))
+            if workers != 1:
+                self.command('compare', self.out / 'certified-1/run.json', output / 'run.json')
 
     def test_interruption_resumes_complete_artifacts(self):
         corpus = self.out / 'resume.jsonl'

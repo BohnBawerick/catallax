@@ -75,6 +75,8 @@ def load(paths, source, adapter=None):
                     problems.append({'source': 'question', 'problem': value})
                 elif fmt in ('catallax-recipe/3', 'catallax-recipe/4'):
                     problems.append({'source': source if source in ('compare', 'field') else 'recipe', 'problem': value})
+                elif fmt == 'catallax-certified-recipe/1':
+                    problems.append({'source': 'recipe', 'problem': value})
                 elif fmt == 'catallax-question/1':
                     if set(value) != {'format', 'source', 'problem', 'max_work'}:
                         raise ValueError(f'{file}: invalid exported question fields')

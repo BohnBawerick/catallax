@@ -53,7 +53,7 @@ Run `"$DRIVER" cleanup --out "$PROOF" --dry-run --json`, then `"$DRIVER" cleanup
 
 ## Helpers
 
-`control-catallax.py --help` is the canonical interface. Built-in source adapters cover question/2, recipe/3 and recipe/4, independent field compilation, sampled comparison, opt-in `name-edit` wrappers and portable question/1 replay. A trusted custom Python module passed with `--adapter` exports `load(Path)` yielding source/problem objects; it cannot change the kernel's exchange semantics.
+`control-catallax.py --help` is the canonical interface. Built-in source adapters cover question/2, recipe/3 and recipe/4, opt-in certified-recipe/1, independent field compilation, sampled comparison, opt-in `name-edit` wrappers and portable question/1 replay. A trusted custom Python module passed with `--adapter` exports `load(Path)` yielding source/problem objects; it cannot change the kernel's exchange semantics.
 
 Run `python3 -B -m unittest discover -s .claude/skills/verify-catallax/scripts -p 'test_*.py' -v` after building to verify the driver against real commands. Set `CATALLAX_VERIFY_BINARY` to test a preserved executable.
 

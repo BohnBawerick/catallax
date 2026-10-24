@@ -986,6 +986,7 @@ pub(super) fn construct(
                         major_sq: major_sq.clone(),
                         minor_sq: minor_sq.clone(),
                     }),
+                    CurveForm::BSpline(curve) => Curve::BSpline(curve.clone()),
                     CurveForm::Branch
                     | CurveForm::Parabola { .. }
                     | CurveForm::Hyperbola { .. } => {

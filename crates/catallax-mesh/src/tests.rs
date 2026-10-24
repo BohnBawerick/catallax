@@ -616,7 +616,7 @@ fn requested_controls_bound_the_returned_triangles_and_polylines() {
                         crate::chart::q(p[1]).into(),
                         crate::chart::q(p[2]).into(),
                     );
-                    let gradient = surface.gradient(&exact);
+                    let gradient = surface.gradient(&exact).expect("analytic fixture gradient");
                     let mut analytic = [&gradient.x, &gradient.y, &gradient.z].map(|x| x.to_f64());
                     if model.face(face.face).sense == Sense::Reversed {
                         analytic = analytic.map(|x| -x);
@@ -887,8 +887,9 @@ fn elliptic_normal_and_length_controls_bound_the_returned_facets() {
                             <= Rational::from_ratio(9, 4).unwrap()
                     );
                     let p = points[i].map(|x| catallax_numbers::Real::from(crate::chart::q(x)));
-                    let gradient =
-                        surface.gradient(&Point3::new(p[0].clone(), p[1].clone(), p[2].clone()));
+                    let gradient = surface
+                        .gradient(&Point3::new(p[0].clone(), p[1].clone(), p[2].clone()))
+                        .expect("analytic plane or elliptic cylinder support");
                     let mut analytic = [&gradient.x, &gradient.y, &gradient.z].map(|x| x.to_f64());
                     if definition.sense == Sense::Reversed {
                         analytic = analytic.map(|x| -x);

@@ -140,7 +140,9 @@ fn oblique_circle_extrusion_has_exact_measurements_and_step_geometry() {
     for (value, expected) in derivatives[0].iter().zip([-1, 0, 1]) {
         assert!(value.contains(&r(expected)));
     }
-    let gradient = analytic.gradient(&p([0, 2, 0]));
+    let gradient = analytic
+        .gradient(&p([0, 2, 0]))
+        .expect("analytic fixture gradient");
     for (value, expected) in [&gradient.x, &gradient.y, &gradient.z]
         .into_iter()
         .zip([0, 1, 0])

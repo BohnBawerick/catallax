@@ -158,6 +158,9 @@ pub enum CurveForm {
         /// Sign of the transverse coordinate on this component.
         branch: catallax_numbers::StrictSign,
     },
+    /// A finite positive-weight spline, with its actual knot domain and controls.
+    /// The tag does not assert that the curve is embedded or bounds a valid face.
+    BSpline(catallax_shapes::BSplineCurve),
     /// An intersection branch with no conic closed form.
     Branch,
 }
@@ -322,6 +325,15 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
             Ok(false)
         }
         CurveForm::Circle { .. } | CurveForm::Ellipse { .. } => Ok(true),
+        CurveForm::BSpline(curve) => {
+            let [lo, hi] = curve.domain();
+            let first = curve.point_at(&lo.clone().into(), dec)?;
+            let last = curve.point_at(&hi.clone().into(), dec)?;
+            Ok(
+                math::sign(&last.minus(&first).norm_squared(), dec)?
+                    == catallax_numbers::Sign::Zero,
+            )
+        }
         CurveForm::Branch => {
             let plan = query::validate(geom, c, dec)?.expect("intersection branch");
             match &plan.frame {
@@ -399,6 +411,22 @@ pub fn trace(
     dec: &mut Decider,
 ) -> Answered<CurveTrace> {
     arc::trace(geom, c, from, to, dec)
+}
+
+/// Exact normal-offset profile quarter at an axial coordinate of its original
+/// elliptic cylinder, before any spline approximation. Quarter `k` runs from
+/// angle `k*pi/2` to `(k+1)*pi/2`, including both ends, for `k` in `0..4`.
+/// Inward profiles at or beyond the normal reach refuse.
+///
+/// This traces the definition, not the represented boundary of a fitted body.
+pub fn trace_elliptic_offset_quarter(
+    definition: &catallax_shapes::EllipticOffsetDefinition,
+    axial: &catallax_numbers::Real,
+    quarter: usize,
+    dec: &mut Decider,
+) -> Answered<TracePiece> {
+    let coords = chart::offset_profile_quarter(definition, axial, quarter, dec)?;
+    Ok(catallax_numbers::Answer::exact(TracePiece::new(coords)))
 }
 
 #[cfg(test)]

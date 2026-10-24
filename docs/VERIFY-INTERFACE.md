@@ -159,6 +159,82 @@ The log records decision settlement counts, not expressions or proof certificate
 
 A budget refusal discards published geometry and marks as before. The log keeps its executed prefix for diagnosis, with the final `numbers.operation-budget` refusal at its root. Prefix marks do not authorize publishing a partial body. A panic remains `internal-error` even when interrupted operations were recorded.
 
+## Certified recipe bodies (opt-in)
+
+An existing `catallax-request/1` with `source:"recipe"` can carry a
+`catallax-certified-recipe/1` problem. The nested `recipe` remains unchanged
+`catallax-recipe/3`; ordinary recipe, question, comparison and face-check inputs
+retain manifest/3 and their existing semantics. `about` advertises the additive
+`certified_recipe` and `certified_manifest` versions without changing its default.
+
+The public [certified recipe example](../.claude/skills/verify-catallax/references/examples/certified-recipe.json)
+constructs the approved oblique-circle/clip source and its inward elliptic
+normal-offset prism. Run the raw example through `control-catallax.py run`;
+the adapter selects `recipe`. The wrapper contains:
+
+| Field | Contract |
+| --- | --- |
+| `recipe` | Required recipe/3 object. |
+| `outputs.mesh` | Optional `{chord_tolerance,max_vertices}`; writes `display.obj`. Chord tolerance is in mm and concerns the represented model, not its exact target. |
+| `outputs.step` | Optional `{file_tolerance,decimal_places}`; writes `answer.step` only after certification. The nonnegative tolerance bounds file-to-model distance in mm. |
+| `properties` | Optional `{relative,absolute,inertia}`; nonnegative requested enclosure widths. `inertia` defaults false. |
+| `field_points` | Optional array of exact three-component points in mm. An empty array requests no field output. |
+| `edit` | Optional `{step,parameter,value}` scalar edit, using the existing face-check edit contract. Rebuilds a separate snapshot; does not mutate the initial body or its artifacts. |
+
+`outputs` itself is required and may be `{}`. Numeric inputs use recipe `Number`
+syntax, including exact rational strings. Unknown wrapper/option fields are
+invalid input.
+
+Only this opt-in problem produces `catallax-manifest/4`. Its `result` uses the
+existing analytic kind tags plus genuine `bspline` surface and curve tags.
+The first supported spline body has one side, two complete planar cap disks,
+two shared physical ring edges and no model vertices. Its finite spline domain
+and knots are reported in `certificate.spline`; `u=0` and `u=4` identify a C1
+closed boundary, not an extra physical model edge. Each cap and side region
+records its actual face, origins, complete trim domain and evidence binding.
+
+The complete `certificate` reports revision, representation, target and scope
+identities; exact regions and local exceptions; the evidence dependency graph;
+proof kinds; the decide-once branch/evidence records; and any proved uniform
+signed-distance bound. Exceptions retain their measured enclosure, source,
+hard limit and proved neighbouring edge/face size lower bounds. Settings record
+the separate 1 nm modelling tolerance, 100 nm engineering target, 1 micrometre
+kernel cap and 10 micrometre import cap. A missing uniform metric is null, not
+zero. `exact` requires an entirely exact region cover and no bounded decisions;
+an empty marks array does not establish it. These wire records report checked
+claims: hashes and parsed JSON alone never confer geometric authority. Replay
+the retained recipe and recheck geometry to reproduce that authority.
+
+Requested consumers return separate `display`, `properties`, `field`, `step`
+and `edit` objects with `status:"answered"` or `"refused"`; unrequested consumers
+are null. A consumer refusal preserves the complete valid body and names. A
+whole-request `numbers.operation-budget` refusal instead retains manifest/4
+but clears geometry, certificate, consumer results and output artifacts. Panics
+and I/O failures retain the existing infrastructure/error rules.
+
+Display face groups and STEP `file_region` names are `face_<snapshot handle>`.
+Their region records distinguish represented-model chord/file errors from
+composed output-to-original-definition bounds. File accuracy never enlarges a
+kernel tolerance. STEP uses an actual degree-(3,1) B-spline surface and its
+shared rounded boundary curves; export-only vertices/edges are reported
+separately from model topology. Unsupported certified export coverage refuses.
+
+Properties and field queries concern the retained **original definition**, not
+the fitted carrier. Properties retain outward decimal enclosures and must meet
+their requested width without adding the carrier error. Field results report
+true signed distance, location, unsigned distance and normal/ambiguity.
+Certificate, field and output-error endpoints are exact rational strings;
+unbounded field endpoints are `"infinity"` or `"-infinity"`, never JSON null.
+The property DTO retains its existing outward-decimal representation and units.
+
+Edited results include their new certificate, names and origin/edge-name matches
+for old references. Handles are snapshot-local; inspect all matches rather than
+assuming a surviving reference means an unchanged handle or a unique match.
+`replay:"question.json"` names the portable request including its work allowance.
+For deterministic comparison, exclude diagnostic clocks and build identity as
+before, but compare certificates, knots, domains, consumer outcomes, names and
+artifact bytes.
+
 ## Whole-face local tolerances
 
 The `recipe` adapter also accepts a `catallax-face-check/1` problem. It wraps an

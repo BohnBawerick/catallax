@@ -704,7 +704,7 @@ fn compact(mesh: &mut Mesh) {
     }
 }
 
-fn check_closed(mesh: &Mesh) -> Result<(), Refusal> {
+pub(crate) fn check_closed(mesh: &Mesh) -> Result<(), Refusal> {
     let mut uses = BTreeMap::<(usize, usize), (usize, i32)>::new();
     for t in &mesh.triangles {
         for i in 0..3 {
@@ -743,8 +743,16 @@ fn regular_chart(
                 .collect(),
             Loop::Vertex(_) => Vec::new(),
         })
-        .map(|c| model.geom().curve(c).equations(model.geom()))
-        .collect();
+        .map(|c| {
+            model
+                .geom()
+                .curve(c)
+                .equations(model.geom())
+                .ok_or_else(|| {
+                    failure("sphere pole separation requires a finite parametric boundary solver")
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     if equations.is_empty() {
         return Chart::new(surface, dec);
     }
@@ -800,6 +808,14 @@ pub(crate) fn build(
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     let faces = model.faces_of_body(body);
+    if faces.iter().any(|face| {
+        matches!(
+            model.geom().surface(model.face(*face).surface),
+            Surface::BSpline(_)
+        )
+    }) {
+        return crate::spline_prism::build(model, body, &faces, options, dec);
+    }
     let mut charts = faces
         .iter()
         .map(|&f| Ok((f, regular_chart(model, f, options, dec)?)))

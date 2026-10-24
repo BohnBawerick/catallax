@@ -1,4 +1,4 @@
-//! Exact recipe-based features over the B-rep model.
+//! Recipe-based B-rep features with retained exact definitions.
 //!
 //! [`evaluate`] builds stock solids, sketches, extrusions, revolutions, elementary
 //! fillets, booleans, exact body patterns and mirrors.
@@ -6,9 +6,13 @@
 //! by a boolean. The model remains compatible with `catallax-measure` and
 //! `catallax-step`; the legacy CLI protocol is not extended.
 //!
-//! Body-copy placements may be algebraic. Feature constructors still refuse some
-//! algebraic placements, generated radii and elliptic cylinders explicitly;
-//! `docs/RECIPE.md` section 7.14 lists these unfinished legal-input cases.
+//! Body-copy placements may be algebraic.
+//! [`evaluate_certified`] additionally builds the checked inward elliptic-offset
+//! prism family with genuine spline geometry and a complete geometry-bound record.
+//! Its retained exact definition remains the target for later offsets and properties.
+//! Unsupported legal geometry keeps an explicit coverage refusal; a surface enum
+//! variant is not general feature or boolean coverage. `docs/RECIPE.md` section 7.14
+//! records the remaining legal-input coverage gaps.
 //!
 //! ```
 //! use catallax_features::evaluate;
@@ -31,6 +35,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+mod certified;
 mod edge_blend;
 /// Definition-native first-hit limits and their exact boundary assembly.
 pub mod end_condition;
@@ -41,13 +46,16 @@ pub mod fillet;
 mod fillet_build;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
+mod offset_fit;
 mod placement;
 mod profile;
 mod revolve;
 mod stock;
 
-pub use evaluate::{BuildError, Built, evaluate};
+pub use certified::{BodyCertificate, CertificateKey, CertifiedBuilt, PrismTarget};
+pub use evaluate::{BuildError, Built, evaluate, evaluate_certified};
 pub use extrude::extrude;
+pub use offset_fit::{EllipticOffsetFit, OffsetSpanBound, fit_elliptic_offset};
 pub use placement::{copy_origin, mirror_placement, pattern_placement};
 pub use profile::Profile;
 pub use revolve::revolve;

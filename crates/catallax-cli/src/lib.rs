@@ -4,10 +4,12 @@
 //! manifest and STEP file defined in `docs/JUDGE-INTERFACE.md`. This crate is
 //! not a piece; it holds no geometry of its own.
 
+mod certified_recipe;
 mod face_checks;
 mod manifest;
 mod name_checks;
 mod question;
+mod recipe_edit;
 pub mod verification;
 
 pub use manifest::{
@@ -460,7 +462,16 @@ fn evaluate(
     span.finish(dec, measured.as_ref().err(), None);
     let properties = measured?;
     let span = catallax_numbers::OperationSpan::begin("brep", &question.result, "summarize", dec);
-    let summary = result_summary(model, built.body, dec, extended);
+    let summary = result_summary(
+        model,
+        built.body,
+        dec,
+        if extended {
+            SummaryExchange::Analytic
+        } else {
+            SummaryExchange::Legacy
+        },
+    );
     span.finish(dec, summary.as_ref().err(), None);
     let summary = summary?;
     if question.export.step && model.body(built.body).kind != BodyKind::Empty {
@@ -527,12 +538,21 @@ fn evaluate(
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SummaryExchange {
+    Legacy,
+    Analytic,
+    Certified,
+}
+
 pub(crate) fn result_summary(
     model: &Model,
     body: BodyId,
     dec: &mut Decider,
-    extended: bool,
+    exchange: SummaryExchange,
 ) -> Result<ResultSummary, Refusal> {
+    let extended = exchange != SummaryExchange::Legacy;
+    let certified = exchange == SummaryExchange::Certified;
     let counts = model.counts(body);
     let mut faces_by_kind = BTreeMap::new();
     for (kind, count) in counts.faces_by_kind {
@@ -542,6 +562,13 @@ pub(crate) fn result_summary(
             catallax_shapes::SurfaceKind::Cone => "cone",
             catallax_shapes::SurfaceKind::Sphere => "sphere",
             catallax_shapes::SurfaceKind::Torus => "torus",
+            catallax_shapes::SurfaceKind::BSpline if certified => "bspline",
+            catallax_shapes::SurfaceKind::BSpline => {
+                return Err(Refusal::new(
+                    catallax_numbers::GEOMETRIC_GAP_UNPROVEN,
+                    "genuine spline geometry requires the certified manifest/4 exchange",
+                ));
+            }
             catallax_shapes::SurfaceKind::EllipticCylinder if extended => "elliptic-cylinder",
             catallax_shapes::SurfaceKind::EllipticCylinder => {
                 return Err(Refusal::new(
@@ -561,6 +588,13 @@ pub(crate) fn result_summary(
             catallax_intersect::CurveForm::Circle { .. } => "circle",
             catallax_intersect::CurveForm::Ellipse { .. } => "ellipse",
             catallax_intersect::CurveForm::Branch => "intersection",
+            catallax_intersect::CurveForm::BSpline(_) if certified => "bspline",
+            catallax_intersect::CurveForm::BSpline(_) => {
+                return Err(Refusal::new(
+                    catallax_numbers::GEOMETRIC_GAP_UNPROVEN,
+                    "genuine spline curves require the certified manifest/4 exchange",
+                ));
+            }
             catallax_intersect::CurveForm::Parabola { .. } if extended => "parabola",
             catallax_intersect::CurveForm::Hyperbola { .. } if extended => "hyperbola",
             catallax_intersect::CurveForm::Parabola { .. }

@@ -242,6 +242,30 @@ fn through(
 /// cuts, booleans, patterns and mirrors.
 /// Other recipe operations retain their unfinished-operation refusal, not a partial body.
 pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError> {
+    evaluate_impl(recipe, None, dec)
+}
+
+/// Opts into the recorded 1 nm modelling policy and the first complete bounded
+/// offset family. Legacy recipe evaluation remains exact-only and unchanged.
+pub fn evaluate_certified(
+    recipe: &Recipe,
+    dec: &mut Decider,
+) -> Result<crate::CertifiedBuilt, BuildError> {
+    let mut certification = crate::certified::CertificationContext::new(recipe);
+    let built = evaluate_impl(recipe, Some(&mut certification), dec)?;
+    certification
+        .finish(built, dec)
+        .map_err(|refusal| BuildError::Geometry {
+            step: recipe.result.clone(),
+            refusal,
+        })
+}
+
+fn evaluate_impl(
+    recipe: &Recipe,
+    mut certification: Option<&mut crate::certified::CertificationContext<'_>>,
+    dec: &mut Decider,
+) -> Result<Built, BuildError> {
     recipe.check().map_err(BuildError::Recipe)?;
     let mut model = Model::new();
     let mut profiles = BTreeMap::new();
@@ -421,6 +445,18 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                 Operation::Boolean { kind, target, tool } => {
                     let a = &bodies[target];
                     let b = &bodies[tool];
+                    if let Some(context) = certification.as_deref_mut()
+                        && (context.has_certificate(target) || context.has_certificate(tool))
+                    {
+                        let (body, radius) = context.boolean(
+                            model,
+                            &step.id,
+                            kind,
+                            [(target, a.body), (tool, b.body)],
+                            dec,
+                        )?;
+                        return Ok(Some(BodyValue { body, radius }));
+                    }
                     let (op, radius) = match kind {
                         BooleanKind::Union => {
                             (BoolOp::Unite, a.radius.clone().max(b.radius.clone()))
@@ -581,6 +617,21 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
                         radius: &source.radius + &shift,
                     }
                 }
+                Operation::Offset { body, distance } if certification.is_some() => {
+                    let input = &bodies[body];
+                    let (body, radius) = certification
+                        .as_deref_mut()
+                        .expect("certified branch")
+                        .offset(
+                            model,
+                            &profiles,
+                            &step.id,
+                            (body, input.body, &input.radius),
+                            distance.value(),
+                            dec,
+                        )?;
+                    BodyValue { body, radius }
+                }
                 _ => {
                     return Err(Refusal::new(
                         "features.unsupported-operation",
@@ -627,6 +678,8 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
             .map(|(id, value)| (id, value.body))
             .collect(),
         fillets,
-        definition: Arc::new(recipe.clone()),
+        definition: certification
+            .and_then(|context| context.snapshot())
+            .unwrap_or_else(|| Arc::new(recipe.clone())),
     })
 }

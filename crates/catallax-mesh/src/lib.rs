@@ -4,6 +4,18 @@
 //! vertex indices on either side of that edge. Periodic chart copies close
 //! seams without adding topological edges. All traversal and refinement orders
 //! are fixed; the implementation has no thread-local or process-global state.
+//!
+//! Checked spline prisms use one adaptive paired ring grid for both planar caps
+//! and the ruled side. Whole-span chord bounds include coordinate rounding, and
+//! interval orientation checks preserve outward triangles. These bounds concern
+//! the represented spline model; its error to an original feature definition is
+//! a separate body certificate, not an enlarged display tolerance.
+//!
+//! Spline faces report certified rounded-facet aspect bounds and unmet requested
+//! aspect controls explicitly. A requested edge-length limit is checked against
+//! every returned triangle and ring segment; a grid requiring further interior
+//! refinement refuses. Whole-spline angular controls remain an explicit coverage
+//! refusal rather than an ignored option or an unproved normal bound.
 
 use std::{io::Write, ops::Range};
 
@@ -17,6 +29,7 @@ mod edges;
 mod evaluate;
 mod planar;
 mod ruled;
+mod spline_prism;
 mod triangulate;
 
 /// Display meshing controls. Lengths use the model's millimetres.
@@ -64,8 +77,8 @@ pub struct FaceMesh {
     pub face: FaceId,
     /// Range in [`Mesh::triangles`].
     pub triangles: Range<usize>,
-    /// Proven maximum deviation from the analytic surface over each triangle's
-    /// parameter triangle. Includes endpoint replacement and binary64 rounding.
+    /// Proven maximum deviation from the represented surface over each triangle's
+    /// complete parameter domain. Includes endpoint replacement and binary64 rounding.
     pub max_chord_error: Rational,
     /// Proven upper bound on longest edge divided by shortest altitude.
     /// None when coordinate rounding collapses a triangle to zero area.

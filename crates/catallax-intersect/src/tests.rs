@@ -533,12 +533,14 @@ fn nodal_trace_is_regular_at_both_ends() {
             }
             assert!(
                 g.implicit(c)
+                    .expect("analytic fixture support")
                     .eval_ball(&p, &catallax_numbers::Decider::default())
                     .unwrap()
                     .contains_zero()
             );
             assert!(
                 g.implicit(s)
+                    .expect("analytic fixture support")
                     .eval_ball(&p, &catallax_numbers::Decider::default())
                     .unwrap()
                     .contains_zero()
@@ -606,7 +608,12 @@ fn quartic_charts_cover_every_regular_branch_family() {
                 let tangent = g
                     .surface(a)
                     .gradient(&point)
-                    .cross(&g.surface(b).gradient(&point));
+                    .expect("analytic fixture gradient")
+                    .cross(
+                        &g.surface(b)
+                            .gradient(&point)
+                            .expect("analytic fixture gradient"),
+                    );
                 assert!(matches!(
                     d.sign(&derivative.dot(&tangent)),
                     Outcome::Proven(StrictSign::Positive)

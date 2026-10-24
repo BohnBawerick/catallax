@@ -443,9 +443,23 @@ pub(crate) fn adjacent(
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let (source, p, source_curve) = source;
-    let carrier = surface.implicit();
+    let carrier = surface.implicit().ok_or_else(|| {
+        catallax_numbers::Refusal::new(
+            "boolean.parametric-query",
+            "surface equation unavailable; this boolean path needs a finite parametric solver",
+        )
+    })?;
     let opposite_carrier = -&carrier;
-    let source_equations = model.geom().curve(source_curve).equations(model.geom());
+    let source_equations = model
+        .geom()
+        .curve(source_curve)
+        .equations(model.geom())
+        .ok_or_else(|| {
+            catallax_numbers::Refusal::new(
+                "boolean.parametric-query",
+                "curve equation unavailable; this boolean path needs a finite parametric solver",
+            )
+        })?;
     // A plane's chart interpolation is the straight segment exactly when
     // both endpoints lie on the carrier. The source arc supplies its proof.
     let straight = matches!(surface, Surface::Plane(_))
@@ -477,8 +491,7 @@ pub(crate) fn adjacent(
         for &edge_id in barriers {
             let edge = model.edge(edge_id);
             let curve = model.geom().curve(edge.curve);
-            let mut equations: Vec<_> = curve
-                .equations(model.geom())
+            let mut equations: Vec<_> = curve.equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
                 .iter()
                 .enumerate()
                 .map(|(index, e)| -> Result<P, Refusal> {

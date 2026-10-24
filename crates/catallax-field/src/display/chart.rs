@@ -573,6 +573,7 @@ mod tests {
             assert!(charts[1].corner_signs_suffice(&normal, &cell));
         }
         let mut dec = catallax_numbers::Decider::default();
+        let implicit = surface.implicit().expect("analytic fixture support");
         for chart in charts {
             for uv in [
                 [q(0), q(0)],
@@ -581,7 +582,7 @@ mod tests {
             ] {
                 let p = chart.point(&uv);
                 assert!(
-                    dec.sign(&surface.implicit().eval_real(&[
+                    dec.sign(&implicit.eval_real(&[
                         Real::from(p.x),
                         Real::from(p.y),
                         Real::from(p.z)

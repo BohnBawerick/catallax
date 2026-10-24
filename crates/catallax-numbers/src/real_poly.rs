@@ -296,6 +296,45 @@ impl RealPoly {
         Ok(roots)
     }
 
+    /// Monic greatest common divisor of two univariate polynomials over the
+    /// shared exact algebraic coefficient field. Both zero inputs give zero.
+    /// Coefficient zeros and every leading divisor are certified, not inferred
+    /// from expression keys or interval overlap. This does not eliminate the
+    /// coefficients into a larger rational polynomial.
+    pub fn gcd(&self, other: &Self, dec: &mut Decider) -> Result<Self, Refusal> {
+        assert_eq!(self.nvars(), 1);
+        assert_eq!(other.nvars(), 1);
+        dec.check_deadline()?;
+        let mut a = univariate_coefficients(self, dec)?;
+        let mut b = univariate_coefficients(other, dec)?;
+        while let Some((&degree, _)) = b.last_key_value() {
+            dec.check_deadline()?;
+            if degree == 0 {
+                return Ok(Self::constant(1, Real::one()));
+            }
+            let remainder = univariate_remainder(a, &b, dec)?;
+            a = b;
+            b = remainder;
+        }
+        let Some((&degree, leading)) = a.last_key_value() else {
+            return Ok(Self::zero(1));
+        };
+        let leading = leading.clone();
+        let mut terms = Vec::with_capacity(a.len());
+        for (power, coefficient) in a {
+            dec.check_deadline()?;
+            terms.push((
+                vec![power],
+                if power == degree {
+                    Real::one()
+                } else {
+                    &coefficient / &leading
+                },
+            ));
+        }
+        Ok(Self::from_terms(1, terms))
+    }
+
     /// Certifies whether every coefficient is zero.
     pub fn is_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
         Ok(self.total_degree(dec)?.is_none())
@@ -419,6 +458,56 @@ impl RealPoly {
         }
         self.scale(&Real::from_i64(-1))
     }
+}
+
+type Univariate = BTreeMap<u32, Real>;
+
+fn univariate_coefficients(
+    polynomial: &RealPoly,
+    dec: &mut Decider,
+) -> Result<Univariate, Refusal> {
+    let mut result = BTreeMap::new();
+    for (monomial, coefficient) in polynomial.terms() {
+        dec.check_deadline()?;
+        // Validate every coefficient before a constant gcd could short-circuit.
+        if nonzero(&coefficient, dec)? {
+            result.insert(monomial.exponents()[0], coefficient);
+        }
+    }
+    Ok(result)
+}
+
+fn univariate_remainder(
+    mut a: Univariate,
+    b: &Univariate,
+    dec: &mut Decider,
+) -> Result<Univariate, Refusal> {
+    let (&degree, leading) = b.last_key_value().expect("nonzero certified divisor");
+    while let Some((&power, coefficient)) = a.last_key_value() {
+        dec.check_deadline()?;
+        if power < degree {
+            break;
+        }
+        let shift = power - degree;
+        let scale = coefficient / leading;
+        // The leading term cancels by field arithmetic and the certified
+        // nonzero divisor. Do not build and re-prove that known-zero expression.
+        a.pop_last();
+        for (&power, coefficient) in b.range(..degree) {
+            dec.check_deadline()?;
+            let term = &scale * coefficient;
+            a.entry(power + shift)
+                .and_modify(|old| *old = &*old - &term)
+                .or_insert_with(|| -term);
+        }
+        while let Some((_, coefficient)) = a.last_key_value() {
+            if nonzero(coefficient, dec)? {
+                break;
+            }
+            a.pop_last();
+        }
+    }
+    Ok(a)
 }
 
 fn nonzero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {

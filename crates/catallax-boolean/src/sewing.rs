@@ -171,7 +171,7 @@ fn pair(
         let mut germs = Vec::new();
         for &index in list {
             let face = &faces[uses[index].face];
-            let normal = oriented(&model.geom().normal(face.surface, point), face.sense);
+            let normal = oriented(&model.geom().normal(face.surface, point, dec)?, face.sense);
             let inward = normal.cross(&oriented(&tangent, uses[index].sense));
             germs.push(crate::germ::surface_germ(
                 model,
@@ -240,8 +240,8 @@ fn merge_faces(
             let agree = match sign(
                 &model
                     .geom()
-                    .normal(a.surface, point)
-                    .dot(&model.geom().normal(b.surface, point)),
+                    .normal(a.surface, point, dec)?
+                    .dot(&model.geom().normal(b.surface, point, dec)?),
                 dec,
                 "boolean.merge-ambiguous",
             )? {
@@ -500,7 +500,7 @@ fn orient_shell(model: &mut Model, faces: &[FaceId], dec: &mut Decider) -> Resul
                 return Ok(None);
             }
         }
-        let gradient = oriented(&model.geom().surface(f.surface).gradient(p), f.sense);
+        let gradient = oriented(&model.geom().surface(f.surface).normal_at(p, dec)?, f.sense);
         let normal = gradient;
         let tangent = crate::geometry::perpendicular(&normal, dec, "boolean.classify-ambiguous")?;
         let second = normal.cross(&tangent);

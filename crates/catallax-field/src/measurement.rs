@@ -5,8 +5,12 @@ use std::collections::BinaryHeap;
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
-use catallax_shapes::{Circle, CurveId, Line, Point3, PointId, Surface, Vector3};
+use catallax_shapes::{
+    Circle, CurveId, EllipticOffsetDefinition, Line, Point3, PointId, Surface, Vector3,
+};
 use catallax_topology::{FaceId, Loop, Model};
+
+pub use crate::offset_spline::{OffsetSweepMeasurement, measure_elliptic_offset_sweep};
 
 const BITS: u32 = 128;
 
@@ -48,6 +52,18 @@ pub enum FaceDefinition {
         /// Non-negative distance in millimetres.
         distance: Real,
     },
+}
+
+impl From<&EllipticOffsetDefinition> for FaceDefinition {
+    /// Builds the unsigned measuring-stick input while leaving the original
+    /// record and its normal-side choice with the producer. This conversion
+    /// does not verify the chosen side, trimming domain or a fitted carrier.
+    fn from(definition: &EllipticOffsetDefinition) -> Self {
+        Self::Offset {
+            original: definition.original().clone(),
+            distance: definition.distance().clone(),
+        }
+    }
 }
 
 /// Deterministic refinement limits. Exhausting cells returns the attained

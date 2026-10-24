@@ -133,7 +133,16 @@ fn carrier_equations(
         }
         _ => None,
     };
-    Ok(curve.as_ref().unwrap_or(geom.curve(c)).equations(geom))
+    curve
+        .as_ref()
+        .unwrap_or(geom.curve(c))
+        .equations(geom)
+        .ok_or_else(|| {
+            Refusal::new(
+                "intersect.parametric-curve",
+                "this intersection needs a finite parametric curve solver",
+            )
+        })
 }
 fn keep_branch(
     geom: &GeomStore,
@@ -353,8 +362,13 @@ pub(super) fn intersect(
     }
     let form = query::form(geom, c, dec)?;
     let equations = carrier_equations(geom, c, &form, dec)?;
-    let implicit = geom.implicit(s);
-    let solutions = solve::intersections(&equations, &implicit, dec)?;
+    let implicit = geom.implicit(s).ok_or_else(|| {
+        Refusal::new(
+            "intersect.parametric-surface",
+            "this intersection needs a finite parametric surface solver",
+        )
+    })?;
+    let solutions = solve::intersections(&equations, implicit, dec)?;
     let Solutions::Points(points) = solutions else {
         return Ok(Answer::exact(CurveSurface::Contained));
     };
@@ -394,13 +408,19 @@ pub(super) fn intersect(
             continue;
         }
         let answer = if let CurveForm::Line { dir, .. } = &form {
-            match sign(&geom.surface(s).gradient(&candidate.position).dot(dir), dec) {
+            match sign(
+                &geom
+                    .surface(s)
+                    .normal_at(&candidate.position, dec)?
+                    .dot(dir),
+                dec,
+            ) {
                 Ok(Sign::Zero) if matches!(geom.surface(s), catallax_shapes::Surface::Torus(_)) => {
                     match chart::line_local(&candidate.position, dir, dec) {
                         Ok(local) => contact(
                             std::slice::from_ref(&local),
                             &candidate.position,
-                            &implicit,
+                            implicit,
                             dec,
                         ),
                         Err(e) => Err(Failure::Refused(e)),
@@ -415,13 +435,13 @@ pub(super) fn intersect(
                 Ok(local) => contact(
                     std::slice::from_ref(&local),
                     &candidate.position,
-                    &implicit,
+                    implicit,
                     dec,
                 ),
                 Err(e) => Err(Failure::Refused(e)),
             }
         } else {
-            contact(&charts, &candidate.position, &implicit, dec)
+            contact(&charts, &candidate.position, implicit, dec)
         };
         candidate.proven_tangent = matches!(&answer, Ok(Contact::Tangent));
         candidate.contact = match answer {

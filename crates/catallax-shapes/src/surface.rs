@@ -1,6 +1,6 @@
-//! Analytic surfaces retaining validated exact algebraic definitions.
+//! Analytic and certified finite parametric surface definitions.
 
-use crate::{Point3, Pose, RPoint3, Vector3, math};
+use crate::{Point3, Pose, RPoint3, SplineSupport, Vector3, math};
 use catallax_numbers::{Ball, Decider, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
 
 /// The kind of a surface.
@@ -19,6 +19,8 @@ pub enum SurfaceKind {
     Torus,
     /// Elliptic cylinder.
     EllipticCylinder,
+    /// Certified finite B-spline support.
+    BSpline,
 }
 
 /// The domain of a surface parameter.
@@ -32,6 +34,10 @@ pub enum ParamKind {
     Latitude,
     /// `[0, infinity)`.
     Ray,
+    /// A finite closed interval, given by the spline's exact knot domain.
+    Finite,
+    /// A finite interval whose endpoints are identified by a checked transition.
+    PeriodicFinite,
 }
 
 /// A plane, oriented by its normal.
@@ -312,7 +318,7 @@ impl EllipticCylinder {
     }
 }
 
-/// An analytic support surface. Finite trims belong to topology.
+/// An analytic support or certified finite parametric support. Face trims belong to topology.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum Surface {
@@ -328,6 +334,8 @@ pub enum Surface {
     Torus(Torus),
     /// Elliptic cylinder.
     EllipticCylinder(EllipticCylinder),
+    /// Genuine finite B-spline carrier with its producer's checked chart family.
+    BSpline(SplineSupport),
 }
 
 impl Surface {
@@ -340,11 +348,12 @@ impl Surface {
             Self::Sphere(_) => SurfaceKind::Sphere,
             Self::Torus(_) => SurfaceKind::Torus,
             Self::EllipticCylinder(_) => SurfaceKind::EllipticCylinder,
+            Self::BSpline(_) => SurfaceKind::BSpline,
         }
     }
 
-    fn definition_fields(&self) -> [Option<&Real>; 11] {
-        let (origin, axis, reference) = self.definition_frame();
+    fn definition_fields(&self) -> Option<[Option<&Real>; 11]> {
+        let (origin, axis, reference) = self.definition_frame()?;
         let dimensions = match self {
             Self::Plane(_) => [None, None],
             Self::Cylinder(s) => [Some(&s.radius_sq), None],
@@ -352,8 +361,9 @@ impl Surface {
             Self::Sphere(s) => [Some(&s.radius), None],
             Self::Torus(s) => [Some(&s.major), Some(&s.minor)],
             Self::EllipticCylinder(s) => [Some(&s.major_sq), Some(&s.minor_sq)],
+            Self::BSpline(_) => return None,
         };
-        [
+        Some([
             Some(&origin.x),
             Some(&origin.y),
             Some(&origin.z),
@@ -365,54 +375,68 @@ impl Surface {
             Some(&reference.z),
             dimensions[0],
             dimensions[1],
-        ]
+        ])
     }
 
     /// Whether every defining scalar has a cheap exact rational value.
     pub fn has_rational_definition(&self) -> bool {
-        self.definition_fields()
-            .into_iter()
-            .flatten()
-            .all(|value| value.rational_ref().is_some())
+        if let Self::BSpline(spline) = self {
+            return spline.carrier().has_rational_definition();
+        }
+        self.definition_fields().is_some_and(|fields| {
+            fields
+                .into_iter()
+                .flatten()
+                .all(|value| value.rational_ref().is_some())
+        })
     }
 
     /// Safe construction-key agreement, not a geometry-equality predicate.
     /// Different definitions may still describe the same point set.
     pub fn same_definition(&self, other: &Self) -> bool {
-        self.kind() == other.kind()
-            && self
-                .definition_fields()
-                .into_iter()
-                .zip(other.definition_fields())
-                .all(|(a, b)| match (a, b) {
-                    (Some(a), Some(b)) => a.same_definition(b),
-                    (None, None) => true,
-                    _ => false,
-                })
+        if self.kind() != other.kind() {
+            return false;
+        }
+        if let (Self::BSpline(a), Self::BSpline(b)) = (self, other) {
+            return a.carrier().same_definition(b.carrier());
+        }
+        match (self.definition_fields(), other.definition_fields()) {
+            (Some(a), Some(b)) => a.into_iter().zip(b).all(|(a, b)| match (a, b) {
+                (Some(a), Some(b)) => a.same_definition(b),
+                (None, None) => true,
+                _ => false,
+            }),
+            _ => false,
+        }
     }
 
     /// Whether a cached result retains the same input expression-DAG nodes.
     /// Value-equal but separately constructed inputs must not acquire aliases
     /// through a cache: those aliases can change deterministic proof work.
     pub fn shares_definition_nodes(&self, other: &Self) -> bool {
-        self.kind() == other.kind()
-            && self
-                .definition_fields()
-                .into_iter()
-                .zip(other.definition_fields())
-                .all(|(a, b)| match (a, b) {
-                    (Some(a), Some(b)) => a.same_node(b),
-                    (None, None) => true,
-                    _ => false,
-                })
+        if self.kind() != other.kind() {
+            return false;
+        }
+        if let (Self::BSpline(a), Self::BSpline(b)) = (self, other) {
+            return a.shares_definition_nodes(b);
+        }
+        match (self.definition_fields(), other.definition_fields()) {
+            (Some(a), Some(b)) => a.into_iter().zip(b).all(|(a, b)| match (a, b) {
+                (Some(a), Some(b)) => a.same_node(b),
+                (None, None) => true,
+                _ => false,
+            }),
+            _ => false,
+        }
     }
 
-    /// Defining implicit polynomial, at the specified exact scaling.
-    pub fn implicit(&self) -> RealPoly {
-        let (origin, axis, _) = self.definition_frame();
+    /// Global analytic equation at its specified scaling. A finite multi-span
+    /// spline has no such equation; absence is not the zero polynomial.
+    pub fn implicit(&self) -> Option<RealPoly> {
+        let (origin, axis, _) = self.definition_frame()?;
         let d = math::displacement(origin);
         let constant = |r| RealPoly::constant(3, r);
-        match self {
+        Some(match self {
             Self::Plane(_) => math::dot(&d, axis),
             Self::Cylinder(s) => {
                 math::norm(&math::cross(&d, axis)) - constant(&s.radius_sq * &axis.norm_squared())
@@ -437,17 +461,19 @@ impl Surface {
                     + (&b * &b).scale(&(&Real::one() / &(&s.minor_sq * &second.norm_squared())))
                     - constant(Real::one())
             }
-        }
+            Self::BSpline(_) => return None,
+        })
     }
 
-    /// Outward gradient of the implicit polynomial at an exact point.
-    pub fn gradient(&self, p: &Point3) -> Vector3 {
-        let (origin, axis, _) = self.definition_frame();
+    /// Gradient of the analytic equation. Parametric normals instead require
+    /// a finite chart preimage and are queried with `normal_at`.
+    pub fn gradient(&self, p: &Point3) -> Option<Vector3> {
+        let (origin, axis, _) = self.definition_frame()?;
         let d = p.minus(origin);
         let n = axis.norm_squared();
         let h = d.dot(axis);
         let two = Real::from_i64(2);
-        match self {
+        Some(match self {
             Self::Plane(_) => axis.clone(),
             Self::Cylinder(_) => d.scaled(&n).minus(&axis.scaled(&h)).scaled(&two),
             Self::Cone(s) => d
@@ -472,6 +498,16 @@ impl Surface {
                     )
                     .scaled(&two)
             }
+            Self::BSpline(_) => return None,
+        })
+    }
+
+    /// Outward normal covector at a surface point, not necessarily a unit vector.
+    /// Parametric supports prove finite incidence before returning their normal.
+    pub fn normal_at(&self, point: &Point3, dec: &mut Decider) -> Result<Vector3, Refusal> {
+        match self {
+            Self::BSpline(spline) => spline.normal_at(point, dec),
+            _ => self.gradient(point).ok_or_else(no_global_equation),
         }
     }
 
@@ -515,6 +551,7 @@ impl Surface {
                 major_sq: s.major_sq.clone(),
                 minor_sq: s.minor_sq.clone(),
             }),
+            Self::BSpline(spline) => Self::BSpline(spline.transformed(pose)),
         }
     }
 
@@ -526,13 +563,17 @@ impl Surface {
             Self::Cone(_) => [ParamKind::Periodic, ParamKind::Ray],
             Self::Sphere(_) => [ParamKind::Periodic, ParamKind::Latitude],
             Self::Torus(_) => [ParamKind::Periodic, ParamKind::Periodic],
+            Self::BSpline(_) => [ParamKind::PeriodicFinite, ParamKind::Finite],
         }
     }
 
     /// Certified chart enclosure at the input precision.
     pub fn evaluate(&self, u: &Ball, v: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
+        if let Self::BSpline(spline) = self {
+            return spline.carrier().evaluate(u, v, dec);
+        }
         let precision = u.precision().max(v.precision());
-        let (origin, axis, reference) = self.definition_frame();
+        let (origin, axis, reference) = self.definition_frame().ok_or_else(no_global_equation)?;
         let frame = math::frame(axis, reference, precision, dec)?;
         let r = |x: &Real| dec.enclose_at(x, precision);
         let zero = || math::ball(&Rational::zero(), precision);
@@ -564,6 +605,7 @@ impl Surface {
                 r(&s.minor_sq.sqrt())? * u.sin(),
                 v.clone(),
             ],
+            Self::BSpline(spline) => return spline.carrier().evaluate(u, v, dec),
         };
         let offset = math::add(
             &math::add(
@@ -582,8 +624,11 @@ impl Surface {
         v: &Ball,
         dec: &Decider,
     ) -> Result<[[Ball; 3]; 2], Refusal> {
+        if let Self::BSpline(spline) = self {
+            return spline.carrier().derivatives(u, v, dec);
+        }
         let precision = u.precision().max(v.precision());
-        let (_, axis, reference) = self.definition_frame();
+        let (_, axis, reference) = self.definition_frame().ok_or_else(no_global_equation)?;
         let [e1, e2, e3] = math::frame(axis, reference, precision, dec)?;
         if matches!(self, Self::Plane(_)) {
             return Ok([e1, e2]);
@@ -641,6 +686,7 @@ impl Surface {
                     ),
                 ]
             }
+            Self::BSpline(spline) => return spline.carrier().derivatives(u, v, dec),
         })
     }
 
@@ -650,9 +696,12 @@ impl Surface {
         p: &[Ball; 3],
         dec: &Decider,
     ) -> Result<Option<[Ball; 2]>, Refusal> {
+        if let Self::BSpline(spline) = self {
+            return spline.parameters_of(p, dec);
+        }
         let precision = p.iter().map(Ball::precision).max().unwrap();
         let work = precision.max(64).saturating_add(32);
-        let (origin, axis, reference) = self.definition_frame();
+        let (origin, axis, reference) = self.definition_frame().ok_or_else(no_global_equation)?;
         let mut x = math::project(p, origin, reference, work, dec)?;
         let second = axis.cross(reference);
         let mut y = math::project(p, origin, &second, work, dec)?;
@@ -729,21 +778,22 @@ impl Surface {
         ]))
     }
 
-    pub(crate) fn definition_frame(&self) -> (&Point3, &Vector3, &Vector3) {
-        match self {
+    pub(crate) fn definition_frame(&self) -> Option<(&Point3, &Vector3, &Vector3)> {
+        Some(match self {
             Self::Plane(s) => (&s.origin, &s.normal, &s.ref_dir),
             Self::Cylinder(s) => (&s.origin, &s.axis, &s.ref_dir),
             Self::Cone(s) => (&s.apex, &s.axis, &s.ref_dir),
             Self::Sphere(s) => (&s.center, &s.axis, &s.ref_dir),
             Self::Torus(s) => (&s.center, &s.axis, &s.ref_dir),
             Self::EllipticCylinder(s) => (&s.origin, &s.axis, &s.major_dir),
-        }
+            Self::BSpline(_) => return None,
+        })
     }
 
-    pub(crate) fn value(&self, p: &Point3) -> Real {
-        let (origin, axis, _) = self.definition_frame();
+    pub(crate) fn value(&self, p: &Point3) -> Option<Real> {
+        let (origin, axis, _) = self.definition_frame()?;
         let d = p.minus(origin);
-        match self {
+        Some(match self {
             Self::Plane(_) => d.dot(axis),
             Self::Cylinder(s) => d.cross(axis).norm_squared() - &s.radius_sq * &axis.norm_squared(),
             Self::Cone(s) => d.cross(axis).norm_squared() - s.slope.square() * d.dot(axis).square(),
@@ -763,7 +813,8 @@ impl Surface {
                     + &(&d.dot(&second).square() / &(&s.minor_sq * &second.norm_squared()))
                     - Real::one()
             }
-        }
+            Self::BSpline(_) => return None,
+        })
     }
 
     pub(crate) fn distance_bound(&self, b: &Rational, dec: &Decider) -> Result<Rational, Refusal> {
@@ -797,6 +848,7 @@ impl Surface {
                 }
             }
             Self::EllipticCylinder(_) => {}
+            Self::BSpline(_) => return Err(no_global_equation()),
         }
         let bound = Real::from(b.clone());
         let value = match self {
@@ -806,6 +858,7 @@ impl Surface {
             Self::Sphere(s) => &bound / &s.radius,
             Self::Torus(s) => &bound / &(&s.minor * &(&s.major.square() - &s.minor.square())),
             Self::EllipticCylinder(s) => &bound * &s.major_sq.sqrt(),
+            Self::BSpline(_) => return Err(no_global_equation()),
         };
         if let Some(value) = value.as_rational() {
             return Ok(value);
@@ -830,4 +883,11 @@ fn angle(x: &Ball, y: &Ball) -> Ball {
             }
         }
     }
+}
+
+fn no_global_equation() -> Refusal {
+    Refusal::new(
+        "shapes.parametric-surface",
+        "this query requires a global analytic support equation",
+    )
 }

@@ -343,6 +343,75 @@ fn unsupported_field_feature_removes_previous_display_without_brep_fallback() {
     fs::remove_dir_all(dir).unwrap();
 }
 
+fn certified_problem() -> Value {
+    serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../.claude/skills/verify-catallax/references/examples/certified-recipe.json"
+    )))
+    .unwrap()
+}
+
+#[test]
+fn certified_output_refusal_preserves_the_complete_valid_body() {
+    use catallax_cli::verification::{Request, answer};
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-certified-output-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut problem = certified_problem();
+    problem["outputs"] = json!({"step":{"file_tolerance":"1e-12","decimal_places":0}});
+    problem["properties"] = Value::Null;
+    problem["field_points"] = json!([]);
+    problem["edit"] = Value::Null;
+    let response = answer(&Request {
+        format: "catallax-request/1".into(),
+        source: "recipe".into(),
+        problem,
+        out: dir.clone(),
+        max_work: 100_000_000,
+    })
+    .unwrap();
+    let manifest = &response["manifest"];
+    assert_eq!(manifest["status"], "answered", "{response}");
+    assert_eq!(manifest["result"]["kind"], "solid");
+    assert_eq!(manifest["result"]["faces_by_kind"]["bspline"], 1);
+    assert_eq!(manifest["result"]["ring_edges"], 2);
+    assert_eq!(manifest["step"]["status"], "refused");
+    assert_eq!(
+        manifest["step"]["refusal"]["code"],
+        "step.tolerance-not-reached"
+    );
+    assert!(!dir.join("answer.step").exists());
+    assert!(!response["work"]["exhausted"].as_bool().unwrap());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn certified_budget_refusal_retains_its_version_and_publishes_no_partial_body() {
+    use catallax_cli::verification::{Request, answer};
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-certified-budget-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let response = answer(&Request {
+        format: "catallax-request/1".into(),
+        source: "recipe".into(),
+        problem: certified_problem(),
+        out: dir.clone(),
+        max_work: 0,
+    })
+    .unwrap();
+    let manifest = &response["manifest"];
+    assert_eq!(manifest["format"], "catallax-manifest/4");
+    assert_eq!(manifest["status"], "refused");
+    assert_eq!(manifest["refusal"]["code"], "numbers.operation-budget");
+    assert!(manifest["result"].is_null() && manifest["certificate"].is_null());
+    assert!(!dir.join("answer.step").exists());
+    assert!(!dir.join("display.obj").exists());
+    fs::remove_dir_all(dir).unwrap();
+}
 #[test]
 fn curved_compare_preserves_work_refusals_and_reports_finite_agreement() {
     use catallax_cli::verification::{Request, answer};

@@ -73,7 +73,8 @@ fn native_elliptic_cylinder_distances_use_the_metric_and_closed_sweep_trim() {
         &faces,
         q(0),
         Vec::new(),
-    );
+    )
+    .unwrap();
     let mut support = Support::new(&faces[0].surface);
     let reflection =
         Isometry::reflection(&RPoint3::new(q(3), q(0), q(1)), &vector(2, 3, 0)).unwrap();

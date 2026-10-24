@@ -299,10 +299,11 @@ impl Isometry {
                 major_sq: s.major_sq.clone(),
                 minor_sq: s.minor_sq.clone(),
             }),
+            Surface::BSpline(s) => Surface::BSpline(s.mapped(self)),
         }
     }
 
-    /// Maps an analytic curve while preserving its parameter direction.
+    /// Maps an explicit analytic or spline curve, preserving parameter direction.
     /// Intersection curves must instead remap their defining objects in the store.
     pub fn curve(&self, curve: &Curve) -> Option<Curve> {
         let p = |p: &Point3| self.apply_point(p);
@@ -333,6 +334,7 @@ impl Isometry {
                 major_sq: c.major_sq.clone(),
                 minor_sq: c.minor_sq.clone(),
             }),
+            Curve::BSpline(c) => Curve::BSpline(c.mapped(self)),
             Curve::Intersection(_) => return None,
         })
     }

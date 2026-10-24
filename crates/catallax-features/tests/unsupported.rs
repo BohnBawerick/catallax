@@ -28,7 +28,7 @@ fn rectangle() -> Value {
 }
 
 #[test]
-fn unavailable_placements_and_elliptic_cylinders_have_specific_codes() {
+fn unavailable_algebraic_placements_have_specific_codes() {
     assert_eq!(
         refusal(rectangle(), extrude(["1", "0", "1"])),
         "features.unsupported-algebraic-placement"
@@ -36,11 +36,6 @@ fn unavailable_placements_and_elliptic_cylinders_have_specific_codes() {
     assert_eq!(
         refusal(rectangle(), revolve("45")),
         "features.unsupported-algebraic-revolve-frame"
-    );
-    let circle = json!([[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"1"}]]);
-    assert_eq!(
-        refusal(circle, extrude(["3", "0", "4"])),
-        "features.unsupported-elliptic-cylinder"
     );
 }
 

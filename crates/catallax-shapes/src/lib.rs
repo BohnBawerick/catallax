@@ -6,14 +6,19 @@
 //!
 //! The contract is `docs/pieces/02-shapes.md`.
 
+mod bspline;
 mod curve;
 /// Certified minimum-distance bounds on trimmed analytic carriers.
 pub mod distance;
 mod intent;
 mod isometry;
 mod math;
+mod offset;
+mod offset_chart;
+mod offset_sweep;
 mod point;
 mod pose;
+mod spline_surface;
 mod store;
 mod surface;
 mod vector;
@@ -21,10 +26,19 @@ mod vector;
 #[cfg(test)]
 mod tests;
 
+pub use bspline::{
+    BSplineCurve, BSplineCurveJet, BSplineJet, BSplineSurface, SplineBoundary, SplineCurveParameter,
+};
 pub use curve::{Circle, Curve, CurveKind, Ellipse, IntersectionCurve, Line};
 pub use isometry::Isometry;
+pub use offset::{EllipticOffsetDefinition, OffsetSide};
+pub use offset_chart::EllipticOffsetChart;
+pub use offset_sweep::{
+    OffsetSweepProof, certify_convex_cubic_span, certify_elliptic_offset_sweep,
+};
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
+pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
 pub use surface::{
     Cone, Cylinder, EllipticCylinder, ParamKind, Plane, Sphere, Surface, SurfaceKind, Torus,

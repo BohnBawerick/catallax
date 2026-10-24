@@ -26,6 +26,12 @@ fn norm(x: &[Ball; 3]) -> Ball {
 fn failure(detail: &str) -> Refusal {
     Refusal::new("shapes.distance-domain", detail)
 }
+fn uncovered() -> Refusal {
+    Refusal::new(
+        "shapes.distance-uncovered",
+        "analytic distance charts do not cover finite B-spline supports",
+    )
+}
 fn point_box(p: &Point3, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
     Ok([
         dec.enclose_budgeted_at(&p.x, BITS)?,
@@ -127,7 +133,7 @@ impl Domain {
     /// Prepares all periodic charts and finite linear parameter ranges. Frames
     /// and dimensions may be algebraic; chart witnesses retain those definitions.
     pub fn new(surface: &Surface, bounds: [Ball; 3], dec: &mut Decider) -> Result<Self, Refusal> {
-        let (origin, axis, reference) = surface.definition_frame();
+        let (origin, axis, reference) = surface.definition_frame().ok_or_else(uncovered)?;
         let normalize = |v: &Vector3| v.scaled(&(Real::one() / v.norm_squared().sqrt()));
         let u = normalize(reference);
         let axis = normalize(axis);
@@ -146,6 +152,7 @@ impl Domain {
             Surface::Sphere(s) => [s.radius.clone(), Real::zero()],
             Surface::Torus(s) => [s.major.clone(), s.minor.clone()],
             Surface::EllipticCylinder(s) => [s.major_sq.sqrt(), s.minor_sq.sqrt()],
+            Surface::BSpline(_) => return Err(uncovered()),
         };
         let dimensions = [
             dec.enclose_budgeted_at(&dimensions[0], BITS)?,
@@ -307,7 +314,7 @@ impl Domain {
 /// An exact point on the carrier near a target. This is a witness candidate,
 /// not a closest-point proof, especially on an elliptic cylinder.
 pub fn project(surface: &Surface, target: &Point3, dec: &mut Decider) -> Result<Point3, Refusal> {
-    let (origin, axis, reference) = surface.definition_frame();
+    let (origin, axis, reference) = surface.definition_frame().ok_or_else(uncovered)?;
     let unit = |v: &Vector3| v.scaled(&(Real::one() / v.norm_squared().sqrt()));
     let axis = unit(axis);
     let d = target.minus(origin);

@@ -784,6 +784,70 @@ Why: these elementary blends have exact analytic carriers and need no sphere-uni
 
 Migration: no recipe schema, command, budget, tolerance, legacy question or STEP-option change. Handle the specific `fillet.*` and `field.fillet-contact` construction refusals for unfinished domains. General contacts, roll-over, corner patches, filtered field references and nonrational sections remain uncovered. P3 application display and whole-part comparison are not acceptance claims of this change; both still require the periodic trimmed-face mesh prerequisite. SolidDraft's positional-selector converter is unchanged.
 
+## 2026-10-22: tolerance proof records and elliptic-offset intent
+
+Pieces: numbers, shapes and future geometric certificate consumers
+Change: numbers exposes the fixed 1 nm `ModellingTolerance`, `EvidenceUnit`, `EvidenceBound`, scoped `GeometricCertificate` claims, `GeometricEvidence`, `EvidenceBook`, original decision evidence and a `DecisionBook` of settled branches. The stable refusals are `numbers.geometric-gap-unproven` and `numbers.geometric-gap-exceeded`. Shapes exposes `EllipticOffsetDefinition` and `OffsetSide`, retaining a validated exact elliptic-cylinder support, unsigned offset magnitude and chosen normal side.
+Why: tolerance decisions and the first offset consumer need immutable settings, typed evidence, shared proof identity and consistent branch reuse without turning diagnostic marks into geometric authority.
+Migration: structural certificate checking is not theorem verification or permission to publish a body. Consumers must validate geometry, coverage, orientation, topology and imported evidence, supply stable recipe/definition keys, and apply their proved transfer rules. Offset consumers may pass the original support and unsigned distance to the field measuring stick but must separately retain and prove the selected side and finite domain. No surface kind, numeric decision path, legacy mark semantics, exchange format or work-budget default changes. The offset record does not choose a B-rep carrier.
+
+## 2026-10-22: elliptic-offset records feed the field measuring stick
+
+Pieces: shapes, field and offset construction consumers
+Change: `catallax_field::measurement::FaceDefinition` implements `From<&EllipticOffsetDefinition>`, retaining the exact original supporting surface and nonnegative offset magnitude required by the landed checker.
+Why: construction records and the independent measuring stick must use the same definitions without repeating unsigned-distance conversion at each caller.
+Migration: construct the checker's input from a borrowed validated record and keep the original record for its inward/outward side. The field metric is unsigned; it does not certify that branch, a finite construction domain or a fitted B-rep carrier. No existing measurement, exchange or geometry path changes.
+
+## 2026-10-23: exact oblique-circle sources and checked offset-sweep candidates
+
+Pieces: shapes, features and field
+Change: rational oblique circular extrusions now reduce to an exact elliptic-cylinder support in both independent builders, preserving their circular end curves and original cap planes. Shapes exposes finite `BSplineSurface` data, full interval chart jets and exact signed `EllipticOffsetChart` laws. Features exposes deterministic closed cubic `fit_elliptic_offset` candidates. Field exposes `measure_elliptic_offset_sweep` and `OffsetSweepMeasurement`, independently checking interpolation, complete two-way parameter coverage, regular normal branch, convexity, periodic closure and whole-span position-error bounds.
+Why: the first approximated face needs a real public source path and a whole-domain geometric check, rather than a renamed analytic face or a sampled fit residual.
+Migration: no pose schema, recipe version, analytic kind tag or legacy exchange field changes. An oblique circular support is no longer a `features.unsupported-elliptic-cylinder` gap. Field point queries label their elliptic support metric as a conservative 1-Lipschitz residual. The spline carrier and its measured fit remain distinct from a published B-rep: consumers must still establish common trims, complete body correspondence, local limits and valid topology. Existing analytic paths retain their definitions.
+
+## 2026-10-23: complete local-exception cover replaces a universal metric cap
+
+Pieces: numbers and geometric publication consumers
+Change: `GeometricCertificate` now binds a complete region inventory, exact regions, explicit `LocalException` records, original bounded decisions and an optional proved uniform metric. `LocalToleranceSettings` records the 100 nm engineering target, inclusive 1 micrometre fit cap and inclusive 10 micrometre import cap. File-specific import acceptance and neighbouring-size lower bounds remain explicit. A strict scoped metric uses `GapCertificate` and `check_gap_structure`. `GeometricEvidence.bound` is optional so a complete cover need not invent a zero uniform metric.
+Why: the amended policy permits a 50 nm fitted face without forcing the entire result below the separate 1 nm sameness bound.
+Migration: whole-result `check_structure` takes the actual region inventory and validates local source limits, strict converted decisions, identity, graph and exact/exception partition. It remains structural and arithmetic checking, not geometric authority. The body consumer must prove adjacency, source authorisation, complete correspondence, topology and orientation. No old mark or exchange field changes meaning; the separately approved certified-recipe wrapper carries the new policy.
+
+## 2026-10-23: shared spline boundaries and common-field preimages
+
+Pieces: numbers, shapes and field
+Change: `RealPoly::gcd` computes a certified monic univariate gcd without eliminating the existing algebraic coefficient field. `BSplineCurve` adds finite positive-weight curve data, shared `SplineBoundary` views, interval jets and checked finite point preimages. `SplineCurveParameter` retains its verified span. The whole-domain sweep checker now lives in shapes and returns an opaque `OffsetSweepProof`; the field measurement API delegates to it without changing its public report.
+Why: real fitted edge controls are algebraic. Recovering their parameter through a global rational elimination exhausted the fixed request allowance; common-field coordinate factors recover actual curve incidence without manufacturing a global implicit.
+Migration: exact preimages are not uniqueness or body proofs. Surface-boundary identity is a positive shared-data witness, not a negative geometric comparison. Publication still requires valid shared trims, orientation, complete body correspondence and source scope. No existing `Surface`/`Curve` kind, legacy request or exchange output changes in this addition.
+
+## 2026-10-23: checked finite spline supports retain their rigid definitions
+
+Pieces: shapes and geometric consumers
+Change: `SplineSurface` owns a checked regular convex offset sweep, its exact target and finite axial domain. `SplinePointParameters` provides exact finite incidence, chart tangents and outward normals. Cross-section side queries use a bounded Bernstein interval filter before the existing exact path. Rigid transports retain canonical source data and the composed exact pose; inverse queries reuse the source frame instead of re-solving world-coordinate equations.
+Why: separate interval boxes lose parameter correlation in tangent half-planes; a rigid coordinate permutation can also make the first two world-coordinate equations dependent. Neither warrants a larger work allowance or a geometry refusal disguised as impossible input.
+Migration: the local support remains distinct from a valid recipe-bound B-rep and its complete region certificate. Cross-section side is not finite-body membership. Uncertain filtering never proves contact; poses preserve source domains and error bounds by exact isometry. Existing analytic kinds and legacy exchange formats remain unchanged.
+
+## 2026-10-23: geometry-bound offset prisms and complete spline consumers
+
+Pieces: shapes, topology, intersections, features, field, measurement, mesh, STEP, application and opt-in verification
+Change: `Surface::BSpline` and `Curve::BSpline` carry checked finite geometry. Global implicit/equation queries return `Option`, analytic gradients return `Option`, and point normals use the fallible decider-aware path. `SplinePrism::check` checks complete represented geometry. `evaluate_certified` returns an opaque `CertifiedBuilt` with a revision/target/representation-bound `BodyCertificate`, complete cap/side local records, geometric evidence and decide-once choices. The first family supports regular inward elliptic normal-offset prisms, certified axial planar trimming, scalar rebuilds and second offsets refitted from the original definition.
+Why: a fitted carrier must be a real usable B-rep, not an analytic proxy accompanied by a diagnostic mark.
+Migration: handle absent global equations explicitly; use finite spline membership, tangents and normals instead of a zero polynomial or the target ellipse. Use the complete checked body association before publishing. Generic spline intersections, outward offsets and rolling fillets remain uncovered, not silently approximated.
+
+Change: shared adaptive meshes retain face/edge picking and model-relative chord bounds. Original-target prism property APIs use certified exact-law integration, with inertia computed only when requested. `CertifiedPrismField` verifies the body and answers nominal true distance, including medial, cap and corner branches. `write_spline_prism_step` takes `CertifiedSplineStepOptions`, emits a real tensor spline with common rounded boundary curves, and hard-refuses an unmet finite-decimal file bound before writing.
+Why: every requested consumer must distinguish the represented model from the retained definition and its own output accuracy.
+Migration: use `build_certified`/`CertifiedApplicationBody` for immutable geometry, optional display and persistent origin/name tables. Keep requested property widths separate from fit error. Treat `StepReport.max_deviation` as file-to-model; compose with a proved body bound separately. Legacy analytic build/export behavior is unchanged.
+
+Change: existing request/1 with source `recipe` accepts an opt-in `catallax-certified-recipe/1` wrapper containing unchanged recipe/3. Only that wrapper returns `catallax-manifest/4`, with real `bspline` kind tags, finite knot/domain/seam metadata, complete scoped evidence/settings, separately requested display/properties/field/STEP and a scalar edit. The verification driver accepts the raw public example. `about` advertises the additive versions.
+Why: old exchanges cannot truthfully publish the new surface vocabulary or its certificate/output scopes.
+Migration: opt in explicitly; do not relabel existing inputs or change JUDGE-INTERFACE. Inspect each requested consumer's status in addition to the valid body's root status. Whole-request budget exhaustion clears all geometry and artifacts while preserving manifest/4. Replay the portable question to reproduce geometric authority; serialized hashes/marks alone are not a proof. Compare certificates and artifact bytes across workers, excluding only existing diagnostic clocks and build identity.
+
+## 2026-10-23: spline consumers preserve isometry and display-control contracts
+
+Pieces: shapes, feature consumers, field, mesh and application
+Change: exact `Isometry` mapping now carries finite spline controls and checked supports, retaining canonical-source inverses and material-outward normals through reflections. Existing proper-Pose APIs and schemas remain unchanged. Concurrent elementary-fillet consumers use squared cylinder radii and fallible point normals without requiring a global polynomial for every surface. Primitive field transport propagates a missing parametric-constraint proof instead of discarding its refusal.
+Why: new surface kinds must integrate with the existing exact copy and display interfaces without reintroducing polynomial assumptions, changing old analytic geometry or silently ignoring controls.
+Migration: local isometric support transport is not a recipe-bound whole-body transfer certificate. Existing exact elementary fillets remain available; general non-analytic rolling constructions are still uncovered. Spline meshes report rounded-facet aspect bounds and unmet aspect requests. Edge length is accepted only when proved for the complete returned mesh; insufficient cap/strip refinement uses `mesh.spline-edge-length`. Uncovered whole-spline angular requests use `mesh.spline-angular-coverage`. Neither refusal changes the body or its modelling tolerance.
+
 ## 2026-10-23: binary enclosures of unreduced integer ratios
 
 Pieces: 1, 5
@@ -921,3 +985,10 @@ Change: ruled cylinder and elliptic-cylinder strips certify their existing bound
 Why: the new-kind path must reuse the merged certified evaluator rather than introduce avoidable high-precision work.
 
 Migration: no public API, exact geometry, picking IDs, requested controls, tolerance, vertex or work allowances, manifest or STEP changes.
+
+## 2026-10-23: spline carriers integrate with trimmed analytic distances and drill cells
+
+Pieces: shapes, Boolean filters, features and field
+Change: analytic `distance::Domain::new` and `distance::project` return `shapes.distance-uncovered` for finite B-spline supports rather than assuming a global analytic frame. The bounded-face exclusion filter uses an implicit equation only when one exists. Definition-native drill and capped-sweep cells propagate fallible constraint construction through their exact isometry API.
+Why: the independently landed analytic-distance and feature consumers must retain their coverage guarantees when the genuine spline kind is present.
+Migration: generic trimmed analytic distance charts do not yet cover represented spline faces. Use the separately certified original-target prism field for its nominal true-distance contract; do not substitute that definition for represented-face distance. An unavailable analytic exclusion proof falls through to the existing intersection path and never proves disjointness. Existing analytic definitions, numeric allowances and output accuracies are unchanged.

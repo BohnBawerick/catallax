@@ -196,7 +196,7 @@ fn first_hit(
                 &tangent_at(model.geom(), edge.curve, hit, dec)?[1],
                 product(edge.sense, use_sense),
             );
-            let normal = oriented(&model.geom().normal(f.surface, hit), f.sense);
+            let normal = oriented(&model.geom().normal(f.surface, hit, dec)?, f.sense);
             let crossing = sign(
                 &probe_tangent.dot(&normal.cross(&boundary_tangent)),
                 dec,
@@ -419,7 +419,10 @@ pub(crate) fn locate(
                 return Ok(Some(location));
             }
         }
-        let normal = model.geom().surface(model.face(face).surface).gradient(&p);
+        let normal = model
+            .geom()
+            .surface(model.face(face).surface)
+            .normal_at(&p, dec)?;
         let u = crate::geometry::perpendicular(&normal, dec, "boolean.classify-ambiguous")?;
         let v = normal.cross(&u);
         for index in 0..attempts {

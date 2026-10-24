@@ -86,15 +86,29 @@ fn circles(a: Surface, b: Surface, expected: &[(Point3, Real, Contact)], points:
         coincident(on_curve(&geom, curve, point, &mut Decider::default()));
         if contact == Contact::Crossing {
             let cross = geom
-                .normal(supports[0], point)
-                .cross(&geom.normal(supports[1], point));
+                .normal(
+                    supports[0],
+                    point,
+                    &mut catallax_numbers::Decider::default(),
+                )
+                .expect("surface normal fixture")
+                .cross(
+                    &geom
+                        .normal(
+                            supports[1],
+                            point,
+                            &mut catallax_numbers::Decider::default(),
+                        )
+                        .expect("surface normal fixture"),
+                );
             positive_multiple(
                 &tangent_at(&geom, curve, point, &mut Decider::default()).unwrap()[1],
                 &cross,
             );
         }
         let trace = exact(trace(&geom, curve, None, None, &mut Decider::default()));
-        let equations = supports.map(|surface| geom.implicit(surface));
+        let equations =
+            supports.map(|surface| geom.implicit(surface).expect("analytic fixture support"));
         for piece in trace.pieces() {
             for t in [r("0"), r("1/3"), r("1")] {
                 let position = piece
@@ -221,7 +235,7 @@ fn open_conics_have_ordered_finite_traces_and_correct_contacts() {
             .unwrap();
         assert!(jets[0][2].contains(&vertex.z));
         assert!(jets[2][2].contains(&second));
-        let equations = supports.map(|s| g.implicit(s));
+        let equations = supports.map(|s| g.implicit(s).expect("analytic fixture support"));
         for t in [r("0"), r("1/4"), r("1/2"), r("3/4"), r("1")] {
             let position = trace.pieces()[0]
                 .evaluate(&Ball::from_rational(&t, 128), &Decider::default())

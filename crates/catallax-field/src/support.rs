@@ -72,9 +72,12 @@ impl Support {
             b,
             factor,
         ];
+        Self::from_exact(kind, exact)
+    }
+    fn from_exact(kind: Kind, exact: [Real; 10]) -> Self {
         let mut fast = exact.each_ref().map(Real::to_f64);
-        if let Surface::Cylinder(cylinder) = surface {
-            fast[7] = cylinder.radius().to_f64();
+        if matches!(kind, Kind::Cylinder) {
+            fast[7] = exact[7].sqrt().to_f64();
         }
         Self {
             kind,

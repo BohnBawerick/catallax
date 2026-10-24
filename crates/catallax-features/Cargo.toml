@@ -15,10 +15,13 @@ catallax-boolean.workspace = true
 catallax-recipe.workspace = true
 catallax-measure.workspace = true
 catallax-intersect.workspace = true
+serde_json = "1"
+sha2 = "0.10"
 
 [dev-dependencies]
+catallax-field.workspace = true
+catallax-mesh.workspace = true
 catallax-step.workspace = true
-serde_json = "1"
 
 [lints]
 workspace = true

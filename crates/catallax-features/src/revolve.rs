@@ -489,7 +489,7 @@ pub fn revolve(
                             .to_real(),
                     )
                 };
-                let sense = match sign(&surface.gradient(&point).dot(&outward), dec)? {
+                let sense = match sign(&surface.normal_at(&point, dec)?.dot(&outward), dec)? {
                     Sign::Positive => Sense::Same,
                     Sign::Negative => Sense::Reversed,
                     Sign::Zero => {

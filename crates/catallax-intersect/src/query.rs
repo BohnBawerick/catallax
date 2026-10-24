@@ -42,6 +42,25 @@ pub(super) fn validate(
     }
 }
 pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<CurveForm, Refusal> {
+    selected_form(geom, c, dec, true)
+}
+
+// Elimination need not inherit a witness's larger coefficient field. The public
+// closed form above still uses the witness as its line origin.
+pub(super) fn solver_form(
+    geom: &GeomStore,
+    c: CurveId,
+    dec: &mut Decider,
+) -> Result<CurveForm, Refusal> {
+    selected_form(geom, c, dec, false)
+}
+
+fn selected_form(
+    geom: &GeomStore,
+    c: CurveId,
+    dec: &mut Decider,
+    witness_line_origin: bool,
+) -> Result<CurveForm, Refusal> {
     let p = validate(geom, c, dec)?;
     Ok(match geom.curve(c) {
         Curve::Line(l) => CurveForm::Line {
@@ -67,9 +86,9 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
             if plan.frame.is_some() {
                 return Ok(CurveForm::Branch);
             }
-            let point = geom.position(i.witness);
+            let point = plan.divider.as_ref().map(|_| geom.position(i.witness));
             let index = if let Some(d) = &plan.divider {
-                if sign(&d.value(&point), dec)? == Sign::Negative {
+                if sign(&d.value(point.as_ref().unwrap()), dec)? == Sign::Negative {
                     1
                 } else {
                     0
@@ -78,8 +97,8 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
                 0
             };
             let mut form = plan.curves[index].form.clone();
-            if let CurveForm::Line { origin, .. } = &mut form {
-                *origin = point;
+            if witness_line_origin && let CurveForm::Line { origin, .. } = &mut form {
+                *origin = point.unwrap_or_else(|| geom.position(i.witness));
             }
             form
         }

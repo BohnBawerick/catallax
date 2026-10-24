@@ -286,6 +286,8 @@ For a line, circle or ellipse it returns that curve's own fields and makes no de
 
 An intersection curve with a `Circle` form is the whole circle. A `Line` form is a carrier: cone generators remain rays from the apex, and `on_curve` checks the ray domain. Such a ray is not globally the same curve as the whole line. Parabolas and hyperbola branches likewise retain their selected domain. An intersection curve built by hand on a CC6 pair would be an open arc of an ellipse between singular points, with a direction the CC6 normals do not fix; it still refuses with `intersect.unsupported-curve`. `intersect_surfaces` stores those CC6 ellipses analytically instead.
 
+Curve–surface elimination may use the selected line's construction frame instead of its witness frame. This does not change the public `curve_form` origin or natural direction above. Certified parameter roots map back to 3D through the same component-domain, contact and ordering checks.
+
 The front end counts edges by `curve_form`, so an intersection curve with a line form counts as a line in the manifest's `edges_by_kind`, and piece 7 writes it as a `LINE` (`JUDGE-INTERFACE.md`).
 
 ## Where a curve meets a surface

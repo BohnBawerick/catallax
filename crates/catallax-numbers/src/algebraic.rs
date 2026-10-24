@@ -758,7 +758,17 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
     // Zero was removed above. All other roots lie strictly inside (-B, B).
     let mut pending = vec![(-&bound, Rational::zero()), (Rational::zero(), bound)];
     while let Some((lo, hi)) = pending.pop() {
-        let variations = descartes_variations(&primitive, &lo, &hi, work)?;
+        // Keep policy-bounded reconstruction on the established path.
+        // Native signs replace only the coarse complete-search predicate.
+        let direct = if rational_complete && work.policy.max_precision_bits != 0 {
+            small_quadratic_variations(&integers, &lo, &hi, work)?
+        } else {
+            None
+        };
+        let variations = match direct {
+            Some(variations) => variations,
+            None => descartes_variations(&primitive, &lo, &hi, work)?,
+        };
         if variations == 0 {
             continue;
         }
@@ -1030,6 +1040,52 @@ fn root_bound(p: &UPoly, work: &mut Work) -> Result<Rational, &'static str> {
         h = h.max(k);
     }
     Ok(Rational::one().mul_pow2(if h == i64::MIN { 0 } else { h + 1 }))
+}
+
+fn small_quadratic_variations(
+    coefficients: &[Integer],
+    lo: &Rational,
+    hi: &Rational,
+    work: &mut Work,
+) -> Result<Option<usize>, &'static str> {
+    let [c, b, a] = coefficients else {
+        return Ok(None);
+    };
+    if !lo.is_integer() || !hi.is_integer() {
+        return Ok(None);
+    }
+    let small = |value: &Integer| value.to_i64().filter(|v| v.unsigned_abs() < (1u64 << 20));
+    let native = || {
+        Some([
+            small(c)?,
+            small(b)?,
+            small(a)?,
+            small(lo.numerator())?,
+            small(hi.numerator())?,
+        ])
+    };
+    let Some([c, b, a, lo, hi]) = native() else {
+        return Ok(None);
+    };
+    // Twenty-bit inputs keep every intermediate within signed 63 bits.
+    // Two Horner evaluations and the middle Bernstein coefficient cost
+    // 20 one-limb arithmetic units; multiplication by two is a shift.
+    work.charge(20)?;
+    let al = a * lo;
+    let ah = a * hi;
+    let at_lo = (al + b) * lo + c;
+    let at_hi = (ah + b) * hi + c;
+    let middle = ((al * hi) << 1) + b * (lo + hi) + (c << 1);
+    let signs = [at_hi, middle, at_lo].map(|value| {
+        if value < 0 {
+            Sign::Negative
+        } else if value > 0 {
+            Sign::Positive
+        } else {
+            Sign::Zero
+        }
+    });
+    Ok(Some(sign_variations(signs)))
 }
 
 // Filtered subdivision and Taylor shifts follow the bitstream Descartes

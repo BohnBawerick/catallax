@@ -699,7 +699,7 @@ pub(super) fn intersect(
 mod tests {
     use super::*;
     use catallax_numbers::BudgetPolicy;
-    use catallax_shapes::{Cone, RPoint3, RVector3, Surface, Torus};
+    use catallax_shapes::{Cone, Line, RPoint3, RVector3, Surface, Torus};
 
     fn point(x: i64, y: i64, z: i64) -> RPoint3 {
         RPoint3::new(r(x), r(y), r(z))

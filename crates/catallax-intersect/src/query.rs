@@ -67,9 +67,9 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
             if plan.frame.is_some() {
                 return Ok(CurveForm::Branch);
             }
-            let point = geom.position(i.witness);
+            let point = plan.divider.as_ref().map(|_| geom.position(i.witness));
             let index = if let Some(d) = &plan.divider {
-                if sign(&d.value(&point), dec)? == Sign::Negative {
+                if sign(&d.value(point.as_ref().unwrap()), dec)? == Sign::Negative {
                     1
                 } else {
                     0
@@ -79,7 +79,7 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
             };
             let mut form = plan.curves[index].form.clone();
             if let CurveForm::Line { origin, .. } = &mut form {
-                *origin = point;
+                *origin = point.unwrap_or_else(|| geom.position(i.witness));
             }
             form
         }

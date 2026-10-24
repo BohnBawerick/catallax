@@ -86,20 +86,22 @@
   <div class="why__grid">
     <div class="why__copy">
       <p class="why__lede">Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.</p>
-      <p>That law is not property. Property exists because things are scarce. If you copy this kernel, we still have it, and now you have one too. Nobody is poorer. Programs are not scarce, so the "intellectual property" over them has to be manufactured by the state: a grant that forbids you from arranging your own bits in a pattern someone else arranged first. Murray Rothbard wrote, "Patents, therefore, are grants of exclusive monopoly privilege by the State" in <a href="https://mises.org/online-book/man-economy-and-state-power-and-market/10-monopoly-and-competition/7-patents-and-copyrights">Man, Economy, and State, chapter 10, section 7</a>. Stephan Kinsella extended the point to copyright: "Ideas are not naturally scarce" in Against Intellectual Property, Journal of Libertarian Studies 15:2, 2001. We stand with that reading.</p>
-      <p>Geometry is mathematics and belongs to everyone. A public kernel lets a one-person CAD product enter the market without buying permission from a kernel vendor. Copy this code. Change it. Sell a product built on it. Compete with us.</p>
-      <p>Catallax puts AI coding agents to work on exact geometry, directed and checked by a human. Most of the inherited implementation was written that way. Whether this approach works at the scale a useful CAD kernel demands is an open question. We will find out in public.</p>
-      <p class="why__plain">Copyright attaches to code by default. We use the legal instrument available to let you use the code without asking us. MIT grants permission to use, copy, modify, publish and sell it, with the notice kept on copies and no warranty.</p>
+      <p>Property exists because things are scarce. If you take my lathe, I no longer have a lathe. If you copy this kernel, we still have it, and now you have one too. Nobody is made poorer for it, on the contrary. Programs are not scarce, so the "intellectual property" over them has to be manufactured by the state: a grant that forbids you from arranging your own bits in a pattern someone else arranged first. Patents, therefore, are grants of exclusive monopoly privilege by the State <a href="https://mises.org/online-book/man-economy-and-state-power-and-market/10-monopoly-and-competition/7-patents-and-copyrights">Murray Rothbard's Man, Economy, and State, chapter 10, section 7</a>. We stand with that reading.</p>
+      <p>A public kernel lets a one-person CAD product enter the market without buying permission from a kernel vendor. Copy this code. Change it. Sell a product built on it. Compete with us.</p>
+      <p>Catallax aims to bridge the gap betwen Implicity and explicity approach. While most of the inherited implementation was written that way. Whether this approach works at the scale a useful CAD kernel demands is an open question.</p>
+      <p class="why__plain">Copyright attaches to code by default. MIT grants permission to use, copy, modify, publish and sell it, with the notice kept on copies and no warranty.</p>
       <a class="btn magnetic" href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE"><span>Read the MIT licence</span></a>
     </div>
     <div class="why__terms">
       <p class="label">A closed kernel · a free kernel</p>
-      <ul class="why__list">
+      <ul class="why__list">pe: an exact B-rep and a signed distance field evaluate the same feature tree. <em>One definition is the truth.</em></p>
+  <p class="direction__note"><span class="status-chip">Vision · in design</span> Parametric parts, drawings and assemblies. Lattices, field-driven thickness and simulation-led shapes. SolidDraft grows toward both, and runs only on Catallax.</p>
+  <p class="direction__note">In design: one modelling tolerance chosen before building, separate from display and export accuracy. Approximate only a proven near-contact or a shape the B-rep cannot carry exactly. Record each decision once, merge what is declared the same, carry visible local tolerances and check topology before publishing. Later operations measure against the definition, so tolerances do not accumulate.</p>
+  <p class="direction__note">In design
         <li><span>Licence</span><b>Closed kernels are licensed, metered and can be withdrawn. Catallax is MIT, for everyone, for ever.</b></li>
         <li><span>The maths</span><b>A century old and published. Geometry is mathematics and belongs to everyone.</b></li>
-        <li><span>The code</span><b>Kept closed by law, not by nature. Copy this one. We still have it, and now you have one too.</b></li>
+        <li><span>The code</span><b>Copy this one. We still have it, and now you have one too.</b></li>
         <li><span>The market</span><b>A one-person CAD product can enter without buying permission from a kernel vendor. Compete with us.</b></li>
-        <li><span>The work</span><b>AI coding agents write most of the code. A human directs, questions and checks it, in public.</b></li>
       </ul>
     </div>
   </div>
@@ -108,10 +110,7 @@
 <!-- WHAT CATALLAX IS ------------------------------------------------------>
 <section class="manifesto section" id="about">
   <p class="label section__label"><span>02</span>What Catallax is</p>
-  <p class="manifesto__text" data-words>A geometry kernel in safe Rust, built for SolidDraft, the CAD application. Two kernels, one recipe: an exact B-rep and a signed distance field evaluate the same feature tree. The B-rep carries exact faces; the field carries implicit features and checks the B-rep. <em>One definition is the truth.</em></p>
-  <p class="direction__note"><span class="status-chip">Vision · in design</span> Parametric parts, drawings and assemblies. Lattices, field-driven thickness and simulation-led shapes. SolidDraft grows toward both, and runs only on Catallax, with no other kernel as a fallback.</p>
-  <p class="direction__note">In design: one modelling tolerance chosen before building, separate from display and export accuracy. Approximate only a proven near-contact or a shape the B-rep cannot carry exactly. Record each decision once, merge what is declared the same, carry visible local tolerances and check topology before publishing. Later operations measure against the definition, so tolerances do not accumulate.</p>
-  <p class="direction__note">In design: the field measures approximated pieces against their own definitions. Where it cannot build a step yet, it takes over that B-rep result and checks later steps independently, reporting the coverage. Field-only features need not become B-rep. <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">Read the build order</a>.</p>
+  <p class="manifesto__text" data-words>A geometry kernel in safe Rust, built for SolidDraft, the CAD application. Two kernels, one reci: the field measures approximated pieces against their own definitions. Where it cannot build a step yet, it takes over that B-rep result and checks later steps independently, reporting the coverage. Field-only features need not become B-rep. <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">Read the build order</a>.</p>
   <div class="manifesto__sig">
     <img src="brand/mark.svg" alt="" width="40" height="40">
     <p><strong>Pedro De Paiva · Perth</strong><br>Mechanical engineer, 8+ years. Founder of <a href="https://zigrawbohnbawerick.org/">Zigrawbohnbawerick Pty Ltd</a>.<br><a href="https://pedro.zigrawbohnbawerick.org/">The engineer behind the kernel</a></p>

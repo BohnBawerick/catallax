@@ -206,7 +206,7 @@ impl fmt::Display for NameError {
 impl std::error::Error for NameError {}
 
 /// The name of an edge: the origins of the two faces it separates, in canonical order.
-/// A face with several origins contributes the first of them.
+/// Construction pairs survive face merging; a model without history uses first origins.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(try_from = "RawEdgeName")]
 pub struct EdgeName {

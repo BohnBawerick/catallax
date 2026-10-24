@@ -57,6 +57,7 @@ pub struct Model {
     edge_coedges: Vec<Vec<CoedgeId>>,
     coedge_owners: Vec<Option<(LoopId, FaceId)>>,
     face_origins: BTreeMap<FaceId, Vec<Origin>>,
+    edge_constructions: BTreeMap<EdgeId, Vec<EdgeName>>,
 }
 
 impl Model {
@@ -152,7 +153,7 @@ impl Model {
         self.face_origins.get(&face).map_or(&[], Vec::as_slice)
     }
 
-    /// Rewrites a body's provenance without changing its geometry or incidence.
+    /// Rewrites a body's face and edge provenance without changing its geometry or incidence.
     /// Call before publishing a newly built body. Shared faces retain this rewrite.
     pub fn map_face_origins(&mut self, body: BodyId, mut map: impl FnMut(&Origin) -> Origin) {
         for face in self.faces_of_body(body) {
@@ -162,6 +163,21 @@ impl Model {
                 }
                 origins.sort();
                 origins.dedup();
+            }
+        }
+        if self.edge_constructions.is_empty() {
+            return;
+        }
+        for edge in self.edges_of_body(body) {
+            if let Some(names) = self.edge_constructions.remove(&edge) {
+                let names = names
+                    .into_iter()
+                    .filter_map(|name| {
+                        let [a, b] = name.between();
+                        EdgeName::new(map(a), map(b)).ok()
+                    })
+                    .collect();
+                self.record_edge_constructions(edge, names);
             }
         }
     }
@@ -192,16 +208,56 @@ impl Model {
         }).collect()
     }
 
-    /// Names an edge by the first origin of its two incident faces.
-    /// Returns `None` for unnamed geometry or a pair with equal first origins.
+    /// Construction names retained through edge splitting and maximal merging.
+    /// Unlike a merged face's origins, these pairs were incident before merging.
+    pub fn edge_constructions(&self, edge: EdgeId) -> &[EdgeName] {
+        self.edge(edge);
+        self.edge_constructions
+            .get(&edge)
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// Records the canonical union of construction names for a newly built edge.
+    pub fn record_edge_constructions(&mut self, edge: EdgeId, mut names: Vec<EdgeName>) {
+        self.edge(edge);
+        if names.is_empty() {
+            return;
+        }
+        let stored = match self.edge_constructions.entry(edge) {
+            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(names),
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                let stored = entry.into_mut();
+                stored.append(&mut names);
+                stored
+            }
+        };
+        stored.sort_by(|a, b| a.between().cmp(b.between()));
+        stored.dedup();
+    }
+
+    /// Names an edge by a retained construction pair still incident on this body.
+    /// Without construction history, uses the first origins of its two faces.
     pub fn edge_name(&self, body: BodyId, edge: EdgeId) -> Option<EdgeName> {
-        let origins: Vec<_> = self.unique_faces(body).filter_map(|face| {
-            self.face(face).loops.iter().any(|lp| {
+        let mut faces = self.unique_faces(body).filter(|face| {
+            self.face(*face).loops.iter().any(|lp| {
                 matches!(self.loop_(*lp), Loop::Coedges(cs) if cs.iter().any(|c| self.coedge(*c).edge == edge))
-            }).then(|| self.face_origins(face).first().cloned()).flatten()
-        }).collect();
-        let [a, b]: [Origin; 2] = origins.try_into().ok()?;
-        EdgeName::new(a, b).ok()
+            })
+        });
+        let (Some(a), Some(b)) = (faces.next(), faces.next()) else {
+            return None;
+        };
+        if faces.next().is_some() {
+            return None;
+        }
+        let a = self.face_origins(a);
+        let b = self.face_origins(b);
+        if let Some(name) = self.edge_constructions(edge).iter().find(|name| {
+            let [x, y] = name.between();
+            (a.contains(x) && b.contains(y)) || (a.contains(y) && b.contains(x))
+        }) {
+            return Some(name.clone());
+        }
+        EdgeName::new(a.first()?.clone(), b.first()?.clone()).ok()
     }
 
     /// Names a vertex by the first origins of all incident faces.

@@ -2,7 +2,7 @@
 
 use crate::*;
 use catallax_numbers::{Fact, FactKind, FactOrigin};
-use catallax_recipe::Origin;
+use catallax_recipe::{EdgeName, Origin};
 use catallax_shapes::{
     Curve, CurveId, GeomKey, Isometry, Meet, MeetOf, PointDef, PointId, Position, SurfaceId,
 };
@@ -125,6 +125,16 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
             start,
             end,
         });
+        let constructions = self
+            .model
+            .edge_constructions(id)
+            .iter()
+            .filter_map(|name| {
+                let [a, b] = name.between();
+                EdgeName::new((self.origin)(a), (self.origin)(b)).ok()
+            })
+            .collect();
+        self.model.record_edge_constructions(mapped, constructions);
         self.edges.insert(id, mapped);
         mapped
     }

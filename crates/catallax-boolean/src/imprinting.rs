@@ -428,6 +428,13 @@ pub(crate) fn imprint(
         for edge in model.edges_of_body(body) {
             if let std::collections::btree_map::Entry::Vacant(entry) = boundary.entry(edge) {
                 let parts = builder.split(model, edge, dec)?;
+                let mut names = model.edge_constructions(edge).to_vec();
+                if names.is_empty() {
+                    names.extend(model.edge_name(body, edge));
+                }
+                for &(part, _) in &parts {
+                    model.record_edge_constructions(part, names.clone());
+                }
                 entry.insert(parts);
             }
         }

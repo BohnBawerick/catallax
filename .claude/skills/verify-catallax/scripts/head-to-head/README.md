@@ -44,6 +44,8 @@ Requested volume, area and all centroid components are compared with that indepe
 
 Each exported STEP is opened without repair in OpenCASCADE. The checker records root transfer, topology validity and the producing tool's expected unique face count. Independently constructed and exported models can split faces differently, so the producer's own topology count is checked rather than requiring both tools to have the same partition. A fixed 216-point grid compares imported and independent solid membership. Boundary classifications remain unresolved and are counted. Passing samples do not prove global set equality. Name checks require every original result face and edge name to resolve after the edit; they record missing and unnamed entities. String-name survival is not a proof of semantic face correspondence.
 
+The table separates STEP files opened, checks completed and full passes. A valid file can still change the producer's expected face count, and an unavailable checker has a zero checked denominator. The pinned OpenCASCADE 8 binding uses `TopoDS.Edge` for explicit topology casts.
+
 The existing `parts` command still runs independent B-rep, field and sampled comparison. This command compares B-rep target construction and its consumers with the released reference tool. It neither replaces field certification nor pretends to exercise SolidDraft's UI. No speed ratio is valid for a target that did not complete and pass the relevant correctness checks in both tools.
 
 ## Prior art

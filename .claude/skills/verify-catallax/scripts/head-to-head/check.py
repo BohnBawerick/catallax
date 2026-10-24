@@ -72,7 +72,7 @@ def check(case, variant, step_path, expected_faces):
                 raise ValueError(f'independent blend pick misses edge: {point}, {distance}')
             if not any(edge.IsSame(old) for old in chosen):
                 chosen.append(edge)
-                builder.Add(radius, TopoDS.Edge_s(edge))
+                builder.Add(radius, TopoDS.Edge(edge))
         builder.Build()
         if not builder.IsDone():
             raise ValueError('independent blend failed')

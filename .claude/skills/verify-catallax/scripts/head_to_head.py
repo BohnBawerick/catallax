@@ -325,7 +325,10 @@ def summarize(report):
                 row['properties_checked'] = sum(v.get('correctness', {}).get('claimed_properties', {}).get('status') in ('passed','failed') for v in variants)
                 row['membership_checked'] = sum(v.get('correctness', {}).get('membership', {}).get('status') in ('passed','failed') for v in variants)
                 row['step_passed'] = sum(v.get('correctness', {}).get('step', {}).get('status') == 'passed' for v in variants)
+                row['step_opened'] = sum(v.get('correctness', {}).get('step', {}).get('opened') is True for v in variants)
+                row['step_checked'] = sum(v.get('correctness', {}).get('step', {}).get('status') in ('passed','failed') for v in variants)
                 row['names_passed'] = sum(p.get('edit_survival', {}).get('status') == 'passed' for p in pairs) if label == 'edit' else None
+                row['names_checked'] = sum(p.get('edit_survival', {}).get('status') in ('passed','failed') for p in pairs) if label == 'edit' else None
                 rows.append(row)
     return rows
 
@@ -334,8 +337,8 @@ def markdown(report):
     lines = ['# Target-part head-to-head', '',
              f'Reference release {report["reference"]["version"]}. One warmup and {report["timing"]["measured_pairs"]} alternating matched pairs per part on core {report["timing"]["core"]}.', '',
              'Shared-machine observations. See raw JSON for load averages, work, operations rebuilt, failures, STEP checks and every property discrepancy.', '',
-             '| Part | Tool | Variant | Build ms | Display/export ms | Measurement ms | Refusal ms | Failed rebuilds | Incomplete | Property errors / checked | Membership errors / checked | STEP passes | Name passes |',
-             '| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | --- | --- | ---: | ---: |']
+             '| Part | Tool | Variant | Build ms | Display/export ms | Measurement ms | Refusal ms | Failed rebuilds | Incomplete | Property errors / checked | Membership errors / checked | STEP opened / checked / full pass | Names passed / checked |',
+             '| --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | --- | --- | --- | --- |']
     def number(value):
         return 'unmeasured' if value is None else f'{value:.3f}'
     def refusals(row):
@@ -353,5 +356,6 @@ def markdown(report):
             *[number(row[k+'_median_ms']) for k in ('build','display','measurement')],
             refusals(row),
             str(row['failed_rebuilds']), str(row['incomplete']), f'{row["wrong_properties"]} / {row["properties_checked"]}',
-            f'{row["wrong_membership"]} / {row["membership_checked"]}', str(row['step_passed']), str(row['names_passed']) if row['names_passed'] is not None else 'not applicable']) + ' |')
+            f'{row["wrong_membership"]} / {row["membership_checked"]}', f'{row["step_opened"]} / {row["step_checked"]} / {row["step_passed"]}',
+            f'{row["names_passed"]} / {row["names_checked"]}' if row['names_passed'] is not None else 'not applicable']) + ' |')
     return '\n'.join(lines) + '\n'

@@ -568,7 +568,7 @@ def main():
     p.add_argument('--occt-python', default=sys.executable, help='Python with cadquery-ocp installed; unavailable binding is reported as not run')
     p = commands.add_parser('head-to-head-reference', help='download and verify the pinned released SolidCraft binary outside the repository')
     p.add_argument('--out', required=True)
-    p = commands.add_parser('head-to-head', help='development-only pinned target-part matched pairs against released SolidCraft')
+    p = commands.add_parser('head-to-head', help='development-only pinned target-part comparison against released tools')
     p.add_argument('inputs', help='fixed target recipe directory, normally parts/')
     p.add_argument('--binary', required=True, help='release examples/head_to_head, not the runtime CLI')
     p.add_argument('--reference', required=True, help='checksum-verified released solidcraft-cli')
@@ -579,6 +579,8 @@ def main():
     p.add_argument('--timeout', type=float, default=120)
     p.add_argument('--part', action='append', help='exact case filename, repeat to select several; default all P0–P5')
     p.add_argument('--occt-python', default=sys.executable)
+    p.add_argument('--tool-runtime', help='runtime.json from head-to-head/prepare.py; adds CadQuery, smlibpy and Pali Ijo')
+    p.add_argument('--machine-class', default='unspecified', help='factual host class, recorded with CPU model and load averages')
     for p in commands.choices.values():
         p.add_argument('--json', action='store_true', help='emit stable machine-readable JSON')
     args = parser.parse_args()

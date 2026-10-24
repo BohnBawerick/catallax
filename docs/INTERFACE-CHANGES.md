@@ -1268,3 +1268,70 @@ Pieces: field and comparison
 Change: the distance-feature visitor uses the current-definition `(RPoint3, FaceId)` callback contract, matching `Plan::visit_candidates`. Native draft-region bounds remain available to the query-only sampler. Constructing a distance feature from a draft region still requires a retained trim proof; its constraints alone are not assumed to define a convex intersection.
 Why: an origin can survive on several replacement supports, and a retained region can contain multiple material cells.
 Migration: certify the emitted handle directly and read its origin from the field registry. No compatibility alias, recipe format, tolerance or work allowance changes.
+## 2026-10-24: stack-safe region sampling and bounded exact display samples
+
+Pieces: 5, display mesh, application
+
+Change: certified face-region sampling has a maximum subdivision depth of 32
+and visits at most 4096 cells per chart build across all boundary pieces.
+Exhaustion returns `boolean.sampling-budget`, which is not retried with greater
+numeric precision. The inherited numeric precision limit still applies.
+Display meshing retains at most 4096 exact traced planar boundary samples per
+body and refuses with `mesh.resource-limit` before constructing another graph.
+The existing vertex allowance and every requested display tolerance still apply.
+
+Why: using numeric precision as the recursion allowance overflowed thread stacks
+and made tiny nonzero coordinates much slower than exact zero. A vertex-only
+display allowance did not constrain the expensive exact boundary expressions.
+The new bounds govern work and retained data, not permissible coordinate sizes.
+Linux application regressions isolate every case under a 512 MiB address-space
+limit, an 8 MiB main-stack limit, 12 CPU seconds and 15 wall seconds.
+These test limits are not a library-wide allocator or wall-clock policy.
+
+Sub-tolerance inputs stay exact. DESIGN R9 forbids snapping merely because a
+coordinate is below 1 nm. No whole-effect distance certificate or scoped
+decide-once record authorizes replacing these coordinates with zero, so an
+unsettled classification refuses instead. A resource refusal is unfinished
+coverage, not a claim that the input geometry is impossible.
+
+Migration: callers must preserve the two new typed resource refusal codes.
+No public type, request format, numeric budget, modelling tolerance, STEP
+representation or successfully sampled geometry changes. The guards do not
+introduce timing, measurement or proof reporting into an application build.
+
+
+## 2026-10-24: correction to sampling depth and aggregate application work
+
+Pieces: 1, 5, application
+
+This corrects the preceding "stack-safe region sampling and bounded exact display
+samples" entry. A fixed depth of 32 rejected previously answered near-contact
+and scaled geometry. Region sampling now uses an explicit heap worklist in the
+same left-before-right order as the old recursion. The inherited numeric depth
+guard remains, but thread-stack use no longer grows with subdivision depth.
+The unchanged 4096-cell allowance is shared across every piece, projection
+choice and precision retry of one signature query, rather than renewed for each
+chart build. Its exhaustion still returns `boolean.sampling-budget`.
+
+An independent phase probe also found a valid displaced-hole build using
+88 million arithmetic units before meshing. A sampling-only bound did not cap
+that complete application edit. `catallax_app::DEFAULT_BUILD_WORK` is now
+20,000,000 units for one construction/display request. The normal bracket uses
+9.8 million units. Both exact and certified application entries share this
+allowance and discard any result after exhaustion with the new
+`Error::ResourceLimit`, code `application.work-limit`. Numeric per-decision
+policies remain in force.
+
+`catallax_numbers::operation_budget_active` reports whether the caller already
+owns an aggregate work scope. Application builds preserve that explicit
+allowance rather than nesting, resetting or enlarging it. In particular, the
+verification exchange retains its existing per-request allowance and outcomes.
+The default application limit is not an allocator cap or a wall-clock deadline.
+The 4096 exact display sample bound and unchanged isolated process caps from the
+preceding entry remain in force. No coordinate-size cutoff, geometric snapping
+or tolerance increase is introduced.
+
+Migration: consumers of the non-exhaustive application error type must retain
+`application.work-limit` as a resource refusal. Callers with an explicit
+operation budget keep control of their request allowance. There is no recipe,
+manifest or STEP format migration.

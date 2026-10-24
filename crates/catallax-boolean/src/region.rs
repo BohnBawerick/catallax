@@ -33,11 +33,21 @@ pub(crate) struct RegionCache {
     coordinates: HashMap<(PointId, u32), [Ball; 3]>,
 }
 
+// Shared across pieces, projection choices and precision retries. Precision
+// controls arithmetic enclosures, never the amount of subdivision work.
+const MAX_SAMPLE_CELLS: usize = 4096;
+
+struct SamplingWork<'a> {
+    traces: &'a mut HashMap<EdgeId, CurveTrace>,
+    remaining: usize,
+}
+
 struct Sampling<'a> {
     piece: &'a TracePiece,
     projection: &'a Projection,
     queries: &'a [Box2],
     bits: u32,
+    remaining: &'a mut usize,
     dec: &'a mut Decider,
 }
 
@@ -49,21 +59,44 @@ impl Sampling<'_> {
         depth: u32,
         out: &mut Vec<Segment>,
     ) -> Result<(), Refusal> {
+        let mut pending = vec![(from, to, depth)];
+        while let Some((from, to, depth)) = pending.pop() {
+            if let Some(mid) = self.cell(&from, &to, depth, out)? {
+                // Pop the left half first, preserving the recursive traversal.
+                pending.push((mid.clone(), to, depth + 1));
+                pending.push((from, mid, depth + 1));
+            }
+        }
+        Ok(())
+    }
+
+    fn cell(
+        &mut self,
+        from: &Rational,
+        to: &Rational,
+        depth: u32,
+        out: &mut Vec<Segment>,
+    ) -> Result<Option<Rational>, Refusal> {
+        if *self.remaining == 0 {
+            return Err(refusal(
+                "boolean.sampling-budget",
+                "face membership exhausted its deterministic sampling cell allowance",
+            ));
+        }
+        *self.remaining -= 1;
         let piece = self.piece;
         let projection = self.projection;
         let queries = self.queries;
         let bits = self.bits;
         let dec = &mut *self.dec;
-        let parameter = ball(&from, &to, bits);
+        let parameter = ball(from, to, bits);
         let projected = projection.project_certified(&piece.evaluate(&parameter, dec)?, dec)?;
-        let mid = (&from + &to).mul_pow2(-1);
+        let mid = (from + to).mul_pow2(-1);
         if let Some(mut entire) = projected {
-            let start = projection.project_certified(
-                &piece.evaluate(&Ball::from_rational(&from, bits), dec)?,
-                dec,
-            )?;
+            let start = projection
+                .project_certified(&piece.evaluate(&Ball::from_rational(from, bits), dec)?, dec)?;
             let end = projection
-                .project_certified(&piece.evaluate(&Ball::from_rational(&to, bits), dec)?, dec)?;
+                .project_certified(&piece.evaluate(&Ball::from_rational(to, bits), dec)?, dec)?;
             if let (Some(mut start), Some(mut end)) = (start, end) {
                 if projection.periodic() {
                     align(&mut start, &entire);
@@ -88,7 +121,7 @@ impl Sampling<'_> {
                 }
                 if clear && depth >= 2 {
                     out.push(Segment { entire, start, end });
-                    return Ok(());
+                    return Ok(None);
                 }
                 let Some(mut middle) = projection.project_certified(
                     &piece.evaluate(&Ball::from_rational(&mid, bits), dec)?,
@@ -127,8 +160,7 @@ impl Sampling<'_> {
                 "trace boxes do not separate the boundary from the query at this precision",
             ));
         }
-        self.sample(from, mid.clone(), depth + 1, out)?;
-        self.sample(mid, to, depth + 1, out)
+        Ok(Some(mid))
     }
 }
 
@@ -194,7 +226,7 @@ fn build(
     projection: &Projection,
     queries: &[Box2],
     bits: u32,
-    traces: &mut HashMap<EdgeId, CurveTrace>,
+    work: &mut SamplingWork<'_>,
     dec: &mut Decider,
 ) -> Result<Vec<Vec<(Point2, Point2)>>, Refusal> {
     let mut polygons = Vec::new();
@@ -206,7 +238,7 @@ fn build(
         for &coedge_id in coedges {
             let coedge = model.coedge(coedge_id);
             let edge = model.edge(coedge.edge);
-            let traced = match traces.entry(coedge.edge) {
+            let traced = match work.traces.entry(coedge.edge) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
                     let (from, to) = natural_ends(model, coedge.edge);
@@ -227,6 +259,7 @@ fn build(
                     projection,
                     queries,
                     bits,
+                    remaining: &mut work.remaining,
                     dec,
                 }
                 .sample(
@@ -334,6 +367,10 @@ impl RegionCache {
         }
         let loops: Vec<_> = loop_groups.iter().flatten().copied().collect();
         let reference = reference(model, surface, &loops, dec)?;
+        let mut work = SamplingWork {
+            traces: &mut self.traces,
+            remaining: MAX_SAMPLE_CELLS,
+        };
         let limit = dec.policy().max_precision_bits.max(1);
         let mut bits = limit.min(128);
         loop {
@@ -371,19 +408,12 @@ impl RegionCache {
                     };
                     queries.push(projected);
                 }
-                let polygons = match build(
-                    model,
-                    &loops,
-                    &projection,
-                    &queries,
-                    bits,
-                    &mut self.traces,
-                    dec,
-                ) {
-                    Ok(p) => p,
-                    Err(e) if e.code == "boolean.classify-ambiguous" => break,
-                    Err(e) => return Err(e),
-                };
+                let polygons =
+                    match build(model, &loops, &projection, &queries, bits, &mut work, dec) {
+                        Ok(p) => p,
+                        Err(e) if e.code == "boolean.classify-ambiguous" => break,
+                        Err(e) => return Err(e),
+                    };
                 let query = queries[0].clone().map(|b| b.mid());
                 let reference = queries.get(1).map(|q| q.clone().map(|b| b.mid()));
                 let mut offset = 0;

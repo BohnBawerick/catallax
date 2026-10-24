@@ -17,9 +17,25 @@ use std::{collections::BTreeMap, fmt};
 
 use catallax_features::{BuildError, Built, evaluate};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
-use catallax_numbers::{Answer, Decider, Refusal};
+use catallax_numbers::{Answer, Decider, Refusal, operation_budget_active, with_operation_budget};
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, VertexId};
+
+/// Default aggregate arithmetic allowance for one application build and display.
+/// An existing caller-owned operation allowance takes precedence.
+pub const DEFAULT_BUILD_WORK: u64 = 20_000_000;
+
+fn bounded_build<T>(run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+    if operation_budget_active() {
+        return run();
+    }
+    let (result, work) = with_operation_budget(DEFAULT_BUILD_WORK, run);
+    if work.exhausted {
+        Err(Error::ResourceLimit)
+    } else {
+        result
+    }
+}
 
 /// Names of every entity in the result, keyed by that build's picking handles.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -125,6 +141,8 @@ pub enum Error {
     InvalidBody(Vec<catallax_topology::TopologyFault>),
     /// Display failed, with its original stable refusal code.
     Display(Refusal),
+    /// The default whole-build work allowance expired; no body is published.
+    ResourceLimit,
 }
 
 impl Error {
@@ -138,6 +156,7 @@ impl Error {
                 refusal.code
             }
             Self::InvalidBody(_) => "application.invalid-body",
+            Self::ResourceLimit => "application.work-limit",
         }
     }
 }
@@ -149,6 +168,9 @@ impl fmt::Display for Error {
             Self::Build(e) => e.fmt(f),
             Self::InvalidBody(faults) => write!(f, "application.invalid-body: {faults:?}"),
             Self::Display(e) => write!(f, "{}: {}", e.code, e.detail),
+            Self::ResourceLimit => {
+                write!(f, "application.work-limit: aggregate build work exhausted")
+            }
         }
     }
 }
@@ -157,6 +179,14 @@ impl std::error::Error for Error {}
 /// Builds and checks the exact body before deriving display triangles and names.
 /// Display controls never change the recipe, topology or origin sets.
 pub fn build(
+    recipe: &Recipe,
+    options: &MeshOptions,
+    decider: &mut Decider,
+) -> Result<ApplicationBody, Error> {
+    bounded_build(|| build_inner(recipe, options, decider))
+}
+
+fn build_inner(
     recipe: &Recipe,
     options: &MeshOptions,
     decider: &mut Decider,

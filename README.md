@@ -104,6 +104,11 @@ The [verification skill](.claude/skills/verify-catallax/SKILL.md) covers corpus 
 `Answered<Mesh>`. `MeshOptions::chord_tolerance` is a positive exact length in
 millimetres. `max_vertices` limits deterministic refinement, including temporary
 periodic chart copies. The default is 0.01 mm and one million vertices.
+Exact planar boundary sampling also has a per-mesh allowance of 4096 retained
+samples, checked before constructing each sample's expression graph. Exhaustion
+returns `mesh.resource-limit` without a partial mesh or a coarser tolerance.
+This bounds the expensive retained boundary data separately from binary64
+vertices. It is not a coordinate-size limit or a process-wide heap limit.
 
 Optional `angular_deviation` bounds the angle in radians between each facet normal
 and every analytic normal over its parameter triangle. `max_edge_length` bounds
@@ -172,11 +177,19 @@ cargo run --release -p catallax-mesh --example obj -- cross intersection.obj 0.0
 The example also accepts `block`, `cylinder`, `cone`, `frustum`, `sphere`,
 `drill` and `lens`. Library callers write any built body with `Mesh::write_obj`.
 OBJ groups are named `face_<id>`, and their triangles share vertex indices.
-Resource or coordinate-precision failures return `mesh.precision-or-budget`;
+Coordinate-precision and vertex-budget failures return `mesh.precision-or-budget`;
+the exact boundary sample allowance returns `mesh.resource-limit`, and
 invalid controls return `mesh.invalid-options`. No over-tolerance or
 non-watertight mesh is returned as a successful answer. A caller-supplied
 wall-clock deadline can still cancel meshing through `Decider`; the default
 library decider has no deadline.
+
+Application entries `catallax_app::build`, `build_soliddraft` and `build_certified`
+share a 20,000,000-unit aggregate arithmetic allowance for construction and
+display unless the caller already owns an operation budget. Default exhaustion
+returns `application.work-limit` without a body. An explicit caller allowance is
+never reset or enlarged by a nested build. This work limit is separate from the
+display sample/vertex limits and from all geometric tolerances.
 
 
 ## Where to start

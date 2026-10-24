@@ -21,6 +21,20 @@ fn box_steps() -> Vec<Value> {
 }
 
 #[test]
+fn caller_work_allowance_is_not_replaced_by_a_fresh_application_budget() {
+    let (answer, work) = catallax_numbers::with_operation_budget(0, || {
+        build_soliddraft(
+            &recipe(box_steps(), "Body"),
+            &MeshOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert_eq!(answer.unwrap_err().code(), "numbers.operation-budget");
+    assert!(work.exhausted);
+    assert_eq!(work.used, 0);
+}
+
+#[test]
 fn bracket_mesh_pick_handles_keep_merged_origins_and_hole_names_after_edit() {
     let mut input: Value = serde_json::from_str(BRACKET).unwrap();
     for height in [60, 72] {

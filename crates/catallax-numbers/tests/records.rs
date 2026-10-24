@@ -130,6 +130,59 @@ blind_test!(generated_fact_equivalence_matches_graph_reachability, {
     }
 });
 
+blind_test!(
+    incidence_quotient_matches_mixed_directed_graph_after_every_union,
+    {
+        use std::collections::{BTreeSet, VecDeque};
+        let mut rng = Rng(0xc01ac1de);
+        let mut book = FactBook::new();
+        let mut recorded = Vec::new();
+        for turn in 0..96 {
+            let a = (rng.next() % 16) as u32;
+            let b = (rng.next() % 16) as u32;
+            let kind = if turn % 3 == 0 {
+                FactKind::Coincident
+            } else {
+                FactKind::Incident
+            };
+            let next = fact(kind, a, b, (turn % 4 == 0).then_some(100));
+            if book.record(next) {
+                recorded.push(next);
+            }
+            for a in 0..17 {
+                for b in 0..17 {
+                    let mut seen = BTreeSet::from([(a, false)]);
+                    let mut queue = VecDeque::from([(a, false)]);
+                    let mut expected = false;
+                    while let Some((key, used)) = queue.pop_front() {
+                        for fact in &recorded {
+                            let next = if fact.a == key {
+                                Some(fact.b)
+                            } else if fact.kind == FactKind::Coincident && fact.b == key {
+                                Some(fact.a)
+                            } else {
+                                None
+                            };
+                            if let Some(next) = next {
+                                let used = used || fact.kind == FactKind::Incident;
+                                expected |= next == b && used;
+                                if seen.insert((next, used)) {
+                                    queue.push_back((next, used));
+                                }
+                            }
+                        }
+                    }
+                    assert_eq!(
+                        book.holds(FactKind::Incident, a, b),
+                        expected,
+                        "insertion {turn}, {a} -> {b}"
+                    );
+                }
+            }
+        }
+    }
+);
+
 blind_test!(marks_worst_by_kind_order_and_answer_mapping, {
     let mut first = MarkLog::new();
     assert!(first.is_empty());

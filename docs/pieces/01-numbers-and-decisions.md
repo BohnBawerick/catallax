@@ -310,6 +310,14 @@ accounting; `OperationWork::used` counts request-wide reservations and checkpoin
 - `facts_about(k)` lists the recorded facts that name `k` as `a`, `b` or `at`, in recording order.
 - `iter()` lists all facts in recording order.
 
+Equivalence queries use union-by-size components instead of walking every
+historical relation. Incidence queries traverse the directed graph of
+`Coincident` components. Merging two components rewires incoming and outgoing
+edges and retains any incidence self-edge. Coincidence alone never proves
+incidence. The original facts, their recording order and provenance stay intact;
+the index does not remove geometry, merge handles or change decision accounting.
+
+
 ## Marks
 
 A mark is the record of one "not exact" answer, carried on results.

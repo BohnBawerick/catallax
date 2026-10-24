@@ -1,4 +1,5 @@
 {
+  "correctness_rechecks_sha256": "e52fc17e7f8f225fa4cf137a20428aee5fbd0f484f43bedd4262f76de35b7d9c",
   "format": "catallax-head-to-head-summary/1",
   "measured_commit": "74bf31a8fae4e2d814cc9a4224dee401621401de",
   "property_rechecks_sha256": "851581e2c5c3a1af66ab5243a25d092824d0d538b60c0f0a7c368443aca832a6",
@@ -2470,7 +2471,7 @@
       "failed_rebuilds": 0,
       "incomplete": 0,
       "measurement_median_ms": 66.433,
-      "membership_checked": 0,
+      "membership_checked": 3,
       "names_checked": null,
       "names_passed": null,
       "operations_rebuilt": [
@@ -2508,8 +2509,8 @@
         null
       ],
       "samples": 3,
-      "step_checked": 0,
-      "step_opened": 0,
+      "step_checked": 3,
+      "step_opened": 3,
       "step_passed": 0,
       "with_requested_measurement_median_ms": 159.732,
       "work": [
@@ -2530,7 +2531,7 @@
       "failed_rebuilds": 0,
       "incomplete": 0,
       "measurement_median_ms": 63.596,
-      "membership_checked": 0,
+      "membership_checked": 3,
       "names_checked": 3,
       "names_passed": 3,
       "operations_rebuilt": [
@@ -2568,8 +2569,8 @@
         null
       ],
       "samples": 3,
-      "step_checked": 0,
-      "step_opened": 0,
+      "step_checked": 3,
+      "step_opened": 3,
       "step_passed": 0,
       "with_requested_measurement_median_ms": 137.683,
       "work": [
@@ -2590,7 +2591,7 @@
       "failed_rebuilds": 0,
       "incomplete": 0,
       "measurement_median_ms": 4.441320999999999,
-      "membership_checked": 0,
+      "membership_checked": 3,
       "names_checked": null,
       "names_passed": null,
       "operations_rebuilt": [
@@ -2628,9 +2629,9 @@
         null
       ],
       "samples": 3,
-      "step_checked": 0,
-      "step_opened": 0,
-      "step_passed": 0,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
       "with_requested_measurement_median_ms": 142.366535,
       "work": [
         25577,
@@ -2650,7 +2651,7 @@
       "failed_rebuilds": 0,
       "incomplete": 0,
       "measurement_median_ms": 4.781020000000001,
-      "membership_checked": 0,
+      "membership_checked": 3,
       "names_checked": 3,
       "names_passed": 3,
       "operations_rebuilt": [
@@ -2688,9 +2689,9 @@
         null
       ],
       "samples": 3,
-      "step_checked": 0,
-      "step_opened": 0,
-      "step_passed": 0,
+      "step_checked": 3,
+      "step_opened": 3,
+      "step_passed": 3,
       "with_requested_measurement_median_ms": 169.80989300000002,
       "work": [
         27019,
@@ -2710,7 +2711,7 @@
       "failed_rebuilds": 0,
       "incomplete": 0,
       "measurement_median_ms": 519.464,
-      "membership_checked": 0,
+      "membership_checked": 3,
       "names_checked": null,
       "names_passed": null,
       "operations_rebuilt": [
@@ -2748,8 +2749,8 @@
         null
       ],
       "samples": 3,
-      "step_checked": 0,
-      "step_opened": 0,
+      "step_checked": 3,
+      "step_opened": 3,
       "step_passed": 0,
       "with_requested_measurement_median_ms": 1479.716,
       "work": [
@@ -2770,7 +2771,7 @@
       "failed_rebuilds": 0,
       "incomplete": 0,
       "measurement_median_ms": 534.441,
-      "membership_checked": 0,
+      "membership_checked": 3,
       "names_checked": 3,
       "names_passed": 3,
       "operations_rebuilt": [
@@ -2808,8 +2809,8 @@
         null
       ],
       "samples": 3,
-      "step_checked": 0,
-      "step_opened": 0,
+      "step_checked": 3,
+      "step_opened": 3,
       "step_passed": 0,
       "with_requested_measurement_median_ms": 1474.6100000000001,
       "work": [

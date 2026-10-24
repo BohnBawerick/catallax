@@ -12,7 +12,7 @@ Times are medians in milliseconds. A successful-phase median requires every meas
 
 Property errors count discrepant quantities or centroid components, not distinct parts. They use an independent OpenCASCADE construction and the documented numeric diagnostic allowance, not a kernel acceptance tolerance. Membership is a fixed 216-point grid, not a global set equality proof. Name checks resolve every original result name but do not prove semantic face correspondence.
 
-STEP columns distinguish files that open from checks that also pass topology and expected face count. Most reference STEP failures are face-count changes, not failed reads. Crossing-pipes exports actually fail OpenCASCADE topology validation in both variants. P2/P3 STEP and membership checks were unavailable in this original run because of the checker cast issue described below. A denominator of zero is unmeasured, never a pass.
+STEP columns distinguish files that open from checks that also pass topology and expected face count. Most reference STEP failures are face-count changes, not failed reads. Crossing-pipes exports actually fail OpenCASCADE topology validation in both variants. P2/P3 STEP and membership checks were unavailable during the original run because of the checker cast issue described below. The table now includes correctness-only checks of the saved artifacts, matched to their original STEP SHA-256 values. A denominator of zero is unmeasured, never a pass.
 
 | Part | Tool | Variant | Build ms | Display/export ms | Measurement ms | Refusal ms | Failed rebuilds | Incomplete | Property errors / checked | Membership errors / checked | STEP opened / checked / full pass | Names passed / checked |
 | --- | --- | --- | ---: | ---: | ---: | --- | ---: | ---: | --- | --- | --- | --- |
@@ -54,12 +54,12 @@ STEP columns distinguish files that open from checks that also pass topology and
 | P1-bracket.json | solidcraft | edit | unmeasured | unmeasured | unmeasured | none observed | 0 | 3 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 0 / 0 |
 | P2-collar.json | catallax | construction | unmeasured | unmeasured | unmeasured | build 0.301 | 3 | 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | not applicable |
 | P2-collar.json | catallax | edit | unmeasured | unmeasured | unmeasured | build 0.134 | 3 | 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 0 / 0 |
-| P2-collar.json | solidcraft | construction | 75.562 | 17.733 | 67.852 | none observed | 0 | 0 | 6 / 3 | 0 / 0 | 0 / 0 / 0 | not applicable |
-| P2-collar.json | solidcraft | edit | 57.464 | 17.278 | 63.965 | none observed | 0 | 0 | 6 / 3 | 0 / 0 | 0 / 0 / 0 | 3 / 3 |
-| P3-filleted-boss.json | catallax | construction | 10.377 | unmeasured | 4.410 | display 45.946 | 0 | 0 | 0 / 3 | 0 / 0 | 0 / 0 / 0 | not applicable |
-| P3-filleted-boss.json | catallax | edit | 9.778 | unmeasured | 4.625 | display 42.377 | 0 | 0 | 0 / 3 | 0 / 0 | 0 / 0 / 0 | 3 / 3 |
-| P3-filleted-boss.json | solidcraft | construction | 939.210 | 17.987 | 511.197 | none observed | 0 | 0 | 9 / 3 | 0 / 0 | 0 / 0 / 0 | not applicable |
-| P3-filleted-boss.json | solidcraft | edit | 900.636 | 24.746 | 543.660 | none observed | 0 | 0 | 9 / 3 | 0 / 0 | 0 / 0 / 0 | 3 / 3 |
+| P2-collar.json | solidcraft | construction | 75.562 | 17.733 | 67.852 | none observed | 0 | 0 | 6 / 3 | 0 / 3 | 3 / 3 / 0 | not applicable |
+| P2-collar.json | solidcraft | edit | 57.464 | 17.278 | 63.965 | none observed | 0 | 0 | 6 / 3 | 0 / 3 | 3 / 3 / 0 | 3 / 3 |
+| P3-filleted-boss.json | catallax | construction | 10.377 | unmeasured | 4.410 | display 45.946 | 0 | 0 | 0 / 3 | 0 / 3 | 3 / 3 / 3 | not applicable |
+| P3-filleted-boss.json | catallax | edit | 9.778 | unmeasured | 4.625 | display 42.377 | 0 | 0 | 0 / 3 | 0 / 3 | 3 / 3 / 3 | 3 / 3 |
+| P3-filleted-boss.json | solidcraft | construction | 939.210 | 17.987 | 511.197 | none observed | 0 | 0 | 9 / 3 | 0 / 3 | 3 / 3 / 0 | not applicable |
+| P3-filleted-boss.json | solidcraft | edit | 900.636 | 24.746 | 543.660 | none observed | 0 | 0 | 9 / 3 | 0 / 3 | 3 / 3 / 0 | 3 / 3 |
 | P4-shelled-tray.json | catallax | construction | unmeasured | unmeasured | unmeasured | build 0.207 | 3 | 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | not applicable |
 | P4-shelled-tray.json | catallax | edit | unmeasured | unmeasured | unmeasured | build 0.089 | 3 | 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 0 / 0 |
 | P4-shelled-tray.json | solidcraft | construction | 150.024 | 1.938 | 7.772 | none observed | 0 | 0 | 9 / 3 | 0 / 3 | 3 / 3 / 0 | not applicable |
@@ -72,8 +72,9 @@ STEP columns distinguish files that open from checks that also pass topology and
 ## Data and checker correction
 
 - [Original raw rows](2026-10-24-head-to-head-1m-raw.json) retain all 52 pairs, including warmups, failures, phase logs and the original checker errors. Output paths and machine names were normalized in transfer. The old raw `summary` also retains refused-phase timing medians; the table above is regenerated from `pairs`, never from that summary.
-- [Property rechecks](2026-10-24-head-to-head-1m-property-rechecks.json) contain fresh independent P2/P3 constructions with the corrected OpenCASCADE 8 cast. Every original claimed property is compared against these values, without changing any measured time or work count. Catallax's P3 properties agree; the reference P2/P3 requested properties differ at the diagnostic allowance. These rechecks do not manufacture STEP or membership evidence.
-- [Derived table rows](2026-10-24-head-to-head-1m-summary.json) pin the raw and recheck SHA-256 values. They retain phase outcomes, refusal latency, work and operations rebuilt alongside the table fields.
+- [Property rechecks](2026-10-24-head-to-head-1m-property-rechecks.json) contain fresh independent P2/P3 constructions with the corrected OpenCASCADE 8 cast. Every original claimed property is compared against these values, without changing any measured time or work count. Catallax's P3 properties agree; the reference P2/P3 requested properties differ at the diagnostic allowance. These numeric rechecks are separate from the later saved-file STEP and membership observations.
+- [Saved-artifact correctness rechecks](2026-10-24-head-to-head-correctness-rechecks.json) retain all 64 corrected P2/P3 records across both experiments, including warmups, and bind each existing file to the original STEP SHA-256. Every Catallax P3 file opens, validates, matches its face count and passes sampled membership. Catallax P2 remains not-run because construction refused. Reference P2 files open and pass sampled membership but have six faces versus their own expected fourteen. This does not make the raw CLI volume/area measurements agree with the independent values.
+- [Derived table rows](2026-10-24-head-to-head-1m-summary.json) pin the raw and recheck SHA-256 values. They also pin the saved-artifact recheck dataset and retain phase outcomes, refusal latency, work and operations rebuilt alongside the table fields.
 
 The original checker used `TopoDS.Edge_s`, which the pinned OpenCASCADE 8.0.1.1 binding does not export. The current checker uses `TopoDS.Edge`. Focused independent P2 and P3 original/edit constructions now complete. P5's independent junction fillet still refuses in OpenCASCADE; neither tool constructed that full target in this run, so no P5 property agreement is asserted. The original aggregate `correctness_failures` includes checker errors and must not be read as a count of wrong geometric answers.
 

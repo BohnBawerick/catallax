@@ -1,0 +1,615 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P5-flanged-housing.json",
+  "recipe_sha256": "b110df500795e795c91e0fa5f35a7f7f5601e74d35230d1b523c78397b90cd05",
+  "edit": {
+    "step": "filleted",
+    "path": [
+      "radius"
+    ],
+    "value": "2.5"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "2",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              22.0,
+              0.0
+            ],
+            [
+              22.0,
+              5.0
+            ],
+            [
+              12.0,
+              5.0
+            ],
+            [
+              12.0,
+              30.0
+            ],
+            [
+              8.0,
+              30.0
+            ],
+            [
+              8.0,
+              0.0
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.revolve",
+        "params": {
+          "operation": "new",
+          "name": "housing",
+          "body_name": "housing",
+          "axis": {
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "angle": "360 deg"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 2,
+          "height": 7,
+          "base": [
+            17.0,
+            6,
+            -0.0
+          ],
+          "axis": [
+            0,
+            -1,
+            0
+          ],
+          "operation": "new",
+          "body_name": "drill-0",
+          "name": "drill-0"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "x_dir": [
+              1,
+              0,
+              0
+            ],
+            "y_dir": [
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              4,
+              0
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              0,
+              2
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.revolve",
+        "params": {
+          "axis": "Z",
+          "angle": "360 deg",
+          "operation": "new",
+          "body_name": "sink-0",
+          "name": "sink-0"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sink-0"
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "angle": "90 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sink-0"
+          ],
+          "translate": [
+            17.0,
+            5,
+            -0.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "drill-0",
+          "tools": [
+            "sink-0"
+          ],
+          "operation": "join"
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "housing",
+          "tools": [
+            "drill-0"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 2,
+          "height": 7,
+          "base": [
+            1.0409497792752501e-15,
+            6,
+            -17.0
+          ],
+          "axis": [
+            0,
+            -1,
+            0
+          ],
+          "operation": "new",
+          "body_name": "drill-1",
+          "name": "drill-1"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "x_dir": [
+              1,
+              0,
+              0
+            ],
+            "y_dir": [
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              4,
+              0
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              0,
+              2
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.revolve",
+        "params": {
+          "axis": "Z",
+          "angle": "360 deg",
+          "operation": "new",
+          "body_name": "sink-1",
+          "name": "sink-1"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sink-1"
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "angle": "90 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sink-1"
+          ],
+          "translate": [
+            1.0409497792752501e-15,
+            5,
+            -17.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "drill-1",
+          "tools": [
+            "sink-1"
+          ],
+          "operation": "join"
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "housing",
+          "tools": [
+            "drill-1"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 2,
+          "height": 7,
+          "base": [
+            -17.0,
+            6,
+            -2.0818995585505003e-15
+          ],
+          "axis": [
+            0,
+            -1,
+            0
+          ],
+          "operation": "new",
+          "body_name": "drill-2",
+          "name": "drill-2"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "x_dir": [
+              1,
+              0,
+              0
+            ],
+            "y_dir": [
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              4,
+              0
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              0,
+              2
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.revolve",
+        "params": {
+          "axis": "Z",
+          "angle": "360 deg",
+          "operation": "new",
+          "body_name": "sink-2",
+          "name": "sink-2"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sink-2"
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "angle": "90 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sink-2"
+          ],
+          "translate": [
+            -17.0,
+            5,
+            -2.0818995585505003e-15
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "drill-2",
+          "tools": [
+            "sink-2"
+          ],
+          "operation": "join"
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "housing",
+          "tools": [
+            "drill-2"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 2,
+          "height": 7,
+          "base": [
+            -3.1228493378257506e-15,
+            6,
+            17.0
+          ],
+          "axis": [
+            0,
+            -1,
+            0
+          ],
+          "operation": "new",
+          "body_name": "drill-3",
+          "name": "drill-3"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0,
+              0,
+              0
+            ],
+            "x_dir": [
+              1,
+              0,
+              0
+            ],
+            "y_dir": [
+              0,
+              0,
+              1
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              4,
+              0
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              0,
+              2
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.revolve",
+        "params": {
+          "axis": "Z",
+          "angle": "360 deg",
+          "operation": "new",
+          "body_name": "sink-3",
+          "name": "sink-3"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sink-3"
+          ],
+          "axis": [
+            1,
+            0,
+            0
+          ],
+          "angle": "90 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sink-3"
+          ],
+          "translate": [
+            -3.1228493378257506e-15,
+            5,
+            17.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "drill-3",
+          "tools": [
+            "sink-3"
+          ],
+          "operation": "join"
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "housing",
+          "tools": [
+            "drill-3"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.fillet",
+        "params": {
+          "body": "housing",
+          "edges": [
+            [
+              12,
+              5,
+              0
+            ]
+          ],
+          "radius": "edit_value",
+          "fit": "exact"
+        }
+      }
+    ],
+    "body": "housing",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "2.5"
+      }
+    },
+    "definition": "Authored from the fixed target dimensions. Four countersink cutters at radius 17 are expanded into explicitly named copies; no omitted pattern instances or substituted geometry."
+  }
+}

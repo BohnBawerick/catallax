@@ -1,0 +1,761 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P1-bracket.json",
+  "recipe_sha256": "1e705deb5a709d2fea99c4b750cf290c72c39d4bf2fc6561bbe65ece1f430d5c",
+  "edit": {
+    "step": "boss",
+    "path": [
+      "radius"
+    ],
+    "value": "9"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "8",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              60.0,
+              0.0
+            ],
+            [
+              60.0,
+              40.0
+            ],
+            [
+              0.0,
+              40.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.extrude",
+        "params": {
+          "operation": "new",
+          "name": "plate",
+          "body_name": "plate",
+          "distance": 5.0
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              5.0
+            ],
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              60.0,
+              0.0
+            ],
+            [
+              60.0,
+              5.0
+            ],
+            [
+              0.0,
+              5.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.extrude",
+        "params": {
+          "operation": "new",
+          "name": "flange",
+          "body_name": "flange",
+          "distance": 25.0
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "flange"
+          ],
+          "operation": "join"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": "edit_value",
+          "height": 10.0,
+          "operation": "new",
+          "name": "boss",
+          "body_name": "boss"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "boss"
+          ],
+          "translate": [
+            30.0,
+            25.0,
+            5.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "boss"
+          ],
+          "operation": "join"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 4.0,
+          "height": 17.0,
+          "operation": "new",
+          "name": "bore",
+          "body_name": "bore"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "bore"
+          ],
+          "translate": [
+            30.0,
+            25.0,
+            -1.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "bore"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 2.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "bolt-0",
+          "body_name": "bolt-0"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "bolt-0"
+          ],
+          "translate": [
+            10.0,
+            12.0,
+            -1.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "bolt-0"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 2.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "bolt-1",
+          "body_name": "bolt-1"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "bolt-1"
+          ],
+          "translate": [
+            50.0,
+            12.0,
+            -1.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "bolt-1"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 2.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "bolt-2",
+          "body_name": "bolt-2"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "bolt-2"
+          ],
+          "translate": [
+            10.0,
+            32.0,
+            -1.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "bolt-2"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 2.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "bolt-3",
+          "body_name": "bolt-3"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "bolt-3"
+          ],
+          "translate": [
+            50.0,
+            32.0,
+            -1.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "bolt-3"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "slot-tool-0",
+          "body_name": "slot-tool-0"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-0"
+          ],
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-0"
+          ],
+          "translate": [
+            23.0,
+            6.0,
+            18.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-tool-0"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "slot-tool-1",
+          "body_name": "slot-tool-1"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-1"
+          ],
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-1"
+          ],
+          "translate": [
+            25.0,
+            6.0,
+            18.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-tool-1"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "slot-tool-2",
+          "body_name": "slot-tool-2"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-2"
+          ],
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-2"
+          ],
+          "translate": [
+            27.0,
+            6.0,
+            18.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-tool-2"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "slot-tool-3",
+          "body_name": "slot-tool-3"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-3"
+          ],
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-3"
+          ],
+          "translate": [
+            29.0,
+            6.0,
+            18.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-tool-3"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "slot-tool-4",
+          "body_name": "slot-tool-4"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-4"
+          ],
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-4"
+          ],
+          "translate": [
+            31.0,
+            6.0,
+            18.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-tool-4"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "slot-tool-5",
+          "body_name": "slot-tool-5"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-5"
+          ],
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-5"
+          ],
+          "translate": [
+            33.0,
+            6.0,
+            18.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-tool-5"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "slot-tool-6",
+          "body_name": "slot-tool-6"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-6"
+          ],
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-6"
+          ],
+          "translate": [
+            35.0,
+            6.0,
+            18.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-tool-6"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 7.0,
+          "operation": "new",
+          "name": "slot-tool-7",
+          "body_name": "slot-tool-7"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-7"
+          ],
+          "axis": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-tool-7"
+          ],
+          "translate": [
+            37.0,
+            6.0,
+            18.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-tool-7"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.box",
+        "params": {
+          "length": 14.0,
+          "width": 7.0,
+          "height": 6.0,
+          "operation": "new",
+          "name": "slot-middle",
+          "body_name": "slot-middle"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "slot-middle"
+          ],
+          "translate": [
+            23.0,
+            -1.0,
+            15.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "plate",
+          "tools": [
+            "slot-middle"
+          ],
+          "operation": "cut"
+        }
+      }
+    ],
+    "body": "plate",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "9"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

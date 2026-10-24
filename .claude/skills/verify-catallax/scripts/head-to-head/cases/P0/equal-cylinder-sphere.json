@@ -1,0 +1,75 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P0/equal-cylinder-sphere.json",
+  "recipe_sha256": "e3304dfbc1d11bfb15705d12e3acf81bc7d59cc497b75835eb436ab267a7c12a",
+  "edit": {
+    "step": "cylinder",
+    "path": [
+      "height"
+    ],
+    "value": "12"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "20",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 5.0,
+          "height": "edit_value",
+          "operation": "new",
+          "name": "cylinder",
+          "body_name": "cylinder"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "cylinder"
+          ],
+          "translate": [
+            0.0,
+            0.0,
+            -10.0
+          ]
+        }
+      },
+      {
+        "command": "solid.sphere",
+        "params": {
+          "radius": 5.0,
+          "operation": "new",
+          "name": "sphere",
+          "body_name": "sphere"
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "cylinder",
+          "tools": [
+            "sphere"
+          ],
+          "operation": "join"
+        }
+      }
+    ],
+    "body": "cylinder",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "12"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

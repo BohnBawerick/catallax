@@ -1,0 +1,9 @@
+{
+  "version": "v0.21.0",
+  "url": "https://github.com/tangency-labs/solidcraft/releases/download/v0.21.0/solidcraft-0.21.0-linux-x86_64.tar.gz",
+  "archive_sha256": "24f87864f9b06aa3788f114725ea81e24968ab08f8ec8eaa4d56bf4a0b0f1fb8",
+  "member": "solidcraft-0.21.0-linux-x86_64/bin/solidcraft-cli",
+  "binary_sha256": "b334c87706833af67fe3b32e86c0c41938baa07f367a78e0a14ef6afc2de04be",
+  "license": "Apache-2.0",
+  "source": "https://github.com/tangency-labs/solidcraft"
+}

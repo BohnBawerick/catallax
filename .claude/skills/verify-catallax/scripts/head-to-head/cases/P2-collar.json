@@ -1,0 +1,119 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P2-collar.json",
+  "recipe_sha256": "4f5fecc16dc9fb6461df9192dcc52ba79a1d8da5ade795d6dfd8cd4cf5c1a712",
+  "edit": {
+    "step": "collar",
+    "path": [
+      "distance"
+    ],
+    "value": "0.75"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "1",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "sketch.create",
+        "params": {
+          "plane": {
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "x_dir": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "y_dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          }
+        }
+      },
+      {
+        "command": "sketch.line",
+        "params": {
+          "points": [
+            [
+              12.0,
+              0.0
+            ],
+            [
+              12.0,
+              12.0
+            ],
+            [
+              6.0,
+              12.0
+            ],
+            [
+              6.0,
+              0.0
+            ]
+          ],
+          "closed": true
+        }
+      },
+      {
+        "command": "solid.revolve",
+        "params": {
+          "operation": "new",
+          "name": "ring",
+          "body_name": "ring",
+          "axis": {
+            "origin": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "dir": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "angle": "360 deg"
+        }
+      },
+      {
+        "command": "solid.chamfer",
+        "params": {
+          "body": "ring",
+          "edges": [
+            [
+              12,
+              0,
+              0
+            ],
+            [
+              12,
+              12,
+              0
+            ]
+          ],
+          "distance": "edit_value"
+        }
+      }
+    ],
+    "body": "ring",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "0.75"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

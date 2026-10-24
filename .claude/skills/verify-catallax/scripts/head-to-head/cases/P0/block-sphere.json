@@ -1,0 +1,77 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P0/block-sphere.json",
+  "recipe_sha256": "b6e7d6a23218c0ea129952820f27de4c6f7ffa11577abe7918351e91d2aa6ef1",
+  "edit": {
+    "step": "block",
+    "path": [
+      "size",
+      0
+    ],
+    "value": "11"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "10",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "solid.box",
+        "params": {
+          "length": "edit_value",
+          "width": 10.0,
+          "height": 10.0,
+          "operation": "new",
+          "name": "block",
+          "body_name": "block"
+        }
+      },
+      {
+        "command": "solid.sphere",
+        "params": {
+          "radius": 6.0,
+          "operation": "new",
+          "name": "sphere",
+          "body_name": "sphere"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "sphere"
+          ],
+          "translate": [
+            10.0,
+            5.0,
+            5.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "block",
+          "tools": [
+            "sphere"
+          ],
+          "operation": "join"
+        }
+      }
+    ],
+    "body": "block",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "11"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

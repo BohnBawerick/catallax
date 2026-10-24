@@ -1,0 +1,76 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P0/line-tangent.json",
+  "recipe_sha256": "f300be5fa154c1e47c5239db81145eadaa869a6a9b82f84e05d86ccca1fae3c0",
+  "edit": {
+    "step": "a",
+    "path": [
+      "height"
+    ],
+    "value": "12"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "10",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 5.0,
+          "height": "edit_value",
+          "operation": "new",
+          "name": "a",
+          "body_name": "a"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 5.0,
+          "height": 10.0,
+          "operation": "new",
+          "name": "b",
+          "body_name": "b"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "b"
+          ],
+          "translate": [
+            10.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "a",
+          "tools": [
+            "b"
+          ],
+          "operation": "join"
+        }
+      }
+    ],
+    "body": "a",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "12"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

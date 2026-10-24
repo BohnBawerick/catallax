@@ -41,6 +41,8 @@ Run `"$DRIVER" parts parts --binary target/release/catallax-verify --out "$PROOF
 
 Configured edits checkpoint in top-level `edit_checks` before display work; finished geometry rows also carry `edit_check`. Inspect report `status` before claiming the full scoreboard completed. Budget-limited checks retain their first `blocked_operation`.
 
+For the released-tool comparison, use the [head-to-head rerun guide](scripts/head-to-head/README.md). Build the opt-in `head_to_head` example, download the checksum-pinned release outside the repository, and run `head-to-head parts --binary target/release/examples/head_to_head --reference RELEASE_BINARY --core CORE --out DIR`. This benchmark separates construction, edit, display and requested measurement without instrumenting application builds. Read raw correctness coverage before making any speed claim.
+
 ## Evidence
 
 Keep proof outside the repository. Capture the command, doctor output, exit code, `config.json`, `inputs.json`, `run.json`, per-case request/response/manifest/STEP files and matched-pair samples. Check the files themselves, including STEP presence or removal. A response alone does not prove the artifact side effect.

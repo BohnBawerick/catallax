@@ -1,0 +1,122 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P3-filleted-boss.json",
+  "recipe_sha256": "57e4be2653f8fe2858a6dd95001e530aa1837e80e1d74e5404c0d7e708eae787",
+  "edit": {
+    "step": "junction",
+    "path": [
+      "radius"
+    ],
+    "value": "2.5"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "2",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "solid.box",
+        "params": {
+          "length": 40.0,
+          "width": 30.0,
+          "height": 10.0,
+          "operation": "new",
+          "name": "block",
+          "body_name": "block"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 8.0,
+          "height": 12.0,
+          "operation": "new",
+          "name": "boss",
+          "body_name": "boss"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "boss"
+          ],
+          "translate": [
+            20.0,
+            15.0,
+            10.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "block",
+          "tools": [
+            "boss"
+          ],
+          "operation": "join"
+        }
+      },
+      {
+        "command": "solid.fillet",
+        "params": {
+          "body": "block",
+          "edges": [
+            [
+              28,
+              15,
+              10
+            ]
+          ],
+          "radius": "edit_value",
+          "fit": "exact"
+        }
+      },
+      {
+        "command": "solid.fillet",
+        "params": {
+          "body": "block",
+          "edges": [
+            [
+              20,
+              0,
+              10
+            ],
+            [
+              40,
+              15,
+              10
+            ],
+            [
+              20,
+              30,
+              10
+            ],
+            [
+              0,
+              15,
+              10
+            ]
+          ],
+          "radius": 1.0,
+          "fit": "exact"
+        }
+      }
+    ],
+    "body": "block",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "2.5"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

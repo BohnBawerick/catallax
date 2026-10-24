@@ -1,0 +1,105 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P4-shelled-tray.json",
+  "recipe_sha256": "94eda6ca26261257497ee8c2747f956e4b33806e100101111ece65d857d510fd",
+  "edit": {
+    "step": "tray",
+    "path": [
+      "thickness"
+    ],
+    "value": "1.5"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "2",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "solid.box",
+        "params": {
+          "length": 40.0,
+          "width": 30.0,
+          "height": 12.0,
+          "operation": "new",
+          "name": "blank",
+          "body_name": "blank"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "blank"
+          ],
+          "translate": [
+            -20.0,
+            -15.0,
+            0.0
+          ]
+        }
+      },
+      {
+        "command": "solid.shell",
+        "params": {
+          "body": "blank",
+          "faces": [
+            [
+              0,
+              0,
+              12
+            ]
+          ],
+          "thickness": "edit_value",
+          "direction": "inside"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 23.0,
+          "height": 14.0,
+          "operation": "new",
+          "name": "rounding",
+          "body_name": "rounding"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "rounding"
+          ],
+          "translate": [
+            0.0,
+            0.0,
+            -1.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "blank",
+          "tools": [
+            "rounding"
+          ],
+          "operation": "intersect"
+        }
+      }
+    ],
+    "body": "blank",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "1.5"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

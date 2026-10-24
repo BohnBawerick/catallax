@@ -1,0 +1,183 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "P0/crossing-pipes.json",
+  "recipe_sha256": "735c6c0d71e819446cffb51d3c7d26c367e961765c5511c2c06229efce5787bc",
+  "edit": {
+    "step": "z-outer",
+    "path": [
+      "height"
+    ],
+    "value": "12"
+  },
+  "reference": {
+    "commands": [
+      {
+        "command": "parameters.add",
+        "params": {
+          "name": "edit_value",
+          "expression": "20",
+          "unit": "mm"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 5.0,
+          "height": "edit_value",
+          "operation": "new",
+          "name": "z-outer",
+          "body_name": "z-outer"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "z-outer"
+          ],
+          "translate": [
+            0.0,
+            0.0,
+            -10.0
+          ]
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 22.0,
+          "operation": "new",
+          "name": "z-bore",
+          "body_name": "z-bore"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "z-bore"
+          ],
+          "translate": [
+            0.0,
+            0.0,
+            -11.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "z-outer",
+          "tools": [
+            "z-bore"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 5.0,
+          "height": 20.0,
+          "operation": "new",
+          "name": "x-outer",
+          "body_name": "x-outer"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "x-outer"
+          ],
+          "axis": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "x-outer"
+          ],
+          "translate": [
+            -10.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      {
+        "command": "solid.cylinder",
+        "params": {
+          "radius": 3.0,
+          "height": 22.0,
+          "operation": "new",
+          "name": "x-bore",
+          "body_name": "x-bore"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "x-bore"
+          ],
+          "axis": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "angle": "90.0 deg"
+        }
+      },
+      {
+        "command": "solid.move",
+        "params": {
+          "bodies": [
+            "x-bore"
+          ],
+          "translate": [
+            -11.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "x-outer",
+          "tools": [
+            "x-bore"
+          ],
+          "operation": "cut"
+        }
+      },
+      {
+        "command": "solid.combine",
+        "params": {
+          "target": "z-outer",
+          "tools": [
+            "x-outer"
+          ],
+          "operation": "join"
+        }
+      }
+    ],
+    "body": "z-outer",
+    "edit": {
+      "command": "parameters.change",
+      "params": {
+        "name": "edit_value",
+        "expression": "12"
+      }
+    },
+    "definition": "Authored from parts/README.md and the fixed target dimensions. Stock placement quaternions are converted to axis-angle in degrees."
+  }
+}

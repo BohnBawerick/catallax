@@ -143,9 +143,14 @@ the existing edge samples in angular order. Strip vertex certificates use the
 shared surface sampler; every triangle passes the same orientation, chord and
 requested-control checks. Other trims or controls needing
 interior vertices use the periodic triangulator. Toroidal bands use a bounded
-minor-angle chart and the shared certified surface sampler. A face-local
-diagonal cannot reuse another face's interior chord between boundary vertices;
-the mesher refines that chord on the analytic face instead.
+minor-angle chart and the shared certified surface sampler. With an angular
+control, interior columns follow the shared rails' major-angle parameters and
+minor-angle subdivisions resolve normal rotation, even when the tube radius is
+below the chord tolerance. This avoids staggered major-circle chords that
+centroid refinement cannot repair on a thin band. Shared boundary samples are
+not moved or split. A face-local diagonal cannot reuse another face's interior
+chord between boundary vertices; the mesher refines that chord on the analytic
+face instead.
 Bounds include replacement of boundary vertices and binary64 coordinate
 rounding. They describe chord error against the analytic face and edge
 definitions, not a proof that polygonal trims equal the exact curved region.
@@ -153,8 +158,10 @@ All covered definitions have proven bounds, so no sampled estimate is presented
 as a proof. Input and trace marks are preserved.
 
 Outward-rounded double intervals filter surface evaluation, trace Taylor
-coefficients, chord checks and facet quality. Uncertain filters retain the
-ball or exact-rational path. Curved faces bulk-load their UV constraints and
+coefficients, chord checks, aspect ratios and angular certificates. Angular
+filters retain the whole-parameter normal-variation bound and include the
+returned coordinates; uncertain cases retain the ball or exact-rational path.
+Curved faces bulk-load their UV constraints and
 grid points without splitting the shared boundary polylines. A triangle whose
 three vertices belong to one shared rail receives a certified interior Steiner
 point instead of becoming a zero-volume fin between adjacent faces. Every

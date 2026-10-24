@@ -94,7 +94,12 @@ pub(crate) fn cosine_limit(angle: &Rational, dec: &Decider) -> Result<Rational, 
     }
 }
 
-fn filtered_aspect(positions: [[f64; 3]; 3]) -> Option<Rational> {
+fn filtered_quality(
+    chart: &Chart,
+    uvs: &[Uv; 3],
+    positions: [[f64; 3]; 3],
+    angular_limit: Option<&Rational>,
+) -> Option<(Rational, bool)> {
     let [a, b, c] = positions.map(|p| p.map(|x| Interval::point(x).unwrap()));
     let ab: [Interval; 3] = std::array::from_fn(|i| b[i] - a[i]);
     let ac: [Interval; 3] = std::array::from_fn(|i| c[i] - a[i]);
@@ -122,7 +127,72 @@ fn filtered_aspect(positions: [[f64; 3]; 3]) -> Option<Rational> {
         })
         .fold(0.0_f64, f64::max);
     let ratio = Interval::point(longest).unwrap() / norm;
-    ratio.is_finite().then(|| chart::q(ratio.hi()))
+    if !ratio.is_finite() {
+        return None;
+    }
+    let aspect = chart::q(ratio.hi());
+    let Some(limit) = angular_limit else {
+        return Some((aspect, true));
+    };
+    let center = std::array::from_fn(|i| {
+        let lo = uvs.iter().map(|p| p[i]).fold(f64::INFINITY, f64::min);
+        let hi = uvs.iter().map(|p| p[i]).fold(f64::NEG_INFINITY, f64::max);
+        lo * 0.5 + hi * 0.5
+    });
+    let spans: [Interval; 2] = std::array::from_fn(|i| {
+        let mut lo = 0.0_f64;
+        let mut hi = 0.0_f64;
+        for p in uvs {
+            let delta = Interval::point(p[i]).unwrap() - Interval::point(center[i]).unwrap();
+            let lower = if delta.lo() >= 0.0 {
+                delta.lo()
+            } else if delta.hi() <= 0.0 {
+                -delta.hi()
+            } else {
+                0.0
+            };
+            lo = lo.max(lower);
+            hi = hi.max(delta.lo().abs().max(delta.hi().abs()));
+        }
+        Interval::new(lo, hi).unwrap()
+    });
+    let (normal, tau) = chart.filtered_normal(center)?;
+    let parameter_span = match &chart.surface {
+        Surface::Cylinder(_) | Surface::Cone(_) => spans[0],
+        Surface::EllipticCylinder(_) => spans[0] * Interval::from_rational(&chart.normal_scale),
+        Surface::Sphere(_) | Surface::Torus(_) => spans[0] + spans[1],
+        _ => return None,
+    };
+    let margin = Interval::from_rational(limit) - parameter_span * tau;
+    if !margin.is_finite() {
+        return None;
+    }
+    if margin.hi() <= 0.0 {
+        return Some((aspect, false));
+    }
+    if margin.lo() <= 0.0 || margin.hi() > 1.0 {
+        return None;
+    }
+    let cosine = cross
+        .iter()
+        .zip(normal)
+        .fold(Interval::point(0.0).unwrap(), |sum, (&a, b)| sum + a * b)
+        / norm;
+    // For 0 <= x <= 1, 1-x²/2+x⁴/24 is an upper bound on cos(x).
+    // Using the lower margin preserves the whole-parameter normal variation
+    // certificate. An inconclusive filter retains the multiprecision proof.
+    let x2 = Interval::point(margin.lo()).unwrap().square();
+    let upper_cosine = Interval::point(1.0).unwrap() - x2 * Interval::point(0.5).unwrap()
+        + x2.square() / Interval::point(24.0).unwrap();
+    if !cosine.is_finite() {
+        return None;
+    }
+    if cosine.lo() >= upper_cosine.hi() {
+        return Some((aspect, true));
+    }
+    let upper2 = Interval::point(margin.hi()).unwrap().square();
+    let lower_cosine = Interval::point(1.0).unwrap() - upper2 * Interval::point(0.5).unwrap();
+    (cosine.hi() < lower_cosine.lo()).then_some((aspect, false))
 }
 
 pub(crate) fn quality(
@@ -132,10 +202,9 @@ pub(crate) fn quality(
     angular_limit: Option<&Rational>,
     dec: &Decider,
 ) -> Result<(Option<Rational>, bool), Refusal> {
-    if angular_limit.is_none()
-        && let Some(aspect) = filtered_aspect(positions)
+    if let Some((aspect, angular_reached)) = filtered_quality(chart, uvs, positions, angular_limit)
     {
-        return Ok((Some(aspect), true));
+        return Ok((Some(aspect), angular_reached));
     }
     let [a, b, c] = positions.map(|p| p.map(chart::q));
     let ab: [Rational; 3] = std::array::from_fn(|i| &b[i] - &a[i]);
@@ -200,4 +269,57 @@ pub(crate) fn quality(
         true
     };
     Ok((Some(aspect), angular_reached))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_shapes::{Pose, RVector3, Rotation};
+    use catallax_topology::{self as topology, Model};
+
+    #[test]
+    fn angular_certificates_distinguish_aligned_staggered_and_reversed_thin_torus_facets() {
+        let mut dec = Decider::default();
+        let pose = Pose::new(
+            Rotation::from_quaternion(1.into(), 2.into(), 3.into(), 4.into()).unwrap(),
+            RVector3::new(7.into(), (-3).into(), 2.into()).into(),
+            &mut dec,
+        )
+        .unwrap();
+        let mut model = Model::new();
+        let body = topology::torus(
+            &mut model,
+            Rational::parse("8.05").unwrap(),
+            Rational::parse("0.05").unwrap(),
+            &pose,
+        )
+        .unwrap();
+        let surface = model
+            .geom()
+            .surface(model.face(model.faces_of_body(body)[0]).surface);
+        let chart = Chart::new(surface, &dec).unwrap();
+        let limit = Rational::parse("0.2617993877991494").unwrap();
+        let tolerance = Rational::parse("0.01").unwrap();
+        for (uvs, expected) in [
+            ([[0.5, 0.5], [0.515625, 0.5], [0.515625, 0.515625]], true),
+            (
+                [
+                    [0.515625, 0.515625],
+                    [0.5, 0.515625],
+                    [0.5099439478235901, 0.5],
+                ],
+                false,
+            ),
+            ([[0.5, 0.5], [0.515625, 0.515625], [0.515625, 0.5]], false),
+        ] {
+            let positions = uvs.map(|uv| chart.sample(uv, None, &tolerance, &dec).unwrap().0);
+            assert_eq!(
+                quality(&chart, &uvs, positions, Some(&limit), &dec)
+                    .unwrap()
+                    .1,
+                expected,
+                "{uvs:?}"
+            );
+        }
+    }
 }

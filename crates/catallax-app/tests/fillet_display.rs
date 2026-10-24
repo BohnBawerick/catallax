@@ -113,9 +113,13 @@ fn thin_boss_rim_fillets_mesh_with_default_accuracy_and_bounded_work() {
             let built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
             let options = MeshOptions {
                 chord_tolerance: catallax_numbers::Rational::parse(tolerance).unwrap(),
+                angular_deviation: Some(
+                    catallax_numbers::Rational::parse("0.2617993877991494").unwrap(),
+                ),
                 ..MeshOptions::default()
             };
             let start = Instant::now();
+            dec.set_deadline(Some(start + Duration::from_secs(5)));
             let (answer, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
                 catallax_mesh::mesh_body(&built.model, built.result, &options, &mut dec)
             });
@@ -146,6 +150,11 @@ fn thin_boss_rim_fillets_mesh_with_default_accuracy_and_bounded_work() {
                     .iter()
                     .all(|face| face.max_chord_error <= options.chord_tolerance)
             );
+            assert!(mesh.faces.iter().all(|face| {
+                face.max_angular_deviation
+                    .as_ref()
+                    .is_some_and(|bound| bound <= options.angular_deviation.as_ref().unwrap())
+            }));
             assert!(
                 mesh.edges
                     .iter()

@@ -174,6 +174,8 @@ named patch approaching the contact. Exhausting the sectors can instead prove
 the selected patch absent, including a consumed sharp circle. Distinct source
 roles sharing a carrier, tangent or singular supports and larger curved fans
 remain unresolved. An isolated buried tangency cannot supply this proof.
+Draft tile domains retain their ordinary named-face proof: carrier sectors
+alone do not identify the selected coplanar tile.
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
 

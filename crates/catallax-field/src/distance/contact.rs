@@ -116,6 +116,7 @@ impl Plan {
     /// Tests the closure of a named surviving face, refining the ordinary face
     /// query with exact transverse-contact sectors. Tangencies, singularities,
     /// ambiguous source partitions and larger curved fans remain indeterminate.
+    /// Draft tile domains retain the ordinary named-face proof unchanged.
     pub fn closed_face_query_checked(
         &self,
         id: FaceId,
@@ -124,7 +125,15 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<FaceQuery, Refusal> {
         let ordinary = self.face_query_checked(id, point, storage, dec)?;
-        if ordinary.state != FaceState::Indeterminate {
+        // Draft origins may partition coplanar tiles. Their existing named
+        // domain proof remains authoritative: carrier sectors alone cannot
+        // establish which tile approaches a closed contact.
+        if ordinary.state != FaceState::Indeterminate
+            || matches!(
+                &self.leaves[self.faces[id.0].leaf],
+                geometry::Leaf::Draft(_)
+            )
+        {
             return Ok(ordinary);
         }
         self.contact_face_query(id, point, dec)
@@ -140,7 +149,7 @@ impl Plan {
         let p = [point.x.clone(), point.y.clone(), point.z.clone()];
         let source = &self.leaves[face.leaf];
         if source.location(&p, dec)? != Location::Boundary
-            || source.on_face(self.definition_role(id.0), &p, dec)? != Some(true)
+            || source.on_face(&face.origin, self.definition_role(id.0), &p, dec)? != Some(true)
         {
             return Ok(unknown());
         }

@@ -126,8 +126,12 @@ impl Plan {
         for i in faces {
             let face = &self.faces[i];
             if self.leaves[face.leaf].location(&xyz, dec)? != Location::Boundary
-                || self.leaves[face.leaf].on_face(self.definition_role(i), &xyz, dec)?
-                    == Some(false)
+                || self.leaves[face.leaf].on_face(
+                    &face.origin,
+                    self.definition_role(i),
+                    &xyz,
+                    dec,
+                )? == Some(false)
             {
                 return Ok(None);
             }

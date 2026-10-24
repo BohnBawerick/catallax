@@ -60,7 +60,7 @@ pub(crate) fn circle(n: u32) -> Vec<[Rational; 2]> {
     points
 }
 impl Plan {
-    /// Visits rational candidates from current primitive, sweep and draft definitions.
+    /// Visits rational candidates from current primitive, sweep, draft and cell definitions.
     /// Each point carries its exact registry handle: one origin can have pieces
     /// on different supports. No historical primitive is sampled in place of a
     /// replacement definition. Use `face_query` to establish actual membership.
@@ -84,7 +84,10 @@ impl Plan {
         let has_derived = self.faces.iter().any(|face| {
             face.in_result
                 && self.leaf_registers[face.leaf].is_some()
-                && matches!(self.leaves[face.leaf], Leaf::Feature(_) | Leaf::Draft(_) | Leaf::Cell(_))
+                && matches!(
+                    self.leaves[face.leaf],
+                    Leaf::Feature(_) | Leaf::Draft(_) | Leaf::Cell(_)
+                )
         });
         if self.is_proven_empty() {
             return Ok(true);
@@ -194,7 +197,11 @@ impl Plan {
         // Cell candidates are a separate, definition-native pass. They are not
         // boundary certificates; callers must use the same face queries as for
         // all other candidate sources.
-        cell::visit(self, divisions, result, &mut visit)
+        if let Some(result) = result {
+            cell::visit(self, divisions, result, &mut visit)
+        } else {
+            Ok(true)
+        }
     }
 }
 

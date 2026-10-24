@@ -5,9 +5,8 @@
 //! membership, absence, nearest distance or complete geometric coverage.
 
 use super::{Bounds, circle, fraction, placement_error};
-use crate::{Plan, geometry::Leaf};
+use crate::{FaceId, Plan, geometry::Leaf};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
-use catallax_recipe::Origin;
 use catallax_shapes::{RPoint3, RVector3, Surface, Vector3};
 use std::collections::BTreeSet;
 
@@ -334,12 +333,12 @@ pub(super) fn visit(
     plan: &Plan,
     divisions: u32,
     bounds: &Bounds,
-    visit: &mut dyn FnMut(RPoint3, &Origin) -> bool,
+    visit: &mut dyn FnMut(RPoint3, FaceId) -> bool,
 ) -> Result<bool, Refusal> {
     if !plan.faces.iter().any(|face| {
         face.in_result
             && plan.leaf_registers[face.leaf].is_some()
-            && matches!(plan.leaves[face.leaf], Leaf::Cell(_))
+            && matches!(&plan.leaves[face.leaf], Leaf::Cell(cell) if cell.capped_chart().is_none())
     }) {
         return Ok(true);
     }
@@ -355,14 +354,16 @@ pub(super) fn visit(
         .flat_map(|leaf| leaf.constraints())
         .filter_map(|c| c.reference_point()?.as_rational())
         .collect();
-    for face in &plan.faces {
-        if !face.in_result
-            || plan.leaf_registers[face.leaf].is_none()
-            || !matches!(plan.leaves[face.leaf], Leaf::Cell(_))
-        {
+    for (index, face) in plan.faces.iter().enumerate() {
+        let Some(id) = plan.result_face(index) else {
+            continue;
+        };
+        // Native drafted cap charts own their candidate traversal. This pass
+        // supplements the other analytic conjunctions, without duplicating it.
+        if !matches!(&plan.leaves[face.leaf], Leaf::Cell(cell) if cell.capped_chart().is_none()) {
             continue;
         }
-        let mut callback = |p| visit(p, &face.origin);
+        let mut callback = |p| visit(p, id);
         let mut emit = Emitter {
             bounds,
             seen: BTreeSet::new(),
@@ -590,8 +591,8 @@ mod tests {
             let plan = drilled(mirrored);
             let mut samples = Vec::new();
             assert!(
-                plan.visit_feature_candidates(4, |p, o| {
-                    samples.push((p, o.clone()));
+                plan.visit_candidates(4, |p, id| {
+                    samples.push((p, id));
                     true
                 })
                 .unwrap()
@@ -602,11 +603,11 @@ mod tests {
             let mut discarded = 0;
             let mut floor = false;
             let mut wall = false;
-            for (p, origin) in samples {
+            for (p, id) in samples {
+                let origin = &plan.faces()[id.index()].origin;
                 if mirrored {
                     assert!(matches!(origin.role, catallax_recipe::Role::Copy { .. }));
                 }
-                let id = plan.select(&origin).unwrap();
                 match plan.face_query(id, &p, &mut workspace).unwrap().state {
                     crate::FaceState::OnFace => {
                         surviving += 1;
@@ -632,7 +633,7 @@ mod tests {
             let mut calls = 0;
             assert!(
                 !plan
-                    .visit_feature_candidates(4, |_, _| {
+                    .visit_candidates(4, |_, _| {
                         calls += 1;
                         false
                     })
@@ -645,15 +646,14 @@ mod tests {
     #[test]
     fn zero_allowance_refuses_even_when_the_cell_was_compiled_beforehand() {
         let plan = drilled(false);
-        let (result, work) = catallax_numbers::with_operation_budget(0, || {
-            plan.visit_feature_candidates(4, |_, _| true)
-        });
+        let (result, work) =
+            catallax_numbers::with_operation_budget(0, || plan.visit_candidates(4, |_, _| true));
         assert!(work.exhausted);
         assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
     }
 
     #[test]
-    fn noncell_feature_order_and_stock_exclusion_remain_unchanged() {
+    fn noncell_feature_order_and_cell_stock_exclusion_remain_unchanged() {
         let recipe = catallax_recipe::Recipe::parse(&serde_json::json!({
             "format":"catallax-recipe/3","name":"unchanged feature candidates","steps":[
                 {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
@@ -668,8 +668,8 @@ mod tests {
         let plan = Plan::compile(&recipe).unwrap();
         let mut samples = Vec::new();
         assert!(
-            plan.visit_feature_candidates(4, |p, o| {
-                samples.push((p, o.clone()));
+            plan.visit_candidates(4, |p, id| {
+                samples.push((p, id));
                 true
             })
             .unwrap()
@@ -685,13 +685,13 @@ mod tests {
             )
         );
         assert!(
-            matches!(&first.1.role, catallax_recipe::Role::Side{segment,..} if segment.as_str()=="bottom")
+            matches!(&plan.faces()[first.1.index()].origin.role, catallax_recipe::Role::Side{segment,..} if segment.as_str()=="bottom")
         );
         let mut calls = 0;
         assert!(
             !plan
-                .visit_feature_candidates(4, |p, o| {
-                    assert_eq!((&p, o), (&first.0, &first.1));
+                .visit_candidates(4, |p, id| {
+                    assert_eq!((&p, id), (&first.0, first.1));
                     calls += 1;
                     false
                 })
@@ -699,11 +699,28 @@ mod tests {
         );
         assert_eq!(calls, 1);
         let stock = catallax_recipe::Recipe::parse(r#"{"format":"catallax-recipe/3","name":"stock","steps":[{"id":"body","op":"sphere","radius":"2","pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"body"}"#).unwrap();
+        let plan = Plan::compile(&stock).unwrap();
+        let bounds = [[q(-2), q(2)], [q(-2), q(2)], [q(-2), q(2)]];
         assert!(
-            Plan::compile(&stock)
-                .unwrap()
-                .visit_feature_candidates(4, |_, _| panic!("stock sampling remains separate"))
-                .unwrap()
+            visit(&plan, 4, &bounds, &mut |_, _| {
+                panic!("the analytic-cell pass must not duplicate stock sampling")
+            })
+            .unwrap()
         );
+        let mut calls = 0;
+        let mut workspace = crate::Workspace::default();
+        assert!(
+            plan.visit_candidates(4, |p, id| {
+                assert_eq!(plan.result_face(id.index()), Some(id));
+                assert_eq!(
+                    plan.face_query(id, &p, &mut workspace).unwrap().state,
+                    crate::FaceState::OnFace
+                );
+                calls += 1;
+                true
+            })
+            .unwrap()
+        );
+        assert!(calls > 0);
     }
 }

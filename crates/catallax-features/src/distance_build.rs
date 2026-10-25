@@ -396,6 +396,7 @@ pub(crate) fn shell(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn thicken(
     model: &mut Model,
     body: BodyId,
@@ -403,6 +404,7 @@ pub(crate) fn thicken(
     thickness: &Real,
     side: ThickenSide,
     step: &StepId,
+    sharp_joins: bool,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
     positive(thickness, dec)?;
@@ -432,9 +434,15 @@ pub(crate) fn thicken(
             .filter_map(|(i, v)| v.then_some(i))
             .collect();
         let [index] = indices.as_slice() else {
-            return Err(bad(
-                "selected cylinder joins require their projection normal sectors",
-            ));
+            if !sharp_joins {
+                return Err(bad(
+                    "selected cylinder joins require their projection normal sectors",
+                ));
+            }
+            return crate::sharp_thicken::RotationalThicken::cylindrical(
+                &skin, &selected, thickness, side, step, dec,
+            )?
+            .build(model, side, dec);
         };
         let band = skin.thicken(*index, thickness, side, step, dec)?;
         let outer = cylinder(model, &band.outer);
@@ -461,9 +469,15 @@ pub(crate) fn thicken(
             .filter_map(|(i, v)| v.then_some(i))
             .collect();
         let [index] = indices.as_slice() else {
-            return Err(bad(
-                "sharp selected conical joins require their projection normal sectors",
-            ));
+            if !sharp_joins {
+                return Err(bad(
+                    "sharp selected conical joins require their projection normal sectors",
+                ));
+            }
+            return crate::sharp_thicken::RotationalThicken::conical(
+                &skin, &selected, thickness, side, step, dec,
+            )?
+            .build(model, side, dec);
         };
         let sweep = skin.face_sweep(*index, thickness, side, step, dec)?;
         return crate::cone_build::sweep(model, &sweep, dec);
@@ -491,9 +505,13 @@ pub(crate) fn thicken(
         .filter_map(|(i, v)| v.then_some(i))
         .collect();
     let [index] = indices.as_slice() else {
-        return Err(bad(
-            "sharp selected joins require their projection normal sectors",
-        ));
+        if !sharp_joins {
+            return Err(bad(
+                "sharp selected joins require their projection normal sectors",
+            ));
+        }
+        return crate::sharp_planar::PlanarThicken::new(cell, selected)?
+            .build(model, thickness, side, step, dec);
     };
     Ok(cell
         .face_sweep(*index, thickness, side, step, dec)?

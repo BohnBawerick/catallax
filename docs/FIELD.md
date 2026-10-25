@@ -224,20 +224,33 @@ It visits every open sector in the selected carrier's tangent plane and uses
 exact normal perturbations that preserve every other support sign. A source
 boundary, surviving intermediate boundaries and a result-material transition
 in one such sector prove an open named patch approaching the contact.
-Exhausting the sectors can instead prove
-the selected patch absent, including a consumed sharp circle. Distinct source
-roles sharing a carrier and singular supports remain unresolved.
+Exhausting the transverse sectors can instead prove the selected patch absent,
+including a consumed sharp circle. Distinct source roles sharing a carrier and
+singular supports remain unresolved.
 
-At a tangent seam, transverse trim signs can instead make the other tangent
-supports irrelevant. Universal Boolean bounds leave their signs unknown and
-prove an open source patch approaches the contact. Exact enclosure of a complete
-ring-torus tube in a tangent plane, coaxial cylinder or coaxial sphere also fixes
-strict carrier signs away from their contact circle. Meridional departure is
-proved separately; tangent-plane samples alone never decide those signs.
-The source leaf must have one Boolean polarity, and every intermediate named
-boundary must survive. Other tangencies and larger curved fans remain unresolved.
-An isolated buried tangency cannot donate a named patch. Draft tile domains retain
-their ordinary named-face proof; carrier sectors do not identify a coplanar tile.
+At a tangent seam, transverse trim signs can make the other tangent supports
+irrelevant. Universal Boolean bounds leave their signs unknown and prove an open
+source patch approaches the contact. Exact enclosure of a complete ring-torus
+tube in a tangent plane, coaxial cylinder or coaxial sphere also fixes strict
+carrier signs away from their contact circle. Meridional departure is proved
+separately; tangent-plane samples alone never decide those signs. This dominance
+proof requires one Boolean polarity for the source leaf, and every intermediate
+named boundary must survive.
+
+When trim dominance supplies no witness, separated second-order normal graphs
+can admit tangent patches through exact polynomial parabolic germs. These are
+presence witnesses; failure to find one does not prove absence. Mixed source
+polarity retains an ambiguous normal. Contacts lacking either proof remain
+unresolved. An isolated buried tangency cannot supply a surviving-patch witness.
+Draft tile domains retain their ordinary named-face proof: carrier sectors alone
+do not identify the selected coplanar tile.
+
+Strict `Inside` or `Outside` at a retained historical boundary node excludes
+that named patch before contact analysis. Alternative ownership paths must all
+be excluded; `Boundary` and `Indeterminate` never prove presence. Rotational
+projection sectors retain their clipped node before union with adjacent normal
+images, so a later boundary cannot restore a buried part of their full carrier.
+The exclusion reuses existing tape locations and changes no geometric predicate.
 
 A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this handle, and resolve it after rebuilding.
 

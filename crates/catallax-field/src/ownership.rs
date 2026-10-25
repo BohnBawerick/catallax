@@ -170,6 +170,38 @@ impl Plan {
         id
     }
 
+    /// Strict point membership can exclude a historical boundary, never admit it.
+    pub(crate) fn domain_excludes_point(
+        &self,
+        domain: usize,
+        locations: &[Location],
+        states: &mut Vec<FaceState>,
+    ) -> bool {
+        use FaceState::{Indeterminate, NotOnFace};
+        states.clear();
+        for predicate in &self.domains[..=domain] {
+            states.push(match *predicate {
+                Domain::Source => Indeterminate,
+                Domain::Absent => NotOnFace,
+                Domain::Boundary { node, parent } => {
+                    if matches!(locations[node], Location::Inside | Location::Outside) {
+                        NotOnFace
+                    } else {
+                        states[parent]
+                    }
+                }
+                Domain::Either { a, b } => {
+                    if states[a] == NotOnFace && states[b] == NotOnFace {
+                        NotOnFace
+                    } else {
+                        Indeterminate
+                    }
+                }
+            });
+        }
+        states[domain] == NotOnFace
+    }
+
     pub(crate) fn domain_normal(
         &self,
         face: &Face,

@@ -296,6 +296,7 @@ impl Plan {
                         thickness.value(),
                         *side,
                         &step.id,
+                        recipe.format == catallax_recipe::FORMAT_V4,
                         dec,
                     )?,
                     Operation::Extrude {
@@ -1470,6 +1471,9 @@ impl Plan {
         if !matches!(self.instructions[self.root], Instruction::Leaf(_)) {
             let query = self.proven_checked(point, storage, dec)?;
             if matches!(query.location, Location::Inside | Location::Outside) {
+                return Ok(absent);
+            }
+            if self.domain_excludes_point(face.domain, &storage.locations, &mut storage.domains) {
                 return Ok(absent);
             }
             for &other in &storage.active {

@@ -382,8 +382,16 @@ impl Ctx<'_> {
             | (O::Chamfer { .. }, Role::Bevel { edge })
             | (O::Shell { .. } | O::Offset { .. }, Role::Round { edge })
             | (O::Thicken { .. }, Role::Rim { edge }) => self.edge(edge, i),
+            (O::Thicken { .. }, Role::Round { edge }) if self.recipe.format == FORMAT_V4 => {
+                self.edge(edge, i)
+            }
             (O::Fillet { .. } | O::Chamfer { .. }, Role::Corner { vertex })
             | (O::Shell { .. } | O::Offset { .. }, Role::RoundCorner { vertex }) => {
+                self.vertex(vertex, i)
+            }
+            (O::Thicken { .. }, Role::RoundCorner { vertex })
+                if self.recipe.format == FORMAT_V4 =>
+            {
                 self.vertex(vertex, i)
             }
             (O::Shell { .. }, Role::Inner { of }) | (O::Thicken { .. }, Role::Offset { of }) => {

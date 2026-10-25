@@ -8,13 +8,23 @@ use catallax_recipe::Recipe;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<_> = env::args_os().skip(1).collect();
+    let previous_input = if args.first().is_some_and(|arg| arg == "--edit-from") {
+        if args.len() < 2 {
+            return Err("--edit-from requires a native recipe path".into());
+        }
+        args.remove(0);
+        Some(args.remove(0))
+    } else {
+        None
+    };
     let incremental = args.first().is_some_and(|arg| arg == "--incremental");
-    if incremental {
+    let application = args.first().is_some_and(|arg| arg == "--application");
+    if incremental || application {
         args.remove(0);
     }
     if !(3..=5).contains(&args.len()) {
         return Err(
-            "usage: display [--incremental] INPUT.json OUTPUT_DIRECTORY REPETITIONS [CHORD_MM|drawing [ANGLE_RADIANS]]".into(),
+            "usage: display [--incremental|--application|--edit-from OLD_NATIVE.json] INPUT.json OUTPUT_DIRECTORY REPETITIONS [CHORD_MM|drawing [ANGLE_RADIANS]]".into(),
         );
     }
     let input = fs::read_to_string(&args[0])?;
@@ -31,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("repetitions must be positive".into());
     }
     let drawing = args.get(3).is_some_and(|value| value == "drawing");
-    if incremental && drawing {
+    if (incremental || application || previous_input.is_some()) && drawing {
         return Err("drawing chord mode requires independent display measurements".into());
     }
     let options = MeshOptions {
@@ -47,9 +57,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .transpose()?,
         ..MeshOptions::default()
     };
+    if let Some(previous_input) = previous_input {
+        let previous = Recipe::parse(&fs::read_to_string(previous_input)?)?;
+        return edit_rebuilds(&previous, &recipe, &options, &out, repetitions);
+    }
     let mut rows = Vec::new();
     if incremental {
         return incremental_edits(&recipe, &options, &out, repetitions);
+    }
+    if application {
+        return application_builds(&recipe, &options, &out, repetitions);
     }
     for iteration in 0..repetitions {
         let mut dec = Decider::default();
@@ -119,6 +136,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn application_builds(
+    recipe: &Recipe,
+    options: &MeshOptions,
+    out: &std::path::Path,
+    repetitions: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut rows = Vec::new();
+    for iteration in 0..repetitions {
+        let start = Instant::now();
+        let body = catallax_app::build(recipe, options, &mut Decider::default())?;
+        let app_ms = start.elapsed().as_secs_f64() * 1000.0;
+        rows.push(serde_json::json!({
+            "iteration":iteration,"app_ms":app_ms,
+            "faces":body.names.faces.len(),
+            "triangles":body.display.value.triangles.len(),
+            "chord_tolerance_mm":options.chord_tolerance.to_string(),
+            "max_work":catallax_app::DEFAULT_BUILD_WORK,
+        }));
+        if iteration + 1 == repetitions {
+            body.display
+                .value
+                .write_obj(&mut BufWriter::new(fs::File::create(
+                    out.join("display.obj"),
+                )?))?;
+            fs::write(out.join("mesh.txt"), format!("{:?}\n", body.display))?;
+        }
+    }
+    println!("{}", serde_json::to_string(&rows)?);
+    fs::write(out.join("samples.json"), serde_json::to_vec_pretty(&rows)?)?;
+    Ok(())
+}
+
 fn incremental_edits(
     recipe: &Recipe,
     options: &MeshOptions,
@@ -167,6 +216,62 @@ fn incremental_edits(
                     )?))?;
             }
             checkpoint = Some(body.checkpoint);
+        }
+    }
+    println!("{}", serde_json::to_string(&rows)?);
+    fs::write(out.join("samples.json"), serde_json::to_vec_pretty(&rows)?)?;
+    Ok(())
+}
+
+fn edit_rebuilds(
+    previous: &Recipe,
+    recipe: &Recipe,
+    options: &MeshOptions,
+    out: &std::path::Path,
+    repetitions: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut rows = Vec::new();
+    for iteration in 0..repetitions {
+        let before =
+            catallax_app::build_incremental(previous, None, options, &mut Decider::default())?;
+        let mut before_obj = Vec::new();
+        before.display.value.write_obj(&mut before_obj)?;
+        let start = Instant::now();
+        let body = catallax_app::build_incremental(
+            recipe,
+            Some(before.checkpoint.clone()),
+            options,
+            &mut Decider::default(),
+        )?;
+        let edit_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let mut edited_obj = Vec::new();
+        body.display.value.write_obj(&mut edited_obj)?;
+        let fresh = catallax_app::build(recipe, options, &mut Decider::default())?;
+        let mut fresh_obj = Vec::new();
+        fresh.display.value.write_obj(&mut fresh_obj)?;
+        assert_eq!(
+            edited_obj, fresh_obj,
+            "edited display differs from fresh build"
+        );
+        assert_eq!(body.names.faces.len(), fresh.names.faces.len());
+        let retained = catallax_app::build_incremental(
+            previous,
+            Some(before.checkpoint),
+            options,
+            &mut Decider::default(),
+        )?;
+        let mut retained_obj = Vec::new();
+        retained.display.value.write_obj(&mut retained_obj)?;
+        assert_eq!(before_obj, retained_obj, "edit changed retained display");
+        rows.push(serde_json::json!({
+            "iteration":iteration,"edit_ms":edit_ms,
+            "faces":body.names.faces.len(),
+            "triangles":body.display.value.triangles.len(),
+            "chord_tolerance_mm":options.chord_tolerance.to_string(),
+            "max_work":catallax_app::DEFAULT_BUILD_WORK,
+        }));
+        if iteration + 1 == repetitions {
+            fs::write(out.join("display.obj"), edited_obj)?;
         }
     }
     println!("{}", serde_json::to_string(&rows)?);

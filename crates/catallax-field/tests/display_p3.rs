@@ -6,7 +6,7 @@ use catallax_field::{
     Plan,
     display::{Diagnostics, Options, mesh_plan_reported},
 };
-use catallax_numbers::{Decider, with_operation_budget};
+use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_recipe::{Origin, Recipe, Role};
 
 fn radius(p: [f64; 3]) -> f64 {
@@ -225,4 +225,62 @@ fn p3_native_display_preserves_work_and_cell_refusals() {
     });
     assert!(!work.exhausted);
     assert_eq!(answer.unwrap_err().code, "field.display-budget");
+}
+
+// This rounded public rim vertex used to spend most of the comparison allowance
+// reclassifying unrelated fillets during each closed-trim witness query.
+#[test]
+fn p3_rim_distance_witnesses_have_independent_closed_trim_controls() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P3-filleted-boss.json")).unwrap();
+    let (checked, work) = with_operation_budget(1_000_000, || {
+        let mut dec = Decider::default();
+        let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+        let domains = plan.prepare_distances(&mut dec).unwrap();
+        let point = catallax_shapes::RPoint3::new(
+            Rational::parse("1969226398041087/70368744177664").unwrap(),
+            Rational::parse("34083787766785/2199023255552").unwrap(),
+            22.into(),
+        );
+        let controls = catallax_shapes::distance::Options {
+            width: Rational::parse("1/400").unwrap(),
+            max_cells: 1,
+        };
+        let mut checked = 0;
+        for (i, face) in plan.faces().iter().enumerate() {
+            if face.origin.step.as_str() != "boss"
+                || !matches!(face.origin.role, Role::End | Role::Side { .. })
+            {
+                continue;
+            }
+            let answer = domains
+                .point_to_face(
+                    plan.result_face(i).unwrap(),
+                    &point.to_real(),
+                    &controls,
+                    &mut dec,
+                )
+                .unwrap();
+            assert!(answer.upper.is_some_and(|bound| bound <= controls.width));
+            let witness = answer.witnesses.unwrap()[1].as_rational().unwrap();
+            let x = witness.x - Rational::from_i64(20);
+            let y = witness.y - Rational::from_i64(15);
+            let squared = &x * &x + &y * &y;
+            match face.origin.role {
+                Role::End => {
+                    assert_eq!(witness.z, Rational::from_i64(22));
+                    assert!(squared <= Rational::from_i64(64));
+                }
+                Role::Side { .. } => {
+                    assert_eq!(squared, Rational::from_i64(64));
+                    assert!(witness.z >= Rational::from_i64(12));
+                    assert!(witness.z <= Rational::from_i64(22));
+                }
+                _ => unreachable!(),
+            }
+            checked += 1;
+        }
+        checked
+    });
+    assert_eq!(checked, 2);
+    assert!(!work.exhausted);
 }

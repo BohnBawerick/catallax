@@ -678,7 +678,9 @@ mod tests {
             &p[1] + &(&epsilon * d[1]),
             &p[2] + &(&epsilon * d[2]),
         );
-        feature.classify(&point.to_real(), dec).unwrap()
+        let mut reference = feature.clone();
+        reference.fillet = None;
+        reference.classify(&point.to_real(), dec).unwrap()
     }
 
     #[test]
@@ -710,9 +712,13 @@ mod tests {
                 .or_else(|| feature.display_classifier())
                 .unwrap();
             let xyz = [p.x.clone(), p.y.clone(), p.z.clone()];
+            // Disable only the query cache trigger in the reference clone.
+            // Its retained profile, sweep and frame remain unchanged.
+            let mut reference = feature.clone();
+            reference.fillet = None;
             assert_eq!(
                 native.location(&xyz),
-                feature.classify(&p.to_real(), &mut dec).unwrap()
+                reference.classify(&p.to_real(), &mut dec).unwrap()
             );
             let inequalities = native.inequalities().unwrap();
             let values: Vec<_> = inequalities.iter().map(|p| p.eval(&xyz)).collect();
@@ -727,8 +733,15 @@ mod tests {
             assert_eq!(
                 Some(native.on_face(plan.definition_role(id.index()), &xyz)),
                 Some(
-                    feature
-                        .on_face_point(plan.definition_role(id.index()), &p.to_real(), &mut dec)
+                    reference
+                        .on_face_point(
+                            &Role::Side {
+                                segment: catallax_recipe::ElementId::new("blend").unwrap(),
+                                path: None,
+                            },
+                            &p.to_real(),
+                            &mut dec,
+                        )
                         .unwrap()
                 )
             );

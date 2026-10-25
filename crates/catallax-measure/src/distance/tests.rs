@@ -103,6 +103,10 @@ fn spherical_cap_does_not_use_the_removed_south_pole() {
     let answer = prepared
         .point_to_face(&mut model, &p(0, 0, -5), &controls(), &mut dec)
         .unwrap();
+    assert_eq!(
+        answer.cells, 0,
+        "complete spherical caps should avoid subdivision: {answer:?}"
+    );
     // The boundary circle has radius four and z=3, so the minimum is sqrt(80).
     let want = Ball::from_rational(&q(80), 256).sqrt().unwrap();
     assert!(answer.lower <= want.lo(), "{answer:?}");
@@ -347,4 +351,314 @@ fn cap_point_with_an_irrational_rim_witness_is_enclosed_without_subdivision() {
     let expected = squared.sqrt().unwrap();
     let three = Ball::from_rational(&q(3), 256);
     irrational_case(false, p(3, 3, 7), &expected, [r.clone(), r, three]);
+}
+
+// Public synthetic finite spherical faces. Trim axes deliberately differ from
+// the carrier frame, so recognition cannot infer a cap from its parametrisation.
+fn spherical_face(
+    pose: &Pose,
+    scale: &Rational,
+    face_sense: Sense,
+    edge_sense: Sense,
+    rims: &[(i64, Sense)],
+) -> (Model, FaceId) {
+    use catallax_numbers::{Fact, FactKind, FactOrigin};
+    use catallax_shapes::{Circle, GeomKey, RVector3, Sphere};
+    use catallax_topology::{Coedge, Edge, Face};
+    let mut model = Model::new();
+    let mut dec = Decider::default();
+    let vector = |x, y, z| pose.apply_vector(&RVector3::new(q(x), q(y), q(z)).to_real());
+    let surface = model.geom_mut().add_surface(Surface::Sphere(
+        Sphere::new(
+            pose.apply_point(&p(0, 0, 0)),
+            (&q(5) * scale).into(),
+            vector(2, 0, 0),
+            vector(0, 3, 0),
+            &mut dec,
+        )
+        .unwrap(),
+    ));
+    let loops = rims
+        .iter()
+        .map(|(z, sense)| {
+            let curve = model.geom_mut().add_curve(Curve::Circle(Circle {
+                center: pose.apply_point(&RPoint3::new(q(0), q(0), &q(*z) * scale).to_real()),
+                normal: vector(0, 0, 2),
+                radius_sq: (&q(25 - z * z) * &(scale * scale)).into(),
+                ref_dir: vector(3, 0, 0),
+            }));
+            model.geom_mut().record_fact(Fact {
+                kind: FactKind::Incident,
+                a: GeomKey::Curve(curve),
+                b: GeomKey::Surface(surface),
+                at: None,
+                origin: FactOrigin::Construction("public-spherical-distance-tests"),
+            });
+            let edge = model.add_edge(Edge {
+                curve,
+                sense: edge_sense,
+                start: None,
+                end: None,
+            });
+            let coedge = model.add_coedge(Coedge {
+                edge,
+                sense: *sense,
+            });
+            model.add_loop(Loop::Coedges(vec![coedge]))
+        })
+        .collect();
+    let face = model.add_face(Face {
+        surface,
+        sense: face_sense,
+        loops,
+    });
+    (model, face)
+}
+
+// MPFR directed rounding is independent of kernel Real/Ball and sphere charts.
+fn independent_sqrt(n: i64) -> [Rational; 2] {
+    use rug::{Float, float::Round};
+    [Round::Down, Round::Up].map(|round| {
+        let mut f = Float::with_val(256, n);
+        f.sqrt_round(round);
+        Rational::parse(&f.to_rational().unwrap().to_string()).unwrap()
+    })
+}
+fn check_spherical(
+    model: &mut Model,
+    face: FaceId,
+    at: &Point3,
+    expected: [Rational; 2],
+) -> Bounds {
+    let mut dec = Decider::default();
+    let prepared = PreparedFace::new(model, face, &mut dec).unwrap();
+    assert!(prepared.finite.is_some());
+    let answer = prepared
+        .point_to_face(model, at, &controls(), &mut dec)
+        .unwrap();
+    let upper = answer.upper.as_ref().unwrap();
+    assert!(answer.converged && answer.cells == 0, "{answer:?}");
+    assert!(
+        answer.lower <= expected[0] && *upper >= expected[1],
+        "{answer:?}, {expected:?}"
+    );
+    assert!(upper - &answer.lower <= controls().width, "{answer:?}");
+    let [_, witness] = answer.witnesses.as_ref().unwrap();
+    assert!(
+        catallax_boolean::face_contains(model, face, witness, &mut dec).unwrap(),
+        "{answer:?}"
+    );
+    answer
+}
+#[test]
+fn spherical_caps_and_bands_match_independent_oracles_under_pose_and_scale() {
+    for pose in [Pose::identity(), placed()] {
+        for scale in [Rational::from_ratio(1, 1000).unwrap(), q(1), q(1000)] {
+            for (rims, cases) in [
+                (
+                    vec![(3, Sense::Same)],
+                    vec![
+                        ([0, 0, -5], 80),
+                        ([0, 0, 7], 4),
+                        ([0, 0, 0], 25),
+                        ([3, 0, 4], 0),
+                        ([6, 0, 8], 25),
+                        ([4, 0, 3], 0),
+                    ],
+                ),
+                (
+                    vec![(-3, Sense::Same), (3, Sense::Reversed)],
+                    vec![
+                        ([6, 0, 8], 29),
+                        ([7, 0, -8], 34),
+                        ([0, 0, 0], 25),
+                        ([0, 0, 7], 32),
+                        ([0, 0, -7], 32),
+                        ([10, 0, 0], 25),
+                        ([4, 0, 3], 0),
+                    ],
+                ),
+                (
+                    vec![(0, Sense::Same), (3, Sense::Reversed)],
+                    vec![([7, 0, -8], 68), ([6, 0, 8], 29), ([5, 0, 0], 0)],
+                ),
+                (
+                    vec![(3, Sense::Same), (4, Sense::Reversed)],
+                    vec![([0, 0, 7], 18), ([0, 0, -5], 80), ([3, 0, 4], 0)],
+                ),
+            ] {
+                let (mut model, face) =
+                    spherical_face(&pose, &scale, Sense::Same, Sense::Same, &rims);
+                for (xyz, squared) in cases {
+                    let at = pose.apply_point(
+                        &RPoint3::new(
+                            &q(xyz[0]) * &scale,
+                            &q(xyz[1]) * &scale,
+                            &q(xyz[2]) * &scale,
+                        )
+                        .to_real(),
+                    );
+                    check_spherical(
+                        &mut model,
+                        face,
+                        &at,
+                        independent_sqrt(squared).map(|x| &x * &scale),
+                    );
+                }
+            }
+        }
+    }
+}
+#[test]
+fn complementary_caps_and_effective_senses_keep_opposite_regions() {
+    // Inverting any one sense selects the complement. Inverting two preserves it.
+    for (face_sense, edge_sense, coedge_sense, north) in [
+        (Sense::Same, Sense::Same, Sense::Same, true),
+        (Sense::Same, Sense::Same, Sense::Reversed, false),
+        (Sense::Same, Sense::Reversed, Sense::Same, false),
+        (Sense::Reversed, Sense::Same, Sense::Same, false),
+        (Sense::Reversed, Sense::Reversed, Sense::Same, true),
+        (Sense::Reversed, Sense::Same, Sense::Reversed, true),
+        (Sense::Same, Sense::Reversed, Sense::Reversed, true),
+        (Sense::Reversed, Sense::Reversed, Sense::Reversed, false),
+    ] {
+        let (mut model, face) = spherical_face(
+            &Pose::identity(),
+            &q(1),
+            face_sense,
+            edge_sense,
+            &[(3, coedge_sense)],
+        );
+        check_spherical(
+            &mut model,
+            face,
+            &p(0, 0, -5),
+            independent_sqrt(if north { 80 } else { 0 }),
+        );
+        check_spherical(
+            &mut model,
+            face,
+            &p(0, 0, 7),
+            independent_sqrt(if north { 4 } else { 32 }),
+        );
+    }
+}
+#[test]
+fn spherical_arc_trims_keep_the_complete_search_and_admitted_witnesses() {
+    let (mut model, body) = crate::fixtures::octant(&Pose::identity());
+    let face = model
+        .faces_of_body(body)
+        .into_iter()
+        .find(|f| {
+            matches!(
+                model.geom().surface(model.face(*f).surface),
+                Surface::Sphere(_)
+            )
+        })
+        .unwrap();
+    let mut dec = Decider::default();
+    let prepared = PreparedFace::new(&model, face, &mut dec).unwrap();
+    assert!(prepared.finite.is_none());
+    let at = p(5, 0, 0);
+    let answer = prepared
+        .point_to_face(&mut model, &at, &controls(), &mut dec)
+        .unwrap();
+    let fallback = distance::point_distance(
+        &prepared.domain,
+        &at,
+        &controls(),
+        &mut |p: &Point3, b: &[Ball; 3], d: &mut Decider| prepared.classify(&mut model, p, b, d),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(answer.lower, fallback.lower);
+    assert_eq!(answer.upper, fallback.upper);
+    assert_eq!(answer.cells, fallback.cells);
+    assert!(answer.converged);
+    // The radius-3 octant admits its positive-x vertex, at distance 2.
+    assert!(answer.lower <= q(2) && answer.upper.as_ref().unwrap() >= &q(2));
+    let [_, witness] = answer.witnesses.unwrap();
+    assert!(catallax_boolean::face_contains(&mut model, face, &witness, &mut dec).unwrap());
+    assert!(!catallax_boolean::face_contains(&mut model, face, &p(-3, 0, 0), &mut dec).unwrap());
+}
+#[test]
+fn insufficient_direct_width_retains_the_original_fallback_controls() {
+    let (mut model, face) = spherical_face(
+        &Pose::identity(),
+        &q(1),
+        Sense::Same,
+        Sense::Same,
+        &[(3, Sense::Same)],
+    );
+    let mut dec = Decider::default();
+    let mut prepared = PreparedFace::new(&model, face, &mut dec).unwrap();
+    let options = Options {
+        width: Rational::from_ratio(1, 10).unwrap().mul_pow2(-512),
+        max_cells: 1,
+    };
+    assert!(
+        prepared
+            .finite
+            .as_ref()
+            .unwrap()
+            .point_distance(&p(0, 0, -5), &options, &mut dec)
+            .unwrap()
+            .is_none()
+    );
+    let direct_fallback = prepared
+        .point_to_face(&mut model, &p(0, 0, -5), &options, &mut dec)
+        .unwrap();
+    prepared.finite = None;
+    let fallback = prepared
+        .point_to_face(&mut model, &p(0, 0, -5), &options, &mut Decider::default())
+        .unwrap();
+    assert_eq!(direct_fallback.lower, fallback.lower);
+    assert_eq!(direct_fallback.upper, fallback.upper);
+    assert_eq!(direct_fallback.cells, fallback.cells);
+    assert_eq!(direct_fallback.converged, fallback.converged);
+    assert!(!fallback.converged);
+}
+
+fn independent_radical(a: i32, b: i32, c: i32, outer_root: bool) -> [Rational; 2] {
+    use rug::{Float, float::Round};
+    [(Round::Down, Round::Up), (Round::Up, Round::Down)].map(|(outward, inward)| {
+        let mut root = Float::with_val(256, c);
+        root.sqrt_round(inward);
+        let product = Float::with_val_round(256, &root * b, inward).0;
+        let mut value = Float::with_val_round(256, a - &product, outward).0;
+        if outer_root {
+            value.sqrt_round(outward);
+        }
+        Rational::parse(&value.to_rational().unwrap().to_string()).unwrap()
+    })
+}
+#[test]
+fn irrational_spherical_witnesses_match_independent_mpfr_oracles() {
+    use catallax_shapes::{RVector3, Rotation};
+    let pose = Pose::from_rational(
+        Rotation::from_quaternion(q(1), q(2), q(3), q(4)).unwrap(),
+        RVector3::new(q(7), q(-11), q(13)),
+    );
+    for pose in [Pose::identity(), pose] {
+        for (rims, xyz, oracle) in [
+            (
+                vec![(3, Sense::Same)],
+                [1, 1, 4],
+                independent_radical(5, 1, 18, false),
+            ),
+            (
+                vec![(3, Sense::Same)],
+                [1, 1, -1],
+                independent_radical(34, 8, 2, true),
+            ),
+            (
+                vec![(-3, Sense::Same), (3, Sense::Reversed)],
+                [1, 1, 0],
+                independent_radical(5, 1, 2, false),
+            ),
+        ] {
+            let (mut model, face) = spherical_face(&pose, &q(1), Sense::Same, Sense::Same, &rims);
+            check_spherical(&mut model, face, &world(&pose, xyz), oracle);
+        }
+    }
 }

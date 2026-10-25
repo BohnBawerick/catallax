@@ -93,7 +93,7 @@ impl PreparedFace {
             finite,
         })
     }
-    /// Recognizes a complete circular cylinder band or perpendicular circular cap:
+    /// Recognizes complete circular cylinder/disc or oriented spherical regions:
     /// every loop is one closed circle edge. Other trims keep the complete search.
     fn recognize(
         model: &Model,
@@ -108,16 +108,18 @@ impl PreparedFace {
             let [c] = cs.as_slice() else {
                 return Ok(None);
             };
-            let edge = model.edge(model.coedge(*c).edge);
+            let coedge = model.coedge(*c);
+            let edge = model.edge(coedge.edge);
             if edge.start.is_some() || edge.end.is_some() {
                 return Ok(None);
             }
             let Curve::Circle(circle) = model.geom().curve(edge.curve) else {
                 return Ok(None);
             };
-            rims.push(circle);
+            let forward = (coedge.sense == edge.sense) == (model.face(face).sense == Sense::Same);
+            rims.push((circle, forward));
         }
-        Finite::recognize(model.geom().surface(model.face(face).surface), &rims, dec)
+        Finite::recognize_oriented(model.geom().surface(model.face(face).surface), &rims, dec)
     }
     fn classify(
         &self,
@@ -140,7 +142,8 @@ impl PreparedFace {
     }
     /// Bounds point-to-face distance. Upper witnesses satisfy exact closed-loop
     /// membership; lower bounds cover all unexcluded parameter cells. Complete
-    /// cylinder bands and perpendicular circular caps are answered directly.
+    /// cylinder bands, perpendicular circular discs and oriented spherical caps
+    /// or complete coaxial bands are answered directly.
     pub fn point_to_face(
         &self,
         model: &mut Model,

@@ -16,7 +16,7 @@ args.out.write_text(
     + "File formats and APIs may change between releases. Keep your source recipes and original files; do not rely on round-tripping saved kernel artifacts across versions.\n\n"
     + "macOS and Windows downloads have no developer identity signature. macOS universal executables carry only the ad-hoc signature required to run on Apple Silicon. GitHub build-provenance attestations are separate from platform code signing.\n\n"
     + "## Evidence and verification\n\n"
-    + "Attached `replay-summary.json` compares 477 earlier answers, manifests and strict STEP bytes, at one, two and four candidate workers. `target-parts.json` records the target scoreboard from this commit, including refusals and checks not yet run. Neither is a claim that all CAD targets are supported.\n\n"
+    + "Attached `replay-summary.json` records preservation of 477 earlier cases, with only committed, answer-pinned refusal upgrades allowed. Candidate manifests and strict STEP bytes must agree at one, two and four workers. `target-parts.json` records the target scoreboard from this commit, including refusals and checks not yet run. Neither is a claim that all CAD targets are supported.\n\n"
     + "Check downloads with `sha256sum --check SHA256SUMS` or an equivalent SHA-256 tool. The CycloneDX SBOM is `catallax-cli.cdx.xml`. Verify build provenance with `gh attestation verify FILE --repo BohnBawerick/catallax`.\n\n"
     + "## Merged pull requests\n\n"
     + args.generated.read_text()

@@ -196,3 +196,33 @@ fn complete_p3_native_display_fits_scoreboard_allowance() {
         "top area={top_area}"
     );
 }
+
+#[test]
+fn p3_native_display_preserves_work_and_cell_refusals() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P3-filleted-boss.json")).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let (answer, work) = with_operation_budget(0, || {
+        mesh_plan_reported(
+            &plan,
+            &Options::default(),
+            &mut Decider::default(),
+            &mut Diagnostics::default(),
+        )
+    });
+    assert!(work.exhausted);
+    assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+    let options = Options {
+        max_cells: 1,
+        ..Options::default()
+    };
+    let (answer, work) = with_operation_budget(1_000_000, || {
+        mesh_plan_reported(
+            &plan,
+            &options,
+            &mut Decider::default(),
+            &mut Diagnostics::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    assert_eq!(answer.unwrap_err().code, "field.display-budget");
+}

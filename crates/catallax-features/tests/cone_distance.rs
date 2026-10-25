@@ -257,18 +257,93 @@ fn outward_frustum_rounds_both_circular_edges_at_true_distance() {
 }
 
 #[test]
-fn outward_cone_tips_keep_a_typed_coverage_refusal() {
+fn outward_cone_tip_uses_a_spherical_normal_sector_and_shared_contact_circle() {
     let recipe = Recipe::parse(include_str!("fixtures/cone-distance/tip-outward.json")).unwrap();
-    let catallax_features::BuildError::Geometry { refusal, .. } =
-        evaluate(&recipe, &mut Decider::default()).unwrap_err()
-    else {
-        panic!("expected a geometric coverage refusal");
-    };
-    assert_eq!(refusal.code, "distance.cone-domain");
-    assert_eq!(
-        Plan::compile(&recipe).unwrap_err().code,
-        "distance.cone-domain"
+    locations(
+        &recipe,
+        &[
+            (["0", "0", "41/10"], Location::Inside),
+            (["0", "0", "21/5"], Location::Boundary),
+            (["0", "0", "421/100"], Location::Outside),
+            (["3/25", "0", "104/25"], Location::Boundary),
+            (["3/25", "0", "415/100"], Location::Inside),
+            (["3/25", "0", "417/100"], Location::Outside),
+            (["11/5", "0", "2"], Location::Inside),
+            (["23/10", "0", "2"], Location::Outside),
+            (["0", "0", "-1/5"], Location::Boundary),
+        ],
     );
+    assert_tip_mesh(&recipe);
+}
+
+fn assert_tip_mesh(recipe: &Recipe) {
+    let built = build(recipe);
+    let spherical = built
+        .model
+        .faces_of_body(built.result)
+        .into_iter()
+        .find(|f| {
+            matches!(
+                built.model.geom().surface(built.model.face(*f).surface),
+                Surface::Sphere(_)
+            )
+        })
+        .expect("the apex normal sector is spherical");
+    assert!(matches!(
+        &built.model.face_origins(spherical)[0].role,
+        catallax_recipe::Role::RoundCorner { vertex } if vertex.faces().len() == 1
+    ));
+    let options = catallax_mesh::MeshOptions {
+        chord_tolerance: Rational::parse("1/200").unwrap(),
+        ..Default::default()
+    };
+    let mesh = catallax_mesh::mesh_body(
+        &built.model,
+        built.result,
+        &options,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    for face in &mesh.faces {
+        assert!(face.max_chord_error <= options.chord_tolerance);
+    }
+    let mut uses = std::collections::BTreeMap::<_, Vec<_>>::new();
+    for triangle in &mesh.triangles {
+        for i in 0..3 {
+            let a = triangle.vertices[i];
+            let b = triangle.vertices[(i + 1) % 3];
+            uses.entry((a.min(b), a.max(b))).or_default().push((a, b));
+        }
+    }
+    for directions in uses.values() {
+        assert_eq!(directions.len(), 2);
+        assert_eq!(directions[0], (directions[1].1, directions[1].0));
+    }
+}
+
+#[test]
+fn rational_tip_contact_and_posed_and_shallow_targets_keep_closed_certified_meshes() {
+    let rational = Recipe::parse(include_str!(
+        "fixtures/cone-distance/tip-outward-rational.json"
+    ))
+    .unwrap();
+    locations(
+        &rational,
+        &[
+            (["4/25", "0", "103/25"], Location::Boundary),
+            (["159/1000", "0", "103/25"], Location::Inside),
+            (["161/1000", "0", "103/25"], Location::Outside),
+            (["3/25", "0", "104/25"], Location::Boundary),
+        ],
+    );
+    for input in [
+        include_str!("fixtures/cone-distance/tip-outward-rational.json"),
+        include_str!("fixtures/cone-distance/tip-outward-posed.json"),
+        include_str!("fixtures/cone-distance/tip-outward-small.json"),
+    ] {
+        assert_tip_mesh(&Recipe::parse(input).unwrap());
+    }
 }
 
 #[test]

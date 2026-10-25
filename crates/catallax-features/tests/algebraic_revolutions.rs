@@ -282,3 +282,186 @@ fn trimmed_horn_and_spindle_sheets_keep_their_coverage_refusal() {
         assert_eq!(refusal.code, "features.unsupported-spindle-torus");
     }
 }
+
+#[test]
+fn field_revolutions_compile_independently_and_resolve_origins() {
+    for (name, source) in CASES {
+        let recipe = Recipe::parse(source).unwrap();
+        let plan =
+            catallax_field::Plan::compile(&recipe).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+        for face in built.model.faces_of_body(built.result) {
+            for origin in built.model.face_origins(face) {
+                assert!(plan.select(origin).is_some(), "{name}: {origin:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn field_revolutions_keep_exact_angular_trims_on_both_profile_sides() {
+    use catallax_field::{Location, Plan, Workspace};
+    for angle in [30, 45, 60, 120, 210, 225, 300, 330] {
+        for reflected in [false, true] {
+            let source = CASES.iter().find(|(name, _)| *name == "line-30").unwrap().1;
+            let mut value: serde_json::Value = serde_json::from_str(source).unwrap();
+            value["steps"][1]["angle"] = angle.to_string().into();
+            if reflected {
+                for edge in value["steps"][0]["loops"][0].as_array_mut().unwrap() {
+                    let x = edge["to"][0].as_str().unwrap();
+                    edge["to"][0] = serde_json::Value::String(format!("-{x}"));
+                }
+            }
+            let recipe = Recipe::parse(&value.to_string()).unwrap();
+            let plan = Plan::compile(&recipe).unwrap();
+            let mut workspace = Workspace::default();
+            for (x, z, want) in [
+                ("2", "-1/2", Location::Inside),
+                (
+                    "1",
+                    "-2",
+                    if angle <= 60 {
+                        Location::Outside
+                    } else {
+                        Location::Inside
+                    },
+                ),
+                ("2", "1/2", Location::Outside),
+                (
+                    "-2",
+                    "1/2",
+                    if angle >= 210 {
+                        Location::Inside
+                    } else {
+                        Location::Outside
+                    },
+                ),
+                (
+                    "-1",
+                    "2",
+                    if angle >= 300 {
+                        Location::Inside
+                    } else {
+                        Location::Outside
+                    },
+                ),
+                (
+                    "3/2",
+                    "-3/2",
+                    if angle == 30 {
+                        Location::Outside
+                    } else if angle == 45 {
+                        Location::Boundary
+                    } else {
+                        Location::Inside
+                    },
+                ),
+            ] {
+                let f = Rational::from_i64(if reflected { -1 } else { 1 });
+                let point = catallax_shapes::RPoint3::new(
+                    Rational::parse(x).unwrap() * f.clone(),
+                    Rational::one(),
+                    Rational::parse(z).unwrap() * f,
+                );
+                assert_eq!(
+                    plan.proven_checked(&point, &mut workspace, &mut Decider::default())
+                        .unwrap()
+                        .location,
+                    want,
+                    "{angle} reflected={reflected}: {point:?}"
+                );
+                let fast = plan
+                    .fast(
+                        [&point.x, &point.y, &point.z].map(Rational::to_f64_nearest),
+                        &mut workspace,
+                    )
+                    .unwrap();
+                assert!(!fast.true_distance_formula);
+                if want == Location::Inside {
+                    assert!(
+                        fast.value <= 0.0,
+                        "{angle} reflected={reflected}: {point:?}: {fast:?}"
+                    );
+                } else if want == Location::Outside {
+                    assert!(
+                        fast.value >= 0.0,
+                        "{angle} reflected={reflected}: {point:?}: {fast:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn irrational_revolution_frames_and_radii_have_exact_field_membership() {
+    use catallax_field::{Location, Plan, Workspace};
+    for (name, cases) in [
+        (
+            "irrational-axis",
+            vec![
+                (["2", "1", "-1/2"], Location::Inside),
+                (["2", "1", "1/2"], Location::Outside),
+                (["2", "1", "0"], Location::Boundary),
+                (["3/2", "3/2", "-1/2"], Location::Boundary),
+            ],
+        ),
+        (
+            "sphere-radius",
+            vec![
+                (["5/4", "0", "0"], Location::Inside),
+                (["3/2", "0", "0"], Location::Outside),
+                (["1", "0", "1"], Location::Boundary),
+                (["1", "0", "0"], Location::Boundary),
+                (["0", "0", "0"], Location::Outside),
+            ],
+        ),
+        (
+            "torus-minor-radius",
+            vec![
+                (["17/4", "0", "0"], Location::Inside),
+                (["9/2", "0", "0"], Location::Outside),
+                (["4", "1", "0"], Location::Boundary),
+                (["4", "0", "0"], Location::Boundary),
+            ],
+        ),
+        (
+            "torus-major-radius",
+            vec![
+                (["4", "0", "0"], Location::Inside),
+                (["5", "0", "0"], Location::Boundary),
+                (["6", "0", "0"], Location::Outside),
+                (["4", "0", "1/2"], Location::Inside),
+                (["4", "0", "3"], Location::Outside),
+                (["2", "2", "0"], Location::Outside),
+            ],
+        ),
+    ] {
+        let recipe =
+            Recipe::parse(CASES.iter().find(|(case, _)| *case == name).unwrap().1).unwrap();
+        let plan = Plan::compile(&recipe).unwrap();
+        let mut workspace = Workspace::default();
+        for (point, expected) in cases {
+            let [x, y, z] = point.map(|s| Rational::parse(s).unwrap());
+            let point = catallax_shapes::RPoint3::new(x, y, z);
+            assert_eq!(
+                plan.proven_checked(&point, &mut workspace, &mut Decider::default())
+                    .unwrap()
+                    .location,
+                expected,
+                "{name}: {point:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn native_field_display_keeps_the_algebraic_cap_coverage_refusal() {
+    let source = CASES.iter().find(|(name, _)| *name == "line-30").unwrap().1;
+    let recipe = Recipe::parse(source).unwrap();
+    let plan = catallax_field::Plan::compile(&recipe).unwrap();
+    let refusal =
+        catallax_field::display::mesh_plan(&plan, &Default::default(), &mut Decider::default())
+            .unwrap_err();
+    assert_eq!(refusal.code, "field.display-unsupported");
+}

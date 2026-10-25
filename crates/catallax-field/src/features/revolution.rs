@@ -44,37 +44,40 @@ impl Angle {
     }
 
     pub(super) fn fast(&self) -> (u16, [f64; 2]) {
-        let sector = if self.is(360) {
-            360
-        } else if self.degrees <= Rational::from_i64(180) {
-            180
+        let rotation = [self.cosine.to_f64(), self.sine.to_f64()];
+        for cardinal in [90, 180, 270, 360] {
+            if self.is(cardinal) {
+                return (cardinal as u16, rotation);
+            }
+        }
+        // Keep the existing cardinal fast paths; 1 and 2 select the new
+        // non-cardinal convex and reflex angular predicates respectively.
+        let sector = if self.degrees <= Rational::from_i64(180) {
+            1
         } else {
-            270
+            2
         };
-        (sector, [self.cosine.to_f64(), self.sine.to_f64()])
+        (sector, rotation)
     }
 
     // b is the coefficient along z cross axis, so its physical length is
     // b*sqrt(norm). Each flip is a distinct preimage in the sketch plane.
+    // Reuse settled coordinate signs to preserve the cardinal query work path.
     pub(super) fn location(
         &self,
         flip: i64,
-        b: &Real,
-        z: &Real,
+        coordinates: [&Real; 2],
         norm: &Rational,
+        signs: [Sign; 2],
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
+        let [b, z] = coordinates;
         if self.is(360) {
             return Ok(Location::Inside);
         }
         for cardinal in [90, 180, 270] {
             if self.is(cardinal) {
-                return Ok(super::angular(
-                    cardinal as u16,
-                    flip,
-                    geometry::sign(b, dec)?,
-                    geometry::sign(z, dec)?,
-                ));
+                return Ok(super::angular(cardinal as u16, flip, signs[0], signs[1]));
             }
         }
         let oriented = |sign| {
@@ -88,7 +91,7 @@ impl Angle {
                 }
             }
         };
-        let start = oriented(geometry::sign(z, dec)?);
+        let start = oriented(signs[1]);
         let end = oriented(geometry::sign(
             &((b * &radius(norm)) * self.sine.clone() - z * &self.cosine),
             dec,
@@ -190,15 +193,15 @@ mod tests {
                         Location::Outside,
                     ),
                 ] {
+                    let b = (&f * &cosine) / radius(&norm);
+                    let z = &f * &sine;
+                    let signs = [
+                        geometry::sign(&b, &mut dec).unwrap(),
+                        geometry::sign(&z, &mut dec).unwrap(),
+                    ];
                     assert_eq!(
                         angle
-                            .location(
-                                flip,
-                                &((&f * &cosine) / radius(&norm)),
-                                &(&f * &sine),
-                                &norm,
-                                &mut dec
-                            )
+                            .location(flip, [&b, &z], &norm, signs, &mut dec)
                             .unwrap(),
                         want,
                         "{degrees} {flip}"

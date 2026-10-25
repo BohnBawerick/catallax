@@ -21,12 +21,14 @@ default requested mass properties, certified B-rep display, and STEP export.
 Measurement and display remain explicit consumer requests; ordinary construction
 does not collect qualification measurements or timing information.
 
-## Pending field integration
+## Independent field compilation and consumer limits
 
-This draft includes the independent field angle implementation in
-`crates/catallax-field/src/features/revolution.rs`. Its shared dispatch hook is
-pending integration. Until that hook lands, the field compiler retains its
-previous algebraic revolution refusal codes.
+The field compiler constructs the analytic carriers independently of B-rep
+topology. Its private revolution angle retains rational degrees and exact sine
+and cosine in `crates/catallax-field/src/features/revolution.rs`. Angular queries
+test the directed start and end half-planes for each profile preimage, including
+reflex sweeps and profiles on either side of the axis. The angle is boxed in the
+private sweep variant to avoid widening the other sweep variants.
 
 The native field display charts have a further coverage restriction: they store
 rational chart points and witnesses. A general algebraic cap plane cannot use
@@ -36,7 +38,7 @@ construction/query change keeps that display refusal explicit. An algebraic
 chart/witness extension remains separate work before the original complete
 two-evaluator display exit can be claimed.
 
-Rational-only comparison candidate APIs also need an explicit coverage refusal
+Rational-only comparison candidate APIs retain an explicit coverage refusal
 for algebraic cap samples; rounding a rotated point is not an exact sample.
 Independent STEP import establishes exchange validity, not a certified volume
 or deviation enclosure. Public regression replay does not replace qualification

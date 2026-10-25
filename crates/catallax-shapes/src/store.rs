@@ -1,6 +1,6 @@
 //! Handles, write-once arenas and the geometry store.
 
-use im::Vector;
+use im::{OrdMap, OrdSet, Vector};
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -163,6 +163,7 @@ pub struct GeomStore {
     facts: FactBook<GeomKey>,
     implicits: Vector<Option<RealPoly>>,
     approximate_points: Vector<[f64; 3]>,
+    closed_conic_supports: OrdMap<CurveId, OrdSet<SurfaceId>>,
 }
 
 impl GeomStore {
@@ -299,6 +300,17 @@ impl GeomStore {
         if fact.kind == FactKind::Incident
             && fact.at.is_none()
             && let (GeomKey::Curve(curve), GeomKey::Surface(surface)) = (fact.a, fact.b)
+            && matches!(self.curve(curve), Curve::Circle(_) | Curve::Ellipse(_))
+        {
+            // An index of retained proofs, not a search for geometric matches.
+            self.closed_conic_supports
+                .entry(curve)
+                .or_default()
+                .insert(surface);
+        }
+        if fact.kind == FactKind::Incident
+            && fact.at.is_none()
+            && let (GeomKey::Curve(curve), GeomKey::Surface(surface)) = (fact.a, fact.b)
             && let Curve::Circle(circle) = self.curve(curve)
         {
             let surface = self.surface(surface);
@@ -432,6 +444,7 @@ impl GeomStore {
             || self
                 .facts
                 .holds(FactKind::Incident, GeomKey::Point(p), GeomKey::Curve(c))
+            || self.closed_conic_incident(c, p)
         {
             return fact_decision(dec);
         }
@@ -506,6 +519,40 @@ impl GeomStore {
                 }
             },
         )
+    }
+
+    fn closed_conic_incident(&self, curve: CurveId, point: PointId) -> bool {
+        let Some(supports) = self.closed_conic_supports.get(&curve) else {
+            return false;
+        };
+        let mut plane = false;
+        let mut quadric = false;
+        for &surface in supports {
+            if !self.facts.holds(
+                FactKind::Incident,
+                GeomKey::Point(point),
+                GeomKey::Surface(surface),
+            ) {
+                continue;
+            }
+            match self.surface(surface) {
+                Surface::Plane(_) => plane = true,
+                Surface::Sphere(_)
+                | Surface::Cylinder(_)
+                | Surface::Cone(_)
+                | Surface::EllipticCylinder(_) => quadric = true,
+                _ => {}
+            }
+            // These positive-radius quadrics have no plane component. Their
+            // restriction to a plane containing a full nondegenerate circle or
+            // ellipse is a nonzero multiple of that conic's equation. A point
+            // on both supports is therefore on the conic. A torus can cut the
+            // same plane in two circles, so it is deliberately not a quadric.
+            if plane && quadric {
+                return true;
+            }
+        }
+        false
     }
 
     /// Whether two points coincide. Facts first; a not-exact outcome carries
@@ -919,5 +966,246 @@ mod contact_fact_tests {
         };
         assert_eq!(actual.bound, expected);
         assert!(actual.bound >= Rational::one() / Rational::from_i64(3));
+    }
+    #[test]
+    fn closed_conic_retains_its_plane_and_quadric_incidence() {
+        let mut store = GeomStore::new();
+        let mut dec = Decider::default();
+        let axis = Vector3::new(Real::zero(), Real::zero(), Real::one());
+        let reference = Vector3::new(Real::one(), Real::zero(), Real::zero());
+        let sphere = store.add_surface(Surface::Sphere(
+            Sphere::new(
+                Point3::new(Real::zero(), Real::zero(), Real::from_i64(3)),
+                Real::from_i64(5),
+                axis.clone(),
+                reference.clone(),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let plane = store.add_surface(Surface::Plane(
+            Plane::new(Point3::origin(), axis.clone(), reference.clone(), &mut dec).unwrap(),
+        ));
+        let circle = store.add_curve(Curve::Circle(
+            crate::Circle::new(
+                Point3::origin(),
+                axis,
+                Real::from_i64(16),
+                reference,
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let coordinate = Real::from_i64(2).sqrt() * Real::from_i64(2);
+        let point = store.add_point(PointDef::Explicit(Point3::new(
+            coordinate.clone(),
+            coordinate,
+            Real::zero(),
+        )));
+        // On z=0, the radius-5 sphere centred at z=3 cuts exactly x²+y²=16.
+        for surface in [sphere, plane] {
+            for subject in [GeomKey::Curve(circle), GeomKey::Point(point)] {
+                store.record_fact(Fact {
+                    kind: FactKind::Incident,
+                    a: subject,
+                    b: GeomKey::Surface(surface),
+                    at: None,
+                    origin: FactOrigin::Proof(ZeroProof::Algebraic),
+                });
+            }
+        }
+        let facts = store.facts().len();
+        let mut budget = small();
+        assert!(
+            store
+                .point_on_curve(circle, point, &mut budget)
+                .is_coincident()
+        );
+        assert_eq!(store.facts().len(), facts);
+        assert_eq!(budget.stats().coincident_fact, 1);
+    }
+
+    fn retain_section(
+        store: &mut GeomStore,
+        curve: CurveId,
+        point: PointId,
+        supports: [SurfaceId; 2],
+    ) {
+        for surface in supports {
+            for subject in [GeomKey::Curve(curve), GeomKey::Point(point)] {
+                store.record_fact(Fact {
+                    kind: FactKind::Incident,
+                    a: subject,
+                    b: GeomKey::Surface(surface),
+                    at: None,
+                    origin: FactOrigin::Proof(ZeroProof::Algebraic),
+                });
+            }
+        }
+    }
+    #[test]
+    fn closed_conics_on_cylinders_and_cones_use_complete_support_proofs() {
+        for kind in 0..3 {
+            let mut store = GeomStore::new();
+            let mut dec = Decider::default();
+            let axis = Vector3::new(Real::zero(), Real::zero(), Real::one());
+            let reference = Vector3::new(Real::one(), Real::zero(), Real::zero());
+            let z = Real::from_i64(if kind == 1 { 2 } else { 0 });
+            let center = Point3::new(Real::zero(), Real::zero(), z.clone());
+            let support = store.add_surface(match kind {
+                0 => Surface::Cylinder(
+                    crate::Cylinder::new(
+                        Point3::origin(),
+                        axis.clone(),
+                        Real::from_i64(2),
+                        reference.clone(),
+                        &mut dec,
+                    )
+                    .unwrap(),
+                ),
+                1 => Surface::Cone(
+                    crate::Cone::new(
+                        Point3::origin(),
+                        axis.clone(),
+                        Real::one(),
+                        reference.clone(),
+                        &mut dec,
+                    )
+                    .unwrap(),
+                ),
+                _ => Surface::EllipticCylinder(
+                    crate::EllipticCylinder::new(
+                        Point3::origin(),
+                        axis.clone(),
+                        reference.clone(),
+                        Real::from_i64(4),
+                        Real::one(),
+                        &mut dec,
+                    )
+                    .unwrap(),
+                ),
+            });
+            let plane = store.add_surface(Surface::Plane(
+                Plane::new(center.clone(), axis.clone(), reference.clone(), &mut dec).unwrap(),
+            ));
+            let curve = store.add_curve(if kind == 2 {
+                Curve::Ellipse(
+                    crate::Ellipse::new(
+                        center,
+                        axis,
+                        reference,
+                        Real::from_i64(4),
+                        Real::one(),
+                        &mut dec,
+                    )
+                    .unwrap(),
+                )
+            } else {
+                Curve::Circle(
+                    crate::Circle::new(center, axis, Real::from_i64(4), reference, &mut dec)
+                        .unwrap(),
+                )
+            });
+            let x = Real::from_i64(2).sqrt();
+            let y = if kind == 2 {
+                Real::one() / x.clone()
+            } else {
+                x.clone()
+            };
+            let point = store.add_point(PointDef::Explicit(Point3::new(x, y, z)));
+            retain_section(&mut store, curve, point, [support, plane]);
+            let mut dec = small();
+            assert!(store.point_on_curve(curve, point, &mut dec).is_coincident());
+            assert_eq!(dec.stats().coincident_fact, 1);
+        }
+    }
+    #[test]
+    fn torus_and_plane_facts_do_not_select_one_of_two_circles() {
+        let mut store = GeomStore::new();
+        let mut dec = Decider::default();
+        let axis = Vector3::new(Real::zero(), Real::zero(), Real::one());
+        let reference = Vector3::new(Real::one(), Real::zero(), Real::zero());
+        let torus = store.add_surface(Surface::Torus(
+            crate::Torus::new(
+                Point3::origin(),
+                axis.clone(),
+                Real::from_i64(3),
+                Real::one(),
+                reference.clone(),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let plane = store.add_surface(Surface::Plane(
+            Plane::new(Point3::origin(), axis.clone(), reference.clone(), &mut dec).unwrap(),
+        ));
+        let outer = store.add_curve(Curve::Circle(
+            crate::Circle::new(
+                Point3::origin(),
+                axis,
+                Real::from_i64(16),
+                reference,
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let point = store.add_point(PointDef::Explicit(Point3::new(
+            Real::from_i64(2),
+            Real::zero(),
+            Real::zero(),
+        )));
+        // The radius-2 point and radius-4 circle lie on the same torus and plane.
+        retain_section(&mut store, outer, point, [torus, plane]);
+        assert!(matches!(
+            store.point_on_curve(outer, point, &mut small()),
+            Outcome::Proven(Apart)
+        ));
+    }
+    #[test]
+    fn a_conic_support_index_forks_with_its_geometry_store() {
+        let mut store = GeomStore::new();
+        let mut dec = Decider::default();
+        let axis = Vector3::new(Real::zero(), Real::zero(), Real::one());
+        let reference = Vector3::new(Real::one(), Real::zero(), Real::zero());
+        let cylinder = store.add_surface(Surface::Cylinder(
+            crate::Cylinder::new(
+                Point3::origin(),
+                axis.clone(),
+                Real::from_i64(2),
+                reference.clone(),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let plane = store.add_surface(Surface::Plane(
+            Plane::new(Point3::origin(), axis.clone(), reference.clone(), &mut dec).unwrap(),
+        ));
+        let circle = store.add_curve(Curve::Circle(
+            crate::Circle::new(
+                Point3::origin(),
+                axis,
+                Real::from_i64(4),
+                reference,
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        store.record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Curve(circle),
+            b: GeomKey::Surface(cylinder),
+            at: None,
+            origin: FactOrigin::Construction("test.section"),
+        });
+        let mut fork = store.clone();
+        fork.record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Curve(circle),
+            b: GeomKey::Surface(plane),
+            at: None,
+            origin: FactOrigin::Construction("test.section"),
+        });
+        assert!(!store.closed_conic_supports[&circle].contains(&plane));
+        assert!(fork.closed_conic_supports[&circle].contains(&plane));
     }
 }

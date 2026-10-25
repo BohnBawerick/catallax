@@ -5,6 +5,7 @@ use crate::draft::{
     arrangement::{Patch, Polyhedron, Skin},
     capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
+    near,
     round::RoundCell,
 };
 use catallax_numbers::{Decider, Rational, Real, Refusal};
@@ -346,7 +347,12 @@ fn assemble_capped(
     }))
 }
 
-fn selected(model: &Model, body: BodyId, refs: &[FaceRef]) -> Result<BTreeSet<FaceId>, Refusal> {
+fn selected(
+    model: &Model,
+    body: BodyId,
+    refs: &[FaceRef],
+    dec: &mut Decider,
+) -> Result<BTreeSet<FaceId>, Refusal> {
     let faces = model.faces_of_body(body);
     let mut edges = BTreeMap::<_, Vec<FaceId>>::new();
     for face in &faces {
@@ -386,15 +392,52 @@ fn selected(model: &Model, body: BodyId, refs: &[FaceRef]) -> Result<BTreeSet<Fa
                 format!("no input face resolves {reference:?}"),
             ));
         }
-        if reference.near.is_some() && matches.len() > 1 {
-            return Err(Refusal::new(
-                "draft.unsupported-near",
-                "nearest-face draft selection needs exact trimmed-face distances",
-            ));
+        if let Some(near) = &reference.near
+            && matches.len() > 1
+        {
+            matches = vec![nearest_axial(model, &faces, &matches, near, dec)?];
         }
         result.extend(matches);
     }
     Ok(result)
+}
+
+/// Picks the uniquely nearest closed trimmed face of a plane-capped axial cylinder.
+fn nearest_axial(
+    model: &Model,
+    faces: &[FaceId],
+    matches: &[FaceId],
+    near: &catallax_recipe::Point3,
+    dec: &mut Decider,
+) -> Result<FaceId, Refusal> {
+    let unsupported = || {
+        Refusal::new(
+            "draft.unsupported-near",
+            "nearest-face draft selection needs one cylindrical side and two planar caps",
+        )
+    };
+    let mut cylinder = None;
+    let mut caps = Vec::new();
+    for face in faces {
+        match model.geom().surface(model.face(*face).surface) {
+            Surface::Cylinder(c) if cylinder.is_none() => cylinder = Some(c),
+            Surface::Plane(p) => caps.push(p),
+            _ => return Err(unsupported()),
+        }
+    }
+    let (Some(cylinder), [first, second]) = (cylinder, caps.as_slice()) else {
+        return Err(unsupported());
+    };
+    let [x, y, z] = near.0.each_ref().map(|n| n.value().clone().into());
+    let point = Point3::new(x, y, z);
+    let mut distances = Vec::with_capacity(matches.len());
+    for face in matches {
+        distances.push(match model.geom().surface(model.face(*face).surface) {
+            Surface::Plane(cap) => near::cap_distance_squared(cylinder, cap, &point, dec)?,
+            _ => near::wall_distance_squared(cylinder, [first, second], &point, dec)?,
+        });
+    }
+    Ok(matches[near::unique_nearest(&distances, dec)?])
 }
 
 fn planar_skin(model: &Model, faces: &[FaceId]) -> Result<Skin, Refusal> {
@@ -646,7 +689,7 @@ pub(crate) fn build(
         let chosen = selected.iter().map(|i| source_faces[*i]).collect();
         (chosen, planar(&skin, &selected, definition, dec)?)
     } else {
-        (selected(model, body, refs)?, Vec::new())
+        (selected(model, body, refs, dec)?, Vec::new())
     };
     let input = model.body(body).clone();
     if components.is_empty() && !source_faces.is_empty() {

@@ -48,6 +48,9 @@ mod cone_rounded;
 pub mod cone_skin;
 /// Finite rotational normal sweeps of conical bands and circular caps.
 pub mod cone_sweep;
+/// Bounded complete cylinder joins and their finite analytic patch witnesses.
+pub mod cylinder_join;
+mod cylinder_join_build;
 /// Complete capped-cylinder distance and normal-sweep definitions.
 pub mod cylinder_skin;
 mod distance_build;

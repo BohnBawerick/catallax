@@ -483,6 +483,11 @@ impl Plan {
             };
         }
         if d > &Rational::zero()
+            && let Some((join, _)) = self.cylinder_join(node, dec)?
+        {
+            return self.cylinder_join_offset(node, &join, &d.clone().into(), step, &bound, dec);
+        }
+        if d > &Rational::zero()
             && let Some(skin) = self.circular_skin(node, dec)?
         {
             return self.circular_offset(node, &skin, &d.clone().into(), step, &bound, dec);
@@ -650,6 +655,17 @@ impl Plan {
             return self.radial_band(
                 RadialBand::thicken(&surface, &origins, &t.clone().into(), side, step, dec)?,
                 bound,
+                dec,
+            );
+        }
+        if let Some((join, _)) = self.cylinder_join(node, dec)? {
+            return self.cylinder_join_thicken(
+                &join,
+                refs,
+                &t.clone().into(),
+                side,
+                step,
+                &bound,
                 dec,
             );
         }

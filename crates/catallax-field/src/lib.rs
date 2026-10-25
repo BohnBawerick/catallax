@@ -11,6 +11,7 @@
 mod certified_prism;
 mod chamfer;
 mod circular_distance;
+mod cylinder_join;
 /// Definition-native, certified display approximations. No B-rep is constructed.
 pub mod display;
 /// Certified trimmed-face and boundary minimum-distance queries.

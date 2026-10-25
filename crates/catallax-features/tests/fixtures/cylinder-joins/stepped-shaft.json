@@ -1,0 +1,58 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "stepped-shaft outward offset",
+  "steps": [
+    {
+      "id": "base",
+      "op": "cylinder",
+      "radius": "4",
+      "height": "3",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "boss",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "5",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "3"
+        ]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "base",
+      "tool": "boss"
+    },
+    {
+      "id": "result",
+      "op": "offset",
+      "body": "joined",
+      "distance": "1/4"
+    }
+  ],
+  "result": "result"
+}

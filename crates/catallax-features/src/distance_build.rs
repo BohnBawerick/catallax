@@ -236,6 +236,11 @@ pub(crate) fn offset(
         });
     }
     if direction == Sign::Positive
+        && let Some(join) = crate::cylinder_join_build::skin(model, body, dec)?
+    {
+        return crate::cylinder_join_build::outward(model, &join, distance, step, dec);
+    }
+    if direction == Sign::Positive
         && let Some(skin) = crate::circular_build::skin(model, body, dec)?
     {
         return crate::circular_build::outward(model, &skin, distance, step, dec);
@@ -425,6 +430,9 @@ pub(crate) fn thicken(
             model,
             RadialBand::thicken(&surface, &origins, thickness, side, step, dec)?,
         ));
+    }
+    if let Some(join) = crate::cylinder_join_build::skin(model, body, dec)? {
+        return crate::cylinder_join_build::thicken(model, &join, refs, thickness, side, step, dec);
     }
     if let Some(skin) = cylindrical(model, body, dec)? {
         let selected = skin.select(refs)?;

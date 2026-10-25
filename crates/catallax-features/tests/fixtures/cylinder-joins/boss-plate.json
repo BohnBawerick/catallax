@@ -1,0 +1,61 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "boss-plate outward offset",
+  "steps": [
+    {
+      "id": "plate",
+      "op": "block",
+      "size": [
+        "20",
+        "16",
+        "3"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "boss",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "5",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "10",
+          "8",
+          "3"
+        ]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "plate",
+      "tool": "boss"
+    },
+    {
+      "id": "result",
+      "op": "offset",
+      "body": "joined",
+      "distance": "1/4"
+    }
+  ],
+  "result": "result"
+}

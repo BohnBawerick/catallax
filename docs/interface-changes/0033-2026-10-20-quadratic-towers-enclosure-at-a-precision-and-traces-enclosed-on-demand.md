@@ -1,0 +1,7 @@
+## 2026-10-20: quadratic towers, enclosure at a precision, and traces enclosed on demand
+
+Pieces: 1, 4 (and pieces 5, 6, 7 through them)
+Change: piece 1's rule 3 adds exact arithmetic in a tower of real quadratic extensions, tried before any annihilating polynomial or separation bound, for expressions whose leaves are rationals, square roots and roots of degree 2. Piece 1 adds `Decider::enclose_at(&self, x, precision) -> Result<Ball, Refusal>`, which encloses a defined `Real` at a working precision without changing decision statistics. Piece 4's trace pieces enclose their non-rational constants on demand at each call's precision through it, instead of at `max_precision_bits` when the trace is made. Piece 1's case 39 gains three tower cases.
+Why: 198 of 232 refusals in the edge hunt were `numbers.deadline` at imprint. In its five smallest reproducers, single sign decisions on exact zeros in `Q(sqrt(5), sqrt(671))` or nested square roots took 13 to 24 s each, and region signatures re-froze trace constants to 16,384 bits at every projection and precision. With a quadratic tower, on-demand enclosure (approximated by a 512-bit cap) and one trace per edge, all five booleans answered unmarked in 5 to 31 s.
+Migration: piece 1 adds the tower path and `enclose_at`. Piece 4 freezes trace constants lazily. Piece 5 traces each boundary edge once per region-signature call. Callers of `trace` need no change.
+

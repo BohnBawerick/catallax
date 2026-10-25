@@ -1,0 +1,7 @@
+## 2026-10-23: spline consumers preserve isometry and display-control contracts
+
+Pieces: shapes, feature consumers, field, mesh and application
+Change: exact `Isometry` mapping now carries finite spline controls and checked supports, retaining canonical-source inverses and material-outward normals through reflections. Existing proper-Pose APIs and schemas remain unchanged. Concurrent elementary-fillet consumers use squared cylinder radii and fallible point normals without requiring a global polynomial for every surface. Primitive field transport propagates a missing parametric-constraint proof instead of discarding its refusal.
+Why: new surface kinds must integrate with the existing exact copy and display interfaces without reintroducing polynomial assumptions, changing old analytic geometry or silently ignoring controls.
+Migration: local isometric support transport is not a recipe-bound whole-body transfer certificate. Existing exact elementary fillets remain available; general non-analytic rolling constructions are still uncovered. Spline meshes report rounded-facet aspect bounds and unmet aspect requests. Edge length is accepted only when proved for the complete returned mesh; insufficient cap/strip refinement uses `mesh.spline-edge-length`. Uncovered whole-spline angular requests use `mesh.spline-angular-coverage`. Neither refusal changes the body or its modelling tolerance.
+

@@ -268,7 +268,7 @@ A work unit is counted the same way on every machine, from the sizes of the numb
 
 The creator may refine this count (for example, square roots), but it must be deterministic, documented in the code, and never read the clock.
 
-`BudgetPolicy::default()` is `max_precision_bits = 16384` and `max_work = 1_000_000_000`. These values may be retuned later by the architect; changes are logged in `INTERFACE-CHANGES.md`.
+`BudgetPolicy::default()` is `max_precision_bits = 16384` and `max_work = 1_000_000_000`. These values may be retuned later by the architect; changes are logged in new `docs/interface-changes/` fragments.
 
 `with_operation_budget` retains root-enclosure certificates already paid for in
 that request. The key includes the exact defining polynomial, original rational

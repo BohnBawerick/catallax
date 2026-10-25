@@ -29,6 +29,40 @@ FIXTURES = ROOT / 'crates/catallax-features/tests/fixtures/chamfer-arcs'
 
 
 class ChamferArcStepTests(unittest.TestCase):
+    def test_finite_concave_variants_remain_typed_refusals(self):
+        retained = os.environ.get('CATALLAX_CHAMFER_EVIDENCE')
+        if retained:
+            Path(retained).mkdir(parents=True, exist_ok=True)
+        directory = Path(tempfile.mkdtemp(prefix='concave-refusal-', dir=retained))
+        inputs = directory / 'inputs'
+        inputs.mkdir()
+        for distance, other in [('2', '1'), ('2', '2'), ('1', '1/2')]:
+            for mirrored in [False, True]:
+                value = json.loads((FIXTURES / 'concave.json').read_text())
+                value['steps'][-1].update(distance=distance, other_distance=other)
+                if mirrored:
+                    value['steps'].append({'id': 'reflected', 'op': 'mirror', 'body': 'bevel',
+                                          'plane': {'point': ['0', '0', '0'], 'normal': ['3', '0', '0']},
+                                          'keep_original': False})
+                    value['result'] = 'reflected'
+                key = f'concave-{distance}-{other.replace("/", "_")}-{mirrored}'
+                value['name'] = key
+                (inputs / f'{key}.json').write_text(json.dumps(value, indent=2) + '\n')
+        for source in ['recipe', 'field']:
+            run = directory / source
+            result = subprocess.run([str(DRIVER), 'run', str(inputs), '--source', source,
+                                     '--binary', str(BINARY), '--max-work', '1000000',
+                                     '--workers', '2', '--out', str(run), '--fresh', '--json'],
+                                    capture_output=True, text=True, check=True)
+            self.assertEqual(json.loads(result.stdout)['outcomes'],
+                             {'chamfer.unsupported-concave-arc': 6})
+            for case in json.loads((run / 'run.json').read_text())['cases']:
+                manifest = case['response']['manifest']
+                self.assertEqual(manifest['refusal']['code'], 'chamfer.unsupported-concave-arc')
+                self.assertFalse((Path(case['path']) / 'answer.step').exists())
+                self.assertFalse((Path(case['path']) / 'display.obj').exists())
+        print(f'Retained typed concave-refusal evidence: {directory}')
+
     def test_finite_cones_survive_native_import_edit_and_reflection(self):
         retained = os.environ.get('CATALLAX_CHAMFER_EVIDENCE')
         if retained:
@@ -38,7 +72,7 @@ class ChamferArcStepTests(unittest.TestCase):
         inputs = directory / 'inputs'
         inputs.mkdir()
         expected = {}
-        for name, faces in [('convex', 6), ('concave', 9), ('chord', 6), ('seam', 5), ('major', 6), ('major-seam', 6)]:
+        for name, faces in [('convex', 6), ('chord', 6), ('seam', 5), ('major', 6), ('major-seam', 6)]:
             for distance, other, mirrored in [('2', '1', False), ('2', '2', False),
                                                ('1', '1/2', False), ('2', '1', True)]:
                 value = json.loads((FIXTURES / f'{name}.json').read_text())

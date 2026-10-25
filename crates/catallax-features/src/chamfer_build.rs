@@ -504,6 +504,16 @@ pub(crate) fn build(
             convex(model, edge, incident, dec)?,
             dec,
         )?;
+        if !definition.convex
+            && matches!(definition.edge, Curve::Circle(_))
+            && model.edge(edge).start.is_some()
+            && model.edge(edge).end.is_some()
+        {
+            return Err(Refusal::new(
+                "chamfer.unsupported-concave-arc",
+                "finite concave circular chamfers remain outside this trimmed-arc slice",
+            ));
+        }
         runs.push(Run {
             edge,
             faces,

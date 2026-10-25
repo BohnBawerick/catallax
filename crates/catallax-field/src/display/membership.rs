@@ -1,9 +1,10 @@
 //! Rational trim predicates for display witnesses. Unsupported profiles keep the
 //! shared exact-real path; these caches never replace the feature definition.
 use crate::{Location, geometry, profile};
-use catallax_numbers::Rational;
-use catallax_recipe::{Role, Turn};
+use catallax_numbers::{Rational, Sign};
+use catallax_recipe::{ElementId, Role, Turn};
 use catallax_shapes::{Isometry, RVector3, Vector3};
+use std::collections::BTreeMap;
 
 type P = [Rational; 2];
 fn q(n: i64) -> Rational {
@@ -27,11 +28,61 @@ fn circle_value(p: &P, centre: &P, squared: &Rational) -> Rational {
     &(&d[0] * &d[0]) + &(&d[1] * &d[1]) - squared.clone()
 }
 
+// Positive normalization preserves exact signs. Axis-aligned tests need no
+// per-point multiplication, and all coefficients belong to the immutable face.
+struct Linear2(P);
+impl Linear2 {
+    fn new(coefficients: P) -> Self {
+        let scale = if coefficients[0].is_zero() {
+            coefficients[1].abs()
+        } else {
+            coefficients[0].abs()
+        };
+        Self(coefficients.map(|q| q / scale.clone()))
+    }
+    fn sign(&self, p: &P) -> Sign {
+        let oriented = |value: Sign, positive: bool| {
+            if positive {
+                value
+            } else {
+                match value {
+                    Sign::Positive => Sign::Negative,
+                    Sign::Negative => Sign::Positive,
+                    Sign::Zero => Sign::Zero,
+                }
+            }
+        };
+        if self.0[0].is_zero() {
+            return oriented(p[1].sign(), self.0[1].sign() == Sign::Positive);
+        }
+        if self.0[1].is_zero() {
+            return oriented(p[0].sign(), self.0[0].sign() == Sign::Positive);
+        }
+        let term = |coefficient: &Rational, value: &Rational| {
+            if *coefficient == q(1) {
+                value.clone()
+            } else if *coefficient == q(-1) {
+                -value
+            } else {
+                coefficient * value
+            }
+        };
+        (term(&self.0[0], &p[0]) + term(&self.0[1], &p[1])).sign()
+    }
+}
+#[derive(Clone, Copy)]
+enum SectorSide {
+    Arc,
+    Radial(usize),
+}
 struct Sector<'a> {
     centre: &'a P,
     squared: &'a Rational,
-    start: P,
-    end: P,
+    major: bool,
+    angle: [Linear2; 2],
+    heading: [Linear2; 2],
+    bounds: Option<[[Rational; 2]; 2]>,
+    sides: BTreeMap<ElementId, SectorSide>,
 }
 impl<'a> Sector<'a> {
     fn new(edges: &'a [profile::Edge]) -> Option<Self> {
@@ -51,40 +102,192 @@ impl<'a> Sector<'a> {
         {
             return None;
         }
-        let (start, end) = if *turn == Turn::Ccw {
+        let forward = *turn == Turn::Ccw;
+        let (start, end) = if forward {
             (&arc.start, &arc.end)
         } else {
             (&arc.end, &arc.start)
         };
-        Some(Self {
+        let start = sub(start, centre);
+        let end = sub(end, centre);
+        let mut sides = BTreeMap::new();
+        for id in &arc.ids {
+            sides.insert(id.clone(), SectorSide::Arc);
+        }
+        for id in &previous.ids {
+            sides.insert(id.clone(), SectorSide::Radial(usize::from(!forward)));
+        }
+        for id in &next.ids {
+            sides.insert(id.clone(), SectorSide::Radial(usize::from(forward)));
+        }
+        let mut result = Self {
             centre,
             squared,
-            start: sub(start, centre),
-            end: sub(end, centre),
+            major: cross(&start, &end) < q(0),
+            angle: [
+                Linear2::new([-&start[1], start[0].clone()]),
+                Linear2::new([end[1].clone(), -&end[0]]),
+            ],
+            heading: [Linear2::new(start), Linear2::new(end)],
+            bounds: None,
+            sides,
+        };
+        // Coordinate extrema occur at the centre, arc ends, or a cardinal
+        // circle point in the angular domain. Irrational radii retain the
+        // exact predicate without this optional rational bound.
+        if let Some(radius) = profile::sqrt(squared) {
+            let mut bounds = centre.each_ref().map(|c| [c.clone(), c.clone()]);
+            let mut points = vec![arc.start.clone(), arc.end.clone()];
+            for direction in [
+                [radius.clone(), q(0)],
+                [q(0), radius.clone()],
+                [-&radius, q(0)],
+                [q(0), -&radius],
+            ] {
+                if result.angle_contains(&direction) {
+                    points.push([&centre[0] + &direction[0], &centre[1] + &direction[1]]);
+                }
+            }
+            for point in points {
+                for i in 0..2 {
+                    bounds[i][0] = bounds[i][0].clone().min(point[i].clone());
+                    bounds[i][1] = bounds[i][1].clone().max(point[i].clone());
+                }
+            }
+            result.bounds = Some(bounds);
+        }
+        Some(result)
+    }
+    fn bounded_outside(&self, p: &P) -> bool {
+        self.bounds
+            .as_ref()
+            .is_some_and(|b| (0..2).any(|i| p[i] < b[i][0] || p[i] > b[i][1]))
+    }
+    fn relative(&self, p: &P) -> P {
+        std::array::from_fn(|i| {
+            if self.centre[i].is_zero() {
+                p[i].clone()
+            } else {
+                &p[i] - &self.centre[i]
+            }
         })
     }
-    fn angle_contains(&self, v: &P) -> bool {
-        let a = cross(&self.start, v);
-        let b = cross(v, &self.end);
-        if cross(&self.start, &self.end) < q(0) {
-            a >= q(0) || b >= q(0)
+    fn accepted(&self, signs: [Sign; 2]) -> bool {
+        if self.major {
+            signs[0] != Sign::Negative || signs[1] != Sign::Negative
         } else {
-            a >= q(0) && b >= q(0)
+            signs[0] != Sign::Negative && signs[1] != Sign::Negative
         }
     }
+    fn angle_contains(&self, v: &P) -> bool {
+        self.accepted(self.angle.each_ref().map(|test| test.sign(v)))
+    }
+    fn radial_value(&self, v: &P) -> Rational {
+        &(&v[0] * &v[0] + &v[1] * &v[1]) - self.squared
+    }
     fn location(&self, p: &P) -> Location {
-        let value = circle_value(p, self.centre, self.squared);
-        let v = sub(p, self.centre);
-        if value > q(0) || !self.angle_contains(&v) {
+        if self.bounded_outside(p) {
             return Location::Outside;
         }
-        let on_ray =
-            |ray: &P| cross(ray, &v).is_zero() && (&ray[0] * &v[0] + &ray[1] * &v[1]) >= q(0);
-        if value.is_zero() || on_ray(&self.start) || on_ray(&self.end) {
+        let v = self.relative(p);
+        let signs = self.angle.each_ref().map(|test| test.sign(&v));
+        if !self.accepted(signs) {
+            return Location::Outside;
+        }
+        let value = self.radial_value(&v);
+        if value > q(0) {
+            return Location::Outside;
+        }
+        if value.is_zero()
+            || (0..2).any(|i| signs[i] == Sign::Zero && self.heading[i].sign(&v) != Sign::Negative)
+        {
             Location::Boundary
         } else {
             Location::Inside
         }
+    }
+    fn on_face(&self, id: &ElementId, p: &P) -> bool {
+        if self.bounded_outside(p) {
+            return false;
+        }
+        let Some(side) = self.sides.get(id) else {
+            return false;
+        };
+        let v = self.relative(p);
+        match side {
+            SectorSide::Arc => self.radial_value(&v).is_zero() && self.angle_contains(&v),
+            SectorSide::Radial(i) => {
+                self.angle[*i].sign(&v) == Sign::Zero
+                    && self.heading[*i].sign(&v) != Sign::Negative
+                    && self.radial_value(&v) <= q(0)
+            }
+        }
+    }
+}
+
+// These maps are rebuilt with the display classifier after every definition or
+// placement edit; no point result is cached. A sparse identity projection is
+// therefore exact and needs no per-cell zero arithmetic or division.
+struct Affine3 {
+    constant: Rational,
+    terms: Vec<(usize, Rational)>,
+}
+impl Affine3 {
+    fn new(coefficients: [Rational; 3], constant: Rational) -> Self {
+        Self {
+            constant,
+            terms: coefficients
+                .into_iter()
+                .enumerate()
+                .filter(|(_, c)| !c.is_zero())
+                .collect(),
+        }
+    }
+    fn evaluate(&self, p: &[Rational; 3]) -> Rational {
+        let mut sum = if self.constant.is_zero() {
+            None
+        } else {
+            Some(self.constant.clone())
+        };
+        for (i, c) in &self.terms {
+            let value = if *c == q(1) {
+                p[*i].clone()
+            } else if *c == q(-1) {
+                -&p[*i]
+            } else {
+                c * &p[*i]
+            };
+            sum = Some(if let Some(old) = sum {
+                old + value
+            } else {
+                value
+            });
+        }
+        sum.unwrap_or_else(|| q(0))
+    }
+}
+struct SectorProjection {
+    height: Affine3,
+    point: [Affine3; 2],
+}
+impl SectorProjection {
+    fn new(matrix: &[[Rational; 3]; 3], translation: &[Rational; 3], vector: &RVector3) -> Self {
+        let factors = [&vector.x / &vector.z, &vector.y / &vector.z];
+        Self {
+            height: Affine3::new(matrix[2].clone(), translation[2].clone()),
+            point: std::array::from_fn(|i| {
+                Affine3::new(
+                    std::array::from_fn(|j| &matrix[i][j] - &(&factors[i] * &matrix[2][j])),
+                    &translation[i] - &(&factors[i] * &translation[2]),
+                )
+            }),
+        }
+    }
+    fn project(&self, p: &[Rational; 3]) -> (Rational, P) {
+        (
+            self.height.evaluate(p),
+            self.point.each_ref().map(|row| row.evaluate(p)),
+        )
     }
 }
 fn profile_location(loops: &[Vec<profile::Edge>], p: &P) -> Location {
@@ -122,6 +325,8 @@ pub(crate) struct Classifier<'a> {
     through: bool,
     loops: &'a [Vec<profile::Edge>],
     sector: Option<Sector<'a>>,
+    sector_projection: Option<SectorProjection>,
+    parameter_bounds: [Rational; 2],
 }
 impl<'a> Classifier<'a> {
     pub(crate) fn new(
@@ -150,20 +355,34 @@ impl<'a> Classifier<'a> {
                 matrix[i][j] = value.as_rational()?;
             }
         }
+        let translation = [
+            inverse.translation.x.as_rational()?,
+            inverse.translation.y.as_rational()?,
+            inverse.translation.z.as_rational()?,
+        ];
+        let sector_projection = sector
+            .as_ref()
+            .map(|_| SectorProjection::new(&matrix, &translation, vector));
+        let parameter_bounds = if sector_projection.is_some() {
+            [q(0).min(vector.z.clone()), q(0).max(vector.z.clone())]
+        } else {
+            [q(0), q(1)]
+        };
         Some(Self {
             matrix,
-            translation: [
-                inverse.translation.x.as_rational()?,
-                inverse.translation.y.as_rational()?,
-                inverse.translation.z.as_rational()?,
-            ],
+            translation,
             vector,
             through,
             loops,
             sector,
+            sector_projection,
+            parameter_bounds,
         })
     }
     fn project(&self, p: &[Rational; 3]) -> (Rational, P) {
+        if let Some(projector) = &self.sector_projection {
+            return projector.project(p);
+        }
         let local: [Rational; 3] = std::array::from_fn(|i| {
             (0..3).fold(self.translation[i].clone(), |s, j| {
                 s + &self.matrix[i][j] * &p[j]
@@ -180,11 +399,11 @@ impl<'a> Classifier<'a> {
     }
     pub(crate) fn location(&self, p: &[Rational; 3]) -> Location {
         let (t, p) = self.project(p);
-        if !self.through && (t < q(0) || t > q(1)) {
+        if !self.through && (t < self.parameter_bounds[0] || t > self.parameter_bounds[1]) {
             return Location::Outside;
         }
         let location = self.profile_location(&p);
-        if location == Location::Inside && !self.through && (t == q(0) || t == q(1)) {
+        if location == Location::Inside && !self.through && self.parameter_bounds.contains(&t) {
             Location::Boundary
         } else {
             location
@@ -198,12 +417,15 @@ impl<'a> Classifier<'a> {
     }
     pub(crate) fn on_face(&self, role: &Role, p: &[Rational; 3]) -> bool {
         let (t, p) = self.project(p);
-        if !self.through && (t < q(0) || t > q(1)) {
+        if !self.through && (t < self.parameter_bounds[0] || t > self.parameter_bounds[1]) {
             return false;
         }
         let mut role = role;
         while let Role::Copy { of, .. } = role {
             role = &of.role;
+        }
+        if let (Some(sector), Role::Side { segment, .. }) = (&self.sector, role) {
+            return sector.on_face(segment, &p);
         }
         match role {
             Role::Start | Role::End => self.profile_location(&p) != Location::Outside,
@@ -250,6 +472,66 @@ mod tests {
     use super::*;
     use catallax_numbers::{Decider, Real};
     use catallax_shapes::{Point3, RPoint3};
+
+    #[test]
+    fn sector_projection_is_rebuilt_for_edits_and_rigid_placement() {
+        use catallax_shapes::{Pose, Rotation};
+        for radius in [8, 10] {
+            for height in [12_i64, -12] {
+                let mut source: serde_json::Value = serde_json::from_str(include_str!(
+                    "../../../catallax-features/tests/fixtures/chamfer-arcs/convex.json"
+                ))
+                .unwrap();
+                source["steps"].as_array_mut().unwrap().pop();
+                source["result"] = "base".into();
+                source["steps"][0]["loops"][0][0]["to"] =
+                    serde_json::json!([radius.to_string(), "0"]);
+                source["steps"][0]["loops"][0][1]["to"] =
+                    serde_json::json!(["0", radius.to_string()]);
+                source["steps"][1]["distance"] = height.to_string().into();
+                if radius == 10 {
+                    source["steps"][1]["direction"] = serde_json::json!(["3", "0", "4"]);
+                }
+                let original = crate::Plan::compile(
+                    &catallax_recipe::Recipe::parse(&source.to_string()).unwrap(),
+                )
+                .unwrap();
+                for quaternion in [[1, 0, 0, 0], [1, 2, 3, 4]] {
+                    let [w, x, y, z] = quaternion.map(q);
+                    let pose = Pose::from_rational(
+                        Rotation::from_quaternion(w, x, y, z).unwrap(),
+                        RVector3::new(q(7), q(-3), q(11)),
+                    );
+                    let image = original
+                        .transformed(&pose, &mut Decider::default())
+                        .unwrap();
+                    for leaf in &image.leaves {
+                        let geometry::Leaf::Feature(feature) = leaf else {
+                            continue;
+                        };
+                        let native = feature.display_classifier().unwrap();
+                        for [x, y, z] in [
+                            [3, 4, 0],
+                            [3, 4, height / 2],
+                            [3, 4, height],
+                            [3, 4, height + height.signum()],
+                            [9, 0, height / 2],
+                            [6, 8, height / 2],
+                        ] {
+                            let point = pose
+                                .apply_rational_point(&RPoint3::new(q(x), q(y), q(z)))
+                                .unwrap();
+                            let point = [point.x, point.y, point.z];
+                            assert_eq!(
+                                native.location(&point),
+                                leaf.location(&point, &mut Decider::default()).unwrap()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn sector_cache_matches_generic_arc_winding_faces_and_germs() {

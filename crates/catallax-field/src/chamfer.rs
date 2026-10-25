@@ -737,6 +737,15 @@ impl Plan {
                 }
             }
         }
+        if definitions
+            .iter()
+            .any(|(definition, domain)| !definition.convex && matches!(domain, Domain::Arc(_)))
+        {
+            return Err(Refusal::new(
+                "chamfer.unsupported-concave-arc",
+                "finite concave circular chamfers remain outside this trimmed-arc slice",
+            ));
+        }
         let mut endpoints: Vec<(Point3, usize)> = Vec::new();
         for (i, (definition, interval)) in definitions.iter().enumerate() {
             if definitions[..i]

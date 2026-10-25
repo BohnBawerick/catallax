@@ -55,8 +55,21 @@ fn point(p: [&str; 3], mirror: bool) -> RPoint3 {
 }
 
 #[test]
+fn finite_concave_arcs_remain_typed_refusals_for_edits_and_reflections() {
+    for mirror in [false, true] {
+        for (plane, cylinder) in [("2", "1"), ("2", "2"), ("1", "1/2")] {
+            let error =
+                evaluate(&recipe("concave", plane, cylinder, mirror), &mut decider()).unwrap_err();
+            assert!(
+                matches!(error,catallax_features::BuildError::Geometry{refusal,..} if refusal.code=="chamfer.unsupported-concave-arc")
+            );
+        }
+    }
+}
+
+#[test]
 fn finite_cones_share_exact_contact_arcs_and_transverse_end_boundaries() {
-    for name in ["convex", "concave", "chord", "seam", "major", "major-seam"] {
+    for name in ["convex", "chord", "seam", "major", "major-seam"] {
         for cylinder in ["1", "2"] {
             for mirror in [false, true] {
                 let built = build(&recipe(name, "2", cylinder, mirror));
@@ -113,7 +126,7 @@ fn finite_cones_share_exact_contact_arcs_and_transverse_end_boundaries() {
 
 #[test]
 fn quarter_strip_volumes_match_independent_revolution_integrals() {
-    for (name, base, direction) in [("convex", 192, -1), ("concave", 224, 1)] {
+    for (name, base, direction) in [("convex", 192, -1)] {
         for (plane, cylinder) in [("2", "1"), ("2", "2"), ("1", "1/2")] {
             let built = build(&recipe(name, plane, cylinder, false));
             let p = Rational::parse(plane).unwrap();
@@ -162,16 +175,6 @@ fn material_controls_include_selected_arc_opposite_arc_and_mirror() {
                 (["9/2", "6", "23/2"], Some(Outside)),
                 (["-21/5", "28/5", "23/2"], Some(Outside)),
                 (["3", "4", "1"], Some(Inside)),
-            ],
-        ),
-        (
-            "concave",
-            vec![
-                (["27/5", "36/5", "9/2"], None),
-                (["51/10", "34/5", "9/2"], Some(Inside)),
-                (["57/10", "38/5", "9/2"], Some(Outside)),
-                (["-27/5", "36/5", "9/2"], Some(Outside)),
-                (["27/5", "36/5", "3"], Some(Inside)),
             ],
         ),
         (
@@ -227,7 +230,7 @@ fn material_controls_include_selected_arc_opposite_arc_and_mirror() {
 
 #[test]
 fn setback_edit_keeps_resolved_origins_and_default_step_supports() {
-    for name in ["convex", "concave", "chord", "seam", "major", "major-seam"] {
+    for name in ["convex", "chord", "seam", "major", "major-seam"] {
         for mirror in [false, true] {
             let mut previous = None;
             for (plane, cylinder) in [("2", "1"), ("1", "1/2")] {
@@ -267,7 +270,7 @@ fn setback_edit_keeps_resolved_origins_and_default_step_supports() {
 fn default_brep_display_keeps_the_conical_strip_and_shared_boundaries() {
     use catallax_mesh::{MeshOptions, mesh_body};
     use catallax_numbers::with_operation_budget;
-    for name in ["convex", "concave", "chord", "seam", "major", "major-seam"] {
+    for name in ["convex", "chord", "seam", "major", "major-seam"] {
         let built = build(&recipe(name, "2", "1", false));
         let options = MeshOptions::default();
         assert_eq!(options.chord_tolerance, Rational::parse("0.01").unwrap());

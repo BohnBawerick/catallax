@@ -32,6 +32,7 @@ enum Sweep {
 pub(crate) struct Feature {
     loops: Vec<Vec<Edge>>,
     convex_revolve: Option<(Sign, i64)>,
+    radial_lines: Option<Vec<RadialLine>>,
     inverse: Isometry,
     sweep: Sweep,
     // Irrational finite end parameter over a rational extrusion carrier.
@@ -849,9 +850,20 @@ impl Feature {
                 supports.push(Support::new(&face.surface));
             }
         }
+        let convex_revolve = convex_revolve(profile, &sweep);
+        let radial_lines = if convex_revolve.is_none()
+            && matches!(sweep, Sweep::Revolve { .. })
+            && profile.loops.len() == 1
+            && profile.loops[0].iter().all(|edge| edge.circle.is_none())
+        {
+            Some(profile.loops[0].iter().map(RadialLine::new).collect())
+        } else {
+            None
+        };
         Ok(Self {
             loops: profile.loops.clone(),
-            convex_revolve: convex_revolve(profile, &sweep),
+            convex_revolve,
+            radial_lines,
             inverse: Isometry::from(&profile.pose.inverse()),
             fast: FastProfile::new(profile, &sweep, &axis_norm),
             axis_norm,
@@ -946,9 +958,7 @@ impl Feature {
                 let t = &v.dot(&axis_real) / &norm;
                 let b = &axis_real.cross(&v).z / &norm;
                 let radicand = &b * &b + &(&v.z * &v.z) / &norm;
-                let straight =
-                    self.loops.len() == 1 && self.loops[0].iter().all(|edge| edge.circle.is_none());
-                let k = if straight {
+                let k = if self.radial_lines.is_some() {
                     None
                 } else {
                     Some(sqrt_real(&radicand, dec)?)
@@ -961,7 +971,7 @@ impl Feature {
                     if angular == Location::Outside {
                         continue;
                     }
-                    let loc = if straight {
+                    let loc = if let Some(edges) = &self.radial_lines {
                         let base = [
                             &origin_real.x + &(&axis_real.x * &t),
                             &origin_real.y + &(&axis_real.y * &t),
@@ -970,7 +980,7 @@ impl Feature {
                             -(&axis_real.y * &Real::from_i64(flip)),
                             &axis_real.x * &Real::from_i64(flip),
                         ];
-                        straight_radial_location(&self.loops[0], &base, &radial, &radicand, dec)?
+                        straight_radial_location(edges, &base, &radial, &radicand, dec)?
                     } else {
                         let k = &Real::from_i64(flip) * k.as_ref().expect("curved profile root");
                         let q = [
@@ -1402,8 +1412,29 @@ fn convex_revolve(profile: &Profile, sweep: &Sweep) -> Option<(Sign, i64)> {
 // loops. The usual half-open horizontal crossing rule needs only affine
 // radical signs; no radial root is isolated or rounded. Profile validation
 // supplies a simple closed loop, and the caller supplies d >= 0.
+#[derive(Clone, Debug)]
+struct RadialLine {
+    start: [Real; 2],
+    end_y: Real,
+    direction: [Real; 2],
+    squared_length: Real,
+    rising: bool,
+}
+impl RadialLine {
+    fn new(edge: &Edge) -> Self {
+        let direction = profile::sub(&edge.end, &edge.start);
+        Self {
+            start: edge.start.each_ref().map(|q| Real::from(q.clone())),
+            end_y: Real::from(edge.end[1].clone()),
+            direction: direction.each_ref().map(|q| Real::from(q.clone())),
+            squared_length: Real::from(profile::dot(&direction, &direction)),
+            rising: direction[1].sign() == Sign::Positive,
+        }
+    }
+}
+
 fn straight_radial_location(
-    edges: &[Edge],
+    edges: &[RadialLine],
     base: &[Real; 2],
     radial: &[Real; 2],
     d: &Real,
@@ -1412,41 +1443,28 @@ fn straight_radial_location(
     dec.check_deadline()?;
     let mut inside = false;
     for edge in edges {
-        let direction = profile::sub(&edge.end, &edge.start);
-        let [dx, dy] = direction.each_ref().map(|q| Real::from(q.clone()));
-        let relative = [
-            &base[0] - &Real::from(edge.start[0].clone()),
-            &base[1] - &Real::from(edge.start[1].clone()),
-        ];
+        let [dx, dy] = &edge.direction;
+        let relative = [&base[0] - &edge.start[0], &base[1] - &edge.start[1]];
         let side = radical_sign(
-            &(&dx * &radial[1] - &dy * &radial[0]),
-            &(&dx * &relative[1] - &dy * &relative[0]),
+            &(dx * &radial[1] - dy * &radial[0]),
+            &(dx * &relative[1] - dy * &relative[0]),
             d,
             dec,
         )?;
         if side == Sign::Zero {
-            let a = &dx * &radial[0] + &dy * &radial[1];
-            let b = &dx * &relative[0] + &dy * &relative[1];
+            let a = dx * &radial[0] + dy * &radial[1];
+            let b = dx * &relative[0] + dy * &relative[1];
             if radical_sign(&a, &b, d, dec)? != Sign::Negative
-                && radical_sign(
-                    &a,
-                    &(&b - &Real::from(profile::dot(&direction, &direction))),
-                    d,
-                    dec,
-                )? != Sign::Positive
+                && radical_sign(&a, &(&b - &edge.squared_length), d, dec)? != Sign::Positive
             {
                 return Ok(Location::Boundary);
             }
         }
         let start_above = radical_sign(&radial[1], &relative[1], d, dec)? == Sign::Negative;
-        let end_above = radical_sign(
-            &radial[1],
-            &(&base[1] - &Real::from(edge.end[1].clone())),
-            d,
-            dec,
-        )? == Sign::Negative;
+        let end_above =
+            radical_sign(&radial[1], &(&base[1] - &edge.end_y), d, dec)? == Sign::Negative;
         if start_above != end_above {
-            inside ^= (side == Sign::Positive) == (direction[1].sign() == Sign::Positive);
+            inside ^= (side == Sign::Positive) == edge.rising;
         }
     }
     Ok(if inside {
@@ -1523,6 +1541,7 @@ mod radial_line_tests {
                         full: false,
                     })
                     .collect();
+                let cached: Vec<_> = edges.iter().map(RadialLine::new).collect();
                 for radicand in ["0", "2", "25/4"] {
                     let d = Rational::parse(radicand).unwrap();
                     let mut oracle = Decider::default();
@@ -1549,7 +1568,7 @@ mod radial_line_tests {
                             let expected =
                                 profile::loop_location(&edges, &point, &mut oracle).unwrap();
                             let actual = straight_radial_location(
-                                &edges,
+                                &cached,
                                 &base,
                                 &radial,
                                 &d,

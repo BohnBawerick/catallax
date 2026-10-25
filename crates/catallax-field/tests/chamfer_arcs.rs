@@ -66,17 +66,6 @@ fn exact_material_controls_cover_contacts_cut_ends_and_excluded_arcs() {
             ],
         ),
         (
-            "concave",
-            vec![
-                (["27/5", "36/5", "9/2"], Boundary),
-                (["51/10", "34/5", "9/2"], Inside),
-                (["57/10", "38/5", "9/2"], Outside),
-                (["-27/5", "36/5", "9/2"], Outside),
-                (["10", "0", "4"], Boundary),
-                (["8", "0", "5"], Boundary),
-            ],
-        ),
-        (
             "chord",
             vec![
                 (["5", "0", "12"], Boundary),
@@ -121,7 +110,7 @@ fn exact_material_controls_cover_contacts_cut_ends_and_excluded_arcs() {
 }
 #[test]
 fn equal_unequal_and_edited_strips_resolve_the_same_named_geometry() {
-    for name in ["convex", "concave", "chord", "seam", "major", "major-seam"] {
+    for name in ["convex", "chord", "seam", "major", "major-seam"] {
         for mirror in [false, true] {
             let mut old = None;
             for (distance, other) in [("2", "1"), ("2", "2"), ("1", "1/2")] {
@@ -144,28 +133,14 @@ fn equal_unequal_and_edited_strips_resolve_the_same_named_geometry() {
                 let selected = plan.select(origin).unwrap();
                 // Query an interior conical point; the transverse ends have
                 // several incident faces and are checked by material controls.
-                let z = if name == "concave" {
-                    if other == "2" {
-                        "5"
-                    } else if other == "1/2" {
-                        "17/4"
-                    } else {
-                        "9/2"
-                    }
-                } else if other == "2" {
+                let z = if other == "2" {
                     "11"
                 } else if other == "1/2" {
                     "47/4"
                 } else {
                     "23/2"
                 };
-                let radius = if name == "concave" {
-                    if distance == "1" { "17/2" } else { "9" }
-                } else if distance == "1" {
-                    "15/2"
-                } else {
-                    "7"
-                };
+                let radius = if distance == "1" { "15/2" } else { "7" };
                 let radius = Rational::parse(radius).unwrap();
                 let (x, y) = if matches!(name, "chord" | "seam") {
                     (4, 3)
@@ -220,49 +195,13 @@ fn equal_unequal_and_edited_strips_resolve_the_same_named_geometry() {
 }
 
 #[test]
-fn concave_end_domains_include_material_added_by_the_bevel() {
+fn finite_concave_arcs_remain_typed_refusals_for_edits_and_reflections() {
     for mirror in [false, true] {
-        let plan =
-            Plan::compile_checked(&recipe("concave", "2", "1", mirror), &mut decider()).unwrap();
-        for (role, sample) in [
-            (Role::Start, ["17/2", "0", "17/4"]),
-            (Role::End, ["0", "17/2", "17/4"]),
-        ] {
-            let origin = &plan
-                .faces()
-                .iter()
-                .find(|face| {
-                    if mirror && !matches!(face.origin.role, Role::Copy { .. }) {
-                        return false;
-                    }
-                    let mut candidate = &face.origin;
-                    while let Role::Copy { of, .. } = &candidate.role {
-                        candidate = of;
-                    }
-                    candidate.step.as_str() == "base" && candidate.role == role
-                })
-                .unwrap()
-                .origin;
-            let selected = plan.select(origin).unwrap();
-            let query = plan
-                .face_query_checked(
-                    selected,
-                    &point(sample, mirror),
-                    &mut Workspace::default(),
-                    &mut decider(),
-                )
-                .unwrap();
-            assert_eq!(query.state, FaceState::OnFace, "{mirror}: {origin:?}");
-            let Direction::Unique(normal) = query.direction else {
-                panic!("{query:?}")
-            };
-            if role == Role::Start {
-                assert!(normal[1].hi() < 0.0);
-            } else if mirror {
-                assert!(normal[0].lo() > 0.0);
-            } else {
-                assert!(normal[0].hi() < 0.0);
-            }
+        for (plane, cylinder) in [("2", "1"), ("2", "2"), ("1", "1/2")] {
+            let refusal =
+                Plan::compile_checked(&recipe("concave", plane, cylinder, mirror), &mut decider())
+                    .unwrap_err();
+            assert_eq!(refusal.code, "chamfer.unsupported-concave-arc");
         }
     }
 }
@@ -297,7 +236,6 @@ fn circular_cap_charts_preserve_all_obj_groups_at_scoreboard_allowance() {
         ("full-circle quadrant control", prefix, 5),
         ("full-circle chamfer control", control, 6),
         ("original arc chamfer", recipe("convex", "2", "1", false), 6),
-        ("concave arc chamfer", recipe("concave", "2", "1", false), 9),
     ] {
         let options = Options::default();
         assert_eq!(options.tolerance, Rational::parse("0.01").unwrap());
@@ -359,25 +297,13 @@ fn circular_cap_charts_preserve_all_obj_groups_at_scoreboard_allowance() {
             for &vertex in &triangle.vertices {
                 let [x, y, z] =
                     mesh.positions[vertex].map(|v| Rational::from_f64_exact(v).unwrap());
-                if expected_groups == 9 {
-                    // This fixture's end cap is x=0, with material at positive
-                    // y outside the radius-four bore. These linear bounds
-                    // exclude the opposite sector and bore for whole triangles.
-                    assert!(x.abs() <= margin, "{name}: end plane");
-                    assert!(
-                        y >= &Rational::from_i64(4) - &margin
-                            && y <= &Rational::from_i64(12) + &margin,
-                        "{name}: excluded bore/sector"
-                    );
-                    assert!(z >= -&margin && z <= &Rational::from_i64(12) + &margin);
-                } else {
-                    assert!(x >= -&margin && y >= -&margin, "{name}: excluded sector");
-                    assert!(
-                        &x * &x + &y * &y <= &cap_radius * &cap_radius,
-                        "{name}: removed cap annulus"
-                    );
-                    assert!((z - Rational::from_i64(12)).abs() <= margin);
-                }
+
+                assert!(x >= -&margin && y >= -&margin, "{name}: excluded sector");
+                assert!(
+                    &x * &x + &y * &y <= &cap_radius * &cap_radius,
+                    "{name}: removed cap annulus"
+                );
+                assert!((z - Rational::from_i64(12)).abs() <= margin);
             }
         }
         assert!(cap_triangles > 0, "{name}: missing end-cap geometry");
@@ -397,7 +323,6 @@ fn default_native_display_keeps_all_trimmed_faces_at_verifier_allowance() {
     use std::collections::BTreeSet;
     for (name, count) in [
         ("convex", 6),
-        ("concave", 9),
         ("chord", 6),
         ("seam", 5),
         ("major", 6),

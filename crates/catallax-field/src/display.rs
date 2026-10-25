@@ -5,6 +5,11 @@
 //! Cells crossing trims shrink until a surviving boundary witness certifies
 //! their covering radius, or a neighbouring mesh vertex covers the entire cell. An
 //! unresolved cell refuses; point samples never establish absence or coverage.
+//!
+//! Elementary quarter-section fillets share exact polynomial predicates across
+//! plane, cylinder and ring-torus charts. This preserves the dependence between
+//! adjoining material regions at buried seams. Unsupported charts and resource
+//! exhaustion retain typed refusals; no B-rep display substitutes for the field.
 
 use crate::{FaceId, FaceState, Instruction, Location, Plan, Workspace};
 use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal};
@@ -229,8 +234,220 @@ struct Classification {
     absent_patch: bool,
 }
 
+// A native fillet is a Boolean combination of exact polynomial halfspaces.
+// Share each oriented predicate across operands before regional evaluation:
+// a boss wall and the adjoining fillet then use complementary values of the
+// same radial predicate, rather than unrelated unknown operand memberships.
+#[derive(Clone)]
+struct NativeRange {
+    polynomial: catallax_numbers::MPoly,
+    anchor: [Interval; 3],
+}
+impl NativeRange {
+    fn new(polynomial: &catallax_numbers::MPoly) -> Self {
+        let mut anchor = [q(0), q(0), q(0)];
+        if polynomial.total_degree() == Some(2) {
+            let mut linear = [q(0), q(0), q(0)];
+            let mut square = [q(0), q(0), q(0)];
+            for (m, c) in polynomial.terms() {
+                for i in 0..3 {
+                    if m.exponents()[i] == 1 && m.degree() == 1 {
+                        linear[i] = c.clone();
+                    }
+                    if m.exponents()[i] == 2 && m.degree() == 2 {
+                        square[i] = c.clone();
+                    }
+                }
+            }
+            for i in 0..3 {
+                if !square[i].is_zero() {
+                    anchor[i] = -&linear[i] / square[i].mul_pow2(1);
+                }
+            }
+        }
+        let mut local = polynomial.clone();
+        for (i, shift) in anchor.iter().enumerate() {
+            if !shift.is_zero() {
+                local = local.substitute(
+                    i,
+                    &(&catallax_numbers::MPoly::var(3, i)
+                        + &catallax_numbers::MPoly::constant(3, shift.clone())),
+                );
+            }
+        }
+        Self {
+            polynomial: local,
+            anchor: anchor.each_ref().map(Interval::from_rational),
+        }
+    }
+    fn range(&self, cover: &[Interval; 3]) -> Interval {
+        self.polynomial
+            .eval_interval(&std::array::from_fn::<_, 3, _>(|i| {
+                cover[i] - self.anchor[i]
+            }))
+    }
+}
+
+struct Native {
+    atoms: Vec<catallax_numbers::MPoly>,
+    leaves: Vec<Vec<(usize, bool)>>,
+}
+fn canonical(polynomial: &catallax_numbers::MPoly) -> Option<(catallax_numbers::MPoly, bool)> {
+    let (_, coefficient) = polynomial.terms().into_iter().next()?;
+    Some((
+        polynomial.scale(&(q(1) / coefficient.clone())),
+        coefficient < q(0),
+    ))
+}
+impl Native {
+    fn new(plan: &Plan, classifiers: &[Option<membership::Classifier<'_>>]) -> Option<Self> {
+        if !plan
+            .leaves
+            .iter()
+            .any(|l| matches!(l, crate::geometry::Leaf::Feature(f) if f.fillet.is_some()))
+        {
+            return None;
+        }
+        if plan.faces.iter().any(|face| {
+            face.in_result
+                && !matches!(
+                    face.surface,
+                    catallax_shapes::Surface::Plane(_)
+                        | catallax_shapes::Surface::Cylinder(_)
+                        | catallax_shapes::Surface::Torus(_)
+                )
+        }) {
+            return None;
+        }
+        let mut result = Self {
+            atoms: Vec::new(),
+            leaves: Vec::new(),
+        };
+        for (i, leaf) in plan.leaves.iter().enumerate() {
+            if plan.leaf_registers[i].is_none() {
+                result.leaves.push(Vec::new());
+                continue;
+            }
+            let inequalities = match leaf {
+                crate::geometry::Leaf::Primitive(_) | crate::geometry::Leaf::Cell(_) => leaf
+                    .constraints()
+                    .iter()
+                    .map(|c| c.polynomial.rational().cloned())
+                    .collect::<Option<Vec<_>>>()?,
+                crate::geometry::Leaf::Feature(_) => classifiers[i].as_ref()?.inequalities()?,
+                _ => return None,
+            };
+            let mut row = Vec::new();
+            for polynomial in inequalities {
+                let (polynomial, positive) = canonical(&polynomial)?;
+                let atom = if let Some(i) = result.atoms.iter().position(|p| *p == polynomial) {
+                    i
+                } else {
+                    result.atoms.push(polynomial);
+                    result.atoms.len() - 1
+                };
+                row.push((atom, positive));
+            }
+            result.leaves.push(row);
+        }
+        Some(result)
+    }
+    fn patch(
+        &self,
+        plan: &Plan,
+        chart: &Chart,
+        face: usize,
+        boolean: &mut Boolean,
+        dec: &mut Decider,
+    ) -> Result<Option<NativePatch>, Refusal> {
+        let Some((support, negative)) = plan.faces[face].polynomial.rational().and_then(canonical)
+        else {
+            return Ok(None);
+        };
+        let mut restrictions = Vec::new();
+        let mut rails = [Vec::new(), Vec::new()];
+        let mut states = Vec::new();
+        for (i, atom) in self.atoms.iter().enumerate() {
+            let mut restriction = chart.pullback(atom, dec)?;
+            restriction.prepare_germ_sign(dec)?;
+            let state = if restriction.is_zero() {
+                // Equal regular carriers have proportional gradients with a
+                // fixed sign. Singular or component-only identities fall back.
+                if atom != &support {
+                    return Ok(None);
+                }
+                if negative {
+                    [State::OUTSIDE, State::INSIDE]
+                } else {
+                    [State::INSIDE, State::OUTSIDE]
+                }
+            } else {
+                [boolean.variable(i, Germ::Shared, dec)?; 2]
+            };
+            for (axis, cuts) in rails.iter_mut().zip(restriction.cuts(&chart.domain, dec)?) {
+                axis.extend(cuts);
+            }
+            restrictions.push(restriction);
+            states.push(state);
+        }
+        let mut tape = Vec::<[State; 2]>::new();
+        for instruction in &plan.instructions {
+            tape.push(match *instruction {
+                Instruction::Empty => [State::OUTSIDE; 2],
+                Instruction::Leaf(i) => {
+                    let mut value = [State::INSIDE; 2];
+                    for &(atom, positive) in &self.leaves[i] {
+                        for side in 0..2 {
+                            let state = if positive {
+                                states[atom][side]
+                            } else {
+                                boolean.negate(states[atom][side], dec)?
+                            };
+                            value[side] =
+                                boolean.combine(BooleanKind::Intersect, value[side], state, dec)?;
+                        }
+                    }
+                    value
+                }
+                Instruction::Boolean { kind, a, b } => [
+                    boolean.combine(kind, tape[a][0], tape[b][0], dec)?,
+                    boolean.combine(kind, tape[a][1], tape[b][1], dec)?,
+                ],
+            });
+        }
+        Ok(Some(NativePatch {
+            roots: tape[plan.root],
+            regions: vec![None; restrictions.len()],
+            restrictions,
+            polynomials: self.atoms.iter().map(NativeRange::new).collect(),
+            region: Vec::new(),
+            rails,
+            owners: (0..self.atoms.len())
+                .map(|atom| {
+                    self.leaves
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, row)| row.iter().any(|(i, _)| *i == atom))
+                        .map(|(i, _)| i)
+                        .collect()
+                })
+                .collect(),
+        }))
+    }
+}
+struct NativePatch {
+    roots: [State; 2],
+    restrictions: Vec<Pullback>,
+    regions: Vec<Option<(Cell, bool)>>,
+    polynomials: Vec<NativeRange>,
+    region: Vec<(Cell, [State; 2])>,
+    rails: [Vec<Rational>; 2],
+    owners: Vec<Vec<usize>>,
+}
+
 struct Patch {
     chart: Chart,
+    native: Option<NativePatch>,
     faces: Vec<usize>,
     coincident: Vec<Vec<bool>>,
     pullbacks: Vec<Vec<Option<Pullback>>>,
@@ -243,6 +460,21 @@ struct Patch {
     side_directions: Option<[catallax_shapes::Vector3; 2]>,
     shared_sides: Vec<bool>,
     last_states: Option<[State; 2]>,
+}
+impl Patch {
+    fn unresolved(&self, boolean: &Boolean, roots: impl IntoIterator<Item = State>) -> Vec<usize> {
+        boolean
+            .unresolved(roots)
+            .into_iter()
+            .flat_map(|variable| {
+                self.native
+                    .as_ref()
+                    .map_or_else(|| vec![variable], |native| native.owners[variable].clone())
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
 }
 struct Builder<'a> {
     plan: &'a Plan,
@@ -346,7 +578,11 @@ fn mesh_plan_inner(
         .leaves
         .iter()
         .map(|leaf| match leaf {
-            crate::geometry::Leaf::Feature(feature) => feature.display_classifier(),
+            crate::geometry::Leaf::Feature(feature) => feature
+                .fillet
+                .as_deref()
+                .and_then(membership::Classifier::fillet)
+                .or_else(|| feature.display_classifier()),
             _ => None,
         })
         .collect();
@@ -484,6 +720,7 @@ fn mesh_plan_inner(
                 .map(|bounds| bounds.map(|b| b.each_ref().map(|v| v.to_interval())))
         })
         .collect::<Result<_, _>>()?;
+    let native = Native::new(plan, &builder.classifiers);
     let mut patches = Vec::new();
     let mut face_work: Vec<(usize, usize, u32)> = groups.iter().map(|g| (g[0], 0, 0)).collect();
     for (group, faces) in groups.into_iter().enumerate() {
@@ -557,8 +794,19 @@ fn mesh_plan_inner(
                 axis.sort();
                 axis.dedup();
             }
+            let native_patch = native
+                .as_ref()
+                .map(|n| n.patch(plan, &chart, faces[0], &mut builder.boolean, dec))
+                .transpose()?
+                .flatten();
+            if let Some(native) = &native_patch {
+                for (cuts, rails) in cuts.iter_mut().zip(&native.rails) {
+                    cuts.extend(rails.iter().cloned());
+                }
+            }
             patches.push(Patch {
                 chart,
+                native: native_patch,
                 group,
                 faces: faces.clone(),
                 coincident: coincident.clone(),
@@ -639,15 +887,16 @@ fn mesh_plan_inner(
                                 .iter()
                                 .enumerate()
                                 .map(|(group, (face, cells, depth))| {
-                                    let roots = patches
+                                    let operands = patches
                                         .iter()
                                         .filter(|patch| patch.group == group)
-                                        .filter_map(|patch| patch.last_states)
-                                        .filter(|states| states[0] != states[1])
-                                        .flatten();
-                                    let operands = builder
-                                        .boolean
-                                        .unresolved(roots)
+                                        .flat_map(|patch| {
+                                            patch.unresolved(
+                                                &builder.boolean,
+                                                patch.last_states.into_iter().flatten(),
+                                            )
+                                        })
+                                        .collect::<std::collections::BTreeSet<_>>()
                                         .into_iter()
                                         .map(|leaf| {
                                             let steps = plan
@@ -697,9 +946,8 @@ fn mesh_plan_inner(
                         .flatten()
                         .copied()
                         .chain(patch.last_states.into_iter().flatten());
-                    let operands = builder
-                        .boolean
-                        .unresolved(roots)
+                    let operands = patch
+                        .unresolved(&builder.boolean, roots)
                         .into_iter()
                         .map(|leaf| {
                             let steps = plan
@@ -745,7 +993,7 @@ fn mesh_plan_inner(
                     for &face in &patch.faces {
                         let stage = report.as_ref().map(|_| Snapshot::new(dec));
                         let point = point.get_or_insert_with(|| patch.chart.point(&cell.centre()));
-                        let queried = builder.face_at(face, point, stable, dec);
+                        let queried = builder.face_at(face, point, stable, &patch.coincident, dec);
                         if let (Some(report), Some(stage)) = (report.as_deref_mut(), stage) {
                             report.faces[face]
                                 .queries
@@ -867,6 +1115,30 @@ fn mesh_plan_inner(
     builder.mesh.max_deviation = options.tolerance.clone();
     Ok(builder.mesh)
 }
+// Enclose a rational unit normal directly in outward binary64 intervals.
+// Tiny/overflowing ranges keep the existing arbitrary-precision path.
+fn native_direction(
+    n: catallax_shapes::Vector3,
+    dec: &mut Decider,
+) -> Result<crate::Direction, Refusal> {
+    if let Some(components) = n.rational_components() {
+        let components = components.map(Interval::from_rational);
+        let squared = components
+            .iter()
+            .fold(Interval::point(0.0).unwrap(), |s, c| s + c.square());
+        if let Some(length) = squared.sqrt()
+            && length.lo() > 0.0
+            && length.is_finite()
+        {
+            let direction = components.map(|c| c / length);
+            if direction.iter().all(|d| d.is_finite() && d.width() < 1e-12) {
+                return Ok(crate::Direction::Unique(direction));
+            }
+        }
+    }
+    crate::unit_direction(n, dec)
+}
+
 enum Visit {
     Skip,
     Defer,
@@ -984,6 +1256,7 @@ impl Builder<'_> {
         id: usize,
         point: &RPoint3,
         stable: bool,
+        coincident: &[Vec<bool>],
         dec: &mut Decider,
     ) -> Result<crate::FaceQuery, Refusal> {
         use crate::{Direction, FaceQuery};
@@ -1023,7 +1296,12 @@ impl Builder<'_> {
             Some(true) => (),
         }
         let n = crate::normal(face, &p);
-        if crate::geometry::sign(&n.norm_squared(), dec)? == catallax_numbers::Sign::Zero {
+        let zero = if let Some(components) = n.rational_components() {
+            components.iter().all(|c| c.is_zero())
+        } else {
+            crate::geometry::sign(&n.norm_squared(), dec)? == catallax_numbers::Sign::Zero
+        };
+        if zero {
             return Ok(unknown);
         }
         let minus_n = n.scaled(&catallax_numbers::Real::from_i64(-1));
@@ -1036,10 +1314,13 @@ impl Builder<'_> {
             (Location::Outside, Location::Inside) => n,
             (Location::Inside, Location::Outside) => minus_n,
             (Location::Inside, Location::Inside) | (Location::Outside, Location::Outside)
-                if stable =>
+                if stable
+                    || (self.native_fillet_closure()
+                        && self.regular_witness(&p, coincident, dec)?) =>
             {
                 return Ok(absent);
             }
+            _ if self.native_fillet_closure() => return Ok(unknown),
             _ => {
                 return plan.closed_face_query_checked(FaceId(id), point, &mut self.workspace, dec);
             }
@@ -1052,6 +1333,7 @@ impl Builder<'_> {
                 &mut self.workspace.domains,
             ) {
                 FaceState::NotOnFace => return Ok(absent),
+                FaceState::Indeterminate if self.native_fillet_closure() => return Ok(unknown),
                 FaceState::Indeterminate => {
                     return plan.closed_face_query_checked(
                         FaceId(id),
@@ -1065,8 +1347,66 @@ impl Builder<'_> {
         }
         Ok(FaceQuery {
             state: FaceState::OnFace,
-            direction: crate::unit_direction(n, dec)?,
+            direction: if self.native_fillet_closure() {
+                native_direction(n, dec)?
+            } else {
+                crate::unit_direction(n, dec)?
+            },
         })
+    }
+
+    // When every boundary operand has only this support through the witness,
+    // its two strict germs describe a complete neighbourhood. This proves
+    // witness-local absence, never absence of the whole unresolved trim cell.
+    fn regular_witness(
+        &self,
+        p: &[Rational; 3],
+        coincident: &[Vec<bool>],
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        for (leaf, constraints) in self.constraints.iter().enumerate() {
+            let Some(slot) = self.plan.leaf_registers[leaf] else {
+                continue;
+            };
+            match self.locations[slot].0 {
+                Location::Inside | Location::Outside => continue,
+                Location::Indeterminate => return Ok(false),
+                Location::Boundary => (),
+            }
+            for (j, constraint) in constraints.iter().enumerate() {
+                if coincident[leaf][j] {
+                    continue;
+                }
+                dec.check_deadline()?;
+                if constraint
+                    .polynomial
+                    .as_ref()
+                    .is_none_or(|p_| p_.eval(p).is_zero())
+                {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+    // Closed contacts can be covered by adjacent certified cells. Retain an
+    // unresolved witness instead of paying for a general contact proof when
+    // the complete elementary fillet has a native display classifier.
+    fn native_fillet_closure(&self) -> bool {
+        self.plan
+            .leaves
+            .iter()
+            .any(|leaf| matches!(leaf, crate::geometry::Leaf::Feature(f) if f.fillet.is_some()))
+            && self.plan.leaves.iter().enumerate().all(|(i, leaf)| {
+                self.plan.leaf_registers[i].is_none()
+                    || match leaf {
+                        crate::geometry::Leaf::Primitive(_) | crate::geometry::Leaf::Cell(_) => {
+                            true
+                        }
+                        crate::geometry::Leaf::Feature(_) => self.classifiers[i].is_some(),
+                        _ => false,
+                    }
+            })
     }
 
     fn classify(
@@ -1079,6 +1419,101 @@ impl Builder<'_> {
     ) -> Result<Classification, Refusal> {
         self.locations.clear();
         self.side_states.clear();
+        if let Some(native) = &mut patch.native {
+            let contains = |region: &Cell| {
+                (0..2).all(|axis| {
+                    cell.range[axis][0] >= region.range[axis][0]
+                        && cell.range[axis][1] <= region.range[axis][1]
+                })
+            };
+            while native
+                .region
+                .last()
+                .is_some_and(|(region, _)| !contains(region))
+            {
+                native.region.pop();
+            }
+            let initial = native
+                .region
+                .last()
+                .map_or(native.roots, |(_, roots)| *roots);
+            if initial[0] == initial[1]
+                || matches!(
+                    initial,
+                    [State::INSIDE, State::OUTSIDE] | [State::OUTSIDE, State::INSIDE]
+                )
+            {
+                self.locations.resize(
+                    self.plan.instructions.len(),
+                    (Location::Indeterminate, false),
+                );
+                self.locations[0] = (Location::Outside, true);
+                return Ok(Classification {
+                    location: Location::Boundary,
+                    stable: initial[0] != initial[1],
+                    absent_patch: initial[0] == initial[1],
+                });
+            }
+            patch.last_states = Some(initial);
+            let mut queried = vec![false; native.restrictions.len()];
+            let mut values = vec![None; native.restrictions.len()];
+            let roots = self.boolean.resolve(initial, dec, &mut |atom, dec| {
+                if queried[atom] {
+                    return Ok(values[atom]);
+                }
+                queried[atom] = true;
+                let value = if let Some((region, value)) = &native.regions[atom]
+                    && (0..2).all(|axis| {
+                        cell.range[axis][0] >= region.range[axis][0]
+                            && cell.range[axis][1] <= region.range[axis][1]
+                    }) {
+                    Some(*value)
+                } else {
+                    let sign = native.restrictions[atom].generic_sign().or_else(|| {
+                        native.polynomials[atom]
+                            .range(cover)
+                            .sign()
+                            .map(|sign| match sign {
+                                catallax_numbers::StrictSign::Positive => {
+                                    catallax_numbers::Sign::Positive
+                                }
+                                catallax_numbers::StrictSign::Negative => {
+                                    catallax_numbers::Sign::Negative
+                                }
+                            })
+                    });
+                    match if sign.is_some() {
+                        sign
+                    } else {
+                        native.restrictions[atom].sign(cell, dec)?
+                    } {
+                        Some(catallax_numbers::Sign::Positive) => Some(true),
+                        Some(catallax_numbers::Sign::Negative) => Some(false),
+                        _ => None,
+                    }
+                };
+                if let Some(value) = value {
+                    native.regions[atom] = Some((cell.clone(), value));
+                }
+                values[atom] = value;
+                Ok(value)
+            })?;
+            patch.last_states = Some(roots);
+            native.region.push((cell.clone(), roots));
+            self.locations.resize(
+                self.plan.instructions.len(),
+                (Location::Indeterminate, false),
+            );
+            self.locations[0] = (Location::Outside, true);
+            return Ok(Classification {
+                location: Location::Boundary,
+                stable: matches!(
+                    roots,
+                    [State::INSIDE, State::OUTSIDE] | [State::OUTSIDE, State::INSIDE]
+                ),
+                absent_patch: roots[0] == roots[1],
+            });
+        }
         let sided = patch.side_directions.is_some();
         let mut corners = None;
         let plan = self.plan;
@@ -1105,12 +1540,16 @@ impl Builder<'_> {
                         }
                         continue;
                     }
-                    if self.source_boxes[i].as_ref().is_some_and(|bounds| {
-                        (0..3).any(|axis| {
-                            cover[axis].hi() < bounds[axis].lo()
-                                || cover[axis].lo() > bounds[axis].hi()
+                    if self.classifiers[i]
+                        .as_ref()
+                        .is_some_and(|c| c.excludes(cover))
+                        || self.source_boxes[i].as_ref().is_some_and(|bounds| {
+                            (0..3).any(|axis| {
+                                cover[axis].hi() < bounds[axis].lo()
+                                    || cover[axis].lo() > bounds[axis].hi()
+                            })
                         })
-                    }) {
+                    {
                         patch.regions[i] = Some(Region {
                             cell: cell.clone(),
                             location: Location::Outside,
@@ -1184,13 +1623,23 @@ impl Builder<'_> {
                     } else if value.1
                         && value.0 == Location::Boundary
                         && patch.coincident[i].iter().any(|&same| same)
-                        && let Some(directions) = &patch.side_directions
                     {
-                        // Every other support has a fixed nonzero sign on the
-                        // open region. Only this exact coincident plane can
-                        // change membership, so each material side is constant.
+                        // Noncoincident supports have fixed nonzero signs on
+                        // the open cell. A regular coincident carrier has two
+                        // constant material germs, oriented by its own normal.
                         let point = point.as_ref().expect("stable boundary witness");
                         let point = [point.x.clone(), point.y.clone(), point.z.clone()];
+                        let curved;
+                        let directions = if let Some(directions) = &patch.side_directions {
+                            directions
+                        } else {
+                            let normal = crate::normal(&plan.faces[patch.faces[0]], &point);
+                            curved = [
+                                normal.clone(),
+                                normal.scaled(&catallax_numbers::Real::from_i64(-1)),
+                            ];
+                            &curved
+                        };
                         [
                             self.leaf_ray(i, &point, &directions[0], dec)?,
                             self.leaf_ray(i, &point, &directions[1], dec)?,
@@ -1249,7 +1698,7 @@ impl Builder<'_> {
             patch.last_states = Some(states);
             if states[0] == states[1] {
                 // The same Boolean function on both sides cannot expose an
-                // open patch of this plane. Its remaining trim boundaries
+                // open patch of this carrier. Its remaining trim boundaries
                 // belong to the unresolved operands' own support charts.
                 result.absent_patch = true;
             } else if matches!(
@@ -1379,28 +1828,75 @@ impl Builder<'_> {
             return false;
         }
         let key = self.bin(cover.map(|b| b.mid()));
-        for x in -2..=2 {
-            for y in -2..=2 {
-                for z in -2..=2 {
-                    let Some(ids) = bins.get(&[
-                        key[0].saturating_add(x),
-                        key[1].saturating_add(y),
-                        key[2].saturating_add(z),
-                    ]) else {
-                        continue;
-                    };
-                    for &i in ids {
-                        let p = self.mesh.positions[i];
-                        let distance = (0..3).fold(q(0), |sum, j| {
-                            let x = Rational::from_f64_exact(p[j]).unwrap();
-                            let lo = Rational::from_f64_exact(cover[j].lo()).unwrap();
-                            let hi = Rational::from_f64_exact(cover[j].hi()).unwrap();
-                            sum + (&x - &lo).abs().max((&x - &hi).abs())
-                        });
-                        if distance <= self.options.tolerance {
-                            return true;
+        let tolerance = Interval::from_rational(&self.options.tolerance);
+        const OFFSETS: [[i64; 3]; 125] = {
+            let mut result = [[0; 3]; 125];
+            let mut index = 0;
+            let mut distance = 0;
+            while distance <= 6 {
+                let mut x: i64 = -2;
+                while x <= 2 {
+                    let mut y: i64 = -2;
+                    while y <= 2 {
+                        let mut z: i64 = -2;
+                        while z <= 2 {
+                            if x.abs() + y.abs() + z.abs() == distance {
+                                result[index] = [x, y, z];
+                                index += 1;
+                            }
+                            z += 1;
                         }
+                        y += 1;
                     }
+                    x += 1;
+                }
+                distance += 1;
+            }
+            result
+        };
+        for [x, y, z] in OFFSETS {
+            let Some(ids) = bins.get(&[
+                key[0].saturating_add(x),
+                key[1].saturating_add(y),
+                key[2].saturating_add(z),
+            ]) else {
+                continue;
+            };
+            for &i in ids {
+                let p = self.mesh.positions[i];
+                // Fast enclosure of the very same exact L1 predicate.
+                // Borderline intervals retain its rational decision.
+                let absolute = |x: Interval| {
+                    Interval::new(
+                        if x.contains_zero() {
+                            0.0
+                        } else {
+                            x.lo().abs().min(x.hi().abs())
+                        },
+                        x.lo().abs().max(x.hi().abs()),
+                    )
+                    .unwrap()
+                };
+                let approximate = (0..3).fold(Interval::point(0.0).unwrap(), |sum, j| {
+                    let p = Interval::point(p[j]).unwrap();
+                    let lo = absolute(p - Interval::point(cover[j].lo()).unwrap());
+                    let hi = absolute(p - Interval::point(cover[j].hi()).unwrap());
+                    sum + Interval::new(lo.lo().max(hi.lo()), lo.hi().max(hi.hi())).unwrap()
+                });
+                if approximate.hi() <= tolerance.lo() {
+                    return true;
+                }
+                if approximate.lo() > tolerance.hi() {
+                    continue;
+                }
+                let distance = (0..3).fold(q(0), |sum, j| {
+                    let x = Rational::from_f64_exact(p[j]).unwrap();
+                    let lo = Rational::from_f64_exact(cover[j].lo()).unwrap();
+                    let hi = Rational::from_f64_exact(cover[j].hi()).unwrap();
+                    sum + (&x - &lo).abs().max((&x - &hi).abs())
+                });
+                if distance <= self.options.tolerance {
+                    return true;
                 }
             }
         }

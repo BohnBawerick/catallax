@@ -139,6 +139,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "catallax-iges"
+version = "0.1.0"
+dependencies = [
+ "catallax-features",
+ "catallax-numbers",
+ "catallax-recipe",
+ "catallax-shapes",
+ "catallax-step",
+ "catallax-topology",
+]
+
+[[package]]
 name = "catallax-intersect"
 version = "0.1.0"
 dependencies = [

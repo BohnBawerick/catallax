@@ -85,7 +85,7 @@ fn control(origin: &Origin, p: [f64; 3], tolerance: f64) -> [f64; 3] {
         ("rounded", Role::Blend { edge }) => {
             let side = edge
                 .between()
-                .into_iter()
+                .iter()
                 .find_map(|o| {
                     if let Role::Side { segment, .. } = &o.role {
                         Some(segment.as_str())

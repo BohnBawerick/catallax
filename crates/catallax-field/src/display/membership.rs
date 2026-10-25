@@ -288,8 +288,8 @@ impl Ring {
 }
 
 pub(crate) enum Classifier<'a> {
-    Extrusion(Extrusion<'a>),
-    Ring(Ring),
+    Extrusion(Box<Extrusion<'a>>),
+    Ring(Box<Ring>),
 }
 impl<'a> Classifier<'a> {
     pub(crate) fn new(
@@ -298,10 +298,10 @@ impl<'a> Classifier<'a> {
         through: bool,
         loops: &'a [Vec<profile::Edge>],
     ) -> Option<Self> {
-        Extrusion::new(inverse, vector, through, loops).map(Self::Extrusion)
+        Extrusion::new(inverse, vector, through, loops).map(|e| Self::Extrusion(Box::new(e)))
     }
     pub(crate) fn fillet(definition: &catallax_features::fillet::FilletDefinition) -> Option<Self> {
-        Ring::new(definition).map(Self::Ring)
+        Ring::new(definition).map(|r| Self::Ring(Box::new(r)))
     }
     /// Exact closed intersections for the elementary fillet tool only.
     pub(crate) fn inequalities(&self) -> Option<Vec<catallax_numbers::MPoly>> {
@@ -649,6 +649,33 @@ mod tests {
             }
         }
     }
+    fn independent_profile_ray(
+        feature: &crate::features::Feature,
+        p: &[Rational; 3],
+        direction: &Vector3,
+        dec: &mut catallax_numbers::Decider,
+    ) -> Location {
+        // Reference the original finite, sign-cell-preserving profile query,
+        // independently of the new direct polynomial germ evaluator.
+        let d = direction.rational_components().unwrap();
+        let mut epsilon = q(1);
+        for constraint in &feature.constraints {
+            let coefficients = geometry::native_ray_coefficients(constraint, p, direction).unwrap();
+            if let Some((i, c)) = coefficients.iter().enumerate().find(|(_, c)| !c.is_zero()) {
+                let tail = coefficients[i + 1..]
+                    .iter()
+                    .fold(q(0), |sum, c| sum + c.abs());
+                epsilon = epsilon.min(c.abs() / (c.abs() + tail + q(1)));
+            }
+        }
+        let point = catallax_shapes::RPoint3::new(
+            &p[0] + &(&epsilon * d[0]),
+            &p[1] + &(&epsilon * d[1]),
+            &p[2] + &(&epsilon * d[2]),
+        );
+        feature.classify(&point.to_real(), dec).unwrap()
+    }
+
     #[test]
     fn native_fillet_regions_match_independent_definitions_and_ray_germs() {
         let recipe =
@@ -680,7 +707,7 @@ mod tests {
             let xyz = [p.x.clone(), p.y.clone(), p.z.clone()];
             assert_eq!(
                 native.location(&xyz),
-                plan.leaves[face.leaf].location(&xyz, &mut dec).unwrap()
+                feature.classify(&p.to_real(), &mut dec).unwrap()
             );
             let inequalities = native.inequalities().unwrap();
             let values: Vec<_> = inequalities.iter().map(|p| p.eval(&xyz)).collect();
@@ -694,14 +721,11 @@ mod tests {
             assert_eq!(enclosed, native.location(&xyz));
             assert_eq!(
                 Some(native.on_face(plan.definition_role(id.index()), &xyz)),
-                plan.leaves[face.leaf]
-                    .on_face(
-                        &face.origin,
-                        plan.definition_role(id.index()),
-                        &xyz,
-                        &mut dec
-                    )
-                    .unwrap()
+                Some(
+                    feature
+                        .on_face_point(plan.definition_role(id.index()), &p.to_real(), &mut dec)
+                        .unwrap()
+                )
             );
             let normal = crate::normal(face, &xyz);
             for normal in [
@@ -712,11 +736,82 @@ mod tests {
                     native
                         .ray(plan.leaves[face.leaf].constraints(), &xyz, &normal)
                         .unwrap(),
-                    plan.leaves[face.leaf].ray(&xyz, &normal, &mut dec).unwrap()
+                    independent_profile_ray(feature, &xyz, &normal, &mut dec)
                 );
             }
             checked += 1;
         }
         assert!(checked >= 20);
+    }
+    #[test]
+    fn quarter_sections_have_independent_inside_outside_and_contact_controls() {
+        let recipe =
+            catallax_recipe::Recipe::parse(include_str!("../../../../parts/P3-filleted-boss.json"))
+                .unwrap();
+        let plan = crate::Plan::compile(&recipe).unwrap();
+        let ring = plan
+            .leaves
+            .iter()
+            .find_map(|leaf| {
+                let geometry::Leaf::Feature(f) = leaf else {
+                    return None;
+                };
+                f.fillet
+                    .as_deref()
+                    .and_then(Classifier::fillet)
+                    .map(|c| (f, c))
+            })
+            .unwrap();
+        let mut dec = Decider::default();
+        for (p, expected) in [
+            (["28", "15", "10"], Location::Boundary),
+            (["142/5", "15", "51/5"], Location::Inside),
+            (["144/5", "15", "52/5"], Location::Boundary),
+            (["147/5", "15", "51/5"], Location::Outside),
+            (["31", "15", "101/10"], Location::Outside),
+            (["28", "15", "13"], Location::Outside),
+            (["27", "15", "21/2"], Location::Outside),
+        ] {
+            let p = p.map(|x| Rational::parse(x).unwrap());
+            assert_eq!(ring.1.location(&p), expected);
+            let point = catallax_shapes::RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone());
+            assert_eq!(
+                ring.0.classify(&point.to_real(), &mut dec).unwrap(),
+                expected
+            );
+        }
+        let corner =
+            plan.faces
+                .iter()
+                .find_map(|face| {
+                    let Role::Blend { edge } = &face.origin.role else {
+                        return None;
+                    };
+                    if !edge.between().iter().any(
+                        |o| matches!(&o.role,Role::Side{segment,..} if segment.as_str()=="x_min"),
+                    ) {
+                        return None;
+                    }
+                    let geometry::Leaf::Feature(f) = &plan.leaves[face.leaf] else {
+                        return None;
+                    };
+                    Some((f, f.display_classifier().unwrap()))
+                })
+                .unwrap();
+        for (p, expected) in [
+            (["1/10", "15", "99/10"], Location::Inside),
+            (["3/5", "15", "49/5"], Location::Outside),
+            (["2/5", "15", "49/5"], Location::Boundary),
+            (["0", "15", "9"], Location::Boundary),
+            (["0", "15", "899/100"], Location::Outside),
+        ] {
+            let p = p.map(|x| Rational::parse(x).unwrap());
+            assert_eq!(corner.1.location(&p), expected);
+            let point = catallax_shapes::RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone());
+            assert_eq!(
+                corner.0.classify(&point.to_real(), &mut dec).unwrap(),
+                expected
+            );
+        }
     }
 }

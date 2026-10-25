@@ -1,0 +1,7 @@
+## 2026-10-22: tolerance proof records and elliptic-offset intent
+
+Pieces: numbers, shapes and future geometric certificate consumers
+Change: numbers exposes the fixed 1 nm `ModellingTolerance`, `EvidenceUnit`, `EvidenceBound`, scoped `GeometricCertificate` claims, `GeometricEvidence`, `EvidenceBook`, original decision evidence and a `DecisionBook` of settled branches. The stable refusals are `numbers.geometric-gap-unproven` and `numbers.geometric-gap-exceeded`. Shapes exposes `EllipticOffsetDefinition` and `OffsetSide`, retaining a validated exact elliptic-cylinder support, unsigned offset magnitude and chosen normal side.
+Why: tolerance decisions and the first offset consumer need immutable settings, typed evidence, shared proof identity and consistent branch reuse without turning diagnostic marks into geometric authority.
+Migration: structural certificate checking is not theorem verification or permission to publish a body. Consumers must validate geometry, coverage, orientation, topology and imported evidence, supply stable recipe/definition keys, and apply their proved transfer rules. Offset consumers may pass the original support and unsigned distance to the field measuring stick but must separately retain and prove the selected side and finite domain. No surface kind, numeric decision path, legacy mark semantics, exchange format or work-budget default changes. The offset record does not choose a B-rep carrier.
+

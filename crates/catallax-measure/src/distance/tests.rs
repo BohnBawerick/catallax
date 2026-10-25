@@ -1,5 +1,6 @@
 use super::*;
 use catallax_shapes::{Pose, RPoint3, Surface};
+use catallax_topology::FaceId;
 fn q(n: i64) -> Rational {
     Rational::from_i64(n)
 }
@@ -181,4 +182,169 @@ fn elliptic_cylinder_preserves_euclidean_distance_and_oblique_circle_trims() {
         let [_, witness] = answer.witnesses.unwrap();
         assert!(catallax_boolean::face_contains(&mut model, face, &witness, &mut dec).unwrap());
     }
+}
+
+fn placed() -> Pose {
+    use catallax_shapes::{RVector3, Rotation};
+    Pose::from_rational(
+        Rotation::from_quaternion(q(1), q(1), q(1), q(1)).unwrap(),
+        RVector3::new(q(1), q(-2), q(3)),
+    )
+}
+fn world(pose: &Pose, local: [i64; 3]) -> Point3 {
+    pose.apply_point(&p(local[0], local[1], local[2]))
+}
+fn solid_faces(pose: &Pose) -> (Model, FaceId, [FaceId; 2]) {
+    let mut model = Model::new();
+    let body = catallax_topology::cylinder(&mut model, q(2), q(3), pose).unwrap();
+    let faces = model.faces_of_body(body);
+    let is = |model: &Model, f: FaceId, wall: bool| {
+        matches!(
+            model.geom().surface(model.face(f).surface),
+            Surface::Cylinder(_)
+        ) == wall
+    };
+    let wall = faces
+        .iter()
+        .copied()
+        .find(|f| is(&model, *f, true))
+        .unwrap();
+    let caps: Vec<_> = faces
+        .into_iter()
+        .filter(|f| is(&model, *f, false))
+        .collect();
+    (model, wall, [caps[0], caps[1]])
+}
+fn exact(
+    model: &mut Model,
+    face: FaceId,
+    point: &Point3,
+    want: &Rational,
+    dec: &mut Decider,
+) -> Bounds {
+    let prepared = PreparedFace::new(model, face, dec).unwrap();
+    let answer = prepared
+        .point_to_face(model, point, &controls(), dec)
+        .unwrap();
+    let upper = answer.upper.clone().unwrap();
+    assert!(answer.lower <= *want && upper >= *want, "{answer:?}");
+    assert!(answer.converged && answer.cells == 0, "{answer:?}");
+    assert!(
+        &upper - &answer.lower <= Rational::from_ratio(1, 1_000_000_000).unwrap(),
+        "{answer:?}"
+    );
+    let [origin, witness] = answer.witnesses.clone().unwrap();
+    assert_eq!(origin.as_rational(), point.as_rational());
+    assert!(catallax_boolean::face_contains(model, face, &witness, dec).unwrap());
+    answer
+}
+#[test]
+fn placed_cylinder_band_matches_independent_distances_for_every_nearest_case() {
+    for pose in [Pose::identity(), placed()] {
+        let (mut model, wall, _) = solid_faces(&pose);
+        let mut dec = Decider::default();
+        // Local points and exact distances to the radius 2, height 3 wall.
+        for (local, want) in [
+            ([5, 0, 1], q(3)),
+            ([0, 0, 1], q(2)),
+            ([1, 0, 1], q(1)),
+            ([5, 0, 7], q(5)),
+            ([5, 0, -4], q(5)),
+            ([2, 0, 7], q(4)),
+            ([0, 0, 3], q(2)),
+            ([2, 0, 3], q(0)),
+            ([3, 4, 0], q(3)),
+        ] {
+            exact(&mut model, wall, &world(&pose, local), &want, &mut dec);
+        }
+        // On the axis beyond the end the nearest set is a rim circle at sqrt(2^2+4^2).
+        let axis = world(&pose, [0, 0, 7]);
+        let answer = PreparedFace::new(&model, wall, &mut dec)
+            .unwrap()
+            .point_to_face(&mut model, &axis, &controls(), &mut dec)
+            .unwrap();
+        let want = Ball::from_rational(&q(20), 256).sqrt().unwrap();
+        assert!(answer.lower <= want.lo() && answer.upper.unwrap() >= want.hi());
+    }
+}
+#[test]
+fn finite_band_is_not_its_infinite_support() {
+    let pose = placed();
+    let (mut model, wall, _) = solid_faces(&pose);
+    let mut dec = Decider::default();
+    // The point lies on the cylinder's infinite support but 4 above the band.
+    let answer = exact(&mut model, wall, &world(&pose, [2, 0, 7]), &q(4), &mut dec);
+    assert!(answer.lower > q(3));
+}
+#[test]
+fn placed_caps_match_independent_distances_including_the_rim_tie() {
+    for pose in [Pose::identity(), placed()] {
+        let (mut model, _, caps) = solid_faces(&pose);
+        let mut dec = Decider::default();
+        // Faces are built bottom (z = 0) then top (z = 3); the zero-distance
+        // rows below fail if that order ever changes.
+        for (cap, base) in caps.into_iter().zip([0, 3]) {
+            for (local, want) in [
+                ([1, 1, base + 4], q(4)),
+                ([0, 0, base - 2], q(2)),
+                ([5, 0, base + 4], q(5)),
+                ([2, 0, base + 1], q(1)),
+                ([2, 0, base], q(0)),
+                ([3, 4, base], q(3)),
+                ([1, 0, base], q(0)),
+            ] {
+                exact(&mut model, cap, &world(&pose, local), &want, &mut dec);
+            }
+        }
+    }
+}
+
+fn sqrt2() -> Ball {
+    Ball::from_rational(&q(2), 256).sqrt().unwrap()
+}
+/// Checks one irrational nearest-point case on the radius 2, height 3 cylinder.
+fn irrational_case(wall: bool, at: Point3, expected: &Ball, witness: [Ball; 3]) {
+    let (mut model, side, caps) = solid_faces(&Pose::identity());
+    let face = if wall { side } else { caps[1] };
+    let mut dec = Decider::default();
+    let prepared = PreparedFace::new(&model, face, &mut dec).unwrap();
+    let answer = prepared
+        .point_to_face(&mut model, &at, &controls(), &mut dec)
+        .unwrap();
+    let upper = answer.upper.clone().unwrap();
+    let tight = Rational::from_ratio(1, 1_000_000_000).unwrap();
+    assert!(answer.converged && answer.cells == 0, "{answer:?}");
+    assert!(
+        answer.lower <= expected.hi() && upper >= expected.lo(),
+        "{answer:?}"
+    );
+    assert!(&upper - &answer.lower <= tight, "{answer:?}");
+    assert!(&expected.hi() - &answer.lower <= tight, "{answer:?}");
+    assert!(&upper - &expected.lo() <= tight, "{answer:?}");
+    let [_, found] = answer.witnesses.unwrap();
+    for (coordinate, want) in [&found.x, &found.y, &found.z].into_iter().zip(&witness) {
+        let got = dec.enclose_budgeted_at(coordinate, 128).unwrap();
+        assert!(got.lo() <= want.hi() && want.lo() <= got.hi(), "{found:?}");
+        assert!(&got.hi() - &got.lo() <= tight, "{found:?}");
+    }
+    assert!(catallax_boolean::face_contains(&mut model, face, &found, &mut dec).unwrap());
+}
+#[test]
+fn wall_point_with_an_irrational_witness_is_enclosed_without_subdivision() {
+    let r = sqrt2();
+    let one = Ball::from_rational(&q(1), 256);
+    // The point (1, 1, 1) is inside the wall, so the nearest point is
+    // (sqrt2, sqrt2, 1) at distance 2 - sqrt2.
+    let expected = Ball::from_rational(&q(2), 256) - r.clone();
+    irrational_case(true, p(1, 1, 1), &expected, [r.clone(), r, one]);
+}
+#[test]
+fn cap_point_with_an_irrational_rim_witness_is_enclosed_without_subdivision() {
+    let r = sqrt2();
+    // The point (3, 3, 7) projects outside the top cap, so the nearest point is
+    // the rim point (sqrt2, sqrt2, 3) at distance sqrt(38 - 12 sqrt2).
+    let squared = Ball::from_rational(&q(38), 256) - Ball::from_rational(&q(12), 256) * r.clone();
+    let expected = squared.sqrt().unwrap();
+    let three = Ball::from_rational(&q(3), 256);
+    irrational_case(false, p(3, 3, 7), &expected, [r.clone(), r, three]);
 }

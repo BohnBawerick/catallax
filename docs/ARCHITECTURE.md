@@ -529,7 +529,7 @@ Each decision runs under a budget set by `catallax_numbers::BudgetPolicy`:
 
 A work unit is defined by piece 1 (see its description) as a deterministic count of limb operations, so the same decision spends the same work on every machine.
 A `Decider` holds the policy and creates a fresh budget for every decision. It also keeps `DecisionStats`: how many decisions ended on each proof path, how many were marked or refused, the largest precision used and the total work.
-The policy default is set by the architect, recorded in `INTERFACE-CHANGES.md` when it changes, and passed by the front end. Pieces never invent their own budgets.
+The policy default is set by the architect, recorded in a new `interface-changes/` fragment when it changes, and passed by the front end. Pieces never invent their own budgets.
 
 At the level of a whole operation, the `Decider` may carry a wall-clock deadline. A decision that starts after the deadline, or is still in progress when it passes, returns `Refused` with code `numbers.deadline`. This is the only way wall-clock time affects the kernel, and it can only produce a refusal, never an answer.
 
@@ -626,5 +626,5 @@ Anything that can come from a question file (zero-size blocks, zero quaternions,
 
 ## Changing this architecture
 
-Workers propose interface changes to the architect. The architect decides, updates the affected description and crate skeleton, appends an entry to `INTERFACE-CHANGES.md` naming the date and the affected pieces, and announces it to every live worker.
+Workers propose interface changes to the architect. The architect decides, updates the affected description and crate skeleton, adds a new fragment in `docs/interface-changes/` naming the date and the affected pieces, and announces it to every live worker.
 Nobody else edits a public signature.

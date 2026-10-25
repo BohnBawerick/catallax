@@ -1,0 +1,7 @@
+## 2026-10-22: retain curve-meeting and root-refinement proofs
+
+Pieces: 1, 5
+Change: explicit curve meetings name both proven carriers in their point definitions. Line substitution retains an actual common-polynomial certificate: rational equations use their GCD, and a sole nonzero algebraic equation certifies its roots directly. Otherwise shared predicates check every carrier equation. Analytic conic candidates retain their exact equation checks without repeating curve membership. A finite meeting with either support exhausts the candidates for an intersection branch; the other support and component predicate remain mandatory. Certified branch membership retains its original proof as incidence. Root enclosure certificates retain exact bisection endpoints and the lower-end sign, so higher-precision calls can continue the same sequence when their sign-filter precision agrees, replaying the cold-evaluation work.
+Why: later boundary queries discarded already-proven curve incidence, and increasing enclosure precision repeated exact polynomial evaluation over the same bisection prefix.
+Migration: no public signatures, default budgets, deadline or exchange-format changes. A completed refinement retains the same bisection sequence and rounding. Cold and warmed caches retain identical work charges under the selected sign algorithm. Refined snapshots and changed defining polynomials retain separate certificates.
+

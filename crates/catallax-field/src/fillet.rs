@@ -1,10 +1,10 @@
 //! Rolling-ball edge regions compiled from recipe supports, without B-rep topology.
 
-use catallax_features::fillet::FilletDefinition;
+use catallax_features::{fillet::FilletDefinition, fillet_corner::CornerDefinition};
 use catallax_intersect::{Component, CurveSurface, SurfacePair};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{
-    BooleanKind, EdgeName, EdgeSelection, ElementId, Origin, Role, StepId, Turn,
+    BooleanKind, EdgeName, EdgeSelection, ElementId, Origin, Role, StepId, Turn, VertexName,
 };
 use catallax_shapes::{Curve, GeomStore, Point3, Surface, Vector3};
 
@@ -406,7 +406,7 @@ impl Plan {
                 }
             }
         }
-        let mut endpoints: Vec<(Point3, usize)> = Vec::new();
+        let mut endpoints: Vec<(Point3, Vec<usize>)> = Vec::new();
         for (i, (definition, interval)) in definitions.iter().enumerate() {
             if definitions[..i]
                 .iter()
@@ -420,12 +420,12 @@ impl Plan {
                 for t in interval {
                     let point = edge.origin.plus(&edge.dir.scaled(&Real::from(t.clone())));
                     let mut found = false;
-                    for (other, count) in &mut endpoints {
+                    for (other, runs) in &mut endpoints {
                         if geometry::sign(&point.minus(other).norm_squared(), dec)? == Sign::Zero {
-                            *count += 1;
-                            if *count > 2 {
+                            runs.push(i);
+                            if runs.len() > 3 {
                                 return Err(bad(
-                                    "three selected runs at a vertex need a corner patch",
+                                    "four or more selected runs at a vertex need a general corner patch",
                                 ));
                             }
                             found = true;
@@ -433,10 +433,40 @@ impl Plan {
                         }
                     }
                     if !found {
-                        endpoints.push((point, 1));
+                        endpoints.push((point, vec![i]));
                     }
                 }
             }
+        }
+        let mut corners = Vec::new();
+        for (_, runs) in &endpoints {
+            let [a, b, c] = runs.as_slice() else {
+                continue;
+            };
+            let strips = [*a, *b, *c].map(|i| &definitions[i].0);
+            let mut faces: Vec<Origin> = strips
+                .iter()
+                .flat_map(|strip| &strip.supports)
+                .map(|support| {
+                    self.faces
+                        .iter()
+                        .find(|f| f.surface.same_definition(support))
+                        .expect("source support")
+                        .origin
+                        .clone()
+                })
+                .collect();
+            faces.sort();
+            faces.dedup();
+            let vertex = VertexName::new(faces).map_err(|e| bad(&e.to_string()))?;
+            corners.push(CornerDefinition::new(
+                Origin {
+                    step: step.clone(),
+                    role: Role::Corner { vertex },
+                },
+                strips,
+                dec,
+            )?);
         }
         let mut result = root;
         for (definition, interval) in definitions {
@@ -472,7 +502,54 @@ impl Plan {
                 dec,
             )?;
         }
+        for corner in corners {
+            let node = self.corner(&corner, step, dec)?;
+            result = self.boolean(BooleanKind::Subtract, result, node, dec)?;
+        }
         Ok(result)
+    }
+
+    /// The material a trihedral corner removes beyond its three strips: the
+    /// cube between the ball centre and the vertex, less the ball.
+    fn corner(
+        &mut self,
+        corner: &CornerDefinition,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let [n0, n1, n2] = &corner.normals;
+        let (x, y) = if geometry::sign(&n0.cross(n1).dot(n2), dec)? == Sign::Positive {
+            (n0, n1)
+        } else {
+            (n1, n0)
+        };
+        let radius = number(q(&corner.radius)?);
+        let centre = corner.centre();
+        let (cube, _) = geometry::compile(
+            &catallax_recipe::Operation::Block {
+                size: [radius.clone(), radius.clone(), radius.clone()],
+                pose: pose(centre, x, y, n2, dec)?,
+            },
+            step,
+            dec,
+        )?;
+        let (ball, mut faces) = geometry::compile(
+            &catallax_recipe::Operation::Sphere {
+                radius,
+                pose: catallax_recipe::Pose {
+                    rotation: [1, 0, 0, 0].map(|v| number(Rational::from_i64(v))),
+                    translation: catallax_recipe::Vector3(coordinates(centre)?.map(number)),
+                },
+            },
+            step,
+            dec,
+        )?;
+        for face in &mut faces {
+            face.origin = corner.origin.clone();
+        }
+        let cube = self.leaf(cube, Vec::new(), dec)?;
+        let ball = self.leaf(ball, faces, dec)?;
+        self.boolean(BooleanKind::Subtract, cube, ball, dec)
     }
 }
 

@@ -144,3 +144,60 @@ fn reflected_blend_keeps_its_named_boundary_and_material_sector() {
     }
     assert_eq!(named_boundary, 1);
 }
+
+#[test]
+fn trihedral_corner_removes_the_cube_beyond_its_ball_and_names_the_sector() {
+    let recipe = Recipe::parse(include_str!(
+        "../../catallax-features/tests/fixtures/trihedral-corner.json"
+    ))
+    .unwrap();
+    let mut dec = Decider::new(BudgetPolicy {
+        max_work: 1_000_000,
+        ..Default::default()
+    });
+    let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+    let mut workspace = Workspace::default();
+    // The ball is centred at 8,8,8 with radius 2. The 93/10 diagonal point
+    // lies in all three strip cylinders but outside the ball.
+    for (p, expected) in [
+        (["91/10", "91/10", "91/10"], Location::Inside),
+        (["93/10", "93/10", "93/10"], Location::Outside),
+        (["93/10", "93/10", "5"], Location::Inside),
+        (["8", "8", "6"], Location::Inside),
+        (["26/3", "28/3", "28/3"], Location::Boundary),
+        (["10", "10", "10"], Location::Outside),
+    ] {
+        assert_eq!(
+            plan.proven_checked(&point(p), &mut workspace, &mut dec)
+                .unwrap()
+                .location,
+            expected,
+            "at {p:?}"
+        );
+    }
+    let corners: Vec<_> = plan
+        .faces()
+        .iter()
+        .filter(|f| matches!(f.origin.role, Role::Corner { .. }))
+        .collect();
+    let [corner] = corners.as_slice() else {
+        panic!("one corner origin expected: {corners:?}");
+    };
+    let Role::Corner { vertex } = &corner.origin.role else {
+        unreachable!()
+    };
+    assert_eq!(vertex.faces().len(), 3);
+    let face = plan.select(&corner.origin).unwrap();
+    for (p, expected) in [
+        (["26/3", "28/3", "28/3"], FaceState::OnFace),
+        (["8", "8", "6"], FaceState::NotOnFace),
+    ] {
+        assert_eq!(
+            plan.face_query_checked(face, &point(p), &mut workspace, &mut dec)
+                .unwrap()
+                .state,
+            expected,
+            "at {p:?}"
+        );
+    }
+}

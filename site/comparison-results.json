@@ -46,7 +46,7 @@
     ],
     "cpu": "x86_64",
     "cpu_model": "Intel(R) Core(TM) i7-14700",
-    "machine_class": "quiet work PC",
+    "machine_class": "quiet benchmark machine",
     "system": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39"
   },
   "installation_hashes": {

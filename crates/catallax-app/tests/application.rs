@@ -35,6 +35,27 @@ fn caller_work_allowance_is_not_replaced_by_a_fresh_application_budget() {
 }
 
 #[test]
+fn unused_body_display_limits_do_not_refuse_the_requested_result() {
+    let mut steps = vec![
+        json!({"id":"unused_profile","op":"profile","plane":"XY","circle":{"center":[0,0],"radius":5}}),
+        json!({"id":"unused","op":"extrude","profile":"unused_profile","distance":2}),
+    ];
+    steps.extend(box_steps());
+    let options = MeshOptions {
+        max_vertices: 8,
+        ..Default::default()
+    };
+    let built =
+        build_soliddraft(&recipe(steps, "Body"), &options, &mut Decider::default()).unwrap();
+    let body = &built.body;
+    let unused = body.built.bodies[&built.steps["unused"]];
+    catallax_mesh::mesh_body(&body.built.model, unused, &options, &mut Decider::default())
+        .expect_err("unused cylinder exceeds the requested display allowance");
+    assert_eq!(body.display.value.positions.len(), 8);
+    assert_eq!(body.display.value.triangles.len(), 12);
+}
+
+#[test]
 fn bracket_mesh_pick_handles_keep_merged_origins_and_hole_names_after_edit() {
     let mut input: Value = serde_json::from_str(BRACKET).unwrap();
     for height in [60, 72] {

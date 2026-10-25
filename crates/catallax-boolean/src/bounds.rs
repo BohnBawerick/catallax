@@ -19,6 +19,36 @@ fn enclose(x: &Real, dec: &mut Decider) -> Result<Ball, Refusal> {
     }
 }
 
+fn support_box(
+    surface: &Surface,
+    bounds: &[Ball; 3],
+    dec: &mut Decider,
+) -> Result<Option<Ball>, Refusal> {
+    let mut local = surface.clone();
+    let origin = match &mut local {
+        Surface::Plane(s) => &mut s.origin,
+        Surface::Cylinder(s) => &mut s.origin,
+        Surface::Cone(s) => &mut s.apex,
+        Surface::Sphere(s) => &mut s.center,
+        Surface::Torus(s) => &mut s.center,
+        Surface::EllipticCylinder(s) => &mut s.origin,
+        _ => return Ok(None),
+    };
+    let offset = [
+        enclose(&origin.x, dec)?,
+        enclose(&origin.y, dec)?,
+        enclose(&origin.z, dec)?,
+    ];
+    *origin = Point3::origin();
+    // Translate before expanding the support polynomial. Evaluating its global
+    // expansion loses local gaps through interval cancellation at large offsets.
+    let bounds: [Ball; 3] = std::array::from_fn(|i| &bounds[i] - &offset[i]);
+    local
+        .implicit()
+        .map(|polynomial| polynomial.eval_ball(&bounds, dec))
+        .transpose()
+}
+
 fn sphere_box(center: &Point3, radius: &Real, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
     let radius = enclose(radius, dec)?;
     let mut result = Vec::with_capacity(3);
@@ -253,6 +283,48 @@ impl FaceBounds {
         }
     }
 
+    pub(crate) fn separated(
+        &mut self,
+        model: &mut Model,
+        a: FaceId,
+        b: FaceId,
+        dec: &mut Decider,
+    ) -> bool {
+        for face in [a, b] {
+            if let std::collections::btree_map::Entry::Vacant(entry) = self.boxes.entry(face) {
+                // Bounds are optional pruning proofs. Unsupported or unsettled
+                // trims retain the ordinary intersection path.
+                entry.insert(face_box(model, face, true, dec).ok().flatten());
+            }
+        }
+        let (Some(a), Some(b)) = (&self.boxes[&a], &self.boxes[&b]) else {
+            return false;
+        };
+        (0..3).any(|i| a[i].hi() < b[i].lo() || b[i].hi() < a[i].lo())
+    }
+
+    pub(crate) fn excludes(
+        &mut self,
+        model: &mut Model,
+        a: FaceId,
+        b: FaceId,
+        dec: &mut Decider,
+    ) -> bool {
+        if self.separated(model, a, b, dec) {
+            return true;
+        }
+        for (bounded, other) in [(a, b), (b, a)] {
+            if let Some(bounds) = &self.boxes[&bounded]
+                && let Ok(Some(value)) =
+                    support_box(model.geom().surface(model.face(other).surface), bounds, dec)
+                && !value.contains_zero()
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(crate) fn disjoint(
         &mut self,
         model: &mut Model,
@@ -296,6 +368,71 @@ mod tests {
     use super::*;
     use catallax_shapes::{Pose, Vector3};
     use catallax_topology::{Face, Sense, cylinder};
+
+    #[test]
+    fn support_exclusion_keeps_local_gaps_under_common_translation() {
+        let r = Rational::from_i64;
+        for offset in [0, 1_000_000] {
+            let mut model = Model::new();
+            let mut pose = Pose::identity();
+            pose.translation.x = Real::from_i64(offset);
+            let body = cylinder(&mut model, r(5), r(2), &pose).unwrap();
+            let cap = model.faces_of_body(body)[0];
+            let mut bounds = FaceBounds::new(false);
+            let mut dec = Decider::default();
+            for (distance, excluded) in [(15, true), (10, false), (9, false)] {
+                pose.translation.x = Real::from_i64(offset + distance);
+                let other = cylinder(&mut model, r(5), r(2), &pose).unwrap();
+                let wall = model
+                    .faces_of_body(other)
+                    .into_iter()
+                    .find(|face| {
+                        matches!(
+                            model.geom().surface(model.face(*face).surface),
+                            Surface::Cylinder(_)
+                        )
+                    })
+                    .unwrap();
+                let support = model.add_face(Face {
+                    surface: model.face(wall).surface,
+                    sense: Sense::Same,
+                    loops: vec![],
+                });
+                assert_eq!(
+                    bounds.excludes(&mut model, cap, support, &mut dec),
+                    excluded,
+                    "offset {offset}, distance {distance}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn coincident_caps_prune_only_strictly_separated_finite_trims() {
+        let r = Rational::from_i64;
+        let mut model = Model::new();
+        let first = cylinder(&mut model, r(2), r(3), &Pose::identity()).unwrap();
+        let cap = model.faces_of_body(first)[0];
+        let mut bounds = FaceBounds::new(false);
+        let mut dec = Decider::default();
+        for (x, separated) in [(5, true), (4, false), (3, false), (0, false)] {
+            let mut pose = Pose::identity();
+            pose.translation.x = Real::from_i64(x);
+            let other = cylinder(&mut model, r(2), r(3), &pose).unwrap();
+            let other_cap = model.faces_of_body(other)[0];
+            assert_eq!(
+                bounds.separated(&mut model, cap, other_cap, &mut dec),
+                separated,
+                "cap offset {x}"
+            );
+        }
+        let unbounded = model.add_face(Face {
+            surface: model.face(cap).surface,
+            sense: model.face(cap).sense,
+            loops: vec![],
+        });
+        assert!(!bounds.separated(&mut model, cap, unbounded, &mut dec));
+    }
 
     #[test]
     fn planar_bounds_exclude_only_supports_outside_the_finite_disk() {

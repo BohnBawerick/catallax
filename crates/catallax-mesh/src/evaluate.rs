@@ -95,6 +95,43 @@ impl Evaluator {
         result.iter().all(Interval::is_finite).then_some(result)
     }
 
+    /// Unit normal and radians per turn from the immutable definition coefficients.
+    pub(crate) fn normal(&self, surface: &Surface, uv: Uv) -> Option<([Interval; 3], Interval)> {
+        let [sin, cos] = self.trig(uv[0])?;
+        let radial: [Interval; 3] =
+            std::array::from_fn(|i| self.frame[0][i] * cos + self.frame[1][i] * sin);
+        let normal = match surface {
+            Surface::Plane(_) => self.frame[2],
+            Surface::Cylinder(_) => radial,
+            Surface::Cone(_) => {
+                let slope = self.dimensions[0];
+                let norm = (point(1.0) + slope.square()).sqrt()?;
+                if norm.lo() <= 0.0 {
+                    return None;
+                }
+                std::array::from_fn(|i| (radial[i] - self.frame[2][i] * slope) / norm)
+            }
+            Surface::Sphere(_) | Surface::Torus(_) => {
+                let [sv, cv] = self.trig(uv[1])?;
+                std::array::from_fn(|i| radial[i] * cv + self.frame[2][i] * sv)
+            }
+            Surface::EllipticCylinder(_) => {
+                let x = self.dimensions[1] * cos;
+                let y = self.dimensions[0] * sin;
+                let norm = (x.square() + y.square()).sqrt()?;
+                if norm.lo() <= 0.0 {
+                    return None;
+                }
+                std::array::from_fn(|i| (self.frame[0][i] * x + self.frame[1][i] * y) / norm)
+            }
+            _ => return None,
+        };
+        normal
+            .iter()
+            .all(Interval::is_finite)
+            .then_some((normal, self.tau))
+    }
+
     fn trig(&self, turns: f64) -> Option<[Interval; 2]> {
         // Reduction uses an exact quarter turn, not an approximate multiple of pi.
         // Every arithmetic operation, including the reduction, rounds outwards.

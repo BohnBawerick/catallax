@@ -200,6 +200,10 @@ impl Chart {
         self.surface.evaluate(&parameters[0], &parameters[1], dec)
     }
 
+    pub(crate) fn filtered_normal(&self, uv: Uv) -> Option<([Interval; 3], Interval)> {
+        self.evaluator.as_ref()?.normal(&self.surface, uv)
+    }
+
     pub(crate) fn sample(
         &self,
         uv: Uv,

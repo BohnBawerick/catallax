@@ -211,6 +211,15 @@ impl FaceBuilder<'_> {
         let widths = self.bounds.map(|b| b[1] - b[0]);
         let bounded_torus =
             matches!(self.chart.surface, Surface::Torus(_)) && !self.chart.periodic[1];
+        let angular_step = self
+            .options
+            .angular_deviation
+            .as_ref()
+            .map(|limit| {
+                catallax_numbers::Ball::pi_checked(chart::BITS, self.dec)
+                    .map(|pi| limit / &pi.hi().mul_pow2(1))
+            })
+            .transpose()?;
         let mut counts = [1usize; 2];
         for (i, count) in counts.iter_mut().enumerate() {
             if self.chart.periodic[i] {
@@ -220,14 +229,36 @@ impl FaceBuilder<'_> {
         loop {
             let du = widths[0] / counts[0] as f64;
             let dv = widths[1] / counts[1] as f64;
-            if chord_bound(&[[0.0, 0.0], [du, dv]], &self.hessian)
-                <= self.options.chord_tolerance.mul_pow2(-1)
-            {
+            let chord_reached = chord_bound(&[[0.0, 0.0], [du, dv]], &self.hessian)
+                <= self.options.chord_tolerance.mul_pow2(-1);
+            let (angular_reached, angular_dimension) = if let Some(step) = &angular_step {
+                let u = match self.chart.surface {
+                    Surface::Plane(_) => Rational::zero(),
+                    Surface::EllipticCylinder(_) => &chart::q(du) * &self.chart.normal_scale,
+                    _ => chart::q(du),
+                };
+                let v = if matches!(self.chart.surface, Surface::Sphere(_) | Surface::Torus(_)) {
+                    chart::q(dv)
+                } else {
+                    Rational::zero()
+                };
+                (&u + &v <= *step, usize::from(v > u))
+            } else {
+                (true, 0)
+            };
+            if chord_reached && angular_reached {
                 break;
             }
-            let u = &self.hessian[0] * &chart::q(du) * chart::q(du);
-            let v = &self.hessian[2] * &chart::q(dv) * chart::q(dv);
-            let dimension = if u >= v { 0 } else { 1 };
+            let dimension = if chord_reached {
+                // A thin surface can meet its chord bound before its normals
+                // are resolved. Seed both angular directions rather than
+                // repeatedly inserting centroids into a chord-only grid.
+                angular_dimension
+            } else {
+                let u = &self.hessian[0] * &chart::q(du) * chart::q(du);
+                let v = &self.hessian[2] * &chart::q(dv) * chart::q(dv);
+                usize::from(v > u)
+            };
             // A cone's mixed derivative also needs axial subdivisions.
             let dimension = if !bounded_torus
                 && !self.hessian[1].is_zero()
@@ -251,12 +282,37 @@ impl FaceBuilder<'_> {
                 (0, counts[i] as i64)
             }
         });
+        let align_rails = bounded_torus && angular_step.is_some();
+        let mut rail_u: Vec<_> = if align_rails {
+            self.cdt
+                .vertices()
+                .map(|vertex| vertex.data().uv.x)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        rail_u.sort_unstable_by(f64::total_cmp);
+        rail_u.dedup();
+        let u_start = self.bounds[0][0];
+        let parameters_u = (ranges[0].0..=ranges[0].1)
+            .take(if align_rails { 0 } else { usize::MAX })
+            .map(|i| u_start + widths[0] * i as f64 / counts[0] as f64)
+            .chain(rail_u);
         let mut queued = None;
-        for i in ranges[0].0..=ranges[0].1 {
+        for u in parameters_u {
             for j in ranges[1].0..=ranges[1].1 {
-                let uv = std::array::from_fn(|k| {
-                    self.bounds[k][0] + widths[k] * [i, j][k] as f64 / counts[k] as f64
-                });
+                // Align interior rows with shared rails. A staggered major-circle
+                // chord can dominate a thin tube's minor-direction tangent, and
+                // centroid refinement only makes that triangle's altitude smaller.
+                // Boundary samples already own the end rows, including their
+                // projection residuals; do not seed nearly coincident rail copies.
+                if align_rails && (j == 0 || j == counts[1] as i64) {
+                    continue;
+                }
+                let uv = [
+                    u,
+                    self.bounds[1][0] + widths[1] * j as f64 / counts[1] as f64,
+                ];
                 // Query the fixed boundary triangulation before bulk loading.
                 // A new point on a rail would split only this face's constraint
                 // and destroy the shared polyline on its adjacent face.

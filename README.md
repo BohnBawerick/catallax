@@ -222,7 +222,7 @@ display sample/vertex limits and from all geometric tolerances.
 
 ## Contributing
 
-Read the design rules first. A guessed topological decision, an unproven construction fact, an `unsafe` block or a silent fallback is a defect. Keep API and format changes explicit, update callers and document the migration. Bring mathematical evidence for geometry changes and report refusals honestly.
+Read the design rules first. A guessed topological decision, an unproven construction fact, an `unsafe` block or a silent fallback is a defect. Keep API and format changes explicit, update callers and document the migration in a new [interface-change fragment](docs/interface-changes/README.md). Bring mathematical evidence for geometry changes and report refusals honestly.
 
 Agent-written code is welcome. Say how it was produced and stay accountable for what it does. This repository's independent tester was built without seeing the kernel's code.
 

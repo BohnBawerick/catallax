@@ -1641,3 +1641,44 @@ Why: a balanced cone grid ignores the much finer longitude already present on it
 Migration: none. Requested tolerances, user resource limits, exact definitions, STEP output and shared-edge ownership are unchanged. Deterministic display connectivity and vertex counts can change. Rotated-cone regressions compare compact output counts with the measured d0cea699 baseline at identical controls, rather than replacing the temporary-chart budget with an arbitrary output limit.
 
 Prior art: [OCCT's cone range splitter](https://github.com/Open-Cascade-SAS/OCCT/blob/master/src/ModelingAlgorithms/TKMesh/BRepMesh/BRepMesh_ConeRangeSplitter.cxx) scales parameter steps using cone radius and excludes boundary rows. [Shewchuk's anisotropic interpolation discussion](https://people.eecs.berkeley.edu/~jrs/papers/elemj.pdf) separates interpolation accuracy from isotropic element shape. This change keeps Catallax's own Hessian and whole-facet proofs; no source code was copied.
+
+## 2026-10-25: exact planar circular-arc winding
+
+Pieces: 5, application
+
+Change: planar loops mixing lines and circular arcs use signed chord crossings
+plus the exact circular-segment winding correction. The correction uses only
+disk and chord-half-plane signs; it constructs no new intersection geometry.
+Minor and major arcs, reversed loops, holes and seamed full circles retain their
+closed-trim semantics. Selected-arc and finite-chord queries keep the existing
+boundary fallback, and unsupported carriers keep the existing probe/trace path.
+
+Why: rounded planar caps missed the straight-polygon and complete-ring paths.
+Repeated membership queries constructed auxiliary surface probes and spent the
+application's aggregate arithmetic allowance on those intersections.
+
+Migration: none. Public APIs, ordered section carriers and points, naming,
+work allowances, geometric tolerances and display options are unchanged.
+The public rounded base/flange recipe now completes the default full application
+build; its regression checks the named inner joint edge at exactly `(0, -35, 10)`.
+Timing and comparison tooling remains outside part construction.
+
+Prior art: [Franklin's crossing convention](https://wrfranklin.org/Research/Short_Notes/pnpoly.html)
+keeps ray endpoints half-open. The [circular segment](https://mathworld.wolfram.com/CircularSegment.html)
+bounded by an arc and chord gives the algebraic winding correction. No source
+code is copied and no angular or sampled approximation is introduced.
+
+## 2026-10-25: preflight complete planar trim queries
+
+Pieces: 5
+
+Change: enable native circular-arc winding only when every trim in the complete
+face or signature batch has a native line/circle carrier. Mixed or implicit trim
+sets retain the earlier polygon/full-ring proof order and generic fallback.
+
+Why: a partial arc attempt could spend substantial algebraic work before finding
+an unsupported later trim, then discard the result. The complete-query carrier
+check prevents that speculative work without adding numerical predicates.
+
+Migration: none. Public APIs, work allowances, tolerances, ordered geometry,
+names and STEP serialization are unchanged.

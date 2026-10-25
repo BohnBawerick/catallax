@@ -1,0 +1,220 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "SolidDraft",
+  "result": "op_97",
+  "steps": [
+    {
+      "id": "op_1",
+      "loops": [
+        [
+          {
+            "centre": [
+              "-52",
+              "-37"
+            ],
+            "id": "l0s7",
+            "kind": "arc",
+            "to": [
+              "-52",
+              "-45"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "52",
+              "-45"
+            ]
+          },
+          {
+            "centre": [
+              "52",
+              "-37"
+            ],
+            "id": "l0s1",
+            "kind": "arc",
+            "to": [
+              "60",
+              "-37"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "60",
+              "37"
+            ]
+          },
+          {
+            "centre": [
+              "52",
+              "37"
+            ],
+            "id": "l0s3",
+            "kind": "arc",
+            "to": [
+              "52",
+              "45"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "id": "l0s4",
+            "kind": "line",
+            "to": [
+              "-52",
+              "45"
+            ]
+          },
+          {
+            "centre": [
+              "-52",
+              "37"
+            ],
+            "id": "l0s5",
+            "kind": "arc",
+            "to": [
+              "-60",
+              "37"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "id": "l0s6",
+            "kind": "line",
+            "to": [
+              "-60",
+              "-37"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "distance": "10",
+      "id": "op_3",
+      "op": "extrude",
+      "profile": "op_1"
+    },
+    {
+      "id": "op_55",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "60",
+              "0"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "60",
+              "62"
+            ]
+          },
+          {
+            "centre": [
+              "52",
+              "62"
+            ],
+            "id": "l0s2",
+            "kind": "arc",
+            "to": [
+              "52",
+              "70"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "-52",
+              "70"
+            ]
+          },
+          {
+            "centre": [
+              "-52",
+              "62"
+            ],
+            "id": "l0s4",
+            "kind": "arc",
+            "to": [
+              "-60",
+              "62"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "id": "l0s5",
+            "kind": "line",
+            "to": [
+              "-60",
+              "0"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "-1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "-45",
+          "0"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "1",
+        "0"
+      ],
+      "distance": "10",
+      "id": "op_57",
+      "op": "extrude",
+      "profile": "op_55"
+    },
+    {
+      "id": "op_97",
+      "kind": "union",
+      "op": "boolean",
+      "target": "op_3",
+      "tool": "op_57"
+    }
+  ]
+}

@@ -56,6 +56,48 @@ fn unused_body_display_limits_do_not_refuse_the_requested_result() {
 }
 
 #[test]
+fn rounded_base_flange_default_build_keeps_the_inner_joint_pick_edge() {
+    let recipe =
+        catallax_recipe::Recipe::parse(include_str!("fixtures/rounded-base-flange.json")).unwrap();
+    let body =
+        catallax_app::build(&recipe, &MeshOptions::default(), &mut Decider::default()).unwrap();
+    let (&edge, _) = body
+        .names
+        .edges
+        .iter()
+        .find(|(_, name)| {
+            name.as_ref().is_some_and(|name| {
+                let ends = |step| {
+                    name.between()
+                        .iter()
+                        .any(|origin| origin.step.as_str() == step && origin.role == Role::End)
+                };
+                ends("op_3") && ends("op_57")
+            })
+        })
+        .expect("the base top and flange back must meet at a pickable inner edge");
+    let model = &body.built.model;
+    let edge = model.edge(edge);
+    let start = model
+        .geom()
+        .position(model.vertex(edge.start.unwrap()).point);
+    let end = model.geom().position(model.vertex(edge.end.unwrap()).point);
+    for (sum, expected) in [
+        (&start.x + &end.x, 0),
+        (&start.y + &end.y, -70),
+        (&start.z + &end.z, 20),
+    ] {
+        assert!(
+            matches!(
+                Decider::default().sign(&(sum - catallax_numbers::Real::from_i64(expected))),
+                catallax_numbers::Outcome::ProvenCoincident(_)
+            ),
+            "the inner joint midpoint must be exactly (0, -35, 10)"
+        );
+    }
+}
+
+#[test]
 fn bracket_mesh_pick_handles_keep_merged_origins_and_hole_names_after_edit() {
     let mut input: Value = serde_json::from_str(BRACKET).unwrap();
     for height in [60, 72] {

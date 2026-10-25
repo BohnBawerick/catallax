@@ -534,6 +534,55 @@ impl Plan {
                         if !profiles[profile].loops.is_empty()
                             && matches!(
                                 recipe.step(target).map(|s| &s.op),
+                                Some(Operation::Torus { .. })
+                            )
+                        {
+                            let cap =
+                                catallax_features::end_condition::toroidal::AnnularCap::compile(
+                                    recipe,
+                                    target,
+                                    profile,
+                                    direction.as_ref(),
+                                    limit,
+                                    dec,
+                                )?;
+                            let built = features::Feature::extrude(
+                                &profiles[profile],
+                                &step.id,
+                                Some(cap.distance()),
+                                direction.as_ref(),
+                                false,
+                                dec,
+                            )?;
+                            let column = plan.feature(built, dec)?;
+                            let surface = cap.surface().clone();
+                            let face = geometry::face(
+                                surface.clone(),
+                                Origin {
+                                    step: step.id.clone(),
+                                    role: catallax_recipe::Role::End,
+                                },
+                                dec,
+                            )?;
+                            let target = plan.leaf(
+                                geometry::Leaf::Cell(geometry::Cell::new(
+                                    vec![surface],
+                                    Some(cap.radius().clone()),
+                                )?),
+                                vec![face],
+                                dec,
+                            )?;
+                            let kind = if cap.branch()
+                                == catallax_features::end_condition::curved::Branch::Entry
+                            {
+                                BooleanKind::Subtract
+                            } else {
+                                BooleanKind::Intersect
+                            };
+                            plan.boolean(kind, column, target, dec)?
+                        } else if !profiles[profile].loops.is_empty()
+                            && matches!(
+                                recipe.step(target).map(|s| &s.op),
                                 Some(
                                     Operation::Sphere { .. }
                                         | Operation::Cylinder { .. }

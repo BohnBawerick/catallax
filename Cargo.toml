@@ -8,6 +8,7 @@ members = [
     "crates/catallax-boolean",
     "crates/catallax-measure",
     "crates/catallax-step",
+    "crates/catallax-iges",
     "crates/catallax-mesh",
     "crates/catallax-recipe",
     "crates/catallax-field",

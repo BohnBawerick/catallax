@@ -9,8 +9,8 @@ use std::fmt;
 
 use catallax_numbers::Rational;
 use catallax_recipe::{
-    Axis, BooleanKind, ElementId, Loop, Number, Operation, Point2, Point3, Pose, Recipe, Segment,
-    Step, StepId, Turn, Vector3,
+    Axis, BooleanKind, EdgeSelection, ElementId, FaceRef, Loop, Number, Operation, OriginPattern,
+    Point2, Point3, Pose, Recipe, Segment, Step, StepId, Turn, Vector3,
 };
 use serde::Deserialize;
 
@@ -623,42 +623,43 @@ pub fn convert(json: &str) -> Result<Converted> {
                 edges,
                 radius,
             } => {
-                lookup(&body)?;
+                let body = lookup(&body)?;
                 edges.check(&steps, &tag)?;
-                positive(radius, &tag)?;
-                return Err(not_yet(
-                    &tag,
-                    "features.unsupported-operation",
-                    "fillet and its selector resolution are not implemented",
-                ));
+                let radius = positive(radius, &tag)?;
+                Operation::Fillet {
+                    body,
+                    edges: edge_selection(&edges, &tag, "fillet")?,
+                    radius,
+                }
             }
             Command::Chamfer {
                 body,
                 edges,
                 distance,
             } => {
-                lookup(&body)?;
+                let body = lookup(&body)?;
                 edges.check(&steps, &tag)?;
-                positive(distance, &tag)?;
-                return Err(not_yet(
-                    &tag,
-                    "features.unsupported-operation",
-                    "chamfer and its selector resolution are not implemented",
-                ));
+                let distance = positive(distance, &tag)?;
+                Operation::Chamfer {
+                    body,
+                    edges: edge_selection(&edges, &tag, "chamfer")?,
+                    distance,
+                    other_distance: None,
+                }
             }
             Command::Shell {
                 body,
                 open_faces,
                 thickness,
             } => {
-                lookup(&body)?;
+                let body = lookup(&body)?;
                 open_faces.check(&steps, &tag)?;
-                positive(thickness, &tag)?;
-                return Err(not_yet(
-                    &tag,
-                    "features.unsupported-operation",
-                    "shell and its selector resolution are not implemented",
-                ));
+                let thickness = positive(thickness, &tag)?;
+                Operation::Shell {
+                    body,
+                    open: face_refs(&open_faces, &tag, &steps, &output)?,
+                    thickness,
+                }
             }
         };
         let base: String = tag
@@ -698,4 +699,61 @@ pub fn convert(json: &str) -> Result<Converted> {
     recipe.description = input.description;
     recipe.check().map_err(|e| invalid(None, e))?;
     Ok(Converted { recipe, steps })
+}
+
+/// Maps a legacy edge selector that has an exact structural counterpart. Selectors
+/// that depend on where edges lie in a built body stay unconverted.
+fn edge_selection(selector: &Selector, tag: &str, operation: &str) -> Result<EdgeSelection> {
+    match selector {
+        Selector::All => Ok(EdgeSelection::All),
+        _ => Err(not_yet(
+            tag,
+            "features.unsupported-operation",
+            &format!("{operation} edge selector has no exact structural mapping yet"),
+        )),
+    }
+}
+
+/// Maps a legacy open-face selector to face references: the faces a step generated
+/// become a reference to that step's origins. Every other form is not converted.
+fn face_refs(
+    selector: &Selector,
+    tag: &str,
+    steps: &BTreeMap<String, StepId>,
+    output: &[Step],
+) -> Result<Vec<FaceRef>> {
+    match selector {
+        Selector::CreatedBy(source) => {
+            let id = &steps[source];
+            let makes_faces = output
+                .iter()
+                .find(|step| step.id == *id)
+                .is_some_and(|step| {
+                    !matches!(
+                        step.op,
+                        Operation::Sketch { .. } | Operation::Boolean { .. }
+                    )
+                });
+            if !makes_faces {
+                return Err(not_yet(
+                    tag,
+                    "features.unsupported-operation",
+                    "shell open faces from a step that makes no faces of its own are not converted",
+                ));
+            }
+            Ok(vec![FaceRef {
+                face: OriginPattern {
+                    step: id.clone(),
+                    role: None,
+                },
+                touching: Vec::new(),
+                near: None,
+            }])
+        }
+        _ => Err(not_yet(
+            tag,
+            "features.unsupported-operation",
+            "shell open-face selector has no exact structural mapping yet",
+        )),
+    }
 }

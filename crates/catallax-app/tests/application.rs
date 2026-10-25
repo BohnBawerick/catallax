@@ -5,7 +5,7 @@ use catallax_app::{
 };
 use catallax_mesh::MeshOptions;
 use catallax_numbers::{Decider, Rational};
-use catallax_recipe::{Operation, Role};
+use catallax_recipe::{EdgeSelection, Operation, Role};
 use serde_json::{Value, json};
 
 const BRACKET: &str = include_str!("fixtures/bracket.json");
@@ -179,16 +179,25 @@ fn bracket_mesh_pick_handles_keep_merged_origins_and_hole_names_after_edit() {
 }
 
 #[test]
-fn unsupported_operations_are_typed_and_never_return_the_input_body() {
+fn unmapped_selectors_are_typed_and_never_return_the_input_body() {
     for (op, params) in [
-        ("fillet", json!({"edges":"all","radius":0.5})),
+        ("fillet", json!({"edges":{"nearest":[0,0,0]},"radius":0.5})),
         (
             "chamfer",
-            json!({"edges":{"nearest":[0,0,0]},"distance":0.5}),
+            json!({"edges":{"within":{"min":[0,0,0],"max":[1,1,1]}},"distance":0.5}),
+        ),
+        (
+            "chamfer",
+            json!({"edges":{"all_of":["all",{"created_by":"Body"}]},"distance":0.5}),
+        ),
+        ("shell", json!({"open_faces":"all","thickness":0.5})),
+        (
+            "shell",
+            json!({"open_faces":{"nearest":[0,0,0]},"thickness":0.5}),
         ),
         (
             "shell",
-            json!({"open_faces":{"created_by":"Body"},"thickness":0.5}),
+            json!({"open_faces":{"created_by":"Sketch"},"thickness":0.5}),
         ),
     ] {
         let mut steps = box_steps();
@@ -202,6 +211,160 @@ fn unsupported_operations_are_typed_and_never_return_the_input_body() {
             Err(Error::Conversion(ConversionError::NotYet { step, code:"features.unsupported-operation", .. })) if step=="finish")
         );
     }
+}
+
+#[test]
+fn structural_selectors_convert_to_named_operations_with_exact_parameters() {
+    let mut steps = box_steps();
+    steps.push(json!({"id":"Round","op":"fillet","body":"Body","edges":"all","radius":0.1}));
+    steps.push(json!({"id":"Bevel","op":"chamfer","body":"Round","edges":"all","distance":0.25}));
+    steps.push(json!({"id":"Hollow","op":"shell","body":"Bevel","open_faces":{"created_by":"Body"},"thickness":0.2}));
+    let converted = convert(&recipe(steps, "Hollow")).unwrap();
+    let ops: Vec<_> = converted.recipe.steps.iter().map(|s| &s.op).collect();
+    let Operation::Fillet { edges, radius, .. } = ops[2] else {
+        panic!()
+    };
+    assert_eq!(*edges, EdgeSelection::All);
+    assert_eq!(radius.value(), &Rational::parse("1/10").unwrap());
+    let Operation::Chamfer {
+        edges,
+        distance,
+        other_distance,
+        ..
+    } = ops[3]
+    else {
+        panic!()
+    };
+    assert_eq!(*edges, EdgeSelection::All);
+    assert_eq!(distance.value(), &Rational::parse("1/4").unwrap());
+    assert!(other_distance.is_none());
+    let Operation::Shell {
+        open, thickness, ..
+    } = ops[4]
+    else {
+        panic!()
+    };
+    assert_eq!(thickness.value(), &Rational::parse("1/5").unwrap());
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].face.step, converted.steps["Body"]);
+    assert!(open[0].face.role.is_none() && open[0].touching.is_empty() && open[0].near.is_none());
+}
+
+#[test]
+fn source_side_invalid_parameters_fail_before_selector_conversion() {
+    for step in [
+        json!({"id":"f","op":"fillet","body":"Body","edges":"all","radius":-1}),
+        json!({"id":"f","op":"fillet","body":"Nope","edges":"all","radius":1}),
+        json!({"id":"f","op":"chamfer","body":"Body","edges":{"created_by":"Nope"},"distance":1}),
+        json!({"id":"f","op":"shell","body":"Body","open_faces":{"nearest":[0,0,0]},"thickness":0}),
+    ] {
+        let mut steps = box_steps();
+        steps.push(step);
+        assert!(matches!(
+            convert(&recipe(steps, "f")),
+            Err(ConversionError::Invalid { .. })
+        ));
+    }
+}
+
+#[test]
+fn all_edge_fillet_and_chamfer_build_and_display() {
+    // A box's three-strip corners need a corner patch the chamfer does not build, so
+    // the chamfer runs on a cylinder's two circular edges.
+    for (op, key, profile) in [
+        (
+            "fillet",
+            "radius",
+            json!({"rectangle":{"center":[0,0],"width":4,"height":2}}),
+        ),
+        (
+            "chamfer",
+            "distance",
+            json!({"circle":{"center":[0,0],"radius":2}}),
+        ),
+    ] {
+        let mut steps = vec![
+            json!({"id":"Sketch","op":"profile","plane":"XY"}),
+            json!({"id":"Body","op":"extrude","profile":"Sketch","distance":3}),
+        ];
+        steps[0]
+            .as_object_mut()
+            .unwrap()
+            .extend(profile.as_object().unwrap().clone());
+        steps.push(json!({"id":"Finish","op":op,"body":"Body","edges":"all",key:0.25}));
+        let result = build_soliddraft(
+            &recipe(steps, "Finish"),
+            &MeshOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let finish = &result.steps["Finish"];
+        let mesh = &result.body.display.value;
+        assert!(mesh.triangles.len() > 12, "{op}");
+        assert!(
+            result
+                .body
+                .names
+                .faces
+                .values()
+                .any(|os| os.iter().any(|o| o.step == *finish)),
+            "{op} leaves no origin"
+        );
+    }
+}
+
+#[test]
+fn named_open_face_shell_builds_and_displays() {
+    let steps = vec![
+        json!({"id":"Sketch","op":"profile","plane":"XY","rectangle":{"center":[0,0],"width":8,"height":6}}),
+        json!({"id":"Body","op":"extrude","profile":"Sketch","distance":4}),
+        json!({"id":"LidSketch","op":"profile","plane":{"base":"XY","origin":[0,0,4]},"rectangle":{"center":[0,0],"width":8,"height":6}}),
+        json!({"id":"Lid","op":"extrude","profile":"LidSketch","distance":1}),
+        json!({"id":"Joined","op":"boolean","kind":"union","target":"Body","tool":"Lid"}),
+        json!({"id":"Hollow","op":"shell","body":"Joined","open_faces":{"created_by":"Lid"},"thickness":0.5}),
+    ];
+    let result = build_soliddraft(
+        &recipe(steps, "Hollow"),
+        &MeshOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let mesh = &result.body.display.value;
+    let hollow = &result.steps["Hollow"];
+    assert!(
+        result
+            .body
+            .names
+            .faces
+            .values()
+            .any(|os| os.iter().any(|o| o.step == *hollow))
+    );
+    assert!(
+        !result.body.names.faces.values().any(|os| os
+            .iter()
+            .any(|o| o.step.as_str() == "lid" && o.role == Role::End)),
+        "the lid's end face is open"
+    );
+    // Every face the lid contributed to is open, merged side faces included, so only
+    // the 0.5 mm floor of the 8 by 6 body remains.
+    for axis in 0..3 {
+        let (lo, hi) = [(-4.0, 4.0), (-3.0, 3.0), (0.0, 0.5)][axis];
+        let min = mesh
+            .positions
+            .iter()
+            .map(|p| p[axis])
+            .fold(f64::MAX, f64::min);
+        let max = mesh
+            .positions
+            .iter()
+            .map(|p| p[axis])
+            .fold(f64::MIN, f64::max);
+        assert!(
+            (min - lo).abs() < 1e-9 && (max - hi).abs() < 1e-9,
+            "axis {axis}"
+        );
+    }
+    assert!(mesh.triangles.len() >= 12);
 }
 
 #[test]

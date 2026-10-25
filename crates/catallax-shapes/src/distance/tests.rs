@@ -278,3 +278,109 @@ fn trim_classification_receives_the_full_cell_not_only_its_bound_intersection() 
     let answer = point_distance(&cap, &p(0, 0, -3), &options(64), &mut trim, &mut dec).unwrap();
     contains(&answer, &Real::from_i64(19).sqrt(), &mut dec);
 }
+mod finite {
+    use super::*;
+    use crate::Circle;
+    fn rim(z: i64, radius_sq: i64, normal: Vector3) -> Circle {
+        Circle {
+            center: p(0, 0, z),
+            normal,
+            radius_sq: Real::from_i64(radius_sq),
+            ref_dir: v(1, 0, 0),
+        }
+    }
+    fn band() -> Surface {
+        Surface::Cylinder(Cylinder {
+            origin: p(0, 0, 0),
+            axis: v(0, 0, 2),
+            radius_sq: Real::from_i64(4),
+            ref_dir: v(1, 0, 0),
+        })
+    }
+    fn query(finite: &Finite, at: Point3, dec: &mut Decider) -> (Bounds, Branch) {
+        finite
+            .point_distance(&at, &options(1), dec)
+            .unwrap()
+            .unwrap()
+    }
+    #[test]
+    fn band_branches_and_boundary_ties() {
+        let mut dec = Decider::default();
+        let (a, b) = (rim(0, 4, v(0, 0, 1)), rim(3, 4, v(0, 0, -1)));
+        let finite = Finite::recognize(&band(), &[&b, &a], &mut dec)
+            .unwrap()
+            .unwrap();
+        for (at, want, branch) in [
+            (p(5, 0, 1), 3, Branch::Interior),
+            (p(2, 0, 3), 0, Branch::Interior),
+            (p(2, 0, 7), 4, Branch::Rim),
+            (p(5, 0, 7), 5, Branch::Rim),
+            (p(0, 0, 1), 2, Branch::Axis),
+            (p(0, 0, 3), 2, Branch::Axis),
+        ] {
+            let (bounds, got) = query(&finite, at, &mut dec);
+            assert_eq!(got, branch);
+            assert!(bounds.lower <= q(want) && bounds.upper.unwrap() >= q(want));
+            assert!(bounds.converged && bounds.cells == 0);
+        }
+    }
+    #[test]
+    fn cap_branches_and_rim_tie() {
+        let mut dec = Decider::default();
+        let plane = Surface::Plane(Plane {
+            origin: p(0, 0, 3),
+            normal: v(0, 0, 1),
+            ref_dir: v(1, 0, 0),
+        });
+        let r = rim(3, 4, v(0, 0, 1));
+        let finite = Finite::recognize(&plane, &[&r], &mut dec).unwrap().unwrap();
+        for (at, want, branch) in [
+            (p(1, 0, 7), 4, Branch::Interior),
+            (p(2, 0, 4), 1, Branch::Interior),
+            (p(5, 0, 7), 5, Branch::Rim),
+        ] {
+            let (bounds, got) = query(&finite, at, &mut dec);
+            assert_eq!(got, branch);
+            assert!(bounds.lower <= q(want) && bounds.upper.unwrap() >= q(want));
+        }
+    }
+    #[test]
+    fn other_trims_are_not_recognized() {
+        let mut dec = Decider::default();
+        let good = rim(0, 4, v(0, 0, 1));
+        let other = rim(3, 4, v(0, 0, 1));
+        let narrow = rim(3, 1, v(0, 0, 1));
+        let tilted = rim(3, 4, v(0, 1, 1));
+        let same = rim(0, 4, v(0, 0, 1));
+        let off_axis = Circle {
+            center: p(1, 0, 3),
+            ..rim(3, 4, v(0, 0, 1))
+        };
+        for rims in [
+            vec![&good],
+            vec![&good, &narrow],
+            vec![&good, &tilted],
+            vec![&good, &same],
+            vec![&good, &off_axis],
+            vec![&good, &other, &other],
+        ] {
+            assert!(
+                Finite::recognize(&band(), &rims, &mut dec)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        let plane = Surface::Plane(Plane {
+            origin: p(0, 0, 1),
+            normal: v(0, 0, 1),
+            ref_dir: v(1, 0, 0),
+        });
+        for rims in [vec![&good], vec![&tilted], vec![&good, &other]] {
+            assert!(
+                Finite::recognize(&plane, &rims, &mut dec)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+}

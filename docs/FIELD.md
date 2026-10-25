@@ -310,6 +310,22 @@ such registry-only handles report `field.face-id` from the distance API.
 Canonical public names retain the plan's generated-domain role for trim
 predicates; renaming a revolved cone cap does not turn it into an angular cap.
 
+Complete circular cylinder bands and perpendicular circular caps skip that search
+for point queries. `PreparedFace` recognizes, exactly, a cylinder face whose two
+loops are single closed rim circles that are coaxial, perpendicular to the axis
+and of the cylinder radius at distinct heights, and a plane face with one closed
+rim circle perpendicular to the plane and centred on it. The distance is then
+`sqrt((rho - r)^2 + dh^2)` for a band, with `dh` measured to the nearer rim
+height, and `sqrt(h^2 + max(rho - R, 0)^2)` for a cap. It measures the finite
+closed face, not its infinite support, and ties on a rim or the axis take the
+same value. The lower bound encloses the exact distance, the upper bound is the
+distance to an exact witness on the closed face, and no cells are visited
+(`Bounds::cells` is 0). `shapes::distance::Finite::point_distance` also returns
+the nearest `Branch` (interior, rim or axis). Any other trim, a hole, a seam
+edge or an arc keeps the complete search, as does a request whose width the
+direct enclosure cannot meet. `cargo bench -p catallax-measure --bench distance`
+prints cells and latency against the general search.
+
 `Options::width` requests an enclosure width, not geometric acceptance.
 `max_cells` limits refinement. Exhaustion returns the attained bounds with
 `converged=false`; `upper=None` means no admitted witness was established.

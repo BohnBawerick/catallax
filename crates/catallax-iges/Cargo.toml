@@ -1,0 +1,21 @@
+[package]
+name = "catallax-iges"
+description = "Strict, deterministic exact-surface IGES B-rep export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+catallax-numbers.workspace = true
+catallax-shapes.workspace = true
+catallax-topology.workspace = true
+
+[dev-dependencies]
+catallax-features.workspace = true
+catallax-recipe.workspace = true
+catallax-step.workspace = true
+
+[lints]
+workspace = true

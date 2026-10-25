@@ -173,6 +173,8 @@ Extrusion projects a query along its defining vector back into the sketch plane,
 
 Named holes compile each cylindrical or conical band into a convex analytic cell with exact axial constraints. Planar face/next extrusions intersect their original infinite profile sweep with the union of the active first-hit columns. Construction cells outside the profile cannot contribute result geometry. One `end` origin can name several limiting supports and discontinuity curtains; a named-face query searches that origin's candidate domains rather than treating one support handle as its complete meaning.
 
+Curved face/next caps compile the same certified construction sets without reading B-rep topology. Rectangular stock-quadric caps use a uniform quadratic entry or exit branch. Coaxial annular torus caps use a finite profile sweep and the exact torus: subtraction for entry, intersection for exit. The radial and axial proof keeps every artificial construction cap out of the result. The torus contributes only the extrusion's `end` origin, not target origins. Unsupported torus sections and spline pairs remain named coverage gaps.
+
 Cells use the minimum unsigned distance to their supporting analytic surfaces, signed by exact membership. Their residual is conservative, not true distance to the trimmed cell. Unbounded halfspaces have no finite sample sphere. One-sided through-all uses such a halfspace at the sketch plane, without a finite artificial end.
 
 Exact body copies map cell constraints and finite sample-sphere centres with `Isometry`, including plane reflection. Radii and metric bounds are unchanged by these orthogonal maps. Copied face records retain their wrapped recipe origins.

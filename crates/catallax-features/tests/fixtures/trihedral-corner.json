@@ -1,0 +1,15 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Block corner with three equal fillets",
+  "description": "mm. Block 10x10x10 at the origin. The three edges meeting at 10,10,10 are filleted with radius 2.",
+  "steps": [
+    {"id":"block","op":"block","size":["10","10","10"],
+     "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+    {"id":"round","op":"fillet","body":"block","radius":"2","edges":[
+      {"between":[{"step":"block","role":"end"},{"step":"block","role":{"side":{"segment":"x_max"}}}]},
+      {"between":[{"step":"block","role":"end"},{"step":"block","role":{"side":{"segment":"y_max"}}}]},
+      {"between":[{"step":"block","role":{"side":{"segment":"x_max"}}},{"step":"block","role":{"side":{"segment":"y_max"}}}]}
+    ]}
+  ],
+  "result": "round"
+}

@@ -12,6 +12,7 @@ use crate::{
     edge_blend::{self, Replacement},
     extrude::reverse,
     fillet::{FilletDefinition, separated},
+    fillet_corner::CornerDefinition,
     profile::sign,
 };
 
@@ -300,6 +301,36 @@ fn guard(
     Ok(())
 }
 
+fn corner_guard(
+    model: &mut Model,
+    body: BodyId,
+    corner: &CornerDefinition,
+    incident: &BTreeSet<FaceId>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for face in model.faces_of_body(body) {
+        if incident.contains(&face) {
+            continue;
+        }
+        let other = model.geom().surface(model.face(face).surface).clone();
+        if separated(&corner.surface, &other, dec)? {
+            continue;
+        }
+        let a = model.geom_mut().add_surface(corner.surface.clone());
+        let b = model.geom_mut().add_surface(other);
+        if !matches!(
+            catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value,
+            SurfacePair::Disjoint
+        ) {
+            return Err(Refusal::new(
+                "fillet.unsupported-overflow",
+                "a non-incident face meets the corner sphere; its trimmed continuation must be resolved before publishing",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn build(
     model: &mut Model,
     body: BodyId,
@@ -382,6 +413,7 @@ pub(crate) fn build(
     }
     let mut edit = Replacement::default();
     let mut end_changes = BTreeMap::new();
+    let mut corners = Vec::new();
     for old in model.vertices_of_body(body) {
         let active: Vec<_> = runs
             .iter()
@@ -491,7 +523,58 @@ pub(crate) fn build(
                     }
                 }
             }
-            _ => return Err(bad("three selected strips at a vertex need a corner patch")),
+            [i, j, k] => {
+                let indices = [*i, *j, *k];
+                let name = model
+                    .vertex_name(body, old)
+                    .ok_or_else(|| bad("a corner vertex needs an unambiguous origin name"))?;
+                let corner = CornerDefinition::new(
+                    Origin {
+                        step: step.clone(),
+                        role: Role::Corner { vertex: name },
+                    },
+                    indices.map(|index| &runs[index].definition),
+                    dec,
+                )?;
+                let mut faces = [None; 3];
+                for (strip, index) in indices.iter().enumerate() {
+                    for (support, face) in corner.strips[strip].into_iter().zip(runs[*index].faces)
+                    {
+                        if faces[support].replace(face).is_some_and(|f| f != face) {
+                            return Err(bad("one corner support carries two input faces"));
+                        }
+                    }
+                }
+                if uses.keys().any(|edge| {
+                    let e = model.edge(*edge);
+                    (e.start == Some(old) || e.end == Some(old))
+                        && indices.iter().all(|index| runs[*index].edge != *edge)
+                }) {
+                    return Err(bad("an unselected edge meets the three-strip corner"));
+                }
+                let feet = corner.feet.clone().map(|p| vertex(model, p));
+                for (strip, index) in indices.iter().enumerate() {
+                    let [a, b] = corner.strips[strip];
+                    let run = &mut runs[*index];
+                    run.ends.insert((old, run.faces[0]), feet[a]);
+                    run.ends.insert((old, run.faces[1]), feet[b]);
+                    let curve = model.geom_mut().add_curve(corner.boundary(strip));
+                    let cap = model.add_edge(Edge {
+                        curve,
+                        sense: Sense::Same,
+                        start: Some(feet[a]),
+                        end: Some(feet[b]),
+                    });
+                    runs[*index].caps.insert(old, cap);
+                }
+                corner_guard(model, body, &corner, &incident, dec)?;
+                corners.push((old, indices, corner));
+            }
+            _ => {
+                return Err(bad(
+                    "four or more selected strips at a vertex need a general corner patch",
+                ));
+            }
         }
     }
     for (old, incident) in &uses {
@@ -510,6 +593,7 @@ pub(crate) fn build(
             edit.edges.insert((*face, *old), edge);
         }
     }
+    let mut cap_uses = BTreeMap::new();
     for run in &runs {
         let input = model.edge(run.edge).clone();
         let mut rails = Vec::with_capacity(2);
@@ -552,6 +636,7 @@ pub(crate) fn build(
             } else {
                 Sense::Reversed
             };
+            cap_uses.insert(cap, sense);
             path.push((cap, sense));
             path.push(rails[1]);
             let end = edge_blend::ends(model, rails[1].0, rails[1].1).1.unwrap();
@@ -566,6 +651,7 @@ pub(crate) fn build(
             } else {
                 Sense::Reversed
             };
+            cap_uses.insert(cap, sense);
             path.push((cap, sense));
             vec![path]
         };
@@ -582,6 +668,35 @@ pub(crate) fn build(
             vec![run.definition.origin.clone()],
         );
         edit.faces.push((run.faces[0], face));
+    }
+    for (old, indices, corner) in &corners {
+        // Each quarter circle is used once by its strip and once, reversed,
+        // by the sphere sector.
+        let mut caps: Vec<_> = indices
+            .iter()
+            .map(|index| {
+                let cap = runs[*index].caps[old];
+                (cap, reverse(cap_uses[&cap]))
+            })
+            .collect();
+        let mut path = vec![caps.remove(0)];
+        while !caps.is_empty() {
+            let end = edge_blend::ends(model, path.last().unwrap().0, path.last().unwrap().1).1;
+            let next = caps
+                .iter()
+                .position(|(cap, sense)| edge_blend::ends(model, *cap, *sense).0 == end)
+                .ok_or_else(|| bad("corner boundary arcs do not close"))?;
+            path.push(caps.remove(next));
+        }
+        let face = crate::extrude::face(
+            model,
+            corner.surface.clone(),
+            Sense::Same,
+            vec![path],
+            None,
+            vec![corner.origin.clone()],
+        );
+        edit.faces.push((runs[indices[0]].faces[0], face));
     }
     let result = edge_blend::apply(model, body, &edit)?;
     Ok((result, runs.into_iter().map(|run| run.definition).collect()))

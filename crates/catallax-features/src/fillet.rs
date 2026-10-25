@@ -268,6 +268,7 @@ fn bounds(
             }
             (coordinate(&c.origin), c.radius())
         }
+        Surface::Sphere(s) => (coordinate(&s.center), s.radius.clone()),
         Surface::Torus(t) => {
             let axial = component(&t.axis);
             let radial = (Real::one() - axial.square() / t.axis.norm_squared()).sqrt();

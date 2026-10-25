@@ -31,8 +31,10 @@ previous algebraic revolution refusal codes.
 The native field display charts have a further coverage restriction: they store
 rational chart points and witnesses. A general algebraic cap plane cannot use
 that representation. Enabling exact field construction and angular queries does
-not by itself establish native field display coverage. That consumer needs an
-algebraic chart/witness extension before this slice can be declared complete.
+not by itself establish native field display coverage. The scoped
+construction/query change keeps that display refusal explicit. An algebraic
+chart/witness extension remains separate work before the original complete
+two-evaluator display exit can be claimed.
 
 Rational-only comparison candidate APIs also need an explicit coverage refusal
 for algebraic cap samples; rounding a rotated point is not an exact sample.

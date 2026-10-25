@@ -1,0 +1,48 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "signed oblique extrusion",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "outer",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "2"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "body",
+      "op": "extrude",
+      "profile": "profile",
+      "distance": "5",
+      "direction": [
+        "1",
+        "0",
+        "1"
+      ]
+    }
+  ],
+  "result": "body"
+}

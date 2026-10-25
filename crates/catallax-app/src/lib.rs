@@ -8,6 +8,7 @@
 //! names for persistent references; do not persist numeric handles.
 
 mod certified;
+pub mod curves;
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
 pub mod soliddraft;

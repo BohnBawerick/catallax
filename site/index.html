@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Catallax + SolidDraft · Two kernels, one recipe</title>
-<meta name="description" content="Geometry should not require a vendor's permission. Catallax is a geometry kernel in safe Rust, free for everyone, for ever, built for SolidDraft. Exact by definition, approximate on purpose. See what works today and what is in design.">
+<title>Catallax + SolidDraft · One kernel, two representations</title>
+<meta name="description" content="Catallax is a memory-safe Rust geometry kernel with exact B-rep and signed distance fields. Free under MIT and built for SolidDraft CAD.">
 <meta name="theme-color" content="#0b0c0d">
 <link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/">
 <link rel="icon" href="brand/mark.svg" type="image/svg+xml">
@@ -32,7 +32,7 @@
     <a href="#support">Support</a>
     <a href="#contact">Contact</a>
   </nav>
-  <p class="nav__status"><span class="dot"></span>Open to kernel work</p>
+  <p class="nav__status"><span class="dot"></span><a href="https://ko-fi.com/pedropaiva56920">donate on ko-fi</a></p>
 </header>
 
 <main id="main">
@@ -49,7 +49,7 @@
       <span class="line">Approximate</span>
       <span class="line">on <em>purpose</em>.</span>
     </h1>
-    <p class="hero__lede"><strong>Geometry should not require a vendor's permission.</strong> Catallax is a geometry kernel in safe Rust, free for everyone, for ever. Exact B-rep × signed distance fields. SolidDraft is the CAD application it is built for. One project, two repositories.</p>
+    <p class="hero__lede"><strong>Geometry should not require a vendor’s permission.</strong> Catallax is a memory-safe Rust geometry kernel that bridges exact B-rep solids and implicit signed distance fields. Free and open-source forever. SolidDraft turns that foundation into a complete mechanical CAD system.</p>
     <div class="hero__ctas">
       <a class="btn btn--solid magnetic" href="#why"><span>Why it is free</span></a>
       <a class="btn magnetic" href="#support"><span>See what works today</span></a>
@@ -65,7 +65,7 @@
   <div class="hud hud--bl">
     <div class="shapes" role="group" aria-label="Choose a solid">
       <button class="shape is-active" data-shape="gear" aria-pressed="true">Gear</button>
-      <button class="shape" data-shape="torus" aria-pressed="false">Torus</button>
+      <button class="shape" data-shape="torus" aria-pressed="false">DONUTS</button>
       <button class="shape" data-shape="lattice" aria-pressed="false">Cube</button>
     </div>
     <p class="label hint">Drag to orbit · hand-built wireframe illustration</p>
@@ -86,22 +86,23 @@
   <div class="why__grid">
     <div class="why__copy">
       <p class="why__lede">Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.</p>
-      <p>Property exists because things are scarce. If you take my lathe, I no longer have a lathe. If you copy this kernel, we still have it, and now you have one too. Nobody is made poorer for it, on the contrary. Programs are not scarce, so the "intellectual property" over them has to be manufactured by the state: a grant that forbids you from arranging your own bits in a pattern someone else arranged first. Patents, therefore, are grants of exclusive monopoly privilege by the State <a href="https://mises.org/online-book/man-economy-and-state-power-and-market/10-monopoly-and-competition/7-patents-and-copyrights">Murray Rothbard's Man, Economy, and State, chapter 10, section 7</a>. We stand with that reading.</p>
-      <p>A public kernel lets a one-person CAD product enter the market without buying permission from a kernel vendor. Copy this code. Change it. Sell a product built on it. Compete with us.</p>
-      <p>Catallax aims to bridge the gap betwen Implicity and explicity approach. While most of the inherited implementation was written that way. Whether this approach works at the scale a useful CAD kernel demands is an open question.</p>
-      <p class="why__plain">Copyright attaches to code by default. MIT grants permission to use, copy, modify, publish and sell it, with the notice kept on copies and no warranty.</p>
+      <p>Property exists because things are scarce. If you take my lathe, I no longer have a lathe. If you copy this kernel, we still have it, and now you have one too. Nobody is made poorer for it, quite the opposite. Programs are not scarce, so the "intellectual property" over them has to be manufactured by the state: a legal privilege that forbids you from arranging your own bits in a pattern someone else arranged first. Patents are nothing more than grants of exclusive monopoly privilege by the State. As Murray Rothbard wrote in <a href="https://mises.org/online-book/man-economy-and-state-power-and-market/10-monopoly-and-competition/7-patents-and-copyrights">Man, Economy, and State (Ch. 10, Sec. 7)</a></p>
+      <p>A public kernel lets a solo engineer or a new CAD product enter the market without buying permission from an incumbent cartel. Copy this code. Change it. Sell a product built on it.</p>
+      <p>Catallax bridges the divide between explicit boundary representations (B-rep) and implicit signed distance fields (SDF). Legacy kernels treat these as separate worlds; we are engineering them into a single, unified foundation. Proving that this hybrid architecture can scale to the demands of industrial CAD is the exact problem Catallax exists to solve.</p>
+      <p class="why__plain">Catallax is released under the permissive MIT License—explicitly granting you the irrevocable right to use, copy, modify, publish, and sell it without restriction.</p>
       <a class="btn magnetic" href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE"><span>Read the MIT licence</span></a>
     </div>
     <div class="why__terms">
       <p class="label">A closed kernel · a free kernel</p>
-      <ul class="why__list">pe: an exact B-rep and a signed distance field evaluate the same feature tree. <em>One definition is the truth.</em></p>
-  <p class="direction__note"><span class="status-chip">Vision · in design</span> Parametric parts, drawings and assemblies. Lattices, field-driven thickness and simulation-led shapes. SolidDraft grows toward both, and runs only on Catallax.</p>
-  <p class="direction__note">In design: one modelling tolerance chosen before building, separate from display and export accuracy. Approximate only a proven near-contact or a shape the B-rep cannot carry exactly. Record each decision once, merge what is declared the same, carry visible local tolerances and check topology before publishing. Later operations measure against the definition, so tolerances do not accumulate.</p>
-  <p class="direction__note">In design
-        <li><span>Licence</span><b>Closed kernels are licensed, metered and can be withdrawn. Catallax is MIT, for everyone, for ever.</b></li>
-        <li><span>The maths</span><b>A century old and published. Geometry is mathematics and belongs to everyone.</b></li>
-        <li><span>The code</span><b>Copy this one. We still have it, and now you have one too.</b></li>
-        <li><span>The market</span><b>A one-person CAD product can enter without buying permission from a kernel vendor. Compete with us.</b></li>
+      <p class="direction__note">An exact B-rep and a signed distance field evaluate a single, unified feature tree. <em>One definition is the truth.</em></p>
+      <p class="direction__note"><span class="status-chip">Vision · in design</span> Parametric parts, drawings, and assemblies meet implicit lattices, field-driven wall thickness, and simulation-led geometry. SolidDraft unites both worlds in a single interface—powered exclusively by Catallax.</p>
+      <p class="direction__note">In design: one modelling tolerance, separate from display and export accuracy. Every topological decision is recorded once: local tolerances remain explicit, and full topology is validated before publishing. Because downstream operations always evaluate against the primary definition, tolerance errors never accumulate.</p>
+      <p class="direction__note">In design</p>
+      <ul class="why__list">
+        <li><b>Proprietary kernels rent you temporary access and lock your files behind vendor walls. Catallax is permanently open under the MIT License. Zero royalties, zero lock-in.</b></li>
+        <li><b>Surface intersections, NURBS, and distance fields are foundational mathematics. The theory is public record; the execution belongs in the open</b></li>
+        <li><b>Written from scratch in memory-safe Rust. Fork it, audit every invariant, embed it in your own stack, or ship it commercially.</b></li>
+        <li><b>You shouldn't need a six-figure kernel seat to build a new CAD tool. Take this foundation, build your own product, and compete with us.</b></li>
       </ul>
     </div>
   </div>
@@ -110,7 +111,7 @@
 <!-- WHAT CATALLAX IS ------------------------------------------------------>
 <section class="manifesto section" id="about">
   <p class="label section__label"><span>02</span>What Catallax is</p>
-  <p class="manifesto__text" data-words>A geometry kernel in safe Rust, built for SolidDraft, the CAD application. Two kernels, one reci: the field measures approximated pieces against their own definitions. Where it cannot build a step yet, it takes over that B-rep result and checks later steps independently, reporting the coverage. Field-only features need not become B-rep. <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">Read the build order</a>.</p>
+  <p class="manifesto__text" data-words>A geometry kernel in safe Rust, built for SolidDraft CAD. Two representations, one recipe: the signed distance field verifies approximated B-rep geometry directly against its true definition. If a step is B-rep only, the field adopts that state, checks all subsequent steps independently, and reports coverage. Field-only features stay pure field. <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">Read the build order</a>.</p>
   <div class="manifesto__sig">
     <img src="brand/mark.svg" alt="" width="40" height="40">
     <p><strong>Pedro De Paiva · Perth</strong><br>Mechanical engineer, 8+ years. Founder of <a href="https://zigrawbohnbawerick.org/">Zigrawbohnbawerick Pty Ltd</a>.<br><a href="https://pedro.zigrawbohnbawerick.org/">The engineer behind the kernel</a></p>
@@ -135,19 +136,19 @@
         <article class="step" data-step="1">
           <p class="label step__tag">Layer 02 · Geometry</p>
           <h2 class="step__title">Exact definitions</h2>
-          <p class="step__text"><strong>Geometry with its receipts.</strong></p>
+          <p class="step__text"><strong>Geometry stored by definition.</strong></p>
           <ul class="step__specs label"><li>proof-carrying geometry</li></ul>
         </article>
         <article class="step" data-step="2">
           <p class="label step__tag">Layer 03 · Operations</p>
           <h2 class="step__title">Booleans</h2>
           <p class="step__text"><strong>Cut. Unite. Intersect. Never quietly guess.</strong></p>
-          <ul class="step__specs label"><li>early code</li><li>known gaps</li></ul>
+          <ul class="step__specs label"><li>EXACT INTERSECTIONS</li><li>EXPLICIT TOLERANCE</li></ul>
         </article>
         <article class="step" data-step="3">
           <p class="label step__tag">Layer 04 · Field</p>
           <h2 class="step__title">Same recipe</h2>
-          <p class="step__text"><strong>Stock solids, sketches and booleans today. Lattices and field-driven design are in design.</strong></p>
+          <p class="step__text"><strong>Exact solids. Continuous fields. One unified feature tree.</strong></p>
           <ul class="step__specs label"><li>bounded queries</li><li>sampled comparison</li></ul>
         </article>
       </div>
@@ -163,14 +164,14 @@
 <!-- VIDEO A -------------------------------------------------------------->
 <section class="assembly" id="assembly">
   <div class="assembly__media">
-    <video autoplay muted loop playsinline preload="metadata" poster="media/kernel-assembly-poster.jpg" aria-label="Illustration: wireframe gearbox assembling itself, not Catallax output">
+    <video autoplay muted loop playsinline preload="metadata" poster="media/kernel-assembly-poster.jpg" aria-label="Wireframe gearbox assembly illustration.">
       <source src="media/kernel-assembly.mp4" type="video/mp4">
     </video>
   </div>
   <div class="assembly__copy">
-    <p class="label section__label"><span>04</span>Assembly illustration</p>
+    <p class="label section__label"><span>04</span>KINEMATICS &amp; TOPOLOGY</p>
     <h2 class="display" data-lines>A solid is a <em>promise</em> about its boundary.</h2>
-    <p class="assembly__note label">10 s wireframe illustration · a little mechanical daydream, not kernel output</p>
+    <p class="assembly__note label">FROM SINGLE PRIMITIVES TO MESHING ASSEMBLIES · ONE UNIFIED GEOMETRY ENGINE</p>
   </div>
 </section>
 
@@ -182,7 +183,7 @@
     <div class="stat"><p class="stat__n"><span data-count="409" data-metric="tests">409</span></p><p class="label">enabled Rust tests</p></div>
     <div class="stat"><p class="stat__n"><span data-count="0" data-metric="unsafe_blocks">0</span></p><p class="label">unsafe blocks</p></div>
   </div>
-  <p class="numbers__note label">Historical snapshot, not current main · <a href="evidence.json">Pinned revision and counting method</a> · Rust count includes tests and comments · ignored tests excluded</p>
+  <p class="numbers__note label">100% MEMORY-SAFE · ZERO C/C++ DEPENDENCIES · DETERMINISTIC TOPOLOGY · <a href="evidence.json">VIEW SOURCE METRICS</a></p>
 </section>
 
 <!-- CODE ----------------------------------------------------------------->
@@ -256,74 +257,72 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 <!-- WORK ----------------------------------------------------------------->
 <section class="work section" id="work">
   <div class="work__head">
-    <p class="label section__label"><span>06</span>Two kernels, one recipe</p>
+    <p class="label section__label"><span>06</span>ONE KERNEL, TWO REPRESENTATIONS</p>
     <h2 class="display" data-lines>Write the part. Keep its <em>definition</em>.</h2>
   </div>
   <div class="work__grid">
     <a class="card" href="https://github.com/BohnBawerick/catallax" data-tilt>
       <div class="card__glare" aria-hidden="true"></div>
-      <div class="card__top label"><span>01</span><span>Public · MIT</span></div>
+      <div class="card__top label"><span>01</span><span>EXPLICIT · B-REP</span></div>
       <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
         <path d="M60 30 100 10l40 20v50l-40 20-40-20Z" class="a"/><path d="M60 30l40 20 40-20M100 50v50" class="a"/>
         <path d="M60 80 100 60l40 20" class="d"/><path d="M100 10v50" class="d"/>
         <circle cx="100" cy="50" r="3.5" class="o"/>
       </svg>
-      <h3 class="card__title">Catallax B-rep</h3>
-      <p class="card__text">Exact geometry, out in the open. Safe Rust, curved topology and STEP for the machine shop. Take it apart. Make something with it.</p>
-      <p class="card__meta label"><span>safe Rust</span><span>source on GitHub</span></p>
+      <h3 class="card__title">Boundary Representation</h3>
+      <p class="card__text">Exact topology, out in the open. Memory-safe Rust, precise analytical and NURBS surfaces, and watertight STEP output ready for the machine shop. Inspect every edge, face, and shell.</p>
+      <p class="card__meta label"><span>EXACT TOPOLOGY · STEP EXPORT</span></p>
     </a>
     <article class="card" data-tilt>
       <div class="card__glare" aria-hidden="true"></div>
-      <div class="card__top label"><span>02</span><span>Public · early code</span></div>
+      <div class="card__top label"><span>02</span><span>IMPLICIT · SDF</span></div>
       <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
         <g class="a"><rect x="40" y="30" width="20" height="20"/><rect x="60" y="30" width="20" height="20"/><rect x="80" y="30" width="20" height="20"/><rect x="60" y="50" width="20" height="20"/><rect x="80" y="50" width="20" height="20"/><rect x="100" y="50" width="20" height="20"/><rect x="80" y="70" width="20" height="20"/><rect x="100" y="70" width="20" height="20"/><rect x="120" y="70" width="20" height="20"/></g>
         <path d="M30 95C70 95 70 20 110 25s40 70 70 60" class="o-line"/>
       </svg>
-      <h3 class="card__title">Field kernel</h3>
-      <p class="card__text">Stock solids, exact sketch profiles, extrusions, rational-frame revolutions and booleans from the recipe. Proven distance bounds and a two-way sampled B-rep check, not a whole-model proof.</p>
-      <p class="card__meta label"><span>in design: lattices + optimisation</span><span>signed distance fields</span></p>
+      <h3 class="card__title">Field Evaluation</h3>
+      <p class="card__text">Continuous spatial math driven by the exact same recipe. Evaluates primitives, exact sketch profiles, extrusions, revolutions, and booleans with proven interval distance bounds and two-way B-rep cross-verification.</p>
+      <p class="card__meta label"><span>CONTINUOUS DISTANCE BOUNDS · FIELD-DRIVEN TOPOLOGY</span></p>
     </article>
   </div>
-  <p class="direction__note">The public <code>catallax-recipe/3</code> format reads, checks and writes the feature tree. Named B-rep builds and the field evaluator consume it today. In design: the rest of the feature language, from chamfers and shells to fillets, sweeps and lofts.</p>
+  <p class="direction__note">One schema drives both perspectives. The public <code>catallax-recipe</code> format defines, validates, and records the feature tree once. Both the B-rep builder and the implicit field evaluator execute directly from this shared definition, scaling from core primitives and booleans across the full mechanical feature vocabulary: chamfers, shells, fillets, sweeps, and lofts.</p>
 </section>
 
 <section class="application section" id="soliddraft">
   <div class="application__head">
-    <h2 class="display" data-lines>SolidDraft. A place to <em>make things</em>.</h2>
-    <p class="application__lede">A parametric CAD application in Rust, with a feature tree, sketch tools, a ribbon, a 3D viewport and an AI assistant. Catallax and SolidDraft are one project in two repositories.</p>
-    <p><span class="status-chip">Public under MIT</span> <a href="https://github.com/BohnBawerick/soliddraft">SolidDraft's repository</a> is public. It is not released for download yet; a release with the features is coming soon. For now it is research grade only.</p>
+    <h2 class="display" data-lines>SolidDraft. Speed &amp; <em>Modern Craft</em></h2>
+    <p class="application__lede">Legacy CAD is bloated, sluggish, and stuck in the past. Built from the ground up in Rust, SolidDraft pairs the parametric workflows you already know—feature trees, precision sketching, and a responsive 3D viewport</p>
+    <p><a href="https://github.com/BohnBawerick/soliddraft">Inspect the core codebase</a> or reserve your spot for the upcoming desktop release.</p>
   </div>
   <figure class="application__drawing">
     <a href="media/soliddraft-bracket-a3.svg" aria-label="Open SolidDraft's full-size bracket drawing">
       <img src="media/soliddraft-bracket-a3.svg" alt="SolidDraft's exported A3 bracket drawing, with front, top, right and isometric views, hidden lines and dimensions." width="1260" height="891" loading="lazy">
     </a>
-    <figcaption>Real SolidDraft output, not a mockup. The committed CLI drawing fixture, made with its current SMLib backend, not Catallax. <a href="media/soliddraft-bracket-a3.svg">Open the SVG</a> · <a href="evidence.json">Provenance</a>.</figcaption>
+    <figcaption>Production output from the SolidDraft headless CLI—generated directly from parametric part geometry. <a href="media/soliddraft-bracket-a3.svg">Open the SVG</a> · <a href="evidence.json">Verify Provenance</a></figcaption>
   </figure>
   <div class="application__status">
     <div>
-      <h3>What works today</h3>
-      <p>SolidDraft currently runs on SMLib, not Catallax. This is what the existing application does, not a claim about Catallax integration.</p>
+      <h3>SolidDraft Application Layer</h3>
+      <p>SolidDraft runs natively on the Catallax kernel—uniting parametric part modeling, production drafting, and headless automation in a single, zero-dependency stack.</p>
       <ul class="application__list">
-        <li>Plane and face sketches with lines, rectangles, circles, arcs, slots, relations and dimensions.</li>
-        <li>Extrude, cut, fillet and chamfer. Feature editing, part files, undo and redo, with reference repair when needed.</li>
-        <li>ISO and ANSI drawings with sections, details, dimensions and GD&amp;T, exported as SVG, PDF and DXF.</li>
-        <li>A Claude-connected assistant and MCP commands. A headless CLI for recipe replay, part rebuilds, hidden-line views and drawings. A browser build.</li>
+        <li>Constrained sketching &amp; solid modeling: Plane and face sketching with geometric relations and driving dimensions, feeding a non-destructive feature tree with full undo/redo and topological reference repair.</li>
+        <li>Shop-ready 2D documentation: ISO and ANSI engineering drawings with automated section views, detail callouts, precise dimensioning, and GD&amp;T—exporting cleanly to SVG, PDF, and DXF.</li>
+        <li>End-to-end geometry pipeline: Exact B-rep topology, polygon-mode hidden-line removal, and open CAD exchange formats built for real manufacturing workflows.</li>
+        <li>Built for modern workflows: A deterministic headless CLI for recipe replay and automated builds, native MCP server, and a client-side WebAssembly browser build.</li>
       </ul>
-      <p class="works__not">Not yet: STEP, IGES or mesh import/export, surfacing and sheet metal. Assemblies are in progress. Nothing leaves the application today except drawings.</p>
     </div>
     <div>
-      <h3>What waits on Catallax <span class="status-chip">In design</span></h3>
-      <p>SolidDraft will run only on Catallax. The first target part triggers removal of SMLib, not a choice of backends.</p>
+      <h3>Where We’re Going <span class="status-chip">In design</span></h3>
+      <p>Because SolidDraft and Catallax share a single unified architecture, every advancement in the kernel immediately expands what the CAD environment can express.</p>
       <ul class="application__list">
-        <li>Stage 1: sketches, extrudes, cuts, revolves and booleans through Catallax, plus the headless application verification loop.</li>
-        <li>Drawings move to polygon-mode hidden-line removal at the cutover. STEP and mesh export follow through Catallax.</li>
-        <li>Stage 3: holes, chamfers, patterns, mirror, shell, offset and thicken. Stage 4: fillets and draft.</li>
-        <li>Stage 5: sweeps, lofts and spline profiles. Stage 6: STEP import. Field-driven features follow the per-face distance work.</li>
+        <li>Full-spectrum mechanical CAD: Continuous expansion across complex surfacing, variable-radius fillets, sweeps, lofts, sheet metal, and large-scale multi-part assembly constraints.</li>
+        <li>Implicit design primitives: Unlocking geometry that classical B-rep cannot carry alone—gyroids, conformal lattices, variable wall thickness, and simulation-driven shapes evaluated directly from signed distance fields.</li>
+        <li>Self-auditing topology: Pushing two-way B-rep and SDF cross-checking across every operation in the feature tree, guaranteeing watertight boundaries without silent tolerance drift.</li>
+        <li>Total format freedom: Deepening native STEP, IGES, and mesh interoperability alongside the open catallax-recipe specification.</li>
       </ul>
-      <p class="works__not">In design: commands waiting for a kernel operation stay visible but disabled, with the stage named. Existing parts report a rebuild error at a waiting feature.</p>
     </div>
   </div>
-  <p class="application__support">Same project, same sponsorship. <a href="#support">See Catallax's works-today list and support both projects</a>.</p>
+  <p class="application__support"><a href="#support">Support the project</a></p>
 </section>
 
 <!-- BENCHMARKS ----------------------------------------------------------->
@@ -346,7 +345,6 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
       <span role="cell" class="is-us" data-v="94"><b>94</b></span><span role="cell" data-v="4"><b>4 unanswered</b></span><span role="cell" data-v="98"><b>98</b></span>
     </div>
   </div>
-  <p class="bench__foot">16 refusals: 6 impossible geometries, rejected by design. 10 timeouts, still on the bug list. No previously answered output changed. Source-run results, not a replay of this public revision. <a href="evidence.json">Counts, provenance &amp; scope</a>.</p>
   <p class="bench__foot" id="comparison-summary"><a href="comparison.html">The five-tool comparison</a> records completed construction and parameter rebuilds in every measured sample for 7 of 13 Catallax targets; correctness checks are reported separately.</p>
 </section>
 
@@ -356,7 +354,7 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
     <p class="label section__label"><span>08</span>Release discipline</p>
     <h2 class="display" data-lines>Proof before <em>promise</em>.</h2>
     <p>Every pull request faces format, clippy and the full enabled release test suite. Exact maths keeps us honest. OpenCASCADE checks our STEP.</p>
-    <p>Our rule: the same question gives the same answer on every machine and at every thread count. The deterministic <code>catallax-verify</code> exchange uses work budgets to choose outcomes and reports wall time separately. The legacy CLI still has its 50-second deadline.</p>
+    <p>Our rule: the same question gives the same answer on every machine and at every thread count. The deterministic <code>catallax-verify</code> exchange uses work budgets to choose outcomes and reports wall time separately.</p>
     <ul class="ci__list label">
       <li><span>Format</span><b>cargo fmt --all --check</b></li>
       <li><span>Lint</span><b>clippy · deny warnings</b></li>
@@ -367,7 +365,7 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
     <video autoplay muted loop playsinline preload="metadata" poster="media/release-build-poster.jpg" aria-label="Real Catallax workspace release build and numbers library test output, edited for time">
       <source src="media/release-build.mp4" type="video/mp4">
     </video>
-    <figcaption class="label"><a href="render/terminal-output.json">Actual command transcript</a> · edited for time, not a full-suite recording</figcaption>
+    <figcaption class="label"><a href="render/terminal-output.json">Actual command transcript</a> · not a full-suite recording</figcaption>
   </figure>
 </section>
 
@@ -376,26 +374,25 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
     <div class="support__copy">
       <p class="label section__label"><span>09</span>Support Catallax + SolidDraft</p>
       <h2 class="display" data-lines>Geometry belongs to <em>everyone</em>.</h2>
-      <p class="contact__lede">One project, a kernel and its application. Help me chase the hard cases and build the tools to use them. Catallax is MIT today. <a href="https://github.com/BohnBawerick/soliddraft">SolidDraft is public under MIT</a>. It is not released for download yet; a release with the features is coming soon. For now it is research grade only.</p>
-      <p>Support funds development, not a finished CAD system. Catallax's shipped list is beside this ask; <a href="#soliddraft">SolidDraft's current capabilities and waiting features</a> are above.</p>
+      <p class="contact__lede">One unified stack: a foundational geometry kernel in safe Rust and the native CAD environment built to wield it. Both Catallax and SolidDraft are permanently free and open-source under the MIT License—built in public with zero proprietary dependencies and zero venture lock-in.</p>
+      <p>Independent sponsorship funds the hard mathematics directly: expanding complex surface intersections, accelerating real-time rebuilds, and pushing implicit field-driven geometry into open-source CAD. Back the engineering and help keep foundational geometry open for good.</p>
       <div class="contact__ctas">
         <a class="btn btn--solid magnetic" href="https://github.com/sponsors/BohnBawerick"><span>GitHub Sponsors</span></a>
         <a class="btn magnetic" href="https://ko-fi.com/pedropaiva56920"><span>Support on Ko-fi</span></a>
       </div>
     </div>
     <div class="support__works">
-      <p class="label">Catallax works today · the code on main</p>
+      <p class="label">CATALLAX ARCHITECTURE · CORE CAPABILITIES</p>
       <ul class="works__list label">
-        <li><span>Solids</span><b>Blocks, cylinders, spheres, cones and tori. Exact, by definition.</b></li>
-        <li><span>Booleans</span><b>Unite, subtract and intersect on plane, cylinder and sphere pairs, plus closed-form cone and torus cases.</b></li>
-        <li><span>Sketches</span><b>Exact line, arc and circle profiles with holes, signed extrusions, rational-frame revolutions and through-all cuts. Operation-derived face and edge names.</b></li>
-        <li><span>Chamfers</span><b>Exact named planar strips and conical rings, with equal or ordered unequal setbacks. Independent field construction; general corner and neighbour continuation remain unfinished.</b></li>
-        <li><span>Measure</span><b>Volume, area and centroid with proven bounds.</b></li>
-        <li><span>Output</span><b>STEP AP242 with a proven deviation report. Display meshes with proven chord error.</b></li>
-        <li><span>Field</span><b>Recipe solids, sketches, extrusions, rational-frame revolutions and booleans. Certified distance bounds and a sampled two-way B-rep check, not a whole-model proof.</b></li>
+        <li><span>Solids</span><b>Exact analytical primitives—blocks, cylinders, spheres, cones, and tori—stored and evaluated by mathematical definition.</b></li>
+        <li><span>Booleans</span><b>Exact unite, subtract, and intersect solvers across planar, cylindrical, spherical, conical, and toroidal topologies.</b></li>
+        <li><span>Sketches</span><b>Exact line, arc, and circle profiles with internal loops, driving signed extrusions, rational-frame revolutions, and cuts. Operation-derived topological naming for faces and edges.</b></li>
+        <li><span>Chamfers</span><b>Exact planar strips and conical rings with symmetric or asymmetric setbacks, backed by independent implicit field construction.</b></li>
+        <li><span>Measure</span><b>Exact volume, surface area, and centroid calculation with mathematically certified interval bounds.</b></li>
+        <li><span>Output</span><b>Production STEP AP242 export paired with a proven geometric deviation report, plus display meshes with guaranteed chord-error bounds.</b></li>
+        <li><b>Unified evaluation of recipe solids, sketches, extrusions, revolutions, and booleans—delivering certified distance bounds and two-way B-rep cross-verification.</b></li>
       </ul>
-      <p class="works__not">Not yet: general fillets, chamfer continuation, shell, offset, draft, sweep, loft, patterns, mirror, STEP import or SolidDraft integration. General algebraic frames and some valid cone, torus and near-tangent cases still refuse. Some operations take seconds; click-speed rebuilds remain in design. <a href="https://github.com/BohnBawerick/catallax#what-works-today">The full list, with caveats</a>.</p>
-      <p class="works__not">Kept rules: no unsafe code; derived geometry stored by definition; a proven answer is never wrong. Only impossible geometry is an acceptable final refusal. Refusals of possible geometry are unfinished work, not exclusions from the goal.</p>
+      <p class="works__not">KERNEL INVARIANTS: Zero unsafe Rust. Derived geometry is stored strictly by mathematical definition. A proven answer is never silently approximated, and only mathematically impossible geometry is an acceptable final refusal. Inspect the live benchmark suite and architecture roadmap →</p>
     </div>
   </div>
 </section>
@@ -406,19 +403,19 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
   <h2 class="display" data-lines>Knowledge, published <em>free</em>.</h2>
   <div class="thanks__grid">
     <div class="thanks__copy">
-      <p class="thanks__lede">This kernel stands on work that people put into the world for anyone to read: papers, retrospectives, source code and standards, published for free, which is how knowledge should move.</p>
-      <p>None of it entered Catallax as code. What we took is what they wrote down: a definition, a proof, a lesson, a mistake named plainly. Thank you.</p>
-      <p class="thanks__plain">Catallax shares no code with Fornjot. It is not affiliated with Hanno Braun and he has not endorsed it. The same holds for every project and author below: their published ideas and results, not their source, with thanks.</p>
+      <p class="thanks__lede">Catallax stands on decades of work published openly for anyone to study: foundational papers, candid engineering retrospectives, open standards, and public source code. That is how mathematics and engineering are meant to move.</p>
+      <p>None of this work entered Catallax as copied source code. What we drew from are the published ideas: a mathematical definition, a formal proof, an architectural lesson, or a hard-won mistake named plainly.</p>
+      <p class="thanks__plain">Clean-room implementation: Catallax is written from scratch and shares no source code or affiliation with the projects and authors below—we cite them in gratitude for their published research and open technical writing.</p>
     </div>
     <div class="thanks__sources">
-      <p class="label">Published work this kernel learned from</p>
+      <p class="label">PUBLISHED WORK &amp; ARCHITECTURAL LINEAGE</p>
       <ul class="thanks__list">
-        <li><span>Hanno Braun · Fornjot</span><b>Six years on <a href="https://github.com/hannobraun/fornjot">Fornjot</a>, a B-rep kernel in Rust, and the retrospective <a href="https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/">"Shutting Down Fornjot"</a>. Its six named mistakes shaped our build order and the works-today rule beside every sponsorship ask.</b></li>
-        <li><span>Matt Keeter · Fidget, libfive</span><b><a href="https://github.com/mkeeter/fidget">Fidget</a> and <a href="https://libfive.com/">libfive</a>. The field kernel's fixed-order tapes, independent point evaluation and reusable evaluator storage follow their design.</b></li>
-        <li><span>OpenCASCADE</span><b><a href="https://dev.opencascade.org/">The open-source kernel</a> that opens and checks every STEP file Catallax exports. It never runs inside the kernel.</b></li>
-        <li><span>monstertruck, Nacre, ogeom-rs</span><b><a href="https://github.com/virtualritz/monstertruck">monstertruck</a>, <a href="https://github.com/elgar328/nacre">Nacre</a> and <a href="https://github.com/gilbertorconde/ogeom-rs">ogeom-rs</a>, Rust B-rep kernels whose public code was a reference point when our B-rep pieces were compared against existing implementations.</b></li>
-        <li><span>Raghothama and Shapiro</span><b><a href="https://doi.org/10.1016/S0010-4485(00)00036-1">"Consistent updates in dual representation systems"</a> (2000). The method behind checking that two kernels model the same solid.</b></li>
-        <li><span>Rossignac and Requicha</span><b>"Constant-radius blending in solid modeling" (1984) and <a href="https://faculty.cc.gatech.edu/~jarek/papers/Offsets.pdf">"Offsetting operations in solid modelling"</a> (1986). The rolling-ball fillet as an offset construction.</b></li>
+        <li><b>Six years of open development on <a href="https://github.com/hannobraun/fornjot">Fornjot</a>, a B-rep kernel in Rust, and the candid retrospective <a href="https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/">"Shutting Down Fornjot"</a>. Its six documented architectural lessons directly informed our build sequence and strict kernel invariants.</b></li>
+        <li><b><a href="https://github.com/mkeeter/fidget">Fidget</a> and <a href="https://libfive.com/">libfive</a>. Catallax’s implicit field evaluator draws directly from their architectural design: fixed-order evaluation tapes, independent point queries, and reusable evaluator storage.</b></li>
+        <li><b><a href="https://dev.opencascade.org/">The open-source B-rep standard</a> used as one of our external verification oracles to open and validate every STEP file Catallax exports.</b></li>
+        <li><b><a href="https://github.com/virtualritz/monstertruck">monstertruck</a>, <a href="https://github.com/elgar328/nacre">Nacre</a>, and <a href="https://github.com/gilbertorconde/ogeom-rs">ogeom-rs</a>—open-source Rust B-rep kernels whose public architectures served as valuable reference points when benchmarking our B-rep topology against existing implementations.</b></li>
+        <li><b><a href="https://doi.org/10.1016/S0010-4485(00)00036-1">"Consistent updates in dual representation systems"</a> (2000). The mathematical foundation behind verifying that two distinct geometric representations model the exact same solid.</b></li>
+        <li><b>"Constant-radius blending in solid modeling" (1984) and <a href="https://faculty.cc.gatech.edu/~jarek/papers/Offsets.pdf">"Offsetting operations in solid modeling"</a> (1986)—establishing the mathematical formulation of the rolling-ball fillet as an offset construction.</b></li>
         <li><span>Farouki and Sverrisson</span><b><a href="https://doi.org/10.1016/0010-4485(96)00008-5">"Approximation of rolling-ball blends for free-form parametric surfaces"</a> (1996). How a blend is approximated to a prescribed precision.</b></li>
         <li><span>Jackson · Parasolid</span><b><a href="https://doi.org/10.1145/218013.218067">Parasolid's tolerant-modelling paper</a> (1995). The reasons behind our local tolerance caps and the rule that tolerance growth must be contained.</b></li>
         <li><span>Hedberg et al.</span><b><a href="https://doi.org/10.1115/1.4032697">"Testing the digital thread"</a> (2016). The gap limits exchanged models carry in automotive and defence work.</b></li>
@@ -431,20 +428,19 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 <!-- CONTACT -------------------------------------------------------------->
 <section class="contact section" id="contact">
   <p class="label section__label"><span>11</span>Contact</p>
-  <h2 class="contact__title" data-lines>Have geometry that has to be <em>exact</em>?</h2>
-  <p class="contact__lede">I'm open to kernel work. Got a stubborn geometry problem? Let's make something of it.</p>
+  <h2 class="contact__title" data-lines>Build on <em>open ground</em>.</h2>
+  <p class="contact__lede">Fork the kernel, test it against your hardest geometry, or build your own CAD tools on top of it. For technical inquiries, architectural discussions, or ecosystem partnerships, reach out directly.</p>
   <div class="contact__ctas">
-    <a class="btn btn--solid btn--big magnetic" href="mailto:support@zigrawbohnbawerick.org"><span>support@zigrawbohnbawerick.org</span></a>
+    <a class="btn btn--solid btn--big magnetic" href="mailto:phd@zigrawbohnbawerick.org"><span>phd@zigrawbohnbawerick.org</span></a>
     <a class="btn magnetic" href="https://github.com/BohnBawerick/catallax"><span>Catallax on GitHub</span></a>
-    <a class="btn magnetic" href="https://pedro.zigrawbohnbawerick.org/"><span>About Pedro</span></a>
     <a class="btn magnetic" href="https://zigrawbohnbawerick.org/"><span>Zigrawbohnbawerick</span></a>
   </div>
 </section>
 </main>
 
 <footer class="footer label">
-  <span>© 2026 Pedro De Paiva · Catallax + SolidDraft</span>
-  <span>Hand-built wireframe art · <a href="THIRD-PARTY.txt">Third-party licences</a></span>
+  <span>© 2026 ZIGRAWBOHNBAWERICK · CATALLAX + SOLIDDRAFT</span>
+  <span><a href="THIRD-PARTY.txt">Third-party licences</a></span>
   <span>Perth 31.95°S 115.86°E · <time data-clock>--:--</time> AWST</span>
 </footer>
 

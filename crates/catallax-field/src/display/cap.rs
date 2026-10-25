@@ -36,7 +36,14 @@ pub(super) fn charts(
         return Ok(None);
     };
     if sources.iter().any(|f| match &f.surface {
-        Surface::Plane(p) => !parallel(&p.normal, &cylinder.axis),
+        Surface::Plane(p) => {
+            !parallel(&p.normal, &cylinder.axis)
+                && !p
+                    .normal
+                    .dot(&cylinder.axis)
+                    .rational_ref()
+                    .is_some_and(|q| q.is_zero())
+        }
         Surface::Cylinder(c) => !coaxial(c, cylinder),
         _ => true,
     }) {

@@ -669,8 +669,32 @@ impl Plan {
             if sweep.is_some() {
                 angular = None;
             }
-            let (feature, faces) = region(definition, interval, sweep, step, dec)?;
+            let (feature, mut faces) = region(definition, interval, sweep, step, dec)?;
+            let first_face = self.faces.len();
+            let mut cap_roles = Vec::new();
+            for (offset, face) in faces.iter_mut().enumerate() {
+                if !matches!(face.origin.role, Role::Start | Role::End) {
+                    continue;
+                }
+                // Concave bevels add a bounded triangular piece to each end
+                // face. Keep that piece under its input plane's stable name;
+                // the native region role still controls its exact domain.
+                let mut origin = None;
+                for &index in source_faces {
+                    if crate::same_support(face, &self.faces[index], dec)? {
+                        let candidate = &self.faces[index].origin;
+                        if origin.as_ref().is_some_and(|old| old != candidate) {
+                            return Err(bad("a concave end plane has ambiguous source names"));
+                        }
+                        origin = Some(candidate.clone());
+                    }
+                }
+                cap_roles.push((first_face + offset, face.origin.role.clone()));
+                face.origin =
+                    origin.ok_or_else(|| bad("a concave end cap lost its input plane"))?;
+            }
             let mut node = self.leaf(geometry::Leaf::Feature(feature), faces, dec)?;
+            self.definition_roles.extend(cap_roles);
             if let Some((planes, major)) = angular {
                 let mut gates = Vec::new();
                 for plane in planes {
@@ -765,6 +789,7 @@ fn region(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<(Feature, Vec<crate::Face>), Refusal> {
+    let keep_ends = !definition.convex && matches!(&interval, Domain::Arc(_));
     let (origin, x, y, z, e, a, b, sweep) = match (&definition.edge, &definition.contacts) {
         (Curve::Line(edge), [Curve::Line(a), Curve::Line(b)]) => {
             let z = unit(&edge.dir);
@@ -860,11 +885,14 @@ fn region(
         )?
     }
     .ok_or_else(|| bad("empty chamfer section"))?;
-    faces.retain(
-        |f| matches!(&f.origin.role, Role::Side { segment, .. } if segment.as_str() == "bevel"),
-    );
+    faces.retain(|f| {
+        matches!(&f.origin.role, Role::Side { segment, .. } if segment.as_str() == "bevel")
+            || (keep_ends && matches!(f.origin.role, Role::Start | Role::End))
+    });
     for face in &mut faces {
-        face.origin = definition.origin.clone();
+        if matches!(&face.origin.role, Role::Side { .. }) {
+            face.origin = definition.origin.clone();
+        }
     }
     feature.chamfer = Some(Box::new(definition));
     Ok((feature, faces))

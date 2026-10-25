@@ -219,8 +219,150 @@ fn equal_unequal_and_edited_strips_resolve_the_same_named_geometry() {
 }
 
 #[test]
-fn default_native_display_keeps_all_trimmed_faces_at_verifier_allowance() {
+fn concave_end_domains_include_material_added_by_the_bevel() {
+    for mirror in [false, true] {
+        let plan =
+            Plan::compile_checked(&recipe("concave", "2", "1", mirror), &mut decider()).unwrap();
+        for (role, sample) in [
+            (Role::Start, ["17/2", "0", "17/4"]),
+            (Role::End, ["0", "17/2", "17/4"]),
+        ] {
+            let origin = &plan
+                .faces()
+                .iter()
+                .find(|face| {
+                    if mirror && !matches!(face.origin.role, Role::Copy { .. }) {
+                        return false;
+                    }
+                    let mut candidate = &face.origin;
+                    while let Role::Copy { of, .. } = &candidate.role {
+                        candidate = of;
+                    }
+                    candidate.step.as_str() == "base" && candidate.role == role
+                })
+                .unwrap()
+                .origin;
+            let selected = plan.select(origin).unwrap();
+            let query = plan
+                .face_query_checked(
+                    selected,
+                    &point(sample, mirror),
+                    &mut Workspace::default(),
+                    &mut decider(),
+                )
+                .unwrap();
+            assert_eq!(query.state, FaceState::OnFace, "{mirror}: {origin:?}");
+            let Direction::Unique(normal) = query.direction else {
+                panic!("{query:?}")
+            };
+            if role == Role::Start {
+                assert!(normal[1].hi() < 0.0);
+            } else if mirror {
+                assert!(normal[0].lo() > 0.0);
+            } else {
+                assert!(normal[0].hi() < 0.0);
+            }
+        }
+    }
+}
+
+#[test]
+fn circular_cap_charts_preserve_all_obj_groups_at_scoreboard_allowance() {
     use catallax_field::display::{Options, mesh_plan};
+    use catallax_numbers::with_operation_budget;
+    use std::collections::BTreeSet;
+
+    // An independent point-set construction of the same quarter cylinder.
+    // The box extends past both caps and the circle's tangent planes, so its
+    // only active cuts are x >= 0 and y >= 0.
+    let mut control = source("convex");
+    control["steps"][0]["loops"] = json!([[{
+        "kind":"circle", "id":"wall", "centre":["0","0"], "radius":"8"
+    }]]);
+    let mut bevel = control["steps"].as_array_mut().unwrap().pop().unwrap();
+    let steps = control["steps"].as_array_mut().unwrap();
+    steps.push(json!({"id":"clip", "op":"block", "size":["9","9","14"],
+        "pose":{"rotation":["1","0","0","0"],"translation":["0","0","-1"]}}));
+    steps.push(json!({"id":"quarter", "op":"boolean", "kind":"intersect",
+        "target":"base", "tool":"clip"}));
+    control["result"] = json!("quarter");
+    let prefix = Recipe::parse(&control.to_string()).unwrap();
+    bevel["body"] = json!("quarter");
+    control["steps"].as_array_mut().unwrap().push(bevel);
+    control["result"] = json!("bevel");
+    let control = Recipe::parse(&control.to_string()).unwrap();
+
+    for (name, recipe, expected_groups) in [
+        ("full-circle quadrant control", prefix, 5),
+        ("full-circle chamfer control", control, 6),
+        ("original arc chamfer", recipe("convex", "2", "1", false), 6),
+    ] {
+        let options = Options::default();
+        assert_eq!(options.tolerance, Rational::parse("0.01").unwrap());
+        assert_eq!(options.max_cells, 2_000_000);
+        assert_eq!(options.max_vertices, 1_000_000);
+        let (answer, work) = with_operation_budget(1_000_000, || {
+            let mut dec = Decider::default();
+            let plan = Plan::compile_checked(&recipe, &mut dec)?;
+            let mesh = mesh_plan(&plan, &options, &mut dec)?;
+            Ok::<_, catallax_numbers::Refusal>((plan, mesh))
+        });
+        assert!(!work.exhausted, "{name}: {work:?}");
+        let (plan, mesh) = answer.unwrap();
+        assert!(!mesh.positions.is_empty() && !mesh.triangles.is_empty());
+        assert!(mesh.max_deviation <= options.tolerance);
+        assert!(mesh.cells <= options.max_cells);
+        assert!(mesh.positions.len() <= options.max_vertices);
+        let origins: BTreeSet<_> = mesh
+            .triangles
+            .iter()
+            .map(|t| plan.faces()[t.face.index()].origin.clone())
+            .collect();
+        assert_eq!(origins.len(), expected_groups, "{name}: {origins:?}");
+        let mut obj = Vec::new();
+        mesh.write_obj(&mut obj).unwrap();
+        let obj = String::from_utf8(obj).unwrap();
+        let groups: BTreeSet<_> = obj.lines().filter(|line| line.starts_with("g ")).collect();
+        assert_eq!(groups.len(), expected_groups, "{name}");
+        // A cap vertex may be within tolerance of the adjacent sloping cone.
+        // Its radial error is then at most sqrt(1 + 2^2) * tolerance, bounded
+        // above by 3*tolerance. Keep every cap triangle in this conservative
+        // convex enclosure: vertex inclusion proves whole-triangle exclusion
+        // from the removed annulus and the other three angular sectors.
+        let margin = options.tolerance.clone();
+        let cap_radius = Rational::from_i64(if expected_groups == 5 { 8 } else { 6 })
+            + Rational::from_i64(3) * margin.clone();
+        let mut cap_triangles = 0;
+        for triangle in &mesh.triangles {
+            let origin = &plan.faces()[triangle.face.index()].origin;
+            if origin.step.as_str() != "base" || origin.role != Role::End {
+                continue;
+            }
+            cap_triangles += 1;
+            for &vertex in &triangle.vertices {
+                let [x, y, z] =
+                    mesh.positions[vertex].map(|v| Rational::from_f64_exact(v).unwrap());
+                assert!(x >= -&margin && y >= -&margin, "{name}: excluded sector");
+                assert!(
+                    &x * &x + &y * &y <= &cap_radius * &cap_radius,
+                    "{name}: removed cap annulus"
+                );
+                assert!((z - Rational::from_i64(12)).abs() <= margin);
+            }
+        }
+        assert!(cap_triangles > 0, "{name}: missing end-cap geometry");
+        eprintln!(
+            "{name}: {} cells, {} OBJ groups, {cap_triangles} excluded-region-checked cap triangles, {} work",
+            mesh.cells,
+            groups.len(),
+            work.used
+        );
+    }
+}
+
+#[test]
+fn default_native_display_keeps_all_trimmed_faces_at_verifier_allowance() {
+    use catallax_field::display::{Diagnostics, Options, mesh_plan_reported};
     use catallax_numbers::with_operation_budget;
     use std::collections::BTreeSet;
     for (name, count) in [
@@ -236,12 +378,31 @@ fn default_native_display_keeps_all_trimmed_faces_at_verifier_allowance() {
             assert_eq!(options.tolerance, Rational::parse("0.01").unwrap());
             assert_eq!(options.max_cells, 2_000_000);
             assert_eq!(options.max_vertices, 1_000_000);
+            let mut diagnostics = Diagnostics::default();
+            let mut origins = Vec::new();
             let (result, work) = with_operation_budget(100_000_000, || {
                 let mut dec = Decider::default();
                 let plan = Plan::compile_checked(&recipe(name, distance, other, false), &mut dec)?;
-                let mesh = mesh_plan(&plan, &options, &mut dec)?;
+                origins = plan
+                    .faces()
+                    .iter()
+                    .map(|face| face.origin.clone())
+                    .collect();
+                let mesh = mesh_plan_reported(&plan, &options, &mut dec, &mut diagnostics)?;
                 Ok::<_, catallax_numbers::Refusal>((plan, mesh))
             });
+            if work.exhausted {
+                for support in &diagnostics.supports {
+                    eprintln!(
+                        "{}",
+                        json!({"case":name,"setbacks":[distance,other],
+                        "origins":support.faces.iter().map(|face|&origins[face.index()]).collect::<Vec<_>>(),
+                        "cells":support.total.cells,"depth":support.total.max_depth,
+                        "work":support.total.work,"classification":support.classification.work,
+                        "queries":support.queries.work})
+                    );
+                }
+            }
             assert!(!work.exhausted, "{name} {distance}: {work:?}");
             let (plan, mesh) = result.unwrap();
             assert!(!mesh.positions.is_empty() && !mesh.triangles.is_empty());

@@ -43,12 +43,15 @@ impl Angle {
         self.degrees == Rational::from_i64(degrees)
     }
 
-    pub(super) fn fast(&self) -> [f64; 3] {
-        [
-            self.degrees.to_f64_nearest(),
-            self.cosine.to_f64(),
-            self.sine.to_f64(),
-        ]
+    pub(super) fn fast(&self) -> (u16, [f64; 2]) {
+        let sector = if self.is(360) {
+            360
+        } else if self.degrees <= Rational::from_i64(180) {
+            180
+        } else {
+            270
+        };
+        (sector, [self.cosine.to_f64(), self.sine.to_f64()])
     }
 
     // b is the coefficient along z cross axis, so its physical length is

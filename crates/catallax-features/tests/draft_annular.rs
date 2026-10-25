@@ -297,8 +297,8 @@ fn full_requested_properties_contain_independent_annular_integrals() {
     check(&inertia[0][0], pi.clone() * b("11020/9"));
     check(&inertia[1][1], pi.clone() * b("11020/9"));
     check(&inertia[2][2], pi * b("2400"));
-    for i in 0..3 {
-        for (j, e) in inertia[i].iter().enumerate() {
+    for (i, row) in inertia.iter().enumerate() {
+        for (j, e) in row.iter().enumerate() {
             if i != j {
                 assert!(e.contains(&r("0")));
             }

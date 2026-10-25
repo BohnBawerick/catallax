@@ -606,7 +606,9 @@ impl Lattice {
         })
     }
 
-    /// Composes a rational rigid motion in front of the frame.
+    /// Composes a rational rigid motion in front of the frame. A reflection is
+    /// accepted: the frame matrix stays orthogonal, so its transpose is still the
+    /// inverse and the local beam set is reused unchanged.
     pub(crate) fn transform(&mut self, map: &Isometry) -> Result<(), Refusal> {
         let m = map.rational_matrix().ok_or_else(|| {
             Refusal::new(
@@ -623,12 +625,6 @@ impl Lattice {
             )
         })?;
         let t = [t.x, t.y, t.z];
-        if map.reversing() {
-            return Err(Refusal::new(
-                "field.lattice-frame",
-                "a mirrored lattice frame is not a rotation; unfinished coverage",
-            ));
-        }
         // world' = M (R l + t0) + t = (M R) l + (M t0 + t)
         let rotation: [[Rational; 3]; 3] = std::array::from_fn(|i| {
             std::array::from_fn(|j| (0..3).fold(q(0), |s, k| s + &m[i][k] * &self.rotation[k][j]))

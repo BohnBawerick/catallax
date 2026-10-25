@@ -1699,3 +1699,19 @@ Change: `extrude_to` and `extrude_next` accept coaxial annular profiles against 
 Why: planar limits and rectangular stock-quadric caps did not cover annular features stopping at a toroidal wall. The kernel already constructs the required coaxial cylinder/torus and normal-plane/torus circles.
 
 Migration: none. Recipe versions, work allowances, modelling tolerance and existing planar and stock-quadric definitions are unchanged. Public test parts cover each curved surface family; represented spline limits explicitly retain the unsupported-pair refusal.
+
+## 2026-10-25: direct point distance for finite cylinder bands and caps
+
+Pieces: 3, 6
+
+Change: `catallax_shapes::distance` adds `Finite` and `Branch`, an exact recognizer
+and direct point-distance reduction for complete circular cylinder bands and
+perpendicular circular caps. `catallax_measure::distance::PreparedFace::point_to_face`
+uses it for recognized faces only.
+
+Why: repeated chart subdivision dominated explicit and selector distance queries
+on these faces although the nearest point has a closed form.
+
+Migration: none. Existing signatures, options, tolerances and the complete search
+for every other trim are unchanged. Recognized faces now return tighter bounds with
+`cells == 0`; both bounds remain valid.

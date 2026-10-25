@@ -17,9 +17,6 @@ fn refusal(loops: Value, operation: Value) -> String {
         error => panic!("valid geometry must not fail recipe structure: {error}"),
     }
 }
-fn extrude(direction: [&str; 3]) -> Value {
-    json!({"id":"body", "op":"extrude", "profile":"profile", "distance":"5", "direction":direction})
-}
 fn revolve(angle: &str) -> Value {
     json!({"id":"body", "op":"revolve", "profile":"profile", "axis":{"point":["0","0","0"],"direction":["0","1","0"]},"angle":angle})
 }
@@ -29,10 +26,6 @@ fn rectangle() -> Value {
 
 #[test]
 fn unavailable_algebraic_placements_have_specific_codes() {
-    assert_eq!(
-        refusal(rectangle(), extrude(["1", "0", "1"])),
-        "features.unsupported-algebraic-placement"
-    );
     assert_eq!(
         refusal(rectangle(), revolve("45")),
         "features.unsupported-algebraic-revolve-frame"

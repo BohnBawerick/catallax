@@ -13,6 +13,9 @@ use catallax_topology::{
 
 use crate::Profile;
 
+#[path = "extrude_algebraic.rs"]
+mod algebraic;
+
 pub(crate) fn sqrt(n: &Rational) -> Option<Rational> {
     fn root(n: &Integer) -> Option<Integer> {
         if n.sign() == Sign::Negative {
@@ -134,12 +137,9 @@ pub fn extrude(
     if profile.is_empty() {
         return Ok(catallax_topology::empty(model));
     }
-    let length = sqrt(&direction.norm_squared()).ok_or_else(|| {
-        Refusal::new(
-            "features.unsupported-algebraic-placement",
-            "the analytic geometry store needs an exact algebraic placement for this direction",
-        )
-    })?;
+    let Some(length) = sqrt(&direction.norm_squared()) else {
+        return algebraic::extrude(model, profile, step, distance, direction);
+    };
     let vector = direction.scaled(&(distance / &length));
     extrude_vector(
         model,

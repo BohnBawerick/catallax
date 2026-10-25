@@ -17,6 +17,9 @@ pub mod capped;
 /// Exact bounded cells used by analytic support arrangements.
 #[path = "draft_cell.rs"]
 pub mod cell;
+/// Exact nearest-face distances for plane-capped axial cylinders.
+#[path = "draft_near.rs"]
+pub mod near;
 /// Exact axial cells bounded by drafted cylindrical supports.
 #[path = "draft_round.rs"]
 pub mod round;

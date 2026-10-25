@@ -220,17 +220,58 @@ impl FaceBuilder<'_> {
                     .map(|pi| limit / &pi.hi().mul_pow2(1))
             })
             .transpose()?;
+        let rail_grid = matches!(self.chart.surface, Surface::Cone(_))
+            || (bounded_torus && angular_step.is_some());
+        let mut rail_u: Vec<_> = if rail_grid {
+            self.cdt
+                .vertices()
+                .map(|vertex| vertex.data().uv.x)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        rail_u.sort_unstable_by(f64::total_cmp);
+        // Keep distinct shared samples, but not nearly coincident interior
+        // columns caused by rounding one longitude to adjacent chart quanta.
+        rail_u.dedup_by(|a, b| (*a - *b).abs() <= 16.0 / 281_474_976_710_656.0);
+        let rail_du = rail_u
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).next_up())
+            .fold(0.0_f64, f64::max);
+        // Shared rails already resolve longitude more finely than a free grid.
+        // Use their actual maximum gap, then refine only the other parameter.
+        // The strict margin guarantees that the fixed longitude can meet both
+        // controls. Sparse/partial trims retain the general two-dimensional grid.
+        let align_rails = rail_du > 0.0
+            && chord_bound(&[[0.0, 0.0], [rail_du, 0.0]], &self.hessian)
+                <= self.options.chord_tolerance.mul_pow2(-2)
+            && angular_step
+                .as_ref()
+                .is_none_or(|step| chart::q(rail_du) <= step.mul_pow2(-1));
+        if !align_rails {
+            rail_u.clear();
+        }
         let mut counts = [1usize; 2];
         for (i, count) in counts.iter_mut().enumerate() {
             if self.chart.periodic[i] {
                 *count = 8;
             }
         }
+        // Reserve a quarter of the chord budget for endpoint replacement.
+        // finish still certifies every facet at the full requested limit.
+        let chord_limit = if align_rails {
+            &self.options.chord_tolerance * &Rational::from_ratio(3, 4).unwrap()
+        } else {
+            self.options.chord_tolerance.mul_pow2(-1)
+        };
         loop {
-            let du = widths[0] / counts[0] as f64;
+            let du = if align_rails {
+                rail_du
+            } else {
+                widths[0] / counts[0] as f64
+            };
             let dv = widths[1] / counts[1] as f64;
-            let chord_reached = chord_bound(&[[0.0, 0.0], [du, dv]], &self.hessian)
-                <= self.options.chord_tolerance.mul_pow2(-1);
+            let chord_reached = chord_bound(&[[0.0, 0.0], [du, dv]], &self.hessian) <= chord_limit;
             let (angular_reached, angular_dimension) = if let Some(step) = &angular_step {
                 let u = match self.chart.surface {
                     Surface::Plane(_) => Rational::zero(),
@@ -260,7 +301,9 @@ impl FaceBuilder<'_> {
                 usize::from(v > u)
             };
             // A cone's mixed derivative also needs axial subdivisions.
-            let dimension = if !bounded_torus
+            let dimension = if align_rails {
+                1
+            } else if !bounded_torus
                 && !self.hessian[1].is_zero()
                 && counts[dimension] > counts[1 - dimension] * 2
             {
@@ -271,7 +314,8 @@ impl FaceBuilder<'_> {
             counts[dimension] = counts[dimension]
                 .checked_mul(2)
                 .ok_or_else(|| failure("grid size overflow"))?;
-            if counts[0].saturating_mul(counts[1]) > self.options.max_vertices {
+            let columns = if align_rails { rail_u.len() } else { counts[0] };
+            if columns.saturating_mul(counts[1]) > self.options.max_vertices {
                 return Err(failure("tolerance exceeds the deterministic grid budget"));
             }
         }
@@ -282,17 +326,6 @@ impl FaceBuilder<'_> {
                 (0, counts[i] as i64)
             }
         });
-        let align_rails = bounded_torus && angular_step.is_some();
-        let mut rail_u: Vec<_> = if align_rails {
-            self.cdt
-                .vertices()
-                .map(|vertex| vertex.data().uv.x)
-                .collect()
-        } else {
-            Vec::new()
-        };
-        rail_u.sort_unstable_by(f64::total_cmp);
-        rail_u.dedup();
         let u_start = self.bounds[0][0];
         let parameters_u = (ranges[0].0..=ranges[0].1)
             .take(if align_rails { 0 } else { usize::MAX })
@@ -306,7 +339,10 @@ impl FaceBuilder<'_> {
                 // centroid refinement only makes that triangle's altitude smaller.
                 // Boundary samples already own the end rows, including their
                 // projection residuals; do not seed nearly coincident rail copies.
-                if align_rails && (j == 0 || j == counts[1] as i64) {
+                let endpoint = j == 0 || j == counts[1] as i64;
+                let apex = matches!(self.chart.surface, Surface::Cone(_))
+                    && self.bounds[1][usize::from(j != 0)] == 0.0;
+                if align_rails && endpoint && !apex {
                     continue;
                 }
                 let uv = [

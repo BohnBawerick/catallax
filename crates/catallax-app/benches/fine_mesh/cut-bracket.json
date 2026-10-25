@@ -1,0 +1,107 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Fine mesh bracket first bore cut",
+  "steps": [
+    {
+      "id": "plate",
+      "op": "block",
+      "size": [
+        "120",
+        "90",
+        "10"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "wall",
+      "op": "block",
+      "size": [
+        "10",
+        "90",
+        "60"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "base",
+      "op": "boolean",
+      "kind": "union",
+      "target": "plate",
+      "tool": "wall"
+    },
+    {
+      "id": "boss",
+      "op": "cylinder",
+      "radius": "12",
+      "height": "30",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "70",
+          "45",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "base",
+      "tool": "boss"
+    },
+    {
+      "id": "bore",
+      "op": "hole",
+      "target": "joined",
+      "at": [
+        {
+          "id": "bore",
+          "point": [
+            "70",
+            "45",
+            "30"
+          ],
+          "direction": [
+            "0",
+            "0",
+            "-1"
+          ]
+        }
+      ],
+      "diameter": "12",
+      "depth": "through",
+      "tip": "flat"
+    }
+  ],
+  "result": "bore"
+}

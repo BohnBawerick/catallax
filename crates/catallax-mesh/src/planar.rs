@@ -651,12 +651,14 @@ fn refine(
 fn split_rail_ears(
     triangles: &mut Vec<Triangle>,
     points: &mut BTreeMap<usize, Position>,
+    enclosures: &BTreeMap<usize, [catallax_numbers::Ball; 3]>,
     rails: &crate::edges::Rails,
     mesh: &mut Mesh,
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<Rational, Refusal> {
-    let third = Real::from(Rational::from_ratio(1, 3).unwrap());
+    let third = Rational::from_ratio(1, 3).unwrap();
+    let factor = catallax_numbers::Ball::from_rational(&third, chart::BITS);
     let mut error = Rational::zero();
     let original = triangles.len();
     for i in 0..original {
@@ -669,18 +671,31 @@ fn split_rail_ears(
             return Err(failure("planar rail-ear refinement reached max_vertices"));
         }
         let [a, b, c] = vertices;
-        let pa = points[&a].exact(dec)?;
-        let pb = points[&b].exact(dec)?;
-        let pc = points[&c].exact(dec)?;
         // The exact affine centroid lies strictly inside the already-certified
-        // planar triangle. No shared boundary sample or segment is replaced.
-        let p =
-            std::array::from_fn::<_, 3, _>(|axis| &(&(&pa[axis] + &pb[axis]) + &pc[axis]) * &third);
-        let balls = [
-            dec.enclose_at(&p[0], chart::BITS)?,
-            dec.enclose_at(&p[1], chart::BITS)?,
-            dec.enclose_at(&p[2], chart::BITS)?,
-        ];
+        // planar triangle. Enclose that same centroid directly from the cached
+        // endpoints, without expanding three trace samples into exact rationals.
+        // Length refinement still retains the exact construction it consumes.
+        let mut exact = None;
+        let balls = if options.max_edge_length.is_some() {
+            let [pa, pb, pc] = [a, b, c].map(|v| points[&v].exact(dec));
+            let [pa, pb, pc] = [pa?, pb?, pc?];
+            let third = Real::from(third.clone());
+            let p = std::array::from_fn::<_, 3, _>(|axis| {
+                &(&(&pa[axis] + &pb[axis]) + &pc[axis]) * &third
+            });
+            let balls = [
+                dec.enclose_at(&p[0], chart::BITS)?,
+                dec.enclose_at(&p[1], chart::BITS)?,
+                dec.enclose_at(&p[2], chart::BITS)?,
+            ];
+            exact = Some(p);
+            balls
+        } else {
+            std::array::from_fn(|axis| {
+                &(&(&enclosures[&a][axis] + &enclosures[&b][axis]) + &enclosures[&c][axis])
+                    * &factor
+            })
+        };
         let position = chart::position(&balls)?;
         error = error.max(chart::residual(&position, &balls));
         if error > options.chord_tolerance {
@@ -688,7 +703,7 @@ fn split_rail_ears(
         }
         let index = mesh.positions.len();
         mesh.positions.push(position);
-        if options.max_edge_length.is_some() {
+        if let Some(p) = exact {
             points.insert(index, Position::Exact(p));
         }
         let face = triangles[i].face;
@@ -856,6 +871,7 @@ pub(crate) fn build(
     error = error.max(split_rail_ears(
         &mut triangles,
         &mut points,
+        &boundaries.enclosures,
         &boundaries.rails,
         &mut boundaries.mesh,
         options,

@@ -1,0 +1,11 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Fine mesh blind drill point",
+  "steps": [
+    {"id":"block","op":"block","size":["30","30","10"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+    {"id":"hole","op":"hole","target":"block","at":[
+      {"id":"drill","point":["15","15","10"],"direction":["0","0","-1"]}
+    ],"diameter":"5","depth":{"blind":"6"},"tip":{"cone":"118"}}
+  ],
+  "result": "hole"
+}

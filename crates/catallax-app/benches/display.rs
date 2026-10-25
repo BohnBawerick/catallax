@@ -12,9 +12,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if incremental {
         args.remove(0);
     }
-    if args.len() != 3 {
+    if !(3..=5).contains(&args.len()) {
         return Err(
-            "usage: display [--incremental] INPUT.json OUTPUT_DIRECTORY REPETITIONS".into(),
+            "usage: display [--incremental] INPUT.json OUTPUT_DIRECTORY REPETITIONS [CHORD_MM|drawing [ANGLE_RADIANS]]".into(),
         );
     }
     let input = fs::read_to_string(&args[0])?;
@@ -30,7 +30,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if repetitions == 0 {
         return Err("repetitions must be positive".into());
     }
-    let options = MeshOptions::default();
+    let drawing = args.get(3).is_some_and(|value| value == "drawing");
+    if incremental && drawing {
+        return Err("drawing chord mode requires independent display measurements".into());
+    }
+    let options = MeshOptions {
+        chord_tolerance: args
+            .get(3)
+            .filter(|_| !drawing)
+            .map(|value| value.to_string_lossy().parse())
+            .transpose()?
+            .unwrap_or_else(|| MeshOptions::default().chord_tolerance),
+        angular_deviation: args
+            .get(4)
+            .map(|value| value.to_string_lossy().parse())
+            .transpose()?,
+        ..MeshOptions::default()
+    };
     let mut rows = Vec::new();
     if incremental {
         return incremental_edits(&recipe, &options, &out, repetitions);
@@ -44,6 +60,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("invalid body: {faults:?}").into());
         }
         let build_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let mut options = options.clone();
+        if drawing {
+            let bounds = catallax_measure::bounding_box(
+                &built.model,
+                built.result,
+                &catallax_measure::Accuracy {
+                    relative: "1e-8".parse()?,
+                    absolute: "1e-10".parse()?,
+                },
+                &mut dec,
+            )?
+            .value
+            .ok_or("empty drawing body")?;
+            let diagonal = (0..3)
+                .map(|i| (&bounds.max[i] - &bounds.min[i]).to_f64_nearest().powi(2))
+                .sum::<f64>()
+                .sqrt()
+                .max(1.0);
+            options.chord_tolerance = catallax_numbers::Rational::from_f64_exact(diagonal * 1e-5)
+                .ok_or("non-finite drawing diagonal")?;
+        }
         let start = Instant::now();
         let mesh = mesh_body(&built.model, built.result, &options, &mut dec)?;
         let display_ms = start.elapsed().as_secs_f64() * 1000.0;
@@ -51,6 +88,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "iteration": iteration, "build_ms": build_ms, "display_ms": display_ms,
             "vertices": mesh.value.positions.len(), "triangles": mesh.value.triangles.len(),
             "chord_tolerance_mm": options.chord_tolerance.to_string(),
+            "angular_deviation_radians": options.angular_deviation.as_ref().map(ToString::to_string),
+            "boundary_segments": mesh.value.edges.iter().map(|edge| edge.vertices.len() - 1).sum::<usize>(),
+            "faces": mesh.value.faces.iter().map(|face| serde_json::json!({
+                "face": face.face.index(), "triangles": face.triangles.len(),
+                "chord_bound_mm": face.max_chord_error.to_f64_nearest(),
+                "angular_bound_radians": face.max_angular_deviation.as_ref().map(|v| v.to_f64_nearest()),
+            })).collect::<Vec<_>>(),
             "max_vertices": options.max_vertices,
         }));
         if iteration + 1 == repetitions {

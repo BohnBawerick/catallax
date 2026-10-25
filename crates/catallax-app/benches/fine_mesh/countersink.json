@@ -1,0 +1,12 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Fine mesh countersink plate",
+  "steps": [
+    {"id":"plate","op":"block","size":["60","40","5"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+    {"id":"holes","op":"hole","target":"plate","at":[
+      {"id":"left","point":["15","20","5"],"direction":["0","0","-1"]},
+      {"id":"right","point":["45","20","5"],"direction":["0","0","-1"]}
+    ],"diameter":"5","depth":"through","tip":"flat","head":{"countersink":{"diameter":"8","angle":"90"}}}
+  ],
+  "result": "holes"
+}

@@ -158,6 +158,7 @@ fn filtered_quality(
     });
     let (normal, tau) = chart.filtered_normal(center)?;
     let parameter_span = match &chart.surface {
+        Surface::Plane(_) => Interval::point(0.0).unwrap(),
         Surface::Cylinder(_) | Surface::Cone(_) => spans[0],
         Surface::EllipticCylinder(_) => spans[0] * Interval::from_rational(&chart.normal_scale),
         Surface::Sphere(_) | Surface::Torus(_) => spans[0] + spans[1],

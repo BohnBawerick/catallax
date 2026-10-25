@@ -4,7 +4,7 @@ The unchanged `parts/P3-filleted-boss.json` completes native display with its ex
 
 The evaluator represents certified quarter-arc and ring-fillet contact regions with exact polynomial predicates. Sharing those predicates across Boolean operands preserves the dependence between the boss and adjoining fillet at buried seams. Exact chart restrictions, regional signs, material germs and the existing deferred-cell cover establish the display's whole-boundary distance certificate. General algebraic charts and new fillet carriers are outside this slice.
 
-The public P3 result uses 6,228 build work and 885,114 display work (891,342 total), with 75,811 vertices, 108,962 triangles and a reported 0.01 mm bound. Independent tests check all thirteen surviving origins against the B-rep, analytic surviving domains, outward triangle winding, planar area controls and valid B-rep topology. Strict P3 STEP bytes are unchanged. Zero-work and exhausted cell limits return refusals without a mesh.
+The public P3 display stage uses 885,114 work, with 75,811 vertices, 108,962 triangles and a reported 0.01 mm bound. Independent tests check all thirteen surviving origins against the B-rep, analytic surviving domains, outward triangle winding, planar area controls and valid B-rep topology. Strict P3 STEP bytes are unchanged. Zero-work and exhausted cell limits return refusals without a mesh.
 
 Development observations remain raw timing misses against the 1,000 ms complete-click target. The latest recorded complete CLI wait is about 17.49 seconds; earlier 35- and 38-second observations remain misses. These are unqualified development measurements, with no speed claim or replacement baseline.
 

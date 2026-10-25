@@ -1,6 +1,6 @@
-//! Certified axial strips for elliptic cylinders and finite cylinder fillets.
+//! Certified strips and layered cone/toroidal bands sharing their original rails.
 
-use catallax_numbers::{Decider, Rational, Refusal};
+use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_shapes::Surface;
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
@@ -15,10 +15,118 @@ struct Sample {
     vertex: usize,
     uv: Uv,
     error: Rational,
+    filtered_error: f64,
 }
 
-/// Returns false when the sampled trim is not an axial strip, or needs interior
-/// refinement. The general periodic triangulator then handles that face.
+fn layers(
+    lower: &[Sample],
+    upper: &[Sample],
+    face: (FaceId, Sense),
+    chart: &Chart,
+    boundaries: &mut Boundaries,
+    options: &MeshOptions,
+    dec: &Decider,
+) -> Result<bool, Refusal> {
+    let [lo, hi] = [lower[0].uv[1], upper[0].uv[1]];
+    // Horizontal, disjoint rails bound one periodic rectangle. Nonconstant
+    // trims retain the general triangulator rather than inferring a band.
+    if lo >= hi
+        || lower.iter().any(|p| p.uv[1].to_bits() != lo.to_bits())
+        || upper.iter().any(|p| p.uv[1].to_bits() != hi.to_bits())
+    {
+        return Ok(false);
+    }
+    let mut columns: Vec<_> = lower[..lower.len() - 1]
+        .iter()
+        .chain(&upper[..upper.len() - 1])
+        .map(|p| p.uv[0] - libm::floor(p.uv[0]))
+        .collect();
+    columns.sort_unstable_by(f64::total_cmp);
+    columns.dedup_by(|a, b| (*a - *b).abs() <= 16.0 / 281_474_976_710_656.0);
+    let du = columns
+        .windows(2)
+        .map(|p| p[1] - p[0])
+        .chain(std::iter::once(
+            columns[0] + 1.0 - columns[columns.len() - 1],
+        ))
+        .fold(0.0_f64, f64::max)
+        .next_up();
+    let hessian = chart.hessian(lo.abs().max(hi.abs()), dec)?;
+    if chord_bound(&[[0.0, 0.0], [du, 0.0]], &hessian) > options.chord_tolerance.mul_pow2(-2) {
+        return Ok(false);
+    }
+    let angular_step = options
+        .angular_deviation
+        .as_ref()
+        .map(|limit| {
+            catallax_numbers::Ball::pi_checked(chart::BITS, dec)
+                .map(|pi| limit / &pi.hi().mul_pow2(1))
+        })
+        .transpose()?;
+    let chord_limit = &options.chord_tolerance * &Rational::from_ratio(3, 4).unwrap();
+    let mut rows = 1usize;
+    loop {
+        let dv = (hi - lo) / rows as f64;
+        let span = if matches!(chart.surface, Surface::Torus(_)) {
+            &chart::q(du) + &chart::q(dv)
+        } else {
+            chart::q(du)
+        };
+        if chord_bound(&[[0.0, 0.0], [du, dv]], &hessian) <= chord_limit
+            && angular_step.as_ref().is_none_or(|step| span <= *step)
+        {
+            break;
+        }
+        let Some(next) = rows.checked_mul(2) else {
+            return Ok(false);
+        };
+        rows = next;
+        if columns.len().saturating_mul(rows) > options.max_vertices {
+            return Ok(false);
+        }
+    }
+    if columns
+        .len()
+        .saturating_mul(rows - 1)
+        .saturating_add(boundaries.mesh.positions.len())
+        > options.max_vertices
+    {
+        return Ok(false);
+    }
+    let mut previous: Option<Vec<Sample>> = None;
+    for row in 1..=rows {
+        dec.check_deadline()?;
+        let before = previous.as_deref().unwrap_or(lower);
+        if row == rows {
+            return sampled_stitch(before, upper, face, chart, boundaries, options, dec);
+        }
+        let v = lo + (hi - lo) * row as f64 / rows as f64;
+        let mut next = Vec::with_capacity(columns.len() + 1);
+        for &u in &columns {
+            let uv = [u, v];
+            let (position, error) = chart.sample(uv, None, &options.chord_tolerance, dec)?;
+            let vertex = boundaries.mesh.positions.len();
+            boundaries.mesh.positions.push(position);
+            next.push(Sample {
+                vertex,
+                uv,
+                filtered_error: Interval::from_rational(&error).hi(),
+                error,
+            });
+        }
+        let mut seam = next[0].clone();
+        seam.uv[0] += 1.0;
+        next.push(seam);
+        if !sampled_stitch(before, &next, face, chart, boundaries, options, dec)? {
+            return Ok(false);
+        }
+        previous = Some(next);
+    }
+    unreachable!("a positive row count always includes the upper rail")
+}
+
+/// Returns false when the sampled trim is not a certified strip or band, or
+/// needs general refinement. The periodic triangulator then handles that face.
 pub(crate) fn build(
     model: &Model,
     face_id: FaceId,
@@ -28,6 +136,10 @@ pub(crate) fn build(
     dec: &Decider,
 ) -> Result<bool, Refusal> {
     let face = model.face(face_id);
+    let band = matches!(chart.surface, Surface::Cone(_) | Surface::Torus(_));
+    if band && (face.loops.len() != 2 || !chart.periodic[0] || chart.periodic[1]) {
+        return Ok(false);
+    }
     if face.loops.len() == 1 {
         return open_strip(model, face_id, chart, boundaries, options, dec);
     }
@@ -69,6 +181,7 @@ pub(crate) fn build(
                     vertex,
                     uv: chart.canonical(chart.project(boundaries.mesh.positions[vertex])),
                     error: Rational::zero(),
+                    filtered_error: 0.0,
                 });
             }
         }
@@ -145,7 +258,6 @@ fn stitch(
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<bool, Refusal> {
-    let (face_id, sense) = face;
     for ring in [&mut lower, &mut upper] {
         for sample in ring.iter_mut() {
             let (_, error) = chart.sample(
@@ -155,9 +267,74 @@ fn stitch(
                 dec,
             )?;
             sample.error = error;
+            sample.filtered_error = Interval::from_rational(&sample.error).hi();
         }
     }
-    let hessian = chart.hessian(0.0, dec)?;
+    let start = (
+        boundaries.mesh.positions.len(),
+        boundaries.mesh.triangles.len(),
+        boundaries.mesh.faces.len(),
+        boundaries.mesh.unavailable_controls.len(),
+    );
+    let band = matches!(chart.surface, Surface::Cone(_) | Surface::Torus(_));
+    let complete = if band {
+        layers(&lower, &upper, face, chart, boundaries, options, dec)?
+    } else {
+        sampled_stitch(&lower, &upper, face, chart, boundaries, options, dec)?
+    };
+    if !complete {
+        boundaries.mesh.positions.truncate(start.0);
+        boundaries.mesh.triangles.truncate(start.1);
+        boundaries.mesh.faces.truncate(start.2);
+        boundaries.mesh.unavailable_controls.truncate(start.3);
+        return Ok(false);
+    }
+    if band {
+        let faces = &mut boundaries.mesh.faces;
+        let maximum = faces[start.2..]
+            .iter()
+            .map(|f| &f.max_chord_error)
+            .max()
+            .unwrap()
+            .clone();
+        let aspect = faces[start.2..]
+            .iter()
+            .filter_map(|f| f.max_aspect_ratio.as_ref())
+            .max()
+            .cloned();
+        faces.truncate(start.2 + 1);
+        let face = &mut faces[start.2];
+        face.triangles = start.1..boundaries.mesh.triangles.len();
+        face.max_chord_error = maximum;
+        face.max_aspect_ratio = aspect;
+        let unavailable = boundaries.mesh.unavailable_controls.len() > start.3;
+        boundaries
+            .mesh
+            .unavailable_controls
+            .truncate(start.3 + usize::from(unavailable));
+    }
+    boundaries.mesh.triangles[start.1..].sort_unstable_by_key(|triangle| triangle.vertices);
+    Ok(true)
+}
+
+fn sampled_stitch(
+    lower: &[Sample],
+    upper: &[Sample],
+    face: (FaceId, Sense),
+    chart: &Chart,
+    boundaries: &mut Boundaries,
+    options: &MeshOptions,
+    dec: &Decider,
+) -> Result<bool, Refusal> {
+    let (face_id, sense) = face;
+    let vmax = lower
+        .iter()
+        .chain(upper)
+        .map(|p| p.uv[1].abs())
+        .fold(0.0_f64, f64::max);
+    let hessian = chart.hessian(vmax, dec)?;
+    let filtered_hessian = hessian.each_ref().map(Interval::from_rational);
+    let filtered_tolerance = Interval::from_rational(&options.chord_tolerance);
     let mut triangles = Vec::with_capacity(lower.len() + upper.len() - 2);
     let mut maximum = Rational::zero();
     let mut aspect = Rational::zero();
@@ -179,8 +356,21 @@ fn stitch(
         if !chart::positive_turn(uvs[0], uvs[1], uvs[2]) {
             return Ok(false);
         }
-        let error =
-            chord_bound(&uvs, &hessian) + samples.iter().map(|p| &p.error).max().unwrap().clone();
+        let filtered_error = samples
+            .iter()
+            .map(|p| p.filtered_error)
+            .fold(0.0_f64, f64::max);
+        let filtered = Interval::point(filtered_error)
+            .map(|error| chart::filtered_chord_bound(&uvs, &filtered_hessian) + error);
+        let error = match filtered {
+            Some(bound) if bound.is_finite() && bound.hi() <= filtered_tolerance.lo() => {
+                chart::q(bound.hi())
+            }
+            _ => {
+                chord_bound(&uvs, &hessian)
+                    + samples.iter().map(|p| &p.error).max().unwrap().clone()
+            }
+        };
         if error > options.chord_tolerance {
             return Ok(false);
         }
@@ -220,7 +410,6 @@ fn stitch(
             face: face_id,
         });
     }
-    triangles.sort_unstable_by_key(|triangle| triangle.vertices);
     let start = boundaries.mesh.triangles.len();
     boundaries.mesh.triangles.extend(triangles);
     boundaries.mesh.faces.push(FaceMesh {
@@ -282,6 +471,7 @@ fn open_strip(
                 vertex,
                 uv,
                 error: Rational::zero(),
+                filtered_error: 0.0,
             });
         }
         axial[i] = chains[i]

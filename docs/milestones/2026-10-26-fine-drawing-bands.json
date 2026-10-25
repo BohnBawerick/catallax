@@ -1,0 +1,2170 @@
+{
+  "format": "catallax-fine-display-pairs/1",
+  "baseline_revision": "68f0e66572d6986e0e5e0edab4b68bc0e0a5d8cb",
+  "baseline_benchmark_change": "Only the requested_wait_ms timer was added before both builds; no baseline mesh code changed.",
+  "candidate_runtime_sha256": {
+    "crates/catallax-mesh/src/ruled.rs": "702bb99afe2bc553e74d3f5f37000bfb0051faab417ded491b11ba385839bd31",
+    "crates/catallax-mesh/src/triangulate.rs": "555af4c26ba4ae5cbce22364615bf46e2b22292204169a168872e6bdc0837ca4"
+  },
+  "benchmark_source_sha256": "1c86823b9e250df04656c59ba8f7de1ad922851ccb8a168f64424fa3a27e2269",
+  "binary_sha256": {
+    "baseline": "f4332c72980a5985ab28d3ec149157a6507cb9a6903a3ef3c7eef54c0a5de48c",
+    "candidate": "8b31a1aa8d56b678bdf60034e1b0bed6d4d22242e15c9a5b3a1a6c8444368509"
+  },
+  "build": "cargo bench -p catallax-app --bench display --no-run -j 2",
+  "execution": "nice -n 10 taskset -c 0 DISPLAY INPUT OUT 1 CHORD 0.03490658503988659",
+  "load_label": "shared-load",
+  "core": 0,
+  "warmups_per_binary": 1,
+  "measured_pair_order": [
+    "AB",
+    "BA",
+    "AB"
+  ],
+  "click_limit_ms": 1000,
+  "interval": "requested_wait_ms starts before recipe evaluation and ends after mesh_body; includes topology checking and drawing-bound selection when requested. Output serialization is outside the requested display interval.",
+  "cases": {
+    "collar": {
+      "input": "parts/P2-collar.json",
+      "medians": {
+        "baseline": {
+          "build_ms": 1.0405639999999998,
+          "display_ms": 2790.945902,
+          "requested_wait_ms": 2792.3561449999997
+        },
+        "candidate": {
+          "build_ms": 1.3305770000000001,
+          "display_ms": 1601.369835,
+          "requested_wait_ms": 1602.7011249999998
+        }
+      },
+      "samples": [
+        {
+          "pair": -1,
+          "engine": "candidate",
+          "build_ms": 1.637773,
+          "display_ms": 1894.967784,
+          "requested_wait_ms": 1896.6065780000001,
+          "vertices": 23360,
+          "triangles": 46720,
+          "boundary_segments": 11072,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 6,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.2888125499802345e-05,
+              "face": 7,
+              "triangles": 4096
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 8,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 3.197176247729642e-05,
+              "face": 3,
+              "triangles": 2952
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0002753122245979843,
+              "face": 4,
+              "triangles": 16348
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00027531222459976066,
+              "face": 5,
+              "triangles": 16348
+            }
+          ],
+          "chord_tolerance_mm": "9/25000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.8017578125,
+            9.2626953125,
+            15.49072265625
+          ],
+          "end_load": [
+            7.8017578125,
+            9.2626953125,
+            15.49072265625
+          ],
+          "display.obj_sha256": "29e6762c3a80a62a7eb2346411ecf10e5981e5207cba70e3af01829bbf25a458",
+          "mesh.txt_sha256": "c6933044a5e1a7bb42d6a61cc356463a769212283c13a7f1f9760a06ab41b8d2"
+        },
+        {
+          "pair": -1,
+          "engine": "baseline",
+          "build_ms": 1.8276569999999999,
+          "display_ms": 3888.78702,
+          "requested_wait_ms": 3890.616,
+          "vertices": 23360,
+          "triangles": 46720,
+          "boundary_segments": 11072,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 6,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.2888125499802345e-05,
+              "face": 7,
+              "triangles": 4096
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 8,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 3.197176247729642e-05,
+              "face": 3,
+              "triangles": 2952
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00027684093884574907,
+              "face": 4,
+              "triangles": 16348
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0002768409388475254,
+              "face": 5,
+              "triangles": 16348
+            }
+          ],
+          "chord_tolerance_mm": "9/25000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.8017578125,
+            9.2626953125,
+            15.49072265625
+          ],
+          "end_load": [
+            7.6572265625,
+            9.20849609375,
+            15.439453125
+          ],
+          "display.obj_sha256": "7f94e50ce30901ba7dd23245a5b2906edb4c24c9933fa47c72f7e0fe4b27f04d",
+          "mesh.txt_sha256": "7b1c37c38b14f119f3bab193e0ac5e4eb00a89f538786e5316c00aca258d72e7"
+        },
+        {
+          "pair": 0,
+          "engine": "baseline",
+          "build_ms": 1.0405639999999998,
+          "display_ms": 3347.835769,
+          "requested_wait_ms": 3348.877355,
+          "vertices": 23360,
+          "triangles": 46720,
+          "boundary_segments": 11072,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 6,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.2888125499802345e-05,
+              "face": 7,
+              "triangles": 4096
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 8,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 3.197176247729642e-05,
+              "face": 3,
+              "triangles": 2952
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00027684093884574907,
+              "face": 4,
+              "triangles": 16348
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0002768409388475254,
+              "face": 5,
+              "triangles": 16348
+            }
+          ],
+          "chord_tolerance_mm": "9/25000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.6572265625,
+            9.20849609375,
+            15.439453125
+          ],
+          "end_load": [
+            7.5244140625,
+            9.15478515625,
+            15.388671875
+          ],
+          "display.obj_sha256": "7f94e50ce30901ba7dd23245a5b2906edb4c24c9933fa47c72f7e0fe4b27f04d",
+          "mesh.txt_sha256": "7b1c37c38b14f119f3bab193e0ac5e4eb00a89f538786e5316c00aca258d72e7"
+        },
+        {
+          "pair": 0,
+          "engine": "candidate",
+          "build_ms": 1.978325,
+          "display_ms": 1698.4499959999998,
+          "requested_wait_ms": 1700.4298900000001,
+          "vertices": 23360,
+          "triangles": 46720,
+          "boundary_segments": 11072,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 6,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.2888125499802345e-05,
+              "face": 7,
+              "triangles": 4096
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 8,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 3.197176247729642e-05,
+              "face": 3,
+              "triangles": 2952
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0002753122245979843,
+              "face": 4,
+              "triangles": 16348
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00027531222459976066,
+              "face": 5,
+              "triangles": 16348
+            }
+          ],
+          "chord_tolerance_mm": "9/25000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.5244140625,
+            9.15478515625,
+            15.388671875
+          ],
+          "end_load": [
+            7.5244140625,
+            9.15478515625,
+            15.388671875
+          ],
+          "display.obj_sha256": "29e6762c3a80a62a7eb2346411ecf10e5981e5207cba70e3af01829bbf25a458",
+          "mesh.txt_sha256": "c6933044a5e1a7bb42d6a61cc356463a769212283c13a7f1f9760a06ab41b8d2"
+        },
+        {
+          "pair": 1,
+          "engine": "candidate",
+          "build_ms": 1.3305770000000001,
+          "display_ms": 1601.369835,
+          "requested_wait_ms": 1602.7011249999998,
+          "vertices": 23360,
+          "triangles": 46720,
+          "boundary_segments": 11072,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 6,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.2888125499802345e-05,
+              "face": 7,
+              "triangles": 4096
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 8,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 3.197176247729642e-05,
+              "face": 3,
+              "triangles": 2952
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0002753122245979843,
+              "face": 4,
+              "triangles": 16348
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00027531222459976066,
+              "face": 5,
+              "triangles": 16348
+            }
+          ],
+          "chord_tolerance_mm": "9/25000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.5244140625,
+            9.15478515625,
+            15.388671875
+          ],
+          "end_load": [
+            7.48193359375,
+            9.11865234375,
+            15.34326171875
+          ],
+          "display.obj_sha256": "29e6762c3a80a62a7eb2346411ecf10e5981e5207cba70e3af01829bbf25a458",
+          "mesh.txt_sha256": "c6933044a5e1a7bb42d6a61cc356463a769212283c13a7f1f9760a06ab41b8d2"
+        },
+        {
+          "pair": 1,
+          "engine": "baseline",
+          "build_ms": 1.4093149999999999,
+          "display_ms": 2790.945902,
+          "requested_wait_ms": 2792.3561449999997,
+          "vertices": 23360,
+          "triangles": 46720,
+          "boundary_segments": 11072,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 6,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.2888125499802345e-05,
+              "face": 7,
+              "triangles": 4096
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 8,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 3.197176247729642e-05,
+              "face": 3,
+              "triangles": 2952
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00027684093884574907,
+              "face": 4,
+              "triangles": 16348
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0002768409388475254,
+              "face": 5,
+              "triangles": 16348
+            }
+          ],
+          "chord_tolerance_mm": "9/25000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.48193359375,
+            9.11865234375,
+            15.34326171875
+          ],
+          "end_load": [
+            7.48193359375,
+            9.11865234375,
+            15.34326171875
+          ],
+          "display.obj_sha256": "7f94e50ce30901ba7dd23245a5b2906edb4c24c9933fa47c72f7e0fe4b27f04d",
+          "mesh.txt_sha256": "7b1c37c38b14f119f3bab193e0ac5e4eb00a89f538786e5316c00aca258d72e7"
+        },
+        {
+          "pair": 2,
+          "engine": "baseline",
+          "build_ms": 0.902185,
+          "display_ms": 2653.8202819999997,
+          "requested_wait_ms": 2654.723092,
+          "vertices": 23360,
+          "triangles": 46720,
+          "boundary_segments": 11072,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 6,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.2888125499802345e-05,
+              "face": 7,
+              "triangles": 4096
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 8,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 3.197176247729642e-05,
+              "face": 3,
+              "triangles": 2952
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00027684093884574907,
+              "face": 4,
+              "triangles": 16348
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0002768409388475254,
+              "face": 5,
+              "triangles": 16348
+            }
+          ],
+          "chord_tolerance_mm": "9/25000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.48193359375,
+            9.11865234375,
+            15.34326171875
+          ],
+          "end_load": [
+            7.44287109375,
+            9.0830078125,
+            15.29833984375
+          ],
+          "display.obj_sha256": "7f94e50ce30901ba7dd23245a5b2906edb4c24c9933fa47c72f7e0fe4b27f04d",
+          "mesh.txt_sha256": "7b1c37c38b14f119f3bab193e0ac5e4eb00a89f538786e5316c00aca258d72e7"
+        },
+        {
+          "pair": 2,
+          "engine": "candidate",
+          "build_ms": 0.9954729999999999,
+          "display_ms": 1451.0167219999998,
+          "requested_wait_ms": 1452.012939,
+          "vertices": 23360,
+          "triangles": 46720,
+          "boundary_segments": 11072,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 6,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.2888125499802345e-05,
+              "face": 7,
+              "triangles": 4096
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.861202408198839e-15,
+              "face": 8,
+              "triangles": 3488
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 3.197176247729642e-05,
+              "face": 3,
+              "triangles": 2952
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0002753122245979843,
+              "face": 4,
+              "triangles": 16348
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00027531222459976066,
+              "face": 5,
+              "triangles": 16348
+            }
+          ],
+          "chord_tolerance_mm": "9/25000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.44287109375,
+            9.0830078125,
+            15.29833984375
+          ],
+          "end_load": [
+            7.44287109375,
+            9.0830078125,
+            15.29833984375
+          ],
+          "display.obj_sha256": "29e6762c3a80a62a7eb2346411ecf10e5981e5207cba70e3af01829bbf25a458",
+          "mesh.txt_sha256": "c6933044a5e1a7bb42d6a61cc356463a769212283c13a7f1f9760a06ab41b8d2"
+        }
+      ],
+      "click_pass": false
+    },
+    "boss-block": {
+      "input": "crates/catallax-app/benches/fine_mesh/fillet.json",
+      "medians": {
+        "baseline": {
+          "build_ms": 37.512288999999996,
+          "display_ms": 6380.183029999999,
+          "requested_wait_ms": 6417.696144
+        },
+        "candidate": {
+          "build_ms": 38.312371,
+          "display_ms": 4159.338943,
+          "requested_wait_ms": 4197.65283
+        }
+      },
+      "samples": [
+        {
+          "pair": -1,
+          "engine": "candidate",
+          "build_ms": 34.506046,
+          "display_ms": 4969.164204,
+          "requested_wait_ms": 5003.670972,
+          "vertices": 102610,
+          "triangles": 205216,
+          "boundary_segments": 5038,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 53,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 54,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.76065145007622e-15,
+              "face": 55,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.551437857822845e-15,
+              "face": 56,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 57,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009924602e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 52,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.44287109375,
+            9.0830078125,
+            15.29833984375
+          ],
+          "end_load": [
+            8.52880859375,
+            9.28125,
+            15.3291015625
+          ],
+          "display.obj_sha256": "92572452938a1c232c2b30f01fedb8b97caab8d64b958b8e8dff114db6094e8f",
+          "mesh.txt_sha256": "fd0cb83d47f70787bbf93c7732cbce37e56689e1470f5610b1c05025946cbf0f"
+        },
+        {
+          "pair": -1,
+          "engine": "baseline",
+          "build_ms": 31.670072,
+          "display_ms": 4752.114149,
+          "requested_wait_ms": 4783.785529,
+          "vertices": 102610,
+          "triangles": 205216,
+          "boundary_segments": 5038,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 53,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 54,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.76065145007622e-15,
+              "face": 55,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.551437857822845e-15,
+              "face": 56,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 57,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009924575e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 52,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.52880859375,
+            9.28125,
+            15.3291015625
+          ],
+          "end_load": [
+            8.166015625,
+            9.193359375,
+            15.26806640625
+          ],
+          "display.obj_sha256": "f97bedb2b3192ec40d989c6320a867b12f603d3945a5ddb29d054cefc3857918",
+          "mesh.txt_sha256": "99220845c002d621d7f940a999fcd52ee2835fa1fd025210b63f73a0b44f4614"
+        },
+        {
+          "pair": 0,
+          "engine": "baseline",
+          "build_ms": 30.144928,
+          "display_ms": 5783.839037,
+          "requested_wait_ms": 5813.985125,
+          "vertices": 102610,
+          "triangles": 205216,
+          "boundary_segments": 5038,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 53,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 54,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.76065145007622e-15,
+              "face": 55,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.551437857822845e-15,
+              "face": 56,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 57,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009924575e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 52,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.166015625,
+            9.193359375,
+            15.26806640625
+          ],
+          "end_load": [
+            8.072265625,
+            9.15673828125,
+            15.2236328125
+          ],
+          "display.obj_sha256": "f97bedb2b3192ec40d989c6320a867b12f603d3945a5ddb29d054cefc3857918",
+          "mesh.txt_sha256": "99220845c002d621d7f940a999fcd52ee2835fa1fd025210b63f73a0b44f4614"
+        },
+        {
+          "pair": 0,
+          "engine": "candidate",
+          "build_ms": 25.69633,
+          "display_ms": 3758.5510879999997,
+          "requested_wait_ms": 3784.2480800000003,
+          "vertices": 102610,
+          "triangles": 205216,
+          "boundary_segments": 5038,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 53,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 54,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.76065145007622e-15,
+              "face": 55,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.551437857822845e-15,
+              "face": 56,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 57,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009924602e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 52,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.072265625,
+            9.15673828125,
+            15.2236328125
+          ],
+          "end_load": [
+            7.74609375,
+            9.07080078125,
+            15.1630859375
+          ],
+          "display.obj_sha256": "92572452938a1c232c2b30f01fedb8b97caab8d64b958b8e8dff114db6094e8f",
+          "mesh.txt_sha256": "fd0cb83d47f70787bbf93c7732cbce37e56689e1470f5610b1c05025946cbf0f"
+        },
+        {
+          "pair": 1,
+          "engine": "candidate",
+          "build_ms": 41.726062,
+          "display_ms": 5273.757012,
+          "requested_wait_ms": 5315.484008,
+          "vertices": 102610,
+          "triangles": 205216,
+          "boundary_segments": 5038,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 53,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 54,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.76065145007622e-15,
+              "face": 55,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.551437857822845e-15,
+              "face": 56,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 57,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009924602e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 52,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.74609375,
+            9.07080078125,
+            15.1630859375
+          ],
+          "end_load": [
+            9.3681640625,
+            9.38525390625,
+            15.232421875
+          ],
+          "display.obj_sha256": "92572452938a1c232c2b30f01fedb8b97caab8d64b958b8e8dff114db6094e8f",
+          "mesh.txt_sha256": "fd0cb83d47f70787bbf93c7732cbce37e56689e1470f5610b1c05025946cbf0f"
+        },
+        {
+          "pair": 1,
+          "engine": "baseline",
+          "build_ms": 37.512288999999996,
+          "display_ms": 6380.183029999999,
+          "requested_wait_ms": 6417.696144,
+          "vertices": 102610,
+          "triangles": 205216,
+          "boundary_segments": 5038,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 53,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 54,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.76065145007622e-15,
+              "face": 55,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.551437857822845e-15,
+              "face": 56,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 57,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009924575e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 52,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            9.25830078125,
+            9.36181640625,
+            15.193359375
+          ],
+          "end_load": [
+            9.1572265625,
+            9.3388671875,
+            15.154296875
+          ],
+          "display.obj_sha256": "f97bedb2b3192ec40d989c6320a867b12f603d3945a5ddb29d054cefc3857918",
+          "mesh.txt_sha256": "99220845c002d621d7f940a999fcd52ee2835fa1fd025210b63f73a0b44f4614"
+        },
+        {
+          "pair": 2,
+          "engine": "baseline",
+          "build_ms": 37.945980999999996,
+          "display_ms": 6664.898896000001,
+          "requested_wait_ms": 6702.845769,
+          "vertices": 102610,
+          "triangles": 205216,
+          "boundary_segments": 5038,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 53,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 54,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.76065145007622e-15,
+              "face": 55,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.551437857822845e-15,
+              "face": 56,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 57,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009924575e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 52,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            9.1572265625,
+            9.3388671875,
+            15.154296875
+          ],
+          "end_load": [
+            8.904296875,
+            9.283203125,
+            15.10498046875
+          ],
+          "display.obj_sha256": "f97bedb2b3192ec40d989c6320a867b12f603d3945a5ddb29d054cefc3857918",
+          "mesh.txt_sha256": "99220845c002d621d7f940a999fcd52ee2835fa1fd025210b63f73a0b44f4614"
+        },
+        {
+          "pair": 2,
+          "engine": "candidate",
+          "build_ms": 38.312371,
+          "display_ms": 4159.338943,
+          "requested_wait_ms": 4197.65283,
+          "vertices": 102610,
+          "triangles": 205216,
+          "boundary_segments": 5038,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 53,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 54,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.76065145007622e-15,
+              "face": 55,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 5.551437857822845e-15,
+              "face": 56,
+              "triangles": 1054
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 57,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009924602e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 52,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.904296875,
+            9.283203125,
+            15.10498046875
+          ],
+          "end_load": [
+            9.15234375,
+            9.32861328125,
+            15.087890625
+          ],
+          "display.obj_sha256": "92572452938a1c232c2b30f01fedb8b97caab8d64b958b8e8dff114db6094e8f",
+          "mesh.txt_sha256": "fd0cb83d47f70787bbf93c7732cbce37e56689e1470f5610b1c05025946cbf0f"
+        }
+      ],
+      "click_pass": false
+    },
+    "complete-boss": {
+      "input": "parts/P3-filleted-boss.json",
+      "medians": {
+        "baseline": {
+          "build_ms": 39.125367000000004,
+          "display_ms": 6896.322427,
+          "requested_wait_ms": 6945.023816
+        },
+        "candidate": {
+          "build_ms": 31.526740999999998,
+          "display_ms": 3717.14102,
+          "requested_wait_ms": 3740.649815
+        }
+      },
+      "samples": [
+        {
+          "pair": -1,
+          "engine": "candidate",
+          "build_ms": 41.523751,
+          "display_ms": 5037.679085,
+          "requested_wait_ms": 5079.203645,
+          "vertices": 101910,
+          "triangles": 203816,
+          "boundary_segments": 5040,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 55,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 56,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 57,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 58,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 59,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009452757e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 52,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799013477316e-05,
+              "face": 53,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 54,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            9.15234375,
+            9.32861328125,
+            15.087890625
+          ],
+          "end_load": [
+            8.89990234375,
+            9.27294921875,
+            15.0390625
+          ],
+          "display.obj_sha256": "4d5c09f9652d8646d54ba38586e7e56510db373b965d33d4ebcb6e014ae633a0",
+          "mesh.txt_sha256": "0e38d001ffa427a9061dda7f415ce6f1bb3c9aa1995dffa723e6f767469c9691"
+        },
+        {
+          "pair": -1,
+          "engine": "baseline",
+          "build_ms": 30.4183,
+          "display_ms": 5140.263158,
+          "requested_wait_ms": 5170.682444,
+          "vertices": 101910,
+          "triangles": 203816,
+          "boundary_segments": 5040,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 55,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 56,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 57,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 58,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 59,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579900945273e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 52,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901347729e-05,
+              "face": 53,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 54,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.89990234375,
+            9.27294921875,
+            15.0390625
+          ],
+          "end_load": [
+            8.58740234375,
+            9.20166015625,
+            14.98486328125
+          ],
+          "display.obj_sha256": "a2b7e459166124c02236ee987a16dbe181bf5e400c45b1b8829ba7fd607dba4c",
+          "mesh.txt_sha256": "8f6f628f6f347e3013c5ca1d9c546af8b4012a6dba6bffc651103dc94900dd0f"
+        },
+        {
+          "pair": 0,
+          "engine": "baseline",
+          "build_ms": 23.716962000000002,
+          "display_ms": 4889.9778129999995,
+          "requested_wait_ms": 4913.695320999999,
+          "vertices": 101910,
+          "triangles": 203816,
+          "boundary_segments": 5040,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 55,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 56,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 57,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 58,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 59,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579900945273e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 52,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901347729e-05,
+              "face": 53,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 54,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.58740234375,
+            9.20166015625,
+            14.98486328125
+          ],
+          "end_load": [
+            8.5400390625,
+            9.181640625,
+            14.947265625
+          ],
+          "display.obj_sha256": "a2b7e459166124c02236ee987a16dbe181bf5e400c45b1b8829ba7fd607dba4c",
+          "mesh.txt_sha256": "8f6f628f6f347e3013c5ca1d9c546af8b4012a6dba6bffc651103dc94900dd0f"
+        },
+        {
+          "pair": 0,
+          "engine": "candidate",
+          "build_ms": 31.526740999999998,
+          "display_ms": 3701.025661,
+          "requested_wait_ms": 3732.553226,
+          "vertices": 101910,
+          "triangles": 203816,
+          "boundary_segments": 5040,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 55,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 56,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 57,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 58,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 59,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009452757e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 52,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799013477316e-05,
+              "face": 53,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 54,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.5400390625,
+            9.181640625,
+            14.947265625
+          ],
+          "end_load": [
+            8.25634765625,
+            9.11181640625,
+            14.8935546875
+          ],
+          "display.obj_sha256": "4d5c09f9652d8646d54ba38586e7e56510db373b965d33d4ebcb6e014ae633a0",
+          "mesh.txt_sha256": "0e38d001ffa427a9061dda7f415ce6f1bb3c9aa1995dffa723e6f767469c9691"
+        },
+        {
+          "pair": 1,
+          "engine": "candidate",
+          "build_ms": 23.508069,
+          "display_ms": 3717.14102,
+          "requested_wait_ms": 3740.649815,
+          "vertices": 101910,
+          "triangles": 203816,
+          "boundary_segments": 5040,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 55,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 56,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 57,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 58,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 59,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009452757e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 52,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799013477316e-05,
+              "face": 53,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 54,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.25634765625,
+            9.11181640625,
+            14.8935546875
+          ],
+          "end_load": [
+            7.9951171875,
+            9.04345703125,
+            14.84033203125
+          ],
+          "display.obj_sha256": "4d5c09f9652d8646d54ba38586e7e56510db373b965d33d4ebcb6e014ae633a0",
+          "mesh.txt_sha256": "0e38d001ffa427a9061dda7f415ce6f1bb3c9aa1995dffa723e6f767469c9691"
+        },
+        {
+          "pair": 1,
+          "engine": "baseline",
+          "build_ms": 48.700353,
+          "display_ms": 6896.322427,
+          "requested_wait_ms": 6945.023816,
+          "vertices": 101910,
+          "triangles": 203816,
+          "boundary_segments": 5040,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 55,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 56,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 57,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 58,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 59,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579900945273e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 52,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901347729e-05,
+              "face": 53,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 54,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            7.9951171875,
+            9.04345703125,
+            14.84033203125
+          ],
+          "end_load": [
+            8.73583984375,
+            9.1591796875,
+            14.8154296875
+          ],
+          "display.obj_sha256": "a2b7e459166124c02236ee987a16dbe181bf5e400c45b1b8829ba7fd607dba4c",
+          "mesh.txt_sha256": "8f6f628f6f347e3013c5ca1d9c546af8b4012a6dba6bffc651103dc94900dd0f"
+        },
+        {
+          "pair": 2,
+          "engine": "baseline",
+          "build_ms": 39.125367000000004,
+          "display_ms": 7164.4595420000005,
+          "requested_wait_ms": 7203.585772,
+          "vertices": 101910,
+          "triangles": 203816,
+          "boundary_segments": 5040,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 55,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 56,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 57,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 58,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 59,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579900945273e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 52,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901347729e-05,
+              "face": 53,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.333579901736307e-05,
+              "face": 54,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.73583984375,
+            9.1591796875,
+            14.8154296875
+          ],
+          "end_load": [
+            8.5966796875,
+            9.123046875,
+            14.7734375
+          ],
+          "display.obj_sha256": "a2b7e459166124c02236ee987a16dbe181bf5e400c45b1b8829ba7fd607dba4c",
+          "mesh.txt_sha256": "8f6f628f6f347e3013c5ca1d9c546af8b4012a6dba6bffc651103dc94900dd0f"
+        },
+        {
+          "pair": 2,
+          "engine": "candidate",
+          "build_ms": 46.499334000000005,
+          "display_ms": 5483.430082,
+          "requested_wait_ms": 5529.93024,
+          "vertices": 101910,
+          "triangles": 203816,
+          "boundary_segments": 5040,
+          "faces": [
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 55,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 56,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 57,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 58,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.0,
+              "face": 44,
+              "triangles": 2
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.14080642295788e-15,
+              "face": 59,
+              "triangles": 1520
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.8013760614049384e-15,
+              "face": 46,
+              "triangles": 4110
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 6.1034535485846635e-05,
+              "face": 50,
+              "triangles": 2804
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 0.00030122759504061817,
+              "face": 48,
+              "triangles": 193964
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799009452757e-05,
+              "face": 51,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 52,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799013477316e-05,
+              "face": 53,
+              "triangles": 352
+            },
+            {
+              "angular_bound_radians": 0.03490658503988659,
+              "chord_bound_mm": 2.3335799017363096e-05,
+              "face": 54,
+              "triangles": 352
+            }
+          ],
+          "chord_tolerance_mm": "1092520022699813/2000000000000000000",
+          "angular_deviation_radians": "3490658503988659/100000000000000000",
+          "max_vertices": 1000000,
+          "start_load": [
+            8.5966796875,
+            9.123046875,
+            14.7734375
+          ],
+          "end_load": [
+            8.78955078125,
+            9.154296875,
+            14.7529296875
+          ],
+          "display.obj_sha256": "4d5c09f9652d8646d54ba38586e7e56510db373b965d33d4ebcb6e014ae633a0",
+          "mesh.txt_sha256": "0e38d001ffa427a9061dda7f415ce6f1bb3c9aa1995dffa723e6f767469c9691"
+        }
+      ],
+      "click_pass": false
+    }
+  }
+}

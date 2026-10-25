@@ -167,11 +167,16 @@ Outward-rounded double intervals filter surface evaluation, trace Taylor
 coefficients, chord checks, aspect ratios and angular certificates. Angular
 filters retain the whole-parameter normal-variation bound and include the
 returned coordinates; uncertain cases retain the ball or exact-rational path.
-Curved faces bulk-load their UV constraints and
-grid points without splitting the shared boundary polylines. A triangle whose
-three vertices belong to one shared rail receives a certified interior Steiner
-point instead of becoming a zero-volume fin between adjacent faces. Every
-resulting triangle still passes the same chord certificate and work limits.
+Closed cone and bounded-torus bands with two horizontal sampled rails use
+angularly ordered layers between their shared edge samples. Interior columns
+follow the rails' longitude parameters; chord and normal-rotation bounds select
+the layer count. Each facet passes the same complete rounded-coordinate
+certificates. An uncertified proposal is discarded before the general periodic
+triangulator runs. Other trims and apices retain that triangulator.
+A triangle whose three vertices belong to one shared rail receives a certified
+interior Steiner point instead of becoming a zero-volume fin between adjacent
+faces. Every resulting triangle still passes the same chord certificate and
+work limits.
 
 The implementation is serial with fixed traversal, subdivision and output
 orders. Pure-Rust angle projection and dyadic periodic coordinates avoid

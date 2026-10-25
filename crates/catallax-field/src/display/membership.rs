@@ -189,26 +189,31 @@ impl Ring {
         let radial = d.iter().fold(q(0), |s, x| s + x * x) - &height * &height;
         (height, radial)
     }
-    fn location(&self, p: &[Rational; 3]) -> Location {
+    fn query(&self, p: &[Rational; 3]) -> (Location, bool) {
         let (height, radial) = self.coordinates(p);
         if height < self.height[0]
             || height > self.height[1]
             || radial < self.radial_squared[0]
             || radial > self.radial_squared[1]
         {
-            return Location::Outside;
+            return (Location::Outside, false);
         }
-        let tube = self.polynomial.eval(p);
+        // Factored physical tube equation. Normalizing the source axis
+        // preserves the expanded polynomial's sign and zero set.
+        let s = &(&radial + &(&height * &height)) + &(&self.major_squared - &self.minor_squared);
+        let tube = &s * &s - (&self.major_squared * &radial).mul_pow2(2);
         if tube < q(0) {
-            Location::Outside
-        } else if tube.is_zero()
-            || self.height.contains(&height)
-            || self.radial_squared.contains(&radial)
-        {
-            Location::Boundary
+            (Location::Outside, false)
+        } else if tube.is_zero() {
+            (Location::Boundary, true)
+        } else if self.height.contains(&height) || self.radial_squared.contains(&radial) {
+            (Location::Boundary, false)
         } else {
-            Location::Inside
+            (Location::Inside, false)
         }
+    }
+    fn location(&self, p: &[Rational; 3]) -> Location {
+        self.query(p).0
     }
     fn ray(&self, p: &[Rational; 3], direction: &Vector3) -> Option<Location> {
         let direction = direction.rational_components()?;
@@ -234,7 +239,7 @@ impl Ring {
             }
         }
         let s = &(&radial + &(&height * &height)) + &(&self.major_squared - &self.minor_squared);
-        let tube = self.polynomial.eval(p);
+        let tube = &s * &s - (&self.major_squared * &radial).mul_pow2(2);
         let first = if !tube.is_zero() {
             tube
         } else {
@@ -361,7 +366,7 @@ impl<'a> Classifier<'a> {
     pub(crate) fn on_face(&self, role: &Role, p: &[Rational; 3]) -> bool {
         match self {
             Self::Extrusion(e) => e.on_face(role, p),
-            Self::Ring(r) => r.location(p) != Location::Outside && r.polynomial.eval(p).is_zero(),
+            Self::Ring(r) => r.query(p).1,
         }
     }
     pub(crate) fn excludes(&self, cover: &[Interval; 3]) -> bool {

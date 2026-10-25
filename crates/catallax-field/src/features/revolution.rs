@@ -159,6 +159,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn algebraic_cap_native_display_keeps_its_chart_coverage_refusal() {
+        let recipe = catallax_recipe::Recipe::parse(include_str!(
+            "../../../catallax-features/tests/fixtures/algebraic-revolutions/line-30.json"
+        ))
+        .unwrap();
+        let plan = crate::Plan::compile(&recipe).unwrap();
+        let refusal =
+            crate::display::mesh_plan(&plan, &Default::default(), &mut Decider::default())
+                .unwrap_err();
+        assert_eq!(refusal.code, "field.display-unsupported");
+    }
+
+    #[test]
     fn directed_angular_domain_keeps_both_sides_and_reflex_caps_exact() {
         let norm = Rational::from_i64(2);
         for degrees in [30, 45, 60, 120, 210, 225, 300, 330] {

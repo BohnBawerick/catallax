@@ -318,6 +318,239 @@ pub(crate) fn comparison_witness(
     width: &Rational,
     dec: &mut Decider,
 ) -> Result<Option<RPoint3>, Refusal> {
+    use catallax_numbers::Ball;
+
+    // These are candidate points, not trim or distance certificates. Rational
+    // parametrisations put them exactly on the carrier; the existing callers
+    // still certify the closed trim and the actual distance independently.
+    // Evaluate the same binary enclosures as the legacy expression route,
+    // without asking the algebraic decider to rediscover rational frame facts.
+    fn midpoints<const N: usize>(
+        width: &Rational,
+        dec: &mut Decider,
+        enclose: impl Fn(u32) -> [Option<Ball>; N],
+    ) -> Result<Option<[Rational; N]>, Refusal> {
+        // One fixed-arity proposal; subsequent refinement rounds remain
+        // cancellable. Components stop at their own first sufficient precision,
+        // exactly as in the separate legacy enclosure calls.
+        dec.check_deadline()?;
+        let limit = dec.policy().max_precision_bits;
+        let mut precision = 64;
+        let mut best = enclose(1);
+        let mut finished: [Option<Rational>; N] = std::array::from_fn(|_| None);
+        loop {
+            if precision > 64 {
+                dec.check_deadline()?;
+            }
+            for (i, ball) in enclose(precision).into_iter().enumerate() {
+                if finished[i].is_some() {
+                    continue;
+                }
+                if let Some(ball) = ball {
+                    best[i] = Some(match best[i].take() {
+                        Some(old) if old.rad() < ball.rad() => old,
+                        _ => ball,
+                    });
+                    if best[i].as_ref().unwrap().rad().mul_pow2(1) <= *width {
+                        finished[i] = Some(best[i].as_ref().unwrap().mid());
+                    }
+                }
+            }
+            if finished.iter().all(Option::is_some) || precision == limit {
+                break;
+            }
+            precision = precision.saturating_mul(2).min(limit);
+        }
+        if (0..N).any(|i| finished[i].is_none() && best[i].is_none()) {
+            return Ok(None);
+        }
+        Ok(Some(std::array::from_fn(|i| {
+            finished[i]
+                .clone()
+                .unwrap_or_else(|| best[i].as_ref().unwrap().mid())
+        })))
+    }
+    fn rational_midpoints<const N: usize>(
+        values: &[Rational; N],
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<[Rational; N]>, Refusal> {
+        midpoints(width, dec, |p| {
+            values.each_ref().map(|q| Some(Ball::from_rational(q, p)))
+        })
+    }
+    fn native(
+        surface: &Surface,
+        target: &RPoint3,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<RPoint3>, Refusal> {
+        match surface {
+            Surface::Plane(s) => {
+                let (Some(origin), Some(normal)) = (s.origin.as_rational(), s.normal.as_rational())
+                else {
+                    return Ok(None);
+                };
+                let squared = normal.norm_squared();
+                if squared.is_zero() {
+                    return Ok(None);
+                }
+                let Some(xyz) = rational_midpoints(
+                    &[target.x.clone(), target.y.clone(), target.z.clone()],
+                    width,
+                    dec,
+                )?
+                else {
+                    return Ok(None);
+                };
+                let point = RPoint3::new(xyz[0].clone(), xyz[1].clone(), xyz[2].clone());
+                let offset = -point.minus(&origin).dot(&normal) / squared;
+                Ok(Some(point.plus(&normal.scaled(&offset))))
+            }
+            Surface::Cylinder(s) => {
+                let (Some(origin), Some(axis), Some(base)) = (
+                    s.origin.as_rational(),
+                    s.axis.as_rational(),
+                    s.radial_reference().as_rational(),
+                ) else {
+                    return Ok(None);
+                };
+                let squared = base.norm_squared();
+                let axis_squared = axis.norm_squared();
+                if squared.is_zero() || axis_squared.is_zero() || !axis.dot(&base).is_zero() {
+                    return Ok(None);
+                }
+                let delta = target.minus(&origin);
+                let along = delta.dot(&base);
+                let base = if along.sign() == Sign::Negative {
+                    base.scaled(&r(-1))
+                } else {
+                    base
+                };
+                let tangent = axis.cross(&base);
+                let tangent_squared = tangent.norm_squared();
+                let parameter = (delta.dot(&tangent) / (&squared + &along.abs()))
+                    * (&squared / &tangent_squared);
+                let Some([t, h]) =
+                    rational_midpoints(&[parameter, delta.dot(&axis) / axis_squared], width, dec)?
+                else {
+                    return Ok(None);
+                };
+                let z = &tangent_squared * &(&t * &t);
+                let denominator = &squared + &z;
+                let radial = base
+                    .scaled(&(&(&squared - &z) / &denominator))
+                    .plus(&tangent.scaled(&((&squared * &t).mul_pow2(1) / denominator)));
+                Ok(Some(origin.plus(&radial).plus(&axis.scaled(&h))))
+            }
+            Surface::Torus(s) => {
+                let (Some(center), Some(axis), Some(reference), Some(major), Some(minor)) = (
+                    s.center.as_rational(),
+                    s.axis.as_rational(),
+                    s.ref_dir.as_rational(),
+                    s.major.as_rational(),
+                    s.minor.as_rational(),
+                ) else {
+                    return Ok(None);
+                };
+                if major <= minor || minor.sign() != Sign::Positive {
+                    return Ok(None);
+                }
+                let (Some(a), Some(b)) = (
+                    sqrt_rational(&axis.norm_squared()),
+                    sqrt_rational(&reference.norm_squared()),
+                ) else {
+                    return Ok(None);
+                };
+                if a.is_zero() || b.is_zero() || !axis.dot(&reference).is_zero() {
+                    return Ok(None);
+                }
+                let axis = axis.scaled(&a.recip().unwrap());
+                let u = reference.scaled(&b.recip().unwrap());
+                let v = axis.cross(&u);
+                let delta = target.minus(&center);
+                let x = delta.dot(&u);
+                let y = delta.dot(&v);
+                if x.is_zero() && y.is_zero() {
+                    return Ok(None);
+                }
+                let radial_sign = if y.is_zero() && x.sign() == Sign::Negative {
+                    -1
+                } else {
+                    1
+                };
+                let height = delta.dot(&axis);
+                let planar = delta.minus(&axis.scaled(&height));
+                let squared = planar.norm_squared();
+                if height.is_zero() && squared == &major * &major {
+                    return Ok(None);
+                }
+                let sign = if height.is_zero() && squared < &major * &major {
+                    -1
+                } else {
+                    1
+                };
+                // Both phases use the same exact squared radial length.
+                // Sharing its enclosure avoids constructing and certifying a
+                // second identical radical without changing either parameter.
+                if squared != &x * &x + &y * &y {
+                    return Ok(None);
+                }
+                let parameters = midpoints(width, dec, |p| {
+                    let Some(radius) = Ball::from_rational(&squared, p).sqrt() else {
+                        return [None, None];
+                    };
+                    let radial_denominator =
+                        &radius + &Ball::from_rational(&(&x * &r(radial_sign)), p);
+                    let radial_parameter =
+                        Ball::from_rational(&y, p).checked_div(&radial_denominator);
+                    let tube_parameter = (|| {
+                        let zero = Ball::from_rational(&r(0), p);
+                        let one = Ball::from_rational(&r(1), p);
+                        let x = &radius - &Ball::from_rational(&major, p);
+                        // Retain the legacy unit-frame dot-product rounding order.
+                        let x_dot = &(&(&x * &one) + &zero) + &zero;
+                        let y_dot = &(&(&x * &zero) + &Ball::from_rational(&height, p)) + &zero;
+                        let norm = &x_dot.square() + &y_dot.square();
+                        if p > 1 && norm.lo().sign() == Sign::Negative {
+                            return None;
+                        }
+                        let denominator =
+                            &norm.sqrt()? + &(&x_dot * &Ball::from_rational(&r(sign), p));
+                        y_dot.checked_div(&denominator)
+                    })();
+                    [radial_parameter, tube_parameter]
+                })?;
+                let Some([radial_parameter, t]) = parameters else {
+                    return Ok(None);
+                };
+                let [radial_cosine, radial_sine] = rational_circle(&radial_parameter);
+                let radial = u
+                    .scaled(&(radial_cosine * r(radial_sign)))
+                    .plus(&v.scaled(&radial_sine));
+                let [cosine, sine] = rational_circle(&t);
+                let cosine = cosine * r(sign);
+                Ok(Some(
+                    center
+                        .plus(&radial.scaled(&(&major + &(&minor * &cosine))))
+                        .plus(&axis.scaled(&(&minor * &sine))),
+                ))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    if matches!(
+        surface,
+        Surface::Plane(_) | Surface::Cylinder(_) | Surface::Torus(_)
+    ) && width.sign() == Sign::Positive
+        && dec.policy().max_precision_bits >= 64
+        && dec.policy().max_work > 0
+        && let Some(target) = target.as_rational()
+        && let Some(point) = native(surface, &target, width, dec)?
+    {
+        return Ok(Some(point));
+    }
     match surface {
         Surface::Sphere(s) => {
             // Choose the stereographic pole opposite the target hemisphere.

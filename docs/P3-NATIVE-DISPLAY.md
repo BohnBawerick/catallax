@@ -6,11 +6,11 @@ The evaluator represents certified quarter-arc and ring-fillet contact regions w
 
 The public P3 display stage uses 885,114 work, with 75,811 vertices, 108,962 triangles and a reported 0.01 mm bound. Independent tests check all thirteen surviving origins against the B-rep, analytic surviving domains, outward triangle winding, planar area controls and valid B-rep topology. Strict P3 STEP bytes are unchanged. Zero-work and exhausted cell limits return refusals without a mesh.
 
-Development observations remain raw timing misses against the 1,000 ms complete-click target. The latest recorded complete CLI wait is about 17.49 seconds; earlier 35- and 38-second observations remain misses. These are unqualified development measurements, with no speed claim or replacement baseline.
+Development observations remain raw timing misses against the 1,000 ms complete-click target. A recorded complete CLI wait is about 17.49 seconds; earlier 35- and 38-second observations remain misses. These are unqualified development measurements, with no speed claim or replacement baseline.
 
-The paired comparison retains its original accuracy (0.01 mm), B-rep chord tolerance (0.005 mm), divisions (4) and normal cosine (999/1000). At the separate verification default of 100,000,000 work, it completes in 4,503,230 work with 10,098 forward vertices, 332 reverse samples, no findings and no refusals. This is sampled two-way agreement, not a whole-result certificate.
+The paired comparison retains its original accuracy (0.01 mm), B-rep chord tolerance (0.005 mm), divisions (4) and normal cosine (999/1000). At the unchanged 1,000,000-work scoreboard allowance, it completes in 993,013 work with 10,098 forward vertices, 332 reverse samples, no findings and no refusals. This is sampled two-way agreement, not a whole-result certificate.
 
-At the unchanged 1,000,000-work scoreboard contract, comparison still exhausts its allowance with unresolved observations. It remains a typed refusal and does not establish scoreboard agreement. The larger verification allowance is not substituted into the scoreboard. The 2,000 ms background-comparison target remains unchanged; development comparison timings also exceed it. Complete target-part acceptance is still pending.
+The same result is checked separately at the verification default of 100,000,000 work; this larger allowance is not substituted into the scoreboard. Deliberately insufficient work still returns a typed refusal with no incomplete agreement. Rational-input plane, cylinder and ring-torus proposals use the same parametrisations and binary rounding as the previous projector, sharing the radial-root enclosure across torus phases. Existing unsupported-frame, algebraic-input and low-precision fallbacks remain intact; the original trim and actual-distance checks still certify each candidate. The 2,000 ms background-comparison target remains unchanged; development comparison timings also exceed it. Complete target-part acceptance is still pending.
 
 Reproduce field display through the verification skill:
 
@@ -21,4 +21,4 @@ python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py run \
   --binary target/release/catallax-verify --out "$PROOF/p3-field" --json
 ```
 
-Run the same public recipe separately with `--source compare` and inspect its refusal, forward/reverse coverage and all findings. The 1M scoreboard, 20M application default and 100M verification default remain separate contracts.
+Run the same public recipe separately with `--source compare` and inspect its forward/reverse coverage, complete findings and resource status. The 1M scoreboard, 20M application default and 100M verification default remain separate contracts.

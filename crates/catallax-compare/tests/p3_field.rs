@@ -2,7 +2,7 @@
 use std::time::Instant;
 
 use catallax_compare::{Completion, Controller, Options, Report, Verdict};
-use catallax_numbers::{OperationWork, with_operation_budget};
+use catallax_numbers::{OperationWork, Rational, with_operation_budget};
 use catallax_recipe::Recipe;
 
 fn check(limit: u64) -> (Report, OperationWork) {
@@ -26,15 +26,12 @@ fn check(limit: u64) -> (Report, OperationWork) {
     (report, work)
 }
 
-#[test]
-fn p3_verification_comparison_has_two_way_coverage_without_unresolved_observations() {
-    // The verification request default, not a replacement scoreboard allowance.
-    let (report, work) = check(100_000_000);
+fn require_complete(report: Report, work: OperationWork) {
     assert!(!work.exhausted);
     assert!(report.refusal.is_none(), "{report:#?}");
     assert!(report.not_comparable.is_empty(), "{report:#?}");
-    assert!(report.forward_vertices > 0);
-    assert!(report.reverse_samples > 0);
+    assert_eq!(report.forward_vertices, 10_098);
+    assert_eq!(report.reverse_samples, 332);
     assert!(report.findings.is_empty(), "{report:#?}");
     assert_eq!(report.verdict, Verdict::Agree);
     assert!(
@@ -43,11 +40,26 @@ fn p3_verification_comparison_has_two_way_coverage_without_unresolved_observatio
             .as_ref()
             .is_some_and(|bound| bound <= &Options::default().accuracy)
     );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::parse("1118961873734028146210319738755494338957/348449143727040986586495598010130648530944").unwrap()));
 }
 
 #[test]
-fn p3_scoreboard_comparison_resource_exhaustion_remains_a_refusal() {
+fn p3_verification_comparison_has_two_way_coverage_without_unresolved_observations() {
+    let (report, work) = check(100_000_000);
+    require_complete(report, work);
+}
+
+#[test]
+fn p3_scoreboard_comparison_has_complete_unchanged_coverage() {
     let (report, work) = check(1_000_000);
+    require_complete(report, work);
+}
+
+#[test]
+fn p3_incomplete_comparison_resource_exhaustion_remains_a_refusal() {
+    // Below construction plus distance-domain work; the 1M scoreboard is a
+    // separate positive control, not a replacement allowance for this refusal.
+    let (report, work) = check(750_000);
     assert!(work.exhausted);
     assert_eq!(report.refusal.unwrap().code, "numbers.operation-budget");
     assert_eq!(report.verdict, Verdict::Unresolved);

@@ -421,14 +421,14 @@ impl GeomStore {
     /// Facts first; a not-exact outcome carries a distance bound.
     pub fn point_on_curve(&self, c: CurveId, p: PointId, dec: &mut Decider) -> Outcome<Apart> {
         let curve = self.curve(c);
-        let by_surfaces = match curve {
-            Curve::Intersection(c) => c.surfaces.iter().all(|s| {
+        let known_supports = match curve {
+            Curve::Intersection(c) => c.surfaces.map(|s| {
                 self.facts
-                    .holds(FactKind::Incident, GeomKey::Point(p), GeomKey::Surface(*s))
+                    .holds(FactKind::Incident, GeomKey::Point(p), GeomKey::Surface(s))
             }),
-            _ => false,
+            _ => [false; 2],
         };
-        if by_surfaces
+        if known_supports.into_iter().all(|known| known)
             || self
                 .facts
                 .holds(FactKind::Incident, GeomKey::Point(p), GeomKey::Curve(c))
@@ -449,37 +449,61 @@ impl GeomStore {
         let Some(equations) = curve.equations(self) else {
             return Outcome::Refused(missing_equation());
         };
+        // A retained incidence discharges only its own support equation. Keep
+        // the remaining equations and their distance-bound indices unchanged.
+        let mut indices = [0, 1, 2];
+        let mut count = 0;
+        for i in 0..equations.len() {
+            if known_supports.get(i).copied().unwrap_or(false) {
+                dec.note_fact_decision();
+            } else {
+                indices[count] = i;
+                count += 1;
+            }
+        }
+        let indices = &indices[..count];
         decide_zeroes(
-            equations.iter().map(|e| e.eval_real(&coordinates)),
+            indices
+                .iter()
+                .map(|&i| equations[i].eval_real(&coordinates)),
             dec,
-            |bounds, dec| match curve {
-                Curve::Line(c) => Ok(math::sqrt_upper(&sum_squares(bounds))
-                    * math::inverse_length_upper(&c.dir, dec)?),
-                Curve::Circle(c) => {
-                    let h_squared = &Real::from(&bounds[0] * &bounds[0]) / &c.normal.norm_squared();
-                    let value = &Real::from(bounds[1].clone()) + &(&Real::from_i64(2) * &h_squared);
-                    if let Some(value) = value.as_rational() {
-                        return Ok(math::sqrt_upper(&value));
+            |bounds, dec| {
+                let mut original = std::array::from_fn::<_, 3, _>(|_| Rational::zero());
+                for (&i, bound) in indices.iter().zip(bounds) {
+                    original[i] = bound.clone();
+                }
+                let bounds = &original[..equations.len()];
+                match curve {
+                    Curve::Line(c) => Ok(math::sqrt_upper(&sum_squares(bounds))
+                        * math::inverse_length_upper(&c.dir, dec)?),
+                    Curve::Circle(c) => {
+                        let h_squared =
+                            &Real::from(&bounds[0] * &bounds[0]) / &c.normal.norm_squared();
+                        let value =
+                            &Real::from(bounds[1].clone()) + &(&Real::from_i64(2) * &h_squared);
+                        if let Some(value) = value.as_rational() {
+                            return Ok(math::sqrt_upper(&value));
+                        }
+                        Ok(dec.enclose_at(&value.sqrt(), 64)?.hi())
                     }
-                    Ok(dec.enclose_at(&value.sqrt(), 64)?.hi())
+                    Curve::Ellipse(c) => {
+                        let major = if let Some(value) = c.major_sq.as_rational() {
+                            math::sqrt_upper(&value)
+                        } else {
+                            dec.enclose_at(&c.major_sq.sqrt(), 64)?.hi()
+                        };
+                        Ok(&major * &bounds[1]
+                            + &bounds[0] * &math::inverse_length_upper(&c.normal, dec)?)
+                    }
+                    Curve::Intersection(c) => Ok(self
+                        .surface(c.surfaces[0])
+                        .distance_bound(&bounds[0], dec)?
+                        .max(
+                            self.surface(c.surfaces[1])
+                                .distance_bound(&bounds[1], dec)?,
+                        )),
+                    Curve::BSpline(_) => Err(missing_equation()),
                 }
-                Curve::Ellipse(c) => {
-                    let major = if let Some(value) = c.major_sq.as_rational() {
-                        math::sqrt_upper(&value)
-                    } else {
-                        dec.enclose_at(&c.major_sq.sqrt(), 64)?.hi()
-                    };
-                    Ok(&major * &bounds[1]
-                        + &bounds[0] * &math::inverse_length_upper(&c.normal, dec)?)
-                }
-                Curve::Intersection(c) => Ok(self
-                    .surface(c.surfaces[0])
-                    .distance_bound(&bounds[0], dec)?
-                    .max(
-                        self.surface(c.surfaces[1])
-                            .distance_bound(&bounds[1], dec)?,
-                    )),
-                Curve::BSpline(_) => Err(missing_equation()),
             },
         )
     }
@@ -713,5 +737,187 @@ fn decide_zeroes(
         }
     } else {
         Outcome::ProvenCoincident(coincidence.expect("at least one equation"))
+    }
+}
+
+#[cfg(test)]
+mod contact_fact_tests {
+    use super::*;
+    use crate::{IntersectionCurve, Plane, Sphere};
+    use catallax_numbers::BudgetPolicy;
+
+    fn fixture() -> (GeomStore, SurfaceId, CurveId, PointId) {
+        let mut store = GeomStore::new();
+        let mut dec = Decider::default();
+        let sphere = store.add_surface(Surface::Sphere(
+            Sphere::new(
+                Point3::origin(),
+                Real::one(),
+                Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let plane = store.add_surface(Surface::Plane(
+            Plane::new(
+                Point3::origin(),
+                Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        // 1/3 + 2/3 = 1 proves this point is on the unit sphere.
+        let third = Real::one() / Real::from_i64(3);
+        let p = Point3::new(
+            third.clone().sqrt(),
+            (third * Real::from_i64(2)).sqrt(),
+            Real::zero(),
+        );
+        assert!(
+            dec.sign(&store.surface(sphere).value(&p).unwrap())
+                .is_coincident()
+        );
+        let point = store.add_point(PointDef::Explicit(p));
+        let curve = store.add_curve(Curve::Intersection(IntersectionCurve {
+            surfaces: [sphere, plane],
+            witness: point,
+        }));
+        (store, sphere, curve, point)
+    }
+    fn small() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 8,
+        })
+    }
+    #[test]
+    fn retained_partial_support_regression() {
+        let (mut store, sphere, curve, point) = fixture();
+        assert!(
+            !store
+                .point_on_curve(curve, point, &mut small())
+                .is_coincident()
+        );
+        store.record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(point),
+            b: GeomKey::Surface(sphere),
+            at: None,
+            origin: FactOrigin::Proof(ZeroProof::Algebraic),
+        });
+        let facts = store.facts().len();
+        let mut dec = small();
+        assert!(store.point_on_curve(curve, point, &mut dec).is_coincident());
+        assert_eq!(
+            store.facts().len(),
+            facts,
+            "a read-only decision must not append facts"
+        );
+        assert!(dec.stats().coincident_fact > 0);
+    }
+    #[test]
+    fn one_support_fact_does_not_discharge_the_other_support() {
+        let (mut store, sphere, curve, _) = fixture();
+        let point = store.add_point(PointDef::Explicit(Point3::new(
+            Real::zero(),
+            Real::zero(),
+            Real::one(),
+        )));
+        store.record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(point),
+            b: GeomKey::Surface(sphere),
+            at: None,
+            origin: FactOrigin::Proof(ZeroProof::ExactArithmetic),
+        });
+        assert!(matches!(
+            store.point_on_curve(curve, point, &mut small()),
+            Outcome::Proven(Apart)
+        ));
+        let (mut store, sphere, curve, point) = fixture();
+        store.record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(point),
+            b: GeomKey::Surface(sphere),
+            at: None,
+            origin: FactOrigin::Proof(ZeroProof::Algebraic),
+        });
+        let mut zero = Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        });
+        assert!(
+            !store
+                .point_on_curve(curve, point, &mut zero)
+                .is_coincident()
+        );
+    }
+    #[test]
+    fn partial_support_keeps_the_unknown_equations_distance_units() {
+        let mut store = GeomStore::new();
+        let mut dec = Decider::default();
+        let z = Real::one() / Real::from_i64(3);
+        let point = Point3::new((Real::from_i64(49) - z.square()).sqrt(), Real::zero(), z);
+        let sphere = store.add_surface(Surface::Sphere(
+            Sphere::new(
+                Point3::origin(),
+                Real::from_i64(7),
+                Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let plane = store.add_surface(Surface::Plane(
+            Plane::new(
+                Point3::origin(),
+                Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        assert!(
+            dec.sign(&store.surface(sphere).value(&point).unwrap())
+                .is_coincident()
+        );
+        let point = store.add_point(PointDef::Explicit(point));
+        let witness = store.add_point(PointDef::Explicit(Point3::new(
+            Real::from_i64(7),
+            Real::zero(),
+            Real::zero(),
+        )));
+        let curve = store.add_curve(Curve::Intersection(IntersectionCurve {
+            surfaces: [sphere, plane],
+            witness,
+        }));
+        store.record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(point),
+            b: GeomKey::Surface(sphere),
+            at: None,
+            origin: FactOrigin::Proof(ZeroProof::Algebraic),
+        });
+        let policy = BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        };
+        let value = store.surface(plane).value(&store.position(point)).unwrap();
+        let Outcome::NotExact(expected) = Decider::new(policy).sign(&value) else {
+            panic!("zero budget retains the unresolved plane value");
+        };
+        let expected = store
+            .surface(plane)
+            .distance_bound(&expected.bound, &Decider::new(policy))
+            .unwrap();
+        let Outcome::NotExact(actual) =
+            store.point_on_curve(curve, point, &mut Decider::new(policy))
+        else {
+            panic!("the unknown support remains unresolved");
+        };
+        assert_eq!(actual.bound, expected);
+        assert!(actual.bound >= Rational::one() / Rational::from_i64(3));
     }
 }

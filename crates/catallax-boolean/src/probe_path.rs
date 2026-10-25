@@ -1,7 +1,7 @@
 //! A probe is adjacent to a boundary arc only after its whole chart path
 //! is certified free of other boundary arcs; displacement alone proves nothing.
 
-use crate::geometry::{natural_ends, on_arc, r, sign, unit};
+use crate::geometry::{equation_is_source_contact, natural_ends, on_arc, r, sign, unit};
 use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
 use catallax_shapes::{
     Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, SurfaceId, Vector3,
@@ -544,23 +544,9 @@ pub(crate) fn adjacent(
                 .iter()
                 .enumerate()
                 .map(|(index, e)| -> Result<P, Refusal> {
-                    let contact = edge.curve == source_curve
-                        || source_equations
-                            .iter()
-                            .any(|source| source.same_definition(e))
-                        || match curve {
-                            Curve::Intersection(branch) => {
-                                let surface = GeomKey::Surface(branch.surfaces[index]);
-                                let facts = model.geom().facts();
-                                facts.holds(FactKind::Incident, GeomKey::Point(source), surface)
-                                    || facts.holds(
-                                        FactKind::Incident,
-                                        GeomKey::Curve(source_curve),
-                                        surface,
-                                    )
-                            }
-                            _ => false,
-                        };
+                    let contact = equation_is_source_contact(
+                        model, source, source_curve, edge.curve, index, e, &source_equations,
+                    );
                     // Every path parametrises this carrier, so its defining
                     // equation is identically zero without reconstruction.
                     let mut polynomial =

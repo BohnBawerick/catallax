@@ -2,10 +2,10 @@
 
 use catallax_intersect::{Cyclic, curve_is_closed, cyclic_order, on_curve, order_on_curve};
 use catallax_numbers::{
-    Decider, Fact, FactKind, FactOrigin, Outcome, Rational, Real, Refusal, Sign, StrictOrder,
-    StrictSign,
+    Decider, Fact, FactKind, FactOrigin, Outcome, Rational, Real, RealPoly, Refusal, Sign,
+    StrictOrder, StrictSign,
 };
-use catallax_shapes::{CurveId, GeomKey, PointId, RVector3, Vector3};
+use catallax_shapes::{Curve, CurveId, GeomKey, PointId, RVector3, Vector3};
 use catallax_topology::{EdgeId, Model, Sense};
 
 // Geometric search counts are independent of arithmetic working precision.
@@ -140,6 +140,44 @@ pub(crate) fn record_same_point(model: &mut Model, a: PointId, b: PointId) {
     }
 }
 
+/// Whether an existing exact relation proves this equation zero at the source.
+/// This says nothing about a different selected component or the rest of a path.
+pub(crate) fn equation_is_source_contact(
+    model: &Model,
+    source: PointId,
+    source_curve: CurveId,
+    barrier: CurveId,
+    equation_index: usize,
+    equation: &RealPoly,
+    source_equations: &[RealPoly],
+) -> bool {
+    let facts = model.geom().facts();
+    if facts.holds(
+        FactKind::Coincident,
+        GeomKey::Curve(source_curve),
+        GeomKey::Curve(barrier),
+    ) || facts.holds(
+        FactKind::Incident,
+        GeomKey::Point(source),
+        GeomKey::Curve(barrier),
+    ) || source_equations.iter().any(|e| e.same_definition(equation))
+    {
+        return true;
+    }
+    if let Curve::Intersection(branch) = model.geom().curve(barrier) {
+        let surface = GeomKey::Surface(branch.surfaces[equation_index]);
+        if facts.holds(FactKind::Incident, GeomKey::Point(source), surface)
+            || facts.holds(FactKind::Incident, GeomKey::Curve(source_curve), surface)
+        {
+            return true;
+        }
+    }
+    let opposite = -equation;
+    source_equations
+        .iter()
+        .any(|e| e.same_definition(&opposite))
+}
+
 pub(crate) fn canonical_point(
     model: &mut Model,
     points: &mut Vec<PointId>,
@@ -210,4 +248,133 @@ pub(crate) fn probe_parameters(index: u32) -> (Rational, Rational) {
     let diagonal = ((index * 8 + 1).isqrt() - 1) / 2;
     let left = index - diagonal * (diagonal + 1) / 2;
     (fraction(left), fraction(diagonal - left))
+}
+
+#[cfg(test)]
+mod contact_fact_tests {
+    use super::*;
+    use catallax_shapes::{Circle, Line, Plane, Point3, PointDef, Surface};
+
+    fn fixture() -> (Model, PointId, CurveId, CurveId) {
+        let mut model = Model::new();
+        let mut dec = Decider::default();
+        let source = model.geom_mut().add_curve(Curve::Line(
+            Line::new(Point3::origin(), unit(0), &mut dec).unwrap(),
+        ));
+        let barrier = model.geom_mut().add_curve(Curve::Circle(
+            Circle::new(Point3::origin(), unit(2), Real::one(), unit(0), &mut dec).unwrap(),
+        ));
+        let point = model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+            Real::one(),
+            Real::zero(),
+            Real::zero(),
+        )));
+        (model, point, source, barrier)
+    }
+    #[test]
+    fn direct_point_curve_fact_retains_analytic_contact() {
+        let (mut model, point, source, barrier) = fixture();
+        let source_equations = model.geom().curve(source).equations(model.geom()).unwrap();
+        let equations = model.geom().curve(barrier).equations(model.geom()).unwrap();
+        assert!(!equation_is_source_contact(
+            &model,
+            point,
+            source,
+            barrier,
+            1,
+            &equations[1],
+            &source_equations
+        ));
+        model.geom_mut().record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(point),
+            b: GeomKey::Curve(barrier),
+            at: None,
+            origin: FactOrigin::Proof(catallax_numbers::ZeroProof::ExactArithmetic),
+        });
+        assert!(equation_is_source_contact(
+            &model,
+            point,
+            source,
+            barrier,
+            1,
+            &equations[1],
+            &source_equations
+        ));
+    }
+    #[test]
+    fn a_shared_plane_does_not_prove_the_other_circle_equation() {
+        let (mut model, _, source, barrier) = fixture();
+        let point = model
+            .geom_mut()
+            .add_point(PointDef::Explicit(Point3::origin()));
+        let plane = model.geom_mut().add_surface(Surface::Plane(
+            Plane::new(Point3::origin(), unit(2), unit(0), &mut Decider::default()).unwrap(),
+        ));
+        model.geom_mut().record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(point),
+            b: GeomKey::Surface(plane),
+            at: None,
+            origin: FactOrigin::Proof(catallax_numbers::ZeroProof::ExactArithmetic),
+        });
+        let source_equations = model.geom().curve(source).equations(model.geom()).unwrap();
+        let equations = model.geom().curve(barrier).equations(model.geom()).unwrap();
+        assert!(!equation_is_source_contact(
+            &model,
+            point,
+            source,
+            barrier,
+            1,
+            &equations[1],
+            &source_equations
+        ));
+    }
+    #[test]
+    fn opposite_source_equation_retains_the_same_zero_contact() {
+        let (model, point, source, barrier) = fixture();
+        let equations = model.geom().curve(barrier).equations(model.geom()).unwrap();
+        let opposite = -&equations[0];
+        assert!(equation_is_source_contact(
+            &model,
+            point,
+            source,
+            barrier,
+            0,
+            &equations[0],
+            &[opposite]
+        ));
+    }
+    #[test]
+    fn coincident_curve_fact_retains_contact_under_a_different_definition() {
+        let (mut model, point, source, _) = fixture();
+        let barrier = model.geom_mut().add_curve(Curve::Line(
+            Line::new(
+                Point3::new(Real::from_i64(2), Real::zero(), Real::zero()),
+                unit(0).scaled(&Real::from_i64(2)),
+                &mut Decider::default(),
+            )
+            .unwrap(),
+        ));
+        model.geom_mut().record_fact(Fact {
+            kind: FactKind::Coincident,
+            a: GeomKey::Curve(source),
+            b: GeomKey::Curve(barrier),
+            at: None,
+            origin: FactOrigin::Proof(catallax_numbers::ZeroProof::ExactArithmetic),
+        });
+        let source_equations = model.geom().curve(source).equations(model.geom()).unwrap();
+        let equations = model.geom().curve(barrier).equations(model.geom()).unwrap();
+        for (index, equation) in equations.iter().enumerate() {
+            assert!(equation_is_source_contact(
+                &model,
+                point,
+                source,
+                barrier,
+                index,
+                equation,
+                &source_equations
+            ));
+        }
+    }
 }

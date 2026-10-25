@@ -1,7 +1,7 @@
 //! Immutable shared real expressions with conservative construction-time caches.
 
 use crate::{Algebraic, Ball, Interval, IsolatedRoot, Rational};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 /// Exact real expression. Cloning shares its immutable definition and caches.
 #[derive(Clone, Debug)]
@@ -46,12 +46,34 @@ impl Real {
     }
     /// Exact rational leaf.
     pub fn from_rational(r: Rational) -> Self {
+        if r.is_integer()
+            && let Some(shared) = r.numerator().to_i64().and_then(Self::shared_integer)
+        {
+            return shared;
+        }
+        Self::rational_leaf(r)
+    }
+    fn shared_integer(value: i64) -> Option<Self> {
+        // Intern only literal values. Arithmetic definitions and their domain
+        // checks remain intact, even when their rational result is -1, 0 or 1.
+        static ZERO: LazyLock<Real> = LazyLock::new(|| Real::rational_leaf(Rational::zero()));
+        static ONE: LazyLock<Real> = LazyLock::new(|| Real::rational_leaf(Rational::one()));
+        static NEGATIVE_ONE: LazyLock<Real> =
+            LazyLock::new(|| Real::rational_leaf(Rational::from_i64(-1)));
+        match value {
+            0 => Some(ZERO.clone()),
+            1 => Some(ONE.clone()),
+            -1 => Some(NEGATIVE_ONE.clone()),
+            _ => None,
+        }
+    }
+    fn rational_leaf(r: Rational) -> Self {
         let approx = Interval::from_rational(&r);
         Self::make(Expr::Rational(r.clone()), approx, || None, Some(r), true)
     }
     /// Exact integer leaf.
     pub fn from_i64(v: i64) -> Self {
-        Self::from_rational(Rational::from_i64(v))
+        Self::shared_integer(v).unwrap_or_else(|| Self::rational_leaf(Rational::from_i64(v)))
     }
     /// Exact algebraic leaf.
     pub fn from_algebraic(a: Algebraic) -> Self {

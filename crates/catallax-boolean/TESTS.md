@@ -108,6 +108,13 @@ The blind benchmark is named `blind_speed` because the merged implementation sup
 
 The growth metric is the largest observable stored rational, not the largest intermediate. Numerator and denominator maxima are separate bit counts over public rational fields, implicit coefficients, root boxes and reachable root-system coefficients. Opaque non-rational `Real` coordinates are reported separately. Hidden expression children, unrelated arena entries and temporary arithmetic allocations are not observable through this interface and are not claimed by the metric.
 
+The feature rebuild benchmark also accepts an external recipe with `--input`,
+`--repeat`, `--stages` and `--step-output`. Its separate stage pass calls the five
+public Boolean stages against each real prefix. These raw decider timings do not
+include the application's aggregate work scope or a complete click. See the
+[latency protocol](../../.claude/skills/verify-catallax/references/features/latency.md).
+
+
 ## Real-build verification
 
 Merged main `f59a7a4ce16161535536723b9fb1876ca3cf17db`, including the piece 1 zero-proof speedup, into the test branch. The serial inventory ran every test against that build with a 600-second limit per test. All 77 tests compiled; the doctest command also passed. The case 19 tangent-sphere test completed in 85.691 seconds.
@@ -231,3 +238,17 @@ The preliminary coefficient filter tries the existing conservative interval widt
 `diamond_projection_keeps_quadrants_seams_and_poles_distinct` checks exact rational phase extrema in all four quadrants, across the positive-axis seam and along the negative axis. It also requires a split for a rectangle containing the pole. A separate before/after smoke compares exact midpoint/radius/precision triples for 2,916 scaled rectangles; eliminating rational-difference normalization leaves every result unchanged.
 
 `straight_contacts_keep_simple_double_and_contained_roots` independently derives a sphere contact at `(sqrt(2), sqrt(3), 1)`, a tangential cylinder contact with a mixed `xy` term, and a contained planar path. It checks every coefficient and the resulting whole-path separation decision. The standalone identity smoke also compares fifteen exact path values, including parameters outside `[0,1]`.
+
+## Finite carrier activity
+
+Finite-face exclusions only gate curve/surface queries for carriers with no
+potentially meeting generating face pair. Every carrier remains in its original
+pool position. Every curve/curve meeting that involves a skipped carrier is
+still queried, because the covered-pair skip relies on a carrier's own complete
+curve/surface results, which a skipped carrier does not have. Optional bounding
+witnesses use a private model fork so they cannot become canonical graph points.
+
+The existing bounds tests distinguish strict separation from touching caps,
+retain unbounded planar regions and check translated local gaps. Unsupported or
+unsettled optional bounds keep the ordinary query path. No mathematical expected
+answer, ignore gate, search bound or numeric allowance changes.

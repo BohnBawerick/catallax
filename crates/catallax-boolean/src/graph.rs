@@ -256,6 +256,11 @@ pub(crate) fn intersect(
     // Surfaces proven to contain each carrier: both supports of a section
     // component, or the face surface carrying a coincident face's edge.
     let mut supports: Vec<BTreeSet<SurfaceId>> = Vec::new();
+    // Preserve every canonical carrier and its insertion order. Optional bound
+    // witnesses stay on a fork, outside the graph's canonical point pool.
+    let mut pruning_model = (!algebraic).then(|| model.clone());
+    let mut finite_bounds = crate::bounds::FaceBounds::new(false);
+    let mut active = Vec::new();
     for &fa in &first {
         for &fb in &second {
             let sa = model.face(fa).surface;
@@ -286,13 +291,25 @@ pub(crate) fn intersect(
                 pairs.insert((sa, sb), answer.value.clone());
                 answer.value
             };
+            // Disjoint and point-only supports have no carrier activity to
+            // prove. Cache the optional finite bound only when adding a curve.
+            let mut relevance = None;
+            let mut relevant = |dec: &mut Decider| {
+                *relevance.get_or_insert_with(|| match &mut pruning_model {
+                    Some(probe) => !finite_bounds.excludes(probe, fa, fb, dec),
+                    None => true,
+                })
+            };
             match pair {
                 SurfacePair::Disjoint => {}
                 SurfacePair::Coincident { .. } => {
                     for face in [fa, fb] {
                         let surface = model.face(face).surface;
                         for curve in face_edges(model, face) {
+                            let relevant = relevant(dec);
                             let index = add_curve(model, &mut pool, curve, dec)?;
+                            active.resize(pool.len(), false);
+                            active[index] |= relevant;
                             supports.resize(pool.len(), BTreeSet::new());
                             supports[index].insert(surface);
                         }
@@ -315,7 +332,10 @@ pub(crate) fn intersect(
                                 singular: nodes,
                                 ..
                             } => {
+                                let relevant = relevant(dec);
                                 let index = add_curve(model, &mut pool, curve, dec)?;
+                                active.resize(pool.len(), false);
+                                active[index] |= relevant;
                                 supports.resize(pool.len(), BTreeSet::new());
                                 supports[index].extend([sa, sb]);
                                 for node in nodes {
@@ -347,6 +367,11 @@ pub(crate) fn intersect(
     // Surfaces whose whole meeting with each carrier is now canonical.
     let mut complete: Vec<BTreeSet<SurfaceId>> = vec![BTreeSet::new(); pool.len()];
     for (index, &curve) in pool.iter().enumerate() {
+        // An inactive carrier has no potentially meeting generating face pair.
+        // The complete curve/pair pass below still includes its crossings.
+        if !active[index] {
+            continue;
+        }
         for &surface in &surfaces {
             let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
             if !matches!(answer.value, CurveSurface::Contained) {
@@ -381,8 +406,10 @@ pub(crate) fn intersect(
             // Two carriers meet only on each other's supports. When one
             // carrier's complete meeting with the other's support is already
             // canonical, the pair can add no point; equality is never inferred.
+            // A skipped carrier's crossings are found only here, so its pairs
+            // are always queried.
             let covered = |c: usize, d: usize| !supports[c].is_disjoint(&complete[d]);
-            if covered(i, j) || covered(j, i) {
+            if active[i] && active[j] && (covered(i, j) || covered(j, i)) {
                 continue;
             }
             let crate::curve_pair::Meetings::Points(meetings) =

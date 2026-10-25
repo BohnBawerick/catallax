@@ -1,5 +1,8 @@
 //! Definition-based profile sweeps, independent of B-rep construction.
 
+#[path = "extrude_algebraic.rs"]
+mod extrude_algebraic;
+
 use crate::{
     Face, Location, geometry,
     metric::Scalar,
@@ -31,6 +34,8 @@ pub(crate) struct Feature {
     convex_revolve: Option<(Sign, i64)>,
     inverse: Isometry,
     sweep: Sweep,
+    // Irrational finite end parameter over a rational extrusion carrier.
+    algebraic_end: Option<Real>,
     axis_norm: Rational,
     merge_caps: Vec<usize>,
     supports: Vec<Support>,
@@ -82,6 +87,9 @@ impl Feature {
         dec: &mut Decider,
     ) -> Result<catallax_features::draft::arrangement::Skin, Refusal> {
         use catallax_features::draft::arrangement::{Patch, Skin};
+        if self.algebraic_end.is_some() {
+            return Err(bad("draft.unsupported-arrangement"));
+        }
         let Sweep::Extrude { vector, through } = &self.sweep else {
             return Err(bad("draft.unsupported-arrangement"));
         };
@@ -277,8 +285,10 @@ impl Feature {
             })
         });
         let half = Rational::from_ratio(1, 2).expect("nonzero denominator");
-        let local = point(&centre).plus(&vector.scaled(&half));
-        Ok(self.inverse.inverse().apply_point(&local.to_real()))
+        let local = point(&centre)
+            .to_real()
+            .plus(&self.extrusion_vector(vector).scaled(&Real::from(half)));
+        Ok(self.inverse.inverse().apply_point(&local))
     }
 
     pub(crate) fn certify_planar_convexity(&self, _dec: &mut Decider) -> Result<(), Refusal> {
@@ -333,9 +343,10 @@ impl Feature {
                 edge.start[1].clone(),
                 Rational::zero(),
             );
-            let end = p.plus(vector);
+            let p = p.to_real();
+            let end = p.plus(&self.extrusion_vector(vector));
             for p in [p, end] {
-                let p = map.apply_point(&p.to_real());
+                let p = map.apply_point(&p);
                 centre = centre.plus(&Vector3::new(p.x.clone(), p.y.clone(), p.z.clone()));
                 vertices.push(p);
             }
@@ -365,6 +376,9 @@ impl Feature {
         Ok(Some(planes))
     }
     pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
+        if self.algebraic_end.is_some() {
+            return self.algebraic_display_box(dec);
+        }
         let Sweep::Extrude { vector, through } = &self.sweep else {
             let radius = self.display_radius(dec)?.expect("finite revolve");
             return Ok(Some(std::array::from_fn(|_| {
@@ -415,6 +429,13 @@ impl Feature {
         )?))
     }
     pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
+        if self.algebraic_end.is_some() {
+            return Ok(self.algebraic_display_box(dec)?.map(|bounds| {
+                bounds
+                    .iter()
+                    .fold(Rational::zero(), |r, b| r + b.lo().abs().max(b.hi().abs()))
+            }));
+        }
         let mut radius = Rational::zero();
         for edge in self.loops.iter().flatten() {
             for p in [&edge.start, &edge.end] {
@@ -468,8 +489,9 @@ impl Feature {
         }
         let through = distance.is_none();
         let v = if let Some(distance) = distance {
-            let length = profile::sqrt(&direction.norm_squared())
-                .ok_or_else(|| bad("features.unsupported-algebraic-placement"))?;
+            let Some(length) = profile::sqrt(&direction.norm_squared()) else {
+                return Self::algebraic_extrude(profile, step, distance, &direction, dec);
+            };
             direction.scaled(&(distance / &length))
         } else {
             direction
@@ -835,6 +857,7 @@ impl Feature {
             axis_norm,
             merge_caps,
             sweep,
+            algebraic_end: None,
             constraints,
             supports,
             fillet: None,
@@ -861,6 +884,9 @@ impl Feature {
         Ok(())
     }
     pub(crate) fn display_classifier(&self) -> Option<crate::display::membership::Classifier<'_>> {
+        if self.algebraic_end.is_some() {
+            return None;
+        }
         let Sweep::Extrude { vector, through } = &self.sweep else {
             return None;
         };
@@ -891,7 +917,7 @@ impl Feature {
                     if start == Sign::Negative {
                         return Ok(Location::Outside);
                     }
-                    let end = geometry::sign(&(&t - &Real::one()), dec)?;
+                    let end = geometry::sign(&(&t - &self.extrusion_end()), dec)?;
                     if end == Sign::Positive {
                         return Ok(Location::Outside);
                     }
@@ -1075,7 +1101,7 @@ impl Feature {
                 let t = &local.z / &Real::from(vector.z.clone());
                 if !through
                     && (geometry::sign(&t, dec)? == Sign::Negative
-                        || geometry::sign(&(&t - &Real::one()), dec)? == Sign::Positive)
+                        || geometry::sign(&(&t - &self.extrusion_end()), dec)? == Sign::Positive)
                 {
                     return Ok(false);
                 }
@@ -1634,6 +1660,11 @@ impl Feature {
     }
 
     pub(crate) fn sample_bounds(&self) -> Result<Option<crate::samples::Bounds>, Refusal> {
+        if self.algebraic_end.is_some() {
+            return Ok(self
+                .algebraic_display_box(&mut Decider::default())?
+                .map(|b| b.map(|v| [v.lo(), v.hi()])));
+        }
         let profile = self.sample_profile_bounds();
         let zero = Rational::zero();
         let local = match &self.sweep {
@@ -1704,6 +1735,9 @@ impl Feature {
         });
         let role = alias.as_ref().unwrap_or(role);
         use crate::samples::{circle, fraction};
+        if self.algebraic_end.is_some() {
+            return Err(crate::samples::placement_error());
+        }
         let pose = self.inverse.inverse();
         if pose
             .matrix()

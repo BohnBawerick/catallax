@@ -986,7 +986,7 @@ impl Feature {
             }
         }
     }
-    // A full revolution of a convex line polygon is an intersection of
+    // A revolution of a convex line polygon is an intersection of
     // oriented section half-planes evaluated at its unique radial preimage.
     // Compare A*sqrt(D)+B by sign and squaring, avoiding root isolation at
     // every rounded display vertex. The convexity and one-sided-axis proofs
@@ -1001,7 +1001,12 @@ impl Feature {
             return Ok(None);
         };
         dec.check_deadline()?;
-        let Sweep::Revolve { origin, axis, .. } = &self.sweep else {
+        let Sweep::Revolve {
+            origin,
+            axis,
+            angle,
+        } = &self.sweep
+        else {
             return Ok(None);
         };
         let origin_real = origin.to_real();
@@ -1011,6 +1016,19 @@ impl Feature {
         let t = v.dot(&axis_real) / norm.clone();
         let base = origin_real.plus(&axis_real.scaled(&t));
         let cross = axis_real.cross(&v).z;
+        let angular_location = if *angle == 360 {
+            Location::Inside
+        } else {
+            angular(
+                *angle,
+                radial_sign,
+                geometry::sign(&cross, dec)?,
+                geometry::sign(&local.z, dec)?,
+            )
+        };
+        if angular_location == Location::Outside {
+            return Ok(Some((Location::Outside, Vec::new())));
+        }
         let radicand = cross.square() / norm.square() + local.z.square() / norm;
         let mut boundary = Vec::new();
         for (i, edge) in self.loops[0].iter().enumerate() {
@@ -1033,7 +1051,7 @@ impl Feature {
             }
         }
         Ok(Some((
-            if boundary.is_empty() {
+            if boundary.is_empty() && angular_location != Location::Boundary {
                 Location::Inside
             } else {
                 Location::Boundary
@@ -1323,7 +1341,7 @@ fn convex_revolve(profile: &Profile, sweep: &Sweep) -> Option<(Sign, i64)> {
     let Sweep::Revolve {
         origin,
         axis,
-        angle: 360,
+        angle: _,
     } = sweep
     else {
         return None;

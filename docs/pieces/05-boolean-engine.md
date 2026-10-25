@@ -200,6 +200,13 @@ circular-segment correction. An oriented arc minus its chord bounds the part of
 the disk on the arc side of that chord. Disk and half-plane signs therefore give
 the correction without constructing an auxiliary intersection. Minor and major
 arcs, reversed uses and seamed complete circles use the same rule.
+
+The circular-arc extension is enabled only when every trim in the complete face
+or signature batch has a native line/circle carrier. An unsupported trim keeps
+the existing polygon/full-ring proof order before generic fallback; it must not
+discard costly algebraic circle residuals after discovering a later unsupported
+edge or group.
+
 Queries on a selected arc or its finite chord retain the closed-trim fallback;
 an artificial chord is not a face boundary. Other carriers retain the certified
 probe and trace paths. This does not prune or rewrite the section graph's ordered

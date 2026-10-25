@@ -5,7 +5,7 @@ use crate::geometry::{product, refusal, sign};
 use crate::region::Location;
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Decider, Real, Refusal, Sign};
-use catallax_shapes::{PointId, Surface};
+use catallax_shapes::{Curve, PointId, Surface};
 use catallax_topology::{FaceId, Loop, LoopId, Model, Sense};
 
 fn ring(model: &Model, l: LoopId) -> Option<(catallax_topology::EdgeId, Sense)> {
@@ -73,12 +73,29 @@ fn chord_winding(
     Ok(Some((value, cross)))
 }
 
+fn native_planar_loops(model: &Model, loops: impl IntoIterator<Item = LoopId>) -> bool {
+    loops.into_iter().all(|l| {
+        let Loop::Coedges(coedges) = model.loop_(l) else {
+            return false;
+        };
+        coedges.iter().all(|&coedge| {
+            matches!(
+                model
+                    .geom()
+                    .curve(model.edge(model.coedge(coedge).edge).curve),
+                Curve::Line(_) | Curve::Circle(_)
+            )
+        })
+    })
+}
+
 fn plane_winding(
     model: &Model,
     surface: &catallax_shapes::Plane,
     l: LoopId,
     p: PointId,
     dec: &mut Decider,
+    native_arcs: bool,
 ) -> Result<Option<i64>, Refusal> {
     let query = model.geom().position(p);
     if let Some((edge, travel)) = ring(model, l) {
@@ -135,8 +152,10 @@ fn plane_winding(
         let coedge = model.coedge(coedge);
         let edge = model.edge(coedge.edge);
         let form = curve_form(model.geom(), edge.curve, dec)?;
-        if !matches!(form, CurveForm::Line { .. } | CurveForm::Circle { .. }) {
-            return Ok(None);
+        match &form {
+            CurveForm::Line { .. } => {}
+            CurveForm::Circle { .. } if native_arcs => {}
+            _ => return Ok(None),
         }
         let (Some(start), Some(end)) = (edge.start, edge.end) else {
             return Ok(None);
@@ -202,18 +221,19 @@ fn plane_winding(
     Ok(Some(result))
 }
 
-pub(crate) fn signature(
+fn signature(
     model: &Model,
     surface: &Surface,
     loops: &[LoopId],
     point: PointId,
     dec: &mut Decider,
+    native_arcs: bool,
 ) -> Result<Option<i64>, Refusal> {
     match surface {
         Surface::Plane(plane) => {
             let mut value = 0;
             for &l in loops {
-                let Some(w) = plane_winding(model, plane, l, point, dec)? else {
+                let Some(w) = plane_winding(model, plane, l, point, dec, native_arcs)? else {
                     return Ok(None);
                 };
                 value += w;
@@ -243,6 +263,27 @@ pub(crate) fn signature(
     }
 }
 
+pub(crate) fn signatures(
+    model: &Model,
+    surface: &Surface,
+    loop_groups: &[Vec<LoopId>],
+    point: PointId,
+    dec: &mut Decider,
+) -> Result<Option<Vec<i64>>, Refusal> {
+    // A later unsupported loop/group would discard the arc decisions. Keep
+    // the legacy predicate order instead of proving expensive unused residuals.
+    let native_arcs = matches!(surface, Surface::Plane(_))
+        && native_planar_loops(model, loop_groups.iter().flatten().copied());
+    let mut values = Vec::with_capacity(loop_groups.len());
+    for loops in loop_groups {
+        let Some(value) = signature(model, surface, loops, point, dec, native_arcs)? else {
+            return Ok(None);
+        };
+        values.push(value);
+    }
+    Ok(Some(values))
+}
+
 pub(crate) fn locate(
     model: &Model,
     face: FaceId,
@@ -253,9 +294,10 @@ pub(crate) fn locate(
     let surface = model.geom().surface(f.surface);
     match surface {
         Surface::Plane(plane) => {
+            let native_arcs = native_planar_loops(model, f.loops.iter().copied());
             let mut value = 0;
             for &l in &f.loops {
-                let Some(w) = plane_winding(model, plane, l, point, dec)? else {
+                let Some(w) = plane_winding(model, plane, l, point, dec, native_arcs)? else {
                     return Ok(None);
                 };
                 value += w;
@@ -515,5 +557,143 @@ mod tests {
                 ([0, -10], Location::Boundary),
             ],
         );
+    }
+
+    #[test]
+    fn mixed_conic_boundary_uses_its_certificate_within_the_remaining_work() {
+        use catallax_intersect::{CurveSurface, intersect_curve_surface};
+        use catallax_numbers::{Outcome, Rational, StrictSign, with_operation_budget};
+        use catallax_shapes::{Cylinder, Ellipse};
+
+        let r = |n, d| Real::from(Rational::from_i64(n) / Rational::from_i64(d));
+        let origin = Point3::new(r(1, 7), r(2, 11), r(3, 13));
+        let u = Vector3::new(r(1, 3), r(2, 3), r(2, 3));
+        let v = Vector3::new(r(2, 3), r(1, 3), r(-2, 3));
+        let normal = u.cross(&v);
+        let at = |x, y| {
+            origin
+                .plus(&u.scaled(&Real::from_i64(x)))
+                .plus(&v.scaled(&Real::from_i64(y)))
+        };
+        let mut model = Model::new();
+        let mut dec = Decider::default();
+        let surface = model.geom_mut().add_surface(Surface::Plane(
+            Plane::new(origin.clone(), normal.clone(), u.clone(), &mut dec).unwrap(),
+        ));
+        let circle = model.geom_mut().add_curve(Curve::Circle(
+            Circle::new(
+                origin.clone(),
+                normal.clone(),
+                Real::from_i64(25),
+                u.clone(),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let a = model.geom_mut().add_point(PointDef::Explicit(at(5, 0)));
+        let b = model.geom_mut().add_point(PointDef::Explicit(at(0, 5)));
+        let va = model.add_vertex(Vertex { point: a });
+        let vb = model.add_vertex(Vertex { point: b });
+        let line = model.geom_mut().add_curve(Curve::Line(Line {
+            origin: at(0, 5),
+            dir: at(5, 0).minus(&at(0, 5)),
+        }));
+        let coedges = [(circle, va, vb), (line, vb, va)]
+            .into_iter()
+            .map(|(curve, start, end)| {
+                let edge = model.add_edge(Edge {
+                    curve,
+                    sense: Sense::Same,
+                    start: Some(start),
+                    end: Some(end),
+                });
+                model.add_coedge(Coedge {
+                    edge,
+                    sense: Sense::Same,
+                })
+            })
+            .collect();
+        let outer = model.add_loop(Loop::Coedges(coedges));
+        let ellipse = model.geom_mut().add_curve(Curve::Ellipse(
+            Ellipse::new(
+                at(3, 3),
+                normal.clone(),
+                u.clone(),
+                r(1, 16),
+                r(1, 64),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let hole_edge = model.add_edge(Edge {
+            curve: ellipse,
+            sense: Sense::Same,
+            start: None,
+            end: None,
+        });
+        let hole_coedge = model.add_coedge(Coedge {
+            edge: hole_edge,
+            sense: Sense::Reversed,
+        });
+        let hole = model.add_loop(Loop::Coedges(vec![hole_coedge]));
+        for (a, b) in [
+            (GeomKey::Point(a), GeomKey::Curve(circle)),
+            (GeomKey::Point(b), GeomKey::Curve(circle)),
+            (GeomKey::Point(a), GeomKey::Curve(line)),
+            (GeomKey::Point(b), GeomKey::Curve(line)),
+            (GeomKey::Curve(circle), GeomKey::Surface(surface)),
+            (GeomKey::Curve(line), GeomKey::Surface(surface)),
+            (GeomKey::Curve(ellipse), GeomKey::Surface(surface)),
+        ] {
+            model.geom_mut().record_fact(Fact {
+                kind: FactKind::Incident,
+                a,
+                b,
+                at: None,
+                origin: FactOrigin::Construction("boolean.test.mixed-conic"),
+            });
+        }
+        let face = model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops: vec![outer, hole],
+        });
+        // In this orthonormal frame the section has x²+y²=25 and xy=1.
+        // Its algebraic coordinates need not be re-eliminated to prove the
+        // already-certified circle incidence of a boundary query.
+        let cutter = model.geom_mut().add_surface(Surface::Cylinder(
+            Cylinder::from_radius_sq(
+                origin.clone(),
+                u.plus(&v).plus(&normal),
+                Real::from_i64(16),
+                u.minus(&v),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let hits = intersect_curve_surface(model.geom_mut(), circle, cutter, &mut dec).unwrap();
+        assert!(hits.marks.is_empty());
+        let CurveSurface::Meets(hits) = hits.value else {
+            panic!("the circle and elliptic section must meet");
+        };
+        let query = hits
+            .into_iter()
+            .find(|hit| {
+                let delta = model.geom().position(hit.point).minus(&origin);
+                matches!(
+                    dec.sign(&delta.dot(&u)),
+                    Outcome::Proven(StrictSign::Positive)
+                ) && matches!(
+                    dec.sign(&delta.dot(&v)),
+                    Outcome::Proven(StrictSign::Positive)
+                )
+            })
+            .unwrap()
+            .point;
+        let (answer, work) = with_operation_budget(10_000, || {
+            crate::region::locate(&mut model, face, query, &mut Decider::default())
+        });
+        assert_eq!(answer.unwrap(), Location::Boundary);
+        assert!(!work.exhausted);
     }
 }

@@ -444,15 +444,9 @@ impl RegionCache {
         {
             return Ok(signature);
         }
-        let mut direct = Vec::with_capacity(loop_groups.len());
-        for group in loop_groups {
-            if let Some(value) = crate::fast_region::signature(model, surface, group, point, dec)? {
-                direct.push(value);
-            } else {
-                break;
-            }
-        }
-        if direct.len() == loop_groups.len() {
+        if let Some(direct) =
+            crate::fast_region::signatures(model, surface, loop_groups, point, dec)?
+        {
             return Ok(direct);
         }
         let loops: Vec<_> = loop_groups.iter().flatten().copied().collect();

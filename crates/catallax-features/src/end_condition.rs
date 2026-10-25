@@ -1255,3 +1255,6 @@ impl Capped {
 
 /// Exact single-branch curved limits and their independent construction cells.
 pub mod curved;
+
+/// Exact coaxial annular caps on stock toroidal limits.
+pub mod toroidal;

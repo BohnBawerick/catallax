@@ -1,0 +1,18 @@
+{
+  "format":"catallax-recipe/4",
+  "name":"spline wall intersection coverage",
+  "steps":[
+    {"id":"section","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"2"}]]},
+    {"id":"sweep","op":"extrude","profile":"section","distance":"10","direction":["3","0","4"]},
+    {"id":"window","op":"block","size":["8","8","1"],"pose":{"rotation":["3","0","1","0"],"translation":["-2","-4","4"]}},
+    {"id":"source","op":"boolean","kind":"intersect","target":"sweep","tool":"window"},
+    {"id":"target","op":"offset","body":"source","distance":"-1/4"},
+    {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+      {"kind":"line","id":"bottom","to":["1/2","-1/2"]},
+      {"kind":"line","id":"right","to":["1/2","1/2"]},
+      {"kind":"line","id":"top","to":["-1/2","1/2"]},
+      {"kind":"line","id":"left","to":["-1/2","-1/2"]}
+    ]]}
+  ],
+  "result":"target"
+}

@@ -486,6 +486,30 @@ fn evaluate_impl(
                     if !profiles[profile].is_empty()
                         && matches!(
                             recipe.step(target).map(|s| &s.op),
+                            Some(Operation::Torus { .. })
+                        )
+                    {
+                        let cap = crate::end_condition::toroidal::AnnularCap::compile(
+                            recipe,
+                            target,
+                            profile,
+                            direction.as_ref(),
+                            Some(limit),
+                            dec,
+                        )?;
+                        BodyValue {
+                            body: cap.build(
+                                model,
+                                bodies[target].body,
+                                &profiles[profile],
+                                &step.id,
+                                dec,
+                            )?,
+                            radius: cap.radius().clone(),
+                        }
+                    } else if !profiles[profile].is_empty()
+                        && matches!(
+                            recipe.step(target).map(|s| &s.op),
                             Some(
                                 Operation::Sphere { .. }
                                     | Operation::Cylinder { .. }
@@ -526,6 +550,30 @@ fn evaluate_impl(
                     direction,
                 } => {
                     if !profiles[profile].is_empty()
+                        && matches!(
+                            recipe.step(target).map(|s| &s.op),
+                            Some(Operation::Torus { .. })
+                        )
+                    {
+                        let cap = crate::end_condition::toroidal::AnnularCap::compile(
+                            recipe,
+                            target,
+                            profile,
+                            direction.as_ref(),
+                            None,
+                            dec,
+                        )?;
+                        BodyValue {
+                            body: cap.build(
+                                model,
+                                bodies[target].body,
+                                &profiles[profile],
+                                &step.id,
+                                dec,
+                            )?,
+                            radius: cap.radius().clone(),
+                        }
+                    } else if !profiles[profile].is_empty()
                         && matches!(
                             recipe.step(target).map(|s| &s.op),
                             Some(

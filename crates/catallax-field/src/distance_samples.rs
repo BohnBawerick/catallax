@@ -266,17 +266,70 @@ fn cylinder_candidates(
     Ok(true)
 }
 
-fn cone_candidates(
+pub(crate) fn cone_candidates(
     surface: &catallax_shapes::Cone,
     bounds: &Bounds,
     leaves: &[Leaf],
     active: &[Option<usize>],
     n: u32,
+    dec: &mut Decider,
     visit: &mut impl FnMut(RPoint3) -> bool,
 ) -> Result<bool, Refusal> {
     let [u, v, axis] = frame(&surface.axis, &surface.ref_dir)?;
-    let apex = surface.apex.as_rational().ok_or_else(placement_error)?;
     let slope = surface.slope.rational_ref().ok_or_else(placement_error)?;
+    let Some(apex) = surface.apex.as_rational() else {
+        let mut found = false;
+        for (leaf, register) in leaves.iter().zip(active) {
+            if register.is_none() {
+                continue;
+            }
+            for constraint in leaf.constraints() {
+                let origin = match constraint.surface() {
+                    Surface::Cone(c) => c.apex.as_rational(),
+                    Surface::Cylinder(c) => c.origin.as_rational(),
+                    Surface::Sphere(s) => s.center.as_rational(),
+                    _ => None,
+                };
+                let Some(origin) = origin else {
+                    continue;
+                };
+                let shift = origin.to_real().minus(&surface.apex);
+                if crate::geometry::sign(&shift.cross(&surface.axis).norm_squared(), dec)?
+                    != catallax_numbers::Sign::Zero
+                {
+                    continue;
+                }
+                let d_sq = (&surface.slope.square() * &shift.norm_squared())
+                    / (&catallax_numbers::Real::one() + &surface.slope.square());
+                let Some(d) = dec
+                    .rational_value(&d_sq)?
+                    .and_then(|q| crate::profile::sqrt(&q))
+                else {
+                    continue;
+                };
+                found = true;
+                let x0 = d.clone();
+                let y0 = &d * slope;
+                for [c, s] in circle(n) {
+                    let x = &(&x0 * &c) - &(&y0 * &s);
+                    let y = &(&x0 * &s) + &(&y0 * &c);
+                    let p = origin.plus(&u.scaled(&x)).plus(&v.scaled(&y));
+                    if within(&p, bounds) && !visit(p) {
+                        return Ok(false);
+                    }
+                }
+                break;
+            }
+            if found {
+                break;
+            }
+        }
+        return if found {
+            Ok(true)
+        } else {
+            Err(placement_error())
+        };
+    };
     let mut axial = [Rational::zero(), Rational::zero()];
     for corner in 0..8 {
         let [x, y, z] = std::array::from_fn(|i| bounds[i][(corner >> i) & 1].clone());
@@ -757,6 +810,7 @@ impl Plan {
                         &self.leaves,
                         &self.leaf_registers,
                         divisions,
+                        &mut dec,
                         &mut emit,
                     )? {
                         return Ok(false);

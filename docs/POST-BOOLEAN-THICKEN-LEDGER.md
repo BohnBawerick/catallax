@@ -7,6 +7,14 @@ The unchanged dispatch calls are features `distance_build.rs:503` and field
 `distance_features.rs:731`. No display, Boolean, shapes, numbers, shared
 `features.rs`/`lib.rs` or held production file is changed.
 
+Main advanced during development to
+`60c9d44edcfaa08e024242433eb33beb54320687` through PR112 and PR103. A clean
+read-only merge-tree check established that integration needs no held-file
+resolution. That current main is the retained-domain qualification baseline;
+the original `357be43` executable and results remain historical reproduction
+evidence. The lane's production patch is unchanged across integration. Upstream
+printing/cone changes belong to their merged PRs, not this lane.
+
 The branch is `cloud/post-boolean-polygon-face-thicken`. Exact published head,
 binary identity, commands, outcomes and pending final gates are recorded in the
 PR description and `/workspace/post-boolean-thicken-proof`. Raw evidence stays

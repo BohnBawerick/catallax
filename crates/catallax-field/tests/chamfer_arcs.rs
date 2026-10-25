@@ -62,6 +62,7 @@ fn exact_material_controls_cover_contacts_cut_ends_and_excluded_arcs() {
                 (["-21/5", "28/5", "23/2"], Outside),
                 (["6", "0", "12"], Boundary),
                 (["8", "0", "11"], Boundary),
+                (["0", "8", "12"], Outside),
             ],
         ),
         (
@@ -268,7 +269,7 @@ fn concave_end_domains_include_material_added_by_the_bevel() {
 
 #[test]
 fn circular_cap_charts_preserve_all_obj_groups_at_scoreboard_allowance() {
-    use catallax_field::display::{Options, mesh_plan};
+    use catallax_field::display::{Diagnostics, Options, mesh_plan_reported};
     use catallax_numbers::with_operation_budget;
     use std::collections::BTreeSet;
 
@@ -296,17 +297,33 @@ fn circular_cap_charts_preserve_all_obj_groups_at_scoreboard_allowance() {
         ("full-circle quadrant control", prefix, 5),
         ("full-circle chamfer control", control, 6),
         ("original arc chamfer", recipe("convex", "2", "1", false), 6),
+        ("concave arc chamfer", recipe("concave", "2", "1", false), 9),
     ] {
         let options = Options::default();
         assert_eq!(options.tolerance, Rational::parse("0.01").unwrap());
         assert_eq!(options.max_cells, 2_000_000);
         assert_eq!(options.max_vertices, 1_000_000);
+        let mut diagnostics = Diagnostics::default();
+        let mut sources = Vec::new();
         let (answer, work) = with_operation_budget(1_000_000, || {
             let mut dec = Decider::default();
             let plan = Plan::compile_checked(&recipe, &mut dec)?;
-            let mesh = mesh_plan(&plan, &options, &mut dec)?;
+            sources = plan
+                .faces()
+                .iter()
+                .map(|face| face.origin.clone())
+                .collect();
+            let mesh = mesh_plan_reported(&plan, &options, &mut dec, &mut diagnostics)?;
             Ok::<_, catallax_numbers::Refusal>((plan, mesh))
         });
+        if work.exhausted {
+            for support in &diagnostics.supports {
+                eprintln!(
+                    "{}",
+                    json!({"case":name,"origins":support.faces.iter().map(|face|&sources[face.index()]).collect::<Vec<_>>(),"cells":support.total.cells,"work":support.total.work,"queries":support.queries.work,"classification":support.classification.work})
+                );
+            }
+        }
         assert!(!work.exhausted, "{name}: {work:?}");
         let (plan, mesh) = answer.unwrap();
         assert!(!mesh.positions.is_empty() && !mesh.triangles.is_empty());
@@ -342,12 +359,25 @@ fn circular_cap_charts_preserve_all_obj_groups_at_scoreboard_allowance() {
             for &vertex in &triangle.vertices {
                 let [x, y, z] =
                     mesh.positions[vertex].map(|v| Rational::from_f64_exact(v).unwrap());
-                assert!(x >= -&margin && y >= -&margin, "{name}: excluded sector");
-                assert!(
-                    &x * &x + &y * &y <= &cap_radius * &cap_radius,
-                    "{name}: removed cap annulus"
-                );
-                assert!((z - Rational::from_i64(12)).abs() <= margin);
+                if expected_groups == 9 {
+                    // This fixture's end cap is x=0, with material at positive
+                    // y outside the radius-four bore. These linear bounds
+                    // exclude the opposite sector and bore for whole triangles.
+                    assert!(x.abs() <= margin, "{name}: end plane");
+                    assert!(
+                        y >= &Rational::from_i64(4) - &margin
+                            && y <= &Rational::from_i64(12) + &margin,
+                        "{name}: excluded bore/sector"
+                    );
+                    assert!(z >= -&margin && z <= &Rational::from_i64(12) + &margin);
+                } else {
+                    assert!(x >= -&margin && y >= -&margin, "{name}: excluded sector");
+                    assert!(
+                        &x * &x + &y * &y <= &cap_radius * &cap_radius,
+                        "{name}: removed cap annulus"
+                    );
+                    assert!((z - Rational::from_i64(12)).abs() <= margin);
+                }
             }
         }
         assert!(cap_triangles > 0, "{name}: missing end-cap geometry");

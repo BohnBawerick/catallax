@@ -945,7 +945,14 @@ impl Feature {
                 let v = local.minus(&origin_real);
                 let t = &v.dot(&axis_real) / &norm;
                 let b = &axis_real.cross(&v).z / &norm;
-                let k = sqrt_real(&(&b * &b + &(&v.z * &v.z) / &norm), dec)?;
+                let radicand = &b * &b + &(&v.z * &v.z) / &norm;
+                let straight =
+                    self.loops.len() == 1 && self.loops[0].iter().all(|edge| edge.circle.is_none());
+                let k = if straight {
+                    None
+                } else {
+                    Some(sqrt_real(&radicand, dec)?)
+                };
                 let b_sign = geometry::sign(&b, dec)?;
                 let z_sign = geometry::sign(&v.z, dec)?;
                 let mut boundary = false;
@@ -954,12 +961,24 @@ impl Feature {
                     if angular == Location::Outside {
                         continue;
                     }
-                    let k = &Real::from_i64(flip) * &k;
-                    let q = [
-                        &origin_real.x + &(&axis_real.x * &t) - &axis_real.y * &k,
-                        &origin_real.y + &(&axis_real.y * &t) + &axis_real.x * &k,
-                    ];
-                    let loc = profile::location(&self.loops, &q, dec)?;
+                    let loc = if straight {
+                        let base = [
+                            &origin_real.x + &(&axis_real.x * &t),
+                            &origin_real.y + &(&axis_real.y * &t),
+                        ];
+                        let radial = [
+                            -(&axis_real.y * &Real::from_i64(flip)),
+                            &axis_real.x * &Real::from_i64(flip),
+                        ];
+                        straight_radial_location(&self.loops[0], &base, &radial, &radicand, dec)?
+                    } else {
+                        let k = &Real::from_i64(flip) * k.as_ref().expect("curved profile root");
+                        let q = [
+                            &origin_real.x + &(&axis_real.x * &t) - &axis_real.y * &k,
+                            &origin_real.y + &(&axis_real.y * &t) + &axis_real.x * &k,
+                        ];
+                        profile::location(&self.loops, &q, dec)?
+                    };
                     if loc == Location::Inside && angular == Location::Inside {
                         return Ok(Location::Inside);
                     }
@@ -1379,6 +1398,64 @@ fn convex_revolve(profile: &Profile, sweep: &Sweep) -> Option<(Sign, i64)> {
     Some((winding, if radial? == Sign::Positive { 1 } else { -1 }))
 }
 
+// Exact line-loop membership at base + radial*sqrt(d), including nonconvex
+// loops. The usual half-open horizontal crossing rule needs only affine
+// radical signs; no radial root is isolated or rounded. Profile validation
+// supplies a simple closed loop, and the caller supplies d >= 0.
+fn straight_radial_location(
+    edges: &[Edge],
+    base: &[Real; 2],
+    radial: &[Real; 2],
+    d: &Real,
+    dec: &mut Decider,
+) -> Result<Location, Refusal> {
+    dec.check_deadline()?;
+    let mut inside = false;
+    for edge in edges {
+        let direction = profile::sub(&edge.end, &edge.start);
+        let [dx, dy] = direction.each_ref().map(|q| Real::from(q.clone()));
+        let relative = [
+            &base[0] - &Real::from(edge.start[0].clone()),
+            &base[1] - &Real::from(edge.start[1].clone()),
+        ];
+        let side = radical_sign(
+            &(&dx * &radial[1] - &dy * &radial[0]),
+            &(&dx * &relative[1] - &dy * &relative[0]),
+            d,
+            dec,
+        )?;
+        if side == Sign::Zero {
+            let a = &dx * &radial[0] + &dy * &radial[1];
+            let b = &dx * &relative[0] + &dy * &relative[1];
+            if radical_sign(&a, &b, d, dec)? != Sign::Negative
+                && radical_sign(
+                    &a,
+                    &(&b - &Real::from(profile::dot(&direction, &direction))),
+                    d,
+                    dec,
+                )? != Sign::Positive
+            {
+                return Ok(Location::Boundary);
+            }
+        }
+        let start_above = radical_sign(&radial[1], &relative[1], d, dec)? == Sign::Negative;
+        let end_above = radical_sign(
+            &radial[1],
+            &(&base[1] - &Real::from(edge.end[1].clone())),
+            d,
+            dec,
+        )? == Sign::Negative;
+        if start_above != end_above {
+            inside ^= (side == Sign::Positive) == (direction[1].sign() == Sign::Positive);
+        }
+    }
+    Ok(if inside {
+        Location::Inside
+    } else {
+        Location::Outside
+    })
+}
+
 fn radical_sign(a: &Real, b: &Real, d: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     let sa = geometry::sign(a, dec)?;
     let sb = geometry::sign(b, dec)?;
@@ -1417,6 +1494,78 @@ fn same_profile_point(a: &[Real; 2], b: &P, dec: &mut Decider) -> Result<bool, R
         geometry::sign(&(&a[0] - &Real::from(b[0].clone())), dec)? == Sign::Zero
             && geometry::sign(&(&a[1] - &Real::from(b[1].clone())), dec)? == Sign::Zero,
     )
+}
+
+#[cfg(test)]
+mod radial_line_tests {
+    use super::*;
+
+    #[test]
+    fn nonconvex_radial_crossings_match_independently_isolated_preimages() {
+        let polygons = [
+            vec![[4, 0], [12, 0], [12, 4], [8, 4], [8, 12], [4, 12]],
+            vec![[-2, -3], [3, -3], [3, 4], [-2, 4]],
+        ];
+        for polygon in polygons {
+            for reverse in [false, true] {
+                let mut points = polygon.clone();
+                if reverse {
+                    points.reverse();
+                }
+                let edges: Vec<_> = points
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| Edge {
+                        ids: vec![catallax_recipe::ElementId::new(format!("e{i}")).unwrap()],
+                        start: p.map(Rational::from_i64),
+                        end: points[(i + 1) % points.len()].map(Rational::from_i64),
+                        circle: None,
+                        full: false,
+                    })
+                    .collect();
+                for radicand in ["0", "2", "25/4"] {
+                    let d = Rational::parse(radicand).unwrap();
+                    let mut oracle = Decider::default();
+                    let root = profile::positive_sqrt(&d, &mut oracle).unwrap();
+                    let d = Real::from(d);
+                    for (x, y) in [
+                        (-4, 0),
+                        (0, 0),
+                        (4, 0),
+                        (4, 4),
+                        (7, 3),
+                        (8, 4),
+                        (8, 5),
+                        (9, 4),
+                        (10, 6),
+                        (12, 4),
+                        (13, 0),
+                    ] {
+                        let base = [Real::from_i64(x), Real::from_i64(y)];
+                        for coefficients in [["1", "0"], ["-1", "0"], ["3/5", "4/5"]] {
+                            let radial =
+                                coefficients.map(|q| Real::from(Rational::parse(q).unwrap()));
+                            let point = std::array::from_fn(|i| &base[i] + &(&radial[i] * &root));
+                            let expected =
+                                profile::loop_location(&edges, &point, &mut oracle).unwrap();
+                            let actual = straight_radial_location(
+                                &edges,
+                                &base,
+                                &radial,
+                                &d,
+                                &mut Decider::default(),
+                            )
+                            .unwrap();
+                            assert_eq!(
+                                actual, expected,
+                                "reverse={reverse}, base={x},{y}, d={radicand}, radial={coefficients:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn angular(angle: u16, flip: i64, b: Sign, z: Sign) -> Location {

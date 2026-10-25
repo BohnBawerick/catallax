@@ -105,6 +105,161 @@ fn pose(
 }
 
 impl Plan {
+    // Enlarge only the auxiliary triangle, keeping its contact edge fixed.
+    // In its radial/axial coordinates T' intersects the original material
+    // quadrant in exactly T. For a concave corner T'\T is already material;
+    // for a convex corner it is empty. Certify this over the whole enlarged
+    // annulus from a complete, unblended input feature's support arrangement.
+    fn chamfer_corner_extension(
+        &self,
+        root: usize,
+        faces: [usize; 2],
+        source_faces: &[usize],
+        definition: &ChamferDefinition,
+        domain: &Domain,
+        dec: &mut Decider,
+    ) -> Result<Option<Rational>, Refusal> {
+        let (Instruction::Leaf(leaf), Domain::Arc(arc)) = (&self.instructions[root], domain) else {
+            return Ok(None);
+        };
+        let geometry::Leaf::Feature(source) = &self.leaves[*leaf] else {
+            return Ok(None);
+        };
+        if source.fillet.is_some() || source.chamfer.is_some() {
+            return Ok(None);
+        }
+        let [Curve::Circle(a), Curve::Circle(b)] = &definition.contacts else {
+            return Ok(None);
+        };
+        let axis = unit(&arc.circle.normal);
+        let radius = q(&square_root(&arc.circle.radius_sq))?;
+        let radii = [
+            q(&square_root(&a.radius_sq))?,
+            q(&square_root(&b.radius_sq))?,
+        ];
+        let heights = [
+            q(&a.center.minus(&arc.circle.center).dot(&axis))?,
+            q(&b.center.minus(&arc.circle.center).dot(&axis))?,
+        ];
+        let dr = radii[0].clone() + radii[1].clone() - radius.clone() - radius.clone();
+        let dz = &heights[0] + &heights[1];
+        if dr.is_zero() || dz.is_zero() {
+            return Ok(None);
+        }
+        let epsilon = ((dr.abs() * dz.abs()) / (Rational::from_i64(4) * (dr.abs() + dz.abs())))
+            .min(radius.clone() / Rational::from_i64(4));
+        let direction = |value: &Rational| {
+            Rational::from_i64(if value.sign() == Sign::Positive {
+                1
+            } else {
+                -1
+            })
+        };
+        let corner_radius = &radius - &(&direction(&dr) * &epsilon);
+        let corner_height = -(&direction(&dz) * &epsilon);
+        let min_radius = radii
+            .iter()
+            .chain([&radius, &corner_radius])
+            .min()
+            .unwrap()
+            .clone();
+        let max_radius = radii
+            .iter()
+            .chain([&radius, &corner_radius])
+            .max()
+            .unwrap()
+            .clone();
+        let min_height = heights
+            .iter()
+            .chain([&Rational::zero(), &corner_height])
+            .min()
+            .unwrap()
+            .clone();
+        let max_height = heights
+            .iter()
+            .chain([&Rational::zero(), &corner_height])
+            .max()
+            .unwrap()
+            .clone();
+        let mut stations = arc.ends.to_vec();
+        for &index in source_faces {
+            if faces.iter().any(|&selected| {
+                self.faces[index]
+                    .support
+                    .same_definition(&self.faces[selected].support)
+            }) {
+                continue;
+            }
+            let surface = &self.faces[index].surface;
+            if let Surface::Plane(plane) = surface
+                && geometry::sign(&plane.normal.dot(&axis), dec)? == Sign::Zero
+                && geometry::sign(
+                    &arc.circle.center.minus(&plane.origin).dot(&plane.normal),
+                    dec,
+                )? == Sign::Zero
+            {
+                let radial = unit(&axis.cross(&plane.normal)).scaled(&Real::from(radius.clone()));
+                stations.extend([
+                    arc.circle.center.plus(&radial),
+                    arc.circle.center.plus(&radial.scaled(&Real::from_i64(-1))),
+                ]);
+                continue;
+            }
+            if !annular_band_avoids(
+                &arc.circle,
+                &min_radius,
+                &max_radius,
+                &min_height,
+                &max_height,
+                surface,
+                dec,
+            )? {
+                return Ok(None);
+            }
+        }
+        let stations = ordered_points(&arc.circle, stations, dec)?;
+        if stations.len() < 2 {
+            return Ok(None);
+        }
+        let expected = definition
+            .same_sense
+            .map(|same| if same == definition.convex { -1 } else { 1 });
+        for index in 0..stations.len() {
+            let cell = BoundedArc::new(
+                arc.circle.clone(),
+                [
+                    stations[index].clone(),
+                    stations[(index + 1) % stations.len()].clone(),
+                ],
+                dec,
+            )?;
+            let point = cell.rational_sample(dec)?;
+            let selected = arc.contains_direction(&point, dec)?;
+            if !selected && !definition.convex {
+                continue;
+            }
+            let xyz = coordinates(&point)?;
+            let [a, b] = faces.map(|i| crate::normal(&self.faces[i], &xyz));
+            for signs in [[-1, -1], [-1, 1], [1, -1], [1, 1]] {
+                let direction = a
+                    .scaled(&Real::from_i64(signs[0]))
+                    .plus(&b.scaled(&Real::from_i64(signs[1])));
+                let location = self.chamfer_ray(root, &xyz, &direction, dec)?;
+                let inside = selected && ((signs == expected) == definition.convex);
+                if location
+                    != if inside {
+                        Location::Inside
+                    } else {
+                        Location::Outside
+                    }
+                {
+                    return Ok(None);
+                }
+            }
+        }
+        Ok(Some(epsilon))
+    }
+
     fn chamfer_ray(
         &self,
         root: usize,
@@ -666,10 +821,29 @@ impl Plan {
                 self.chamfer_domain(&definition, faces, &interval, source_faces, dec)?;
             let convex = definition.convex;
             let sweep = finite_sweep(&interval, angular.as_ref(), dec)?;
+            let extension = if sweep.is_some() {
+                self.chamfer_corner_extension(
+                    root,
+                    faces,
+                    source_faces,
+                    &definition,
+                    &interval,
+                    dec,
+                )?
+            } else {
+                None
+            };
             if sweep.is_some() {
                 angular = None;
             }
-            let (feature, mut faces) = region(definition, interval, sweep, step, dec)?;
+            // The full-ring convex cutter is equivalent only when the above
+            // partition proof also establishes absence outside the named arc.
+            let sweep = if convex && extension.is_some() {
+                None
+            } else {
+                sweep
+            };
+            let (feature, mut faces) = region(definition, interval, sweep, extension, step, dec)?;
             let first_face = self.faces.len();
             let mut cap_roles = Vec::new();
             for (offset, face) in faces.iter_mut().enumerate() {
@@ -734,6 +908,73 @@ impl Plan {
     }
 }
 
+fn annular_band_avoids(
+    circle: &catallax_shapes::Circle,
+    min_radius: &Rational,
+    max_radius: &Rational,
+    min_height: &Rational,
+    max_height: &Rational,
+    surface: &Surface,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    use catallax_numbers::Ball;
+    let axis = unit(&circle.normal);
+    if let Surface::Cylinder(cylinder) = surface
+        && geometry::sign(&axis.cross(&cylinder.axis).norm_squared(), dec)? == Sign::Zero
+        && geometry::sign(
+            &circle
+                .center
+                .minus(&cylinder.origin)
+                .cross(&axis)
+                .norm_squared(),
+            dec,
+        )? == Sign::Zero
+    {
+        let low = geometry::sign(
+            &(&Real::from(min_radius * min_radius) - &cylinder.radius_sq),
+            dec,
+        )?;
+        let high = geometry::sign(
+            &(&Real::from(max_radius * max_radius) - &cylinder.radius_sq),
+            dec,
+        )?;
+        return Ok(low != Sign::Zero && low == high);
+    }
+    let first = circle
+        .center
+        .plus(&axis.scaled(&Real::from(min_height.clone())));
+    let last = circle
+        .center
+        .plus(&axis.scaled(&Real::from(max_height.clone())));
+    let first = [first.x, first.y, first.z];
+    let last = [last.x, last.y, last.z];
+    let normal = [axis.x, axis.y, axis.z];
+    let mut bounds = Vec::new();
+    for i in 0..3 {
+        let span =
+            square_root(&(Real::one() - normal[i].square())) * Real::from(max_radius.clone());
+        let span = dec.enclose_budgeted_at(&span, 128)?;
+        let centre = dec
+            .enclose_budgeted_at(&first[i], 128)?
+            .hull(&dec.enclose_budgeted_at(&last[i], 128)?);
+        bounds.push((&centre - &span).hull(&(&centre + &span)));
+    }
+    let Some(polynomial) = surface.implicit() else {
+        return Ok(false);
+    };
+    let mut value = Ball::from_rational(&Rational::zero(), 128);
+    for (monomial, coefficient) in polynomial.terms() {
+        let mut term = dec.enclose_budgeted_at(&coefficient, 128)?;
+        for (exponent, coordinate) in monomial.exponents().iter().zip(&bounds) {
+            if *exponent != 0 {
+                term = &term * &coordinate.pow_u32(*exponent);
+            }
+        }
+        value = &value + &term;
+    }
+    Ok(value.lo().sign() == Sign::Positive || value.hi().sign() == Sign::Negative)
+}
+
 fn vertices(definition: &ChamferDefinition, interval: &Domain) -> Vec<Point3> {
     let (Curve::Line(edge), [Curve::Line(a), Curve::Line(b)], Domain::Line(interval)) =
         (&definition.edge, &definition.contacts, interval)
@@ -786,6 +1027,7 @@ fn region(
     definition: ChamferDefinition,
     interval: Domain,
     finite: Option<(Vector3, Rational)>,
+    extension: Option<Rational>,
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<(Feature, Vec<crate::Face>), Refusal> {
@@ -832,6 +1074,23 @@ fn region(
             )
         }
         _ => return Err(bad("unknown elementary bevel section")),
+    };
+    let e = if let Some(extension) = extension {
+        let delta = a.minus(&e).plus(&b.minus(&e));
+        let signed = |value: Real, dec: &mut Decider| -> Result<Real, Refusal> {
+            Ok(Real::from(extension.clone())
+                * Real::from_i64(if geometry::sign(&value, dec)? == Sign::Positive {
+                    1
+                } else {
+                    -1
+                }))
+        };
+        let shift = x
+            .scaled(&signed(delta.dot(&x), dec)?)
+            .plus(&y.scaled(&signed(delta.dot(&y), dec)?));
+        e.plus(&shift.scaled(&Real::from_i64(-1)))
+    } else {
+        e
     };
     let local = |p: &Point3| -> Result<catallax_recipe::Point2, Refusal> {
         let d = p.minus(&origin);

@@ -6,6 +6,7 @@ use catallax_features::draft::{
     arrangement::Polyhedron,
     capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
+    near,
     round::RoundCell,
 };
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
@@ -802,6 +803,65 @@ fn bind_patches(
 }
 
 impl Plan {
+    /// Chooses the uniquely nearest closed trimmed face of a plane-capped axial
+    /// cylinder, then every alias of that physical face.
+    fn nearest_axial(
+        &self,
+        source_faces: &[usize],
+        matches: &[usize],
+        near: &catallax_recipe::Point3,
+        dec: &mut Decider,
+    ) -> Result<Vec<usize>, Refusal> {
+        let unsupported = || {
+            Refusal::new(
+                "draft.unsupported-reference",
+                "curved field references need exact patch adjacency and distance",
+            )
+        };
+        let mut cylinder = None;
+        let mut caps = Vec::new();
+        for f in source_faces {
+            match &self.faces[*f].surface {
+                Surface::Cylinder(c) if cylinder.is_none() => cylinder = Some(c),
+                Surface::Plane(p) => {
+                    if !caps.iter().any(|(g, _): &(usize, &Plane)| {
+                        self.faces[*g]
+                            .support
+                            .same_definition(&self.faces[*f].support)
+                    }) {
+                        caps.push((*f, p));
+                    }
+                }
+                Surface::Cylinder(_) => {}
+                _ => return Err(unsupported()),
+            }
+        }
+        let (Some(cylinder), [(_, first), (_, second)]) = (cylinder, caps.as_slice()) else {
+            return Err(unsupported());
+        };
+        let [x, y, z] = near.0.each_ref().map(|n| n.value().clone().into());
+        let point = Point3::new(x, y, z);
+        let mut groups: Vec<Vec<usize>> = Vec::new();
+        for f in matches {
+            match groups.iter_mut().find(|group| {
+                self.faces[group[0]]
+                    .support
+                    .same_definition(&self.faces[*f].support)
+            }) {
+                Some(group) => group.push(*f),
+                None => groups.push(vec![*f]),
+            }
+        }
+        let mut distances = Vec::with_capacity(groups.len());
+        for group in &groups {
+            distances.push(match &self.faces[group[0]].surface {
+                Surface::Plane(cap) => near::cap_distance_squared(cylinder, cap, &point, dec)?,
+                _ => near::wall_distance_squared(cylinder, [first, second], &point, dec)?,
+            });
+        }
+        Ok(groups.swap_remove(near::unique_nearest(&distances, dec)?))
+    }
+
     /// Returns distinct connected material interiors, not a convex decomposition.
     fn draft_cells(
         &self,
@@ -1065,14 +1125,18 @@ impl Plan {
                         format!("no input face resolves {reference:?}"),
                     ));
                 }
-                if !reference.touching.is_empty() || (reference.near.is_some() && matches.len() > 1)
-                {
+                if !reference.touching.is_empty() {
                     return Err(Refusal::new(
                         "draft.unsupported-reference",
                         "curved field references need exact patch adjacency and distance",
                     ));
                 }
-                selected.extend(matches);
+                match &reference.near {
+                    Some(near) if matches.len() > 1 => {
+                        selected.extend(self.nearest_axial(source_faces, &matches, near, dec)?)
+                    }
+                    _ => selected.extend(matches),
+                }
             }
             None
         };

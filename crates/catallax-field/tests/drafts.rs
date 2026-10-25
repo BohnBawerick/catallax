@@ -1188,3 +1188,114 @@ fn separated_round_cells_survive_radial_and_axial_separation_proofs() {
         ));
     }
 }
+
+fn mixed_near(near: [&str; 3], translation: [&str; 3], radius: &str) -> Recipe {
+    let mut steps = cylinder(radius);
+    steps[0]["pose"]["translation"] = json!(translation);
+    let mut draft = planar_cap_draft(["-1", "0", "1"], "0");
+    draft["faces"] = json!([{"face":{"step":"base"},"near":near}]);
+    draft["neutral"]["point"] = json!(translation);
+    recipe(steps, draft)
+}
+
+fn shifted(xyz: [&str; 3], by: [&str; 3]) -> [String; 3] {
+    let mut out = [const { String::new() }; 3];
+    for i in 0..3 {
+        let sum = Rational::parse(xyz[i]).unwrap() + Rational::parse(by[i]).unwrap();
+        out[i] = sum.to_string();
+    }
+    out
+}
+
+fn both_at(recipe: &Recipe, by: [&str; 3], cases: &[([&str; 3], Location)]) {
+    let moved: Vec<_> = cases.iter().map(|(p, l)| (shifted(*p, by), *l)).collect();
+    let borrowed: Vec<_> = moved
+        .iter()
+        .map(|(p, l)| ([p[0].as_str(), p[1].as_str(), p[2].as_str()], *l))
+        .collect();
+    both(recipe, &borrowed);
+}
+
+// Radius-one cylinder, z in [0, 4]. Drafting its upper cap along (-1, 0, 1)
+// about the plane x = 0 tilts the cap to z = 4 - x and leaves the wall alone.
+const TILTED_CAP: [([&str; 3], Location); 4] = [
+    (["-1/2", "0", "17/4"], Location::Inside),
+    (["-1/2", "0", "9/2"], Location::Boundary),
+    (["1/2", "0", "15/4"], Location::Outside),
+    (["1/2", "0", "13/4"], Location::Inside),
+];
+fn mixed_wall(near: [&str; 3], translation: [&str; 3]) -> Recipe {
+    let mut steps = cylinder("8");
+    steps[0]["pose"]["translation"] = json!(translation);
+    let mut draft = operation("wall");
+    draft["faces"] = json!([{"face":{"step":"base"},"near":near}]);
+    draft["neutral"]["point"] = json!(translation);
+    recipe(steps, draft)
+}
+// Radius-eight cylinder, z in [0, 4]. Drafting the wall 45 degrees about z = 0
+// narrows it to radius 8 - z, so radius 5 at height 3.
+const TAPERED_WALL: [([&str; 3], Location); 3] = [
+    (["1", "0", "3"], Location::Inside),
+    (["6", "0", "3"], Location::Outside),
+    (["5", "0", "3"], Location::Boundary),
+];
+/// A cap parallel to the pull cannot be drafted, so this refusal shows the cap was chosen.
+fn refused_for_cap(recipe: &Recipe) {
+    assert!(matches!(evaluate(recipe, &mut Decider::default()),
+        Err(BuildError::Geometry { refusal, .. }) if refusal.code == "draft.parallel-face-normal"));
+    assert_eq!(
+        Plan::compile(recipe).unwrap_err().code,
+        "draft.parallel-face-normal"
+    );
+}
+
+#[test]
+fn mixed_carrier_near_selects_the_cap_the_wall_or_the_rim_nearest_face() {
+    let zero = ["0", "0", "0"];
+    // Above the upper cap on its axis: the cap.
+    both(&mixed_near(["0", "0", "5"], zero, "1"), &TILTED_CAP);
+    // Beyond the closed wall's rim the wall carrier is nearer (1/2 against 1)
+    // but the trimmed wall ends at z = 4, so the cap disc is strictly nearer.
+    both(&mixed_near(["1/2", "0", "5"], zero, "1"), &TILTED_CAP);
+    // Radius eight: the wall is nearest to a point outside it, the cap to one over it.
+    both(&mixed_wall(["10", "0", "2"], zero), &TAPERED_WALL);
+    refused_for_cap(&mixed_wall(["7", "0", "5"], zero));
+}
+
+#[test]
+fn mixed_carrier_near_ties_stay_ambiguous() {
+    let zero = ["0", "0", "0"];
+    // Both the cap and the wall are nearest the rim point (1, 0, 4).
+    for recipe in [
+        mixed_near(["2", "0", "5"], zero, "1"),
+        mixed_wall(["9", "0", "5"], zero),
+    ] {
+        assert!(matches!(evaluate(&recipe, &mut Decider::default()),
+            Err(BuildError::Geometry { refusal, .. }) if refusal.code == "recipe.ambiguous-reference"));
+        assert_eq!(
+            Plan::compile(&recipe).unwrap_err().code,
+            "recipe.ambiguous-reference"
+        );
+    }
+}
+
+#[test]
+fn mixed_carrier_near_follows_translated_copies_and_unchanged_saved_points() {
+    let by = ["5", "3", "2"];
+    both_at(&mixed_near(["5", "3", "7"], by, "1"), by, &TILTED_CAP);
+    refused_for_cap(&mixed_wall(["12", "3", "7"], by));
+    both_at(&mixed_wall(["15", "3", "4"], by), by, &TAPERED_WALL);
+    // Editing the cylinder keeps the saved point on the same face.
+    let mut edited = mixed_near(["0", "0", "5"], ["0", "0", "0"], "3/2");
+    both(
+        &edited,
+        &[
+            (["-1/2", "0", "17/4"], Location::Inside),
+            (["5/4", "0", "5/2"], Location::Inside),
+            (["5/4", "0", "15/4"], Location::Outside),
+            (["1/2", "0", "15/4"], Location::Outside),
+        ],
+    );
+    edited = mixed_near(["0", "0", "5"], ["0", "0", "0"], "1");
+    both(&edited, &TILTED_CAP);
+}

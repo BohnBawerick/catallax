@@ -114,6 +114,15 @@ one split piece never moves another piece merely because it shares an alias.
 Convex extracted skins retain the direct halfspace path, including non-simple
 vertices that need no moved-fan construction.
 
+A `near` filter also resolves on a plane-capped axial cylinder whose caps are
+perpendicular to its axis. A cap is the closed disc and the wall is the closed
+cylinder between the two cap planes, so a point past the rim is nearest the rim,
+not a carrier. Squared distances compare exactly, using
+`(rho - radius)^2 = rho² + radius² - 2*sqrt(rho²*radius²)`. The nearest physical face
+is chosen before its aliases, and equal minima are reference errors in both the
+B-rep and the field. Other curved arrangements and `touching` on curved sources
+remain unsupported.
+
 Drafted planar caps can extend and trim an unchanged cylindrical side. Their
 heights are affine over the exact radial disk; nonnegative thickness clips its
 footprint. Cap intersections are native circles or ellipses, with an exact chord

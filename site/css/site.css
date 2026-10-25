@@ -93,6 +93,8 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
 }
 .nav__links a:hover { background-size: 100% 1px; color: var(--bone); }
 .nav__status { margin: 0; display: flex; align-items: center; gap: 10px; font: 500 12px var(--font-mono); color: var(--fog); padding: 8px 14px; border: 1px solid var(--steel); border-radius: 999px; }
+.nav__status a { text-decoration: none; }
+.nav__status a:hover { color: var(--bone); }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal) 60%, transparent); animation: pulse 2.4s ease-in-out infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px transparent; } }
 
@@ -171,6 +173,7 @@ em { font-family: var(--font-serif); font-style: italic; font-weight: 400; lette
 .why__list li, .thanks__list li { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--steel); }
 .why__list span, .thanks__list span { color: var(--oxide); font: 500 11.5px/1.6 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .why__list b, .thanks__list b { color: var(--bone); font-weight: 500; font-size: 15px; line-height: 1.5; }
+.why__list li > b:only-child, .thanks__list li > b:only-child, .works__list li > b:only-child { grid-column: 1 / -1; }
 .thanks { border-top: 1px solid var(--steel); }
 
 /* Marquee ---------------------------------------------------------------- */

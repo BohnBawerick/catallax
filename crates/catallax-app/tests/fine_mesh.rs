@@ -194,3 +194,41 @@ fn tilted_trim_preserves_fine_planar_certificates() {
     .value;
     check_geometry(&built.model, &mesh, &options);
 }
+
+#[test]
+fn rotated_cones_and_apices_preserve_bounds_without_increasing_baseline_vertices() {
+    // Compact output counts measured on d0cea699 at these exact controls and
+    // placements. They are not the temporary-chart MeshOptions vertex budget.
+    for (base, top, height, baseline_vertices) in
+        [("12", "11", "1", 269_308), ("2.5", "0", "1.5", 67_059)]
+    {
+        let input = serde_json::json!({
+            "format":"catallax-recipe/3", "name":"Rotated fine cone",
+            "steps":[{"id":"cone", "op":"cone", "base_radius":base, "top_radius":top,
+                "height":height, "pose":{"rotation":["1","2","3","4"],
+                    "translation":["7","-3","2"]}}],
+            "result":"cone"
+        });
+        let recipe = Recipe::parse(&input.to_string()).unwrap();
+        let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+        let options = MeshOptions {
+            chord_tolerance: "0.00036".parse().unwrap(),
+            angular_deviation: Some("0.03490658503988659".parse().unwrap()),
+            ..MeshOptions::default()
+        };
+        let mesh = mesh_body(
+            &built.model,
+            built.result,
+            &options,
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .value;
+        assert!(
+            mesh.positions.len() <= baseline_vertices,
+            "radii {base}/{top}: {} vertices exceed baseline {baseline_vertices}",
+            mesh.positions.len()
+        );
+        check_geometry(&built.model, &mesh, &options);
+    }
+}

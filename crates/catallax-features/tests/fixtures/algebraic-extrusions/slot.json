@@ -1,0 +1,81 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "signed oblique extrusion",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "4",
+              "-1"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "right",
+            "centre": [
+              "4",
+              "0"
+            ],
+            "to": [
+              "4",
+              "1"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "0",
+              "1"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "left",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "to": [
+              "0",
+              "-1"
+            ],
+            "turn": "ccw"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "body",
+      "op": "extrude",
+      "profile": "profile",
+      "distance": "5",
+      "direction": [
+        "1",
+        "0",
+        "1"
+      ]
+    }
+  ],
+  "result": "body"
+}

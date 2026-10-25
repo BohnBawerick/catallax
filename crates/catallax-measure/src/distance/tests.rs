@@ -298,3 +298,53 @@ fn placed_caps_match_independent_distances_including_the_rim_tie() {
         }
     }
 }
+
+fn sqrt2() -> Ball {
+    Ball::from_rational(&q(2), 256).sqrt().unwrap()
+}
+/// Checks one irrational nearest-point case on the radius 2, height 3 cylinder.
+fn irrational_case(wall: bool, at: Point3, expected: &Ball, witness: [Ball; 3]) {
+    let (mut model, side, caps) = solid_faces(&Pose::identity());
+    let face = if wall { side } else { caps[1] };
+    let mut dec = Decider::default();
+    let prepared = PreparedFace::new(&model, face, &mut dec).unwrap();
+    let answer = prepared
+        .point_to_face(&mut model, &at, &controls(), &mut dec)
+        .unwrap();
+    let upper = answer.upper.clone().unwrap();
+    let tight = Rational::from_ratio(1, 1_000_000_000).unwrap();
+    assert!(answer.converged && answer.cells == 0, "{answer:?}");
+    assert!(
+        answer.lower <= expected.hi() && upper >= expected.lo(),
+        "{answer:?}"
+    );
+    assert!(&upper - &answer.lower <= tight, "{answer:?}");
+    assert!(&expected.hi() - &answer.lower <= tight, "{answer:?}");
+    assert!(&upper - &expected.lo() <= tight, "{answer:?}");
+    let [_, found] = answer.witnesses.unwrap();
+    for (coordinate, want) in [&found.x, &found.y, &found.z].into_iter().zip(&witness) {
+        let got = dec.enclose_budgeted_at(coordinate, 128).unwrap();
+        assert!(got.lo() <= want.hi() && want.lo() <= got.hi(), "{found:?}");
+        assert!(&got.hi() - &got.lo() <= tight, "{found:?}");
+    }
+    assert!(catallax_boolean::face_contains(&mut model, face, &found, &mut dec).unwrap());
+}
+#[test]
+fn wall_point_with_an_irrational_witness_is_enclosed_without_subdivision() {
+    let r = sqrt2();
+    let one = Ball::from_rational(&q(1), 256);
+    // The point (1, 1, 1) is inside the wall, so the nearest point is
+    // (sqrt2, sqrt2, 1) at distance 2 - sqrt2.
+    let expected = Ball::from_rational(&q(2), 256) - r.clone();
+    irrational_case(true, p(1, 1, 1), &expected, [r.clone(), r, one]);
+}
+#[test]
+fn cap_point_with_an_irrational_rim_witness_is_enclosed_without_subdivision() {
+    let r = sqrt2();
+    // The point (3, 3, 7) projects outside the top cap, so the nearest point is
+    // the rim point (sqrt2, sqrt2, 3) at distance sqrt(38 - 12 sqrt2).
+    let squared = Ball::from_rational(&q(38), 256) - Ball::from_rational(&q(12), 256) * r.clone();
+    let expected = squared.sqrt().unwrap();
+    let three = Ball::from_rational(&q(3), 256);
+    irrational_case(false, p(3, 3, 7), &expected, [r.clone(), r, three]);
+}

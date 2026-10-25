@@ -1,0 +1,86 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "rotated cylinder first-hit cap",
+  "description": "Public synthetic convex rational polygon; exact side walls and uniform stock-quadric entry.",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "1",
+          "1",
+          "1"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "5"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "side-1",
+            "to": [
+              "0",
+              "-1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "side-2",
+            "to": [
+              "1/2",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "side-3",
+            "to": [
+              "0",
+              "1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "side-4",
+            "to": [
+              "-1/2",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "target",
+      "op": "cylinder",
+      "height": "10",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "5",
+          "0",
+          "0"
+        ]
+      },
+      "radius": "2"
+    },
+    {
+      "id": "cap",
+      "op": "extrude_next",
+      "target": "target",
+      "profile": "profile"
+    }
+  ],
+  "result": "cap"
+}

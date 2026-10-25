@@ -1,8 +1,9 @@
-//! Certified single-branch curved caps over rectangular sketch domains.
+//! Certified single-branch curved caps over convex rational sketch domains.
 //!
 //! This reduction keeps analytic supports exact. It proves the same positive
-//! quadratic hit branch over the complete closed rectangle, including every
-//! edge and corner. Silhouettes, changing start states, projected trim events
+//! quadratic hit branch over a closed rectangular enclosure, including every
+//! edge and corner. Exact polygon sides define the swept domain. Silhouettes,
+//! changing start states, projected trim events
 //! and nonquadratic targets remain named coverage gaps. No sampled witness
 //! licenses a branch or a missing-hit refusal.
 
@@ -13,6 +14,8 @@ use std::collections::BTreeSet;
 
 #[path = "curved/build.rs"]
 mod build;
+#[path = "curved/polygon.rs"]
+mod polygon;
 #[path = "curved/projected.rs"]
 mod projected;
 #[path = "curved/scene.rs"]
@@ -37,16 +40,18 @@ pub struct CurvedCapped {
     scene: Scene,
     frame: Frame,
     bounds: [[Rational; 2]; 2],
+    sides: Vec<[Rational; 3]>,
+    polygon: Option<polygon::Polygon>,
     branch: Branch,
     midpoint: Plane,
     extent: Rational,
 }
 
-/// A compiled authored rectangle, retaining its segment ids and finite bound.
+/// A compiled authored convex polygon, retaining its segment ids and finite bound.
 #[derive(Clone, Debug)]
 pub struct AuthoredCap {
     definition: CurvedCapped,
-    side_ids: [ElementId; 4],
+    side_ids: Vec<ElementId>,
     radius: Rational,
 }
 
@@ -56,8 +61,10 @@ impl AuthoredCap {
         &self.definition
     }
 
-    /// Authored side ids in u-min, u-max, v-min, v-max order.
-    pub fn side_ids(&self) -> &[ElementId; 4] {
+    /// Authored side ids in the definition's side-constraint order. Axis-aligned
+    /// rectangles retain their u-min, u-max, v-min, v-max order; other polygons
+    /// retain authored segment order, in either winding.
+    pub fn side_ids(&self) -> &[ElementId] {
         &self.side_ids
     }
 
@@ -66,7 +73,7 @@ impl AuthoredCap {
         &self.radius
     }
 
-    /// Compiles a recipe's rectangular sketch and stock quadric target. The
+    /// Compiles a recipe's convex polygon sketch and stock quadric target. The
     /// same certified crossing is the first hit for both face and next modes.
     pub fn compile(
         recipe: &Recipe,
@@ -90,9 +97,9 @@ impl AuthoredCap {
                 "curved extrusion input is not a sketch",
             ));
         };
-        if loops.len() != 1 || loops[0].0.len() != 4 {
+        if loops.len() != 1 || loops[0].0.len() < 3 {
             return Err(coverage(
-                "curved cap profile currently requires one four-line rectangle",
+                "curved cap profile requires one convex rational line polygon",
             ));
         }
         let mut points = Vec::new();
@@ -110,35 +117,21 @@ impl AuthoredCap {
                     .iter()
                     .map(|p| p[i].clone())
                     .min()
-                    .expect("four endpoints"),
+                    .expect("at least three endpoints"),
                 points
                     .iter()
                     .map(|p| p[i].clone())
                     .max()
-                    .expect("four endpoints"),
+                    .expect("at least three endpoints"),
             ]
         });
-        let mut seen = BTreeSet::new();
-        let mut sides: [Option<ElementId>; 4] = std::array::from_fn(|_| None);
-        for i in 0..4 {
-            let a = &points[(i + 3) % 4];
-            let b = &points[i];
-            if !seen.insert(b.clone())
-                || (0..2).any(|j| b[j] != bounds[j][0] && b[j] != bounds[j][1])
-            {
-                return Err(coverage("the sketch is not a nondegenerate rectangle"));
-            }
-            let wall = if a[0] == b[0] && a[1] != b[1] {
-                usize::from(b[0] == bounds[0][1])
-            } else if a[1] == b[1] && a[0] != b[0] {
-                2 + usize::from(b[1] == bounds[1][1])
-            } else {
-                return Err(coverage("the sketch rectangle has a diagonal or zero edge"));
-            };
-            if sides[wall].replace(ids[i].clone()).is_some() {
-                return Err(coverage("the sketch repeats a rectangle side"));
-            }
-        }
+        // Keep the established rectangle construction and physical side order.
+        let rectangle_ids = rectangle_ids(&points, &ids, &bounds);
+        let polygon = if rectangle_ids.is_none() {
+            Some(polygon::Polygon::new(points, dec)?)
+        } else {
+            None
+        };
         let pose = scene::placement(plane)?;
         let direction = direction
             .map(|v| {
@@ -156,10 +149,14 @@ impl AuthoredCap {
             .radius
             .clone()
             .max(build::frame_radius(&frame, &bounds, dec)?);
-        let definition = CurvedCapped::rectangle(source, frame, bounds, dec)?;
+        let mut definition = CurvedCapped::rectangle(source, frame, bounds, dec)?;
+        if let Some(polygon) = polygon {
+            definition.sides = polygon.sides().to_vec();
+            definition.polygon = Some(polygon);
+        }
         Ok(Self {
             definition,
-            side_ids: sides.map(|s| s.expect("each rectangle side occurs once")),
+            side_ids: rectangle_ids.map(Vec::from).unwrap_or(ids),
             radius,
         })
     }
@@ -171,12 +168,11 @@ impl AuthoredCap {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<catallax_topology::BodyId, Refusal> {
-        self.definition
-            .build(model, step, self.side_ids.clone(), dec)
+        self.definition.build(model, step, &self.side_ids, dec)
     }
 }
 
-/// Exact classification relative to the closed capped rectangle.
+/// Exact classification relative to the closed capped polygon.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Location {
     /// Three-dimensional interior.
@@ -210,6 +206,36 @@ fn axis(i: usize) -> Vector3 {
     Vector3::new(x, y, z)
 }
 
+fn rectangle_ids(
+    points: &[[Rational; 2]],
+    ids: &[ElementId],
+    bounds: &[[Rational; 2]; 2],
+) -> Option<[ElementId; 4]> {
+    if points.len() != 4 {
+        return None;
+    }
+    let mut seen = BTreeSet::new();
+    let mut sides: [Option<ElementId>; 4] = std::array::from_fn(|_| None);
+    for i in 0..4 {
+        let a = &points[(i + 3) % 4];
+        let b = &points[i];
+        if !seen.insert(b.clone()) || (0..2).any(|j| b[j] != bounds[j][0] && b[j] != bounds[j][1]) {
+            return None;
+        }
+        let wall = if a[0] == b[0] && a[1] != b[1] {
+            usize::from(b[0] == bounds[0][1])
+        } else if a[1] == b[1] && a[0] != b[0] {
+            2 + usize::from(b[1] == bounds[1][1])
+        } else {
+            return None;
+        };
+        if sides[wall].replace(ids[i].clone()).is_some() {
+            return None;
+        }
+    }
+    Some(sides.map(|s| s.expect("each rectangle side occurs once")))
+}
+
 impl CurvedCapped {
     /// Certifies a capped rectangle. The bounds are the profile definition,
     /// rather than a sample-derived approximation to a different domain.
@@ -220,10 +246,18 @@ impl CurvedCapped {
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let certificate = projected::certify(&scene, &frame, &bounds, dec)?;
+        let sides = vec![
+            [(-Rational::one()), Rational::zero(), bounds[0][0].clone()],
+            [Rational::one(), Rational::zero(), -&bounds[0][1]],
+            [Rational::zero(), -Rational::one(), bounds[1][0].clone()],
+            [Rational::zero(), Rational::one(), -&bounds[1][1]],
+        ];
         Ok(Self {
             scene,
             frame,
             bounds,
+            sides,
+            polygon: None,
             branch: certificate.branch,
             midpoint: certificate.midpoint,
             extent: certificate.extent,
@@ -245,9 +279,37 @@ impl CurvedCapped {
         &self.frame
     }
 
-    /// The closed rectangular profile domain.
+    /// The closed rectangular enclosure used for the whole-profile branch
+    /// proof. The exact profile domain is the intersection of `side_constraints`.
     pub fn bounds(&self) -> &[[Rational; 2]; 2] {
         &self.bounds
+    }
+
+    /// Exact chart halfplanes `[a, b, c]`, with `a*u + b*v + c <= 0`
+    /// inside the profile, in the same order as the authored side ids.
+    pub fn side_constraints(&self) -> &[[Rational; 3]] {
+        &self.sides
+    }
+
+    fn profile_location(&self, q: &[Real; 2], dec: &mut Decider) -> Result<Location, Refusal> {
+        let mut boundary = false;
+        for [a, b, c] in &self.sides {
+            match sign(
+                &(&Real::from(a.clone()) * &q[0]
+                    + &Real::from(b.clone()) * &q[1]
+                    + Real::from(c.clone())),
+                dec,
+            )? {
+                Sign::Positive => return Ok(Location::Outside),
+                Sign::Zero => boundary = true,
+                Sign::Negative => (),
+            }
+        }
+        Ok(if boundary {
+            Location::Boundary
+        } else {
+            Location::Inside
+        })
     }
 
     /// A strict rational upper bound on every selected line parameter.
@@ -261,14 +323,10 @@ impl CurvedCapped {
         &self.midpoint
     }
 
-    /// The exact positive first hit at a point of the certified rectangle.
+    /// The exact positive first hit at a point of the certified polygon.
     pub fn height(&self, q: &[Real; 2], dec: &mut Decider) -> Result<Real, Refusal> {
-        for (x, [lo, hi]) in q.iter().zip(&self.bounds) {
-            if sign(&(x - &Real::from(lo.clone())), dec)? == Sign::Negative
-                || sign(&(x - &Real::from(hi.clone())), dec)? == Sign::Positive
-            {
-                return Err(coverage("height query is outside its certified domain"));
-            }
+        if self.profile_location(q, dec)? == Location::Outside {
+            return Err(coverage("height query is outside its certified domain"));
         }
         let [c, b, a] =
             projected::coefficients(&self.scene.surface, &self.frame)?.map(|p| p.eval_real(q));
@@ -291,15 +349,11 @@ impl CurvedCapped {
         t: &Real,
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
-        let mut boundary = false;
-        for (x, [lo, hi]) in q.iter().zip(&self.bounds) {
-            let a = sign(&(x - &Real::from(lo.clone())), dec)?;
-            let b = sign(&(x - &Real::from(hi.clone())), dec)?;
-            if a == Sign::Negative || b == Sign::Positive {
-                return Ok(Location::Outside);
-            }
-            boundary |= a == Sign::Zero || b == Sign::Zero;
+        let profile = self.profile_location(q, dec)?;
+        if profile == Location::Outside {
+            return Ok(Location::Outside);
         }
+        let boundary = profile == Location::Boundary;
         let start = sign(t, dec)?;
         if start == Sign::Negative {
             return Ok(Location::Outside);

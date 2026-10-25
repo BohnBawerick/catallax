@@ -1,4 +1,4 @@
-//! Analytic rectangle prisms and the existing regularised Boolean engine.
+//! Analytic convex columns and the existing regularised Boolean engine.
 
 use super::*;
 use catallax_numbers::{Fact, FactKind, FactOrigin};
@@ -35,7 +35,7 @@ impl ConvexCell {
 /// Independent analytic cells for the same regularised cap definition.
 #[derive(Clone, Debug)]
 pub struct CapConstruction {
-    /// The finite rectangle prism, including its artificial upper cap.
+    /// The finite exact profile column, including its artificial upper cap.
     pub column: ConvexCell,
     /// The closed trimmed stock target, renamed by this extrusion.
     pub target: ConvexCell,
@@ -53,21 +53,7 @@ fn prism_cell(
     if orientation == Sign::Zero {
         return Err(coverage("construction prism is degenerate"));
     }
-    let mut radius = Rational::zero();
-    for corner in 0..8 {
-        let mut p = base.clone();
-        for (i, v) in vectors.iter().enumerate() {
-            if corner & (1 << i) != 0 {
-                p = p.plus(v);
-            }
-        }
-        let mut upper = Rational::zero();
-        for x in [&p.x, &p.y, &p.z] {
-            let b = projected::enclose(x, dec)?;
-            upper = upper + b.lo().abs().max(b.hi().abs());
-        }
-        radius = radius.max(upper);
-    }
+    let radius = prism_radius(base, vectors, dec)?;
     let mut surfaces = Vec::new();
     for i in 0..3 {
         let mut n = vectors[(i + 1) % 3].cross(&vectors[(i + 2) % 3]);
@@ -98,6 +84,29 @@ fn prism_cell(
         roles,
         radius,
     })
+}
+
+fn prism_radius(
+    base: &Point3,
+    vectors: &[Vector3; 3],
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
+    let mut radius = Rational::zero();
+    for corner in 0..8 {
+        let mut p = base.clone();
+        for (i, v) in vectors.iter().enumerate() {
+            if corner & (1 << i) != 0 {
+                p = p.plus(v);
+            }
+        }
+        let mut upper = Rational::zero();
+        for x in [&p.x, &p.y, &p.z] {
+            let b = projected::enclose(x, dec)?;
+            upper = upper + b.lo().abs().max(b.hi().abs());
+        }
+        radius = radius.max(upper);
+    }
+    Ok(radius)
 }
 
 fn clipping_prism(
@@ -138,9 +147,10 @@ impl CurvedCapped {
     /// `column intersect target`. The certificate excludes every artificial cap.
     pub fn construction(
         &self,
-        sides: &[ElementId; 4],
+        sides: &[ElementId],
         dec: &mut Decider,
     ) -> Result<CapConstruction, Refusal> {
+        self.check_side_ids(sides)?;
         let base = self.frame.point(&[
             self.bounds[0][0].clone().into(),
             self.bounds[1][0].clone().into(),
@@ -164,7 +174,16 @@ impl CurvedCapped {
             })
             .collect();
         roles.extend([Role::Start, Role::End]);
-        let column = prism_cell(&base, &vectors, roles, dec)?;
+        let column = if let Some(polygon) = &self.polygon {
+            ConvexCell {
+                surfaces: polygon.surfaces(&self.frame, &self.extent, dec)?,
+                roles,
+                // The whole enclosing parallelepiped also bounds the polygon.
+                radius: prism_radius(&base, &vectors, dec)?,
+            }
+        } else {
+            prism_cell(&base, &vectors, roles, dec)?
+        };
         let mut surfaces = vec![self.scene.surface.clone()];
         surfaces.extend(self.scene.trims.iter().cloned().map(Surface::Plane));
         let target = ConvexCell {
@@ -329,48 +348,74 @@ fn prism(
 }
 
 impl CurvedCapped {
-    /// Builds the exact capped rectangle. Side ids are ordered u-min, u-max,
-    /// v-min, v-max and come from the authored sketch, never subdivision indices.
+    fn check_side_ids(&self, sides: &[ElementId]) -> Result<(), Refusal> {
+        if sides.len() != self.sides.len() {
+            return Err(coverage(
+                "construction side ids do not match the exact profile",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Builds the exact capped polygon. Side ids follow `side_constraints` and
+    /// come from the authored sketch, never subdivision indices. Rectangle
+    /// callers can continue to supply their four-element array.
     pub fn build(
         &self,
         model: &mut Model,
         step: &StepId,
-        side_ids: [ElementId; 4],
+        side_ids: impl AsRef<[ElementId]>,
         dec: &mut Decider,
     ) -> Result<BodyId, Refusal> {
         dec.check_deadline()?;
+        let side_ids = side_ids.as_ref();
+        self.check_side_ids(side_ids)?;
         let origin = |role| Origin {
             step: step.clone(),
             role,
         };
-        let names = std::array::from_fn(|i| {
-            vec![origin(if i < 4 {
-                Role::Side {
-                    segment: side_ids[i].clone(),
-                    path: None,
-                }
-            } else if i == 4 {
-                Role::Start
-            } else {
-                Role::End
-            })]
-        });
-        let base = self.frame.point(&[
-            self.bounds[0][0].clone().into(),
-            self.bounds[1][0].clone().into(),
-        ]);
-        let vectors = [
-            self.frame
-                .u
-                .scaled(&Real::from(&self.bounds[0][1] - &self.bounds[0][0])),
-            self.frame
-                .v
-                .scaled(&Real::from(&self.bounds[1][1] - &self.bounds[1][0])),
-            self.frame
-                .direction
-                .scaled(&Real::from(self.extent.clone())),
-        ];
-        let tool = prism(model, base, vectors, names, dec)?;
+        let tool = if let Some(polygon) = &self.polygon {
+            let mut names: Vec<_> = side_ids
+                .iter()
+                .map(|id| {
+                    vec![origin(Role::Side {
+                        segment: id.clone(),
+                        path: None,
+                    })]
+                })
+                .collect();
+            names.extend([vec![origin(Role::Start)], vec![origin(Role::End)]]);
+            polygon.build(model, &self.frame, &self.extent, &names, dec)?
+        } else {
+            let names = std::array::from_fn(|i| {
+                vec![origin(if i < 4 {
+                    Role::Side {
+                        segment: side_ids[i].clone(),
+                        path: None,
+                    }
+                } else if i == 4 {
+                    Role::Start
+                } else {
+                    Role::End
+                })]
+            });
+            let base = self.frame.point(&[
+                self.bounds[0][0].clone().into(),
+                self.bounds[1][0].clone().into(),
+            ]);
+            let vectors = [
+                self.frame
+                    .u
+                    .scaled(&Real::from(&self.bounds[0][1] - &self.bounds[0][0])),
+                self.frame
+                    .v
+                    .scaled(&Real::from(&self.bounds[1][1] - &self.bounds[1][0])),
+                self.frame
+                    .direction
+                    .scaled(&Real::from(self.extent.clone())),
+            ];
+            prism(model, base, vectors, names, dec)?
+        };
         let source = match &self.scene.operation {
             Operation::Sphere { radius, pose } => {
                 catallax_topology::sphere(model, radius.value().clone(), &scene::placement(pose)?)?

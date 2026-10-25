@@ -1,0 +1,19 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "shallow tip small outward offset",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cone",
+      "base_radius": "1",
+      "top_radius": "0",
+      "height": "8",
+      "pose": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "0"]
+      }
+    },
+    {"id": "result", "op": "offset", "body": "stock", "distance": "1/200"}
+  ],
+  "result": "result"
+}

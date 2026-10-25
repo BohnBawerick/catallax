@@ -1,0 +1,19 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "posed steep tip outward",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cone",
+      "base_radius": "8",
+      "top_radius": "0",
+      "height": "3",
+      "pose": {
+        "rotation": ["1", "2", "3", "4"],
+        "translation": ["17/3", "-11/7", "23/5"]
+      }
+    },
+    {"id": "result", "op": "offset", "body": "stock", "distance": "1/5"}
+  ],
+  "result": "result"
+}

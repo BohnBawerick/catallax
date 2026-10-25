@@ -1,8 +1,8 @@
-//! Direct convex frustum offsets with circular torus joins.
+//! Direct convex conical offsets with circular edge and spherical tip joins.
 
 use catallax_numbers::{Decider, Real, Refusal, Sign};
-use catallax_recipe::{EdgeName, Origin, Role, StepId};
-use catallax_shapes::{Circle, Curve, Surface, Torus};
+use catallax_recipe::{EdgeName, Origin, Role, StepId, VertexName};
+use catallax_shapes::{Circle, Curve, Sphere, Surface, Torus};
 use catallax_topology::{BodyId, Model};
 
 use crate::{
@@ -21,11 +21,6 @@ pub(crate) fn build(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
-    if skin.apex.is_some() {
-        return Err(bad(
-            "outward cone tips need a verified mesh of the spherical/conical meeting circle",
-        ));
-    }
     if skin
         .faces
         .iter()
@@ -52,16 +47,48 @@ pub(crate) fn build(
         origins: skin.faces[wall].origins.clone(),
     }];
     let mut boundaries = Vec::new();
-    let factor = reduced((&Real::one() + &cone.slope.square()).sqrt(), dec)?;
-    let radial = distance / &factor;
+    let factor_sq = &Real::one() + &cone.slope.square();
+    let factor = reduced(factor_sq.sqrt(), dec)?;
+    let radial = &(distance / &factor_sq) * &factor;
     let axial = -(&radial * &cone.slope);
-    if skin.boundaries.len() != 2 {
+    if skin.boundaries.len() != if skin.apex.is_some() { 1 } else { 2 } {
         return Err(bad(
-            "outward conical joins need one complete circular cap at each finite end",
+            "outward conical joins need a complete circular cap at each finite end",
         ));
     }
-    for (i, boundary) in skin.boundaries.iter().enumerate() {
-        let lower = i == 0;
+    if let Some((apex, incident)) = &skin.apex {
+        let origin = skin.faces[*incident]
+            .origins
+            .first()
+            .ok_or_else(|| bad("a conical tip needs a named incident face"))?;
+        let vertex = VertexName::new(vec![origin.clone()]).map_err(|e| bad(&e.to_string()))?;
+        let tip = faces.len();
+        faces.push(ConeFace {
+            surface: Surface::Sphere(Sphere {
+                center: apex.clone(),
+                radius: distance.clone(),
+                axis: skin.axis.clone(),
+                ref_dir: cone.ref_dir.clone(),
+            }),
+            origins: vec![Origin {
+                step: step.clone(),
+                role: Role::RoundCorner { vertex },
+            }],
+        });
+        // The normal at a conical generator is (radial - slope * axis) / factor.
+        // Its image of the apex is the exact sphere/cone contact circle.
+        boundaries.push(ConeBoundary {
+            curve: Curve::Circle(Circle {
+                center: apex.plus(&skin.axis.scaled(&axial)),
+                normal: skin.axis.clone(),
+                radius_sq: reduced(&distance.square() / &factor_sq, dec)?,
+                ref_dir: cone.ref_dir.clone(),
+            }),
+            faces: [tip, 0],
+        });
+    }
+    for boundary in &skin.boundaries {
+        let lower = boundary.faces[0] != wall;
         let Curve::Circle(circle) = &boundary.curve else {
             return Err(bad(
                 "elliptic conical edges need a certified non-toroidal distance carrier",

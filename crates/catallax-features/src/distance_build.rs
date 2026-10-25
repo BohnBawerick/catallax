@@ -497,7 +497,12 @@ pub(crate) fn thicken(
         let sweep = skin.face_sweep(*index, thickness, side, step, dec)?;
         return crate::cone_build::sweep(model, &sweep, dec);
     }
-    let cell = convex(model, body, dec)?;
+    let cell = match convex(model, body, dec) {
+        Ok(cell) => cell,
+        Err(e) => {
+            return crate::planar_face::thicken(model, body, refs, thickness, side, step, e, dec);
+        }
+    };
     let selected = cell.select(refs, dec)?;
     let indices: Vec<_> = selected
         .iter()

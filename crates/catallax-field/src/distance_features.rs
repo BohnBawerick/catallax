@@ -726,7 +726,10 @@ impl Plan {
             let sweep = skin.face_sweep(*index, &t.clone().into(), side, step, dec)?;
             return self.cone_sweep(&sweep, &bound, dec);
         }
-        let cell = self.planar_skin(node, dec)?;
+        let cell = match self.planar_skin(node, dec) {
+            Ok(cell) => cell,
+            Err(e) => return self.planar_cap_thicken(node, refs, t, side, step, e, dec),
+        };
         let selected = cell.select(refs, dec)?;
         let indices: Vec<_> = selected
             .iter()

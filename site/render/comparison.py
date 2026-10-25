@@ -54,8 +54,8 @@ def import_run(path, destination):
             raise ValueError('missing measured samples')
         if any(set(p['engines']) != set(ENGINES) for p in samples):
             raise ValueError('missing engine observations')
-    if report['host'].get('machine_class') != 'quiet work PC':
-        raise ValueError('publication timing must come from the designated quiet work PC')
+    if report['host'].get('machine_class') != 'quiet benchmark machine':
+        raise ValueError('publication timing must come from the designated quiet benchmark machine')
     revision = report['source_revision']
     def committed_bytes(path):
         relative = path.relative_to(ROOT).as_posix()

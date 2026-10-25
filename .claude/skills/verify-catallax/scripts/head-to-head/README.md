@@ -46,7 +46,7 @@ nice -n 10 python3 -B "$DRIVER" head-to-head parts \
   --binary target/release/examples/head_to_head \
   --reference /tmp/h2h/reference/solidcraft-cli \
   --tool-runtime "$TOOLS/runtime.json" \
-  --machine-class 'quiet work PC' --core 0 --max-work 100000000 \
+  --machine-class 'quiet benchmark machine' --core 0 --max-work 100000000 \
   --repeats 3 --out /tmp/h2h/five-tools --json
 ```
 

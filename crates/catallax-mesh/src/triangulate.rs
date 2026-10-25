@@ -545,12 +545,27 @@ impl FaceBuilder<'_> {
                     .iter()
                     .map(|n| self.filtered_errors[n.error].hi())
                     .fold(0.0_f64, f64::max);
-                let filtered = chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
-                    + Interval::point(filtered_residual).unwrap();
+                let vmax = uvs[0][1].abs().max(uvs[1][1].abs()).max(uvs[2][1].abs());
+                let filtered = if matches!(self.chart.surface, Surface::Cone(_)) {
+                    let scale = Interval::point(vmax).unwrap()
+                        / Interval::point(self.bounds[1][0].abs().max(self.bounds[1][1].abs()))
+                            .unwrap();
+                    let h = [
+                        self.filtered_hessian[0] * scale,
+                        self.filtered_hessian[1],
+                        self.filtered_hessian[2],
+                    ];
+                    chart::filtered_chord_bound(&uvs, &h)
+                        + Interval::point(filtered_residual).unwrap()
+                } else {
+                    chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
+                        + Interval::point(filtered_residual).unwrap()
+                };
                 let error = if filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo() {
                     chart::q(filtered.hi())
                 } else {
-                    &chord_bound(&uvs, &self.hessian) + residual
+                    let hessian = self.chart.hessian(vmax, dec)?;
+                    &chord_bound(&uvs, &hessian) + residual
                 };
                 if let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {

@@ -15,15 +15,19 @@ fn conical_offsets_shells_and_sweeps_agree_without_direction_or_origin_findings(
         include_str!("../../catallax-features/tests/fixtures/cone-distance/oblique-inward.json"),
         include_str!("../../catallax-features/tests/fixtures/cone-distance/frustum-outward.json"),
         include_str!("../../catallax-features/tests/fixtures/cone-distance/thicken-cap-front.json"),
+        include_str!("../../catallax-features/tests/fixtures/cone-distance/tip-outward.json"),
+        include_str!(
+            "../../catallax-features/tests/fixtures/cone-distance/tip-outward-rational.json"
+        ),
     ] {
         let recipe = Recipe::parse(text).unwrap();
         let controller = Controller::default();
         let revision = controller.begin();
         let (completion, work) =
             with_operation_budget(100_000_000, || revision.check(&recipe, &Default::default()));
+        let report = controller.latest().unwrap();
         assert_eq!(completion, Completion::Published);
         assert!(!work.exhausted);
-        let report = controller.latest().unwrap();
         assert_eq!(
             report.verdict,
             Verdict::Agree,

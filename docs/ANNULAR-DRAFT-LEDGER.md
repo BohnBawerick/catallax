@@ -7,7 +7,8 @@ queries, mass integration, B-rep meshing and STEP export.
 
 ## Identity and source provenance
 
-- Inspected and frozen base/main: `357be43e3ea5ba00df9fd449ea2afca09260ae24`.
+- Original inspected current-main reproduction base: `357be43e3ea5ba00df9fd449ea2afca09260ae24`.
+- Integrated current main after PR112 and PR103 landed: `60c9d44edcfaa08e024242433eb33beb54320687`. Incoming changes are disjoint from this lane; no held-file conflict resolution was needed. Original-base evidence remains historical after this integration.
 - Branch: `cloud/axial-annular-draft-20261025`. The final PR description and
   external proof identity record name the exact delivery head and CI runs.
 - Original worktree was clean. No `AGENTS.md` existed in the checkout, its

@@ -3,7 +3,7 @@
 This is the public exchange contract for the B-rep half of Catallax and an independent tester built without seeing the kernel's code. The kernel accepts a question file, answers it, and writes a STEP AP242 file and a JSON manifest. The exchange consists only of those files and the program's exit code.
 This file specifies the kernel's input and output behaviour, not the tester's implementation or checks.
 
-The program is `exact-brep`, built by the `catallax-cli` crate. Format versions are part of the contract: a change to either file format bumps its version and is logged in `INTERFACE-CHANGES.md`.
+The program is `exact-brep`, built by the `catallax-cli` crate. Format versions are part of the contract: a change to either file format bumps its version and is logged in a new `interface-changes/` fragment.
 The current versions are `exact-brep-question/2` and `exact-brep-manifest/2`. Version 1 of each was replaced before any build wrote or read it.
 
 `exact-brep`, `exact-brep-question/2`, `exact-brep-manifest/2` and the manifest's `kernel.name` value `exact-brep` are this contract's legacy names. The `catallax` binary is built from the same main and accepts the same commands. Rename these protocol identities only through a versioned contract change, never as a package rename.
@@ -280,7 +280,7 @@ The ellipses stand for numbers the kernel computes; a real manifest never contai
 
 ## Decisions on the judge's open points
 
-Each line gives the decision and where it is written. The dated entries in `INTERFACE-CHANGES.md` give the reasons.
+Each line gives the decision and where it is written. The dated fragments in `interface-changes/` give the reasons.
 
 | Point | Decision | Section |
 | --- | --- | --- |

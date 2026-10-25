@@ -97,4 +97,4 @@ Keep exact mathematical cases, independent oracles, scale and placement checks, 
 
 ## Changing contracts
 
-Propose public API and format changes through review. Update the affected piece descriptions and [INTERFACE-CHANGES.md](INTERFACE-CHANGES.md) with migrations for every caller. Preserve the legacy exchange names until a versioned contract change replaces them. New PRD requirements must identify inherited implementation gaps rather than relabel the existing code as compliant.
+Propose public API and format changes through review. Update the affected piece descriptions and add a new [interface-change fragment](interface-changes/README.md) with migrations for every caller. Preserve the legacy exchange names until a versioned contract change replaces them. New PRD requirements must identify inherited implementation gaps rather than relabel the existing code as compliant.

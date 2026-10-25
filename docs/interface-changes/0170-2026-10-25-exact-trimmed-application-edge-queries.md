@@ -1,0 +1,7 @@
+## 2026-10-25: exact trimmed application edge queries
+
+Pieces: app, 2, 3, 4, recipe
+Change: `catallax_app::curves` adds `edge_curve` and the `ApplicationBody::edge_curve` and `IncrementalApplicationBody::edge_curve` adapters. `EdgeCurve` retains the original curve and endpoint definitions, exact `CurveForm`, edge traversal sense, topological bounds, a finite line/full circle/circular arc span, exact arc interior point and strict seam-crossing flag, stable edge name, complete incident origins and retained construction pairs. Other conics, splines and general branches remain `CurveSpan::Unsupported`; unresolved existing intersection queries still refuse. New refusals: `app.curve-edge` for an edge outside the selected result and `app.curve-trim` for unpaired endpoints or a line without finite bounds. Caller deciders and active work allowances are retained.
+Why: drawing and inspection consumers need the exact finite selected curve without fitting display polylines or mistaking a whole circular carrier for its trim.
+Migration: additive. Query an edge handle from the same result, read `span` before consuming line/circle geometry, and traverse finite `trim` endpoints in stored edge order with `sense` relative to the carrier. Persist origin names and resolve them against each rebuild; numeric handles and meeting references remain model-local. The interior point disambiguates the branch and is not a midpoint or an angular enclosure. This adds no drawing visibility policy or silhouette query; SolidDraft integration is separate.
+

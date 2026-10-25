@@ -645,11 +645,6 @@ fn face_mesh(
     dec: &Decider,
 ) -> Result<(), Refusal> {
     let face = model.face(face_id);
-    if let Some(center) =
-        crate::bounded::minor_angle_center(model, face_id, chart, boundaries, dec)?
-    {
-        chart.restrict(1, center);
-    }
     let mut segments = Vec::new();
     let mut projected = Vec::new();
     for &l in &face.loops {
@@ -915,9 +910,17 @@ pub(crate) fn build(
                 |e| Refusal::new(e.code, format!("face {}: {}", face.index(), e.detail)),
             )?;
         } else {
+            if let Some(center) =
+                crate::bounded::minor_angle_center(model, face, &charts[&face], &boundaries, dec)?
+            {
+                charts.get_mut(&face).unwrap().restrict(1, center);
+            }
             let strip = matches!(
                 charts[&face].surface,
-                Surface::Cylinder(_) | Surface::EllipticCylinder(_)
+                Surface::Cylinder(_)
+                    | Surface::EllipticCylinder(_)
+                    | Surface::Cone(_)
+                    | Surface::Torus(_)
             ) && crate::ruled::build(
                 model,
                 face,

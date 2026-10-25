@@ -1,14 +1,14 @@
 //! Exact selected-edge definitions, independent of the display mesh.
 //!
-//! A finite circle span is selected by its ordered endpoints, the edge's sense
+//! A finite circle or ellipse span is selected by its ordered endpoints, the edge's sense
 //! relative to the carrier, and an exact interior point. No rounded angle or
 //! polyline chooses the branch. Handles and meeting definitions belong to the
 //! queried model; persist origin names and resolve them again after an edit.
 //!
 //! Query a result picking handle with [`ApplicationBody::edge_curve`] or an
 //! incremental checkpoint with [`IncrementalApplicationBody::edge_curve`].
-//! Inspect [`CurveSpan`] first: only lines, full circles and proper circular
-//! arcs are supported output. The other carriers retain their exact form and
+//! Inspect [`CurveSpan`] first: only lines, full circles and ellipses, and proper
+//! circular and elliptical arcs are supported output. The other carriers retain their exact form and
 //! trim with `Unsupported`. An underlying intersection-query refusal propagates.
 //! Finite trim endpoints follow edge traversal; apply a face's coedge sense
 //! separately when walking a wire. `crosses_seam` excludes seam endpoints and
@@ -69,7 +69,16 @@ pub enum CurveSpan {
         /// The seam lies strictly inside the arc. A seam endpoint is excluded.
         crosses_seam: bool,
     },
-    /// An ellipse, other conic, spline or general intersection branch.
+    /// A complete ellipse, including a closed edge with coincident endpoints.
+    FullEllipse,
+    /// A proper elliptical arc, which may cross the major-axis seam.
+    EllipticArc {
+        /// Exact point strictly inside the selected branch; not an arc midpoint.
+        interior: Point3,
+        /// The seam lies strictly inside the arc. A seam endpoint is excluded.
+        crosses_seam: bool,
+    },
+    /// A parabola, hyperbola, spline or general intersection branch.
     /// The exact carrier and topological trim remain available on [`EdgeCurve`].
     Unsupported,
 }
@@ -89,7 +98,7 @@ pub struct EdgeCurve {
     pub sense: Sense,
     /// Topological endpoints, independent of the carrier's parameter seam.
     pub trim: CurveTrim,
-    /// Supported line/circle span or explicit unsupported status.
+    /// Supported line/circle/ellipse span or explicit unsupported status.
     pub span: CurveSpan,
     /// Stable origin-pair name when the result admits one; not necessarily unique.
     pub name: Option<EdgeName>,
@@ -161,6 +170,7 @@ pub fn edge_curve(
         (CurveForm::Line { .. }, CurveTrim::Finite { .. }) => CurveSpan::Line,
         (CurveForm::Line { .. }, CurveTrim::Closed) => return Err(bad_trim()),
         (CurveForm::Circle { .. }, CurveTrim::Closed) => CurveSpan::FullCircle,
+        (CurveForm::Ellipse { .. }, CurveTrim::Closed) => CurveSpan::FullEllipse,
         (
             CurveForm::Circle {
                 center,
@@ -170,30 +180,32 @@ pub fn edge_curve(
             },
             CurveTrim::Finite { start, end },
         ) => {
-            match exact(model.geom().same_point(start.point, end.point, decider))? {
+            let seam = center.plus(&ref_dir.scaled(&(radius_sq / &ref_dir.norm_squared()).sqrt()));
+            match finite_arc(model, source, start, end, seam, decider)? {
                 None => CurveSpan::FullCircle,
-                Some(_) => {
-                    let (from, to) = match source.sense {
-                        Sense::Same => (start.point, end.point),
-                        Sense::Reversed => (end.point, start.point),
-                    };
-                    let interior =
-                        arc_point(model.geom(), source.curve, Some(from), Some(to), decider)?.value;
-                    // A private persistent-store clone supplies the seam point to
-                    // the existing cyclic query without mutating the source model.
-                    let seam =
-                        center.plus(&ref_dir.scaled(&(radius_sq / &ref_dir.norm_squared()).sqrt()));
-                    let mut geom = model.geom().clone();
-                    let seam = geom.add_point(PointDef::Explicit(seam));
-                    let crosses_seam = matches!(
-                        exact(cyclic_order(&geom, source.curve, [from, seam, to], decider))?,
-                        Some(Cyclic::Forward)
-                    );
-                    CurveSpan::CircularArc {
-                        interior,
-                        crosses_seam,
-                    }
-                }
+                Some((interior, crosses_seam)) => CurveSpan::CircularArc {
+                    interior,
+                    crosses_seam,
+                },
+            }
+        }
+        (
+            CurveForm::Ellipse {
+                center,
+                major_dir,
+                major_sq,
+                ..
+            },
+            CurveTrim::Finite { start, end },
+        ) => {
+            let seam =
+                center.plus(&major_dir.scaled(&(major_sq / &major_dir.norm_squared()).sqrt()));
+            match finite_arc(model, source, start, end, seam, decider)? {
+                None => CurveSpan::FullEllipse,
+                Some((interior, crosses_seam)) => CurveSpan::EllipticArc {
+                    interior,
+                    crosses_seam,
+                },
             }
         }
         _ => CurveSpan::Unsupported,
@@ -223,6 +235,35 @@ pub fn edge_curve(
     };
     decider.check_deadline()?;
     Ok(result)
+}
+
+/// The proper arc between two distinct endpoints of a circle or ellipse, as its
+/// exact interior point and strict seam crossing; `None` when they coincide.
+fn finite_arc(
+    model: &Model,
+    source: &catallax_topology::Edge,
+    start: &CurveEndpoint,
+    end: &CurveEndpoint,
+    seam: Point3,
+    decider: &mut Decider,
+) -> Result<Option<(Point3, bool)>, Refusal> {
+    if exact(model.geom().same_point(start.point, end.point, decider))?.is_none() {
+        return Ok(None);
+    }
+    let (from, to) = match source.sense {
+        Sense::Same => (start.point, end.point),
+        Sense::Reversed => (end.point, start.point),
+    };
+    let interior = arc_point(model.geom(), source.curve, Some(from), Some(to), decider)?.value;
+    // A private persistent-store clone supplies the seam point to the existing
+    // cyclic query without mutating the source model.
+    let mut geom = model.geom().clone();
+    let seam = geom.add_point(PointDef::Explicit(seam));
+    let crosses_seam = matches!(
+        exact(cyclic_order(&geom, source.curve, [from, seam, to], decider))?,
+        Some(Cyclic::Forward)
+    );
+    Ok(Some((interior, crosses_seam)))
 }
 
 fn exact<T>(outcome: Outcome<T>) -> Result<Option<T>, Refusal> {

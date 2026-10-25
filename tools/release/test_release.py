@@ -1,7 +1,12 @@
-"""Public release evidence must reject incomplete, stale or unequal replays."""
+"""Public release evidence rejects stale replays and unapproved changes."""
 import copy
 import unittest
 
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+
+import release
 from release import check_summary, COMPARISONS, LABELS
 
 
@@ -10,9 +15,12 @@ class ReplayPolicyTests(unittest.TestCase):
         run = {"cases": 477, "manifest_cases": 477, "crashes": 0, "cache_hits": 0,
                "outcomes": {"answered": 396, "numbers.operation-budget": 81},
                "work_total": 1000, "elapsed_ms": 2000, "binary_sha256": "b" * 64}
-        return {"format": "catallax-release-replay/1", "base_sha": "a" * 40,
-                "candidate_sha": "b" * 40, "runs": {name: copy.deepcopy(run) for name in LABELS},
-                "comparisons": {name: {"cases": 477, "equal": True, "failures": []} for name in COMPARISONS}}
+        summary = {"format": "catallax-release-replay/2", "base_sha": "a" * 40,
+                   "candidate_sha": "b" * 40, "upgrades_sha256": release.sha256(release.UPGRADES),
+                   "runs": {name: copy.deepcopy(run) for name in LABELS},
+                   "comparisons": {name: {"cases": 477, "equal": True, "failures": []} for name in COMPARISONS}}
+        summary["comparisons"][COMPARISONS[0]]["upgrades"] = 0
+        return summary
 
     def test_outcome_totals_must_cover_all_manifest_cases(self):
         summary = self.summary()
@@ -64,6 +72,36 @@ class ReplayPolicyTests(unittest.TestCase):
         summary["input_paths"] = ["not-public"]
         with self.assertRaisesRegex(ValueError, "unexpected replay fields"):
             check_summary(summary, "b" * 40)
+
+    def test_summary_requires_the_committed_upgrade_digest_and_count(self):
+        summary = self.summary()
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "upgrades.json"
+            approval = {"index": 0, "request_sha256": "1" * 64,
+                        "refusal_sha256": "2" * 64, "answer_sha256": "3" * 64}
+            release.write_json(path, {"format": "catallax-replay-upgrades/1", "upgrades": [approval]})
+            with patch.object(release, "UPGRADES", path):
+                with self.assertRaisesRegex(ValueError, "upgrades file differs"):
+                    check_summary(summary, "b" * 40)
+                summary["upgrades_sha256"] = release.sha256(path)
+                summary["comparisons"][COMPARISONS[0]].update(equal=False, upgrades=1)
+                for name in LABELS[1:]:
+                    summary["runs"][name]["outcomes"] = {"answered": 397, "numbers.operation-budget": 80}
+                self.assertEqual(check_summary(summary, "b" * 40)["comparisons"][COMPARISONS[0]]["upgrades"], 1)
+                summary["comparisons"][COMPARISONS[0]]["upgrades"] = 2
+                with self.assertRaisesRegex(ValueError, "comparison differs"):
+                    check_summary(summary, "b" * 40)
+
+    def test_upgrade_file_rejects_duplicate_or_out_of_range_cases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "upgrades.json"
+            approval = {"index": 0, "request_sha256": "1" * 64,
+                        "refusal_sha256": "2" * 64, "answer_sha256": "3" * 64}
+            for rows in ([approval, approval], [{**approval, "index": 477}]):
+                release.write_json(path, {"format": "catallax-replay-upgrades/1", "upgrades": rows})
+                with patch.object(release, "UPGRADES", path):
+                    with self.assertRaisesRegex(ValueError, "invalid or duplicate"):
+                        release.read_upgrades()
 
 
 if __name__ == "__main__":

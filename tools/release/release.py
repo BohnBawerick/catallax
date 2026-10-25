@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 LABELS = ("baseline-w1", "candidate-w1", "candidate-w2", "candidate-w4")
 COMPARISONS = ("baseline-w1 vs candidate-w1", "candidate-w1 vs candidate-w2", "candidate-w1 vs candidate-w4")
 COUNT = 477
+UPGRADES = ROOT / "tools/release/replay-upgrades.json"
 
 
 def require(condition, message):
@@ -40,9 +41,62 @@ def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
 
+def read_upgrades():
+    document = read_json(UPGRADES)
+    require(set(document) == {"format", "upgrades"} and
+            document["format"] == "catallax-replay-upgrades/1", "unsupported upgrades file")
+    rows = document["upgrades"]
+    require(isinstance(rows, list), "upgrades must be a list")
+    seen = set()
+    for row in rows:
+        require(set(row) == {"index", "request_sha256", "refusal_sha256", "answer_sha256"},
+                "unexpected upgrade fields")
+        require(type(row["index"]) is int and 0 <= row["index"] < COUNT and row["index"] not in seen,
+                "invalid or duplicate upgrade index")
+        seen.add(row["index"])
+        require(all(isinstance(row[key], str) and re.fullmatch(r"[0-9a-f]{64}", row[key])
+                    for key in ("request_sha256", "refusal_sha256", "answer_sha256")),
+                "invalid upgrade digest")
+    return rows
+
+
+def answer_digest(driver, directory):
+    directory = Path(directory)
+    return driver.digest({
+        "manifest": driver.comparable(read_json(directory / "manifest.json")),
+        "files": {name: sha256(directory / name) if (directory / name).exists() else None
+                  for name in ("answer.step", "display.obj", "print.stl")}})
+
+
+def compare_baseline(driver, baseline, candidate, upgrades):
+    result = driver.compare(baseline, candidate)
+    before, after = [read_json(path)["cases"] for path in (baseline, candidate)]
+    approvals = {row["index"]: row for row in upgrades}
+    used = set()
+    for failure in result["failures"]:
+        require(failure["cause"] == "manifest", "replay differs; inspect the local comparison")
+        index = failure["index"]
+        old, new = [Path(cases[index]["path"]) for cases in (before, after)]
+        old_manifest, new_manifest = [read_json(path / "manifest.json") for path in (old, new)]
+        require(old_manifest["status"] == "refused" and new_manifest["status"] == "answered",
+                "replay differs; only refusal-to-answer upgrades are permitted")
+        require(index in approvals, "unlisted upgrade")
+        request = read_json(old / "request.json")
+        request.pop("out", None)
+        expected = {"index": index, "request_sha256": driver.digest(request),
+                    "refusal_sha256": answer_digest(driver, old),
+                    "answer_sha256": answer_digest(driver, new)}
+        require(approvals[index] == expected, "approved upgrade differs")
+        used.add(index)
+    require(used == set(approvals), "unused upgrade approval")
+    return {"cases": result["cases"], "equal": result["equal"], "failures": [], "upgrades": len(used)}
+
+
 def check_summary(summary, commit, allow_historical=False):
-    require(set(summary) == {"format", "base_sha", "candidate_sha", "runs", "comparisons"}, "unexpected replay fields")
-    require(summary["format"] == "catallax-release-replay/1", "unsupported replay summary")
+    require(set(summary) == {"format", "base_sha", "candidate_sha", "runs", "comparisons", "upgrades_sha256"}, "unexpected replay fields")
+    require(summary["format"] == "catallax-release-replay/2", "unsupported replay summary")
+    upgrades = read_upgrades()
+    require(summary["upgrades_sha256"] == sha256(UPGRADES), "replay upgrades file differs")
     require(re.fullmatch(r"[0-9a-f]{40}", summary["base_sha"]), "invalid baseline commit")
     require(re.fullmatch(r"[0-9a-f]{40}", summary["candidate_sha"]), "invalid candidate commit")
     require(allow_historical or summary["candidate_sha"] == commit, "replay is not from the selected commit")
@@ -56,8 +110,18 @@ def check_summary(summary, commit, allow_historical=False):
         require(row["work_total"] >= 0 and row["elapsed_ms"] >= 0, "invalid run measurement")
     require(len({summary["runs"][name]["binary_sha256"] for name in LABELS[1:]}) == 1, "worker runs use different candidate binaries")
     require(set(summary["comparisons"]) == set(COMPARISONS), "missing replay comparisons")
-    for row in summary["comparisons"].values():
-        require(row == {"cases": COUNT, "equal": True, "failures": []}, "replay comparison differs")
+    baseline = summary["comparisons"][COMPARISONS[0]]
+    require(baseline == {"cases": COUNT, "equal": not upgrades, "failures": [], "upgrades": len(upgrades)},
+            "replay comparison differs")
+    for name in COMPARISONS[1:]:
+        require(summary["comparisons"][name] == {"cases": COUNT, "equal": True, "failures": []},
+                "replay comparison differs")
+    baseline_answered = summary["runs"]["baseline-w1"]["outcomes"].get("answered", 0)
+    candidate_outcomes = summary["runs"]["candidate-w1"]["outcomes"]
+    require(candidate_outcomes.get("answered", 0) == baseline_answered + len(upgrades),
+            "upgrade answer count differs")
+    require(all(summary["runs"][name]["outcomes"] == candidate_outcomes for name in LABELS[2:]),
+            "worker outcomes differ")
     return summary
 
 
@@ -65,6 +129,9 @@ def replay_summary(args):
     spec = importlib.util.spec_from_file_location("catallax_driver", ROOT / ".claude/skills/verify-catallax/scripts/control-catallax.py")
     driver = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(driver)
+    upgrades = read_upgrades()
+    require(git("show", f"HEAD:{UPGRADES.relative_to(ROOT).as_posix()}") == UPGRADES.read_text().strip(),
+            "upgrades file must be committed")
     paths = dict(zip(LABELS, map(Path, args.runs)))
     summaries, commits = {}, {}
     for name, path in paths.items():
@@ -92,13 +159,16 @@ def replay_summary(args):
     comparisons = {}
     for name in COMPARISONS:
         left, right = name.split(" vs ")
-        result = driver.compare(paths[left], paths[right])
-        require(result["equal"], "replay differs; inspect the private comparison on the replay machine")
+        if name == COMPARISONS[0]:
+            result = compare_baseline(driver, paths[left], paths[right], upgrades)
+        else:
+            result = driver.compare(paths[left], paths[right])
+            require(result["equal"], "candidate worker replay differs; inspect the local comparison")
         comparisons[name] = result
-    summary = {"format": "catallax-release-replay/1", "base_sha": commits[LABELS[0]],
+    summary = {"format": "catallax-release-replay/2", "upgrades_sha256": sha256(UPGRADES), "base_sha": commits[LABELS[0]],
                "candidate_sha": commits[LABELS[1]], "runs": summaries, "comparisons": comparisons}
     write_json(args.out, check_summary(summary, commits[LABELS[1]]))
-    print(f"477 manifests and strict STEP bytes equal; public aggregate written to {args.out}")
+    print(f"477 earlier cases preserved with {len(upgrades)} approved upgrades; public aggregate written to {args.out}")
 
 
 def check_evidence(directory, commit, allow_historical=False):

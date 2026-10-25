@@ -59,8 +59,12 @@ impl Evaluator {
                 unit(axis, dec)?,
             ],
             dimensions,
-            tau: (Ball::pi_checked(BITS, dec)? * Ball::from_rational(&Rational::from_i64(2), BITS))
-                .to_interval(),
+            tau: if matches!(surface, Surface::Plane(_)) {
+                point(0.0)
+            } else {
+                (Ball::pi_checked(BITS, dec)? * Ball::from_rational(&Rational::from_i64(2), BITS))
+                    .to_interval()
+            },
         })
     }
 
@@ -97,6 +101,9 @@ impl Evaluator {
 
     /// Unit normal and radians per turn from the immutable definition coefficients.
     pub(crate) fn normal(&self, surface: &Surface, uv: Uv) -> Option<([Interval; 3], Interval)> {
+        if matches!(surface, Surface::Plane(_)) {
+            return Some((self.frame[2], self.tau));
+        }
         let [sin, cos] = self.trig(uv[0])?;
         let radial: [Interval; 3] =
             std::array::from_fn(|i| self.frame[0][i] * cos + self.frame[1][i] * sin);

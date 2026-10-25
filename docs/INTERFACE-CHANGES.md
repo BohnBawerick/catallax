@@ -1619,3 +1619,13 @@ Change: generated rotational sectors retain the boundary predicate of their clip
 Migration: version 3 keeps its prior sharp-selection refusal. Single-face paths, outward cylinder offsets, tolerances and deterministic work allowances are unchanged. New images reduce proved rational expressions before constructing their arrangements, avoiding needless algebraic elimination in two-sided unions. Nonconvex source skins, branched boundary fans, conical folds, tips and non-ring carriers retain typed coverage refusals.
 
 Prior art: [OpenCASCADE arc joins](https://dev.opencascade.org/doc/refman/html/class_b_rep_offset_a_p_i___make_offset_shape.html) distinguish round joins from intersection mitres. [Normal cones](https://macaulay2.com/doc/Macaulay2-1.24.11/share/doc/Macaulay2/Polyhedra/html/_normal__Cone_lp__Polyhedron_cm__Polyhedron_rp.html) determine the selected projection sectors. [Libfive's offset discussion](https://github.com/libfive/libfive/discussions/545) explains why a generic Boolean residual cannot replace a true distance construction.
+
+## 2026-10-25: reuse planar display certificates and affine enclosures
+
+Pieces: display mesh, application benchmark
+
+Change: planar facet quality checks use a cached interval unit normal, with the existing multiprecision certificate retained when the filter is inconclusive. Shared-rail ear centroids enclose the same exact affine construction from cached endpoint balls instead of expanding exact trace coordinates. Requested edge-length refinement still retains the exact centroid it consumes.
+
+Why: fine cap meshes repeated multiprecision angle constants per triangle, and long rational trim coordinates made repeated exact centroid construction expensive.
+
+Migration: none. Public mesh options, user tolerances, resource limits, shared edge polylines, whole-facet bounds and exact geometry are unchanged. Rounded interior coordinates can change within their certified bound. The display benchmark accepts optional chord and angle arguments and records per-face bounds; its default invocation is unchanged.

@@ -65,7 +65,7 @@ pub(crate) struct Chart {
     origin: [f64; 3],
     frame: [[f64; 3]; 3],
     turn: Option<Ball>,
-    evaluator: Option<crate::evaluate::Evaluator>,
+    evaluator: crate::evaluate::Evaluator,
     ellipse_radii: Option<[f64; 2]>,
     centers: [Option<f64>; 2],
     hessian: OnceCell<[Rational; 3]>,
@@ -122,11 +122,7 @@ impl Chart {
             normal_scale,
             origin,
             turn,
-            evaluator: if matches!(surface, Surface::Plane(_)) {
-                None
-            } else {
-                Some(crate::evaluate::Evaluator::new(surface, dec)?)
-            },
+            evaluator: crate::evaluate::Evaluator::new(surface, dec)?,
             frame: [
                 unit(reference, dec)?,
                 unit(&axis.cross(reference), dec)?,
@@ -201,7 +197,7 @@ impl Chart {
     }
 
     pub(crate) fn filtered_normal(&self, uv: Uv) -> Option<([Interval; 3], Interval)> {
-        self.evaluator.as_ref()?.normal(&self.surface, uv)
+        self.evaluator.normal(&self.surface, uv)
     }
 
     pub(crate) fn sample(
@@ -212,11 +208,7 @@ impl Chart {
         dec: &Decider,
     ) -> Result<([f64; 3], Rational), Refusal> {
         dec.check_deadline()?;
-        if let Some(values) = self
-            .evaluator
-            .as_ref()
-            .and_then(|e| e.evaluate(&self.surface, uv))
-        {
+        if let Some(values) = self.evaluator.evaluate(&self.surface, uv) {
             let position = boundary.unwrap_or_else(|| values.map(|v| v.mid()));
             let deltas = std::array::from_fn::<_, 3, _>(|i| {
                 catallax_numbers::Interval::point(position[i]).unwrap() - values[i]

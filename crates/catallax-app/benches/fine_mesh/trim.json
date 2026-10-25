@@ -1,0 +1,12 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Fine mesh trimmed half cylinder",
+  "steps": [
+    {"id":"half","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+      {"id":"arc","kind":"arc","centre":["0","0"],"to":["-5","0"],"turn":"ccw"},
+      {"id":"diameter","kind":"line","to":["5","0"]}
+    ]]},
+    {"id":"solid","op":"extrude","profile":"half","distance":"2"}
+  ],
+  "result": "solid"
+}

@@ -8,6 +8,9 @@ use catallax_numbers::{
 };
 use catallax_shapes::{Cone, Plane, Point3, Surface, Vector3};
 
+/// Exact hollow axial cells with strictly separated radial walls.
+#[path = "draft_annular.rs"]
+pub mod annular;
 /// Oriented multi-cell planar support arrangements and patch provenance.
 #[path = "draft_arrangement.rs"]
 pub mod arrangement;

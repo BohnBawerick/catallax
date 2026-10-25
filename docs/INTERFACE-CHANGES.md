@@ -1689,3 +1689,13 @@ Pieces: app, 2, 3, 4, recipe
 Change: `catallax_app::curves` adds `edge_curve` and the `ApplicationBody::edge_curve` and `IncrementalApplicationBody::edge_curve` adapters. `EdgeCurve` retains the original curve and endpoint definitions, exact `CurveForm`, edge traversal sense, topological bounds, a finite line/full circle/circular arc span, exact arc interior point and strict seam-crossing flag, stable edge name, complete incident origins and retained construction pairs. Other conics, splines and general branches remain `CurveSpan::Unsupported`; unresolved existing intersection queries still refuse. New refusals: `app.curve-edge` for an edge outside the selected result and `app.curve-trim` for unpaired endpoints or a line without finite bounds. Caller deciders and active work allowances are retained.
 Why: drawing and inspection consumers need the exact finite selected curve without fitting display polylines or mistaking a whole circular carrier for its trim.
 Migration: additive. Query an edge handle from the same result, read `span` before consuming line/circle geometry, and traverse finite `trim` endpoints in stored edge order with `sense` relative to the carrier. Persist origin names and resolve them against each rebuild; numeric handles and meeting references remain model-local. The interior point disambiguates the branch and is not a midpoint or an angular enclosure. This adds no drawing visibility policy or silhouette query; SolidDraft integration is separate.
+
+## 2026-10-26: exact annular torus first-hit limits
+
+Pieces: features, field
+
+Change: `extrude_to` and `extrude_next` accept coaxial annular profiles against a stock torus when one entry or exit branch is certified over the complete profile. Both kernels use exact circular sections and finite construction columns. Authored direction scale and sign, rigid placement, profile holes and extrusion-owned names are retained. Oblique or offset torus sections and spline intersection pairs remain named coverage gaps. The quadratic cap reduction now refuses higher-degree ray terms instead of omitting them.
+
+Why: planar limits and rectangular stock-quadric caps did not cover annular features stopping at a toroidal wall. The kernel already constructs the required coaxial cylinder/torus and normal-plane/torus circles.
+
+Migration: none. Recipe versions, work allowances, modelling tolerance and existing planar and stock-quadric definitions are unchanged. Public test parts cover each curved surface family; represented spline limits explicitly retain the unsupported-pair refusal.

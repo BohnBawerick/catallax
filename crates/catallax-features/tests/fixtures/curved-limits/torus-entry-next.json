@@ -1,0 +1,13 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "annular torus first entry",
+  "steps": [
+    {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[
+      [{"kind":"circle","id":"outer","centre":["0","0"],"radius":"7/2"}],
+      [{"kind":"circle","id":"inner","centre":["0","0"],"radius":"5/2"}]
+    ]},
+    {"id":"target","op":"torus","major":"3","minor":"1","pose":{"rotation":["1","0","0","0"],"translation":["0","0","5"]}},
+    {"id":"cap","op":"extrude_next","target":"target","profile":"profile"}
+  ],
+  "result":"cap"
+}

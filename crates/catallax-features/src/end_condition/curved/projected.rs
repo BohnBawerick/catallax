@@ -55,17 +55,17 @@ pub(super) fn coefficients(surface: &Surface, frame: &Frame) -> Result<[RealPoly
         }
         polynomial = polynomial + term;
     }
-    Ok(std::array::from_fn(|k| {
-        RealPoly::from_terms(
-            2,
-            polynomial
-                .terms()
-                .into_iter()
-                .filter(|(m, _)| m.exponents()[2] == k as u32)
-                .map(|(m, c)| (m.exponents()[..2].to_vec(), c))
-                .collect(),
-        )
-    }))
+    let mut coefficients: [Vec<_>; 3] = std::array::from_fn(|_| Vec::new());
+    for (m, coefficient) in polynomial.terms() {
+        let degree = m.exponents()[2] as usize;
+        if degree > 2 {
+            return Err(coverage(
+                "nonquadratic ray equation requires a certified first-hit branch, not a truncated quadratic",
+            ));
+        }
+        coefficients[degree].push((m.exponents()[..2].to_vec(), coefficient));
+    }
+    Ok(coefficients.map(|terms| RealPoly::from_terms(2, terms)))
 }
 
 pub(super) fn certify(
@@ -221,3 +221,7 @@ pub(super) fn perpendicular(n: &Vector3, dec: &mut Decider) -> Result<Vector3, R
 fn interval(lo: &Rational, hi: &Rational) -> Ball {
     Ball::from_rational(lo, 128).hull(&Ball::from_rational(hi, 128))
 }
+
+#[cfg(test)]
+#[path = "projected_tests.rs"]
+mod tests;

@@ -84,6 +84,14 @@ the additive fragment is
    field tests. Subsequent final-head checks and any failures are recorded in
    the PR and external logs, without relabelling predecessor results.
 
+6. Integrated-head CI at `2598e2483d893b7913b16f8e16a97eed9106021e`
+   exposed a new STEP-test API mismatch: OCP 8 uses `TopoDS.Face`, while the
+   test called the older `Face_s`. All five annular variants had already passed
+   import validity, analytic volume and strict hole/material checks before
+   this face-type inspection error. Added a binding-version-compatible cast;
+   no production code or geometric assertion changed. The failed build job
+   is `121327773989` in check run `40246043774` and remains historical evidence.
+
 ## Independent oracles and retained behavior
 
 For `both.json`, with `0 <= z <= 2`, the exact radii are `R=8-z` and `r=2+z`.

@@ -23,6 +23,7 @@ BINARY = Path(os.environ.get('CATALLAX_VERIFY_BINARY', ROOT / 'target/release/ca
 DRIVER = ROOT / '.claude/skills/verify-catallax/scripts/control-catallax.py'
 CHECK = runpy.run_path(str(DRIVER.with_name('check-step.py')))['check']
 FIXTURES = ROOT / 'crates/catallax-features/tests/fixtures/draft-annular'
+FACE = getattr(TopoDS, 'Face_s', None) or TopoDS.Face
 
 
 class AnnularDraftImports(unittest.TestCase):
@@ -57,7 +58,7 @@ class AnnularDraftImports(unittest.TestCase):
                     explorer = TopExp_Explorer(shape, TopAbs_FACE)
                     counts = {GeomAbs_Plane: 0, GeomAbs_Cylinder: 0, GeomAbs_Cone: 0}
                     while explorer.More():
-                        kind = BRepAdaptor_Surface(TopoDS.Face_s(explorer.Current())).GetType()
+                        kind = BRepAdaptor_Surface(FACE(explorer.Current())).GetType()
                         self.assertIn(kind, counts)
                         counts[kind] += 1
                         explorer.Next()

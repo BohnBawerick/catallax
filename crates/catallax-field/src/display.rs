@@ -329,6 +329,7 @@ impl Native {
                 continue;
             }
             let inequalities = match leaf {
+                crate::geometry::Leaf::Cell(cell) if cell.capped_chart().is_some() => return None,
                 crate::geometry::Leaf::Primitive(_) | crate::geometry::Leaf::Cell(_) => leaf
                     .constraints()
                     .iter()
@@ -370,6 +371,11 @@ impl Native {
         for (i, atom) in self.atoms.iter().enumerate() {
             let mut restriction = chart.pullback(atom, dec)?;
             restriction.prepare_germ_sign(dec)?;
+            // Nonzero restrictions share their sign across the transverse
+            // germs away from algebraic trim curves. A constant surviving
+            // patch extends to those curves by boundary closure. A culled
+            // patch's possible intersections remain covered by the registered
+            // elementary carriers and the ordinary deferred-cell certificate.
             let state = if restriction.is_zero() {
                 // Equal regular carriers have proportional gradients with a
                 // fixed sign. Singular or component-only identities fall back.
@@ -993,7 +999,14 @@ fn mesh_plan_inner(
                     for &face in &patch.faces {
                         let stage = report.as_ref().map(|_| Snapshot::new(dec));
                         let point = point.get_or_insert_with(|| patch.chart.point(&cell.centre()));
-                        let queried = builder.face_at(face, point, stable, &patch.coincident, dec);
+                        let queried = builder.face_at(
+                            face,
+                            point,
+                            stable,
+                            &patch.coincident,
+                            patch.native.is_some(),
+                            dec,
+                        );
                         if let (Some(report), Some(stage)) = (report.as_deref_mut(), stage) {
                             report.faces[face]
                                 .queries
@@ -1257,6 +1270,7 @@ impl Builder<'_> {
         point: &RPoint3,
         stable: bool,
         coincident: &[Vec<bool>],
+        native: bool,
         dec: &mut Decider,
     ) -> Result<crate::FaceQuery, Refusal> {
         use crate::{Direction, FaceQuery};
@@ -1314,13 +1328,11 @@ impl Builder<'_> {
             (Location::Outside, Location::Inside) => n,
             (Location::Inside, Location::Outside) => minus_n,
             (Location::Inside, Location::Inside) | (Location::Outside, Location::Outside)
-                if stable
-                    || (self.native_fillet_closure()
-                        && self.regular_witness(&p, coincident, dec)?) =>
+                if stable || (native && self.regular_witness(&p, coincident, dec)?) =>
             {
                 return Ok(absent);
             }
-            _ if self.native_fillet_closure() => return Ok(unknown),
+            _ if native => return Ok(unknown),
             _ => {
                 return plan.closed_face_query_checked(FaceId(id), point, &mut self.workspace, dec);
             }
@@ -1333,7 +1345,7 @@ impl Builder<'_> {
                 &mut self.workspace.domains,
             ) {
                 FaceState::NotOnFace => return Ok(absent),
-                FaceState::Indeterminate if self.native_fillet_closure() => return Ok(unknown),
+                FaceState::Indeterminate if native => return Ok(unknown),
                 FaceState::Indeterminate => {
                     return plan.closed_face_query_checked(
                         FaceId(id),
@@ -1347,7 +1359,7 @@ impl Builder<'_> {
         }
         Ok(FaceQuery {
             state: FaceState::OnFace,
-            direction: if self.native_fillet_closure() {
+            direction: if native {
                 native_direction(n, dec)?
             } else {
                 crate::unit_direction(n, dec)?
@@ -1389,26 +1401,6 @@ impl Builder<'_> {
         }
         Ok(true)
     }
-    // Closed contacts can be covered by adjacent certified cells. Retain an
-    // unresolved witness instead of paying for a general contact proof when
-    // the complete elementary fillet has a native display classifier.
-    fn native_fillet_closure(&self) -> bool {
-        self.plan
-            .leaves
-            .iter()
-            .any(|leaf| matches!(leaf, crate::geometry::Leaf::Feature(f) if f.fillet.is_some()))
-            && self.plan.leaves.iter().enumerate().all(|(i, leaf)| {
-                self.plan.leaf_registers[i].is_none()
-                    || match leaf {
-                        crate::geometry::Leaf::Primitive(_) | crate::geometry::Leaf::Cell(_) => {
-                            true
-                        }
-                        crate::geometry::Leaf::Feature(_) => self.classifiers[i].is_some(),
-                        _ => false,
-                    }
-            })
-    }
-
     fn classify(
         &mut self,
         patch: &mut Patch,

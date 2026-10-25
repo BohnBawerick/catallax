@@ -540,6 +540,7 @@ pub(crate) fn adjacent(
                     continue;
                 }
             }
+            let conic_contact = model.geom().has_conic_incidence(edge.curve, source);
             let mut equations: Vec<_> = curve.equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
                 .iter()
                 .enumerate()
@@ -547,6 +548,10 @@ pub(crate) fn adjacent(
                     let contact = equation_is_source_contact(
                         model, source, source_curve, edge.curve, index, e, &source_equations,
                     );
+                    let contact = if !contact && conic_contact {
+                        dec.note_fact_decision();
+                        true
+                    } else { contact };
                     // Every path parametrises this carrier, so its defining
                     // equation is identically zero without reconstruction.
                     let mut polynomial =

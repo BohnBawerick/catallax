@@ -444,7 +444,7 @@ impl GeomStore {
             || self
                 .facts
                 .holds(FactKind::Incident, GeomKey::Point(p), GeomKey::Curve(c))
-            || self.closed_conic_incident(c, p)
+            || self.has_conic_incidence(c, p)
         {
             return fact_decision(dec);
         }
@@ -521,7 +521,10 @@ impl GeomStore {
         )
     }
 
-    fn closed_conic_incident(&self, curve: CurveId, point: PointId) -> bool {
+    /// Whether retained plane and quadric facts prove circle/ellipse membership.
+    /// `false` is inconclusive. This reads proofs without arithmetic or mutation;
+    /// callers consuming it as a decision must call `Decider::note_fact_decision`.
+    pub fn has_conic_incidence(&self, curve: CurveId, point: PointId) -> bool {
         let Some(supports) = self.closed_conic_supports.get(&curve) else {
             return false;
         };

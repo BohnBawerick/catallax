@@ -34,6 +34,7 @@ mod metric;
 mod offset_spline;
 mod ownership;
 mod planar;
+mod planar_face;
 /// Watertight certified print meshes built directly from the field.
 pub mod printing;
 mod profile;

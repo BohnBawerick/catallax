@@ -69,6 +69,7 @@ pub mod lattice;
 mod offset_fit;
 mod placement;
 mod planar_distance;
+mod planar_face;
 /// Exact face, edge and vertex distance-neighbourhood definitions.
 pub mod polyhedral_offset;
 /// Exact bounded convex plane arrangements shared by the independent kernels.

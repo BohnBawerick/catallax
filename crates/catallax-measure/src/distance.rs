@@ -3,8 +3,8 @@
 use catallax_intersect::trace;
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
 use catallax_shapes::{
-    Point3,
-    distance::{self, Bounds, Domain, Membership, Options},
+    Curve, Point3,
+    distance::{self, Bounds, Domain, Finite, Membership, Options},
 };
 use catallax_topology::{FaceId, Loop, Model, Sense};
 use std::cell::RefCell;
@@ -15,6 +15,7 @@ pub struct PreparedFace {
     face: FaceId,
     domain: Domain,
     boundary: Vec<[Ball; 3]>,
+    finite: Option<Finite>,
 }
 fn marked() -> Refusal {
     Refusal::new(
@@ -84,11 +85,39 @@ impl PreparedFace {
                 }
             }
         }
+        let finite = Self::recognize(model, face, dec)?;
         Ok(Self {
             face,
             domain,
             boundary,
+            finite,
         })
+    }
+    /// Recognizes a complete circular cylinder band or perpendicular circular cap:
+    /// every loop is one closed circle edge. Other trims keep the complete search.
+    fn recognize(
+        model: &Model,
+        face: FaceId,
+        dec: &mut Decider,
+    ) -> Result<Option<Finite>, Refusal> {
+        let mut rims = Vec::new();
+        for lp in &model.face(face).loops {
+            let Loop::Coedges(cs) = model.loop_(*lp) else {
+                return Ok(None);
+            };
+            let [c] = cs.as_slice() else {
+                return Ok(None);
+            };
+            let edge = model.edge(model.coedge(*c).edge);
+            if edge.start.is_some() || edge.end.is_some() {
+                return Ok(None);
+            }
+            let Curve::Circle(circle) = model.geom().curve(edge.curve) else {
+                return Ok(None);
+            };
+            rims.push(circle);
+        }
+        Finite::recognize(model.geom().surface(model.face(face).surface), &rims, dec)
     }
     fn classify(
         &self,
@@ -110,7 +139,8 @@ impl PreparedFace {
         })
     }
     /// Bounds point-to-face distance. Upper witnesses satisfy exact closed-loop
-    /// membership; lower bounds cover all unexcluded parameter cells.
+    /// membership; lower bounds cover all unexcluded parameter cells. Complete
+    /// cylinder bands and perpendicular circular caps are answered directly.
     pub fn point_to_face(
         &self,
         model: &mut Model,
@@ -118,6 +148,11 @@ impl PreparedFace {
         options: &Options,
         dec: &mut Decider,
     ) -> Result<Bounds, Refusal> {
+        if let Some(finite) = &self.finite
+            && let Some((bounds, _)) = finite.point_distance(p, options, dec)?
+        {
+            return Ok(bounds);
+        }
         distance::point_distance(
             &self.domain,
             p,

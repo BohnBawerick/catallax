@@ -1904,3 +1904,4 @@ fn sample_rotate(
 #[cfg(test)]
 #[path = "features/distance_tests.rs"]
 mod distance_tests;
+mod planar_thicken;

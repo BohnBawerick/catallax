@@ -8,6 +8,9 @@ use crate::{Point3, Surface, Vector3, math};
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use std::{cmp::Ordering, collections::BinaryHeap};
 
+mod analytic;
+pub use analytic::{Branch, Finite};
+
 const BITS: u32 = 128;
 fn q(n: i64) -> Rational {
     Rational::from_i64(n)

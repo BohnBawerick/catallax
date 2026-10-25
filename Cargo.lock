@@ -43,11 +43,13 @@ name = "catallax-app"
 version = "0.1.0"
 dependencies = [
  "catallax-features",
+ "catallax-intersect",
  "catallax-measure",
  "catallax-mesh",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",
+ "catallax-step",
  "catallax-topology",
  "libm",
  "serde",

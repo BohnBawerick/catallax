@@ -30,7 +30,9 @@ fn require_complete(report: Report, work: OperationWork) {
     assert!(!work.exhausted);
     assert!(report.refusal.is_none(), "{report:#?}");
     assert!(report.not_comparable.is_empty(), "{report:#?}");
-    assert_eq!(report.forward_vertices, 10_098);
+    // Frozen against the same main-integrated mesh with the legacy projector.
+    // Every vertex remains covered after the upstream layered-band mesh change.
+    assert_eq!(report.forward_vertices, 9_842);
     assert_eq!(report.reverse_samples, 332);
     assert!(report.findings.is_empty(), "{report:#?}");
     assert_eq!(report.verdict, Verdict::Agree);
@@ -40,7 +42,7 @@ fn require_complete(report: Report, work: OperationWork) {
             .as_ref()
             .is_some_and(|bound| bound <= &Options::default().accuracy)
     );
-    assert_eq!(report.sampled_distance_upper, Some(Rational::parse("1118961873734028146210319738755494338957/348449143727040986586495598010130648530944").unwrap()));
+    assert_eq!(report.sampled_distance_upper, Some(Rational::parse("3212700504381544564524693448969410158467/696898287454081973172991196020261297061888").unwrap()));
 }
 
 #[test]

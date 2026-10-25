@@ -1,0 +1,80 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "trimmed circular chamfer seam crossing",
+  "steps": [
+    {
+      "id": "base",
+      "op": "cylinder",
+      "radius": "8",
+      "height": "12",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "clip",
+      "op": "block",
+      "size": [
+        "10",
+        "20",
+        "12"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "24/5",
+          "-10",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "sector",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "base",
+      "tool": "clip"
+    },
+    {
+      "id": "bevel",
+      "op": "chamfer",
+      "body": "sector",
+      "distance": "2",
+      "other_distance": "1",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "base",
+              "role": "end"
+            },
+            {
+              "step": "base",
+              "role": {
+                "side": {
+                  "segment": "wall"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "result": "bevel"
+}

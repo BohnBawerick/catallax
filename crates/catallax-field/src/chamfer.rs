@@ -1,12 +1,22 @@
 //! Setback edge regions compiled from recipe supports, without B-rep topology.
 
-use catallax_features::chamfer::ChamferDefinition;
+use catallax_features::chamfer::{
+    ChamferDefinition,
+    arc::{BoundedArc, ordered_points},
+};
 use catallax_intersect::{Component, CurveSurface, SurfacePair};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, EdgeName, EdgeSelection, ElementId, Origin, Role, StepId};
 use catallax_shapes::{Curve, GeomStore, Point3, Surface, Vector3};
 
 use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
+
+#[derive(Clone, Debug)]
+enum Domain {
+    Whole,
+    Line([Rational; 2]),
+    Arc(BoundedArc),
+}
 
 pub(crate) struct Setbacks {
     pub distances: [Real; 2],
@@ -166,11 +176,12 @@ impl Plan {
         &self,
         definition: &ChamferDefinition,
         faces: [usize; 2],
-        interval: &Option<[Rational; 2]>,
+        interval: &Domain,
         source_faces: &[usize],
         dec: &mut Decider,
-    ) -> Result<(), Refusal> {
+    ) -> Result<Option<([catallax_shapes::Plane; 2], bool)>, Refusal> {
         let mut end_planes = [false; 2];
+        let mut arc_planes = [None, None];
         for &i in source_faces {
             let face = &self.faces[i];
             if faces
@@ -179,7 +190,7 @@ impl Plan {
             {
                 continue;
             }
-            if let (Curve::Line(edge), Surface::Plane(p), Some(interval)) =
+            if let (Curve::Line(edge), Surface::Plane(p), Domain::Line(interval)) =
                 (&definition.edge, &face.surface, interval)
                 && geometry::sign(&p.normal.cross(&edge.dir).norm_squared(), dec)? == Sign::Zero
             {
@@ -187,6 +198,27 @@ impl Plan {
                     q(&(p.origin.minus(&edge.origin).dot(&p.normal) / edge.dir.dot(&p.normal)))?;
                 if let Some(end) = interval.iter().position(|value| *value == t) {
                     end_planes[end] = true;
+                    continue;
+                }
+            }
+            if let (Domain::Arc(arc), Surface::Plane(plane)) = (interval, &face.surface) {
+                let mut matched = false;
+                for (end, point) in arc.ends.iter().enumerate() {
+                    if geometry::sign(&point.minus(&plane.origin).dot(&plane.normal), dec)?
+                        == Sign::Zero
+                    {
+                        for contact in &definition.contacts {
+                            let Curve::Circle(contact) = contact else {
+                                unreachable!("circular contact")
+                            };
+                            arc.contact_at(contact, end, plane, dec)?;
+                        }
+                        end_planes[end] = true;
+                        arc_planes[end] = Some(plane.clone());
+                        matched = true;
+                    }
+                }
+                if matched {
                     continue;
                 }
             }
@@ -198,12 +230,21 @@ impl Plan {
                 "the field affected region may reach another support and needs trimmed continuation",
             ));
         }
-        if interval.is_some() && end_planes != [true, true] {
+        if !matches!(interval, Domain::Whole) && end_planes != [true, true] {
             return Err(bad(
                 "finite line strips need proven perpendicular end planes",
             ));
         }
-        Ok(())
+        if let Domain::Arc(arc) = interval {
+            return arc
+                .trim(
+                    definition,
+                    &arc_planes.map(|p| p.expect("proven arc end plane")),
+                    dec,
+                )
+                .map(Some);
+        }
+        Ok(None)
     }
 
     pub(crate) fn chamfer(
@@ -323,6 +364,7 @@ impl Plan {
                 let edge = geom.curve(curve).clone();
                 let samples = match &edge {
                     Curve::Circle(c) => {
+                        let mut stations = Vec::new();
                         for &other in source_faces {
                             if faces.iter().any(|i| {
                                 self.faces[*i]
@@ -332,23 +374,48 @@ impl Plan {
                                 continue;
                             }
                             let surface = geom.add_surface(self.faces[other].surface.clone());
-                            if !matches!(
-                                catallax_intersect::intersect_curve_surface(
-                                    &mut geom, curve, surface, dec
-                                )?
-                                .value,
-                                CurveSurface::Disjoint
-                            ) {
-                                return Err(bad(
-                                    "a circular run meets another support and needs certified arc subdivision",
-                                ));
+                            match catallax_intersect::intersect_curve_surface(
+                                &mut geom, curve, surface, dec,
+                            )?
+                            .value
+                            {
+                                CurveSurface::Disjoint => (),
+                                CurveSurface::Meets(hits) => {
+                                    stations
+                                        .extend(hits.into_iter().map(|h| geom.position(h.point)));
+                                }
+                                _ => {
+                                    return Err(bad(
+                                        "a circular run coincides with another support",
+                                    ));
+                                }
                             }
                         }
-                        vec![(
-                            c.center
-                                .plus(&unit(&c.ref_dir).scaled(&square_root(&c.radius_sq))),
-                            None,
-                        )]
+                        let stations = ordered_points(c, stations, dec)?;
+                        if stations.is_empty() {
+                            vec![(
+                                c.center
+                                    .plus(&unit(&c.ref_dir).scaled(&square_root(&c.radius_sq))),
+                                Domain::Whole,
+                            )]
+                        } else {
+                            if stations.len() < 2 {
+                                return Err(bad("a tangent circular end needs continuation"));
+                            }
+                            let mut samples = Vec::new();
+                            for i in 0..stations.len() {
+                                let arc = BoundedArc::new(
+                                    c.clone(),
+                                    [
+                                        stations[i].clone(),
+                                        stations[(i + 1) % stations.len()].clone(),
+                                    ],
+                                    dec,
+                                )?;
+                                samples.push((arc.rational_sample(dec)?, Domain::Arc(arc)));
+                            }
+                            samples
+                        }
                     }
                     Curve::Line(line) => {
                         let length = q(&square_root(&line.dir.norm_squared()))?;
@@ -382,7 +449,7 @@ impl Plan {
                                     line.origin.plus(&line.dir.scaled(&Real::from(
                                         (&pair[0] + &pair[1]) / Rational::from_i64(2),
                                     ))),
-                                    Some([pair[0].clone(), pair[1].clone()]),
+                                    Domain::Line([pair[0].clone(), pair[1].clone()]),
                                 )
                             })
                             .collect()
@@ -418,17 +485,35 @@ impl Plan {
                         ));
                     }
                     if definitions.len() > first_definition {
-                        let (previous, previous_interval): &mut (
-                            ChamferDefinition,
-                            Option<[Rational; 2]>,
-                        ) = definitions.last_mut().unwrap();
-                        if let (Some(previous_interval), Some(current)) =
-                            (previous_interval, &interval)
+                        let (previous, previous_interval): &mut (ChamferDefinition, Domain) =
+                            definitions.last_mut().unwrap();
+                        if let (Domain::Line(previous_interval), Domain::Line(current)) =
+                            (&mut *previous_interval, &interval)
                             && previous_interval[1] == current[0]
                             && previous.convex == convex
                             && previous.same_sense == senses
                         {
                             previous_interval[1] = current[1].clone();
+                            continue;
+                        }
+                        if let (Domain::Arc(previous_arc), Domain::Arc(current)) =
+                            (&mut *previous_interval, &interval)
+                            && geometry::sign(
+                                &previous_arc.ends[1].minus(&current.ends[0]).norm_squared(),
+                                dec,
+                            )? == Sign::Zero
+                            && previous.convex == convex
+                            && previous.same_sense == senses
+                        {
+                            if geometry::sign(
+                                &previous_arc.ends[0].minus(&current.ends[1]).norm_squared(),
+                                dec,
+                            )? == Sign::Zero
+                            {
+                                *previous_interval = Domain::Whole;
+                            } else {
+                                previous_arc.ends[1] = current.ends[1].clone();
+                            }
                             continue;
                         }
                     }
@@ -450,6 +535,25 @@ impl Plan {
                         dec,
                     )?;
                     definitions.push((definition, interval));
+                }
+                // The first and last cells are adjacent on a circle. Joining
+                // them preserves a single named run across the carrier seam.
+                if definitions.len() > first_definition + 1 {
+                    let (first, first_domain) = &definitions[first_definition];
+                    let (last, last_domain) = definitions.last().unwrap();
+                    if let (Domain::Arc(a), Domain::Arc(b)) = (first_domain, last_domain)
+                        && first.convex == last.convex
+                        && first.same_sense == last.same_sense
+                        && geometry::sign(&b.ends[1].minus(&a.ends[0]).norm_squared(), dec)?
+                            == Sign::Zero
+                    {
+                        let start = b.ends[0].clone();
+                        definitions.pop();
+                        let Domain::Arc(arc) = &mut definitions[first_definition].1 else {
+                            unreachable!("joined circular cells");
+                        };
+                        arc.ends[0] = start;
+                    }
                 }
             }
         }
@@ -488,7 +592,7 @@ impl Plan {
                     "split named contact runs need a multi-domain face-selection proof",
                 ));
             }
-            if let (Curve::Line(edge), Some(interval)) = (&definition.edge, interval) {
+            if let (Curve::Line(edge), Domain::Line(interval)) = (&definition.edge, interval) {
                 for t in interval {
                     let point = edge.origin.plus(&edge.dir.scaled(&Real::from(t.clone())));
                     let mut found = false;
@@ -512,22 +616,23 @@ impl Plan {
         }
         for (i, (definition, interval)) in definitions.iter().enumerate() {
             for (other, other_interval) in &definitions[i + 1..] {
-                let shared_end = if let (Curve::Line(a), Some(ai), Curve::Line(b), Some(bi)) =
-                    (&definition.edge, interval, &other.edge, other_interval)
-                {
-                    let mut shared = false;
-                    for at in ai {
-                        for bt in bi {
-                            let a = a.origin.plus(&a.dir.scaled(&Real::from(at.clone())));
-                            let b = b.origin.plus(&b.dir.scaled(&Real::from(bt.clone())));
-                            shared |=
-                                geometry::sign(&a.minus(&b).norm_squared(), dec)? == Sign::Zero;
+                let shared_end =
+                    if let (Curve::Line(a), Domain::Line(ai), Curve::Line(b), Domain::Line(bi)) =
+                        (&definition.edge, interval, &other.edge, other_interval)
+                    {
+                        let mut shared = false;
+                        for at in ai {
+                            for bt in bi {
+                                let a = a.origin.plus(&a.dir.scaled(&Real::from(at.clone())));
+                                let b = b.origin.plus(&b.dir.scaled(&Real::from(bt.clone())));
+                                shared |=
+                                    geometry::sign(&a.minus(&b).norm_squared(), dec)? == Sign::Zero;
+                            }
                         }
-                    }
-                    shared
-                } else {
-                    false
-                };
+                        shared
+                    } else {
+                        false
+                    };
                 if shared_end {
                     continue;
                 }
@@ -557,10 +662,39 @@ impl Plan {
                     .position(|f| f.surface.same_definition(&definition.supports[1]))
                     .expect("source support"),
             ];
-            self.chamfer_domain(&definition, faces, &interval, source_faces, dec)?;
+            let mut angular =
+                self.chamfer_domain(&definition, faces, &interval, source_faces, dec)?;
             let convex = definition.convex;
-            let (feature, faces) = region(definition, interval, step, dec)?;
-            let node = self.leaf(geometry::Leaf::Feature(feature), faces, dec)?;
+            let sweep = finite_sweep(&interval, angular.as_ref(), dec)?;
+            if sweep.is_some() {
+                angular = None;
+            }
+            let (feature, faces) = region(definition, interval, sweep, step, dec)?;
+            let mut node = self.leaf(geometry::Leaf::Feature(feature), faces, dec)?;
+            if let Some((planes, major)) = angular {
+                let mut gates = Vec::new();
+                for plane in planes {
+                    gates.push(self.leaf(
+                        geometry::Leaf::Cell(geometry::Cell::new(
+                            vec![Surface::Plane(plane)],
+                            None,
+                        )?),
+                        Vec::new(),
+                        dec,
+                    )?);
+                }
+                let gate = self.boolean(
+                    if major {
+                        BooleanKind::Union
+                    } else {
+                        BooleanKind::Intersect
+                    },
+                    gates[0],
+                    gates[1],
+                    dec,
+                )?;
+                node = self.boolean(BooleanKind::Intersect, node, gate, dec)?;
+            }
             result = self.boolean(
                 if convex {
                     BooleanKind::Subtract
@@ -576,8 +710,8 @@ impl Plan {
     }
 }
 
-fn vertices(definition: &ChamferDefinition, interval: &Option<[Rational; 2]>) -> Vec<Point3> {
-    let (Curve::Line(edge), [Curve::Line(a), Curve::Line(b)], Some(interval)) =
+fn vertices(definition: &ChamferDefinition, interval: &Domain) -> Vec<Point3> {
+    let (Curve::Line(edge), [Curve::Line(a), Curve::Line(b)], Domain::Line(interval)) =
         (&definition.edge, &definition.contacts, interval)
     else {
         return Vec::new();
@@ -592,9 +726,42 @@ fn vertices(definition: &ChamferDefinition, interval: &Option<[Rational; 2]>) ->
         .collect()
 }
 
+// Reuse the field's own finite angular sweep when both end planes are radial
+// and its existing exact angular classifier covers this domain. Other proven
+// end cuts retain the general analytic halfspace construction above.
+fn finite_sweep(
+    domain: &Domain,
+    angular: Option<&([catallax_shapes::Plane; 2], bool)>,
+    dec: &mut Decider,
+) -> Result<Option<(Vector3, Rational)>, Refusal> {
+    let (Domain::Arc(arc), Some((planes, _))) = (domain, angular) else {
+        return Ok(None);
+    };
+    for plane in planes {
+        if geometry::sign(
+            &arc.circle.center.minus(&plane.origin).dot(&plane.normal),
+            dec,
+        )? != Sign::Zero
+        {
+            return Ok(None);
+        }
+    }
+    let [a, b] = arc.ends.each_ref().map(|p| p.minus(&arc.circle.center));
+    let dot = geometry::sign(&a.dot(&b), dec)?;
+    let cross = geometry::sign(&a.cross(&b).dot(&arc.circle.normal), dec)?;
+    let angle = match (dot, cross) {
+        (Sign::Zero, Sign::Positive) => 90,
+        (Sign::Negative, Sign::Zero) => 180,
+        (Sign::Zero, Sign::Negative) => 270,
+        _ => return Ok(None),
+    };
+    Ok(Some((unit(&a), Rational::from_i64(angle))))
+}
+
 fn region(
     definition: ChamferDefinition,
-    interval: Option<[Rational; 2]>,
+    interval: Domain,
+    finite: Option<(Vector3, Rational)>,
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<(Feature, Vec<crate::Face>), Refusal> {
@@ -603,9 +770,9 @@ fn region(
             let z = unit(&edge.dir);
             let x = unit(&a.origin.minus(&edge.origin));
             let y = z.cross(&x);
-            let [start, _] = interval
-                .as_ref()
-                .ok_or_else(|| bad("a line bevel needs a finite input interval"))?;
+            let Domain::Line([start, _]) = &interval else {
+                return Err(bad("a line bevel needs a finite input interval"));
+            };
             let shift = edge.dir.scaled(&Real::from(start.clone()));
             let e = edge.origin.plus(&shift);
             (
@@ -620,7 +787,9 @@ fn region(
             )
         }
         (Curve::Circle(edge), [Curve::Circle(a), Curve::Circle(b)]) => {
-            let x = unit(&edge.ref_dir);
+            let x = finite
+                .as_ref()
+                .map_or_else(|| unit(&edge.ref_dir), |(x, _)| x.clone());
             let axis = unit(&edge.normal);
             let z = x.cross(&axis);
             let e = edge.center.plus(&x.scaled(&square_root(&edge.radius_sq)));
@@ -670,11 +839,13 @@ fn region(
                 point: point(&origin)?,
                 direction: vector(&axis)?,
             },
-            &Rational::from_i64(360),
+            &finite.map_or_else(|| Rational::from_i64(360), |(_, angle)| angle),
             dec,
         )?
     } else {
-        let [start, end] = interval.as_ref().expect("line interval");
+        let Domain::Line([start, end]) = &interval else {
+            unreachable!("line interval")
+        };
         let Curve::Line(edge) = &definition.edge else {
             unreachable!("line interval");
         };

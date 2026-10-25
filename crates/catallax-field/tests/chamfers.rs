@@ -12,6 +12,15 @@ fn decider() -> Decider {
         ..Default::default()
     })
 }
+
+#[test]
+fn trimmed_circular_public_missing_case() {
+    let recipe = Recipe::parse(include_str!(
+        "../../catallax-features/tests/fixtures/chamfer-arcs/convex.json"
+    ))
+    .unwrap();
+    check(&recipe, &[]);
+}
 fn point(p: [&str; 3]) -> RPoint3 {
     let [x, y, z] = p.map(|x| Rational::parse(x).unwrap());
     RPoint3::new(x, y, z)

@@ -2,13 +2,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_numbers::{Decider, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Outcome, Real, Refusal, Sign, StrictOrder};
 use catallax_recipe::{EdgeSelection, Origin, Role, StepId};
 use catallax_shapes::{Curve, Line, Point3, PointDef, Surface};
 use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex, VertexId};
 
 use crate::{
-    chamfer::ChamferDefinition,
+    chamfer::{ChamferDefinition, arc::BoundedArc},
     edge_blend::{self, Replacement},
     extrude::reverse,
     profile::sign,
@@ -132,6 +132,7 @@ struct Run {
     definition: ChamferDefinition,
     ends: BTreeMap<(VertexId, FaceId), VertexId>,
     caps: BTreeMap<VertexId, EdgeId>,
+    end_planes: BTreeMap<VertexId, catallax_shapes::Plane>,
 }
 fn outward(
     model: &Model,
@@ -252,10 +253,106 @@ fn plane(model: &Model, face: FaceId) -> Result<&catallax_shapes::Plane, Refusal
     Ok(p)
 }
 
+fn end_contact(
+    model: &Model,
+    run: &Run,
+    face: FaceId,
+    old: VertexId,
+    end_plane: &catallax_shapes::Plane,
+    dec: &mut Decider,
+) -> Result<Point3, Refusal> {
+    let index = run.faces.iter().position(|f| *f == face).unwrap();
+    match (&run.definition.edge, &run.definition.contacts[index]) {
+        (Curve::Line(_), Curve::Line(line)) => line_plane(line, end_plane, dec),
+        (Curve::Circle(circle), Curve::Circle(contact)) => {
+            let input = model.edge(run.edge);
+            let mut ends = [input.start, input.end].map(|v| {
+                v.map(|v| model.geom().position(model.vertex(v).point))
+                    .ok_or_else(|| bad("a finite circular run needs both endpoints"))
+            });
+            if input.sense == Sense::Reversed {
+                ends.swap(0, 1);
+            }
+            let [a, b] = ends;
+            let arc = BoundedArc::new(circle.clone(), [a?, b?], dec)?;
+            let end = usize::from(if input.sense == Sense::Same {
+                input.end == Some(old)
+            } else {
+                input.start == Some(old)
+            });
+            arc.contact_at(contact, end, end_plane, dec)
+        }
+        _ => Err(bad("a contact rail has no elementary end trim")),
+    }
+}
+
+fn conic_connector(
+    model: &mut Model,
+    first: &Surface,
+    second: &Surface,
+    from: VertexId,
+    to: VertexId,
+    dec: &mut Decider,
+) -> Result<EdgeId, Refusal> {
+    use catallax_intersect::{Component, SurfacePair};
+    let a = model.geom_mut().add_surface(first.clone());
+    let b = model.geom_mut().add_surface(second.clone());
+    let SurfacePair::Meets(components) =
+        catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value
+    else {
+        return Err(bad("a conical end has no exact plane intersection"));
+    };
+    let points = [from, to].map(|v| model.vertex(v).point);
+    for component in components {
+        let Component::Curve {
+            curve, singular, ..
+        } = component
+        else {
+            continue;
+        };
+        if !singular.is_empty() || catallax_intersect::curve_is_closed(model.geom(), curve, dec)? {
+            continue;
+        }
+        let mut contains = true;
+        for point in points {
+            match catallax_intersect::on_curve(model.geom(), curve, point, dec) {
+                Outcome::ProvenCoincident(_) => (),
+                Outcome::Proven(_) => contains = false,
+                Outcome::NotExact(n) => return Err(bad(&n.detail)),
+                Outcome::Refused(r) => return Err(r),
+            }
+        }
+        if !contains {
+            continue;
+        }
+        let sense = match catallax_intersect::order_on_curve(
+            model.geom(),
+            curve,
+            points[0],
+            points[1],
+            dec,
+        ) {
+            Outcome::Proven(StrictOrder::Less) => Sense::Same,
+            Outcome::Proven(StrictOrder::Greater) => Sense::Reversed,
+            Outcome::Refused(r) => return Err(r),
+            _ => return Err(bad("a conical end boundary has unresolved ordering")),
+        };
+        return Ok(model.add_edge(Edge {
+            curve,
+            sense,
+            start: Some(from),
+            end: Some(to),
+        }));
+    }
+    Err(bad(
+        "the two contacts do not share one regular conical end branch",
+    ))
+}
+
 fn connector(
     model: &mut Model,
-    a: &Surface,
-    b: &Surface,
+    first: &Surface,
+    second: &Surface,
     from: VertexId,
     to: VertexId,
     dec: &mut Decider,
@@ -265,13 +362,43 @@ fn connector(
     if same(&p, &q, dec)? {
         return Err(bad("a collapsed end needs corner continuation"));
     }
-    for surface in [a, b] {
-        let Surface::Plane(plane) = surface else {
-            return Err(bad("line-strip connectors need planes"));
-        };
-        for point in [&p, &q] {
-            if sign(&point.minus(&plane.origin).dot(&plane.normal), dec)? != Sign::Zero {
-                return Err(bad("connector endpoints do not lie on both supports"));
+    for surface in [first, second] {
+        match surface {
+            Surface::Plane(plane) => {
+                for point in [&p, &q] {
+                    if sign(&point.minus(&plane.origin).dot(&plane.normal), dec)? != Sign::Zero {
+                        return Err(bad("connector endpoints do not lie on both supports"));
+                    }
+                }
+            }
+            Surface::Cone(cone) => {
+                let a = p.minus(&cone.apex);
+                let b = q.minus(&cone.apex);
+                if sign(&a.cross(&b).norm_squared(), dec)? != Sign::Zero {
+                    return conic_connector(model, first, second, from, to, dec);
+                }
+                if sign(&a.dot(&cone.axis), dec)? != Sign::Positive
+                    || sign(&b.dot(&cone.axis), dec)? != Sign::Positive
+                {
+                    return Err(bad(
+                        "a conical strip end needs one regular shared generator",
+                    ));
+                }
+                let polynomial = surface.implicit().expect("cone is algebraic");
+                for point in [&p, &q] {
+                    if sign(
+                        &polynomial.eval_real(&[point.x.clone(), point.y.clone(), point.z.clone()]),
+                        dec,
+                    )? != Sign::Zero
+                    {
+                        return Err(bad("generator misses its conical support"));
+                    }
+                }
+            }
+            _ => {
+                return Err(bad(
+                    "elementary connectors need planes or conical generators",
+                ));
             }
         }
     }
@@ -384,6 +511,7 @@ pub(crate) fn build(
             definition,
             ends: BTreeMap::new(),
             caps: BTreeMap::new(),
+            end_planes: BTreeMap::new(),
         });
     }
     let mut edit = Replacement::default();
@@ -415,8 +543,10 @@ pub(crate) fn build(
             [i] => {
                 let faces = runs[*i].faces;
                 let third = *incident.iter().find(|f| !faces.contains(f)).unwrap();
-                let a = line_plane(rail(&runs[*i], faces[0])?, plane(model, third)?, dec)?;
-                let b = line_plane(rail(&runs[*i], faces[1])?, plane(model, third)?, dec)?;
+                let end_plane = plane(model, third)?.clone();
+                runs[*i].end_planes.insert(old, end_plane.clone());
+                let a = end_contact(model, &runs[*i], faces[0], old, &end_plane, dec)?;
+                let b = end_contact(model, &runs[*i], faces[1], old, plane(model, third)?, dec)?;
                 let [a, b] = [vertex(model, a), vertex(model, b)];
                 for (face, v) in faces.into_iter().zip([a, b]) {
                     runs[*i].ends.insert((old, face), v);
@@ -492,6 +622,28 @@ pub(crate) fn build(
         }
     }
     for run in &runs {
+        let input = model.edge(run.edge);
+        if let (Curve::Circle(circle), Some(start), Some(end)) =
+            (&run.definition.edge, input.start, input.end)
+        {
+            let mut ends = [start, end];
+            if input.sense == Sense::Reversed {
+                ends.swap(0, 1);
+            }
+            let arc = BoundedArc::new(
+                circle.clone(),
+                ends.map(|v| model.geom().position(model.vertex(v).point)),
+                dec,
+            )?;
+            let planes = ends.map(|v| {
+                run.end_planes
+                    .get(&v)
+                    .cloned()
+                    .ok_or_else(|| bad("a circular corner needs continuation"))
+            });
+            let [a, b] = planes;
+            arc.trim(&run.definition, &[a?, b?], dec)?;
+        }
         guard(model, body, run, &uses, dec)?;
     }
     for (i, a) in runs.iter().enumerate() {

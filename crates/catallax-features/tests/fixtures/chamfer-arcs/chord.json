@@ -1,0 +1,88 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "trimmed circular chamfer chord ends",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "radial-a",
+            "to": [
+              "8",
+              "0"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "wall",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "to": [
+              "24/5",
+              "32/5"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "radial-b",
+            "to": [
+              "24/5",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "profile",
+      "distance": "12"
+    },
+    {
+      "id": "bevel",
+      "op": "chamfer",
+      "body": "base",
+      "distance": "2",
+      "other_distance": "1",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "base",
+              "role": "end"
+            },
+            {
+              "step": "base",
+              "role": {
+                "side": {
+                  "segment": "wall"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "result": "bevel"
+}

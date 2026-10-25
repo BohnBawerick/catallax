@@ -8,6 +8,10 @@ use catallax_shapes::{
 
 use crate::profile::sign;
 
+/// Exact finite circular domains used by the independent chamfer builders.
+#[path = "chamfer_arc.rs"]
+pub mod arc;
+
 /// The immutable generating definition of a plane or conical chamfer strip.
 #[derive(Clone, Debug)]
 pub struct ChamferDefinition {

@@ -263,3 +263,11 @@ fn copied_and_reflected_bevels_keep_their_generating_definitions() {
         );
     }
 }
+
+#[test]
+fn trimmed_circular_public_missing_case() {
+    let recipe = Recipe::parse(include_str!("fixtures/chamfer-arcs/convex.json")).unwrap();
+    let built = build(&recipe);
+    assert_eq!(built.chamfers.len(), 1);
+    assert!(matches!(built.chamfers[0].surface, Surface::Cone(_)));
+}

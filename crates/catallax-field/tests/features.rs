@@ -427,13 +427,33 @@ fn source_names_match_brep_aliases_and_survive_splitting() {
 }
 
 #[test]
-fn invalid_profiles_and_unfinished_algebraic_cases_share_specific_codes() {
+fn algebraic_extrusion_has_exact_signs_and_the_same_brep_origins() {
     let mut irrational = extrude(rectangle(), "2");
     if let catallax_recipe::Operation::Extrude { direction, .. } = &mut irrational.steps[1].op {
         *direction = Some(catallax_recipe::Vector3([1.into(), 0.into(), 1.into()]));
     }
+    let plan = Plan::compile(&irrational).unwrap();
+    let built = catallax_features::evaluate(&irrational, &mut Decider::default()).unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    check(
+        &plan,
+        &[
+            (["2", "1", "1"], Location::Inside),
+            (["2", "1", "2"], Location::Outside),
+            (["1", "1", "0"], Location::Boundary),
+            (["1", "1", "1"], Location::Boundary),
+        ],
+    );
+    for face in built.model.faces_of_body(built.result) {
+        for origin in built.model.face_origins(face) {
+            assert!(plan.select(origin).is_some(), "missing {origin:?}");
+        }
+    }
+}
+
+#[test]
+fn invalid_profiles_and_unfinished_algebraic_cases_share_specific_codes() {
     for r in [
-        irrational,
         revolve(rectangle(), "45"),
         extrude(circles(&["0"], ["0", "0"]), "2"),
         extrude(rectangle(), "0"),

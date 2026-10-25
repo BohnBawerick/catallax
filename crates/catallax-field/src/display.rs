@@ -16,6 +16,7 @@ mod boolean;
 mod cap;
 mod chart;
 mod diagnostics;
+mod extrude_algebraic;
 pub(crate) mod membership;
 use boolean::{Boolean, Germ, State};
 use chart::{Chart, Pullback};
@@ -323,6 +324,9 @@ fn mesh_plan_inner(
         cells: 0,
     };
     if plan.is_proven_empty() {
+        return Ok(mesh);
+    }
+    if let Some(mesh) = extrude_algebraic::mesh(plan, options, dec, report.as_deref_mut())? {
         return Ok(mesh);
     }
     let mut builder = Builder {

@@ -39,6 +39,9 @@ mod certified;
 /// Exact setback definitions retained beside their topology.
 pub mod chamfer;
 mod chamfer_build;
+mod circular_build;
+/// Convex coaxial cells with complete circular plane, cylinder and sphere joins.
+pub mod circular_skin;
 mod cone_build;
 mod cone_rounded;
 /// Exact complete conical cells and analytic meeting sections.

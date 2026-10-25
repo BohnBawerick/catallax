@@ -194,6 +194,13 @@ impl Plan {
                 hi = p[1].clone();
             }
         }
+        for face in &sweep.faces {
+            if let Surface::Sphere(sphere) = &face.surface
+                && geometry::sign(&(&sphere.radius - &radius), dec)? == Sign::Positive
+            {
+                radius = sphere.radius.clone();
+            }
+        }
         let bounds = vec![
             Surface::Cylinder(Cylinder {
                 origin: sweep.origin.clone(),
@@ -426,12 +433,12 @@ impl Plan {
                 None => Ok(0),
             };
         }
+        if d > &Rational::zero()
+            && let Some(skin) = self.circular_skin(node, dec)?
+        {
+            return self.circular_offset(node, &skin, &d.clone().into(), step, &bound, dec);
+        }
         if let Some(skin) = self.cylinder_skin(node, dec)? {
-            if d > &Rational::zero() {
-                return Err(bad(
-                    "outward cylinder offsets require toroidal cap-edge joins",
-                ));
-            }
             return match skin.eroded(&Real::from(-d), dec)? {
                 Some(skin) => self.cylinder_leaf(skin, &bound, dec),
                 None => Ok(0),
@@ -525,6 +532,17 @@ impl Plan {
             let cavity = self.cone_leaf(cavity, &bound, dec)?;
             return self.boolean(BooleanKind::Subtract, node, cavity, dec);
         }
+        if let Some(skin) = self.circular_skin(node, dec)? {
+            let selected = skin.select(open)?;
+            if selected.iter().all(|v| *v) {
+                return Ok(0);
+            }
+            let Some(cavity) = skin.cavity(&selected, &t.clone().into(), step, dec)? else {
+                return Ok(node);
+            };
+            let cavity = self.circular_cell(cavity, &bound, dec)?;
+            return self.boolean(BooleanKind::Subtract, node, cavity, dec);
+        }
         let cell = self.planar_skin(node, dec)?;
         let selected = cell.select(open, dec)?;
         if selected.iter().all(|v| *v) {
@@ -615,6 +633,21 @@ impl Plan {
             let [index] = indices.as_slice() else {
                 return Err(bad(
                     "sharp selected conical joins require their projection normal sectors",
+                ));
+            };
+            let sweep = skin.face_sweep(*index, &t.clone().into(), side, step, dec)?;
+            return self.cone_sweep(&sweep, &bound, dec);
+        }
+        if let Some(skin) = self.circular_skin(node, dec)? {
+            let selected = skin.select(refs)?;
+            let indices: Vec<_> = selected
+                .iter()
+                .enumerate()
+                .filter_map(|(i, v)| v.then_some(i))
+                .collect();
+            let [index] = indices.as_slice() else {
+                return Err(bad(
+                    "sharp selected circular joins require their projection normal sectors",
                 ));
             };
             let sweep = skin.face_sweep(*index, &t.clone().into(), side, step, dec)?;

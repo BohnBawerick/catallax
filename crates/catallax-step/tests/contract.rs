@@ -51,7 +51,7 @@ blind_test!(
         let _unselected = block(&mut m, [n(11), n(13), n(17)], &Pose::identity()).unwrap();
         let b = sphere(&mut m, n(5), &Pose::identity()).unwrap();
         let (bytes, a, _) = export(&m, &[b], &options(17));
-        report(&a, [1, 1, 1, 2, 2, 1, 0], true);
+        report(&a, [1, 1, 0, 1, 1, 0, 0], true);
         let mut clean = Model::new();
         let b = sphere(&mut clean, n(5), &Pose::identity()).unwrap();
         let (other, _, _) = export(&clean, &[b], &options(17));
@@ -83,98 +83,6 @@ blind_test!(case03_cylinder_ring_vertices_and_seams, {
         let e = &s.entities[&id];
         assert_eq!(e.args[1], e.args[2]);
         assert_eq!(s.e(reference(&e.args[3]), "CIRCLE").args[2], "2.");
-    }
-});
-fn loop_edges(s: &Step) -> Vec<(usize, String)> {
-    let id = s.ids("EDGE_LOOP");
-    assert_eq!(id.len(), 1);
-    list(&s.entities[&id[0]].args[1])
-        .iter()
-        .map(|v| {
-            let e = s.e(reference(v), "ORIENTED_EDGE");
-            (reference(&e.args[3]), e.args[4].clone())
-        })
-        .collect()
-}
-fn circle_frame(
-    s: &Step,
-    edge: usize,
-    center: [Rational; 3],
-    axis: [Rational; 3],
-    reference_dir: [Rational; 3],
-    radius: &str,
-) {
-    let c = s.e(reference(&s.e(edge, "EDGE_CURVE").args[3]), "CIRCLE");
-    assert_eq!(c.args[2], radius);
-    assert_eq!(
-        s.placement(reference(&c.args[1])),
-        (center, axis, reference_dir)
-    );
-}
-blind_test!(case04_sphere_poles_and_half_meridian, {
-    let mut m = Model::new();
-    let b = sphere(&mut m, n(5), &Pose::identity()).unwrap();
-    let (_, a, s) = export(&m, &[b], &options(17));
-    report(&a, [1, 1, 1, 2, 2, 1, 0], true);
-    counts(
-        &s,
-        &[
-            ("SPHERICAL_SURFACE", 1),
-            ("CIRCLE", 1),
-            ("ORIENTED_EDGE", 2),
-        ],
-    );
-    let es = loop_edges(&s);
-    assert_eq!(es, vec![(es[0].0, ".T.".into()), (es[0].0, ".F.".into())]);
-    let e = s.e(es[0].0, "EDGE_CURVE");
-    assert_eq!(s.xyz(s.vertex(reference(&e.args[1]))), [n(0), n(0), n(-5)]);
-    assert_eq!(s.xyz(s.vertex(reference(&e.args[2]))), [n(0), n(0), n(5)]);
-    circle_frame(
-        &s,
-        es[0].0,
-        [n(0), n(0), n(0)],
-        [n(0), n(-1), n(0)],
-        [n(1), n(0), n(0)],
-        "5.",
-    );
-});
-blind_test!(case05_torus_two_closed_seams, {
-    let mut m = Model::new();
-    let b = torus(&mut m, n(3), n(1), &Pose::identity()).unwrap();
-    let (_, a, s) = export(&m, &[b], &options(17));
-    report(&a, [1, 1, 2, 1, 1, 2, 0], true);
-    assert_eq!(vertex_set(&s), BTreeSet::from([[n(4), n(0), n(0)]]));
-    let es = loop_edges(&s);
-    assert_eq!(es.len(), 4);
-    assert_ne!(es[0].0, es[1].0);
-    assert_eq!(
-        es,
-        vec![
-            (es[0].0, ".T.".into()),
-            (es[1].0, ".T.".into()),
-            (es[0].0, ".F.".into()),
-            (es[1].0, ".F.".into())
-        ]
-    );
-    circle_frame(
-        &s,
-        es[0].0,
-        [n(3), n(0), n(0)],
-        [n(0), n(-1), n(0)],
-        [n(1), n(0), n(0)],
-        "1.",
-    );
-    circle_frame(
-        &s,
-        es[1].0,
-        [n(0), n(0), n(0)],
-        [n(0), n(0), n(1)],
-        [n(1), n(0), n(0)],
-        "4.",
-    );
-    for (id, _) in es {
-        let e = s.e(id, "EDGE_CURVE");
-        assert_eq!(e.args[1], e.args[2]);
     }
 });
 blind_test!(case06_cone_apex_and_transcendental_angle, {

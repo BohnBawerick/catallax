@@ -2,6 +2,7 @@
 
 use crate::draft::{
     DraftDefinition,
+    annular::{AnnularCell, AnnularWall},
     arrangement::{Patch, Polyhedron, Skin},
     capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
@@ -28,6 +29,7 @@ pub struct ConsumedFace {
 }
 
 enum Cell {
+    Annular(Box<AnnularCell>),
     Planar(PlanarCell),
     Round(Box<RoundCell>),
     Polyhedral(Box<Polyhedron>),
@@ -37,6 +39,7 @@ enum Cell {
 impl Cell {
     fn contains_interior(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         match self {
+            Self::Annular(cell) => cell.contains_interior(point, dec),
             Self::Planar(cell) => cell.contains_interior(point, dec),
             Self::Round(cell) => cell.contains_interior(point, dec),
             Self::Polyhedral(cell) => cell.contains_interior(point, dec),
@@ -46,6 +49,7 @@ impl Cell {
 
     fn anchored(&self, definition: &DraftDefinition, dec: &mut Decider) -> Result<bool, Refusal> {
         match self {
+            Self::Annular(cell) => cell.anchored(&definition.neutral, dec),
             Self::Planar(cell) => cell.anchored(&definition.neutral, dec),
             Self::Round(cell) => cell.anchored(&definition.neutral, dec),
             Self::Polyhedral(cell) => cell.anchored(&definition.neutral, dec),
@@ -55,6 +59,20 @@ impl Cell {
 
     fn origins(&self) -> BTreeSet<Origin> {
         match self {
+            Self::Annular(cell) => cell
+                .outer
+                .origins
+                .iter()
+                .chain(&cell.inner.origins)
+                .chain(
+                    cell.outer
+                        .caps
+                        .iter()
+                        .flatten()
+                        .flat_map(|(_, origins)| origins),
+                )
+                .cloned()
+                .collect(),
             Self::Planar(cell) => cell
                 .supports
                 .iter()
@@ -92,6 +110,7 @@ impl Cell {
                 })
         };
         match self {
+            Self::Annular(cell) => Self::Round(Box::new(cell.outer.clone())).radius(dec),
             Self::Planar(cell) => cell
                 .vertices
                 .iter()
@@ -120,6 +139,7 @@ impl Cell {
 
     fn assemble(&self, model: &mut Model, dec: &mut Decider) -> Result<BodyId, Refusal> {
         Ok(match self {
+            Self::Annular(cell) => assemble_annular(model, cell),
             Self::Planar(cell) => assemble(model, cell),
             Self::Round(cell) => assemble_round(model, cell),
             Self::Polyhedral(cell) => assemble_polyhedral(model, cell),
@@ -135,6 +155,19 @@ fn round(
     definition: &DraftDefinition,
     dec: &mut Decider,
 ) -> Result<Cell, Refusal> {
+    if faces
+        .iter()
+        .filter(|f| {
+            matches!(
+                model.geom().surface(model.face(**f).surface),
+                Surface::Cylinder(_)
+            )
+        })
+        .count()
+        == 2
+    {
+        return annular(model, faces, chosen, definition, dec).map(|c| Cell::Annular(Box::new(c)));
+    }
     let mut cylinder = None;
     let mut caps = Vec::new();
     for face in faces {
@@ -193,6 +226,137 @@ fn round(
         CappedCylinder::new(cylinder.clone(), origins, caps, dec)
             .map(|cell| Cell::Capped(Box::new(cell)))
     }
+}
+
+fn annular(
+    model: &Model,
+    faces: &[FaceId],
+    chosen: &BTreeSet<FaceId>,
+    definition: &DraftDefinition,
+    dec: &mut Decider,
+) -> Result<AnnularCell, Refusal> {
+    let unsupported = || {
+        Refusal::new(
+            "draft.unsupported-arrangement",
+            "annular construction needs two complete cylindrical walls and two complete annular caps",
+        )
+    };
+    let mut walls = Vec::new();
+    let mut caps = Vec::new();
+    if faces.len() != 4 {
+        return Err(unsupported());
+    }
+    for id in faces {
+        let face = model.face(*id);
+        if face.loops.len() != 2 {
+            return Err(unsupported());
+        }
+        for lp in &face.loops {
+            let Loop::Coedges(cs) = model.loop_(*lp) else {
+                return Err(unsupported());
+            };
+            let [c] = cs.as_slice() else {
+                return Err(unsupported());
+            };
+            let edge = model.edge(model.coedge(*c).edge);
+            if edge.start.is_some()
+                || edge.end.is_some()
+                || !matches!(model.geom().curve(edge.curve), Curve::Circle(_))
+            {
+                return Err(unsupported());
+            }
+        }
+        let origins = model.face_origins(*id).to_vec();
+        match model.geom().surface(face.surface) {
+            Surface::Cylinder(cylinder) => walls.push(AnnularWall {
+                cylinder: cylinder.clone(),
+                origins,
+                same_sense: face.sense == Sense::Same,
+                selected: chosen.contains(id),
+            }),
+            Surface::Plane(plane) => {
+                let mut plane = plane.clone();
+                if chosen.contains(id) {
+                    definition.support(
+                        &Surface::Plane(plane.clone()),
+                        face.sense == Sense::Same,
+                        dec,
+                    )?;
+                    return Err(unsupported());
+                }
+                if face.sense == Sense::Reversed {
+                    plane.normal = plane.normal.scaled(&Real::from_i64(-1));
+                }
+                caps.push((plane, origins));
+            }
+            _ => return Err(unsupported()),
+        }
+    }
+    AnnularCell::new(
+        walls.try_into().map_err(|_| unsupported())?,
+        caps.try_into().map_err(|_| unsupported())?,
+        definition,
+        dec,
+    )
+}
+
+fn assemble_annular(model: &mut Model, cell: &AnnularCell) -> BodyId {
+    let mut paths = [Vec::new(), Vec::new()];
+    let mut faces = Vec::new();
+    for i in 0..2 {
+        let mut cap_paths = Vec::new();
+        for (j, wall) in [&cell.outer, &cell.inner].into_iter().enumerate() {
+            let curve = model.geom_mut().add_curve(Curve::Circle(Circle {
+                center: wall.centre(i),
+                normal: wall.axis.clone(),
+                radius_sq: wall.radii[i].square(),
+                ref_dir: wall.reference.clone(),
+            }));
+            let edge = model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: None,
+                end: None,
+            });
+            let cap_sense = if i == j { Sense::Reversed } else { Sense::Same };
+            cap_paths.push(vec![(edge, cap_sense)]);
+            paths[j].push(vec![(edge, crate::extrude::reverse(cap_sense))]);
+        }
+        let (plane, origins) = cell.outer.caps[i]
+            .as_ref()
+            .expect("certified nonvanishing annular caps");
+        faces.push(crate::extrude::face(
+            model,
+            Surface::Plane(plane.clone()),
+            Sense::Same,
+            cap_paths,
+            None,
+            origins.clone(),
+        ));
+    }
+    for (j, (wall, paths)) in [&cell.outer, &cell.inner]
+        .into_iter()
+        .zip(paths)
+        .enumerate()
+    {
+        faces.push(crate::extrude::face(
+            model,
+            wall.surface.clone(),
+            if j == 0 { Sense::Same } else { Sense::Reversed },
+            paths,
+            None,
+            wall.origins.clone(),
+        ));
+    }
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: Default::default(),
+    })
 }
 
 fn assemble_round(model: &mut Model, cell: &RoundCell) -> BodyId {
@@ -705,7 +869,11 @@ pub(crate) fn build(
             components.push(round(model, faces, &chosen, definition, dec)?);
         }
     }
-    if components.len() > 1 && components.iter().any(|c| matches!(c, Cell::Capped(_))) {
+    if components.len() > 1
+        && components
+            .iter()
+            .any(|c| matches!(c, Cell::Capped(_) | Cell::Annular(_)))
+    {
         return Err(Refusal::new(
             "draft.unsupported-arrangement",
             "several plane-capped cylinders need a certified curved component arrangement",

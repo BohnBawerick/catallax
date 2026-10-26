@@ -161,8 +161,9 @@ command log and factual PR description; listing a gate here does not assert it
 has passed.
 
 Crossings, touching walls, axis folds, noncoaxial sources, oblique nonzero-angle
-neutral curves, more general curved arrangements and ambiguous annular nearest
-references remain honest coverage refusals. The independent field recognizer
+neutral curves, more general curved arrangements remain honest coverage refusals. A saved
+nearest-face reference selects uniquely among the two walls and two annular
+caps with exact closed-face distances; exact ties stay ambiguous references. The independent field recognizer
 currently requires one finite source feature; general Boolean curved-source
 extraction and redrafting conical walls retain their existing refusals. Native
 field display and field mass integration are separate consumers and are not

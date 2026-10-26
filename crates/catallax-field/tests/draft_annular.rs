@@ -92,13 +92,34 @@ fn independent_carriers_retain_hole_after_reflection_and_scalar_rebuild() {
 }
 
 #[test]
-fn ambiguous_nearest_selection_does_not_guess_between_annular_walls() {
+fn nearest_selection_distinguishes_annular_walls_and_ties_stay_ambiguous() {
     let mut source = source();
-    source["steps"][2]["faces"] = json!([{"face":{"step":"base"},"near":["3","0","1"]}]);
+    // The hole axis side of the inner wall: the inner wall alone is drafted.
+    source["steps"][2]["faces"] = json!([{"face":{"step":"base"},"near":["1","0","1"]}]);
+    let plan = Plan::compile(&Recipe::parse(&source.to_string()).unwrap()).unwrap();
+    let mut storage = Workspace::default();
+    // Inner radius 2+z at height 1; the outer wall stays at radius 8.
+    assert_eq!(
+        plan.proven(&p(3, 0, 1), &mut storage).location,
+        Location::Boundary
+    );
+    assert_eq!(
+        plan.proven(&p(4, 0, 1), &mut storage).location,
+        Location::Inside
+    );
+    assert_eq!(
+        plan.proven(&p(7, 0, 1), &mut storage).location,
+        Location::Inside
+    );
+    assert_eq!(
+        plan.proven(&p(2, 0, 1), &mut storage).location,
+        Location::Outside
+    );
+    source["steps"][2]["faces"] = json!([{"face":{"step":"base"},"near":["5","0","1"]}]);
     let recipe = Recipe::parse(&source.to_string()).unwrap();
     assert_eq!(
         Plan::compile(&recipe).unwrap_err().code,
-        "draft.unsupported-reference"
+        "recipe.ambiguous-reference"
     );
 }
 

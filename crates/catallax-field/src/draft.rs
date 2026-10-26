@@ -11,7 +11,7 @@ use catallax_features::draft::{
 };
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{FaceRef, Origin, StepId};
-use catallax_shapes::{Isometry, Plane, Point3, RPoint3, Surface, Vector3};
+use catallax_shapes::{Cylinder, Isometry, Plane, Point3, RPoint3, Surface, Vector3};
 use std::collections::BTreeSet;
 
 #[path = "draft_annular.rs"]
@@ -874,7 +874,7 @@ fn bind_patches(
 
 impl Plan {
     /// Chooses the uniquely nearest closed trimmed face of a plane-capped axial
-    /// cylinder, then every alias of that physical face.
+    /// cylinder or of a coaxial annulus, then every alias of that physical face.
     fn nearest_axial(
         &self,
         source_faces: &[usize],
@@ -888,22 +888,19 @@ impl Plan {
                 "curved field references need exact patch adjacency and distance",
             )
         };
-        let mut cylinder = None;
-        let mut cylinder_face: Option<usize> = None;
+        // One entry per physical cylinder and per physical cap: aliases of a
+        // definition are the same face, two walls of different radii are not.
+        let mut cylinders: Vec<(usize, &Cylinder)> = Vec::new();
         let mut caps = Vec::new();
         for f in source_faces {
             match &self.faces[*f].surface {
                 Surface::Cylinder(c) => {
-                    if let Some(previous) = cylinder_face {
-                        if !self.faces[previous]
+                    if !cylinders.iter().any(|(g, _)| {
+                        self.faces[*g]
                             .support
                             .same_definition(&self.faces[*f].support)
-                        {
-                            return Err(unsupported());
-                        }
-                    } else {
-                        cylinder = Some(c);
-                        cylinder_face = Some(*f);
+                    }) {
+                        cylinders.push((*f, c));
                     }
                 }
                 Surface::Plane(p) => {
@@ -918,8 +915,13 @@ impl Plan {
                 _ => return Err(unsupported()),
             }
         }
-        let (Some(cylinder), [(_, first), (_, second)]) = (cylinder, caps.as_slice()) else {
+        let [(_, first), (_, second)] = caps.as_slice() else {
             return Err(unsupported());
+        };
+        let walls = match cylinders.as_slice() {
+            [_] => None,
+            [(_, a), (_, b)] => Some(near::annulus_walls(a, b, dec)?),
+            _ => return Err(unsupported()),
         };
         let [x, y, z] = near.0.each_ref().map(|n| n.value().clone().into());
         let point = Point3::new(x, y, z);
@@ -937,8 +939,14 @@ impl Plan {
         let mut distances = Vec::with_capacity(groups.len());
         for group in &groups {
             distances.push(match &self.faces[group[0]].surface {
-                Surface::Plane(cap) => near::cap_distance_squared(cylinder, cap, &point, dec)?,
-                _ => near::wall_distance_squared(cylinder, [first, second], &point, dec)?,
+                Surface::Plane(cap) => match walls {
+                    Some(walls) => near::annular_cap_distance_squared(walls, cap, &point, dec)?,
+                    None => near::cap_distance_squared(cylinders[0].1, cap, &point, dec)?,
+                },
+                Surface::Cylinder(wall) => {
+                    near::wall_distance_squared(wall, [first, second], &point, dec)?
+                }
+                _ => return Err(unsupported()),
             });
         }
         Ok(groups.swap_remove(near::unique_nearest(&distances, dec)?))

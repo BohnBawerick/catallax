@@ -62,6 +62,8 @@ mod extrude;
 /// Exact elementary rolling-ball definitions retained beside their topology.
 pub mod fillet;
 mod fillet_build;
+/// Exact spherical corners where three perpendicular convex strips meet.
+pub mod fillet_corner;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
 /// Lattice cell templates and parameter checks, shared with the field kernel.
@@ -69,6 +71,7 @@ pub mod lattice;
 mod offset_fit;
 mod placement;
 mod planar_distance;
+mod planar_face;
 /// Exact face, edge and vertex distance-neighbourhood definitions.
 pub mod polyhedral_offset;
 /// Exact bounded convex plane arrangements shared by the independent kernels.

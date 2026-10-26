@@ -1,0 +1,93 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "pentagon sphere first-hit cap",
+  "description": "Public synthetic convex rational polygon; exact side walls and uniform stock-quadric entry.",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "side-1",
+            "to": [
+              "-1/4",
+              "-1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "side-2",
+            "to": [
+              "1/4",
+              "-1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "side-3",
+            "to": [
+              "1/2",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "side-4",
+            "to": [
+              "0",
+              "1/2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "side-5",
+            "to": [
+              "-1/2",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "target",
+      "op": "sphere",
+      "radius": "2",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "5"
+        ]
+      }
+    },
+    {
+      "id": "cap",
+      "op": "extrude_next",
+      "target": "target",
+      "profile": "profile"
+    }
+  ],
+  "result": "cap"
+}

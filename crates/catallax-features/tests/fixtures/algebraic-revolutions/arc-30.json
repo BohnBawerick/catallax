@@ -1,0 +1,67 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "arc-30",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "arc",
+            "id": "round",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "to": [
+              "0",
+              "2"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "chord",
+            "to": [
+              "0",
+              "-2"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "body",
+      "op": "revolve",
+      "profile": "profile",
+      "axis": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "direction": [
+          "0",
+          "1",
+          "0"
+        ]
+      },
+      "angle": "30"
+    }
+  ],
+  "result": "body"
+}

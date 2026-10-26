@@ -105,6 +105,23 @@ pub(crate) fn constraint(surface: Surface) -> Result<Constraint, Refusal> {
     })
 }
 impl Constraint {
+    /// Reverses the material halfspace while retaining its analytic carrier.
+    pub(crate) fn reversed(mut self) -> Self {
+        self.polynomial = -&self.polynomial;
+        match &mut self.terms {
+            Terms::Rational(terms) => {
+                for (_, coefficient) in terms {
+                    *coefficient = -&*coefficient;
+                }
+            }
+            Terms::Algebraic(terms) => {
+                for (_, coefficient) in terms {
+                    *coefficient = -&*coefficient;
+                }
+            }
+        }
+        self
+    }
     pub(crate) fn surface(&self) -> &Surface {
         &self.surface
     }
@@ -948,6 +965,7 @@ impl Leaf {
                 "lattice beams are field-only, not draft source faces",
             )),
             Self::Draft(region) => Ok(match &region.cell {
+                crate::draft::Cell::Annular(cell) => cell.interior_witness(),
                 crate::draft::Cell::Planar(cell) => {
                     let sum = cell.vertices.iter().fold(Vector3::zero(), |sum, p| {
                         sum.plus(&p.minus(&Point3::origin()))

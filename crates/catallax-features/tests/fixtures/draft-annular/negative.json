@@ -1,0 +1,99 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "public synthetic annulus: negative",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "outer",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "8"
+          }
+        ],
+        [
+          {
+            "kind": "circle",
+            "id": "inner",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "2"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "2"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "base",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "inner"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "outer"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "0",
+        "0",
+        "1"
+      ],
+      "neutral": {
+        "point": [
+          "0",
+          "0",
+          "1"
+        ],
+        "normal": [
+          "0",
+          "0",
+          "1"
+        ]
+      },
+      "angle": "-45"
+    }
+  ],
+  "result": "drafted"
+}

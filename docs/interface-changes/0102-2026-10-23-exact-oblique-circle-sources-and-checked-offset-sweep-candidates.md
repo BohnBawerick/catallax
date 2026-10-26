@@ -1,0 +1,7 @@
+## 2026-10-23: exact oblique-circle sources and checked offset-sweep candidates
+
+Pieces: shapes, features and field
+Change: rational oblique circular extrusions now reduce to an exact elliptic-cylinder support in both independent builders, preserving their circular end curves and original cap planes. Shapes exposes finite `BSplineSurface` data, full interval chart jets and exact signed `EllipticOffsetChart` laws. Features exposes deterministic closed cubic `fit_elliptic_offset` candidates. Field exposes `measure_elliptic_offset_sweep` and `OffsetSweepMeasurement`, independently checking interpolation, complete two-way parameter coverage, regular normal branch, convexity, periodic closure and whole-span position-error bounds.
+Why: the first approximated face needs a real public source path and a whole-domain geometric check, rather than a renamed analytic face or a sampled fit residual.
+Migration: no pose schema, recipe version, analytic kind tag or legacy exchange field changes. An oblique circular support is no longer a `features.unsupported-elliptic-cylinder` gap. Field point queries label their elliptic support metric as a conservative 1-Lipschitz residual. The spline carrier and its measured fit remain distinct from a published B-rep: consumers must still establish common trims, complete body correspondence, local limits and valid topology. Existing analytic paths retain their definitions.
+

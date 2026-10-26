@@ -545,12 +545,27 @@ impl FaceBuilder<'_> {
                     .iter()
                     .map(|n| self.filtered_errors[n.error].hi())
                     .fold(0.0_f64, f64::max);
-                let filtered = chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
-                    + Interval::point(filtered_residual).unwrap();
+                let vmax = uvs[0][1].abs().max(uvs[1][1].abs()).max(uvs[2][1].abs());
+                let filtered = if matches!(self.chart.surface, Surface::Cone(_)) {
+                    let scale = Interval::point(vmax).unwrap()
+                        / Interval::point(self.bounds[1][0].abs().max(self.bounds[1][1].abs()))
+                            .unwrap();
+                    let h = [
+                        self.filtered_hessian[0] * scale,
+                        self.filtered_hessian[1],
+                        self.filtered_hessian[2],
+                    ];
+                    chart::filtered_chord_bound(&uvs, &h)
+                        + Interval::point(filtered_residual).unwrap()
+                } else {
+                    chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
+                        + Interval::point(filtered_residual).unwrap()
+                };
                 let error = if filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo() {
                     chart::q(filtered.hi())
                 } else {
-                    &chord_bound(&uvs, &self.hessian) + residual
+                    let hessian = self.chart.hessian(vmax, dec)?;
+                    &chord_bound(&uvs, &hessian) + residual
                 };
                 if let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {
@@ -645,11 +660,6 @@ fn face_mesh(
     dec: &Decider,
 ) -> Result<(), Refusal> {
     let face = model.face(face_id);
-    if let Some(center) =
-        crate::bounded::minor_angle_center(model, face_id, chart, boundaries, dec)?
-    {
-        chart.restrict(1, center);
-    }
     let mut segments = Vec::new();
     let mut projected = Vec::new();
     for &l in &face.loops {
@@ -915,9 +925,17 @@ pub(crate) fn build(
                 |e| Refusal::new(e.code, format!("face {}: {}", face.index(), e.detail)),
             )?;
         } else {
+            if let Some(center) =
+                crate::bounded::minor_angle_center(model, face, &charts[&face], &boundaries, dec)?
+            {
+                charts.get_mut(&face).unwrap().restrict(1, center);
+            }
             let strip = matches!(
                 charts[&face].surface,
-                Surface::Cylinder(_) | Surface::EllipticCylinder(_)
+                Surface::Cylinder(_)
+                    | Surface::EllipticCylinder(_)
+                    | Surface::Cone(_)
+                    | Surface::Torus(_)
             ) && crate::ruled::build(
                 model,
                 face,

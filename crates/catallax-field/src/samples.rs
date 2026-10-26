@@ -300,6 +300,73 @@ impl Region {
         })?;
         let mut dec = Decider::default();
         match &self.cell {
+            Cell::Annular(cell) => {
+                let outer = &cell.outer;
+                let axis = native_vector(&outer.axis, &mut dec)?;
+                let reference = outer
+                    .reference
+                    .scaled(&(&Real::one() / &outer.reference.norm_squared().sqrt()));
+                let u = native_vector(&reference, &mut dec)?;
+                let v = native_vector(&outer.axis.cross(&reference), &mut dec)?;
+                let origin = native_point(&outer.origin, &mut dec)?;
+                let heights = [
+                    native_scalar(&outer.heights[0], &mut dec)?,
+                    native_scalar(&outer.heights[1], &mut dec)?,
+                ];
+                let radii = [
+                    [
+                        native_scalar(&outer.radii[0], &mut dec)?,
+                        native_scalar(&outer.radii[1], &mut dec)?,
+                    ],
+                    [
+                        native_scalar(&cell.inner.radii[0], &mut dec)?,
+                        native_scalar(&cell.inner.radii[1], &mut dec)?,
+                    ],
+                ];
+                let angular = circle(divisions);
+                for (j, wall) in [&cell.outer, &cell.inner].into_iter().enumerate() {
+                    if !wall.origins.contains(source) {
+                        continue;
+                    }
+                    for i in 0..divisions {
+                        let t = fraction(i, divisions);
+                        let height = &heights[0] + &(&t * &(&heights[1] - &heights[0]));
+                        let radius = &radii[j][0] + &(&t * &(&radii[j][1] - &radii[j][0]));
+                        let centre = origin.plus(&axis.scaled(&height));
+                        for [c, s] in &angular {
+                            if !visit(
+                                centre
+                                    .plus(&u.scaled(&(&radius * c)))
+                                    .plus(&v.scaled(&(&radius * s))),
+                            ) {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                    return Ok(true);
+                }
+                for i in 0..2 {
+                    let (_, names) = outer.caps[i].as_ref().expect("annular caps do not vanish");
+                    if !names.contains(source) {
+                        continue;
+                    }
+                    let centre = origin.plus(&axis.scaled(&heights[i]));
+                    for ring in 0..divisions {
+                        let radius = &radii[1][i]
+                            + &(&fraction(ring, divisions) * &(&radii[0][i] - &radii[1][i]));
+                        for [c, s] in &angular {
+                            if !visit(
+                                centre
+                                    .plus(&u.scaled(&(&radius * c)))
+                                    .plus(&v.scaled(&(&radius * s))),
+                            ) {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                    return Ok(true);
+                }
+            }
             Cell::Planar(cell) => {
                 for (support, cycle) in cell.supports.iter().zip(&cell.cycles) {
                     if cycle.is_empty() || !support.origins.contains(source) {

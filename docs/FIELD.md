@@ -12,11 +12,15 @@ Lattice point queries compile the periodic beam definitions of RECIPE section 4.
 
 Interval classification excludes boxes proven wholly inside or outside. Primitive queries use their local frame before evaluating squared radii, avoiding cancellation from expanded world-coordinate polynomials. Beam intervals use cached coefficients and outward-rounded expanded beam bounds. The Boolean traversal skips operands that cannot change a proven result.
 
+Corner membership reuses strict leaf states from the interval query at that same exact point. Only unresolved or unvisited leaves need exact classification. Regularised Boolean contacts still use the authoritative evaluator's active-face, planar-sector and transverse-boundary witnesses. Printing does not evaluate discarded distance bounds or analytic normals; its facets retain their existing outward-orientation check. This reuse is local to printing and does not change field mass classification.
+
 Every remaining boundary box reaches one common grid size `h`. Six conforming Kuhn tetrahedra divide each grid cube. Exact corner membership supplies the crossing edges, whose midpoints define the triangles. A crossing between material and non-material supplies a real boundary witness in that cube. Every unresolved cube must be a mixed cube or a direct neighbour of one; otherwise the algorithm refines rather than dropping the unresolved geometry. The resulting two-sided boundary distance is at most `4h`, which must not exceed the requested output tolerance. This is a distance certificate, not a claim of topology equivalence to features smaller than that tolerance.
 
-Before publication, every mesh edge must have two oppositely oriented incident facets and every vertex link must be one cycle. STL coordinates are admitted only when exactly representable in binary32, so file rounding adds no unreported error. `write_stl` writes unit outward normals; `write_obj` writes the same vertices and facets for display. Neither output claims the support-chart registry's face-picking metadata. The original recipe remains the definition.
+Before publication, every mesh edge must have two oppositely oriented incident facets and every vertex link must be one cycle. STL coordinates are admitted only when exactly representable in binary32, so file rounding adds no unreported error. `write_stl` writes unit outward normals; `write_obj` writes the same vertices and facets for display. Both writers gather output in a bounded 64 KiB chunk and issue one write per chunk, so an unbuffered file sink does not pay a system call per field; the bytes are unchanged and a sink error is returned at the failing write. Neither output claims the support-chart registry's face-picking metadata. The original recipe remains the definition.
 
 The verification CLI accepts `catallax-print/1` through `print`, or through `field` when an explicit print wrapper is supplied. See [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing). P6's enclosing shell uses explicit region Booleans, not a substitute implementation of the separate shell operation.
+
+The dedicated benchmark builds with `cargo build --release -p catallax-field --bench printing -j 1`. Run its `target/release/deps/printing-*` executable with a `catallax-print/1` request, an external output directory and a positive repetition count. It records compilation, meshing, file STL, file OBJ and compile/mesh/write milliseconds in `samples.json`, plus separate in-memory STL and OBJ serializer-only milliseconds that are excluded from the complete-request total and checked byte-equal to the file output, with the unchanged 100M verification work allowance, requested controls, cell count and mesh counts. It writes the final STL and OBJ through plain `File` sinks like the verification adapter. Pin baseline and candidate executables to the same allowed core, retain both byte streams, and alternate order. Measure the complete public request with the verification driver's matched pairs as well; neither lower work nor mesh-only timing proves the complete 1000 ms wait target.
 
 ## Field moments and mass stand-ins
 
@@ -199,7 +203,9 @@ Plane-plane line contacts reduce to exact cylinder strips. A plane meeting a per
 
 Finite straight runs use independently resolved source-edge intervals and perpendicular end planes. Every requested reference must resolve a sharp input component. The blend origin uses the input edge name, not the radius or a generated handle. The retained definition includes both supports, their orientations, the selected carrier, radius, material side and contact rails; rigid transforms move that definition with the field.
 
-The sweep residual and conservative distance bounds above still apply. This is not a new true-distance formula. Filtered references, algebraic section coordinates, oblique line-strip ends, horn or spindle tori, neighbour roll-over and general corner patches remain explicit unfinished coverage. An unproved contact continuation returns `field.fillet-contact` or `fillet.unsupported-overflow`, not an impossible-geometry claim. Independent P3 point and face queries cover convex removal, concave addition and blend origins. Application display and sampled whole-part comparison remain gated by periodic trimmed-face meshing.
+Three selected line runs meeting at one point form a corner. When their three planar supports are mutually perpendicular and every run is convex, the shared `CornerDefinition` places the ball centre at depth `r` behind all three supports. The field then also subtracts the cube spanned by the centre and the vertex, less that ball. Inside the cube the three strip regions remove only points outside all three cylinders, so the union of strips and cube-less-ball is exactly the rolling-ball removal, and the sphere face carries the `corner.vertex` origin of the three source faces. Any other three-run junction returns `fillet.unsupported-corner`; four or more runs at a point remain unfinished coverage.
+
+The sweep residual and conservative distance bounds above still apply. This is not a new true-distance formula. Filtered references, algebraic section coordinates, oblique line-strip ends, horn or spindle tori, neighbour roll-over and general corner patches remain explicit unfinished coverage. Native field display of two or more strips meeting at a vertex exceeds the default refinement limit, and field mass properties do not yet cover extruded strip regions. An unproved contact continuation returns `field.fillet-contact` or `fillet.unsupported-overflow`, not an impossible-geometry claim. Independent P3 point and face queries cover convex removal, concave addition and blend origins. Application display and sampled whole-part comparison remain gated by periodic trimmed-face meshing.
 
 ## Exact signs and surface directions
 
@@ -309,6 +315,22 @@ Reusing a coincident evaluation leaf does not reactivate discarded copy names;
 such registry-only handles report `field.face-id` from the distance API.
 Canonical public names retain the plan's generated-domain role for trim
 predicates; renaming a revolved cone cap does not turn it into an angular cap.
+
+Complete circular cylinder bands and perpendicular circular caps skip that search
+for point queries. `PreparedFace` recognizes, exactly, a cylinder face whose two
+loops are single closed rim circles that are coaxial, perpendicular to the axis
+and of the cylinder radius at distinct heights, and a plane face with one closed
+rim circle perpendicular to the plane and centred on it. The distance is then
+`sqrt((rho - r)^2 + dh^2)` for a band, with `dh` measured to the nearer rim
+height, and `sqrt(h^2 + max(rho - R, 0)^2)` for a cap. It measures the finite
+closed face, not its infinite support, and ties on a rim or the axis take the
+same value. The lower bound encloses the exact distance, the upper bound is the
+distance to an exact witness on the closed face, and no cells are visited
+(`Bounds::cells` is 0). `shapes::distance::Finite::point_distance` also returns
+the nearest `Branch` (interior, rim or axis). Any other trim, a hole, a seam
+edge or an arc keeps the complete search, as does a request whose width the
+direct enclosure cannot meet. `cargo bench -p catallax-measure --bench distance`
+prints cells and latency against the general search.
 
 `Options::width` requests an enclosure width, not geometric acceptance.
 `max_cells` limits refinement. Exhaustion returns the attained bounds with

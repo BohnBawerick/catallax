@@ -381,6 +381,23 @@ pub(super) fn visit(
             }
             continue;
         }
+        if conical
+            && let Surface::Cone(cone) = &face.surface
+            && cone.apex.as_rational().is_none()
+        {
+            if !crate::distance_samples::cone_candidates(
+                cone,
+                bounds,
+                &plan.leaves,
+                &plan.leaf_registers,
+                divisions,
+                &mut Decider::default(),
+                &mut |p| visit(p, id),
+            )? {
+                return Ok(false);
+            }
+            continue;
+        }
         let mut callback = |p| visit(p, id);
         let mut emit = Emitter {
             bounds,

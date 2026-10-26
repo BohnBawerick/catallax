@@ -28,3 +28,7 @@ harness = false
 [[bench]]
 name = "blind"
 harness = false
+
+[[bench]]
+name = "distance"
+harness = false

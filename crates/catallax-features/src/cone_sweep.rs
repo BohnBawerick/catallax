@@ -1,8 +1,8 @@
 //! Exact rotational normal sweeps with their finite meridian domains.
 
 use catallax_numbers::{Decider, Real, Refusal, Sign};
-use catallax_recipe::{EdgeName, Origin, Role, StepId, ThickenSide};
-use catallax_shapes::{Circle, Cone, Curve, Cylinder, Plane, Point3, Surface, Vector3};
+use catallax_recipe::{EdgeName, Origin, Role, StepId, ThickenSide, VertexName};
+use catallax_shapes::{Circle, Cone, Curve, Cylinder, Plane, Point3, Sphere, Surface, Vector3};
 
 use crate::{
     cone_skin::{ConeSkin, reduced},
@@ -77,8 +77,8 @@ impl ConeSweep {
                     "a folded conical sweep needs its exposed normal-image arrangement",
                 ));
             }
-            let dr = &q[0] - &p[0];
-            let dh = &q[1] - &p[1];
+            let dr = reduced(&q[0] - &p[0], dec)?;
+            let dh = reduced(&q[1] - &p[1], dec)?;
             for v in &vertices {
                 let cross = &(&dr * &(&v[1] - &p[1])) - &(&dh * &(&v[0] - &p[0]));
                 if sign(&cross, dec)? == Sign::Negative {
@@ -116,9 +116,10 @@ impl ConeSweep {
                     height_sign == Sign::Negative,
                 )
             } else {
-                let slope = &dr / &dh;
+                let slope = reduced(&dr / &dh, dec)?;
                 let increasing = sign(&slope, dec)? == Sign::Positive;
-                let apex = origin.plus(&axis.scaled(&(&p[1] - &(&p[0] / &slope))));
+                let shift = reduced(&p[1] - &(&p[0] / &slope), dec)?;
+                let apex = origin.plus(&axis.scaled(&shift));
                 (
                     Surface::Cone(Cone {
                         apex,
@@ -322,9 +323,9 @@ pub enum ConeDistancePiece {
 }
 
 impl ConeSkin {
-    /// Decomposes outward frustum distance by nearest face and circular edge.
-    /// This lets the field compile the solid independently of the B-rep's
-    /// directly assembled torus normal sectors. Cone tips remain unproved.
+    /// Decomposes outward conical distance by nearest face, circular edge and tip.
+    /// The field unions these finite normal images independently of the B-rep's
+    /// directly assembled boundary sectors.
     pub fn outward_pieces(
         &self,
         distance: &Real,
@@ -332,11 +333,6 @@ impl ConeSkin {
         dec: &mut Decider,
     ) -> Result<Vec<ConeDistancePiece>, Refusal> {
         use catallax_shapes::Torus;
-        if self.apex.is_some() {
-            return Err(bad(
-                "outward cone tips need a verified mesh of the spherical/conical meeting circle",
-            ));
-        }
         if self
             .faces
             .iter()
@@ -348,7 +344,43 @@ impl ConeSkin {
         }
         let mut pieces = Vec::new();
         for (i, f) in self.faces.iter().enumerate() {
-            let mut sweep = self.face_sweep(i, distance, ThickenSide::Front, step, dec)?;
+            let mut sweep = if let Some((apex, incident)) = &self.apex
+                && *incident == i
+            {
+                let Surface::Cone(cone) = &f.surface else {
+                    unreachable!("a conical tip is incident to its conical wall")
+                };
+                let [boundary] = self.boundaries.as_slice() else {
+                    return Err(bad("a pointed conical wall needs one complete cap"));
+                };
+                let Curve::Circle(circle) = &boundary.curve else {
+                    return Err(bad("an oblique tip normal image needs its elliptic rim"));
+                };
+                if sign(&circle.normal.cross(&self.axis).norm_squared(), dec)? != Sign::Zero {
+                    return Err(bad("a tip normal image needs a perpendicular circular cap"));
+                }
+                let radius = reduced(circle.radius_sq.sqrt(), dec)?;
+                let height = reduced(circle.center.minus(apex).dot(&self.axis), dec)?;
+                let factor_sq = &Real::one() + &cone.slope.square();
+                let factor = reduced(factor_sq.sqrt(), dec)?;
+                let radial = &(distance / &factor_sq) * &factor;
+                let axial = -(&radial * &cone.slope);
+                ConeSweep::new(
+                    apex.clone(),
+                    self.axis.clone(),
+                    cone.ref_dir.clone(),
+                    vec![
+                        [Real::zero(), Real::zero()],
+                        [radial.clone(), axial.clone()],
+                        [&radius + &radial, &height + &axial],
+                        [radius, height],
+                    ],
+                    vec![Vec::new(), f.origins.clone(), Vec::new(), Vec::new()],
+                    dec,
+                )?
+            } else {
+                self.face_sweep(i, distance, ThickenSide::Front, step, dec)?
+            };
             for patch in &mut sweep.faces {
                 if patch
                     .origins
@@ -365,6 +397,28 @@ impl ConeSkin {
                 }
             }
             pieces.push(ConeDistancePiece::Sweep(sweep));
+        }
+        if let Some((apex, incident)) = &self.apex {
+            let Surface::Cone(cone) = &self.faces[*incident].surface else {
+                unreachable!("a conical tip is incident to its conical wall")
+            };
+            let origin = self.faces[*incident]
+                .origins
+                .first()
+                .ok_or_else(|| bad("a conical tip needs a named incident face"))?;
+            let vertex = VertexName::new(vec![origin.clone()]).map_err(|e| bad(&e.to_string()))?;
+            pieces.push(ConeDistancePiece::Round(
+                Surface::Sphere(Sphere {
+                    center: apex.clone(),
+                    radius: distance.clone(),
+                    axis: self.axis.clone(),
+                    ref_dir: cone.ref_dir.clone(),
+                }),
+                vec![Origin {
+                    step: step.clone(),
+                    role: Role::RoundCorner { vertex },
+                }],
+            ));
         }
         for boundary in &self.boundaries {
             let Curve::Circle(circle) = &boundary.curve else {

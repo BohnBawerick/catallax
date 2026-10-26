@@ -245,7 +245,7 @@ impl Source {
                     let mut skin = match &region.cell {
                         Cell::Planar(cell) => cell_skin(cell),
                         Cell::Polyhedral(cell) => cell.skin(),
-                        Cell::Round(_) => {
+                        Cell::Round(_) | Cell::Annular(_) => {
                             return Err(failure("a curved source needs curved arrangement cells"));
                         }
                     };

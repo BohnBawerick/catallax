@@ -32,6 +32,7 @@ fn check_geometry(model: &Model, mesh: &Mesh, options: &MeshOptions) {
         assert!(face.max_chord_error <= options.chord_tolerance);
         assert_eq!(face.max_angular_deviation, options.angular_deviation);
         let definition = model.face(face.face);
+        assert!(!model.face_origins(face.face).is_empty());
         let surface = model.geom().surface(definition.surface);
         let dec = Decider::default();
         let scalar = |value: &catallax_numbers::Real| {
@@ -56,6 +57,7 @@ fn check_geometry(model: &Model, mesh: &Mesh, options: &MeshOptions) {
         let norm = axis.iter().map(|x| x * x).sum::<f64>().sqrt();
         axis = axis.map(|x| x / norm);
         for triangle in &mesh.triangles[face.triangles.clone()] {
+            assert_eq!(triangle.face, face.face);
             let points = triangle.vertices.map(|i| mesh.positions[i]);
             let ab: [f64; 3] = std::array::from_fn(|i| points[1][i] - points[0][i]);
             let ac: [f64; 3] = std::array::from_fn(|i| points[2][i] - points[0][i]);
@@ -130,6 +132,10 @@ fn fine_drawing_meshes_preserve_bounds_and_shared_edges() {
         ),
         (include_str!("../../../parts/P2-collar.json"), "0.00036"),
         (
+            include_str!("../../../parts/P3-filleted-boss.json"),
+            "0.0005462600113499065",
+        ),
+        (
             include_str!("../benches/fine_mesh/bracket.json"),
             "0.0016638509548634457",
         ),
@@ -149,6 +155,17 @@ fn fine_drawing_meshes_preserve_bounds_and_shared_edges() {
         let mesh = mesh_body(&built.model, built.result, &options, &mut dec)
             .unwrap()
             .value;
+        assert_eq!(
+            mesh.faces
+                .iter()
+                .map(|face| face.face)
+                .collect::<std::collections::BTreeSet<_>>(),
+            built
+                .model
+                .faces_of_body(built.result)
+                .into_iter()
+                .collect()
+        );
         check_geometry(&built.model, &mesh, &options);
         assert_eq!(
             mesh,

@@ -1,0 +1,7 @@
+## 2026-10-19: piece 5 deepened, with section edges and rational point queries
+
+Pieces: 5, cli
+Change: `IntersectionGraph::curves` is replaced by `edges() -> &[SectionEdge]` (curve, end points and the faces of each body the arc lies on), and `points()` now returns `&[PointId]` of isolated meeting points only. `classify_point` takes `&mut Model` and `&RPoint3`: a rational query point lets every ray and probe be rational, so piece 4 can intersect them exactly, and the model may gain auxiliary geometry. New `face_point` gives a rational point strictly inside a face. `boolean.foreign-body` is removed (a handle from another model is a programming error, as `ARCHITECTURE.md` says); `boolean.imprint-ambiguous`, `boolean.merge-ambiguous` and `boolean.no-rational-point` are added. A `NotExact` whose degenerate branch would need a fact no proof gives (two points as one, a point on a curve, two curves or surfaces as one) is refused instead of marked, as DESIGN.md R5 requires. Passing one `BodyId` as both operands is a programming error. The description fixes the stage contracts, the classification rule imprint must satisfy, the touching and maximality rules and the cases that define correct behaviour.
+Why: the stage outputs must be testable, and classification of curved faces needs exact probes, which rational data allows.
+Migration: the front end passes no point to `classify_point`. Later operations reuse the stages through these accessors.
+

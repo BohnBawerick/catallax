@@ -1,0 +1,7 @@
+## 2026-10-22: analytic fields and stock solids in recipe version 2
+
+Pieces: recipe, field; B-rep pieces and the exchange interface are unchanged
+Change: add `catallax-field` with `Plan`, a separate `Face`/`Origin` registry, `Workspace`, `Batch`, tentative `Approximate` results, and proven `Query`, `Location`, `Value`, `DistanceBound`, `Direction` and `FaceQuery` results. Recipe `Operation` gains exact `Block`, `Cylinder`, `Sphere`, `Cone` and `Torus` variants. Their face names use the existing start/end and side roles with fixed segment ids. `VertexName` accepts one origin for singular vertices such as cone apices, but still rejects empty or repeated origins. The schema identifier becomes `catallax-recipe/2`.
+Why: both kernels need the same stock-solid definitions before comparisons can cover what the B-rep already builds. Residuals, true distance enclosures, conservative geometric bounds and unresolved Boolean zeros must remain distinguishable.
+Migration: update operation matches for the five variants. Explicitly relabel reviewed version 1 recipes as version 2, then parse/check/write them; existing operation meanings and exact numbers are unchanged. Version 1 is not accepted as an alias. Persist recipe origins rather than `FaceId` or tape indices, and establish a registry face's surviving domain with `face_query`. Handle non-exhaustive query enums, especially `Indeterminate`; Boolean distance upper bounds are unbounded unless the point is certified on the boundary. No existing B-rep caller, CLI question, manifest or STEP format changes.
+

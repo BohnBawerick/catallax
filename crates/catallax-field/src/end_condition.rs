@@ -54,13 +54,17 @@ impl CurvedField {
         let point = point.to_real();
         let [u, v, t] = self.coordinates(&point, dec)?;
         let mut boundary = false;
-        for (x, [lo, hi]) in [&u, &v].into_iter().zip(self.cap.definition().bounds()) {
-            let a = sign(&(x - &Real::from(lo.clone())), dec)?;
-            let b = sign(&(x - &Real::from(hi.clone())), dec)?;
-            if a == Sign::Negative || b == Sign::Positive {
+        for [a, b, c] in self.cap.definition().side_constraints() {
+            let side = sign(
+                &(&Real::from(a.clone()) * &u
+                    + &Real::from(b.clone()) * &v
+                    + Real::from(c.clone())),
+                dec,
+            )?;
+            if side == Sign::Positive {
                 return Ok(Location::Outside);
             }
-            boundary |= a == Sign::Zero || b == Sign::Zero;
+            boundary |= side == Sign::Zero;
         }
         let start = sign(&t, dec)?;
         if start == Sign::Negative {
@@ -127,18 +131,24 @@ impl CurvedField {
         if sign(&polynomial.eval_real(&[p.x, p.y, p.z]), dec)? == Sign::Zero {
             roles.push(Role::End);
         }
-        for (i, (x, [lo, hi])) in [&u, &v]
-            .into_iter()
-            .zip(self.cap.definition().bounds())
-            .enumerate()
+        for ([a, b, c], id) in self
+            .cap
+            .definition()
+            .side_constraints()
+            .iter()
+            .zip(self.cap.side_ids())
         {
-            for (upper, coordinate) in [lo, hi].into_iter().enumerate() {
-                if sign(&(x - &Real::from(coordinate.clone())), dec)? == Sign::Zero {
-                    roles.push(Role::Side {
-                        segment: self.cap.side_ids()[2 * i + upper].clone(),
-                        path: None,
-                    });
-                }
+            if sign(
+                &(&Real::from(a.clone()) * &u
+                    + &Real::from(b.clone()) * &v
+                    + Real::from(c.clone())),
+                dec,
+            )? == Sign::Zero
+            {
+                roles.push(Role::Side {
+                    segment: id.clone(),
+                    path: None,
+                });
             }
         }
         let mut origins: Vec<_> = roles

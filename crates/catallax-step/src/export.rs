@@ -638,10 +638,9 @@ impl<'a> Exporter<'a> {
         let a = topology.ring_vertices[&band.edges[0]].clone();
         let b = topology.ring_vertices[&band.edges[1]].clone();
         let origin = &self.bands.rings[&band.edges[0]].origin;
-        let end = &self.bands.rings[&band.edges[1]].origin;
         let form = CurveForm::Line {
             origin: origin.clone(),
-            dir: end.minus(origin),
+            dir: band.seam_direction.clone(),
         };
         let curve = self.curve_geometry(&form)?.unwrap();
         let period = self.band_period()?;

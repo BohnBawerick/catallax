@@ -14,7 +14,9 @@ python3 crates/catallax-step/tests/verify_exact.py
 The required CI job runs `tools/step-regressions/test_loopless_faces.py` and
 `test_periodic_bands.py` with `cadquery-ocp==8.0.1.1.0`. They check full spheres,
 tori, cylinders and both frustum directions at identity and rational
-rotated/translated poses, plus a reversed cylindrical through-hole wall.
+rotated/translated poses, a reversed cylindrical through-hole wall, an enclosed
+cylindrical void, and 82/100-degree algebraic countersinks at the unchanged
+100,000,000-work request allowance.
 Checks cover native topology, degenerate sphere poles, validity and positive
 analytic volume. Direct `StepToTopoDS_Builder` translation bypasses the
 reader's default ShapeFix processing. SameParameter remains disabled.
@@ -81,6 +83,11 @@ digits. Arbitrarily trimmed periodic faces and apex cones retain their previous
 encoding and remain known raw-import gaps. A file containing such unsupported
 faces does not receive a partial band cutover.
 
+Longitudinal seam directions come from the certified carrier frame, not from
+normalizing an algebraic endpoint-height difference. Full-carrier incidence
+and coaxial facts are reused when present; eligibility otherwise retains its
+exact proofs. The CLI standard-hole allowance regression stays unchanged.
+
 `step.not-solid` and `step.unsupported-geometry` are not constructible through today's public enums. Their future variants are deliberately not faked. Invalid handles and failed topology checks are programming errors, not refusal fixtures.
 
 Case 18 accepts `step.budget-exhausted` and
@@ -108,6 +115,9 @@ requires exactly zero decimal value and error after a piece 1 proof; adding
 ### Void decision
 
 The void-face rule reverses the model's face sense. Piece 3 case 17's inner faces have `Sense::Reversed`, so their exported `ADVANCED_FACE.same_sense` is `.T.`, their `FACE_BOUND.orientation` is `.F.`, and the wrapping `ORIENTED_CLOSED_SHELL.orientation` is `.F.`. The original piece 7 case 10 expectation was a typo; the general rule and mathematical assertions stand.
+Complete periodic bands instead keep their `FACE_BOUND.orientation` equal to
+`ADVANCED_FACE.same_sense`, including on void shells, because their parameter
+rectangle always retains the counter-clockwise chart walk.
 
 ## Non-gating measurements
 

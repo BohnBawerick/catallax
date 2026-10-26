@@ -30,6 +30,7 @@ pub(crate) struct Band {
     pub low_v: Real,
     pub v_scale: Real,
     pub radius_bound: Real,
+    pub seam_direction: Vector3,
 }
 
 #[derive(Default)]
@@ -54,6 +55,7 @@ struct SourceRing {
 struct SourceBand {
     face: FaceId,
     surface: SurfaceId,
+    axis: Vector3,
     reference: Vector3,
     v_scale: Real,
     rings: [SourceRing; 2],
@@ -141,6 +143,13 @@ impl Plan {
         for (index, source) in sources.iter().enumerate() {
             let reference = &sources[root(&mut parents, index)].reference;
             plan.references.insert(source.surface, reference.clone());
+            // Use the certified carrier frame, not a normalized difference
+            // of algebraic endpoint heights that must be re-proved unit.
+            let seam_direction = match model.geom().surface(source.surface) {
+                Surface::Cylinder(_) => source.axis.clone(),
+                Surface::Cone(cone) => source.axis.plus(&reference.scaled(&cone.slope)),
+                _ => unreachable!(),
+            };
             plan.faces.insert(
                 source.face,
                 Rc::new(Band {
@@ -153,6 +162,7 @@ impl Plan {
                     low_v: source.rings[0].v.clone(),
                     v_scale: source.v_scale.clone(),
                     radius_bound: &source.rings[0].radius + &source.rings[1].radius,
+                    seam_direction,
                 }),
             );
             for ring in &source.rings {
@@ -309,6 +319,7 @@ fn source_band(
     Ok(Some(SourceBand {
         face,
         surface: face_definition.surface,
+        axis,
         reference,
         v_scale: slant,
         rings,

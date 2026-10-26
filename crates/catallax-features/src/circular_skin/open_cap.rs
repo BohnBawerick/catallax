@@ -32,9 +32,7 @@ fn range(band: &CircularBand, direction: &Real, reversed: bool) -> [Real; 2] {
 /// or untrimmed-support assertion is used outside these hypotheses.
 pub(super) fn prove(skin: &CircularSkin, open: &[bool], dec: &mut Decider) -> Result<(), Refusal> {
     let unsupported = || {
-        bad(
-            "this opening needs a finite kept-face distance envelope beyond one equatorial-or-higher planar base and spherical cap",
-        )
+        bad("open curved circular cells need their kept-face edge-distance envelope")
     };
     if skin.faces.len() != 3
         || skin.bands.len() != 2

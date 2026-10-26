@@ -276,7 +276,11 @@ fn exact_f32_tetrahedron_normals_survive_binary64_subtraction_cancellation() {
             point.map(|coordinate| Rational::from_f64_exact(f64::from(coordinate)).unwrap())
         })
         .collect();
-    for (triangle, facet) in mesh.triangles.iter().zip(bytes[84..].chunks_exact(50)) {
+    for (triangle, facet) in mesh
+        .triangles
+        .iter()
+        .zip(bytes[84..].as_chunks::<50>().0.iter())
+    {
         let normal: [f32; 3] = std::array::from_fn(|i| {
             f32::from_le_bytes(facet[i * 4..i * 4 + 4].try_into().unwrap())
         });

@@ -29,7 +29,9 @@ fn stl(path: PathBuf) -> (Vec<u8>, Vec<[[f64; 3]; 3]>) {
     let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
     assert_eq!(bytes.len(), 84 + 50 * count);
     let triangles = bytes[84..]
-        .chunks_exact(50)
+        .as_chunks::<50>()
+        .0
+        .iter()
         .map(|facet| {
             std::array::from_fn(|v| {
                 std::array::from_fn(|axis| {

@@ -566,7 +566,8 @@ fn selected(
     Ok(result)
 }
 
-/// Picks the uniquely nearest closed trimmed face of a plane-capped axial cylinder.
+/// Picks the uniquely nearest closed trimmed face of a plane-capped axial
+/// cylinder, or of a coaxial annulus with two walls and two annular caps.
 fn nearest_axial(
     model: &Model,
     faces: &[FaceId],
@@ -577,28 +578,39 @@ fn nearest_axial(
     let unsupported = || {
         Refusal::new(
             "draft.unsupported-near",
-            "nearest-face draft selection needs one cylindrical side and two planar caps",
+            "nearest-face draft selection needs one or two coaxial cylindrical sides and two planar caps",
         )
     };
-    let mut cylinder = None;
+    let mut cylinders = Vec::new();
     let mut caps = Vec::new();
     for face in faces {
         match model.geom().surface(model.face(*face).surface) {
-            Surface::Cylinder(c) if cylinder.is_none() => cylinder = Some(c),
+            Surface::Cylinder(c) if cylinders.len() < 2 => cylinders.push(c),
             Surface::Plane(p) => caps.push(p),
             _ => return Err(unsupported()),
         }
     }
-    let (Some(cylinder), [first, second]) = (cylinder, caps.as_slice()) else {
+    let [first, second] = caps.as_slice() else {
         return Err(unsupported());
+    };
+    let walls = match cylinders.as_slice() {
+        [_] => None,
+        [a, b] => Some(near::annulus_walls(a, b, dec)?),
+        _ => return Err(unsupported()),
     };
     let [x, y, z] = near.0.each_ref().map(|n| n.value().clone().into());
     let point = Point3::new(x, y, z);
     let mut distances = Vec::with_capacity(matches.len());
     for face in matches {
         distances.push(match model.geom().surface(model.face(*face).surface) {
-            Surface::Plane(cap) => near::cap_distance_squared(cylinder, cap, &point, dec)?,
-            _ => near::wall_distance_squared(cylinder, [first, second], &point, dec)?,
+            Surface::Plane(cap) => match walls {
+                Some(walls) => near::annular_cap_distance_squared(walls, cap, &point, dec)?,
+                None => near::cap_distance_squared(cylinders[0], cap, &point, dec)?,
+            },
+            Surface::Cylinder(wall) => {
+                near::wall_distance_squared(wall, [first, second], &point, dec)?
+            }
+            _ => return Err(unsupported()),
         });
     }
     Ok(matches[near::unique_nearest(&distances, dec)?])

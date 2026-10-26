@@ -860,7 +860,18 @@ impl Feature {
         };
         crate::display::membership::Classifier::new(&self.inverse, vector, *through, &self.loops)
     }
+    // Query-only reuse of certified elementary fillet sectors. Unsupported
+    // sectors and non-rational ray directions retain the existing evaluator.
+    fn fillet_query_classifier(&self) -> Option<crate::display::membership::Classifier<'_>> {
+        self.fillet.as_deref().and_then(|definition| {
+            crate::display::membership::Classifier::fillet(definition)
+                .or_else(|| self.display_classifier())
+        })
+    }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
+        if let Some(classifier) = self.fillet_query_classifier() {
+            return Ok(classifier.location(p));
+        }
         self.classify(
             &Point3::new(
                 p[0].clone().into(),
@@ -871,6 +882,11 @@ impl Feature {
         )
     }
     pub(crate) fn classify(&self, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
+        if let Some(p) = p.as_rational()
+            && let Some(classifier) = self.fillet_query_classifier()
+        {
+            return Ok(classifier.location(&[p.x, p.y, p.z]));
+        }
         let local = self.inverse.apply_point(p);
         if let Some((location, _)) = self.convex_revolve_query(&local, dec)? {
             return Ok(location);
@@ -1017,6 +1033,18 @@ impl Feature {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        let mut base_role = role;
+        while let Role::Copy { of, .. } = base_role {
+            base_role = &of.role;
+        }
+        if self
+            .fillet
+            .as_ref()
+            .is_some_and(|definition| &definition.origin.role == base_role)
+            && let Some(classifier) = self.fillet_query_classifier()
+        {
+            return Ok(classifier.on_face(base_role, p));
+        }
         self.on_face_point(
             role,
             &Point3::new(
@@ -1036,6 +1064,12 @@ impl Feature {
         let mut role = role;
         while let Role::Copy { of, .. } = role {
             role = &of.role;
+        }
+        if self.fillet.as_ref().is_some_and(|f| &f.origin.role == role)
+            && let Some(p) = p.as_rational()
+            && let Some(classifier) = self.fillet_query_classifier()
+        {
+            return Ok(classifier.on_face(role, &[p.x, p.y, p.z]));
         }
         let alias = self
             .fillet
@@ -1200,6 +1234,11 @@ impl Feature {
         d: &Vector3,
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
+        if let Some(classifier) = self.fillet_query_classifier()
+            && let Some(location) = classifier.ray(&self.constraints, p, d)
+        {
+            return Ok(location);
+        }
         // Stay within every support's initial sign cell; this is not a tolerance.
         let mut epsilon = Rational::one();
         for constraint in &self.constraints {

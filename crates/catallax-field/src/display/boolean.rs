@@ -79,6 +79,8 @@ impl Boolean {
             Germ::Positive => 1,
             Germ::Negative => 2,
         };
+        self.variables
+            .resize(self.variables.len().max(operand + 1), [None; 3]);
         if let Some(state) = self.variables[operand][index] {
             return Ok(state);
         }
@@ -93,7 +95,7 @@ impl Boolean {
         self.variables[operand][index] = Some(state);
         Ok(state)
     }
-    fn negate(&mut self, state: State, dec: &mut Decider) -> Result<State, Refusal> {
+    pub(super) fn negate(&mut self, state: State, dec: &mut Decider) -> Result<State, Refusal> {
         dec.check_deadline()?;
         if state == State::OUTSIDE {
             return Ok(State::INSIDE);
@@ -177,6 +179,55 @@ impl Boolean {
             }
         }
     }
+    pub(super) fn resolve(
+        &mut self,
+        roots: [State; 2],
+        dec: &mut Decider,
+        predicate: &mut impl FnMut(usize, &mut Decider) -> Result<Option<bool>, Refusal>,
+    ) -> Result<[State; 2], Refusal> {
+        fn visit(
+            b: &mut Boolean,
+            state: State,
+            dec: &mut Decider,
+            predicate: &mut impl FnMut(usize, &mut Decider) -> Result<Option<bool>, Refusal>,
+            cache: &mut BTreeMap<State, State>,
+        ) -> Result<State, Refusal> {
+            let Some(node) = b.node(state) else {
+                return Ok(state);
+            };
+            if let Some(&result) = cache.get(&state) {
+                return Ok(result);
+            }
+            dec.check_deadline()?;
+            let result = if let Some(inside) = predicate(node.variable.operand, dec)? {
+                visit(
+                    b,
+                    if inside { node.inside } else { node.outside },
+                    dec,
+                    predicate,
+                    cache,
+                )?
+            } else {
+                let outside = visit(b, node.outside, dec, predicate, cache)?;
+                let inside = visit(b, node.inside, dec, predicate, cache)?;
+                b.make(
+                    Node {
+                        variable: node.variable,
+                        outside,
+                        inside,
+                    },
+                    dec,
+                )?
+            };
+            cache.insert(state, result);
+            Ok(result)
+        }
+        let mut cache = BTreeMap::new();
+        Ok([
+            visit(self, roots[0], dec, predicate, &mut cache)?,
+            visit(self, roots[1], dec, predicate, &mut cache)?,
+        ])
+    }
     pub(super) fn unresolved(&self, roots: impl IntoIterator<Item = State>) -> Vec<usize> {
         let mut stack: Vec<_> = roots.into_iter().collect();
         let mut visited = BTreeSet::new();
@@ -256,5 +307,35 @@ mod tests {
             .unwrap();
         assert!(value(&b, exposed, |v| v.germ == Germ::Positive));
         assert!(!value(&b, exposed, |_| true));
+    }
+    #[test]
+    fn partial_predicate_resolution_preserves_every_completion_and_the_work_refusal() {
+        let mut b = Boolean::new(3);
+        let mut dec = Decider::default();
+        let [x, y, z] = std::array::from_fn(|i| b.variable(i, Germ::Shared, &mut dec).unwrap());
+        let xy = b.combine(BooleanKind::Union, x, y, &mut dec).unwrap();
+        let root = b.combine(BooleanKind::Subtract, xy, z, &mut dec).unwrap();
+        for fixed in [false, true] {
+            let reduced = b
+                .resolve([root, root], &mut dec, &mut |i, _| {
+                    Ok((i == 1).then_some(fixed))
+                })
+                .unwrap();
+            assert_eq!(reduced[0], reduced[1]);
+            for bits in 0..8 {
+                if (bits & 2 != 0) != fixed {
+                    continue;
+                }
+                assert_eq!(
+                    value(&b, root, |v| bits & (1 << v.operand) != 0),
+                    value(&b, reduced[0], |v| bits & (1 << v.operand) != 0)
+                );
+            }
+        }
+        let (answer, work) = catallax_numbers::with_operation_budget(0, || {
+            b.resolve([root, root], &mut dec, &mut |_, _| Ok(None))
+        });
+        assert!(work.exhausted);
+        assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
     }
 }

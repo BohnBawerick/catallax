@@ -76,6 +76,7 @@ dependencies = [
  "catallax-compare",
  "catallax-features",
  "catallax-field",
+ "catallax-iges",
  "catallax-intersect",
  "catallax-measure",
  "catallax-mesh",
@@ -86,6 +87,7 @@ dependencies = [
  "catallax-topology",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -163,6 +165,7 @@ dependencies = [
 name = "catallax-measure"
 version = "0.1.0"
 dependencies = [
+ "catallax-app",
  "catallax-boolean",
  "catallax-intersect",
  "catallax-numbers",
@@ -170,6 +173,7 @@ dependencies = [
  "catallax-shapes",
  "catallax-topology",
  "rug",
+ "serde_json",
 ]
 
 [[package]]

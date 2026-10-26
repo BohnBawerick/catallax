@@ -24,7 +24,8 @@ mod marks;
 mod operation;
 mod outcome;
 pub use operation::{
-    OperationWork, current_operation_work, operation_budget_active, with_operation_budget,
+    OperationAllowance, OperationWork, current_operation_work, operation_budget_active,
+    with_operation_budget,
 };
 mod poly;
 mod quadratic;

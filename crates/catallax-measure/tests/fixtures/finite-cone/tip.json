@@ -1,0 +1,27 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "public-finite-cone-tip",
+  "steps": [
+    {
+      "id": "cone",
+      "op": "cone",
+      "base_radius": "6",
+      "top_radius": "0",
+      "height": "6",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    }
+  ],
+  "result": "cone"
+}

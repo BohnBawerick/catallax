@@ -27,5 +27,13 @@ catallax-step.workspace = true
 name = "display"
 harness = false
 
+[[bench]]
+name = "preview_mesh"
+harness = false
+
+[[bench]]
+name = "preview_lifecycle"
+harness = false
+
 [lints]
 workspace = true

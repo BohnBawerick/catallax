@@ -18,6 +18,7 @@ catallax-boolean.workspace = true
 catallax-intersect.workspace = true
 catallax-measure.workspace = true
 catallax-step.workspace = true
+catallax-iges.workspace = true
 catallax-recipe.workspace = true
 catallax-features.workspace = true
 catallax-compare.workspace = true
@@ -26,6 +27,7 @@ catallax-mesh.workspace = true
 catallax-app.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 
 [dev-dependencies]
 catallax-numbers = { workspace = true, features = ["test-deadline"] }

@@ -16,6 +16,76 @@ BINARY = Path(os.environ.get('CATALLAX_VERIFY_BINARY', ROOT / 'target/release/ca
 EXAMPLES = ROOT / '.claude/skills/verify-catallax/references/examples'
 
 
+def load_driver():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('control_catallax', DRIVER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def fake_case(driver, wall_ms, status='answered', refusal=None, preview=None, source='recipe'):
+    response = {'wall_ms': wall_ms, 'work': 1, 'manifest': {'status': status, 'refusal': refusal}}
+    if preview is not None:
+        response['preview'] = preview
+    return {'key': 'k', 'id': 'part', 'cache_hit': False, 'class': source, 'group': 'g',
+            'target_ms': driver.TARGETS[source], 'response': response}
+
+
+class AcceptanceTests(unittest.TestCase):
+    """Preview wait and proof completion are separate; no BINARY needed."""
+
+    def setUp(self):
+        self.driver = load_driver()
+
+    def test_command_return_without_preview_evidence_is_not_a_preview_pass(self):
+        verdict = self.driver.acceptance(fake_case(self.driver, 5)['response'])
+        self.assertEqual(verdict['preview']['status'], 'not-measured')
+        self.assertNotIn('met', verdict['preview'])
+        self.assertTrue(verdict['proof']['met'])
+
+    def test_preview_needs_unproved_label_and_delivered_display(self):
+        for record in ({'state': 'proved', 'displayed': True, 'wall_ms': 1},
+                       {'state': 'unproved', 'displayed': False, 'wall_ms': 1},
+                       {'state': 'unproved', 'displayed': True},
+                       {'state': 'unproved', 'displayed': True, 'wall_ms': True}):
+            verdict = self.driver.acceptance(fake_case(self.driver, 5, preview=record)['response'])
+            self.assertEqual(verdict['preview']['status'], 'invalid', record)
+            self.assertFalse(verdict['preview'].get('met', False))
+        good = self.driver.acceptance(fake_case(self.driver, 5000, preview={'state': 'unproved', 'displayed': True, 'wall_ms': 40})['response'])
+        self.assertTrue(good['preview']['met'])
+        self.assertFalse(good['proof']['met'], 'slow proof stays visible beside a fast preview')
+        self.assertFalse(good['built'])
+
+    def test_preview_alone_never_builds_a_part_and_a_refusal_is_incomplete(self):
+        preview = {'state': 'unproved', 'displayed': True, 'wall_ms': 1}
+        refused = fake_case(self.driver, 1, status='refused', refusal={'code': 'numbers.operation-budget'}, preview=preview)
+        verdict = self.driver.acceptance(refused['response'])
+        self.assertTrue(verdict['preview']['met'])
+        self.assertEqual(verdict['proof']['status'], 'incomplete')
+        self.assertFalse(verdict['built'])
+
+    def test_summary_counts_the_columns_separately(self):
+        preview = {'state': 'unproved', 'displayed': True, 'wall_ms': 900}
+        report = {'elapsed_ms': 1, 'cases': [
+            fake_case(self.driver, 1500, preview=preview),
+            fake_case(self.driver, 2500),
+            fake_case(self.driver, 5, status='refused', refusal={'code': 'x'}),
+            fake_case(self.driver, 10, source='compare')]}
+        accepted = self.driver.summarize(report)['acceptance']
+        self.assertEqual(accepted['preview'], {'measured': 1, 'met': 1, 'not_measured': 3, 'invalid': 0, 'target_ms': 1000})
+        self.assertEqual(accepted['proof'], {'completed': 3, 'within_target': 2, 'incomplete': 1, 'target_ms': 2000})
+        self.assertEqual(accepted['built_after_proof'], 2)
+        self.assertEqual(accepted['comparison_requested'], 1)
+
+    def test_comparison_column_is_requested_not_default(self):
+        import argparse
+        base = dict(print_tolerance=None)
+        self.assertEqual(self.driver.parts_sources(argparse.Namespace(compare=False, **base)), ('recipe', 'field'))
+        self.assertEqual(self.driver.parts_sources(argparse.Namespace(compare=True, **base)), ('recipe', 'field', 'compare'))
+        self.assertEqual(self.driver.parts_sources(argparse.Namespace(compare=False, print_tolerance='0.5')), ('recipe', 'field', 'print'))
+
+
 @unittest.skipUnless(BINARY.exists(), 'build catallax-verify first')
 class DriverTests(unittest.TestCase):
     def setUp(self):
@@ -222,6 +292,24 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(check['status'], 'passed', check)
         self.assertEqual(check['brep']['faces_checked'], 6)
         self.assertEqual(check['brep']['edges_checked'], 12)
+
+    def test_scoreboard_runs_comparison_only_when_requested(self):
+        targets = self.out / 'targets'
+        targets.mkdir()
+        (targets / 'part.json').write_text((EXAMPLES / 'recipe.json').read_text())
+        plain = self.command('parts', targets, '--binary', BINARY, '--out', self.out / 'plain')
+        self.assertEqual(plain['columns'], ['recipe', 'field'])
+        self.assertEqual(plain['comparison'], {'requested': False, 'status': 'not-requested'})
+        self.assertIsNone(plain['comparison_disagreements'])
+        self.assertNotIn('compare', plain['cases'][0])
+        self.assertFalse((self.out / 'plain/cases/part/compare').exists())
+        row = plain['cases'][0]['acceptance']['recipe']
+        self.assertEqual(row['preview']['status'], 'not-measured')
+        asked = self.command('parts', targets, '--binary', BINARY, '--out', self.out / 'asked', '--compare')
+        self.assertEqual(asked['columns'], ['recipe', 'field', 'compare'])
+        self.assertEqual(asked['comparison_disagreements'], 0)
+        self.assertEqual(asked['cases'][0]['compare']['manifest']['comparison']['verdict'], 'agree')
+
 
 if __name__ == '__main__':
     unittest.main()

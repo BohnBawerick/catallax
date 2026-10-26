@@ -9,8 +9,8 @@ use std::fmt;
 
 use catallax_numbers::Rational;
 use catallax_recipe::{
-    Axis, BooleanKind, ElementId, Loop, Number, Operation, Point2, Point3, Pose, Recipe, Segment,
-    Step, StepId, Turn, Vector3,
+    Axis, BooleanKind, EdgeSelection, ElementId, FaceRef, Loop, Number, Operation, OriginPattern,
+    Point2, Point3, Pose, Recipe, Segment, Step, StepId, Turn, Vector3,
 };
 use serde::Deserialize;
 
@@ -623,42 +623,44 @@ pub fn convert(json: &str) -> Result<Converted> {
                 edges,
                 radius,
             } => {
-                lookup(&body)?;
+                let body = lookup(&body)?;
                 edges.check(&steps, &tag)?;
-                positive(radius, &tag)?;
-                return Err(not_yet(
-                    &tag,
-                    "features.unsupported-operation",
-                    "fillet and its selector resolution are not implemented",
-                ));
+                let radius = positive(radius, &tag)?;
+                Operation::Fillet {
+                    body,
+                    edges: edge_selection(&edges, &tag, "fillet")?,
+                    radius,
+                }
             }
             Command::Chamfer {
                 body,
                 edges,
                 distance,
             } => {
-                lookup(&body)?;
+                let body = lookup(&body)?;
                 edges.check(&steps, &tag)?;
-                positive(distance, &tag)?;
-                return Err(not_yet(
-                    &tag,
-                    "features.unsupported-operation",
-                    "chamfer and its selector resolution are not implemented",
-                ));
+                let distance = positive(distance, &tag)?;
+                Operation::Chamfer {
+                    body,
+                    edges: edge_selection(&edges, &tag, "chamfer")?,
+                    distance,
+                    other_distance: None,
+                }
             }
             Command::Shell {
                 body,
                 open_faces,
                 thickness,
             } => {
-                lookup(&body)?;
+                let body = lookup(&body)?;
                 open_faces.check(&steps, &tag)?;
-                positive(thickness, &tag)?;
-                return Err(not_yet(
-                    &tag,
-                    "features.unsupported-operation",
-                    "shell and its selector resolution are not implemented",
-                ));
+                let thickness = positive(thickness, &tag)?;
+                let open = face_refs(&open_faces, &tag, &body, &steps, &output)?;
+                Operation::Shell {
+                    body,
+                    open,
+                    thickness,
+                }
             }
         };
         let base: String = tag
@@ -698,4 +700,128 @@ pub fn convert(json: &str) -> Result<Converted> {
     recipe.description = input.description;
     recipe.check().map_err(|e| invalid(None, e))?;
     Ok(Converted { recipe, steps })
+}
+
+/// Maps a legacy edge selector that has an exact structural counterpart. Selectors
+/// that depend on where edges lie in a built body stay unconverted.
+fn edge_selection(selector: &Selector, tag: &str, operation: &str) -> Result<EdgeSelection> {
+    match selector {
+        Selector::All => Ok(EdgeSelection::All),
+        _ => Err(not_yet(
+            tag,
+            "features.unsupported-operation",
+            &format!("{operation} edge selector has no exact structural mapping yet"),
+        )),
+    }
+}
+
+/// A face reference for every step the body was built from that makes faces of its own,
+/// in recipe order. Every face of the body carries an origin from one of them, so
+/// together they choose exactly its faces. References are mandatory, so each step must
+/// provably leave a face on the body, from its definition alone and without evaluating
+/// it. Only these operations qualify:
+///
+/// - `profile`: makes no faces and is never referenced.
+/// - `extrude`: its start cap, end cap and sides are the faces of the new solid, and no
+///   later step in an allowed history consumes them.
+/// - `revolve`: its swept sides and any caps are the faces of the new solid, and no later
+///   step in an allowed history consumes them.
+///
+/// Everything else is refused with the reason. A `fillet` or `chamfer` returns its input
+/// unchanged when it has no edge to act on, so it may make no face. A `boolean` can
+/// consume every face of either operand, and a `shell` removes its open faces. Because
+/// only a single extrude or revolve qualifies, an allowed history has one face maker.
+fn ancestor_face_makers(
+    body: &StepId,
+    output: &[Step],
+) -> std::result::Result<Vec<FaceRef>, &'static str> {
+    let mut needed = BTreeSet::from([body.clone()]);
+    let mut refs = Vec::new();
+    for step in output.iter().rev() {
+        if !needed.contains(&step.id) {
+            continue;
+        }
+        needed.extend(step.op.inputs().into_iter().map(|(id, _)| id.clone()));
+        match step.op {
+            Operation::Sketch { .. } => {}
+            Operation::Extrude { .. } | Operation::Revolve { .. } => refs.push(FaceRef {
+                face: OriginPattern {
+                    step: step.id.clone(),
+                    role: None,
+                },
+                touching: Vec::new(),
+                near: None,
+            }),
+            Operation::Fillet { .. } | Operation::Chamfer { .. } => {
+                return Err("a fillet or chamfer may return its input unchanged and make no face");
+            }
+            Operation::Boolean { .. } => {
+                return Err("a boolean may consume every face of an operand");
+            }
+            Operation::Shell { .. } => return Err("a shell removes its open faces"),
+            _ => return Err("the history has an operation not known to keep its faces"),
+        }
+    }
+    refs.reverse();
+    Ok(refs)
+}
+
+/// Maps a legacy open-face selector to face references. The faces a step generated
+/// become a reference to that step's origins, and every face of the body becomes a
+/// reference to each face-making step it was built from. Positional forms are not
+/// converted.
+fn face_refs(
+    selector: &Selector,
+    tag: &str,
+    body: &StepId,
+    steps: &BTreeMap<String, StepId>,
+    output: &[Step],
+) -> Result<Vec<FaceRef>> {
+    match selector {
+        Selector::All => match ancestor_face_makers(body, output) {
+            Ok(refs) if !refs.is_empty() => Ok(refs),
+            Ok(_) => Err(not_yet(
+                tag,
+                "features.unsupported-operation",
+                "shell open faces of a body with no face-making step are not converted",
+            )),
+            Err(reason) => Err(not_yet(
+                tag,
+                "features.unsupported-operation",
+                &format!("shell open faces `all` have no exact structural mapping: {reason}"),
+            )),
+        },
+        Selector::CreatedBy(source) => {
+            let id = &steps[source];
+            let makes_faces = output
+                .iter()
+                .find(|step| step.id == *id)
+                .is_some_and(|step| {
+                    !matches!(
+                        step.op,
+                        Operation::Sketch { .. } | Operation::Boolean { .. }
+                    )
+                });
+            if !makes_faces {
+                return Err(not_yet(
+                    tag,
+                    "features.unsupported-operation",
+                    "shell open faces from a step that makes no faces of its own are not converted",
+                ));
+            }
+            Ok(vec![FaceRef {
+                face: OriginPattern {
+                    step: id.clone(),
+                    role: None,
+                },
+                touching: Vec::new(),
+                near: None,
+            }])
+        }
+        _ => Err(not_yet(
+            tag,
+            "features.unsupported-operation",
+            "shell open-face selector has no exact structural mapping yet",
+        )),
+    }
 }

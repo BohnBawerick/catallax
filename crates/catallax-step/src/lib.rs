@@ -10,6 +10,7 @@ use std::io::Write;
 use catallax_numbers::{Answered, Decider, Rational};
 use catallax_topology::{BodyId, Model};
 
+mod band;
 mod certified_spline;
 mod export;
 mod fit;
@@ -60,17 +61,17 @@ pub struct StepReport {
     pub max_deviation: Rational,
     /// Intersection branches written as fitted splines.
     pub approximated_curves: usize,
-    /// Vertices added because STEP needs them (ring edges, poles).
+    /// Vertices added because STEP needs them (ring origins, natural-boundary poles).
     pub added_vertices: usize,
-    /// Edges added because STEP needs them (seams of loopless faces).
+    /// Explicit edges added because STEP needs them (periodic band and torus seams).
     pub added_edges: usize,
     /// Solids written.
     pub solids: usize,
     /// Faces written.
     pub faces: usize,
-    /// Edges written.
+    /// Explicit EDGE_CURVE entities written, excluding implicit natural boundaries.
     pub edges: usize,
-    /// Vertices written.
+    /// Explicit VERTEX_POINT entities written.
     pub vertices: usize,
     /// Export-only topology changes, each with its own certified displacement.
     pub regularizations: Vec<StepRegularization>,

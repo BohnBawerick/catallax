@@ -19,11 +19,12 @@ agrees with this separation. No existing crate API needed modification.
 | Valid, finite, unmarked closed bodies; multiple lumps and shells | Manifold solids, one per lump |
 | Planar faces with finite line/circular-arc wires, including holes | Exact type 190 supports and shared trims |
 | Cylindrical/conical bands between two full vertexless circular edges | Exact type 192/194 supports, one added seam per band |
+| Finite axial cylinder/cone sectors with two circular arcs and two generators | One unwrapped four-edge wire; cardinal endpoints in the retained surface frame, including 90/180/270-degree spans and seam crossings |
 | Box, bored plate, public P2 collar | Independently tested with 6, 7, 6 faces |
 | Rational placements and dimensions whose circle frames have terminating decimal unit coordinates | Exact definitions, followed by the certified common scale |
 | A cone half-angle with a proved finite decimal degree encoding | Exact type 194 angle; rational slope 1 has angle 45 degrees |
 | Other surface/curve kinds | Typed `UnsupportedSurface` / `UnsupportedCurve` |
-| General algebraic coordinates, nonterminating circle frames, uncovered cone angles, periodic sectors, apex caps, nonaligned ring seams | Typed `UnrepresentableDefinition`, or a shared decision refusal |
+| General algebraic coordinates, nonterminating circle frames, uncovered cone angles, other periodic trims, apex caps, nonaligned ring seams | Typed `UnrepresentableDefinition`, or a shared decision refusal |
 | Marked input without a retained whole-definition certificate | `UncertifiedModel` |
 
 These are coverage limits, not claims that the refused geometry is impossible.
@@ -37,8 +38,20 @@ Input edges remain shared. The format requires a vertex on each vertexless ring;
 the report counts those additions. A periodic seam is an exact straight
 rational degree-one type 126 curve, shared by its two opposite coedge uses.
 No input edge or face is merged, and the source model is immutable. Faces use
-190/192/194, original curves use 110/100, and topology uses 502/504/508/510/514/186.
+190/192/194, original curves use 110/100 (sector generators use bounded degree-one
+126 curves), and topology uses 502/504/508/510/514/186.
 There is no tessellated or fitted surface fallback.
+
+Finite sectors require one alternating four-edge loop. Exact rational projection
+proves coaxial, constant-height circular rails, nonzero generator heights and
+cardinal rays. Cone vertices must lie strictly on the positive nappe, away from
+the apex. Directed circle normals, edge senses, coedge senses and face senses
+select the signed angular span; accumulating that span keeps one continuous
+degree chart through the seam. Opposing spans must close one rectangle. No
+extra seam, face, edge or vertex is introduced for these sectors. Finite type-100
+arcs use an exact orthonormal placement whose start angle is zero, so their
+native ranges match bounded pcurves even when a retained circle has a different
+reference ray. This reparameterizes the same exact circle without fitting it.
 
 ## Whole-domain certificate
 
@@ -79,9 +92,14 @@ Interpolation between endpoints bounds the entire straight pcurve. A unit-speed
 cone generator converts that parameter error directly to a positional bound.
 The shared seam's 3D and 2D representations have the same [0,1] domain.
 Circular pcurves use a bounded [0,T] domain, where `T` is a 17-digit decimal of
-`2*pi`. An outward ball bounds `|T-2*pi|`; multiplication by `B` conservatively
+the arc's radian span (or `2*pi` for a full ring). An outward ball bounds the
+absolute endpoint error; multiplication by the whole-circle coordinate bound conservatively
 bounds the whole-domain angular correspondence/compatibility error. These
 angular and slant bounds are **added**, not replaced by their maximum.
+Linear interpolation of the two rounded slant levels bounds the whole finite
+sector; the cone generator is unit speed in slant. Angular interpolation covers
+the whole directed arc, including a span longer than 180 degrees. Common scaling
+then applies to all metric pcurve levels and all shared 3D geometry together.
 
 Writing `E` for that sum, the report declares the rational bound
 
@@ -120,6 +138,17 @@ bindings for Rust test shards; this separate check must be run explicitly.
 The Rust tests check strict rejection and unchanged sinks, rational emitted
 vertices, composed trim bounds, determinism, unsupported inputs, work refusal,
 and unchanged retained STEP bytes before and after IGES export.
+
+The finite-sector regression was reproduced on main
+`10d57eb79110941f930c11358f663968440b1b46`: the public sketch/revolve recipe
+builds, then `write_iges` returns `UnrepresentableDefinition` for its periodic
+face. `partial_axial_sectors_export_through_the_recipe_path` preserves that
+failing-before/passing-after boundary. The native fixtures add cylinder/cone
+90/180/270-degree sectors, opposite cone axes, recharted seam crossings with
+reversed edges and circle reference rays, and a nonzero common-scale cone.
+The checker also checks finite domains, matching curve/pcurve ranges and sampled
+3D/pcurve compatibility. Those numerical checks do not establish the bound above.
+General angle encoding, apex caps and other periodic trim shapes remain refused.
 
 ## Primary references
 

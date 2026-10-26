@@ -1,0 +1,27 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "public-finite-cone-reversed-large",
+  "steps": [
+    {
+      "id": "cone",
+      "op": "cone",
+      "base_radius": "6000",
+      "top_radius": "2000",
+      "height": "4000",
+      "pose": {
+        "rotation": [
+          "0",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "7",
+          "-11",
+          "13"
+        ]
+      }
+    }
+  ],
+  "result": "cone"
+}

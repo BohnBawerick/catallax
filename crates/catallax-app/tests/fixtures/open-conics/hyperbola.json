@@ -1,0 +1,56 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "finite hyperbola arcs",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cone",
+      "base_radius": "4",
+      "top_radius": "1",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "cut",
+      "op": "block",
+      "size": [
+        "4",
+        "20",
+        "20"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "-2",
+          "-10",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "clipped",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "stock",
+      "tool": "cut"
+    }
+  ],
+  "result": "clipped"
+}

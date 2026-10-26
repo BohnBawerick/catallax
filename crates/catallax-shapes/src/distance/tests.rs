@@ -384,3 +384,224 @@ mod finite {
         }
     }
 }
+
+mod spherical_finite {
+    use super::*;
+    use crate::Circle;
+    fn sphere() -> Surface {
+        Surface::Sphere(Sphere {
+            center: p(0, 0, 0),
+            radius: Real::from_i64(5),
+            axis: v(2, 0, 0),
+            ref_dir: v(0, 3, 0),
+        })
+    }
+    fn rim(z: i64) -> Circle {
+        Circle {
+            center: p(0, 0, z),
+            normal: v(0, 0, 2),
+            radius_sq: Real::from_i64(25 - z * z),
+            ref_dir: v(3, 0, 0),
+        }
+    }
+    fn check(finite: &Finite, at: Point3, squared: i64, branch: Branch, dec: &mut Decider) {
+        let (bounds, found) = finite
+            .point_distance(&at, &options(1), dec)
+            .unwrap()
+            .unwrap();
+        contains(&bounds, &Real::from_i64(squared).sqrt(), dec);
+        assert_eq!(found, branch);
+        assert!(bounds.cells == 0 && bounds.converged);
+        let [_, w] = bounds.witnesses.unwrap();
+        // Independent sphere equation and retained-domain checks, not a chart.
+        assert_eq!(
+            math::sign(
+                &(w.minus(&p(0, 0, 0)).norm_squared() - Real::from_i64(25)),
+                dec
+            )
+            .unwrap(),
+            Sign::Zero
+        );
+    }
+    #[test]
+    fn branches_include_poles_centre_both_rims_and_radial_boundary_ties() {
+        let mut dec = Decider::default();
+        let (lo, hi) = (rim(-3), rim(3));
+        let cap = Finite::recognize_oriented(&sphere(), &[(&hi, true)], &mut dec)
+            .unwrap()
+            .unwrap();
+        for (at, squared, branch) in [
+            (p(6, 0, 8), 25, Branch::Interior),
+            (p(3, 0, 4), 0, Branch::Interior),
+            (p(4, 0, 3), 0, Branch::Interior),
+            (p(0, 0, 7), 4, Branch::Axis),
+            (p(0, 0, -5), 80, Branch::Axis),
+            (p(0, 0, 0), 25, Branch::Axis),
+            (p(7, 0, -8), 130, Branch::Rim),
+        ] {
+            check(&cap, at, squared, branch, &mut dec);
+        }
+        let band = Finite::recognize_oriented(&sphere(), &[(&hi, false), (&lo, true)], &mut dec)
+            .unwrap()
+            .unwrap();
+        for (at, squared, branch) in [
+            (p(6, 0, 8), 29, Branch::Rim),
+            (p(7, 0, -8), 34, Branch::Rim),
+            (p(10, 0, 0), 25, Branch::Interior),
+            (p(0, 0, 7), 32, Branch::Axis),
+            (p(0, 0, -7), 32, Branch::Axis),
+            (p(0, 0, 0), 25, Branch::Axis),
+        ] {
+            check(&band, at, squared, branch, &mut dec);
+        }
+    }
+    #[test]
+    fn hemisphere_major_cap_and_reversed_circle_normal_have_exact_retained_sides() {
+        let mut dec = Decider::default();
+        for (ring, forward, south_squared, north_squared) in [
+            (rim(0), true, 50, 4),
+            (rim(-3), true, 20, 4),
+            (rim(3), false, 0, 32),
+            (
+                Circle {
+                    normal: v(0, 0, -3),
+                    ..rim(3)
+                },
+                false,
+                80,
+                4,
+            ),
+        ] {
+            let finite = Finite::recognize_oriented(&sphere(), &[(&ring, forward)], &mut dec)
+                .unwrap()
+                .unwrap();
+            check(&finite, p(0, 0, -5), south_squared, Branch::Axis, &mut dec);
+            check(&finite, p(0, 0, 7), north_squared, Branch::Axis, &mut dec);
+        }
+    }
+    #[test]
+    fn irrational_radial_and_rim_witnesses_are_exact_and_admitted() {
+        let mut dec = Decider::default();
+        let ring = rim(3);
+        let cap = Finite::recognize_oriented(&sphere(), &[(&ring, true)], &mut dec)
+            .unwrap()
+            .unwrap();
+        for (at, expected, branch) in [
+            (
+                p(1, 1, 4),
+                Real::from_i64(5) - Real::from_i64(18).sqrt(),
+                Branch::Interior,
+            ),
+            (
+                p(1, 1, -1),
+                (Real::from_i64(34) - Real::from_i64(8) * Real::from_i64(2).sqrt()).sqrt(),
+                Branch::Rim,
+            ),
+        ] {
+            let (bounds, found) = cap
+                .point_distance(&at, &options(1), &mut dec)
+                .unwrap()
+                .unwrap();
+            contains(&bounds, &expected, &mut dec);
+            assert_eq!(found, branch);
+            let [_, w] = bounds.witnesses.unwrap();
+            assert_ne!(
+                math::sign(&(&w.z - &Real::from_i64(3)), &mut dec).unwrap(),
+                Sign::Negative
+            );
+            assert_eq!(
+                math::sign(
+                    &(w.minus(&p(0, 0, 0)).norm_squared() - Real::from_i64(25)),
+                    &mut dec
+                )
+                .unwrap(),
+                Sign::Zero
+            );
+        }
+    }
+    #[test]
+    fn missing_orientation_incompatible_bands_and_nonincident_or_polar_rings_decline() {
+        let mut dec = Decider::default();
+        let (a, b) = (rim(-3), rim(3));
+        assert!(
+            Finite::recognize(&sphere(), &[&b], &mut dec)
+                .unwrap()
+                .is_none()
+        );
+        let displaced = Circle {
+            center: p(1, 0, 3),
+            ..rim(3)
+        };
+        let wrong_radius = Circle {
+            radius_sq: Real::one(),
+            ..rim(3)
+        };
+        let skew = Circle {
+            normal: v(0, 1, 1),
+            ..rim(3)
+        };
+        let bad_reference = Circle {
+            ref_dir: v(0, 0, 1),
+            ..rim(3)
+        };
+        let polar = rim(5);
+        for rings in [
+            vec![],
+            vec![(&a, true), (&b, true)],
+            vec![(&a, false), (&b, true)],
+            vec![(&a, true), (&a, false)],
+            vec![(&a, true), (&b, false), (&b, false)],
+            vec![(&displaced, true)],
+            vec![(&wrong_radius, true)],
+            vec![(&skew, true)],
+            vec![(&bad_reference, true)],
+            vec![(&polar, true)],
+        ] {
+            assert!(
+                Finite::recognize_oriented(&sphere(), &rings, &mut dec)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+    #[test]
+    fn spherical_direct_route_preserves_validation_width_and_typed_budget_refusals() {
+        use catallax_numbers::BudgetPolicy;
+        let mut dec = Decider::default();
+        let ring = rim(3);
+        let cap = Finite::recognize_oriented(&sphere(), &[(&ring, true)], &mut dec)
+            .unwrap()
+            .unwrap();
+        let at = p(0, 0, -5);
+        assert_eq!(
+            cap.point_distance(&at, &options(0), &mut dec)
+                .unwrap_err()
+                .code,
+            "shapes.distance-domain"
+        );
+        let mut invalid = options(1);
+        invalid.width = q(0);
+        assert_eq!(
+            cap.point_distance(&at, &invalid, &mut dec)
+                .unwrap_err()
+                .code,
+            "shapes.distance-domain"
+        );
+        let mut tight = options(1);
+        tight.width = q(1).mul_pow2(-512);
+        assert!(cap.point_distance(&at, &tight, &mut dec).unwrap().is_none());
+        let mut exhausted = Decider::new(BudgetPolicy {
+            max_work: 0,
+            ..BudgetPolicy::default()
+        });
+        assert_eq!(
+            cap.point_distance(&at, &options(1), &mut exhausted)
+                .unwrap_err()
+                .code,
+            "numbers.budget-exhausted"
+        );
+    }
+}
+
+#[path = "conical_tests.rs"]
+mod conical;

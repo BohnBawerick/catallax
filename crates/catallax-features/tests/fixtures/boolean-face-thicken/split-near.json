@@ -1,0 +1,78 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Split origin with nearest trim",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "block",
+      "size": [
+        "6",
+        "4",
+        "3"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "tool",
+      "op": "block",
+      "size": [
+        "2",
+        "6",
+        "5"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "2",
+          "-1",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "retained",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "stock",
+      "tool": "tool"
+    },
+    {
+      "id": "result",
+      "op": "thicken",
+      "body": "retained",
+      "faces": [
+        {
+          "face": {
+            "step": "stock",
+            "role": "end"
+          },
+          "near": [
+            "1",
+            "1",
+            "3"
+          ]
+        }
+      ],
+      "thickness": "1",
+      "side": "front"
+    }
+  ],
+  "result": "result"
+}

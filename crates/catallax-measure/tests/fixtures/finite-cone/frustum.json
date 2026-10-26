@@ -1,0 +1,27 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "public-finite-cone-frustum",
+  "steps": [
+    {
+      "id": "cone",
+      "op": "cone",
+      "base_radius": "6",
+      "top_radius": "2",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    }
+  ],
+  "result": "cone"
+}

@@ -1,0 +1,73 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Tilted Boolean L",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "block",
+      "size": [
+        "4",
+        "4",
+        "3"
+      ],
+      "pose": {
+        "rotation": [
+          "2",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "5",
+          "-2",
+          "1"
+        ]
+      }
+    },
+    {
+      "id": "tool",
+      "op": "block",
+      "size": [
+        "2",
+        "2",
+        "5"
+      ],
+      "pose": {
+        "rotation": [
+          "2",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "7",
+          "0",
+          "2"
+        ]
+      }
+    },
+    {
+      "id": "retained",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "stock",
+      "tool": "tool"
+    },
+    {
+      "id": "result",
+      "op": "thicken",
+      "body": "retained",
+      "faces": [
+        {
+          "face": {
+            "step": "stock",
+            "role": "end"
+          }
+        }
+      ],
+      "thickness": "1",
+      "side": "front"
+    }
+  ],
+  "result": "result"
+}

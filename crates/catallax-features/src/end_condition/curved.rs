@@ -1,8 +1,10 @@
-//! Certified single-branch curved caps over convex rational sketch domains.
+//! Certified single-branch curved caps over convex polygons and coaxial disks.
 //!
 //! This reduction keeps analytic supports exact. It proves the same positive
 //! quadratic hit branch over a closed rectangular enclosure, including every
-//! edge and corner. Exact polygon sides define the swept domain. Silhouettes,
+//! edge and corner. Exact polygon sides define the swept domain. Coaxial
+//! circular profiles on spheres instead use a whole-disk radial certificate
+//! and an exact cylindrical wall. Silhouettes,
 //! changing start states, projected trim events
 //! and nonquadratic targets remain named coverage gaps. No sampled witness
 //! licenses a branch or a missing-hit refusal.
@@ -14,6 +16,10 @@ use std::collections::BTreeSet;
 
 #[path = "curved/build.rs"]
 mod build;
+#[path = "curved/circular.rs"]
+mod circular;
+#[path = "curved/circular_build.rs"]
+mod circular_build;
 #[path = "curved/polygon.rs"]
 mod polygon;
 #[path = "curved/projected.rs"]
@@ -42,12 +48,13 @@ pub struct CurvedCapped {
     bounds: [[Rational; 2]; 2],
     sides: Vec<[Rational; 3]>,
     polygon: Option<polygon::Polygon>,
+    circle: Option<circular::Circle>,
     branch: Branch,
     midpoint: Plane,
     extent: Rational,
 }
 
-/// A compiled authored convex polygon, retaining its segment ids and finite bound.
+/// A compiled authored convex polygon or coaxial disk, with segment ids and bound.
 #[derive(Clone, Debug)]
 pub struct AuthoredCap {
     definition: CurvedCapped,
@@ -63,7 +70,7 @@ impl AuthoredCap {
 
     /// Authored side ids in the definition's side-constraint order. Axis-aligned
     /// rectangles retain their u-min, u-max, v-min, v-max order; other polygons
-    /// retain authored segment order, in either winding.
+    /// retain authored segment order, in either winding. A disk has one circle id.
     pub fn side_ids(&self) -> &[ElementId] {
         &self.side_ids
     }
@@ -73,8 +80,9 @@ impl AuthoredCap {
         &self.radius
     }
 
-    /// Compiles a recipe's convex polygon sketch and stock quadric target. The
-    /// same certified crossing is the first hit for both face and next modes.
+    /// Compiles a convex polygon against a stock quadric, or a coaxial disk
+    /// against a stock sphere. The same certified crossing is the first hit
+    /// for both face and next modes.
     pub fn compile(
         recipe: &Recipe,
         target: &StepId,
@@ -97,6 +105,11 @@ impl AuthoredCap {
                 "curved extrusion input is not a sketch",
             ));
         };
+        if loops.len() == 1
+            && let [Segment::Circle { id, centre, radius }] = loops[0].0.as_slice()
+        {
+            return circular::compile(source, plane, id, centre, radius, direction, dec);
+        }
         if loops.len() != 1 || loops[0].0.len() < 3 {
             return Err(coverage(
                 "curved cap profile requires one convex rational line polygon",
@@ -172,7 +185,7 @@ impl AuthoredCap {
     }
 }
 
-/// Exact classification relative to the closed capped polygon.
+/// Exact classification relative to the closed capped profile.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Location {
     /// Three-dimensional interior.
@@ -258,6 +271,7 @@ impl CurvedCapped {
             bounds,
             sides,
             polygon: None,
+            circle: None,
             branch: certificate.branch,
             midpoint: certificate.midpoint,
             extent: certificate.extent,
@@ -279,19 +293,39 @@ impl CurvedCapped {
         &self.frame
     }
 
-    /// The closed rectangular enclosure used for the whole-profile branch
-    /// proof. The exact profile domain is the intersection of `side_constraints`.
+    /// A closed rectangular enclosure. Polygon branch proofs use this bound;
+    /// disk proofs use the radial domain returned by `circular_radius`.
     pub fn bounds(&self) -> &[[Rational; 2]; 2] {
         &self.bounds
     }
 
     /// Exact chart halfplanes `[a, b, c]`, with `a*u + b*v + c <= 0`
-    /// inside the profile, in the same order as the authored side ids.
+    /// inside the polygon, in authored side-id order. Empty for a disk, whose
+    /// complete domain is defined by `circular_radius` instead.
     pub fn side_constraints(&self) -> &[[Rational; 3]] {
         &self.sides
     }
 
+    /// The radius of a complete circular profile, centred at the retained
+    /// frame origin. Such profiles use `u² + v² <= radius²` instead of linear
+    /// side constraints, and have one authored side id.
+    pub fn circular_radius(&self) -> Option<&Rational> {
+        self.circle.as_ref().map(|c| &c.radius)
+    }
+
     fn profile_location(&self, q: &[Real; 2], dec: &mut Decider) -> Result<Location, Refusal> {
+        if let Some(radius) = self.circular_radius() {
+            return Ok(
+                match sign(
+                    &(&q[0] * &q[0] + &q[1] * &q[1] - Real::from(radius * radius)),
+                    dec,
+                )? {
+                    Sign::Positive => Location::Outside,
+                    Sign::Zero => Location::Boundary,
+                    Sign::Negative => Location::Inside,
+                },
+            );
+        }
         let mut boundary = false;
         for [a, b, c] in &self.sides {
             match sign(
@@ -323,7 +357,7 @@ impl CurvedCapped {
         &self.midpoint
     }
 
-    /// The exact positive first hit at a point of the certified polygon.
+    /// The exact positive first hit at a point of the certified profile.
     pub fn height(&self, q: &[Real; 2], dec: &mut Decider) -> Result<Real, Refusal> {
         if self.profile_location(q, dec)? == Location::Outside {
             return Err(coverage("height query is outside its certified domain"));

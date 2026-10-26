@@ -1,0 +1,17 @@
+{
+  "format":"catallax-recipe/3",
+  "name":"Fine mesh chamfer edit with retained pocket",
+  "description":"SolidDraft public chamfer drawing scenario through step 8: radius 12, radius 6 bore, height 12, both outer rims chamfered 1.5, and a 2 by 2 by 3 pocket centered at x=8.5 on the upper cap.",
+  "steps":[
+    {"id":"outer","op":"cylinder","radius":"12","height":"12","pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+    {"id":"bore","op":"cylinder","radius":"6","height":"14","pose":{"rotation":["1","0","0","0"],"translation":["0","0","-1"]}},
+    {"id":"ring","op":"boolean","kind":"subtract","target":"outer","tool":"bore"},
+    {"id":"beveled","op":"chamfer","body":"ring","distance":"1.5","edges":[
+      {"between":[{"step":"outer","role":"start"},{"step":"outer","role":{"side":{"segment":"wall"}}}]},
+      {"between":[{"step":"outer","role":"end"},{"step":"outer","role":{"side":{"segment":"wall"}}}]}
+    ]},
+    {"id":"pocket","op":"block","size":["2","2","3"],"pose":{"rotation":["1","0","0","0"],"translation":["7.5","-1","9"]}},
+    {"id":"cut","op":"boolean","kind":"subtract","target":"beveled","tool":"pocket"}
+  ],
+  "result":"cut"
+}

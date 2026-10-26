@@ -27,7 +27,7 @@ signal.signal(signal.SIGINT, interrupt)
 signal.signal(signal.SIGTERM, interrupt)
 
 CONTRACT = 'catallax-request/1'
-TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'field': 1000, 'compare': 2000, 'name-edit': 1000}
+TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'field': 1000, 'compare': 2000, 'name-edit': 1000, 'iges': 1000}
 
 
 def canonical(value):
@@ -74,13 +74,20 @@ def load(paths, source, adapter=None):
                 elif fmt == 'exact-brep-question/2':
                     problems.append({'source': 'question', 'problem': value})
                 elif fmt in ('catallax-recipe/3', 'catallax-recipe/4'):
-                    problems.append({'source': source if source in ('compare', 'field', 'print') else 'recipe', 'problem': value})
+                    if source == 'iges':
+                        problems.append({'source': 'iges', 'problem': {'format': 'catallax-iges/1', 'recipe': value}})
+                    else:
+                        problems.append({'source': source if source in ('compare', 'field', 'print') else 'recipe', 'problem': value})
                 elif fmt == 'catallax-certified-recipe/1':
                     problems.append({'source': 'recipe', 'problem': value})
                 elif fmt == 'catallax-stand-in/1':
                     if source not in ('auto', 'recipe'):
                         raise ValueError(f'{file}: stand-in wrappers require the recipe source')
                     problems.append({'source': 'recipe', 'problem': value})
+                elif fmt == 'catallax-iges/1':
+                    if source not in ('auto', 'iges'):
+                        raise ValueError(f'{file}: iges wrappers require the iges source')
+                    problems.append({'source': 'iges', 'problem': value})
                 elif fmt == 'catallax-print/1':
                     if source not in ('auto', 'field', 'print'):
                         raise ValueError(f'{file}: print wrappers require the print or field source')
@@ -88,7 +95,7 @@ def load(paths, source, adapter=None):
                 elif fmt == 'catallax-question/1':
                     if set(value) != {'format', 'source', 'problem', 'max_work'}:
                         raise ValueError(f'{file}: invalid exported question fields')
-                    if value['source'] not in ('question', 'recipe', 'field', 'print', 'compare', 'name-edit'):
+                    if value['source'] not in ('question', 'recipe', 'field', 'print', 'iges', 'compare', 'name-edit'):
                         raise ValueError(f'{file}: unknown exported question source')
                     if type(value['max_work']) is not int or not 0 <= value['max_work'] <= 2**64 - 1:
                         raise ValueError(f'{file}: exported max_work must be an unsigned 64-bit integer')
@@ -107,7 +114,7 @@ def classification(item):
         problem = problem['edited_recipe']
     if kind == 'print':
         kind = 'field'
-    if problem.get('format') in ('catallax-print/1', 'catallax-stand-in/1'):
+    if problem.get('format') in ('catallax-print/1', 'catallax-stand-in/1', 'catallax-iges/1'):
         problem = problem['recipe']
     if kind == 'question':
         kind = 'boolean' if problem.get('steps') else 'stock'
@@ -154,6 +161,7 @@ class Worker:
         self.child.stdout.close()
         self.child.stderr.close()
         CHILDREN.discard(self.child)
+        return self.child.returncode
 
 
 def valid_artifact(directory, key):
@@ -185,6 +193,8 @@ def run(args):
     batches = [[] for _ in range(args.workers)]
     for i, pair in enumerate(unique.items()):
         batches[i % args.workers].append(pair)
+
+    exits = {}
 
     def batch(index):
         results = {}
@@ -236,26 +246,81 @@ def run(args):
                     log.flush()
         finally:
             if worker:
-                worker.close()
+                exits[str(index)] = worker.close()
+                if exits[str(index)] != 0:
+                    raise RuntimeError('worker failed on shutdown; diagnose before requalification')
         return results
 
     merged = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
         for result in pool.map(batch, range(args.workers)):
             merged.update(result)
-    report = {'format': 'catallax-run/1', 'config': config, 'elapsed_ms': (time.perf_counter() - started) * 1000, 'cases': [merged[key] for key in keys]}
+    report = {'format': 'catallax-run/1', 'config': config, 'execution': {
+        'fresh': args.fresh, 'workers': args.workers, 'cores': cores,
+        'worker_exits': exits}, 'elapsed_ms': (time.perf_counter() - started) * 1000,
+        'cases': [merged[key] for key in keys]}
     atomic(out / 'run.json', report)
     return summarize(report)
 
 
+# The preview wait and the background proof job are separate budgets. A whole
+# response is a proof wait, never a preview pass: only a record labelled
+# unproved with a delivered display is accepted as preview evidence.
+PREVIEW_TARGET_MS = 1000
+PROOF_TARGET_MS = 2000
+
+
+def preview_evidence(response):
+    """Preview wait from a response that carries a delivered, unproved preview."""
+    record = response.get('preview') or response.get('manifest', {}).get('preview')
+    if record is None:
+        return {'status': 'not-measured', 'reason': 'response carries no preview record', 'target_ms': PREVIEW_TARGET_MS}
+    wait = record.get('wall_ms')
+    valid = (record.get('state') == 'unproved' and record.get('displayed') is True
+             and isinstance(wait, (int, float)) and not isinstance(wait, bool) and wait >= 0)
+    if not valid:
+        return {'status': 'invalid', 'reason': 'a preview must be labelled unproved and report its delivered display wait', 'target_ms': PREVIEW_TARGET_MS}
+    return {'status': 'measured', 'state': 'unproved', 'wall_ms': wait, 'target_ms': PREVIEW_TARGET_MS, 'met': wait <= PREVIEW_TARGET_MS}
+
+
+def proof_evidence(response):
+    """Background proof completion: the whole response wall, met only if it answered."""
+    manifest = response['manifest']
+    completed = manifest.get('status') == 'answered' and not manifest.get('refusal')
+    wait = response['wall_ms']
+    return {'status': 'completed' if completed else 'incomplete', 'wall_ms': wait, 'target_ms': PROOF_TARGET_MS,
+            'met': completed and wait <= PROOF_TARGET_MS}
+
+
+def acceptance(response):
+    """Separate preview and proof columns. A part is built only by completed proof."""
+    preview, proof = preview_evidence(response), proof_evidence(response)
+    return {'preview': preview, 'proof': proof, 'built': proof['met']}
+
+
 def summarize(report):
     groups, slow, issues = {}, [], {}
+    historical = report.get('evidence', {}).get('kind') == 'reused'
     crashes = 0
     disagreements = 0
     edit_failures = 0
+    preview = {'measured': 0, 'met': 0, 'not_measured': 0, 'invalid': 0}
+    proof = {'completed': 0, 'within_target': 0, 'incomplete': 0}
+    built = 0
+    comparison_requested = 0
     for case in report['cases']:
         response = case['response']
         manifest = response['manifest']
+        verdict = acceptance(response)
+        preview['measured'] += verdict['preview']['status'] == 'measured'
+        preview['met'] += bool(verdict['preview'].get('met'))
+        preview['not_measured'] += verdict['preview']['status'] == 'not-measured'
+        preview['invalid'] += verdict['preview']['status'] == 'invalid'
+        proof['completed'] += verdict['proof']['status'] == 'completed'
+        proof['within_target'] += verdict['proof']['met']
+        proof['incomplete'] += verdict['proof']['status'] == 'incomplete'
+        built += verdict['built']
+        comparison_requested += case['class'] == 'compare'
         cause = (manifest.get('refusal') or {}).get('code', manifest.get('status', 'unknown'))
         crashes += manifest.get('status') == 'internal-error'
         comparison = manifest.get('comparison')
@@ -278,12 +343,16 @@ def summarize(report):
             boolean_ms = sum(step.get('wall_ms', 0) for step in steps) if steps is not None else None
             phase = ('boolean' if boolean_ms >= response['wall_ms'] / 2 else 'outside-boolean') if boolean_ms is not None else 'unmeasured-phase'
             outside_ms = max(0, response['wall_ms'] - boolean_ms) if boolean_ms is not None else None
-            slow.append({k: case[k] for k in ['id', 'key', 'group', 'target_ms']} | {'wall_ms': response['wall_ms'], 'work': response['work'], 'cause': cause, 'phase': phase, 'boolean_ms': boolean_ms, 'outside_boolean_ms': outside_ms, 'cached_timing': case['cache_hit']})
+            slow.append({k: case[k] for k in ['id', 'key', 'group', 'target_ms']} | {'wall_ms': response['wall_ms'], 'work': response['work'], 'cause': cause, 'phase': phase, 'boolean_ms': boolean_ms, 'outside_boolean_ms': outside_ms, 'cached_timing': case['cache_hit'], 'historical_timing': historical})
     performance = {}
     for case in slow:
         label = case['group'] + '/' + case['phase'] + '/' + case['cause']
         performance.setdefault(label, []).append(case['key'])
-    return {'cases': len(report['cases']), 'elapsed_ms': report['elapsed_ms'], 'cache_hits': sum(c['cache_hit'] for c in report['cases']), 'outcomes': groups, 'issue_groups': issues, 'crashes': crashes, 'comparison_disagreements': disagreements, 'edit_failures': edit_failures, 'performance_groups': performance, 'slow': sorted(slow, key=lambda c: -c['wall_ms'])}
+    return {'cases': len(report['cases']), 'elapsed_ms': report['elapsed_ms'], 'cache_hits': sum(c['cache_hit'] for c in report['cases']), 'outcomes': groups, 'issue_groups': issues, 'crashes': crashes, 'comparison_disagreements': disagreements, 'edit_failures': edit_failures, 'performance_groups': performance, 'slow': sorted(slow, key=lambda c: -c['wall_ms']),
+            'timing': 'historical' if historical else 'observed',
+            'acceptance': {'preview': preview | {'target_ms': PREVIEW_TARGET_MS}, 'proof': proof | {'target_ms': PROOF_TARGET_MS},
+                           'built_after_proof': built, 'comparison_requested': comparison_requested,
+                           'rule': 'a whole-response wait is a proof wait; preview passes need a delivered unproved display; a preview alone never counts a part as built'}}
 
 
 def comparable(manifest):
@@ -301,6 +370,8 @@ def compare(left, right):
     if len(a['cases']) != len(b['cases']):
         failures.append({'cause': 'case-count', 'left': len(a['cases']), 'right': len(b['cases'])})
     for i, (x, y) in enumerate(zip(a['cases'], b['cases'])):
+        x, y = [dict(c, path=str(Path(p).parent / c['path']))
+                for c, p in ((x, left), (y, right))]
         # Inputs, including order and duplicates, are part of the proof.
         px, py = [json.loads((Path(c['path']) / 'request.json').read_text()) for c in (x, y)]
         for request in (px, py):
@@ -329,6 +400,11 @@ def compare(left, right):
                 and (Path(x['path']) / 'print.stl').read_bytes() != (Path(y['path']) / 'print.stl').read_bytes()
             ):
                 cause = 'print-bytes'
+            elif (Path(x['path']) / 'answer.igs').exists() != (Path(y['path']) / 'answer.igs').exists() or (
+                (Path(x['path']) / 'answer.igs').exists()
+                and (Path(x['path']) / 'answer.igs').read_bytes() != (Path(y['path']) / 'answer.igs').read_bytes()
+            ):
+                cause = 'iges-bytes'
         if cause:
             failures.append({'index': i, 'id': x['id'], 'cause': cause, 'left': x['path'], 'right': y['path']})
     return {'equal': not failures, 'cases': len(a['cases']), 'failures': failures}
@@ -452,6 +528,12 @@ def part_edit_check(worker, problem, changes, relative, out, max_work):
     return check
 
 
+def parts_sources(args):
+    """Requested columns. The second-kernel comparison runs only when asked."""
+    return (('recipe', 'field') + (('compare',) if args.compare else ())
+            + (('print',) if args.print_tolerance is not None else ()))
+
+
 def parts(args):
     root = Path(args.inputs).resolve()
     edit_file = root / 'edit-checks.json'
@@ -483,6 +565,9 @@ def parts(args):
               'max_work': args.max_work, 'status': 'running', 'edit_checks': {}, 'cases': []}
     if args.print_tolerance is not None:
         report['print_tolerance_mm'] = args.print_tolerance
+    report['columns'] = list(parts_sources(args))
+    report['comparison'] = {'requested': args.compare,
+                            'status': 'requested' if args.compare else 'not-requested'}
     try:
         # Exact name rebuilds do not depend on display or sampled comparison.
         # Persist every configured check before either can delay unrelated rows.
@@ -493,7 +578,7 @@ def parts(args):
                 atomic(out / 'parts.json', report)
         for file, relative, problem in problems:
             case = {'recipe_file': relative, 'sha256': file_hash(file), 'name': problem['name']}
-            sources = ('recipe', 'field', 'compare') + (('print',) if args.print_tolerance is not None else ())
+            sources = parts_sources(args)
             for source in sources:
                 dest = out / 'cases' / relative.removesuffix('.json') / source
                 dest.mkdir(parents=True, exist_ok=True)
@@ -528,6 +613,9 @@ def parts(args):
                                       'refusal': brep.get('refusal')}
             # SolidDraft interaction and volume error transfer remain separate
             # acceptance gates; name resolution is exercised above without a UI.
+            # Preview wait is not measured by catallax-verify; see head_to_head. A
+            # row is built only when its recipe proof completed within the proof target.
+            case['acceptance'] = {source: acceptance(case[source]) for source in ('recipe', 'field')}
             case['application_check'] = {'status': 'not-run', 'code': 'parts.application-loop-required'}
             report['cases'].append(case)
             atomic(out / 'parts.json', report)
@@ -538,9 +626,11 @@ def parts(args):
     finally:
         worker.close()
     report['crashes'] = sum(c[s]['manifest'].get('status') in ('internal-error', 'invalid-question')
-                            for c in report['cases'] for s in ('recipe', 'field', 'compare'))
-    report['comparison_disagreements'] = sum(c['compare']['manifest'].get('comparison', {}).get('verdict') == 'disagree'
-                                             for c in report['cases'])
+                            for c in report['cases'] for s in report['columns'])
+    # None means the comparison column was not requested, not zero disagreements.
+    report['comparison_disagreements'] = (
+        sum(c['compare']['manifest'].get('comparison', {}).get('verdict') == 'disagree' for c in report['cases'])
+        if args.compare else None)
     report['step_failures'] = sum(c['step_check']['status'] == 'failed' for c in report['cases'])
     report['edit_failures'] = sum(c['edit_check']['status'] in ('failed', 'invalid') for c in report['cases'])
     report['status'] = 'completed'
@@ -567,7 +657,7 @@ def main():
             p.add_argument('--binary', required=True)
         if name != 'legacy':
             p.add_argument('--max-work', type=int, default=100_000_000)
-            p.add_argument('--source', choices=['auto', 'recipe', 'field', 'print', 'compare'], default='auto')
+            p.add_argument('--source', choices=['auto', 'recipe', 'field', 'print', 'iges', 'compare'], default='auto')
             p.add_argument('--adapter', help='trusted Python file exporting load(Path) -> source/problem records')
         if name == 'run':
             p.add_argument('--workers', type=int, choices=range(1, 65), default=1)
@@ -576,6 +666,18 @@ def main():
     p = commands.add_parser('compare', help='strict STEP and manifests excluding stats/build identity')
     p.add_argument('baseline')
     p.add_argument('candidate')
+    p = commands.add_parser('qualify', help='fresh candidate 1/2/4; optional explicitly selected qualified baseline archive')
+    p.add_argument('inputs', nargs='+')
+    p.add_argument('--baseline', required=True)
+    p.add_argument('--candidate', required=True)
+    p.add_argument('--out', required=True, help='new owned directory, never resumed')
+    p.add_argument('--baseline-identity', help='complete build provenance JSON; missing/unknown disables reuse')
+    p.add_argument('--reuse-baseline', help='explicit archive directory from an earlier fresh qualified six')
+    p.add_argument('--fresh-audit', action='store_true', help='force all six even with a matching archive')
+    p.add_argument('--cores', help='same CPU policy for each 1/2/4 run')
+    p.add_argument('--max-work', type=int, default=100_000_000)
+    p.add_argument('--source', choices=['auto', 'recipe', 'field', 'print', 'iges', 'compare'], default='auto')
+    p.add_argument('--adapter', help='trusted explicit corpus adapter')
     p = commands.add_parser('report', help='correctness groups and separate interactive performance failures')
     p.add_argument('run')
     p = commands.add_parser('cleanup', help='confirm no persistent processes are retained; preserve all evidence')
@@ -588,6 +690,7 @@ def main():
     p.add_argument('--max-work', type=int, default=100_000_000)
     p.add_argument('--core', type=int, help='one pinned CPU for the worker')
     p.add_argument('--occt-python', default=sys.executable, help='Python with cadquery-ocp installed; unavailable binding is reported as not run')
+    p.add_argument('--compare', action='store_true', help='also run the second-kernel field comparison column; off by default')
     p.add_argument('--print-tolerance', help='also build direct field STL/OBJ at this exact millimetre output tolerance')
     p = commands.add_parser('head-to-head-reference', help='download and verify the pinned released SolidCraft binary outside the repository')
     p.add_argument('--out', required=True)
@@ -620,6 +723,9 @@ def main():
             result = run(args)
         elif args.command == 'compare':
             result = compare(args.baseline, args.candidate)
+        elif args.command == 'qualify':
+            from qualification import qualify
+            result = qualify(args, sys.modules[__name__])
         elif args.command == 'report':
             result = summarize(json.loads(Path(args.run).read_text()))
         elif args.command == 'pair':
@@ -641,7 +747,9 @@ def main():
         print(json.dumps(result, indent=None if args.json else 2, sort_keys=True))
         return 1 if result.get('equal') is False or result.get('crashes', 0) or result.get('comparison_disagreements', 0) or result.get('step_failures', 0) or result.get('edit_failures', 0) or result.get('correctness_failures', 0) else 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-        print(json.dumps({'error': str(error), 'action': 'retain evidence, run doctor, then resume using the same --out'}), file=sys.stderr)
+        action = ('retain evidence; diagnose and explicitly requalify with a new --out'
+                  if args.command == 'qualify' else 'retain evidence, run doctor, then resume using the same --out')
+        print(json.dumps({'error': str(error), 'action': action}), file=sys.stderr)
         return 2
 
 

@@ -107,6 +107,8 @@ struct Polygon<'a> {
 
 impl Polygon<'_> {
     fn turn(&mut self, a: usize, b: usize, c: usize) -> Result<Sign, Refusal> {
+        // Filtered predicates still consume work in bridge and ear searches.
+        self.dec.check_deadline()?;
         if a == b || b == c || a == c {
             return Ok(Sign::Zero);
         }
@@ -943,4 +945,41 @@ pub(crate) fn build(
             .filter(|_| angular_reached),
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+
+    #[test]
+    fn filtered_orientations_exhaust_the_operation_allowance() {
+        let points = [(0, 0), (2, 0), (0, 2)]
+            .into_iter()
+            .enumerate()
+            .map(|(index, (x, y))| {
+                (
+                    index,
+                    Point {
+                        position: Position::Exact([x.into(), y.into(), Real::zero()]),
+                        axes: [0, 1],
+                        bounds: [[x as f64; 2], [y as f64; 2]],
+                    },
+                )
+            })
+            .collect();
+        let mut dec = Decider::default();
+        let mut polygon = Polygon {
+            points,
+            dec: &mut dec,
+        };
+        let (result, work) = with_operation_budget(2, || {
+            assert_eq!(polygon.turn(0, 1, 2).unwrap(), Sign::Positive);
+            assert_eq!(polygon.turn(0, 2, 1).unwrap(), Sign::Negative);
+            polygon.turn(1, 2, 0)
+        });
+        assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+        assert_eq!(work.used, 2);
+        assert!(work.exhausted);
+    }
 }

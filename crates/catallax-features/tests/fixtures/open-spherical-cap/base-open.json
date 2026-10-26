@@ -1,0 +1,22 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Planar opening below a spherical cap",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "6",
+      "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}
+    },
+    {
+      "id": "limit",
+      "op": "sphere",
+      "radius": "5",
+      "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}
+    },
+    {"id": "clipped", "op": "boolean", "kind": "intersect", "target": "stock", "tool": "limit"},
+    {"id": "result", "op": "shell", "body": "clipped", "open": [{"face": {"step": "stock", "role": "start"}}], "thickness": "1/2"}
+  ],
+  "result": "result"
+}

@@ -81,13 +81,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             options.chord_tolerance = catallax_numbers::Rational::from_f64_exact(diagonal * 1e-5)
                 .ok_or("non-finite drawing diagonal")?;
         }
+        // The unproved preview is timed on its own and excluded from the
+        // certified wait, which keeps its historical definition.
+        let preview_start = Instant::now();
+        let preview = catallax_app::preview_body(&built, &Default::default(), &mut dec)?;
+        let preview_ms = preview_start.elapsed().as_secs_f64() * 1000.0;
         let mesh_start = Instant::now();
         let mesh = mesh_body(&built.model, built.result, &options, &mut dec)?;
         let display_ms = mesh_start.elapsed().as_secs_f64() * 1000.0;
-        let requested_wait_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let requested_wait_ms = start.elapsed().as_secs_f64() * 1000.0 - preview_ms;
         rows.push(serde_json::json!({
             "iteration": iteration, "build_ms": build_ms, "display_ms": display_ms,
             "requested_wait_ms": requested_wait_ms,
+            "preview_ms": preview_ms, "preview_wait_ms": build_ms + preview_ms,
+            "preview_state": "unproved", "preview_target_ms": 1000,
+            "preview_triangles": preview.mesh.triangles.len(),
             "vertices": mesh.value.positions.len(), "triangles": mesh.value.triangles.len(),
             "chord_tolerance_mm": options.chord_tolerance.to_string(),
             "angular_deviation_radians": options.angular_deviation.as_ref().map(ToString::to_string),

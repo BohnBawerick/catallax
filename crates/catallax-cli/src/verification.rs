@@ -14,11 +14,11 @@ pub const DEFAULT_WORK: u64 = 100_000_000;
 pub struct Request {
     /// Must be `catallax-request/1`.
     pub format: String,
-    /// `question`, `recipe`, `field`, `compare`, or `name-edit`.
+    /// `question`, `recipe`, `field`, `print`, `iges`, `compare`, or `name-edit`.
     pub source: String,
     /// Original question or recipe object.
     pub problem: Value,
-    /// Owned directory for this request's manifest and STEP artifacts.
+    /// Owned directory for this request's manifest and exchange artifacts.
     pub out: PathBuf,
     /// Complete-operation work allowance, independent of machine speed.
     #[serde(default = "default_work")]
@@ -68,6 +68,16 @@ fn refused(code: &str, detail: impl ToString) -> Value {
 }
 
 fn request_refused(request: &Request, code: &str, detail: impl ToString) -> Value {
+    if request.source == "print"
+        || (request.source == "field" && request.problem["format"] == "catallax-print/1")
+    {
+        return crate::printing::request_refused(
+            &request.problem,
+            request.source == "field",
+            code,
+            detail,
+        );
+    }
     if request.format == "catallax-request/1"
         && request.source == "recipe"
         && crate::certified_recipe::is_problem(&request.problem)
@@ -113,6 +123,7 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
     };
     if work.exhausted && manifest["status"] != "internal-error" {
         let display_diagnostics = manifest.get("display_diagnostics").cloned();
+        let printing = manifest.get("printing").cloned();
         manifest = request_refused(
             request,
             "numbers.operation-budget",
@@ -120,6 +131,19 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
         );
         if let Some(diagnostics) = display_diagnostics {
             manifest["display_diagnostics"] = diagnostics;
+        }
+        if let Some(mut printing) = printing {
+            printing["file"] = Value::Null;
+            printing["watertight"] = Value::Null;
+            printing["deviation_bound_mm"] = Value::Null;
+            printing["completeness"] = json!("unproven");
+            printing["topology"] = json!("unproven");
+            printing["orientation"] = json!("unproven");
+            printing
+                .as_object_mut()
+                .expect("print settings")
+                .remove("sha256");
+            manifest["printing"] = printing;
         }
     }
     if manifest["status"] != "answered" {
@@ -187,10 +211,11 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         return Ok(value);
     }
     match request.source.as_str() {
-        "print" => crate::printing::evaluate(&request.problem, &request.out),
+        "print" => crate::printing::evaluate(&request.problem, &request.out, false),
         "field" if request.problem["format"] == "catallax-print/1" => {
-            crate::printing::evaluate(&request.problem, &request.out)
+            crate::printing::evaluate(&request.problem, &request.out, true)
         }
+        "iges" => crate::iges::evaluate(&request.problem, &request.out),
         "name-edit" => {
             let report = crate::name_checks::check(&request.problem);
             Ok(json!({"format":"catallax-manifest/3",
@@ -418,7 +443,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         _ => {
             let mut value = refused(
                 "cli.invalid-source",
-                "use question, recipe, field, compare, or name-edit",
+                "use question, recipe, field, print, iges, compare, or name-edit",
             );
             value["status"] = json!("invalid-question");
             Ok(value)

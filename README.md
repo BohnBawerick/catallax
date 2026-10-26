@@ -208,6 +208,20 @@ display unless the caller already owns an operation budget. Default exhaustion
 returns `application.work-limit` without a body. An explicit caller allowance is
 never reset or enlarged by a nested build. This work limit is separate from the
 display sample/vertex limits and from all geometric tolerances.
+Planar orientation predicates charge this allowance even when interval filtering
+settles their signs without exact arithmetic. Bridge and ear searches therefore
+cannot bypass cancellation or the work limit through their filtered fast path.
+
+`catallax_app::lifecycle::Controller` delivers an opt-in revision-bound unproved
+preview before certified meshing. The caller chooses the preview/proof split of
+one allowance, then schedules the returned single-use proof job. Confirmation
+provides the retained exact body and a certified replacement display; failure
+keeps its typed refusal with the edit. New edits invalidate old completions,
+and saved selection names resolve only against the same revision's confirmed
+result. Both caps are reserved up front from the caller, never duplicated by
+deferral. Actual phase work is reported separately from reservations. See the
+[lifecycle interface contract](docs/interface-changes/2026-10-26-application-preview-lifecycle.md)
+for scheduling, budget accounting and development timing.
 
 
 ## Where to start

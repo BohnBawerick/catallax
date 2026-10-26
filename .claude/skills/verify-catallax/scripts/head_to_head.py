@@ -323,6 +323,17 @@ def summarize(report):
                     row['phase_refusals'][phase] = [
                         {key: p.get(key) for key in ('status', 'refusal_ms', 'refusal_upper_bound_ms')}
                         for p in phases if p.get('refusal_ms') is not None or p.get('refusal_upper_bound_ms') is not None]
+                # The unproved preview wait is reported apart from proof phases; a
+                # refused or missing preview or build yields no wait, never a pass.
+                previews = []
+                for variant in variants:
+                    build, preview = variant.get('build', {}), variant.get('preview', {})
+                    ready = all(p.get('status') == 'answered' and p.get('wall_ms') is not None for p in (build, preview))
+                    previews.append(build['wall_ms'] + preview['wall_ms'] if ready else None)
+                row['preview_budget_ms'] = 1000
+                row['preview_wait_median_ms'] = statistics.median(previews) if previews and all(v is not None for v in previews) else None
+                row['preview_budget_passes'] = sum(v is not None and v <= 1000 for v in previews)
+                row['preview_measured'] = sum(v is not None for v in previews)
                 waits = []
                 queries = []
                 for variant in variants:
@@ -334,6 +345,16 @@ def summarize(report):
                 row['build_and_display_median_ms'] = statistics.median(waits) if waits and all(v is not None for v in waits) else None
                 row['build_and_display_budget_passes'] = sum(v is not None and v <= 1000 for v in waits)
                 row['with_requested_measurement_median_ms'] = statistics.median(queries) if queries and all(v is not None for v in queries) else None
+                # Background proof completion: certified display, measurement and STEP all answered.
+                proofs = []
+                for variant in variants:
+                    phases = [variant.get(k, {}) for k in ('build', 'display', 'measurement', 'step')]
+                    done = all(p.get('status') == 'answered' and p.get('wall_ms') is not None for p in phases)
+                    proofs.append(sum(p['wall_ms'] for p in phases) if done else None)
+                row['proof_budget_ms'] = 2000
+                row['proof_wait_median_ms'] = statistics.median(proofs) if proofs and all(v is not None for v in proofs) else None
+                row['proof_budget_passes'] = sum(v is not None and v <= 2000 for v in proofs)
+                row['built_after_proof'] = bool(proofs) and all(v is not None and v <= 2000 for v in proofs)
                 row['work'] = [v.get('build', {}).get('work') for v in variants]
                 row['operations_rebuilt'] = [v.get('build', {}).get('operations_rebuilt') for v in variants]
                 row['refusal_ms'] = [v.get('build', {}).get('refusal_ms') for v in variants]

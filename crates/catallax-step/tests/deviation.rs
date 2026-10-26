@@ -229,3 +229,29 @@ fn torus_seam_period_rounding_contributes_to_the_distance_bound() {
         }
     }
 }
+
+#[test]
+fn cylindrical_seam_period_rounding_contributes_to_the_distance_bound() {
+    let mut model = Model::new();
+    let body = cylinder(&mut model, n(1), n(2), &Pose::identity()).unwrap();
+    let pi = Ball::pi(256);
+    let lo = pi.lo().mul_pow2(1);
+    let hi = pi.hi().mul_pow2(1);
+    for digits in [1, 5, 17] {
+        let (_, answer, step) = export(&model, &[body], &options(digits));
+        for id in step.ids("SEAM_CURVE") {
+            for pcurve in list(&step.e(id, "SEAM_CURVE").args[2]) {
+                let pcurve = step.e(reference(pcurve), "PCURVE");
+                let representation =
+                    step.e(reference(&pcurve.args[2]), "DEFINITIONAL_REPRESENTATION");
+                let line = step.e(reference(list(&representation.args[1])[0]), "LINE");
+                let point = step.e(reference(&line.args[1]), "CARTESIAN_POINT");
+                let written = number(list(&point.args[1])[0]);
+                if written != n(0) {
+                    let angular_error = (&written - &lo).abs().max((&written - &hi).abs());
+                    assert!(answer.value.max_deviation >= angular_error);
+                }
+            }
+        }
+    }
+}

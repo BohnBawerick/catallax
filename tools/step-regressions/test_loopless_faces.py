@@ -15,7 +15,7 @@ from OCP.GProp import GProp_GProps
 from OCP.IFSelect import IFSelect_RetDone
 from OCP.Interface import Interface_Static
 from OCP.STEPControl import STEPControl_Reader
-from OCP.StepShape import StepShape_ManifoldSolidBrep
+from OCP.StepShape import StepShape_BrepWithVoids, StepShape_ManifoldSolidBrep
 from OCP.StepToTopoDS import StepToTopoDS_Builder
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_SOLID, TopAbs_VERTEX
 from OCP.TopExp import TopExp_Explorer
@@ -61,7 +61,12 @@ def raw_solid(path):
         builder = StepToTopoDS_Builder()
         builder.SetPrecision(1e-7)
         builder.SetMaxTol(1e-7)
-        builder.Init(solids[0], process)
+        if isinstance(solids[0], StepShape_BrepWithVoids):
+            # Positional dispatch selects the base-solid overload and drops
+            # void shells. The keyword selects the raw void-aware translator.
+            builder.Init(theBRepWithVoids=solids[0], theTP=process)
+        else:
+            builder.Init(solids[0], process)
         if not builder.IsDone():
             raise AssertionError(f'cannot translate {path}')
         return builder.Value()

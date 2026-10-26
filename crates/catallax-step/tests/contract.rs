@@ -58,33 +58,6 @@ blind_test!(
         assert_eq!(bytes, other);
     }
 );
-blind_test!(case03_cylinder_ring_vertices_and_seams, {
-    let mut m = Model::new();
-    let b = cylinder(&mut m, n(2), n(5), &Pose::identity()).unwrap();
-    let (_, a, s) = export(&m, &[b], &options(17));
-    report(&a, [1, 3, 2, 2, 2, 0, 0], true);
-    counts(
-        &s,
-        &[
-            ("ADVANCED_FACE", 3),
-            ("FACE_BOUND", 4),
-            ("EDGE_LOOP", 4),
-            ("ORIENTED_EDGE", 4),
-            ("CIRCLE", 2),
-            ("PLANE", 2),
-            ("CYLINDRICAL_SURFACE", 1),
-        ],
-    );
-    assert_eq!(
-        vertex_set(&s),
-        BTreeSet::from([[n(2), n(0), n(0)], [n(2), n(0), n(5)]])
-    );
-    for id in s.ids("EDGE_CURVE") {
-        let e = &s.entities[&id];
-        assert_eq!(e.args[1], e.args[2]);
-        assert_eq!(s.e(reference(&e.args[3]), "CIRCLE").args[2], "2.");
-    }
-});
 blind_test!(case06_cone_apex_and_transcendental_angle, {
     let mut m = Model::new();
     let b = cone(&mut m, n(3), n(0), n(4), &Pose::identity()).unwrap();

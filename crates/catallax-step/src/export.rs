@@ -27,6 +27,7 @@ struct Edge {
 struct Topology {
     vertices: BTreeMap<VertexId, Rc<Vertex>>,
     edges: BTreeMap<EdgeId, Rc<Edge>>,
+    ring_vertices: BTreeMap<EdgeId, Rc<Vertex>>,
 }
 
 struct Curve {
@@ -62,6 +63,8 @@ pub(crate) struct Exporter<'a> {
     report: StepReport,
     face_errors: BTreeMap<FaceId, Rational>,
     edge_errors: BTreeMap<EdgeId, Rational>,
+    bands: crate::band::Plan,
+    band_period: Option<Rc<Number>>,
 }
 
 impl<'a> Exporter<'a> {
@@ -76,6 +79,8 @@ impl<'a> Exporter<'a> {
             report: StepReport::default(),
             face_errors: BTreeMap::new(),
             edge_errors: BTreeMap::new(),
+            bands: crate::band::Plan::default(),
+            band_period: None,
         }
     }
 
@@ -198,7 +203,11 @@ impl<'a> Exporter<'a> {
         if let Some(curve) = self.curves.get(&id) {
             return Ok(curve.clone());
         }
-        let form = curve_form(self.model.geom(), id, self.dec)?;
+        let form = if let Some(form) = self.bands.curves.get(&id) {
+            form.clone()
+        } else {
+            curve_form(self.model.geom(), id, self.dec)?
+        };
         let curve = self.curve_geometry(&form)?.map(Rc::new);
         self.curves.insert(id, curve.clone());
         Ok(curve)
@@ -390,17 +399,24 @@ impl<'a> Exporter<'a> {
                 {
                     return Err(unsupported());
                 }
-                let origin = self
-                    .model
-                    .geom()
-                    .curve(source.curve)
-                    .parameter_origin(self.model.geom());
+                let origin = self.bands.rings.get(&id).map_or_else(
+                    || {
+                        self.model
+                            .geom()
+                            .curve(source.curve)
+                            .parameter_origin(self.model.geom())
+                    },
+                    |ring| ring.origin.clone(),
+                );
                 let v = self.added_vertex(&origin)?;
+                if self.bands.rings.contains_key(&id) {
+                    topology.ring_vertices.insert(id, v.clone());
+                }
                 (v.clone(), v)
             }
             _ => panic!("edge has only one endpoint"),
         };
-        let (curve, bounds, same) = if let Some(curve) = self.analytic_curve(source.curve)? {
+        let (curve, bounds, same, error) = if let Some(curve) = self.analytic_curve(source.curve)? {
             let bounds = curve
                 .bounds
                 .clone()
@@ -413,8 +429,12 @@ impl<'a> Exporter<'a> {
             } else {
                 arc_error(&curve, &start, &end)
             };
-            self.deviation(error + self.edge_errors.get(&id).cloned().unwrap_or_default());
-            (curve.id, bounds, source.sense == Sense::Same)
+            (
+                curve.id,
+                bounds,
+                source.sense == Sense::Same,
+                error + self.edge_errors.get(&id).cloned().unwrap_or_default(),
+            )
         } else {
             let from = source.start.map(|v| self.model.vertex(v).point);
             let to = source.end.map(|v| self.model.vertex(v).point);
@@ -434,7 +454,6 @@ impl<'a> Exporter<'a> {
                 self.options,
                 self.dec,
             )?;
-            self.deviation(fit.error);
             let points = fit
                 .points
                 .iter()
@@ -467,7 +486,13 @@ impl<'a> Exporter<'a> {
                 ],
             );
             self.report.approximated_curves += 1;
-            (curve, fit.bounds, true)
+            (curve, fit.bounds, true, fit.error)
+        };
+        let curve = if let Some(ring) = self.bands.rings.get(&id).cloned() {
+            self.ring_curve(curve, &bounds, &ring, error)?
+        } else {
+            self.deviation(error);
+            curve
         };
         let edge = Rc::new(Edge {
             id: self.edge_entity(start.id, end.id, curve, same),
@@ -482,6 +507,178 @@ impl<'a> Exporter<'a> {
             "ORIENTED_EDGE",
             vec![text("''"), text("*"), text("*"), edge.into(), boolean(same)],
         )
+    }
+
+    fn pcurve_line(
+        &mut self,
+        surface: Id,
+        context: Id,
+        origin: [&str; 2],
+        direction: &'static str,
+    ) -> Id {
+        let point = self.graph.add(
+            "CARTESIAN_POINT",
+            vec![text("''"), text(format!("({},{})", origin[0], origin[1]))],
+        );
+        let direction = self
+            .graph
+            .add("DIRECTION", vec![text("''"), text(direction)]);
+        let vector = self
+            .graph
+            .add("VECTOR", vec![text("''"), direction.into(), text("1.")]);
+        let line = self
+            .graph
+            .add("LINE", vec![text("''"), point.into(), vector.into()]);
+        let representation = self.graph.add(
+            "DEFINITIONAL_REPRESENTATION",
+            vec![text("''"), refs([line]), context.into()],
+        );
+        self.graph.add(
+            "PCURVE",
+            vec![text("''"), surface.into(), representation.into()],
+        )
+    }
+
+    fn parameter_context(&mut self) -> Id {
+        self.graph.add(
+            "GEOMETRIC_REPRESENTATION_CONTEXT",
+            vec![text("''"), text("''"), text("2")],
+        )
+    }
+
+    fn surface_error(&self, id: SurfaceId, bounds: &Bounds) -> Rational {
+        let surface = &self.surfaces[&id];
+        let extent = (0..3).fold(Rational::zero(), |sum, i| {
+            sum + (&bounds[i][0] - &surface.origin[i][1])
+                .abs()
+                .max((&bounds[i][1] - &surface.origin[i][0]).abs())
+        });
+        &surface.base_error + &(&surface.extent_error * &extent)
+    }
+
+    fn band_period(&mut self) -> Result<Rc<Number>, Refusal> {
+        if let Some(period) = &self.band_period {
+            return Ok(period.clone());
+        }
+        let precision = number::work_precision(
+            self.dec.policy(),
+            self.digits().saturating_mul(4).saturating_add(32),
+            2,
+        )
+        .ok_or_else(|| number::budget("no work available for the band's period"))?;
+        let pi = catallax_numbers::Ball::pi_checked(precision, self.dec)?;
+        let period = Rc::new(number::certified(
+            number::rounded(&pi.lo().mul_pow2(1), &pi.hi().mul_pow2(1), self.digits()),
+            self.digits(),
+        )?);
+        self.band_period = Some(period.clone());
+        Ok(period)
+    }
+
+    fn ring_curve(
+        &mut self,
+        curve: Id,
+        bounds: &Bounds,
+        ring: &crate::band::Ring,
+        error: Rational,
+    ) -> Result<Id, Refusal> {
+        let context = self.parameter_context();
+        let period = self.band_period()?;
+        let mut pcurves = Vec::with_capacity(ring.associations.len());
+        for association in &ring.associations {
+            self.surface(association.surface)?;
+            let v = number::real(&association.v, self.digits(), self.dec)?;
+            let surface = self.surfaces[&association.surface].id;
+            pcurves.push(self.pcurve_line(
+                surface,
+                context,
+                [
+                    if association.increasing {
+                        "0."
+                    } else {
+                        &period.text
+                    },
+                    &v.text,
+                ],
+                if association.increasing {
+                    "(1.,0.)"
+                } else {
+                    "(-1.,0.)"
+                },
+            ));
+            let axial_error = &v.error * &number::upper(&association.v_scale, self.dec)?;
+            let angular_error = if association.increasing {
+                Rational::zero()
+            } else {
+                &period.error * &number::upper(&ring.radius, self.dec)?
+            };
+            self.deviation(
+                &error
+                    + &(&axial_error
+                        + &angular_error
+                        + self.surface_error(association.surface, bounds)),
+            );
+        }
+        Ok(self.graph.add(
+            "SURFACE_CURVE",
+            vec![text("''"), curve.into(), refs(pcurves), text(".CURVE_3D.")],
+        ))
+    }
+
+    fn band_loop(
+        &mut self,
+        band: &crate::band::Band,
+        topology: &mut Topology,
+    ) -> Result<(Id, Bounds), Refusal> {
+        let low = self.edge(band.edges[0], topology)?;
+        let high = self.edge(band.edges[1], topology)?;
+        let mut bounds = Some(low.bounds.clone());
+        include_bounds(&mut bounds, &high.bounds);
+        let bounds = bounds.unwrap();
+        let a = topology.ring_vertices[&band.edges[0]].clone();
+        let b = topology.ring_vertices[&band.edges[1]].clone();
+        let origin = &self.bands.rings[&band.edges[0]].origin;
+        let form = CurveForm::Line {
+            origin: origin.clone(),
+            dir: band.seam_direction.clone(),
+        };
+        let curve = self.curve_geometry(&form)?.unwrap();
+        let period = self.band_period()?;
+        let v = number::real(&band.low_v, self.digits(), self.dec)?;
+        self.surface(band.surface)?;
+        let surface = self.surfaces[&band.surface].id;
+        let context = self.parameter_context();
+        let pcurves = [&period.text[..], "0."]
+            .map(|u| self.pcurve_line(surface, context, [u, &v.text], "(0.,1.)"));
+        let seam_curve = self.graph.add(
+            "SEAM_CURVE",
+            vec![
+                text("''"),
+                curve.id.into(),
+                refs(pcurves),
+                text(".CURVE_3D."),
+            ],
+        );
+        let seam = self.edge_entity(a.id, b.id, seam_curve, true);
+        self.report.added_edges += 1;
+        let origin = curve.line_origin.as_ref().unwrap();
+        let extent = a.point.extent(origin).max(b.point.extent(origin));
+        let line_error = (&curve.error + &(&extent * &curve.aspect)) * Rational::from_i64(2)
+            + a.point.error().max(b.point.error());
+        let parameter_error = &number::upper(&band.radius_bound, self.dec)? * &period.error
+            + &v.error * &number::upper(&band.v_scale, self.dec)?;
+        self.deviation(line_error + parameter_error + self.surface_error(band.surface, &bounds));
+        let uses = [
+            (high.id, !band.forward[1]),
+            (seam, false),
+            (low.id, band.forward[0]),
+            (seam, true),
+        ];
+        let uses = uses.map(|(edge, same)| self.oriented(edge, same));
+        Ok((
+            self.graph.add("EDGE_LOOP", vec![text("''"), refs(uses)]),
+            bounds,
+        ))
     }
 
     fn added_seam(
@@ -678,7 +875,11 @@ impl<'a> Exporter<'a> {
             ),
             _ => return Err(unsupported()),
         };
-        let placement = self.placement(origin, axis, reference)?;
+        let placement = if let Some(reference) = self.bands.references.get(&id).cloned() {
+            self.placement(origin, axis, &reference)?
+        } else {
+            self.placement(origin, axis, reference)?
+        };
         let mut base_error = placement.origin.error();
         let mut extent_error = placement.error.clone();
         let mut fields = vec![text("''"), placement.id.into()];
@@ -746,30 +947,45 @@ impl<'a> Exporter<'a> {
         let face = self.model.face(id).clone();
         let mut bounds = Vec::new();
         let mut boundary_extent: Option<Bounds> = None;
-        for loop_id in &face.loops {
-            let loop_entity = match self.model.loop_(*loop_id).clone() {
-                Loop::Vertex(v) => {
-                    let vertex = self.vertex(v, topology)?;
-                    include_bounds(&mut boundary_extent, &point_bounds(&vertex.point));
-                    self.graph
-                        .add("VERTEX_LOOP", vec![text("''"), vertex.id.into()])
-                }
-                Loop::Coedges(coedges) => {
-                    let mut oriented = Vec::new();
-                    for coedge in coedges {
-                        let coedge = self.model.coedge(coedge);
-                        let edge = self.edge(coedge.edge, topology)?;
-                        include_bounds(&mut boundary_extent, &edge.bounds);
-                        oriented.push(self.oriented(edge.id, coedge.sense == Sense::Same));
-                    }
-                    self.graph
-                        .add("EDGE_LOOP", vec![text("''"), refs(oriented)])
-                }
-            };
+        if let Some(band) = self.bands.faces.get(&id).cloned() {
+            let (loop_entity, extent) = self.band_loop(&band, topology)?;
+            boundary_extent = Some(extent);
             bounds.push(self.graph.add(
                 "FACE_BOUND",
-                vec![text("''"), loop_entity.into(), boolean(!reverse)],
+                // Keep the chart walk CCW and reverse the bound together with
+                // the face, as the native writer does for cylindrical holes.
+                vec![
+                    text("''"),
+                    loop_entity.into(),
+                    boolean((face.sense == Sense::Same) != reverse),
+                ],
             ));
+        } else {
+            for loop_id in &face.loops {
+                let loop_entity = match self.model.loop_(*loop_id).clone() {
+                    Loop::Vertex(v) => {
+                        let vertex = self.vertex(v, topology)?;
+                        include_bounds(&mut boundary_extent, &point_bounds(&vertex.point));
+                        self.graph
+                            .add("VERTEX_LOOP", vec![text("''"), vertex.id.into()])
+                    }
+                    Loop::Coedges(coedges) => {
+                        let mut oriented = Vec::new();
+                        for coedge in coedges {
+                            let coedge = self.model.coedge(coedge);
+                            let edge = self.edge(coedge.edge, topology)?;
+                            include_bounds(&mut boundary_extent, &edge.bounds);
+                            oriented.push(self.oriented(edge.id, coedge.sense == Sense::Same));
+                        }
+                        self.graph
+                            .add("EDGE_LOOP", vec![text("''"), refs(oriented)])
+                    }
+                };
+                bounds.push(self.graph.add(
+                    "FACE_BOUND",
+                    vec![text("''"), loop_entity.into(), boolean(!reverse)],
+                ));
+            }
         }
         if face.loops.is_empty() {
             let loop_entity = self.loopless(face.surface)?;
@@ -836,6 +1052,11 @@ impl<'a> Exporter<'a> {
         bodies: &[BodyId],
         envelope: Option<BodyId>,
     ) -> Answered<(String, StepReport)> {
+        self.bands = crate::band::Plan::prepare(
+            self.model,
+            bodies.iter().copied().chain(envelope),
+            self.dec,
+        )?;
         let mut solids = Vec::new();
         for id in bodies {
             let body = self.model.body(*id);

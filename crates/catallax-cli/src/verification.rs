@@ -14,11 +14,11 @@ pub const DEFAULT_WORK: u64 = 100_000_000;
 pub struct Request {
     /// Must be `catallax-request/1`.
     pub format: String,
-    /// `question`, `recipe`, `field`, `compare`, or `name-edit`.
+    /// `question`, `recipe`, `field`, `print`, `iges`, `compare`, or `name-edit`.
     pub source: String,
     /// Original question or recipe object.
     pub problem: Value,
-    /// Owned directory for this request's manifest and STEP artifacts.
+    /// Owned directory for this request's manifest and exchange artifacts.
     pub out: PathBuf,
     /// Complete-operation work allowance, independent of machine speed.
     #[serde(default = "default_work")]
@@ -191,6 +191,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         "field" if request.problem["format"] == "catallax-print/1" => {
             crate::printing::evaluate(&request.problem, &request.out)
         }
+        "iges" => crate::iges::evaluate(&request.problem, &request.out),
         "name-edit" => {
             let report = crate::name_checks::check(&request.problem);
             Ok(json!({"format":"catallax-manifest/3",
@@ -418,7 +419,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         _ => {
             let mut value = refused(
                 "cli.invalid-source",
-                "use question, recipe, field, compare, or name-edit",
+                "use question, recipe, field, print, iges, compare, or name-edit",
             );
             value["status"] = json!("invalid-question");
             Ok(value)

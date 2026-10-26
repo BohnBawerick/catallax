@@ -6,6 +6,7 @@
 
 mod certified_recipe;
 mod face_checks;
+mod iges;
 mod manifest;
 mod name_checks;
 mod printing;
@@ -114,6 +115,7 @@ pub fn prepare_output(out_dir: &Path) -> io::Result<()> {
     fs::create_dir_all(out_dir)?;
     for name in [
         "answer.step",
+        "answer.igs",
         "display.obj",
         "print.stl",
         "step-regularizations.json",

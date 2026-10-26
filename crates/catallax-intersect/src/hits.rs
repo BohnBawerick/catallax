@@ -11,8 +11,8 @@ use catallax_numbers::{
     Rational, Real, RealPoly, Refusal, Sign,
 };
 use catallax_shapes::{
-    Circle, Curve, CurveId, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3, PointDef,
-    Position, Surface, SurfaceId,
+    Circle, Curve, CurveId, Cylinder, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3,
+    PointDef, Position, Surface, SurfaceId, Vector3,
 };
 use std::sync::Arc;
 
@@ -484,6 +484,47 @@ fn algebraic_line(
     Ok(Solutions::Points(points))
 }
 
+fn cylinder_excludes_plane(
+    cylinder: &Cylinder,
+    origin: &Point3,
+    normal: &Vector3,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    if !normal
+        .dot(&cylinder.axis)
+        .rational_ref()
+        .is_some_and(Rational::is_zero)
+    {
+        return Ok(false);
+    }
+    let height = cylinder.origin.minus(origin).dot(normal);
+    let separation = &height.square() - &(&cylinder.radius_sq * &normal.norm_squared());
+    Ok(sign(&separation, dec)? == Sign::Positive)
+}
+
+fn branch_plane_disjoint(
+    geom: &GeomStore,
+    curve: CurveId,
+    surface: SurfaceId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let (Curve::Intersection(branch), Surface::Plane(plane)) =
+        (geom.curve(curve), geom.surface(surface))
+    else {
+        return Ok(false);
+    };
+    // The entire carrier lies on each support. This excludes no point at
+    // tangency and asserts nothing about trim membership or orientation.
+    for support in &branch.surfaces {
+        if let Surface::Cylinder(cylinder) = geom.surface(*support)
+            && cylinder_excludes_plane(cylinder, &plane.origin, &plane.normal, dec)?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn circular_cylinder(
     form: &CurveForm,
     surface: &Surface,
@@ -501,14 +542,17 @@ fn circular_cylinder(
     else {
         return Ok(None);
     };
-    // This section is a circle only when its plane is perpendicular to the
-    // cylinder axis. Other orientations retain the general intersection solver.
+    // Parallel normals use the circular section below. A circle plane parallel
+    // to the cylinder axis can first be excluded by its distance from that axis.
     if !normal
         .cross(&cylinder.axis)
         .norm_squared()
         .rational_ref()
         .is_some_and(Rational::is_zero)
     {
+        if cylinder_excludes_plane(cylinder, center, normal, dec)? {
+            return Ok(Some(Solutions::Points(Vec::new())));
+        }
         return Ok(None);
     }
     let offset = cylinder.origin.minus(center);
@@ -550,6 +594,9 @@ pub(super) fn intersect(
         return Ok(Answer::exact(CurveSurface::Contained));
     }
     let form = query::form(geom, c, dec)?;
+    if matches!(form, CurveForm::Branch) && branch_plane_disjoint(geom, c, s, dec)? {
+        return Ok(Answer::exact(CurveSurface::Disjoint));
+    }
     if let Some(answer) = circular_section(geom, c, s, &form, dec)? {
         return Ok(Answer::exact(answer));
     }

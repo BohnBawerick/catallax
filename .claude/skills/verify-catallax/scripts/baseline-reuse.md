@@ -14,6 +14,10 @@ Candidate 1/2/4 always executes fresh with no cache or resume, even when both
 executables have identical bytes. Reused qualifications cannot seed another
 archive. Already running commands are unaffected.
 
+Qualification requires a nonempty interpreted corpus, including when a trusted
+adapter is selected. An empty adapter result is rejected before any output
+directory, worker job or archive is created; selecting reuse cannot bypass this.
+
 `--fresh-audit` forces six. A missing archive, unknown build provenance,
 changed complete key, missing evidence or failed integrity check also selects
 six. An **intact** archive that fails current semantic validation stops before
@@ -93,6 +97,21 @@ are parsed exactly; interval strings are never shortened. Only established
 time/build exclusions apply to geometric manifests. Same-build checks also
 compare complete work and non-time logs. Current comparisons are recomputed
 for both historical triplets; no stored `equal` verdict is authoritative.
+
+Every `catallax-operation-log/1` entry must retain all protocol fields, including
+nullable fields and observed `wall_ms`. Answered/refused entries require the
+complete unsigned decision-counter record; interrupted entries require null
+decisions. Refused entries require code/detail; answered/interrupted entries
+require null refusal. Marks retain their typed complete schema and exact bound.
+Successful `face_measure` local certificates must match the manifest's complete
+face record and exact interval; other operations have null local tolerances.
+Failed whole requests may retain null face certificates. These explicit nullable
+forms preserve the current schema; omitted fields in older layouts are never
+silently upgraded. Additive fields remain present in equality checks.
+
+The existing face-check schema records internal B-rep display measurements
+without an OBJ file. That specific request format is kept distinct from field
+and print display records, which explicitly declare a delivered `display.obj`.
 
 The gate deliberately requires strict manifest and artifact preservation
 between builds. It cannot automatically approve a refusal becoming an answer,

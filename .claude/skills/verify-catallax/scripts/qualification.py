@@ -5,6 +5,7 @@ An archive is an integrity-checked evidence directory, not a trusted verdict.
 """
 import argparse
 from decimal import Decimal
+from fractions import Fraction
 import json
 import os
 from pathlib import Path
@@ -89,8 +90,10 @@ def build_identity(path, binary, driver):
 
 
 def effective_inputs(args, driver):
-    return [dict(item, max_work=item.get('max_work', args.max_work))
-            for item in driver.load(args.inputs, args.source, args.adapter)]
+    items = [dict(item, max_work=item.get('max_work', args.max_work))
+             for item in driver.load(args.inputs, args.source, args.adapter)]
+    require(bool(items), 'qualification requires at least one request')
+    return items
 
 
 def reuse_key(args, driver):
@@ -148,10 +151,92 @@ def exact_manifest(manifest, driver):
     return driver.comparable(manifest)
 
 
+OPERATION_FIELDS = {'sequence', 'kernel', 'id', 'operation', 'status', 'decisions',
+                    'work', 'marks', 'local_tolerances', 'refusal', 'wall_ms'}
+DECISION_FIELDS = {'total', 'filter', 'refined', 'exact', 'coincident_exact',
+                   'coincident_separation', 'coincident_fact', 'not_exact',
+                   'refused', 'max_bits_high_water'}
+
+
+def unsigned(value):
+    return type(value) is int and 0 <= value <= 2**64 - 1
+
+
+def bound(value):
+    require(isinstance(value, str), 'bound must retain its exact string')
+    try:
+        parsed = Fraction(value)
+    except (ValueError, ZeroDivisionError) as error:
+        raise EvidenceError('invalid exact bound') from error
+    require(parsed >= 0, 'negative bound')
+    return parsed
+
+
+def audit_marks(marks):
+    require(isinstance(marks, list), 'operation marks')
+    for mark in marks:
+        require(isinstance(mark, dict) and {'code', 'kind', 'bound', 'step', 'detail'} <= set(mark), 'incomplete mark')
+        require(isinstance(mark['code'], str) and bool(mark['code']) and
+                mark['kind'] in ('distance', 'angle', 'value') and
+                (mark['step'] is None or isinstance(mark['step'], str)) and
+                isinstance(mark['detail'], str), 'mark fields')
+        bound(mark['bound'])
+
+
+def audit_operation(operation, sequence, used, measurement=None, final_status='answered'):
+    # catallax-operation-log/1 as published by verification.rs. Null fields
+    # are required too. Older incomplete layouts are not silently upgraded.
+    require(isinstance(operation, dict) and OPERATION_FIELDS <= set(operation), 'incomplete operation entry')
+    require(type(operation['sequence']) is int and operation['sequence'] == sequence and
+            operation['kernel'] in ('brep', 'field') and isinstance(operation['id'], str) and
+            isinstance(operation['operation'], str) and bool(operation['operation']) and
+            operation['status'] in ('answered', 'refused', 'interrupted'), 'operation identity/status')
+    elapsed = operation['wall_ms']
+    require(type(elapsed) in (int, float, Decimal) and Decimal(str(elapsed)).is_finite() and elapsed >= 0, 'operation wall time')
+    counted = operation['work']
+    require(isinstance(counted, dict) and {'before', 'after', 'used'} <= set(counted) and
+            all(unsigned(counted[k]) for k in ('before', 'after', 'used')) and
+            counted['before'] <= counted['after'] <= used and
+            counted['used'] == counted['after'] - counted['before'], 'operation work accounting')
+    decisions, refusal = operation['decisions'], operation['refusal']
+    if operation['status'] == 'interrupted':
+        require(decisions is None and refusal is None, 'interrupted operation fields')
+    else:
+        require(isinstance(decisions, dict) and DECISION_FIELDS <= set(decisions) and
+                all(unsigned(decisions[k]) for k in DECISION_FIELDS), 'operation decision counters')
+        if operation['status'] == 'refused':
+            require(isinstance(refusal, dict) and {'code', 'detail'} <= set(refusal) and
+                    isinstance(refusal['code'], str) and bool(refusal['code']) and
+                    isinstance(refusal['detail'], str), 'operation refusal fields')
+        else:
+            require(refusal is None, 'answered operation refusal')
+    audit_marks(operation['marks'])
+    local = operation['local_tolerances']
+    if operation['operation'] != 'face_measure':
+        require(local is None, 'local tolerances on an unrelated operation')
+        return
+    require(local == ([measurement] if measurement is not None else None), 'local certificate/manifest disagreement')
+    if final_status == 'answered' and operation['status'] == 'answered':
+        require(measurement is not None, 'missing successful face certificate')
+    if measurement is not None:
+        required = {'face', 'origins', 'kind', 'deviation_mm', 'local_tolerance_mm',
+                    'converged', 'coverage', 'cells', 'witnesses'}
+        require(isinstance(measurement, dict) and required <= set(measurement), 'incomplete face certificate')
+        require(all(unsigned(measurement[k]) for k in ('face', 'cells', 'witnesses')) and
+                isinstance(measurement['origins'], list) and all(isinstance(o, dict) for o in measurement['origins']) and
+                measurement['kind'] in ('fillet', 'offset') and type(measurement['converged']) is bool and
+                isinstance(measurement['coverage'], str), 'face certificate fields')
+        deviation = measurement['deviation_mm']
+        require(isinstance(deviation, dict) and {'lower', 'upper'} <= set(deviation), 'face interval fields')
+        require(bound(deviation['lower']) <= bound(deviation['upper']) and
+                measurement['local_tolerance_mm'] == deviation['upper'], 'face interval/local bound')
+
+
 def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work, evidence_kind='fresh'):
     """Check every occurrence and every file, including non-time log content."""
     path = Path(path)
     report = read(path)
+    require(bool(items), 'empty qualification evidence')
     require(report['format'] == 'catallax-run/1', 'run version')
     require(report['evidence']['kind'] == evidence_kind, 'fresh/reused provenance')
     config = report['config']
@@ -203,16 +288,21 @@ def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work
                 (manifest.get('name_edit') or {}).get('status') not in ('failed', 'invalid'), 'failed comparison/name-edit gate')
         require(all(log[k] == manifest[k] for k in ('refusal', 'marks')) and
                 isinstance(log['operations'], list), 'operation log completeness')
+        audit_marks(log['marks'])
         work = response['work']
         require(type(work['used']) is int and 0 <= work['used'] <= item['max_work'] and
                 type(work['limit']) is int and work['limit'] == item['max_work'] and
                 type(work['exhausted']) is bool, 'work accounting')
+        measurements = (manifest.get('face_measurements') or {}).get('faces', [])
+        require(isinstance(measurements, list), 'face certificate list')
+        measured = 0
         for sequence, operation in enumerate(log['operations']):
-            counted = operation['work']
-            require(type(operation['sequence']) is int and operation['sequence'] == sequence and
-                    all(type(counted[k]) is int for k in ('before', 'after', 'used')) and
-                    0 <= counted['before'] <= counted['after'] <= work['used'] and
-                    counted['used'] == counted['after'] - counted['before'], 'operation work accounting')
+            face = None
+            if isinstance(operation, dict) and operation.get('operation') == 'face_measure':
+                face = measurements[measured] if measured < len(measurements) else None
+                measured += 1
+            audit_operation(operation, sequence, work['used'], face, manifest['status'])
+        require(measured >= len(measurements), 'unlogged face certificate')
         artifacts = {name: driver.file_hash(directory / name) for name in
                      ('answer.step', 'answer.igs', 'display.obj', 'print.stl') if (directory / name).exists()}
         require(manifest['status'] == 'answered' or not artifacts, 'stale refused artifacts')
@@ -227,9 +317,15 @@ def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work
             require(manifest['iges']['sha256'] == artifacts['answer.igs'] and
                     manifest['iges']['bytes'] == (directory / 'answer.igs').stat().st_size, 'IGES artifact identity')
         display = manifest.get('face_measurements', {}).get('display', {})
-        require(('display.obj' in artifacts) == (bool(display) or 'print.stl' in artifacts), 'display presence')
+        # face-check/1 measures an internal B-rep display mesh without exporting
+        # it. Field/print display records explicitly name their delivered OBJ.
+        internal_display = (item['source'] == 'recipe' and item['problem'].get('format') == 'catallax-face-check/1')
         if display:
-            require(display['file'] == 'display.obj', 'display artifact name')
+            require(isinstance(display, dict) and
+                    {'vertices', 'triangles', 'chord_tolerance_mm'} <= set(display) and
+                    (not internal_display or 'first_mesh_ms' in display), 'display record fields')
+            require(display.get('file') == 'display.obj' or internal_display and 'file' not in display, 'display artifact name')
+        require(('display.obj' in artifacts) == (bool(display.get('file')) or 'print.stl' in artifacts), 'display presence')
         deterministic.append({'manifest': exact_manifest(manifest, driver), 'artifacts': artifacts,
                               'work': work, 'log': without_time(log)})
     return deterministic

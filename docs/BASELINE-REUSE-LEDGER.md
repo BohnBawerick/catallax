@@ -22,6 +22,9 @@ inputs and held-out data were not read. No real 477 replay was run here.
 | Q3 | Normal JSON float parsing can collapse distinct numeric endpoints below binary64 spacing. | Qualification reads numeric JSON decimals exactly and retains full interval strings. A public regression demonstrates endpoints that ordinary float parsing merges. |
 | Q4 | A copied historical baseline's original `cache_hit: false` alone does not describe its current use. | Qualification and copied run records explicitly label reuse and archive provenance. `report` labels historical timing separately. Original responses/work remain preserved. |
 | Q5 | A hash-intact archive can still fail a changed validator or reveal a baseline defect. | Stop before new jobs and require diagnosis plus explicit requalification. Never retry automatically or trust an old `equal` flag. |
+| Q6 | Independent review suspected incomplete operation records could pass if coherently changed in all three baseline logs. Executed public reproduction against `69bfe0c` confirmed an archive omitting `kernel` in all baseline logs/response copies was accepted after resealing. | Require every operation field, correct types, complete unsigned decision counts, status-dependent decisions/refusal, complete marks and bound/certificate records. All-worker omission/type mutations now fail on schema completeness, independently of determinism. |
+| Q7 | Independent review suspected an adapter returning `[]` could qualify without workers. Executed public reproduction against `69bfe0c` confirmed `qualified`, a published archive and six runs containing zero cases. | Reject empty interpreted inputs before creating output or launching jobs, for fresh and reuse entry points; reject empty archived qualification evidence too. Ordinary adapter loading is unchanged. |
+| Q8 | The new real face-measurement positive control exposed an owned over-rejection: face-check display observations have no exported OBJ, unlike field/print output. | Preserve that explicit existing schema by request format while retaining delivered-file presence/name checks for field and print. A real public torus face-measurement triplet passes alongside all export controls. |
 
 Build provenance is a trusted build-time operator attestation bound to executable
 bytes and the binary's source commit. Its schema requires complete source,
@@ -49,8 +52,8 @@ are separate scopes, not terms of an aggregate makespan or speedup claim.
 | Isolated locked release CLI build, two build jobs | Exit 0; 136.74 s elapsed. |
 | Real CLI doctor | Exit 0; request protocol `catallax-request/1`; executable SHA-256 `14239b7e825157a79f3c7784903340bc4cf5bc43c54bbe6a367fbee76dc2948e`. |
 | Public one-block explicit fresh-six smoke | All six fresh; strict gate passed; command span 447.42 ms, final gate audit 6.39 ms. |
-| Final complete driver suite, including PR138 reporting and public mutation tests | 43 passed in 29.591 s. |
-| Focused qualification mutation coverage | 13 tests included in the final passing driver suite; includes toolchain byte identities, default-allowance consistency and typed exit evidence. |
+| Final complete driver suite after review corrections, including PR138 reporting and public mutation tests | 48 passed in 31.017 s. |
+| Focused qualification mutation coverage | 18 tests included in the final passing driver suite; includes coherent all-baseline field/type mutations, explicit nullable schemas, empty fresh/reuse adapter rejection and real face-measurement certificates. |
 | STEP regressions with CI's pinned OCP 8.0.1.1.0 | 15 passed in 69.708 s. |
 | Edge hunt / release evidence policy | 15 / 21 passed. |
 | Formatting / generated comparison page / diff whitespace | Passed. |
@@ -67,6 +70,14 @@ completed with 22 subtest errors in 15 tests, including the unavailable
 `TopoDS.Face` API. An isolated installation of CI's pinned OCP version resolved
 that prerequisite mismatch; no geometry code changed. The workspace release
 suite's terminal result is recorded with the PR.
+
+The review reproductions retain the published `69bfe0c` implementation and
+public synthetic archives outside the repository. Both source-only suspicions
+were executed and confirmed before repair; their red test logs and the later
+passing tests are preserved. The earlier head's hosted check and target-parts
+workflows both completed successfully, but that result does not clear the
+review defects or qualify the corrected head. No existing run was cancelled
+or replaced to obtain these results.
 
 There is no saved-time claim: this implementation has not reused a real
 matching future baseline. Synthetic archive reuse tests prove the control path,

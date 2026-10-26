@@ -74,8 +74,8 @@ class QualificationTests(unittest.TestCase):
         record['files'] = q.inventory(archive, self.driver)
         write(archive / 'archive.json', record)
 
-    def mutate_case(self, archive, edit):
-        run = archive / 'baseline2/run.json'
+    def mutate_case(self, archive, edit, run_name='baseline2'):
+        run = archive / run_name / 'run.json'
         report = json.loads(run.read_text())
         index = 0
         directory = run.parent / report['cases'][index]['path']
@@ -309,6 +309,116 @@ class QualificationTests(unittest.TestCase):
             q.validate_archive(archive, self.key, self.driver)
         with self.assertRaises(q.EvidenceError):
             q.qualify(self.args_for(out=str(self.archive)), self.driver)
+
+    def test_coherently_omitted_operation_field_in_all_baselines_is_incomplete(self):
+        for field in sorted(q.OPERATION_FIELDS):
+            with self.subTest(field=field):
+                archive = Path(shutil.copytree(self.archive, self.work / field))
+                def remove_field(directory, report):
+                    response = json.loads((directory / 'response.json').read_text())
+                    response['operation_log']['operations'][0].pop(field)
+                    write(directory / 'response.json', response)
+                    write(directory / 'operations.json', response['operation_log'])
+                for workers in (1, 2, 4):
+                    self.mutate_case(archive, remove_field, f'baseline{workers}')
+                with self.assertRaisesRegex(q.EvidenceError, 'incomplete operation entry'):
+                    q.validate_archive(archive, self.key, self.driver)
+
+    def test_coherent_operation_type_and_decision_mutations_are_incomplete(self):
+        invalid = {'sequence': True, 'kernel': 'unknown', 'id': None, 'operation': [],
+                   'status': 'unknown', 'decisions': None, 'work': None, 'marks': None,
+                   'local_tolerances': [], 'refusal': {}, 'wall_ms': True}
+        edits = [(field, lambda op, field=field, value=value: op.update({field: value}))
+                 for field, value in invalid.items()]
+        edits += [(field, lambda op, field=field: op['decisions'].pop(field))
+                  for field in sorted(q.DECISION_FIELDS)]
+        for index, (name, edit) in enumerate(edits):
+            with self.subTest(field=name, index=index):
+                archive = Path(shutil.copytree(self.archive, self.work / str(index)))
+                def change_field(directory, report):
+                    response = json.loads((directory / 'response.json').read_text())
+                    edit(response['operation_log']['operations'][0])
+                    write(directory / 'response.json', response)
+                    write(directory / 'operations.json', response['operation_log'])
+                for workers in (1, 2, 4):
+                    self.mutate_case(archive, change_field, f'baseline{workers}')
+                with self.assertRaises(q.EvidenceError):
+                    q.validate_archive(archive, self.key, self.driver)
+
+    def test_operation_schema_preserves_conditional_nulls_marks_and_certificates(self):
+        report = json.loads((self.archive / 'baseline1/run.json').read_text())
+        operation = report['cases'][0]['response']['operation_log']['operations'][0]
+        used = report['cases'][0]['response']['work']['used']
+        q.audit_operation(operation, 0, used)
+        interrupted = dict(operation, status='interrupted', decisions=None, refusal=None)
+        q.audit_operation(interrupted, 0, used)
+        refused = dict(operation, status='refused', refusal={'code': 'synthetic.refusal', 'detail': ''})
+        q.audit_operation(refused, 0, used)
+        for bad in (dict(operation, decisions=None), dict(interrupted, decisions={}),
+                    dict(refused, refusal=None), dict(refused, refusal={'code': 'missing.detail'}),
+                    dict(operation, decisions={**operation['decisions'], 'total': True}),
+                    dict(operation, decisions={**operation['decisions'], 'total': -1})):
+            with self.subTest(operation=bad), self.assertRaises(q.EvidenceError):
+                q.audit_operation(bad, 0, used)
+        mark = {'code': 'synthetic.bound', 'kind': 'distance', 'bound': '1/1000', 'step': None, 'detail': ''}
+        q.audit_operation(dict(operation, marks=[mark]), 0, used)
+        for field in mark:
+            with self.subTest(mark_field=field), self.assertRaises(q.EvidenceError):
+                q.audit_operation(dict(operation, marks=[{k: v for k, v in mark.items() if k != field}]), 0, used)
+        for bad_bound in ('nan', '-1', '1/0', 1):
+            with self.subTest(bound=bad_bound), self.assertRaises(q.EvidenceError):
+                q.audit_operation(dict(operation, marks=[dict(mark, bound=bad_bound)]), 0, used)
+        certificate = {'face': 0, 'origins': [{'step': 'public', 'role': 'side'}], 'kind': 'offset',
+                       'deviation_mm': {'lower': '0', 'upper': '1/1000'}, 'local_tolerance_mm': '1/1000',
+                       'converged': True, 'coverage': 'synthetic schema fixture', 'cells': 1, 'witnesses': 1}
+        measured = dict(operation, kernel='field', operation='face_measure', local_tolerances=[certificate])
+        q.audit_operation(measured, 0, used, certificate)
+        q.audit_operation(dict(measured, local_tolerances=None, status='refused', refusal=refused['refusal']),
+                          0, used, final_status='refused')
+        with self.assertRaises(q.EvidenceError):
+            q.audit_operation(dict(measured, local_tolerances=None), 0, used)
+        for field in certificate:
+            incomplete = {k: v for k, v in certificate.items() if k != field}
+            with self.subTest(certificate_field=field), self.assertRaises(q.EvidenceError):
+                q.audit_operation(dict(measured, local_tolerances=[incomplete]), 0, used, incomplete)
+        for changed in ({'converged': 1}, {'cells': True}, {'deviation_mm': {'lower': '2', 'upper': '1'}},
+                        {'local_tolerance_mm': '2'}, {'deviation_mm': {'lower': '0'}}):
+            incomplete = {**certificate, **changed}
+            with self.subTest(certificate=changed), self.assertRaises(q.EvidenceError):
+                q.audit_operation(dict(measured, local_tolerances=[incomplete]), 0, used, incomplete)
+
+    def test_empty_adapter_cannot_qualify_fresh_or_reuse(self):
+        adapter = self.work / 'empty_adapter.py'
+        adapter.write_text('def load(path):\n return []\n')
+        for index, archive in enumerate((None, str(self.archive))):
+            with self.subTest(archive=archive), patch.object(self.driver, 'run', wraps=self.driver.run) as runs:
+                args = self.args_for(adapter=str(adapter), reuse_baseline=archive,
+                                     out=str(self.work / f'empty-{index}'))
+                with self.assertRaises(q.EvidenceError):
+                    q.qualify(args, self.driver)
+                self.assertEqual(runs.call_count, 0)
+                self.assertFalse(Path(args.out).exists())
+
+    def test_real_face_measurement_certificate_schema_remains_accepted(self):
+        problem = {'format': 'catallax-face-check/1',
+            'recipe': {'format': 'catallax-recipe/3', 'name': 'public-torus-face',
+                'steps': [{'id': 'tube', 'op': 'torus', 'major': '4', 'minor': '1.0002',
+                           'pose': {'rotation': ['1', '0', '0', '0'], 'translation': ['0', '0', '0']}}],
+                'result': 'tube'},
+            'definitions': [{'face': {'step': 'tube'}, 'definition': {'kind': 'fillet', 'radius': '1',
+                'path': {'kind': 'circle', 'center': ['0', '0', '0'], 'normal': ['0', '0', '1'],
+                         'radius': '4', 'reference': ['1', '0', '0']}}}]}
+        source = self.work / 'face.json'
+        write(source, {'format': 'catallax-question/1', 'source': 'recipe',
+                       'problem': problem, 'max_work': 100_000_000})
+        args = self.args_for(inputs=[str(source)])
+        result = q.qualify(args, self.driver)
+        self.assertTrue(result['equal'], result)
+        report = json.loads((Path(args.out) / 'baseline1/run.json').read_text())
+        response = report['cases'][0]['response']
+        self.assertEqual(response['manifest']['status'], 'answered')
+        operation = next(o for o in response['operation_log']['operations'] if o['operation'] == 'face_measure')
+        self.assertEqual(operation['local_tolerances'], response['manifest']['face_measurements']['faces'])
 
     def test_all_export_types_use_same_strict_gate(self):
         recipe = json.loads((EXAMPLES / 'recipe.json').read_text())

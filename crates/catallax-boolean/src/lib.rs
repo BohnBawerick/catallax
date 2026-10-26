@@ -26,6 +26,7 @@ mod geometry;
 mod germ;
 mod graph;
 mod imprinting;
+mod point_identity;
 mod points;
 mod probe_path;
 mod probed_region;
@@ -169,7 +170,19 @@ pub fn boolean(
     macro_rules! run {
         ($stage:expr, $operation:expr) => {{
             let before = dec.stats().clone();
-            let answer = $operation.map_err(|refusal| BooleanRefusal {
+            let span = catallax_numbers::OperationSpan::begin(
+                "boolean-stage",
+                &format!("{:?}", $stage),
+                "stage",
+                dec,
+            );
+            let evaluated = $operation;
+            span.finish(
+                dec,
+                evaluated.as_ref().err(),
+                evaluated.as_ref().ok().map(|answer| &answer.marks),
+            );
+            let answer = evaluated.map_err(|refusal| BooleanRefusal {
                 stage: $stage,
                 refusal,
             })?;
@@ -198,7 +211,9 @@ pub fn boolean(
         let imprinted = run!(Stage::Imprint, imprint(model, &graph, dec));
         let classes = run!(Stage::Classify, classify(model, &imprinted, dec));
         let before = dec.stats().clone();
+        let span = catallax_numbers::OperationSpan::begin("boolean-stage", &"Keep", "stage", dec);
         let selection = keep(&classes, &imprinted, op);
+        span.finish(dec, None, None);
         report.stages.push(StageRecord {
             stage: Stage::Keep,
             stats: statistics_delta(&before, dec.stats()),

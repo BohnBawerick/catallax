@@ -178,23 +178,6 @@ pub(crate) fn equation_is_source_contact(
         .any(|e| e.same_definition(&opposite))
 }
 
-pub(crate) fn canonical_point(
-    model: &mut Model,
-    points: &mut Vec<PointId>,
-    point: PointId,
-    dec: &mut Decider,
-    code: &'static str,
-) -> Result<PointId, Refusal> {
-    for &existing in points.iter() {
-        if coincident(model.geom().same_point(existing, point, dec), code)? {
-            record_same_point(model, existing, point);
-            return Ok(existing);
-        }
-    }
-    points.push(point);
-    Ok(point)
-}
-
 pub(crate) fn r(n: i64) -> Rational {
     Rational::from_i64(n)
 }

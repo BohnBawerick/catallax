@@ -1,7 +1,8 @@
 //! Boundary intersections trimmed to both operands, with canonical exact
 //! points and curves. Temporary carrier cuts are removed from the answer.
 
-use crate::geometry::{canonical_point, coincident, on_arc, refusal};
+use crate::geometry::{coincident, on_arc, refusal};
+use crate::point_identity::CanonicalPoints;
 use crate::points::curve_sample;
 use crate::region::{Location, RegionCache};
 use crate::stages::{IntersectionGraph, SectionEdge};
@@ -202,14 +203,13 @@ pub(crate) fn intersect(
     let mut bounds = crate::bounds::FaceBounds::new(algebraic);
     let mut regions = RegionCache::default();
     let mut pool = Vec::new();
-    let mut points = Vec::new();
+    let mut canonical = CanonicalPoints::default();
     let mut mandatory = BTreeSet::new();
     let mut singular = BTreeSet::new();
     for body in [a, b] {
         for vertex in model.vertices_of_body(body) {
-            let point = canonical_point(
+            let point = canonical.insert(
                 model,
-                &mut points,
                 model.vertex(vertex).point,
                 dec,
                 "boolean.imprint-ambiguous",
@@ -261,13 +261,7 @@ pub(crate) fn intersect(
                     for part in parts {
                         match part {
                             Component::Point { point } => {
-                                canonical_point(
-                                    model,
-                                    &mut points,
-                                    point,
-                                    dec,
-                                    "boolean.imprint-ambiguous",
-                                )?;
+                                canonical.insert(model, point, dec, "boolean.imprint-ambiguous")?;
                             }
                             Component::Curve {
                                 curve,
@@ -276,9 +270,8 @@ pub(crate) fn intersect(
                             } => {
                                 add_curve(model, &mut pool, curve, dec)?;
                                 for node in nodes {
-                                    let point = canonical_point(
+                                    let point = canonical.insert(
                                         model,
-                                        &mut points,
                                         node,
                                         dec,
                                         "boolean.imprint-ambiguous",
@@ -316,13 +309,7 @@ pub(crate) fn intersect(
                             "intersection branch membership lacks an incidence proof",
                         ));
                     }
-                    canonical_point(
-                        model,
-                        &mut points,
-                        hit.point,
-                        dec,
-                        "boolean.imprint-ambiguous",
-                    )?;
+                    canonical.insert(model, hit.point, dec, "boolean.imprint-ambiguous")?;
                 }
             }
             marks.extend(&answer.marks);
@@ -336,12 +323,12 @@ pub(crate) fn intersect(
                 continue;
             };
             for point in meetings {
-                canonical_point(model, &mut points, point, dec, "boolean.imprint-ambiguous")?;
+                canonical.insert(model, point, dec, "boolean.imprint-ambiguous")?;
             }
         }
     }
     let mut point_faces = BTreeMap::new();
-    for &point in &points {
+    for &point in &canonical.points {
         point_faces.insert(
             point,
             (
@@ -353,7 +340,7 @@ pub(crate) fn intersect(
     let mut edges = Vec::new();
     for &curve in &pool {
         let mut cuts = Vec::new();
-        for &point in &points {
+        for &point in &canonical.points {
             if coincident(
                 on_curve(model.geom(), curve, point, dec),
                 "boolean.imprint-ambiguous",
@@ -432,7 +419,7 @@ pub(crate) fn intersect(
         edges.extend(pieces);
     }
     let mut isolated = Vec::new();
-    for point in points {
+    for point in canonical.points {
         if point_faces[&point].0.is_empty() || point_faces[&point].1.is_empty() {
             continue;
         }

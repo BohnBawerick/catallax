@@ -14,7 +14,10 @@ use catallax_shapes::{
 };
 use catallax_topology::Model;
 
-use crate::geometry::{canonical_point, coincident, refusal, sign};
+use crate::{
+    geometry::{coincident, refusal, sign},
+    point_identity::CanonicalPoints,
+};
 
 fn retain_incidence(
     model: &mut Model,
@@ -159,79 +162,70 @@ pub(crate) fn meetings(
     b: CurveId,
     dec: &mut Decider,
 ) -> Result<Meetings, Refusal> {
-    if coincident(
-        same_curve(model.geom(), a, b, dec),
-        "boolean.imprint-ambiguous",
-    )? {
-        return Ok(Meetings::Coincident);
-    }
-    let mut result = Vec::new();
-    if let Curve::Intersection(branch) = model.geom().curve(b).clone() {
-        for surface in branch.surfaces {
-            let answer = intersect_curve_surface(model.geom_mut(), a, surface, dec)?;
-            if !answer.marks.is_empty() {
-                return Err(refusal(
-                    "boolean.imprint-ambiguous",
-                    "curve pair elimination required unresolved incidence",
-                ));
+    let span =
+        catallax_numbers::OperationSpan::begin("curve-pair", &format!("{a:?}/{b:?}"), "meet", dec);
+    let result = (|| {
+        if coincident(
+            same_curve(model.geom(), a, b, dec),
+            "boolean.imprint-ambiguous",
+        )? {
+            return Ok(Meetings::Coincident);
+        }
+        let mut canonical = CanonicalPoints::default();
+        if let Curve::Intersection(branch) = model.geom().curve(b).clone() {
+            for surface in branch.surfaces {
+                let answer = intersect_curve_surface(model.geom_mut(), a, surface, dec)?;
+                if !answer.marks.is_empty() {
+                    return Err(refusal(
+                        "boolean.imprint-ambiguous",
+                        "curve pair elimination required unresolved incidence",
+                    ));
+                }
+                let finite = !matches!(&answer.value, CurveSurface::Contained);
+                if let CurveSurface::Meets(hits) = answer.value {
+                    for hit in hits {
+                        if retain_incidence(model, b, hit.point, dec)? {
+                            canonical.insert(model, hit.point, dec, "boolean.imprint-ambiguous")?;
+                        }
+                    }
+                }
+                // b lies on both supports. Any finite meeting with one support
+                // exhausts a's possible meetings with b; the branch predicate
+                // above still checks the other support and the component.
+                if finite {
+                    break;
+                }
             }
-            let finite = !matches!(&answer.value, CurveSurface::Contained);
-            if let CurveSurface::Meets(hits) = answer.value {
-                for hit in hits {
-                    if retain_incidence(model, b, hit.point, dec)? {
-                        canonical_point(
-                            model,
-                            &mut result,
-                            hit.point,
-                            dec,
-                            "boolean.imprint-ambiguous",
-                        )?;
+            let pair = intersect_surfaces(
+                model.geom_mut(),
+                branch.surfaces[0],
+                branch.surfaces[1],
+                dec,
+            )?;
+            if let SurfacePair::Meets(parts) = pair.value {
+                for part in parts {
+                    let points = match part {
+                        Component::Curve { singular, .. } => singular,
+                        Component::Point { point } => vec![point],
+                    };
+                    for point in points {
+                        if retain_incidence(model, a, point, dec)?
+                            && retain_incidence(model, b, point, dec)?
+                        {
+                            canonical.insert(model, point, dec, "boolean.imprint-ambiguous")?;
+                        }
                     }
                 }
             }
-            // b lies on both supports. Any finite meeting with one support
-            // exhausts a's possible meetings with b; the branch predicate
-            // above still checks the other support and the component.
-            if finite {
-                break;
-            }
+            return Ok(Meetings::Points(canonical.points));
         }
-        let pair = intersect_surfaces(
-            model.geom_mut(),
-            branch.surfaces[0],
-            branch.surfaces[1],
-            dec,
-        )?;
-        if let SurfacePair::Meets(parts) = pair.value {
-            for part in parts {
-                let points = match part {
-                    Component::Curve { singular, .. } => singular,
-                    Component::Point { point } => vec![point],
-                };
-                for point in points {
-                    if retain_incidence(model, a, point, dec)?
-                        && retain_incidence(model, b, point, dec)?
-                    {
-                        canonical_point(
-                            model,
-                            &mut result,
-                            point,
-                            dec,
-                            "boolean.imprint-ambiguous",
-                        )?;
-                    }
-                }
-            }
+        if matches!(model.geom().curve(a), Curve::Intersection(_)) {
+            return meetings(model, b, a, dec);
         }
-        return Ok(Meetings::Points(result));
-    }
-    if matches!(model.geom().curve(a), Curve::Intersection(_)) {
-        return meetings(model, b, a, dec);
-    }
-    if let Curve::Line(line) = model.geom().curve(a).clone() {
-        let mut common: Option<RealPoly> = None;
-        let mut common_proven = true;
-        for equation in model.geom().curve(b).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
+        if let Curve::Line(line) = model.geom().curve(a).clone() {
+            let mut common: Option<RealPoly> = None;
+            let mut common_proven = true;
+            for equation in model.geom().curve(b).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
             let p = univariate(&substitute(&equation, &line.origin, &line.dir, None), 0);
             if !p.is_zero(dec)? {
                 common = Some(match common {
@@ -255,42 +249,44 @@ pub(crate) fn meetings(
                 });
             }
         }
-        if let Some(poly) = common {
-            for t in roots(&poly, dec)? {
-                let position = affine(&line.origin, &line.dir, None, &t, None);
-                if common_proven {
-                    // Every substituted equation is divisible by the retained
-                    // GCD (or is the sole nonzero equation). Its certified root
-                    // and the affine line definition prove both incidences.
-                    result.push(model.geom_mut().add_point(PointDef::Meet(Meet {
-                        of: MeetOf::Curves(a, b),
-                        position: Position::Closed(position),
-                    })));
-                } else if let Some(point) = candidate(model, a, b, position, dec)? {
-                    // A non-rational equation was not reduced into the GCD.
-                    // Its membership must still be proved by shared predicates.
-                    result.push(point);
+            if let Some(poly) = common {
+                for t in roots(&poly, dec)? {
+                    let position = affine(&line.origin, &line.dir, None, &t, None);
+                    if common_proven {
+                        // Every substituted equation is divisible by the retained
+                        // GCD (or is the sole nonzero equation). Its certified root
+                        // and the affine line definition prove both incidences.
+                        canonical
+                            .points
+                            .push(model.geom_mut().add_point(PointDef::Meet(Meet {
+                                of: MeetOf::Curves(a, b),
+                                position: Position::Closed(position),
+                            })));
+                    } else if let Some(point) = candidate(model, a, b, position, dec)? {
+                        // A non-rational equation was not reduced into the GCD.
+                        // Its membership must still be proved by shared predicates.
+                        canonical.points.push(point);
+                    }
                 }
             }
+            return Ok(Meetings::Points(canonical.points));
         }
-        return Ok(Meetings::Points(result));
-    }
-    if matches!(model.geom().curve(b), Curve::Line(_)) {
-        return meetings(model, b, a, dec);
-    }
-    let (origin, u, normal) = match model.geom().curve(a) {
-        Curve::Circle(c) => (c.center.clone(), c.ref_dir.clone(), c.normal.clone()),
-        Curve::Ellipse(c) => (c.center.clone(), c.major_dir.clone(), c.normal.clone()),
-        _ => {
-            return Err(refusal(
-                "boolean.imprint-ambiguous",
-                "curve does not provide a supported elimination chart",
-            ));
+        if matches!(model.geom().curve(b), Curve::Line(_)) {
+            return meetings(model, b, a, dec);
         }
-    };
-    let v = normal.cross(&u);
-    let mut first = None;
-    for equation in model
+        let (origin, u, normal) = match model.geom().curve(a) {
+            Curve::Circle(c) => (c.center.clone(), c.ref_dir.clone(), c.normal.clone()),
+            Curve::Ellipse(c) => (c.center.clone(), c.major_dir.clone(), c.normal.clone()),
+            _ => {
+                return Err(refusal(
+                    "boolean.imprint-ambiguous",
+                    "curve does not provide a supported elimination chart",
+                ));
+            }
+        };
+        let v = normal.cross(&u);
+        let mut first = None;
+        for equation in model
         .geom()
         .curve(a)
         .equations(model.geom())
@@ -307,13 +303,13 @@ pub(crate) fn meetings(
             break;
         }
     }
-    let first = first.ok_or_else(|| {
-        refusal(
-            "boolean.imprint-ambiguous",
-            "analytic conic equation was not certified",
-        )
-    })?;
-    for equation in model
+        let first = first.ok_or_else(|| {
+            refusal(
+                "boolean.imprint-ambiguous",
+                "analytic conic equation was not certified",
+            )
+        })?;
+        for equation in model
         .geom()
         .curve(b)
         .equations(model.geom())
@@ -345,18 +341,21 @@ pub(crate) fn meetings(
                     affine(&origin, &u, Some(&v), &x, Some(&y)),
                     dec,
                 )? {
-                    canonical_point(model, &mut result, point, dec, "boolean.imprint-ambiguous")?;
+                    canonical.insert(model, point, dec, "boolean.imprint-ambiguous")?;
                 }
             }
         }
-        return Ok(Meetings::Points(result));
+        return Ok(Meetings::Points(canonical.points));
     }
-    // Distinct coplanar analytic conics cannot share a one-dimensional
-    // component. A missing eliminant therefore needs a proof, not a guess.
-    Err(refusal(
-        "boolean.imprint-ambiguous",
-        "curve equations did not separate distinct carriers",
-    ))
+        // Distinct coplanar analytic conics cannot share a one-dimensional
+        // component. A missing eliminant therefore needs a proof, not a guess.
+        Err(refusal(
+            "boolean.imprint-ambiguous",
+            "curve equations did not separate distinct carriers",
+        ))
+    })();
+    span.finish(dec, result.as_ref().err(), None);
+    result
 }
 
 #[cfg(test)]

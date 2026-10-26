@@ -1,10 +1,9 @@
 //! A face-local halfedge arrangement. Boundary walks are grouped by winding
 //! signatures, so holes, cylinder bands and noncontractible cuts use one rule.
 
-use crate::geometry::{
-    canonical_point, coincident, natural_ends, on_arc, oriented, refusal, reverse, sign,
-};
+use crate::geometry::{coincident, natural_ends, on_arc, oriented, refusal, reverse, sign};
 use crate::graph::sort_points;
+use crate::point_identity::CanonicalPoints;
 use crate::points::{curve_sample, left_probe};
 use crate::region::{Location, RegionCache, locate};
 use crate::stages::{Imprinted, IntersectionGraph};
@@ -19,7 +18,7 @@ use catallax_topology::{
 use std::collections::{BTreeMap, BTreeSet};
 
 struct Builder {
-    points: Vec<PointId>,
+    canonical: CanonicalPoints,
     vertices: BTreeMap<PointId, VertexId>,
     edges: Vec<EdgeId>,
 }
@@ -30,7 +29,8 @@ impl Builder {
         p: PointId,
         dec: &mut Decider,
     ) -> Result<PointId, Refusal> {
-        canonical_point(model, &mut self.points, p, dec, "boolean.imprint-ambiguous")
+        self.canonical
+            .insert(model, p, dec, "boolean.imprint-ambiguous")
     }
     fn vertex(&mut self, model: &mut Model, p: PointId) -> VertexId {
         *self
@@ -121,7 +121,7 @@ impl Builder {
         if let Some(p) = from {
             cuts.push(p);
         }
-        for &p in &self.points {
+        for &p in &self.canonical.points {
             if Some(p) != from
                 && on_arc(model, curve, from, to, p, dec, "boolean.imprint-ambiguous")?
             {
@@ -407,7 +407,7 @@ pub(crate) fn imprint(
     dec: &mut Decider,
 ) -> Answered<Imprinted> {
     let mut builder = Builder {
-        points: Vec::new(),
+        canonical: CanonicalPoints::default(),
         vertices: BTreeMap::new(),
         edges: Vec::new(),
     };

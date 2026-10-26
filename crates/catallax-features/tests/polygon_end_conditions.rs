@@ -392,6 +392,99 @@ fn clockwise_transformed_and_reversed_scaled_rays_keep_exact_physical_sides() {
 }
 
 #[test]
+fn spherical_polygon_chart_excludes_poles_and_seam_with_identical_exact_support_and_sense() {
+    use catallax_numbers::StrictSign;
+    use catallax_shapes::Surface;
+    use catallax_topology::Sense;
+
+    for text in [CASES[0], CASES[2]] {
+        for to in [false, true] {
+            for exit in [false, true] {
+                for configuration in 0..3 {
+                    let mut v = variant(text, to, exit);
+                    if configuration == 1 {
+                        // A proper placement and noncardinal raw direction.
+                        let start = if exit { "-16" } else { "-11" };
+                        v["steps"][0]["plane"] =
+                            json!({"rotation":["1","1","0","0"],"translation":["7",start,"3"]});
+                        v["steps"][1]["pose"] =
+                            json!({"rotation":["1","1","0","0"],"translation":["7","-16","3"]});
+                        v["steps"][2]["direction"] = if to {
+                            json!(["1/2", "-2", "0"])
+                        } else {
+                            json!(["1/4", "-1", "0"])
+                        };
+                    } else if configuration == 2 {
+                        v["steps"][0]["plane"]["translation"][2] =
+                            json!(if exit { "5" } else { "10" });
+                        v["steps"][2]["direction"] = json!(["0", "0", "-3"]);
+                    }
+                    let recipe = recipe(&v);
+                    let mut dec = Decider::default();
+                    let cap = compile(&recipe, &mut dec);
+                    let built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+                    let ends: Vec<_> = built
+                        .model
+                        .faces_of_body(built.result)
+                        .into_iter()
+                        .filter(|f| {
+                            matches!(
+                                built.model.geom().surface(built.model.face(*f).surface),
+                                Surface::Sphere(_)
+                            )
+                        })
+                        .collect();
+                    assert_eq!(ends.len(), 1);
+                    let face = built.model.face(ends[0]);
+                    assert_eq!(face.sense, if exit { Sense::Same } else { Sense::Reversed });
+                    assert_eq!(
+                        built.model.face_origins(ends[0]),
+                        &[Origin {
+                            step: id("cap"),
+                            role: Role::End
+                        }]
+                    );
+                    let support = built.model.geom().surface(face.surface);
+                    // Polynomial equality proves the entire carrier remains
+                    // the exact independently compiled sphere, not a fit.
+                    assert!(
+                        support
+                            .implicit()
+                            .unwrap()
+                            .equals(
+                                &cap.definition().scene().surface().implicit().unwrap(),
+                                &mut dec
+                            )
+                            .unwrap()
+                    );
+                    let Surface::Sphere(sphere) = support else {
+                        unreachable!()
+                    };
+                    let w = &cap.definition().frame().direction;
+                    equal(&sphere.axis.dot(w), q("0"), &mut dec);
+                    equal(&sphere.ref_dir.cross(w).norm_squared(), q("0"), &mut dec);
+                    assert!(matches!(
+                        dec.sign(&sphere.axis.norm_squared()),
+                        Outcome::Proven(StrictSign::Positive)
+                    ));
+                    let mut points = vertices(&v);
+                    points.push([q("0"), q("0")]);
+                    for uv in points {
+                        let uv = uv.map(Real::from);
+                        let height = cap.definition().height(&uv, &mut dec).unwrap();
+                        let end = cap.definition().frame().point(&uv).plus(&w.scaled(&height));
+                        assert!(matches!(
+                            dec.sign(&end.minus(&sphere.center).dot(&sphere.ref_dir)),
+                            Outcome::Proven(StrictSign::Negative)
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn polygon_brep_display_and_step_are_complete_and_extrusion_owned() {
     for text in CASES {
         for to in [false, true] {

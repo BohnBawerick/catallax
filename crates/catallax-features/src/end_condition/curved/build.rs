@@ -3,7 +3,7 @@
 use super::*;
 use catallax_numbers::{Fact, FactKind, FactOrigin};
 use catallax_recipe::{ElementId, Operation, Origin, Role, StepId};
-use catallax_shapes::{Curve, GeomKey, Line, PointDef};
+use catallax_shapes::{Curve, GeomKey, Line, PointDef, Sphere};
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, Face, Loop, Lump, Model, Sense, Shell, Vertex,
 };
@@ -142,6 +142,50 @@ fn clipping_prism(
 }
 
 impl CurvedCapped {
+    fn polygon_sphere_source(
+        &self,
+        model: &mut Model,
+        dec: &mut Decider,
+    ) -> Result<BodyId, Refusal> {
+        let Surface::Sphere(sphere) = &self.scene.surface else {
+            unreachable!("a stock sphere operation has a spherical support")
+        };
+        let w = &self.frame.direction;
+        let pole = projected::perpendicular(w, dec)?.cross(w);
+        let seam = if self.branch == Branch::Entry {
+            w.clone()
+        } else {
+            w.scaled(&Real::from_i64(-1))
+        };
+        // At the certified root, grad(F).w is -sqrt(D) for entry and
+        // +sqrt(D) for exit. Hence every retained cap normal has a strictly
+        // negative component along `seam`. The poles (perpendicular to w)
+        // and positive seam meridian are outside the entire cap. Only the
+        // sphere's chart changes: its implicit polynomial, centre and radius
+        // are identical to the independently compiled analytic definition.
+        let surface = model.geom_mut().add_surface(Surface::Sphere(Sphere::new(
+            sphere.center.clone(),
+            sphere.radius.clone(),
+            pole,
+            seam,
+            dec,
+        )?));
+        let face = model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops: Vec::new(),
+        });
+        let shell = model.add_shell(Shell { faces: vec![face] });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        Ok(model.add_body(Body {
+            kind: BodyKind::Solid,
+            lumps: vec![lump],
+            marks: Default::default(),
+        }))
+    }
+
     /// Exposes analytic construction cells, not B-rep faces or containment.
     /// Entry is `(column intersect clipper) subtract target`; exit is
     /// `column intersect target`. The certificate excludes every artificial cap.
@@ -417,6 +461,9 @@ impl CurvedCapped {
             prism(model, base, vectors, names, dec)?
         };
         let source = match &self.scene.operation {
+            Operation::Sphere { .. } if self.polygon.is_some() => {
+                self.polygon_sphere_source(model, dec)?
+            }
             Operation::Sphere { radius, pose } => {
                 catallax_topology::sphere(model, radius.value().clone(), &scene::placement(pose)?)?
             }

@@ -32,7 +32,7 @@ engine, display, revolution and distance-feature production files are untouched.
 | Four-line rectangle gate | Fresh B-rep and field CLI runs reject triangle, pentagon and rotated diamond with `features.unsupported-curved-limit`; no STEP. | Retain the whole rectangular enclosure proof; construct and query the intersection of exact polygon side halfplanes. Both kernels consume the same finite analytic column definition. |
 | Adjacent collinear authored sides | The added control produced `boolean.merge-ambiguous` because adjacent coplanar prism faces did not close after Boolean merging. | Merge straight topology sides using exact rational collinearity and union their authored origins. Analytic cells retain equivalent halfplanes. The control now passes without Boolean-engine edits. |
 | Enclosure too broad | A diamond of circumradius 3/2 has sphere hits everywhere, but its enclosing square crosses the radius-2 silhouette. | Retain `features.unsupported-curved-limit`; the test independently establishes the polygon lies strictly within the silhouette. This is unfinished coverage, not an impossible missing cap. |
-| Native spherical STEP volume consistency | OpenCASCADE imports valid solids, but the imported entry/exit volume sum differs from the exact polygon integral. | Still open. Gauss-Kronrod integration requested at 1e-12 reports discrepancies of about 6.869e-8 (pentagon), 1.334e-7 (rotated square) and 1.274e-6 mm³ (triangle). The new 1e-7 identity assertion remains enabled and fails for the latter two profiles. The cause is not isolated; exact Catallax volume checks do not clear this independent gate. No export/import production repair is attempted in this lane. |
+| Native spherical STEP volume consistency | Frozen `20ba71661152e4099c70835763f86c586beae232` imports valid solids but its triangle/rotated-square sums fail the enabled 1e-7 mm³ assertion in both modes, up to 1.274e-6 mm³. | Exact rational circle-carrier bounds and controlled chart-only copies isolate pole/seam-sensitive native pcurve reconstruction. The owned polygon-sphere source now chooses an exact chart separated from the retained branch; centre, radius, implicit support, finite trims, sense and origins are unchanged. All 36 original numerical import/property cases and the added eight-case native pcurve/carrier regression pass before final qualification. The original assertion, uncertainty and all frozen evidence are retained. Numerical import checks do not certify whole-result mass/deviation bounds. |
 
 Nonconvex, self-crossing, degenerate/repeated-vertex, trim-crossing and exhausted
 requests retain typed refusals. Tangency, changing branches and general target
@@ -42,7 +42,7 @@ terms, increases a cell cap or changes a tolerance or request allowance.
 ## Focused checks
 
 `cargo test --release -p catallax-features --test polygon_end_conditions -j 2 -- --test-threads=2`
-passes ten tests on the implementation before final qualification:
+passed ten tests on frozen `20ba716`. The bounded spherical-chart repair passes eleven tests before final qualification, adding exact support/sense and whole-branch chart controls:
 
 - 36 profile/stock/mode/branch combinations build in B-rep and field, retain
   every authored side origin and distinguish exact polygons from their bounding
@@ -57,9 +57,7 @@ passes ten tests on the implementation before final qualification:
 - Requested default-accuracy B-rep volumes enclose an independent exact integral
   for the cylinder triangle. All nine profile/stock entry-plus-exit integrals
   enclose exactly five times the authored polygon area.
-- The public native STEP-import regression covers both modes and branches;
-  independent import validity/volume checks remain distinct from certified
-  Catallax property enclosures.
+- The public native STEP-import regression covers both modes and branches. Its original 1e-7 mm³ volume assertion remains unchanged. A second regression checks exact rational exported circle-carrier bounds, absence of inserted spherical pole/seam edges and sampled pcurve-to-3D agreement in both modes. Numerical import checks remain distinct from certified Catallax property enclosures.
 
 Initial local Rust compile/borrow errors and the red collinear control are
 retained in external logs; they are not passing qualification. Full-suite,
@@ -74,6 +72,37 @@ a rational unit frame`. This separate held display path is not a prerequisite
 for the construction/query slice and is not repaired here. Full default field
 mass and final-head checks retain their actual outcomes in external evidence and
 the PR; no success is inferred from B-rep properties.
+
+## Frozen failure and bounded chart repair
+
+Frozen `20ba716` remains available with its verifier, all 36 original STEP files,
+raw CI failure and complete local release result (1,082 tests plus two doctests,
+zero failures and 11 inherited ignores). Its four native STEP volume subtests
+remain historical failures. The new production repair is confined to
+`curved/build.rs::CurvedCapped::build` and its private `polygon_sphere_source`
+helper. No STEP-writer, shape-store, topology-builder or field-display edit is
+needed. The [additive chart fragment](interface-changes/2026-10-26-spherical-polygon-cap-chart.md)
+records the representation change.
+
+For the ray w, select a nonzero pole direction perpendicular to w and use +w
+as seam reference for entry, -w for exit. At a certified quadratic root,
+`gradient(F).w` is respectively `-sqrt(D)` or `+sqrt(D)`, uniformly separated
+from zero by the existing enclosure certificate. Thus every retained cap
+normal has negative component along the seam reference, excluding both poles
+and the positive seam meridian over the entire domain. The sphere's exact
+implicit equation and point set are unchanged.
+
+Independent diagnosis verifies mm units and the exact five-times-polygon-area
+entry/exit volume identity. Exact rational bounds place all 48 exported circular
+carriers within 1e-15 mm radially of the exported sphere. These are carrier
+bounds, not trim or mass certificates. Native pcurve lifts in the frozen files
+have sampled gaps up to 1.9261e-5 mm; quadrature refinement to 1e-15 does not
+remove their volume bias. Chart-only diagnostic copies preserve all original
+3D geometry/topology and reduce the numerical error, but are not production
+exports or certified property bounds. Actual exports from the owned source
+repair pass the unchanged regression. Final-head full checks and CI are reported
+with their actual commit in the PR and external proof, without relabeling the
+frozen results.
 
 ## Reproduction commands and evidence
 

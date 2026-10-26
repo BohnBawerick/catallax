@@ -7,7 +7,139 @@ use catallax_topology::{BodyId, Model, block, cone, cylinder, empty, sphere, tor
 fn q(s: &str) -> Rational {
     Rational::parse(s).unwrap()
 }
+fn sector_recipe(kind: &str, angle: &str) -> String {
+    let points: &[[&str; 2]] = match kind {
+        "cylinder" => &[["3", "0"], ["3", "2"], ["1", "2"], ["1", "0"]],
+        "cone" => &[["3", "0"], ["5", "2"], ["3", "2"], ["1", "0"]],
+        "scaled-cone" => &[["1", "0"], ["5/3", "2/3"], ["1", "2/3"], ["1/3", "0"]],
+        "reversed-cone" => &[["5", "0"], ["3", "2"], ["1", "2"], ["3", "0"]],
+        "uncovered-cone" => &[["3", "0"], ["4", "2"], ["2", "2"], ["1", "0"]],
+        "apex-cone" => &[["3", "0"], ["0", "3"], ["0", "0"]],
+        _ => panic!("unknown sector"),
+    };
+    let segments = points
+        .iter()
+        .enumerate()
+        .map(|(i, [x, y])| format!(r#"{{"kind":"line","id":"s{i}","to":["{x}","{y}"]}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        r#"{{"format":"catallax-recipe/3","name":"public axial sector",
+        "steps":[{{"id":"profile","op":"sketch",
+          "plane":{{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+          "loops":[[{segments}]]}},
+          {{"id":"body","op":"revolve","profile":"profile",
+            "axis":{{"point":["0","0","0"],"direction":["0","1","0"]}},"angle":"{angle}"}}],
+        "result":"body"}}"#
+    )
+}
+fn sector(kind: &str, angle: &str) -> (Model, BodyId) {
+    if let Some(kind) = kind.strip_prefix("seam-") {
+        let (mut model, body) = sector(kind, angle);
+        let body = rechart_and_reverse_edges(&mut model, body);
+        assert!(model.check(body).is_empty(), "{:?}", model.check(body));
+        return (model, body);
+    }
+    let recipe = catallax_recipe::Recipe::parse(&sector_recipe(kind, angle)).unwrap();
+    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    (built.model, built.result)
+}
+
+// Reparameterize the same exact supports by a quarter turn and reverse every
+// topological edge. This changes no point set, trim, or material orientation.
+fn rechart_and_reverse_edges(m: &mut Model, b: BodyId) -> BodyId {
+    use catallax_numbers::{Fact, FactKind, FactOrigin};
+    use catallax_shapes::{GeomKey, Surface};
+    use catallax_topology::{Loop, Sense};
+    let reverse = |s| {
+        if s == Sense::Same {
+            Sense::Reversed
+        } else {
+            Sense::Same
+        }
+    };
+    let edges: std::collections::BTreeMap<_, _> = m
+        .edges_of_body(b)
+        .into_iter()
+        .map(|id| {
+            let mut e = m.edge(id).clone();
+            if let catallax_shapes::Curve::Circle(mut c) = m.geom().curve(e.curve).clone() {
+                c.ref_dir = c.normal.cross(&c.ref_dir);
+                e.curve = m.geom_mut().add_curve(catallax_shapes::Curve::Circle(c));
+                for v in [e.start, e.end].into_iter().flatten() {
+                    let point = m.vertex(v).point;
+                    m.geom_mut().record_fact(Fact {
+                        kind: FactKind::Incident,
+                        a: GeomKey::Point(point),
+                        b: GeomKey::Curve(e.curve),
+                        at: None,
+                        origin: FactOrigin::Construction("test.same-circle"),
+                    });
+                }
+            }
+            std::mem::swap(&mut e.start, &mut e.end);
+            e.sense = reverse(e.sense);
+            (id, m.add_edge(e))
+        })
+        .collect();
+    let mut body = m.body(b).clone();
+    for lump in &mut body.lumps {
+        let mut l = m.lump(*lump).clone();
+        for shell in &mut l.shells {
+            let mut s = m.shell(*shell).clone();
+            for face in &mut s.faces {
+                let mut f = m.face(*face).clone();
+                let mut surface = m.geom().surface(f.surface).clone();
+                let changed = match &mut surface {
+                    Surface::Cylinder(c) => {
+                        c.ref_dir = c.axis.cross(&c.ref_dir);
+                        true
+                    }
+                    Surface::Cone(c) => {
+                        c.ref_dir = c.axis.cross(&c.ref_dir);
+                        true
+                    }
+                    _ => false,
+                };
+                if changed {
+                    f.surface = m.geom_mut().add_surface(surface);
+                }
+                for lp in &mut f.loops {
+                    let Loop::Coedges(cs) = m.loop_(*lp).clone() else {
+                        panic!("finite sector")
+                    };
+                    let mut mapped = Vec::new();
+                    for c in cs {
+                        let mut c = m.coedge(c).clone();
+                        c.edge = edges[&c.edge];
+                        c.sense = reverse(c.sense);
+                        {
+                            let curve = m.edge(c.edge).curve;
+                            m.geom_mut().record_fact(Fact {
+                                kind: FactKind::Incident,
+                                a: GeomKey::Curve(curve),
+                                b: GeomKey::Surface(f.surface),
+                                at: None,
+                                origin: FactOrigin::Construction("test.same-axial-support"),
+                            });
+                        }
+                        mapped.push(m.add_coedge(c));
+                    }
+                    *lp = m.add_loop(Loop::Coedges(mapped));
+                }
+                *face = m.add_face(f);
+            }
+            *shell = m.add_shell(s);
+        }
+        *lump = m.add_lump(l);
+    }
+    m.add_body(body)
+}
 fn fixture(name: &str) -> (Model, BodyId) {
+    if let Some((kind, angle)) = name.split_once("-sector-") {
+        return sector(kind, angle);
+    }
     let mut m = Model::new();
     let b = match name {
         "box" => block(&mut m, [q("2"), q("3"), q("5")], &Pose::identity()).unwrap(),
@@ -78,6 +210,167 @@ fn public_fixtures_are_deterministic_shared_breps() {
                 .count(),
             2
         );
+    }
+}
+#[test]
+fn partial_axial_sectors_export_through_the_recipe_path() {
+    for kind in [
+        "cylinder",
+        "cone",
+        "reversed-cone",
+        "seam-cylinder",
+        "seam-cone",
+    ] {
+        for angle in ["90", "180", "270"] {
+            let (m, b) = sector(kind, angle);
+            let (bytes, report) = export(&m, b, &IgesOptions::default());
+            assert_eq!(report.faces, 6);
+            assert_eq!(report.edges, m.edges_of_body(b).len());
+            assert_eq!(report.vertices, m.vertices_of_body(b).len());
+            assert_eq!(report.added_edges, 0);
+            assert_eq!(report.added_vertices, 0);
+            assert_eq!((bytes, report), export(&m, b, &IgesOptions::default()));
+        }
+    }
+}
+
+fn entities(bytes: &[u8]) -> std::collections::BTreeMap<usize, Vec<String>> {
+    let mut rows = std::collections::BTreeMap::<usize, String>::new();
+    for line in std::str::from_utf8(bytes).unwrap().lines() {
+        if &line[72..73] == "P" {
+            rows.entry(line[64..72].trim().parse().unwrap())
+                .or_default()
+                .push_str(line[..64].trim_end());
+        }
+    }
+    rows.into_iter()
+        .map(|(id, row)| {
+            (
+                id,
+                row.trim_end_matches(';')
+                    .split(',')
+                    .map(str::to_owned)
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn sector_pcurves_close_in_one_finite_unwrapped_rectangle() {
+    for kind in ["cylinder", "cone", "seam-cylinder", "seam-cone"] {
+        for angle in ["90", "180", "270"] {
+            let (m, b) = sector(kind, angle);
+            let (bytes, _) = export(&m, b, &IgesOptions::default());
+            let graph = entities(&bytes);
+            let mut rectangles = 0;
+            let mut beyond_seam = false;
+            for wire in graph.values().filter(|p| p[0] == "508" && p[1] == "4") {
+                if wire[6] == "0" {
+                    continue;
+                } // Planar wires have no pcurves.
+                let pcs: Vec<_> = wire[2..]
+                    .chunks(7)
+                    .map(|entry| {
+                        assert_eq!(entry[4], "1");
+                        assert_eq!(entry[5], "1");
+                        &graph[&entry[6].parse::<usize>().unwrap()]
+                    })
+                    .collect();
+                assert_eq!(pcs.len(), 4);
+                let mut arcs = 0;
+                for i in 0..4 {
+                    let pc = pcs[i];
+                    assert_eq!(pc[0], "126");
+                    assert_eq!(pc[1], "1");
+                    assert_eq!(pc[2], "1");
+                    assert_eq!(q(&pc[19]), q("0"));
+                    assert!(q(&pc[20]) > q("0"));
+                    assert_eq!(q(&pc[16]), q(&pcs[(i + 1) % 4][13]));
+                    assert_eq!(q(&pc[17]), q(&pcs[(i + 1) % 4][14]));
+                    let du = &q(&pc[16]) - &q(&pc[13]);
+                    let dv = &q(&pc[17]) - &q(&pc[14]);
+                    if du.is_zero() {
+                        assert!(!dv.is_zero());
+                        assert_eq!(q(&pc[20]), q("1"));
+                    } else {
+                        assert_eq!(du.abs(), q(angle));
+                        assert!(dv.is_zero());
+                        arcs += 1;
+                    }
+                    beyond_seam |= [q(&pc[13]), q(&pc[16])]
+                        .iter()
+                        .any(|u| u < &q("0") || u > &q("360"));
+                }
+                assert_eq!(arcs, 2);
+                rectangles += 1;
+            }
+            assert_eq!(rectangles, 2);
+            if kind.starts_with("seam-") && angle == "270" {
+                assert!(beyond_seam, "{kind} {angle}");
+            }
+        }
+    }
+}
+
+#[test]
+fn sector_angular_slant_and_scale_errors_are_added_and_enforced() {
+    use catallax_numbers::Ball;
+    let (m, b) = sector("scaled-cone", "270");
+    for digits in [4, 17] {
+        let mut o = IgesOptions {
+            scale_digits: digits,
+            tolerance: q("1"),
+            ..Default::default()
+        };
+        let (bytes, r) = export(&m, b, &o);
+        assert_ne!(r.scale, q("1"));
+        let graph = entities(&bytes);
+        let pc = graph
+            .values()
+            .find(|p| p[0] == "126" && p[3] == "1" && p[13] != p[16])
+            .unwrap();
+        let t = q(&pc[20]);
+        let radians = Ball::pi(160) * Ball::from_rational(&q("3/2"), 160);
+        let angular =
+            &(&t - &radians.lo()).abs().max((&t - &radians.hi()).abs()) * &r.coordinate_bound;
+        assert!(r.trim_deviation > angular); // Includes the nonzero slant rounding too.
+        assert_eq!(
+            r.max_deviation,
+            &(&r.scale - &q("1")).abs() * &r.coordinate_bound + &r.scale * &r.trim_deviation
+        );
+        o.tolerance = r.max_deviation.clone();
+        assert_eq!(export(&m, b, &o).1, r);
+        o.tolerance = &r.max_deviation / &q("2");
+        let mut sink = b"retained artifact".to_vec();
+        assert!(matches!(
+            write_iges(&m, &[b], &o, &mut Decider::default(), &mut sink),
+            Err(IgesError::ToleranceExceeded { .. })
+        ));
+        assert_eq!(sink, b"retained artifact");
+    }
+}
+
+#[test]
+fn unsupported_sector_definitions_refuse_atomically() {
+    for (kind, angle) in [
+        ("cylinder", "45"),
+        ("uncovered-cone", "90"),
+        ("apex-cone", "90"),
+    ] {
+        let (m, b) = sector(kind, angle);
+        let mut sink = b"retained artifact".to_vec();
+        assert!(matches!(
+            write_iges(
+                &m,
+                &[b],
+                &IgesOptions::default(),
+                &mut Decider::default(),
+                &mut sink
+            ),
+            Err(IgesError::UnrepresentableDefinition(_))
+        ));
+        assert_eq!(sink, b"retained artifact");
     }
 }
 #[test]
@@ -199,6 +492,16 @@ fn write_readback_fixtures() {
         "cone",
         "rounded-box",
         "posed-cylinder",
+        "cylinder-sector-90",
+        "cylinder-sector-180",
+        "cylinder-sector-270",
+        "cone-sector-90",
+        "cone-sector-180",
+        "cone-sector-270",
+        "reversed-cone-sector-270",
+        "seam-cylinder-sector-270",
+        "seam-cone-sector-270",
+        "scaled-cone-sector-270",
     ] {
         let (m, b) = fixture(name);
         {

@@ -529,3 +529,26 @@ fn radius_and_start_height_edits_keep_circular_faces_and_physical_rim_names() {
         }
     }
 }
+
+#[test]
+fn invalid_circle_radii_keep_the_existing_sketch_refusal_in_every_entry() {
+    for radius in ["0", "-1"] {
+        let mut v = variant(false, false);
+        v["steps"][0]["loops"][0][0]["radius"] = json!(radius);
+        let r = recipe(&v);
+        assert_eq!(
+            compile(&r, &mut Decider::default()).unwrap_err().code,
+            "sketch.non-positive-radius"
+        );
+        let catallax_features::BuildError::Geometry { refusal, .. } =
+            catallax_features::evaluate(&r, &mut Decider::default()).unwrap_err()
+        else {
+            panic!("geometry refusal")
+        };
+        assert_eq!(refusal.code, "sketch.non-positive-radius");
+        assert_eq!(
+            Plan::compile(&r).unwrap_err().code,
+            "sketch.non-positive-radius"
+        );
+    }
+}

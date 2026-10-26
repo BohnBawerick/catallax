@@ -75,7 +75,7 @@ pub(super) fn compile(
     let r = radius.value();
     if r.sign() != Sign::Positive {
         return Err(Refusal::new(
-            "profile.non-positive-radius",
+            "sketch.non-positive-radius",
             "circle radius must be positive",
         ));
     }

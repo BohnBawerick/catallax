@@ -9,6 +9,7 @@
 
 mod certified;
 pub mod curves;
+pub mod loops;
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
 pub mod soliddraft;

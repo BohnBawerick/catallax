@@ -161,6 +161,7 @@ class Worker:
         self.child.stdout.close()
         self.child.stderr.close()
         CHILDREN.discard(self.child)
+        return self.child.returncode
 
 
 def valid_artifact(directory, key):
@@ -192,6 +193,8 @@ def run(args):
     batches = [[] for _ in range(args.workers)]
     for i, pair in enumerate(unique.items()):
         batches[i % args.workers].append(pair)
+
+    exits = {}
 
     def batch(index):
         results = {}
@@ -243,14 +246,19 @@ def run(args):
                     log.flush()
         finally:
             if worker:
-                worker.close()
+                exits[str(index)] = worker.close()
+                if exits[str(index)] != 0:
+                    raise RuntimeError('worker failed on shutdown; diagnose before requalification')
         return results
 
     merged = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
         for result in pool.map(batch, range(args.workers)):
             merged.update(result)
-    report = {'format': 'catallax-run/1', 'config': config, 'elapsed_ms': (time.perf_counter() - started) * 1000, 'cases': [merged[key] for key in keys]}
+    report = {'format': 'catallax-run/1', 'config': config, 'execution': {
+        'fresh': args.fresh, 'workers': args.workers, 'cores': cores,
+        'worker_exits': exits}, 'elapsed_ms': (time.perf_counter() - started) * 1000,
+        'cases': [merged[key] for key in keys]}
     atomic(out / 'run.json', report)
     return summarize(report)
 
@@ -292,6 +300,7 @@ def acceptance(response):
 
 def summarize(report):
     groups, slow, issues = {}, [], {}
+    historical = report.get('evidence', {}).get('kind') == 'reused'
     crashes = 0
     disagreements = 0
     edit_failures = 0
@@ -334,12 +343,13 @@ def summarize(report):
             boolean_ms = sum(step.get('wall_ms', 0) for step in steps) if steps is not None else None
             phase = ('boolean' if boolean_ms >= response['wall_ms'] / 2 else 'outside-boolean') if boolean_ms is not None else 'unmeasured-phase'
             outside_ms = max(0, response['wall_ms'] - boolean_ms) if boolean_ms is not None else None
-            slow.append({k: case[k] for k in ['id', 'key', 'group', 'target_ms']} | {'wall_ms': response['wall_ms'], 'work': response['work'], 'cause': cause, 'phase': phase, 'boolean_ms': boolean_ms, 'outside_boolean_ms': outside_ms, 'cached_timing': case['cache_hit']})
+            slow.append({k: case[k] for k in ['id', 'key', 'group', 'target_ms']} | {'wall_ms': response['wall_ms'], 'work': response['work'], 'cause': cause, 'phase': phase, 'boolean_ms': boolean_ms, 'outside_boolean_ms': outside_ms, 'cached_timing': case['cache_hit'], 'historical_timing': historical})
     performance = {}
     for case in slow:
         label = case['group'] + '/' + case['phase'] + '/' + case['cause']
         performance.setdefault(label, []).append(case['key'])
     return {'cases': len(report['cases']), 'elapsed_ms': report['elapsed_ms'], 'cache_hits': sum(c['cache_hit'] for c in report['cases']), 'outcomes': groups, 'issue_groups': issues, 'crashes': crashes, 'comparison_disagreements': disagreements, 'edit_failures': edit_failures, 'performance_groups': performance, 'slow': sorted(slow, key=lambda c: -c['wall_ms']),
+            'timing': 'historical' if historical else 'observed',
             'acceptance': {'preview': preview | {'target_ms': PREVIEW_TARGET_MS}, 'proof': proof | {'target_ms': PROOF_TARGET_MS},
                            'built_after_proof': built, 'comparison_requested': comparison_requested,
                            'rule': 'a whole-response wait is a proof wait; preview passes need a delivered unproved display; a preview alone never counts a part as built'}}
@@ -360,6 +370,8 @@ def compare(left, right):
     if len(a['cases']) != len(b['cases']):
         failures.append({'cause': 'case-count', 'left': len(a['cases']), 'right': len(b['cases'])})
     for i, (x, y) in enumerate(zip(a['cases'], b['cases'])):
+        x, y = [dict(c, path=str(Path(p).parent / c['path']))
+                for c, p in ((x, left), (y, right))]
         # Inputs, including order and duplicates, are part of the proof.
         px, py = [json.loads((Path(c['path']) / 'request.json').read_text()) for c in (x, y)]
         for request in (px, py):
@@ -654,6 +666,18 @@ def main():
     p = commands.add_parser('compare', help='strict STEP and manifests excluding stats/build identity')
     p.add_argument('baseline')
     p.add_argument('candidate')
+    p = commands.add_parser('qualify', help='fresh candidate 1/2/4; optional explicitly selected qualified baseline archive')
+    p.add_argument('inputs', nargs='+')
+    p.add_argument('--baseline', required=True)
+    p.add_argument('--candidate', required=True)
+    p.add_argument('--out', required=True, help='new owned directory, never resumed')
+    p.add_argument('--baseline-identity', help='complete build provenance JSON; missing/unknown disables reuse')
+    p.add_argument('--reuse-baseline', help='explicit archive directory from an earlier fresh qualified six')
+    p.add_argument('--fresh-audit', action='store_true', help='force all six even with a matching archive')
+    p.add_argument('--cores', help='same CPU policy for each 1/2/4 run')
+    p.add_argument('--max-work', type=int, default=100_000_000)
+    p.add_argument('--source', choices=['auto', 'recipe', 'field', 'print', 'iges', 'compare'], default='auto')
+    p.add_argument('--adapter', help='trusted explicit corpus adapter')
     p = commands.add_parser('report', help='correctness groups and separate interactive performance failures')
     p.add_argument('run')
     p = commands.add_parser('cleanup', help='confirm no persistent processes are retained; preserve all evidence')
@@ -699,6 +723,9 @@ def main():
             result = run(args)
         elif args.command == 'compare':
             result = compare(args.baseline, args.candidate)
+        elif args.command == 'qualify':
+            from qualification import qualify
+            result = qualify(args, sys.modules[__name__])
         elif args.command == 'report':
             result = summarize(json.loads(Path(args.run).read_text()))
         elif args.command == 'pair':
@@ -720,7 +747,9 @@ def main():
         print(json.dumps(result, indent=None if args.json else 2, sort_keys=True))
         return 1 if result.get('equal') is False or result.get('crashes', 0) or result.get('comparison_disagreements', 0) or result.get('step_failures', 0) or result.get('edit_failures', 0) or result.get('correctness_failures', 0) else 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-        print(json.dumps({'error': str(error), 'action': 'retain evidence, run doctor, then resume using the same --out'}), file=sys.stderr)
+        action = ('retain evidence; diagnose and explicitly requalify with a new --out'
+                  if args.command == 'qualify' else 'retain evidence, run doctor, then resume using the same --out')
+        print(json.dumps({'error': str(error), 'action': action}), file=sys.stderr)
         return 2
 
 

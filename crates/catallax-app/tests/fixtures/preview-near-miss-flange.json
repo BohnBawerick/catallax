@@ -1,0 +1,30 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Plate and flange with sketch-roundoff boundary offsets",
+  "steps": [
+    {
+      "id": "plate-profile", "op": "sketch",
+      "plane": {"rotation": ["2", "0", "0", "1"], "translation": ["0", "0", "0"]},
+      "loops": [[
+        {"id": "a", "kind": "line", "to": ["60", "-45"]},
+        {"id": "b", "kind": "line", "to": ["60", "45"]},
+        {"id": "c", "kind": "line", "to": ["-60", "45"]},
+        {"id": "d", "kind": "line", "to": ["-60", "-45"]}
+      ]]
+    },
+    {"id": "plate", "op": "extrude", "profile": "plate-profile", "distance": "10", "direction": ["0", "0", "1"]},
+    {
+      "id": "flange-profile", "op": "sketch",
+      "plane": {"rotation": ["2", "2", "1", "1"], "translation": ["36", "-27", "9.99999999999999"]},
+      "loops": [[
+        {"id": "a", "kind": "line", "to": ["59.99999999999999", "0"]},
+        {"id": "b", "kind": "line", "to": ["59.99999999999999", "60"]},
+        {"id": "c", "kind": "line", "to": ["-59.99999999999999", "60"]},
+        {"id": "d", "kind": "line", "to": ["-59.99999999999999", "0"]}
+      ]]
+    },
+    {"id": "flange", "op": "extrude", "profile": "flange-profile", "distance": "10", "direction": ["-4", "3", "0"]},
+    {"id": "joined", "op": "boolean", "kind": "union", "target": "plate", "tool": "flange"}
+  ],
+  "result": "joined"
+}

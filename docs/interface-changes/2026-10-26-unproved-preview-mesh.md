@@ -18,6 +18,8 @@ Charge `preview_body` to the preview/display allowance. It uses an active caller
 
 The preview samples retained edge traces and face definitions. Analytic ruled strips share sampled angular columns across their end trims. Other analytic trims use the existing periodic chart triangulator with sampled refinement. The existing retained spline-prism family uses sampled paired rings and cap fans. No preview path calls `mesh_body` or certifies facets. Preview topology, watertightness and approximation quality are unproved.
 
+Preview boundary sampling coalesces topological vertex samples within `1e-12` mm before tracing the shared edge polylines. This preview-only simplification is one million times smaller than the unchanged 1 nm modelling tolerance. It handles plate/flange sketches with boundary offsets around `1e-14` mm without feeding roundoff-width constraints to the chart triangulator. Zero-length segments disappear and opposite segment pairs cancel. A collapsed face retains its face ID and name entry with an empty triangle range. Retained geometry, certified boundary sampling and every certified check stay unchanged. The simplification provides no approximation or topology guarantee.
+
 `mesh_body`, `Answer<Mesh>`, every certified bound, `Mesh::write_obj` and its `proven_chord_error` labels, certified watertightness checks, STEP and all other export guarantees remain unchanged. There is no automatic export fallback to preview data.
 
 ### Development measurements
@@ -29,6 +31,15 @@ taskset -c 2 cargo bench -p catallax-app --bench preview_mesh -- /tmp/preview-me
 ```
 
 It builds each public fixture once, warms both mesh paths, alternates their order, and uses fresh deciders with identical 20,000,000-work allowances and 10-second deadlines for each display request. Rows separate elapsed time, deterministic work, output sizes and refusals. Fixtures include the public fillet and countersink reproductions, the [SolidDraft chamfer scenario](https://github.com/BohnBawerick/soliddraft/pull/30) through its distance edit with the pocket retained, P2, P1 and P3. The optional third argument selects one fixture by name.
+
+The `near-miss-flange` fixture builds two sketch extrusions and their union through the ordinary recipe evaluator, with `1e-14` mm offsets in the flange width and its contact height. Its regression checks coverage of the nominal L-shaped skin, finite positive-area triangles, outward volume, closed oriented incidence and retained face IDs. These checks cover this fixture only, not a preview certificate. Select it with the third benchmark argument to measure `preview_body` separately from construction.
+
+A pinned optimized run of `near-miss-flange` on CPU 2 used one warmup and five alternating measured pairs, with a `0.01` mm chord target and `0.03490658503988659` rad angular target. Construction and diagnostics were outside the timers. Neither path refused or exhausted its allowance.
+
+| Display request | Minimum ms | Median ms | Maximum ms | Deterministic work | Triangles |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Unproved preview, including names | 2.98 | 3.33 | 5.11 | 18,458 | 24 |
+| Certified mesh | 4.56 | 4.95 | 8.35 | 37,628 | 28 |
 
 Eight diagnostic points per preview triangle compare sampled positions and normals to retained analytic carriers. They are explicitly labelled `diagnostic_not_a_proof`. These samples do not prove trim coverage, Hausdorff distance, watertightness, deviation bounds or export eligibility. Timings include application picking names on the preview side and certified meshing alone on the certified side. Building the body, sampled diagnostics, JSON and any later proof are outside those display timings. Shared-machine timing remains diagnostic; compare warmed, pinned pairs rather than a single sample.
 

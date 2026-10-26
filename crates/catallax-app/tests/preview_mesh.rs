@@ -6,6 +6,67 @@ use catallax_numbers::{Decider, with_operation_budget};
 use catallax_recipe::{Recipe, Role};
 
 #[test]
+fn preview_accepts_near_coincident_plate_and_flange_boundaries() {
+    let recipe = Recipe::parse(include_str!("fixtures/preview-near-miss-flange.json")).unwrap();
+    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+    let start = std::time::Instant::now();
+    let display =
+        catallax_app::preview_body(&built, &PreviewOptions::default(), &mut Decider::default())
+            .unwrap();
+    eprintln!("near-miss flange preview: {:?}", start.elapsed());
+    assert_eq!(
+        display
+            .mesh
+            .faces
+            .iter()
+            .map(|f| f.face)
+            .collect::<BTreeSet<_>>(),
+        built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .collect()
+    );
+    let mut area = 0.0;
+    let mut volume6 = 0.0;
+    let mut incidence = std::collections::BTreeMap::<_, (usize, i32)>::new();
+    for triangle in &display.mesh.triangles {
+        let [a, b, c] = triangle.vertices.map(|i| display.mesh.positions[i]);
+        let u: [f64; 3] = std::array::from_fn(|i| b[i] - a[i]);
+        let v: [f64; 3] = std::array::from_fn(|i| c[i] - a[i]);
+        let cross: [f64; 3] = std::array::from_fn(|i| {
+            u[(i + 1) % 3] * v[(i + 2) % 3] - u[(i + 2) % 3] * v[(i + 1) % 3]
+        });
+        let twice_area = cross.iter().map(|x| x * x).sum::<f64>().sqrt();
+        assert!(twice_area > 0.0);
+        area += twice_area * 0.5;
+        volume6 += (0..3).map(|i| a[i] * cross[i]).sum::<f64>();
+        assert!(
+            [a, b, c]
+                .iter()
+                .map(|p| (-4.0 * p[0] + 3.0 * p[1]) / 5.0)
+                .sum::<f64>()
+                / 3.0
+                <= -35.0 + 1e-10
+                || (a[2] + b[2] + c[2]) / 3.0 <= 10.0 + 1e-10
+        );
+        for i in 0..3 {
+            let a = triangle.vertices[i];
+            let b = triangle.vertices[(i + 1) % 3];
+            let entry = incidence.entry((a.min(b), a.max(b))).or_default();
+            entry.0 += 1;
+            entry.1 += if a < b { 1 } else { -1 };
+        }
+    }
+    assert!((area - 41_400.0).abs() < 1e-6, "area: {area}");
+    assert!(
+        (volume6 / 6.0 - 180_000.0).abs() < 1e-6,
+        "volume6: {volume6}"
+    );
+    assert!(incidence.values().all(|&uses| uses == (2, 0)));
+}
+
+#[test]
 fn preview_picks_retain_complete_face_origins_and_edge_names_after_edits() {
     let mut input: serde_json::Value =
         serde_json::from_str(include_str!("../benches/fine_mesh/countersink.json")).unwrap();

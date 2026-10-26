@@ -524,3 +524,92 @@ blind_test!(
         }
     }
 );
+
+blind_test!(circle_planes_parallel_to_cylinder_axes_keep_tangent_hits, {
+    let circle_at = |height: Rational| {
+        Carrier::Analytic(Curve::Circle(
+            catallax_shapes::Circle::new(
+                Point3::new(rr(0), rr(0), height.into()),
+                vi([0, 0, 7]).into(),
+                rr(9),
+                vi([2, 0, 0]).into(),
+                &mut Decider::default(),
+            )
+            .unwrap(),
+        ))
+    };
+    let surface = cyl(pi([0, 0, 0]), vi([0, 3, 0]), n(2));
+    for height in [n(3), n(2) + n(1).mul_pow2(-128)] {
+        let case = HitCase {
+            name: "circle plane strictly beyond cylinder".into(),
+            curve: circle_at(height),
+            surface: surface.clone(),
+            expected: Hits::Disjoint,
+        };
+        check(
+            &case,
+            &n(1),
+            &Pose::identity(),
+            Decider::new(BudgetPolicy {
+                max_precision_bits: 128,
+                max_work: 512,
+            }),
+            Mode::Exact,
+        );
+    }
+    let root = rr(5).sqrt();
+    for (height, expected) in [
+        (
+            n(0),
+            Hits::Meets(vec![
+                (Point3::new(rr(2), root.clone(), rr(0)), Contact::Crossing),
+                (Point3::new(rr(-2), root.clone(), rr(0)), Contact::Crossing),
+                (Point3::new(rr(-2), -&root, rr(0)), Contact::Crossing),
+                (Point3::new(rr(2), -&root, rr(0)), Contact::Crossing),
+            ]),
+        ),
+        (
+            n(2),
+            Hits::Meets(vec![
+                (pi([0, 3, 2]).to_real(), Contact::Tangent),
+                (pi([0, -3, 2]).to_real(), Contact::Tangent),
+            ]),
+        ),
+    ] {
+        let case = HitCase {
+            name: "circle plane intersects or touches cylinder".into(),
+            curve: circle_at(height),
+            surface: surface.clone(),
+            expected,
+        };
+        for pose in [Pose::identity(), Rng(0x5A13).pose()] {
+            check(&case, &n(1), &pose, Decider::default(), Mode::Exact);
+        }
+    }
+});
+
+blind_test!(intersection_supports_preserve_tangent_plane_contacts, {
+    let carrier = Carrier::Branch {
+        a: cyl(pi([0, 0, 0]), vi([0, 0, -3]), n(5)),
+        b: Box::new(cyl(pi([3, 0, 2]), vi([0, 5, 0]), n(1))),
+        witness: pi([3, 4, 3]).to_real(),
+    };
+    for (height, expected) in [
+        (n(4), Hits::Disjoint),
+        (n(3) + n(1).mul_pow2(-128), Hits::Disjoint),
+        (
+            n(3),
+            Hits::Meets(vec![(pi([3, 4, 3]).to_real(), Contact::Tangent)]),
+        ),
+    ] {
+        let case = HitCase {
+            name: "intersection component against a support-parallel plane".into(),
+            curve: carrier.clone(),
+            surface: axis_plane(2, height),
+            expected,
+        };
+        for pose in [Pose::identity(), Rng(0xC71).pose()] {
+            check(&case, &n(1), &pose, Decider::default(), Mode::Exact);
+        }
+    }
+});

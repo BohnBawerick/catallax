@@ -31,9 +31,8 @@ fn range(band: &CircularBand, direction: &Real, reversed: bool) -> [Real; 2] {
 /// halfspace and the two inward parallels. No edge-tube approximation
 /// or untrimmed-support assertion is used outside these hypotheses.
 pub(super) fn prove(skin: &CircularSkin, open: &[bool], dec: &mut Decider) -> Result<(), Refusal> {
-    let unsupported = || {
-        bad("open curved circular cells need their kept-face edge-distance envelope")
-    };
+    let unsupported =
+        || bad("open curved circular cells need their kept-face edge-distance envelope");
     if skin.faces.len() != 3
         || skin.bands.len() != 2
         || skin.boundaries.len() != 2

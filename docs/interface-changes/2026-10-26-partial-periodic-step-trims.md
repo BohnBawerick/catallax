@@ -32,6 +32,12 @@ existing edges as well as new seams. `approximated_curves` counts emitted 3D
 branch fits, so splitting a branch can increase it. Report fields and manifest
 formats do not change. Complete-band and loopless exports retain their previous bytes.
 
+An exact analytic 3D `CIRCLE` remains exact beneath its `SURFACE_CURVE`
+association. Its auxiliary pcurve can still contribute a nonzero certified
+`max_deviation`. Consumers compare the actual writer-returned rational bound
+with the requested linear tolerance rather than assuming an analytic master
+curve implies a zero bound; the 3D curve is not replaced by an approximation.
+
 Eligibility: A selected scene must use supported regular charts throughout.
 Arbitrary cone/torus trims, elliptic cylinders and spherical domains containing
 a parameter pole keep their legacy encoding. Complete non-apex conical bands

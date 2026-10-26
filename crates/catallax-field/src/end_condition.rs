@@ -54,6 +54,13 @@ impl CurvedField {
         let point = point.to_real();
         let [u, v, t] = self.coordinates(&point, dec)?;
         let mut boundary = false;
+        if let Some(radius) = self.cap.definition().circular_radius() {
+            let radial = sign(&(&u * &u + &v * &v - Real::from(radius * radius)), dec)?;
+            if radial == Sign::Positive {
+                return Ok(Location::Outside);
+            }
+            boundary = radial == Sign::Zero;
+        }
         for [a, b, c] in self.cap.definition().side_constraints() {
             let side = sign(
                 &(&Real::from(a.clone()) * &u
@@ -118,6 +125,14 @@ impl CurvedField {
         let p = point.to_real();
         let [u, v, t] = self.coordinates(&p, dec)?;
         let mut roles = Vec::new();
+        if let Some(radius) = self.cap.definition().circular_radius()
+            && sign(&(&u * &u + &v * &v - Real::from(radius * radius)), dec)? == Sign::Zero
+        {
+            roles.push(Role::Side {
+                segment: self.cap.side_ids()[0].clone(),
+                path: None,
+            });
+        }
         if sign(&t, dec)? == Sign::Zero {
             roles.push(Role::Start);
         }

@@ -18,6 +18,14 @@ pub struct ConvexCell {
 }
 
 impl ConvexCell {
+    pub(super) fn circular(surfaces: Vec<Surface>, roles: Vec<Role>, radius: Rational) -> Self {
+        Self {
+            surfaces,
+            roles,
+            radius,
+        }
+    }
+
     /// Inside is the nonpositive side of every exact support polynomial.
     pub fn surfaces(&self) -> &[Surface] {
         &self.surfaces
@@ -194,6 +202,9 @@ impl CurvedCapped {
         sides: &[ElementId],
         dec: &mut Decider,
     ) -> Result<CapConstruction, Refusal> {
+        if self.circle.is_some() {
+            return circular_build::construction(self, sides, dec);
+        }
         self.check_side_ids(sides)?;
         let base = self.frame.point(&[
             self.bounds[0][0].clone().into(),
@@ -413,6 +424,9 @@ impl CurvedCapped {
     ) -> Result<BodyId, Refusal> {
         dec.check_deadline()?;
         let side_ids = side_ids.as_ref();
+        if self.circle.is_some() {
+            return circular_build::build(self, model, step, side_ids, dec);
+        }
         self.check_side_ids(side_ids)?;
         let origin = |role| Origin {
             step: step.clone(),

@@ -163,6 +163,7 @@ dependencies = [
 name = "catallax-measure"
 version = "0.1.0"
 dependencies = [
+ "catallax-app",
  "catallax-boolean",
  "catallax-intersect",
  "catallax-numbers",
@@ -170,6 +171,7 @@ dependencies = [
  "catallax-shapes",
  "catallax-topology",
  "rug",
+ "serde_json",
 ]
 
 [[package]]

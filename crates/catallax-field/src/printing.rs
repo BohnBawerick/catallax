@@ -51,16 +51,27 @@ pub struct Mesh {
     /// Total visited octree cells, including unsuccessful refinements.
     pub cells: usize,
 }
+/// Bytes gathered before one write. Unbuffered sinks such as files otherwise
+/// pay a system call per field.
+const CHUNK: usize = 1 << 16;
+fn drain(out: &mut impl Write, chunk: &mut Vec<u8>, limit: usize) -> std::io::Result<()> {
+    if chunk.len() >= limit {
+        out.write_all(chunk)?;
+        chunk.clear();
+    }
+    Ok(())
+}
 impl Mesh {
     /// Writes a binary STL. All topology checks finish before publication.
     pub fn write_stl(&self, out: &mut impl Write) -> std::io::Result<()> {
+        let count = u32::try_from(self.triangles.len())
+            .map_err(|_| std::io::Error::other("too many STL triangles"))?;
+        let mut chunk = Vec::with_capacity(CHUNK + 50);
         let mut header = [0u8; 80];
         let label = b"catallax field mesh; millimetres";
         header[..label.len()].copy_from_slice(label);
-        out.write_all(&header)?;
-        let count = u32::try_from(self.triangles.len())
-            .map_err(|_| std::io::Error::other("too many STL triangles"))?;
-        out.write_all(&count.to_le_bytes())?;
+        chunk.extend_from_slice(&header);
+        chunk.extend_from_slice(&count.to_le_bytes());
         for triangle in &self.triangles {
             let p = triangle.map(|i| self.positions[i].map(f64::from));
             let a: [f64; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
@@ -71,28 +82,32 @@ impl Mesh {
             });
             let length = crate::metric::Scalar::sqrt(&normal.iter().map(|n| n * n).sum::<f64>());
             for component in normal {
-                out.write_all(&((component / length) as f32).to_le_bytes())?;
+                chunk.extend_from_slice(&((component / length) as f32).to_le_bytes());
             }
             for &vertex in triangle {
                 for coordinate in self.positions[vertex] {
-                    out.write_all(&coordinate.to_le_bytes())?;
+                    chunk.extend_from_slice(&coordinate.to_le_bytes());
                 }
             }
-            out.write_all(&[0u8; 2])?;
+            chunk.extend_from_slice(&[0u8; 2]);
+            drain(out, &mut chunk, CHUNK)?;
         }
-        Ok(())
+        drain(out, &mut chunk, 1)
     }
     /// Writes the same rounded vertices and facets for display.
     pub fn write_obj(&self, out: &mut impl Write) -> std::io::Result<()> {
-        writeln!(out, "# catallax field print mesh; millimetres")?;
-        writeln!(out, "# proven_two_sided_deviation {}", self.max_deviation)?;
+        let mut chunk = Vec::with_capacity(CHUNK + 256);
+        writeln!(chunk, "# catallax field print mesh; millimetres")?;
+        writeln!(chunk, "# proven_two_sided_deviation {}", self.max_deviation)?;
         for p in &self.positions {
-            writeln!(out, "v {} {} {}", p[0] as f64, p[1] as f64, p[2] as f64)?;
+            writeln!(chunk, "v {} {} {}", p[0] as f64, p[1] as f64, p[2] as f64)?;
+            drain(out, &mut chunk, CHUNK)?;
         }
         for t in &self.triangles {
-            writeln!(out, "f {} {} {}", t[0] + 1, t[1] + 1, t[2] + 1)?;
+            writeln!(chunk, "f {} {} {}", t[0] + 1, t[1] + 1, t[2] + 1)?;
+            drain(out, &mut chunk, CHUNK)?;
         }
-        Ok(())
+        drain(out, &mut chunk, 1)
     }
 }
 fn q(n: i64) -> Rational {

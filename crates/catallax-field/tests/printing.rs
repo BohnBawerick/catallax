@@ -180,3 +180,147 @@ fn printing_keeps_cell_and_vertex_refusals() {
         );
     }
 }
+
+/// Reference serializers: one small write per field, as before chunking.
+fn reference_stl(mesh: &Mesh) -> Vec<u8> {
+    let mut out = vec![0u8; 80];
+    let label = b"catallax field mesh; millimetres";
+    out[..label.len()].copy_from_slice(label);
+    out.extend((mesh.triangles.len() as u32).to_le_bytes());
+    for triangle in &mesh.triangles {
+        let p = triangle.map(|i| mesh.positions[i].map(f64::from));
+        let a: [f64; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
+        let b: [f64; 3] = std::array::from_fn(|i| p[2][i] - p[0][i]);
+        let normal: [f64; 3] = std::array::from_fn(|i| {
+            let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+            a[j] * b[k] - a[k] * b[j]
+        });
+        let length = normal.iter().map(|n| n * n).sum::<f64>().sqrt();
+        for component in normal {
+            out.extend(((component / length) as f32).to_le_bytes());
+        }
+        for &vertex in triangle {
+            for coordinate in mesh.positions[vertex] {
+                out.extend(coordinate.to_le_bytes());
+            }
+        }
+        out.extend([0u8; 2]);
+    }
+    out
+}
+fn reference_obj(mesh: &Mesh) -> Vec<u8> {
+    use std::io::Write;
+    let mut out = Vec::new();
+    writeln!(out, "# catallax field print mesh; millimetres").unwrap();
+    writeln!(out, "# proven_two_sided_deviation {}", mesh.max_deviation).unwrap();
+    for p in &mesh.positions {
+        writeln!(out, "v {} {} {}", p[0] as f64, p[1] as f64, p[2] as f64).unwrap();
+    }
+    for t in &mesh.triangles {
+        writeln!(out, "f {} {} {}", t[0] + 1, t[1] + 1, t[2] + 1).unwrap();
+    }
+    out
+}
+/// Large enough that output spans several internal chunks.
+fn sphere_mesh() -> Mesh {
+    let recipe = Recipe::parse(r#"{"format":"catallax-recipe/3","name":"print bytes","steps":[{"id":"ball","op":"sphere","radius":"10","pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"ball"}"#).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    printing::mesh_plan(
+        &plan,
+        &Options {
+            tolerance: Rational::from_ratio(1, 2).unwrap(),
+            ..Options::default()
+        },
+        &mut Decider::default(),
+    )
+    .unwrap()
+}
+#[test]
+fn stl_and_obj_bytes_match_the_unchunked_reference() {
+    for mesh in [
+        mesh(
+            r#"{"id":"box","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}"#,
+            "box",
+        ),
+        sphere_mesh(),
+    ] {
+        let (mut stl, mut obj) = (Vec::new(), Vec::new());
+        mesh.write_stl(&mut stl).unwrap();
+        mesh.write_obj(&mut obj).unwrap();
+        assert_eq!(stl, reference_stl(&mesh));
+        assert_eq!(obj, reference_obj(&mesh));
+    }
+    assert!(reference_stl(&sphere_mesh()).len() > 3 << 16);
+}
+#[test]
+fn small_sinks_see_few_writes() {
+    struct Counting(usize, usize);
+    impl std::io::Write for Counting {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += 1;
+            self.1 += bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mesh = sphere_mesh();
+    let mut stl = Counting(0, 0);
+    mesh.write_stl(&mut stl).unwrap();
+    assert_eq!(stl.1, reference_stl(&mesh).len());
+    assert!(stl.0 <= stl.1 / (1 << 16) + 2);
+}
+#[test]
+fn a_failing_sink_reports_the_error_for_both_formats() {
+    struct Failing(usize);
+    impl std::io::Write for Failing {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if self.0 < bytes.len() {
+                return Err(std::io::Error::other("disk full"));
+            }
+            self.0 -= bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mesh = sphere_mesh();
+    for budget in [0, 100, 70_000] {
+        let stl = mesh.write_stl(&mut Failing(budget)).unwrap_err();
+        assert_eq!(stl.to_string(), "disk full");
+        let obj = mesh.write_obj(&mut Failing(budget)).unwrap_err();
+        assert_eq!(obj.to_string(), "disk full");
+    }
+    mesh.write_stl(&mut Failing(usize::MAX)).unwrap();
+    mesh.write_obj(&mut Failing(usize::MAX)).unwrap();
+}
+#[test]
+fn the_artifact_path_writes_identical_bytes_to_memory() {
+    let mesh = sphere_mesh();
+    let dir = std::env::temp_dir().join(format!("catallax-print-bytes-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    mesh.write_stl(&mut std::fs::File::create(dir.join("print.stl")).unwrap())
+        .unwrap();
+    mesh.write_obj(&mut std::fs::File::create(dir.join("display.obj")).unwrap())
+        .unwrap();
+    assert_eq!(
+        std::fs::read(dir.join("print.stl")).unwrap(),
+        reference_stl(&mesh)
+    );
+    assert_eq!(
+        std::fs::read(dir.join("display.obj")).unwrap(),
+        reference_obj(&mesh)
+    );
+    let full = std::fs::File::open("/dev/full");
+    if let Ok(full) = full {
+        drop(full);
+        let mut device = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .unwrap();
+        assert!(mesh.write_stl(&mut device).is_err());
+        assert!(mesh.write_obj(&mut device).is_err());
+    }
+}

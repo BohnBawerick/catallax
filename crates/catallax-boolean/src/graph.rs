@@ -222,12 +222,7 @@ pub(crate) fn intersect(
         for &fb in &second {
             let sa = model.face(fa).surface;
             let sb = model.face(fb).surface;
-            let disjoint = if algebraic {
-                bounds.disjoint(model, fa, fb, dec)?
-            } else {
-                bounds.excludes(model, fa, fb, dec)
-            };
-            if disjoint {
+            if algebraic && bounds.disjoint(model, fa, fb, dec)? {
                 continue;
             }
             let pair = if let Some(value) = pairs.get(&(sa, sb)) {

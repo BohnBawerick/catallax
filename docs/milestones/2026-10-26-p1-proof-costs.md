@@ -19,25 +19,22 @@ The original spends 279,884 work in `slot-cut-0` intersection and another 427,87
 
 The proposed planar endpoint-incidence reuse accounts for only 1,035 work across the reached chain, about 0.10% of the allowance. It is not selected as the first optimization. Its incidence fact would establish only carrier membership, not trim membership or orientation.
 
-## Selected routes
+## Compatibility-preserving routes
 
-- Apply the existing conservative finite-face exclusion proofs before rational support-pair construction. Strictly separated boxes or a support enclosure excluding zero prove only this finite pair irrelevant. An overlapping box proves nothing; unsupported bounds retain the analytic route. The algebraic support-pair route is unchanged.
-- Use the existing one-parameter line solver when the line itself has algebraic coordinates, even if the intersected surface is rational. Rational-line/rational-surface cases retain their existing solver. This preserves correlated coordinates instead of independently eliminating them.
-- Intersect a circle perpendicular to a cylinder's axis through its exact radical plane and common chord. Parallel, offset axes are covered; coaxiality is not assumed. Signed squared chord height distinguishes two crossings, both tangent cases and disjoint carriers. Other orientations retain the general solver. Candidate branch, domain, contact and ordering checks still run.
+- Use the circle/cylinder radical-plane calculation only to prove carrier separation or complete containment when the circle's normal is parallel to the cylinder axis. Offset axes are covered; coaxiality is not assumed. Tangency, overlap and unsupported orientations retain the original nonempty-hit solver and its RUR point expressions.
+- Keep the original support-pair enumeration and rational-target line route. Omitting auxiliary support queries or replacing exact point expressions changed previously reported measurement enclosures, including wider bounds. Mathematical equivalence of the carriers does not guarantee identical interval arithmetic.
 - Reuse the existing prepared signature workspace across one imprinted face's probes, with the same append-only model and decider. Cached projection proofs do not reuse a winding result for another point.
 
-## Measured construction progress
+## Current construction smoke
 
-| Development snapshot | Original `slot-cut-0` work | Original `slot-cut-1` intersection work | First refusal |
-| --- | ---: | ---: | --- |
-| Baseline | 307,350 | 427,876 before refusal | `slot-cut-1`, Intersect |
-| Finite-face pruning | 107,761 | 669,139 before refusal | `slot-cut-1`, Intersect |
-| Plus algebraic-line routing | 107,761 | 392,395, completed | `slot-cut-1`, Imprint |
-| Plus offset circular sections | 107,761 | 219,333, completed | `slot-cut-1`, Imprint |
+Both unchanged recipes still refuse at `slot-cut-1`. The matched prefix before that Boolean is slightly cheaper; this is not completed construction or progress to a later feature.
 
-A larger refused-stage count can mean that earlier work became cheaper and the stage reached more queries. It is not a regression measurement on equal completed work.
+| Recipe | Baseline work before `slot-cut-1` | Current work before `slot-cut-1` | Current accepted request work |
+| --- | ---: | ---: | ---: |
+| Original | 572,123 | 571,334 | 999,996 |
+| Boss radius 9 | 568,070 | 567,281 | 999,996 |
 
-With prepared signature reuse, both complete recipes still refuse during `slot-cut-1` imprinting at 999,995 accepted work. In that run, signatures consume 313,107 work across the reached chain. Trace preparation is only 1,614 work. Almost all remaining signature cost is certified projection/subdivision, not trace construction. The two expensive first signatures consume 136,035 and 158,893 work. Reusing traces alone does not remove that proof cost.
+A larger refused-operation count can mean that earlier work became cheaper and the operation reached more queries. It is not a regression measurement on equal completed work. The baseline CSV remains the per-stage profile; the prefix columns above come from the real CLI operation log, not a newly inferred Boolean-stage report.
 
 ## Verification and limits
 
@@ -47,4 +44,14 @@ All timings in the CSV are development observations on a shared host, pinned to 
 
 P1 is not yet a completed construction or edit at 1M. Its unproved `preview_body` delivery and background proof remain unreached, so preview wait and proof time are unmeasured, not zero. The [26 October preview/proof contract](../ARCHITECTURE.md#preview-and-deferred-proof-decision-of-2026-10-26) remains unchanged. No allowance, tolerance, output accuracy or geometric definition is relaxed.
 
-The real `catallax-verify` CLI, driven through the verification skill with both full inputs, also refuses at 999,995 work. The run has two cases, zero crashes and zero cache hits. Observed request waits are 742.425 ms and 734.291 ms; these are refusal waits, not preview latency. The exercised binary's SHA-256 is `82e0585c2d5e8b3631d688787eeb74de75c2d882f2835f0e21a184206064f0a1`.
+The real `catallax-verify` CLI replays both complete portable questions with their retained 1M allowances. Both honestly refuse, without producing a preview or an export. The exercised compatibility-preserving binary's SHA-256 is `d5e6355a2ce77cc115f00a27cc925dc82792a56332a5d8cfd5eadf98784ae531`.
+
+## Public-case compatibility
+
+The 41 reported public cases were replayed against the baseline and the compatibility-preserving variant with the same 100M verification-request allowance. This is a separate contract from the 1M P1 construction allowance.
+
+Every prior answered manifest is identical after excluding kernel identity and statistics: topology, exact property endpoints, marks, STEP metadata and question identity are unchanged. One previous budget refusal now answers; all other refusals are unchanged. Both runs have zero crashes and zero cache hits. The earlier full point-solving and support-pruning experiments are not part of this variant.
+
+All 35 resulting STEP files pass the calibrated standard-reader validity check with expected face and solid counts. The 34 pre-existing STEP files are byte-identical to baseline. This uses standard reader processing and is not a raw no-healing validity claim.
+
+The geometry regressions and public replay exercise both the new exclusions and the unchanged nonempty-hit fallbacks. Full-corpus qualification remains separate from these 41 public cases.

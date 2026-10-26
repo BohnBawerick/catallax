@@ -523,25 +523,16 @@ fn circular_cylinder(
             },
         ));
     }
-    // The radical plane gives the common chord without eliminating three
-    // world coordinates. Its signed squared height retains both tangencies.
+    // The radical plane proves separation without eliminating world coordinates.
+    // Nonempty intersections retain the original solver's RUR witnesses.
     let fraction =
         (&(&distance_sq + radius_sq) - &cylinder.radius_sq) / (&Real::from_i64(2) * &distance_sq);
-    let chord = center.plus(&radial.scaled(&fraction));
-    let transverse = normal.cross(&radial);
-    let height_sq = (radius_sq - &(&fraction.square() * &distance_sq)) / transverse.norm_squared();
-    let points = match sign(&height_sq, dec)? {
-        Sign::Negative => Vec::new(),
-        Sign::Zero => vec![chord],
-        Sign::Positive => {
-            let shift = transverse.scaled(&height_sq.sqrt());
-            vec![
-                chord.plus(&shift),
-                chord.plus(&shift.scaled(&Real::from_i64(-1))),
-            ]
-        }
-    };
-    Ok(Some(Solutions::Points(points)))
+    let height_numerator = radius_sq - &(&fraction.square() * &distance_sq);
+    Ok(if sign(&height_numerator, dec)? == Sign::Negative {
+        Some(Solutions::Points(Vec::new()))
+    } else {
+        None
+    })
 }
 
 pub(super) fn intersect(
@@ -571,10 +562,7 @@ pub(super) fn intersect(
     let solutions = if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
         solutions
     } else if let CurveForm::Line { origin, dir } = &form
-        && (!geom.surface(s).has_rational_definition()
-            || [&origin.x, &origin.y, &origin.z, &dir.x, &dir.y, &dir.z]
-                .into_iter()
-                .any(|coordinate| coordinate.rational_ref().is_none()))
+        && !geom.surface(s).has_rational_definition()
     {
         algebraic_line(origin, dir, geom.surface(s), implicit, dec)?
     } else {

@@ -233,3 +233,64 @@ fn an_active_unsupported_feature_still_refuses_print_and_mass() {
         "field.print-coverage"
     );
 }
+
+fn handed_off_plan() -> Plan {
+    let recipe = Recipe::parse(include_str!(
+        "../../catallax-features/tests/fixtures/boolean-face-thicken/collinear-neighbours.json"
+    ))
+    .unwrap();
+    Plan::compile(&recipe).unwrap()
+}
+
+#[test]
+fn handed_off_triangle_history_has_exact_box_mass_at_original_defaults() {
+    // Preserve the original ordinary library call: no operation-budget wrapper.
+    let result = mass::properties(
+        &handed_off_plan(),
+        &mass::Accuracy::default(),
+        &mass::Options::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(result.volume.is_exact());
+    assert_eq!(result.volume.lo, q("16"));
+    // Independent moments of [0,4] x [0,4] x [3,4], not a mesh or B-rep query.
+    for (value, expected) in result
+        .centroid
+        .as_ref()
+        .unwrap()
+        .iter()
+        .zip(["2", "2", "7/2"])
+    {
+        assert!(value.is_exact());
+        assert_eq!(value.lo, q(expected));
+    }
+    for (i, row) in result.inertia.as_ref().unwrap().iter().enumerate() {
+        for (j, value) in row.iter().enumerate() {
+            assert!(value.is_exact());
+            assert_eq!(
+                value.lo,
+                if i == j {
+                    q(["68/3", "68/3", "128/3"][i])
+                } else {
+                    q("0")
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn required_handed_off_thicken_prints_at_original_defaults() {
+    // This required consumer gate stays enabled. Reaching a separate cell limit
+    // is an open print defect, not a substitute expected-refusal success.
+    let mesh = printing::mesh_plan(
+        &handed_off_plan(),
+        &printing::Options::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(!mesh.triangles.is_empty());
+    assert!(mesh.max_deviation <= printing::Options::default().tolerance);
+    assert!(!bytes(&mesh).0.is_empty());
+}

@@ -51,11 +51,18 @@ without exhausting that work allowance. No STL or OBJ is published. This is a
 real consumer blocker beyond preparation; the required print smoke remains
 open. A smaller synthetic success does not satisfy this required smoke.
 
-PR119 must land before migrating its single obsolete mass-refusal assertion.
-Its publication implementation and all other assertions remain with that PR.
-Frozen-head integration probes are separate evidence, not final-main evidence.
-The draft PR records exact final source/runtime identities, commands, terminal
-checks and any still-pending integration gate.
+PR119 landed as `68f80436a4a9804c5d6a15435c4dfecc6119d758` before integration
+and migration of its single obsolete mass-refusal assertion. The original
+unwrapped library call now requires exact volume 16. A dedicated independent
+oracle also requires centroid `(2,2,7/2)` and centroidal inertia
+`diag(68/3,68/3,128/3)`. Its publication implementation and all other assertions
+are preserved. Frozen-head integration probes remain separate from final-main
+evidence. The draft PR records exact final source/runtime identities, commands
+and terminal checks.
+
+The required handed-off print success test stays enabled at the original
+defaults. It remains a failing gate when refinement exhausts the original cell
+cap; neither an expected-refusal assertion nor a smaller print replaces it.
 
 ## Defect and attempt ledger
 
@@ -64,7 +71,8 @@ checks and any still-pending integration gate.
 | Inactive Feature preparation | Original dedicated mass and print regressions fail with `field.print-coverage`; active Feature refusal passes | Skip preparation using existing liveness, with indexed empty slots |
 | First synthetic Boolean print expectation | A default-cap print reaches `field.print-budget` after preparation is repaired | Preserve compact decision and keep a separate enabled actual-output test; no cap increase |
 | Exact-size compact thicken equivalent | Real default-cap CLI print reaches `field.print-budget` | Required thicken print gate remains open; report the independent limit |
-| PR119 mass-refusal assertion | Still expects the historical preparation refusal | Migrate only after dependency landing is verified |
+| PR119 mass-refusal assertion | Dependency landing verified at `68f80436`; original call now answers exact volume 16 | Migrate only that assertion; add independent exact moments |
+| Required retained thicken print | Both ordinary library and actual CLI reach `field.print-budget` after preparation repair | Keep the public success test enabled and the draft unready |
 
 Verification uses the checkout's `verify-catallax` skill, public synthetic
 inputs, preserved baseline executable and separate evidence directories outside

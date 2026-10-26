@@ -539,14 +539,15 @@ fn changing_neighbours_on_one_straight_rim_do_not_partition_the_sweep() {
             (["4", "2", "7/2"], Location::Boundary),
         ],
     );
-    // This extra source is an authored triangular sweep. The existing mass
-    // classifier still inspects inactive source leaves and refuses that history;
-    // its printing/mass coverage is outside this lane. Keep that gate explicit.
+    // The authored triangular source is inactive in the final box. Its retained
+    // history must not prevent ordinary field mass at the original defaults.
     let mass = catallax_field::mass::properties(
         &Plan::compile(&recipe).unwrap(),
         &Default::default(),
         &Default::default(),
         &mut Decider::default(),
     );
-    assert_eq!(mass.unwrap_err().code, "field.print-coverage");
+    let mass = mass.unwrap();
+    assert!(mass.volume.is_exact());
+    assert_eq!(mass.volume.lo, Rational::from_i64(16));
 }

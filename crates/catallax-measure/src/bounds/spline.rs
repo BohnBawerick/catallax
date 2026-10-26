@@ -4,8 +4,10 @@ use super::{Accuracy, Budget, Extrema};
 use crate::Enclosure;
 use catallax_numbers::{Ball, Decider, MarkLog, Rational, Refusal};
 use catallax_shapes::{BSplineCurve, Curve, Surface};
-use catallax_topology::{Body, BodyKind, FaceId, Loop, Lump, Model, Shell, SplinePrism};
-use std::collections::BTreeSet;
+use catallax_topology::{
+    Body, BodyId, BodyKind, EdgeId, FaceId, Loop, Lump, Model, Shell, SplinePrism,
+};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
 mod tests;
@@ -36,12 +38,45 @@ fn unsupported() -> Refusal {
     )
 }
 
-/// Recover only the three incident faces; the topology checker, rather than
-/// this adjacency walk, establishes their actual complete parameter domains.
-/// A face query has no body handle, so check an immutable scratch shell using
-/// the original faces. No new geometric facts, seams or trim assumptions enter.
+fn ambiguous() -> Refusal {
+    Refusal::new(
+        "measure.unsupported-surface",
+        "spline face has ambiguous model-wide prism adjacency; a body scope is required",
+    )
+}
+
+/// Read actual face uses within the requested body. Model-wide back-links may
+/// name a different body's first owner of a shared loop or coedge.
+fn body_adjacency(
+    model: &Model,
+    body: BodyId,
+    dec: &Decider,
+) -> Result<BTreeMap<EdgeId, BTreeSet<FaceId>>, Refusal> {
+    let mut adjacency: BTreeMap<EdgeId, BTreeSet<FaceId>> = BTreeMap::new();
+    for face in model.faces_of_body(body) {
+        dec.check_deadline()?;
+        for lp in &model.face(face).loops {
+            if let Loop::Coedges(cs) = model.loop_(*lp) {
+                for c in cs {
+                    dec.check_deadline()?;
+                    adjacency
+                        .entry(model.coedge(*c).edge)
+                        .or_default()
+                        .insert(face);
+                }
+            }
+        }
+    }
+    Ok(adjacency)
+}
+
+/// Recover three incident faces within the body's inventory when supplied.
+/// Face-only queries retain their model-wide walk and refuse ambiguous covers.
+/// The topology checker, rather than adjacency alone, establishes complete
+/// parameter domains on an immutable scratch shell of the original faces.
 pub(super) fn prism_faces(
     model: &Model,
+    body: Option<BodyId>,
     face: FaceId,
     accuracy: &Accuracy,
     budget: &mut Budget,
@@ -67,6 +102,9 @@ pub(super) fn prism_faces(
             .max(64)
             .min(budget.policy.max_precision_bits);
     }
+    let adjacency = body
+        .map(|body| body_adjacency(model, body, dec))
+        .transpose()?;
     let mut faces = BTreeSet::from([face]);
     let mut pending = vec![face];
     while let Some(face) = pending.pop() {
@@ -76,14 +114,28 @@ pub(super) fn prism_faces(
                 return Err(unsupported());
             };
             for c in cs {
-                for adjacent in model.coedges_of_edge(model.coedge(*c).edge) {
-                    dec.check_deadline()?;
-                    let Some((_, owner)) = model.owner_of_coedge(adjacent) else {
-                        return Err(unsupported());
-                    };
+                let edge = model.coedge(*c).edge;
+                let neighbors = if let Some(adjacency) = &adjacency {
+                    adjacency.get(&edge).cloned().unwrap_or_default()
+                } else {
+                    let mut neighbors = BTreeSet::new();
+                    for adjacent in model.coedges_of_edge(edge) {
+                        dec.check_deadline()?;
+                        let Some((_, owner)) = model.owner_of_coedge(adjacent) else {
+                            return Err(unsupported());
+                        };
+                        neighbors.insert(owner);
+                    }
+                    neighbors
+                };
+                for owner in neighbors {
                     if faces.insert(owner) {
                         if faces.len() > 3 {
-                            return Err(unsupported());
+                            return Err(if body.is_some() {
+                                unsupported()
+                            } else {
+                                ambiguous()
+                            });
                         }
                         pending.push(owner);
                     }

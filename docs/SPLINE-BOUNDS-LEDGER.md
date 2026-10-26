@@ -113,3 +113,35 @@ unchanged. Shared-cloud timings are diagnostic, not a quiet pinned AB/BA speed
 claim or complete-click acceptance. The 100/500/1000/2000 ms engineering targets
 are unchanged. Private release preservation and readiness remain external
 qualification gates; this public fixture work does not replace them.
+
+## Cross-body sharing correction
+
+Frozen source `eda40cf1e94c6b06409b252cfeeeac0a5cdb5bb8` incorrectly used the
+model-wide coedge owner graph even when the caller supplied a body. The earlier
+qualification is retained as historical evidence and does not qualify this
+correction. The failure is an acceptance gap, not a false enclosure.
+
+The public regression starts with checked prism A, adds a fresh coedge, loop
+and lower-cap face on the same ring and plane with the same senses, then forms
+prism B from that cap and A's existing upper cap and side. Both bodies pass the
+structural and complete geometric prism checks. On the frozen source, both
+body-bound queries return `measure.unsupported-surface`; the regression exits
+101 before repair. Its original source, executable, command, output and hash
+remain separate from the corrected-head evidence.
+
+Body queries now read actual face/loop/coedge uses within that body's inventory
+to build their adjacency map. They do not filter model-wide first-owner links:
+even a complete loop and coedge may be shared across bodies, with a different
+first owner in the model's lookup table. A query's model, optional body and
+Accuracy are immutable throughout its cached face/edge extrema. The same
+complete-domain checker, closed rims and unchanged interval extremum proof are
+used after the scoped walk. No geometry, incidence facts or storage change.
+
+Four additional application regressions check the valid A/B bodies against the
+independent rim-extremum oracle, shared loops/coedges in all six face orders,
+unowned foreign coedges, missing-cap/side refusals, model immutability and
+alternating loose/tight Accuracy requests. A face-only query still has no body
+selector and explicitly refuses the ambiguous four-face model-wide cover.
+Incomplete body inventories cannot borrow a globally available cap or side.
+No budget, tolerance, target-law guarantee or existing refusal is weakened.
+See the [additive correction contract](interface-changes/2026-10-26-body-scoped-spline-prism-bounds.md).

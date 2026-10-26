@@ -1,10 +1,12 @@
 //! Public application fixture regressions for represented finite spline bounds.
 
 use catallax_measure::{Accuracy, BoundingBox, bounding_box, face_bounding_box};
-use catallax_numbers::{Decider, Rational, with_operation_budget};
+use catallax_numbers::{Decider, MarkLog, Rational, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_shapes::{Curve, Isometry, Pose, RPoint3, RVector3, Rotation};
-use catallax_topology::{BodyId, Face, Model, SplinePrism, transformed_body};
+use catallax_topology::{
+    Body, BodyId, BodyKind, Face, FaceId, Loop, Lump, Model, Shell, SplinePrism, transformed_body,
+};
 
 #[path = "spline_bounds/oracle.rs"]
 mod oracle;
@@ -31,6 +33,204 @@ fn accuracy() -> Accuracy {
         relative: q("0"),
         absolute: q("1e-10"),
     }
+}
+
+fn body_with_faces<const N: usize>(model: &mut Model, faces: [FaceId; N]) -> BodyId {
+    let shell = model.add_shell(Shell {
+        faces: faces.into(),
+    });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: MarkLog::new(),
+    })
+}
+
+fn shared_cap_fixture() -> (Model, [BodyId; 2], [FaceId; 4]) {
+    let application = fixture();
+    let built = application.built().built();
+    let mut model = built.model.clone();
+    let [lower, upper, side] = SplinePrism::check(&model, built.result, &mut Decider::default())
+        .unwrap()
+        .faces();
+    let mut cap = model.face(lower).clone();
+    let Loop::Coedges(uses) = model.loop_(cap.loops[0]).clone() else {
+        unreachable!()
+    };
+    let uses = uses
+        .into_iter()
+        .map(|id| {
+            let coedge = model.coedge(id).clone();
+            model.add_coedge(coedge)
+        })
+        .collect();
+    cap.loops = vec![model.add_loop(Loop::Coedges(uses))];
+    let origins = model.face_origins(lower).to_vec();
+    let replacement = model.add_named_face(cap, origins);
+    let other = body_with_faces(&mut model, [replacement, upper, side]);
+    (
+        model,
+        [built.result, other],
+        [lower, upper, side, replacement],
+    )
+}
+
+fn assert_body_rim_oracle(model: &Model, body: BodyId, bounds: &BoundingBox, accuracy: &Accuracy) {
+    let checked = SplinePrism::check(model, body, &mut Decider::default()).unwrap();
+    let rims = checked.rings().map(|edge| {
+        let Curve::BSpline(curve) = model.geom().curve(model.edge(edge).curve) else {
+            unreachable!()
+        };
+        oracle::extrema(curve)
+    });
+    for axis in 0..3 {
+        let min_lo = rims[0].min[axis]
+            .lo
+            .clone()
+            .min(rims[1].min[axis].lo.clone());
+        let min_hi = rims[0].min[axis]
+            .hi
+            .clone()
+            .min(rims[1].min[axis].hi.clone());
+        let max_lo = rims[0].max[axis]
+            .lo
+            .clone()
+            .max(rims[1].max[axis].lo.clone());
+        let max_hi = rims[0].max[axis]
+            .hi
+            .clone()
+            .max(rims[1].max[axis].hi.clone());
+        assert!(bounds.min[axis] <= min_lo && bounds.max[axis] >= max_hi);
+        assert!(&min_hi - &bounds.min[axis] <= accuracy.absolute);
+        assert!(&bounds.max[axis] - &max_lo <= accuracy.absolute);
+    }
+}
+
+#[test]
+fn body_bounds_accept_two_valid_prisms_sharing_a_cap_ring() {
+    let (model, bodies, faces) = shared_cap_fixture();
+    for body in bodies {
+        assert!(model.check(body).is_empty());
+        SplinePrism::check(&model, body, &mut Decider::default()).unwrap();
+    }
+    let answers =
+        bodies.map(|body| bounding_box(&model, body, &accuracy(), &mut Decider::default()));
+    eprintln!(
+        "valid shared-cap body refusals: {:?}",
+        answers.each_ref().map(|answer| answer.as_ref().err())
+    );
+    assert!(answers.iter().all(Result::is_ok));
+    let [a, b] = answers.map(Result::unwrap);
+    assert!(a.marks.is_empty() && b.marks.is_empty());
+    assert_eq!(a.value, b.value);
+    for body in bodies {
+        assert_body_rim_oracle(&model, body, a.value.as_ref().unwrap(), &accuracy());
+    }
+    // A face alone does not select one of the model-wide prism covers.
+    // Body queries above must not impose that global ambiguity on A or B.
+    for face in faces {
+        assert_eq!(
+            face_bounding_box(&model, face, &accuracy(), &mut Decider::default())
+                .unwrap_err()
+                .code,
+            "measure.unsupported-surface"
+        );
+    }
+}
+
+#[test]
+fn body_scope_reads_shared_loop_uses_in_every_face_order() {
+    let (mut model, [a, _], [lower, upper, side, _]) = shared_cap_fixture();
+    let expected = bounding_box(&model, a, &accuracy(), &mut Decider::default())
+        .unwrap()
+        .value;
+    let origins = model.face_origins(lower).to_vec();
+    // Cross-body sharing permits reusing the loop and coedge themselves. Their
+    // model-wide first owner remains A's lower cap, not this replacement face.
+    let replacement = model.add_named_face(model.face(lower).clone(), origins);
+    let Loop::Coedges(uses) = model.loop_(model.face(lower).loops[0]) else {
+        unreachable!()
+    };
+    let dangling = model.coedge(uses[0]).clone();
+    model.add_coedge(dangling); // Unfinished foreign topology must not affect A.
+    for faces in [
+        [replacement, upper, side],
+        [replacement, side, upper],
+        [upper, replacement, side],
+        [upper, side, replacement],
+        [side, replacement, upper],
+        [side, upper, replacement],
+    ] {
+        let body = body_with_faces(&mut model, faces);
+        assert!(model.check(body).is_empty());
+        SplinePrism::check(&model, body, &mut Decider::default()).unwrap();
+        let answer = bounding_box(&model, body, &accuracy(), &mut Decider::default()).unwrap();
+        assert!(answer.marks.is_empty());
+        assert_eq!(answer.value, expected);
+    }
+    assert_eq!(
+        bounding_box(&model, a, &accuracy(), &mut Decider::default())
+            .unwrap()
+            .value,
+        expected
+    );
+}
+
+#[test]
+fn body_scope_cannot_borrow_a_missing_cap_from_another_prism() {
+    let (mut model, [a, _], [lower, upper, side, _]) = shared_cap_fixture();
+    let expected = bounding_box(&model, a, &accuracy(), &mut Decider::default())
+        .unwrap()
+        .value;
+    for faces in [[upper, side], [lower, side], [lower, upper]] {
+        let incomplete = body_with_faces(&mut model, faces);
+        assert!(SplinePrism::check(&model, incomplete, &mut Decider::default()).is_err());
+        assert!(bounding_box(&model, incomplete, &accuracy(), &mut Decider::default()).is_err());
+    }
+    assert_eq!(
+        bounding_box(&model, a, &accuracy(), &mut Decider::default())
+            .unwrap()
+            .value,
+        expected
+    );
+}
+
+#[test]
+fn shared_body_queries_keep_accuracy_caches_and_model_immutable() {
+    let (model, bodies, faces) = shared_cap_fixture();
+    let snapshots = faces.map(|id| (model.face(id).clone(), model.face_origins(id).to_vec()));
+    let counts = bodies.map(|body| model.counts(body));
+    let mut tight = None;
+    for tolerance in ["1e-5", "1e-12", "1e-5", "1e-12"] {
+        let accuracy = Accuracy {
+            relative: q("0"),
+            absolute: q(tolerance),
+        };
+        for body in [bodies[1], bodies[0]] {
+            let (answer, work) = with_operation_budget(20_000_000, || {
+                bounding_box(&model, body, &accuracy, &mut Decider::default())
+            });
+            assert!(!work.exhausted);
+            let answer = answer.unwrap();
+            assert!(answer.marks.is_empty());
+            let bounds = answer.value.unwrap();
+            assert_body_rim_oracle(&model, body, &bounds, &accuracy);
+            if tolerance == "1e-12" {
+                if let Some(previous) = &tight {
+                    assert_eq!(&bounds, previous);
+                }
+                tight = Some(bounds);
+            }
+        }
+    }
+    assert_eq!(bodies.map(|body| model.counts(body)), counts);
+    assert_eq!(
+        faces.map(|id| (model.face(id).clone(), model.face_origins(id).to_vec())),
+        snapshots
+    );
 }
 
 fn assert_prism(model: &Model, body: BodyId) -> [BoundingBox; 3] {

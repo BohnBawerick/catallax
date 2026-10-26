@@ -35,6 +35,7 @@ class BooleanFaceThickenStepTests(unittest.TestCase):
             ('l-tilted', 8, 12, (6, -4.2, 3.9), (8, -3, 5.5)),
             ('hole-front', 10, 32, (1, 1, 3.5), (3, 3, 3.5)),
             ('hole-back', 10, 32, (1, 1, 2.5), (3, 3, 2.5)),
+            ('two-holes', 14, 52, (5, 3, 3.5), (3, 3, 3.5)),
             ('symmetric', 8, 24, (1, 1, 3), (3, 3, 3)),
             ('reversed-wall', 6, 6, (2.5, 3, 1), (1.5, 3, 1)),
             ('split-near', 6, 8, (1, 1, 3.5), (5, 1, 3.5)),

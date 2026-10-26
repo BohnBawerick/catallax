@@ -381,6 +381,46 @@ fn source_names_match_brep_aliases_and_survive_splitting() {
         revolve(rectangle(), "180"),
         revolve(circles(&["1"], ["4", "0"]), "360"),
         through_recipe(None),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/line-30.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/line-45.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/line-60.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/arc-30.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/arc-45.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/arc-60.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/irrational-axis.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/sphere-radius.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/torus-minor-radius.json"
+        ))
+        .unwrap(),
+        Recipe::parse(include_str!(
+            "../../catallax-features/tests/fixtures/algebraic-revolutions/torus-major-radius.json"
+        ))
+        .unwrap(),
     ] {
         let built = catallax_features::evaluate(&r, &mut Decider::default()).unwrap();
         let plan = Plan::compile(&r).unwrap();
@@ -452,9 +492,17 @@ fn algebraic_extrusion_has_exact_signs_and_the_same_brep_origins() {
 }
 
 #[test]
-fn invalid_profiles_and_unfinished_algebraic_cases_share_specific_codes() {
+fn invalid_profiles_share_specific_codes() {
+    let supported = revolve(rectangle(), "45");
+    let plan = Plan::compile(&supported).unwrap();
+    let built = catallax_features::evaluate(&supported, &mut Decider::default()).unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    for face in built.model.faces_of_body(built.result) {
+        for origin in built.model.face_origins(face) {
+            assert!(plan.select(origin).is_some());
+        }
+    }
     for r in [
-        revolve(rectangle(), "45"),
         extrude(circles(&["0"], ["0", "0"]), "2"),
         extrude(rectangle(), "0"),
         revolve(rectangle(), "0"),
@@ -701,24 +749,26 @@ fn rational_bisector_arc_keeps_its_irrational_radius_and_trims() {
 }
 
 #[test]
-fn generated_algebraic_radii_and_spindle_sheets_keep_the_shared_refusals() {
+fn generated_algebraic_radii_answer_and_spindle_sheets_keep_their_refusal() {
     let spherical = json!([[{"kind":"arc","id":"round","centre":["0","0"],"to":["1","1"],"turn":"ccw"},{"kind":"line","id":"chord","to":["1","-1"]}]]);
     let toroidal = json!([[{"kind":"arc","id":"round","centre":["3","0"],"to":["4","1"],"turn":"ccw"},{"kind":"line","id":"chord","to":["4","-1"]}]]);
     let spindle = json!([[{"kind":"arc","id":"round","centre":["1","0"],"to":["1","2"],"turn":"ccw"},{"kind":"line","id":"chord","to":["1","-2"]}]]);
     for (r, code) in [
-        (
-            revolve(spherical, "360"),
-            "features.unsupported-algebraic-sphere-radius",
-        ),
-        (
-            revolve(toroidal, "360"),
-            "features.unsupported-algebraic-torus-radius",
-        ),
+        (revolve(spherical, "360"), None),
+        (revolve(toroidal, "360"), None),
         (
             revolve(spindle, "360"),
-            "features.unsupported-spindle-torus",
+            Some("features.unsupported-spindle-torus"),
         ),
     ] {
+        let Some(code) = code else {
+            let plan = Plan::compile(&r).unwrap();
+            let built = catallax_features::evaluate(&r, &mut Decider::default()).unwrap();
+            assert!(built.model.check(built.result).is_empty());
+            assert_eq!(plan.faces().len(), 2);
+            assert_eq!(built.model.counts(built.result).faces, 2);
+            continue;
+        };
         assert_eq!(Plan::compile(&r).unwrap_err().code, code);
         let catallax_features::BuildError::Geometry { refusal, .. } =
             catallax_features::evaluate(&r, &mut Decider::default()).unwrap_err()

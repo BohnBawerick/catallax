@@ -1,5 +1,7 @@
 //! Certified strips and layered cone/toroidal bands sharing their original rails.
 
+use std::borrow::Cow;
+
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_shapes::Surface;
 use catallax_topology::{FaceId, Loop, Model, Sense};
@@ -101,25 +103,18 @@ fn layers(
             return sampled_stitch(before, upper, face, chart, boundaries, options, dec);
         }
         let v = lo + (hi - lo) * row as f64 / rows as f64;
-        let mut next = Vec::with_capacity(columns.len() + 1);
-        for &u in &columns {
-            let uv = [u, v];
-            let (position, error) = chart.sample(uv, None, &options.chord_tolerance, dec)?;
-            let vertex = boundaries.mesh.positions.len();
-            boundaries.mesh.positions.push(position);
-            next.push(Sample {
-                vertex,
-                uv,
-                filtered_error: Interval::from_rational(&error).hi(),
-                error,
-            });
-        }
-        let mut seam = next[0].clone();
-        seam.uv[0] += 1.0;
-        next.push(seam);
-        if !sampled_stitch(before, &next, face, chart, boundaries, options, dec)? {
+        let vmax = before.iter().map(|p| p.uv[1].abs()).fold(v.abs(), f64::max);
+        let strip = Strip::new(
+            face,
+            chart,
+            options,
+            vmax,
+            before.len() + columns.len() - 1,
+            dec,
+        )?;
+        let Some(next) = sampled_layer(before, &columns, v, strip, boundaries, dec)? else {
             return Ok(false);
-        }
+        };
         previous = Some(next);
     }
     unreachable!("a positive row count always includes the upper rail")
@@ -326,18 +321,18 @@ fn sampled_stitch(
     options: &MeshOptions,
     dec: &Decider,
 ) -> Result<bool, Refusal> {
-    let (face_id, sense) = face;
-    let vmax = lower
-        .iter()
-        .chain(upper)
-        .map(|p| p.uv[1].abs())
-        .fold(0.0_f64, f64::max);
-    let hessian = chart.hessian(vmax, dec)?;
-    let filtered_hessian = hessian.each_ref().map(Interval::from_rational);
-    let filtered_tolerance = Interval::from_rational(&options.chord_tolerance);
-    let mut triangles = Vec::with_capacity(lower.len() + upper.len() - 2);
-    let mut maximum = Rational::zero();
-    let mut aspect = Rational::zero();
+    let mut strip = Strip::new(
+        face,
+        chart,
+        options,
+        lower
+            .iter()
+            .chain(upper)
+            .map(|p| p.uv[1].abs())
+            .fold(0.0_f64, f64::max),
+        lower.len() + upper.len() - 2,
+        dec,
+    )?;
     let (mut a, mut b) = (0, 0);
     while a + 1 < lower.len() || b + 1 < upper.len() {
         dec.check_deadline()?;
@@ -352,6 +347,132 @@ fn sampled_stitch(
             b += 1;
             samples
         };
+        if !strip.triangle(samples, &boundaries.mesh.positions, dec)? {
+            return Ok(false);
+        }
+    }
+    strip.finish(boundaries);
+    Ok(true)
+}
+
+// Samples and certifies one generated row in angular merge order. Sampling the
+// next endpoint checkpoints the bounded cell, so its two triangles do not need
+// a second traversal's checkpoints. Extra lower advances and the copied seam
+// still checkpoint explicitly.
+fn sampled_layer(
+    lower: &[Sample],
+    columns: &[f64],
+    v: f64,
+    mut strip: Strip<'_>,
+    boundaries: &mut Boundaries,
+    dec: &Decider,
+) -> Result<Option<Vec<Sample>>, Refusal> {
+    let mut next = Vec::<Sample>::with_capacity(columns.len() + 1);
+    let mut a = 0;
+    for index in 0..=columns.len() {
+        let sample = if index < columns.len() {
+            let uv = [columns[index], v];
+            let (position, error) =
+                strip
+                    .chart
+                    .sample(uv, None, &strip.options.chord_tolerance, dec)?;
+            let vertex = boundaries.mesh.positions.len();
+            boundaries.mesh.positions.push(position);
+            Sample {
+                vertex,
+                uv,
+                filtered_error: Interval::from_rational(&error).hi(),
+                error,
+            }
+        } else {
+            dec.check_deadline()?;
+            let mut seam = next[0].clone();
+            seam.uv[0] += 1.0;
+            seam
+        };
+        if let Some(previous) = next.last() {
+            let mut advanced = false;
+            while a + 1 < lower.len() && lower[a + 1].uv[0] <= sample.uv[0] {
+                if advanced {
+                    dec.check_deadline()?;
+                }
+                if !strip.triangle(
+                    [&lower[a], &lower[a + 1], previous],
+                    &boundaries.mesh.positions,
+                    dec,
+                )? {
+                    return Ok(None);
+                }
+                a += 1;
+                advanced = true;
+            }
+            if !strip.triangle(
+                [&lower[a], &sample, previous],
+                &boundaries.mesh.positions,
+                dec,
+            )? {
+                return Ok(None);
+            }
+        }
+        next.push(sample);
+    }
+    while a + 1 < lower.len() {
+        dec.check_deadline()?;
+        if !strip.triangle(
+            [&lower[a], &lower[a + 1], next.last().unwrap()],
+            &boundaries.mesh.positions,
+            dec,
+        )? {
+            return Ok(None);
+        }
+        a += 1;
+    }
+    strip.finish(boundaries);
+    Ok(Some(next))
+}
+
+struct Strip<'a> {
+    face: (FaceId, Sense),
+    chart: &'a Chart,
+    options: &'a MeshOptions,
+    hessian: Cow<'a, [Rational; 3]>,
+    filtered_hessian: [Interval; 3],
+    filtered_tolerance: Interval,
+    triangles: Vec<Triangle>,
+    maximum: Rational,
+    aspect: Rational,
+}
+
+impl<'a> Strip<'a> {
+    fn new(
+        face: (FaceId, Sense),
+        chart: &'a Chart,
+        options: &'a MeshOptions,
+        vmax: f64,
+        capacity: usize,
+        dec: &Decider,
+    ) -> Result<Self, Refusal> {
+        let hessian = chart.hessian(vmax, dec)?;
+        let filtered_hessian = hessian.each_ref().map(Interval::from_rational);
+        Ok(Self {
+            face,
+            chart,
+            options,
+            hessian,
+            filtered_hessian,
+            filtered_tolerance: Interval::from_rational(&options.chord_tolerance),
+            triangles: Vec::with_capacity(capacity),
+            maximum: Rational::zero(),
+            aspect: Rational::zero(),
+        })
+    }
+
+    fn triangle(
+        &mut self,
+        samples: [&Sample; 3],
+        positions: &[[f64; 3]],
+        dec: &Decider,
+    ) -> Result<bool, Refusal> {
         let uvs = samples.map(|p| p.uv);
         if !chart::positive_turn(uvs[0], uvs[1], uvs[2]) {
             return Ok(false);
@@ -361,22 +482,22 @@ fn sampled_stitch(
             .map(|p| p.filtered_error)
             .fold(0.0_f64, f64::max);
         let filtered = Interval::point(filtered_error)
-            .map(|error| chart::filtered_chord_bound(&uvs, &filtered_hessian) + error);
+            .map(|error| chart::filtered_chord_bound(&uvs, &self.filtered_hessian) + error);
         let error = match filtered {
-            Some(bound) if bound.is_finite() && bound.hi() <= filtered_tolerance.lo() => {
+            Some(bound) if bound.is_finite() && bound.hi() <= self.filtered_tolerance.lo() => {
                 chart::q(bound.hi())
             }
             _ => {
-                chord_bound(&uvs, &hessian)
+                chord_bound(&uvs, &self.hessian)
                     + samples.iter().map(|p| &p.error).max().unwrap().clone()
             }
         };
-        if error > options.chord_tolerance {
+        if error > self.options.chord_tolerance {
             return Ok(false);
         }
         let mut vertices = samples.map(|p| p.vertex);
-        let positions = vertices.map(|i| boundaries.mesh.positions[i]);
-        if let Some(limit) = &options.max_edge_length {
+        let positions = vertices.map(|i| positions[i]);
+        if let Some(limit) = &self.options.max_edge_length {
             for i in 0..3 {
                 if crate::controls::length_squared(positions[i], positions[(i + 1) % 3])
                     > limit * limit
@@ -386,10 +507,10 @@ fn sampled_stitch(
             }
         }
         let (ratio, angular_reached) = crate::controls::quality(
-            chart,
+            self.chart,
             &uvs,
             positions,
-            options.angular_deviation.as_ref(),
+            self.options.angular_deviation.as_ref(),
             dec,
         )?;
         let Some(ratio) = ratio else {
@@ -398,42 +519,57 @@ fn sampled_stitch(
         if !angular_reached {
             return Ok(false);
         }
-        maximum = maximum.max(error);
-        aspect = aspect.max(ratio);
-        if sense == Sense::Reversed {
+        if error > self.maximum {
+            self.maximum = error;
+        }
+        if ratio > self.aspect {
+            self.aspect = ratio;
+        }
+        if self.face.1 == Sense::Reversed {
             vertices.swap(1, 2);
         }
         let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
         vertices.rotate_left(first);
-        triangles.push(Triangle {
+        self.triangles.push(Triangle {
             vertices,
-            face: face_id,
+            face: self.face.0,
         });
+        Ok(true)
     }
-    let start = boundaries.mesh.triangles.len();
-    boundaries.mesh.triangles.extend(triangles);
-    boundaries.mesh.faces.push(FaceMesh {
-        face: face_id,
-        triangles: start..boundaries.mesh.triangles.len(),
-        max_chord_error: maximum,
-        max_aspect_ratio: Some(aspect.clone()),
-        max_angular_deviation: options.angular_deviation.clone(),
-    });
-    if options
-        .max_aspect_ratio
-        .as_ref()
-        .is_some_and(|limit| aspect > *limit)
-    {
-        boundaries
-            .mesh
-            .unavailable_controls
-            .push(UnavailableControl {
-                face: face_id,
-                control: MeshControl::AspectRatio,
-                reason: "the certified aspect-ratio bound exceeds the requested limit",
-            });
+
+    fn finish(self, boundaries: &mut Boundaries) {
+        let Self {
+            face: (face_id, _),
+            options,
+            triangles,
+            maximum,
+            aspect,
+            ..
+        } = self;
+        let start = boundaries.mesh.triangles.len();
+        boundaries.mesh.triangles.extend(triangles);
+        boundaries.mesh.faces.push(FaceMesh {
+            face: face_id,
+            triangles: start..boundaries.mesh.triangles.len(),
+            max_chord_error: maximum,
+            max_aspect_ratio: Some(aspect.clone()),
+            max_angular_deviation: options.angular_deviation.clone(),
+        });
+        if options
+            .max_aspect_ratio
+            .as_ref()
+            .is_some_and(|limit| aspect > *limit)
+        {
+            boundaries
+                .mesh
+                .unavailable_controls
+                .push(UnavailableControl {
+                    face: face_id,
+                    control: MeshControl::AspectRatio,
+                    reason: "the certified aspect-ratio bound exceeds the requested limit",
+                });
+        }
     }
-    Ok(true)
 }
 
 fn open_strip(
@@ -529,4 +665,129 @@ fn open_strip(
         options,
         dec,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_shapes::Pose;
+    use catallax_topology as topology;
+
+    fn boundaries(mesh: crate::Mesh) -> Boundaries {
+        Boundaries {
+            mesh,
+            edges: Default::default(),
+            vertices: Default::default(),
+            exact_positions: Default::default(),
+            enclosures: Default::default(),
+            rails: Default::default(),
+            marks: Default::default(),
+        }
+    }
+
+    fn ring(
+        columns: &[f64],
+        v: f64,
+        chart: &Chart,
+        boundaries: &mut Boundaries,
+        options: &MeshOptions,
+        dec: &Decider,
+    ) -> Vec<Sample> {
+        let mut ring = Vec::new();
+        for &u in columns {
+            let uv = [u, v];
+            let (position, error) = chart
+                .sample(uv, None, &options.chord_tolerance, dec)
+                .unwrap();
+            let vertex = boundaries.mesh.positions.len();
+            boundaries.mesh.positions.push(position);
+            ring.push(Sample {
+                vertex,
+                uv,
+                filtered_error: Interval::from_rational(&error).hi(),
+                error,
+            });
+        }
+        let mut seam = ring[0].clone();
+        seam.uv[0] += 1.0;
+        ring.push(seam);
+        ring
+    }
+
+    #[test]
+    fn streamed_rows_preserve_unequal_rails_seam_tails_and_control_certificates() {
+        let dec = Decider::default();
+        let mut model = Model::new();
+        let body = topology::torus(
+            &mut model,
+            Rational::from_i64(8),
+            Rational::one(),
+            &Pose::identity(),
+        )
+        .unwrap();
+        let face_id = model.faces_of_body(body)[0];
+        let surface = model.geom().surface(model.face(face_id).surface);
+        let chart = Chart::new(surface, &dec).unwrap();
+        for (lower_columns, columns) in [
+            (
+                vec![0.0078125, 0.015625, 0.03125, 0.25, 0.75],
+                vec![0.0, 0.125, 0.5, 0.625],
+            ),
+            (vec![0.0, 0.125, 0.5, 0.625], vec![0.03125, 0.25, 0.75]),
+            (vec![0.0, 0.25, 0.5, 0.75], vec![0.0, 0.25, 0.5, 0.75]),
+        ] {
+            for sense in [Sense::Same, Sense::Reversed] {
+                for control in 0..3 {
+                    let options = MeshOptions {
+                        chord_tolerance: Rational::from_i64(100),
+                        max_aspect_ratio: Some(Rational::one()),
+                        max_edge_length: (control == 1).then(Rational::one),
+                        angular_deviation: (control == 2)
+                            .then(|| Rational::parse("0.001").unwrap()),
+                        ..MeshOptions::default()
+                    };
+                    let mut streamed = boundaries(crate::Mesh::default());
+                    let lower = ring(
+                        &lower_columns,
+                        -0.03125,
+                        &chart,
+                        &mut streamed,
+                        &options,
+                        &dec,
+                    );
+                    let mut reference = boundaries(streamed.mesh.clone());
+                    let upper = ring(&columns, 0.015625, &chart, &mut reference, &options, &dec);
+                    let complete = sampled_stitch(
+                        &lower,
+                        &upper,
+                        (face_id, sense),
+                        &chart,
+                        &mut reference,
+                        &options,
+                        &dec,
+                    )
+                    .unwrap();
+                    let strip = Strip::new(
+                        (face_id, sense),
+                        &chart,
+                        &options,
+                        0.03125,
+                        lower.len() + columns.len() - 1,
+                        &dec,
+                    )
+                    .unwrap();
+                    let result =
+                        sampled_layer(&lower, &columns, 0.015625, strip, &mut streamed, &dec)
+                            .unwrap();
+                    assert_eq!(result.is_some(), complete);
+                    if complete {
+                        assert_eq!(streamed.mesh, reference.mesh);
+                    } else {
+                        assert!(streamed.mesh.triangles.is_empty());
+                        assert!(streamed.mesh.faces.is_empty());
+                    }
+                }
+            }
+        }
+    }
 }

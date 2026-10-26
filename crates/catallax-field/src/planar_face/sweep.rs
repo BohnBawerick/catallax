@@ -1,5 +1,7 @@
 //! Straight normal images of exactly one recovered finite polygonal patch.
 
+mod finite;
+
 use super::recovery;
 use crate::{Face, Plan, geometry};
 use catallax_features::draft::{
@@ -304,47 +306,38 @@ impl Plan {
         let bound = &self.node_radius(node, dec)? + thickness;
         let mut result = 0;
         for component in components {
-            for term in &component.terms {
-                let surfaces: Vec<_> = term
-                    .sides
-                    .iter()
-                    .map(|(index, same)| {
-                        let mut plane = component.planes[*index].clone();
-                        if !same {
-                            plane.normal = plane.normal.scaled(&Real::from_i64(-1));
-                        }
-                        Surface::Plane(plane)
-                    })
-                    .collect();
-                let (leaf, native) = match box_leaf(&surfaces, step, dec)? {
+            for term in finite::terms(&component, dec)? {
+                let (leaf, native) = match box_leaf(&term.surfaces, step, dec)? {
                     Some((leaf, faces)) => (leaf, faces),
                     None => (
-                        geometry::Leaf::Cell(geometry::Cell::new(surfaces, Some(bound.clone()))?),
+                        geometry::Leaf::Cell(geometry::Cell::new(
+                            term.surfaces,
+                            Some(bound.clone()),
+                        )?),
                         Vec::new(),
                     ),
                 };
                 let mut faces = Vec::new();
                 let mut roles = Vec::new();
-                for face in &component.faces {
-                    if term.sides.contains(&(face.support, face.same_sense)) {
-                        for origin in &face.origins {
-                            let face = geometry::face(
-                                Surface::Plane(component.plane(face)),
-                                origin.clone(),
-                                dec,
-                            )?;
-                            let role = native
-                                .iter()
-                                .find(|n| n.support.same_definition(&face.support))
-                                .map(|n| n.origin.role.clone());
-                            if !native.is_empty() && role.is_none() {
-                                return Err(recovery::bad(
-                                    "physical boundary has no exact primitive chart",
-                                ));
-                            }
-                            roles.push(role);
-                            faces.push(face);
+                for face_index in term.faces {
+                    let face = &component.faces[face_index];
+                    for origin in &face.origins {
+                        let face = geometry::face(
+                            Surface::Plane(component.plane(face)),
+                            origin.clone(),
+                            dec,
+                        )?;
+                        let role = native
+                            .iter()
+                            .find(|n| n.support.same_definition(&face.support))
+                            .map(|n| n.origin.role.clone());
+                        if !native.is_empty() && role.is_none() {
+                            return Err(recovery::bad(
+                                "physical boundary has no exact primitive chart",
+                            ));
                         }
+                        roles.push(role);
+                        faces.push(face);
                     }
                 }
                 let first = self.faces.len();

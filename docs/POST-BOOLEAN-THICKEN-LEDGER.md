@@ -1,5 +1,38 @@
 # One post-Boolean polygonal face thicken
 
+## Review correction: disconnected coplanar origin domains
+
+Frozen `f8805201fde79d1cba5c92c041a9800226dbce64` has a public counterexample:
+a 10 by 6 by 3 stock minus two 2 by 2 through tools at (2,2,-1) and (6,2,-1),
+then a unit front sweep of `stock.end`. Hole A's lower-rim origin answers
+`OnFace` at (7,2,7/2) on hole B; it must answer `NotOnFace`. Its own-hole query
+answers `OnFace`, and B-rep's finite-face query correctly rejects the other hole.
+The original, rigid-source-transform and hole-position-edit regressions all
+reproduce before the production repair. Raw frozen-head evidence is preserved
+under `/workspace/post-boolean-face-review-proof`; earlier f880 qualification
+remains historical and does not certify this missing selector case.
+The frozen public CLI also reports `compare.origins` for the two-hole fixture.
+
+The field sweep's convex-term publication previously attached every face with
+the same support and sense, without its finite patch. The owned sweep helper
+now reconstructs each exact finite convex facet and proves mutual closed polygon
+containment with a physical boundary tile. Only the owning tile's complete
+origin set is published on that term. Every physical tile must have exactly one
+proved material owner; missing or duplicate correspondence returns a typed
+coverage refusal before publication. Halfspaces, geometry, predicates, budgets,
+tolerances and query signatures remain unchanged. No held geometry/lib/display
+or printing edit is involved.
+
+The dedicated public regression checks both directions between the holes, lower
+and upper rims, correct-hole positive membership, exact B-rep membership, rigid
+source transforms and a position edit. Corrected-head focused/retained checks,
+public replay and final CI are recorded separately in the PR and new proof root.
+Current main `3776a1b2015cf9504f6aa9da37b7ec601b6dd311` integrates cleanly;
+the correction's bytes are unchanged and no upstream hunk needed manual repair.
+Qualification distinguishes that current base from the frozen f880 reproduction.
+The extra authored-triangle `field.print-coverage` limitation remains explicit;
+required L/hole/symmetric mass evidence is not replaced by that negative control.
+
 Base: `357be43e3ea5ba00df9fd449ea2afca09260ae24`. This lane owns only the two
 `planar_face.rs` modules, the field module's `recovery.rs` and `sweep.rs` helpers,
 and new dedicated tests, public fixtures and this additive documentation.

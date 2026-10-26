@@ -51,11 +51,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ))
         });
         let (mesh, build_ms, mesh_ms) = result?;
+        let stl_start = Instant::now();
         mesh.write_stl(&mut fs::File::create(out.join("print.stl"))?)?;
+        let stl_ms = stl_start.elapsed().as_secs_f64() * 1000.0;
+        let obj_start = Instant::now();
         mesh.write_obj(&mut fs::File::create(out.join("display.obj"))?)?;
+        let obj_ms = obj_start.elapsed().as_secs_f64() * 1000.0;
+        let total_ms = start.elapsed().as_secs_f64() * 1000.0;
+        // Serializer-only timings into memory, outside the complete-request total.
+        let (mut stl, mut obj) = (Vec::new(), Vec::new());
+        let memory_start = Instant::now();
+        mesh.write_stl(&mut stl)?;
+        let stl_memory_ms = memory_start.elapsed().as_secs_f64() * 1000.0;
+        let memory_start = Instant::now();
+        mesh.write_obj(&mut obj)?;
+        let obj_memory_ms = memory_start.elapsed().as_secs_f64() * 1000.0;
+        if stl != fs::read(out.join("print.stl"))? || obj != fs::read(out.join("display.obj"))? {
+            return Err("memory and file output differ".into());
+        }
         rows.push(json!({
             "iteration": iteration, "build_ms": build_ms, "mesh_ms": mesh_ms,
-            "total_ms": start.elapsed().as_secs_f64() * 1000.0,
+            "stl_ms": stl_ms, "obj_ms": obj_ms,
+            "stl_memory_ms": stl_memory_ms, "obj_memory_ms": obj_memory_ms,
+            "total_ms": total_ms,
             "target_ms": 1000, "work": work.used, "exhausted": work.exhausted,
             "max_work": 100_000_000, "max_cells": options.max_cells,
             "max_vertices": options.max_vertices, "cells": mesh.cells,

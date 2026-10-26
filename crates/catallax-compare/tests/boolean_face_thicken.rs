@@ -18,6 +18,7 @@ fn retained_polygonal_face_thickens_have_no_comparison_findings() {
         ),
         include_str!("../../catallax-features/tests/fixtures/boolean-face-thicken/hole-front.json"),
         include_str!("../../catallax-features/tests/fixtures/boolean-face-thicken/hole-back.json"),
+        include_str!("../../catallax-features/tests/fixtures/boolean-face-thicken/two-holes.json"),
         include_str!("../../catallax-features/tests/fixtures/boolean-face-thicken/symmetric.json"),
         include_str!(
             "../../catallax-features/tests/fixtures/boolean-face-thicken/reversed-wall.json"

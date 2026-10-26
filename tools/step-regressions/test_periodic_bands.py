@@ -66,6 +66,16 @@ class PeriodicBandImports(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='catallax-periodic-hole-') as temporary:
             self.check_recipe(recipe, (7, 15, 10), 32 - 2 * math.pi, Path(temporary), 'hole')
 
+    def test_complete_band_on_an_enclosed_void_shell(self):
+        pose = lambda z: {'rotation': ['1', '0', '0', '0'], 'translation': ['0', '0', z]}
+        recipe = {'format': 'catallax-recipe/3', 'name': 'closed cylindrical void', 'steps': [
+            {'id': 'base', 'op': 'cylinder', 'radius': '3', 'height': '4', 'pose': pose('0')},
+            {'id': 'tool', 'op': 'cylinder', 'radius': '1', 'height': '2', 'pose': pose('1')},
+            {'id': 'void', 'op': 'boolean', 'kind': 'subtract', 'target': 'base', 'tool': 'tool'}],
+            'result': 'void'}
+        with tempfile.TemporaryDirectory(prefix='catallax-periodic-void-') as temporary:
+            self.check_recipe(recipe, (6, 6, 4), 34 * math.pi, Path(temporary), 'void')
+
 
 if __name__ == '__main__':
     unittest.main()

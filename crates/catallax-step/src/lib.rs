@@ -63,7 +63,7 @@ pub struct StepReport {
     pub approximated_curves: usize,
     /// Vertices added because STEP needs them (ring origins, natural-boundary poles).
     pub added_vertices: usize,
-    /// Explicit edges added because STEP needs them (loopless torus seams).
+    /// Explicit edges added because STEP needs them (periodic band and torus seams).
     pub added_edges: usize,
     /// Solids written.
     pub solids: usize,

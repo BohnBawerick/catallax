@@ -62,9 +62,33 @@ struct SourceBand {
 impl Plan {
     pub(crate) fn prepare(
         model: &Model,
-        bodies: impl IntoIterator<Item = BodyId>,
+        bodies: impl Iterator<Item = BodyId> + Clone,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        let mut has_band = false;
+        for body in bodies.clone() {
+            for lump in &model.body(body).lumps {
+                for shell in &model.lump(*lump).shells {
+                    for &face in &model.shell(*shell).faces {
+                        let definition = model.face(face);
+                        match model.geom().surface(definition.surface) {
+                            Surface::Plane(_) => {}
+                            Surface::Sphere(_) | Surface::Torus(_)
+                                if definition.loops.is_empty() => {}
+                            Surface::Cylinder(_) | Surface::Cone(_)
+                                if ring_edges(model, face).is_some() =>
+                            {
+                                has_band = true
+                            }
+                            _ => return Ok(Self::default()),
+                        }
+                    }
+                }
+            }
+        }
+        if !has_band {
+            return Ok(Self::default());
+        }
         let mut sources = Vec::new();
         let mut seen = BTreeSet::new();
         for body in bodies {
@@ -165,15 +189,33 @@ impl Plan {
     }
 }
 
+fn ring_edges(model: &Model, face: FaceId) -> Option<[EdgeId; 2]> {
+    let [a, b] = model.face(face).loops.as_slice() else {
+        return None;
+    };
+    let edge = |loop_id| {
+        let Loop::Coedges(coedges) = model.loop_(loop_id) else {
+            return None;
+        };
+        let [coedge] = coedges.as_slice() else {
+            return None;
+        };
+        let edge = model.coedge(*coedge).edge;
+        let definition = model.edge(edge);
+        (definition.start.is_none() && definition.end.is_none()).then_some(edge)
+    };
+    Some([edge(*a)?, edge(*b)?])
+}
+
 fn source_band(
     model: &Model,
     face: FaceId,
     dec: &mut Decider,
 ) -> Result<Option<SourceBand>, Refusal> {
     let face_definition = model.face(face);
-    if face_definition.loops.len() != 2 {
+    let Some(edges) = ring_edges(model, face) else {
         return Ok(None);
-    }
+    };
     let surface = model.geom().surface(face_definition.surface);
     let (origin, axis, reference, slant) = match surface {
         Surface::Cylinder(s) => (
@@ -190,19 +232,9 @@ fn source_band(
         ),
         _ => return Ok(None),
     };
-    let mut rings = Vec::with_capacity(2);
-    for loop_id in &face_definition.loops {
-        let Loop::Coedges(coedges) = model.loop_(*loop_id) else {
-            return Ok(None);
-        };
-        if coedges.len() != 1 {
-            return Ok(None);
-        }
-        let edge = model.coedge(coedges[0]).edge;
+    let mut rings = [None, None];
+    for (index, edge) in edges.into_iter().enumerate() {
         let definition = model.edge(edge);
-        if definition.start.is_some() || definition.end.is_some() {
-            return Ok(None);
-        }
         let CurveForm::Circle {
             center,
             normal,
@@ -237,7 +269,7 @@ fn source_band(
             Outcome::Refused(refusal) => return Err(refusal),
             _ => return Ok(None),
         };
-        rings.push(SourceRing {
+        rings[index] = Some(SourceRing {
             edge,
             curve: definition.curve,
             center,
@@ -248,7 +280,7 @@ fn source_band(
             increasing,
         });
     }
-    let mut rings: [SourceRing; 2] = rings.try_into().ok().unwrap();
+    let mut rings = rings.map(Option::unwrap);
     match dec.compare(&rings[0].v, &rings[1].v) {
         Outcome::Proven(StrictOrder::Greater) => rings.swap(0, 1),
         Outcome::Proven(StrictOrder::Less) => {}

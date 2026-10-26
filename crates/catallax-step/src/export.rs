@@ -628,7 +628,6 @@ impl<'a> Exporter<'a> {
     fn band_loop(
         &mut self,
         band: &crate::band::Band,
-        sense: Sense,
         topology: &mut Topology,
     ) -> Result<(Id, Bounds), Refusal> {
         let low = self.edge(band.edges[0], topology)?;
@@ -670,18 +669,12 @@ impl<'a> Exporter<'a> {
         let parameter_error = &number::upper(&band.radius_bound, self.dec)? * &period.error
             + &v.error * &number::upper(&band.v_scale, self.dec)?;
         self.deviation(line_error + parameter_error + self.surface_error(band.surface, &bounds));
-        let mut uses = [
+        let uses = [
             (high.id, !band.forward[1]),
             (seam, false),
             (low.id, band.forward[0]),
             (seam, true),
         ];
-        if sense == Sense::Reversed {
-            uses.reverse();
-            for (_, same) in &mut uses {
-                *same = !*same;
-            }
-        }
         let uses = uses.map(|(edge, same)| self.oriented(edge, same));
         Ok((
             self.graph.add("EDGE_LOOP", vec![text("''"), refs(uses)]),
@@ -956,11 +949,17 @@ impl<'a> Exporter<'a> {
         let mut bounds = Vec::new();
         let mut boundary_extent: Option<Bounds> = None;
         if let Some(band) = self.bands.faces.get(&id).cloned() {
-            let (loop_entity, extent) = self.band_loop(&band, face.sense, topology)?;
+            let (loop_entity, extent) = self.band_loop(&band, topology)?;
             boundary_extent = Some(extent);
             bounds.push(self.graph.add(
                 "FACE_BOUND",
-                vec![text("''"), loop_entity.into(), boolean(!reverse)],
+                // Keep the chart walk CCW and reverse the bound together with
+                // the face, as the native writer does for cylindrical holes.
+                vec![
+                    text("''"),
+                    loop_entity.into(),
+                    boolean((face.sense == Sense::Same) != reverse),
+                ],
             ));
         } else {
             for loop_id in &face.loops {

@@ -11,11 +11,13 @@ cargo test -p catallax-step --release
 python3 crates/catallax-step/tests/verify_exact.py
 ```
 
-The required CI job also runs `tools/step-regressions/test_loopless_faces.py`
-with `cadquery-ocp==8.0.1.1.0`. It checks full spheres and tori at identity and
-rational rotated/translated poses, including native topology, degenerate pole
-edges, validity and positive analytic volume. Direct `StepToTopoDS_Builder`
-translation bypasses the reader's default ShapeFix processing.
+The required CI job runs `tools/step-regressions/test_loopless_faces.py` and
+`test_periodic_bands.py` with `cadquery-ocp==8.0.1.1.0`. They check full spheres,
+tori, cylinders and both frustum directions at identity and rational
+rotated/translated poses, plus a reversed cylindrical through-hole wall.
+Checks cover native topology, degenerate sphere poles, validity and positive
+analytic volume. Direct `StepToTopoDS_Builder` translation bypasses the
+reader's default ShapeFix processing. SameParameter remains disabled.
 
 Run **all tests**, including the eight cases retained behind individual ignore reasons:
 
@@ -52,7 +54,8 @@ of its model supports. Added seam geometry and ring origins are checked too.
 | --- | --- | --- |
 | 1 | `contract` | Default options, exact header and fixed entities, all fourteen entity counts, 170 total entities, corners and exact report |
 | 2 | Every export via `common::reader` | Consecutive IDs, existing references, depth-first first-visit numbering, no unreachable entities; unselected store entries do not change output |
-| 3, 6 | `contract` | Cylinder rings, cone apex loop and rounded angle |
+| 3 | `tools/step-regressions/test_periodic_bands.py` | Complete cylinder/frustum bands, ring and seam pcurves, outward and reversed-hole orientations |
+| 6 | `contract` | Cone apex loop and rounded angle; apex export is not covered by the band repair |
 | 4, 5 | `tools/step-regressions/test_loopless_faces.py` | Full sphere and torus raw import, poles, seams, validity and analytic volume at two poses |
 | 7 | `contract` | Apostrophe, backslash, BMP and supplementary Unicode, control characters, empty name, literal escape-looking text and syntax-looking strings |
 | 8 | `contract` | Empty list, empty bodies, mixed empty and solid bodies |
@@ -69,6 +72,14 @@ of its model supports. Added seam geometry and ring origins are checked too.
 | Refusals and other rules | `contract`, `refusals` | `step.io-error` with exact error detail after immediate and partial writes; `intersect.unsupported-curve` propagated unchanged and atomically; zero digits clamp to one; uncertainty rounds upward; body marks are not copied into exporter marks |
 
 The cases with branch nodes additionally check that both fitted curves use the same existing vertex rather than adding seam vertices. Surface and curve definitions are matched to the source model, with ordering and sharing checked by IDs, not just aggregate counts. Loopless torus seams carry two pcurves on their unchanged analytic circles. A loopless sphere uses a sole vertex loop for the complete natural domain.
+
+Complete cylindrical and conical bands with two vertex-free ring loops get an
+export-only seam and iso-parameter ring pcurves. Connected bands choose a common
+physical meridian without changing their exact carriers. Independent rational
+tests bound decimal period rounding at one, five and seventeen significant
+digits. Arbitrarily trimmed periodic faces and apex cones retain their previous
+encoding and remain known raw-import gaps. A file containing such unsupported
+faces does not receive a partial band cutover.
 
 `step.not-solid` and `step.unsupported-geometry` are not constructible through today's public enums. Their future variants are deliberately not faked. Invalid handles and failed topology checks are programming errors, not refusal fixtures.
 

@@ -20,7 +20,7 @@ fn bad(detail: &str) -> Refusal {
 struct Rim {
     from: Point3,
     to: Point3,
-    across: FaceId,
+    across: Vec<FaceId>,
 }
 
 fn across(model: &Model, coedge: catallax_topology::CoedgeId, own: FaceId) -> Option<FaceId> {
@@ -46,10 +46,15 @@ fn neighbours(model: &Model, face: FaceId) -> Vec<FaceId> {
 }
 
 /// The single face every reference resolves to, or none when the selection is not one face.
-fn select(model: &Model, body: BodyId, refs: &[FaceRef]) -> Result<Option<FaceId>, Refusal> {
+fn select(
+    model: &Model,
+    body: BodyId,
+    refs: &[FaceRef],
+    dec: &mut Decider,
+) -> Result<Option<FaceId>, Refusal> {
     let mut chosen = None;
     for reference in refs {
-        let found: Vec<_> = model
+        let mut found: Vec<_> = model
             .faces_of_body(body)
             .into_iter()
             .filter(|f| {
@@ -66,6 +71,38 @@ fn select(model: &Model, body: BodyId, refs: &[FaceRef]) -> Result<Option<FaceId
                 })
             })
             .collect();
+        if found.len() > 1 && reference.near.is_some() {
+            use crate::draft::arrangement::{Patch, Skin};
+            let mut skin = Skin {
+                vertices: Vec::new(),
+                patches: Vec::new(),
+            };
+            for f in &found {
+                let Surface::Plane(plane) = model.geom().surface(model.face(*f).surface) else {
+                    return Ok(None);
+                };
+                let loops = boundary(model, *f)?;
+                let mut cycles = Vec::new();
+                for rims in loops {
+                    let first = skin.vertices.len();
+                    skin.vertices.extend(rims.into_iter().map(|r| r.from));
+                    cycles.push((first..skin.vertices.len()).collect());
+                }
+                skin.patches.push(Patch {
+                    plane: plane.clone(),
+                    loops: cycles,
+                    origins: model.face_origins(*f).to_vec(),
+                });
+            }
+            let mut pick = reference.clone();
+            // Adjacency has already filtered the physical faces above.
+            pick.touching.clear();
+            let selected = skin.resolve_faces(&[pick], dec).map_err(|e| match e.code {
+                "recipe.ambiguous-reference" => Refusal::new("reference.ambiguous-face", e.detail),
+                _ => e,
+            })?;
+            found = selected.into_iter().map(|i| found[i]).collect();
+        }
         match found.as_slice() {
             [] => {
                 return Err(Refusal::new(
@@ -109,7 +146,7 @@ fn boundary(model: &Model, face: FaceId) -> Result<Vec<Vec<Rim>>, Refusal> {
             rims.push(Rim {
                 from: model.geom().position(model.vertex(from).point),
                 to: model.geom().position(model.vertex(to).point),
-                across: neighbour,
+                across: vec![neighbour],
             });
         }
         loops.push(rims);
@@ -117,12 +154,84 @@ fn boundary(model: &Model, face: FaceId) -> Result<Vec<Vec<Rim>>, Refusal> {
     Ok(loops)
 }
 
-fn first_origin(model: &Model, face: FaceId) -> Result<Origin, Refusal> {
-    model
-        .face_origins(face)
-        .first()
-        .cloned()
-        .ok_or_else(|| bad("a normal-sweep rim requires named input faces"))
+fn rim_origins(
+    model: &Model,
+    face: FaceId,
+    across: &[FaceId],
+    step: &StepId,
+    complete: bool,
+) -> Result<Vec<Origin>, Refusal> {
+    let mut names = Vec::new();
+    let source = model.face_origins(face);
+    let source = if complete {
+        source
+    } else {
+        &source[..source.len().min(1)]
+    };
+    for adjacent in across {
+        let neighbour = model.face_origins(*adjacent);
+        let neighbour = if complete {
+            neighbour
+        } else {
+            &neighbour[..neighbour.len().min(1)]
+        };
+        for a in source {
+            for b in neighbour {
+                let edge = EdgeName::new(a.clone(), b.clone()).map_err(|e| bad(&e.to_string()))?;
+                names.push(Origin {
+                    step: step.clone(),
+                    role: Role::Rim { edge },
+                });
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        return Err(bad("a normal-sweep rim requires named input faces"));
+    }
+    Ok(names)
+}
+
+/// A changed source neighbour is provenance, not a corner of the normal image.
+/// Collapse every straight run before creating vertices, edges or side faces.
+fn coalesced(rims: Vec<Rim>, dec: &mut Decider) -> Result<Vec<Rim>, Refusal> {
+    let count = rims.len();
+    let direction = |i: usize| rims[i].to.minus(&rims[i].from);
+    let mut breaks = Vec::new();
+    for i in 0..count {
+        let p = (i + count - 1) % count;
+        if sign(&direction(p).cross(&direction(i)).norm_squared(), dec)? != Sign::Zero {
+            breaks.push(i);
+        } else if sign(&direction(p).dot(&direction(i)), dec)? != Sign::Positive {
+            return Err(bad("a polygonal rim must not backtrack"));
+        }
+    }
+    if breaks.len() < 3 {
+        return Err(bad("a polygonal face needs a finite area wire"));
+    }
+    let mut result = Vec::new();
+    for (k, first) in breaks.iter().copied().enumerate() {
+        let next = breaks[(k + 1) % breaks.len()];
+        let last = (next + count - 1) % count;
+        let mut across = Vec::new();
+        let mut i = first;
+        loop {
+            across.extend(rims[i].across.iter().copied());
+            if i == last {
+                break;
+            }
+            i = (i + 1) % count;
+        }
+        across.sort();
+        across.dedup();
+        result.push(Rim {
+            from: rims[first].from.clone(),
+            to: rims[last].to.clone(),
+            across,
+        });
+    }
+    Ok(result)
 }
 
 /// Whether the body is one profile extrusion and `face` is one of its end caps.
@@ -148,6 +257,28 @@ fn plain_prism(model: &Model, body: BodyId, face: FaceId) -> bool {
         .all(|o| matches!(o.role, Role::Start | Role::End))
 }
 
+/// Bounded additional family: polygonal faces retained from several elementary
+/// planar creators. A plain authored nonconvex side/multi-face skin stays outside
+/// this fallback, as do curved neighbours and derived feature envelopes.
+fn planar_boolean_skin(model: &Model, body: BodyId) -> bool {
+    let mut creators = std::collections::BTreeSet::new();
+    model.faces_of_body(body).into_iter().all(|f| {
+        let origins = model.face_origins(f);
+        origins.iter().for_each(|o| {
+            creators.insert(o.step.clone());
+        });
+        !origins.is_empty()
+            && origins
+                .iter()
+                .all(|o| matches!(o.role, Role::Start | Role::End | Role::Side { .. }))
+            && matches!(
+                model.geom().surface(model.face(f).surface),
+                Surface::Plane(_)
+            )
+            && boundary(model, f).is_ok()
+    }) && creators.len() > 1
+}
+
 /// Sweeps the one selected nonconvex planar face of `body` along its normal.
 /// A body, selection or boundary outside that family reports `fallback`.
 #[allow(clippy::too_many_arguments)]
@@ -161,10 +292,11 @@ pub(crate) fn thicken(
     fallback: Refusal,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
-    let Some(selected) = select(model, body, refs)? else {
+    let Some(selected) = select(model, body, refs, dec)? else {
         return Err(fallback);
     };
-    if !plain_prism(model, body, selected) {
+    let plain = plain_prism(model, body, selected);
+    if !plain && !planar_boolean_skin(model, body) {
         return Err(fallback);
     }
     let f = model.face(selected);
@@ -175,7 +307,7 @@ pub(crate) fn thicken(
     if f.sense == Sense::Reversed {
         plane.normal = plane.normal.scaled(&Real::from_i64(-1));
     }
-    let loops = match boundary(model, selected) {
+    let mut loops = match boundary(model, selected) {
         Ok(loops) if !loops.is_empty() => loops,
         _ => return Err(fallback),
     };
@@ -192,8 +324,13 @@ pub(crate) fn thicken(
     if sign(&area.dot(&plane.normal), dec)? != Sign::Positive {
         return Err(fallback);
     }
+    if !plain {
+        loops = loops
+            .into_iter()
+            .map(|rims| coalesced(rims, dec))
+            .collect::<Result<_, _>>()?;
+    }
     let names = model.face_origins(selected).to_vec();
-    let base_origin = first_origin(model, selected)?;
     let front = matches!(side, ThickenSide::Front);
     let distance = if front { thickness.clone() } else { -thickness };
     let Some(Surface::Plane(mut far)) =
@@ -208,7 +345,7 @@ pub(crate) fn thicken(
         ring: usize,
         first: usize,
         last: usize,
-        origin: Origin,
+        origins: Vec<Origin>,
     }
     let mut runs = Vec::new();
     for (ring, rims) in loops.iter().enumerate() {
@@ -229,19 +366,11 @@ pub(crate) fn thicken(
         for (k, first) in breaks.iter().enumerate() {
             let next = breaks[(k + 1) % breaks.len()];
             let last = (next + m - 1) % m;
-            let edge = EdgeName::new(
-                base_origin.clone(),
-                first_origin(model, rims[*first].across)?,
-            )
-            .map_err(|e| bad(&e.to_string()))?;
             runs.push(Run {
                 ring,
                 first: *first,
                 last,
-                origin: Origin {
-                    step: step.clone(),
-                    role: Role::Rim { edge },
-                },
+                origins: rim_origins(model, selected, &rims[*first].across, step, !plain)?,
             });
         }
     }
@@ -341,7 +470,7 @@ pub(crate) fn thicken(
             Sense::Same,
             vec![path],
             None,
-            vec![run.origin.clone()],
+            run.origins.clone(),
         ));
     }
 

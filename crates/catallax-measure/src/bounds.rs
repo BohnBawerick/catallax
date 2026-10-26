@@ -15,6 +15,8 @@ use catallax_shapes::{Point3, PointDef, Surface, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod spline;
+
 /// An inclusive axis-aligned box containing the exact geometry, in model coordinates.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundingBox {
@@ -121,25 +123,43 @@ impl Budget {
 
 struct Query<'a> {
     model: &'a Model,
+    body: Option<BodyId>,
+    accuracy: &'a Accuracy,
     scratch: Option<Model>,
     budget: Budget,
     edges: BTreeMap<EdgeId, Extrema>,
+    spline_faces: BTreeMap<FaceId, Extrema>,
 }
 impl<'a> Query<'a> {
-    fn new(model: &'a Model, dec: &Decider) -> Result<Self, Refusal> {
+    fn new(
+        model: &'a Model,
+        body: Option<BodyId>,
+        accuracy: &'a Accuracy,
+        dec: &Decider,
+    ) -> Result<Self, Refusal> {
         Ok(Self {
             model,
+            body,
+            accuracy,
             scratch: None,
             budget: Budget::new(dec)?,
             edges: BTreeMap::new(),
+            spline_faces: BTreeMap::new(),
         })
     }
-    fn face(
-        &mut self,
-        id: FaceId,
-        accuracy: &Accuracy,
-        dec: &mut Decider,
-    ) -> Result<Extrema, Refusal> {
+    fn face(&mut self, id: FaceId, dec: &mut Decider) -> Result<Extrema, Refusal> {
+        let accuracy = self.accuracy;
+        if let Some(extrema) = self.spline_faces.get(&id) {
+            return Ok(extrema.clone());
+        }
+        if spline::has_spline_boundary(self.model, id) {
+            for (face, extrema) in
+                spline::prism_faces(self.model, self.body, id, accuracy, &mut self.budget, dec)?
+            {
+                self.spline_faces.insert(face, extrema);
+            }
+            return Ok(self.spline_faces[&id].clone());
+        }
         let surface = self.model.geom().surface(self.model.face(id).surface);
         if self.model.face(id).loops.is_empty() {
             let (center, radii) = match surface {
@@ -592,10 +612,10 @@ pub(crate) fn body(
     if faces.is_empty() {
         return Ok(Answer::exact(None));
     }
-    let mut query = Query::new(model, dec)?;
+    let mut query = Query::new(model, Some(body), accuracy, dec)?;
     let mut total = None;
     for face in faces {
-        merge(&mut total, query.face(face, accuracy, dec)?);
+        merge(&mut total, query.face(face, dec)?);
     }
     let answer = total.unwrap().finish(accuracy);
     Ok(Answer::with_marks(Some(answer.value), answer.marks))
@@ -607,6 +627,6 @@ pub(crate) fn face(
     dec: &mut Decider,
 ) -> Answered<BoundingBox> {
     accuracy.validate();
-    let mut query = Query::new(model, dec)?;
-    Ok(query.face(face, accuracy, dec)?.finish(accuracy))
+    let mut query = Query::new(model, None, accuracy, dec)?;
+    Ok(query.face(face, dec)?.finish(accuracy))
 }

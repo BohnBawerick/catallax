@@ -217,10 +217,6 @@ fn ring_edges(model: &Model, face: FaceId) -> Option<[EdgeId; 2]> {
     Some([edge(*a)?, edge(*b)?])
 }
 
-pub(crate) fn is_complete(model: &Model, face: FaceId, dec: &mut Decider) -> Result<bool, Refusal> {
-    Ok(source_band(model, face, dec)?.is_some())
-}
-
 fn source_band(
     model: &Model,
     face: FaceId,

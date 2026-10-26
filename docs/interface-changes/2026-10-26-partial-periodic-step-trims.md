@@ -38,10 +38,17 @@ association. Its auxiliary pcurve can still contribute a nonzero certified
 with the requested linear tolerance rather than assuming an analytic master
 curve implies a zero bound; the 3D curve is not replaced by an approximation.
 
-Eligibility: A selected scene must use supported regular charts throughout.
-Arbitrary cone/torus trims, elliptic cylinders and spherical domains containing
-a parameter pole keep their legacy encoding. Complete non-apex conical bands
-can accompany supported partial faces. Before cutover, distinct endpoints of
+Eligibility is whole-export, not per-face. Only regular cylinders and proven
+pole-free spheres are rebuilt as charts. Uncharted planar caps must retain
+native analytic space boundaries: explicit lines/circles/ellipses or intersections
+of a plane with planes, cylinders or spheres. Opaque boundaries on other faces
+reject the entire cutover rather than inheriting a different branch fit.
+Cone faces, arbitrary torus trims, elliptic cylinders and spherical domains
+containing a parameter pole keep the whole scene on its legacy encoding.
+The earlier complete-band path remains unchanged; conical bands no longer enter
+the partial-chart path alongside partial faces. Structural rejection happens
+before chart membership, cuts or fitting and uses no runtime import or measurement.
+Before cutover, distinct endpoints of
 nonclosed chart edges must remain separated after the existing decimal rounding
 by more than `max(abs(curve_tolerance), 1e-7)` plus their certified rounding
 errors. Each chart vertex's rounding error must also meet the requested distance

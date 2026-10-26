@@ -21,8 +21,9 @@ at identity and a rational pose. It checks topology, one solid and converged
 adaptive volume through both raw and standard reader procedures. Only the raw
 procedure asserts no healing: direct `StepToTopoDS_Builder` translation bypasses
 the reader's default ShapeFix processing and keeps SameParameter disabled.
-The Rust `partial` target preserves the 100,000,000-work request allowance and
-the legacy encoding of unresolved subprecision trims.
+The Rust `partial` target preserves the 100,000,000-work request allowance,
+the legacy encoding of unresolved subprecision trims, and whole-export legacy
+topology for mixed conical scenes in both body orders.
 
 Run **all tests**, including the eight cases retained behind individual ignore reasons:
 
@@ -83,10 +84,11 @@ their existing seam encoding. Regular partial cylinders and pole-free spherical
 faces use exact shared-edge cuts and bounded, parameter-coupled pcurves. Source
 loop-corner incidence is preserved at touching vertices; disconnected chart
 components receive distinct face/surface identities. No kernel topology is
-modified. Elliptic cylinders, arbitrary cones and tori, spherical faces whose
-poles belong to the domain, and unresolved rounded trims retain their previous
-encoding. A scene containing an unsupported face does not receive a partial
-cutover. Distinct endpoints must remain separated by the larger of the requested
+modified. Elliptic cylinders, cone faces, arbitrary torus trims, spherical faces
+whose poles belong to the domain, and unresolved rounded trims retain their
+previous encoding. Uncharted planar caps must keep native analytic boundaries;
+opaque boundaries reject the whole export's partial cutover. Complete bands
+remain on their earlier path. Distinct endpoints must remain separated by the larger of the requested
 distance tolerance and `1e-7`, plus their certified rounding errors.
 
 Longitudinal seam directions come from the certified carrier frame, not from

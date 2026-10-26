@@ -1,9 +1,9 @@
 //! Exact export-only topology over regular periodic charts. Spherical callers
 //! certify that both chart poles are outside the requested trimmed domain.
 
-use crate::{band, chart, cut, number, trim, wire};
+use crate::{chart, cut, number, trim, wire};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
-use catallax_shapes::Surface;
+use catallax_shapes::{Curve, Surface};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Shell};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -45,14 +45,13 @@ pub(crate) fn prepare(
     for face in faces() {
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
-            Surface::Plane(_) => {}
+            Surface::Plane(_) if unchanged_planar_boundary(model, face) => {}
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
             Surface::Cylinder(_) | Surface::Sphere(_)
                 if definition
                     .loops
                     .iter()
                     .all(|id| matches!(model.loop_(*id), Loop::Coedges(_))) => {}
-            Surface::Cone(_) if band::is_complete(model, face, dec)? => {}
             _ => return Ok(None),
         }
     }
@@ -65,7 +64,7 @@ pub(crate) fn prepare(
         }
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
-            Surface::Cylinder(_) | Surface::Cone(_) => {}
+            Surface::Cylinder(_) => {}
             Surface::Sphere(sphere) if !definition.loops.is_empty() => {
                 let points = *poles.entry(definition.surface).or_insert_with(|| {
                     let radius = number::unit(&sphere.axis).scaled(&sphere.radius);
@@ -132,6 +131,40 @@ pub(crate) fn prepare(
         }
     }
     Ok(Some(prepared))
+}
+
+// Uncharted caps may gain exact subdivisions, but must keep the same native
+// analytic space curves. An opaque intersection could otherwise receive the
+// chart fitter's different 3D approximation without a proven chart for this face.
+fn unchanged_planar_boundary(model: &Model, face: FaceId) -> bool {
+    let definition = model.face(face);
+    !definition.loops.is_empty()
+        && definition.loops.iter().all(|id| {
+            let Loop::Coedges(coedges) = model.loop_(*id) else {
+                return false;
+            };
+            !coedges.is_empty()
+                && coedges.iter().all(|id| {
+                    match model.geom().curve(model.edge(model.coedge(*id).edge).curve) {
+                        Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_) => true,
+                        Curve::Intersection(curve) => {
+                            curve
+                                .surfaces
+                                .iter()
+                                .any(|id| matches!(model.geom().surface(*id), Surface::Plane(_)))
+                                && curve.surfaces.iter().all(|id| {
+                                    matches!(
+                                        model.geom().surface(*id),
+                                        Surface::Plane(_)
+                                            | Surface::Cylinder(_)
+                                            | Surface::Sphere(_)
+                                    )
+                                })
+                        }
+                        _ => false,
+                    }
+                })
+        })
 }
 
 pub(crate) fn prepare_regular(

@@ -74,3 +74,37 @@ fn unresolved_sliver_keeps_legacy_topology_instead_of_periodic_chart_coverage() 
     assert_eq!((report.added_edges, report.added_vertices), (0, 0));
     assert!(report.regularizations.is_empty());
 }
+
+#[test]
+fn mixed_conical_scene_keeps_the_whole_export_on_legacy_topology() {
+    let (mut model, a, b) = boolean_pair(36);
+    let lens = catallax_boolean::boolean(
+        &mut model,
+        a,
+        b,
+        catallax_boolean::BoolOp::Intersect,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    let frustum = cone(&mut model, n(2), n(1), n(2), &translated("20", "0", "0")).unwrap();
+    for bodies in [[lens, frustum], [frustum, lens]] {
+        let mut bytes = Vec::new();
+        let answer = write_step(
+            &model,
+            &bodies,
+            &StepOptions::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        )
+        .unwrap();
+        let report = answer.value;
+        assert_eq!(
+            (report.solids, report.faces, report.edges, report.vertices),
+            (2, 5, 3, 3)
+        );
+        assert_eq!(report.added_edges, 0);
+    }
+    assert!(model.check(lens).is_empty());
+    assert!(model.check(frustum).is_empty());
+}

@@ -602,3 +602,6 @@ mod spherical_finite {
         );
     }
 }
+
+#[path = "conical_tests.rs"]
+mod conical;

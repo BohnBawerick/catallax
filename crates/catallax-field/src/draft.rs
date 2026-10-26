@@ -889,10 +889,23 @@ impl Plan {
             )
         };
         let mut cylinder = None;
+        let mut cylinder_face: Option<usize> = None;
         let mut caps = Vec::new();
         for f in source_faces {
             match &self.faces[*f].surface {
-                Surface::Cylinder(c) if cylinder.is_none() => cylinder = Some(c),
+                Surface::Cylinder(c) => {
+                    if let Some(previous) = cylinder_face {
+                        if !self.faces[previous]
+                            .support
+                            .same_definition(&self.faces[*f].support)
+                        {
+                            return Err(unsupported());
+                        }
+                    } else {
+                        cylinder = Some(c);
+                        cylinder_face = Some(*f);
+                    }
+                }
                 Surface::Plane(p) => {
                     if !caps.iter().any(|(g, _): &(usize, &Plane)| {
                         self.faces[*g]
@@ -902,7 +915,6 @@ impl Plan {
                         caps.push((*f, p));
                     }
                 }
-                Surface::Cylinder(_) => return Err(unsupported()),
                 _ => return Err(unsupported()),
             }
         }

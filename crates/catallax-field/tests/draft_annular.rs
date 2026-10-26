@@ -103,6 +103,37 @@ fn ambiguous_nearest_selection_does_not_guess_between_annular_walls() {
 }
 
 #[test]
+fn retained_nearest_selection_accepts_aliases_of_one_physical_cylinder() {
+    let pose = json!({"rotation":["1","0","0","0"],"translation":["0","0","0"]});
+    let document = json!({"format":"catallax-recipe/3","name":"retained cylinder aliases","steps":[
+        {"id":"left","op":"cylinder","radius":"8","height":"2","pose":pose},
+        {"id":"right","op":"cylinder","radius":"8","height":"2","pose":pose},
+        {"id":"source","op":"boolean","kind":"union","target":"left","tool":"right"},
+        {"id":"drafted","op":"draft","body":"source","faces":[{"face":{"step":"left"},"near":["8","0","1"]}],"pull":["0","0","1"],"neutral":{"point":["0","0","0"],"normal":["0","0","1"]},"angle":"45"}
+    ],"result":"drafted"});
+    let recipe = Recipe::parse(&document.to_string()).unwrap();
+    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    let plan = Plan::compile(&recipe).unwrap();
+    assert_eq!(
+        plan.proven(&p(0, 0, 1), &mut Workspace::default()).location,
+        Location::Inside
+    );
+    for creator in ["left", "right"] {
+        let name: Origin =
+            serde_json::from_value(json!({"step":creator,"role":{"side":{"segment":"wall"}}}))
+                .unwrap();
+        let id = plan.select(&name).unwrap();
+        assert_eq!(
+            plan.face_query(id, &p(7, 0, 1), &mut Workspace::default())
+                .unwrap()
+                .state,
+            FaceState::OnFace
+        );
+    }
+}
+
+#[test]
 fn true_distance_reaches_finite_annuli_and_both_wall_segments() {
     let plan = Plan::compile(&Recipe::parse(&source().to_string()).unwrap()).unwrap();
     for (point, oracle) in [

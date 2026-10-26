@@ -92,6 +92,18 @@ the additive fragment is
    no production code or geometric assertion changed. The failed build job
    is `121327773989` in check run `40246043774` and remains historical evidence.
 
+7. A retained-domain audit reproduced a regression in the new annular nearest
+   guard: main `60c9d44` answered a coincident-cylinder union with a saved near
+   selector, while `b9e4cd5` rejected duplicate aliases as two different walls.
+   The guard now compares carrier definitions, preserving aliases of one
+   physical cylinder while still refusing distinct annular walls. Added a
+   dedicated both-kernel construction and field origin/query regression.
+   Interrupted the obsolete local full-suite compilation before restarting
+   qualification; its partial log is retained, not counted as a passing suite.
+8. The five new sampled comparisons exhaust the unchanged separate 1M allowance.
+   At the existing 100M verification allowance all five agree. These are
+   distinct requests, not a repaired 1M comparison gate or a latency pass.
+
 ## Independent oracles and retained behavior
 
 For `both.json`, with `0 <= z <= 2`, the exact radii are `R=8-z` and `r=2+z`.

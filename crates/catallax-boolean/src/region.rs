@@ -671,16 +671,6 @@ impl RegionCache {
     }
 }
 
-pub(crate) fn signatures(
-    model: &Model,
-    surface: &Surface,
-    loop_groups: &[Vec<LoopId>],
-    point: PointId,
-    dec: &mut Decider,
-) -> Result<Vec<i64>, Refusal> {
-    RegionCache::default().signatures(model, surface, loop_groups, point, dec)
-}
-
 pub(crate) fn locate(
     model: &mut Model,
     face: FaceId,

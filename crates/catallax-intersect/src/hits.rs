@@ -370,7 +370,7 @@ fn circular_section(
         && radius_sq.rational_ref().is_some()
         && surface.has_rational_definition()
     {
-        // Preserve the existing native rational solver and its work accounting.
+        // Rational sections use the closed-form or general solver below.
         return Ok(None);
     }
     let residual = if let Surface::Plane(plane) = surface {
@@ -484,6 +484,57 @@ fn algebraic_line(
     Ok(Solutions::Points(points))
 }
 
+fn circular_cylinder(
+    form: &CurveForm,
+    surface: &Surface,
+    dec: &mut Decider,
+) -> Result<Option<Solutions>, Refusal> {
+    let (
+        CurveForm::Circle {
+            center,
+            normal,
+            radius_sq,
+            ..
+        },
+        Surface::Cylinder(cylinder),
+    ) = (form, surface)
+    else {
+        return Ok(None);
+    };
+    // This section is a circle only when its plane is perpendicular to the
+    // cylinder axis. Other orientations retain the general intersection solver.
+    if !normal
+        .cross(&cylinder.axis)
+        .norm_squared()
+        .rational_ref()
+        .is_some_and(Rational::is_zero)
+    {
+        return Ok(None);
+    }
+    let offset = cylinder.origin.minus(center);
+    let radial = offset.minus(&normal.scaled(&(offset.dot(normal) / normal.norm_squared())));
+    let distance_sq = radial.norm_squared();
+    if sign(&distance_sq, dec)? == Sign::Zero {
+        return Ok(Some(
+            if sign(&(radius_sq - &cylinder.radius_sq), dec)? == Sign::Zero {
+                Solutions::Contained
+            } else {
+                Solutions::Points(Vec::new())
+            },
+        ));
+    }
+    // The radical plane proves separation without eliminating world coordinates.
+    // Nonempty intersections retain the original solver's RUR witnesses.
+    let fraction =
+        (&(&distance_sq + radius_sq) - &cylinder.radius_sq) / (&Real::from_i64(2) * &distance_sq);
+    let height_numerator = radius_sq - &(&fraction.square() * &distance_sq);
+    Ok(if sign(&height_numerator, dec)? == Sign::Negative {
+        Some(Solutions::Points(Vec::new()))
+    } else {
+        None
+    })
+}
+
 pub(super) fn intersect(
     geom: &mut GeomStore,
     c: CurveId,
@@ -508,8 +559,10 @@ pub(super) fn intersect(
             "this intersection needs a finite parametric surface solver",
         )
     })?;
-    let solutions = if !geom.surface(s).has_rational_definition()
-        && let CurveForm::Line { origin, dir } = &form
+    let solutions = if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
+        solutions
+    } else if let CurveForm::Line { origin, dir } = &form
+        && !geom.surface(s).has_rational_definition()
     {
         algebraic_line(origin, dir, geom.surface(s), implicit, dec)?
     } else {

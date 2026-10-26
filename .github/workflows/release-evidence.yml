@@ -56,7 +56,7 @@ jobs:
         run: |
           python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py parts parts \
             --binary target/release/catallax-verify --out "$RUNNER_TEMP/parts" \
-            --max-work 1000000 --occt-python "$RUNNER_TEMP/occt/bin/python" --json
+            --max-work 1000000 --compare --occt-python "$RUNNER_TEMP/occt/bin/python" --json
           cp "$RUNNER_TEMP/parts/parts.json" "$RUNNER_TEMP/release-evidence/target-parts.json"
           flags=()
           if [[ "$HISTORICAL_REPLAY" == true ]]; then flags+=(--allow-historical-replay); fi

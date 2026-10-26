@@ -70,6 +70,31 @@ class CorrectnessTests(unittest.TestCase):
         self.assertIsNone(row['build_median_ms'])
         self.assertEqual(row['failed_rebuilds'], 1)
 
+    def test_preview_wait_is_separate_from_proof_completion(self):
+        def phase(ms, status='answered'):
+            return {'status': status, 'wall_ms': ms}
+        variant = {'build': phase(300), 'preview': phase(200), 'display': phase(900),
+                   'measurement': phase(400), 'step': phase(500)}
+        engine = {'status': 'completed', 'variants': {'construction': variant}}
+        row = summarize({'pairs': [{'part': 'P0/example.json', 'warmup': False,
+                                    'engines': {'catallax': engine, 'solidcraft': engine}}]})[0]
+        self.assertEqual(row['preview_wait_median_ms'], 500)
+        self.assertEqual(row['preview_budget_passes'], 1)
+        self.assertEqual(row['proof_wait_median_ms'], 2100)
+        self.assertFalse(row['built_after_proof'], 'proof over 2000 ms is not built')
+
+    def test_missing_or_refused_preview_is_no_wait_and_preview_never_builds(self):
+        quick = {'build': {'status': 'answered', 'wall_ms': 1}, 'preview': {'status': 'work-exhausted', 'wall_ms': 1},
+                 'display': {'status': 'work-exhausted', 'wall_ms': 1}}
+        legacy = {'build': {'status': 'answered', 'wall_ms': 1}}
+        for variant in (quick, legacy):
+            engine = {'status': 'completed', 'variants': {'construction': variant}}
+            row = summarize({'pairs': [{'part': 'P0/example.json', 'warmup': False,
+                                        'engines': {'catallax': engine, 'solidcraft': engine}}]})[0]
+            self.assertIsNone(row['preview_wait_median_ms'])
+            self.assertEqual(row['preview_budget_passes'], 0)
+            self.assertFalse(row['built_after_proof'])
+
 
 if __name__ == '__main__':
     unittest.main()

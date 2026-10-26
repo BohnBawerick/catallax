@@ -248,14 +248,63 @@ def run(args):
     return summarize(report)
 
 
+# The preview wait and the background proof job are separate budgets. A whole
+# response is a proof wait, never a preview pass: only a record labelled
+# unproved with a delivered display is accepted as preview evidence.
+PREVIEW_TARGET_MS = 1000
+PROOF_TARGET_MS = 2000
+
+
+def preview_evidence(response):
+    """Preview wait from a response that carries a delivered, unproved preview."""
+    record = response.get('preview') or response.get('manifest', {}).get('preview')
+    if record is None:
+        return {'status': 'not-measured', 'reason': 'response carries no preview record', 'target_ms': PREVIEW_TARGET_MS}
+    wait = record.get('wall_ms')
+    valid = (record.get('state') == 'unproved' and record.get('displayed') is True
+             and isinstance(wait, (int, float)) and not isinstance(wait, bool) and wait >= 0)
+    if not valid:
+        return {'status': 'invalid', 'reason': 'a preview must be labelled unproved and report its delivered display wait', 'target_ms': PREVIEW_TARGET_MS}
+    return {'status': 'measured', 'state': 'unproved', 'wall_ms': wait, 'target_ms': PREVIEW_TARGET_MS, 'met': wait <= PREVIEW_TARGET_MS}
+
+
+def proof_evidence(response):
+    """Background proof completion: the whole response wall, met only if it answered."""
+    manifest = response['manifest']
+    completed = manifest.get('status') == 'answered' and not manifest.get('refusal')
+    wait = response['wall_ms']
+    return {'status': 'completed' if completed else 'incomplete', 'wall_ms': wait, 'target_ms': PROOF_TARGET_MS,
+            'met': completed and wait <= PROOF_TARGET_MS}
+
+
+def acceptance(response):
+    """Separate preview and proof columns. A part is built only by completed proof."""
+    preview, proof = preview_evidence(response), proof_evidence(response)
+    return {'preview': preview, 'proof': proof, 'built': proof['met']}
+
+
 def summarize(report):
     groups, slow, issues = {}, [], {}
     crashes = 0
     disagreements = 0
     edit_failures = 0
+    preview = {'measured': 0, 'met': 0, 'not_measured': 0, 'invalid': 0}
+    proof = {'completed': 0, 'within_target': 0, 'incomplete': 0}
+    built = 0
+    comparison_requested = 0
     for case in report['cases']:
         response = case['response']
         manifest = response['manifest']
+        verdict = acceptance(response)
+        preview['measured'] += verdict['preview']['status'] == 'measured'
+        preview['met'] += bool(verdict['preview'].get('met'))
+        preview['not_measured'] += verdict['preview']['status'] == 'not-measured'
+        preview['invalid'] += verdict['preview']['status'] == 'invalid'
+        proof['completed'] += verdict['proof']['status'] == 'completed'
+        proof['within_target'] += verdict['proof']['met']
+        proof['incomplete'] += verdict['proof']['status'] == 'incomplete'
+        built += verdict['built']
+        comparison_requested += case['class'] == 'compare'
         cause = (manifest.get('refusal') or {}).get('code', manifest.get('status', 'unknown'))
         crashes += manifest.get('status') == 'internal-error'
         comparison = manifest.get('comparison')
@@ -283,7 +332,10 @@ def summarize(report):
     for case in slow:
         label = case['group'] + '/' + case['phase'] + '/' + case['cause']
         performance.setdefault(label, []).append(case['key'])
-    return {'cases': len(report['cases']), 'elapsed_ms': report['elapsed_ms'], 'cache_hits': sum(c['cache_hit'] for c in report['cases']), 'outcomes': groups, 'issue_groups': issues, 'crashes': crashes, 'comparison_disagreements': disagreements, 'edit_failures': edit_failures, 'performance_groups': performance, 'slow': sorted(slow, key=lambda c: -c['wall_ms'])}
+    return {'cases': len(report['cases']), 'elapsed_ms': report['elapsed_ms'], 'cache_hits': sum(c['cache_hit'] for c in report['cases']), 'outcomes': groups, 'issue_groups': issues, 'crashes': crashes, 'comparison_disagreements': disagreements, 'edit_failures': edit_failures, 'performance_groups': performance, 'slow': sorted(slow, key=lambda c: -c['wall_ms']),
+            'acceptance': {'preview': preview | {'target_ms': PREVIEW_TARGET_MS}, 'proof': proof | {'target_ms': PROOF_TARGET_MS},
+                           'built_after_proof': built, 'comparison_requested': comparison_requested,
+                           'rule': 'a whole-response wait is a proof wait; preview passes need a delivered unproved display; a preview alone never counts a part as built'}}
 
 
 def comparable(manifest):
@@ -452,6 +504,12 @@ def part_edit_check(worker, problem, changes, relative, out, max_work):
     return check
 
 
+def parts_sources(args):
+    """Requested columns. The second-kernel comparison runs only when asked."""
+    return (('recipe', 'field') + (('compare',) if args.compare else ())
+            + (('print',) if args.print_tolerance is not None else ()))
+
+
 def parts(args):
     root = Path(args.inputs).resolve()
     edit_file = root / 'edit-checks.json'
@@ -483,6 +541,9 @@ def parts(args):
               'max_work': args.max_work, 'status': 'running', 'edit_checks': {}, 'cases': []}
     if args.print_tolerance is not None:
         report['print_tolerance_mm'] = args.print_tolerance
+    report['columns'] = list(parts_sources(args))
+    report['comparison'] = {'requested': args.compare,
+                            'status': 'requested' if args.compare else 'not-requested'}
     try:
         # Exact name rebuilds do not depend on display or sampled comparison.
         # Persist every configured check before either can delay unrelated rows.
@@ -493,7 +554,7 @@ def parts(args):
                 atomic(out / 'parts.json', report)
         for file, relative, problem in problems:
             case = {'recipe_file': relative, 'sha256': file_hash(file), 'name': problem['name']}
-            sources = ('recipe', 'field', 'compare') + (('print',) if args.print_tolerance is not None else ())
+            sources = parts_sources(args)
             for source in sources:
                 dest = out / 'cases' / relative.removesuffix('.json') / source
                 dest.mkdir(parents=True, exist_ok=True)
@@ -528,6 +589,9 @@ def parts(args):
                                       'refusal': brep.get('refusal')}
             # SolidDraft interaction and volume error transfer remain separate
             # acceptance gates; name resolution is exercised above without a UI.
+            # Preview wait is not measured by catallax-verify; see head_to_head. A
+            # row is built only when its recipe proof completed within the proof target.
+            case['acceptance'] = {source: acceptance(case[source]) for source in ('recipe', 'field')}
             case['application_check'] = {'status': 'not-run', 'code': 'parts.application-loop-required'}
             report['cases'].append(case)
             atomic(out / 'parts.json', report)
@@ -538,9 +602,11 @@ def parts(args):
     finally:
         worker.close()
     report['crashes'] = sum(c[s]['manifest'].get('status') in ('internal-error', 'invalid-question')
-                            for c in report['cases'] for s in ('recipe', 'field', 'compare'))
-    report['comparison_disagreements'] = sum(c['compare']['manifest'].get('comparison', {}).get('verdict') == 'disagree'
-                                             for c in report['cases'])
+                            for c in report['cases'] for s in report['columns'])
+    # None means the comparison column was not requested, not zero disagreements.
+    report['comparison_disagreements'] = (
+        sum(c['compare']['manifest'].get('comparison', {}).get('verdict') == 'disagree' for c in report['cases'])
+        if args.compare else None)
     report['step_failures'] = sum(c['step_check']['status'] == 'failed' for c in report['cases'])
     report['edit_failures'] = sum(c['edit_check']['status'] in ('failed', 'invalid') for c in report['cases'])
     report['status'] = 'completed'
@@ -588,6 +654,7 @@ def main():
     p.add_argument('--max-work', type=int, default=100_000_000)
     p.add_argument('--core', type=int, help='one pinned CPU for the worker')
     p.add_argument('--occt-python', default=sys.executable, help='Python with cadquery-ocp installed; unavailable binding is reported as not run')
+    p.add_argument('--compare', action='store_true', help='also run the second-kernel field comparison column; off by default')
     p.add_argument('--print-tolerance', help='also build direct field STL/OBJ at this exact millimetre output tolerance')
     p = commands.add_parser('head-to-head-reference', help='download and verify the pinned released SolidCraft binary outside the repository')
     p.add_argument('--out', required=True)

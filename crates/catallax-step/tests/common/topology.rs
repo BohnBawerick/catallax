@@ -310,6 +310,15 @@ pub fn assert_topology(m: &Model, bs: &[BodyId], s: &Step, o: &StepOptions, d: &
                         );
                         continue;
                     }
+                    if bounds.len() == 1 && face.loops.len() == 2
+                        && matches!(m.geom().surface(face.surface), Surface::Cylinder(_) | Surface::Cone(_))
+                    {
+                        // The independent native tests check the export-only chart
+                        // cut; the source still has two vertex-free ring loops.
+                        let bound = s.e(reference(bounds[0]), "FACE_BOUND");
+                        assert_eq!(bound.args[2], if index == 0 { ".T." } else { ".F." });
+                        continue;
+                    }
                     assert_eq!(bounds.len(), face.loops.len());
                     for (&lid, bound) in face.loops.iter().zip(bounds) {
                         let bound = s.e(reference(bound), "FACE_BOUND");
@@ -335,7 +344,10 @@ pub fn assert_topology(m: &Model, bs: &[BodyId], s: &Step, o: &StepOptions, d: &
                                     bind(&mut maps.edges, co.edge, eid);
                                     let edge = m.edge(co.edge);
                                     let e = s.e(eid, "EDGE_CURVE");
-                                    let curve_id = reference(&e.args[3]);
+                                    let mut curve_id = reference(&e.args[3]);
+                                    if s.entities[&curve_id].kind == "SURFACE_CURVE" {
+                                        curve_id = reference(&s.e(curve_id, "SURFACE_CURVE").args[1]);
+                                    }
                                     let spline =
                                         s.entities[&curve_id].kind == "B_SPLINE_CURVE_WITH_KNOTS";
                                     if !spline {

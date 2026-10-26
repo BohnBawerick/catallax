@@ -10,6 +10,7 @@ use std::io::Write;
 use catallax_numbers::{Answered, Decider, Rational};
 use catallax_topology::{BodyId, Model};
 
+mod band;
 mod certified_spline;
 mod export;
 mod fit;

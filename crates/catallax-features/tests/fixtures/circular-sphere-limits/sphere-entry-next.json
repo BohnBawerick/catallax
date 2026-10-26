@@ -1,0 +1,62 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "circular sphere entry next",
+  "description": "Public synthetic coaxial disk first-hit request.",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "rim",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "3"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "target",
+      "op": "sphere",
+      "radius": "5",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "10"
+        ]
+      }
+    },
+    {
+      "id": "cap",
+      "op": "extrude_next",
+      "target": "target",
+      "profile": "profile"
+    }
+  ],
+  "result": "cap"
+}

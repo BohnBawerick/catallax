@@ -51,7 +51,7 @@ The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap
 
 Keep 0.01 mm as the default print accuracy, not a mandatory accuracy for every export. Accuracy and resource caps are recorded output settings, consistent with [PLAN section 3.1](PLAN.md#31-one-modelling-tolerance). Prefer accurate parts and improve the route rather than silently coarsening them. When the requested output does not fit, explain the cost and let the user choose a coarser accuracy or a higher cap.
 
-This decision changes the implementation direction, not today's API or output bytes. The current `source: print` adapter still always builds a field mesh. B-rep print, adaptive boundary cells, trade-off reports and embedded settings below are requirements to implement, not delivered capabilities. [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing) separates that current contract from the approved direction.
+The ordinary B-rep adapter and versioned file metadata are implemented by the [B-rep print interface fragment](interface-changes/2026-10-26-certified-brep-print.md). Adaptive boundary cells and trade-off estimates remain requirements, not delivered capabilities. [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing) specifies current routing and output guarantees.
 
 ### Why change the print route
 
@@ -96,7 +96,7 @@ The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap
 
 ### Print implementation lanes
 
-Source observations are at `1cb8ee77723bca2d57836a25624e3e0b54753711`. These lanes describe missing work, not current print support.
+Source observations for the original lane split are at `1cb8ee77723bca2d57836a25624e3e0b54753711`. The B-rep adapter and file metadata now have an [implementation contract](interface-changes/2026-10-26-certified-brep-print.md); adaptive cells and trade-off estimates remain separate work.
 
 | Lane | Source and work | Risk and acceptance evidence |
 | --- | --- | --- |

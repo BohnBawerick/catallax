@@ -37,7 +37,7 @@ python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py run /tmp/P
 
 The tolerance is an explicit print setting in millimetres, not a change to modelling tolerance or the scoreboard's allowance. An answered request writes `print.stl` and the matching `display.obj`. A printable mesh alone does not complete P6's mass-equivalent STEP stand-in gate.
 
-For a scoreboard that also retains direct field print artifacts, add `--print-tolerance 0.5` to `parts`. Every row then includes a separate `print` response. Unsupported print definitions keep their refusal instead of borrowing the B-rep mesh.
+For a scoreboard that also retains qualified print artifacts, add `--print-tolerance 0.5` to `parts`. Every row then includes a separate `print` response naming its route. Ordinary recipes use B-rep and native-field definitions use field. Use an explicit `route: "field"` wrapper to exercise the independent field print gate; a successful B-rep print does not close it. Unsupported print definitions keep their typed refusal with no route fallback.
 
 ## Run the report
 

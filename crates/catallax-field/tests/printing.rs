@@ -252,6 +252,76 @@ fn stl_and_obj_bytes_match_the_unchunked_reference() {
     }
     assert!(reference_stl(&sphere_mesh()).len() > 3 << 16);
 }
+
+#[test]
+fn exact_f32_tetrahedron_normals_survive_binary64_subtraction_cancellation() {
+    let large = 2.0_f32.powi(60);
+    let mesh = Mesh {
+        positions: vec![
+            [large, large, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        triangles: vec![[0, 1, 2], [0, 3, 1], [1, 3, 2], [0, 2, 3]],
+        max_deviation: Rational::zero(),
+        cells: 0,
+    };
+    let mut bytes = Vec::new();
+    mesh.write_stl(&mut bytes).unwrap();
+    let exact_positions: Vec<_> = mesh
+        .positions
+        .iter()
+        .map(|point| {
+            point.map(|coordinate| Rational::from_f64_exact(f64::from(coordinate)).unwrap())
+        })
+        .collect();
+    for (triangle, facet) in mesh
+        .triangles
+        .iter()
+        .zip(bytes[84..].as_chunks::<50>().0.iter())
+    {
+        let normal: [f32; 3] = std::array::from_fn(|i| {
+            f32::from_le_bytes(facet[i * 4..i * 4 + 4].try_into().unwrap())
+        });
+        assert!(normal.iter().all(|component| component.is_finite()));
+        let [a, b, c] = triangle.map(|i| &exact_positions[i]);
+        let ab: [Rational; 3] = std::array::from_fn(|i| &b[i] - &a[i]);
+        let ac: [Rational; 3] = std::array::from_fn(|i| &c[i] - &a[i]);
+        let dot = (0..3).fold(Rational::zero(), |sum, i| {
+            let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+            &sum + &(&Rational::from_f64_exact(f64::from(normal[i])).unwrap()
+                * &(&(&ab[j] * &ac[k]) - &(&ab[k] * &ac[j])))
+        });
+        assert!(
+            dot > Rational::zero(),
+            "normal must agree with encoded facet winding"
+        );
+    }
+    let first: [f32; 3] = std::array::from_fn(|i| {
+        f32::from_le_bytes(bytes[84 + i * 4..88 + i * 4].try_into().unwrap())
+    });
+    assert_eq!(first, [0.0, 0.0, -1.0]);
+}
+
+#[test]
+fn stl_writer_rejects_degenerate_and_nonfinite_facets_instead_of_emitting_nan() {
+    for positions in [
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        vec![[f32::INFINITY, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+    ] {
+        let mesh = Mesh {
+            positions,
+            triangles: vec![[0, 1, 2]],
+            max_deviation: Rational::zero(),
+            cells: 0,
+        };
+        assert_eq!(
+            mesh.write_stl(&mut Vec::new()).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
+    }
+}
 #[test]
 fn small_sinks_see_few_writes() {
     struct Counting(usize, usize);

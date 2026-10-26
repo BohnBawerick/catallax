@@ -190,7 +190,10 @@ fn unmapped_selectors_are_typed_and_never_return_the_input_body() {
             "chamfer",
             json!({"edges":{"all_of":["all",{"created_by":"Body"}]},"distance":0.5}),
         ),
-        ("shell", json!({"open_faces":"all","thickness":0.5})),
+        (
+            "shell",
+            json!({"open_faces":{"all_of":["all",{"created_by":"Body"}]},"thickness":0.5}),
+        ),
         (
             "shell",
             json!({"open_faces":{"nearest":[0,0,0]},"thickness":0.5}),
@@ -365,6 +368,63 @@ fn named_open_face_shell_builds_and_displays() {
         );
     }
     assert!(mesh.triangles.len() >= 12);
+}
+
+#[test]
+fn shell_all_faces_converts_to_a_reference_per_face_making_ancestor() {
+    let mut steps = box_steps();
+    steps.push(json!({"id":"Round","op":"fillet","body":"Body","edges":"all","radius":0.1}));
+    steps.push(
+        json!({"id":"Hollow","op":"shell","body":"Round","open_faces":"all","thickness":0.2}),
+    );
+    let converted = convert(&recipe(steps, "Hollow")).unwrap();
+    let Operation::Shell {
+        open, thickness, ..
+    } = &converted.recipe.steps[3].op
+    else {
+        panic!()
+    };
+    assert_eq!(thickness.value(), &Rational::parse("1/5").unwrap());
+    let steps: Vec<_> = open.iter().map(|r| &r.face.step).collect();
+    assert_eq!(steps, [&converted.steps["Body"], &converted.steps["Round"]]);
+    assert!(
+        open.iter()
+            .all(|r| r.face.role.is_none() && r.touching.is_empty() && r.near.is_none())
+    );
+    for step in [
+        json!({"id":"s","op":"shell","body":"Body","open_faces":"all","thickness":-1}),
+        json!({"id":"s","op":"shell","body":"Nope","open_faces":"all","thickness":1}),
+    ] {
+        let mut steps = box_steps();
+        steps.push(step);
+        assert!(matches!(
+            convert(&recipe(steps, "s")),
+            Err(ConversionError::Invalid { .. })
+        ));
+    }
+}
+
+#[test]
+fn shell_all_faces_builds_an_empty_body_before_and_after_an_upstream_edit() {
+    // Opening every face leaves no wall, so the exact result is empty.
+    for width in [4, 6] {
+        let mut steps = box_steps();
+        steps[0]["rectangle"]["width"] = width.into();
+        steps.push(
+            json!({"id":"Hollow","op":"shell","body":"Body","open_faces":"all","thickness":0.2}),
+        );
+        let result = build_soliddraft(
+            &recipe(steps, "Hollow"),
+            &MeshOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert!(
+            result.body.display.value.triangles.is_empty(),
+            "width {width}"
+        );
+        assert!(result.body.names.faces.is_empty(), "width {width}");
+    }
 }
 
 #[test]

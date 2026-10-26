@@ -2,7 +2,7 @@
 
 Pieces: application converter
 
-Change: `soliddraft::convert` now converts `fillet` and `chamfer` with `all` edges and `shell` with a `created_by` open-face selector into the native `fillet`, `chamfer` and `shell` operations instead of returning `features.unsupported-operation`. `nearest`, `within`, `all_of` and `all` open faces still return that `NotYet` code. A `created_by` open face whose step makes no faces also returns it.
+Change: `soliddraft::convert` now converts `fillet` and `chamfer` with `all` edges and `shell` with an `all` or `created_by` open-face selector into the native `fillet`, `chamfer` and `shell` operations instead of returning `features.unsupported-operation`. `nearest`, `within` and `all_of` still return that `NotYet` code. A `created_by` open face whose step makes no faces also returns it.
 
 Why: these selectors have an exact structural mapping to edge and face references, so no built body is needed to resolve them.
 

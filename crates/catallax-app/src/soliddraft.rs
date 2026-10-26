@@ -655,9 +655,10 @@ pub fn convert(json: &str) -> Result<Converted> {
                 let body = lookup(&body)?;
                 open_faces.check(&steps, &tag)?;
                 let thickness = positive(thickness, &tag)?;
+                let open = face_refs(&open_faces, &tag, &body, &steps, &output)?;
                 Operation::Shell {
                     body,
-                    open: face_refs(&open_faces, &tag, &steps, &output)?,
+                    open,
                     thickness,
                 }
             }
@@ -714,15 +715,58 @@ fn edge_selection(selector: &Selector, tag: &str, operation: &str) -> Result<Edg
     }
 }
 
-/// Maps a legacy open-face selector to face references: the faces a step generated
-/// become a reference to that step's origins. Every other form is not converted.
+/// A face reference for every step the body was built from, itself included, that
+/// makes faces of its own, in recipe order. Every face of the body carries an origin
+/// from one of them, so together they choose exactly its faces.
+fn ancestor_face_makers(body: &StepId, output: &[Step]) -> Vec<FaceRef> {
+    let mut needed = BTreeSet::from([body.clone()]);
+    let mut refs = Vec::new();
+    for step in output.iter().rev() {
+        if !needed.contains(&step.id) {
+            continue;
+        }
+        needed.extend(step.op.inputs().into_iter().map(|(id, _)| id.clone()));
+        if !matches!(
+            step.op,
+            Operation::Sketch { .. } | Operation::Boolean { .. }
+        ) {
+            refs.push(FaceRef {
+                face: OriginPattern {
+                    step: step.id.clone(),
+                    role: None,
+                },
+                touching: Vec::new(),
+                near: None,
+            });
+        }
+    }
+    refs.reverse();
+    refs
+}
+
+/// Maps a legacy open-face selector to face references. The faces a step generated
+/// become a reference to that step's origins, and every face of the body becomes a
+/// reference to each face-making step it was built from. Positional forms are not
+/// converted.
 fn face_refs(
     selector: &Selector,
     tag: &str,
+    body: &StepId,
     steps: &BTreeMap<String, StepId>,
     output: &[Step],
 ) -> Result<Vec<FaceRef>> {
     match selector {
+        Selector::All => {
+            let refs = ancestor_face_makers(body, output);
+            if refs.is_empty() {
+                return Err(not_yet(
+                    tag,
+                    "features.unsupported-operation",
+                    "shell open faces of a body with no face-making ancestor are not converted",
+                ));
+            }
+            Ok(refs)
+        }
         Selector::CreatedBy(source) => {
             let id = &steps[source];
             let makes_faces = output

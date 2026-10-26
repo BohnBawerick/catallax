@@ -1,0 +1,78 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "irrational-axis",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "a",
+            "to": [
+              "2",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "b",
+            "to": [
+              "3",
+              "1"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "c",
+            "to": [
+              "2",
+              "2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "d",
+            "to": [
+              "1",
+              "1"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "body",
+      "op": "revolve",
+      "profile": "profile",
+      "axis": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "direction": [
+          "1",
+          "1",
+          "0"
+        ]
+      },
+      "angle": "90"
+    }
+  ],
+  "result": "body"
+}

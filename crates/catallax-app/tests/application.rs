@@ -371,26 +371,30 @@ fn named_open_face_shell_builds_and_displays() {
 }
 
 #[test]
-fn shell_all_faces_converts_to_a_reference_per_face_making_ancestor() {
-    let mut steps = box_steps();
-    steps.push(json!({"id":"Round","op":"fillet","body":"Body","edges":"all","radius":0.1}));
-    steps.push(
-        json!({"id":"Hollow","op":"shell","body":"Round","open_faces":"all","thickness":0.2}),
-    );
-    let converted = convert(&recipe(steps, "Hollow")).unwrap();
-    let Operation::Shell {
-        open, thickness, ..
-    } = &converted.recipe.steps[3].op
-    else {
-        panic!()
-    };
-    assert_eq!(thickness.value(), &Rational::parse("1/5").unwrap());
-    let steps: Vec<_> = open.iter().map(|r| &r.face.step).collect();
-    assert_eq!(steps, [&converted.steps["Body"], &converted.steps["Round"]]);
-    assert!(
-        open.iter()
-            .all(|r| r.face.role.is_none() && r.touching.is_empty() && r.near.is_none())
-    );
+fn shell_all_faces_converts_for_each_allowed_family_and_keeps_source_errors_first() {
+    let revolve = vec![
+        json!({"id":"Sketch","op":"profile","plane":"XY","circle":{"center":[3,0],"radius":1}}),
+        json!({"id":"Body","op":"revolve","profile":"Sketch","axis_origin":[0,0,0],"axis_direction":[0,1,0],"angle_deg":360}),
+    ];
+    for base in [box_steps(), revolve] {
+        let mut steps = base;
+        steps.push(
+            json!({"id":"Hollow","op":"shell","body":"Body","open_faces":"all","thickness":0.2}),
+        );
+        let converted = convert(&recipe(steps, "Hollow")).unwrap();
+        let Operation::Shell {
+            open, thickness, ..
+        } = &converted.recipe.steps[2].op
+        else {
+            panic!()
+        };
+        assert_eq!(thickness.value(), &Rational::parse("1/5").unwrap());
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].face.step, converted.steps["Body"]);
+        assert!(
+            open[0].face.role.is_none() && open[0].touching.is_empty() && open[0].near.is_none()
+        );
+    }
     for step in [
         json!({"id":"s","op":"shell","body":"Body","open_faces":"all","thickness":-1}),
         json!({"id":"s","op":"shell","body":"Nope","open_faces":"all","thickness":1}),
@@ -402,6 +406,23 @@ fn shell_all_faces_converts_to_a_reference_per_face_making_ancestor() {
             Err(ConversionError::Invalid { .. })
         ));
     }
+}
+
+#[test]
+fn shell_all_faces_of_a_revolve_builds_an_empty_body() {
+    let steps = vec![
+        json!({"id":"Sketch","op":"profile","plane":"XY","circle":{"center":[3,0],"radius":1}}),
+        json!({"id":"Body","op":"revolve","profile":"Sketch","axis_origin":[0,0,0],"axis_direction":[0,1,0],"angle_deg":360}),
+        json!({"id":"Hollow","op":"shell","body":"Body","open_faces":"all","thickness":0.2}),
+    ];
+    let result = build_soliddraft(
+        &recipe(steps, "Hollow"),
+        &MeshOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(result.body.display.value.triangles.is_empty());
+    assert!(result.body.names.faces.is_empty());
 }
 
 #[test]
@@ -468,6 +489,32 @@ fn shell_created_by_a_vanished_producer_still_reports_the_lost_face() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("reference.lost-face"), "{error}");
+}
+
+#[test]
+fn shell_all_faces_after_a_finishing_feature_is_not_converted_even_when_it_is_a_no_op() {
+    // An edgeless torus has nothing to round, so the fillet or chamfer returns it
+    // unchanged and makes no face of its own.
+    for (op, key) in [("fillet", "radius"), ("chamfer", "distance")] {
+        let steps = vec![
+            json!({"id":"P","op":"profile","plane":"XY","circle":{"center":[3,0],"radius":1}}),
+            json!({"id":"Torus","op":"revolve","profile":"P","axis_origin":[0,0,0],"axis_direction":[0,1,0],"angle_deg":360}),
+            json!({"id":"Finish","op":op,"body":"Torus","edges":"all",key:0.1}),
+            json!({"id":"Hollow","op":"shell","body":"Finish","open_faces":"all","thickness":0.2}),
+        ];
+        assert!(
+            matches!(
+                build_soliddraft(
+                    &recipe(steps, "Hollow"),
+                    &MeshOptions::default(),
+                    &mut Decider::default()
+                ),
+                Err(Error::Conversion(ConversionError::NotYet { step, code: "features.unsupported-operation", .. }))
+                    if step == "Hollow"
+            ),
+            "{op}"
+        );
+    }
 }
 
 #[test]

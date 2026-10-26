@@ -715,13 +715,26 @@ fn edge_selection(selector: &Selector, tag: &str, operation: &str) -> Result<Edg
     }
 }
 
-/// A face reference for every step the body was built from, itself included, that
-/// makes faces of its own, in recipe order. Every face of the body carries an origin
-/// from one of them, so together they choose exactly its faces. References are
-/// mandatory, so this holds only while each of those steps keeps a face: a boolean or
-/// a shell can consume every face of an earlier step, and then no exact list exists
-/// without evaluating the body. Such a history yields `None`.
-fn ancestor_face_makers(body: &StepId, output: &[Step]) -> Option<Vec<FaceRef>> {
+/// A face reference for every step the body was built from that makes faces of its own,
+/// in recipe order. Every face of the body carries an origin from one of them, so
+/// together they choose exactly its faces. References are mandatory, so each step must
+/// provably leave a face on the body, from its definition alone and without evaluating
+/// it. Only these operations qualify:
+///
+/// - `profile`: makes no faces and is never referenced.
+/// - `extrude`: its start cap, end cap and sides are the faces of the new solid, and no
+///   later step in an allowed history consumes them.
+/// - `revolve`: its swept sides and any caps are the faces of the new solid, and no later
+///   step in an allowed history consumes them.
+///
+/// Everything else is refused with the reason. A `fillet` or `chamfer` returns its input
+/// unchanged when it has no edge to act on, so it may make no face. A `boolean` can
+/// consume every face of either operand, and a `shell` removes its open faces. Because
+/// only a single extrude or revolve qualifies, an allowed history has one face maker.
+fn ancestor_face_makers(
+    body: &StepId,
+    output: &[Step],
+) -> std::result::Result<Vec<FaceRef>, &'static str> {
     let mut needed = BTreeSet::from([body.clone()]);
     let mut refs = Vec::new();
     for step in output.iter().rev() {
@@ -730,9 +743,8 @@ fn ancestor_face_makers(body: &StepId, output: &[Step]) -> Option<Vec<FaceRef>> 
         }
         needed.extend(step.op.inputs().into_iter().map(|(id, _)| id.clone()));
         match step.op {
-            Operation::Boolean { .. } | Operation::Shell { .. } => return None,
             Operation::Sketch { .. } => {}
-            _ => refs.push(FaceRef {
+            Operation::Extrude { .. } | Operation::Revolve { .. } => refs.push(FaceRef {
                 face: OriginPattern {
                     step: step.id.clone(),
                     role: None,
@@ -740,10 +752,18 @@ fn ancestor_face_makers(body: &StepId, output: &[Step]) -> Option<Vec<FaceRef>> 
                 touching: Vec::new(),
                 near: None,
             }),
+            Operation::Fillet { .. } | Operation::Chamfer { .. } => {
+                return Err("a fillet or chamfer may return its input unchanged and make no face");
+            }
+            Operation::Boolean { .. } => {
+                return Err("a boolean may consume every face of an operand");
+            }
+            Operation::Shell { .. } => return Err("a shell removes its open faces"),
+            _ => return Err("the history has an operation not known to keep its faces"),
         }
     }
     refs.reverse();
-    Some(refs)
+    Ok(refs)
 }
 
 /// Maps a legacy open-face selector to face references. The faces a step generated
@@ -759,11 +779,16 @@ fn face_refs(
 ) -> Result<Vec<FaceRef>> {
     match selector {
         Selector::All => match ancestor_face_makers(body, output) {
-            Some(refs) if !refs.is_empty() => Ok(refs),
-            _ => Err(not_yet(
+            Ok(refs) if !refs.is_empty() => Ok(refs),
+            Ok(_) => Err(not_yet(
                 tag,
                 "features.unsupported-operation",
-                "shell open faces of a body built through a boolean or shell have no exact structural mapping yet",
+                "shell open faces of a body with no face-making step are not converted",
+            )),
+            Err(reason) => Err(not_yet(
+                tag,
+                "features.unsupported-operation",
+                &format!("shell open faces `all` have no exact structural mapping: {reason}"),
             )),
         },
         Selector::CreatedBy(source) => {

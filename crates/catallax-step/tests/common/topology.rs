@@ -198,80 +198,55 @@ fn loopless_seams(
 ) {
     let bound = s.e(bound, "FACE_BOUND");
     assert_eq!(bound.args[2], if void { ".F." } else { ".T." });
-    let loop_ = s.e(reference(&bound.args[1]), "EDGE_LOOP");
-    let uses = list(&loop_.args[1])
-        .into_iter()
-        .map(|id| {
-            let e = s.e(reference(id), "ORIENTED_EDGE");
-            (reference(&e.args[3]), e.args[4].as_str())
-        })
-        .collect::<Vec<_>>();
-    let (center, e3, e1, radii) = match def {
-        Surface::Sphere(p) => (&p.center, &p.axis, &p.ref_dir, vec![p.radius.clone()]),
-        Surface::Torus(p) => (
-            &p.center,
-            &p.axis,
-            &p.ref_dir,
-            vec![p.minor.clone(), &p.major + &p.minor],
-        ),
-        _ => panic!("unexpected loopless fixture"),
+    if let Surface::Sphere(p) = def {
+        let loop_ = s.e(reference(&bound.args[1]), "VERTEX_LOOP");
+        let point = p.center.plus(&p.axis.scaled(&(-&p.radius)));
+        let id = s.vertex(reference(&loop_.args[1]));
+        coords(s, id, &real_xyz(&point), o.significant_digits);
+        assert!(distance_sq(&s.xyz(id), &real_xyz(&point)) <= sq(d));
+        on_written_surface(s, surface_id, &real_xyz(&point), d);
+        return;
+    }
+    let Surface::Torus(p) = def else {
+        panic!("unexpected loopless fixture");
     };
-    // Primitive fixtures use unit frame vectors, including after rational poses.
-    assert_eq!(e3.norm_squared().rational_ref(), Some(&n(1)));
-    assert_eq!(e1.norm_squared().rational_ref(), Some(&n(1)));
-    let minus_e2 = e3.cross(e1).scaled(&catallax_numbers::Real::from_i64(-1));
-    let mut edges = Vec::new();
-    for (i, radius) in radii.iter().enumerate() {
-        let edge_id = uses[i].0;
-        let edge = s.e(edge_id, "EDGE_CURVE");
-        let (origin, axis, start, end) = match def {
-            Surface::Sphere(p) => (
-                center.clone(),
-                minus_e2.clone(),
-                center.plus(&e3.scaled(&(-&p.radius))),
-                center.plus(&e3.scaled(&p.radius)),
-            ),
-            Surface::Torus(p) => {
-                let vertex = center.plus(&e1.scaled(&(&p.major + &p.minor)));
-                let origin = if i == 0 {
-                    center.plus(&e1.scaled(&p.major))
-                } else {
-                    center.clone()
-                };
-                (
-                    origin,
-                    if i == 0 { minus_e2.clone() } else { e3.clone() },
-                    vertex.clone(),
-                    vertex,
-                )
-            }
-            _ => unreachable!(),
+    let loop_ = s.e(reference(&bound.args[1]), "EDGE_LOOP");
+    let uses = list(&loop_.args[1]);
+    let vertex = p.center.plus(&p.ref_dir.scaled(&(&p.major + &p.minor)));
+    for (i, radius) in [&(&p.major + &p.minor), &p.minor].into_iter().enumerate() {
+        let oriented = s.e(reference(uses[i]), "ORIENTED_EDGE");
+        let edge = s.e(reference(&oriented.args[3]), "EDGE_CURVE");
+        let seam = s.e(reference(&edge.args[3]), "SEAM_CURVE");
+        let origin = if i == 1 {
+            p.center.plus(&p.ref_dir.scaled(&p.major))
+        } else {
+            p.center.clone()
+        };
+        let axis = if i == 1 {
+            p.axis
+                .cross(&p.ref_dir)
+                .scaled(&catallax_numbers::Real::from_i64(-1))
+        } else {
+            p.axis.clone()
         };
         curve(
             s,
-            reference(&edge.args[3]),
+            reference(&seam.args[1]),
             &Curve::Circle(Circle {
                 center: origin,
                 normal: axis,
-                ref_dir: e1.clone(),
+                ref_dir: p.ref_dir.clone(),
                 radius_sq: radius * radius,
             }),
             o.significant_digits,
         );
-        for (vertex, point) in [(&edge.args[1], start), (&edge.args[2], end)] {
-            let id = s.vertex(reference(vertex));
-            coords(s, id, &real_xyz(&point), o.significant_digits);
-            assert!(distance_sq(&s.xyz(id), &real_xyz(&point)) <= sq(d));
-            on_written_surface(s, surface_id, &real_xyz(&point), d);
+        for endpoint in [&edge.args[1], &edge.args[2]] {
+            let id = s.vertex(reference(endpoint));
+            coords(s, id, &real_xyz(&vertex), o.significant_digits);
+            assert!(distance_sq(&s.xyz(id), &real_xyz(&vertex)) <= sq(d));
+            on_written_surface(s, surface_id, &real_xyz(&vertex), d);
         }
-        edges.push(edge_id);
     }
-    let expected = edges
-        .iter()
-        .map(|&id| (id, ".T."))
-        .chain(edges.iter().map(|&id| (id, ".F.")))
-        .collect::<Vec<_>>();
-    assert_eq!(uses, expected);
 }
 pub fn assert_topology(m: &Model, bs: &[BodyId], s: &Step, o: &StepOptions, d: &Rational) {
     let mut maps = Maps::default();

@@ -133,7 +133,7 @@ fn primitive_entity_counts_and_added_topology() {
     for (body, counts, added) in [
         (block, (6, 12, 8), (0, 0)),
         (cylinder, (3, 2, 2), (2, 0)),
-        (sphere, (1, 1, 2), (2, 1)),
+        (sphere, (1, 0, 1), (1, 0)),
         (torus, (1, 2, 1), (1, 2)),
         (cone, (2, 1, 2), (1, 0)),
     ] {
@@ -144,7 +144,7 @@ fn primitive_entity_counts_and_added_topology() {
         assert_eq!(report.solids, 1);
         assert_eq!(report.approximated_curves, 0);
         assert!(answer.marks.is_empty());
-        if body == cone {
+        if body == cone || body == torus {
             assert!(report.max_deviation > Rational::zero());
         } else {
             assert_eq!(report.max_deviation, Rational::zero());
@@ -716,7 +716,6 @@ fn terminating_decimal_radii_and_rational_frames_have_zero_deviation() {
     let bodies = [
         topology::cylinder(&mut model, q("0.6"), q("2.5"), &pose).unwrap(),
         topology::sphere(&mut model, q("0.6"), &pose).unwrap(),
-        topology::torus(&mut model, q("1.7"), q("0.6"), &pose).unwrap(),
     ];
     for body in bodies {
         let (file, answer) = export(&model, &[body], &StepOptions::default());

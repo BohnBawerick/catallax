@@ -484,39 +484,81 @@ impl<'a> Exporter<'a> {
         )
     }
 
-    fn added_circle(
+    fn added_seam(
         &mut self,
-        center: &Point3,
-        axis: &Vector3,
-        reference: &Vector3,
-        radius: &Real,
-        start: &Vertex,
-        end: &Vertex,
+        form: &CurveForm,
+        vertex: &Vertex,
+        surface: Id,
+        period: &str,
+        along_u: bool,
+        parameter_error: &Rational,
     ) -> Result<Id, Refusal> {
-        let curve = self
-            .curve_geometry(&CurveForm::Circle {
-                center: center.clone(),
-                normal: axis.clone(),
-                radius_sq: radius * radius,
-                ref_dir: reference.clone(),
-            })?
-            .unwrap();
-        self.deviation(arc_error(&curve, start, end));
+        let curve = self.curve_geometry(form)?.unwrap();
+        self.deviation(&arc_error(&curve, vertex, vertex) + parameter_error);
+        let context = self.graph.add(
+            "GEOMETRIC_REPRESENTATION_CONTEXT",
+            vec![text("''"), text("''"), text("2")],
+        );
+        let pcurves = [period, "0."].map(|offset| {
+            let point = self.graph.add(
+                "CARTESIAN_POINT",
+                vec![
+                    text("''"),
+                    text(if along_u {
+                        format!("(0.,{offset})")
+                    } else {
+                        format!("({offset},0.)")
+                    }),
+                ],
+            );
+            let direction = self.graph.add(
+                "DIRECTION",
+                vec![
+                    text("''"),
+                    text(if along_u { "(1.,0.)" } else { "(0.,1.)" }),
+                ],
+            );
+            let vector = self
+                .graph
+                .add("VECTOR", vec![text("''"), direction.into(), text("1.")]);
+            let line = self
+                .graph
+                .add("LINE", vec![text("''"), point.into(), vector.into()]);
+            let representation = self.graph.add(
+                "DEFINITIONAL_REPRESENTATION",
+                vec![text("''"), refs([line]), context.into()],
+            );
+            self.graph.add(
+                "PCURVE",
+                vec![text("''"), surface.into(), representation.into()],
+            )
+        });
+        let seam = self.graph.add(
+            "SEAM_CURVE",
+            vec![
+                text("''"),
+                curve.id.into(),
+                refs(pcurves),
+                text(".CURVE_3D."),
+            ],
+        );
         self.report.added_edges += 1;
-        Ok(self.edge_entity(start.id, end.id, curve.id, true))
+        Ok(self.edge_entity(vertex.id, vertex.id, seam, true))
     }
 
-    fn loopless(&mut self, surface: &Surface) -> Result<Id, Refusal> {
-        let (edges, orientations) = match surface {
+    fn loopless(&mut self, id: SurfaceId) -> Result<Id, Refusal> {
+        self.surface(id)?;
+        let surface = self.surfaces[&id].id;
+        match self.model.geom().surface(id) {
             Surface::Sphere(s) => {
+                // A sole vertex_loop denotes the surface's complete natural
+                // domain, including its seam and both singular pole edges.
                 let axis = number::unit(&s.axis);
                 let low = number::point_plus(&s.center, &axis, &(-&s.radius));
-                let high = number::point_plus(&s.center, &axis, &s.radius);
-                let a = self.added_vertex(&low)?;
-                let b = self.added_vertex(&high)?;
-                let normal = s.axis.cross(&s.ref_dir).scaled(&Real::from_i64(-1));
-                let edge = self.added_circle(&s.center, &normal, &s.ref_dir, &s.radius, &a, &b)?;
-                (vec![edge, edge], vec![true, false])
+                let vertex = self.added_vertex(&low)?;
+                Ok(self
+                    .graph
+                    .add("VERTEX_LOOP", vec![text("''"), vertex.id.into()]))
             }
             Surface::Torus(s) => {
                 let radial = number::unit(&s.ref_dir);
@@ -525,25 +567,59 @@ impl<'a> Exporter<'a> {
                 let origin = number::point_plus(&s.center, &radial, &radius);
                 let vertex = self.added_vertex(&origin)?;
                 let normal = s.axis.cross(&s.ref_dir).scaled(&Real::from_i64(-1));
-                let tube =
-                    self.added_circle(&center, &normal, &s.ref_dir, &s.minor, &vertex, &vertex)?;
-                let equator =
-                    self.added_circle(&s.center, &s.axis, &s.ref_dir, &radius, &vertex, &vertex)?;
-                (
-                    vec![tube, equator, tube, equator],
-                    vec![true, true, false, false],
+                let precision = number::work_precision(
+                    self.dec.policy(),
+                    self.digits().saturating_mul(4).saturating_add(32),
+                    2,
                 )
+                .ok_or_else(|| number::budget("no work available for the torus's period"))?;
+                let pi = catallax_numbers::Ball::pi_checked(precision, self.dec)?;
+                let period = number::certified(
+                    number::rounded(&pi.lo().mul_pow2(1), &pi.hi().mul_pow2(1), self.digits()),
+                    self.digits(),
+                )?;
+                // The surface map is Lipschitz in either angle with constant
+                // R+r. Include decimal period rounding in each seam's bound.
+                let parameter_error = &number::upper(&radius, self.dec)? * &period.error;
+                let tube = self.added_seam(
+                    &CurveForm::Circle {
+                        center,
+                        normal,
+                        radius_sq: &s.minor * &s.minor,
+                        ref_dir: s.ref_dir.clone(),
+                    },
+                    &vertex,
+                    surface,
+                    &period.text,
+                    false,
+                    &parameter_error,
+                )?;
+                let equator = self.added_seam(
+                    &CurveForm::Circle {
+                        center: s.center.clone(),
+                        normal: s.axis.clone(),
+                        radius_sq: &radius * &radius,
+                        ref_dir: s.ref_dir.clone(),
+                    },
+                    &vertex,
+                    surface,
+                    &period.text,
+                    true,
+                    &parameter_error,
+                )?;
+                let oriented = [
+                    (equator, false),
+                    (tube, false),
+                    (equator, true),
+                    (tube, true),
+                ]
+                .map(|(edge, same)| self.oriented(edge, same));
+                Ok(self
+                    .graph
+                    .add("EDGE_LOOP", vec![text("''"), refs(oriented)]))
             }
-            _ => return Err(unsupported()),
-        };
-        let oriented = edges
-            .into_iter()
-            .zip(orientations)
-            .map(|(edge, same)| self.oriented(edge, same))
-            .collect::<Vec<_>>();
-        Ok(self
-            .graph
-            .add("EDGE_LOOP", vec![text("''"), refs(oriented)]))
+            _ => Err(unsupported()),
+        }
     }
 
     fn surface(&mut self, id: SurfaceId) -> Result<(), Refusal> {
@@ -696,7 +772,7 @@ impl<'a> Exporter<'a> {
             ));
         }
         if face.loops.is_empty() {
-            let loop_entity = self.loopless(self.model.geom().surface(face.surface))?;
+            let loop_entity = self.loopless(face.surface)?;
             bounds.push(self.graph.add(
                 "FACE_BOUND",
                 vec![text("''"), loop_entity.into(), boolean(!reverse)],

@@ -61,8 +61,53 @@ fn drain(out: &mut impl Write, chunk: &mut Vec<u8>, limit: usize) -> std::io::Re
     }
     Ok(())
 }
+fn stl_normal(points: [[f64; 3]; 3]) -> std::io::Result<[f32; 3]> {
+    let invalid = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "STL facet has non-finite coordinates or no finite nonzero normal",
+        )
+    };
+    if points.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(invalid());
+    }
+    let normalise = |normal: [f64; 3]| {
+        let length = crate::metric::Scalar::sqrt(&normal.iter().map(|n| n * n).sum::<f64>());
+        normal.map(|component| (component / length) as f32)
+    };
+    let a: [f64; 3] = std::array::from_fn(|i| points[1][i] - points[0][i]);
+    let b: [f64; 3] = std::array::from_fn(|i| points[2][i] - points[0][i]);
+    let normal = normalise(std::array::from_fn(|i| {
+        let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+        a[j] * b[k] - a[k] * b[j]
+    }));
+    if normal.iter().all(|component| component.is_finite()) {
+        // Preserve existing finite field normals, including their exact bytes.
+        return Ok(normal);
+    }
+    // Subtract the encoded coordinates exactly before forming the cross product.
+    // Binary32 differences/products have exponents within binary64's range, so a
+    // nonzero exact component survives conversion and its squared norm is finite.
+    let points = points.map(|point| {
+        point.map(|value| Rational::from_f64_exact(value).expect("finite encoded coordinate"))
+    });
+    let a: [Rational; 3] = std::array::from_fn(|i| &points[1][i] - &points[0][i]);
+    let b: [Rational; 3] = std::array::from_fn(|i| &points[2][i] - &points[0][i]);
+    let normal = normalise(std::array::from_fn(|i| {
+        let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+        (&(&a[j] * &b[k]) - &(&a[k] * &b[j])).to_f64_nearest()
+    }));
+    if normal.iter().all(|component| component.is_finite()) {
+        Ok(normal)
+    } else {
+        Err(invalid())
+    }
+}
+
 impl Mesh {
-    /// Writes a binary STL. All topology checks finish before publication.
+    /// Writes a binary STL with finite advisory normals. All topology checks
+    /// finish before publication. Invalid coordinates or degenerate facets
+    /// return [`std::io::ErrorKind::InvalidData`], never NaN normal bytes.
     pub fn write_stl(&self, out: &mut impl Write) -> std::io::Result<()> {
         let count = u32::try_from(self.triangles.len())
             .map_err(|_| std::io::Error::other("too many STL triangles"))?;
@@ -74,15 +119,8 @@ impl Mesh {
         chunk.extend_from_slice(&count.to_le_bytes());
         for triangle in &self.triangles {
             let p = triangle.map(|i| self.positions[i].map(f64::from));
-            let a: [f64; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
-            let b: [f64; 3] = std::array::from_fn(|i| p[2][i] - p[0][i]);
-            let normal: [f64; 3] = std::array::from_fn(|i| {
-                let (j, k) = ((i + 1) % 3, (i + 2) % 3);
-                a[j] * b[k] - a[k] * b[j]
-            });
-            let length = crate::metric::Scalar::sqrt(&normal.iter().map(|n| n * n).sum::<f64>());
-            for component in normal {
-                chunk.extend_from_slice(&((component / length) as f32).to_le_bytes());
+            for component in stl_normal(p)? {
+                chunk.extend_from_slice(&component.to_le_bytes());
             }
             for &vertex in triangle {
                 for coordinate in self.positions[vertex] {

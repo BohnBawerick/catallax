@@ -1,7 +1,7 @@
 use super::*;
 use catallax_numbers::{Rational, Real, StrictSign, with_operation_budget};
 use catallax_recipe::{Recipe, Role};
-use catallax_shapes::{Circle, Line, Vector3};
+use catallax_shapes::{Circle, Ellipse, Line, Vector3};
 use serde_json::{Value, json};
 
 const FIXTURE: &str = include_str!("../../tests/fixtures/trimmed-curves.json");
@@ -495,7 +495,10 @@ fn valid_conic_and_spline_bodies_keep_the_unsupported_boundary_explicit() {
         let query = body.edge_curve(edge, &mut Decider::default()).unwrap();
         if matches!(query.form, CurveForm::Ellipse { .. }) {
             ellipses += 1;
-            assert!(matches!(query.span, CurveSpan::Unsupported));
+            assert!(matches!(
+                query.span,
+                CurveSpan::FullEllipse | CurveSpan::EllipticArc { .. }
+            ));
         }
     }
     assert!(ellipses > 0);
@@ -523,19 +526,31 @@ fn valid_conic_and_spline_bodies_keep_the_unsupported_boundary_explicit() {
 }
 
 fn isolated_edge(curve: Curve, anchor: Option<Point3>) -> (Model, BodyId, EdgeId) {
+    isolated_span(curve, anchor.clone().zip(anchor), Sense::Same)
+}
+
+fn isolated_span(
+    curve: Curve,
+    ends: Option<(Point3, Point3)>,
+    sense: Sense,
+) -> (Model, BodyId, EdgeId) {
     use catallax_shapes::{Plane, Surface};
     use catallax_topology::{Body, BodyKind, Coedge, Edge, Face, Lump, Shell, Vertex};
     let mut model = Model::new();
     let curve = model.geom_mut().add_curve(curve);
-    let anchor = anchor.map(|position| {
+    let mut vertex = |position| {
         let point = model.geom_mut().add_point(PointDef::Explicit(position));
         model.add_vertex(Vertex { point })
-    });
+    };
+    let (start, end) = match ends {
+        Some((a, b)) => (Some(vertex(a)), Some(vertex(b))),
+        None => (None, None),
+    };
     let edge = model.add_edge(Edge {
         curve,
-        sense: Sense::Same,
-        start: anchor,
-        end: anchor,
+        sense,
+        start,
+        end,
     });
     let coedge = model.add_coedge(Coedge {
         edge,
@@ -562,4 +577,192 @@ fn isolated_edge(curve: Curve, anchor: Option<Point3>) -> (Model, BodyId, EdgeId
         marks: Default::default(),
     });
     (model, body, edge)
+}
+
+fn ellipse() -> Curve {
+    Curve::Ellipse(Ellipse {
+        center: Point3::new(Real::zero(), Real::zero(), Real::zero()),
+        normal: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+        major_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+        major_sq: Real::from_i64(25),
+        minor_sq: Real::from_i64(9),
+    })
+}
+
+fn frac(n: i64, d: i64) -> Real {
+    Real::from(Rational::from_ratio(n, d).unwrap())
+}
+
+fn xy(x: Real, y: Real) -> Point3 {
+    Point3::new(x, y, Real::zero())
+}
+
+/// Exact ellipse x^2/25 + y^2/9 = 1 points: the seam, vertices and (+-3, +-12/5).
+fn ep(name: &str) -> Point3 {
+    let i = Real::from_i64;
+    match name {
+        "seam" => xy(i(5), i(0)),
+        "top" => xy(i(0), i(3)),
+        "left" => xy(i(-5), i(0)),
+        "bottom" => xy(i(0), i(-3)),
+        "ur" => xy(i(3), frac(12, 5)),
+        "ul" => xy(i(-3), frac(12, 5)),
+        "ll" => xy(i(-3), frac(-12, 5)),
+        _ => panic!("{name}"),
+    }
+}
+
+/// Queries an isolated ellipse edge and checks the exact interior point lies on
+/// the ellipse and strictly between the traversal endpoints on the right branch.
+fn ellipse_arc(start: &str, end: &str, sense: Sense) -> (EdgeCurve, Point3) {
+    let (model, result, edge) = isolated_span(ellipse(), Some((ep(start), ep(end))), sense);
+    let query = edge_curve(&model, result, edge, &mut Decider::default()).unwrap();
+    assert_eq!(query.sense, sense);
+    assert!(query.definition.same_definition(&ellipse()));
+    assert!(matches!(query.form, CurveForm::Ellipse { .. }));
+    let CurveSpan::EllipticArc { interior, .. } = &query.span else {
+        panic!("elliptic arc")
+    };
+    let on = &interior.x * &interior.x * frac(1, 25) + &interior.y * &interior.y * frac(1, 9)
+        - Real::one();
+    assert!(matches!(
+        Decider::default().sign(&on),
+        Outcome::ProvenCoincident(_)
+    ));
+    // Independent control: ordered counter-clockwise from the carrier's view.
+    let (from, to) = match sense {
+        Sense::Same => (ep(start), ep(end)),
+        Sense::Reversed => (ep(end), ep(start)),
+    };
+    let ccw = |a: &Point3, b: &Point3, c: &Point3| {
+        Decider::default().sign(&b.minus(a).cross(&c.minus(a)).z)
+    };
+    assert!(matches!(
+        ccw(&from, interior, &to),
+        Outcome::Proven(StrictSign::Positive)
+    ));
+    let interior = interior.clone();
+    (query, interior)
+}
+
+fn crosses(query: &EdgeCurve) -> bool {
+    let CurveSpan::EllipticArc { crosses_seam, .. } = query.span else {
+        panic!()
+    };
+    crosses_seam
+}
+
+#[test]
+fn exact_ellipse_arcs_keep_branch_sense_and_strict_seam_flag() {
+    // Minor arc over the top, no seam.
+    let (minor, interior) = ellipse_arc("ur", "ul", Sense::Same);
+    assert!(!crosses(&minor));
+    assert!(matches!(
+        Decider::default().sign(&(interior.y - frac(12, 5))),
+        Outcome::Proven(StrictSign::Positive)
+    ));
+    // Complementary major arc passes through the seam and the lower half.
+    let (major, interior) = ellipse_arc("ul", "ur", Sense::Same);
+    assert!(crosses(&major));
+    assert!(matches!(
+        Decider::default().sign(&(interior.y - frac(12, 5))),
+        Outcome::Proven(StrictSign::Negative)
+    ));
+    // Seam endpoints are excluded from the strict crossing flag.
+    assert!(!crosses(&ellipse_arc("seam", "top", Sense::Same).0));
+    assert!(!crosses(&ellipse_arc("bottom", "seam", Sense::Same).0));
+    // A seam crossing arc between two quadrants.
+    assert!(crosses(&ellipse_arc("bottom", "top", Sense::Same).0));
+    // Reversed storage walks the carrier from end to start.
+    let (reversed_minor, interior) = ellipse_arc("ul", "ur", Sense::Reversed);
+    assert!(!crosses(&reversed_minor));
+    assert!(matches!(
+        Decider::default().sign(&(interior.y - frac(12, 5))),
+        Outcome::Proven(StrictSign::Positive)
+    ));
+    let CurveTrim::Finite { start, end } = &reversed_minor.trim else {
+        panic!()
+    };
+    for (endpoint, name) in [(start, "ul"), (end, "ur")] {
+        assert!(matches!(
+            Decider::default().sign(&(&endpoint.position.x - &ep(name).x)),
+            Outcome::ProvenCoincident(_)
+        ));
+    }
+    assert!(crosses(&ellipse_arc("ur", "ul", Sense::Reversed).0));
+}
+
+#[test]
+fn full_ellipse_is_explicit_for_ring_and_coincident_endpoints() {
+    let (model, result, edge) = isolated_span(ellipse(), None, Sense::Same);
+    let query = edge_curve(&model, result, edge, &mut Decider::default()).unwrap();
+    assert!(matches!(query.span, CurveSpan::FullEllipse));
+    assert!(matches!(query.trim, CurveTrim::Closed));
+    let (model, result, edge) = isolated_span(ellipse(), Some((ep("ul"), ep("ul"))), Sense::Same);
+    let query = edge_curve(&model, result, edge, &mut Decider::default()).unwrap();
+    assert!(matches!(query.span, CurveSpan::FullEllipse));
+    assert!(matches!(query.trim, CurveTrim::Finite { .. }));
+}
+
+fn cone_recipe(base_radius: &str) -> Recipe {
+    let mut input: Value = serde_json::from_str(include_str!(
+        "../../../catallax-features/tests/fixtures/cone-distance/oblique-inward.json"
+    ))
+    .unwrap();
+    input["steps"].as_array_mut().unwrap().pop();
+    input["result"] = json!("clipped");
+    input["steps"][0]["base_radius"] = json!(base_radius);
+    Recipe::parse(&input.to_string()).unwrap()
+}
+
+#[test]
+fn built_ellipse_edges_keep_origins_names_and_follow_an_upstream_edit() {
+    let body = build(&cone_recipe("4"));
+    let mut found = Vec::new();
+    for &edge in body.names.edges.keys() {
+        let query = body.edge_curve(edge, &mut Decider::default()).unwrap();
+        if let CurveForm::Ellipse { .. } = query.form {
+            if let CurveSpan::EllipticArc { interior, .. } = &query.span {
+                let CurveForm::Ellipse {
+                    center,
+                    normal,
+                    major_sq,
+                    ..
+                } = &query.form
+                else {
+                    unreachable!()
+                };
+                assert!(matches!(
+                    Decider::default().sign(&interior.minus(center).dot(normal)),
+                    Outcome::ProvenCoincident(_)
+                ));
+                assert!(matches!(
+                    Decider::default()
+                        .sign(&(interior.minus(center).norm_squared() - major_sq.clone())),
+                    Outcome::Proven(StrictSign::Negative) | Outcome::ProvenCoincident(_)
+                ));
+            } else {
+                assert!(matches!(query.span, CurveSpan::FullEllipse));
+            }
+            assert!(!query.origins.is_empty());
+            assert!(!query.constructions.is_empty());
+            found.push(query);
+        }
+    }
+    assert!(!found.is_empty());
+    // The same stable name resolves again after the cone's base radius changes.
+    let name = found[0].name.clone().unwrap();
+    let edited = build(&cone_recipe("5"));
+    let ids = edited
+        .built
+        .model
+        .edges_with_name(edited.built.result, &name);
+    assert_eq!(ids.len(), 1);
+    let again = edited.edge_curve(ids[0], &mut Decider::default()).unwrap();
+    assert!(matches!(
+        again.span,
+        CurveSpan::EllipticArc { .. } | CurveSpan::FullEllipse
+    ));
+    assert_eq!(again.origins, found[0].origins);
+    assert!(!again.definition.same_definition(&found[0].definition));
 }

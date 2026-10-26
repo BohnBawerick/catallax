@@ -37,12 +37,18 @@ pub(super) fn charts(
     };
     if sources.iter().any(|f| match &f.surface {
         Surface::Plane(p) => {
+            // Only planes through the axis are radial cuts for disk charts.
+            // Offset cuts retain their established planar chart route.
             !parallel(&p.normal, &cylinder.axis)
-                && !p
+                && !(p
                     .normal
                     .dot(&cylinder.axis)
                     .rational_ref()
                     .is_some_and(|q| q.is_zero())
+                    && p.normal
+                        .dot(&cylinder.origin.minus(&p.origin))
+                        .rational_ref()
+                        .is_some_and(|q| q.is_zero()))
         }
         Surface::Cylinder(c) => !coaxial(c, cylinder),
         _ => true,

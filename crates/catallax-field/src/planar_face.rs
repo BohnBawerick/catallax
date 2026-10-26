@@ -1,4 +1,7 @@
-//! Thickening one selected cap of a nonconvex polygonal extrusion from field definitions.
+//! One polygonal planar face swept from independent field definitions.
+
+mod recovery;
+mod sweep;
 
 use catallax_numbers::{Decider, Rational, Refusal};
 use catallax_recipe::{FaceRef, Origin, Role, StepId, ThickenSide};
@@ -20,7 +23,7 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
         let Instruction::Leaf(leaf) = self.instructions[node] else {
-            return Err(fallback);
+            return self.boolean_planar_thicken(node, refs, t, side, step, fallback, dec);
         };
         let geometry::Leaf::Feature(feature) = &self.leaves[leaf] else {
             return Err(fallback);

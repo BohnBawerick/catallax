@@ -1,0 +1,27 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "public-finite-cone-growing",
+  "steps": [
+    {
+      "id": "cone",
+      "op": "cone",
+      "base_radius": "2",
+      "top_radius": "6",
+      "height": "4",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    }
+  ],
+  "result": "cone"
+}

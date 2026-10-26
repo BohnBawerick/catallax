@@ -662,3 +662,6 @@ fn irrational_spherical_witnesses_match_independent_mpfr_oracles() {
         }
     }
 }
+
+#[path = "conical_tests.rs"]
+mod conical;

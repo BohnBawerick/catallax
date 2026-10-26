@@ -19,6 +19,10 @@ fn point(x: i64, y: i64, z: i64) -> Point3 {
 }
 
 fn main() {
+    if std::env::var_os("CATALLAX_CONICAL_DISTANCE_BENCH").is_some() {
+        conical_queries();
+        return;
+    }
     if std::env::var_os("CATALLAX_SPHERICAL_DISTANCE_BENCH").is_some() {
         spherical_queries();
         return;
@@ -158,6 +162,80 @@ fn spherical_queries() {
                 Err(e) => println!(
                     "case={case} prepare_ns={prepare_ns} prepare_work={} query_ns={query_ns} query_work={} refusal={} width={} max_cells={} max_work={} max_bits={}",
                     build_dec.stats().work,
+                    dec.stats().work,
+                    e.code,
+                    options.width,
+                    options.max_cells,
+                    dec.policy().max_work,
+                    dec.policy().max_precision_bits
+                ),
+            }
+        }
+    }
+}
+
+// Identical harness on both source revisions: baseline PreparedFace runs its
+// complete production fallback. Construction and preparation have separate clocks.
+fn conical_queries() {
+    use catallax_shapes::Surface;
+    let selected = std::env::var("CATALLAX_DISTANCE_CASE").ok();
+    for (name, base, top, height) in [("frustum", 6, 2, 4), ("tip", 6, 0, 6)] {
+        let mut model = Model::new();
+        let start = Instant::now();
+        let body =
+            catallax_topology::cone(&mut model, r(base), r(top), r(height), &Pose::identity())
+                .unwrap();
+        let construction_ns = start.elapsed().as_nanos();
+        let face = model
+            .faces_of_body(body)
+            .into_iter()
+            .find(|f| {
+                matches!(
+                    model.geom().surface(model.face(*f).surface),
+                    Surface::Cone(_)
+                )
+            })
+            .unwrap();
+        let mut preparation = Decider::default();
+        let start = Instant::now();
+        let prepared = PreparedFace::new(&model, face, &mut preparation).unwrap();
+        let prepare_ns = start.elapsed().as_nanos();
+        let options = Options {
+            width: Rational::from_ratio(1, 1000).unwrap(),
+            max_cells: 4096,
+        };
+        for (query, at) in [
+            ("interior", point(4, 0, 0)),
+            ("lower-rim", point(8, 0, -2)),
+            ("upper-rim", point(1, 0, 7)),
+            ("axis", point(0, 0, 2)),
+            ("opposite-nappe", point(2, 0, 8)),
+        ] {
+            let case = format!("{name}-{query}");
+            if selected.as_ref().is_some_and(|s| s != &case) {
+                continue;
+            }
+            let mut dec = Decider::default();
+            let start = Instant::now();
+            let answer = prepared.point_to_face(&mut model, &at, &options, &mut dec);
+            let query_ns = start.elapsed().as_nanos();
+            match answer {
+                Ok(b) => println!(
+                    "case={case} construction_ns={construction_ns} prepare_ns={prepare_ns} prepare_work={} query_ns={query_ns} query_work={} cells={} converged={} lower={} upper={} width={} max_cells={} max_work={} max_bits={}",
+                    preparation.stats().work,
+                    dec.stats().work,
+                    b.cells,
+                    b.converged,
+                    b.lower,
+                    b.upper.map_or("none".into(), |q| q.to_string()),
+                    options.width,
+                    options.max_cells,
+                    dec.policy().max_work,
+                    dec.policy().max_precision_bits
+                ),
+                Err(e) => println!(
+                    "case={case} construction_ns={construction_ns} prepare_ns={prepare_ns} prepare_work={} query_ns={query_ns} query_work={} refusal={} width={} max_cells={} max_work={} max_bits={}",
+                    preparation.stats().work,
                     dec.stats().work,
                     e.code,
                     options.width,

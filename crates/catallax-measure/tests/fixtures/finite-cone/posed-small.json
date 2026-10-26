@@ -1,0 +1,27 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "public-finite-cone-posed-small",
+  "steps": [
+    {
+      "id": "cone",
+      "op": "cone",
+      "base_radius": "3/500",
+      "top_radius": "1/500",
+      "height": "1/250",
+      "pose": {
+        "rotation": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "translation": [
+          "7",
+          "-11",
+          "13"
+        ]
+      }
+    }
+  ],
+  "result": "cone"
+}

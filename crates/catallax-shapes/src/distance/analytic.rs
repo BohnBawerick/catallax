@@ -1,12 +1,12 @@
 //! Direct point distances to complete circular cylinder bands and perpendicular
-//! circular discs, spherical caps and coaxial spherical bands. The finite closed
-//! face is measured, never its infinite support.
+//! circular discs, spherical caps, coaxial spherical bands and conical bands.
+//! The finite closed face is measured, never its infinite support.
 //!
-//! Recognition proves complete circular boundaries and, for spheres, their
+//! Recognition proves complete circular boundaries and, for spheres and cones, their
 //! oriented retained sides. Every unrecognized trim keeps the complete search.
 
 use super::{Bounds, Options, validate, witness_distance};
-use crate::{Circle, Point3, Sphere, Surface, Vector3, math};
+use crate::{Circle, Cone, Point3, Sphere, Surface, Vector3, math};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 
 /// Which nearest-point case produced a witness.
@@ -26,6 +26,14 @@ pub enum Branch {
 pub struct Finite(Shape);
 #[derive(Clone, Debug)]
 enum Shape {
+    /// A positive-nappe cone wall, including an explicitly retained tip.
+    Conical {
+        apex: Point3,
+        axis: Vector3,
+        reference: Vector3,
+        slope: Real,
+        heights: [Real; 2],
+    },
     /// A full cylinder wall between two axial heights.
     Band {
         origin: Point3,
@@ -83,7 +91,9 @@ impl Finite {
     /// edge, coedge and face senses. On a sphere the retained side is then toward
     /// the circle normal; reversing that boolean selects the complementary cap.
     /// Only one cap or a compatible two-rim coaxial band is recognized. Other
-    /// spherical trims return `None`; other carriers use [`Self::recognize`].
+    /// spherical trims return `None`. Cones require compatible lower and upper
+    /// retained sides; an explicit tip uses [`Self::recognize_conical`]. Other
+    /// carriers use [`Self::recognize`].
     pub fn recognize_oriented(
         surface: &Surface,
         rims: &[(&Circle, bool)],
@@ -92,11 +102,81 @@ impl Finite {
         if let Surface::Sphere(s) = surface {
             return Self::spherical(s, rims, dec);
         }
+        if let Surface::Cone(s) = surface {
+            return Self::recognize_conical(s, rims, None, dec);
+        }
         Self::recognize(
             surface,
             &rims.iter().map(|(rim, _)| *rim).collect::<Vec<_>>(),
             dec,
         )
+    }
+
+    /// Recognizes the entire closed positive-nappe band between two oriented
+    /// full circles, or between one circle and an explicit collapsed apex loop.
+    /// `apex` is the complete vertex-loop inventory: at most one is permitted.
+    /// Each rim boolean combines face, edge and coedge senses as in
+    /// [`Self::recognize_oriented`]. All other boundary inventories decline.
+    pub fn recognize_conical(
+        cone: &Cone,
+        rims: &[(&Circle, bool)],
+        apex: Option<&Point3>,
+        dec: &mut Decider,
+    ) -> Result<Option<Self>, Refusal> {
+        if rims.len() != if apex.is_some() { 1 } else { 2 }
+            || zero(&cone.axis.norm_squared(), dec)?
+            || zero(&cone.ref_dir.norm_squared(), dec)?
+            || !zero(&cone.ref_dir.dot(&cone.axis), dec)?
+            || math::sign(&cone.slope, dec)? != Sign::Positive
+        {
+            return Ok(None);
+        }
+        if let Some(p) = apex
+            && !zero(&p.minus(&cone.apex).norm_squared(), dec)?
+        {
+            return Ok(None);
+        }
+        let axis = unit(&cone.axis);
+        let mut lower = apex.map(|_| Real::zero());
+        let mut upper = None;
+        for &(rim, forward) in rims {
+            if zero(&rim.normal.norm_squared(), dec)?
+                || zero(&rim.ref_dir.norm_squared(), dec)?
+                || math::sign(&rim.radius_sq, dec)? != Sign::Positive
+                || !coaxial(rim, &cone.apex, &axis, dec)?
+                || !zero(&rim.ref_dir.dot(&axis), dec)?
+            {
+                return Ok(None);
+            }
+            let height = rim.center.minus(&cone.apex).dot(&axis);
+            if math::sign(&height, dec)? != Sign::Positive
+                || !zero(&(&rim.radius_sq - &(&cone.slope * &height).square()), dec)?
+            {
+                return Ok(None);
+            }
+            // For outward cone normal r-k*a and natural tangent a cross r,
+            // n cross t points along a+k*r, into increasing positive height.
+            let increasing =
+                (math::sign(&rim.normal.dot(&axis), dec)? == Sign::Positive) == forward;
+            let bound = if increasing { &mut lower } else { &mut upper };
+            if bound.is_some() {
+                return Ok(None);
+            }
+            *bound = Some(height);
+        }
+        let (Some(lo), Some(hi)) = (lower, upper) else {
+            return Ok(None);
+        };
+        if math::sign(&(&hi - &lo), dec)? != Sign::Positive {
+            return Ok(None);
+        }
+        Ok(Some(Self(Shape::Conical {
+            apex: cone.apex.clone(),
+            axis,
+            reference: unit(&cone.ref_dir),
+            slope: cone.slope.clone(),
+            heights: [lo, hi],
+        })))
     }
 
     fn spherical(
@@ -217,6 +297,53 @@ impl Finite {
     /// squared distance, and the branch taken.
     fn nearest(&self, p: &Point3, dec: &mut Decider) -> Result<(Point3, Real, Branch), Refusal> {
         match &self.0 {
+            Shape::Conical {
+                apex,
+                axis,
+                reference,
+                slope,
+                heights,
+            } => {
+                let d = p.minus(apex);
+                let z = d.dot(axis);
+                let planar = d.minus(&axis.scaled(&z));
+                let rho_sq = planar.norm_squared();
+                let on_axis = zero(&rho_sq, dec)?;
+                let rho = math::exact_sqrt(&rho_sq);
+                // At each positive height the aligned azimuth minimizes distance
+                // (every azimuth ties on-axis). The remaining strictly convex
+                // quadratic is distance to the meridian segment (k*h,h).
+                let projected = (&z + &(slope * &rho)) / (Real::one() + slope.square());
+                let (height, interior) =
+                    if math::sign(&(&projected - &heights[0]), dec)? == Sign::Negative {
+                        (heights[0].clone(), false)
+                    } else if math::sign(&(&projected - &heights[1]), dec)? == Sign::Positive {
+                        (heights[1].clone(), false)
+                    } else {
+                        (projected, true)
+                    };
+                let radial = if on_axis {
+                    reference.clone()
+                } else {
+                    planar.scaled(&(&Real::one() / &rho))
+                };
+                let radius = slope * &height;
+                let witness = apex
+                    .plus(&axis.scaled(&height))
+                    .plus(&radial.scaled(&radius));
+                let squared = (&rho - &radius).square() + (&z - &height).square();
+                Ok((
+                    witness,
+                    squared,
+                    if on_axis {
+                        Branch::Axis
+                    } else if interior {
+                        Branch::Interior
+                    } else {
+                        Branch::Rim
+                    },
+                ))
+            }
             Shape::Band {
                 origin,
                 axis,

@@ -93,17 +93,26 @@ impl PreparedFace {
             finite,
         })
     }
-    /// Recognizes complete circular cylinder/disc or oriented spherical regions:
-    /// every loop is one closed circle edge. Other trims keep the complete search.
+    /// Recognizes complete circular cylinder/disc, oriented spherical or conical
+    /// regions. A cone tip may have one collapsed vertex loop. Every other loop
+    /// must be one closed circle edge. Other trims keep the complete search.
     fn recognize(
         model: &Model,
         face: FaceId,
         dec: &mut Decider,
     ) -> Result<Option<Finite>, Refusal> {
         let mut rims = Vec::new();
+        let mut apex = None;
         for lp in &model.face(face).loops {
-            let Loop::Coedges(cs) = model.loop_(*lp) else {
-                return Ok(None);
+            let cs = match model.loop_(*lp) {
+                Loop::Vertex(v) => {
+                    if apex.is_some() {
+                        return Ok(None);
+                    }
+                    apex = Some(model.geom().position(model.vertex(*v).point));
+                    continue;
+                }
+                Loop::Coedges(cs) => cs,
             };
             let [c] = cs.as_slice() else {
                 return Ok(None);
@@ -118,6 +127,14 @@ impl PreparedFace {
             };
             let forward = (coedge.sense == edge.sense) == (model.face(face).sense == Sense::Same);
             rims.push((circle, forward));
+        }
+        if let Some(apex) = &apex {
+            let catallax_shapes::Surface::Cone(cone) =
+                model.geom().surface(model.face(face).surface)
+            else {
+                return Ok(None);
+            };
+            return Finite::recognize_conical(cone, &rims, Some(apex), dec);
         }
         Finite::recognize_oriented(model.geom().surface(model.face(face).surface), &rims, dec)
     }
@@ -143,7 +160,8 @@ impl PreparedFace {
     /// Bounds point-to-face distance. Upper witnesses satisfy exact closed-loop
     /// membership; lower bounds cover all unexcluded parameter cells. Complete
     /// cylinder bands, perpendicular circular discs and oriented spherical caps
-    /// or complete coaxial bands are answered directly.
+    /// or complete coaxial bands and positive-nappe conical bands (including
+    /// explicitly retained tips) are answered directly.
     pub fn point_to_face(
         &self,
         model: &mut Model,

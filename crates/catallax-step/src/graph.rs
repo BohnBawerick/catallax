@@ -44,6 +44,15 @@ impl Graph {
         id
     }
 
+    pub(crate) fn duplicate(&mut self, id: Id) -> Id {
+        let entity = &self.entities[id.0];
+        self.add(entity.name, entity.fields.clone())
+    }
+
+    pub(crate) fn replace(&mut self, id: Id, name: &'static str, fields: Vec<Field>) {
+        self.entities[id.0] = Entity { name, fields };
+    }
+
     pub(crate) fn write(&self, roots: &[Id], header: impl FnOnce(&[usize]) -> String) -> String {
         let mut numbers = vec![0; self.entities.len()];
         let mut order = Vec::with_capacity(self.entities.len());

@@ -86,7 +86,7 @@
   <div class="why__grid">
     <div class="why__copy">
       <p class="why__lede">Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.</p>
-      <p>Property exists because things are scarce. If you take my lathe, I no longer have a lathe. If you copy this kernel, we still have it, and now you have one too. Nobody is made poorer for it, quite the opposite. Programs are not scarce, so the "intellectual property" over them has to be manufactured by the state: a legal privilege that forbids you from arranging your own bits in a pattern someone else arranged first. Patents are nothing more than grants of exclusive monopoly privilege by the State. As Murray Rothbard wrote in <a href="https://mises.org/online-book/man-economy-and-state-power-and-market/10-monopoly-and-competition/7-patents-and-copyrights">Man, Economy, and State (Ch. 10, Sec. 7)</a></p>
+      <p>Property exists because things are scarce. If you take my lathe, I no longer have a lathe. If you copy this kernel, we still have it, and now you have one too. Nobody is made poorer for it, quite the opposite. Programs are not scarce, so the "intellectual property" over them has to be manufactured by the state: a legal privilege that forbids you from arranging your own bits in a pattern someone else arranged first. Patents are nothing more than grants of exclusive monopoly privilege by the State, as Murray Rothbard wrote in <a href="https://mises.org/online-book/man-economy-and-state-power-and-market/10-monopoly-and-competition/7-patents-and-copyrights">Man, Economy, and State (Ch. 10, Sec. 7)</a>.</p>
       <p>A public kernel lets a solo engineer or a new CAD product enter the market without buying permission from an incumbent cartel. Copy this code. Change it. Sell a product built on it.</p>
       <p>Catallax bridges the divide between explicit boundary representations (B-rep) and implicit signed distance fields (SDF). Legacy kernels treat these as separate worlds; we are engineering them into a single, unified foundation. Proving that this hybrid architecture can scale to the demands of industrial CAD is the exact problem Catallax exists to solve.</p>
       <p class="why__plain">Catallax is released under the permissive MIT License—explicitly granting you the irrevocable right to use, copy, modify, publish, and sell it without restriction.</p>
@@ -97,10 +97,9 @@
       <p class="direction__note">An exact B-rep and a signed distance field evaluate a single, unified feature tree. <em>One definition is the truth.</em></p>
       <p class="direction__note"><span class="status-chip">Vision · in design</span> Parametric parts, drawings, and assemblies meet implicit lattices, field-driven wall thickness, and simulation-led geometry. SolidDraft unites both worlds in a single interface—powered exclusively by Catallax.</p>
       <p class="direction__note">In design: one modelling tolerance, separate from display and export accuracy. Every topological decision is recorded once: local tolerances remain explicit, and full topology is validated before publishing. Because downstream operations always evaluate against the primary definition, tolerance errors never accumulate.</p>
-      <p class="direction__note">In design</p>
       <ul class="why__list">
         <li><b>Proprietary kernels rent you temporary access and lock your files behind vendor walls. Catallax is permanently open under the MIT License. Zero royalties, zero lock-in.</b></li>
-        <li><b>Surface intersections, NURBS, and distance fields are foundational mathematics. The theory is public record; the execution belongs in the open</b></li>
+        <li><b>Surface intersections, NURBS, and distance fields are foundational mathematics. The theory is public record; the execution belongs in the open.</b></li>
         <li><b>Written from scratch in memory-safe Rust. Fork it, audit every invariant, embed it in your own stack, or ship it commercially.</b></li>
         <li><b>You shouldn't need a six-figure kernel seat to build a new CAD tool. Take this foundation, build your own product, and compete with us.</b></li>
       </ul>
@@ -291,7 +290,7 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
 <section class="application section" id="soliddraft">
   <div class="application__head">
     <h2 class="display" data-lines>SolidDraft. Speed &amp; <em>Modern Craft</em></h2>
-    <p class="application__lede">Legacy CAD is bloated, sluggish, and stuck in the past. Built from the ground up in Rust, SolidDraft pairs the parametric workflows you already know—feature trees, precision sketching, and a responsive 3D viewport</p>
+    <p class="application__lede">Legacy CAD is bloated, sluggish, and stuck in the past. Built from the ground up in Rust, SolidDraft offers the parametric workflows you already know—feature trees, precision sketching, and a responsive 3D viewport.</p>
     <p><a href="https://github.com/BohnBawerick/soliddraft">Inspect the core codebase</a> or reserve your spot for the upcoming desktop release.</p>
   </div>
   <figure class="application__drawing">
@@ -330,22 +329,34 @@ let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</c
   <div class="bench__head">
     <p class="label section__label"><span>07</span>Benchmarks</p>
     <h2 class="display" data-lines>Measured, not <em>marketed</em>.</h2>
-    <p class="bench__lede">Hard cases. Real answers. Historical source-run figures, not a measurement of current main.</p>
+    <p class="bench__lede">Construction and parameter edits across fixed CAD targets, measured with five tools.</p>
   </div>
-  <div class="bench__table" role="table" aria-label="Reported kernel robustness results">
+  <div class="bench__table" role="table" aria-label="Five-tool completed builds">
     <div class="bench__row bench__row--head label" role="row">
-      <span role="columnheader">Corpus</span><span role="columnheader">Answered</span><span role="columnheader">Other outcomes</span><span role="columnheader">Total</span>
+      <span role="columnheader">Tool</span><span role="columnheader">Construction</span><span role="columnheader">Parameter edit</span><span role="columnheader">Samples per phase</span>
     </div>
     <div class="bench__row" role="row">
-      <span role="cell">Hard-test requests<small>Historical matched source run</small></span>
-      <span role="cell" class="is-us" data-v="363"><b>363</b></span><span role="cell" data-v="16"><b>16 refused</b></span><span role="cell" data-v="379"><b>379</b></span>
+      <span role="cell">Catallax</span>
+      <span role="cell" class="is-us" data-v="24"><b>24</b></span><span role="cell" class="is-us" data-v="21"><b>21</b></span><span role="cell" data-v="39"><b>39</b></span>
     </div>
     <div class="bench__row" role="row">
-      <span role="cell">Recorded failure packs<small>Answered in the same source run</small></span>
-      <span role="cell" class="is-us" data-v="94"><b>94</b></span><span role="cell" data-v="4"><b>4 unanswered</b></span><span role="cell" data-v="98"><b>98</b></span>
+      <span role="cell">SolidCraft</span>
+      <span role="cell" data-v="33"><b>33</b></span><span role="cell" data-v="30"><b>30</b></span><span role="cell" data-v="39"><b>39</b></span>
+    </div>
+    <div class="bench__row" role="row">
+      <span role="cell">CadQuery</span>
+      <span role="cell" data-v="36"><b>36</b></span><span role="cell" data-v="36"><b>36</b></span><span role="cell" data-v="39"><b>39</b></span>
+    </div>
+    <div class="bench__row" role="row">
+      <span role="cell">smlibpy</span>
+      <span role="cell" data-v="30"><b>30</b></span><span role="cell" data-v="27"><b>27</b></span><span role="cell" data-v="39"><b>39</b></span>
+    </div>
+    <div class="bench__row" role="row">
+      <span role="cell">Pali Ijo</span>
+      <span role="cell" data-v="30"><b>30</b></span><span role="cell" data-v="30"><b>30</b></span><span role="cell" data-v="39"><b>39</b></span>
     </div>
   </div>
-  <p class="bench__foot" id="comparison-summary"><a href="comparison.html">The five-tool comparison</a> records completed construction and parameter rebuilds in every measured sample for 7 of 13 Catallax targets; correctness checks are reported separately.</p>
+  <p class="bench__foot" id="comparison-summary">Completed builds across 13 targets and 3 measured samples per tool and target. An edit skipped after a failed construction remains incomplete. Completion is not correctness. <a href="comparison.html">The five-tool comparison</a> reports timings, correctness checks, versions and method.</p>
 </section>
 
 <!-- VIDEO B -------------------------------------------------------------->

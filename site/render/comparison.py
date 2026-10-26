@@ -23,17 +23,39 @@ def render_index(source, index, check=False):
     data = json.loads(source.read_text())
     rows = summarize({'engines': ENGINES, 'pairs': data['observations']})
     parts = {row['part'] for row in rows}
-    completed = sum(all(any(row['engine'] == 'catallax' and row['part'] == part
-                            and row['phase'] == phase and row['samples'] > 0
-                            and row['build_median_ms'] is not None for row in rows)
-                        for phase in ('construction', 'edit')) for part in parts)
-    paragraph = ('<p class="bench__foot" id="comparison-summary">'
-                 '<a href="comparison.html">The five-tool comparison</a> records completed construction and parameter rebuilds '
-                 f'in every measured sample for {completed} of {len(parts)} Catallax targets; correctness checks are reported separately.</p>')
+    summary_rows = []
+    for engine in ENGINES:
+        subset = [row for row in rows if row['engine'] == engine]
+        construction, edit = (
+            sum(row['phase_outcomes']['build'].get('answered', 0)
+                for row in subset if row['phase'] == phase)
+            for phase in ('construction', 'edit'))
+        total = sum(row['samples'] for row in subset if row['phase'] == 'construction')
+        highlight = ' class="is-us"' if engine == 'catallax' else ''
+        summary_rows.append(
+            '    <div class="bench__row" role="row">\n'
+            f'      <span role="cell">{escape(data["tools"][engine]["name"])}</span>\n'
+            f'      <span role="cell"{highlight} data-v="{construction}"><b>{construction}</b></span>'
+            f'<span role="cell"{highlight} data-v="{edit}"><b>{edit}</b></span>'
+            f'<span role="cell" data-v="{total}"><b>{total}</b></span>\n'
+            '    </div>')
+    table = (
+        '  <div class="bench__table" role="table" aria-label="Five-tool completed builds">\n'
+        '    <div class="bench__row bench__row--head label" role="row">\n'
+        '      <span role="columnheader">Tool</span><span role="columnheader">Construction</span>'
+        '<span role="columnheader">Parameter edit</span><span role="columnheader">Samples per phase</span>\n'
+        '    </div>\n' + '\n'.join(summary_rows) + '\n  </div>')
+    paragraph = (
+        '<p class="bench__foot" id="comparison-summary">'
+        f'Completed builds across {len(parts)} targets and {data["timing"]["measured_pairs"]} measured samples per tool and target. '
+        'An edit skipped after a failed construction remains incomplete. Completion is not correctness. '
+        '<a href="comparison.html">The five-tool comparison</a> reports timings, correctness checks, versions and method.</p>')
     original = index.read_text()
-    generated, count = re.subn(r'<p class="bench__foot" id="comparison-summary">[^\n]*</p>', paragraph, original)
+    generated, count = re.subn(
+        r'  <div class="bench__table"[^>]*>.*?</div>\n  <p class="bench__foot" id="comparison-summary">[^\n]*</p>',
+        lambda _: table + '\n  ' + paragraph, original, flags=re.DOTALL)
     if count != 1:
-        raise ValueError('index.html must have exactly one comparison-summary paragraph')
+        raise ValueError('index.html must have exactly one benchmark table and comparison-summary paragraph')
     if check:
         if generated != original:
             raise SystemExit('index.html comparison summary is stale; run site/render/comparison.py')

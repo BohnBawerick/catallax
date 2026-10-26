@@ -1,6 +1,6 @@
 # Code provenance and licences
 
-Catallax's own code is licensed under MIT, copyright 2026 Pedro De Paiva. This public tree starts from the existing B-rep implementation without importing its Git history. The publication changes package names and documentation, adds a binary name, and replaces the CI deployment; it does not import a reference implementation or change geometry algorithms.
+Catallax's own code is licensed under MIT, copyright 2026 Zigrawbohnbawerick Pty Ltd. This public tree starts from the existing B-rep implementation without importing its Git history. The publication changes package names and documentation, adds a binary name, and replaces the CI deployment; it does not import a reference implementation or change geometry algorithms.
 
 ## Reference implementation audit
 

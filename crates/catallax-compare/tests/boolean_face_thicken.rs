@@ -9,6 +9,9 @@ fn retained_polygonal_face_thickens_have_no_comparison_findings() {
     for text in [
         include_str!("../../catallax-features/tests/fixtures/boolean-face-thicken/l-front.json"),
         include_str!("../../catallax-features/tests/fixtures/boolean-face-thicken/l-back.json"),
+        include_str!(
+            "../../catallax-features/tests/fixtures/boolean-face-thicken/collinear-neighbours.json"
+        ),
         include_str!("../../catallax-features/tests/fixtures/boolean-face-thicken/l-tilted.json"),
         include_str!(
             "../../catallax-features/tests/fixtures/boolean-face-thicken/l-merged-origins.json"

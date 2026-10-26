@@ -11,7 +11,7 @@ use catallax_recipe::{
     BooleanKind, EdgeName, FaceRef, Number, Operation, Origin, Pose, Role, StepId, ThickenSide,
     Vector3 as RecipeVector,
 };
-use catallax_shapes::{Plane, Surface};
+use catallax_shapes::{Plane, Point3, Surface};
 use std::collections::BTreeMap;
 
 fn selection_error(error: Refusal) -> Refusal {
@@ -20,6 +20,57 @@ fn selection_error(error: Refusal) -> Refusal {
         "recipe.ambiguous-reference" => Refusal::new("reference.ambiguous-face", error.detail),
         _ => error,
     }
+}
+
+struct Rim {
+    a: usize,
+    b: usize,
+    origins: Vec<Origin>,
+}
+
+/// The source can change across a straight edge of the chosen patch. Those
+/// pieces are one swept wall; an artificial rise there is not a boundary.
+fn coalesced(rims: Vec<Rim>, vertices: &[Point3], dec: &mut Decider) -> Result<Vec<Rim>, Refusal> {
+    let count = rims.len();
+    let direction = |i: usize| vertices[rims[i].b].minus(&vertices[rims[i].a]);
+    let mut breaks = Vec::new();
+    for i in 0..count {
+        let previous = (i + count - 1) % count;
+        if geometry::sign(
+            &direction(previous).cross(&direction(i)).norm_squared(),
+            dec,
+        )? != Sign::Zero
+        {
+            breaks.push(i);
+        } else if geometry::sign(&direction(previous).dot(&direction(i)), dec)? != Sign::Positive {
+            return Err(recovery::bad("a polygonal rim must not backtrack"));
+        }
+    }
+    if breaks.len() < 3 {
+        return Err(recovery::bad("a swept face needs a finite area wire"));
+    }
+    let mut result = Vec::new();
+    for (k, first) in breaks.iter().copied().enumerate() {
+        let next = breaks[(k + 1) % breaks.len()];
+        let last = (next + count - 1) % count;
+        let mut origins = Vec::new();
+        let mut i = first;
+        loop {
+            origins.extend(rims[i].origins.iter().cloned());
+            if i == last {
+                break;
+            }
+            i = (i + 1) % count;
+        }
+        origins.sort();
+        origins.dedup();
+        result.push(Rim {
+            a: rims[first].a,
+            b: rims[last].b,
+            origins,
+        });
+    }
+    Ok(result)
 }
 
 /// Exact box reduction of a convex arrangement term. This preserves the existing
@@ -113,17 +164,6 @@ impl Plan {
             unreachable!("a plane parallel never collapses")
         };
         let shift = far.origin.minus(&patch.plane.origin);
-        let mut remap = BTreeMap::new();
-        let mut vertices = Vec::new();
-        for i in patch.loops.iter().flatten() {
-            if let std::collections::btree_map::Entry::Vacant(entry) = remap.entry(*i) {
-                entry.insert(vertices.len());
-                vertices.push(skin.vertices[*i].clone());
-            }
-        }
-        let count = vertices.len();
-        let tops: Vec<_> = vertices.iter().map(|p| p.plus(&shift)).collect();
-        vertices.extend(tops);
         let mut incidence = BTreeMap::<_, Vec<usize>>::new();
         for (index, patch) in skin.patches.iter().enumerate() {
             for cycle in &patch.loops {
@@ -136,8 +176,9 @@ impl Plan {
                 }
             }
         }
-        let mut patches = Vec::new();
+        let mut rings = Vec::new();
         for cycle in &patch.loops {
+            let mut rims = Vec::new();
             for i in 0..cycle.len() {
                 let (a, b) = (cycle[i], cycle[(i + 1) % cycle.len()]);
                 let uses = &incidence[&(a.min(b), a.max(b))];
@@ -168,26 +209,45 @@ impl Plan {
                 if origins.is_empty() {
                     return Err(recovery::bad("a swept rim has no complete source origins"));
                 }
-                let mut wire = vec![remap[&a], remap[&b], remap[&b] + count, remap[&a] + count];
-                if !front {
-                    wire.reverse();
-                }
-                patches.push(Patch {
-                    plane: Plane {
-                        origin: skin.vertices[a].clone(),
-                        normal: skin.vertices[b]
-                            .minus(&skin.vertices[a])
-                            .cross(&patch.plane.normal),
-                        ref_dir: patch.plane.normal.clone(),
-                    },
-                    loops: vec![wire],
-                    origins,
-                });
+                rims.push(Rim { a, b, origins });
+            }
+            rings.push(coalesced(rims, &skin.vertices, dec)?);
+        }
+        let cycles: Vec<Vec<_>> = rings
+            .iter()
+            .map(|rims| rims.iter().map(|r| r.a).collect())
+            .collect();
+        let mut remap = BTreeMap::new();
+        let mut vertices = Vec::new();
+        for i in cycles.iter().flatten() {
+            if let std::collections::btree_map::Entry::Vacant(entry) = remap.entry(*i) {
+                entry.insert(vertices.len());
+                vertices.push(skin.vertices[*i].clone());
             }
         }
+        let count = vertices.len();
+        let tops: Vec<_> = vertices.iter().map(|p| p.plus(&shift)).collect();
+        vertices.extend(tops);
+        let mut patches = Vec::new();
+        for Rim { a, b, origins } in rings.into_iter().flatten() {
+            let mut wire = vec![remap[&a], remap[&b], remap[&b] + count, remap[&a] + count];
+            if !front {
+                wire.reverse();
+            }
+            patches.push(Patch {
+                plane: Plane {
+                    origin: skin.vertices[a].clone(),
+                    normal: skin.vertices[b]
+                        .minus(&skin.vertices[a])
+                        .cross(&patch.plane.normal),
+                    ref_dir: patch.plane.normal.clone(),
+                },
+                loops: vec![wire],
+                origins,
+            });
+        }
         let loops = |offset: usize, flip: bool| {
-            patch
-                .loops
+            cycles
                 .iter()
                 .map(|cycle| {
                     let mut cycle: Vec<_> = cycle.iter().map(|i| remap[i] + offset).collect();

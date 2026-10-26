@@ -506,3 +506,47 @@ fn authored_plain_cap_keeps_its_existing_collinear_rim_alias_choice() {
         ],
     );
 }
+
+#[test]
+fn changing_neighbours_on_one_straight_rim_do_not_partition_the_sweep() {
+    let recipe = parse(include_str!(
+        "fixtures/boolean-face-thicken/collinear-neighbours.json"
+    ));
+    let built = build(&recipe);
+    exact_volume(&built, "16");
+    assert_eq!(built.model.faces_of_body(built.result).len(), 6);
+    assert_eq!(built.model.edges_of_body(built.result).len(), 12);
+    assert_eq!(built.model.vertices_of_body(built.result).len(), 8);
+    assert!(
+        built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .any(|f| {
+                let origins = built.model.face_origins(f);
+                origins.len() > 1 && origins.iter().all(|o| matches!(o.role, Role::Rim { .. }))
+            }),
+        "one merged wall retains every adjacent source origin"
+    );
+    agree(
+        &recipe,
+        &[
+            (["1", "1", "7/2"], Location::Inside),
+            (["7/2", "3", "7/2"], Location::Inside),
+            (["1", "1", "5/2"], Location::Outside),
+            (["4", "1", "7/2"], Location::Boundary),
+            (["4", "3", "7/2"], Location::Boundary),
+            (["4", "2", "7/2"], Location::Boundary),
+        ],
+    );
+    // This extra source is an authored triangular sweep. The existing mass
+    // classifier still inspects inactive source leaves and refuses that history;
+    // its printing/mass coverage is outside this lane. Keep that gate explicit.
+    let mass = catallax_field::mass::properties(
+        &Plan::compile(&recipe).unwrap(),
+        &Default::default(),
+        &Default::default(),
+        &mut Decider::default(),
+    );
+    assert_eq!(mass.unwrap_err().code, "field.print-coverage");
+}

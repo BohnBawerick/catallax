@@ -28,6 +28,7 @@ CAST_SOLID = getattr(TopoDS, 'Solid_s', None) or TopoDS.Solid
 class BooleanFaceThickenStepTests(unittest.TestCase):
     def test_polygonal_sweeps_import_with_exact_oracle_volumes_and_material(self):
         for name, faces, volume, inside, outside in [
+            ('collinear-neighbours', 6, 16, (1, 1, 3.5), (1, 1, 2.5)),
             ('l-front', 8, 12, (1, 1, 3.5), (3, 3, 3.5)),
             ('l-back', 8, 12, (1, 1, 2.5), (3, 3, 2.5)),
             ('l-merged-origins', 8, 12, (1, 1, 3.5), (3, 3, 3.5)),

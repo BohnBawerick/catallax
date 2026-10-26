@@ -93,6 +93,33 @@ checkpoint. Earlier failed attempts are not removed or relabelled as passing.
 
 ## Commands and limits
 
+### Straight rims whose source neighbour changes
+
+A final public wedge-cut check at delivery `174e4482bcc4fa2d8052483f32097abfb581bd73`
+found a remaining partition: the selected rectangular cap had a straight rim
+whose adjacent input face changed at a collinear vertex. That candidate emitted
+seven faces for a six-face prism; independent field sweep partitioning refused
+`draft.unsplit-patch-boundary`. The frozen executable, original input and both
+CLI responses are retained in `collinear-neighbour-before-*` outside the repo.
+
+The assigned modules now coalesce straight runs before constructing topology or
+field patches, union every neighbour-origin product and remove the obsolete
+degree-two vertices. The new fixture requires six faces, twelve edges, eight
+vertices, exact B-rep volume 16, complete matching rim origins, point membership
+across the former split, sampled comparison and STEP read-back. The original
+plain-cap naming path remains unchanged. No shared arrangement or held file was
+edited.
+
+An additional property probe on this *authored triangular source* remains the
+existing `field.print-coverage` refusal: the mass classifier inspects an inactive
+source Feature leaf. Fixing that consumer requires the held printing module,
+outside this lane. The regression keeps the typed refusal explicit; it is not
+reported as an answered field-mass request. The required rectilinear L/hole and
+two-sided field mass oracles remain exact and enabled. The full local run for
+the superseded `174e448` was interrupted with exit 130 after discovering the
+functional counterexample; its partial log is retained and is not final-head
+qualification. Final-head outcomes are recorded in the PR/evidence.
+
 Rust commands use `CARGO_HOME=/workspace/.cargo RUSTUP_HOME=/workspace/.rustup`
 and prepend `/workspace/.cargo/bin` to PATH; builds use `nice -n 10` and `-j 2`.
 The exact base build is `cargo build --release -p catallax-cli --bins -j 2`.

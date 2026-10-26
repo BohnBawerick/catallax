@@ -1,0 +1,102 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Retained cap over a changing adjacent wall",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "block",
+      "size": [
+        "4",
+        "4",
+        "3"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "wedge-profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "4",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "low",
+            "to": [
+              "3",
+              "2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "outside",
+            "to": [
+              "5",
+              "2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "slope",
+            "to": [
+              "5",
+              "4"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "tool",
+      "op": "extrude",
+      "profile": "wedge-profile",
+      "distance": "2"
+    },
+    {
+      "id": "retained",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "stock",
+      "tool": "tool"
+    },
+    {
+      "id": "result",
+      "op": "thicken",
+      "body": "retained",
+      "faces": [
+        {
+          "face": {
+            "step": "stock",
+            "role": "end"
+          }
+        }
+      ],
+      "thickness": "1",
+      "side": "front"
+    }
+  ],
+  "result": "result"
+}

@@ -20,7 +20,7 @@ fn bad(detail: &str) -> Refusal {
 struct Rim {
     from: Point3,
     to: Point3,
-    across: FaceId,
+    across: Vec<FaceId>,
 }
 
 fn across(model: &Model, coedge: catallax_topology::CoedgeId, own: FaceId) -> Option<FaceId> {
@@ -146,7 +146,7 @@ fn boundary(model: &Model, face: FaceId) -> Result<Vec<Vec<Rim>>, Refusal> {
             rims.push(Rim {
                 from: model.geom().position(model.vertex(from).point),
                 to: model.geom().position(model.vertex(to).point),
-                across: neighbour,
+                across: vec![neighbour],
             });
         }
         loops.push(rims);
@@ -157,30 +157,32 @@ fn boundary(model: &Model, face: FaceId) -> Result<Vec<Vec<Rim>>, Refusal> {
 fn rim_origins(
     model: &Model,
     face: FaceId,
-    across: FaceId,
+    across: &[FaceId],
     step: &StepId,
     complete: bool,
 ) -> Result<Vec<Origin>, Refusal> {
     let mut names = Vec::new();
     let source = model.face_origins(face);
-    let neighbour = model.face_origins(across);
     let source = if complete {
         source
     } else {
         &source[..source.len().min(1)]
     };
-    let neighbour = if complete {
-        neighbour
-    } else {
-        &neighbour[..neighbour.len().min(1)]
-    };
-    for a in source {
-        for b in neighbour {
-            let edge = EdgeName::new(a.clone(), b.clone()).map_err(|e| bad(&e.to_string()))?;
-            names.push(Origin {
-                step: step.clone(),
-                role: Role::Rim { edge },
-            });
+    for adjacent in across {
+        let neighbour = model.face_origins(*adjacent);
+        let neighbour = if complete {
+            neighbour
+        } else {
+            &neighbour[..neighbour.len().min(1)]
+        };
+        for a in source {
+            for b in neighbour {
+                let edge = EdgeName::new(a.clone(), b.clone()).map_err(|e| bad(&e.to_string()))?;
+                names.push(Origin {
+                    step: step.clone(),
+                    role: Role::Rim { edge },
+                });
+            }
         }
     }
     names.sort();
@@ -189,6 +191,47 @@ fn rim_origins(
         return Err(bad("a normal-sweep rim requires named input faces"));
     }
     Ok(names)
+}
+
+/// A changed source neighbour is provenance, not a corner of the normal image.
+/// Collapse every straight run before creating vertices, edges or side faces.
+fn coalesced(rims: Vec<Rim>, dec: &mut Decider) -> Result<Vec<Rim>, Refusal> {
+    let count = rims.len();
+    let direction = |i: usize| rims[i].to.minus(&rims[i].from);
+    let mut breaks = Vec::new();
+    for i in 0..count {
+        let p = (i + count - 1) % count;
+        if sign(&direction(p).cross(&direction(i)).norm_squared(), dec)? != Sign::Zero {
+            breaks.push(i);
+        } else if sign(&direction(p).dot(&direction(i)), dec)? != Sign::Positive {
+            return Err(bad("a polygonal rim must not backtrack"));
+        }
+    }
+    if breaks.len() < 3 {
+        return Err(bad("a polygonal face needs a finite area wire"));
+    }
+    let mut result = Vec::new();
+    for (k, first) in breaks.iter().copied().enumerate() {
+        let next = breaks[(k + 1) % breaks.len()];
+        let last = (next + count - 1) % count;
+        let mut across = Vec::new();
+        let mut i = first;
+        loop {
+            across.extend(rims[i].across.iter().copied());
+            if i == last {
+                break;
+            }
+            i = (i + 1) % count;
+        }
+        across.sort();
+        across.dedup();
+        result.push(Rim {
+            from: rims[first].from.clone(),
+            to: rims[last].to.clone(),
+            across,
+        });
+    }
+    Ok(result)
 }
 
 /// Whether the body is one profile extrusion and `face` is one of its end caps.
@@ -264,7 +307,7 @@ pub(crate) fn thicken(
     if f.sense == Sense::Reversed {
         plane.normal = plane.normal.scaled(&Real::from_i64(-1));
     }
-    let loops = match boundary(model, selected) {
+    let mut loops = match boundary(model, selected) {
         Ok(loops) if !loops.is_empty() => loops,
         _ => return Err(fallback),
     };
@@ -280,6 +323,12 @@ pub(crate) fn thicken(
     }
     if sign(&area.dot(&plane.normal), dec)? != Sign::Positive {
         return Err(fallback);
+    }
+    if !plain {
+        loops = loops
+            .into_iter()
+            .map(|rims| coalesced(rims, dec))
+            .collect::<Result<_, _>>()?;
     }
     let names = model.face_origins(selected).to_vec();
     let front = matches!(side, ThickenSide::Front);
@@ -321,7 +370,7 @@ pub(crate) fn thicken(
                 ring,
                 first: *first,
                 last,
-                origins: rim_origins(model, selected, rims[*first].across, step, !plain)?,
+                origins: rim_origins(model, selected, &rims[*first].across, step, !plain)?,
             });
         }
     }

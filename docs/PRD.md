@@ -6,6 +6,8 @@ This document sets the direction for Catallax. It describes requirements and pla
 
 The [26 October 2026 decision](ARCHITECTURE.md#preview-and-deferred-proof-decision-of-2026-10-26) separates preview/display from deferred proof and makes second-kernel comparison on demand. This changes the build direction, not the current public API or what counts as proven.
 
+The [26 October 2026 print decision](ARCHITECTURE.md#print-accuracy-and-routes-decision-of-2026-10-26) keeps 0.01 mm as Catallax's default print accuracy, uses proven B-rep tessellation for ordinary parts and adaptive certified field cells for field parts, and requires visible output settings and explicit resource trade-offs. It does not claim those routes and reports are already implemented.
+
 ## 1. What Catallax is
 
 Catallax is an open-source geometry kernel under the MIT licence.
@@ -24,7 +26,7 @@ Catallax is a new public repository, exported from the existing B-rep implementa
 
 | Kernel | Jobs |
 |---|---|
-| B-rep | STEP export, drawings, CAM, exact dimensions, exact mass properties, mates |
+| B-rep | STEP export, ordinary-part printing, drawings, CAM, exact dimensions, exact mass properties, mates |
 | Field | FEA without meshing, field features for printing such as lattices, gyroids and graded density, interference and clearance checks, booleans that never fail |
 
 ## 3. Rules
@@ -39,6 +41,8 @@ A tolerance is allowed only in two cases, and both are cases of necessity.
 2. A decision that takes too long to prove. This is allowed only after the B-rep kernel has proven that the gap behind the decision is smaller than 1 nm. exact-brep already has this outcome, "not exact, with a proven bound". The 1 nm limit is new.
 
 Decide once and reuse the record; merge objects declared the same; retain each local tolerance; and check topology before publication as proven. Never clamp a measured tolerance to its cap. [ARCHITECTURE.md](ARCHITECTURE.md#composable-geometric-error-decision-of-2026-10-22) defines composition and the measurement, comparison and STEP hand-offs for these scoped certificates. Section 3.3 permits an explicitly unproved preview before that proof completes.
+
+Display and export accuracy are output settings, not modelling tolerances. Print accuracy defaults to 0.01 mm and may be changed explicitly for an output under section 5.1. A chosen coarser output does not relax the model's 1 nm decisions, approximation target or local caps.
 
 ### 3.2 Refusals
 
@@ -56,7 +60,7 @@ Examples from exact-brep today:
 | `measure.accuracy-not-reached` | A volume or centroid that could not be proven to the requested accuracy |
 
 About 20 codes of this second kind exist in the code today, including `boolean.classify-ambiguous`, `boolean.merge-ambiguous`, `numbers.budget-exhausted` and `numbers.precision-limit`.
-Until the kernel covers such a case, the user sees a plain failure like a SolidWorks rebuild error, and the case goes on the list of kernel bugs to fix.
+Until the kernel covers such a case, the user sees a failure like a SolidWorks rebuild error, and the case goes on the list of kernel bugs to fix. A print refusal also explains the limiting stage and the accuracy/resource trade-off under section 5.1; it must not be a bare failure or claim the geometry is impossible merely because a cap was reached.
 The user never sees a half-built state presented as a proven result and never needs to know a kernel exists. If proof of an already visible preview fails, the app marks it failed and shows the typed refusal for that edit.
 
 ### 3.3 Display
@@ -70,7 +74,7 @@ Preview/display has its own budget for construction preview, display mesh, edge 
 
 A preview uses the same immutable recipe revision and exact definitions as the eventual proof, but need not use the same representation or construction route. It is clearly labelled `unproved` until proof confirms it or replaces it with the proven result. Selection names belong to that revision and are resolved against the completed result; they are not proof. A newer edit invalidates the earlier pairing, and a late proof cannot overwrite it. A previous body may remain visible as the previous revision, not as a preview of new geometry. On model-proof failure, mark the preview `failed` with the typed refusal. Exports, requested measurements and anything published as proven still wait for their applicable proof. An output-specific failure does not invalidate an already proved model.
 
-Keep the 1M scoreboard, 20M application and 100M verification-request allowances unchanged. Separating preview and proof must not reset, duplicate or enlarge a caller's deterministic allowance. All modelling tolerances, approximation targets and caps, and display/export accuracy settings stay unchanged. A proven answer is never wrong.
+Keep the 1M scoreboard, 20M application and 100M verification-request allowances unchanged. Separating preview and proof must not reset, duplicate or enlarge a caller's deterministic allowance. All modelling tolerances, approximation targets and caps stay unchanged. Display/export accuracy remains an output setting; section 5.1 governs explicit print choices. A proven answer is never wrong.
 
 ### 3.4 Hand-off points
 
@@ -153,10 +157,24 @@ Rust's safe threads run rebuilds and checks in the background, so the user is ne
 | Drawing | B-rep | Yes, when the part is printed from the field |
 | CAM | B-rep, through STEP | No |
 | FEA | Field | Yes. It must match the exported part |
-| Print | Field slices or 3MF, or the B-rep's mesh | Yes, when the part is inspected against a B-rep drawing |
+| Print | Ordinary parts from proven B-rep faces; field parts from adaptive certified field cells, at the chosen print accuracy | Yes when a field print is inspected against a B-rep drawing or the output otherwise combines representations; no automatic field comparison for B-rep-only printing |
 | Mass, centre of gravity | B-rep exact, plus the field for field-only features | Yes. The user sees one number |
 | Mates | B-rep planes and axes, or recipe-defined field faces | Yes, together with interference |
 | Interference, clearance | Field | Yes, together with mates |
+
+### 5.1 Print accuracy and resource choices
+
+Default to 0.01 mm print accuracy and a visible 2,000,000-cell cap. Keep the separate 1,000,000-vertex default. These are output controls, recorded even when supplied by default. Report the cell cap on every successful or refused print, with its applicability and actual usage; a B-rep route without cell traversal does not consume field cells.
+
+Ordinary parts print by tessellating proven B-rep faces and trims within the chosen deviation. Flat polygons need no accuracy-driven interior refinement; curves need enough subdivision to meet their bound. Prove file-coordinate rounding and composition of model, tessellation and encoding error, manifold vertex links and cavity orientation. A display mesh, preview or successful file write is not automatically a print.
+
+Lattices, gyroids, graded density and other field parts use adaptive cells, fine near detail and coarse on flat or gentle regions only when their local certificate permits it. Keep certified error per cell size, complete two-sided boundary coverage and valid oriented topology across refinement levels. Neither route may delete small components or cavities, silently switch representations or publish a partial mesh. A B-rep print does not satisfy a native-field acceptance case.
+
+When the request cannot fit, name the limiting stage and report requested accuracy, effective caps, actual cells/vertices/facets and work used. Give labelled estimates of cells, triangles, peak memory and time at that accuracy, a coarser accuracy estimated to fit the current limits, and the higher-cap cost of retaining accuracy where supported. Explain when no fitting candidate or credible cost estimate is available. Identify any remaining vertex or work limit. Bounded coarse traversal, live-storage accounting and identified throughput calibration underpin these estimates; [the architecture decision](ARCHITECTURE.md#visible-limits-and-actionable-refusals) specifies their scope and uncertainty. Estimates are not proof or a promise of completion.
+
+The user explicitly chooses a new request; controls never weaken silently. A chosen 0.05 mm print must prove 0.05 mm and must not be reported as a 0.01 mm print. Successful files carry the chosen accuracy and cap in documented metadata, with a byte-bound manifest retaining the requested settings, achieved file-to-definition bound, units, encoding/rounding, preservation policy and completeness/topology/orientation status. For STL this needs an explicit header/consumer contract because STL standardizes neither units nor certified accuracy. A format that cannot retain the settings losslessly must not silently discard them.
+
+The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap and other local limits remain unchanged, as do the distinct 1M/20M/100M work allowances. Raising a print cell cap does not raise a work allowance. Existing native-field qualification controls remain in force.
 
 ## 6. What the kernel provides
 
@@ -173,7 +191,7 @@ Rust's safe threads run rebuilds and checks in the background, so the user is ne
 
 - **STEP accuracy.** The user chooses the accuracy level at export.
 - **Stand-in for very large parts.** When a full conversion would be huge, STEP and drawings use a stand-in the way nTop does it: the outer envelope plus bodies that match the mass, centre of gravity and inertia. nTop's example lattice cube was over 600 MB as STEP and under 30 kB in its own format. nTop suggests full conversion only up to about 10,000 beams or 1,000 gyroid cells. The size that switches to the stand-in is not decided yet.
-- **Printing.** Slices, 3MF or STL, either from the field directly or from the B-rep's mesh.
+- **Printing.** Slices, 3MF or STL under section 5.1. Ordinary parts use a print-qualified tessellation of the proven B-rep; field parts use adaptive certified cells. The chosen accuracy and cap travel with the file, and an output that cannot fit returns an explicit trade-off for the user to choose.
 - **STEP import.** The imported body enters the recipe as a fixed piece. The field kernel computes its field from it. Jev decides whether small gaps and offsets are intended or noise from the system that wrote the file.
 - **Mesh and scan import.** An AI model writes a recipe from the mesh, following the CAD-Recode and CADFit research. A numeric fit refines the dimensions. Jev picks the intent among measured options. The B-rep kernel builds the result exactly, and the app measures and shows the deviation. No published method guarantees a tolerance, so the measured deviation is the guarantee.
 

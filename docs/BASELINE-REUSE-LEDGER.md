@@ -25,6 +25,7 @@ inputs and held-out data were not read. No real 477 replay was run here.
 | Q6 | Independent review suspected incomplete operation records could pass if coherently changed in all three baseline logs. Executed public reproduction against `69bfe0c` confirmed an archive omitting `kernel` in all baseline logs/response copies was accepted after resealing. | Require every operation field, correct types, complete unsigned decision counts, status-dependent decisions/refusal, complete marks and bound/certificate records. All-worker omission/type mutations now fail on schema completeness, independently of determinism. |
 | Q7 | Independent review suspected an adapter returning `[]` could qualify without workers. Executed public reproduction against `69bfe0c` confirmed `qualified`, a published archive and six runs containing zero cases. | Reject empty interpreted inputs before creating output or launching jobs, for fresh and reuse entry points; reject empty archived qualification evidence too. Ordinary adapter loading is unchanged. |
 | Q8 | The new real face-measurement positive control exposed an owned over-rejection: face-check display observations have no exported OBJ, unlike field/print output. | Preserve that explicit existing schema by request format while retaining delivered-file presence/name checks for field and print. A real public torus face-measurement triplet passes alongside all export controls. |
+| Q9 | Bounded recheck suspected coherently deleted whole entries could evade field validation. Executed public mutations against `60e0755` confirmed acceptance of empty histories, a deleted final entry and a deleted middle entry with renumbering across all baseline runs. The corresponding same-executable counter mutation also exposed a gap across the two triplets. | Compare ordered operation identity/status histories, including their counts, against the independent counterpart retained by the fresh six-run archive. Identical executables also require full non-time log/work equality across both triplets. All-baseline deletions and same-executable counter changes now fail. A real public comparison preflight returns legitimate empty logs and still qualifies/reuses with three fresh candidate jobs. Different-build work/counter changes remain allowed; changed execution histories require separate audit. |
 
 Build provenance is a trusted build-time operator attestation bound to executable
 bytes and the binary's source commit. Its schema requires complete source,
@@ -52,12 +53,13 @@ are separate scopes, not terms of an aggregate makespan or speedup claim.
 | Isolated locked release CLI build, two build jobs | Exit 0; 136.74 s elapsed. |
 | Real CLI doctor | Exit 0; request protocol `catallax-request/1`; executable SHA-256 `14239b7e825157a79f3c7784903340bc4cf5bc43c54bbe6a367fbee76dc2948e`. |
 | Public one-block explicit fresh-six smoke | All six fresh; strict gate passed; command span 447.42 ms, final gate audit 6.39 ms. |
-| Final complete driver suite after review corrections, including PR138 reporting and public mutation tests | 48 passed in 31.017 s. |
-| Focused qualification mutation coverage | 18 tests included in the final passing driver suite; includes coherent all-baseline field/type mutations, explicit nullable schemas, empty fresh/reuse adapter rejection and real face-measurement certificates. |
+| Final complete driver suite after review corrections, including PR138 reporting and public mutation tests | 51 passed in 31.376 s. |
+| Focused qualification mutation coverage | 21 tests included in the final passing driver suite; includes coherent all-baseline field/type/entry deletions, same-executable counter histories, explicit nullable schemas, empty fresh/reuse adapter rejection, legitimate empty preflights and real face-measurement certificates. |
 | STEP regressions with CI's pinned OCP 8.0.1.1.0 | 15 passed in 69.708 s. |
 | Edge hunt / release evidence policy | 15 / 21 passed. |
 | Formatting / generated comparison page / diff whitespace | Passed. |
 | Workspace Clippy, all targets, warnings denied | Passed after prerequisite repair; 138.35 s elapsed. |
+| Existing local workspace release suite, including doctests | Exit 0; 1,237 passed, 0 failed, 11 existing ignored across 165 targets. Command span including its serialized build: 2,129.75 s. Rust sources/binaries were from the pinned original base; current Python checks are recorded separately above. |
 
 Initial Rust test/Clippy attempts stopped in GMP configuration because `m4`
 was missing. The Debian trixie `m4` 1.4.19-8 package was extracted into isolated
@@ -78,6 +80,13 @@ passing tests are preserved. The earlier head's hosted check and target-parts
 workflows both completed successfully, but that result does not clear the
 review defects or qualify the corrected head. No existing run was cancelled
 or replaced to obtain these results.
+
+The same saved environment briefly disconnected while starting the Q9
+reproduction. The test-file edit persisted; the command had not started and no
+log existed. After connection recovery, process/worktree reconciliation found
+the earlier workspace suite terminal with exit 0 and no active local validation.
+Only the previously unstarted focused reproduction resumed. No replacement
+environment or duplicate workspace suite/build was created.
 
 There is no saved-time claim: this implementation has not reused a real
 matching future baseline. Synthetic archive reuse tests prove the control path,

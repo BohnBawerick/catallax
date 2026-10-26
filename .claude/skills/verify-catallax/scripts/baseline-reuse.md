@@ -109,6 +109,18 @@ Failed whole requests may retain null face certificates. These explicit nullable
 forms preserve the current schema; omitted fields in older layouts are never
 silently upgraded. Additive fields remain present in equality checks.
 
+Entry validation alone cannot prove that entries were not coherently deleted.
+The strict gate also matches the ordered operation history (kernel, original
+ID, operation and status, including its count) between the two independently
+executed triplets. Archive revalidation therefore checks baseline history
+against its retained historical candidate counterpart. Work and decision
+counters may still differ across different builds; identical executable hashes
+require full non-time log/work equality across both triplets as well as within
+each triplet. A changed execution history needs the parent's separate audit and
+cannot automatically seed reuse. Legitimate empty preflight histories remain
+valid when both independent counterparts establish the same empty history;
+there is no blanket nonempty-log rule.
+
 The existing face-check schema records internal B-rep display measurements
 without an OBJ file. That specific request format is kept distinct from field
 and print display records, which explicitly declare a delivered `display.obj`.

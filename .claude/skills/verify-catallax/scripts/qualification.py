@@ -343,6 +343,15 @@ def gates(root, items, hashes, cores, driver, default_max_work, reused_baseline=
     # automatically accepted. Such a change needs the parent's separate audit.
     for workers in (1, 2, 4):
         left, right = observed['baseline', workers], observed['candidate', workers]
+        # The other historical triplet is an independent counterpart for the
+        # execution history, not just its final manifest. Keep count and order;
+        # comparing only present entries cannot detect coherent deletions.
+        def history(cases):
+            return [[{k: operation[k] for k in ('kernel', 'id', 'operation', 'status')}
+                     for operation in case['log']['operations']] for case in cases]
+        require(history(left) == history(right), 'operation history completeness: unmatched executed spans require audit')
+        if hashes['baseline'] == hashes['candidate']:
+            require(left == right, 'same-build counterpart: manifest/artifact/work/non-time-log determinism')
         require([{k: c[k] for k in ('manifest', 'artifacts')} for c in left] ==
                 [{k: c[k] for k in ('manifest', 'artifacts')} for c in right], 'preservation/changed-export audit required')
         result = driver.compare(Path(root) / f'baseline{workers}/run.json', Path(root) / f'candidate{workers}/run.json')

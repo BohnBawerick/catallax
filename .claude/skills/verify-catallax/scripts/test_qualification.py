@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from test_control import BINARY, EXAMPLES, load_driver
+from test_control import BINARY, EXAMPLES, ROOT, load_driver
 import qualification as q
 
 
@@ -344,6 +344,61 @@ class QualificationTests(unittest.TestCase):
                     self.mutate_case(archive, change_field, f'baseline{workers}')
                 with self.assertRaises(q.EvidenceError):
                     q.validate_archive(archive, self.key, self.driver)
+
+    def test_legitimate_empty_preflight_logs_remain_qualified_and_reusable(self):
+        # Comparison coverage preflight returns unresolved before executing any
+        # operation for this public native-field recipe (protocol, Operation log).
+        source = ROOT / 'parts/P6-lattice-bracket.json'
+        args = self.args_for(inputs=[str(source)], source='compare')
+        result = q.qualify(args, self.driver)
+        self.assertTrue(result['equal'], result)
+        root = Path(args.out)
+        report = json.loads((root / 'baseline1/run.json').read_text())
+        response = report['cases'][0]['response']
+        self.assertEqual(response['manifest']['status'], 'answered')
+        self.assertEqual(response['manifest']['comparison']['verdict'], 'unresolved')
+        self.assertTrue(response['manifest']['comparison']['not_comparable'])
+        self.assertEqual(response['operation_log']['operations'], [])
+        reused = self.args_for(inputs=[str(source)], source='compare', reuse_baseline=str(root),
+                               out=str(self.work / 'reused-preflight'))
+        with patch.object(self.driver, 'run', wraps=self.driver.run) as runs:
+            accepted = q.qualify(reused, self.driver)
+        self.assertTrue(accepted['equal'], accepted)
+        self.assertEqual(accepted['mode'], 'REUSED-BASELINE')
+        self.assertEqual(runs.call_count, 3)
+        self.assertTrue(all(c.args[0].fresh for c in runs.call_args_list))
+
+    def test_coherently_deleted_operation_entries_are_incomplete(self):
+        for mode in ('empty', 'prefix', 'remove-middle'):
+            with self.subTest(mode=mode):
+                archive = Path(shutil.copytree(self.archive, self.work / mode))
+                def remove_entries(directory, report):
+                    response = json.loads((directory / 'response.json').read_text())
+                    operations = response['operation_log']['operations']
+                    self.assertGreaterEqual(len(operations), 3)
+                    operations = ([] if mode == 'empty' else operations[:-1] if mode == 'prefix'
+                                  else [op for index, op in enumerate(operations) if index != 1])
+                    for sequence, operation in enumerate(operations):
+                        operation['sequence'] = sequence
+                    response['operation_log']['operations'] = operations
+                    write(directory / 'response.json', response)
+                    write(directory / 'operations.json', response['operation_log'])
+                for workers in (1, 2, 4):
+                    self.mutate_case(archive, remove_entries, f'baseline{workers}')
+                with self.assertRaisesRegex(q.EvidenceError, 'operation history completeness'):
+                    q.validate_archive(archive, self.key, self.driver)
+
+    def test_same_executable_counterpart_binds_full_non_time_logs(self):
+        archive = self.archive_copy()
+        def change_counter(directory, report):
+            response = json.loads((directory / 'response.json').read_text())
+            response['operation_log']['operations'][0]['decisions']['total'] += 1
+            write(directory / 'response.json', response)
+            write(directory / 'operations.json', response['operation_log'])
+        for workers in (1, 2, 4):
+            self.mutate_case(archive, change_counter, f'baseline{workers}')
+        with self.assertRaisesRegex(q.EvidenceError, 'same-build counterpart'):
+            q.validate_archive(archive, self.key, self.driver)
 
     def test_operation_schema_preserves_conditional_nulls_marks_and_certificates(self):
         report = json.loads((self.archive / 'baseline1/run.json').read_text())

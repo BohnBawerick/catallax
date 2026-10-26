@@ -41,7 +41,11 @@ and no reusable archive. The source commit must also match the executable's
   },
   "executable_sha256": "<64 lowercase hex digits>",
   "build": {
-    "toolchain": {"rustc": "<full version>", "cargo": "<full version>", "linker": "<full version>"},
+    "toolchain": {
+      "rustc": {"version": "<full version>", "sha256": "<64 lowercase hex digits>"},
+      "cargo": {"version": "<full version>", "sha256": "<64 lowercase hex digits>"},
+      "linker": {"version": "<full version>", "sha256": "<64 lowercase hex digits>"}
+    },
     "dependencies": {
       "cargo_lock_sha256": "<64 lowercase hex digits>",
       "resolved_sha256": "<64 lowercase hex digits>",
@@ -59,7 +63,8 @@ and no reusable archive. The source commit must also match the executable's
 }
 ```
 
-Submodules, if any, contain `path` and exact `commit`. Dependency hashes cover
+Toolchain hashes identify the actual compiler, Cargo and linker executable bytes;
+version strings alone are insufficient. Submodules, if any, contain `path` and exact `commit`. Dependency hashes cover
 the complete resolved dependency sources and native build inputs, not merely
 package names. Build environment and config hashes cover all effective
 compiler/linker flags, Cargo configuration, generated build inputs and options.

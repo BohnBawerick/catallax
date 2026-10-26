@@ -31,7 +31,8 @@ class QualificationTests(unittest.TestCase):
         cls.identity = {'format': 'catallax-build-evidence/1',
             'source': {'commit': json.loads(about['kernel'])['commit'], 'tree': 'b' * 40, 'dirty': False, 'submodules': []},
             'executable_sha256': cls.driver.file_hash(BINARY),
-            'build': {'toolchain': {'rustc': 'synthetic rustc', 'cargo': 'synthetic cargo', 'linker': 'synthetic linker'},
+            'build': {'toolchain': {k: {'version': 'synthetic ' + k, 'sha256': 'a' * 64}
+                                   for k in ('rustc', 'cargo', 'linker')},
                 'dependencies': {k: 'c' * 64 for k in ('cargo_lock_sha256', 'resolved_sha256', 'native_sha256')},
                 'options': {'command': ['synthetic-build'], 'env_sha256': 'd' * 64, 'config_sha256': 'e' * 64,
                             'target': 'synthetic-target', 'profile': 'release', 'features': []}}}
@@ -152,7 +153,8 @@ class QualificationTests(unittest.TestCase):
 
     def test_real_key_construction_tracks_build_controls_corpus_and_environment(self):
         paths = [('source', 'tree'), ('source', 'commit'), ('executable_sha256',),
-                 *[('build', 'toolchain', k) for k in self.identity['build']['toolchain']],
+                 *[('build', 'toolchain', k, leaf) for k in self.identity['build']['toolchain']
+                   for leaf in ('version', 'sha256')],
                  *[('build', 'dependencies', k) for k in self.identity['build']['dependencies']],
                  *[('build', 'options', k) for k in self.identity['build']['options']]]
         for path in paths:
@@ -210,7 +212,9 @@ class QualificationTests(unittest.TestCase):
                      lambda r: r['cases'].reverse(),
                      lambda r: r['cases'][0].update(cache_hit=True),
                      lambda r: r['cases'][0].update(path='../escape'),
-                     lambda r: r['config'].update(binary_sha256='f' * 64)]
+                     lambda r: r['config'].update(binary_sha256='f' * 64),
+                     lambda r: r['config'].update(max_work=1),
+                     lambda r: r['execution']['worker_exits'].update({'0': False})]
         for i, mutate in enumerate(mutations):
             with self.subTest(mutation=i):
                 archive = Path(shutil.copytree(self.archive, self.work / str(i)))

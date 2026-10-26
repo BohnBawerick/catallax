@@ -56,7 +56,7 @@ def known(value):
 
 def build_identity(path, binary, driver):
     """Require a build-time attestation; an executable cannot reveal its flags."""
-    data = json.loads(Path(path).read_text())
+    data = read(path)
     require(known(data), 'unknown build provenance')
     require(set(data) == {'format', 'source', 'executable_sha256', 'build'}, 'build provenance fields')
     require(data['format'] == 'catallax-build-evidence/1', 'build provenance version')
@@ -71,7 +71,10 @@ def build_identity(path, binary, driver):
     build = data['build']
     require(set(build) == {'toolchain', 'dependencies', 'options'}, 'build identity fields')
     require(set(build['toolchain']) == {'rustc', 'cargo', 'linker'}, 'toolchain identity fields')
-    require(all(isinstance(v, str) and v for v in build['toolchain'].values()), 'toolchain identity')
+    require(all(isinstance(v, dict) and set(v) == {'version', 'sha256'} and
+                isinstance(v['version'], str) and isinstance(v['sha256'], str) and
+                re.fullmatch('[0-9a-f]{64}', v['sha256'])
+                for v in build['toolchain'].values()), 'toolchain executable identities')
     require(set(build['dependencies']) == {'cargo_lock_sha256', 'resolved_sha256', 'native_sha256'}, 'dependency identity fields')
     options = build['options']
     require(set(options) == {'command', 'env_sha256', 'config_sha256', 'target', 'profile', 'features'}, 'build options fields')
@@ -145,22 +148,25 @@ def exact_manifest(manifest, driver):
     return driver.comparable(manifest)
 
 
-def audit_run(path, items, binary_hash, workers, cores, driver, evidence_kind='fresh'):
+def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work, evidence_kind='fresh'):
     """Check every occurrence and every file, including non-time log content."""
     path = Path(path)
     report = read(path)
     require(report['format'] == 'catallax-run/1', 'run version')
     require(report['evidence']['kind'] == evidence_kind, 'fresh/reused provenance')
     config = report['config']
-    require(config['binary_sha256'] == binary_hash and config['contract'] == driver.CONTRACT, 'run identity')
+    require(config['binary_sha256'] == binary_hash and config['contract'] == driver.CONTRACT and
+            type(config['max_work']) is int and config['max_work'] == default_max_work, 'run identity/allowance')
     execution = report['execution']
-    require(execution['fresh'] is True and execution['workers'] == workers and execution['cores'] == cores, 'fresh worker policy')
+    require(execution['fresh'] is True and type(execution['workers']) is int and
+            execution['workers'] == workers and execution['cores'] == cores, 'fresh worker policy')
     # driver hashes the loaded item before resolving a default allowance.
     loaded = json.loads((path.parent / 'inputs.json').read_text())
     require([dict(x, max_work=x.get('max_work', config['max_work'])) for x in loaded] == items, 'ordered inputs')
     expected_keys = [driver.digest({**config, **item}) for item in loaded]
     expected_workers = min(workers, len(set(expected_keys)))
-    require(execution['worker_exits'] == {str(i): 0 for i in range(expected_workers)}, 'worker exits')
+    require(execution['worker_exits'] == {str(i): 0 for i in range(expected_workers)} and
+            all(type(code) is int for code in execution['worker_exits'].values()), 'worker exits')
     saved_config = read(path.parent / 'config.json')
     require(all(saved_config[k] == v for k, v in config.items()) and
             saved_config['workers'] == workers and saved_config['cores'] == cores, 'saved config')
@@ -187,18 +193,23 @@ def audit_run(path, items, binary_hash, workers, cores, driver, evidence_kind='f
         require(response == case['response'] and response['manifest'] == manifest and
                 response['operation_log'] == log, 'response/manifest/log disagreement')
         require(response['format'] == 'catallax-response/1' and
+                manifest['format'] in ('catallax-manifest/3', 'catallax-manifest/4') and
+                type(manifest['exact']) is bool and isinstance(manifest['marks'], list) and
                 manifest['status'] in ('answered', 'refused') and
                 log['format'] == 'catallax-operation-log/1' and log['status'] == manifest['status'], 'invalid outcome')
+        require(manifest['refusal'] is None if manifest['status'] == 'answered' else
+                isinstance(manifest['refusal'], dict) and isinstance(manifest['refusal']['code'], str), 'refusal completeness')
         require((manifest.get('comparison') or {}).get('verdict') != 'disagree' and
                 (manifest.get('name_edit') or {}).get('status') not in ('failed', 'invalid'), 'failed comparison/name-edit gate')
         require(all(log[k] == manifest[k] for k in ('refusal', 'marks')) and
                 isinstance(log['operations'], list), 'operation log completeness')
         work = response['work']
         require(type(work['used']) is int and 0 <= work['used'] <= item['max_work'] and
-                work['limit'] == item['max_work'] and type(work['exhausted']) is bool, 'work accounting')
+                type(work['limit']) is int and work['limit'] == item['max_work'] and
+                type(work['exhausted']) is bool, 'work accounting')
         for sequence, operation in enumerate(log['operations']):
             counted = operation['work']
-            require(operation['sequence'] == sequence and
+            require(type(operation['sequence']) is int and operation['sequence'] == sequence and
                     all(type(counted[k]) is int for k in ('before', 'after', 'used')) and
                     0 <= counted['before'] <= counted['after'] <= work['used'] and
                     counted['used'] == counted['after'] - counted['before'], 'operation work accounting')
@@ -224,12 +235,12 @@ def audit_run(path, items, binary_hash, workers, cores, driver, evidence_kind='f
     return deterministic
 
 
-def gates(root, items, hashes, cores, driver, reused_baseline=False):
+def gates(root, items, hashes, cores, driver, default_max_work, reused_baseline=False):
     observed = {}
     for role in ('baseline', 'candidate'):
         for workers in (1, 2, 4):
             observed[role, workers] = audit_run(Path(root) / f'{role}{workers}/run.json', items,
-                hashes[role], workers, cores, driver,
+                hashes[role], workers, cores, driver, default_max_work,
                 'reused' if role == 'baseline' and reused_baseline else 'fresh')
         require(observed[role, 1] == observed[role, 2] == observed[role, 4], 'within-build manifest/artifact/work/non-time-log determinism')
     # Conservative preservation: no changed export or changed certificate is
@@ -249,8 +260,9 @@ def validate_archive(root, key, driver):
     require(record['files'] == inventory(root, driver), 'archive inventory/integrity')
     require(record['hashes']['baseline'] == key['baseline']['executable_sha256'], 'archive executable')
     try:
-        gates(root, key['ordered_requests'], record['hashes'], key['worker_policy']['cores'], driver)
-    except (ValueError, TypeError, KeyError, OSError) as error:
+        gates(root, key['ordered_requests'], record['hashes'], key['worker_policy']['cores'], driver,
+              key['interpretation']['default_max_work'])
+    except (ValueError, TypeError, KeyError, AttributeError, OSError) as error:
         raise BaselineDefect(f'intact archive fails current validator: {error}; diagnose before requalification') from error
     return record
 
@@ -324,14 +336,14 @@ def qualify(args, driver):
         if key is not None:
             require(reuse_key(args, driver) == key, 'key changed during qualification')
         gate_started = time.perf_counter()
-        gates(out, items, hashes, cores, driver, reused_baseline=reuse)
+        gates(out, items, hashes, cores, driver, args.max_work, reused_baseline=reuse)
         result.update(status='qualified', equal=True, gate_audit_ms=(time.perf_counter() - gate_started) * 1000)
         if not reuse and key is not None:
             # Only fresh six-run evidence can seed reuse. Reused descendants
             # cannot launder historical baseline evidence into a fresh archive.
             driver.atomic(out / 'archive.json', {'format': 'catallax-baseline-archive/1',
                          'origin': 'fresh-six', 'key': key, 'hashes': hashes, 'files': inventory(out, driver)})
-    except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as error:
         result.update(status='failed', equal=False, error=str(error),
                       action='retain evidence; diagnose and requalify; do not retry until green')
     result['elapsed_ms'] = (time.perf_counter() - started) * 1000

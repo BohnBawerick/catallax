@@ -25,7 +25,7 @@ inputs and held-out data were not read. No real 477 replay was run here.
 
 Build provenance is a trusted build-time operator attestation bound to executable
 bytes and the binary's source commit. Its schema requires complete source,
-toolchain, resolved/native dependencies, build options/environment/config and
+toolchain executable hashes and versions, resolved/native dependencies, build options/environment/config and
 feature information. It does not authenticate a malicious attestation or infer
 missing compiler inputs. Tests use explicitly synthetic attestations and never
 claim those are measured build provenance.
@@ -48,9 +48,9 @@ are separate scopes, not terms of an aggregate makespan or speedup claim.
 | --- | --- |
 | Isolated locked release CLI build, two build jobs | Exit 0; 136.74 s elapsed. |
 | Real CLI doctor | Exit 0; request protocol `catallax-request/1`; executable SHA-256 `14239b7e825157a79f3c7784903340bc4cf5bc43c54bbe6a367fbee76dc2948e`. |
-| Final public one-block explicit fresh-six smoke | All six fresh; strict gate passed; command span 447.42 ms, final gate audit 6.39 ms. |
-| Final complete driver suite, including PR138 reporting and public mutation tests | 43 passed in 28.111 s. |
-| Final focused qualification mutation suite | 13 passed in 9.061 s. |
+| Public one-block explicit fresh-six smoke | All six fresh; strict gate passed; command span 447.42 ms, final gate audit 6.39 ms. |
+| Final complete driver suite, including PR138 reporting and public mutation tests | 43 passed in 29.591 s. |
+| Focused qualification mutation coverage | 13 tests included in the final passing driver suite; includes toolchain byte identities, default-allowance consistency and typed exit evidence. |
 | STEP regressions with CI's pinned OCP 8.0.1.1.0 | 15 passed in 69.708 s. |
 | Edge hunt / release evidence policy | 15 / 21 passed. |
 | Formatting / generated comparison page / diff whitespace | Passed. |

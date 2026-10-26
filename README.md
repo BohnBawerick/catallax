@@ -208,6 +208,9 @@ display unless the caller already owns an operation budget. Default exhaustion
 returns `application.work-limit` without a body. An explicit caller allowance is
 never reset or enlarged by a nested build. This work limit is separate from the
 display sample/vertex limits and from all geometric tolerances.
+Planar orientation predicates charge this allowance even when interval filtering
+settles their signs without exact arithmetic. Bridge and ear searches therefore
+cannot bypass cancellation or the work limit through their filtered fast path.
 
 `catallax_app::lifecycle::Controller` delivers an opt-in revision-bound unproved
 preview before certified meshing. The caller chooses the preview/proof split of

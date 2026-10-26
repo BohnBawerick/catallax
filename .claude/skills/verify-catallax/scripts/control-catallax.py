@@ -27,7 +27,7 @@ signal.signal(signal.SIGINT, interrupt)
 signal.signal(signal.SIGTERM, interrupt)
 
 CONTRACT = 'catallax-request/1'
-TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'field': 1000, 'compare': 2000, 'name-edit': 1000}
+TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'field': 1000, 'compare': 2000, 'name-edit': 1000, 'iges': 1000}
 
 
 def canonical(value):
@@ -74,13 +74,20 @@ def load(paths, source, adapter=None):
                 elif fmt == 'exact-brep-question/2':
                     problems.append({'source': 'question', 'problem': value})
                 elif fmt in ('catallax-recipe/3', 'catallax-recipe/4'):
-                    problems.append({'source': source if source in ('compare', 'field', 'print') else 'recipe', 'problem': value})
+                    if source == 'iges':
+                        problems.append({'source': 'iges', 'problem': {'format': 'catallax-iges/1', 'recipe': value}})
+                    else:
+                        problems.append({'source': source if source in ('compare', 'field', 'print') else 'recipe', 'problem': value})
                 elif fmt == 'catallax-certified-recipe/1':
                     problems.append({'source': 'recipe', 'problem': value})
                 elif fmt == 'catallax-stand-in/1':
                     if source not in ('auto', 'recipe'):
                         raise ValueError(f'{file}: stand-in wrappers require the recipe source')
                     problems.append({'source': 'recipe', 'problem': value})
+                elif fmt == 'catallax-iges/1':
+                    if source not in ('auto', 'iges'):
+                        raise ValueError(f'{file}: iges wrappers require the iges source')
+                    problems.append({'source': 'iges', 'problem': value})
                 elif fmt == 'catallax-print/1':
                     if source not in ('auto', 'field', 'print'):
                         raise ValueError(f'{file}: print wrappers require the print or field source')
@@ -88,7 +95,7 @@ def load(paths, source, adapter=None):
                 elif fmt == 'catallax-question/1':
                     if set(value) != {'format', 'source', 'problem', 'max_work'}:
                         raise ValueError(f'{file}: invalid exported question fields')
-                    if value['source'] not in ('question', 'recipe', 'field', 'print', 'compare', 'name-edit'):
+                    if value['source'] not in ('question', 'recipe', 'field', 'print', 'iges', 'compare', 'name-edit'):
                         raise ValueError(f'{file}: unknown exported question source')
                     if type(value['max_work']) is not int or not 0 <= value['max_work'] <= 2**64 - 1:
                         raise ValueError(f'{file}: exported max_work must be an unsigned 64-bit integer')
@@ -107,7 +114,7 @@ def classification(item):
         problem = problem['edited_recipe']
     if kind == 'print':
         kind = 'field'
-    if problem.get('format') in ('catallax-print/1', 'catallax-stand-in/1'):
+    if problem.get('format') in ('catallax-print/1', 'catallax-stand-in/1', 'catallax-iges/1'):
         problem = problem['recipe']
     if kind == 'question':
         kind = 'boolean' if problem.get('steps') else 'stock'
@@ -329,6 +336,11 @@ def compare(left, right):
                 and (Path(x['path']) / 'print.stl').read_bytes() != (Path(y['path']) / 'print.stl').read_bytes()
             ):
                 cause = 'print-bytes'
+            elif (Path(x['path']) / 'answer.igs').exists() != (Path(y['path']) / 'answer.igs').exists() or (
+                (Path(x['path']) / 'answer.igs').exists()
+                and (Path(x['path']) / 'answer.igs').read_bytes() != (Path(y['path']) / 'answer.igs').read_bytes()
+            ):
+                cause = 'iges-bytes'
         if cause:
             failures.append({'index': i, 'id': x['id'], 'cause': cause, 'left': x['path'], 'right': y['path']})
     return {'equal': not failures, 'cases': len(a['cases']), 'failures': failures}
@@ -567,7 +579,7 @@ def main():
             p.add_argument('--binary', required=True)
         if name != 'legacy':
             p.add_argument('--max-work', type=int, default=100_000_000)
-            p.add_argument('--source', choices=['auto', 'recipe', 'field', 'print', 'compare'], default='auto')
+            p.add_argument('--source', choices=['auto', 'recipe', 'field', 'print', 'iges', 'compare'], default='auto')
             p.add_argument('--adapter', help='trusted Python file exporting load(Path) -> source/problem records')
         if name == 'run':
             p.add_argument('--workers', type=int, choices=range(1, 65), default=1)

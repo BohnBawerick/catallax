@@ -10,7 +10,7 @@ Build with `cargo build --release -p catallax-cli --bins`. `catallax-verify abou
 {"format":"catallax-request/1","source":"question","problem":{"format":"exact-brep-question/2","id":"box","operands":{"a":{"shape":"block","size":["1","2","3"]}},"steps":[],"result":"a"},"out":"/tmp/box-proof","max_work":100000000}
 ```
 
-All fields except `max_work` are required. Unknown envelope fields are invalid. `out` names an owned artifact directory; the command replaces `manifest.json`, `operations.json`, `question.json`, `answer.step`, `display.obj` and `print.stl` there. A refusal removes stale geometry artifacts. Never assign the same output directory to concurrent requests. `max_work` is an unsigned 64-bit integer; zero is valid and refuses on the first work checkpoint. The default is 100,000,000.
+All fields except `max_work` are required. Unknown envelope fields are invalid. `out` names an owned artifact directory; the command replaces `manifest.json`, `operations.json`, `question.json`, `answer.step`, `answer.igs`, `display.obj` and `print.stl` there. A refusal removes stale geometry artifacts. Never assign the same output directory to concurrent requests. `max_work` is an unsigned 64-bit integer; zero is valid and refuses on the first work checkpoint. The default is 100,000,000.
 
 Sources:
 
@@ -22,6 +22,7 @@ Sources:
 | `compare` | `catallax-recipe/3`, `catallax-recipe/4` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
 | `field` | `catallax-recipe/3`, `catallax-recipe/4` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
 | `print` | `catallax-print/1`, or an unwrapped recipe using default print options | Current route: independently build a watertight field mesh. Write binary `print.stl` and matching `display.obj`, with a two-sided output-distance bound. No B-rep construction or STEP output. The approved B-rep/adaptive print direction below is not implemented by this contract. |
+| `iges` | `catallax-iges/1` | Build the recipe through `catallax-features` only, then write `answer.igs` with the existing IGES writer. Report the writer's actual bounds, units, topology counts and artifact identity as `iges`. No STEP, display, mass or property request. |
 | `name-edit` | `catallax-name-edit/1` | Rebuild `recipe` and `edited_recipe`, resolve every original result-face origin and physical-edge name, and check the independently compiled field registries. Report `name_edit`; no STEP or display. |
 
 A new source implements one evaluation adapter returning a manifest. External corpus adapters export Python `load(Path)` and yield `{"source":...,"problem":...}` records. These adapters are trusted executable code selected explicitly with `--adapter`. Data files cannot select executable adapters.
@@ -57,6 +58,16 @@ The [26 October 2026 decision](ARCHITECTURE.md#print-accuracy-and-routes-decisio
 | File metadata | Embed chosen accuracy and cell cap in 3MF metadata, OBJ comments or a versioned binary-STL 80-byte header with units. Retain the full record in a manifest bound to the file bytes. STL standardizes neither units nor accuracy, so document the header and manifest consumer contract. If chosen values cannot fit losslessly, offer another format or refuse that encoding, not truncate or omit them. |
 
 No exact new field names or version numbers are reserved here. Implementers must preserve the distinction between existing `tolerance_mm` and `deviation_bound_mm` and specify new metadata, refusal details and byte-comparison expectations in that interface change. The 1 nm modelling tolerance, approximation target and geometry caps, and the 1M scoreboard, 20M application and 100M verification-request allowances are not changed.
+
+### IGES output
+
+`catallax-iges/1` contains `format` and a complete `recipe`, with optional `tolerance` (an exact positive-or-zero string in millimetres), `scale_digits` (an integer) and `units` (only `"mm"`). Omitted controls use the `catallax-iges` defaults. Unknown fields, a different units value or a recipe that does not parse are `invalid-question`. The adapter builds B-rep only and runs the library writer once, with the request's unchanged `max_work` shared by the build and the export proof. It adds no display, mass, STEP or comparison work.
+
+An answered request writes `answer.igs`. The manifest's `iges` object records the file name, `bytes`, the `sha256` of the written bytes, `units`, the requested `tolerance_mm` and `scale_digits`, and the writer's `IgesReport`: `max_deviation_mm`, `trim_deviation_mm`, `scale`, `coordinate_bound_mm`, `solids`, `faces`, `edges`, `added_edges`, `vertices` and `added_vertices`. Bounds are exact rational strings. `exact` is true only when the built body carries no approximation marks and the proven deviation is zero. `result` and `properties` are null.
+
+Typed writer failures keep their own refusal codes: `iges.invalid-options`, `iges.invalid-topology`, `iges.uncertified-model`, `iges.unsupported-surface`, `iges.unsupported-curve`, `iges.unrepresentable-definition` and `iges.tolerance-exceeded` (proven and requested bounds in the detail), plus the shared work refusal `numbers.operation-budget`. Build refusals keep their step and code. Every refusal removes a previous `answer.igs`, and a refused request never publishes a partial file. A failure to read or write an artifact is an I/O error of the process, not a refusal: the stream command exits without a response for that request, and any partial `answer.igs` is removed.
+
+The portable `question.json` replays through `catallax-verify replay` to the same manifest, work and operation outcomes, and the same file bytes at any worker count. `control-catallax.py` accepts `catallax-iges/1` wrappers (or `--source iges` on a plain recipe), compares `answer.igs` bytes in strict comparison, and applies the 1000 ms requested-click target. The writer supports the surface and curve kinds in its crate README; wider coverage arrives through the library without changing this adapter. An independent OpenCASCADE read of the file remains the external check in `crates/catallax-iges/tests/readback.py`; no importer is part of this adapter.
 
 ### Field mass stand-ins
 

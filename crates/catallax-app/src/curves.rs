@@ -8,7 +8,8 @@
 //! Query a result picking handle with [`ApplicationBody::edge_curve`] or an
 //! incremental checkpoint with [`IncrementalApplicationBody::edge_curve`].
 //! Inspect [`CurveSpan`] first: only lines, full circles and ellipses, and proper
-//! circular and elliptical arcs are supported output. The other carriers retain their exact form and
+//! circular and elliptical arcs and finite parabola and hyperbola arcs are
+//! supported output. The other carriers retain their exact form and
 //! trim with `Unsupported`. An underlying intersection-query refusal propagates.
 //! Finite trim endpoints follow edge traversal; apply a face's coedge sense
 //! separately when walking a wire. `crosses_seam` excludes seam endpoints and
@@ -20,8 +21,8 @@
 //! geometry describes the retained model; any construction marks remain on that
 //! model and are not erased by querying its definitions.
 
-use catallax_intersect::{CurveForm, Cyclic, arc_point, curve_form, cyclic_order};
-use catallax_numbers::{Decider, Outcome, Refusal};
+use catallax_intersect::{CurveForm, Cyclic, arc_point, curve_form, cyclic_order, order_on_curve};
+use catallax_numbers::{Decider, Outcome, Real, Refusal, StrictOrder};
 use catallax_recipe::{EdgeName, Origin};
 use catallax_shapes::{Curve, CurveId, Point3, PointDef, PointId};
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
@@ -78,7 +79,24 @@ pub enum CurveSpan {
         /// The seam lies strictly inside the arc. A seam endpoint is excluded.
         crosses_seam: bool,
     },
-    /// A parabola, hyperbola, spline or general intersection branch.
+    /// A finite parabola arc or single-branch hyperbola arc between distinct
+    /// endpoints. The carrier kind and branch are on [`EdgeCurve::form`].
+    OpenConicArc {
+        /// Exact point strictly inside the selected arc, not a polyline vertex.
+        interior: Point3,
+        /// Transverse coordinate of the arc's endpoint that comes first along
+        /// the carrier's natural direction, in the carrier frame. The frame
+        /// origin is the parabola vertex or hyperbola centre and the axis is
+        /// the unit of `normal x axis_dir`.
+        first: Real,
+        /// Transverse coordinate of the endpoint that comes last along the
+        /// carrier's natural direction. The coordinate is strictly monotone
+        /// on the arc, so the arc is exactly the carrier points whose
+        /// coordinate lies between `first` and `last`. The edge's start is
+        /// `first` when the sense is `Same` and `last` when it is `Reversed`.
+        last: Real,
+    },
+    /// A spline or general intersection branch.
     /// The exact carrier and topological trim remain available on [`EdgeCurve`].
     Unsupported,
 }
@@ -208,6 +226,49 @@ pub fn edge_curve(
                 },
             }
         }
+        (CurveForm::Parabola { .. }, CurveTrim::Closed)
+        | (CurveForm::Hyperbola { .. }, CurveTrim::Closed) => return Err(bad_trim()),
+        (
+            CurveForm::Parabola {
+                vertex: origin,
+                normal,
+                axis_dir,
+                ..
+            }
+            | CurveForm::Hyperbola {
+                center: origin,
+                normal,
+                axis_dir,
+                ..
+            },
+            CurveTrim::Finite { start, end },
+        ) => {
+            if exact(model.geom().same_point(start.point, end.point, decider))?.is_none() {
+                return Err(bad_trim());
+            }
+            let (from, to) = match source.sense {
+                Sense::Same => (start.point, end.point),
+                Sense::Reversed => (end.point, start.point),
+            };
+            // The existing open-curve order decides the carrier direction; a
+            // reversed pair is a malformed edge, not a span to flip silently.
+            match order_on_curve(model.geom(), source.curve, from, to, decider) {
+                Outcome::Proven(StrictOrder::Less) => {}
+                Outcome::Proven(_) | Outcome::ProvenCoincident(_) => return Err(bad_trim()),
+                Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+                Outcome::Refused(r) => return Err(r),
+            }
+            let interior =
+                arc_point(model.geom(), source.curve, Some(from), Some(to), decider)?.value;
+            let v = normal.cross(axis_dir);
+            let v = v.scaled(&(Real::one() / v.norm_squared().sqrt()));
+            let coordinate = |point| model.geom().position(point).minus(origin).dot(&v);
+            CurveSpan::OpenConicArc {
+                interior,
+                first: coordinate(from),
+                last: coordinate(to),
+            }
+        }
         _ => CurveSpan::Unsupported,
     };
     let mut origins = Vec::new();
@@ -278,7 +339,7 @@ fn exact<T>(outcome: Outcome<T>) -> Result<Option<T>, Refusal> {
 fn bad_trim() -> Refusal {
     Refusal::new(
         "app.curve-trim",
-        "line needs finite bounds; endpoint bounds must be paired",
+        "line and open conic need distinct finite bounds in carrier order; endpoint bounds must be paired",
     )
 }
 

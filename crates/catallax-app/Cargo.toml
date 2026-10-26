@@ -31,5 +31,9 @@ harness = false
 name = "preview_mesh"
 harness = false
 
+[[bench]]
+name = "preview_lifecycle"
+harness = false
+
 [lints]
 workspace = true

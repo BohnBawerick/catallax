@@ -4,6 +4,8 @@ Published 22 October 2026. The [research notes](research/) give the sources behi
 
 This document sets the direction for Catallax. It describes requirements and planned features, not a claim that they are already implemented.
 
+The [26 October 2026 decision](ARCHITECTURE.md#preview-and-deferred-proof-decision-of-2026-10-26) separates preview/display from deferred proof and makes second-kernel comparison on demand. This changes the build direction, not the current public API or what counts as proven.
+
 ## 1. What Catallax is
 
 Catallax is an open-source geometry kernel under the MIT licence.
@@ -15,7 +17,7 @@ Catallax is a new public repository, exported from the existing B-rep implementa
 ## 2. The model
 
 - One recipe is the master. The recipe is the feature tree: sketches, extrudes, holes, booleans, fillets, lattices and the rest.
-- Two kernels build every part from the recipe. The B-rep kernel builds exact faces and edges. The field kernel builds a signed distance field.
+- Two kernels evaluate the same recipe definitions when needed. The B-rep kernel builds exact faces and edges. The field kernel builds a signed distance field, owns field-only features and supplies an on-demand second opinion on B-rep parts.
 - Each operation has one mathematical definition, and both kernels use it. A fillet, for example, is the surface swept by a ball of radius r that rolls while touching faces A and B. Two kernels can only agree on operations that have a written definition.
 - Faces and edges are named by the operation that made them, for example "the edge between the side face of extrude 1 and the floor of cut 2". A name never depends on the order of faces in a result.
 - Nothing is converted from one kernel to the other unless a feature or an output needs it.
@@ -36,7 +38,7 @@ A tolerance is allowed only in two cases, and both are cases of necessity.
 1. Shapes needing a different representation in the B-rep or in STEP, including general curved-face offsets and fillets. Both kernels retain the exact definition. The B-rep may carry a certified polynomial or rational B-spline surface beside it. Each approximated face records its proved local tolerance: 100 nm target and 1 µm hard cap for kernel-made approximations; 10 µm for imports unless the user explicitly accepts and records a looser limit for that file. A local tolerance is also at most a tenth of the shortest neighbouring edge or narrowest neighbouring face. The body's certificate proves exact agreement except for the listed approximated/imported faces and bounded decisions, with complete coverage, orientation and valid topology. A permitted face approximation does not also have to meet a universal 1 nm whole-result bound. Later operations remeasure against the retained exact definition, so tolerances do not grow by inheritance. Display and export record separate output errors and accuracy requirements. Field-only features remain field-only unless an explicit conversion meets its contract.
 2. A decision that takes too long to prove. This is allowed only after the B-rep kernel has proven that the gap behind the decision is smaller than 1 nm. exact-brep already has this outcome, "not exact, with a proven bound". The 1 nm limit is new.
 
-Decide once and reuse the record; merge objects declared the same; retain each local tolerance; and check topology before publication. Never clamp a measured tolerance to its cap. [ARCHITECTURE.md](ARCHITECTURE.md#composable-geometric-error-decision-of-2026-10-22) defines composition and the measurement, comparison and STEP hand-offs for these scoped certificates.
+Decide once and reuse the record; merge objects declared the same; retain each local tolerance; and check topology before publication as proven. Never clamp a measured tolerance to its cap. [ARCHITECTURE.md](ARCHITECTURE.md#composable-geometric-error-decision-of-2026-10-22) defines composition and the measurement, comparison and STEP hand-offs for these scoped certificates. Section 3.3 permits an explicitly unproved preview before that proof completes.
 
 ### 3.2 Refusals
 
@@ -55,14 +57,20 @@ Examples from exact-brep today:
 
 About 20 codes of this second kind exist in the code today, including `boolean.classify-ambiguous`, `boolean.merge-ambiguous`, `numbers.budget-exhausted` and `numbers.precision-limit`.
 Until the kernel covers such a case, the user sees a plain failure like a SolidWorks rebuild error, and the case goes on the list of kernel bugs to fix.
-The user never sees a half-built state and never needs to know a kernel exists.
+The user never sees a half-built state presented as a proven result and never needs to know a kernel exists. If proof of an already visible preview fails, the app marks it failed and shows the typed refusal for that edit.
 
 ### 3.3 Display
 
 The kernel that owns a feature builds it and shows it.
 Extrudes, holes and fillets belong to the B-rep kernel.
 Lattices, gyroids and graded density belong to the field kernel.
-The other kernel builds its version only when an output needs it.
+The other kernel builds its version only when a requested output or an on-demand comparison needs it.
+
+Preview/display has its own budget for construction preview, display mesh, edge polylines and names needed for selection. The targets are 100 ms for stock solids, 500 ms for booleans and 1,000 ms for a recipe-feature click, measured through the visible selectable edit. A separate background proof budget covers certificates, whole-face deviation bounds, exact requested measurements, export validation and requested field comparison. Its target remains 2,000 ms for the complete requested background job. Proof never blocks the preview click and may be postponed.
+
+A preview uses the same immutable recipe revision and exact definitions as the eventual proof, but need not use the same representation or construction route. It is clearly labelled `unproved` until proof confirms it or replaces it with the proven result. Selection names belong to that revision and are resolved against the completed result; they are not proof. A newer edit invalidates the earlier pairing, and a late proof cannot overwrite it. A previous body may remain visible as the previous revision, not as a preview of new geometry. On model-proof failure, mark the preview `failed` with the typed refusal. Exports, requested measurements and anything published as proven still wait for their applicable proof. An output-specific failure does not invalidate an already proved model.
+
+Keep the 1M scoreboard, 20M application and 100M verification-request allowances unchanged. Separating preview and proof must not reset, duplicate or enlarge a caller's deterministic allowance. All modelling tolerances, approximation targets and caps, and display/export accuracy settings stay unchanged. A proven answer is never wrong.
 
 ### 3.4 Hand-off points
 
@@ -80,13 +88,15 @@ Agreement does not matter for a picture on screen, or for a workflow that only e
 
 ### 3.5 Checks
 
-Agreement is checked in three places.
+The field's second-kernel comparison runs only when the user or a verification run asks for it. It does not run on every edit and is not a prerequisite for a B-rep feature or its landing.
 
-1. **In development.** An independent tester built without seeing the kernel's code, exact and certified checks using the Raghothama and Shapiro method, and random recipes run through both kernels. These prove exact agreement or complete coverage of the permitted local bounds, including the 1 nm decision limit, on as many kinds of problem as possible.
-2. **In the app, after every edit.** A cheap surface comparison runs in the background. It evaluates the field at every vertex of the B-rep's display mesh, and it measures how far sampled points on the field's surface are from that mesh. It rechecks only the region the edit touched. It never blocks the user and restarts if the user edits again. It catches differences larger than the mesh accuracy, which is about 0.01 mm. The estimated cost is a fraction of a second of one core per edit. That estimate comes from published Fidget benchmarks and is not measured on our kernels.
-3. **Before anything leaves the app.** STEP export, printing and FEA run the same comparison at a finer level over the whole part.
+1. In development, explicit verification runs use the independent tester, exact and certified checks using the Raghothama and Shapiro method, and random recipes through both kernels. Claims of proof need exact agreement or complete coverage of permitted local bounds, including the 1 nm decision limit.
+2. In the app, a requested surface comparison runs in the background, separately from preview delivery. It can evaluate the field at B-rep mesh vertices and check the reverse direction. The existing approximately 0.01 mm mesh accuracy makes this a sampled diagnostic, not a whole-face or whole-result proof. Its cost must be measured, not assumed from another engine.
+3. Exports and requested measurements wait for their own validation. A user request combining both representations also requests the scoped hand-off agreement proof from section 3.4 before delivery. A single-kernel export does not automatically request a whole-part comparison.
 
-If a check finds a disagreement, the feature just edited fails like a rebuild error, and the case goes on the list of kernel bugs.
+For a requested comparison, the field builds supported steps independently. Where it cannot yet build a step, it may take over the certified B-rep result, explicitly labelling that step non-independent and reporting which later steps it checked independently. Unsupported takeover or missing proof remains unresolved or a typed refusal. The report must not call partial independent coverage full agreement.
+
+Each approximated face still needs whole-face deviation bounds against its own exact definition. Two-sided per-face distance routines may supply that local proof without rebuilding the whole part in the second kernel. A sampled comparison never substitutes for it. If proof or a requested comparison finds a model failure, the edited feature and its preview are marked failed with the typed refusal, and the case goes on the kernel bug list.
 
 The app never checks by asking the B-rep kernel point by point.
 In an earlier measured run exact-brep took 1 to 25 ms per point on ordinary parts, so a useful check of that kind would take 10 seconds to 4 minutes per edit.
@@ -155,7 +165,7 @@ Rust's safe threads run rebuilds and checks in the background, so the user is ne
 3. A field version of every feature, including imports, with the recipe's faces kept selectable.
 4. Conversion in both directions on demand. Field to B-rep at a chosen accuracy, plus the stand-in. B-rep to field.
 5. Meshes from both kernels at a chosen accuracy.
-6. The cheap surface comparison and the hand-off checks from section 3.5.
+6. The on-demand surface comparison and requested hand-off checks from section 3.5.
 7. The queries FEA and interference checks need: inside or outside, distance and surface direction. Exact mass from the B-rep side.
 8. Background rebuilds and checks on several threads.
 
@@ -170,7 +180,7 @@ Rust's safe threads run rebuilds and checks in the background, so the user is ne
 ## 8. Outside this PRD for now
 
 - **FEA.** The field kernel gives the solver inside or outside, distance and surface direction. How the solver works gets its own discussion.
-- **On-screen speed.** First measure how fast parts render and rotate, then decide whether anything is needed.
+- Rotation and rendering throughput beyond the preview/display targets in section 3.3. Measure those separately before deciding whether more work is needed.
 - **Large-assembly display.** Research found that CAD tools draw big assemblies as meshes with level of detail, lazy loading and instancing. No CAD viewer was found that draws assemblies from SDFs. In assemblies the field kernel's role is interference and clearance.
 
 ## 9. How this relates to existing work
@@ -234,10 +244,14 @@ SolidDraft is the application this kernel serves. Integration must use the share
 1. Publish the clean Catallax repository and align its design, architecture and plan with this PRD.
 2. Continue independent B-rep testing and review subsequent fixes without changing the exchange contract in this publication.
 3. Define the recipe language. Both kernels and consuming applications need the same definitions and names.
-4. Build the field kernel for everything the B-rep half already builds, plus the background comparison. This gives two versions of the same part, which every hand-off point depends on.
-5. Widen both kernels along the feature list in section 4. Each new operation lands in both kernels with its definition.
+4. Grow the field kernel toward B-rep feature parity and provide the on-demand background comparison. Required cross-kernel hand-offs wait for their scoped proof, but an ordinary B-rep click does not wait for a second build.
+5. Widen the kernels along the feature list in section 4 using the shared definitions. A narrow B-rep feature may land with its own proof before field parity; it need not land in both kernels together. Requested comparison reports independent and taken-over steps as section 3.5 requires. Field-only features remain owned and built by the field.
 6. Integrate Catallax into SolidDraft once it covers the operations the application needs.
 7. Add the field-only features, the export levels and the stand-in, then FEA and interference. FEA is designed in its own discussion first.
+
+Target-part and milestone acceptance follows [PLAN sections 9 and 10.1](PLAN.md#9-target-parts): preview/display meets the interactive targets, background proof completes within its separate budget, and the existing export, name-survival and application checks pass. List field comparison as an on-demand check with its coverage and outcome, not a universal landing or built gate. Preview alone does not count as a built part.
+
+Prioritise cheaper-proof research: proof from recorded construction facts, certificate caching and reuse across edits, proof scoped to requested exports or measurements, and coarse certificates refined on demand. These are research candidates, not decided designs or weaker accuracy requirements.
 
 ## 11. Open items
 

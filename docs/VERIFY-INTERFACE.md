@@ -21,20 +21,42 @@ Sources:
 | `recipe` | `catallax-stand-in/1` | Explicit field-moment measurement and an opt-in massless surface envelope plus unit-density STEP solids. This does not convert the field boundary to B-rep. |
 | `compare` | `catallax-recipe/3`, `catallax-recipe/4` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
 | `field` | `catallax-recipe/3`, `catallax-recipe/4` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
-| `print` | `catallax-print/1`, or an unwrapped recipe using default print options | Independently build a watertight field mesh. Write binary `print.stl` and matching `display.obj`, with a two-sided output-distance bound. No B-rep construction or STEP output. |
+| `print` | `catallax-print/1`, or an unwrapped recipe using default print options | Current route: independently build a watertight field mesh. Write binary `print.stl` and matching `display.obj`, with a two-sided output-distance bound. No B-rep construction or STEP output. The approved B-rep/adaptive print direction below is not implemented by this contract. |
 | `name-edit` | `catallax-name-edit/1` | Rebuild `recipe` and `edited_recipe`, resolve every original result-face origin and physical-edge name, and check the independently compiled field registries. Report `name_edit`; no STEP or display. |
 
 A new source implements one evaluation adapter returning a manifest. External corpus adapters export Python `load(Path)` and yield `{"source":...,"problem":...}` records. These adapters are trusted executable code selected explicitly with `--adapter`. Data files cannot select executable adapters.
 
 ### Field printing
 
-`catallax-print/1` contains `format`, a complete `recipe`, and a positive exact `tolerance` string in millimetres. Optional `max_cells` and `max_vertices` use the field print defaults when omitted. Unknown fields are invalid. The same wrapper is accepted by `field` for explicit-accuracy field display; it writes both output files.
+#### Current exchange
+
+`catallax-print/1` contains `format`, a complete `recipe`, and a positive exact `tolerance` string in millimetres. Optional `max_cells` and `max_vertices` default to 2,000,000 and 1,000,000. An unwrapped recipe sent to `print` uses 0.01 mm accuracy and those same caps. Unknown fields are invalid. The same wrapper is accepted by `field` for explicit-accuracy field display; it writes both output files.
 
 The manifest's `printing` object records the actual file, units, facet and vertex counts, visited cells, requested `tolerance_mm` and certified `deviation_bound_mm`. `watertight: true` is published only after edge orientation and vertex-link checks. `face_measurements.display` describes the matching OBJ. These artifacts are approximations, so `exact` is false. No field mass property or B-rep equivalence is inferred from this output.
+
+`cells` counts all visited octree cells across refinement attempts. The current mesh excludes interior/exterior cells early but uses one uniform finest cell size `h` near the boundary, with a certified `4h` bound and exactly representable binary32 vertices. It does not yet use locally coarser boundary cells. The manifest records requested accuracy and achieved deviation, but not effective caps or trade-off estimates. The current STL header declares millimetres only; OBJ comments declare millimetres and the achieved bound. Neither file yet records the chosen accuracy and cap.
 
 The mesher covers analytic primitive/constraint cells, periodic beams and their Boolean combinations. Unsupported definitions, unresolved exact corner membership, work exhaustion, incomplete boundary coverage and non-representable binary32 coordinates refuse explicitly. No partial STL is published. The explicit tolerance controls output approximation only; it does not enlarge a modelling tolerance. The driver retains the existing field timing target for print requests and compares STL bytes as well as manifests and OBJ.
 
 `parts --print-tolerance 0.5` adds a separate `print` request and response to every target row, keeping that explicit output tolerance in the report. Without the option, the existing three-adapter scoreboard is unchanged. The allowance is shared only within each request and remains the caller's supplied `max_work`.
+
+#### Approved print direction, not yet implemented
+
+The [26 October 2026 decision](ARCHITECTURE.md#print-accuracy-and-routes-decision-of-2026-10-26) requires the following changes in a separately reviewed implementation and interface fragment. The current request schema, field-only route, refusal codes and bytes above remain unchanged by this docs-only decision.
+
+| Required contract | Meaning |
+| --- | --- |
+| Route and scope | Ordinary parts print from tessellated proven B-rep faces and finite trims; field parts use adaptive certified cells. Report the route explicitly, never silently fall back between them. A native-field qualification case still requires field output. |
+| Output controls | Default accuracy remains 0.01 mm, cell cap 2,000,000 and vertex cap 1,000,000. Resolve defaults before the request and report all effective controls on success and refusal. The cell cap counts all visited refinement cells across attempts; mark it not applicable on a B-rep route without cells. Keep work allowances separate and unchanged. |
+| B-rep proof | Prove complete two-sided file-to-definition coverage and composition of model, tessellation and file-coordinate rounding error. Validate oppositely paired edges, connected cyclic manifold vertex links and material/cavity orientation in the emitted coordinates. A certified binary64 display mesh does not automatically certify binary32 STL. |
+| Field proof | Retain certified error for each accepted cell size, complete boundary coverage and conforming coarse/fine transitions. Reusing the present `4h` bound cannot justify a larger cell that exceeds the chosen accuracy; a tighter local certificate is required. Preserve components and cavities, including between initial samples. |
+| Result record | Separate requested accuracy, achieved certified bound or diagnostic/unfinished status, completeness, topology and orientation status. Record route, units, coordinate encoding and rounding bound, preservation policy, effective caps, applicability and actual cells/vertices/facets. A coarser choice is certified at its chosen accuracy, never relabelled 0.01 mm. |
+| Capacity refusal | Name the limiting stage and cap; retain actual counts and deterministic work. Report estimated total cells/triangles, peak bytes and elapsed-time ranges at the requested accuracy, a coarser candidate estimated to fit, and the higher-cap cost of retaining accuracy where supported. Identify other vertex/work blockers. If no fitting candidate or credible estimate is established, explain why. |
+| Estimate provenance | Label estimates separately from actual counts, lower bounds and certificates. Use bounded coarse traversal with unresolved regions and refinement overhead for cell demand, live data-structure counts for peak memory, and named implementation/machine throughput calibration for time. State uncertainty or `unavailable`; neither estimates nor wall time decide geometric success. Estimation stays within the existing request allowance. |
+| User choice and publication | A suggested accuracy or cap requires an explicit new request, never a silent retry. Preserve the initial request and the replacement choice. Publish only after complete file proof; a refusal leaves no usable partial or stale print artifact. No minimum-component filter or deletion-based simplification. |
+| File metadata | Embed chosen accuracy and cell cap in 3MF metadata, OBJ comments or a versioned binary-STL 80-byte header with units. Retain the full record in a manifest bound to the file bytes. STL standardizes neither units nor accuracy, so document the header and manifest consumer contract. If chosen values cannot fit losslessly, offer another format or refuse that encoding, not truncate or omit them. |
+
+No exact new field names or version numbers are reserved here. Implementers must preserve the distinction between existing `tolerance_mm` and `deviation_bound_mm` and specify new metadata, refusal details and byte-comparison expectations in that interface change. The 1 nm modelling tolerance, approximation target and geometry caps, and the 1M scoreboard, 20M application and 100M verification-request allowances are not changed.
 
 ### Field mass stand-ins
 

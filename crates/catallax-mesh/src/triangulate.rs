@@ -32,6 +32,7 @@ type Cdt = ConstrainedDelaunayTriangulation<Node, (), (), (), HierarchyHintGener
 struct FaceBuilder<'a> {
     chart: &'a Chart,
     options: &'a MeshOptions,
+    unproved: bool,
     positions: &'a mut Vec<[f64; 3]>,
     rails: &'a edges::Rails,
     cdt: Cdt,
@@ -59,6 +60,17 @@ impl FaceBuilder<'_> {
                 ));
             }
             (mesh, error)
+        } else if self.unproved {
+            let mesh = if let Some(index) = boundary {
+                index
+            } else {
+                let point = self.chart.preview_position(canonical, self.dec)?;
+                let index = self.positions.len();
+                self.positions.push(point);
+                index
+            };
+            self.canonical.insert(key(canonical), (mesh, 0));
+            (mesh, 0)
         } else {
             let (p, residual) = self.chart.sample(
                 canonical,
@@ -256,6 +268,10 @@ impl FaceBuilder<'_> {
             if self.chart.periodic[i] {
                 *count = 8;
             }
+        }
+        if self.unproved && !matches!(self.chart.surface, Surface::Plane(_)) {
+            // Curved end trims need interior axial rows even on a linear ruling.
+            counts[1] = counts[1].max(8);
         }
         // Reserve a quarter of the chord budget for endpoint replacement.
         // finish still certifies every facet at the full requested limit.
@@ -480,6 +496,125 @@ impl FaceBuilder<'_> {
             ));
         }
         Ok(point)
+    }
+
+    /// Samples facets for preview refinement. These checks are not bounds.
+    fn finish_preview(&mut self, face: FaceId, sense: Sense) -> Result<Vec<Triangle>, Refusal> {
+        let tolerance = self.options.chord_tolerance.to_f64_nearest();
+        let angle = self
+            .options
+            .angular_deviation
+            .as_ref()
+            .map(|v| v.to_f64_nearest());
+        for _ in 0..32 {
+            self.dec.check_deadline()?;
+            let labels = self.labels()?;
+            let mut pending = BTreeMap::new();
+            let mut triangles = Vec::new();
+            for triangle in self.cdt.inner_faces() {
+                self.dec.check_deadline()?;
+                if !labels[triangle.index()] {
+                    continue;
+                }
+                let uv = triangle.positions().map(|p| [p.x, p.y]);
+                let center = std::array::from_fn(|i| (uv[0][i] + uv[1][i] + uv[2][i]) / 3.0);
+                if !self.central(center) {
+                    continue;
+                }
+                let mut vertices = triangle.vertices().map(|vertex| vertex.data().mesh);
+                if vertices[0] == vertices[1]
+                    || vertices[1] == vertices[2]
+                    || vertices[0] == vertices[2]
+                {
+                    continue;
+                }
+                let p = vertices.map(|i| self.positions[i]);
+                let ab: [f64; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
+                let ac: [f64; 3] = std::array::from_fn(|i| p[2][i] - p[0][i]);
+                let cross: [f64; 3] = std::array::from_fn(|i| {
+                    ab[(i + 1) % 3] * ac[(i + 2) % 3] - ab[(i + 2) % 3] * ac[(i + 1) % 3]
+                });
+                let norm = cross.iter().map(|x| x * x).sum::<f64>().sqrt();
+                if norm == 0.0 {
+                    continue;
+                }
+                let mut refine = false;
+                for weights in [
+                    [0.5, 0.5, 0.0],
+                    [0.0, 0.5, 0.5],
+                    [0.5, 0.0, 0.5],
+                    [1.0 / 3.0; 3],
+                ] {
+                    let parameter =
+                        std::array::from_fn(|i| (0..3).map(|j| weights[j] * uv[j][i]).sum::<f64>());
+                    let actual = self
+                        .chart
+                        .preview_position(self.chart.canonical(parameter), self.dec)?;
+                    let linear: [f64; 3] =
+                        std::array::from_fn(|i| (0..3).map(|j| weights[j] * p[j][i]).sum::<f64>());
+                    let distance = (0..3)
+                        .map(|i| (actual[i] - linear[i]).powi(2))
+                        .sum::<f64>()
+                        .sqrt();
+                    refine |= distance > tolerance;
+                    if let Some(angle) = angle {
+                        let (normal, _) = self
+                            .chart
+                            .filtered_normal(parameter)
+                            .ok_or_else(|| failure("preview normal is not finite"))?;
+                        let normal = normal.map(|v| v.mid());
+                        let length = normal.iter().map(|x| x * x).sum::<f64>().sqrt();
+                        let cosine =
+                            (0..3).map(|i| cross[i] * normal[i]).sum::<f64>() / (norm * length);
+                        refine |= !cosine.is_finite() || cosine.clamp(-1.0, 1.0).acos() > angle;
+                    }
+                }
+                if refine {
+                    let edge = triangle
+                        .adjacent_edges()
+                        .into_iter()
+                        .filter(|edge| !edge.is_constraint_edge())
+                        .map(|edge| {
+                            let a = edge.from().position();
+                            let b = edge.to().position();
+                            let span = (a.x - b.x).abs()
+                                + if self.chart.periodic[1] {
+                                    (a.y - b.y).abs()
+                                } else {
+                                    0.0
+                                };
+                            (span, [(a.x + b.x) * 0.5, (a.y + b.y) * 0.5])
+                        })
+                        .max_by(|a, b| a.0.total_cmp(&b.0));
+                    let point = edge.map_or(center, |(_, point)| point);
+                    let point = self.chart.canonical(point);
+                    pending.insert(key(point), point);
+                    continue;
+                }
+                if sense == Sense::Reversed {
+                    vertices.swap(1, 2);
+                }
+                let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
+                vertices.rotate_left(first);
+                triangles.push(Triangle { vertices, face });
+            }
+            if pending.is_empty() {
+                triangles.sort_unstable_by_key(|t| t.vertices);
+                return Ok(triangles);
+            }
+            let mut added = false;
+            for point in pending.into_values() {
+                for shift in self.shifts() {
+                    added |= self.free_point([point[0] + shift[0], point[1] + shift[1]])?;
+                }
+            }
+            if !added {
+                return Err(failure(
+                    "preview sampling cannot resolve its visual targets",
+                ));
+            }
+        }
+        Err(failure("preview sampling reached its refinement limit"))
     }
 
     fn finish(
@@ -717,6 +852,7 @@ fn face_mesh(
     let mut builder = FaceBuilder {
         chart,
         options,
+        unproved: false,
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,
         cdt: Cdt::new(),
@@ -975,4 +1111,116 @@ pub(crate) fn build(
         value: boundaries.mesh,
         marks: boundaries.marks,
     })
+}
+
+/// Shares the chart and boundary machinery, but never runs facet certification.
+pub(crate) fn build_preview(
+    model: &Model,
+    body: BodyId,
+    options: &crate::PreviewOptions,
+    dec: &mut Decider,
+) -> Result<crate::PreviewMesh, Refusal> {
+    let visual = options;
+    let options = MeshOptions {
+        chord_tolerance: options.chord_tolerance.clone(),
+        angular_deviation: options.angular_deviation.clone(),
+        max_vertices: options.max_vertices,
+        max_edge_length: None,
+        max_aspect_ratio: None,
+    };
+    let faces = model.faces_of_body(body);
+    let mut charts = faces
+        .iter()
+        .map(|&face| Ok((face, regular_chart(model, face, &options, dec)?)))
+        .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
+    let mut boundaries = crate::preview::edges::build(model, body, &charts, visual, dec)?;
+    for face in faces {
+        crate::preview::strips::restrict(model, face, charts.get_mut(&face).unwrap(), &boundaries);
+        if crate::preview::strips::build(model, face, &charts[&face], &mut boundaries, visual, dec)?
+        {
+            continue;
+        }
+        let chart = &charts[&face];
+        let definition = model.face(face);
+        let mut segments = Vec::new();
+        let mut projected = Vec::new();
+        for &boundary in &definition.loops {
+            match model.loop_(boundary) {
+                Loop::Vertex(vertex) => projected
+                    .push(chart.project(boundaries.mesh.positions[boundaries.vertices[vertex]])),
+                Loop::Coedges(coedges) => {
+                    for &coedge in coedges {
+                        let coedge = model.coedge(coedge);
+                        let edge = &boundaries.mesh.edges[boundaries.edges[&coedge.edge]];
+                        for pair in edge.vertices.windows(2) {
+                            let [first, last] = if coedge.sense == Sense::Same {
+                                [pair[0], pair[1]]
+                            } else {
+                                [pair[1], pair[0]]
+                            };
+                            let a = chart.project(boundaries.mesh.positions[first]);
+                            let b = align(
+                                chart.project(boundaries.mesh.positions[last]),
+                                a,
+                                chart.periodic,
+                            );
+                            projected.extend([a, b]);
+                            segments.push((a, b, first, last));
+                        }
+                    }
+                }
+            }
+        }
+        let bounds = std::array::from_fn(|i| {
+            if chart.periodic[i] {
+                [0.0, 1.0]
+            } else if i == 1 && matches!(chart.surface, Surface::Sphere(_)) {
+                [-0.25, 0.25]
+            } else {
+                [
+                    projected.iter().map(|p| p[i]).fold(f64::INFINITY, f64::min),
+                    projected
+                        .iter()
+                        .map(|p| p[i])
+                        .fold(f64::NEG_INFINITY, f64::max),
+                ]
+            }
+        });
+        if bounds
+            .iter()
+            .any(|b| !b[0].is_finite() || !b[1].is_finite() || b[0] >= b[1])
+        {
+            return Err(failure("preview face has no finite parameter region"));
+        }
+        let hessian = chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?;
+        let prior_chords = BTreeSet::new();
+        let rails = edges::Rails::default();
+        let mut builder = FaceBuilder {
+            chart,
+            options: &options,
+            unproved: true,
+            positions: &mut boundaries.mesh.positions,
+            rails: &rails,
+            cdt: Cdt::new(),
+            canonical: BTreeMap::new(),
+            errors: Vec::new(),
+            filtered_errors: Vec::new(),
+            interior_left: BTreeSet::new(),
+            prior_chords: &prior_chords,
+            bounds,
+            filtered_hessian: hessian.each_ref().map(Interval::from_rational),
+            hessian: hessian.into_owned(),
+            dec,
+        };
+        builder.boundary(&segments, definition.sense)?;
+        builder.grid()?;
+        let triangles = builder.finish_preview(face, definition.sense)?;
+        let start = boundaries.mesh.triangles.len();
+        boundaries.mesh.triangles.extend(triangles);
+        boundaries.mesh.faces.push(crate::PreviewFace {
+            face,
+            triangles: start..boundaries.mesh.triangles.len(),
+        });
+    }
+    Ok(boundaries.mesh)
 }

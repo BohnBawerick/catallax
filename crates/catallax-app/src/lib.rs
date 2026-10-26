@@ -12,6 +12,9 @@ pub mod curves;
 pub mod loops;
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
+/// Unproved preview meshes and selection names from retained B-rep definitions.
+pub mod preview;
+pub use preview::{PreviewApplicationBody, PreviewDisplay, build_preview, preview_body};
 pub mod soliddraft;
 pub use certified::{CertifiedApplicationBody, build_certified};
 

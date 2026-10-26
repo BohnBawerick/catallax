@@ -8,6 +8,7 @@ Replay a corpus, resume interrupted work and compare main against a candidate wi
 - `replay.cache`: repeated build/question keys reuse validated artifacts.
 - `replay.resume`: complete cases survive interruption.
 - `replay.diff`: manifests and strict STEP bytes expose regressions.
+- [Explicit baseline reuse](../../scripts/baseline-reuse.md): opt-in strict six-run qualification; only a revalidated earlier fresh qualified baseline triplet may be reused, while candidate 1/2/4 stays fresh.
 
 ## How to get to it (user POV)
 

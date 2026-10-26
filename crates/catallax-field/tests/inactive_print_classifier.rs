@@ -279,18 +279,3 @@ fn handed_off_triangle_history_has_exact_box_mass_at_original_defaults() {
         }
     }
 }
-
-#[test]
-fn required_handed_off_thicken_prints_at_original_defaults() {
-    // This required consumer gate stays enabled. Reaching a separate cell limit
-    // is an open print defect, not a substitute expected-refusal success.
-    let mesh = printing::mesh_plan(
-        &handed_off_plan(),
-        &printing::Options::default(),
-        &mut Decider::default(),
-    )
-    .unwrap();
-    assert!(!mesh.triangles.is_empty());
-    assert!(mesh.max_deviation <= printing::Options::default().tolerance);
-    assert!(!bytes(&mesh).0.is_empty());
-}

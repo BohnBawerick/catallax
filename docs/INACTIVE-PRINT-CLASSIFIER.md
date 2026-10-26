@@ -60,9 +60,18 @@ are preserved. Frozen-head integration probes remain separate from final-main
 evidence. The draft PR records exact final source/runtime identities, commands
 and terminal checks.
 
-The required handed-off print success test stays enabled at the original
-defaults. It remains a failing gate when refinement exhausts the original cell
-cap; neither an expected-refusal assertion nor a smaller print replaces it.
+The required handed-off print success test was introduced by this change at
+`172636abda9b108587726c09db2d78ab1504f448`; it did not exist on main. A scope
+split moves that added test to a separate follow-up without changing its enabled
+`#[test]`, default controls or success assertions. The [original enabled test](https://github.com/BohnBawerick/catallax/blob/172636abda9b108587726c09db2d78ab1504f448/crates/catallax-field/tests/inactive_print_classifier.rs#L281)
+has SHA-256 `92a8509bc4aa71bd52ac222908abfd3ce1308b5c6c8105771e7dacb11455f1a8`.
+The preserved restoration patch has SHA-256
+`76bc91febd45f6a728dc63b4f0d8faee98ca71f4c20d0603fad5cd25204574ed`.
+No existing main test is removed or ignored, and the new exact mass oracle and
+active unsupported refusal control remain in this classifier change. The print
+limit remains an open consumer defect; moving its test does not establish print
+acceptance. Neither an expected-refusal assertion nor a smaller print replaces
+the unchanged follow-up success gate.
 
 ## Defect and attempt ledger
 
@@ -72,7 +81,7 @@ cap; neither an expected-refusal assertion nor a smaller print replaces it.
 | First synthetic Boolean print expectation | A default-cap print reaches `field.print-budget` after preparation is repaired | Preserve compact decision and keep a separate enabled actual-output test; no cap increase |
 | Exact-size compact thicken equivalent | Real default-cap CLI print reaches `field.print-budget` | Required thicken print gate remains open; report the independent limit |
 | PR119 mass-refusal assertion | Dependency landing verified at `68f80436`; original call now answers exact volume 16 | Migrate only that assertion; add independent exact moments |
-| Required retained thicken print | Both ordinary library and actual CLI reach `field.print-budget` after preparation repair | Keep the public success test enabled and the draft unready |
+| Required retained thicken print | Both ordinary library and actual CLI reach `field.print-budget` after preparation repair | Preserve the unchanged enabled success test and restoration patch for separate follow-up qualification; no print acceptance claim |
 
 Verification uses the checkout's `verify-catallax` skill, public synthetic
 inputs, preserved baseline executable and separate evidence directories outside

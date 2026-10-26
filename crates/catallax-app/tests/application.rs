@@ -427,6 +427,49 @@ fn shell_all_faces_builds_an_empty_body_before_and_after_an_upstream_edit() {
     }
 }
 
+fn disjoint_subtract_steps(open_faces: Value) -> Vec<Value> {
+    vec![
+        json!({"id":"BodySketch","op":"profile","plane":"XY","rectangle":{"center":[0,0],"width":4,"height":2}}),
+        json!({"id":"Body","op":"extrude","profile":"BodySketch","distance":3}),
+        json!({"id":"ToolSketch","op":"profile","plane":"XY","rectangle":{"center":[100,0],"width":4,"height":2}}),
+        json!({"id":"Tool","op":"extrude","profile":"ToolSketch","distance":3}),
+        json!({"id":"Cut","op":"boolean","kind":"subtract","target":"Body","tool":"Tool"}),
+        json!({"id":"Hollow","op":"shell","body":"Cut","open_faces":open_faces,"thickness":0.2}),
+    ]
+}
+
+#[test]
+fn shell_all_faces_after_a_boolean_is_not_converted_instead_of_losing_a_face() {
+    // The subtraction is disjoint and keeps only Body, so a mandatory reference to
+    // Tool's faces would be lost. Without evaluating, no exact list exists.
+    for kind in ["subtract", "union"] {
+        let mut steps = disjoint_subtract_steps(json!("all"));
+        steps[4]["kind"] = kind.into();
+        assert!(
+            matches!(
+                convert(&recipe(steps, "Hollow")),
+                Err(ConversionError::NotYet { step, code: "features.unsupported-operation", .. })
+                    if step == "Hollow"
+            ),
+            "{kind}"
+        );
+    }
+}
+
+#[test]
+fn shell_created_by_a_vanished_producer_still_reports_the_lost_face() {
+    let error = build_soliddraft(
+        &recipe(
+            disjoint_subtract_steps(json!({"created_by":"Tool"})),
+            "Hollow",
+        ),
+        &MeshOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("reference.lost-face"), "{error}");
+}
+
 #[test]
 fn ids_are_collision_free_and_numbers_are_decimal_intent_not_binary_expansions() {
     let mut steps = box_steps();

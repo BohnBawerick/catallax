@@ -717,8 +717,11 @@ fn edge_selection(selector: &Selector, tag: &str, operation: &str) -> Result<Edg
 
 /// A face reference for every step the body was built from, itself included, that
 /// makes faces of its own, in recipe order. Every face of the body carries an origin
-/// from one of them, so together they choose exactly its faces.
-fn ancestor_face_makers(body: &StepId, output: &[Step]) -> Vec<FaceRef> {
+/// from one of them, so together they choose exactly its faces. References are
+/// mandatory, so this holds only while each of those steps keeps a face: a boolean or
+/// a shell can consume every face of an earlier step, and then no exact list exists
+/// without evaluating the body. Such a history yields `None`.
+fn ancestor_face_makers(body: &StepId, output: &[Step]) -> Option<Vec<FaceRef>> {
     let mut needed = BTreeSet::from([body.clone()]);
     let mut refs = Vec::new();
     for step in output.iter().rev() {
@@ -726,22 +729,21 @@ fn ancestor_face_makers(body: &StepId, output: &[Step]) -> Vec<FaceRef> {
             continue;
         }
         needed.extend(step.op.inputs().into_iter().map(|(id, _)| id.clone()));
-        if !matches!(
-            step.op,
-            Operation::Sketch { .. } | Operation::Boolean { .. }
-        ) {
-            refs.push(FaceRef {
+        match step.op {
+            Operation::Boolean { .. } | Operation::Shell { .. } => return None,
+            Operation::Sketch { .. } => {}
+            _ => refs.push(FaceRef {
                 face: OriginPattern {
                     step: step.id.clone(),
                     role: None,
                 },
                 touching: Vec::new(),
                 near: None,
-            });
+            }),
         }
     }
     refs.reverse();
-    refs
+    Some(refs)
 }
 
 /// Maps a legacy open-face selector to face references. The faces a step generated
@@ -756,17 +758,14 @@ fn face_refs(
     output: &[Step],
 ) -> Result<Vec<FaceRef>> {
     match selector {
-        Selector::All => {
-            let refs = ancestor_face_makers(body, output);
-            if refs.is_empty() {
-                return Err(not_yet(
-                    tag,
-                    "features.unsupported-operation",
-                    "shell open faces of a body with no face-making ancestor are not converted",
-                ));
-            }
-            Ok(refs)
-        }
+        Selector::All => match ancestor_face_makers(body, output) {
+            Some(refs) if !refs.is_empty() => Ok(refs),
+            _ => Err(not_yet(
+                tag,
+                "features.unsupported-operation",
+                "shell open faces of a body built through a boolean or shell have no exact structural mapping yet",
+            )),
+        },
         Selector::CreatedBy(source) => {
             let id = &steps[source];
             let makes_faces = output

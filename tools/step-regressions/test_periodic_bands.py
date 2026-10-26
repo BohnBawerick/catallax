@@ -76,6 +76,26 @@ class PeriodicBandImports(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='catallax-periodic-void-') as temporary:
             self.check_recipe(recipe, (6, 6, 4), 34 * math.pi, Path(temporary), 'void')
 
+    def test_algebraic_countersink_bands_at_existing_allowance(self):
+        with tempfile.TemporaryDirectory(prefix='catallax-periodic-countersink-') as temporary:
+            for angle in (82, 100):
+                with self.subTest(angle=angle):
+                    recipe = {'format': 'catallax-recipe/3', 'name': 'algebraic countersink',
+                              'steps': [
+                        {'id': 'stock', 'op': 'block', 'size': ['10', '10', '10'],
+                         'pose': {'rotation': ['1', '0', '0', '0'],
+                                  'translation': ['-5', '-5', '0']}},
+                        {'id': 'drill', 'op': 'hole', 'target': 'stock',
+                         'at': [{'id': 'centre', 'point': ['0', '0', '0'],
+                                 'direction': ['0', '0', '1']}],
+                         'diameter': '2', 'depth': {'blind': '4'}, 'tip': 'flat',
+                         'head': {'countersink': {'diameter': '8', 'angle': str(angle)}}}],
+                              'result': 'drill'}
+                    height = 3 / math.tan(math.radians(angle / 2))
+                    self.check_recipe(recipe, (9, 17, 11),
+                                      1000 - math.pi * (4 + 6 * height),
+                                      Path(temporary), f'countersink-{angle}')
+
 
 if __name__ == '__main__':
     unittest.main()

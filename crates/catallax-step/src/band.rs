@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use catallax_intersect::{CurveForm, curve_form};
-use catallax_numbers::{Decider, Outcome, Real, Refusal, StrictOrder, StrictSign};
-use catallax_shapes::{CurveId, Point3, Surface, SurfaceId, Vector3};
+use catallax_numbers::{Decider, FactKind, Outcome, Real, Refusal, StrictOrder, StrictSign};
+use catallax_shapes::{CurveId, GeomKey, Point3, Surface, SurfaceId, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::number;
@@ -246,23 +246,42 @@ fn source_band(
         };
         let offset = center.minus(origin);
         let height = offset.dot(&axis);
-        if !zero(&normal.cross(&axis).norm_squared(), dec)?
+        let curve_key = GeomKey::Curve(definition.curve);
+        let surface_key = GeomKey::Surface(face_definition.surface);
+        if model
+            .geom()
+            .facts()
+            .holds(FactKind::Coaxial, curve_key, surface_key)
+        {
+            dec.note_fact_decision();
+        } else if !zero(&normal.cross(&axis).norm_squared(), dec)?
             || !zero(&offset.cross(&axis).norm_squared(), dec)?
         {
             return Ok(None);
         }
-        let expected_radius_sq = match surface {
-            Surface::Cylinder(s) => s.radius_sq.clone(),
-            Surface::Cone(s) => {
-                if !matches!(dec.sign(&height), Outcome::Proven(StrictSign::Positive)) {
-                    return Ok(None);
-                }
-                (&s.slope * &height).square()
-            }
-            _ => unreachable!(),
-        };
-        if !zero(&(&radius_sq - &expected_radius_sq), dec)? {
+        if matches!(surface, Surface::Cone(_))
+            && !matches!(dec.sign(&height), Outcome::Proven(StrictSign::Positive))
+        {
             return Ok(None);
+        }
+        // Whole-carrier incidence already proves the circular section's
+        // radius equation. Re-eliminating an algebraic drill angle here can
+        // exhaust the request after construction has certified that identity.
+        if model
+            .geom()
+            .facts()
+            .holds(FactKind::Incident, curve_key, surface_key)
+        {
+            dec.note_fact_decision();
+        } else {
+            let expected_radius_sq = match surface {
+                Surface::Cylinder(s) => s.radius_sq.clone(),
+                Surface::Cone(s) => (&s.slope * &height).square(),
+                _ => unreachable!(),
+            };
+            if !zero(&(&radius_sq - &expected_radius_sq), dec)? {
+                return Ok(None);
+            }
         }
         let increasing = match dec.sign(&normal.dot(&axis)) {
             Outcome::Proven(sign) => sign == StrictSign::Positive,

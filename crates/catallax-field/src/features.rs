@@ -16,6 +16,9 @@ use catallax_shapes::{
     Torus, Vector3,
 };
 
+mod revolution;
+use revolution::{Angle, radius};
+
 #[derive(Clone, Debug)]
 enum Sweep {
     Extrude {
@@ -25,7 +28,7 @@ enum Sweep {
     Revolve {
         origin: RPoint3,
         axis: RVector3,
-        angle: u16,
+        angle: Box<Angle>,
     },
 }
 #[derive(Clone, Debug)]
@@ -672,25 +675,7 @@ impl Feature {
                 return Err(bad("boolean.self-touching-shell"));
             }
         }
-        let angle = if full {
-            360
-        } else if *angle == Rational::from_i64(90) {
-            90
-        } else if *angle == Rational::from_i64(180) {
-            180
-        } else if *angle == Rational::from_i64(270) {
-            270
-        } else {
-            return Err(bad("features.unsupported-algebraic-revolve-frame"));
-        };
-        let length = if angle == 90 || angle == 270 {
-            Some(
-                profile::sqrt(&norm)
-                    .ok_or_else(|| bad("features.unsupported-algebraic-placement"))?,
-            )
-        } else {
-            None
-        };
+        let angle = Angle::new(angle, dec)?;
         let mut faces = Vec::new();
         let mut merge_caps = Vec::new();
         for (index, edges) in profile.loops.iter().enumerate() {
@@ -702,38 +687,31 @@ impl Feature {
                     let centre = point(c);
                     let projection = project(&centre);
                     let offset = centre.minus(&projection);
-                    let radius = profile::sqrt(r).ok_or_else(|| {
-                        bad(if offset.is_zero() {
-                            "features.unsupported-algebraic-sphere-radius"
-                        } else {
-                            "features.unsupported-algebraic-torus-radius"
-                        })
-                    })?;
+                    let radius = radius(r);
                     if offset.is_zero() {
                         Surface::Sphere(Sphere {
                             center: centre.into(),
-                            radius: radius.into(),
+                            radius,
                             axis: axis.clone().into(),
                             ref_dir: axis.cross(&z()).into(),
                         })
                     } else {
-                        let major = profile::sqrt(&offset.norm_squared())
-                            .ok_or_else(|| bad("features.unsupported-algebraic-torus-radius"))?;
-                        if major <= radius {
+                        let major_sq = offset.norm_squared();
+                        if major_sq <= *r {
                             return Err(bad("features.unsupported-spindle-torus"));
                         }
                         Surface::Torus(Torus {
                             center: projection.into(),
                             axis: axis.clone().into(),
-                            major: major.into(),
-                            minor: radius.into(),
+                            major: revolution::radius(&major_sq),
+                            minor: radius,
                             ref_dir: offset.into(),
                         })
                     }
                 } else {
                     let tangent = end.minus(&start);
                     if on_axis(edge) {
-                        if angle == 180 && depths[index] % 2 == 0 {
+                        if angle.is(180) && depths[index] % 2 == 0 {
                             merge_caps.push(index);
                         }
                         continue;
@@ -787,17 +765,7 @@ impl Feature {
         }
         if !full {
             let normal = profile::rational_vector(&profile.pose, &z());
-            let local_end_normal = match angle {
-                90 => axis
-                    .cross(&z())
-                    .scaled(&length.as_ref().unwrap().recip().unwrap()),
-                180 => z().scaled(&Rational::from_i64(-1)),
-                270 => axis
-                    .cross(&z())
-                    .scaled(&(-length.as_ref().unwrap().recip().unwrap())),
-                _ => unreachable!(),
-            };
-            let end_normal = profile::rational_vector(&profile.pose, &local_end_normal);
+            let end_normal = profile.pose.apply_vector(&angle.end_normal(&axis));
             let reference = world_axis.clone();
             let world_origin = profile::rational_point(&profile.pose, &origin);
             faces.push(face(
@@ -813,7 +781,7 @@ impl Feature {
             faces.push(face(
                 Surface::Plane(Plane {
                     origin: world_origin.into(),
-                    normal: end_normal.into(),
+                    normal: end_normal,
                     ref_dir: reference.into(),
                 }),
                 step,
@@ -824,7 +792,7 @@ impl Feature {
         let sweep = Sweep::Revolve {
             origin,
             axis,
-            angle,
+            angle: Box::new(angle),
         };
         Ok(Some((
             Self::new(profile, sweep, &faces, norm, merge_caps)?,
@@ -892,7 +860,18 @@ impl Feature {
         };
         crate::display::membership::Classifier::new(&self.inverse, vector, *through, &self.loops)
     }
+    // Query-only reuse of certified elementary fillet sectors. Unsupported
+    // sectors and non-rational ray directions retain the existing evaluator.
+    fn fillet_query_classifier(&self) -> Option<crate::display::membership::Classifier<'_>> {
+        self.fillet.as_deref().and_then(|definition| {
+            crate::display::membership::Classifier::fillet(definition)
+                .or_else(|| self.display_classifier())
+        })
+    }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
+        if let Some(classifier) = self.fillet_query_classifier() {
+            return Ok(classifier.location(p));
+        }
         self.classify(
             &Point3::new(
                 p[0].clone().into(),
@@ -903,6 +882,11 @@ impl Feature {
         )
     }
     pub(crate) fn classify(&self, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
+        if let Some(p) = p.as_rational()
+            && let Some(classifier) = self.fillet_query_classifier()
+        {
+            return Ok(classifier.location(&[p.x, p.y, p.z]));
+        }
         let local = self.inverse.apply_point(p);
         if let Some((location, _)) = self.convex_revolve_query(&local, dec)? {
             return Ok(location);
@@ -950,7 +934,8 @@ impl Feature {
                 let z_sign = geometry::sign(&v.z, dec)?;
                 let mut boundary = false;
                 for flip in [-1, 1] {
-                    let angular = angular(*angle, flip, b_sign, z_sign);
+                    let angular =
+                        angle.location(flip, [&b, &v.z], &self.axis_norm, [b_sign, z_sign], dec)?;
                     if angular == Location::Outside {
                         continue;
                     }
@@ -965,7 +950,7 @@ impl Feature {
                     }
                     boundary |= loc != Location::Outside;
                 }
-                if boundary && *angle == 360 && b_sign == Sign::Zero && z_sign == Sign::Zero {
+                if boundary && angle.is(360) && b_sign == Sign::Zero && z_sign == Sign::Zero {
                     let q = [local.x, local.y];
                     for edge in self.loops.iter().flatten().filter(|e| e.circle.is_none()) {
                         if axis.cross(&point(&edge.start).minus(origin)).z.is_zero()
@@ -1048,6 +1033,18 @@ impl Feature {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        let mut base_role = role;
+        while let Role::Copy { of, .. } = base_role {
+            base_role = &of.role;
+        }
+        if self
+            .fillet
+            .as_ref()
+            .is_some_and(|definition| &definition.origin.role == base_role)
+            && let Some(classifier) = self.fillet_query_classifier()
+        {
+            return Ok(classifier.on_face(base_role, p));
+        }
         self.on_face_point(
             role,
             &Point3::new(
@@ -1067,6 +1064,12 @@ impl Feature {
         let mut role = role;
         while let Role::Copy { of, .. } = role {
             role = &of.role;
+        }
+        if self.fillet.as_ref().is_some_and(|f| &f.origin.role == role)
+            && let Some(p) = p.as_rational()
+            && let Some(classifier) = self.fillet_query_classifier()
+        {
+            return Ok(classifier.on_face(role, &[p.x, p.y, p.z]));
         }
         let alias = self
             .fillet
@@ -1145,7 +1148,9 @@ impl Feature {
                     let b_sign = geometry::sign(&b, dec)?;
                     let z_sign = geometry::sign(&v.z, dec)?;
                     for flip in [-1, 1] {
-                        if angular(*angle, flip, b_sign, z_sign) == Location::Outside {
+                        if angle.location(flip, [&b, &v.z], norm, [b_sign, z_sign], dec)?
+                            == Location::Outside
+                        {
                             continue;
                         }
                         let k = &Real::from_i64(flip) * &k;
@@ -1166,23 +1171,11 @@ impl Feature {
                     }
                     return Ok(false);
                 }
-                let (cosine, sine) = if matches!(role, Role::Start) {
-                    (1, 0)
-                } else {
-                    match angle {
-                        90 => (0, 1),
-                        180 => (-1, 0),
-                        270 => (0, -1),
-                        _ => (1, 0),
-                    }
-                };
                 let radial = v.minus(&axis.scaled(&t));
-                let rotated = if sine == 0 {
-                    radial.scaled(&Real::from_i64(cosine))
+                let rotated = if matches!(role, Role::Start) {
+                    radial
                 } else {
-                    axis.cross(&radial).scaled(&Real::from(
-                        Rational::from_i64(-sine) / profile::sqrt(norm).unwrap(),
-                    ))
+                    angle.unrotate_radial(&radial, &axis, norm)
                 };
                 if geometry::sign(&rotated.z, dec)? != Sign::Zero {
                     return Ok(false);
@@ -1192,7 +1185,7 @@ impl Feature {
                 if profile::location(&self.loops, &q, dec)? != Location::Outside {
                     return Ok(true);
                 }
-                if *angle == 180 {
+                if angle.is(180) {
                     let reflected = origin
                         .plus(&axis.scaled(&t))
                         .plus(&rotated.scaled(&Real::from_i64(-1)));
@@ -1241,6 +1234,11 @@ impl Feature {
         d: &Vector3,
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
+        if let Some(classifier) = self.fillet_query_classifier()
+            && let Some(location) = classifier.ray(&self.constraints, p, d)
+        {
+            return Ok(location);
+        }
         // Stay within every support's initial sign cell; this is not a tolerance.
         let mut epsilon = Rational::one();
         for constraint in &self.constraints {
@@ -1323,11 +1321,14 @@ fn convex_revolve(profile: &Profile, sweep: &Sweep) -> Option<(Sign, i64)> {
     let Sweep::Revolve {
         origin,
         axis,
-        angle: 360,
+        angle,
     } = sweep
     else {
         return None;
     };
+    if !angle.is(360) {
+        return None;
+    }
     let [edges] = profile.loops.as_slice() else {
         return None;
     };
@@ -1454,6 +1455,7 @@ struct FastProfile {
     edges: Vec<FastEdge>,
     sweep: [f64; 5],
     angle: u16,
+    rotation: [f64; 2],
     through: bool,
     valid: bool,
 }
@@ -1486,7 +1488,7 @@ impl FastProfile {
                 full: e.full,
             })
             .collect::<Vec<_>>();
-        let (parameters, angle) = match sweep {
+        let (parameters, angle, rotation) = match sweep {
             Sweep::Extrude { vector, .. } => (
                 [
                     vector.x.to_f64_nearest(),
@@ -1496,6 +1498,7 @@ impl FastProfile {
                     0.0,
                 ],
                 0,
+                [1.0, 0.0],
             ),
             Sweep::Revolve {
                 origin,
@@ -1510,7 +1513,8 @@ impl FastProfile {
                     axis.y.to_f64_nearest(),
                     norm.to_f64_nearest(),
                 ],
-                *angle,
+                angle.fast().0,
+                angle.fast().1,
             ),
         };
         let mut result = Self {
@@ -1519,6 +1523,7 @@ impl FastProfile {
             edges,
             sweep: parameters,
             angle,
+            rotation,
             through: matches!(sweep, Sweep::Extrude { through: true, .. }),
             valid: false,
         };
@@ -1531,6 +1536,7 @@ impl FastProfile {
             .flatten()
             .chain(self.translation.iter())
             .chain(self.sweep.iter())
+            .chain(self.rotation.iter())
             .all(|v| v.is_finite())
             && self.edges.iter().all(|e| {
                 e.start.iter().chain(e.end.iter()).all(|v| v.is_finite())
@@ -1562,7 +1568,18 @@ impl FastProfile {
                 90 => b * flip >= 0.0 && p[2] * flip >= 0.0,
                 180 => p[2] * flip >= 0.0,
                 270 => b * flip <= 0.0 || p[2] * flip >= 0.0,
-                _ => true,
+                360 => true,
+                sector => {
+                    let start = p[2] * flip;
+                    let end = (b * Scalar::sqrt(&a[4]) * self.rotation[1]
+                        - p[2] * self.rotation[0])
+                        * flip;
+                    if sector == 1 {
+                        start >= 0.0 && end >= 0.0
+                    } else {
+                        start >= 0.0 || end >= 0.0
+                    }
+                }
             };
             if angular
                 && self.region([
@@ -1785,29 +1802,15 @@ impl Feature {
                             if matches!(role, Role::Start) {
                                 p
                             } else {
-                                let (cosine, sine) = match angle {
-                                    90 => (
-                                        Rational::zero(),
-                                        profile::sqrt(&axis.norm_squared())
-                                            .unwrap()
-                                            .recip()
-                                            .unwrap(),
-                                    ),
-                                    180 => (Rational::from_i64(-1), Rational::zero()),
-                                    270 => (
-                                        Rational::zero(),
-                                        -profile::sqrt(&axis.norm_squared())
-                                            .unwrap()
-                                            .recip()
-                                            .unwrap(),
-                                    ),
-                                    _ => {
-                                        return Err(Refusal::new(
-                                            "field.sample-role",
-                                            "whole revolutions have no end cap",
-                                        ));
-                                    }
-                                };
+                                if angle.is(360) {
+                                    return Err(Refusal::new(
+                                        "field.sample-role",
+                                        "whole revolutions have no end cap",
+                                    ));
+                                }
+                                let (cosine, sine) = angle
+                                    .rational_rotation(&axis.norm_squared())
+                                    .ok_or_else(crate::samples::placement_error)?;
                                 sample_rotate(&p, origin, axis, &cosine, &sine)
                             }
                         }

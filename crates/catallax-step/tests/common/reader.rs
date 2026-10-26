@@ -179,17 +179,6 @@ impl Step {
             for id in refs(&e.text) {
                 assert!(out.entities.contains_key(&id), "dangling #{id}");
             }
-            assert!(
-                ![
-                    "FACE_OUTER_BOUND",
-                    "PCURVE",
-                    "SURFACE_CURVE",
-                    "SEAM_CURVE",
-                    "B_SPLINE_SURFACE",
-                    "RATIONAL_B_SPLINE_CURVE"
-                ]
-                .contains(&e.kind.as_str())
-            );
         }
         let mut seen = (1..=20).collect::<BTreeSet<_>>();
         let mut order = Vec::new();

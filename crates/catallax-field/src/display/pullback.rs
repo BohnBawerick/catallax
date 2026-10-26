@@ -68,9 +68,50 @@ fn basis(n: usize, range: &[Rational; 2]) -> Vec<Vec<Rational>> {
         .collect()
 }
 
+// Recover an exact polynomial square by cancelling leading terms. Every
+// proposed factor is checked by multiplication; non-squares retain Bernstein.
+fn square_root(polynomial: &MPoly, dec: &mut Decider) -> Result<Option<MPoly>, Refusal> {
+    let Some((leading, coefficient)) = polynomial.terms().pop() else {
+        return Ok(None);
+    };
+    if leading.exponents().iter().any(|e| e % 2 != 0) {
+        return Ok(None);
+    }
+    let Some(root_coefficient) = crate::profile::sqrt(&coefficient) else {
+        return Ok(None);
+    };
+    let powers: Vec<_> = leading.exponents().iter().map(|e| e / 2).collect();
+    let mut root = MPoly::from_terms(2, vec![(powers.clone(), root_coefficient.clone())]);
+    let mut last = catallax_numbers::Monomial::new(powers.clone());
+    loop {
+        dec.check_deadline()?;
+        let remainder = polynomial - &(&root * &root);
+        let Some((monomial, coefficient)) = remainder.terms().pop() else {
+            return Ok(Some(root));
+        };
+        let Some(next) = monomial
+            .exponents()
+            .iter()
+            .zip(&powers)
+            .map(|(a, b)| a.checked_sub(*b))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Ok(None);
+        };
+        let monomial = catallax_numbers::Monomial::new(next.clone());
+        if monomial >= last {
+            return Ok(None);
+        }
+        last = monomial;
+        root =
+            &root + &MPoly::from_terms(2, vec![(next, coefficient / root_coefficient.mul_pow2(1))]);
+    }
+}
+
 pub(in crate::display) struct Pullback {
     terms: Vec<([usize; 2], Rational)>,
     degree: [usize; 2],
+    generic: Option<Sign>,
 }
 impl Pullback {
     fn new(polynomial: &MPoly) -> Self {
@@ -81,7 +122,39 @@ impl Pullback {
             .collect();
         let degree =
             std::array::from_fn(|axis| terms.iter().map(|(e, _)| e[axis]).max().unwrap_or(0));
-        Self { terms, degree }
+        Self {
+            terms,
+            degree,
+            generic: None,
+        }
+    }
+
+    // A square has this strict sign off its algebraic zero set. Only the
+    // shared material-germ diagram may use it: ordinary trim stability still
+    // requires proving that the entire open cell excludes that zero set.
+    pub(in crate::display) fn generic_sign(&self) -> Option<Sign> {
+        self.generic
+    }
+
+    pub(in crate::display) fn prepare_germ_sign(
+        &mut self,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        let polynomial = MPoly::from_terms(
+            2,
+            self.terms
+                .iter()
+                .map(|(e, c)| (e.iter().map(|e| *e as u32).collect(), c.clone()))
+                .collect(),
+        );
+        if polynomial.total_degree().is_some_and(|d| d >= 4) {
+            let (_, leading) = polynomial.terms().pop().expect("nonzero restriction");
+            let scaled = polynomial.scale(&(q(1) / leading.clone()));
+            if square_root(&scaled, dec)?.is_some() {
+                self.generic = Some(leading.sign());
+            }
+        }
+        Ok(())
     }
 
     pub(in crate::display) fn is_zero(&self) -> bool {
@@ -410,5 +483,43 @@ mod tests {
             .unwrap();
         assert_eq!(cuts[1], vec![q(2)]);
         assert!(cuts[0].is_empty());
+    }
+    #[test]
+    fn tangent_torus_restriction_has_a_generic_square_sign_but_keeps_its_zero_curve() {
+        let plane = Surface::Plane(Plane {
+            origin: RPoint3::new(0.into(), 0.into(), 10.into()).into(),
+            normal: RVector3::new(0.into(), 0.into(), 1.into()).into(),
+            ref_dir: RVector3::new(1.into(), 0.into(), 0.into()).into(),
+        });
+        let torus = Surface::Torus(Torus {
+            center: RPoint3::new(20.into(), 15.into(), 12.into()).into(),
+            axis: RVector3::new(0.into(), 0.into(), 1.into()).into(),
+            major: 10.into(),
+            minor: 2.into(),
+            ref_dir: RVector3::new(1.into(), 0.into(), 0.into()).into(),
+        });
+        let polynomial = torus.implicit().unwrap().rational().unwrap().clone();
+        let chart = Chart::all(&plane, &q(50)).unwrap().remove(0);
+        let crossing = Cell {
+            range: [[q(29), q(31)], [q(14), q(16)]],
+            depth: 0,
+        };
+        for scale in [
+            Rational::from_ratio(1, 37).unwrap(),
+            Rational::from_ratio(-1, 37).unwrap(),
+        ] {
+            let mut dec = Decider::default();
+            let mut restriction = chart.pullback(&polynomial.scale(&scale), &mut dec).unwrap();
+            restriction.prepare_germ_sign(&mut dec).unwrap();
+            assert_eq!(restriction.generic_sign(), Some(scale.sign()));
+            assert_eq!(restriction.sign(&crossing, &mut dec).unwrap(), None);
+            assert!(polynomial.eval(&[q(30), q(15), q(10)]).is_zero());
+        }
+        let mut dec = Decider::default();
+        let perturbed = &polynomial + &MPoly::constant(3, q(-1));
+        assert_eq!(
+            chart.pullback(&perturbed, &mut dec).unwrap().generic_sign(),
+            None
+        );
     }
 }

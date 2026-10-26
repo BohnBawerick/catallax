@@ -1,0 +1,171 @@
+# One post-Boolean polygonal face thicken
+
+## Review correction: disconnected coplanar origin domains
+
+Frozen `f8805201fde79d1cba5c92c041a9800226dbce64` has a public counterexample:
+a 10 by 6 by 3 stock minus two 2 by 2 through tools at (2,2,-1) and (6,2,-1),
+then a unit front sweep of `stock.end`. Hole A's lower-rim origin answers
+`OnFace` at (7,2,7/2) on hole B; it must answer `NotOnFace`. Its own-hole query
+answers `OnFace`, and B-rep's finite-face query correctly rejects the other hole.
+The original, rigid-source-transform and hole-position-edit regressions all
+reproduce before the production repair. Raw frozen-head evidence is preserved
+under `/workspace/post-boolean-face-review-proof`; earlier f880 qualification
+remains historical and does not certify this missing selector case.
+The frozen public CLI also reports `compare.origins` for the two-hole fixture.
+
+The field sweep's convex-term publication previously attached every face with
+the same support and sense, without its finite patch. The owned sweep helper
+now reconstructs each exact finite convex facet and proves mutual closed polygon
+containment with a physical boundary tile. Only the owning tile's complete
+origin set is published on that term. Every physical tile must have exactly one
+proved material owner; missing or duplicate correspondence returns a typed
+coverage refusal before publication. Halfspaces, geometry, predicates, budgets,
+tolerances and query signatures remain unchanged. No held geometry/lib/display
+or printing edit is involved.
+
+The dedicated public regression checks both directions between the holes, lower
+and upper rims, correct-hole positive membership, exact B-rep membership, rigid
+source transforms and a position edit. Corrected-head focused/retained checks,
+public replay and final CI are recorded separately in the PR and new proof root.
+Current main `3776a1b2015cf9504f6aa9da37b7ec601b6dd311` integrates cleanly;
+the correction's bytes are unchanged and no upstream hunk needed manual repair.
+Qualification distinguishes that current base from the frozen f880 reproduction.
+The extra authored-triangle `field.print-coverage` limitation remains explicit;
+required L/hole/symmetric mass evidence is not replaced by that negative control.
+
+Base: `357be43e3ea5ba00df9fd449ea2afca09260ae24`. This lane owns only the two
+`planar_face.rs` modules, the field module's `recovery.rs` and `sweep.rs` helpers,
+and new dedicated tests, public fixtures and this additive documentation.
+The unchanged dispatch calls are features `distance_build.rs:503` and field
+`distance_features.rs:731`. No display, Boolean, shapes, numbers, shared
+`features.rs`/`lib.rs` or held production file is changed.
+
+Main advanced during development to
+`60c9d44edcfaa08e024242433eb33beb54320687` through PR112 and PR103. A clean
+read-only merge-tree check established that integration needs no held-file
+resolution. That current main is the retained-domain qualification baseline;
+the original `357be43` executable and results remain historical reproduction
+evidence. The lane's production patch is unchanged across integration. Upstream
+printing/cone changes belong to their merged PRs, not this lane.
+
+The branch is `cloud/post-boolean-polygon-face-thicken`. Exact published head,
+binary identity, commands, outcomes and pending final gates are recorded in the
+PR description and `/workspace/post-boolean-thicken-proof`. Raw evidence stays
+outside the repository. This is a functional lane report, not full target-part
+acceptance or private qualification. final477 remains parent-routed.
+
+## Reproduction and provenance
+
+Before production edits, current main and the saved clean checkout agreed at
+the base above. Open PR ownership and complete filename lists for
+93/101/103/107/109/112 were inspected through the connected GitHub app. No
+`AGENTS.md` was present at the filesystem/workspace/repository roots or below
+the repository. The verification skill, feature map, deterministic-answer
+entry, workflow checks and interface-fragment instructions were read.
+
+A fresh release verifier at that exact base rejects all seven initial fixtures
+with `distance.unsupported-envelope` in both evaluators. The B-rep rejects the
+non-plain-prism body; field recovery rejects its non-leaf Boolean tape.
+The preinstalled verifier was older (`9e0200c`) and rejected recipe/4; those
+invalid initial attempts are retained separately as `stale-preinstalled-*`.
+They are not geometric reproduction evidence.
+
+All fixtures are new public synthetic definitions. The L is a 4 by 4 by 3 block
+minus its 2 by 2 through-corner tool: selected area 12. The hole is a 6 by 6 by 3
+block minus a 2 by 2 through tool: selected area 32. Unit-thickness front/back
+sweeps therefore have exact volumes 12 and 32; the explicit front/back L union
+has volume 24. Additional fixtures cover a reversed tool wall (volume 6), split
+origin (volume 8), merged cap aliases and an exact rational rigid tilt.
+No private corpus or held-out input was accessed.
+
+## Construction and proof boundaries
+
+The B-rep reads its current selected face loops, orientation and adjacent
+physical face origins. The field independently collects planar source skins
+from its active leaf definitions, classifies full-dimensional arrangement cells
+through the Boolean tape and proves both outward germs and surviving origins.
+It never calls the B-rep evaluator or uses native field display as recovery.
+
+Both then construct the finite straight normal sweep. Source and offset caps
+retain every alias; each rim retains the product of selected and adjacent
+origin sets. Field convex material terms use exact analytic leaves. A term is
+reduced to a stock box only when every bounding plane proves that exact box;
+other terms keep all analytic halfspaces. Only physical boundary supports get
+face candidates. Partition walls carry no invented origins. Primitive sampling
+roles remain separate from public construction names.
+
+The bounded field fallback receives a node, not recipe ownership snapshots.
+It refuses geometry-folded creators with unrelated aliases, copied/derived
+sources, curved source skins and multiple physical selections rather than
+guessing their scoped provenance or normal fans. Lost/ambiguous selections
+stay typed. Existing authored plain-cap behavior uses its original path.
+The field registry retains historical candidates by design; physical removal
+of the two-sided base is established by `face_query` and interior membership,
+not by registry-list absence.
+
+## Defect ledger
+
+| Attempt | Finding | Disposition |
+| --- | --- | --- |
+| Setup | cargo absent from PATH; default rustup home read-only | Use existing `/workspace/.cargo` and `/workspace/.rustup`; no account/configuration change. |
+| Frozen base | seven geometric refusals in each evaluator | Reproduced before production edits and preserved with binary identity. |
+| First candidate | polyhedral Draft leaf refused field mass with `field.print-coverage` | Replace only the new helper's publication with certified analytic material terms. |
+| First candidate | union name-set assertion counted a historical base candidate as physical | Test its actual trim membership at former base interiors and require inside material. |
+| Analytic candidate | sampling `rim` names had no primitive chart (`field.sample-role`) | Preserve exact primitive definition roles separately in the owned helper. |
+| Local Clippy setup | gmp build prerequisite `m4` absent | Repair only workspace-local prerequisites; final result recorded in PR/evidence. |
+| Native STEP harness | OpenCASCADE 8 renamed `TopoDS.Solid_s` | Use the binding's native solid cast; nine topology/volume/material read-backs then pass without repair. |
+
+Eleven focused geometry/oracle/edit/name/refusal tests and the nine-fixture
+sampled-comparison test pass in the development snapshot. Nine independent
+OpenCASCADE 8.0.1.1.0 STEP read-backs pass topology, numeric volume and material
+controls without repair. The 29 retained-domain tests pass, including original
+nonconvex and sharp thicken behavior; a separate plain-cap collinear-alias test
+keeps its original naming choice. Final-head full checks, CLI preservation and
+CI results must be read from their actual evidence, not inferred from this
+checkpoint. Earlier failed attempts are not removed or relabelled as passing.
+
+## Commands and limits
+
+### Straight rims whose source neighbour changes
+
+A final public wedge-cut check at delivery `174e4482bcc4fa2d8052483f32097abfb581bd73`
+found a remaining partition: the selected rectangular cap had a straight rim
+whose adjacent input face changed at a collinear vertex. That candidate emitted
+seven faces for a six-face prism; independent field sweep partitioning refused
+`draft.unsplit-patch-boundary`. The frozen executable, original input and both
+CLI responses are retained in `collinear-neighbour-before-*` outside the repo.
+
+The assigned modules now coalesce straight runs before constructing topology or
+field patches, union every neighbour-origin product and remove the obsolete
+degree-two vertices. The new fixture requires six faces, twelve edges, eight
+vertices, exact B-rep volume 16, complete matching rim origins, point membership
+across the former split, sampled comparison and STEP read-back. The original
+plain-cap naming path remains unchanged. No shared arrangement or held file was
+edited.
+
+An additional property probe on this *authored triangular source* remains the
+existing `field.print-coverage` refusal: the mass classifier inspects an inactive
+source Feature leaf. Fixing that consumer requires the held printing module,
+outside this lane. The regression keeps the typed refusal explicit; it is not
+reported as an answered field-mass request. The required rectilinear L/hole and
+two-sided field mass oracles remain exact and enabled. The full local run for
+the superseded `174e448` was interrupted with exit 130 after discovering the
+functional counterexample; its partial log is retained and is not final-head
+qualification. Final-head outcomes are recorded in the PR/evidence.
+
+Rust commands use `CARGO_HOME=/workspace/.cargo RUSTUP_HOME=/workspace/.rustup`
+and prepend `/workspace/.cargo/bin` to PATH; builds use `nice -n 10` and `-j 2`.
+The exact base build is `cargo build --release -p catallax-cli --bins -j 2`.
+Doctor and independent recipe/field runs use the repository's
+`.claude/skills/verify-catallax/scripts/control-catallax.py`, the frozen baseline
+executable and separate output directories under the external proof root.
+Focused commands are `cargo test --release -p catallax-features -p
+catallax-compare --test boolean_face_thicken -j 2` and the retained
+`nonconvex_thicken`, `distance_features`, `sharp_thicken` integration targets.
+Final commands and exit codes are saved verbatim in that proof root.
+
+No work allowance, tolerance, approximation bound, cell cap, comparison option
+or typed fail-closed policy changes. The 1M scoreboard, 20M application and
+100M verification allowances remain distinct. Sampled comparison is not a
+whole-result distance certificate; STEP read-back is not certified deviation.
+No matched latency experiment or speedup claim is made.

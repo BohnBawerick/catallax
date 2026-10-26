@@ -118,6 +118,90 @@ fn full_and_partial_annular_revolutions() {
 }
 
 #[test]
+fn algebraic_partial_annuli_retain_exact_mass_and_trims() {
+    let ring = polygon(&[(3, 0), (3, 2), (1, 2), (1, 0)]);
+    for angle in [30, 45, 60, 120, 210, 225, 300, 330] {
+        let (model, body) = build(std::slice::from_ref(&ring), angle);
+        let mass = mass(&model, body);
+        let pi = Ball::pi(256);
+        let fraction = Ball::from_rational(&Rational::from_ratio(angle, 360).unwrap(), 256);
+        let theta = &pi * &Ball::from_rational(&Rational::from_ratio(angle, 180).unwrap(), 256);
+        contains(&mass.volume, b(16) * pi.clone() * fraction.clone());
+        contains(&mass.area, b(32) * pi * fraction + b(8));
+        let centroid = mass.centroid.unwrap();
+        let mean_radius = Ball::from_rational(&Rational::from_ratio(13, 6).unwrap(), 256);
+        contains(
+            &centroid[0],
+            (mean_radius.clone() * theta.sin())
+                .checked_div(&theta)
+                .unwrap(),
+        );
+        contains(
+            &centroid[2],
+            (mean_radius * (theta.cos() - b(1)))
+                .checked_div(&theta)
+                .unwrap(),
+        );
+        assert!(centroid[1].contains(&r(1)));
+
+        let mut step = Vec::new();
+        catallax_step::write_step(
+            &model,
+            &[body],
+            &Default::default(),
+            &mut Decider::default(),
+            &mut step,
+        )
+        .unwrap();
+        assert!(!step.is_empty());
+    }
+}
+
+#[test]
+fn irrational_generated_radii_remain_analytic() {
+    let root_two = b(2).sqrt().unwrap();
+    for (centre, start, end, volume, area) in [
+        (
+            0,
+            (1, 1),
+            (1, -1),
+            (b(4) * Ball::pi(256)).checked_div(&b(3)).unwrap(),
+            b(4) * Ball::pi(256) * (root_two.clone() + b(1)),
+        ),
+        (
+            3,
+            (4, 1),
+            (4, -1),
+            b(3) * Ball::pi(256).square() - (b(14) * Ball::pi(256)).checked_div(&b(3)).unwrap(),
+            b(3) * root_two.clone() * Ball::pi(256).square()
+                + b(4) * root_two.clone() * Ball::pi(256)
+                + b(16) * Ball::pi(256),
+        ),
+    ] {
+        let profile = Loop(vec![
+            Segment::Arc {
+                id: ElementId::new("round").unwrap(),
+                centre: p(centre, 0),
+                to: p(start.0, start.1),
+                turn: Turn::Ccw,
+            },
+            Segment::Line {
+                id: ElementId::new("chord").unwrap(),
+                to: p(end.0, end.1),
+            },
+        ]);
+        let (model, body) = build(&[profile], 360);
+        let properties = mass(&model, body);
+        contains(&properties.volume, volume);
+        contains(&properties.area, area);
+        assert!(model.faces_of_body(body).iter().any(|f| matches!(
+            model.geom().surface(model.face(*f).surface),
+            catallax_shapes::Surface::Sphere(_) | catallax_shapes::Surface::Torus(_)
+        )));
+    }
+}
+
+#[test]
 fn triangular_profile_revolves_to_a_cone_with_an_apex() {
     let (mut model, body) = build(&[polygon(&[(3, 0), (0, 4), (0, 0)])], 360);
     let body = catallax_boolean::make_maximal(&mut model, body, &mut Decider::default())

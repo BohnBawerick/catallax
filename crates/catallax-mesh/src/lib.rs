@@ -28,6 +28,9 @@ mod controls;
 mod edges;
 mod evaluate;
 mod planar;
+/// Unproved preview sampling, separate from certified display and export meshes.
+pub mod preview;
+pub use preview::{PreviewEdge, PreviewFace, PreviewMesh, PreviewOptions, preview_mesh_body};
 mod ruled;
 mod spline_prism;
 mod triangulate;

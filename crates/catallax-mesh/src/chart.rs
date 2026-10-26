@@ -200,6 +200,15 @@ impl Chart {
         self.evaluator.normal(&self.surface, uv)
     }
 
+    /// Rounded definition samples for an explicitly unproved preview.
+    pub(crate) fn preview_position(&self, uv: Uv, dec: &Decider) -> Result<[f64; 3], Refusal> {
+        dec.check_deadline()?;
+        if let Some(values) = self.evaluator.evaluate(&self.surface, uv) {
+            return Ok(values.map(|value| value.mid()));
+        }
+        position(&self.evaluate(uv, dec)?)
+    }
+
     pub(crate) fn sample(
         &self,
         uv: Uv,

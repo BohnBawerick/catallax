@@ -11,11 +11,15 @@ use catallax_features::draft::{
 };
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{FaceRef, Origin, StepId};
-use catallax_shapes::{Isometry, Plane, Point3, RPoint3, Surface, Vector3};
+use catallax_shapes::{Cylinder, Isometry, Plane, Point3, RPoint3, Surface, Vector3};
 use std::collections::BTreeSet;
+
+#[path = "draft_annular.rs"]
+mod annular;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Cell {
+    Annular(Box<catallax_features::draft::annular::AnnularCell>),
     Planar(PlanarCell),
     Round(Box<RoundCell>),
     Polyhedral(Box<Polyhedron>),
@@ -24,6 +28,7 @@ pub(crate) enum Cell {
 impl Cell {
     fn contains_interior(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         match self {
+            Self::Annular(c) => c.contains_interior(p, dec),
             Self::Planar(c) => c.contains_interior(p, dec),
             Self::Round(c) => c.contains_interior(p, dec),
             Self::Polyhedral(c) => c.contains_interior(p, dec),
@@ -31,6 +36,7 @@ impl Cell {
     }
     fn anchored(&self, definition: &DraftDefinition, dec: &mut Decider) -> Result<bool, Refusal> {
         match self {
+            Self::Annular(c) => c.anchored(&definition.neutral, dec),
             Self::Planar(c) => c.anchored(&definition.neutral, dec),
             Self::Round(c) => c.anchored(&definition.neutral, dec),
             Self::Polyhedral(c) => c.anchored(&definition.neutral, dec),
@@ -40,6 +46,12 @@ impl Cell {
 
 #[derive(Clone, Debug)]
 enum Fast {
+    Annular {
+        origin: [f64; 3],
+        axis: [f64; 3],
+        heights: [f64; 2],
+        radii: [[f64; 2]; 2],
+    },
     Planar {
         vertices: Vec<[f64; 3]>,
         planes: Vec<([f64; 3], [f64; 3])>,
@@ -100,6 +112,15 @@ impl Region {
         let mut current = origin;
         loop {
             let present = match &self.cell {
+                Cell::Annular(c) => {
+                    c.outer.origins.contains(current)
+                        || c.inner.origins.contains(current)
+                        || c.outer
+                            .caps
+                            .iter()
+                            .flatten()
+                            .any(|(_, names)| names.contains(current))
+                }
                 Cell::Planar(cell) => cell
                     .supports
                     .iter()
@@ -248,6 +269,7 @@ impl Region {
             }
         };
         match &cell {
+            Cell::Annular(_) => (),
             Cell::Planar(c) => include(&c.cycles),
             Cell::Polyhedral(c) => {
                 for face in &c.faces {
@@ -270,6 +292,15 @@ impl Region {
     }
     fn fast_geometry(cell: &Cell) -> Fast {
         match cell {
+            Cell::Annular(c) => Fast::Annular {
+                origin: point(&c.outer.origin),
+                axis: vector(&c.outer.axis),
+                heights: c.outer.heights.each_ref().map(Real::to_f64),
+                radii: [
+                    c.outer.radii.each_ref().map(Real::to_f64),
+                    c.inner.radii.each_ref().map(Real::to_f64),
+                ],
+            },
             Cell::Planar(cell) => Fast::Planar {
                 vertices: cell.vertices.iter().map(point).collect(),
                 planes: cell
@@ -297,6 +328,18 @@ impl Region {
     fn refresh_constraints(&mut self) -> Result<(), Refusal> {
         self.constraints.clear();
         match &self.cell {
+            Cell::Annular(c) => {
+                self.constraints
+                    .push(geometry::constraint(c.outer.surface.clone())?);
+                self.constraints
+                    .push(geometry::constraint(c.inner.surface.clone())?.reversed());
+                for (plane, _) in c.outer.caps.iter().flatten() {
+                    self.constraints
+                        .push(geometry::constraint(Surface::Plane(plane.clone()))?);
+                }
+                // Positive endpoint radii and finite caps already prove that
+                // both cone graphs stay on their chosen nappes throughout.
+            }
             Cell::Planar(cell) => {
                 for support in &cell.supports {
                     self.constraints
@@ -351,6 +394,11 @@ impl Region {
             Ok(())
         };
         match &self.cell {
+            Cell::Annular(c) => {
+                for i in 0..2 {
+                    include(&c.outer.centre(i), &c.outer.radii[i])?;
+                }
+            }
             Cell::Planar(cell) => {
                 for p in &cell.vertices {
                     include(p, &Real::zero())?;
@@ -384,6 +432,11 @@ impl Region {
     }
     pub(crate) fn transform(&mut self, map: &Isometry) -> Result<(), Refusal> {
         match &mut self.cell {
+            Cell::Annular(c) => {
+                for wall in [&mut c.outer, &mut c.inner] {
+                    annular::transform_wall(wall, map);
+                }
+            }
             Cell::Planar(cell) => {
                 for p in &mut cell.vertices {
                     *p = map.apply_point(p);
@@ -476,6 +529,9 @@ impl Region {
         let p = p.to_real();
         let mut best = None;
         match &self.cell {
+            Cell::Annular(c) => {
+                best = Some(annular::distance_squared(c, &p, dec)?);
+            }
             Cell::Planar(cell) => {
                 for (support, cycle) in cell.supports.iter().zip(&cell.cycles) {
                     if cycle.is_empty() {
@@ -586,6 +642,20 @@ impl Region {
     pub(crate) fn fast_distance(&self, p: [f64; 3]) -> f64 {
         let mut best = f64::INFINITY;
         let inside = match (&self.cell, &self.fast) {
+            (
+                Cell::Annular(_),
+                Fast::Annular {
+                    origin,
+                    axis,
+                    heights,
+                    radii,
+                },
+            ) => {
+                let (distance, inside) =
+                    annular::fast_distance(p, *origin, *axis, *heights, *radii);
+                best = distance;
+                inside
+            }
             (Cell::Planar(_), Fast::Planar { vertices, planes }) => {
                 let inside = planes
                     .iter()
@@ -804,7 +874,7 @@ fn bind_patches(
 
 impl Plan {
     /// Chooses the uniquely nearest closed trimmed face of a plane-capped axial
-    /// cylinder, then every alias of that physical face.
+    /// cylinder or of a coaxial annulus, then every alias of that physical face.
     fn nearest_axial(
         &self,
         source_faces: &[usize],
@@ -818,11 +888,21 @@ impl Plan {
                 "curved field references need exact patch adjacency and distance",
             )
         };
-        let mut cylinder = None;
+        // One entry per physical cylinder and per physical cap: aliases of a
+        // definition are the same face, two walls of different radii are not.
+        let mut cylinders: Vec<(usize, &Cylinder)> = Vec::new();
         let mut caps = Vec::new();
         for f in source_faces {
             match &self.faces[*f].surface {
-                Surface::Cylinder(c) if cylinder.is_none() => cylinder = Some(c),
+                Surface::Cylinder(c) => {
+                    if !cylinders.iter().any(|(g, _)| {
+                        self.faces[*g]
+                            .support
+                            .same_definition(&self.faces[*f].support)
+                    }) {
+                        cylinders.push((*f, c));
+                    }
+                }
                 Surface::Plane(p) => {
                     if !caps.iter().any(|(g, _): &(usize, &Plane)| {
                         self.faces[*g]
@@ -832,12 +912,16 @@ impl Plan {
                         caps.push((*f, p));
                     }
                 }
-                Surface::Cylinder(_) => {}
                 _ => return Err(unsupported()),
             }
         }
-        let (Some(cylinder), [(_, first), (_, second)]) = (cylinder, caps.as_slice()) else {
+        let [(_, first), (_, second)] = caps.as_slice() else {
             return Err(unsupported());
+        };
+        let walls = match cylinders.as_slice() {
+            [_] => None,
+            [(_, a), (_, b)] => Some(near::annulus_walls(a, b, dec)?),
+            _ => return Err(unsupported()),
         };
         let [x, y, z] = near.0.each_ref().map(|n| n.value().clone().into());
         let point = Point3::new(x, y, z);
@@ -855,8 +939,14 @@ impl Plan {
         let mut distances = Vec::with_capacity(groups.len());
         for group in &groups {
             distances.push(match &self.faces[group[0]].surface {
-                Surface::Plane(cap) => near::cap_distance_squared(cylinder, cap, &point, dec)?,
-                _ => near::wall_distance_squared(cylinder, [first, second], &point, dec)?,
+                Surface::Plane(cap) => match walls {
+                    Some(walls) => near::annular_cap_distance_squared(walls, cap, &point, dec)?,
+                    None => near::cap_distance_squared(cylinders[0].1, cap, &point, dec)?,
+                },
+                Surface::Cylinder(wall) => {
+                    near::wall_distance_squared(wall, [first, second], &point, dec)?
+                }
+                _ => return Err(unsupported()),
             });
         }
         Ok(groups.swap_remove(near::unique_nearest(&distances, dec)?))
@@ -990,6 +1080,12 @@ impl Plan {
             if group.iter().any(|f| selected.contains(f)) {
                 selected.extend(group.iter().copied());
             }
+        }
+        if let Some(cell) = self.annular_cell(leaf, &groups, selected, definition, dec)? {
+            return Ok(Candidates {
+                components: vec![Candidate::Region(Cell::Annular(Box::new(cell)))],
+                source_faces: groups,
+            });
         }
         let mut planes = Vec::new();
         let mut cylinder = None;
@@ -1190,6 +1286,13 @@ impl Plan {
                 Ok(())
             };
             match &cell {
+                Candidate::Region(Cell::Annular(c)) => {
+                    add(c.outer.surface.clone(), &c.outer.origins)?;
+                    add(c.inner.surface.clone(), &c.inner.origins)?;
+                    for (p, origins) in c.outer.caps.iter().flatten() {
+                        add(Surface::Plane(p.clone()), origins)?;
+                    }
+                }
                 Candidate::Region(Cell::Planar(c)) => {
                     for (s, cycle) in c.supports.iter().zip(&c.cycles) {
                         if !cycle.is_empty() {

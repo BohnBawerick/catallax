@@ -12,20 +12,98 @@ mod contact;
 fn coordinates(p: &Point3) -> [Real; 3] {
     [p.x.clone(), p.y.clone(), p.z.clone()]
 }
+fn cone_witness(
+    surface: &catallax_shapes::Surface,
+    target: &Point3,
+    step: &Rational,
+    offset: i64,
+) -> Result<Option<Point3>, Refusal> {
+    let catallax_shapes::Surface::Cone(s) = surface else {
+        return Ok(None);
+    };
+    let (Some(axis), Some(reference), Some(slope)) = (
+        s.axis.as_rational(),
+        s.ref_dir.as_rational(),
+        s.slope.rational_ref(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(axis_len) = crate::profile::sqrt(&axis.norm_squared()) else {
+        return Ok(None);
+    };
+    let Some(ref_len) = crate::profile::sqrt(&reference.norm_squared()) else {
+        return Ok(None);
+    };
+    let axis = axis.scaled(&axis_len.recip().unwrap());
+    let u = reference.scaled(&ref_len.recip().unwrap());
+    let v = axis.cross(&u);
+    let d = target.minus(&s.apex);
+    let approx = |v: &catallax_shapes::RVector3| {
+        let mid = d.dot(&v.clone().to_real()).approx().mid();
+        Rational::from_f64_exact(mid).map(|q| Ball::from_rational(&q, 14).mid())
+    };
+    let Some(mut height) = approx(&axis) else {
+        return Ok(None);
+    };
+    height = match offset {
+        0 => height,
+        1 => &height - step,
+        2 => &height + step,
+        _ => return Ok(None),
+    };
+    if height <= Rational::zero() {
+        return Ok(None);
+    }
+    let (Some(x), Some(y)) = (approx(&u), approx(&v)) else {
+        return Ok(None);
+    };
+    let r_xy = Ball::from_rational(&(&x * &x + &y * &y), 16)
+        .sqrt()
+        .unwrap()
+        .mid();
+    let [cos, sin] = if (&r_xy + &x).is_zero() {
+        [-Rational::one(), Rational::zero()]
+    } else {
+        let t = Ball::from_rational(&(&y / &(&r_xy + &x)), 14).mid();
+        let t2 = &t * &t;
+        let denom = Rational::one() + t2.clone();
+        [
+            (Rational::one() - t2) / denom.clone(),
+            Rational::from_i64(2) * t / denom,
+        ]
+    };
+    let radius = slope * &height;
+    let offset = axis
+        .scaled(&height)
+        .plus(&u.scaled(&(&radius * &cos)))
+        .plus(&v.scaled(&(&radius * &sin)));
+    Ok(Some(s.apex.plus(&offset.to_real())))
+}
 fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
+    if let Some(p) = p.as_rational() {
+        return leaf.location(&[p.x, p.y, p.z], dec);
+    }
     match leaf {
         geometry::Leaf::Feature(f) => f.classify(p, dec),
         geometry::Leaf::Draft(region) => region.classify(p, None, dec),
-        geometry::Leaf::Lattice(lattice) => {
-            Ok(p.as_rational().map_or(Location::Indeterminate, |p| {
-                lattice.location(&[p.x, p.y, p.z])
-            }))
-        }
+        geometry::Leaf::Lattice(_) => Ok(Location::Indeterminate),
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
-            let p = coordinates(p);
+            let xyz = coordinates(p);
             for c in leaf.constraints() {
-                match geometry::sign(&c.polynomial.eval_real(&p), dec)? {
+                let value = match c.surface() {
+                    catallax_shapes::Surface::Cone(s) if !c.surface().has_rational_definition() => {
+                        let d = p.minus(&s.apex);
+                        d.cross(&s.axis).norm_squared() - s.slope.square() * d.dot(&s.axis).square()
+                    }
+                    catallax_shapes::Surface::Plane(s)
+                        if !c.surface().has_rational_definition() =>
+                    {
+                        p.minus(&s.origin).dot(&s.normal)
+                    }
+                    _ => c.polynomial.eval_real(&xyz),
+                };
+                match geometry::sign(&value, dec)? {
                     Sign::Positive => return Ok(Location::Outside),
                     Sign::Zero => boundary = true,
                     Sign::Negative => (),
@@ -473,16 +551,18 @@ impl Prepared<'_> {
             };
             // Reuse the rational analytic support witness, not a B-rep face or
             // mesher. Rational frames avoid introducing needless radial radicals.
-            let Some(p) = catallax_boolean::surface_witness(
+            let p = match catallax_boolean::surface_witness(
                 domain.surface(),
                 &target,
                 &options.width.mul_pow2(-20),
                 dec,
-            )?
-            else {
-                break;
+            )? {
+                Some(p) => p.to_real(),
+                None => match cone_witness(domain.surface(), point, &step, offset)? {
+                    Some(p) => p,
+                    None => break,
+                },
             };
-            let p = p.to_real();
             let squared = point.minus(&p).norm_squared();
             let distance = if let Some(q) = squared.rational_ref() {
                 Ball::from_rational(q, 128)
@@ -491,6 +571,9 @@ impl Prepared<'_> {
             }
             .sqrt()
             .unwrap();
+            if options.max_cells == 1 && offset == 0 && distance.lo() > options.width.mul_pow2(1) {
+                break;
+            }
             if self.member(id.0, &p, dec)?
                 && candidate.upper.as_ref().is_none_or(|u| distance.hi() < *u)
             {

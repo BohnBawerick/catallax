@@ -9,6 +9,8 @@ use crate::{
     profile::sign,
 };
 
+mod open_cap;
+
 /// One finite meridian interval of a physical curved face.
 #[derive(Clone, Debug)]
 pub struct CircularBand {
@@ -473,8 +475,8 @@ impl CircularSkin {
         Ok((faces, boundaries))
     }
 
-    /// Closed-shell cavity from the intersection of inward convex parallels.
-    /// Open spherical trims need a separate kept-face edge-distance proof.
+    /// Cavity from inward convex parallels. A planar opening below one
+    /// spherical cap first proves a nearest witness on the finite kept faces.
     pub fn cavity(
         &self,
         open: &[bool],
@@ -482,13 +484,18 @@ impl CircularSkin {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<Option<Self>, Refusal> {
+        if open.len() != self.faces.len() {
+            return Err(bad("selection and circular face inventory differ"));
+        }
         if open.iter().any(|v| *v) {
-            return Err(bad(
-                "open curved circular cells need their kept-face edge-distance envelope",
-            ));
+            open_cap::prove(self, open, dec)?;
         }
         let mut surfaces = Vec::new();
-        for face in &self.faces {
+        for (face, opened) in self.faces.iter().zip(open) {
+            if *opened {
+                surfaces.push((face.surface.clone(), face.origins.clone()));
+                continue;
+            }
             let Some(surface) = face.surface.parallel_support(&(-thickness), dec)? else {
                 return Ok(None);
             };

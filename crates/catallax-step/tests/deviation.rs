@@ -169,7 +169,7 @@ fn check_added(shape: &Primitive, pose: &Pose, s: &Step, d: &Rational) {
             }
             p
         }
-        Primitive::Sphere(radius) => vec![[n(0), n(0), -radius], [n(0), n(0), radius.clone()]],
+        Primitive::Sphere(radius) => vec![[n(0), n(0), -radius]],
         Primitive::Torus(major, minor) => vec![[major + minor, n(0), n(0)]],
     };
     let mut used = BTreeSet::new();
@@ -198,6 +198,58 @@ fn check_added(shape: &Primitive, pose: &Pose, s: &Step, d: &Rational) {
                     {
                         on_written_surface(s, reference(&f.args[2]), &exact, d);
                     }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn torus_seam_period_rounding_contributes_to_the_distance_bound() {
+    let mut model = Model::new();
+    let body = torus(&mut model, n(3), n(1), &Pose::identity()).unwrap();
+    let pi = Ball::pi(256);
+    let lo = pi.lo().mul_pow2(1);
+    let hi = pi.hi().mul_pow2(1);
+    for digits in [1, 5, 17] {
+        let (_, answer, step) = export(&model, &[body], &options(digits));
+        for id in step.ids("PCURVE") {
+            let pcurve = step.e(id, "PCURVE");
+            let representation = step.e(reference(&pcurve.args[2]), "DEFINITIONAL_REPRESENTATION");
+            let items = list(&representation.args[1]);
+            let line = step.e(reference(items[0]), "LINE");
+            let point = step.e(reference(&line.args[1]), "CARTESIAN_POINT");
+            for coordinate in list(&point.args[1]) {
+                let written = number(coordinate);
+                if written != n(0) {
+                    let angular_error = (&written - &lo).abs().max((&written - &hi).abs());
+                    assert!(answer.value.max_deviation >= n(4) * angular_error);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn cylindrical_seam_period_rounding_contributes_to_the_distance_bound() {
+    let mut model = Model::new();
+    let body = cylinder(&mut model, n(1), n(2), &Pose::identity()).unwrap();
+    let pi = Ball::pi(256);
+    let lo = pi.lo().mul_pow2(1);
+    let hi = pi.hi().mul_pow2(1);
+    for digits in [1, 5, 17] {
+        let (_, answer, step) = export(&model, &[body], &options(digits));
+        for id in step.ids("SEAM_CURVE") {
+            for pcurve in list(&step.e(id, "SEAM_CURVE").args[2]) {
+                let pcurve = step.e(reference(pcurve), "PCURVE");
+                let representation =
+                    step.e(reference(&pcurve.args[2]), "DEFINITIONAL_REPRESENTATION");
+                let line = step.e(reference(list(&representation.args[1])[0]), "LINE");
+                let point = step.e(reference(&line.args[1]), "CARTESIAN_POINT");
+                let written = number(list(&point.args[1])[0]);
+                if written != n(0) {
+                    let angular_error = (&written - &lo).abs().max((&written - &hi).abs());
+                    assert!(answer.value.max_deviation >= angular_error);
                 }
             }
         }

@@ -9,6 +9,8 @@
 
 mod certified;
 pub mod curves;
+/// Revision-bound preview delivery and caller-scheduled proof.
+pub mod lifecycle;
 pub mod loops;
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
@@ -159,6 +161,8 @@ pub enum Error {
     Display(Refusal),
     /// The default whole-build work allowance expired; no body is published.
     ResourceLimit,
+    /// A preview/proof allocation could not be reserved from the caller.
+    Allocation(Refusal),
 }
 
 impl Error {
@@ -173,6 +177,7 @@ impl Error {
             }
             Self::InvalidBody(_) => "application.invalid-body",
             Self::ResourceLimit => "application.work-limit",
+            Self::Allocation(refusal) => refusal.code,
         }
     }
 }
@@ -184,6 +189,7 @@ impl fmt::Display for Error {
             Self::Build(e) => e.fmt(f),
             Self::InvalidBody(faults) => write!(f, "application.invalid-body: {faults:?}"),
             Self::Display(e) => write!(f, "{}: {}", e.code, e.detail),
+            Self::Allocation(e) => write!(f, "{}: {}", e.code, e.detail),
             Self::ResourceLimit => {
                 write!(f, "application.work-limit: aggregate build work exhausted")
             }

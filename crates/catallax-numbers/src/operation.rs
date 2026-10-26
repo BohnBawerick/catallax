@@ -129,6 +129,63 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
     )
 }
 
+/// A single-use allowance reserved for work that may run after its caller returns.
+/// Not cloneable: splitting or repeating a request cannot duplicate its work.
+#[derive(Debug)]
+pub struct OperationAllowance {
+    limit: u64,
+}
+
+impl OperationAllowance {
+    /// Reserves all units from the active request, or owns `limit` units when
+    /// there is no enclosing request. Reservations are charged immediately and
+    /// never refunded, including when the job is cancelled.
+    pub fn reserve(limit: u64) -> Result<Self, crate::Refusal> {
+        if charge(limit) {
+            return Err(crate::Refusal {
+                code: "numbers.operation-budget",
+                detail: "deferred work allocation exceeds the caller allowance".into(),
+            });
+        }
+        Ok(Self { limit })
+    }
+
+    /// Moves units to a separate single-use job without creating work.
+    pub fn split_off(&mut self, limit: u64) -> Option<Self> {
+        self.limit = self.limit.checked_sub(limit)?;
+        Some(Self { limit })
+    }
+
+    /// The reserved cap, not the eventual amount of arithmetic performed.
+    pub fn limit(&self) -> u64 {
+        self.limit
+    }
+
+    /// Consumes the reservation. An enclosing request has already paid for
+    /// these units; the returned counters report actual work separately.
+    /// Request-local proof caches are not carried across scheduling boundaries.
+    pub fn run<T>(self, run: impl FnOnce() -> T) -> (T, OperationWork) {
+        struct Restore {
+            state: Option<State>,
+            roots: BTreeMap<RootProofKey, Arc<RootEnclosure>>,
+            lists: RootListProofs,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                ACTIVE.with(|slot| slot.set(self.state));
+                ROOT_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.roots));
+                ROOT_LIST_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.lists));
+            }
+        }
+        let _restore = Restore {
+            state: ACTIVE.with(|slot| slot.take()),
+            roots: ROOT_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
+            lists: ROOT_LIST_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
+        };
+        with_operation_budget(self.limit, run)
+    }
+}
+
 pub(crate) fn charge(units: u64) -> bool {
     ACTIVE.with(|slot| {
         let Some(mut state) = slot.get() else {
@@ -219,5 +276,51 @@ pub(crate) fn record_root_list_proof(
                 .or_default()
                 .insert(polynomial.clone(), certificate.clone());
         });
+    }
+}
+
+#[cfg(test)]
+mod allowance_tests {
+    use super::*;
+
+    #[test]
+    fn split_reservations_conserve_work_and_restore_the_parent() {
+        let (_, parent) = with_operation_budget(10, || {
+            let mut allowance = OperationAllowance::reserve(7).unwrap();
+            assert!(allowance.split_off(8).is_none());
+            let second = allowance.split_off(4).unwrap();
+            assert_eq!(allowance.limit(), 3);
+            let (refused, first) = allowance.run(|| charge(4));
+            assert!(refused);
+            assert!(first.exhausted);
+            assert_eq!(first.used, 0);
+            assert_eq!(current_operation_work().used, 7);
+            assert!(!current_operation_work().exhausted);
+            let (_, actual) = second.run(|| assert!(!charge(4)));
+            assert_eq!(actual.used, 4);
+            assert!(!charge(3));
+            assert!(OperationAllowance::reserve(1).is_err());
+        });
+        assert_eq!(parent.used, 10);
+        assert!(parent.exhausted);
+    }
+
+    #[test]
+    fn panic_in_reserved_work_restores_the_paid_parent() {
+        let (_, parent) = with_operation_budget(10, || {
+            let allowance = OperationAllowance::reserve(7).unwrap();
+            let panic = std::panic::catch_unwind(|| {
+                allowance.run(|| {
+                    assert!(!charge(2));
+                    panic!("unwind deferred work");
+                })
+            });
+            assert!(panic.is_err());
+            assert_eq!(current_operation_work().used, 7);
+            assert!(!charge(3));
+        });
+        assert_eq!(parent.used, 10);
+        assert!(!parent.exhausted);
+        assert!(!operation_budget_active());
     }
 }

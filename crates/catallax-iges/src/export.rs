@@ -310,10 +310,27 @@ impl Exporter<'_> {
     }
     fn circle(&mut self, c: &Circle, a: usize, b: usize, same: bool) -> Result<usize, IgesError> {
         let center = ex::point(&c.center, self.dec)?;
-        let x = ex::unit(&c.ref_dir, self.dec)?;
+        let mut x = ex::unit(&c.ref_dir, self.dec)?;
         let z = ex::unit(&c.normal, self.dec)?;
-        let y = ex::cross(&z, &x);
         let radius = ex::rational(&c.radius_sq.sqrt(), self.dec)?;
+        if radius <= Rational::zero() {
+            return Err(IgesError::UnrepresentableDefinition(
+                "nonpositive circle radius",
+            ));
+        }
+        if a != b {
+            // A type-100 arc's native range starts at its local start angle.
+            // Give finite arcs a zero start so [0,T] pcurves have the same
+            // range even when the retained circle uses another reference ray.
+            let start = if same { a } else { b };
+            x = ex::sub(&self.points[start - 1], &center).map(|v| &v / &radius);
+            if ex::dot(&x, &x) != Rational::one() || !ex::dot(&x, &z).is_zero() {
+                return Err(IgesError::UnrepresentableDefinition(
+                    "arc start is not on its circle",
+                ));
+            }
+        }
+        let y = ex::cross(&z, &x);
         self.bound = self
             .bound
             .clone()
@@ -352,6 +369,233 @@ impl Exporter<'_> {
         );
         self.graph.entities[(id - 1) / 2].transform = matrix;
         Ok(id)
+    }
+    /// A finite axial band has one rectangular, unwrapped parameter wire.
+    /// Recover its branch from the retained directed arcs, never from a fit.
+    fn axial_sector(&mut self, f: &catallax_topology::Face) -> Result<usize, IgesError> {
+        let bad = || {
+            IgesError::UnrepresentableDefinition(
+                "axial sector requires two circular arcs and two generators with cardinal endpoints",
+            )
+        };
+        if f.loops.len() != 1 {
+            return Err(bad());
+        }
+        let Loop::Coedges(mut cs) = self.model.loop_(f.loops[0]).clone() else {
+            return Err(bad());
+        };
+        if cs.len() != 4 {
+            return Err(bad());
+        }
+        if f.sense == Sense::Reversed {
+            cs.reverse();
+        }
+        let (origin, axis, reference, radius, slope) = match self.model.geom().surface(f.surface) {
+            Surface::Cylinder(c) => (
+                ex::point(&c.origin, self.dec)?,
+                ex::unit(&c.axis, self.dec)?,
+                ex::unit(&c.ref_dir, self.dec)?,
+                Some(ex::rational(&c.radius(), self.dec)?),
+                None,
+            ),
+            Surface::Cone(c) => (
+                ex::point(&c.apex, self.dec)?,
+                ex::unit(&c.axis, self.dec)?,
+                ex::unit(&c.ref_dir, self.dec)?,
+                None,
+                Some(ex::rational(&c.slope, self.dec)?),
+            ),
+            _ => unreachable!(),
+        };
+        if !ex::dot(&axis, &reference).is_zero() {
+            return Err(bad());
+        }
+        let transverse = ex::cross(&axis, &reference);
+        let mut uses = Vec::new();
+        let mut levels = BTreeMap::new();
+        for coedge in cs {
+            let c = self.model.coedge(coedge).clone();
+            let edge = self.model.edge(c.edge).clone();
+            let (Some(start), Some(end)) = (edge.start, edge.end) else {
+                return Err(bad());
+            };
+            let (index, same) = self.edge(c.edge)?;
+            let orientation = ((c.sense == Sense::Same) == same) == (f.sense == Sense::Same);
+            let forward = (c.sense == Sense::Same) == (f.sense == Sense::Same);
+            let (a, b) = if forward { (start, end) } else { (end, start) };
+            let (a, b) = (self.vertex(a)?, self.vertex(b)?);
+            for v in [a, b] {
+                if levels.contains_key(&v) {
+                    continue;
+                }
+                let d = ex::sub(&self.points[v - 1], &origin);
+                let height = ex::dot(&d, &axis);
+                let radial = std::array::from_fn(|i| &d[i] - &(&height * &axis[i]));
+                let r = if let Some(slope) = &slope {
+                    if height <= Rational::zero() || slope <= &Rational::zero() {
+                        return Err(bad()); // Apex and opposite nappe are outside this slice.
+                    }
+                    &height * slope
+                } else {
+                    radius.clone().unwrap()
+                };
+                if r <= Rational::zero() || ex::dot(&radial, &radial) != &r * &r {
+                    return Err(bad());
+                }
+                let x = ex::dot(&radial, &reference);
+                let y = ex::dot(&radial, &transverse);
+                let u = if x == r && y.is_zero() {
+                    0i64
+                } else if x.is_zero() && y == r {
+                    90
+                } else if x == -r.clone() && y.is_zero() {
+                    180
+                } else if x.is_zero() && y == -r {
+                    270
+                } else {
+                    return Err(bad());
+                };
+                let level = if slope.is_some() {
+                    let root = Real::from(ex::dot(&d, &d)).sqrt();
+                    let ball = self.dec.enclose_at(&root, 160)?;
+                    let (lower, _) = ball.mid().to_decimal_bounds(25);
+                    let q = Rational::parse(&lower).unwrap();
+                    let mut error = (&q - &ball.lo()).abs().max((&q - &ball.hi()).abs());
+                    match self.dec.compare(&root, &Real::from(q.clone())) {
+                        Outcome::ProvenCoincident(_) => error = Rational::zero(),
+                        Outcome::Refused(r) => return Err(r.into()),
+                        _ => {}
+                    }
+                    self.trim_error = self.trim_error.clone().max(error);
+                    q
+                } else {
+                    height.clone()
+                };
+                levels.insert(v, (u, level, height));
+            }
+            let (ua, va, ha) = &levels[&a];
+            let (ub, vb, hb) = &levels[&b];
+            let (delta, end) = match self.model.geom().curve(edge.curve) {
+                Curve::Circle(circle) => {
+                    let center = ex::point(&circle.center, self.dec)?;
+                    let normal = ex::vector(&circle.normal, self.dec)?;
+                    let expected = std::array::from_fn(|i| &origin[i] + &(ha * &axis[i]));
+                    if ha != hb
+                        || center != expected
+                        || !ex::cross(&normal, &axis).iter().all(Rational::is_zero)
+                    {
+                        return Err(bad());
+                    }
+                    let increasing = (ex::dot(&normal, &axis) > Rational::zero()) == orientation;
+                    let delta = if increasing {
+                        (ub - ua).rem_euclid(360)
+                    } else {
+                        -((ua - ub).rem_euclid(360))
+                    };
+                    if delta == 0 {
+                        return Err(bad());
+                    }
+                    let pi = catallax_numbers::Ball::pi_checked(160, self.dec)?;
+                    let exact = pi
+                        * catallax_numbers::Ball::from_rational(
+                            &Rational::from_ratio(delta.abs(), 180).unwrap(),
+                            160,
+                        );
+                    let (t, _) = exact.mid().to_decimal_bounds(17);
+                    let t = Rational::parse(&t).unwrap();
+                    let error = (&t - &exact.lo()).abs().max((&t - &exact.hi()).abs());
+                    self.parameter_error = self.parameter_error.clone().max(&self.bound * &error);
+                    (delta, t)
+                }
+                Curve::Line(_) => {
+                    if ua != ub || va == vb || ha == hb {
+                        return Err(bad());
+                    }
+                    // Use the same bounded [0,1] range for the shared 3D
+                    // generator and its pcurve, including reversed coedges.
+                    let Value::Text(curve) = &self.edge_rows[(index - 1) * 5] else {
+                        unreachable!()
+                    };
+                    let curve = curve.parse::<usize>().unwrap();
+                    let entity = &mut self.graph.entities[(curve - 1) / 2];
+                    if entity.kind == 110 {
+                        let mut segment = vec![
+                            text(1),
+                            text(1),
+                            text(0),
+                            text(0),
+                            text(1),
+                            text(0),
+                            text(0),
+                            text(0),
+                            text(1),
+                            text(1),
+                            text(1),
+                            text(1),
+                        ];
+                        segment.append(&mut entity.values);
+                        segment.extend([text(0), text(1), text(0), text(0), text(0)]);
+                        entity.kind = 126;
+                        entity.values = segment;
+                    }
+                    (0, Rational::one())
+                }
+                _ => return Err(bad()),
+            };
+            uses.push((index, orientation, a, b, delta, end));
+        }
+        // Two opposing arcs and two generators must close one finite rectangle.
+        if (0..4).any(|i| {
+            (uses[i].4 == 0) == (uses[(i + 1) % 4].4 == 0) || uses[i].3 != uses[(i + 1) % 4].2
+        }) || uses.iter().map(|x| x.4).sum::<i64>() != 0
+        {
+            return Err(bad());
+        }
+        let mut u = levels[&uses[0].2].0;
+        let mut values = vec![4usize.into()];
+        for (index, orientation, a, b, delta, end) in uses {
+            let next = u + delta;
+            let pc = self.graph.add(
+                126,
+                0,
+                vec![
+                    text(1),
+                    text(1),
+                    text(1),
+                    text(0),
+                    text(1),
+                    text(0),
+                    text(0),
+                    text(0),
+                    text(ex::decimal(&end)?),
+                    text(ex::decimal(&end)?),
+                    text(1),
+                    text(1),
+                    text(u),
+                    Value::Length(levels[&a].1.clone()),
+                    text(0),
+                    text(next),
+                    Value::Length(levels[&b].1.clone()),
+                    text(0),
+                    text(0),
+                    text(ex::decimal(&end)?),
+                    text(0),
+                    text(0),
+                    text(1),
+                ],
+            );
+            values.extend([
+                0usize.into(),
+                self.edge_list.into(),
+                index.into(),
+                usize::from(orientation).into(),
+                1usize.into(),
+                1usize.into(),
+                pc.into(),
+            ]);
+            u = next;
+        }
+        Ok(self.graph.add(508, 1, values))
     }
     fn face(&mut self, id: FaceId) -> Result<usize, IgesError> {
         let f = self.model.face(id).clone();
@@ -569,12 +813,9 @@ impl Exporter<'_> {
                 ]);
             }
             loops.push(self.graph.add(508, 1, values));
+        } else if periodic {
+            loops.push(self.axial_sector(&f)?);
         } else {
-            if periodic {
-                return Err(IgesError::UnrepresentableDefinition(
-                    "periodic faces currently require two full circular trims",
-                ));
-            }
             for lp in &f.loops {
                 let mut values = vec![];
                 match self.model.loop_(*lp).clone() {

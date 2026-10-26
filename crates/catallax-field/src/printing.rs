@@ -197,14 +197,20 @@ enum Definition {
 }
 pub(crate) struct Classifier<'a> {
     plan: &'a Plan,
-    definitions: Vec<Definition>,
+    definitions: Vec<Option<Definition>>,
     states: Vec<Option<BoxState>>,
     pending: Vec<usize>,
 }
 impl<'a> Classifier<'a> {
     pub(crate) fn new(plan: &'a Plan, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut definitions = Vec::with_capacity(plan.leaves.len());
-        for leaf in &plan.leaves {
+        for (i, leaf) in plan.leaves.iter().enumerate() {
+            // Compaction retains source leaves for face history. Keep their
+            // indices, but prepare only definitions referenced by the live tape.
+            if plan.leaf_registers[i].is_none() {
+                definitions.push(None);
+                continue;
+            }
             match leaf {
                 geometry::Leaf::Primitive(primitive) => {
                     let inverse = primitive.inverse_placement();
@@ -224,12 +230,12 @@ impl<'a> Classifier<'a> {
                     for i in 0..3 {
                         offsets[i] = geometry::enclose(translation[i], 192, dec)?.to_interval();
                     }
-                    definitions.push(Definition::Primitive(Box::new(Primitive {
+                    definitions.push(Some(Definition::Primitive(Box::new(Primitive {
                         kind: primitive.kind,
                         matrix,
                         translation: offsets,
                         parameters: primitive.parameters.each_ref().map(Interval::from_rational),
-                    })));
+                    }))));
                 }
                 geometry::Leaf::Cell(_) => {
                     let mut supports = Vec::new();
@@ -243,9 +249,9 @@ impl<'a> Classifier<'a> {
                         }
                         supports.push(terms);
                     }
-                    definitions.push(Definition::Cell(supports));
+                    definitions.push(Some(Definition::Cell(supports)));
                 }
-                geometry::Leaf::Lattice(_) => definitions.push(Definition::Lattice),
+                geometry::Leaf::Lattice(_) => definitions.push(Some(Definition::Lattice)),
                 _ => {
                     return Err(refusal(
                         "field.print-coverage",
@@ -286,7 +292,7 @@ impl<'a> Classifier<'a> {
                     if let Some(state) = exact_leaf(i) {
                         state
                     } else {
-                        match &self.definitions[i] {
+                        match self.definitions[i].as_ref().expect("live leaf definition") {
                             Definition::Primitive(primitive) => primitive.classify(xyz),
                             Definition::Lattice => {
                                 let geometry::Leaf::Lattice(lattice) = &self.plan.leaves[i] else {

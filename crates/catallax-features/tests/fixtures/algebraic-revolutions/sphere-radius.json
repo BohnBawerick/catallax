@@ -1,0 +1,67 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "sphere-radius",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "arc",
+            "id": "round",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "to": [
+              "1",
+              "1"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "chord",
+            "to": [
+              "1",
+              "-1"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "body",
+      "op": "revolve",
+      "profile": "profile",
+      "axis": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "direction": [
+          "0",
+          "1",
+          "0"
+        ]
+      },
+      "angle": "360"
+    }
+  ],
+  "result": "body"
+}

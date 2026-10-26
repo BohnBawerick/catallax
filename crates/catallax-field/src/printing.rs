@@ -9,11 +9,12 @@
 use crate::{Instruction, Location, Plan, Workspace, geometry, lattice::BoxState, metric::Kind};
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_recipe::BooleanKind;
-use catallax_shapes::RPoint3;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
+
+mod membership;
 
 type Index = [u32; 3];
 type Terms = Vec<([u32; 3], Interval)>;
@@ -339,21 +340,14 @@ impl<'a> Classifier<'a> {
         match self.classify(&point.each_ref().map(Interval::from_rational), dec)? {
             BoxState::Inside => Ok(true),
             BoxState::Outside => Ok(false),
-            BoxState::Unknown => {
-                let [x, y, z] = point.clone();
-                match self
-                    .plan
-                    .proven_checked(&RPoint3::new(x, y, z), workspace, dec)?
-                    .location
-                {
-                    Location::Inside => Ok(true),
-                    Location::Outside | Location::Boundary => Ok(false),
-                    Location::Indeterminate => Err(refusal(
-                        "field.print-classification",
-                        "an exact grid-corner classification is unresolved",
-                    )),
-                }
-            }
+            BoxState::Unknown => match self.corner_location(point, workspace, dec)? {
+                Location::Inside => Ok(true),
+                Location::Outside | Location::Boundary => Ok(false),
+                Location::Indeterminate => Err(refusal(
+                    "field.print-classification",
+                    "an exact grid-corner classification is unresolved",
+                )),
+            },
         }
     }
 }

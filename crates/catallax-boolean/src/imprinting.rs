@@ -6,7 +6,7 @@ use crate::geometry::{
 };
 use crate::graph::sort_points;
 use crate::points::{curve_sample, left_probe};
-use crate::region::{Location, locate, signatures};
+use crate::region::{Location, RegionCache, locate};
 use crate::stages::{Imprinted, IntersectionGraph};
 use catallax_intersect::{curve_is_closed, same_curve, tangent_at};
 use catallax_numbers::{
@@ -336,6 +336,7 @@ fn pieces(
         .into_iter()
         .collect();
     let mut cells: BTreeMap<Vec<i64>, Vec<LoopId>> = BTreeMap::new();
+    let mut regions = RegionCache::default();
     for &l in &loops {
         let Loop::Coedges(original_coedges) = model.loop_(l) else {
             unreachable!("arrangement walks use coedges")
@@ -351,11 +352,11 @@ fn pieces(
             sense: f.sense,
             loops: vec![temporary_loop],
         });
-        let surface = model.geom().surface(f.surface).clone();
         let (inside, signature) =
             left_probe(model, temporary, &barriers, dec, |model, point, _, dec| {
                 let inside = locate(model, face, point, dec)? == Location::Inside;
-                let signature = signatures(model, &surface, &groups, point, dec)?;
+                let signature =
+                    regions.signatures_prepared(model, f.surface, &groups, point, dec)?;
                 Ok(Some((inside, signature)))
             })?;
         if inside {

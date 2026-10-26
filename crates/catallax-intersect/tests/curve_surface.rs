@@ -450,3 +450,77 @@ blind_test!(line_meeting_coordinate_bounds_ignore_parameter_scale, {
         }
     }
 });
+
+blind_test!(
+    offset_circular_sections_keep_roots_contacts_and_containment,
+    {
+        let crossing = Hits::Meets(vec![
+            (pi([3, 4, 0]).to_real(), Contact::Crossing),
+            (pi([3, -4, 0]).to_real(), Contact::Crossing),
+        ]);
+        let tangent = Hits::Meets(vec![(pi([5, 0, 0]).to_real(), Contact::Tangent)]);
+        for (offset, radius, expected) in [
+            (6, 5, crossing),
+            (10, 5, tangent.clone()),
+            (2, 3, tangent),
+            (11, 5, Hits::Disjoint),
+            (1, 3, Hits::Disjoint),
+            (0, 3, Hits::Disjoint),
+            (0, 5, Hits::Contained),
+        ] {
+            let case = HitCase {
+                name: format!("parallel circular section {offset}/{radius}"),
+                curve: Carrier::Analytic(k5()),
+                surface: cyl(pi([offset, 0, 7]), vi([0, 0, -3]), n(radius)),
+                expected,
+            };
+            for pose in [Pose::identity(), Rng(0x513).pose()] {
+                check(&case, &n(1), &pose, Decider::default(), Mode::Exact);
+            }
+        }
+    }
+);
+
+blind_test!(
+    algebraic_lines_keep_correlated_hits_on_rational_cylinders,
+    {
+        let root = rr(2).sqrt();
+        let surface = cyl(pi([0, 0, 0]), vi([0, 0, 1]), n(2));
+        for (origin, expected) in [
+            (
+                Point3::new(root.clone(), rr(0), rr(0)),
+                Hits::Meets(vec![
+                    (Point3::new(root.clone(), -&root, rr(0)), Contact::Crossing),
+                    (
+                        Point3::new(root.clone(), root.clone(), rr(0)),
+                        Contact::Crossing,
+                    ),
+                ]),
+            ),
+            (
+                Point3::new(rr(2), rr(0), root.clone()),
+                Hits::Meets(vec![(
+                    Point3::new(rr(2), rr(0), root.clone()),
+                    Contact::Tangent,
+                )]),
+            ),
+            (Point3::new(&rr(2) * &root, rr(0), rr(0)), Hits::Disjoint),
+        ] {
+            let case = HitCase {
+                name: "algebraic line on rational cylinder".into(),
+                curve: Carrier::Analytic(Curve::Line(
+                    Line::new(origin, vi([0, 1, 0]).into(), &mut Decider::default()).unwrap(),
+                )),
+                surface: surface.clone(),
+                expected,
+            };
+            check(
+                &case,
+                &n(1),
+                &Pose::identity(),
+                Decider::default(),
+                Mode::Exact,
+            );
+        }
+    }
+);

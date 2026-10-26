@@ -15,7 +15,12 @@ pub(crate) struct Boundaries {
     pub(crate) mesh: PreviewMesh,
     pub(crate) edges: BTreeMap<EdgeId, usize>,
     pub(crate) vertices: BTreeMap<VertexId, usize>,
+    pub(crate) merged_vertices: bool,
 }
+
+// Preview-only simplification, one million times smaller than 1 nm in mm.
+// This does not change retained positions, predicates, or certified sampling.
+const VERTEX_MERGE_MM: f64 = 1e-12;
 
 impl Boundaries {
     fn push(&mut self, point: [f64; 3], options: &PreviewOptions) -> Result<usize, Refusal> {
@@ -30,6 +35,7 @@ impl Boundaries {
         &mut self,
         model: &Model,
         vertex: VertexId,
+        nearby: &mut BTreeMap<[i64; 3], Vec<usize>>,
         options: &PreviewOptions,
         dec: &Decider,
     ) -> Result<usize, Refusal> {
@@ -42,7 +48,35 @@ impl Boundaries {
             dec.enclose_at(&p.y, chart::BITS)?,
             dec.enclose_at(&p.z, chart::BITS)?,
         ])?;
-        let index = self.push(point, options)?;
+        let cell = point.map(|x| libm::floor(x / VERTEX_MERGE_MM) as i64);
+        let mut existing = None;
+        for x in -1..=1 {
+            for y in -1..=1 {
+                for z in -1..=1 {
+                    let key = [
+                        cell[0].saturating_add(x),
+                        cell[1].saturating_add(y),
+                        cell[2].saturating_add(z),
+                    ];
+                    for &index in nearby.get(&key).into_iter().flatten() {
+                        let other = self.mesh.positions[index];
+                        if (0..3).map(|i| (point[i] - other[i]).powi(2)).sum::<f64>()
+                            <= VERTEX_MERGE_MM * VERTEX_MERGE_MM
+                        {
+                            existing = Some(existing.map_or(index, |old: usize| old.min(index)));
+                        }
+                    }
+                }
+            }
+        }
+        let index = if let Some(index) = existing {
+            self.merged_vertices = true;
+            index
+        } else {
+            let index = self.push(point, options)?;
+            nearby.entry(cell).or_default().push(index);
+            index
+        };
         self.vertices.insert(vertex, index);
         Ok(index)
     }
@@ -132,9 +166,11 @@ pub(crate) fn build(
         mesh: PreviewMesh::default(),
         edges: BTreeMap::new(),
         vertices: BTreeMap::new(),
+        merged_vertices: false,
     };
+    let mut nearby = BTreeMap::new();
     for vertex in model.vertices_of_body(body) {
-        result.vertex(model, vertex, options, dec)?;
+        result.vertex(model, vertex, &mut nearby, options, dec)?;
     }
     let mut adjacent = BTreeMap::<EdgeId, Vec<&Chart>>::new();
     for (&face, chart) in charts {

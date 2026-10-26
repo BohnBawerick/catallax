@@ -19,6 +19,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let fixtures = [
         (
+            "near-miss-flange",
+            include_str!("../tests/fixtures/preview-near-miss-flange.json"),
+            "0.01",
+        ),
+        (
             "fillet",
             include_str!("fine_mesh/fillet.json"),
             "0.0005462600113499065",

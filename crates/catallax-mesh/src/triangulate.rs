@@ -1158,19 +1158,49 @@ pub(crate) fn build_preview(
                             } else {
                                 [pair[1], pair[0]]
                             };
+                            if first == last && boundaries.merged_vertices {
+                                continue;
+                            }
                             let a = chart.project(boundaries.mesh.positions[first]);
                             let b = align(
                                 chart.project(boundaries.mesh.positions[last]),
                                 a,
                                 chart.periodic,
                             );
-                            projected.extend([a, b]);
                             segments.push((a, b, first, last));
                         }
                     }
                 }
             }
         }
+        if boundaries.merged_vertices {
+            // Only simplified boundaries need cancellation. Preserve the usual
+            // insertion order and avoid a second index for ordinary previews.
+            let mut surviving = BTreeMap::new();
+            for (a, b, first, last) in segments {
+                // Include chart lifts: periodic arcs can share mesh endpoints
+                // without tracing the same segment in the chart.
+                if surviving.remove(&(last, first, key(b), key(a))).is_none() {
+                    surviving.insert((first, last, key(a), key(b)), (a, b, first, last));
+                }
+            }
+            segments = surviving.into_values().collect();
+        }
+        if boundaries.merged_vertices
+            && segments.is_empty()
+            && definition
+                .loops
+                .iter()
+                .any(|&boundary| matches!(model.loop_(boundary), Loop::Coedges(_)))
+        {
+            let end = boundaries.mesh.triangles.len();
+            boundaries.mesh.faces.push(crate::PreviewFace {
+                face,
+                triangles: end..end,
+            });
+            continue;
+        }
+        projected.extend(segments.iter().flat_map(|&(a, b, _, _)| [a, b]));
         let bounds = std::array::from_fn(|i| {
             if chart.periodic[i] {
                 [0.0, 1.0]

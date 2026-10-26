@@ -71,7 +71,7 @@ pub(super) fn mesh(
     let lipschitz = feature.algebraic_display_lipschitz(&height, dec)?;
     let mut controls = options.clone();
     controls.tolerance = &options.tolerance / &(&q(2) * &lipschitz);
-    let mut mesh = mesh_plan_inner(&source, &controls, dec, report)?;
+    let mut mesh = mesh_plan_inner(&source, &controls, dec, report, None)?;
     // Enclose the affine coefficients once. Every output vertex and facet
     // reuses these exact coefficient enclosures; no per-vertex root isolation.
     let (origin, matrix) = feature.algebraic_display_affine(&height);

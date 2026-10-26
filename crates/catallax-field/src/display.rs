@@ -23,10 +23,12 @@ mod chart;
 mod diagnostics;
 mod extrude_algebraic;
 pub(crate) mod membership;
+mod preview;
 use boolean::{Boolean, Germ, State};
 use chart::{Chart, Pullback};
 use diagnostics::Snapshot;
 pub use diagnostics::{Cost, Diagnostics, FaceWork, SupportWork};
+pub use preview::{PreviewMesh, PreviewOptions, preview_plan};
 
 /// Deterministic display limits, in millimetres and counts.
 #[derive(Clone, Debug)]
@@ -500,7 +502,7 @@ struct Builder<'a> {
 /// Every unsupported chart, unresolved trim or exhausted limit returns a stable
 /// refusal rather than publishing incomplete geometry or falling back to B-rep.
 pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Mesh, Refusal> {
-    mesh_plan_inner(plan, options, dec, None)
+    mesh_plan_inner(plan, options, dec, None, None)
 }
 
 /// Builds the same mesh and retains non-charging per-face/support observations,
@@ -513,7 +515,7 @@ pub fn mesh_plan_reported(
 ) -> Result<Mesh, Refusal> {
     *report = Diagnostics::default();
     let before = Snapshot::new(dec);
-    let result = mesh_plan_inner(plan, options, dec, Some(report));
+    let result = mesh_plan_inner(plan, options, dec, Some(report), None);
     report.total.record(before, dec, 0, false);
     report.total.cells = report.supports.iter().map(|s| s.total.cells).sum();
     report.total.max_depth = report
@@ -533,11 +535,14 @@ pub fn mesh_plan_reported(
     result
 }
 
+/// `gaps` selects the unproved preview: cells the certified request would refuse
+/// are counted there and left empty instead of failing the request.
 fn mesh_plan_inner(
     plan: &Plan,
     options: &Options,
     dec: &mut Decider,
     mut report: Option<&mut Diagnostics>,
+    mut gaps: Option<&mut usize>,
 ) -> Result<Mesh, Refusal> {
     if options.tolerance <= q(0) || options.max_vertices < 4 || options.max_cells == 0 {
         return Err(failure(
@@ -564,8 +569,11 @@ fn mesh_plan_inner(
     if plan.is_proven_empty() {
         return Ok(mesh);
     }
-    if let Some(mesh) = extrude_algebraic::mesh(plan, options, dec, report.as_deref_mut())? {
-        return Ok(mesh);
+    match extrude_algebraic::mesh(plan, options, dec, report.as_deref_mut()) {
+        Ok(Some(mesh)) => return Ok(mesh),
+        Ok(None) => (),
+        Err(refusal) if gaps.is_some() && !preview::is_allowance(&refusal) => (),
+        Err(refusal) => return Err(refusal),
     }
     let mut builder = Builder {
         plan,
@@ -1067,6 +1075,24 @@ fn mesh_plan_inner(
                     builder.mesh.cells != previous_cells,
                 );
             }
+            let result = match result {
+                Err(refusal) if gaps.is_some() && !preview::is_allowance(&refusal) => {
+                    if preview::is_cell_limit(&refusal) {
+                        // The limit is spent: every cell still queued stays a gap.
+                        if let Some(gaps) = gaps.as_deref_mut() {
+                            *gaps += 1 + stack.len() + deferred.len();
+                        }
+                        stack.clear();
+                        deferred.clear();
+                        break;
+                    }
+                    if let Some(gaps) = gaps.as_deref_mut() {
+                        *gaps += 1;
+                    }
+                    continue;
+                }
+                other => other,
+            };
             match result? {
                 Visit::Skip => continue,
                 Visit::Defer => {

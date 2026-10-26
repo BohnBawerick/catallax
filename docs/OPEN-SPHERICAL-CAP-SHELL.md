@@ -71,8 +71,13 @@ source material and open curved faces do not acquire this proof. Cases needing
 finite rim pipes continue to report their existing coverage refusal. No torus
 envelope representation, dispatcher, native display implementation, STEP writer,
 accuracy target, deterministic allowance or independent vertex limit changes.
-Native field display and sampled background comparison remain separate consumers;
-their outcomes do not replace the whole-domain proof or independent properties.
+For the public fixture, native field display at `0.01 mm` with a `20M` work
+allowance returns `field.display-budget` at `2,000,001` cells under the unchanged
+`2M` cell cap and leaves no OBJ artifact. The sampled comparison agrees with a
+`100M` verification allowance, while the `1M` comparison exhausts its allowance
+with `numbers.operation-budget`. These consumer outcomes do not replace the
+whole-domain proof or independent properties, and provide no latency
+qualification.
 
 The tests are [finite shell controls](../crates/catallax-features/tests/open_spherical_cap.rs),
 [application controls](../crates/catallax-app/tests/open_spherical_cap.rs), and

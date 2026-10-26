@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use catallax_intersect::{Contact, CurveForm, CurveSurface, Cyclic};
-use catallax_numbers::{Decider, Outcome, Real, Refusal, Sign, StrictOrder, StrictSign};
+use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictOrder, StrictSign};
 use catallax_shapes::{
     CurveId, GeomStore, Plane, Point3, PointDef, PointId, Surface, SurfaceId, Vector3,
 };
@@ -284,6 +284,7 @@ impl Geometry {
         let center = sphere.center.clone();
         let axis = sphere.axis.clone();
         let reference = sphere.ref_dir.clone();
+        let radius = sphere.radius.clone();
         let boundaries = self.boundaries(model, face, dec)?;
         if boundaries.is_empty() {
             return Ok(Location::Inside);
@@ -345,18 +346,60 @@ impl Geometry {
         let query_vector = query.minus(&center);
         let across = axis.cross(&reference);
         let attempts = boundaries.len().saturating_add(1).saturating_mul(128);
-        // Choose a meridian from the carrier frame, not from an algebraic arc
-        // midpoint: the latter needlessly raises the curve-plane eliminant's
-        // coefficient field. The first transverse boundary hit determines which
-        // side contains the query; no reconstructed-point equality is needed.
+        // Aim rational planes toward known trim chords first. Blind carrier
+        // rays can all miss a small spherical patch. Enclose only to choose
+        // the candidate: arc membership and crossing orientation stay exact.
+        // Keeping algebraic vertices out of the plane coefficients also avoids
+        // raising the intersection eliminant's coefficient field.
+        let epsilon = dec.enclose(&radius, &Rational::one())?.hi().abs()
+            * Rational::from_ratio(1, 100_000_000).unwrap();
+        let mut approximate = BTreeMap::<PointId, Vector3>::new();
         for attempt in 0..attempts {
             dec.check_deadline()?;
-            let a = Real::from_i64((attempt / 2) as i64);
-            let ray = reference
-                .plus(&across.scaled(&a))
-                .plus(&axis.scaled(&(&a * &a)));
+            let (ray, reverse) = if attempt < boundaries.len() {
+                let (Some(from), Some(to)) = (boundaries[attempt].from, boundaries[attempt].to)
+                else {
+                    continue;
+                };
+                if from == to {
+                    continue;
+                }
+                for point in [from, to] {
+                    if let std::collections::btree_map::Entry::Vacant(entry) =
+                        approximate.entry(point)
+                    {
+                        let p = self.store.position(point).minus(&center);
+                        let coordinate =
+                            |value: &Real, dec: &mut Decider| -> Result<Real, Refusal> {
+                                let enclosure = dec.enclose(value, &epsilon)?;
+                                Ok(number::rational(&enclosure.mid(), 8).value.into())
+                            };
+                        entry.insert(Vector3::new(
+                            coordinate(&p.x, dec)?,
+                            coordinate(&p.y, dec)?,
+                            coordinate(&p.z, dec)?,
+                        ));
+                    }
+                }
+                (approximate[&from].plus(&approximate[&to]), false)
+            } else {
+                let serial = attempt - boundaries.len();
+                let index = serial / 2;
+                let magnitude = index.div_ceil(2) as i64;
+                let a = Real::from_i64(if index % 2 == 0 {
+                    -magnitude
+                } else {
+                    magnitude
+                });
+                (
+                    reference
+                        .plus(&across.scaled(&a))
+                        .plus(&axis.scaled(&(&a * &a))),
+                    serial % 2 != 0,
+                )
+            };
             let mut normal = query_vector.cross(&ray);
-            if attempt % 2 != 0 {
+            if reverse {
                 normal = normal.scaled(&Real::from_i64(-1));
             }
             if sign(&normal.norm_squared(), dec)? == Sign::Zero {

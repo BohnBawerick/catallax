@@ -94,7 +94,7 @@ class PartialPeriodicTrimImports(unittest.TestCase):
         self.check_intersection([
             {'op': 'cylinder', 'radius': '1', 'height': '6', 'pose': pose(z='-3')},
             {'op': 'sphere', 'radius': '2', 'pose': pose(x='2')}],
-            (3, 3, 2), 3.100408279750527)
+            (2, 1, 1), 3.100408279750527)
 
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),
@@ -104,7 +104,7 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                 self.check_intersection([
                     {'op': 'sphere', 'radius': '5', 'pose': first},
                     {'op': 'sphere', 'radius': '5', 'pose': second}],
-                    (3, 3, 2), 104 * math.pi / 3)
+                    (2, 1, 1), 104 * math.pi / 3)
 
 
 if __name__ == '__main__':

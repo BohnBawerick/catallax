@@ -628,7 +628,7 @@ fn branch_spline_has_certified_bounds_at_default_tight_and_small_budgets() {
             ..StepOptions::default()
         };
         let (file, answer) = export(&model, &[body], &options);
-        assert_eq!(answer.value.approximated_curves, 2);
+        assert_eq!(answer.value.approximated_curves, 1);
         assert!(
             answer.value.max_deviation <= options.curve_tolerance,
             "{:?}",
@@ -1045,10 +1045,10 @@ fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
             answer.value.edges,
             answer.value.vertices
         ),
-        (5, 9, 6)
+        (4, 6, 4)
     );
     assert_eq!(answer.value.approximated_curves, 0);
-    assert_eq!(answer.value.added_vertices, 2);
+    assert_eq!(answer.value.added_vertices, 0);
     assert!(answer.value.max_deviation > Rational::zero());
     assert!(answer.marks.is_empty());
     let es = entities(&file);
@@ -1362,7 +1362,7 @@ fn steinmetz_ellipse_arcs_stay_analytic_with_a_valid_deviation_bound() {
             answer.value.edges,
             answer.value.vertices
         ),
-        (6, 9, 5)
+        (4, 4, 2)
     );
     assert_eq!(answer.value.approximated_curves, 0);
     assert!(answer.marks.is_empty());

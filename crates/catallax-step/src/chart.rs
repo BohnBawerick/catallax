@@ -45,17 +45,35 @@ pub(crate) fn meridian(
     let across = axis.cross(&reference);
     let boundaries = geometry.boundaries(model, face, dec)?;
     let attempts = boundaries.len().saturating_add(1).saturating_mul(128);
-    for attempt in 0..attempts {
+    let mut fallback = None;
+    for attempt in 0..attempts.saturating_add(4) {
+        if attempt == 4
+            && let Some(meridian) = fallback.take()
+        {
+            return Ok(meridian);
+        }
         dec.check_deadline()?;
-        let magnitude = attempt.div_ceil(2) as i64;
-        let t = Real::from_i64(if attempt % 2 == 0 {
-            -magnitude
-        } else {
-            magnitude
-        });
-        let reference = reference
-            .scaled(&(Real::one() - &t * &t))
-            .plus(&across.scaled(&(&Real::from_i64(2) * &t)));
+        // Prefer an exterior chart cut before splitting a contractible trim.
+        // The antipodal ray shares the first plane/intersection cache and
+        // keeps ordinary partial walls and caps as one face.
+        let reference = match attempt {
+            0 => reference.clone(),
+            1 => reference.scaled(&(-Real::one())),
+            2 => across.clone(),
+            3 => across.scaled(&(-Real::one())),
+            _ => {
+                let serial = attempt - 1;
+                let magnitude = serial.div_ceil(2) as i64;
+                let t = Real::from_i64(if serial % 2 == 0 {
+                    -magnitude
+                } else {
+                    magnitude
+                });
+                reference
+                    .scaled(&(Real::one() - &t * &t))
+                    .plus(&across.scaled(&(&Real::from_i64(2) * &t)))
+            }
+        };
         let normal = axis.cross(&reference);
         let plane = geometry.plane(origin.clone(), normal, axis.clone(), dec)?;
         let mut crossings = Vec::new();
@@ -129,10 +147,16 @@ pub(crate) fn meridian(
             }
         }
         if regular {
-            return Ok(Meridian {
+            let meridian = Meridian {
                 reference,
                 crossings,
-            });
+            };
+            if meridian.crossings.is_empty() || attempt >= 4 {
+                return Ok(meridian);
+            }
+            if fallback.is_none() {
+                fallback = Some(meridian);
+            }
         }
     }
     Err(number::budget(

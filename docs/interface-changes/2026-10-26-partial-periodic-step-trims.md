@@ -9,6 +9,13 @@ is preserved at touching vertices. Disconnected chart components become separate
 STEP faces with distinct surface identities; a cut shared by two components is
 not mislabeled as a same-face seam.
 
+Selection first tries exterior meridians so contractible partial walls and caps
+do not acquire unnecessary face fragments. Spherical membership aims rational
+query planes toward enclosed trim chords instead of relying only on blind
+carrier rays that can all miss a small cap. The enclosures choose candidates,
+not geometric approximations: arc membership and crossing orientation still
+require exact proofs, and the existing request budgets are unchanged.
+
 Each incident chart has a bounded degree-seven pcurve using the written space
 curve's native parameter. Interval Taylor remainders, endpoint replacement and
 decimal rounding contribute to the existing certified distance bound. The

@@ -156,6 +156,10 @@ dependencies = [
 name = "catallax-import"
 version = "0.1.0"
 dependencies = [
+ "catallax-numbers",
+ "catallax-shapes",
+ "catallax-step",
+ "catallax-topology",
  "serde",
  "serde_json",
 ]

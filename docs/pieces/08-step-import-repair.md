@@ -10,7 +10,7 @@ A real click path needs, in order: a Part 21 reader, analytic surface and curve 
 
 Files: AP203/AP214/AP242 `MANIFOLD_SOLID_BREP` with one `CLOSED_SHELL`, in millimetres, inches or metres (exact conversion).
 
-Surfaces: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE`. Curves: `LINE`, `CIRCLE`, `ELLIPSE`. Everything else (B-spline, offset, swept, trimmed-by-surface, multiple solids in one product, assemblies) is refused with the entity id and type. Decimals read as exact rationals; no float enters a decision.
+Surfaces: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE`. Curves: `LINE`, `CIRCLE`, `ELLIPSE`, and `SURFACE_CURVE` or `SEAM_CURVE` read through their 3D curve (parameter-space curves are ignored). A `CONICAL_SURFACE` is read only when its semi-angle is exactly 45 degrees in a degree context, because other angles have an irrational slope; others are refused. Several `MANIFOLD_SOLID_BREP` entities import as separate bodies, which acceptance test 2 needs. Everything else (B-spline, offset, swept, voids, shell models, assemblies) is refused with the entity id and type. A face with a single `FACE_BOUND` and no `FACE_OUTER_BOUND` is read with that bound as its outer boundary, as Catallax's own exporter writes it. Decimals read as exact rationals; no float enters a decision.
 
 Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4.18.
 

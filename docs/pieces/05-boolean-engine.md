@@ -113,6 +113,14 @@ Finite trim membership is required on both operands. The smaller face set is que
 
 The pieces satisfy the classification rule: **the interior of each piece, apart from the isolated points of the graph, lies entirely inside the other body, entirely outside it, or entirely on its boundary**. This is what imprint is for, and tests check it through `classify` and `face_point`.
 
+An inward probe is adjacent only after its whole chart path is certified free
+of boundary barriers. On a proven straight planar path from a native circle,
+subtracting the source circle's sphere equation from another circle's sphere
+equation keeps the barrier polynomial affine in the exact source coordinates.
+The path polynomial is unchanged. Its plane equation, finite-arc checks,
+permitted source contact and strict destination exclusion still apply; no
+carrier or canonical witness is removed.
+
 Accessors: `pieces_of_first()` and `pieces_of_second()` list the pieces of each body, and `common_edges()` the common edges, in deterministic orders that are not part of the contract.
 
 ### Classify

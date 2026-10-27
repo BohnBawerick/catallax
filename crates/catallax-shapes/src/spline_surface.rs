@@ -2,7 +2,7 @@
 
 use crate::{
     BSplineCurve, BSplineSurface, EllipticOffsetDefinition, Isometry, OffsetSweepProof, Point3,
-    Pose, SplineBoundary, SplineCurveParameter, Vector3, math,
+    Pose, RollingEnvelope, SplineBoundary, SplineCurveParameter, Vector3, math,
 };
 use catallax_numbers::{Ball, Decider, EvidenceBound, Rational, Real, Refusal, Sign};
 use std::{
@@ -45,6 +45,8 @@ pub struct SplineSurface {
 pub enum SplineSupport {
     /// Regular convex normal offset of an elliptic cylinder, with finite caps.
     EllipticOffset(SplineSurface),
+    /// Rolling-ball envelope while the ball rests on a cylinder and a mouth edge.
+    RollingEnvelope(RollingEnvelope),
 }
 
 impl From<SplineSurface> for SplineSupport {
@@ -52,28 +54,38 @@ impl From<SplineSurface> for SplineSupport {
         Self::EllipticOffset(surface)
     }
 }
+impl From<RollingEnvelope> for SplineSupport {
+    fn from(surface: RollingEnvelope) -> Self {
+        Self::RollingEnvelope(surface)
+    }
+}
 impl SplineSupport {
     /// The genuine finite B-spline carrier, independent of its exact target.
     pub fn carrier(&self) -> &BSplineSurface {
         match self {
             Self::EllipticOffset(surface) => surface.carrier(),
+            Self::RollingEnvelope(surface) => surface.carrier(),
         }
     }
     /// Exact rigid transport of the carrier, retained law and local proofs.
     pub fn transformed(&self, pose: &Pose) -> Self {
         match self {
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.transformed(pose)),
+            Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.transformed(pose)),
         }
     }
     pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
         match self {
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.mapped(pose)),
+            Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.mapped(pose)),
         }
     }
     /// Positive expression-node identity for deterministic cache reuse.
     pub fn shares_definition_nodes(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::EllipticOffset(a), Self::EllipticOffset(b)) => a.shares_definition_nodes(b),
+            (Self::RollingEnvelope(a), Self::RollingEnvelope(b)) => a.shares_definition_nodes(b),
+            _ => false,
         }
     }
     /// Complete finite parameter cover for a spatial box. A returned cover
@@ -86,6 +98,7 @@ impl SplineSupport {
     ) -> Result<Option<[Ball; 2]>, Refusal> {
         match self {
             Self::EllipticOffset(surface) => surface.parameters_of_box(point, dec),
+            Self::RollingEnvelope(surface) => surface.parameters_of_box(point, dec),
         }
     }
 
@@ -93,6 +106,7 @@ impl SplineSupport {
     pub fn side_at(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
         match self {
             Self::EllipticOffset(surface) => surface.side_at(point, dec),
+            Self::RollingEnvelope(surface) => surface.side_at(point, dec),
         }
     }
     /// Outward normal at an actual finite carrier point; no global implicit
@@ -108,6 +122,15 @@ impl SplineSupport {
                     )
                 })?
                 .normal(dec),
+            Self::RollingEnvelope(surface) => surface.normal_at(point, dec),
+        }
+    }
+    /// Parameter kinds: the elliptic sweep closes around its section; the
+    /// envelope is finite in both directions.
+    pub fn param_kinds(&self) -> [crate::ParamKind; 2] {
+        match self {
+            Self::EllipticOffset(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
+            Self::RollingEnvelope(_) => [crate::ParamKind::Finite, crate::ParamKind::Finite],
         }
     }
 }

@@ -19,6 +19,7 @@ mod offset_sweep;
 mod parallel;
 mod point;
 mod pose;
+mod rolling_envelope;
 mod spline_surface;
 mod store;
 mod surface;
@@ -39,6 +40,9 @@ pub use offset_sweep::{
 };
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
+pub use rolling_envelope::{
+    ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope, RollingEnvelopeDefinition,
+};
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
 pub use surface::{

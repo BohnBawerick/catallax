@@ -194,8 +194,8 @@ trace piece, parameter interval and precision. The cache retains at most 4096
 entries; a full cache computes further boxes without storing them. Cancellation
 is checked on hits. Drop the batch before leaving its budget scope or changing
 existing geometry or topology. Auxiliary query geometry may be appended.
-Outside the closed-form planar line/circle cases below, ordinary construction and
-single-point queries retain their previous proof order.
+Outside the closed-form planar and cylindrical cases below, ordinary
+construction and single-point queries retain their previous proof order.
 
 Planar loops of lines and circular arcs use signed chord crossings and an exact
 circular-segment correction. An oriented arc minus its chord bounds the part of
@@ -213,6 +213,19 @@ Queries on a selected arc or its finite chord retain the closed-trim fallback;
 an artificial chord is not a face boundary. Other carriers retain the certified
 probe and trace paths. This does not prune or rewrite the section graph's ordered
 carrier and point definitions.
+
+A cylindrical face with one four-coedge loop may be a product of a closed
+axial interval and a circular arc. The classifier requires two native circular
+caps and two distinct axial line generators, with retained endpoint incidence
+and exact loop closure. It proves matching cylinder radii and axes, ordered
+cap heights and compatible cap and generator travel before using that product.
+Generators may be native lines or validated line components of parallel
+cylinder intersections; an analytic line form's direction is not assumed to
+be its natural orientation. Coedge endpoints establish finite generator travel.
+The axial interval and oriented cap chord then classify interior, exterior and
+closed boundary, including major arcs and reversed face uses. Unsupported
+representations and missing incidence retain the ordinary membership path.
+Every performed predicate retains the caller's decider and remaining allowance.
 
 
 ## Decisions, outcomes and marks

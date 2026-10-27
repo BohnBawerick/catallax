@@ -563,7 +563,7 @@ impl Surface {
             Self::Cone(_) => [ParamKind::Periodic, ParamKind::Ray],
             Self::Sphere(_) => [ParamKind::Periodic, ParamKind::Latitude],
             Self::Torus(_) => [ParamKind::Periodic, ParamKind::Periodic],
-            Self::BSpline(_) => [ParamKind::PeriodicFinite, ParamKind::Finite],
+            Self::BSpline(spline) => spline.param_kinds(),
         }
     }
 

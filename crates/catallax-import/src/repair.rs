@@ -64,6 +64,7 @@ pub fn apply(
 ) -> Result<Imported, ImportRefusal> {
     let file = read_step(source)?;
     let sha = sha256_hex(source);
+    crate::check_self_intersection(&file)?;
     let gaps = measure(&file, &options.search_radius_mm)?;
     let props = proposals(&file, &sha, &gaps);
 
@@ -208,8 +209,10 @@ pub fn apply(
             .map(|(p, _)| p.id.clone());
         if let Some(id) = &first {
             let mut scratch = Model::new();
-            let body = build_solid(&mut scratch, solid, None)
-                .map_err(|e| failed(id, format!("the repaired solid is not valid: {e:?}")))?;
+            let body = build_solid(&mut scratch, solid, None).map_err(|e| match e {
+                e @ ImportRefusal::SelfIntersecting { .. } => e,
+                e => failed(id, format!("the repaired solid is not valid: {e:?}")),
+            })?;
             let v = volume(
                 &scratch,
                 body,

@@ -204,6 +204,13 @@ pub enum ImportRefusal {
         /// Which check.
         detail: String,
     },
+    /// Two faces of one solid pass through each other. Geometry.
+    SelfIntersecting {
+        /// Solid entity name.
+        solid: String,
+        /// Entity names of the first pair of faces whose interiors intersect.
+        faces: [String; 2],
+    },
     /// The work allowance ended first. Incomplete, not impossible.
     ResourceLimit,
 }

@@ -256,3 +256,127 @@ fn write_box(w: &mut Writer, b: &BoxFixture) -> u64 {
     let shell = w.add(format!("CLOSED_SHELL('',({list}))"));
     w.add(format!("MANIFOLD_SOLID_BREP('box',#{shell})"))
 }
+
+/// A solid given as planar faces, each a ring of corners counter-clockwise seen
+/// from outside. Corners and straight edges are shared by coordinates.
+pub type Ring = Vec<[&'static str; 3]>;
+
+pub fn polyhedra_step(solids: &[Vec<Ring>]) -> String {
+    let mut w = Writer { lines: Vec::new() };
+    let mut names = Vec::new();
+    for faces in solids {
+        let mut vertex: std::collections::BTreeMap<[Rational; 3], u64> = Default::default();
+        let mut edge: std::collections::BTreeMap<([Rational; 3], [Rational; 3]), u64> =
+            Default::default();
+        let mut face_ids = Vec::new();
+        for ring in faces {
+            let pts: Vec<[Rational; 3]> = ring.iter().map(|p| p.map(r)).collect();
+            let mut oriented = Vec::new();
+            for k in 0..pts.len() {
+                let (from, to) = (&pts[k], &pts[(k + 1) % pts.len()]);
+                let forward = from < to;
+                let (lo, hi) = if forward { (from, to) } else { (to, from) };
+                let key = (lo.clone(), hi.clone());
+                if !edge.contains_key(&key) {
+                    let mut ids = [0u64; 2];
+                    for (slot, p) in [lo, hi].into_iter().enumerate() {
+                        ids[slot] = *vertex.entry(p.clone()).or_insert_with(|| {
+                            let pt = w.point(p);
+                            w.add(format!("VERTEX_POINT('',#{pt})"))
+                        });
+                    }
+                    let d: [Rational; 3] = std::array::from_fn(|i| &hi[i] - &lo[i]);
+                    let origin = w.point(lo);
+                    let dir = w.add(format!(
+                        "DIRECTION('',({},{},{}))",
+                        dec(&d[0]),
+                        dec(&d[1]),
+                        dec(&d[2])
+                    ));
+                    let vec = w.add(format!("VECTOR('',#{dir},1.0)"));
+                    let line = w.add(format!("LINE('',#{origin},#{vec})"));
+                    let e = w.add(format!(
+                        "EDGE_CURVE('',#{},#{},#{line},.T.)",
+                        ids[0], ids[1]
+                    ));
+                    edge.insert(key.clone(), e);
+                }
+                oriented.push(w.add(format!(
+                    "ORIENTED_EDGE('',*,*,#{},.{}.)",
+                    edge[&key],
+                    if forward { "T" } else { "F" }
+                )));
+            }
+            let list = oriented
+                .iter()
+                .map(|o| format!("#{o}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let lp = w.add(format!("EDGE_LOOP('',({list}))"));
+            let bound = w.add(format!("FACE_OUTER_BOUND('',#{lp},.T.)"));
+            // Newell normal of the ring, scaled to integers is not needed: any exact normal.
+            let n = {
+                let mut n = [r("0"), r("0"), r("0")];
+                for k in 0..pts.len() {
+                    let (a, b) = (&pts[k], &pts[(k + 1) % pts.len()]);
+                    n[0] = &n[0] + &(&(&a[1] - &b[1]) * &(&a[2] + &b[2]));
+                    n[1] = &n[1] + &(&(&a[2] - &b[2]) * &(&a[0] + &b[0]));
+                    n[2] = &n[2] + &(&(&a[0] - &b[0]) * &(&a[1] + &b[1]));
+                }
+                n
+            };
+            let origin = w.point(&pts[0]);
+            let axis = w.add(format!(
+                "DIRECTION('',({},{},{}))",
+                dec(&n[0]),
+                dec(&n[1]),
+                dec(&n[2])
+            ));
+            let e0 = {
+                let d: [Rational; 3] = std::array::from_fn(|i| &pts[1][i] - &pts[0][i]);
+                w.add(format!(
+                    "DIRECTION('',({},{},{}))",
+                    dec(&d[0]),
+                    dec(&d[1]),
+                    dec(&d[2])
+                ))
+            };
+            let pl = w.add(format!("AXIS2_PLACEMENT_3D('',#{origin},#{axis},#{e0})"));
+            let plane = w.add(format!("PLANE('',#{pl})"));
+            face_ids.push(w.add(format!("ADVANCED_FACE('',(#{bound}),#{plane},.T.)")));
+        }
+        let list = face_ids
+            .iter()
+            .map(|f| format!("#{f}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let shell = w.add(format!("CLOSED_SHELL('',({list}))"));
+        names.push(w.add(format!("MANIFOLD_SOLID_BREP('p',#{shell})")));
+    }
+    let mut out = String::from("ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n");
+    for (i, line) in w.lines.iter().enumerate() {
+        out.push_str(&format!("#{}={};\n", i + 1, line));
+    }
+    let base = w.lines.len() as u64;
+    out.push_str(&format!(
+        "#{}=( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#{})) REPRESENTATION_CONTEXT('',''));\n#{}=( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\nENDSEC;\nEND-ISO-10303-21;\n",
+        base + 1,
+        base + 2,
+        base + 2
+    ));
+    out
+}
+
+/// The six faces of an axis-aligned box `[lo, hi]`, outward counter-clockwise.
+pub fn box_rings(lo: [&'static str; 3], hi: [&'static str; 3]) -> Vec<Ring> {
+    let p =
+        |x: usize, y: usize, z: usize| [[lo[0], hi[0]][x], [lo[1], hi[1]][y], [lo[2], hi[2]][z]];
+    vec![
+        vec![p(0, 0, 0), p(0, 0, 1), p(0, 1, 1), p(0, 1, 0)],
+        vec![p(1, 0, 0), p(1, 1, 0), p(1, 1, 1), p(1, 0, 1)],
+        vec![p(0, 0, 0), p(1, 0, 0), p(1, 0, 1), p(0, 0, 1)],
+        vec![p(0, 1, 0), p(0, 1, 1), p(1, 1, 1), p(1, 1, 0)],
+        vec![p(0, 0, 0), p(0, 1, 0), p(1, 1, 0), p(1, 0, 0)],
+        vec![p(0, 0, 1), p(1, 0, 1), p(1, 1, 1), p(0, 1, 1)],
+    ]
+}

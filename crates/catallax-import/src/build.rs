@@ -64,6 +64,7 @@ pub fn build_solid(
     solid: &Solid,
     step: Option<&StepId>,
 ) -> Result<BodyId, ImportRefusal> {
+    crate::intersect::check_solid(solid)?;
     let mut b = Builder {
         model,
         vertices: BTreeMap::new(),

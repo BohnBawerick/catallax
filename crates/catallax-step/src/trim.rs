@@ -14,6 +14,9 @@ use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::number;
 
+/// Blind query planes tried after every chord-aimed plane has failed.
+const BLIND_ATTEMPTS: usize = 32;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Location {
     Outside,
@@ -271,13 +274,14 @@ impl Geometry {
         }
     }
 
+    /// Locates `point` on a spherical face, or `None` without a certificate.
     pub fn sphere_contains(
         &mut self,
         model: &Model,
         face: FaceId,
         point: PointId,
         dec: &mut Decider,
-    ) -> Result<Location, Refusal> {
+    ) -> Result<Option<Location>, Refusal> {
         let Surface::Sphere(sphere) = self.store.surface(model.face(face).surface) else {
             unreachable!("sphere membership on another carrier");
         };
@@ -287,7 +291,7 @@ impl Geometry {
         let radius = sphere.radius.clone();
         let boundaries = self.boundaries(model, face, dec)?;
         if boundaries.is_empty() {
-            return Ok(Location::Inside);
+            return Ok(Some(Location::Inside));
         }
         let query = self.store.position(point);
         let loop_count = model
@@ -318,24 +322,24 @@ impl Geometry {
                 };
                 match sign(&query.minus(center).dot(normal), dec)? {
                     Sign::Zero => boundary = true,
-                    Sign::Positive if !edge.forward => return Ok(Location::Outside),
-                    Sign::Negative if edge.forward => return Ok(Location::Outside),
+                    Sign::Positive if !edge.forward => return Ok(Some(Location::Outside)),
+                    Sign::Negative if edge.forward => return Ok(Some(Location::Outside)),
                     _ => {}
                 }
             }
             if circular {
-                return Ok(if boundary {
+                return Ok(Some(if boundary {
                     Location::Boundary
                 } else {
                     Location::Inside
-                });
+                }));
             }
         }
         for edge in boundaries.iter() {
             match catallax_intersect::on_curve(&self.store, edge.curve, point, dec) {
                 Outcome::ProvenCoincident(_) => {
                     if self.on_arc(edge, point, dec)? != Location::Outside {
-                        return Ok(Location::Boundary);
+                        return Ok(Some(Location::Boundary));
                     }
                 }
                 Outcome::Proven(_) => {}
@@ -345,7 +349,9 @@ impl Geometry {
         }
         let query_vector = query.minus(&center);
         let across = axis.cross(&reference);
-        let attempts = boundaries.len().saturating_add(1).saturating_mul(128);
+        // Admission is optional: an uncertified point keeps the legacy export.
+        // Bound the blind fallback so that failure stays cheap.
+        let attempts = boundaries.len().saturating_add(BLIND_ATTEMPTS);
         // Aim rational planes toward known trim chords first. Blind carrier
         // rays can all miss a small spherical patch. Enclose only to choose
         // the candidate: arc membership and crossing orientation stay exact.
@@ -465,15 +471,15 @@ impl Geometry {
                 if side == Sign::Zero {
                     continue;
                 }
-                return Ok(if (side == Sign::Positive) == boundaries[index].forward {
-                    Location::Inside
-                } else {
-                    Location::Outside
-                });
+                return Ok(Some(
+                    if (side == Sign::Positive) == boundaries[index].forward {
+                        Location::Inside
+                    } else {
+                        Location::Outside
+                    },
+                ));
             }
         }
-        Err(number::budget(
-            "no transverse spherical trim membership certificate",
-        ))
+        Ok(None)
     }
 }

@@ -1225,21 +1225,43 @@ impl<'a> Exporter<'a> {
                 bodies.iter().copied().chain(envelope),
                 self.dec,
             )?;
-            if self.bands.faces.is_empty()
-                && let Some(prepared) = crate::partial::prepare(
+            // Charts are an optional encoding. Only an exhausted request
+            // allowance or deadline may turn their failure into a refusal;
+            // otherwise the scene keeps its legacy encoding.
+            if self.bands.faces.is_empty() {
+                let charted = crate::partial::prepare(
                     self.model,
                     bodies.iter().copied().chain(envelope),
                     self.options,
                     self.dec,
-                )?
-            {
-                let (face_errors, edge_errors) =
-                    prepared.errors(self.face_errors, self.edge_errors);
-                let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
-                return Exporter::new(&prepared.model, self.options, self.dec)
-                    .regularizations(self.report.regularizations, face_errors, edge_errors)
-                    .charts(prepared.plan)
-                    .build_parts(&prepared.bodies[..bodies.len()], envelope);
+                )
+                .and_then(|prepared| {
+                    let Some(prepared) = prepared else {
+                        return Ok(None);
+                    };
+                    let (face_errors, edge_errors) =
+                        prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
+                    let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
+                    Exporter::new(&prepared.model, self.options, self.dec)
+                        .regularizations(
+                            self.report.regularizations.clone(),
+                            face_errors,
+                            edge_errors,
+                        )
+                        .charts(prepared.plan)
+                        .build_parts(&prepared.bodies[..bodies.len()], envelope)
+                        .map(Some)
+                });
+                match charted {
+                    Ok(Some(answer)) => return Ok(answer),
+                    Ok(None) => {}
+                    Err(refusal)
+                        if !matches!(
+                            refusal.code,
+                            "numbers.operation-budget" | "numbers.deadline"
+                        ) => {}
+                    Err(refusal) => return Err(refusal),
+                }
             }
         }
         let mut solids = Vec::new();

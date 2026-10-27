@@ -34,27 +34,33 @@ def converged_volume(shape):
     return values[-1], max(values) - min(values)
 
 
+def intersection(primitives):
+    return {'format': 'catallax-recipe/3', 'name': 'public periodic trim',
+            'steps': [dict(primitives[0], id='a'), dict(primitives[1], id='b'),
+                      {'id': 'body', 'op': 'boolean', 'kind': 'intersect',
+                       'target': 'a', 'tool': 'b'}], 'result': 'body'}
+
+
 class PartialPeriodicTrimImports(unittest.TestCase):
+    def answer(self, recipe, root):
+        source = root / 'recipe.json'
+        source.write_text(json.dumps(recipe))
+        out = root / 'run'
+        completed = subprocess.run(
+            [str(DRIVER), 'run', str(source), '--source', 'recipe', '--binary',
+             str(BINARY), '--out', str(out), '--fresh', '--workers', '1', '--json'],
+            capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(completed.stdout)['outcomes'], {'answered': 1})
+        case = json.loads((out / 'run.json').read_text())['cases'][0]
+        manifest = case['response']['manifest']
+        self.assertTrue(manifest['exact'], manifest)
+        self.assertEqual(manifest['marks'], [])
+        return Path(case['path']), manifest
+
     def check_intersection(self, primitives, topology, expected_volume):
-        recipe = {'format': 'catallax-recipe/3', 'name': 'public periodic trim',
-                  'steps': [dict(primitives[0], id='a'), dict(primitives[1], id='b'),
-                            {'id': 'body', 'op': 'boolean', 'kind': 'intersect',
-                             'target': 'a', 'tool': 'b'}], 'result': 'body'}
         with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
-            root = Path(temporary)
-            source = root / 'recipe.json'
-            source.write_text(json.dumps(recipe))
-            out = root / 'run'
-            completed = subprocess.run(
-                [str(DRIVER), 'run', str(source), '--source', 'recipe', '--binary',
-                 str(BINARY), '--out', str(out), '--fresh', '--workers', '1', '--json'],
-                capture_output=True, text=True, check=True)
-            self.assertEqual(json.loads(completed.stdout)['outcomes'], {'answered': 1})
-            case = json.loads((out / 'run.json').read_text())['cases'][0]
-            manifest = case['response']['manifest']
-            self.assertTrue(manifest['exact'], manifest)
-            self.assertEqual(manifest['marks'], [])
-            path = Path(case['path']) / 'answer.step'
+            directory, _ = self.answer(intersection(primitives), Path(temporary))
+            path = directory / 'answer.step'
             raw = raw_solid(path)
             reader = STEPControl_Reader()
             self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
@@ -95,6 +101,17 @@ class PartialPeriodicTrimImports(unittest.TestCase):
             {'op': 'cylinder', 'radius': '1', 'height': '6', 'pose': pose(z='-3')},
             {'op': 'sphere', 'radius': '2', 'pose': pose(x='2')}],
             (2, 1, 1), 3.100408279750527)
+
+    def test_uncertified_pole_keeps_the_answer(self):
+        # The ball's frame puts its poles on the y axis. Its membership search
+        # finds no certificate, so the scene keeps its legacy encoding inside
+        # the unchanged request allowance instead of refusing.
+        with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
+            _, manifest = self.answer(intersection([
+                {'op': 'cylinder', 'radius': '1', 'height': '11/4', 'pose': pose(z='-11/8')},
+                {'op': 'sphere', 'radius': '7/4',
+                 'pose': pose(x='1/8', rotation=('1', '-1', '0', '0'))}]), Path(temporary))
+            self.assertEqual(manifest['step']['added_edges'], 0)
 
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),

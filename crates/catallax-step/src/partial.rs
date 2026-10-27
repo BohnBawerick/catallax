@@ -74,7 +74,8 @@ pub(crate) fn prepare(
                     ]
                 });
                 for point in points {
-                    if geometry.sphere_contains(model, face, point, dec)? != trim::Location::Outside
+                    if geometry.sphere_contains(model, face, point, dec)?
+                        != Some(trim::Location::Outside)
                     {
                         return Ok(None);
                     }
@@ -92,14 +93,29 @@ pub(crate) fn prepare(
     // The raw translator cannot resolve separate vertices below its 1e-7
     // model-unit precision. Do not turn a rounded-away sliver into full
     // periodic coverage. Keep the legacy bytes rather than regularizing it.
+    // Check every written edge: an uncharted sliver leaves the scene unresolved.
     let resolution = options
         .curve_tolerance
         .abs()
         .max(Rational::from_ratio(1, 10_000_000).unwrap());
-    for &edge in prepared.plan.uses.keys() {
+    let mut edges = BTreeSet::new();
+    for &body in &prepared.bodies {
+        for face in prepared.model.faces_of_body(body) {
+            for id in &prepared.model.face(face).loops {
+                if let Loop::Coedges(coedges) = prepared.model.loop_(*id) {
+                    edges.extend(coedges.iter().map(|c| prepared.model.coedge(*c).edge));
+                }
+            }
+        }
+    }
+    for edge in edges {
         let definition = prepared.model.edge(edge);
         let (Some(start), Some(end)) = (definition.start, definition.end) else {
-            unreachable!("chart edge without endpoints")
+            assert!(
+                !prepared.plan.uses.contains_key(&edge),
+                "chart edge without endpoints"
+            );
+            continue;
         };
         for vertex in [start, end] {
             if let std::collections::btree_map::Entry::Vacant(entry) =

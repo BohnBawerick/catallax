@@ -134,6 +134,40 @@ pub(crate) fn containing_faces(
     Ok(result)
 }
 
+type SharedFaces = (Vec<FaceId>, Vec<FaceId>);
+
+// Every graph consumer requires membership on both operands. Exact exclusion
+// from the smaller face set therefore settles the conjunction without testing
+// the other set; incidence alone never discharges either finite trim test.
+fn shared_faces(
+    model: &mut Model,
+    first: &[FaceId],
+    second: &[FaceId],
+    point: PointId,
+    regions: &mut RegionCache,
+    dec: &mut Decider,
+) -> Result<Option<SharedFaces>, Refusal> {
+    let reversed = first.len() > second.len();
+    let (smaller, larger) = if reversed {
+        (second, first)
+    } else {
+        (first, second)
+    };
+    let small_faces = containing_faces(model, smaller, point, regions, dec)?;
+    if small_faces.is_empty() {
+        return Ok(None);
+    }
+    let large_faces = containing_faces(model, larger, point, regions, dec)?;
+    if large_faces.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(if reversed {
+        (large_faces, small_faces)
+    } else {
+        (small_faces, large_faces)
+    }))
+}
+
 fn same_faces(a: &SectionEdge, b: &SectionEdge) -> bool {
     a.faces_of_first == b.faces_of_first && a.faces_of_second == b.faces_of_second
 }
@@ -342,13 +376,9 @@ pub(crate) fn intersect(
     }
     let mut point_faces = BTreeMap::new();
     for &point in &points {
-        point_faces.insert(
-            point,
-            (
-                containing_faces(model, &first, point, &mut regions, dec)?,
-                containing_faces(model, &second, point, &mut regions, dec)?,
-            ),
-        );
+        if let Some(faces) = shared_faces(model, &first, &second, point, &mut regions, dec)? {
+            point_faces.insert(point, faces);
+        }
     }
     let mut edges = Vec::new();
     for &curve in &pool {
@@ -377,11 +407,11 @@ pub(crate) fn intersect(
         let mut pieces: Vec<SectionEdge> = Vec::new();
         for (start, end) in arcs {
             let sample = curve_sample(model, curve, start, end, dec)?;
-            let faces_of_first = containing_faces(model, &first, sample, &mut regions, dec)?;
-            let faces_of_second = containing_faces(model, &second, sample, &mut regions, dec)?;
-            if faces_of_first.is_empty() || faces_of_second.is_empty() {
+            let Some((faces_of_first, faces_of_second)) =
+                shared_faces(model, &first, &second, sample, &mut regions, dec)?
+            else {
                 continue;
-            }
+            };
             let edge = SectionEdge {
                 curve,
                 start,
@@ -394,8 +424,9 @@ pub(crate) fn intersect(
                 && same_faces(last, &edge)
                 && edge.start.is_some_and(|p| {
                     !mandatory.contains(&p)
-                        && point_faces[&p].0 == edge.faces_of_first
-                        && point_faces[&p].1 == edge.faces_of_second
+                        && point_faces.get(&p).is_some_and(|(first, second)| {
+                            first == &edge.faces_of_first && second == &edge.faces_of_second
+                        })
                 })
             {
                 last.end = edge.end;
@@ -409,8 +440,10 @@ pub(crate) fn intersect(
                 && same_faces(&pieces[n - 1], &pieces[0])
                 && pieces[0].start.is_some_and(|p| {
                     !mandatory.contains(&p)
-                        && point_faces[&p].0 == pieces[0].faces_of_first
-                        && point_faces[&p].1 == pieces[0].faces_of_second
+                        && point_faces.get(&p).is_some_and(|(first, second)| {
+                            first == &pieces[0].faces_of_first
+                                && second == &pieces[0].faces_of_second
+                        })
                 })
             {
                 let last = pieces.pop().expect("nonempty sections");
@@ -422,8 +455,9 @@ pub(crate) fn intersect(
             && pieces[0].start == pieces[0].end
             && pieces[0].start.is_some_and(|p| {
                 !mandatory.contains(&p)
-                    && point_faces[&p].0 == pieces[0].faces_of_first
-                    && point_faces[&p].1 == pieces[0].faces_of_second
+                    && point_faces.get(&p).is_some_and(|(first, second)| {
+                        first == &pieces[0].faces_of_first && second == &pieces[0].faces_of_second
+                    })
             })
         {
             pieces[0].start = None;
@@ -433,7 +467,7 @@ pub(crate) fn intersect(
     }
     let mut isolated = Vec::new();
     for point in points {
-        if point_faces[&point].0.is_empty() || point_faces[&point].1.is_empty() {
+        if !point_faces.contains_key(&point) {
             continue;
         }
         let mut on_section = false;

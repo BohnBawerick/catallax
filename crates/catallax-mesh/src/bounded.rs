@@ -1,6 +1,6 @@
-//! Nonperiodic minor-angle lifts for toroidal bands.
+//! Nonperiodic minor-angle lifts for toroidal bands and contractible patches.
 
-use catallax_numbers::{Decider, Refusal};
+use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_shapes::Surface;
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
@@ -59,6 +59,32 @@ fn cut_is_clear(rings: &[Vec<Uv>], dimension: usize, center: f64) -> bool {
     })
 }
 
+fn contractible_center(ring: &[Uv], same: bool, dec: &Decider) -> Result<Option<f64>, Refusal> {
+    let mut previous = ring[0];
+    let mut bounds = previous.map(|v| [v, v]);
+    let mut area = Rational::zero();
+    for i in 1..=ring.len() {
+        dec.check_deadline()?;
+        let next = align(ring[i % ring.len()], previous, [true, true]);
+        area = area + chart::q(previous[0]) * chart::q(next[1])
+            - chart::q(previous[1]) * chart::q(next[0]);
+        for dimension in 0..2 {
+            bounds[dimension][0] = bounds[dimension][0].min(next[dimension]);
+            bounds[dimension][1] = bounds[dimension][1].max(next[dimension]);
+        }
+        previous = next;
+    }
+    // A closed lift inside one period bounds a disk. Its oriented interior,
+    // rather than the complementary punctured torus, must be the retained face.
+    if previous.map(f64::to_bits) != ring[0].map(f64::to_bits)
+        || bounds.iter().any(|[lo, hi]| hi - lo >= 1.0 || hi <= lo)
+        || area.sign() != if same { Sign::Positive } else { Sign::Negative }
+    {
+        return Ok(None);
+    }
+    Ok(Some((bounds[1][0] + bounds[1][1]) * 0.5))
+}
+
 pub(crate) fn minor_angle_center(
     model: &Model,
     face: FaceId,
@@ -74,6 +100,12 @@ pub(crate) fn minor_angle_center(
     };
     dec.check_deadline()?;
     let same = model.face(face).sense == Sense::Same;
+    if let [ring] = rings.as_slice() {
+        let Some(center) = contractible_center(ring, same, dec)? else {
+            return Ok(None);
+        };
+        return Ok(cut_is_clear(&rings, 1, center).then_some(center));
+    }
     if rings.len() != 2 {
         return Ok(None);
     }
@@ -117,4 +149,28 @@ pub(crate) fn minor_angle_center(
         return Ok(None);
     }
     Ok(Some(center))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complements_and_noncontractible_loops_keep_periodic_domains() {
+        let ring = [[0.9, 0.9], [0.1, 0.9], [0.1, 0.1], [0.9, 0.1]];
+        let dec = Decider::default();
+        assert!(contractible_center(&ring, false, &dec).unwrap().is_none());
+        let reversed: Vec<_> = ring.into_iter().rev().collect();
+        assert!(
+            contractible_center(&reversed, true, &dec)
+                .unwrap()
+                .is_none()
+        );
+        let noncontractible = [[0.0, 0.25], [0.25, 0.25], [0.5, 0.25], [0.75, 0.25]];
+        assert!(
+            contractible_center(&noncontractible, true, &dec)
+                .unwrap()
+                .is_none()
+        );
+    }
 }

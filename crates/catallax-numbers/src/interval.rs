@@ -35,6 +35,9 @@ impl Interval {
     }
     /// Tight neighboring-double enclosure of a rational.
     pub fn from_rational(r: &Rational) -> Self {
+        if let Some(interval) = Self::from_small_rational(r) {
+            return interval;
+        }
         let v = r.to_f64_nearest();
         if v == f64::INFINITY {
             return Self {
@@ -54,6 +57,40 @@ impl Interval {
             if q < *r { v.next_up() } else { v },
         )
         .unwrap()
+    }
+    // A numerator and denominator of at most 2^53 are exact doubles, so one
+    // IEEE division is the nearest double (ties to even) and the quotient is a
+    // normal double. Integer arithmetic then places it against `r` exactly.
+    fn from_small_rational(r: &Rational) -> Option<Self> {
+        const EXACT: u64 = 1 << 53;
+        let n = r.numerator().to_i64()?;
+        let d = r.denominator().to_i64()?;
+        if n.unsigned_abs() > EXACT || d <= 0 || d.unsigned_abs() > EXACT {
+            return None;
+        }
+        if n == 0 {
+            return Self::point(0.0);
+        }
+        let v = n as f64 / d as f64;
+        // |v| = m 2^e; compare m d 2^e with |n|.
+        let bits = v.abs().to_bits();
+        let m = u128::from(bits & ((1 << 52) - 1) | 1 << 52);
+        let e = (bits >> 52) as i32 - 1075;
+        let scaled = m * u128::from(d.unsigned_abs());
+        let magnitude = u128::from(n.unsigned_abs());
+        let order = if e >= 0 {
+            (scaled << e).cmp(&magnitude)
+        } else {
+            if magnitude.leading_zeros() <= e.unsigned_abs() {
+                return None;
+            }
+            scaled.cmp(&(magnitude << e.unsigned_abs()))
+        };
+        let order = if n < 0 { order.reverse() } else { order };
+        Self::new(
+            if order.is_gt() { v.next_down() } else { v },
+            if order.is_lt() { v.next_up() } else { v },
+        )
     }
     /// Tight neighboring-double enclosure of an integer.
     pub fn from_integer(n: &Integer) -> Self {

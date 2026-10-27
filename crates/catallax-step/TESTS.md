@@ -17,14 +17,26 @@ cylinders, both frustum directions, rational poses, reversed through-hole
 walls, enclosed cylindrical voids and algebraic countersinks.
 `test_partial_periodic_trims.py` adds a public cylinder/sphere intersection,
 touching branch vertices, a closed cylinder/sphere branch, and spherical lenses
-at identity and a rational pose. Two scenes pin the legacy fallback: a
-transverse ball frame whose pole has no membership certificate still answers
-within the request allowance, and touching spherical trims keep a file with no
-pcurves. `test_step_import.py` pins the legacy encoding of the full slot-cut
-capture, whose rounded planar sliver the raw translator cannot resolve. It checks topology, one solid and converged
-adaptive volume through both raw and standard reader procedures. Only the raw
-procedure asserts no healing: direct `StepToTopoDS_Builder` translation bypasses
-the reader's default ShapeFix processing and keeps SameParameter disabled.
+at identity and a rational pose. Each of these imports the file through two
+procedures: raw translation and the standard reader. Each procedure must give a
+valid shape with one solid, the expected face, edge and vertex counts, and a
+converged adaptive volume within the diagnostic tube of the expected volume.
+Only the raw procedure asserts no healing: direct `StepToTopoDS_Builder`
+translation bypasses the reader's default ShapeFix processing and keeps
+SameParameter disabled. Two scenes in the same file pin the legacy fallback and
+check only the export: a transverse ball frame whose pole has no membership
+certificate still answers within the request allowance with no added edges, and
+touching spherical trims keep a file with no pcurves.
+
+`test_step_import.py` reads files through `check-step.py`, which uses only the
+standard reader with its default processing. That check requires a valid
+shape and the expected number of distinct faces across the whole shape. It
+does not count solids or translate raw, and it reports the kernel volume
+comparison as unmeasured. The tests also check the regularization report. The parallel-gap cases compare the
+standard reader's volume with 168 within 1e-9. On the full slot-cut capture,
+whose rounded planar sliver the raw translator cannot resolve, the test pins
+the legacy encoding by requiring no added edges.
+
 The Rust `partial` target preserves the 100,000,000-work request allowance,
 the legacy encoding of unresolved subprecision trims, and whole-export legacy
 topology for mixed conical scenes in both body orders.

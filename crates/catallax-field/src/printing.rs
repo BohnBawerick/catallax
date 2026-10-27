@@ -14,13 +14,14 @@ use std::{
     io::Write,
 };
 
+pub mod brep;
 mod membership;
 
 type Index = [u32; 3];
 type Terms = Vec<([u32; 3], Interval)>;
 
 /// Print-output controls. These do not change the model or its tolerances.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Options {
     /// Two-sided distance limit in millimetres.
     pub tolerance: Rational,

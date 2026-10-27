@@ -8,6 +8,41 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+#[test]
+fn retained_body_print_api_matches_cli_bytes_and_retains_proven_settings() {
+    use catallax_field::printing::{Options, brep};
+    use catallax_numbers::{Decider, Rational};
+    use catallax_recipe::Recipe;
+
+    let cases = [
+        json!([block("box", ["4", "4", "1"], ["0", "0", "0"])]),
+        json!([block("box", ["0.1", "0.2", "0.3"], ["0.1", "0.1", "0.1"])]),
+        json!([
+            block("outer", ["4", "4", "4"], ["0", "0", "0"]),
+            block("inner", ["2", "2", "2"], ["1", "1", "1"]),
+            {"id":"box", "op":"boolean", "kind":"subtract", "target":"outer", "tool":"inner"}
+        ]),
+    ];
+    for steps in cases {
+        let r = request(steps, "box");
+        let recipe = Recipe::parse(&r.problem["recipe"].to_string()).unwrap();
+        let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+        let mut options = Options::default();
+        let proof = brep::mesh(&built, &options, &mut Decider::default()).unwrap();
+        options.tolerance = Rational::one();
+        options.max_vertices = 4;
+        assert_eq!(proof.options(), &Options::default());
+        let (bytes, proof) = proof.stl().unwrap();
+        assert!(proof.mesh().max_deviation <= proof.options().tolerance);
+        let response = answer(&r).unwrap();
+        assert_eq!(response["manifest"]["status"], "answered", "{response}");
+        assert_eq!(bytes, fs::read(r.out.join("print.stl")).unwrap());
+        assert!(brep::mesh(&built, &options, &mut Decider::default()).is_err());
+        fs::remove_dir_all(r.out).unwrap();
+    }
+}
+
 fn request(steps: Value, result: &str) -> Request {
     Request {
         format: "catallax-request/1".into(),

@@ -211,6 +211,15 @@ pub enum ImportRefusal {
         /// Entity names of the first pair of faces whose interiors intersect.
         faces: [String; 2],
     },
+    /// A pair of faces could not be decided, so the solid is not verified. Never a pass.
+    SelfIntersectionNotVerified {
+        /// Solid entity name.
+        solid: String,
+        /// Entity names of the first pair of faces that could not be decided.
+        faces: [String; 2],
+        /// Why the engine could not decide.
+        reason: String,
+    },
     /// The work allowance ended first. Incomplete, not impossible.
     ResourceLimit,
 }

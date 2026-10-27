@@ -3,11 +3,15 @@
 
 use catallax_numbers::Rational;
 
+#[allow(unused_imports)]
+pub use soup::{Caps, Hole, Soup};
+mod soup;
+
 pub fn r(s: &str) -> Rational {
     Rational::parse(s).unwrap()
 }
 
-fn dec(v: &Rational) -> String {
+pub(crate) fn dec(v: &Rational) -> String {
     let t = v.to_decimal_exact().expect("terminating decimal");
     if t.contains('.') { t } else { format!("{t}.0") }
 }
@@ -45,8 +49,8 @@ impl BoxFixture {
     }
 }
 
-struct Writer {
-    lines: Vec<String>,
+pub(crate) struct Writer {
+    pub(crate) lines: Vec<String>,
 }
 
 impl Writer {

@@ -10,6 +10,7 @@ mod wire;
 pub use wire::*;
 mod build;
 mod consume;
+mod curved;
 mod exact;
 mod gap;
 mod intersect;

@@ -11,8 +11,8 @@ use std::collections::BTreeMap;
 use catallax_numbers::{Fact, FactKind, FactOrigin, MarkLog, Rational};
 use catallax_recipe::{Origin, Role, StepId};
 use catallax_shapes::{
-    Circle, Cone, Curve as GeomCurve, Cylinder, GeomKey, Line, Plane, Point3, PointDef, RPoint3,
-    RVector3, Surface as GeomSurface, Vector3,
+    Circle, Cone, Curve as GeomCurve, Cylinder, Ellipse, GeomKey, Line, Plane, Point3, PointDef,
+    RPoint3, RVector3, Sphere, Surface as GeomSurface, Torus, Vector3,
 };
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, Loop, Lump, Model, Sense, Shell, Vertex,
@@ -65,12 +65,7 @@ pub fn build_solid(
     step: Option<&StepId>,
 ) -> Result<BodyId, ImportRefusal> {
     crate::intersect::check_solid(solid)?;
-    let mut b = Builder {
-        model,
-        vertices: BTreeMap::new(),
-        edges: BTreeMap::new(),
-        segments: BTreeMap::new(),
-    };
+    let mut b = Builder::new(model, false);
     let mut faces = Vec::new();
     for face in &solid.faces {
         let origins = step
@@ -107,6 +102,9 @@ type Joined = (EdgeId, [Option<VertexId>; 2]);
 
 struct Builder<'a> {
     model: &'a mut Model,
+    /// Scratch models carry every recognised surface and edge for geometric
+    /// queries. They skip the incidence checks and the topology rules.
+    scratch: bool,
     vertices: BTreeMap<Vec3, VertexId>,
     edges: BTreeMap<String, Joined>,
     /// Straight edges by their joined vertex pair, lower id first.
@@ -117,6 +115,29 @@ struct Builder<'a> {
 struct Use {
     edge: String,
     forward: bool,
+}
+
+impl<'a> Builder<'a> {
+    fn new(model: &'a mut Model, scratch: bool) -> Self {
+        Self {
+            model,
+            scratch,
+            vertices: BTreeMap::new(),
+            edges: BTreeMap::new(),
+            segments: BTreeMap::new(),
+        }
+    }
+}
+
+/// Builds the faces of a solid into a scratch model for geometric queries only.
+/// Any recognised surface and edge is carried as written, with no incidence or
+/// topology checks and no body.
+pub(crate) fn scratch_faces(
+    model: &mut Model,
+    solid: &Solid,
+) -> Result<Vec<catallax_topology::FaceId>, ImportRefusal> {
+    let mut b = Builder::new(model, true);
+    solid.faces.iter().map(|f| b.face(f, Vec::new())).collect()
 }
 
 impl Builder<'_> {
@@ -168,6 +189,19 @@ impl Builder<'_> {
                     ref_dir: vector(&p.ref_dir),
                 })
             }
+            Surface::Sphere(p, r) if self.scratch => GeomSurface::Sphere(Sphere {
+                center: point(&p.origin),
+                radius: r.clone().into(),
+                axis: vector(&p.axis),
+                ref_dir: vector(&p.ref_dir),
+            }),
+            Surface::Torus(p, major, minor) if self.scratch => GeomSurface::Torus(Torus {
+                center: point(&p.origin),
+                axis: vector(&p.axis),
+                major: major.clone().into(),
+                minor: minor.clone().into(),
+                ref_dir: vector(&p.ref_dir),
+            }),
             Surface::Sphere(..) | Surface::Torus(..) => {
                 return Err(unsupported(
                     &face.name,
@@ -196,7 +230,9 @@ impl Builder<'_> {
                 e.edge
             )));
         }
-        if ring && !matches!(e.curve, Curve::Circle(..)) {
+        let closed_form = matches!(e.curve, Curve::Circle(..))
+            || (self.scratch && matches!(e.curve, Curve::Ellipse(..)));
+        if ring && !closed_form {
             return Err(unsupported(
                 &e.edge,
                 "EDGE_CURVE (closed edge on a non-circle)",
@@ -222,6 +258,30 @@ impl Builder<'_> {
                 radius_sq: (r * r).into(),
                 ref_dir: vector(&p.ref_dir),
             }),
+            Curve::Ellipse(p, a, b) if self.scratch => {
+                // The longer semi-axis is the major one; a circle is not an ellipse here.
+                if a == b {
+                    GeomCurve::Circle(Circle {
+                        center: point(&p.origin),
+                        normal: vector(&p.axis),
+                        radius_sq: (a * a).into(),
+                        ref_dir: vector(&p.ref_dir),
+                    })
+                } else {
+                    let (major_dir, major, minor) = if a > b {
+                        (p.ref_dir.clone(), a, b)
+                    } else {
+                        (cross(&p.axis, &p.ref_dir), b, a)
+                    };
+                    GeomCurve::Ellipse(Ellipse {
+                        center: point(&p.origin),
+                        normal: vector(&p.axis),
+                        major_dir: vector(&major_dir),
+                        major_sq: (major * major).into(),
+                        minor_sq: (minor * minor).into(),
+                    })
+                }
+            }
             Curve::Ellipse(..) => return Err(unsupported(&e.edge, "ELLIPSE")),
         };
         let curve = self.model.geom_mut().add_curve(curve);
@@ -263,19 +323,21 @@ impl Builder<'_> {
                         Sense::Reversed
                     };
                     let data = self.model.edge(edge).clone();
-                    check_on_surface(face, e)?;
-                    check_on_curve(e)?;
-                    self.fact(GeomKey::Curve(data.curve), GeomKey::Surface(surface));
-                    for v in [data.start, data.end].into_iter().flatten() {
-                        let p = self.model.vertex(v).point;
-                        self.fact(GeomKey::Point(p), GeomKey::Curve(data.curve));
+                    if !self.scratch {
+                        check_on_surface(face, e)?;
+                        check_on_curve(e)?;
+                        self.fact(GeomKey::Curve(data.curve), GeomKey::Surface(surface));
+                        for v in [data.start, data.end].into_iter().flatten() {
+                            let p = self.model.vertex(v).point;
+                            self.fact(GeomKey::Point(p), GeomKey::Curve(data.curve));
+                        }
                     }
                     coedges.push(self.model.add_coedge(Coedge { edge, sense }));
                 }
                 loops.push(self.model.add_loop(Loop::Coedges(coedges)));
             }
         }
-        if loops.is_empty() {
+        if loops.is_empty() && !self.scratch {
             return Err(unsupported(&face.name, "ADVANCED_FACE (no bounds)"));
         }
         Ok(self.model.add_named_face(

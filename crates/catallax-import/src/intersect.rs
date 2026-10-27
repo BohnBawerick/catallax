@@ -4,8 +4,8 @@
 //! is interior to at least one of them, or, if coplanar and facing the same way,
 //! an area. Coplanar faces facing opposite ways touch and are allowed. Contact only
 //! along boundaries, at a single point, or at a vertex is allowed. Everything is
-//! rational arithmetic on the file's coordinates. Faces with a curved surface or
-//! a circular edge are not compared.
+//! rational arithmetic on the file's coordinates. Pairs with a curved surface or a
+//! circular edge are decided by the `curved` module.
 
 use std::collections::BTreeSet;
 
@@ -35,6 +35,10 @@ fn poly(face: &Face) -> Option<Poly<'_>> {
     let Surface::Plane(p) = &face.surface else {
         return None;
     };
+    // A plane with no boundary is unbounded; the engine path reports it.
+    if face.loops.is_empty() {
+        return None;
+    }
     let mut segments = Vec::new();
     for bound in &face.loops {
         for e in &bound.edges {
@@ -190,40 +194,72 @@ fn coplanar_overlap(a: &Poly, b: &Poly) -> bool {
     false
 }
 
-/// The first pair of planar faces of the solid whose interiors intersect.
-fn solid_pair(solid: &Solid) -> Option<(&str, &str)> {
-    let polys: Vec<Poly> = solid.faces.iter().filter_map(poly).collect();
+/// Checks one solid. Planar polygon pairs are decided exactly here; any pair with a
+/// curved surface or circular edge goes to the certified engine, after boxes that
+/// are provably apart are set aside. An intersection found anywhere wins over a pair
+/// that could not be decided.
+pub(crate) fn check_solid(solid: &Solid) -> Result<(), ImportRefusal> {
+    let polys: Vec<Option<Poly>> = solid.faces.iter().map(poly).collect();
     for i in 0..polys.len() {
         for j in i + 1..polys.len() {
-            if faces_intersect(&polys[i], &polys[j]) {
-                return Some((polys[i].name, polys[j].name));
+            if let (Some(a), Some(b)) = (&polys[i], &polys[j])
+                && faces_intersect(a, b)
+            {
+                return Err(ImportRefusal::SelfIntersecting {
+                    solid: solid.name.clone(),
+                    faces: [a.name.to_string(), b.name.to_string()],
+                });
             }
         }
     }
-    None
-}
-
-/// Refuses a file when two planar faces of one solid intersect. Pairs involving a
-/// curved surface or circular edge are not compared. Separate solids are not compared.
-pub fn check_self_intersection(file: &StepFile) -> Result<(), ImportRefusal> {
-    for solid in &file.solids {
-        if let Some((a, b)) = solid_pair(solid) {
-            return Err(ImportRefusal::SelfIntersecting {
-                solid: solid.name.clone(),
-                faces: [a.to_string(), b.to_string()],
-            });
+    let bounds: Vec<_> = solid.faces.iter().map(crate::curved::face_bounds).collect();
+    let mut scratch: Option<Result<crate::curved::Scratch, String>> = None;
+    let mut dec = catallax_numbers::Decider::default();
+    let mut unverified: Option<(usize, usize, String)> = None;
+    for i in 0..polys.len() {
+        for j in i + 1..polys.len() {
+            if polys[i].is_some() && polys[j].is_some() {
+                continue;
+            }
+            if let (Some(a), Some(b)) = (&bounds[i], &bounds[j])
+                && crate::curved::apart(a, b)
+            {
+                continue;
+            }
+            let ready = scratch.get_or_insert_with(|| crate::curved::scratch(solid));
+            let outcome = match ready {
+                Ok(s) => {
+                    let (fa, fb) = (s.faces[i], s.faces[j]);
+                    crate::curved::pair_intersects(&mut s.model, fa, fb, &mut dec)
+                }
+                Err(reason) => Err(reason.clone()),
+            };
+            match outcome {
+                Ok(true) => {
+                    return Err(ImportRefusal::SelfIntersecting {
+                        solid: solid.name.clone(),
+                        faces: [solid.faces[i].name.clone(), solid.faces[j].name.clone()],
+                    });
+                }
+                Ok(false) => {}
+                Err(reason) => {
+                    unverified.get_or_insert((i, j, reason));
+                }
+            }
         }
     }
-    Ok(())
+    match unverified {
+        None => Ok(()),
+        Some((i, j, reason)) => Err(ImportRefusal::SelfIntersectionNotVerified {
+            solid: solid.name.clone(),
+            faces: [solid.faces[i].name.clone(), solid.faces[j].name.clone()],
+            reason,
+        }),
+    }
 }
 
-/// The same test for one solid.
-pub(crate) fn check_solid(solid: &Solid) -> Result<(), ImportRefusal> {
-    match solid_pair(solid) {
-        Some((a, b)) => Err(ImportRefusal::SelfIntersecting {
-            solid: solid.name.clone(),
-            faces: [a.to_string(), b.to_string()],
-        }),
-        None => Ok(()),
-    }
+/// Refuses a file when two faces of one solid intersect, and when a pair of faces
+/// cannot be decided. Separate solids are not compared.
+pub fn check_self_intersection(file: &StepFile) -> Result<(), ImportRefusal> {
+    file.solids.iter().try_for_each(check_solid)
 }

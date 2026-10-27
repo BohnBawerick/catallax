@@ -107,6 +107,7 @@ fn measure_solid(si: usize, solid: &Solid, radius: &Rational) -> Result<Vec<Gap>
     // Directed uses by unordered endpoint pair, for straight edges.
     let mut segments: BTreeMap<(Vec3, Vec3), Vec<Use>> = BTreeMap::new();
     let mut rings: BTreeMap<String, (i32, i32)> = BTreeMap::new();
+    let mut ring_faces: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (fi, face) in solid.faces.iter().enumerate() {
         for bound in &face.loops {
             for (i, e) in bound.edges.iter().enumerate() {
@@ -128,6 +129,10 @@ fn measure_solid(si: usize, solid: &Solid, radius: &Rational) -> Result<Vec<Gap>
                         to,
                     });
                 } else {
+                    ring_faces
+                        .entry(e.edge.clone())
+                        .or_default()
+                        .insert(face.name.clone());
                     let counts = rings.entry(e.edge.clone()).or_default();
                     if travel {
                         counts.0 += 1;
@@ -140,7 +145,12 @@ fn measure_solid(si: usize, solid: &Solid, radius: &Rational) -> Result<Vec<Gap>
     }
     if let Some((name, _)) = rings.iter().find(|(_, c)| **c != (1, 1)) {
         return Err(not_solid(format!(
-            "curved edge {name} is not shared by two faces; only straight seams are repaired"
+            "gap at curved edge {name} (faces {}): curved gaps are outside the first path, only straight seams between planar faces are repaired",
+            ring_faces[name]
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
         )));
     }
     let mut free: Vec<Use> = Vec::new();
@@ -249,8 +259,8 @@ fn measure_solid(si: usize, solid: &Solid, radius: &Rational) -> Result<Vec<Gap>
                 normal(&solid.faces[p.b.face]),
             ) else {
                 return Err(not_solid(format!(
-                    "gap between faces {} and {} touches a curved face; only planar seams are repaired",
-                    solid.faces[p.a.face].name, solid.faces[p.b.face].name
+                    "gap between faces {} and {} (edges {}, {}) touches a curved face: curved gaps are outside the first path, only planar seams are repaired",
+                    solid.faces[p.a.face].name, solid.faces[p.b.face].name, p.a.edge, p.b.edge
                 )));
             };
             // Faces that would fold onto each other close an opening, not a seam.

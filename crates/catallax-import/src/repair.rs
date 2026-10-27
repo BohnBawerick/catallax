@@ -148,8 +148,13 @@ pub fn apply(
                 )
             }
             Some((tol, approver)) => {
-                let (solid, move2) = best_repair(&work.solids[gap.solid], gap)
-                    .map_err(|detail| failed(&p.id, detail))?;
+                let (solid, move2) =
+                    best_repair(&work.solids[gap.solid], gap).map_err(|detail| {
+                        failed(
+                            &p.id,
+                            format!("gap {} ({}): {detail}", p.id, p.entities.join(", ")),
+                        )
+                    })?;
                 if move2 > tol * tol {
                     return Err(failed(&p.id, "measured movement exceeds the tolerance"));
                 }
@@ -379,7 +384,10 @@ fn try_move(solid: &Solid, gap: &Gap, mover: u8) -> Result<(Solid, Rational), St
                 }
                 if moved {
                     let Curve::Line(origin, dir) = &mut e.curve else {
-                        return Err("a curved edge would have to move".into());
+                        return Err(format!(
+                            "curved edge {} would have to move; curved gaps are outside the first path",
+                            e.edge
+                        ));
                     };
                     let d = sub(&e.end.point, &e.start.point);
                     if is_zero(&d) {
@@ -410,7 +418,10 @@ fn try_move(solid: &Solid, gap: &Gap, mover: u8) -> Result<(Solid, Rational), St
 /// Refits a planar face through its current vertices, which must stay coplanar.
 fn refit(face: &mut crate::Face) -> Result<(), String> {
     let Surface::Plane(old) = &face.surface else {
-        return Err("a curved face would have to move".into());
+        return Err(format!(
+            "curved face {} would have to move; curved gaps are outside the first path",
+            face.name
+        ));
     };
     let points: Vec<Vec3> = face
         .loops

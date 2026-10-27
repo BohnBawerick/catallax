@@ -28,7 +28,7 @@ Measurement comes first. A gap is a pair of boundary features (edge/edge or vert
 | Features on different shells or bodies, any `d` | Never merge. Bodies stay separate, even at 0.005 mm |
 | The gap is an opening (a boundary loop of a face with no neighbouring face, an open shell, a hole) | Never close automatically, even at 0.005 mm. Ask |
 | `d > 0.01 mm`, or `d` or the nearest-feature size is uncertain, or identity or opening intent cannot be established | Ask. Proximity and any AI suggestion are not permission |
-| Declined | Original body used unchanged; no derivative is made; the decision is saved as `decline` so the question is not re-asked for the same bytes |
+| Declined | The source bytes are never modified and no derivative is made. The decision is saved as `decline` so the question is not re-asked for the same bytes. The solid that has the declined gap stays open and is not built; it is reported in `left_open`, and the application must tell the user so. This is a documented limit, not a returned original body |
 
 An approved out-of-policy proposal is still validated deterministically after the move: closed, non-self-intersecting, oriented, connected, and the measured maximum movement must not exceed the approved tolerance. Failed validation rejects the repair and leaves the original.
 
@@ -81,8 +81,8 @@ Tier when built: FULL SIX for interpretation and numerics; dialog-only changes S
 - A gap is an opening, always asked and never closed, when any of its boundary edges has no partner within the radius, or when a pair's faces are exactly anti-parallel (closing would fold them onto each other). A thin plate with one edge face missing is such an opening. Accepting an opening proposal is refused; only a decline is accepted.
 - Automatic closure needs a seam, a distance of at most 0.01 mm (inclusive) and a squared distance times 100 not above the squared length of the shortest straight edge of the faces involved. Otherwise the proposal asks, with the reason.
 - The repair moves whole vertices of one side onto their partners and refits each planar face through its moved vertices, which must stay exactly coplanar. Both sides are tried. The side that changes fewer surfaces wins, then the smaller movement. So a seam closes by extending faces along their own surfaces where possible. If neither side works, `validation_failed` and nothing is built.
-- The repaired solid is rebuilt in a scratch model, checked for closed, sound topology and positive volume before it is built for the caller. Self-intersection is not tested yet.
+- The repaired solid is rebuilt in a scratch model, checked for closed, sound topology and positive volume before it is built for the caller. Open item: self-intersection is not tested yet. It must be added before U10 is called done.
 - Recorded bounds are the bounds of the solid's vertices; they ignore curved bulge. Movement is the largest vertex displacement, rounded up at 1e-12 mm.
-- Curved edges or faces in a gap are refused with `not_solid`.
-- A decline leaves the solid open, so it is reported in `left_open` and not built.
+- Curved gaps are out of scope for the first path. A gap that involves a curved edge or face is refused with `not_solid` or `validation_failed`, never guessed at. The message names the faces and edges involved, and the gap id once one is assigned. This is a documented limit.
+- A decline leaves that solid open and unbuilt: it is reported in `left_open` and not built, the source bytes are never modified, and the application must say plainly that the solid was left open. This is a documented limit.
 - A solid with no gap is built as written. Separate solids are never joined, so bodies 0.005 mm apart produce no proposal.

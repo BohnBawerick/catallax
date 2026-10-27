@@ -12,6 +12,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
+mod cone_torus;
 mod cylinder_torus;
 
 const INTERVAL_PRECISION: u32 = 128;
@@ -399,9 +400,27 @@ impl Linear {
 }
 #[derive(Clone, Debug)]
 enum Inverse {
-    Circle { cos: Linear, sin: Linear },
-    Squared { value: Linear, lo: Real, span: Real },
-    Affine { value: Linear, lo: Real, span: Real },
+    Circle {
+        cos: Linear,
+        sin: Linear,
+    },
+    Squared {
+        value: Linear,
+        lo: Real,
+        span: Real,
+    },
+    Affine {
+        value: Linear,
+        lo: Real,
+        span: Real,
+    },
+    TorusArc {
+        coordinates: Arc<crate::pair::cone_torus::Coordinates>,
+        quarter: usize,
+        lo: Real,
+        span: Real,
+        orders: [usize; 2],
+    },
 }
 #[derive(Clone, Debug)]
 pub(super) struct Chart {
@@ -425,6 +444,27 @@ impl Chart {
             .map(|k| [j[0][k].clone(), j[1][k].clone(), j[2][k].clone()])
             .collect()
     }
+    pub fn endpoint_tangent(&self, end: bool) -> Vector3 {
+        let order = match &self.inverse {
+            Inverse::TorusArc { orders, .. } if orders[usize::from(end ^ self.reverse)] == 3 => {
+                // A triple radicand root at the cone apex uses a quadratic
+                // parameter. Its first nonzero position jet has order two.
+                2
+            }
+            _ => 1,
+        };
+        let jets = self.exact_jets(&Real::from_i64(i64::from(end)), order);
+        let tangent = Vector3::new(
+            jets[order][0].clone(),
+            jets[order][1].clone(),
+            jets[order][2].clone(),
+        );
+        if end && order % 2 == 0 {
+            tangent.scaled(&Real::from_i64(-1))
+        } else {
+            tangent
+        }
+    }
     pub fn locate(&self, p: &Point3, dec: &mut Decider) -> Result<Option<Real>, Failure> {
         for (check, s) in &self.checks {
             let v = check.at(p) * Real::from_i64(*s);
@@ -439,6 +479,32 @@ impl Chart {
                 u.sqrt() / (Real::one() + (Real::one() - u).sqrt())
             }
             Inverse::Affine { value, lo, span } => (&value.at(p) - lo) / span.clone(),
+            Inverse::TorusArc {
+                coordinates,
+                quarter,
+                lo,
+                span,
+                orders,
+            } => {
+                let angle = coordinates.minor_angle(p);
+                let Some(value) =
+                    crate::pair::cone_torus::quarter_parameter(&angle, *quarter, dec)?
+                else {
+                    return Ok(None);
+                };
+                let u = (&value - lo) / span.clone();
+                if sign(&u, dec)? == Sign::Negative
+                    || sign(&(&u - &Real::one()), dec)? == Sign::Positive
+                {
+                    return Ok(None);
+                }
+                match orders.map(|order| order % 2 == 1) {
+                    [false, false] => u,
+                    [true, false] => u.sqrt(),
+                    [false, true] => Real::one() - (Real::one() - u).sqrt(),
+                    [true, true] => u.sqrt() / (Real::one() + (Real::one() - u).sqrt()),
+                }
+            }
         };
         Ok(Some(if self.reverse { Real::one() - t } else { t }))
     }
@@ -1002,6 +1068,10 @@ pub(super) fn branch_charts(
             let (pieces, direction) = cylinder_torus::charts(frame, branch);
             charts = pieces;
             forward = direction;
+        }
+        Frame::ConeTorus(frame) => {
+            let component = frame.component(&witness, dec)?;
+            return Ok(cone_torus::charts(frame, component));
         }
     }
     // In the cylinder/sphere frame grad(cylinder) x grad(sphere)

@@ -9,6 +9,7 @@ use catallax_shapes::{
 };
 use std::{cell::RefCell, collections::VecDeque, sync::Arc};
 
+pub(super) mod cone_torus;
 mod conics;
 mod cylinder_torus;
 
@@ -138,6 +139,7 @@ pub(super) enum Frame {
         mode: CylinderTorusMode,
         sense: i64,
     },
+    ConeTorus(cone_torus::ConeTorusFrame),
 }
 #[derive(Clone, Debug)]
 pub(super) struct Spec {

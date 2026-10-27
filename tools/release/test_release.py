@@ -1,5 +1,8 @@
 """Public release evidence rejects stale replays and unapproved changes."""
 import copy
+import os
+import subprocess
+from types import SimpleNamespace
 import unittest
 
 from pathlib import Path
@@ -102,6 +105,48 @@ class ReplayPolicyTests(unittest.TestCase):
                 with patch.object(release, "UPGRADES", path):
                     with self.assertRaisesRegex(ValueError, "invalid or duplicate"):
                         release.read_upgrades()
+
+
+class ReleaseSourceTests(unittest.TestCase):
+    def test_publication_requires_matching_release_branch_ancestry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text('[workspace.package]\nversion = "0.1.1"\n')
+            (root / "docs/milestones").mkdir(parents=True)
+            (root / "docs/milestones/M1.md").write_text("# M1\n")
+
+            def git(*args):
+                subprocess.run(["git", *args], cwd=root, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+            git("init")
+            git("add", ".")
+            git("-c", "user.name=Release test", "-c", "user.email=release@example.invalid",
+                "commit", "-m", "candidate")
+            git("update-ref", "refs/remotes/origin/main", "HEAD")
+            git("update-ref", "refs/remotes/origin/release/0.2.0", "HEAD")
+            args = SimpleNamespace(publish=True, tag="v0.1.1")
+            with patch.object(release, "ROOT", root), patch.dict(
+                    os.environ, GITHUB_OUTPUT=str(root / "outputs")):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    release.prepare(args)
+                git("update-ref", "refs/remotes/origin/release/0.1.1", "HEAD")
+                release.prepare(args)
+                (root / "Cargo.toml").write_text('[workspace.package]\nversion = "0.1.1"\n# release-only metadata\n')
+                git("add", "Cargo.toml")
+                git("-c", "user.name=Release test", "-c", "user.email=release@example.invalid",
+                    "commit", "-m", "release-only metadata")
+                git("update-ref", "refs/remotes/origin/release/0.1.1", "HEAD")
+                release.prepare(args)
+                with self.assertRaisesRegex(ValueError, "workspace version"):
+                    release.prepare(SimpleNamespace(publish=True, tag="v0.2.0"))
+                (root / "Cargo.toml").write_text('[workspace.package]\nversion = "0.1.1"\n# later work\n')
+                git("add", "Cargo.toml")
+                git("-c", "user.name=Release test", "-c", "user.email=release@example.invalid",
+                    "commit", "-m", "unreleased work")
+                git("update-ref", "refs/remotes/origin/main", "HEAD")
+                with self.assertRaises(subprocess.CalledProcessError):
+                    release.prepare(args)
 
 
 if __name__ == "__main__":

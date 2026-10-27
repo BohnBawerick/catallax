@@ -195,7 +195,7 @@ def prepare(args):
     if args.publish:
         require(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", args.tag), "tag must be vX.Y.Z")
         require(args.tag == tag and version != "0.0.0", "tag must match the workspace version")
-        subprocess.run(["git", "merge-base", "--is-ancestor", commit, "origin/main"], cwd=ROOT, check=True)
+        subprocess.run(["git", "merge-base", "--is-ancestor", commit, f"origin/release/{version}"], cwd=ROOT, check=True)
         milestone = ROOT / "docs/milestones" / f"M{version.split('.')[1]}.md"
         require(milestone.is_file(), "missing milestone note under docs/milestones/MN.md")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as stream:

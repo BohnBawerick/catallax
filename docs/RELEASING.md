@@ -2,7 +2,7 @@
 
 Catallax releases follow completed work, not dates. M1 is **0.1.0**. Each later roadmap milestone advances the minor version, so M2 is 0.2.0 and M3 is 0.3.0. Patch versions, such as 0.1.1, fix an already released milestone without claiming the next milestone. The entire 0.x series is labelled **alpha** and published as GitHub prereleases. A version number never encodes a date. The first 1.x release needs a separate readiness decision.
 
-No release is scheduled by this machinery. A maintainer pushes a `vX.Y.Z` tag only after the checklist passes. The tag must match `workspace.package.version` in `Cargo.toml` and point to a commit reachable from `main`. Do not move a published tag. Fix a bad release with a new patch version.
+No release is scheduled by this machinery. A maintainer pushes a `vX.Y.Z` tag only after the checklist passes. The tag must match `workspace.package.version` in `Cargo.toml` and point to a commit reachable from the matching `release/X.Y.Z` branch. Do not move a published tag. Fix a bad release with a new patch version.
 
 ## Downloads
 
@@ -33,18 +33,20 @@ Verify an individual download with `gh attestation verify FILE --repo BohnBaweri
 
 ## Release checklist
 
-1. Complete the milestone's must-show list in [PLAN section 10.1](PLAN.md#101-milestones). Land or park every in-flight lane. Rebase pending release changes onto current `main`.
-2. Set the workspace version and refresh `Cargo.lock` with Cargo. No milestone bump is made merely to install the machinery.
+1. Complete the milestone's must-show list in [PLAN section 10.1](PLAN.md#101-milestones). Record every in-flight lane as landed or parked. At the release freeze, record the exact candidate commit and create `release/<version>` from it. Development continues on `main`.
+2. Set the workspace version and refresh `Cargo.lock` with Cargo on the release branch. No milestone bump is made merely to install the machinery.
 3. Add `docs/milestones/MN.md`, such as `M1.md`, as required by PLAN item 21. Record landed and parked work, reasons, P0 and target-part numbers including regressions, and the next milestone's must-show list. Patch releases update that milestone's note.
-4. Merge the version and milestone note. Require a green full-suite `check.yml` run on that exact `main` commit. The tag workflow rejects a commit without one.
+4. Commit the version and milestone note on the release branch. Require a green full-suite `check.yml` push run on that exact commit and matching release branch. The tag workflow rejects a commit without one.
 5. On the replay machine, build baseline and candidate verification programs and use the verification driver for the full 477 inputs. Preserve every earlier answer's manifest and strict STEP bytes, the original inputs and work allowances. Run baseline at one worker and the same candidate binary freshly at one, two and four workers. No cache hits, missing manifests or internal errors are allowed. The only permitted baseline differences are explicitly approved refusal-to-answer upgrades. Candidate worker runs must remain strictly equal.
 6. Generate the public aggregate as below, then run the evidence workflow on the exact candidate commit. It generates the target scoreboard independently in CI. Inspect refusals, edits, STEP imports and not-run checks; the scoreboard is not proof of complete SolidDraft acceptance.
 7. Run the non-publishing release dry run against that commit and evidence run. Inspect all platform smoke checks, SBOM, generated notes, checksums and attestations. Link the green run in the release preparation PR or milestone review.
-8. Only then create and push the release tag from `main`. Watch the release workflow. It publishes only after every platform, universal archive, evidence gate and attestation succeeds.
+8. Only then create and push the release tag from the checked release commit. Watch the release workflow. It publishes only after every platform, universal archive, evidence gate and attestation succeeds.
 
 Measurement, comparisons and evidence aggregation live in scripts and CI. None runs in the kernel's part-building path or adds work to a user edit. Never increase a work allowance or loosen a tolerance to make a release gate pass.
 
-For an `X.Y.0` milestone release, use the previous release tag as the replay baseline. When no earlier release exists, use the main commit immediately before the version-and-milestone-note merge, the release commit's first parent. That first-release merge must change only release metadata and documentation, not kernel code or recipes. Record the selected baseline and why in the milestone review. Per-change preservation replays remain the cumulative evidence for the kernel work preceding that baseline.
+The freeze holds release scope, not `main`. Finish exact-pin application acceptance, package dry runs and downloaded-build smoke on the versioned release branches. A blocker fix lands on `main` through its owning lane first, then is cherry-picked to the release branch, unless it applies only to the release. Record each resulting candidate commit and repeat affected exact-source evidence. Release CI has priority; report a starved release queue to the integration owner rather than cancel other lanes' work.
+
+For an `X.Y.0` milestone release, use the previous release tag as the replay baseline. When no earlier release exists, use the candidate commit immediately before the version-and-milestone-note merge, the release commit's first parent. That first-release merge must change only release metadata and documentation, not kernel code or recipes. Record the selected baseline and why in the milestone review. Per-change preservation replays remain the cumulative evidence for the kernel work preceding that baseline.
 
 Every changed baseline case must have been `refused` and now be `answered`, with an entry in the committed `tools/release/replay-upgrades.json`. Changed answers, answers becoming refusals, changed refusals and unlisted upgrades fail. Unchanged refusals remain refusals, not successful answers. The list must describe exactly the upgrades against the selected baseline, with no unused entries. Keep it empty for releases without upgrades.
 
@@ -93,30 +95,30 @@ Review each new answer and its saved artifacts before adding an entry. Commit on
 
 The file has format `catallax-replay-upgrades/1` and an `upgrades` array. Indices must be unique and in range, and all three digests must be lowercase 64-digit SHA-256 values. The aggregate checks the unchanged request, original refusal and exact new answer against each entry. It never generates approvals automatically. After committing reviewed entries, rebuild the candidate and replay all cases at all worker counts from that commit before generating the public summary.
 
-At a clean candidate commit on `main`, submit only the generated public JSON:
+At a clean candidate commit on the versioned release branch, submit only the generated public JSON:
 
 ```sh
 SHA=$(git rev-parse HEAD)
 SUMMARY=$(cat "$PROOF/replay-summary.json")
 gh-axi workflow run release-evidence.yml -R BohnBawerick/catallax \
-  --ref main --field "replay_summary=$SUMMARY"
+  --ref release/0.1.1 --field "replay_summary=$SUMMARY"
 gh-axi run list -R BohnBawerick/catallax --workflow release-evidence.yml --commit "$SHA"
 ```
 
-Dispatch uses a branch or tag, not an unreferenced commit SHA. If `main` moves after the replay, the commit gate fails closed; replay and prepare evidence for the new tip.
+Dispatch uses a branch or tag, not an unreferenced commit SHA. If the release branch moves after the replay, the commit gate fails closed; replay and prepare evidence for the new candidate. Unrelated development on `main` does not move the release candidate.
 
 The successful run uploads `release-evidence-SHA` for 90 days. Record its run ID as `EVIDENCE_RUN`. If it expires, rerun the evidence workflow with the saved aggregate at the same commit. The tag workflow automatically selects the latest successful `release-evidence.yml` run for its exact commit and validates both evidence files again. It never substitutes an older committed milestone report.
 
 ## Dry run without publishing
 
-After the workflows land on `main`:
+After the workflows land and the candidate release branch exists:
 
 ```sh
 gh-axi workflow run release.yml -R BohnBawerick/catallax \
-  --ref main --field "evidence_run=$EVIDENCE_RUN"
+  --ref release/0.1.1 --field "evidence_run=$EVIDENCE_RUN"
 ```
 
-`workflow_dispatch` has no publish switch. It always builds and attests the same files, and never creates a GitHub Release or pushes a tag. Only a tag-push event can enter the publishing job. Dry runs skip the main-ancestry, milestone-note and green-main gates, so release preparation can be exercised before a milestone is complete.
+`workflow_dispatch` has no publish switch. It always builds and attests the same files, and never creates a GitHub Release or pushes a tag. Only a tag-push event can enter the publishing job. Dry runs skip the release-branch ancestry, milestone-note and green-release-CI gates, so release preparation can be exercised before a milestone is complete.
 
 For a branch introducing or changing the release workflows, GitHub cannot dispatch a new workflow file until that file exists on the default branch. The existing `check.yml` provides the bootstrap entry point and runs the full suite too:
 
@@ -126,11 +128,11 @@ gh-axi workflow run check.yml -R BohnBawerick/catallax \
   --field "replay_summary=$SUMMARY"
 ```
 
-This first generates the scoreboard at the tested commit, then calls the reusable release workflow with that same run's artifact. A non-publishing dry run may reuse a previously measured replay aggregate after a mechanical rebase or CI-only change. Its original `candidate_sha` remains in the attached JSON and logs; it is not relabelled as a replay of the dry-run commit. The scoreboard must still match the current commit and recipe hashes. Ordinary standalone `release-evidence.yml` dispatch and every tag-push release require exact-commit replay evidence. Before a real release, run a fresh replay on final `main` after the queue lands. All build failures remain failures. A dry run is not a release.
+This first generates the scoreboard at the tested commit, then calls the reusable release workflow with that same run's artifact. A non-publishing dry run may reuse a previously measured replay aggregate after a mechanical rebase or CI-only change. Its original `candidate_sha` remains in the attached JSON and logs; it is not relabelled as a replay of the dry-run commit. The scoreboard must still match the current commit and recipe hashes. Ordinary standalone `release-evidence.yml` dispatch and every tag-push release require exact-commit replay evidence. Before a real release, run a fresh replay on the final release-branch commit after its fixes land. All build failures remain failures. A dry run is not a release.
 
 ## Cut a release
 
-After every checklist item is satisfied, from updated `main`:
+After every checklist item is satisfied, from the checked versioned release branch:
 
 ```sh
 VERSION=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"] == "catallax-cli"))')

@@ -81,7 +81,10 @@ class CircularSphereImports(unittest.TestCase):
                             self.assertTrue(manifest['exact'])
                             self.assertEqual(manifest['marks'], [])
                             path = Path(case['path']) / 'answer.step'
-                            self.assertEqual(CHECK(str(path), 3)['status'], 'passed')
+                            # The spherical face contains its pole, which moves
+                            # onto an export-only cap: three model faces, four
+                            # exported faces.
+                            self.assertEqual(CHECK(str(path), 4)['status'], 'passed')
                             reader = STEPControl_Reader()
                             self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
                             self.assertGreater(reader.TransferRoots(), 0)
@@ -114,7 +117,9 @@ class CircularSphereImports(unittest.TestCase):
                             while explorer.More():
                                 kinds.append(BRepAdaptor_Surface(FACE(explorer.Current())).GetType())
                                 explorer.Next()
-                            self.assertCountEqual(kinds, [GeomAbs_Plane, GeomAbs_Cylinder, GeomAbs_Sphere])
+                            # The pole cap is a second spherical face.
+                            self.assertCountEqual(kinds, [GeomAbs_Plane, GeomAbs_Cylinder,
+                                                          GeomAbs_Sphere, GeomAbs_Sphere])
 
 
 if __name__ == '__main__':

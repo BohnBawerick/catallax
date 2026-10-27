@@ -18,8 +18,10 @@ walls, enclosed cylindrical voids and algebraic countersinks.
 `test_partial_periodic_trims.py` adds a public cylinder/sphere intersection,
 touching branch vertices, a closed cylinder/sphere branch, spherical lenses at
 identity and a rational pose, and a public block/cylinder union whose two
-cylinder band seams each meet two cut vertices. Each of these imports the file through two
-procedures: raw translation and the standard reader. Each procedure must give a
+cylinder band seams each meet two cut vertices. An L-shaped prism minus a ball
+at two poses checks that an interior pole moves onto an export-only cap. Each
+of these imports the file through two procedures: raw translation and the
+standard reader. Each procedure must give a
 valid shape with one solid, the expected face, edge and vertex counts, and a
 converged adaptive volume within the diagnostic tube of the expected volume.
 Only the raw procedure asserts no healing: direct `StepToTopoDS_Builder`
@@ -107,9 +109,10 @@ their existing seam encoding. Regular partial cylinders and pole-free spherical
 faces use exact shared-edge cuts and bounded, parameter-coupled pcurves. Source
 loop-corner incidence is preserved at touching vertices; disconnected chart
 components receive distinct face/surface identities. No kernel topology is
-modified. Elliptic cylinders, cone faces, arbitrary torus trims, spherical faces
-whose poles belong to the domain, touching spherical trims, and unresolved
-rounded edges anywhere in the export retain their previous encoding. Uncharted planar caps must keep native analytic boundaries;
+modified. An interior spherical pole moves onto an export-only cap behind a
+latitude ring. Elliptic cylinders, cone faces, arbitrary torus trims, poles on a
+trim or without a membership certificate, touching spherical trims, and
+unresolved rounded edges anywhere in the export retain their previous encoding. Uncharted planar caps must keep native analytic boundaries;
 opaque boundaries reject the whole export's partial cutover. Complete bands
 remain on their earlier path. Distinct endpoints must remain separated by the larger of the requested
 distance tolerance and `1e-7`, plus their certified rounding errors.

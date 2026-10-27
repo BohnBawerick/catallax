@@ -1,7 +1,8 @@
 //! Exact export-only topology over regular periodic charts. Spherical callers
 //! certify that both chart poles are outside the requested trimmed domain.
+//! An interior pole first moves onto its own export-only cap.
 
-use crate::{chart, cut, number, trim, wire};
+use crate::{chart, cut, number, poles, trim, wire};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{Curve, Surface};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, Shell};
@@ -21,6 +22,16 @@ pub(crate) fn prepare(
     model: &Model,
     bodies: impl Iterator<Item = BodyId> + Clone,
     options: &crate::StepOptions,
+    dec: &mut Decider,
+) -> Result<Option<Prepared>, Refusal> {
+    prepare_charts(model, bodies, options, true, dec)
+}
+
+fn prepare_charts(
+    model: &Model,
+    bodies: impl Iterator<Item = BodyId> + Clone,
+    options: &crate::StepOptions,
+    split_poles: bool,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
     let faces = || {
@@ -60,6 +71,7 @@ pub(crate) fn prepare(
     let mut geometry = trim::Geometry::new(model);
     let mut selected = BTreeSet::new();
     let mut poles = BTreeMap::new();
+    let mut interior = Vec::new();
     for face in faces() {
         if selected.contains(&face) {
             continue;
@@ -76,22 +88,48 @@ pub(crate) fn prepare(
                         geometry.point(sphere.center.plus(&radius)),
                     ]
                 });
-                for point in points {
-                    if geometry.sphere_contains(model, face, point, dec)?
-                        != Some(trim::Location::Outside)
-                    {
-                        return Ok(None);
+                let mut inside = [false; 2];
+                for (index, point) in points.into_iter().enumerate() {
+                    match geometry.sphere_contains(model, face, point, dec)? {
+                        Some(trim::Location::Outside) => {}
+                        Some(trim::Location::Inside) if split_poles => inside[index] = true,
+                        _ => return Ok(None),
                     }
+                }
+                if inside.contains(&true) {
+                    interior.push((face, inside));
+                    continue;
                 }
             }
             _ => continue,
         }
         selected.insert(face);
     }
+    let bodies: Vec<_> = bodies.collect();
+    if !interior.is_empty() {
+        let Some(split) = poles::split(model, &bodies, &interior, &mut geometry, dec)? else {
+            return Ok(None);
+        };
+        let Some(mut prepared) = prepare_charts(
+            &split.model,
+            split.bodies.iter().copied(),
+            options,
+            false,
+            dec,
+        )?
+        else {
+            return Ok(None);
+        };
+        prepared.plan.added_edges += split.rings;
+        for (source, holed) in split.faces {
+            let charted = prepared.face_map.get(&holed).copied().unwrap_or(holed);
+            prepared.face_map.insert(source, charted);
+        }
+        return Ok(Some(prepared));
+    }
     if selected.is_empty() {
         return Ok(None);
     }
-    let bodies: Vec<_> = bodies.collect();
     let Some(mut prepared) = prepare_regular(model, &bodies, selected, geometry, dec)? else {
         return Ok(None);
     };

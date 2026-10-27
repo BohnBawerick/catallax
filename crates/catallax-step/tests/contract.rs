@@ -172,17 +172,23 @@ blind_test!(case11_bodies_keep_lump_order_and_geometry_sharing, {
     let first = s.e(items[1], "MANIFOLD_SOLID_BREP");
     let shell = s.e(reference(&first.args[1]), "CLOSED_SHELL");
     assert_eq!(list(&shell.args[1]).len(), 1);
+    // Each hemisphere contains a pole. Their legacy shared-sphere file read
+    // as an invalid zero-volume solid without repair. Each pole now moves
+    // onto an export-only cap behind a ring, and every chart component has
+    // its own spherical surface, so the file no longer mirrors the model.
     let (m, b) = split_sphere();
-    let (_, a, s) = export(&m, &[b], &options(17));
-    report_shared_sphere(&a, &s);
-});
-fn report_shared_sphere(a: &Answer<StepReport>, s: &Step) {
-    report(a, [1, 2, 1, 1, 1, 0, 0], true);
+    let o = options(17);
+    let mut bytes = Vec::new();
+    let a = write_step(&m, &[b], &o, &mut Decider::default(), &mut bytes).unwrap();
+    let s = Step::parse(&bytes, &o.product_name);
+    common::report(&a, [1, 4, 5, 3, 3, 4, 0], false);
+    assert!(a.marks.is_empty());
+    assert!(a.value.max_deviation <= o.curve_tolerance);
     counts(
-        s,
-        &[("SPHERICAL_SURFACE", 1), ("CIRCLE", 1), ("EDGE_CURVE", 1)],
+        &s,
+        &[("SPHERICAL_SURFACE", 4), ("CIRCLE", 5), ("EDGE_CURVE", 5)],
     );
-}
+});
 blind_test!(case19_repeat_and_eight_cloned_models, {
     for primitive in primitives() {
         let mut m = Model::new();

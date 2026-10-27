@@ -59,8 +59,11 @@ class PartialPeriodicTrimImports(unittest.TestCase):
         return Path(case['path']), manifest
 
     def check_intersection(self, primitives, topology, expected_volume, kind='intersect'):
+        self.check_recipe(intersection(primitives, kind), topology, expected_volume)
+
+    def check_recipe(self, recipe, topology, expected_volume):
         with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
-            directory, _ = self.answer(intersection(primitives, kind), Path(temporary))
+            directory, _ = self.answer(recipe, Path(temporary))
             path = directory / 'answer.step'
             raw = raw_solid(path)
             reader = STEPControl_Reader()
@@ -166,6 +169,24 @@ class PartialPeriodicTrimImports(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
             directory, _ = self.answer(recipe, Path(temporary))
             self.assertNotIn('PCURVE', (directory / 'answer.step').read_text())
+
+    def test_interior_sphere_pole_moves_onto_an_export_cap(self):
+        # An L-shaped prism minus a unit ball centred on its top face. The
+        # dimple contains the ball's lower pole, so no chart of its own frame
+        # is pole-free. An export-only latitude ring moves that pole onto a cap
+        # written with a perpendicular frame. Volume: 22 - 2*pi/3.
+        for rotation in [('1', '0', '0', '0'), ('1', '2', '3', '4')]:
+            with self.subTest(rotation=rotation):
+                self.check_recipe({
+                    'format': 'catallax-recipe/3', 'name': 'spherical dimple', 'steps': [
+                        {'id': 'a', 'op': 'block', 'size': ['4', '2', '2'], 'pose': pose()},
+                        {'id': 'b', 'op': 'block', 'size': ['1', '3', '2'], 'pose': pose(y='2')},
+                        {'id': 'l', 'op': 'boolean', 'kind': 'union', 'target': 'a', 'tool': 'b'},
+                        {'id': 's', 'op': 'sphere', 'radius': '1',
+                         'pose': pose('2', '1', '2', rotation)},
+                        {'id': 'd', 'op': 'boolean', 'kind': 'subtract', 'target': 'l',
+                         'tool': 's'}],
+                    'result': 'd'}, (11, 25, 16), 22 - 2 * math.pi / 3)
 
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),

@@ -20,6 +20,7 @@ mod graph;
 mod number;
 mod partial;
 mod pcurve;
+mod poles;
 mod regularize;
 mod trim;
 mod uv;

@@ -119,9 +119,19 @@ pub fn check_export(
     assert_eq!(report.faces, step.count("ADVANCED_FACE"));
     assert_eq!(report.edges, step.count("EDGE_CURVE"));
     assert_eq!(report.vertices, step.count("VERTEX_POINT"));
+    // Bounded chart pcurves are 2D splines inside a definitional
+    // representation. Only 3D splines are approximated space curves.
+    let pcurves: BTreeSet<usize> = step
+        .ids("DEFINITIONAL_REPRESENTATION")
+        .into_iter()
+        .flat_map(|id| list(&step.entities[&id].args[1]).into_iter().map(reference))
+        .collect();
     assert_eq!(
         report.approximated_curves,
-        step.count("B_SPLINE_CURVE_WITH_KNOTS")
+        step.ids("B_SPLINE_CURVE_WITH_KNOTS")
+            .into_iter()
+            .filter(|id| !pcurves.contains(id))
+            .count()
     );
     assert_eq!(
         answer.marks.len(),

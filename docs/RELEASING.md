@@ -48,6 +48,16 @@ For an `X.Y.0` milestone release, use the previous release tag as the replay bas
 
 Every changed baseline case must have been `refused` and now be `answered`, with an entry in the committed `tools/release/replay-upgrades.json`. Changed answers, answers becoming refusals, changed refusals and unlisted upgrades fail. Unchanged refusals remain refusals, not successful answers. The list must describe exactly the upgrades against the selected baseline, with no unused entries. Keep it empty for releases without upgrades.
 
+### Joint SolidDraft release handoff
+
+A qualified kernel merge is an intermediate result, not application acceptance. After kernel qualification, the release integration owner updates SolidDraft's dependency pins and lockfile once. Record the kernel commit, the SolidDraft commit containing that pin, the qualification tier and evidence links in the release review. Do not force the repositories to share a version number. Until the complete M2 must-show list passes, a patch of the completed milestone does not claim M2 or full canonical P1.
+
+Run the final kernel evidence and package dry run at the exact candidate commit. Then check that SolidDraft's recorded pin is that same commit and complete its [application release checklist](https://github.com/BohnBawerick/soliddraft/blob/main/docs/RELEASING.md), including downloaded desktop and browser interaction, older supported documents, edited-part output and drawing reopen. Source changes after qualification require the affected evidence again. A successful kernel scoreboard or archive smoke does not certify the application's click, proof or output path.
+
+The joint ordinary-parts cut requires the application bracket, edited collar, safe-edit recovery, checked exports and requested drill-point measurement, plus the rounded-boss correctness assessment for all affected shipped paths. Canonical P1 remains a separate full-path gate. Missing acceptance evidence or an unresolved shared-output correctness defect holds the tag; neither a deadline nor a passing package job overrides that hold.
+
+The current aggregate permits only the refusal upgrades described above. Any proposed invalid-to-valid correction of a previously successful output requires an enumerated reviewed policy and qualified release-driver support before tagging. Approval to investigate such a policy is not an approval of any particular changed output. Do not change the baseline, relax byte comparison or relabel a historical dry run to bypass this gate.
+
 ## Generate the replay aggregate
 
 Use the [verification skill](../.claude/skills/verify-catallax/SKILL.md) on the designated replay machine. Raw inputs and per-case artifacts remain there; do not upload them to GitHub, name them in public notes or commit them. `BASELINE`, `CANDIDATE`, `INPUTS` and `PROOF` below are local runtime paths selected by the operator.

@@ -4,7 +4,7 @@
 use crate::geometry::{equation_is_source_contact, natural_ends, on_arc, r, sign, unit};
 use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
 use catallax_shapes::{
-    Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, SurfaceId, Vector3,
+    Circle, Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, SurfaceId, Vector3,
 };
 use catallax_topology::{EdgeId, Model};
 
@@ -446,6 +446,20 @@ fn straight_contact(equation: &RealPoly, p: &Point3, q: &Point3, degree: u32) ->
     P(vec![Real::zero(), first.clone(), end - first])
 }
 
+/// Restrict a circle's sphere equation to a straight path from another circle.
+/// Subtracting the source sphere eliminates every quadratic source coordinate.
+fn straight_circles(source: &Circle, barrier: &Circle, p: &Point3, q: &Point3) -> P {
+    let shift = source.center.minus(&barrier.center);
+    let start = Real::from_i64(2) * shift.dot(&p.minus(&source.center))
+        + shift.norm_squared()
+        + (&source.radius_sq - &barrier.radius_sq);
+    let end_offset = q.minus(&barrier.center);
+    let end = &end_offset.norm_squared() - &barrier.radius_sq;
+    let middle = &end_offset.dot(&p.minus(&barrier.center)) - &barrier.radius_sq;
+    let first = Real::from_i64(2) * (&middle - &start);
+    P(vec![start.clone(), first.clone(), end - start - first])
+}
+
 /// The source position is an exact arc probe on the supplied source curve.
 pub(crate) fn adjacent(
     model: &Model,
@@ -564,6 +578,12 @@ pub(crate) fn adjacent(
                             } else {
                                 numerator(e, &path, dec)?
                             }
+                        } else if straight
+                            && index == 1
+                            && let (Curve::Circle(source), Curve::Circle(barrier)) =
+                                (model.geom().curve(source_curve), curve)
+                        {
+                            straight_circles(source, barrier, p, q)
                         } else {
                             numerator(e, &path, dec)?
                         };
@@ -763,5 +783,59 @@ mod tests {
             );
         }
         assert!(!polynomial.excludes_zero(&mut dec).unwrap());
+    }
+
+    #[test]
+    fn circle_source_reduction_keeps_crossings_tangencies_and_endpoint_hits() {
+        let root2 = Real::from_i64(2).sqrt();
+        let root3 = Real::from_i64(3).sqrt();
+        let source = Circle {
+            center: RPoint3::new(r(0), r(0), r(0)).to_real(),
+            normal: unit(2),
+            radius_sq: Real::from_i64(5),
+            ref_dir: unit(0),
+        };
+        let p = Point3::new(root2.clone(), root3.clone(), Real::zero());
+        let barrier = Circle {
+            center: RPoint3::new(r(4), r(0), r(0)).to_real(),
+            radius_sq: Real::one(),
+            ..source.clone()
+        };
+        let tangent_barrier = Circle {
+            center: Point3::new(
+                &root2 + &Real::from_i64(2),
+                &root3 + &Real::one(),
+                Real::zero(),
+            ),
+            ..barrier.clone()
+        };
+        let mut dec = Decider::default();
+        assert!(
+            dec.sign(&(&p.minus(&source.center).norm_squared() - &source.radius_sq))
+                .is_coincident()
+        );
+        for (barrier, q, clear) in [
+            (&barrier, RPoint3::new(r(1), r(1), r(0)).to_real(), true),
+            (&barrier, RPoint3::new(r(6), r(0), r(0)).to_real(), false),
+            (&barrier, RPoint3::new(r(4), r(0), r(0)).to_real(), false),
+            (&barrier, RPoint3::new(r(5), r(0), r(0)).to_real(), false),
+            (
+                &tangent_barrier,
+                Point3::new(&root2 + &Real::one(), root3.clone(), Real::zero()),
+                true,
+            ),
+            (
+                &tangent_barrier,
+                Point3::new(&root2 + &Real::from_i64(4), root3.clone(), Real::zero()),
+                false,
+            ),
+        ] {
+            assert_eq!(
+                straight_circles(&source, barrier, &p, &q)
+                    .excludes_zero(&mut dec)
+                    .unwrap(),
+                clear,
+            );
+        }
     }
 }

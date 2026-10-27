@@ -619,16 +619,49 @@ impl Decider {
         system: &Arc<PolySystem>,
         candidate: &RootBox,
     ) -> Outcome<BoxRoots> {
+        self.certify_root_between(
+            system,
+            candidate,
+            64u32.min(self.policy.max_precision_bits),
+            self.policy.max_precision_bits,
+        )
+    }
+    /// Attempts root certification at one working precision without escalation.
+    ///
+    /// An inconclusive box still refuses; it is never an empty-box certificate.
+    /// All work remains charged to this decider and its enclosing request.
+    /// A requested precision above the caller's policy refuses before arithmetic.
+    pub fn certify_root_at(
+        &mut self,
+        system: &Arc<PolySystem>,
+        candidate: &RootBox,
+        precision: u32,
+    ) -> Outcome<BoxRoots> {
+        let precision = precision.max(1);
+        self.certify_root_between(system, candidate, precision, precision)
+    }
+    fn certify_root_between(
+        &mut self,
+        system: &Arc<PolySystem>,
+        candidate: &RootBox,
+        mut precision: u32,
+        ceiling: u32,
+    ) -> Outcome<BoxRoots> {
         assert_eq!(system.dimension(), candidate.dimension());
         self.stats.decisions += 1;
         if self.expired() {
             return self.refused(deadline());
         }
+        if ceiling > self.policy.max_precision_bits {
+            return self.refused(Refusal::new(
+                "numbers.precision-limit",
+                "requested working precision exceeds the caller's policy",
+            ));
+        }
         let mut work = Work::new(self.policy, self.deadline);
-        let mut p = 64u32.min(self.policy.max_precision_bits);
         let mut answer = None;
-        while p != 0 {
-            match system::certify(system, candidate, p, &mut work) {
+        while precision != 0 {
+            match system::certify(system, candidate, precision, &mut work) {
                 Ok(Some(v)) => {
                     answer = Some(v);
                     break;
@@ -636,10 +669,10 @@ impl Decider {
                 Ok(None) => {}
                 Err(_) => break,
             }
-            if p == self.policy.max_precision_bits {
+            if precision == ceiling {
                 break;
             }
-            p = p.saturating_mul(2).min(self.policy.max_precision_bits);
+            precision = precision.saturating_mul(2).min(ceiling);
         }
         self.account(&work);
         if self.expired() {

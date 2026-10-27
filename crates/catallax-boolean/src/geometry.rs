@@ -186,7 +186,20 @@ pub(crate) fn canonical_point(
     code: &'static str,
 ) -> Result<PointId, Refusal> {
     for &existing in points.iter() {
-        if coincident(model.geom().same_point(existing, point, dec), code)? {
+        let identity = if model.geom().facts().holds(
+            FactKind::Coincident,
+            GeomKey::Point(existing),
+            GeomKey::Point(point),
+        ) {
+            None
+        } else {
+            crate::point_identity::same_cylinder_point(model.geom(), existing, point, dec)?
+        };
+        let equal = match identity {
+            Some(equal) => equal,
+            None => coincident(model.geom().same_point(existing, point, dec), code)?,
+        };
+        if equal {
             record_same_point(model, existing, point);
             return Ok(existing);
         }

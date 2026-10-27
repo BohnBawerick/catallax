@@ -1,3 +1,5 @@
+//! Round trips of the import wire types.
+
 use catallax_import::*;
 
 fn b(v: &str) -> Bounds {

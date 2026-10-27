@@ -544,3 +544,47 @@ fn connected_tangent_corners_refuse_as_a_self_touching_shell() {
     assert!(model.check(a).is_empty());
     assert!(model.check(b).is_empty());
 }
+
+#[test]
+fn skipped_carriers_keep_the_complete_section_order() {
+    // A public edge-hunt block/cylinder intersection whose skipped carriers
+    // cross the closed section curves. Its STEP bytes depend on which cut each
+    // closed curve starts at.
+    let q = |n: i64, d: i64| Rational::from_ratio(n, d).unwrap();
+    let section = |prune: bool| {
+        let mut model = Model::new();
+        let mut dec = Decider::default();
+        let a = block(&mut model, [r(2), r(2), r(2)], &pose(-1, -1, -1)).unwrap();
+        let rotation = Rotation::from_quaternion(q(1, 2), q(1, 3), q(1, 5), q(1, 7)).unwrap();
+        let translation = RVector3::new(q(-33491, 37178), q(3161, 1923), q(-34021, 92945));
+        let placement = Pose::new(rotation, translation.into(), &mut dec).unwrap();
+        let b = cylinder(&mut model, r(2), r(4), &placement).unwrap();
+        let graph = crate::graph::section(&mut model, a, b, prune, &mut dec)
+            .unwrap()
+            .value;
+        let at = |point: Option<catallax_shapes::PointId>| {
+            point.map(|point| {
+                let p = model.geom().position(point);
+                [&p.x, &p.y, &p.z].map(|c| format!("{:.6}", c.to_f64()))
+            })
+        };
+        let edges: Vec<_> = graph
+            .edges()
+            .iter()
+            .map(|edge| {
+                (
+                    edge.curve,
+                    at(edge.start),
+                    at(edge.end),
+                    edge.faces_of_first.clone(),
+                    edge.faces_of_second.clone(),
+                )
+            })
+            .collect();
+        let points: Vec<_> = graph.points().iter().map(|&p| at(Some(p))).collect();
+        (edges, points, graph.marks.len())
+    };
+    let complete = section(false);
+    assert!(complete.0.len() > 2);
+    assert_eq!(section(true), complete);
+}

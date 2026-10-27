@@ -243,10 +243,26 @@ The preliminary coefficient filter tries the existing conservative interval widt
 
 Finite-face exclusions only gate curve/surface queries for carriers with no
 potentially meeting generating face pair. Every carrier remains in its original
-pool position. Every curve/curve meeting that involves a skipped carrier is
-still queried, because the covered-pair skip relies on a carrier's own complete
-curve/surface results, which a skipped carrier does not have. Optional bounding
+pool position. The covered-pair skip relies on a carrier's own complete
+curve/surface results, which a skipped carrier does not have. A pair of a
+skipped carrier and a later active carrier is therefore always queried. A pair
+with an earlier active carrier that covers it is skipped, because that carrier
+or an earlier one already found every crossing. Optional bounding
 witnesses use a private model fork so they cannot become canonical graph points.
+
+A skipped carrier can cross an active carrier at a point that the complete pass
+would find first through the skipped carrier. Discovery order decides only two
+outputs: the first cut of a closed carrier and the order of isolated points.
+The graph records which carrier found each point and which skipped carriers
+cross it. When a crossing could come first on a closed carrier that keeps a
+piece, or among isolated points, the graph queries that skipped carrier, ranks
+the point by its hit order, and restores the complete pass's order. The
+complete pass would make the same query.
+`skipped_carriers_keep_the_complete_section_order` builds a public edge-hunt
+block/cylinder intersection of that kind and requires the pruned graph's edges,
+cut coordinates, isolated points and marks to equal the complete pass. Without
+the restored order its closed sections start at different cuts and the test
+fails.
 
 The existing bounds tests distinguish strict separation from touching caps,
 retain unbounded planar regions and check translated local gaps. Unsupported or

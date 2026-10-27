@@ -10,6 +10,7 @@ use catallax_shapes::{
 use std::{cell::RefCell, collections::VecDeque, sync::Arc};
 
 mod conics;
+mod cylinder_torus;
 
 #[derive(Clone, Debug)]
 enum DividerValue {
@@ -88,6 +89,12 @@ impl Divider {
         }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CylinderTorusMode {
+    Single,
+    Axial,
+    Transverse,
+}
 #[derive(Clone, Debug)]
 pub(super) enum Frame {
     CylinderSphere {
@@ -112,6 +119,23 @@ pub(super) enum Frame {
         alpha: Real,
         gamma: Real,
         mode: u8,
+        sense: i64,
+    },
+    CylinderTorus {
+        origin: Point3,
+        e1: Vector3,
+        e2: Vector3,
+        e3: Vector3,
+        radius: Real,
+        radial_shift: Real,
+        radial_slope: Real,
+        lo: Real,
+        span: Real,
+        lower_radius: Real,
+        upper_radius: Real,
+        y_ends: [bool; 2],
+        z_ends: [bool; 2],
+        mode: CylinderTorusMode,
         sense: i64,
     },
 }

@@ -513,9 +513,7 @@ pub(super) fn cylinder_torus(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     if !coaxial(&t.center, &t.axis, &c.origin, &c.axis, dec)? {
-        return Err(traced(
-            "non-coaxial cylinder/torus intersection requires certified branch tracing",
-        ));
+        return super::cylinder_torus::parallel(c, t, sigma, dec);
     }
     let discriminant = sq(&t.minor) - sq(&(&c.radius() - &t.major));
     if sign(&discriminant, dec)? == Sign::Negative {

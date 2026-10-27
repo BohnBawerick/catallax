@@ -26,6 +26,10 @@ pub struct BoxFixture {
     pub size: [Rational; 3],
     pub unit: Unit,
     pub shift: Option<(usize, [Rational; 3])>,
+    /// A second shifted face.
+    pub also: Option<(usize, [Rational; 3])>,
+    /// Leaves this face out of the shell, which opens the shell.
+    pub omit: Option<usize>,
 }
 
 impl BoxFixture {
@@ -35,6 +39,8 @@ impl BoxFixture {
             size: size.map(r),
             unit: Unit::Millimetre,
             shift: None,
+            also: None,
+            omit: None,
         }
     }
 }
@@ -139,6 +145,9 @@ fn write_box(w: &mut Writer, b: &BoxFixture) -> u64 {
     };
     let mut faces = Vec::new();
     for (index, (axis, side)) in (0..3).flat_map(|a| [(a, 0), (a, 1)]).enumerate() {
+        if b.omit == Some(index) {
+            continue;
+        }
         let (bb, cc) = ((axis + 1) % 3, (axis + 2) % 3);
         let mut ring = [[0usize; 3]; 4];
         for (k, (ib, ic)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
@@ -149,10 +158,11 @@ fn write_box(w: &mut Writer, b: &BoxFixture) -> u64 {
         if side == 0 {
             ring.reverse();
         }
-        let offset = match &b.shift {
-            Some((i, d)) if *i == index => Some(d.clone()),
-            _ => None,
-        };
+        let offset = [&b.shift, &b.also]
+            .into_iter()
+            .flatten()
+            .find(|(i, _)| *i == index)
+            .map(|(_, d)| d.clone());
         let mut own: std::collections::BTreeMap<usize, u64> = Default::default();
         let mut own_edge: std::collections::BTreeMap<(usize, usize), u64> = Default::default();
         let mut vertex = |w: &mut Writer, shared: &mut Shared, c: [usize; 3]| -> u64 {
@@ -221,11 +231,15 @@ fn write_box(w: &mut Writer, b: &BoxFixture) -> u64 {
             .join(",");
         let lp = w.add(format!("EDGE_LOOP('',({list}))"));
         let bound = w.add(format!("FACE_OUTER_BOUND('',#{lp},.T.)"));
-        let origin = w.point(&corner(b, {
+        let mut at = corner(b, {
             let mut c = [0; 3];
             c[axis] = side;
             c
-        }));
+        });
+        if let Some(d) = &offset {
+            at = std::array::from_fn(|i| &at[i] + &d[i]);
+        }
+        let origin = w.point(&at);
         let (n, rd) = (w.dir(axis), w.dir(bb));
         let pl = w.add(format!("AXIS2_PLACEMENT_3D('',#{origin},#{n},#{rd})"));
         let plane = w.add(format!("PLANE('',#{pl})"));

@@ -72,3 +72,17 @@ Tier when built: FULL SIX for interpretation and numerics; dialog-only changes S
 ## File ownership needed
 
 `catallax-recipe` (consumer of `ImportStep`), `catallax-topology` (shell construction), `catallax-app` adapter entry points (L03), cache mechanics (L04), and a new `catallax-step` reader module. SolidDraft: import/repair dialog, change-record viewer, decline path.
+
+## Implemented repair scope
+
+`propose` and `apply` in `catallax-import` measure and repair only straight seams between planar faces.
+
+- A gap is a set of straight boundary edges used once with no opposite use, paired within a search radius (default 1 mm) by opposite travel and endpoint distance. Pairs sharing a point form one gap. Distances are exact squared rational distances; the shown bounds enclose their square roots at 1e-12 mm.
+- A gap is an opening, always asked and never closed, when any of its boundary edges has no partner within the radius, or when a pair's faces are exactly anti-parallel (closing would fold them onto each other). A thin plate with one edge face missing is such an opening. Accepting an opening proposal is refused; only a decline is accepted.
+- Automatic closure needs a seam, a distance of at most 0.01 mm (inclusive) and a squared distance times 100 not above the squared length of the shortest straight edge of the faces involved. Otherwise the proposal asks, with the reason.
+- The repair moves whole vertices of one side onto their partners and refits each planar face through its moved vertices, which must stay exactly coplanar. Both sides are tried. The side that changes fewer surfaces wins, then the smaller movement. So a seam closes by extending faces along their own surfaces where possible. If neither side works, `validation_failed` and nothing is built.
+- The repaired solid is rebuilt in a scratch model, checked for closed, sound topology and positive volume before it is built for the caller. Self-intersection is not tested yet.
+- Recorded bounds are the bounds of the solid's vertices; they ignore curved bulge. Movement is the largest vertex displacement, rounded up at 1e-12 mm.
+- Curved edges or faces in a gap are refused with `not_solid`.
+- A decline leaves the solid open, so it is reported in `left_open` and not built.
+- A solid with no gap is built as written. Separate solids are never joined, so bodies 0.005 mm apart produce no proposal.

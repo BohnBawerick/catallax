@@ -88,7 +88,12 @@ fn candidate(
     dec: &mut Decider,
 ) -> Result<Option<PointId>, Refusal> {
     for curve in [a, b] {
-        for equation in model.geom().curve(curve).equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))? {
+        for equation in model.geom().curve_equations(curve).ok_or_else(|| {
+            catallax_numbers::Refusal::new(
+                "boolean.parametric-query",
+                "curve equation unavailable; this boolean path needs a finite parametric solver",
+            )
+        })? {
             if sign(
                 &equation.eval_real(&[p.x.clone(), p.y.clone(), p.z.clone()]),
                 dec,

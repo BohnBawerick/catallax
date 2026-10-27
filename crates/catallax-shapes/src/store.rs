@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
+use std::sync::OnceLock;
 
 use catallax_numbers::{
     Ball, Coincidence, Decider, Fact, FactBook, FactKind, FactOrigin, NotExact, Outcome, Rational,
@@ -162,6 +163,9 @@ pub struct GeomStore {
     points: Arena<PointDef>,
     facts: FactBook<GeomKey>,
     implicits: Vector<Option<RealPoly>>,
+    // Built on first use. Curves and implicits never change once added, so a
+    // clone sharing a cell with this store needs the same equations.
+    curve_equations: Vector<OnceLock<Option<Vec<RealPoly>>>>,
     approximate_points: Vector<[f64; 3]>,
     closed_conic_supports: OrdMap<CurveId, OrdSet<SurfaceId>>,
 }
@@ -187,6 +191,7 @@ impl GeomStore {
             );
         }
         let id = self.curves.push(c);
+        self.curve_equations.push_back(OnceLock::new());
         if let Curve::Intersection(i) = self.curves.get(id) {
             let surfaces = i.surfaces;
             for s in surfaces {
@@ -346,6 +351,13 @@ impl GeomStore {
         self.implicits[s.index as usize].as_ref()
     }
 
+    /// Borrowed `Curve::equations` of a curve in this store.
+    pub fn curve_equations(&self, c: CurveId) -> Option<&[RealPoly]> {
+        self.curve_equations[c.index as usize]
+            .get_or_init(|| self.curve(c).equations(self))
+            .as_deref()
+    }
+
     /// Exact position of a point.
     pub fn position(&self, p: PointId) -> Point3 {
         match self.point(p) {
@@ -459,7 +471,7 @@ impl GeomStore {
             };
         }
         let coordinates = [position.x, position.y, position.z];
-        let Some(equations) = curve.equations(self) else {
+        let Some(equations) = self.curve_equations(c) else {
             return Outcome::Refused(missing_equation());
         };
         // A retained incidence discharges only its own support equation. Keep

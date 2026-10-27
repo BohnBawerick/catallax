@@ -465,16 +465,12 @@ pub(crate) fn adjacent(
         )
     })?;
     let opposite_carrier = -&carrier;
-    let source_equations = model
-        .geom()
-        .curve(source_curve)
-        .equations(model.geom())
-        .ok_or_else(|| {
-            catallax_numbers::Refusal::new(
-                "boolean.parametric-query",
-                "curve equation unavailable; this boolean path needs a finite parametric solver",
-            )
-        })?;
+    let source_equations = model.geom().curve_equations(source_curve).ok_or_else(|| {
+        catallax_numbers::Refusal::new(
+            "boolean.parametric-query",
+            "curve equation unavailable; this boolean path needs a finite parametric solver",
+        )
+    })?;
     // A plane's chart interpolation is the straight segment exactly when
     // both endpoints lie on the carrier. The source arc supplies its proof.
     let straight = matches!(surface, Surface::Plane(_))
@@ -541,12 +537,12 @@ pub(crate) fn adjacent(
                 }
             }
             let conic_contact = model.geom().has_conic_incidence(edge.curve, source);
-            let mut equations: Vec<_> = curve.equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
+            let mut equations: Vec<_> = model.geom().curve_equations(edge.curve).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
                 .iter()
                 .enumerate()
                 .map(|(index, e)| -> Result<P, Refusal> {
                     let contact = equation_is_source_contact(
-                        model, source, source_curve, edge.curve, index, e, &source_equations,
+                        model, source, source_curve, edge.curve, index, e, source_equations,
                     );
                     let contact = if !contact && conic_contact {
                         dec.note_fact_decision();

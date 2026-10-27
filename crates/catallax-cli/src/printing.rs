@@ -1,15 +1,14 @@
 //! Qualified print outputs. Route selection never retries another representation.
 use catallax_field::{
     Plan,
-    printing::{Mesh, Options},
+    printing::{Mesh, Options, native_field},
 };
 use catallax_numbers::{Decider, Rational, Refusal};
-use catallax_recipe::{Number, Operation, Recipe};
+use catallax_recipe::{Number, Recipe};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fs,
     io::{BufWriter, Write},
     path::Path,
@@ -84,28 +83,6 @@ pub(crate) fn request_refused(
     let mut result = refused(code, detail);
     result["printing"] = settings(route, &options);
     result
-}
-fn native_field(recipe: &Recipe) -> bool {
-    let steps: BTreeMap<_, _> = recipe.steps.iter().map(|s| (&s.id, &s.op)).collect();
-    let mut pending = vec![&recipe.result];
-    let mut seen = BTreeSet::new();
-    while let Some(id) = pending.pop() {
-        if !seen.insert(id) {
-            continue;
-        }
-        let op = steps[id];
-        if matches!(
-            op,
-            Operation::Lattice { .. }
-                | Operation::Gyroid { .. }
-                | Operation::SmoothBlend { .. }
-                | Operation::ImportMesh { .. }
-        ) {
-            return true;
-        }
-        pending.extend(op.inputs().into_iter().map(|(id, _)| id));
-    }
-    false
 }
 fn settings(route: Route, options: &Options) -> Value {
     json!({"route":route.name(),"file":null,"format":"binary-stl","metadata":"catallax-print-stl/1","units":"mm",

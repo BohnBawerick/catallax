@@ -8,7 +8,7 @@
 
 use crate::{Instruction, Location, Plan, Workspace, geometry, lattice::BoxState, metric::Kind};
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
-use catallax_recipe::BooleanKind;
+use catallax_recipe::{BooleanKind, Operation, Recipe};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
@@ -19,6 +19,31 @@ mod membership;
 
 type Index = [u32; 3];
 type Terms = Vec<([u32; 3], Interval)>;
+
+/// Whether the validated recipe's requested result depends on a field-only definition.
+/// Unused field steps do not change the requested result's print route.
+pub fn native_field(recipe: &Recipe) -> bool {
+    let steps: BTreeMap<_, _> = recipe.steps.iter().map(|s| (&s.id, &s.op)).collect();
+    let mut pending = vec![&recipe.result];
+    let mut seen = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let op = steps[id];
+        if matches!(
+            op,
+            Operation::Lattice { .. }
+                | Operation::Gyroid { .. }
+                | Operation::SmoothBlend { .. }
+                | Operation::ImportMesh { .. }
+        ) {
+            return true;
+        }
+        pending.extend(op.inputs().into_iter().map(|(id, _)| id));
+    }
+    false
+}
 
 /// Print-output controls. These do not change the model or its tolerances.
 #[derive(Clone, Debug, PartialEq, Eq)]

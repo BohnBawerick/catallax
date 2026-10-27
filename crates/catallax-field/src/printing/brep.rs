@@ -26,6 +26,7 @@ pub struct Output {
 
 /// Qualifies the exact supplied body, without rebuilding it or using its display.
 /// Marked geometry requires [`mesh_certified`], never an assumed zero model bound.
+/// Result-reachable field definitions refuse even if the B-rep holds a solid envelope.
 pub fn mesh(built: &Built, options: &Options, dec: &mut Decider) -> Result<Output, Refusal> {
     check_body(built, options)?;
     if !built.model.body(built.result).marks.is_empty() {
@@ -62,6 +63,12 @@ pub fn mesh_certified(
 }
 
 fn check_body(built: &Built, options: &Options) -> Result<(), Refusal> {
+    if super::native_field(built.recipe()) {
+        return Err(Refusal::new(
+            "print.brep-field-definition",
+            "a field envelope is not a B-rep print definition; request the field route",
+        ));
+    }
     if options.tolerance <= Rational::zero() || options.max_vertices < 4 {
         return Err(Refusal::new(
             "print.invalid-options",

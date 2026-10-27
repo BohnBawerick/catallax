@@ -219,6 +219,7 @@ pub(crate) fn cut_face(
         Surface::Cylinder(s) => s.ref_dir = meridian.reference.clone(),
         Surface::Sphere(s) => s.ref_dir = meridian.reference.clone(),
         Surface::Cone(s) => s.ref_dir = meridian.reference.clone(),
+        Surface::Torus(s) => s.ref_dir = meridian.reference.clone(),
         _ => unreachable!("chart walk on a non-periodic carrier"),
     }
     let surface = model.geom_mut().add_surface(surface);
@@ -326,6 +327,14 @@ pub(crate) fn cut_face(
             Surface::Cone(s) => Curve::Line(Line {
                 origin: s.apex.clone(),
                 dir: number::unit(&s.axis).plus(&reference.scaled(&s.slope)),
+            }),
+            // The tube circle's angle is the torus v parameter: it starts on
+            // the outer equator and increases toward the axis direction.
+            Surface::Torus(s) => Curve::Circle(Circle {
+                center: s.center.plus(&reference.scaled(&s.major)),
+                normal: meridian.reference.cross(&s.axis),
+                radius_sq: s.minor.square(),
+                ref_dir: meridian.reference.clone(),
             }),
             _ => unreachable!(),
         };

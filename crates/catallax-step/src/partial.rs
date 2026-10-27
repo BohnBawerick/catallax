@@ -35,18 +35,20 @@ pub(crate) fn prepare(
         !definition.loops.is_empty()
             && matches!(
                 model.geom().surface(definition.surface),
-                Surface::Cylinder(_) | Surface::Sphere(_)
+                Surface::Cylinder(_) | Surface::Sphere(_) | Surface::Torus(_)
             )
     }) {
         return Ok(None);
     }
     // Classify structure before doing exact membership work. In particular,
-    // this is not an arbitrary cone, torus, or elliptic-cylinder cutover.
+    // this is not an arbitrary cone, elliptic-cylinder or torus-trim cutover.
+    // Trimmed tori need explicit circular trims and a proven exterior v seam.
     for face in faces() {
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
             Surface::Plane(_) if unchanged_planar_boundary(model, face) => {}
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
+            Surface::Torus(_) if circular_boundary(model, face) => {}
             Surface::Cylinder(_) | Surface::Sphere(_)
                 if definition
                     .loops
@@ -65,6 +67,7 @@ pub(crate) fn prepare(
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
             Surface::Cylinder(_) => {}
+            Surface::Torus(_) if !definition.loops.is_empty() => {}
             Surface::Sphere(sphere) if !definition.loops.is_empty() => {
                 let points = *poles.entry(definition.surface).or_insert_with(|| {
                     let radius = number::unit(&sphere.axis).scaled(&sphere.radius);
@@ -89,7 +92,9 @@ pub(crate) fn prepare(
         return Ok(None);
     }
     let bodies: Vec<_> = bodies.collect();
-    let mut prepared = prepare_regular(model, &bodies, selected, geometry, dec)?;
+    let Some(mut prepared) = prepare_regular(model, &bodies, selected, geometry, dec)? else {
+        return Ok(None);
+    };
     // Two trims touching at a tangency meet at one parameter point. Cylinder
     // charts preserve that corner incidence, but a spherical chart face whose
     // wires pass the same vertex on the same chart side twice can cross itself
@@ -225,18 +230,45 @@ fn unchanged_planar_boundary(model: &Model, face: FaceId) -> bool {
         })
 }
 
+// Opaque torus intersections are quartic. Their membership queries are not
+// part of this cutover and can exhaust an operation allowance that the legacy
+// encoder never spends, so they keep the legacy bytes.
+fn circular_boundary(model: &Model, face: FaceId) -> bool {
+    let definition = model.face(face);
+    !definition.loops.is_empty()
+        && definition.loops.iter().all(|id| {
+            let Loop::Coedges(coedges) = model.loop_(*id) else {
+                return false;
+            };
+            !coedges.is_empty()
+                && coedges.iter().all(|id| {
+                    matches!(
+                        model.geom().curve(model.edge(model.coedge(*id).edge).curve),
+                        Curve::Circle(_)
+                    )
+                })
+        })
+}
+
 pub(crate) fn prepare_regular(
     model: &Model,
     bodies: &[BodyId],
     faces: BTreeSet<FaceId>,
     mut geometry: trim::Geometry,
     dec: &mut Decider,
-) -> Result<Prepared, Refusal> {
+) -> Result<Option<Prepared>, Refusal> {
     assert!(!faces.is_empty(), "empty periodic preparation");
     let mut cuts = cut::Cuts::default();
     let mut meridians = BTreeMap::new();
     for face in faces {
         let mut meridian = chart::meridian(&mut geometry, model, face, dec)?;
+        if matches!(
+            geometry.store.surface(model.face(face).surface),
+            Surface::Torus(_)
+        ) && !chart::torus_seam_outside(&mut geometry, model, face, &meridian, dec)?
+        {
+            return Ok(None);
+        }
         cuts.add(&geometry, &mut meridian, dec)?;
         meridians.insert(face, meridian);
     }
@@ -314,13 +346,13 @@ pub(crate) fn prepare_regular(
         .into_iter()
         .map(|(edge, replacements)| (edge, replacements.into_iter().map(|c| c.edge).collect()))
         .collect();
-    Ok(Prepared {
+    Ok(Some(Prepared {
         model: prepared,
         bodies: replacements,
         plan,
         face_map,
         edge_map,
-    })
+    }))
 }
 
 impl Prepared {

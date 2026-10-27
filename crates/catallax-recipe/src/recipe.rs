@@ -96,6 +96,28 @@ impl Recipe {
         crate::check::check(self)
     }
 
+    /// Checks that every lattice step is terminal: no step reads a lattice, so no
+    /// CAD operation, boolean or second lattice follows it. [`Recipe::check`] does not
+    /// require this; an application that treats the lattice as its last feature calls
+    /// this on the history it is about to build.
+    pub fn check_lattice_terminal(&self) -> Result<(), RecipeError> {
+        for (i, lattice) in self.steps.iter().enumerate() {
+            if !matches!(lattice.op, Operation::Lattice { .. }) {
+                continue;
+            }
+            if let Some(reader) = self.steps[i + 1..]
+                .iter()
+                .find(|s| s.op.inputs().iter().any(|(input, _)| **input == lattice.id))
+            {
+                return Err(RecipeError::LatticeNotTerminal {
+                    step: reader.id.clone(),
+                    lattice: lattice.id.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// The step with this id.
     pub fn step(&self, id: &StepId) -> Option<&Step> {
         self.steps.iter().find(|s| &s.id == id)
@@ -210,6 +232,13 @@ pub enum RecipeError {
         /// The import step.
         step: StepId,
     },
+    /// A step reads a lattice where the lattice must be the last feature.
+    LatticeNotTerminal {
+        /// The reading step.
+        step: StepId,
+        /// The lattice step it reads.
+        lattice: StepId,
+    },
     /// The result is not a step that makes a body.
     Result {
         /// The result id.
@@ -236,6 +265,7 @@ impl RecipeError {
             RecipeError::NoSuchCopy { .. } => "recipe.no-such-copy",
             RecipeError::AsymmetricAll { .. } => "recipe.asymmetric-all",
             RecipeError::FileHash { .. } => "recipe.file-hash",
+            RecipeError::LatticeNotTerminal { .. } => "recipe.lattice-not-terminal",
             RecipeError::Result { .. } => "recipe.result",
         }
     }
@@ -317,6 +347,10 @@ impl fmt::Display for RecipeError {
                     "step {step}: sha256 must be 64 lowercase hexadecimal digits"
                 )
             }
+            RecipeError::LatticeNotTerminal { step, lattice } => write!(
+                f,
+                "step {step} reads lattice {lattice}, but a lattice must be the last feature"
+            ),
             RecipeError::Result { result } => {
                 write!(f, "result {result} is not a step that makes a body")
             }

@@ -415,3 +415,40 @@ fn steps_expose_their_inputs_and_elements() {
     );
     assert!(matches!(outline.op, Operation::Sketch { .. }));
 }
+
+const BLOCK_AND_LATTICE: &str = r#"{"format":"catallax-recipe/3","name":"terminal lattice","steps":[{"id":"region","op":"block","size":["4","4","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"beams","op":"lattice","region":"region","cell":"cubic","size":"2","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"radius":{"constant":"0.25"}}],"result":"beams"}"#;
+
+#[test]
+fn a_lattice_that_nothing_reads_is_terminal() {
+    let recipe = Recipe::parse(BLOCK_AND_LATTICE).unwrap();
+    assert_eq!(recipe.check_lattice_terminal(), Ok(()));
+}
+
+#[test]
+fn a_cad_step_after_a_lattice_is_not_terminal() {
+    let text = BLOCK_AND_LATTICE
+        .replace(r#""result":"beams""#, r#""result":"after""#)
+        .replace(
+            "}],\"result",
+            r#"},{"id":"after","op":"offset","body":"beams","distance":"0.1"}],"result"#,
+        );
+    let recipe = Recipe::parse(&text).unwrap();
+    let error = recipe.check_lattice_terminal().unwrap_err();
+    assert_eq!(error.code(), "recipe.lattice-not-terminal");
+    assert_eq!(
+        error,
+        RecipeError::LatticeNotTerminal {
+            step: StepId::new("after").unwrap(),
+            lattice: StepId::new("beams").unwrap(),
+        }
+    );
+}
+
+#[test]
+fn a_union_of_a_lattice_is_not_terminal() {
+    let error = every_operation().check_lattice_terminal().unwrap_err();
+    assert!(matches!(
+        error,
+        RecipeError::LatticeNotTerminal { ref lattice, .. } if lattice.as_str() == "truss"
+    ));
+}

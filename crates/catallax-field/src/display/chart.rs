@@ -33,6 +33,26 @@ fn unit(v: &Vector3) -> Result<[Rational; 3], Refusal> {
         })?;
     Ok(v.map(|x| &x / &length))
 }
+
+fn planar_axis(v: &Vector3) -> Result<([Rational; 3], Rational), Refusal> {
+    let v = [rational(&v.x)?, rational(&v.y)?, rational(&v.z)?];
+    let squared = v.iter().fold(q(0), |sum, x| sum + x * x);
+    if squared.is_zero() {
+        return Err(failure(
+            "field.display-unsupported",
+            "display chart needs a nonzero rational planar frame",
+        ));
+    }
+    if let Some(length) = crate::profile::sqrt(&squared) {
+        return Ok((v.map(|x| &x / &length), q(1)));
+    }
+    // Length at least one keeps the global parameter extent conservative.
+    // The L1 norm bounds the physical derivative without an irrational unit vector.
+    let norm = v.iter().fold(q(0), |sum, x| sum + x.abs());
+    let scale = &norm / &squared;
+    let bound = &norm * &scale;
+    Ok((v.map(|x| &x * &scale), bound))
+}
 #[derive(Clone, Copy)]
 enum Kind {
     Plane,
@@ -239,10 +259,22 @@ impl Chart {
             rational(&origin.y)?,
             rational(&origin.z)?,
         ];
-        let frame = if let Some(frame) = radial_frame {
-            frame
+        let (frame, planar_bounds) = if matches!(kind, Kind::Plane) {
+            let (u, lu) = planar_axis(reference)?;
+            let (v, lv) = planar_axis(&axis.cross(reference))?;
+            let normal = [
+                &(&u[1] * &v[2]) - &(&u[2] * &v[1]),
+                &(&u[2] * &v[0]) - &(&u[0] * &v[2]),
+                &(&u[0] * &v[1]) - &(&u[1] * &v[0]),
+            ];
+            ([u, v, normal], Some([lu, lv]))
         } else {
-            [unit(reference)?, unit(&axis.cross(reference))?, unit(axis)?]
+            let frame = if let Some(frame) = radial_frame {
+                frame
+            } else {
+                [unit(reference)?, unit(&axis.cross(reference))?, unit(axis)?]
+            };
+            (frame, None)
         };
         let extent = bound + &origin.iter().fold(q(0), |sum, x| sum + x.abs());
         let mut b = q(1);
@@ -250,7 +282,11 @@ impl Chart {
             b = b.mul_pow2(1);
         }
         let [lu, lv, huu, huv, hvv] = match kind {
-            Kind::Plane | Kind::Disk => [q(1), q(1), q(0), q(0), q(0)],
+            Kind::Plane => {
+                let [lu, lv] = planar_bounds.expect("planar frame bounds");
+                [lu, lv, q(0), q(0), q(0)]
+            }
+            Kind::Disk => [q(1), q(1), q(0), q(0), q(0)],
             Kind::Cylinder => {
                 let bound = radial_bound.as_ref().unwrap_or(&radius);
                 [bound.mul_pow2(1), q(1), bound.mul_pow2(3), q(0), q(0)]
@@ -342,7 +378,14 @@ impl Chart {
                     Some([lo, hi]) => [lo.min(range[0].clone()), hi.max(range[1].clone())],
                 });
             }
-            let [lo, hi] = bounds.expect("nonempty source boxes");
+            let [mut lo, mut hi] = bounds.expect("nonempty source boxes");
+            if matches!(self.kind, Kind::Plane) {
+                let squared = frame.iter().fold(q(0), |sum, x| sum + x * x);
+                if squared != q(1) {
+                    lo = &lo / &squared;
+                    hi = &hi / &squared;
+                }
+            }
             self.domain.range[axis][0] = self.domain.range[axis][0].clone().max(lo);
             self.domain.range[axis][1] = self.domain.range[axis][1].clone().min(hi);
         }
@@ -553,6 +596,179 @@ impl Chart {
 mod tests {
     use super::*;
     use catallax_shapes::{Cone, Cylinder, Plane, Point3, Sphere, Torus};
+
+    #[test]
+    fn planar_chamfer_preview_keeps_its_named_boundary() {
+        use super::super::{PreviewOptions, preview_plan};
+        use catallax_recipe::{Recipe, Role};
+
+        let recipe = Recipe::parse(
+            &serde_json::json!({
+                "format":"catallax-recipe/3", "name":"named planar bevel",
+                "steps":[
+                    {"id":"base","op":"block","size":["40","30","10"],
+                     "pose":{"rotation":["1","0","0","0"],"translation":["-20","-15","0"]}},
+                    {"id":"bevel","op":"chamfer","body":"base","distance":"2",
+                     "edges":[{"between":[
+                         {"step":"base","role":{"side":{"segment":"x_min"}}},
+                         {"step":"base","role":{"side":{"segment":"y_min"}}}
+                     ]}]}
+                ], "result":"bevel"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let options = PreviewOptions::default();
+        let (result, work) = catallax_numbers::with_operation_budget(2_000_000, || {
+            let mut dec = catallax_numbers::Decider::default();
+            let plan = crate::Plan::compile_checked(&recipe, &mut dec)?;
+            let origin = &plan
+                .faces()
+                .iter()
+                .find(|face| {
+                    face.origin.step.as_str() == "bevel"
+                        && matches!(face.origin.role, Role::Bevel { .. })
+                })
+                .unwrap()
+                .origin;
+            let id = plan.select(origin).unwrap();
+            assert_eq!(
+                plan.face_query_checked(
+                    id,
+                    &RPoint3::new(q(-19), q(-14), q(5)),
+                    &mut crate::Workspace::default(),
+                    &mut dec
+                )?
+                .state,
+                crate::FaceState::OnFace,
+            );
+            let mesh = preview_plan(&plan, &options, &mut dec)?;
+            Ok::<_, Refusal>((plan, mesh))
+        });
+        assert!(!work.exhausted);
+        let (plan, mesh) = result.unwrap();
+        assert_eq!(mesh.unresolved_cells, 0);
+        let cross = |a: &[Rational; 2], b: &[Rational; 2], p: &[Rational; 2]| {
+            &(&b[0] - &a[0]) * &(&p[1] - &a[1]) - &(&b[1] - &a[1]) * &(&p[0] - &a[0])
+        };
+        let target = [q(-19), q(5)];
+        let squared_error = (&options.tolerance * &options.tolerance).mul_pow2(1);
+        let mut covered = false;
+        for triangle in &mesh.triangles {
+            let origin = &plan.faces()[triangle.face.index()].origin;
+            if origin.step.as_str() != "bevel" || !matches!(origin.role, Role::Bevel { .. }) {
+                continue;
+            }
+            let xyz = triangle.vertices.map(|index| {
+                mesh.positions[index].map(|value| Rational::from_f64_exact(value).unwrap())
+            });
+            for p in &xyz {
+                let residual = &(&p[0] + &p[1]) + &q(33);
+                assert!(&residual * &residual <= squared_error);
+            }
+            let vertices = xyz.map(|p| [p[0].clone(), p[2].clone()]);
+            if cross(&vertices[0], &vertices[1], &vertices[2]).is_zero() {
+                continue;
+            }
+            let sides = [
+                cross(&vertices[0], &vertices[1], &target),
+                cross(&vertices[1], &vertices[2], &target),
+                cross(&vertices[2], &vertices[0], &target),
+            ];
+            covered |= sides.iter().all(|s| s >= &q(0)) || sides.iter().all(|s| s <= &q(0));
+        }
+        assert!(
+            covered,
+            "the displayed named bevel must cover its proved boundary witness"
+        );
+    }
+
+    #[test]
+    fn planar_nonunit_chamfer_frame_covers_the_source_patch_with_physical_bounds() {
+        for scale in [q(1), Rational::from_ratio(1, 10).unwrap()] {
+            let surface = Surface::Plane(Plane {
+                origin: Point3::new(0.into(), (-15).into(), 8.into()),
+                normal: Vector3::new(0.into(), (-&scale).into(), scale.clone().into()),
+                ref_dir: Vector3::new(scale.into(), 0.into(), 0.into()),
+            });
+            let mut chart = Chart::all(&surface, &q(32)).unwrap().remove(0);
+            let source = [
+                Interval::new(-20.0, 20.0).unwrap(),
+                Interval::new(-15.0, -13.0).unwrap(),
+                Interval::new(8.0, 10.0).unwrap(),
+            ];
+            chart.restrict(&[&source]);
+            let lo = chart.domain.range.each_ref().map(|range| range[0].clone());
+            let hi = chart.domain.range.each_ref().map(|range| range[1].clone());
+            let start = chart.point(&lo);
+            assert_eq!(start, RPoint3::new(q(-20), q(-15), q(8)));
+            assert_eq!(chart.point(&hi), RPoint3::new(q(20), q(-13), q(10)));
+            for axis in 0..2 {
+                let mut end = lo.clone();
+                end[axis] = hi[axis].clone();
+                let displacement = chart.point(&end).minus(&start);
+                let bound = &chart.lipschitz[axis] * &chart.domain.span()[axis];
+                assert!(displacement.norm_squared() <= &bound * &bound);
+            }
+            assert!(chart.chord(&chart.domain).is_zero());
+        }
+    }
+
+    #[test]
+    fn planar_unit_frame_preserves_distances_and_source_projection() {
+        let surface = Surface::Plane(Plane {
+            origin: Point3::origin(),
+            normal: Vector3::new(0.into(), 0.into(), 1.into()),
+            ref_dir: Vector3::new(3.into(), 4.into(), 0.into()),
+        });
+        let mut chart = Chart::all(&surface, &q(32)).unwrap().remove(0);
+        let start = chart.point(&[q(0), q(0)]);
+        let end = chart.point(&[q(3), q(4)]);
+        assert_eq!(
+            end,
+            RPoint3::new(
+                Rational::from_ratio(-7, 5).unwrap(),
+                Rational::from_ratio(24, 5).unwrap(),
+                q(0),
+            )
+        );
+        assert_eq!(end.minus(&start).norm_squared(), q(25));
+        assert_eq!(chart.lipschitz, [q(1), q(1)]);
+        let source = [
+            Interval::new(-1.0, 1.0).unwrap(),
+            Interval::new(-1.0, 1.0).unwrap(),
+            Interval::point(0.0).unwrap(),
+        ];
+        chart.restrict(&[&source]);
+        let extent = Rational::from_ratio(7, 5).unwrap();
+        assert_eq!(
+            chart.domain.range,
+            [[-&extent, extent.clone()], [-&extent, extent]]
+        );
+    }
+
+    #[test]
+    fn planar_zero_frame_vectors_remain_typed_refusals() {
+        for (normal, reference) in [
+            ([0, 0, 0], [1, 0, 0]),
+            ([0, 0, 1], [0, 0, 0]),
+            ([0, 0, 1], [0, 0, 1]),
+        ] {
+            let surface = Surface::Plane(Plane {
+                origin: Point3::origin(),
+                normal: Vector3::new(normal[0].into(), normal[1].into(), normal[2].into()),
+                ref_dir: Vector3::new(
+                    reference[0].into(),
+                    reference[1].into(),
+                    reference[2].into(),
+                ),
+            });
+            let error = Chart::all(&surface, &q(4))
+                .err()
+                .expect("degenerate plane must be refused");
+            assert_eq!(error.code, "field.display-unsupported");
+        }
+    }
 
     #[test]
     fn irrational_cylinder_chart_does_not_assume_monotonicity_across_an_extremum() {

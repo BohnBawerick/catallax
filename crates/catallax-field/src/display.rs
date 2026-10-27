@@ -1326,9 +1326,16 @@ impl Builder<'_> {
             Location::Boundary => (),
         }
         let role = plan.definition_role(id);
+        let mut base_role = role;
+        while let catallax_recipe::Role::Copy { of, .. } = base_role {
+            base_role = &of.role;
+        }
+        // Bevel aliases belong to the exact feature definition, not the profile cache.
         let on_face = match &self.classifiers[face.leaf] {
-            Some(classifier) => Some(classifier.on_face(role, &p)),
-            None => plan.leaves[face.leaf].on_face(&face.origin, role, &p, dec)?,
+            Some(classifier) if !matches!(base_role, catallax_recipe::Role::Bevel { .. }) => {
+                Some(classifier.on_face(role, &p))
+            }
+            _ => plan.leaves[face.leaf].on_face(&face.origin, role, &p, dec)?,
         };
         match on_face {
             Some(false) => return Ok(absent),

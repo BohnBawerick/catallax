@@ -2,7 +2,7 @@
 
 use crate::integrate::{Builder, Expr, Program};
 use crate::planar::real_direction as direction;
-use catallax_numbers::Sign;
+use catallax_numbers::{Decider, Outcome, Refusal, Sign};
 use catallax_shapes::{Circle, Point3, RPoint3, Surface, Vector3};
 
 fn dot<'a>(a: [Expr<'a>; 3], b: [Expr<'a>; 3]) -> Expr<'a> {
@@ -29,6 +29,40 @@ fn orientation<'a>(b: &'a Builder, normal: &Vector3, axis: &Vector3) -> Option<E
 }
 
 pub(crate) fn compile(
+    surface: &Surface,
+    circle: &Circle,
+    anchor: &RPoint3,
+    indices: &[usize],
+    property: crate::surface::Property,
+    dec: &mut Decider,
+) -> Result<Option<Program>, Refusal> {
+    if let Surface::Cone(cone) = surface {
+        if parallel(&cone.axis, &circle.normal) != Some(true) {
+            return Ok(None);
+        }
+        let coaxial = circle
+            .center
+            .minus(&cone.apex)
+            .cross(&cone.axis)
+            .norm_squared();
+        let proven = if let Some(value) = coaxial.as_rational() {
+            value.is_zero()
+        } else {
+            match dec.sign(&coaxial) {
+                Outcome::ProvenCoincident(_) => true,
+                Outcome::Proven(_) | Outcome::NotExact(_) => false,
+                Outcome::Refused(refusal) => return Err(refusal),
+            }
+        };
+        if !proven {
+            return Ok(None);
+        }
+    }
+    Ok(compile_admitted(surface, circle, anchor, indices, property))
+}
+
+// Conical circle coaxiality and parallel normals are proved before any integral family.
+fn compile_admitted(
     surface: &Surface,
     circle: &Circle,
     anchor: &RPoint3,
@@ -93,17 +127,6 @@ pub(crate) fn compile(
             [area, volume, moments[0], moments[1], moments[2]]
         }
         Surface::Cone(cone) => {
-            if !parallel(&cone.axis, &circle.normal)?
-                || !circle
-                    .center
-                    .minus(&cone.apex)
-                    .cross(&cone.axis)
-                    .norm_squared()
-                    .as_rational()?
-                    .is_zero()
-            {
-                return None;
-            }
             let axis = unit(&b, &cone.axis);
             let z = dot(offset(&b, &circle.center, &cone.apex), axis);
             let origin = offset(&b, &cone.apex, anchor);
@@ -179,7 +202,7 @@ fn second_moment(
         Surface::Sphere(_) => &circle.normal,
         _ => return None,
     };
-    if !parallel(axis_vector, &circle.normal)? {
+    if !matches!(surface, Surface::Cone(_)) && !parallel(axis_vector, &circle.normal)? {
         return None;
     }
     let axis = unit(&b, axis_vector);
@@ -227,16 +250,6 @@ fn second_moment(
                 / b.k(5)
         }
         Surface::Cone(c) => {
-            if !circle
-                .center
-                .minus(&c.apex)
-                .cross(&c.axis)
-                .norm_squared()
-                .as_rational()?
-                .is_zero()
-            {
-                return None;
-            }
             let z = dot(offset(&b, &circle.center, &c.apex), axis);
             let o = offset(&b, &c.apex, &anchor);
             let slope = b.exact(&c.slope);
@@ -357,17 +370,6 @@ fn face_centroid(
             )
         }
         Surface::Cone(c) => {
-            if !parallel(&c.axis, &circle.normal)?
-                || !circle
-                    .center
-                    .minus(&c.apex)
-                    .cross(&c.axis)
-                    .norm_squared()
-                    .as_rational()?
-                    .is_zero()
-            {
-                return None;
-            }
             let axis = unit(&b, &c.axis);
             let z = dot(offset(&b, &circle.center, &c.apex), axis);
             let origin = offset(&b, &c.apex, &anchor);

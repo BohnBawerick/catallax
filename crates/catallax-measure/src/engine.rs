@@ -333,15 +333,18 @@ pub(crate) fn measure(
                         };
                         // A whole analytic circle has no endpoint-location
                         // question. Its carrier integral is evaluated directly.
-                        let analytic = circle.and_then(|circle| {
+                        let analytic = if let Some(circle) = circle {
                             crate::ring::compile(
                                 surface,
                                 circle,
                                 anchor,
                                 &compiled.indices,
                                 property,
-                            )
-                        });
+                                dec,
+                            )?
+                        } else {
+                            None
+                        };
                         let meridian = if coedges.len() == 1 {
                             circle.and_then(|circle| torus_meridian(surface, circle))
                         } else {

@@ -117,6 +117,8 @@ An inward probe is adjacent only after its whole chart path is certified free
 of boundary barriers. On a proven straight planar path from a native circle,
 subtracting the source circle's sphere equation from another circle's sphere
 equation keeps the barrier polynomial affine in the exact source coordinates.
+Native-circle quadratics retain their Bernstein control coefficients directly;
+general chart restrictions retain their power coefficients.
 The path polynomial is unchanged. Its plane equation, finite-arc checks,
 permitted source contact and strict destination exclusion still apply; no
 carrier or canonical witness is removed.

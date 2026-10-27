@@ -153,6 +153,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "catallax-import"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "catallax-intersect"
 version = "0.1.0"
 dependencies = [

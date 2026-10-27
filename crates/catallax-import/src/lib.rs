@@ -20,4 +20,4 @@ pub use build::{build_file, build_solid};
 pub use consume::{import_step_bodies, sha256_hex};
 pub use gap::{ImportOptions, propose};
 pub use recognize::*;
-pub use repair::{Imported, apply, canonical_bytes};
+pub use repair::{Imported, apply, canonical_bytes, rebuild};

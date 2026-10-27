@@ -514,3 +514,70 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
     }
     out.into_bytes()
 }
+
+/// Rebuilds an import from the source bytes and a persisted record.
+///
+/// The record's approvals become the decisions, the repair runs again, and the
+/// result must reproduce the record exactly, derivative hash included. Bytes that
+/// are not the recorded source are a hash mismatch, as is a derivative that
+/// differs from the recorded one.
+pub fn rebuild(
+    model: &mut Model,
+    source: &[u8],
+    options: &ImportOptions,
+    record: &RepairRecord,
+    step: Option<&StepId>,
+) -> Result<Imported, ImportRefusal> {
+    if record.format != REPAIR_FORMAT {
+        return Err(ImportRefusal::Malformed {
+            detail: format!("unknown repair record format `{}`", record.format),
+        });
+    }
+    let actual = sha256_hex(source);
+    if actual != record.source.sha256 {
+        return Err(ImportRefusal::HashMismatch {
+            expected: record.source.sha256.clone(),
+            actual,
+        });
+    }
+    let decisions: Vec<Decision> = record
+        .changes
+        .iter()
+        .filter_map(|c| match c.approval {
+            Approval::Automatic => None,
+            Approval::Declined => Some(Decision::Decline { id: c.id.clone() }),
+            Approval::User => Some(Decision::Accept {
+                id: c.id.clone(),
+                tolerance_mm: c.tolerance_mm.clone(),
+                approver: c.approver.clone().unwrap_or_default(),
+            }),
+        })
+        .collect();
+    let imported = apply(
+        model,
+        source,
+        &record.source.name,
+        options,
+        &decisions,
+        step,
+    )?;
+    let hash = |r: &RepairRecord| r.derivative.as_ref().map(|d| d.sha256.clone());
+    if hash(&imported.record) != hash(record) {
+        return Err(ImportRefusal::HashMismatch {
+            expected: hash(record).unwrap_or_else(|| "none".into()),
+            actual: hash(&imported.record).unwrap_or_else(|| "none".into()),
+        });
+    }
+    if let Some(change) = record
+        .changes
+        .iter()
+        .zip(&imported.record.changes)
+        .find(|(a, b)| a != b)
+    {
+        return Err(failed(&change.0.id, "the record does not match the repair"));
+    }
+    if record.changes.len() != imported.record.changes.len() {
+        return Err(failed("", "the record lists a different set of gaps"));
+    }
+    Ok(imported)
+}

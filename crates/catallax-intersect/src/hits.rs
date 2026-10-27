@@ -164,6 +164,9 @@ fn keep_branch(
             Err(e) => return Err(Refusal::from(e)),
         }
     }
+    if let Some(keep) = query::interval_component_contains(geom, c, p, plan.as_deref(), dec)? {
+        return Ok(keep.then_some(false));
+    }
     let Some(d) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
         return Ok(Some(false));
     };
@@ -575,6 +578,29 @@ fn cylinder_torus_excludes_plane(
     }
 }
 
+fn torus_excludes_plane(
+    torus: &catallax_shapes::Torus,
+    plane: &Plane,
+    dec: &Decider,
+) -> Result<bool, Refusal> {
+    // The complete ring torus projects onto [-h,h], where
+    // h = R |normal_radial| + r |normal|. Strict separation preserves contacts.
+    let radial_sq = plane.normal.cross(&torus.axis).norm_squared() / torus.axis.norm_squared();
+    let extent = &torus.major * &root_real(&radial_sq)
+        + &torus.minor * &root_real(&plane.normal.norm_squared());
+    let separation = torus
+        .center
+        .minus(&plane.origin)
+        .dot(&plane.normal)
+        .square()
+        - extent.square();
+    match dec.enclose_at(&separation, 128) {
+        Ok(bound) => Ok(bound.sign() == Some(StrictSign::Positive)),
+        Err(refusal) if refusal.code == "numbers.deadline" => Err(refusal),
+        Err(_) => Ok(false),
+    }
+}
+
 fn branch_plane_disjoint(
     geom: &GeomStore,
     curve: CurveId,
@@ -590,9 +616,14 @@ fn branch_plane_disjoint(
     // The entire carrier lies on each support. This excludes no point at
     // tangency and asserts nothing about trim membership or orientation.
     for support in &branch.surfaces {
-        if let Surface::Cylinder(cylinder) = geom.surface(*support)
-            && cylinder_excludes_plane(cylinder, &plane.origin, &plane.normal, dec)?
-        {
+        let excluded = match geom.surface(*support) {
+            Surface::Cylinder(cylinder) => {
+                cylinder_excludes_plane(cylinder, &plane.origin, &plane.normal, dec)?
+            }
+            Surface::Torus(torus) => torus_excludes_plane(torus, plane, dec)?,
+            _ => false,
+        };
+        if excluded {
             return Ok(true);
         }
     }

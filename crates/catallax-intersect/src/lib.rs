@@ -315,7 +315,7 @@ pub fn curve_form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cur
 ///
 /// Lines, parabolas and hyperbola branches are open. Circles, ellipses and
 /// the supported cylinder/sphere, cylinder/cylinder and parallel-axis
-/// cylinder/torus branches are closed.
+/// cylinder/torus and cone/torus branches are closed.
 /// Unsupported curve definitions return the same refusal as [`curve_form`].
 pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<bool, Refusal> {
     if let Some(closed) = geom.curve(c).is_closed() {
@@ -341,7 +341,8 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
                 Some(
                     pair::Frame::CylinderSphere { .. }
                     | pair::Frame::Cylinders { .. }
-                    | pair::Frame::CylinderTorus { .. },
+                    | pair::Frame::CylinderTorus { .. }
+                    | pair::Frame::ConeTorus(_),
                 ) => Ok(true),
                 None => Err(math::refused_curve()),
             }

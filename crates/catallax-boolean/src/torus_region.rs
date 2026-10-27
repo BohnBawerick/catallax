@@ -1,13 +1,15 @@
-//! Circular noncontractible cuts partition either angular circle of a torus.
-//! Label a cell by its preceding cut, not by a winding jump across an arbitrary
-//! seam. The labels therefore agree on both sides of an uncut parameter seam.
+//! Exact cells for circular torus boundaries, including trimmed parallels and
+//! meridians. Complete circles use angular labels; finite arcs use the connected
+//! cells of their periodic arrangement, without introducing a parameter seam.
 
 use crate::geometry::{refusal, sign};
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Decider, Real, Refusal, Sign};
-use catallax_shapes::{PointId, Torus};
+use catallax_shapes::{CurveId, Point3, PointId, Torus, Vector3};
 use catallax_topology::{Loop, LoopId, Model};
 use std::{cmp::Ordering, collections::BTreeSet};
+
+mod trimmed;
 
 struct Phase {
     x: Real,
@@ -35,14 +37,15 @@ impl Phase {
         })
     }
 }
-fn add_cut(cuts: &mut Vec<Phase>, phase: Phase, dec: &mut Decider) -> Result<(), Refusal> {
-    for old in cuts.iter() {
+fn add_cut(cuts: &mut Vec<Phase>, phase: Phase, dec: &mut Decider) -> Result<usize, Refusal> {
+    for (i, old) in cuts.iter().enumerate() {
         if phase.compare(old, dec)? == Ordering::Equal {
-            return Ok(());
+            return Ok(i);
         }
     }
+    let index = cuts.len();
     cuts.push(phase);
-    Ok(())
+    Ok(index)
 }
 fn cell(cuts: &[Phase], query: &Phase, dec: &mut Decider) -> Result<i64, Refusal> {
     let mut before: Option<usize> = None;
@@ -81,6 +84,96 @@ fn radius(squared: &Real) -> Real {
     squared.sqrt()
 }
 
+struct CircleCut {
+    dimension: usize,
+    phase: Phase,
+    normal: Vector3,
+    offset: Vector3,
+}
+
+fn circle_cut(
+    model: &Model,
+    torus: &Torus,
+    curve: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<CircleCut>, Refusal> {
+    let CurveForm::Circle {
+        center,
+        normal,
+        radius_sq,
+        ..
+    } = curve_form(model.geom(), curve, dec)?
+    else {
+        return Ok(None);
+    };
+    let axis = &torus.axis;
+    let offset = center.minus(&torus.center);
+    if sign(
+        &normal.cross(axis).norm_squared(),
+        dec,
+        "boolean.classify-ambiguous",
+    )? == Sign::Zero
+    {
+        if sign(
+            &offset.cross(axis).norm_squared(),
+            dec,
+            "boolean.classify-ambiguous",
+        )? != Sign::Zero
+        {
+            return Ok(None);
+        }
+        Ok(Some(CircleCut {
+            dimension: 1,
+            phase: Phase::new(&radius(&radius_sq) - &torus.major, offset.dot(axis), dec)?,
+            normal,
+            offset,
+        }))
+    } else if sign(&normal.dot(axis), dec, "boolean.classify-ambiguous")? == Sign::Zero {
+        for zero in [
+            offset.dot(axis),
+            offset.dot(&normal),
+            offset.norm_squared() - torus.major.square(),
+            &radius_sq - &torus.minor.square(),
+        ] {
+            if sign(&zero, dec, "boolean.classify-ambiguous")? != Sign::Zero {
+                return Ok(None);
+            }
+        }
+        Ok(Some(CircleCut {
+            dimension: 0,
+            phase: Phase::new(
+                offset.dot(&torus.ref_dir),
+                offset.dot(&axis.cross(&torus.ref_dir)),
+                dec,
+            )?,
+            normal,
+            offset,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+fn point_phase(
+    torus: &Torus,
+    point: &Point3,
+    dimension: usize,
+    dec: &mut Decider,
+) -> Result<Phase, Refusal> {
+    let offset = point.minus(&torus.center);
+    if dimension == 0 {
+        Phase::new(
+            offset.dot(&torus.ref_dir),
+            offset.dot(&torus.axis.cross(&torus.ref_dir)),
+            dec,
+        )
+    } else {
+        let height = offset.dot(&torus.axis);
+        let radial2 = offset.norm_squared() - height.square() / torus.axis.norm_squared();
+        Phase::new(&radius(&radial2) - &torus.major, height, dec)
+    }
+}
+
 pub(crate) fn signature(
     model: &Model,
     torus: &Torus,
@@ -88,13 +181,19 @@ pub(crate) fn signature(
     point: PointId,
     dec: &mut Decider,
 ) -> Result<Option<Vec<i64>>, Refusal> {
-    let axis = &torus.axis;
-    let first = &torus.ref_dir;
-    let second = torus.axis.cross(&torus.ref_dir);
-    let center = &torus.center;
-    let major = &torus.major;
-    let major2 = torus.major.square();
-    let minor2 = torus.minor.square();
+    if let Some(value) = whole_signature(model, torus, groups, point, dec)? {
+        return Ok(Some(value));
+    }
+    trimmed::signature(model, torus, groups, point, dec)
+}
+
+fn whole_signature(
+    model: &Model,
+    torus: &Torus,
+    groups: &[Vec<LoopId>],
+    point: PointId,
+    dec: &mut Decider,
+) -> Result<Option<Vec<i64>>, Refusal> {
     let mut azimuth = Vec::new();
     let mut tube = Vec::new();
     let mut seen = BTreeSet::new();
@@ -112,68 +211,30 @@ pub(crate) fn signature(
         if !seen.insert(edge.curve) {
             continue;
         }
-        let CurveForm::Circle {
-            center: circle_center,
-            normal,
-            radius_sq,
-            ..
-        } = curve_form(model.geom(), edge.curve, dec)?
-        else {
+        let Some(cut) = circle_cut(model, torus, edge.curve, dec)? else {
             return Ok(None);
         };
-        let offset = circle_center.minus(center);
-        if sign(
-            &normal.cross(axis).norm_squared(),
+        add_cut(
+            if cut.dimension == 0 {
+                &mut azimuth
+            } else {
+                &mut tube
+            },
+            cut.phase,
             dec,
-            "boolean.classify-ambiguous",
-        )? == Sign::Zero
-        {
-            if sign(
-                &offset.cross(axis).norm_squared(),
-                dec,
-                "boolean.classify-ambiguous",
-            )? != Sign::Zero
-            {
-                return Ok(None);
-            }
-            add_cut(
-                &mut tube,
-                Phase::new(&radius(&radius_sq) - major, offset.dot(axis), dec)?,
-                dec,
-            )?;
-        } else if sign(&normal.dot(axis), dec, "boolean.classify-ambiguous")? == Sign::Zero {
-            for zero in [
-                offset.dot(axis),
-                offset.dot(&normal),
-                offset.norm_squared() - major2.clone(),
-                &radius_sq - &minor2,
-            ] {
-                if sign(&zero, dec, "boolean.classify-ambiguous")? != Sign::Zero {
-                    return Ok(None);
-                }
-            }
-            add_cut(
-                &mut azimuth,
-                Phase::new(offset.dot(first), offset.dot(&second), dec)?,
-                dec,
-            )?;
-        } else {
-            return Ok(None);
-        }
+        )?;
     }
-    let offset = model.geom().position(point).minus(center);
+    let position = model.geom().position(point);
     let u = if azimuth.is_empty() {
         -1
     } else {
-        let query = Phase::new(offset.dot(first), offset.dot(&second), dec)?;
+        let query = point_phase(torus, &position, 0, dec)?;
         cell(&azimuth, &query, dec)?
     };
     let v = if tube.is_empty() {
         -1
     } else {
-        let height = offset.dot(axis);
-        let radial2 = offset.norm_squared() - height.square() / torus.axis.norm_squared();
-        let query = Phase::new(&radius(&radial2) - major, height, dec)?;
+        let query = point_phase(torus, &position, 1, dec)?;
         cell(&tube, &query, dec)?
     };
     Ok(Some(vec![u, v]))

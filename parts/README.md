@@ -1,6 +1,6 @@
 # Target parts
 
-These are `catallax-recipe/3` inputs for the roadmap's P0–P6 scoreboard. Dimensions are millimetres, exact decimal or rational strings. P0 is eight separate recipes so an early refusal cannot hide another hard-case family. P1–P6 are complete intended recipes, not reduced substitutes for operations the kernel cannot build yet.
+These are versioned `catallax-recipe` inputs for the roadmap's P0–P6 scoreboard. P5 uses version 4 for the [reviewed roll-over migration](../docs/interface-changes/2026-10-27-p5-roll-over-recipe-migration.md); the other inputs retain their declared versions. Dimensions are millimetres, exact decimal or rational strings. P0 is eight separate recipes so an early refusal cannot hide another hard-case family. P1–P6 are complete intended recipes, not reduced substitutes for operations the kernel cannot build yet.
 
 | Input | Fixed dimensions and construction |
 | --- | --- |

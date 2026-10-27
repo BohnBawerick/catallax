@@ -94,8 +94,8 @@ fn add_curve(
     pool: &mut Vec<CurveId>,
     curve: CurveId,
     dec: &mut Decider,
-) -> Result<(), Refusal> {
-    for &other in pool.iter() {
+) -> Result<usize, Refusal> {
+    for (index, &other) in pool.iter().enumerate() {
         if coincident(
             same_curve(model.geom(), curve, other, dec),
             "boolean.imprint-ambiguous",
@@ -107,11 +107,12 @@ fn add_curve(
                 at: None,
                 origin: FactOrigin::Proof(ZeroProof::Algebraic),
             });
-            return Ok(());
+            return Ok(index);
         }
     }
+    let index = pool.len();
     pool.push(curve);
-    Ok(())
+    Ok(index)
 }
 
 pub(crate) fn containing_faces(
@@ -252,6 +253,11 @@ pub(crate) fn intersect(
         }
     }
     let mut pairs: BTreeMap<(SurfaceId, SurfaceId), SurfacePair> = BTreeMap::new();
+    // Preserve every canonical carrier and its insertion order. Optional bound
+    // witnesses stay on a fork, outside the graph's canonical point pool.
+    let mut pruning_model = (!algebraic).then(|| model.clone());
+    let mut finite_bounds = crate::bounds::FaceBounds::new(false);
+    let mut active = Vec::new();
     for &fa in &first {
         for &fb in &second {
             let sa = model.face(fa).surface;
@@ -282,12 +288,24 @@ pub(crate) fn intersect(
                 pairs.insert((sa, sb), answer.value.clone());
                 answer.value
             };
+            // Disjoint and point-only supports have no carrier activity to
+            // prove. Cache the optional finite bound only when adding a curve.
+            let mut relevance = None;
+            let mut relevant = |dec: &mut Decider| {
+                *relevance.get_or_insert_with(|| match &mut pruning_model {
+                    Some(probe) => !finite_bounds.excludes(probe, fa, fb, dec),
+                    None => true,
+                })
+            };
             match pair {
                 SurfacePair::Disjoint => {}
                 SurfacePair::Coincident { .. } => {
                     for face in [fa, fb] {
                         for curve in face_edges(model, face) {
-                            add_curve(model, &mut pool, curve, dec)?;
+                            let relevant = relevant(dec);
+                            let index = add_curve(model, &mut pool, curve, dec)?;
+                            active.resize(pool.len(), false);
+                            active[index] |= relevant;
                         }
                     }
                 }
@@ -308,7 +326,10 @@ pub(crate) fn intersect(
                                 singular: nodes,
                                 ..
                             } => {
-                                add_curve(model, &mut pool, curve, dec)?;
+                                let relevant = relevant(dec);
+                                let index = add_curve(model, &mut pool, curve, dec)?;
+                                active.resize(pool.len(), false);
+                                active[index] |= relevant;
                                 for node in nodes {
                                     let point = canonical_point(
                                         model,
@@ -335,7 +356,12 @@ pub(crate) fn intersect(
         .into_iter()
         .collect();
     let mut marks = MarkLog::new();
-    for &curve in &pool {
+    for (index, &curve) in pool.iter().enumerate() {
+        // An inactive carrier has no potentially meeting generating face pair.
+        // The complete curve/pair pass below still includes its crossings.
+        if !active[index] {
+            continue;
+        }
         for &surface in &surfaces {
             let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
             if let CurveSurface::Meets(hits) = answer.value {

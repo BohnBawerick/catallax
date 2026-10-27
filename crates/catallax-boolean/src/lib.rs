@@ -26,6 +26,7 @@ mod geometry;
 mod germ;
 mod graph;
 mod imprinting;
+mod point_identity;
 mod points;
 mod probe_path;
 mod probed_region;

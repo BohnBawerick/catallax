@@ -423,6 +423,94 @@ blind_test!(system_certification_unique_empty_multiple_and_singular, {
     stats_sum(d.stats());
 });
 
+blind_test!(
+    single_precision_root_certification_preserves_fallback_work,
+    {
+        let gap = Rational::one().mul_pow2(-160);
+        let system = Arc::new(
+            PolySystem::new(vec![MPoly::from_terms(
+                1,
+                vec![(vec![2], r("1")), (vec![0], -(&gap * &gap))],
+            )])
+            .unwrap(),
+        );
+        let radius = Rational::one().mul_pow2(-32);
+        let both = RootBox::new(vec![-&radius], vec![radius]).unwrap();
+        let mut d = Decider::default();
+        let ((), work) = with_operation_budget(1_000_000, || {
+            refused(
+                d.certify_root_at(&system, &both, 64),
+                "numbers.root-not-certified",
+            );
+            let low = Real::from_rational(-&gap);
+            let high = Real::from_rational(gap);
+            assert_eq!(d.compare(&low, &high), Outcome::Proven(StrictOrder::Less));
+        });
+        assert!(!work.exhausted);
+        stats_sum(d.stats());
+    }
+);
+
+blind_test!(
+    single_precision_root_certification_keeps_closed_box_obligations,
+    {
+        let system = circle_system(false);
+        let candidate = box2("1/2", "1");
+        let mut d = Decider::default();
+        let Outcome::Proven(BoxRoots::One(root)) = d.certify_root_at(&system, &candidate, 64)
+        else {
+            panic!("regular root not certified");
+        };
+        for axis in 0..2 {
+            assert!(root.root_box().lo()[axis] >= candidate.lo()[axis]);
+            assert!(root.root_box().hi()[axis] <= candidate.hi()[axis]);
+            assert!(
+                d.compare(&root.coordinate(axis), &real("1/2").sqrt())
+                    .is_coincident()
+            );
+        }
+        assert!(matches!(
+            d.certify_root_at(&system, &box2("-1/10", "1/10"), 64),
+            Outcome::Proven(BoxRoots::None)
+        ));
+        let linear = Arc::new(PolySystem::new(vec![MPoly::var(1, 0)]).unwrap());
+        let boundary = RootBox::new(vec![r("0")], vec![r("1")]).unwrap();
+        let Outcome::Proven(BoxRoots::One(root)) = d.certify_root_at(&linear, &boundary, 64) else {
+            panic!("closed boundary root lost");
+        };
+        proven_sign(&mut d, &root.coordinate(0), 0);
+        stats_sum(d.stats());
+    }
+);
+
+blind_test!(single_precision_root_certification_obeys_caller_limits, {
+    let system = circle_system(false);
+    let candidate = box2("1/2", "1");
+    let mut d = Decider::new(BudgetPolicy {
+        max_precision_bits: 32,
+        max_work: 1_000_000,
+    });
+    refused(
+        d.certify_root_at(&system, &candidate, 64),
+        "numbers.precision-limit",
+    );
+    stats_sum(d.stats());
+    let mut d = Decider::new(BudgetPolicy {
+        max_precision_bits: 64,
+        max_work: 0,
+    });
+    refused(
+        d.certify_root_at(&system, &candidate, 64),
+        "numbers.root-not-certified",
+    );
+    stats_sum(d.stats());
+    let mut d = Decider::default();
+    let (answer, work) = with_operation_budget(0, || d.certify_root_at(&system, &candidate, 64));
+    assert!(answer.is_refused());
+    assert!(work.exhausted);
+    stats_sum(d.stats());
+});
+
 blind_test!(system_certification_with_pinned_coordinate, {
     // The positive solution is (sqrt(1/2), sqrt(1/2), 0).
     // Its Jacobian determinant is -2 sqrt(2), so it is nonsingular.

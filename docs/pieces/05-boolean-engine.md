@@ -101,6 +101,8 @@ Section edges are split at every point where the set of faces they lie on change
 
 Finite trim membership is required on both operands. The smaller face set is queried first; an exact empty result settles that conjunction without querying the other operand. Retained sections still carry complete face lists in each operand's original order, and isolated contacts still require membership on both boundaries. Canonical witnesses, mandatory cuts and curve-interval construction are unchanged. Every performed predicate uses the caller's decider and work allowance.
 
+Two carriers meet only on surfaces containing them. A carrier records the surfaces proven to contain it: both supports of a section component, or the face surface of a coincident face's edge. When another carrier's meeting with one of those surfaces was disjoint or a complete hit list, every meeting point of the pair is already canonical, so the pair query is skipped. A contained result never covers a pair.
+
 `edges()` lists the section edges and `points()` the isolated points, in a deterministic order that is not part of the contract.
 
 ### Imprint

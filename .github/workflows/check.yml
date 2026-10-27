@@ -2,7 +2,7 @@ name: check
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -19,8 +19,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: check-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: check-${{ github.workflow }}-${{ startsWith(github.ref, 'refs/heads/release/') && github.run_id || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/heads/release/') }}
 
 env:
   CARGO_INCREMENTAL: "0"

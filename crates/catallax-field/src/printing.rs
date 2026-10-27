@@ -105,6 +105,28 @@ fn stl_normal(points: [[f64; 3]; 3]) -> std::io::Result<[f32; 3]> {
 }
 
 impl Mesh {
+    /// The number of edge-connected components. A closed mesh with no triangles has none.
+    pub fn component_count(&self) -> usize {
+        let mut parent: Vec<usize> = (0..self.positions.len()).collect();
+        fn root(parent: &mut [usize], mut v: usize) -> usize {
+            while parent[v] != v {
+                parent[v] = parent[parent[v]];
+                v = parent[v];
+            }
+            v
+        }
+        for &[a, b, c] in &self.triangles {
+            for (x, y) in [(a, b), (b, c)] {
+                let (x, y) = (root(&mut parent, x), root(&mut parent, y));
+                parent[x] = y;
+            }
+        }
+        let used: BTreeSet<usize> = self.triangles.iter().flatten().copied().collect();
+        used.into_iter()
+            .map(|v| root(&mut parent, v))
+            .collect::<BTreeSet<_>>()
+            .len()
+    }
     /// Writes a binary STL with finite advisory normals. All topology checks
     /// finish before publication. Invalid coordinates or degenerate facets
     /// return [`std::io::ErrorKind::InvalidData`], never NaN normal bytes.
@@ -645,6 +667,24 @@ fn check_topology(mesh: &Mesh) -> Result<(), Refusal> {
         }
     }
     Ok(())
+}
+
+/// Builds the print output of a plan whose result must be one connected solid, such as
+/// a lattice. A closed mesh with several components is refused as
+/// `field.print-disconnected` rather than published.
+pub fn mesh_plan_connected(
+    plan: &Plan,
+    options: &Options,
+    dec: &mut Decider,
+) -> Result<Mesh, Refusal> {
+    let mesh = mesh_plan(plan, options, dec)?;
+    match mesh.component_count() {
+        1 => Ok(mesh),
+        n => Err(refusal(
+            "field.print-disconnected",
+            format!("the print output has {n} connected components, expected one"),
+        )),
+    }
 }
 
 /// Builds a watertight output from the field alone. No B-rep builder is called.

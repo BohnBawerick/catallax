@@ -12,6 +12,8 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
+mod cylinder_torus;
+
 const INTERVAL_PRECISION: u32 = 128;
 
 #[derive(Debug, Default)]
@@ -995,6 +997,11 @@ pub(super) fn branch_charts(
                     charts.push(chart);
                 }
             }
+        }
+        frame @ Frame::CylinderTorus { .. } => {
+            let (pieces, direction) = cylinder_torus::charts(frame, branch);
+            charts = pieces;
+            forward = direction;
         }
     }
     // In the cylinder/sphere frame grad(cylinder) x grad(sphere)

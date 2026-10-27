@@ -314,7 +314,8 @@ pub fn curve_form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cur
 /// Whether a curve closes on itself, rather than requiring ordered finite endpoints.
 ///
 /// Lines, parabolas and hyperbola branches are open. Circles, ellipses and
-/// the supported cylinder/sphere and cylinder/cylinder branches are closed.
+/// the supported cylinder/sphere, cylinder/cylinder and parallel-axis
+/// cylinder/torus branches are closed.
 /// Unsupported curve definitions return the same refusal as [`curve_form`].
 pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<bool, Refusal> {
     if let Some(closed) = geom.curve(c).is_closed() {
@@ -337,9 +338,11 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
         CurveForm::Branch => {
             let plan = query::validate(geom, c, dec)?.expect("intersection branch");
             match &plan.frame {
-                Some(pair::Frame::CylinderSphere { .. } | pair::Frame::Cylinders { .. }) => {
-                    Ok(true)
-                }
+                Some(
+                    pair::Frame::CylinderSphere { .. }
+                    | pair::Frame::Cylinders { .. }
+                    | pair::Frame::CylinderTorus { .. },
+                ) => Ok(true),
                 None => Err(math::refused_curve()),
             }
         }

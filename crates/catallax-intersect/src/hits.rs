@@ -2,17 +2,17 @@ use crate::{
     Contact, CurveForm, CurveHit, CurveSurface,
     chart::{self, Chart},
     math::*,
-    pair::Plan,
+    pair::{CylinderTorusMode, Frame, Plan},
     query,
     solve::{self, Solutions},
 };
 use catallax_numbers::{
     Answer, Answered, BoundKind, Decider, Fact, FactKind, FactOrigin, Mark, MarkLog, Outcome,
-    Rational, Real, RealPoly, Refusal, Sign,
+    Rational, Real, RealPoly, Refusal, Sign, StrictSign,
 };
 use catallax_shapes::{
-    Circle, Curve, CurveId, Cylinder, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3,
-    PointDef, Position, Surface, SurfaceId, Vector3,
+    Circle, Curve, CurveId, Cylinder, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Plane,
+    Point3, PointDef, Position, Surface, SurfaceId, Vector3,
 };
 use std::sync::Arc;
 
@@ -502,10 +502,84 @@ fn cylinder_excludes_plane(
     Ok(sign(&separation, dec)? == Sign::Positive)
 }
 
+fn cylinder_torus_excludes_plane(
+    witness: &Point3,
+    plane: &Plane,
+    plan: &Plan,
+    dec: &Decider,
+) -> Result<bool, Refusal> {
+    let Some(Frame::CylinderTorus {
+        origin,
+        e1,
+        e2,
+        e3,
+        radius,
+        radial_shift,
+        radial_slope,
+        lo,
+        span,
+        lower_radius,
+        upper_radius,
+        mode,
+        ..
+    }) = &plan.frame
+    else {
+        return Ok(false);
+    };
+    // Bound the complete component in its orthonormal frame, then project the
+    // plane into that frame. Bounding world coordinates first loses correlations
+    // under a rigid placement. Strict exclusion keeps endpoints and tangencies.
+    let attempt = || -> Result<bool, Refusal> {
+        let enclose = |value: &Real| dec.enclose_at(value, 128);
+        let x = enclose(lo)?.hull(&enclose(&(lo + span))?);
+        let Some(mut y) = (&enclose(radius)?.square() - &x.square()).sqrt() else {
+            return Ok(false);
+        };
+        let Some(radial) = (&enclose(radial_shift)? + &(&enclose(radial_slope)? * &x)).sqrt()
+        else {
+            return Ok(false);
+        };
+        let Some(mut z) =
+            (&(&enclose(upper_radius)? - &radial) * &(&radial - &enclose(lower_radius)?)).sqrt()
+        else {
+            return Ok(false);
+        };
+        match mode {
+            CylinderTorusMode::Single => {
+                y = y.hull(&(-&y));
+                z = z.hull(&(-&z));
+            }
+            CylinderTorusMode::Axial | CylinderTorusMode::Transverse => {
+                let (selected, both, axis) = if *mode == CylinderTorusMode::Axial {
+                    (&mut z, &mut y, e3)
+                } else {
+                    (&mut y, &mut z, e2)
+                };
+                match enclose(&witness.minus(origin).dot(axis))?.sign() {
+                    Some(StrictSign::Positive) => {}
+                    Some(StrictSign::Negative) => *selected = -&*selected,
+                    None => return Ok(false),
+                }
+                *both = both.hull(&(-&*both));
+            }
+        }
+        let mut distance = enclose(&origin.minus(&plane.origin).dot(&plane.normal))?;
+        for (axis, bound) in [e1, e2, e3].into_iter().zip([x, y, z]) {
+            distance = &distance + &(&enclose(&axis.dot(&plane.normal))? * &bound);
+        }
+        Ok(!distance.contains_zero())
+    };
+    match attempt() {
+        Err(refusal) if refusal.code != "numbers.deadline" => Ok(false),
+        answer => answer,
+    }
+}
+
 fn branch_plane_disjoint(
     geom: &GeomStore,
     curve: CurveId,
     surface: SurfaceId,
+    plan: Option<&Plan>,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let (Curve::Intersection(branch), Surface::Plane(plane)) =
@@ -521,6 +595,9 @@ fn branch_plane_disjoint(
         {
             return Ok(true);
         }
+    }
+    if let Some(plan) = plan {
+        return cylinder_torus_excludes_plane(&geom.position(branch.witness), plane, plan, dec);
     }
     Ok(false)
 }
@@ -594,7 +671,8 @@ pub(super) fn intersect(
         return Ok(Answer::exact(CurveSurface::Contained));
     }
     let form = query::form(geom, c, dec)?;
-    if matches!(form, CurveForm::Branch) && branch_plane_disjoint(geom, c, s, dec)? {
+    if matches!(form, CurveForm::Branch) && branch_plane_disjoint(geom, c, s, plan.as_deref(), dec)?
+    {
         return Ok(Answer::exact(CurveSurface::Disjoint));
     }
     if let Some(answer) = circular_section(geom, c, s, &form, dec)? {

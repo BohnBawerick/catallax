@@ -60,6 +60,8 @@ The joint ordinary-parts cut requires the application bracket, edited collar, sa
 
 The correction mechanism below is release-only and does not infer validity from differing bytes. The captain must approve the enumerated correction list and its retained independent evidence before it lands; driver support requires FULL SIX qualification. A previously accepted source change or a reader's healed import is not per-case approval. Do not change the baseline, relax the ordinary strict comparator or relabel a historical dry run to bypass this gate.
 
+The [review inventory](../tools/release/review-candidates.json) records the 118 observed changes between the previous release and the frozen candidate. It is not consumed by the release gate and approves nothing. Its three-output legacy fingerprints omit IGES and cannot be copied into the four-output approval schema. Source attribution remains unresolved for index 189; final geometry validity/equivalence remains unproven for all 99 answered STEP changes; index 354 is a changed refusal outside the current exception classes. The inventory's integrity evidence hash is not independent geometry validation. Resolve those holds and obtain the required subject hashes and review evidence before promoting any entry.
+
 ## Generate the replay aggregate
 
 Use the [verification skill](../.claude/skills/verify-catallax/SKILL.md) on the designated replay machine. Raw inputs and per-case artifacts remain there; do not upload them to GitHub, name them in public notes or commit them. `BASELINE`, `CANDIDATE`, `INPUTS` and `PROOF` below are local runtime paths selected by the operator.

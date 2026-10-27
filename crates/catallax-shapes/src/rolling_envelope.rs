@@ -10,7 +10,7 @@
 //! The two-sided position bound is recomputed from the retained node data and
 //! interval Taylor jets of the exact definition, never from producer residuals.
 
-use crate::{BSplineSurface, Isometry, Point3, Pose, Vector3, math};
+use crate::{BSplineSurface, Isometry, Point3, Pose, Rotation, Vector3, math};
 use catallax_numbers::{
     Ball, Decider, EvidenceBound, EvidenceUnit, Outcome, Rational, Real, Refusal, Sign, StrictSign,
 };
@@ -380,11 +380,15 @@ impl Constants {
 
 // Exact rows of the envelope at chart parameter s, as jets in s. `fitted` is
 // the represented mouth reparametrisation, which fixes the mouth row weight
-// and therefore the exact middle weight.
+// and therefore the exact middle weight. The apex is kept in the cylinder's
+// tangent plane at the rail point: `tangent` along the rail circle's tangent
+// and `axial` along the axis, so the represented middle row leaves the rail
+// tangentially and the carrier stays outside the cylinder.
 struct Rows {
     height: Jet,
     mouth: Jet,
-    apex: [Jet; 3],
+    tangent: Jet,
+    axial: Jet,
     weight: Option<Jet>,
     cosine: Jet,
 }
@@ -418,22 +422,21 @@ fn rows(k: &Constants, s: &Jet, fitted: Option<&Jet>) -> Result<Rows, Refusal> {
         .scale(&r_inv)
         .neg();
     let one_d = one.add(&dot);
-    let apex = [
-        cx.add(&rx.sub(&cx).sub(&cos.scale(&k.radius)).div(&one_d)?),
-        height.sub(&height.div(&one_d)?),
-        cz.add(&rz.sub(&cz).sub(&sin.scale(&k.radius)).div(&one_d)?),
-    ];
+    // Apex M = C + (r a + R - C) / (1 + d), relative to the rail point A.
+    let tangent = sin
+        .mul(&rx.sub(&cx))
+        .neg()
+        .add(&cos.mul(&rz.sub(&cz)))
+        .div(&one_d)?;
+    let axial = height.div(&one_d)?.neg();
+    // Middle weight cos(half) sqrt(w0 w2), divided by the rail weight 1 + u^2
+    // that the tangent-plane form of the middle row multiplies back.
     let weight = match fitted {
         None => None,
         Some(w) => Some(
             one_d
-                .mul(&den)
                 .mul(&one.add(&w.square()))
-                .scale(
-                    &b(&Rational::one(), k.one.precision())
-                        .checked_div(&k.two)
-                        .expect("two is separated from zero"),
-                )
+                .div(&den.scale(&k.two))?
                 .sqrt()?,
         ),
     };
@@ -447,7 +450,8 @@ fn rows(k: &Constants, s: &Jet, fitted: Option<&Jet>) -> Result<Rows, Refusal> {
     Ok(Rows {
         height,
         mouth,
-        apex,
+        tangent,
+        axial,
         weight,
         cosine,
     })
@@ -458,18 +462,20 @@ fn rows(k: &Constants, s: &Jet, fitted: Option<&Jet>) -> Result<Rows, Refusal> {
 struct Node {
     s: Rational,
     // Value then s-derivative: rail height, mouth reparametrisation, apex
-    // coordinates and middle weight, all in the definition frame.
-    values: [Real; 6],
-    slopes: [Rational; 6],
+    // tangent-plane offsets and middle weight, all in the definition frame.
+    values: [Real; ROWS],
+    slopes: [Rational; ROWS],
 }
 
+const ROWS: usize = 5;
 // Enclosed value and slope of each fitted row at one node.
-type RowData = [[Ball; 2]; 6];
+type RowData = [[Ball; 2]; ROWS];
 
 const HEIGHT: usize = 0;
 const MOUTH: usize = 1;
-const APEX: usize = 2;
-const WEIGHT: usize = 5;
+const TANGENT: usize = 2;
+const AXIAL: usize = 3;
+const WEIGHT: usize = 4;
 
 // The Hermite cubic on one span, in exact Taylor form about its midpoint. The
 // cardinal-basis form would lose cancellation over an interval and inflate
@@ -556,7 +562,7 @@ fn cubic(span: [&Rational; 2], values: [&Real; 2], slopes: [&Rational; 2]) -> Ve
     ]
 }
 
-const DEGREE: usize = 6;
+const DEGREE: usize = 8;
 
 /// A finite checked rolling-ball envelope face. The carrier is the represented
 /// geometry over `[-1,1] x [0,1]`: `u` runs along the ball path from the
@@ -604,8 +610,9 @@ impl RollingEnvelope {
             ));
         }
         let carrier = build(&definition, &nodes, dec)?;
-        check_transitions(&definition, &nodes, &carrier, dec)?;
+        check_transitions(&definition, &carrier, dec)?;
         check_regular(&definition, &carrier, dec)?;
+        check_clearance(&definition, &nodes, dec)?;
         Ok(Self {
             data: Arc::new(Data {
                 definition,
@@ -618,6 +625,64 @@ impl RollingEnvelope {
                 reversing: false,
             }),
         })
+    }
+    /// The same certified face for a definition that differs only by a
+    /// rotation about the shared cylinder axis, such as a patterned hole. The
+    /// copy is rigid transport, so its bound and proofs carry over unchanged.
+    pub fn reframed(
+        &self,
+        definition: RollingEnvelopeDefinition,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let own = &self.data.definition;
+        let same = |a: &Real, c: &Real, dec: &mut Decider| -> Result<bool, Refusal> {
+            Ok(math::sign(&(a - c), dec)? == Sign::Zero)
+        };
+        let same_vector = |a: &Vector3, c: &Vector3, dec: &mut Decider| -> Result<bool, Refusal> {
+            Ok(same(&a.x, &c.x, dec)? && same(&a.y, &c.y, dec)? && same(&a.z, &c.z, dec)?)
+        };
+        let scalars = [
+            (&own.body, &definition.body),
+            (&own.mouth, &definition.mouth),
+            (&own.offset, &definition.offset),
+            (&own.radius, &definition.radius),
+            (&own.edge[0], &definition.edge[0]),
+            (&own.edge[1], &definition.edge[1]),
+        ];
+        for (a, c) in scalars {
+            if !same(a, c, dec)? {
+                return Err(refusal("a reframed envelope needs the same contact law"));
+            }
+        }
+        if !same_vector(&own.axis, &definition.axis, dec)?
+            || !same_vector(&own.origin.minus(&definition.origin), &Vector3::zero(), dec)?
+        {
+            return Err(refusal("a reframed envelope must share the cylinder axis"));
+        }
+        // The half-angle quaternion (1 + t0.t1, t0 x t1) turns t0 onto t1 about
+        // the shared axis; opposite directions use a half turn about the axis.
+        let mut w = &Real::one() + &own.toward.dot(&definition.toward);
+        let mut v = own.toward.cross(&definition.toward);
+        if math::sign(&w, dec)? == Sign::Zero {
+            w = Real::zero();
+            v = own.axis.clone();
+        }
+        let rotation = Rotation::from_real_quaternion(w, v.x, v.y, v.z, dec)?;
+        let centre = own.origin.minus(&Point3::origin());
+        let translation = centre.minus(&rotation.apply_real(&centre));
+        let copy = self.transformed(&Pose::new(rotation, translation, dec)?);
+        let moved = &copy.data.definition;
+        if !same_vector(&moved.toward, &definition.toward, dec)?
+            || !same_vector(&moved.across, &definition.across, dec)?
+            || !same_vector(
+                &moved.origin.minus(&definition.origin),
+                &Vector3::zero(),
+                dec,
+            )?
+        {
+            return Err(refusal("reframing did not reproduce the requested frame"));
+        }
+        Ok(copy)
     }
     /// Represented geometry over `[-1,1] x [0,1]`.
     pub fn carrier(&self) -> &BSplineSurface {
@@ -1075,15 +1140,9 @@ fn produce(
         let point = Jet::linear(b(&s, bits), k.one.clone());
         let exact = rows(&k, &point, None)?;
         let mid = |ball: &Ball| ball.mid();
-        let mut slopes: [Rational; 6] = std::array::from_fn(|_| Rational::zero());
-        let mut values: [Real; 6] = std::array::from_fn(|_| Real::zero());
-        let scalar = [
-            &exact.height,
-            &exact.mouth,
-            &exact.apex[0],
-            &exact.apex[1],
-            &exact.apex[2],
-        ];
+        let mut slopes: [Rational; ROWS] = std::array::from_fn(|_| Rational::zero());
+        let mut values: [Real; ROWS] = std::array::from_fn(|_| Real::zero());
+        let scalar = [&exact.height, &exact.mouth, &exact.tangent, &exact.axial];
         for (j, jet) in scalar.into_iter().enumerate() {
             let [value, slope] = jet.data();
             values[j] = Real::from_rational(mid(&value));
@@ -1092,12 +1151,11 @@ fn produce(
         let end = i == 0 || i == spans;
         if end {
             let z = if i == 0 { -&t.z } else { t.z.clone() };
-            let scale = &def.body / &t.centre;
             values[HEIGHT] = def.radius.clone();
             values[MOUTH] = -(&z / &(&(&def.mouth + &def.offset) - &t.x));
-            values[APEX] = &t.x * &scale;
-            values[APEX + 1] = Real::zero();
-            values[APEX + 2] = &z * &scale;
+            // The transition apex is the plane/cylinder corner below the rail.
+            values[TANGENT] = Real::zero();
+            values[AXIAL] = -&def.radius;
         }
         let fitted = Jet::linear(
             dec.enclose_at(&values[MOUTH], bits)?,
@@ -1106,9 +1164,9 @@ fn produce(
         let with_weight = rows(&k, &point, Some(&fitted))?;
         let [value, slope] = with_weight.weight.expect("weight requested").data();
         values[WEIGHT] = if end {
-            // d = 0 at a transition, so the weight is sqrt((1+u^2)(1+w^2)/2).
-            (&(&(&Real::one() + &t.t.square()) * &(&Real::one() + &values[MOUTH].square()))
-                / &Real::from_i64(2))
+            // d = 0 at a transition, so the weight is sqrt((1+w^2)/(2(1+u^2))).
+            (&(&Real::one() + &values[MOUTH].square())
+                / &(&(&Real::one() + &t.t.square()) * &Real::from_i64(2)))
                 .sqrt()
         } else {
             Real::from_rational(mid(&value))
@@ -1149,9 +1207,8 @@ fn recompute_bound(
         Ok([
             exact.height.data(),
             exact.mouth.data(),
-            exact.apex[0].data(),
-            exact.apex[1].data(),
-            exact.apex[2].data(),
+            exact.tangent.data(),
+            exact.axial.data(),
             exact.weight.expect("weight requested").data(),
         ])
     };
@@ -1185,9 +1242,8 @@ fn recompute_bound(
         let fourth = [
             &whole.height.0[4],
             &whole.mouth.0[4],
-            &whole.apex[0].0[4],
-            &whole.apex[1].0[4],
-            &whole.apex[2].0[4],
+            &whole.tangent.0[4],
+            &whole.axial.0[4],
             &whole.weight.as_ref().expect("weight requested").0[4],
         ];
         let h4 = h.pow(4).expect("nonzero span");
@@ -1201,7 +1257,9 @@ fn recompute_bound(
         };
         let rail = error(HEIGHT);
         let mouth = q(2) * k.mouth.hi() * error(MOUTH);
-        let apex = error(APEX) + error(APEX + 1) + error(APEX + 2);
+        // The represented apex is A~ + tangent~ T + axial~ axis with an exact
+        // unit tangent T, and A~ moves only by the rail height error.
+        let apex = error(TANGENT) + error(AXIAL) + error(HEIGHT);
         let weight = whole.weight.as_ref().expect("weight requested").0[0].lo();
         if weight <= Rational::zero() {
             return Err(unresolved("exact middle weight is not separated from zero"));
@@ -1223,74 +1281,99 @@ fn recompute_bound(
     Ok(worst)
 }
 
+// Local homogeneous Bernstein rows of one span, [rail, middle, mouth], each
+// as [x, y, z, w] in the definition frame, elevated to the carrier degree.
+fn span_rows(def: &RollingEnvelopeDefinition, pair: &[Node]) -> [[Vec<Real>; 4]; 3] {
+    let t = def.transition();
+    let one = Real::one();
+    let span = [&pair[0].s, &pair[1].s];
+    let f = |j: usize| {
+        cubic(
+            span,
+            [&pair[0].values[j], &pair[1].values[j]],
+            [&pair[0].slopes[j], &pair[1].slopes[j]],
+        )
+    };
+    let u = vec![
+        &t.t * &Real::from_rational(span[0].clone()),
+        &t.t * &Real::from_rational(span[1].clone()),
+    ];
+    let u2 = product(&u, &u);
+    let ones = vec![one.clone(); 3];
+    let den = combine(&ones, &u2, &one, &one);
+    // (1 - u^2, 2u) / (1 + u^2) is the exact cosine and sine of the station.
+    let cos = combine(&ones, &u2, &one, &(-&one));
+    let sin: Vec<Real> = elevate(&u, 2)
+        .iter()
+        .map(|c| c * &Real::from_i64(2))
+        .collect();
+    let scaled = |p: &[Real], c: &Real| -> Vec<Real> { p.iter().map(|x| x * c).collect() };
+    // Rail row: (body (1-u^2), height (1+u^2), 2 body u) / (1+u^2).
+    let rail = [
+        scaled(&cos, &def.body),
+        product(&f(HEIGHT), &den),
+        scaled(&sin, &def.body),
+        den.clone(),
+    ];
+    // Middle row: the rail point moved within the cylinder's tangent plane by
+    // the fitted tangential and axial offsets, times the fitted middle weight.
+    let tangent = f(TANGENT);
+    let x = combine(
+        &scaled(&cos, &def.body),
+        &product(&tangent, &sin),
+        &one,
+        &(-&one),
+    );
+    let z = combine(
+        &scaled(&sin, &def.body),
+        &product(&tangent, &cos),
+        &one,
+        &one,
+    );
+    let height = combine(&f(HEIGHT), &f(AXIAL), &one, &one);
+    let weight = f(WEIGHT);
+    let middle = [
+        product(&weight, &x),
+        product(&weight, &product(&height, &den)),
+        product(&weight, &z),
+        product(&weight, &den),
+    ];
+    // Mouth row: the mouth circle at angle pi + 2 atan(w).
+    let w = f(MOUTH);
+    let w2 = product(&w, &w);
+    let ones6 = vec![one.clone(); 7];
+    let mouth_den = combine(&ones6, &w2, &one, &one);
+    let mouth = [
+        combine(
+            &mouth_den,
+            &combine(&ones6, &w2, &one, &(-&one)),
+            &def.offset,
+            &(-&def.mouth),
+        ),
+        vec![Real::zero(); 7],
+        w.iter()
+            .map(|c| &(c * &def.mouth) * &Real::from_i64(-2))
+            .collect(),
+        mouth_den,
+    ];
+    [rail, middle, mouth].map(|row| row.map(|c| elevate(&c, DEGREE)))
+}
+
 // Builds the carrier from node data alone: degree (6, 2), C0 knots at nodes.
 fn build(
     def: &RollingEnvelopeDefinition,
     nodes: &[Node],
     dec: &mut Decider,
 ) -> Result<BSplineSurface, Refusal> {
-    let t = def.transition();
-    let one = Real::one();
     let mut controls = Vec::with_capacity((nodes.len() - 1) * DEGREE * 3 + 3);
     let mut weights = Vec::with_capacity(controls.capacity());
     let mut knots = vec![Rational::from_i64(-1); DEGREE + 1];
     let count = (nodes.len() - 1) * DEGREE + 1;
     for (index, pair) in nodes.windows(2).enumerate() {
         dec.check_deadline()?;
-        let span = [&pair[0].s, &pair[1].s];
-        let f = |j: usize| {
-            cubic(
-                span,
-                [&pair[0].values[j], &pair[1].values[j]],
-                [&pair[0].slopes[j], &pair[1].slopes[j]],
-            )
-        };
-        let u = vec![
-            &t.t * &Real::from_rational(span[0].clone()),
-            &t.t * &Real::from_rational(span[1].clone()),
-        ];
-        let u2 = product(&u, &u);
-        let ones = vec![one.clone(); 3];
-        let den = combine(&ones, &u2, &one, &one);
-        // Rail row: (body (1-u^2), height (1+u^2), 2 body u) / (1+u^2).
-        let rail = [
-            combine(&ones, &u2, &def.body, &(-&def.body)),
-            product(&f(HEIGHT), &den),
-            elevate(&u, 2)
-                .iter()
-                .map(|c| &(c * &def.body) * &Real::from_i64(2))
-                .collect(),
-            den.clone(),
-        ];
-        // Mouth row: the mouth circle at angle pi + 2 atan(w).
-        let w = f(MOUTH);
-        let w2 = product(&w, &w);
-        let ones6 = vec![one.clone(); 7];
-        let mouth_den = combine(&ones6, &w2, &one, &one);
-        let mouth = [
-            combine(
-                &mouth_den,
-                &combine(&ones6, &w2, &one, &(-&one)),
-                &def.offset,
-                &(-&def.mouth),
-            ),
-            vec![Real::zero(); 7],
-            w.iter()
-                .map(|c| &(c * &def.mouth) * &Real::from_i64(-2))
-                .collect(),
-            mouth_den,
-        ];
-        // Middle row: the fitted apex, weighted by the fitted middle weight.
-        let weight = f(WEIGHT);
-        let middle = [
-            product(&weight, &f(APEX)),
-            product(&weight, &f(APEX + 1)),
-            product(&weight, &f(APEX + 2)),
-            weight.clone(),
-        ];
+        let rows = span_rows(def, pair);
         let last = index + 2 == nodes.len();
         let take = if last { DEGREE + 1 } else { DEGREE };
-        let rows = [rail, middle, mouth].map(|row| row.map(|c| elevate(&c, DEGREE)));
         for i in 0..take {
             for row in &rows {
                 let w = &row[3][i];
@@ -1299,7 +1382,7 @@ fn build(
                 weights.push(w.clone());
             }
         }
-        let knot = span[1].clone();
+        let knot = pair[1].s.clone();
         if last {
             knots.extend(std::iter::repeat_n(knot, DEGREE + 1));
         } else {
@@ -1322,7 +1405,6 @@ fn build(
 // plane/cylinder section, and the conic weight ratio is that of a quarter circle.
 fn check_transitions(
     def: &RollingEnvelopeDefinition,
-    nodes: &[Node],
     carrier: &BSplineSurface,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
@@ -1337,10 +1419,7 @@ fn check_transitions(
         }
     };
     let count = carrier.control_count()[0];
-    for (sign, column, node) in [
-        (Sign::Negative, 0, &nodes[0]),
-        (Sign::Positive, count - 1, &nodes[nodes.len() - 1]),
-    ] {
+    for (sign, column) in [(Sign::Negative, 0), (Sign::Positive, count - 1)] {
         let corners = def.corners(sign);
         let controls = &carrier.controls()[column * 3..column * 3 + 3];
         let weights = &carrier.weights()[column * 3..column * 3 + 3];
@@ -1353,11 +1432,7 @@ fn check_transitions(
                 same(a, c, dec)?;
             }
         }
-        let apex = def.world([
-            &node.values[APEX],
-            &node.values[APEX + 1],
-            &node.values[APEX + 2],
-        ]);
+        let apex = &controls[1];
         let t = def.transition();
         let z = if sign == Sign::Negative {
             -&t.z
@@ -1383,6 +1458,107 @@ fn check_transitions(
         )?;
     }
     Ok(())
+}
+
+// Exact clearances that make the face meet its neighbours only along its
+// boundary, proved on Bernstein coefficients of local homogeneous rows:
+// - Outside the cylinder: with c, s the exact station cosine and sine,
+//   x c + z s - body w is identically zero on the rail and middle rows (the
+//   middle row lies in the rail's tangent plane), so it suffices that the mouth
+//   row's polynomial is positive; then S . radial > body for every v > 0.
+// - Above the mouth plane: the rail height and the middle row's height are
+//   nonnegative, the rail strictly, and the mouth row lies in the plane.
+// - Inside the hole's sector: every control column but the transition ones lies
+//   strictly inside both meridian half-spaces; the transition columns are the
+//   meridian arcs proved by `check_transitions`.
+fn check_clearance(
+    def: &RollingEnvelopeDefinition,
+    nodes: &[Node],
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let bits = 128.min(dec.policy().max_precision_bits);
+    let t = def.transition();
+    let e = |x: &Real| dec.enclose_at(x, bits);
+    let (x0, z0) = (e(&t.x)?, e(&t.z)?);
+    let one = Real::one();
+    let spans = nodes.len() - 1;
+    for (index, pair) in nodes.windows(2).enumerate() {
+        dec.check_deadline()?;
+        let rows = span_rows(def, pair);
+        let span = [&pair[0].s, &pair[1].s];
+        let u = vec![
+            &t.t * &Real::from_rational(span[0].clone()),
+            &t.t * &Real::from_rational(span[1].clone()),
+        ];
+        let u2 = product(&u, &u);
+        let ones = vec![one.clone(); 3];
+        let den = combine(&ones, &u2, &one, &one);
+        let cos = combine(&ones, &u2, &one, &(-&one));
+        let sin: Vec<Real> = elevate(&u, 2)
+            .iter()
+            .map(|c| c * &Real::from_i64(2))
+            .collect();
+        let [x, _, z, w] = &rows[2];
+        let radial = combine(&product(x, &cos), &product(z, &sin), &one, &one);
+        let gap = combine(&radial, &product(w, &den), &one, &(-&def.body));
+        if !positive_bernstein(&gap, bits, dec)? {
+            return Err(refusal("envelope mouth row is not clear of the cylinder"));
+        }
+        let cubic_of = |j: usize| {
+            cubic(
+                span,
+                [&pair[0].values[j], &pair[1].values[j]],
+                [&pair[0].slopes[j], &pair[1].slopes[j]],
+            )
+        };
+        let height = cubic_of(HEIGHT);
+        let middle = combine(&height, &cubic_of(AXIAL), &one, &one);
+        for (row, strict) in [(&height, true), (&middle, false), (&cubic_of(WEIGHT), true)] {
+            for c in row {
+                let c = e(c)?;
+                if c.lo() < Rational::zero() || (strict && c.lo() == Rational::zero()) {
+                    return Err(refusal("envelope rows are not clear of the mouth plane"));
+                }
+            }
+        }
+        for column in 0..=DEGREE {
+            let transition =
+                (index == 0 && column == 0) || (index + 1 == spans && column == DEGREE);
+            if transition {
+                continue;
+            }
+            for row in &rows {
+                let (xh, zh) = (e(&row[0][column])?, e(&row[2][column])?);
+                let plus = &(&x0 * &zh) - &(&z0 * &xh);
+                let minus = -&(&(&x0 * &zh) + &(&z0 * &xh));
+                if plus.hi() >= Rational::zero() || minus.hi() >= Rational::zero() {
+                    return Err(refusal("envelope leaves the sector between its meridians"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn positive_bernstein(c: &[Real], bits: u32, dec: &Decider) -> Result<bool, Refusal> {
+    let mut stack = vec![(
+        c.iter()
+            .map(|x| dec.enclose_at(x, bits))
+            .collect::<Result<Vec<_>, _>>()?,
+        0,
+    )];
+    while let Some((poly, depth)) = stack.pop() {
+        if poly.iter().all(|x| x.lo() > Rational::zero()) {
+            continue;
+        }
+        if depth >= 8 || poly.iter().any(|x| x.hi() <= Rational::zero()) {
+            return Ok(false);
+        }
+        let [left, right] = split_net(&poly, [poly.len() - 1, 0], 0);
+        stack.push((left, depth + 1));
+        stack.push((right, depth + 1));
+    }
+    Ok(true)
 }
 
 // Gale-Nikaido on the closed chart rectangle: with F = (across . S,

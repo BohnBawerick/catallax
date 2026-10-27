@@ -94,8 +94,8 @@ fn add_curve(
     pool: &mut Vec<CurveId>,
     curve: CurveId,
     dec: &mut Decider,
-) -> Result<(), Refusal> {
-    for &other in pool.iter() {
+) -> Result<usize, Refusal> {
+    for (index, &other) in pool.iter().enumerate() {
         if coincident(
             same_curve(model.geom(), curve, other, dec),
             "boolean.imprint-ambiguous",
@@ -107,11 +107,12 @@ fn add_curve(
                 at: None,
                 origin: FactOrigin::Proof(ZeroProof::Algebraic),
             });
-            return Ok(());
+            return Ok(index);
         }
     }
+    let index = pool.len();
     pool.push(curve);
-    Ok(())
+    Ok(index)
 }
 
 pub(crate) fn containing_faces(
@@ -252,6 +253,9 @@ pub(crate) fn intersect(
         }
     }
     let mut pairs: BTreeMap<(SurfaceId, SurfaceId), SurfacePair> = BTreeMap::new();
+    // Surfaces proven to contain each carrier: both supports of a section
+    // component, or the face surface carrying a coincident face's edge.
+    let mut supports: Vec<BTreeSet<SurfaceId>> = Vec::new();
     for &fa in &first {
         for &fb in &second {
             let sa = model.face(fa).surface;
@@ -286,8 +290,11 @@ pub(crate) fn intersect(
                 SurfacePair::Disjoint => {}
                 SurfacePair::Coincident { .. } => {
                     for face in [fa, fb] {
+                        let surface = model.face(face).surface;
                         for curve in face_edges(model, face) {
-                            add_curve(model, &mut pool, curve, dec)?;
+                            let index = add_curve(model, &mut pool, curve, dec)?;
+                            supports.resize(pool.len(), BTreeSet::new());
+                            supports[index].insert(surface);
                         }
                     }
                 }
@@ -308,7 +315,9 @@ pub(crate) fn intersect(
                                 singular: nodes,
                                 ..
                             } => {
-                                add_curve(model, &mut pool, curve, dec)?;
+                                let index = add_curve(model, &mut pool, curve, dec)?;
+                                supports.resize(pool.len(), BTreeSet::new());
+                                supports[index].extend([sa, sb]);
                                 for node in nodes {
                                     let point = canonical_point(
                                         model,
@@ -335,9 +344,14 @@ pub(crate) fn intersect(
         .into_iter()
         .collect();
     let mut marks = MarkLog::new();
-    for &curve in &pool {
+    // Surfaces whose whole meeting with each carrier is now canonical.
+    let mut complete: Vec<BTreeSet<SurfaceId>> = vec![BTreeSet::new(); pool.len()];
+    for (index, &curve) in pool.iter().enumerate() {
         for &surface in &surfaces {
             let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
+            if !matches!(answer.value, CurveSurface::Contained) {
+                complete[index].insert(surface);
+            }
             if let CurveSurface::Meets(hits) = answer.value {
                 for hit in hits {
                     if !model.geom().facts().holds(
@@ -364,6 +378,13 @@ pub(crate) fn intersect(
     }
     for i in 0..pool.len() {
         for j in i + 1..pool.len() {
+            // Two carriers meet only on each other's supports. When one
+            // carrier's complete meeting with the other's support is already
+            // canonical, the pair can add no point; equality is never inferred.
+            let covered = |c: usize, d: usize| !supports[c].is_disjoint(&complete[d]);
+            if covered(i, j) || covered(j, i) {
+                continue;
+            }
             let crate::curve_pair::Meetings::Points(meetings) =
                 crate::curve_pair::meetings(model, pool[i], pool[j], dec)?
             else {

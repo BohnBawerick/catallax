@@ -212,16 +212,16 @@ Planar orientation predicates charge this allowance even when interval filtering
 settles their signs without exact arithmetic. Bridge and ear searches therefore
 cannot bypass cancellation or the work limit through their filtered fast path.
 
-`catallax_app::lifecycle::Controller` delivers an opt-in revision-bound unproved
-preview before certified meshing. The caller chooses the preview/proof split of
-one allowance, then schedules the returned single-use proof job. Confirmation
-provides the retained exact body and a certified replacement display; failure
-keeps its typed refusal with the edit. New edits invalidate old completions,
-and saved selection names resolve only against the same revision's confirmed
-result. Both caps are reserved up front from the caller, never duplicated by
-deferral. Actual phase work is reported separately from reservations. See the
-[lifecycle interface contract](docs/interface-changes/2026-10-26-application-preview-lifecycle.md)
-for scheduling, budget accounting and development timing.
+`catallax_app::lifecycle::Controller` can deliver a revision-bound construction
+display before exact B-rep evaluation, using the independent field compiler.
+Unsupported definitions or incomplete displays refuse rather than showing a
+substitute shape. The caller reserves one preview/proof allocation and schedules
+the returned proof job. Confirmation retains an incremental exact checkpoint and
+certified display. Failure restores the last proved display, but does not allow
+that older body to be exported as the failed input. Cancellation invalidates queued
+work. Selection origins resolve only against the same revision's confirmed result.
+See the [construction and snapback contract](docs/interface-changes/2026-10-27-construction-preview-and-snapback.md)
+for representation types, output gates, budget accounting and exercised limits.
 
 
 ## Where to start

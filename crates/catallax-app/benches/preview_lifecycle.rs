@@ -73,8 +73,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let preview = controller.latest().unwrap();
                     assert!(matches!(preview.status(), Status::Unproved));
                     row["preview_work"] = json!(preview.work().preview.used);
-                    row["preview_vertices"] = json!(preview.preview().mesh.positions.len());
-                    row["preview_triangles"] = json!(preview.preview().mesh.triangles.len());
+                    let display = preview.preview().brep().unwrap();
+                    row["preview_vertices"] = json!(display.mesh.positions.len());
+                    row["preview_triangles"] = json!(display.mesh.triangles.len());
                     // No artificial delay. Real callers can postpone this job.
                     let proof_start = Instant::now();
                     let completion = job.prove(&mut Decider::default());

@@ -16,7 +16,10 @@ pub mod loops;
 pub mod pattern;
 /// Unproved preview meshes and selection names from retained B-rep definitions.
 pub mod preview;
-pub use preview::{PreviewApplicationBody, PreviewDisplay, build_preview, preview_body};
+pub use preview::{
+    ConstructionDisplay, ConstructionOptions, PreviewApplicationBody, PreviewDisplay,
+    build_preview, construction_preview, preview_body,
+};
 pub mod soliddraft;
 pub use certified::{CertifiedApplicationBody, build_certified};
 
@@ -159,6 +162,8 @@ pub enum Error {
     InvalidBody(Vec<catallax_topology::TopologyFault>),
     /// Display failed, with its original stable refusal code.
     Display(Refusal),
+    /// Definition-native early display could not construct a complete preview.
+    ConstructionPreview(Refusal),
     /// The default whole-build work allowance expired; no body is published.
     ResourceLimit,
     /// A preview/proof allocation could not be reserved from the caller.
@@ -172,9 +177,9 @@ impl Error {
             Self::Conversion(soliddraft::ConversionError::Invalid { .. }) => "soliddraft.invalid",
             Self::Conversion(soliddraft::ConversionError::NotYet { code, .. }) => code,
             Self::Build(BuildError::Recipe(error)) => error.code(),
-            Self::Build(BuildError::Geometry { refusal, .. }) | Self::Display(refusal) => {
-                refusal.code
-            }
+            Self::Build(BuildError::Geometry { refusal, .. })
+            | Self::Display(refusal)
+            | Self::ConstructionPreview(refusal) => refusal.code,
             Self::InvalidBody(_) => "application.invalid-body",
             Self::ResourceLimit => "application.work-limit",
             Self::Allocation(refusal) => refusal.code,
@@ -189,6 +194,7 @@ impl fmt::Display for Error {
             Self::Build(e) => e.fmt(f),
             Self::InvalidBody(faults) => write!(f, "application.invalid-body: {faults:?}"),
             Self::Display(e) => write!(f, "{}: {}", e.code, e.detail),
+            Self::ConstructionPreview(e) => write!(f, "{}: {}", e.code, e.detail),
             Self::Allocation(e) => write!(f, "{}: {}", e.code, e.detail),
             Self::ResourceLimit => {
                 write!(f, "application.work-limit: aggregate build work exhausted")

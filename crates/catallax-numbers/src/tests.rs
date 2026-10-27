@@ -84,6 +84,48 @@ fn exact_parsing_normalization_and_error_precedence() {
 }
 
 #[test]
+fn machine_sized_rationals_match_the_big_integer_route() {
+    // Scaling by 2^128 moves an operand out of the machine-word range; the
+    // results scale exactly. Rational::new normalizes through big integers.
+    let mut parts = vec![1, 2, 3, 5, 7, 12, 100, 4501, i64::MAX];
+    for k in [31, 32, 52, 53, 61, 62] {
+        parts.extend([(1_i64 << k) - 1, 1 << k, (1 << k) + 1]);
+    }
+    let mut state = 0x2545_f491_4f6c_dd1d_u64;
+    for _ in 0..60 {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        parts.push((((state >> 1) >> (state % 62)) as i64).max(1));
+    }
+    let values: Vec<Rational> = parts
+        .iter()
+        .flat_map(|&n| [n, -n, 0])
+        .flat_map(|n| {
+            parts
+                .iter()
+                .map(move |&d| Rational::from_ratio(n, d).unwrap())
+        })
+        .step_by(97)
+        .collect();
+    for x in &values {
+        let big = x.mul_pow2(128);
+        for y in &values {
+            let (n, d) = (x.numerator(), x.denominator());
+            let (m, e) = (y.numerator(), y.denominator());
+            let sum = x + y;
+            assert_eq!(sum, Rational::new(&(n * e) + &(m * d), d * e).unwrap());
+            assert_eq!(x - y, Rational::new(&(n * e) - &(m * d), d * e).unwrap());
+            assert_eq!(x * y, Rational::new(n * m, d * e).unwrap());
+            assert_eq!(x.cmp(y), (n * e).cmp(&(m * d)));
+            assert_eq!(&big + &y.mul_pow2(128), sum.mul_pow2(128));
+            assert_eq!(&big * y, (x * y).mul_pow2(128));
+            assert_eq!(big.cmp(&y.mul_pow2(128)), x.cmp(y));
+        }
+    }
+}
+
+#[test]
 fn floor_division_and_large_integer_field_laws() {
     for (a, d, quotient, remainder) in [
         (7, -3, -3, -2),

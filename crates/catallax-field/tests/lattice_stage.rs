@@ -334,3 +334,47 @@ fn self_intersections(mesh: &catallax_field::printing::Mesh) -> usize {
     }
     count
 }
+
+#[test]
+fn the_preview_is_coarse_unproved_and_independent_of_the_export_settings() {
+    use catallax_field::{display::PreviewOptions, lattice_stage::Proof};
+    let stage = Stage::new(
+        &body("block", "2"),
+        thick(),
+        loose(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let options = PreviewOptions {
+        tolerance: q("2"),
+        max_vertices: 100_000,
+        max_cells: 100_000,
+    };
+    let preview = stage.preview(&options, &mut Decider::default()).unwrap();
+    assert_eq!(preview.proof, Proof::Unproved);
+    assert!(!preview.mesh.triangles.is_empty());
+    let output = stage.export(&mut Decider::default()).unwrap();
+    assert!(preview.mesh.max_deviation >= output.verdict.max_deviation);
+    assert!(preview.mesh.triangles.len() <= output.mesh.triangles.len());
+}
+
+#[test]
+fn a_preview_over_its_cell_limit_refuses_without_a_partial_mesh() {
+    use catallax_field::display::PreviewOptions;
+    let stage = Stage::new(
+        &body("block", "2"),
+        thick(),
+        loose(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let options = PreviewOptions {
+        tolerance: q("2"),
+        max_vertices: 100_000,
+        max_cells: 1,
+    };
+    let error = stage
+        .preview(&options, &mut Decider::default())
+        .unwrap_err();
+    assert_eq!(error.code, "field.print-budget");
+}

@@ -568,3 +568,42 @@ fn refused_print_request_removes_the_previous_print_and_display_artifacts() {
     assert!(!dir.join("answer.step").exists());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn the_field_adapter_shows_a_lattice_as_an_unproved_preview() {
+    use catallax_cli::verification::{Request, answer};
+    let root = std::env::temp_dir().join(format!(
+        "catallax-lattice-preview-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let pose = json!({"rotation":["1","0","0","0"],"translation":["0","0","0"]});
+    let recipe = json!({"format":"catallax-recipe/3","name":"preview",
+        "steps":[
+            {"id":"region","op":"block","size":["4","4","4"],"pose":pose},
+            {"id":"beams","op":"lattice","region":"region","cell":"cubic","size":"2",
+             "frame":pose,"radius":{"constant":"0.3"}}],
+        "result":"beams"});
+    let request = |problem: Value, name: &str| Request {
+        format: "catallax-request/1".into(),
+        source: "field".into(),
+        problem,
+        out: root.join(name),
+        max_work: 100_000_000,
+    };
+    let lattice = answer(&request(recipe, "lattice")).unwrap();
+    let manifest = &lattice["manifest"];
+    assert_eq!(manifest["status"], "answered");
+    assert_eq!(manifest["exact"], false);
+    let display = &manifest["face_measurements"]["display"];
+    assert_eq!(display["proof"], "unproved");
+    assert!(display["triangles"].as_u64().unwrap() > 0);
+    assert!(root.join("lattice/display.obj").exists());
+    // The certified request is untouched: a plain block is still exact and carries no proof label.
+    let block = json!({"format":"catallax-recipe/3","name":"block",
+        "steps":[{"id":"region","op":"block","size":["4","4","4"],"pose":pose}],"result":"region"});
+    let plain = answer(&request(block, "block")).unwrap();
+    assert_eq!(plain["manifest"]["exact"], true);
+    assert!(plain["manifest"]["face_measurements"]["display"]["proof"].is_null());
+    fs::remove_dir_all(root).unwrap();
+}

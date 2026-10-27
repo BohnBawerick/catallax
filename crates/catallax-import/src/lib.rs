@@ -8,7 +8,12 @@
 mod wire;
 
 pub use wire::*;
+mod build;
+mod consume;
+mod exact;
 mod part21;
 mod recognize;
 
+pub use build::{build_file, build_solid};
+pub use consume::{import_step_bodies, sha256_hex};
 pub use recognize::*;

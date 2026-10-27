@@ -1,6 +1,7 @@
 //! Exact signed dyadics. Nonzero mantissas are odd; zero has exponent zero.
 
 use crate::{Integer, Rational, Sign};
+use num_bigint::BigInt;
 use std::{
     cmp::Ordering,
     ops::{Add, Mul, Neg, Sub},
@@ -27,6 +28,17 @@ impl Binary {
 
     pub(super) fn from_integer(value: Integer) -> Self {
         Self::new(value, 0)
+    }
+
+    pub(super) fn from_i128(value: i128) -> Self {
+        if value == 0 {
+            return Self::zero();
+        }
+        let twos = value.trailing_zeros();
+        Self {
+            mantissa: Integer(BigInt::from(value >> twos)),
+            exponent: i64::from(twos),
+        }
     }
 
     pub(super) fn from_rational(value: Rational) -> Self {
@@ -227,6 +239,55 @@ impl Binary {
         Self::new(Integer(mantissa), exponent)
     }
 }
+/// `Binary::rounded` of an i128 whose magnitude is at most 2^64, so the
+/// result fits too. Arithmetic shifts floor like the signed big-integer ones.
+pub(super) fn round_i128(value: i128, precision: u32, upwards: bool) -> i128 {
+    debug_assert!(value.unsigned_abs() <= 1 << 64);
+    if value == 0 {
+        return 0;
+    }
+    let twos = value.trailing_zeros();
+    let mantissa = value >> twos;
+    let discard = (128 - mantissa.unsigned_abs().leading_zeros()).saturating_sub(precision);
+    if discard == 0 {
+        return value;
+    }
+    let mantissa = if upwards {
+        (mantissa >> discard) + 1
+    } else {
+        ((mantissa >> (discard - 1)) + 1) >> 1
+    };
+    mantissa << (twos + discard)
+}
+
+/// `x / y` rounded to `precision` significant bits like `Binary::div_rounded`,
+/// for `|x| < 2^63`, `0 < y < 2^62` and `precision <= 63`. Returns `(q, s, e)`:
+/// the rounded value is `q 2^-s` and `|x - q 2^-s y| = e 2^-max(s, 0)`.
+/// Every intermediate stays below 2^126.
+pub(super) fn div_round_i128(x: i128, y: i128, precision: u32, upwards: bool) -> (i128, i64, i128) {
+    debug_assert!(x.unsigned_abs() < 1 << 63 && 0 < y && y < 1 << 62 && precision <= 63);
+    let bits = |v: u128| i64::from(128 - v.leading_zeros());
+    let (a, b) = (x.unsigned_abs(), y.unsigned_abs());
+    // floor(log2 |x / y|), as `div_rounded` finds it from the mantissas.
+    let mut power = bits(a) - bits(b);
+    let below = if power >= 0 {
+        a < b << power
+    } else {
+        a << -power < b
+    };
+    if below {
+        power -= 1;
+    }
+    let s = i64::from(precision) - power - 1;
+    let (numerator, denominator) = if s >= 0 { (x << s, y) } else { (x, y << -s) };
+    let mut q = numerator.div_euclid(denominator);
+    let remainder = numerator.rem_euclid(denominator);
+    if remainder != 0 && (upwards || 2 * remainder >= denominator) {
+        q += 1;
+    }
+    (q, s, (numerator - q * denominator).abs())
+}
+
 impl Ord for Binary {
     fn cmp(&self, other: &Self) -> Ordering {
         let sign = self.sign().cmp(&other.sign());

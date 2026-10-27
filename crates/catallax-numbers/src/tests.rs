@@ -249,6 +249,73 @@ fn ball_rounding_domains_and_sqrt_containment() {
 }
 
 #[test]
+fn machine_sized_enclosures_match_the_big_integer_route() {
+    // Scaling by 2^128 moves every value out of the machine-integer range, onto
+    // the big-integer route. Rounding to significant bits and to doubles both
+    // commute with that exact scaling.
+    let scale = Rational::one().mul_pow2(128);
+    let mut values = vec![0, 1, 3, 5, 7, 100, 255, 4501, i64::MAX, i64::MIN];
+    for k in 1..63 {
+        values.extend([1 << k, (1 << k) - 1, (1 << k) + 1, 3 << (k - 1)]);
+    }
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    for _ in 0..200 {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        values.push((state >> (state % 61)) as i64);
+    }
+    values.extend(values.clone().into_iter().map(i64::wrapping_neg));
+    let precisions = [0, 1, 2, 3, 7, 52, 53, 63, 64, 65, 128];
+    for &n in &values {
+        let n = Integer::from_i64(n);
+        for p in precisions {
+            let fast = Ball::from_integer(&n, p);
+            let slow = Ball::from_integer(&n.mul_pow2(128), p);
+            assert_eq!(fast.precision(), slow.precision());
+            assert_eq!(&fast.mid() * &scale, slow.mid());
+            assert_eq!(&fast.rad() * &scale, slow.rad());
+        }
+    }
+    let exact = 1_i64 << 53;
+    let denominators = [
+        1,
+        2,
+        3,
+        7,
+        10,
+        100,
+        4096,
+        999_983,
+        exact - 1,
+        exact,
+        exact + 1,
+        (1 << 62) - 1,
+        1 << 62,
+    ];
+    for &n in &values {
+        for d in denominators {
+            let r = Rational::from_ratio(n, d).unwrap();
+            let scaled = r.mul_pow2(128);
+            if n.unsigned_abs() <= 1 << 54 {
+                let fast = Interval::from_rational(&r);
+                let slow = Interval::from_rational(&scaled);
+                assert!(interval_contains(fast, &r));
+                assert_eq!(fast.lo() * 2f64.powi(128), slow.lo());
+                assert_eq!(fast.hi() * 2f64.powi(128), slow.hi());
+            }
+            for p in precisions {
+                let fast = Ball::from_rational(&r, p);
+                let slow = Ball::from_rational(&scaled, p);
+                assert!(fast.contains(&r));
+                assert_eq!(&fast.mid() * &scale, slow.mid());
+                assert_eq!(&fast.rad() * &scale, slow.rad());
+            }
+        }
+    }
+}
+
+#[test]
 fn ratio_balls_keep_signed_rounding_and_common_factors() {
     for (n, d, mid, rad) in [
         (7, 2, "4", "1/2"),

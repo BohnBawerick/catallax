@@ -25,6 +25,7 @@ mod features;
 mod fillet;
 mod geometry;
 mod lattice;
+pub mod lattice_stage;
 /// Certified field-only volume, centroid and inertia queries.
 pub mod mass;
 pub use certified_prism::CertifiedPrismField;

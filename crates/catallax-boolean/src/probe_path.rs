@@ -82,14 +82,6 @@ impl P {
     fn pow(&self, n: u32) -> Self {
         (0..n).fold(Self::constant(Real::one()), |p, _| p.mul(self))
     }
-    fn is_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
-        for x in &self.0 {
-            if coefficient_sign(x, dec)? != Sign::Zero {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
     fn excludes_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
         let mut first = 0;
         let expected = loop {
@@ -123,6 +115,50 @@ impl P {
             }
         }
         Ok(true)
+    }
+}
+
+enum BarrierPolynomial {
+    Power(P),
+    Bernstein([Real; 3]),
+}
+
+impl BarrierPolynomial {
+    fn coefficients(&self) -> &[Real] {
+        match self {
+            Self::Power(polynomial) => &polynomial.0,
+            Self::Bernstein(coefficients) => coefficients,
+        }
+    }
+
+    fn is_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
+        for coefficient in self.coefficients() {
+            if coefficient_sign(coefficient, dec)? != Sign::Zero {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn excludes_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
+        match self {
+            Self::Power(polynomial) => polynomial.excludes_zero(dec),
+            Self::Bernstein(coefficients) => {
+                let mut expected = Sign::Zero;
+                for (index, coefficient) in coefficients.iter().enumerate() {
+                    let value = coefficient_sign(coefficient, dec)?;
+                    if expected == Sign::Zero {
+                        // Leading zero controls factor a permitted source contact.
+                        expected = value;
+                    } else if value != expected
+                        && (value != Sign::Zero || index == coefficients.len() - 1)
+                    {
+                        return Ok(false);
+                    }
+                }
+                Ok(expected != Sign::Zero)
+            }
+        }
     }
 }
 
@@ -448,7 +484,12 @@ fn straight_contact(equation: &RealPoly, p: &Point3, q: &Point3, degree: u32) ->
 
 /// Restrict a circle's sphere equation to a straight path from another circle.
 /// Subtracting the source sphere eliminates every quadratic source coordinate.
-fn straight_circles(source: &Circle, barrier: &Circle, p: &Point3, q: &Point3) -> P {
+fn straight_circles(
+    source: &Circle,
+    barrier: &Circle,
+    p: &Point3,
+    q: &Point3,
+) -> BarrierPolynomial {
     let shift = source.center.minus(&barrier.center);
     let start = Real::from_i64(2) * shift.dot(&p.minus(&source.center))
         + shift.norm_squared()
@@ -456,8 +497,7 @@ fn straight_circles(source: &Circle, barrier: &Circle, p: &Point3, q: &Point3) -
     let end_offset = q.minus(&barrier.center);
     let end = &end_offset.norm_squared() - &barrier.radius_sq;
     let middle = &end_offset.dot(&p.minus(&barrier.center)) - &barrier.radius_sq;
-    let first = Real::from_i64(2) * (&middle - &start);
-    P(vec![start.clone(), first.clone(), end - start - first])
+    BarrierPolynomial::Bernstein([start, middle, end])
 }
 
 /// The source position is an exact arc probe on the supplied source curve.
@@ -558,7 +598,7 @@ pub(crate) fn adjacent(
             let mut equations: Vec<_> = curve.equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
                 .iter()
                 .enumerate()
-                .map(|(index, e)| -> Result<P, Refusal> {
+                .map(|(index, e)| -> Result<BarrierPolynomial, Refusal> {
                     let contact = equation_is_source_contact(
                         model, source, source_curve, edge.curve, index, e, &source_equations,
                     );
@@ -583,7 +623,7 @@ pub(crate) fn adjacent(
                             && let (Curve::Circle(source), Curve::Circle(barrier)) =
                                 (model.geom().curve(source_curve), curve)
                         {
-                            straight_circles(source, barrier, p, q)
+                            return Ok(straight_circles(source, barrier, p, q));
                         } else {
                             numerator(e, &path, dec)?
                         };
@@ -593,12 +633,12 @@ pub(crate) fn adjacent(
                         // zero without inferring another branch's membership.
                         polynomial.0[0] = Real::zero();
                     }
-                    Ok(polynomial)
+                    Ok(BarrierPolynomial::Power(polynomial))
                 })
                 .collect::<Result<_, _>>()?;
             // Separation is existential. Try coefficients whose cached bounds
             // already exclude zero before asking for exact contact proofs.
-            equations.sort_by_key(|p| p.0.iter().all(|c| c.approx().sign().is_none()));
+            equations.sort_by_key(|p| p.coefficients().iter().all(|c| c.approx().sign().is_none()));
             let mut separated = false;
             for equation in &equations {
                 if equation.excludes_zero(dec)? {
@@ -832,6 +872,28 @@ mod tests {
         ] {
             assert_eq!(
                 straight_circles(&source, barrier, &p, &q)
+                    .excludes_zero(&mut dec)
+                    .unwrap(),
+                clear,
+            );
+        }
+    }
+
+    #[test]
+    fn bernstein_clearance_keeps_source_contacts_and_later_hits() {
+        let mut dec = Decider::default();
+        for (coefficients, clear) in [
+            ([0, 0, 2], true),
+            ([0, 2, 1], true),
+            ([0, -1, -2], true),
+            ([1, 0, 1], true),
+            ([0, 0, 0], false),
+            ([0, 1, 0], false),
+            ([0, 1, -1], false),
+            ([1, -1, 1], false),
+        ] {
+            assert_eq!(
+                BarrierPolynomial::Bernstein(coefficients.map(Real::from_i64))
                     .excludes_zero(&mut dec)
                     .unwrap(),
                 clear,

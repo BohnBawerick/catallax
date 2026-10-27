@@ -745,6 +745,120 @@ fn grouped_properties_reuse_failed_sphere_gauges_before_centroid() {
 }
 
 #[test]
+fn conical_ring_does_not_round_a_small_axis_offset_to_coincidence() {
+    use catallax_numbers::Real;
+    use catallax_shapes::{Circle, Cone, Point3, Surface, Vector3};
+
+    let root = Real::from(2).sqrt();
+    let zero = &root - &root;
+    let axis = Vector3::new(Real::zero(), Real::zero(), Real::one());
+    let surface = Surface::Cone(Cone {
+        apex: Point3::new(zero.clone(), zero, Real::zero()),
+        axis: axis.clone(),
+        slope: Real::one(),
+        ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+    });
+    for offset in [-1, 1] {
+        let circle = Circle {
+            center: Point3::new(r(offset).mul_pow2(-40).into(), Real::zero(), Real::from(2)),
+            normal: axis.clone(),
+            radius_sq: Real::from(4),
+            ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+        };
+        for (property, indices) in [
+            (surface::Property::Area, &[0][..]),
+            (surface::Property::SecondMoment(0, 0), &[2][..]),
+            (surface::Property::FaceCentroid, &[1, 2, 3, 4][..]),
+        ] {
+            assert!(
+                ring::compile(
+                    &surface,
+                    &circle,
+                    &RPoint3::origin(),
+                    indices,
+                    property,
+                    &mut Decider::default(),
+                )
+                .unwrap()
+                .is_none()
+            );
+        }
+    }
+}
+
+#[test]
+fn conical_properties_preserve_exact_coaxiality_behind_algebraic_coordinates() {
+    use catallax_numbers::Real;
+    use catallax_shapes::Vector3;
+
+    let root = Real::from(2).sqrt();
+    let zero = &root - &root;
+    assert!(zero.as_rational().is_none());
+    let mut dec = Decider::new(BudgetPolicy {
+        max_work: 20_000_000,
+        ..BudgetPolicy::default()
+    });
+    let pose = Pose::new(
+        Rotation::identity(),
+        Vector3::new(zero.clone(), zero.clone(), zero),
+        &mut dec,
+    )
+    .unwrap();
+    let mut model = Model::new();
+    let body = catallax_topology::cone(&mut model, r(2), r(0), r(2), &pose).unwrap();
+    let measured = mass_properties(&model, body, &Accuracy::default(), &mut dec).unwrap();
+    assert!(measured.marks.is_empty(), "{:?}", measured.marks);
+    let pi = Ball::pi(512);
+    contains(
+        &measured.value.volume,
+        &(&pi * &ball(8)).checked_div(&ball(3)).unwrap(),
+    );
+    contains(
+        &measured.value.area,
+        &(&pi * &ball(4) * (ball(1) + ball(2).sqrt().unwrap())),
+    );
+    for (coordinate, expected) in
+        measured
+            .value
+            .centroid
+            .unwrap()
+            .iter()
+            .zip([r(0), r(0), r(1) / r(2)])
+    {
+        assert!(coordinate.contains(&expected));
+        assert!(meets_width(coordinate, &Accuracy::default()));
+    }
+    let inertia = measured.value.inertia.unwrap();
+    for (i, row) in inertia.iter().enumerate() {
+        for (j, entry) in row.iter().enumerate() {
+            if i != j {
+                assert!(entry.contains(&r(0)));
+            } else {
+                let expected = if i == 2 {
+                    (&pi * &ball(16)).checked_div(&ball(5)).unwrap()
+                } else {
+                    &pi * &ball(2)
+                };
+                contains(entry, &expected);
+            }
+        }
+    }
+    for face in model.faces_of_body(body) {
+        if matches!(
+            model.geom().surface(model.face(face).surface),
+            catallax_shapes::Surface::Cone(_)
+        ) {
+            let center = face_centroid(&model, face, &Accuracy::default(), &mut dec).unwrap();
+            assert!(center.marks.is_empty());
+            for (coordinate, expected) in center.value.iter().zip([r(0), r(0), r(2) / r(3)]) {
+                assert!(coordinate.contains(&expected));
+                assert!(meets_width(coordinate, &Accuracy::default()));
+            }
+        }
+    }
+}
+
+#[test]
 fn face_centroids_match_analytic_primitives() {
     let accuracy = Accuracy {
         relative: r(0),

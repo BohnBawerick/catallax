@@ -115,3 +115,40 @@ work/operation logs and actual STEP/OBJ/STL bytes. Fresh 1/2/4-worker and cold/w
 runs check determinism and validated artifact reuse separately. Any inherited
 failure remains a failure and is reported in the PR; no allowance, assertion or
 process cap is relaxed to pass it.
+
+## Whole-ring property integration
+
+The drill-point measurement path exposed a separate admission gap in the existing
+closed-circle antiderivatives. A cone's apex coordinates can retain algebraic
+construction expressions even when their transverse components are exactly zero.
+The squared coaxiality expression then has no cached rational value. Treating that
+cache miss as an unsupported ring sent volume, area, centroid and inertia through
+Taylor panels.
+
+For an already complete circular boundary with a parallel normal, the adapter now
+asks the existing Decider to prove
+`|(circle.center - cone.apex) cross cone.axis|² = 0` when the rational cache cannot
+settle it. Only a proved zero admits the existing ring formulas. A proved nonzero
+or unresolved identity retains quadrature; a refusal propagates. This does not
+change finite-cone distance evaluation, trim membership, integration formulas,
+requested accuracy, or any work allowance.
+
+The public diagnostic case is a 30 × 30 × 10 mm block with one centred,
+diameter-5 mm, depth-6 mm hole and a 118-degree drill tip. At base
+`7a347113d34131a54dc59af2c6f073da2af9099f`, profiling confirmed a complete ring
+whose rational coaxiality check returned no value while the exact predicate
+proved coincidence. The profile spent 35.3 seconds in integration attempts and
+2.0 seconds evaluating their nonrational literals on a contended host. A literal
+cache therefore was not the selected fix.
+
+The uninstrumented candidate's full mass-properties probe, including inertia,
+completed in 599 ms. All 14 returned enclosure entries were contained in the
+baseline enclosures. These are diagnostic observations, not SolidDraft click or
+release timing acceptance. The application scenario remains the speed gate and
+must use its ordinary 20-million-work policy.
+
+The regression suite includes a complete cone translated by algebraic expressions
+that equal zero, checked against closed-form mass properties and face centroids.
+Separate positive and negative offsets of `2^-40` must not be admitted as coaxial.
+These checks cover the shared admission condition for area, second moments and
+face-centroid integrals without rounding a geometric predicate.

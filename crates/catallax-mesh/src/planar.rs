@@ -232,14 +232,27 @@ impl Polygon<'_> {
                 .then_with(|| positions[a][axes[1]].total_cmp(&positions[b][axes[1]]))
                 .then_with(|| a.cmp(&b))
         });
-        // Floating sorting is only a proposal; certify its exact lexicographic order.
-        for pair in order.windows(2) {
-            let x = self.coordinate_order(pair[0], pair[1], 0)?;
-            if x == Sign::Positive
-                || (x == Sign::Zero
-                    && self.coordinate_order(pair[0], pair[1], 1)? != Sign::Negative)
-            {
-                return Ok(None);
+        // Rounded coordinates propose an order, but near-equal coordinates can
+        // reverse it (including on concentric circular rails). Repair only those
+        // inversions with exact comparisons instead of abandoning the CDT and
+        // doing a quadratic bridge/ear search over the entire cap. This insertion
+        // pass certifies the same strict lexicographic order the hull requires;
+        // coincident exact points still reject the candidate. Every comparison
+        // checkpoints the caller's unchanged work allowance and deadline.
+        for i in 1..order.len() {
+            let mut j = i;
+            while j > 0 {
+                self.dec.check_deadline()?;
+                let mut comparison = self.coordinate_order(order[j - 1], order[j], 0)?;
+                if comparison == Sign::Zero {
+                    comparison = self.coordinate_order(order[j - 1], order[j], 1)?;
+                }
+                match comparison {
+                    Sign::Negative => break,
+                    Sign::Zero => return Ok(None),
+                    Sign::Positive => order.swap(j - 1, j),
+                }
+                j -= 1;
             }
         }
         let mut hull = Vec::with_capacity(order.len() * 2);
@@ -951,6 +964,58 @@ pub(crate) fn build(
 mod tests {
     use super::*;
     use catallax_numbers::with_operation_budget;
+
+    #[test]
+    fn hull_repairs_rounded_coordinate_order_without_merging_exact_points() {
+        // These distinct x values round to 1, so float sorting orders by y and
+        // reverses their exact x order. The four points still form a strict hull.
+        let epsilon = Rational::one().mul_pow2(-54);
+        let exact = [
+            [&Rational::one() - &epsilon, Rational::one()],
+            [&Rational::one() + &epsilon, Rational::zero()],
+            [Rational::from_i64(2), Rational::zero()],
+            [Rational::from_i64(2), Rational::one()],
+        ];
+        let positions: Vec<_> = exact
+            .iter()
+            .map(|p| [p[0].to_f64_nearest(), p[1].to_f64_nearest(), 0.0])
+            .collect();
+        assert_eq!(positions[0][0], positions[1][0]);
+        let points = exact
+            .into_iter()
+            .enumerate()
+            .map(|(index, p)| {
+                let bounds = p.each_ref().map(|q| {
+                    let rounded = q.to_f64_nearest();
+                    [rounded.next_down(), rounded.next_up()]
+                });
+                (
+                    index,
+                    Point {
+                        position: Position::Exact([
+                            p[0].clone().into(),
+                            p[1].clone().into(),
+                            Real::zero(),
+                        ]),
+                        axes: [0, 1],
+                        bounds,
+                    },
+                )
+            })
+            .collect();
+        let mut dec = Decider::default();
+        let mut polygon = Polygon {
+            points,
+            dec: &mut dec,
+        };
+        assert_eq!(
+            polygon.hull(&positions, [0, 1]).unwrap().unwrap(),
+            BTreeSet::from([(0, 1), (1, 2), (2, 3), (0, 3)])
+        );
+        // Exact coincidence is not repaired by deleting or merging a point.
+        polygon.points.insert(1, polygon.points[&0].clone());
+        assert!(polygon.hull(&positions, [0, 1]).unwrap().is_none());
+    }
 
     #[test]
     fn filtered_orientations_exhaust_the_operation_allowance() {

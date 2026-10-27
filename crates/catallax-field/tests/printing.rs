@@ -394,3 +394,40 @@ fn the_artifact_path_writes_identical_bytes_to_memory() {
         assert!(mesh.write_obj(&mut device).is_err());
     }
 }
+
+fn lattice_plan(cell: &str) -> Plan {
+    let recipe = Recipe::parse(&format!(
+        r#"{{"format":"catallax-recipe/3","name":"lattice print","steps":[{{"id":"region","op":"block","size":["4","4","4"],"pose":{{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}}},{{"id":"beams","op":"lattice","region":"region","cell":{cell},"size":"2","frame":{{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},"radius":{{"constant":"0.25"}}}}],"result":"beams"}}"#
+    ))
+    .unwrap();
+    Plan::compile(&recipe).unwrap()
+}
+fn coarse() -> Options {
+    Options {
+        tolerance: "0.25".parse().unwrap(),
+        ..Options::default()
+    }
+}
+
+#[test]
+fn a_connected_lattice_prints_as_one_closed_component() {
+    let mesh = printing::mesh_plan_connected(
+        &lattice_plan(r#""cubic""#),
+        &coarse(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(mesh.component_count(), 1);
+}
+
+#[test]
+fn a_lattice_of_separate_struts_is_refused_not_published() {
+    let cell =
+        r#"{"custom":{"nodes":[["0.25","0.25","0.25"],["0.75","0.75","0.75"]],"beams":[[0,1]]}}"#;
+    let plan = lattice_plan(cell);
+    let refusal =
+        printing::mesh_plan_connected(&plan, &coarse(), &mut Decider::default()).unwrap_err();
+    assert_eq!(refusal.code, "field.print-disconnected");
+    let loose = printing::mesh_plan(&plan, &coarse(), &mut Decider::default()).unwrap();
+    assert!(loose.component_count() > 1);
+}

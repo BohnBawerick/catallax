@@ -99,6 +99,8 @@ Where two faces lie on the same surface, their common region is two-dimensional;
 
 Section edges are split at every point where the set of faces they lie on changes, and at every vertex of either body that lies on them, so that each section edge lies on one fixed set of faces. They are otherwise as long as possible. Every curve is one piece 4 made (`intersect_surfaces`) or an edge curve of an operand; every end point is a point of the store.
 
+Finite trim membership is required on both operands. The smaller face set is queried first; an exact empty result settles that conjunction without querying the other operand. Retained sections still carry complete face lists in each operand's original order, and isolated contacts still require membership on both boundaries. Canonical witnesses, mandatory cuts and curve-interval construction are unchanged. Every performed predicate uses the caller's decider and work allowance.
+
 `edges()` lists the section edges and `points()` the isolated points, in a deterministic order that is not part of the contract.
 
 ### Imprint

@@ -1,5 +1,5 @@
 {
-  "format": "catallax-recipe/3",
+  "format": "catallax-recipe/4",
   "name": "P5 flanged housing",
   "description": "mm. y-axis revolution: inner radius8, body outer radius12 height30; flange radius22 thickness5. A diameter4 through cutter with diameter8 90-degree countersink is circular-patterned four times at 90 degrees on radius17. Junction fillet r2.",
   "steps": [

@@ -535,7 +535,9 @@ fn cached_curve_equations_follow_their_store() {
     // split gets its own cell in each clone.
     let mut a = store.clone();
     let mut b = store.clone();
+    let before = format!("{a:?}");
     same(a.curve_equations(shared), a.curve(shared).equations(&a));
+    assert_eq!(format!("{a:?}"), before, "filling a cell changed the store");
     same(
         b.curve_equations(shared),
         store.curve(shared).equations(&store),

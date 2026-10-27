@@ -155,6 +155,19 @@ pub enum Side {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Apart;
 
+/// `Curve::equations` per curve, built on first use. Curves and implicits never
+/// change once added, so a clone sharing a cell with this store needs the same
+/// equations. Whether a cell is filled is not part of the store's value, so the
+/// debug form leaves the cells out.
+#[derive(Clone, Default)]
+struct EquationCells(Vector<OnceLock<Option<Vec<RealPoly>>>>);
+
+impl fmt::Debug for EquationCells {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("..")
+    }
+}
+
 /// The write-once store of surfaces, curves and points, with its fact book.
 #[derive(Clone, Debug, Default)]
 pub struct GeomStore {
@@ -163,9 +176,7 @@ pub struct GeomStore {
     points: Arena<PointDef>,
     facts: FactBook<GeomKey>,
     implicits: Vector<Option<RealPoly>>,
-    // Built on first use. Curves and implicits never change once added, so a
-    // clone sharing a cell with this store needs the same equations.
-    curve_equations: Vector<OnceLock<Option<Vec<RealPoly>>>>,
+    curve_equations: EquationCells,
     approximate_points: Vector<[f64; 3]>,
     closed_conic_supports: OrdMap<CurveId, OrdSet<SurfaceId>>,
 }
@@ -191,7 +202,7 @@ impl GeomStore {
             );
         }
         let id = self.curves.push(c);
-        self.curve_equations.push_back(OnceLock::new());
+        self.curve_equations.0.push_back(OnceLock::new());
         if let Curve::Intersection(i) = self.curves.get(id) {
             let surfaces = i.surfaces;
             for s in surfaces {
@@ -353,7 +364,7 @@ impl GeomStore {
 
     /// Borrowed `Curve::equations` of a curve in this store.
     pub fn curve_equations(&self, c: CurveId) -> Option<&[RealPoly]> {
-        self.curve_equations[c.index as usize]
+        self.curve_equations.0[c.index as usize]
             .get_or_init(|| self.curve(c).equations(self))
             .as_deref()
     }

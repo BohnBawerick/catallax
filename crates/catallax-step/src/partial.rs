@@ -4,7 +4,7 @@
 use crate::{chart, cut, number, trim, wire};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{Curve, Surface};
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Shell};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, Shell};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct Prepared {
@@ -90,6 +90,48 @@ pub(crate) fn prepare(
     }
     let bodies: Vec<_> = bodies.collect();
     let mut prepared = prepare_regular(model, &bodies, selected, geometry, dec)?;
+    // Two trims touching at a tangency meet at one parameter point. Cylinder
+    // charts preserve that corner incidence, but a spherical chart face whose
+    // wires pass the same vertex on the same chart side twice can cross itself
+    // in the parameter plane. Keep its legacy bytes.
+    for (&face, chart) in &prepared.plan.faces {
+        if !matches!(
+            prepared
+                .model
+                .geom()
+                .surface(prepared.model.face(face).surface),
+            Surface::Sphere(_)
+        ) {
+            continue;
+        }
+        let mut corners = BTreeSet::new();
+        for id in &prepared.model.face(face).loops {
+            let Loop::Coedges(coedges) = prepared.model.loop_(*id) else {
+                continue;
+            };
+            for id in coedges {
+                let coedge = prepared.model.coedge(*id);
+                let edge = prepared.model.edge(coedge.edge);
+                // Sides follow the curve's natural direction, as in the walks.
+                let sides = chart.sides[id];
+                let (a, b) = if edge.sense == Sense::Same {
+                    (edge.start, edge.end)
+                } else {
+                    (edge.end, edge.start)
+                };
+                let (vertex, side) = if coedge.sense == edge.sense {
+                    (a, sides[0])
+                } else {
+                    (b, sides[1])
+                };
+                if let Some(vertex) = vertex
+                    && !corners.insert((vertex, side))
+                {
+                    return Ok(None);
+                }
+            }
+        }
+    }
     // The raw translator cannot resolve separate vertices below its 1e-7
     // model-unit precision. Do not turn a rounded-away sliver into full
     // periodic coverage. Keep the legacy bytes rather than regularizing it.

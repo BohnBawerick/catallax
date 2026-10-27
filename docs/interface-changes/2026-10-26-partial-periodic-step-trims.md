@@ -49,13 +49,22 @@ The earlier complete-band path remains unchanged; conical bands no longer enter
 the partial-chart path alongside partial faces. Structural rejection happens
 before chart membership, cuts or fitting and uses no runtime import or measurement.
 Before cutover, distinct endpoints of
-nonclosed chart edges must remain separated after the existing decimal rounding
-by more than `max(abs(curve_tolerance), 1e-7)` plus their certified rounding
-errors. Each chart vertex's rounding error must also meet the requested distance
-tolerance; otherwise an existing over-tolerance low-digit answer stays on its
-legacy path. The `1e-7` floor matches the pinned raw translator's model-unit precision.
+every nonclosed written edge, charted or not, must remain separated after the
+existing decimal rounding by more than `max(abs(curve_tolerance), 1e-7)` plus
+their certified rounding errors. Each written vertex's rounding error must also
+meet the requested distance tolerance; otherwise an existing over-tolerance
+low-digit answer stays on its legacy path. The `1e-7` floor matches the pinned
+raw translator's model-unit precision. A spherical chart face whose wires pass
+the same vertex on the same chart side twice, as trims touching at a tangency
+do, also keeps the legacy encoding; touching cylinder trims keep their charts.
 Unresolved scenes keep their original bytes; this guard neither heals them nor
 turns an existing answer into a new refusal.
+
+Pole membership is a bounded search over chord-aimed and 32 blind query planes.
+A pole without a certificate keeps the legacy encoding instead of refusing.
+Charts are an optional encoding: any refusal raised while preparing or writing
+them, other than an exhausted request allowance or deadline, falls back to the
+legacy encoder.
 
 Known follow-up: Public fixture `boolean-13` intersects a radius-two cylinder
 with a box at a height offset of `1e-30`. Its certified volume is approximately

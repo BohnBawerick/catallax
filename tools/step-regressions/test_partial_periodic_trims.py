@@ -113,6 +113,28 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                  'pose': pose(x='1/8', rotation=('1', '-1', '0', '0'))}]), Path(temporary))
             self.assertEqual(manifest['step']['added_edges'], 0)
 
+    def test_touching_spherical_trims_keep_legacy_encoding(self):
+        # The first intersection leaves spherical trims touching at one
+        # vertex. Its partial charts crossed themselves in the parameter
+        # plane and failed both readers; the legacy file reads under the
+        # standard reader, so this scene keeps its legacy encoding.
+        tilt = ('1', '1', '1', '1')
+        recipe = {'format': 'catallax-recipe/3', 'name': 'touching spherical trims', 'steps': [
+            {'id': 'a', 'op': 'cylinder', 'radius': '3', 'height': '6',
+             'pose': pose('-3', rotation=tilt)},
+            {'id': 'b', 'op': 'sphere', 'radius': '1', 'pose': pose('0', '3', '1', tilt)},
+            {'id': 's1', 'op': 'boolean', 'kind': 'intersect', 'target': 'a', 'tool': 'b'},
+            {'id': 'c2', 'op': 'block', 'size': ['2', '2', '2'],
+             'pose': pose('-4/5', '-1/2', '-2/3', tilt)},
+            {'id': 's2', 'op': 'boolean', 'kind': 'union', 'target': 's1', 'tool': 'c2'},
+            {'id': 'c3', 'op': 'cylinder', 'radius': '2', 'height': '4',
+             'pose': pose('-9/5', '1', '0', tilt)},
+            {'id': 's3', 'op': 'boolean', 'kind': 'subtract', 'target': 's2', 'tool': 'c3'}],
+            'result': 's3'}
+        with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
+            directory, _ = self.answer(recipe, Path(temporary))
+            self.assertNotIn('PCURVE', (directory / 'answer.step').read_text())
+
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),
                               (pose('7/3', '-11/7', '13/5', ('1', '2', '3', '4')),

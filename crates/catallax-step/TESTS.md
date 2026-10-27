@@ -17,7 +17,11 @@ cylinders, both frustum directions, rational poses, reversed through-hole
 walls, enclosed cylindrical voids and algebraic countersinks.
 `test_partial_periodic_trims.py` adds a public cylinder/sphere intersection,
 touching branch vertices, a closed cylinder/sphere branch, and spherical lenses
-at identity and a rational pose. It checks topology, one solid and converged
+at identity and a rational pose. Two scenes pin the legacy fallback: a
+transverse ball frame whose pole has no membership certificate still answers
+within the request allowance, and touching spherical trims keep a file with no
+pcurves. `test_step_import.py` pins the legacy encoding of the full slot-cut
+capture, whose rounded planar sliver the raw translator cannot resolve. It checks topology, one solid and converged
 adaptive volume through both raw and standard reader procedures. Only the raw
 procedure asserts no healing: direct `StepToTopoDS_Builder` translation bypasses
 the reader's default ShapeFix processing and keeps SameParameter disabled.
@@ -85,8 +89,8 @@ faces use exact shared-edge cuts and bounded, parameter-coupled pcurves. Source
 loop-corner incidence is preserved at touching vertices; disconnected chart
 components receive distinct face/surface identities. No kernel topology is
 modified. Elliptic cylinders, cone faces, arbitrary torus trims, spherical faces
-whose poles belong to the domain, and unresolved rounded trims retain their
-previous encoding. Uncharted planar caps must keep native analytic boundaries;
+whose poles belong to the domain, touching spherical trims, and unresolved
+rounded edges anywhere in the export retain their previous encoding. Uncharted planar caps must keep native analytic boundaries;
 opaque boundaries reject the whole export's partial cutover. Complete bands
 remain on their earlier path. Distinct endpoints must remain separated by the larger of the requested
 distance tolerance and `1e-7`, plus their certified rounding errors.

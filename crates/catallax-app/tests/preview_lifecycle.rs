@@ -47,11 +47,10 @@ fn preview_then_confirm_resolves_names_only_on_the_proven_result() {
     let preview = controller.latest().unwrap();
     assert!(matches!(preview.status(), Status::Unproved));
     assert!(preview.work().proof.is_none());
-    assert_eq!(preview.preview().mesh.positions.len(), 8);
-    assert_eq!(preview.preview().mesh.triangles.len(), 12);
-    let face = preview.preview().mesh.faces[0].face;
-    let edge = preview.preview().mesh.edges[0].edge;
-    let vertex = *preview.preview().names.vertices.keys().next().unwrap();
+    let display = preview.preview().brep().unwrap();
+    let face = display.mesh.faces[0].face;
+    let edge = display.mesh.edges[0].edge;
+    let vertex = *display.names.vertices.keys().next().unwrap();
     let selections = [
         preview.select_face(face).unwrap(),
         preview.select_edge(edge).unwrap(),
@@ -74,8 +73,8 @@ fn preview_then_confirm_resolves_names_only_on_the_proven_result() {
     let Status::Confirmed(body) = confirmed.status() else {
         panic!("expected confirmed result")
     };
-    assert_eq!(body.built.recipe(), &recipe(4));
-    assert_eq!(body.names, preview.preview().names);
+    assert_eq!(body.checkpoint.built().recipe(), &recipe(4));
+    assert_eq!(body.names, display.names);
     assert_eq!(
         confirmed.resolve(&selections[0]),
         Some(ResolvedSelection::Faces(vec![face]))
@@ -113,7 +112,10 @@ fn typed_proof_failure_marks_the_visible_edit_failed() {
     };
     assert_eq!(refusal.code, "numbers.operation-budget");
     assert_eq!(failed.revision(), before.revision());
-    assert_eq!(failed.preview().mesh, before.preview().mesh);
+    assert_eq!(
+        failed.preview().brep().unwrap().mesh,
+        before.preview().brep().unwrap().mesh,
+    );
     assert!(failed.work().proof.unwrap().exhausted);
     assert_eq!(failed.work().proof.unwrap().used, 0);
 }
@@ -128,7 +130,9 @@ fn late_success_and_failure_cannot_overwrite_a_newer_edit() {
         }
         let old_job = start(&controller, 4, caps, &MeshOptions::default());
         let old = controller.latest().unwrap();
-        let pick = old.select_face(old.preview().mesh.faces[0].face).unwrap();
+        let pick = old
+            .select_face(old.preview().brep().unwrap().mesh.faces[0].face)
+            .unwrap();
         let completion = old_job.prove(&mut Decider::default());
         let new_job = start(&controller, 8, allocation(), &MeshOptions::default());
         let new = controller.latest().unwrap();
@@ -175,7 +179,7 @@ fn equal_revision_numbers_from_different_controllers_do_not_share_picks() {
     let first_job = start(&first, 4, allocation(), &MeshOptions::default());
     let first_preview = first.latest().unwrap();
     let pick = first_preview
-        .select_face(first_preview.preview().mesh.faces[0].face)
+        .select_face(first_preview.preview().brep().unwrap().mesh.faces[0].face)
         .unwrap();
     let second_job = start(&second, 4, allocation(), &MeshOptions::default());
     assert!(first_job.prove(&mut Decider::default()).publish());
@@ -296,4 +300,170 @@ fn zero_caller_allowance_and_overflow_never_publish() {
         assert_eq!(work.used, 0);
         assert!(controller.latest().is_none());
     }
+}
+
+#[test]
+fn failed_edit_restores_last_proved_display_but_cannot_export_it_as_current() {
+    let controller = Controller::default();
+    let first = start(&controller, 4, allocation(), &MeshOptions::default());
+    assert!(first.prove(&mut Decider::default()).publish());
+    let proved = controller.displayed().unwrap();
+    assert_eq!(
+        controller.confirmed().unwrap().checkpoint.built().recipe(),
+        &recipe(4)
+    );
+
+    let failing = start(
+        &controller,
+        8,
+        WorkAllocation {
+            preview: 1_000_000,
+            proof: 0,
+        },
+        &MeshOptions::default(),
+    );
+    let requested = controller.latest().unwrap().revision();
+    assert_eq!(controller.displayed().unwrap().revision(), requested);
+    assert!(controller.confirmed().is_none());
+    assert!(failing.prove(&mut Decider::default()).publish());
+    assert!(matches!(
+        controller.latest().unwrap().status(),
+        Status::Failed(_)
+    ));
+    assert_eq!(controller.latest().unwrap().revision(), requested);
+    assert_eq!(
+        controller.displayed().unwrap().revision(),
+        proved.revision()
+    );
+    assert!(controller.confirmed().is_none());
+
+    let restored = controller.cancel().unwrap();
+    assert_eq!(restored.revision(), proved.revision());
+    assert_eq!(
+        controller.confirmed().unwrap().checkpoint.built().recipe(),
+        &recipe(4)
+    );
+}
+
+#[test]
+fn cancellation_rejects_queued_success_and_failure_without_losing_last_proof() {
+    for fail in [false, true] {
+        let controller = Controller::default();
+        let first = start(&controller, 4, allocation(), &MeshOptions::default());
+        assert!(first.prove(&mut Decider::default()).publish());
+        let proved = controller.latest().unwrap();
+        let mut caps = allocation();
+        if fail {
+            caps.proof = 0;
+        }
+        let pending = start(&controller, 8, caps, &MeshOptions::default());
+        let completion = pending.prove(&mut Decider::default());
+        assert_eq!(controller.cancel().unwrap().revision(), proved.revision());
+        assert!(!completion.publish());
+        assert_eq!(
+            controller.confirmed().unwrap().checkpoint.built().recipe(),
+            &recipe(4)
+        );
+
+        let next = controller.begin();
+        assert!(controller.confirmed().is_none());
+        assert_eq!(
+            controller.displayed().unwrap().revision(),
+            proved.revision()
+        );
+        drop(next);
+        controller.cancel();
+        let newest = start(&controller, 12, allocation(), &MeshOptions::default());
+        assert!(newest.prove(&mut Decider::default()).publish());
+        assert_eq!(
+            controller.confirmed().unwrap().checkpoint.built().recipe(),
+            &recipe(12)
+        );
+    }
+    let empty = Controller::default();
+    let unproved = start(&empty, 4, allocation(), &MeshOptions::default());
+    assert!(empty.cancel().is_none());
+    assert!(!unproved.prove(&mut Decider::default()).publish());
+    assert!(empty.displayed().is_none());
+    assert!(empty.confirmed().is_none());
+}
+
+#[test]
+fn early_construction_delivers_edited_geometry_and_origins_before_exact_proof() {
+    let controller = Controller::default();
+    let mut input = recipe(4);
+    let job = controller
+        .begin()
+        .construct(
+            &input,
+            &catallax_field::display::PreviewOptions::default(),
+            &MeshOptions::default(),
+            allocation(),
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .unwrap();
+    let pending = controller.latest().unwrap();
+    let display = pending.preview().construction().unwrap();
+    let bounds = display.mesh.positions.iter().fold(
+        ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]),
+        |(mut lo, mut hi), point| {
+            for i in 0..3 {
+                lo[i] = lo[i].min(point[i]);
+                hi[i] = hi[i].max(point[i]);
+            }
+            (lo, hi)
+        },
+    );
+    assert_eq!(bounds, ([-2.0, -1.0, 0.0], [2.0, 1.0, 3.0]));
+    let origin = display.origins.values().next().unwrap();
+    let selected = pending.select_origin(origin).unwrap();
+    assert!(pending.resolve(&selected).is_none());
+    assert!(controller.confirmed().is_none());
+    input = recipe(12);
+    assert!(job.prove(&mut Decider::default()).publish());
+    let proved = controller.latest().unwrap();
+    let Status::Confirmed(body) = proved.status() else {
+        panic!("exact model must prove")
+    };
+    assert_eq!(body.checkpoint.built().recipe(), &recipe(4));
+    assert_ne!(body.checkpoint.built().recipe(), &input);
+    let expected = body
+        .names
+        .faces
+        .iter()
+        .filter_map(|(&face, origins)| origins.contains(origin).then_some(face))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        proved.resolve(&selected),
+        Some(ResolvedSelection::Faces(expected))
+    );
+}
+
+#[test]
+fn incomplete_construction_preview_never_replaces_a_proved_shape() {
+    let controller = Controller::default();
+    let first = start(&controller, 4, allocation(), &MeshOptions::default());
+    assert!(first.prove(&mut Decider::default()).publish());
+    let proved = controller.latest().unwrap();
+    let refused = controller.begin().construct(
+        &recipe(8),
+        &catallax_field::display::PreviewOptions {
+            max_cells: 1,
+            ..Default::default()
+        },
+        &MeshOptions::default(),
+        allocation(),
+        &mut Decider::default(),
+    );
+    assert!(matches!(
+        refused,
+        Err(Error::ConstructionPreview(refusal)) if refusal.code == "application.preview-incomplete"
+    ));
+    assert!(controller.latest().is_none());
+    assert!(controller.confirmed().is_none());
+    assert_eq!(
+        controller.displayed().unwrap().revision(),
+        proved.revision()
+    );
 }

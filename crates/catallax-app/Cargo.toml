@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 catallax-features.workspace = true
+catallax-field.workspace = true
 catallax-intersect.workspace = true
 catallax-mesh.workspace = true
 catallax-measure.workspace = true

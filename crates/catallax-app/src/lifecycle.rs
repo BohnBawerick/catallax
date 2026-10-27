@@ -1,17 +1,20 @@
 //! Caller-scheduled preview and certified display for one immutable edit.
 //!
-//! Construction keeps its existing proofs. Only certified display is deferred;
-//! this entry does not promise a whole-model or second-kernel certificate.
+//! Early construction and retained B-rep previews share one revision authority.
+//! Model/display proof is not a whole-model or second-kernel certificate.
 
 use std::sync::{Arc, Mutex};
 
-use catallax_features::Built;
+use catallax_features::{EvaluationCheckpoint, evaluate_incremental};
 use catallax_mesh::{MeshOptions, PreviewOptions};
 use catallax_numbers::{Decider, OperationAllowance, OperationWork, Refusal};
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
 use catallax_topology::{EdgeId, FaceId, VertexId};
 
-use crate::{ApplicationBody, Error, PreviewDisplay, build_preview, display_and_names};
+use crate::{
+    ConstructionDisplay, Error, IncrementalApplicationBody, PreviewDisplay, construction_preview,
+    display_and_names, preview_body,
+};
 
 /// Explicit caps for construction plus preview, and for subsequent proof.
 /// Unused units never move between phases. The default total remains 20M;
@@ -20,7 +23,7 @@ use crate::{ApplicationBody, Error, PreviewDisplay, build_preview, display_and_n
 pub struct WorkAllocation {
     /// Construction, unproved mesh, edge polylines and selection names.
     pub preview: u64,
-    /// Topology validation and certified display of the retained exact build.
+    /// Exact construction when deferred, topology and certified display.
     pub proof: u64,
 }
 
@@ -66,9 +69,37 @@ pub enum Status {
     /// Visible geometry and names only, without a certified display.
     Unproved,
     /// The retained exact build passed topology and certified display.
-    Confirmed(Arc<ApplicationBody>),
-    /// Proof refused. Keep this refusal with the visible failed edit.
+    Confirmed(Arc<IncrementalApplicationBody>),
+    /// Proof refused. Retain its reason while displaying the last proved edit.
     Failed(Error),
+}
+
+/// Explicit preview representation. Field registry indices and B-rep handles
+/// remain different types; only origins cross from construction to proof.
+#[derive(Clone, Debug)]
+pub enum Display {
+    /// Preview of already constructed exact geometry, including edge picks.
+    Brep(Arc<PreviewDisplay>),
+    /// Definition-native display available before exact B-rep construction.
+    Construction(Arc<ConstructionDisplay>),
+}
+
+impl Display {
+    /// B-rep preview data, only when that construction route was requested.
+    pub fn brep(&self) -> Option<&PreviewDisplay> {
+        match self {
+            Self::Brep(display) => Some(display),
+            Self::Construction(_) => None,
+        }
+    }
+
+    /// Early display and origin names, without exact numeric handles.
+    pub fn construction(&self) -> Option<&ConstructionDisplay> {
+        match self {
+            Self::Construction(display) => Some(display),
+            Self::Brep(_) => None,
+        }
+    }
 }
 
 /// Immutable delivery. Its fields cannot be paired with another revision.
@@ -76,7 +107,7 @@ pub enum Status {
 pub struct Snapshot {
     revision: u64,
     identity: Arc<()>,
-    preview: Arc<PreviewDisplay>,
+    preview: Display,
     status: Status,
     work: WorkReport,
 }
@@ -87,7 +118,7 @@ impl Snapshot {
         self.revision
     }
     /// Unproved mesh and revision-local numeric picking handles.
-    pub fn preview(&self) -> &PreviewDisplay {
+    pub fn preview(&self) -> &Display {
         &self.preview
     }
     /// Whether this edit is awaiting proof, confirmed or failed.
@@ -101,20 +132,30 @@ impl Snapshot {
     /// Saves origins instead of carrying a numeric face handle into proof.
     pub fn select_face(&self, face: FaceId) -> Option<Selection> {
         Some(self.selection(SelectionName::Face(
-            self.preview.names.faces.get(&face)?.clone(),
+            self.preview.brep()?.names.faces.get(&face)?.clone(),
         )))
     }
     /// Saves an edge's incident-origin name, if it has one.
     pub fn select_edge(&self, edge: EdgeId) -> Option<Selection> {
         Some(self.selection(SelectionName::Edge(
-            self.preview.names.edges.get(&edge)?.clone()?,
+            self.preview.brep()?.names.edges.get(&edge)?.clone()?,
         )))
     }
     /// Saves a vertex's incident-origin name, if it has one.
     pub fn select_vertex(&self, vertex: VertexId) -> Option<Selection> {
         Some(self.selection(SelectionName::Vertex(
-            self.preview.names.vertices.get(&vertex)?.clone()?,
+            self.preview.brep()?.names.vertices.get(&vertex)?.clone()?,
         )))
+    }
+    /// Saves an origin actually present in this construction display.
+    /// A registry candidate that emitted no triangles is not selectable.
+    pub fn select_origin(&self, origin: &Origin) -> Option<Selection> {
+        let display = self.preview.construction()?;
+        display
+            .origins
+            .values()
+            .any(|candidate| candidate == origin)
+            .then(|| self.selection(SelectionName::Face(vec![origin.clone()])))
     }
     fn selection(&self, name: SelectionName) -> Selection {
         Selection {
@@ -132,8 +173,9 @@ impl Snapshot {
         let Status::Confirmed(body) = &self.status else {
             return None;
         };
-        let model = &body.built.model;
-        let result = body.built.result;
+        let built = body.checkpoint.built();
+        let model = &built.model;
+        let result = built.result;
         Some(match &selection.name {
             SelectionName::Face(origins) => ResolvedSelection::Faces(
                 body.names
@@ -193,6 +235,7 @@ struct State {
     revision: u64,
     identity: Option<Arc<()>>,
     latest: Option<Snapshot>,
+    last_proved: Option<Snapshot>,
 }
 
 /// Atomic edit invalidation and publication. Never starts worker threads.
@@ -221,6 +264,41 @@ impl Controller {
     pub fn latest(&self) -> Option<Snapshot> {
         self.0.lock().unwrap().latest.clone()
     }
+    /// Geometry to display. A failed or still-constructing edit restores the
+    /// last proved snapshot; its revision never masquerades as the new input.
+    pub fn displayed(&self) -> Option<Snapshot> {
+        let state = self.0.lock().unwrap();
+        match &state.latest {
+            Some(snapshot) if !matches!(snapshot.status, Status::Failed(_)) => {
+                Some(snapshot.clone())
+            }
+            _ => state.last_proved.clone(),
+        }
+    }
+
+    /// Current model/display proof only. Pending or failed input never falls
+    /// back to an older proved body for export or a requested proven query.
+    /// The returned body still needs the proof applicable to that output/query.
+    pub fn confirmed(&self) -> Option<Arc<IncrementalApplicationBody>> {
+        let state = self.0.lock().unwrap();
+        match state.latest.as_ref()?.status() {
+            Status::Confirmed(body) => Some(body.clone()),
+            Status::Unproved | Status::Failed(_) => None,
+        }
+    }
+
+    /// Cancels the requested edit and restores the last proved revision.
+    /// All work for the cancelled edit becomes stale before this returns.
+    /// With no proved revision, the controller returns to an empty state.
+    pub fn cancel(&self) -> Option<Snapshot> {
+        let mut state = self.0.lock().unwrap();
+        state.latest = state.last_proved.clone();
+        state.identity = state
+            .latest
+            .as_ref()
+            .map(|snapshot| snapshot.identity.clone());
+        state.latest.clone()
+    }
 }
 
 /// Single-use authority to construct and deliver one edit.
@@ -231,6 +309,63 @@ pub struct Revision {
 }
 
 impl Revision {
+    /// Publishes a complete definition-native display before exact evaluation.
+    /// The proof job owns the immutable recipe and the reserved exact-build cap.
+    /// Unsupported definitions or incomplete displays return a typed refusal.
+    pub fn construct(
+        self,
+        recipe: &Recipe,
+        preview_options: &crate::ConstructionOptions,
+        proof_options: &MeshOptions,
+        allocation: WorkAllocation,
+        decider: &mut Decider,
+    ) -> Result<Option<ProofJob>, Error> {
+        if !self.is_current() {
+            return Ok(None);
+        }
+        let (preview_allowance, proof_allowance) = allocation.reserve()?;
+        let (answer, work) =
+            preview_allowance.run(|| construction_preview(recipe, preview_options, decider));
+        let preview = answer?;
+        if work.exhausted {
+            return Err(Error::ResourceLimit);
+        }
+        let snapshot = Snapshot {
+            revision: self.id,
+            identity: self.identity.clone(),
+            preview: Display::Construction(Arc::new(preview)),
+            status: Status::Unproved,
+            work: WorkReport {
+                allocation,
+                preview: work,
+                proof: None,
+            },
+        };
+        let prefix = {
+            let state = self.controller.0.lock().unwrap();
+            state
+                .last_proved
+                .as_ref()
+                .and_then(|proved| match proved.status() {
+                    Status::Confirmed(body) => Some(body.checkpoint.clone()),
+                    Status::Unproved | Status::Failed(_) => None,
+                })
+        };
+        if !self.publish(snapshot.clone()) {
+            return Ok(None);
+        }
+        Ok(Some(ProofJob {
+            revision: self,
+            snapshot,
+            source: ProofSource::Definition {
+                recipe: Arc::new(recipe.clone()),
+                prefix,
+            },
+            options: proof_options.clone(),
+            allowance: proof_allowance,
+        }))
+    }
+
     /// Constructs a complete selectable preview without certified meshing.
     /// Both phase caps are reserved now from an active caller allowance, or
     /// from the explicit standalone total. The reservation is never refunded.
@@ -247,16 +382,19 @@ impl Revision {
             return Ok(None);
         }
         let (preview_allowance, proof_allowance) = allocation.reserve()?;
-        let (answer, work) =
-            preview_allowance.run(|| build_preview(recipe, preview_options, decider));
-        let body = answer?;
+        let (answer, work) = preview_allowance.run(|| {
+            let checkpoint = evaluate_incremental(recipe, None, decider).map_err(Error::Build)?;
+            let preview = preview_body(checkpoint.built(), preview_options, decider)?;
+            Ok((checkpoint, preview))
+        });
+        let (checkpoint, preview) = answer?;
         if work.exhausted {
             return Err(Error::ResourceLimit);
         }
         let snapshot = Snapshot {
             revision: self.id,
             identity: self.identity.clone(),
-            preview: Arc::new(body.preview),
+            preview: Display::Brep(Arc::new(preview)),
             status: Status::Unproved,
             work: WorkReport {
                 allocation,
@@ -270,7 +408,7 @@ impl Revision {
         Ok(Some(ProofJob {
             revision: self,
             snapshot,
-            built: body.built,
+            source: ProofSource::Retained(checkpoint),
             options: proof_options.clone(),
             allowance: proof_allowance,
         }))
@@ -293,30 +431,42 @@ impl Revision {
         {
             return false;
         }
+        if matches!(snapshot.status, Status::Confirmed(_)) {
+            state.last_proved = Some(snapshot.clone());
+        }
         state.latest = Some(snapshot);
         true
     }
 }
 
-/// Owned retained geometry and reserved proof work. Dropping it postpones proof
-/// indefinitely; it never changes an unproved preview into success.
+enum ProofSource {
+    Retained(EvaluationCheckpoint),
+    Definition {
+        recipe: Arc<Recipe>,
+        prefix: Option<EvaluationCheckpoint>,
+    },
+}
+
+/// Owned immutable construction and reserved proof work. Dropping it postpones
+/// proof indefinitely; it never changes an unproved preview into success.
 pub struct ProofJob {
     revision: Revision,
     snapshot: Snapshot,
-    built: Built,
+    source: ProofSource,
     options: MeshOptions,
     allowance: OperationAllowance,
 }
 
 impl ProofJob {
-    /// Runs proof when the caller schedules it. No recipe rebuild and no new
-    /// allowance. Publication is separate so a queued completion can be stale.
+    /// Runs the proof for the retained immutable input, without a new allowance.
+    /// A construction preview evaluates its exact body here, never beforehand.
+    /// Publication is separate so a queued completion can be stale.
     /// The caller owns the decider's policy and wall-clock deadline.
     pub fn prove(self, decider: &mut Decider) -> ProofCompletion {
         let Self {
             revision,
             mut snapshot,
-            built,
+            source,
             options,
             allowance,
         } = self;
@@ -326,16 +476,24 @@ impl ProofJob {
                 snapshot: None,
             };
         }
-        let (answer, work) = allowance.run(|| display_and_names(&built, &options, decider));
+        let (answer, work) = allowance.run(|| match source {
+            ProofSource::Definition { recipe, prefix } => {
+                crate::build_incremental(&recipe, prefix, &options, decider)
+            }
+            ProofSource::Retained(checkpoint) => {
+                let (display, names) = display_and_names(checkpoint.built(), &options, decider)?;
+                Ok(IncrementalApplicationBody {
+                    checkpoint,
+                    display,
+                    names,
+                })
+            }
+        });
         snapshot.work.proof = Some(work);
         snapshot.status = match answer {
             Err(error) => Status::Failed(error),
             Ok(_) if work.exhausted => Status::Failed(Error::ResourceLimit),
-            Ok((display, names)) => Status::Confirmed(Arc::new(ApplicationBody {
-                built,
-                display,
-                names,
-            })),
+            Ok(body) => Status::Confirmed(Arc::new(body)),
         };
         ProofCompletion {
             revision,

@@ -71,7 +71,10 @@ Pole membership is a bounded search over chord-aimed and 32 blind query planes.
 A pole without a certificate keeps the legacy encoding instead of refusing.
 Charts are an optional encoding: any refusal raised while preparing or writing
 them, other than an exhausted request allowance or deadline, falls back to the
-legacy encoder.
+legacy encoder. So does a charted export whose certified deviation exceeds the
+requested tolerance, which would turn an exact answer inexact. A trim that
+passes within rounding distance of a pole of its sphere's frame can need more
+pcurve spans than reach the tolerance.
 
 Known follow-up: Public fixture `boolean-13` intersects a radius-two cylinder
 with a box at a height offset of `1e-30`. Its certified volume is approximately

@@ -1227,7 +1227,9 @@ impl<'a> Exporter<'a> {
             )?;
             // Charts are an optional encoding. Only an exhausted request
             // allowance or deadline may turn their failure into a refusal;
-            // otherwise the scene keeps its legacy encoding.
+            // otherwise the scene keeps its legacy encoding. Charts that miss
+            // the requested tolerance would turn an exact answer inexact, so
+            // they are not used either.
             if self.bands.faces.is_empty() {
                 let charted = crate::partial::prepare(
                     self.model,
@@ -1253,8 +1255,12 @@ impl<'a> Exporter<'a> {
                         .map(Some)
                 });
                 match charted {
-                    Ok(Some(answer)) => return Ok(answer),
-                    Ok(None) => {}
+                    Ok(Some(answer))
+                        if answer.value.1.max_deviation <= self.options.curve_tolerance =>
+                    {
+                        return Ok(answer);
+                    }
+                    Ok(_) => {}
                     Err(refusal)
                         if !matches!(
                             refusal.code,

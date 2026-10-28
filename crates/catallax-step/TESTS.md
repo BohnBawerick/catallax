@@ -24,10 +24,12 @@ valid shape with one solid, the expected face, edge and vertex counts, and a
 converged adaptive volume within the diagnostic tube of the expected volume.
 Only the raw procedure asserts no healing: direct `StepToTopoDS_Builder`
 translation bypasses the reader's default ShapeFix processing and keeps
-SameParameter disabled. Two scenes in the same file pin the legacy fallback and
+SameParameter disabled. Three scenes in the same file pin the legacy fallback and
 check only the export: a transverse ball frame whose pole has no membership
-certificate still answers within the request allowance with no added edges, and
-touching spherical trims keep a file with no pcurves.
+certificate still answers within the request allowance with no added edges,
+touching spherical trims keep a file with no pcurves, and a ball cut by a plane
+passing 1e-15 from both of its frame's poles keeps an exact answer and a file
+with no pcurves.
 
 `test_step_import.py` reads files through `check-step.py`, which uses only the
 standard reader with its default processing. That check requires a valid

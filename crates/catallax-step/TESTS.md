@@ -21,8 +21,10 @@ identity and a rational pose, and a public block/cylinder union whose two
 cylinder band seams each meet two cut vertices. An L-shaped prism minus a ball
 at two poses checks that an interior pole moves onto an export-only cap, a
 ball cut by a plane passing 1e-15 from both of its frame's poles checks the
-retry on the perpendicular frame, and one octant of a ball at two poses checks
-that a pole on a trim gets another sphere frame. Each
+retry on the perpendicular frame, one octant of a ball at two poses checks
+that a pole on a trim gets another sphere frame, and a dimple touching the outer
+boundary of a reversed planar face checks that the split planar loop starts at
+its repeated vertex. Each
 of these imports the file through two procedures: raw translation and the
 standard reader. Each procedure must give a
 valid shape with one solid, the expected face, edge and vertex counts, and a

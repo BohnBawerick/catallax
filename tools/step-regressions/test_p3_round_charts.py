@@ -1,4 +1,4 @@
-"""Public P3 block rounds and junction torus; raw translation remains non-repairing."""
+"""Public P3 block rounds and junction torus; raw translation bypasses caller-side processing."""
 import json
 from pathlib import Path
 import subprocess
@@ -65,7 +65,8 @@ class P3RoundCharts(unittest.TestCase):
                 reader = STEPControl_Reader()
                 self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
                 self.assertGreater(reader.TransferRoots(), 0)
-                # Only raw_solid is the no-healing assertion.
+                # Only raw_solid bypasses caller-side processing; internal
+                # repair inside the reader remains unproven.
                 for mode, shape in [('raw', raw), ('standard', reader.OneShape())]:
                     with self.subTest(reader=mode):
                         self.assertTrue(BRepCheck_Analyzer(shape).IsValid())

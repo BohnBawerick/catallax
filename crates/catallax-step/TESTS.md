@@ -1,6 +1,6 @@
 # STEP export blind tests
 
-The blind tests use `docs/pieces/07-step-export.md`, the judge file contract, and the public interfaces of pieces 1 to 5. The loopless-face import regressions additionally use pinned OpenCASCADE without healing, sewing or SameParameter.
+The blind tests use `docs/pieces/07-step-export.md`, the judge file contract, and the public interfaces of pieces 1 to 5. The loopless-face import regressions additionally use pinned OpenCASCADE through the configured direct translation, which bypasses caller-side processing, sewing and SameParameter; internal repair inside the reader remains unproven.
 
 ## Commands
 
@@ -26,10 +26,11 @@ of these imports the file through two procedures: raw translation and the
 standard reader. Each procedure must give a
 valid shape with one solid, the expected face, edge and vertex counts, and a
 converged adaptive volume within the diagnostic tube of the expected volume.
-Only the raw procedure asserts no healing: direct `StepToTopoDS_Builder`
-translation bypasses the reader's default ShapeFix processing and keeps
-SameParameter disabled. Two scenes in the same file pin the legacy fallback and
-check only the export: a transverse ball frame whose pole has no membership
+The raw procedure is the configured direct `StepToTopoDS_Builder`
+translation. It bypasses caller-side processing: it never calls `TransferRoots`
+or `ProcessShape`, and it keeps SameParameter and max precision off. Internal
+repair inside the reader remains unproven. Two scenes in the same file pin the
+legacy fallback and check only the export: a transverse ball frame whose pole has no membership
 certificate still answers within the request allowance with no added edges, and
 touching spherical trims keep a file with no pcurves.
 `test_p3_round_charts.py` exports the public P3 filleted boss at both junction

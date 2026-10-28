@@ -1,4 +1,4 @@
-"""Public regular periodic trims; raw translation remains non-repairing."""
+"""Public regular periodic trims; raw translation bypasses caller-side processing."""
 from fractions import Fraction
 import json
 import math
@@ -70,7 +70,8 @@ class PartialPeriodicTrimImports(unittest.TestCase):
             self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
             self.assertGreater(reader.TransferRoots(), 0)
             # This second procedure intentionally includes standard reader
-            # processing. Only raw_solid is the no-healing assertion.
+            # processing. Only raw_solid bypasses caller-side processing;
+            # internal repair inside the reader remains unproven.
             for mode, shape in [('raw', raw), ('standard', reader.OneShape())]:
                 with self.subTest(reader=mode):
                     self.assertTrue(BRepCheck_Analyzer(shape).IsValid())

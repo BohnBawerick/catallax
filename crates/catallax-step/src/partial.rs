@@ -18,13 +18,35 @@ pub(crate) struct Prepared {
 
 /// Preserve the legacy encoder for scenes outside the regular-chart contract,
 /// and for complete bands already handled without changing their STEP bytes.
+/// With `reframe`, every trimmed spherical face is first moved onto its
+/// sphere's perpendicular frame.
 pub(crate) fn prepare(
     model: &Model,
     bodies: impl Iterator<Item = BodyId> + Clone,
     options: &crate::StepOptions,
+    reframe: bool,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
-    prepare_charts(model, bodies, options, true, dec)
+    if !reframe {
+        return prepare_charts(model, bodies, options, true, dec);
+    }
+    let bodies: Vec<_> = bodies.collect();
+    let reframed = poles::reframe(model, &bodies);
+    let Some(mut prepared) = prepare_charts(
+        &reframed.model,
+        reframed.bodies.iter().copied(),
+        options,
+        true,
+        dec,
+    )?
+    else {
+        return Ok(None);
+    };
+    for (source, moved) in reframed.faces {
+        let charted = prepared.face_map.get(&moved).copied().unwrap_or(moved);
+        prepared.face_map.insert(source, charted);
+    }
+    Ok(Some(prepared))
 }
 
 fn prepare_charts(

@@ -18,6 +18,15 @@ strictly inside the face. Faces whose pole is on a trim or uncertified, or whose
 rings fail every tried height, keep the whole scene on its legacy encoding, as do
 all the other limits of the earlier fragment.
 
+A charted export that misses the requested tolerance is not used. A trim that
+passes within rounding distance of a pole of its sphere's frame can need that
+many pcurve spans, so such a scene is tried once more with every trimmed sphere
+on its perpendicular frame, whose axis is the source reference direction. The
+old poles then lie on the new frame's equator, and a new pole inside a face
+moves onto a cap as above. If the retry also misses the tolerance, the scene
+keeps its legacy encoding. Only scenes whose first charts miss the tolerance
+change.
+
 `StepReport.faces` counts the cap faces and `added_edges` includes each ring.
 Report fields and manifest formats do not change.
 

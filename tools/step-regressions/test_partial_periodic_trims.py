@@ -130,24 +130,6 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                  'pose': pose(x='1/8', rotation=('1', '-1', '0', '0'))}]), Path(temporary))
             self.assertEqual(manifest['step']['added_edges'], 0)
 
-    def test_trim_close_to_a_pole_keeps_an_exact_answer(self):
-        # A radius-two ball cut by the plane 3x + 4y = 5e-15. The trim misses
-        # both poles of the ball's frame by 1e-15, so charts on that frame miss
-        # the requested tolerance. Such charts are not used: the scene keeps
-        # its legacy encoding and the answer stays exact.
-        offset = Fraction(1, 10**15)
-        recipe = {'format': 'catallax-recipe/3', 'name': 'trim close to a pole', 'steps': [
-            {'id': 'a', 'op': 'sphere', 'radius': '2', 'pose': pose()},
-            {'id': 'b', 'op': 'block', 'size': ['10', '10', '10'],
-             'pose': pose(str(Fraction(3, 5) * offset + 4), str(Fraction(4, 5) * offset - 3),
-                          '-5', ('2', '0', '0', '1'))},
-            {'id': 'body', 'op': 'boolean', 'kind': 'intersect', 'target': 'a', 'tool': 'b'}],
-            'result': 'body'}
-        with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
-            directory, manifest = self.answer(recipe, Path(temporary))
-            self.assertEqual(manifest['step']['added_edges'], 0)
-            self.assertNotIn('PCURVE', (directory / 'answer.step').read_text())
-
     def test_touching_spherical_trims_keep_legacy_encoding(self):
         # The first intersection leaves spherical trims touching at one
         # vertex. Its partial charts crossed themselves in the parameter
@@ -187,6 +169,22 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                         {'id': 'd', 'op': 'boolean', 'kind': 'subtract', 'target': 'l',
                          'tool': 's'}],
                     'result': 'd'}, (11, 25, 16), 22 - 2 * math.pi / 3)
+
+    def test_trim_close_to_a_pole_uses_a_perpendicular_frame(self):
+        # A radius-two ball cut by the plane 3x + 4y = 5e-15. The trim misses
+        # both poles of the ball's frame by 1e-15, so charts on that frame
+        # need more pcurve spans than reach the tolerance, and the answer must
+        # not lose its exactness. The retry on the perpendicular frame moves the
+        # old poles away from the trim. Volume: half the ball, 16*pi/3.
+        offset = Fraction(1, 10**15)
+        self.check_recipe({
+            'format': 'catallax-recipe/3', 'name': 'trim close to a pole', 'steps': [
+                {'id': 'a', 'op': 'sphere', 'radius': '2', 'pose': pose()},
+                {'id': 'b', 'op': 'block', 'size': ['10', '10', '10'],
+                 'pose': pose(str(Fraction(3, 5) * offset + 4), str(Fraction(4, 5) * offset - 3),
+                              '-5', ('2', '0', '0', '1'))},
+                {'id': 'body', 'op': 'boolean', 'kind': 'intersect', 'target': 'a', 'tool': 'b'}],
+            'result': 'body'}, (3, 3, 2), 16 * math.pi / 3)
 
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),

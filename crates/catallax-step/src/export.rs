@@ -1237,44 +1237,53 @@ impl<'a> Exporter<'a> {
             // allowance or deadline may turn their failure into a refusal;
             // otherwise the scene keeps its legacy encoding. Charts that miss
             // the requested tolerance would turn an exact answer inexact, so
-            // they are not used either.
+            // they are not used either. A trim passing close to a parameter
+            // pole can need that many pcurve spans, so such a scene is tried
+            // once more with every sphere on its perpendicular frame.
             if self.bands.faces.is_empty() {
-                let charted = crate::partial::prepare(
-                    self.model,
-                    bodies.iter().copied().chain(envelope),
-                    self.options,
-                    self.dec,
-                )
-                .and_then(|prepared| {
-                    let Some(prepared) = prepared else {
-                        return Ok(None);
-                    };
-                    let (face_errors, edge_errors) =
-                        prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
-                    let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
-                    Exporter::new(&prepared.model, self.options, self.dec)
-                        .regularizations(
-                            self.report.regularizations.clone(),
-                            face_errors,
-                            edge_errors,
-                        )
-                        .charts(prepared.plan)
-                        .build_parts(&prepared.bodies[..bodies.len()], envelope)
-                        .map(Some)
-                });
-                match charted {
-                    Ok(Some(answer))
-                        if answer.value.1.max_deviation <= self.options.curve_tolerance =>
-                    {
-                        return Ok(answer);
+                for reframe in [false, true] {
+                    let charted = crate::partial::prepare(
+                        self.model,
+                        bodies.iter().copied().chain(envelope),
+                        self.options,
+                        reframe,
+                        self.dec,
+                    )
+                    .and_then(|prepared| {
+                        let Some(prepared) = prepared else {
+                            return Ok(None);
+                        };
+                        let (face_errors, edge_errors) =
+                            prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
+                        let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
+                        Exporter::new(&prepared.model, self.options, self.dec)
+                            .regularizations(
+                                self.report.regularizations.clone(),
+                                face_errors,
+                                edge_errors,
+                            )
+                            .charts(prepared.plan)
+                            .build_parts(&prepared.bodies[..bodies.len()], envelope)
+                            .map(Some)
+                    });
+                    match charted {
+                        Ok(Some(answer))
+                            if answer.value.1.max_deviation <= self.options.curve_tolerance =>
+                        {
+                            return Ok(answer);
+                        }
+                        Ok(Some(_)) => {}
+                        Ok(None) => break,
+                        Err(refusal)
+                            if !matches!(
+                                refusal.code,
+                                "numbers.operation-budget" | "numbers.deadline"
+                            ) =>
+                        {
+                            break;
+                        }
+                        Err(refusal) => return Err(refusal),
                     }
-                    Ok(_) => {}
-                    Err(refusal)
-                        if !matches!(
-                            refusal.code,
-                            "numbers.operation-budget" | "numbers.deadline"
-                        ) => {}
-                    Err(refusal) => return Err(refusal),
                 }
             }
         }

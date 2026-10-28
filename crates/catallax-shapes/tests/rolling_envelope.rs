@@ -45,10 +45,15 @@ fn p5_envelopes_meet_the_kernel_target() {
         let mut dec = Decider::default();
         let envelope = fit(radius, &mut dec);
         assert!(envelope.bound().upper <= target);
-        assert_eq!(envelope.carrier().degrees(), [6, 2]);
+        assert_eq!(envelope.carrier().degrees(), [8, 2]);
         assert_eq!(
             envelope.carrier().control_count(),
-            [6 * envelope.span_count() + 1, 3]
+            [8 * envelope.span_count() + 1, 3]
+        );
+        println!(
+            "radius {radius}: {} spans, bound {} nm",
+            envelope.span_count(),
+            (envelope.bound().upper.clone() * Rational::from_i64(1_000_000)).to_f64_nearest()
         );
     }
 }
@@ -235,4 +240,33 @@ fn sampled_carrier_points_lie_on_the_exact_envelope() {
             "sampled {worst} exceeds bound {bound}"
         );
     }
+}
+
+#[test]
+fn patterned_holes_reuse_one_fit() {
+    let mut dec = Decider::default();
+    let envelope = fit("2", &mut dec);
+    for toward in [v(0, 0, 1), v(-1, 0, 0), v(0, 0, -1)] {
+        let definition = RollingEnvelopeDefinition::new(
+            p(q("0"), q("5"), q("0")),
+            v(0, 1, 0),
+            toward,
+            q("12"),
+            q("4"),
+            q("17"),
+            q("2"),
+            [q("1"), q("1")],
+            &mut dec,
+        )
+        .unwrap();
+        let copy = envelope.reframed(definition.clone(), &mut dec).unwrap();
+        for sign in [Sign::Negative, Sign::Positive] {
+            for corner in definition.corners(sign) {
+                assert!(copy.on_boundary(&corner, &mut dec).unwrap());
+            }
+        }
+    }
+    let other = definition("2.5", "12", &mut dec).unwrap();
+    let refusal = envelope.reframed(other, &mut dec).unwrap_err();
+    assert_eq!(refusal.code, "shapes.rolling-envelope");
 }

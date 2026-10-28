@@ -16,6 +16,9 @@ use crate::{
     profile::sign,
 };
 
+#[path = "fillet_envelope.rs"]
+mod fillet_envelope;
+
 type Uses = BTreeMap<EdgeId, Vec<(FaceId, Sense)>>;
 
 fn bad(detail: &str) -> Refusal {
@@ -382,7 +385,27 @@ pub(crate) fn build(
         });
     }
     for run in &runs {
-        guard(model, body, run, &uses, dec)?;
+        if let Err(refusal) = guard(model, body, run, &uses, dec) {
+            // A lone closed ring may continue over countersink mouths; every
+            // other overflow, and any ring outside that stratum, still refuses.
+            let continuable = refusal.code == "fillet.unsupported-overflow"
+                || refusal.code.starts_with("intersect.");
+            if continuable
+                && runs.len() == 1
+                && let Some(result) = fillet_envelope::build(
+                    model,
+                    body,
+                    run.edge,
+                    run.faces,
+                    &run.definition,
+                    &uses,
+                    dec,
+                )?
+            {
+                return Ok((result, vec![run.definition.clone()]));
+            }
+            return Err(refusal);
+        }
     }
     for (i, a) in runs.iter().enumerate() {
         for b in &runs[i + 1..] {

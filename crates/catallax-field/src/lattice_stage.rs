@@ -48,6 +48,33 @@ impl Settings {
     }
 }
 
+/// What the export checked about its mesh. `Stage::export` returns an [`Output`] only
+/// when every flag is true.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Verdict {
+    /// Every edge has exactly two facets of opposite sense and every vertex link is a
+    /// cycle.
+    pub closed: bool,
+    /// The surface is a closed 2-manifold on a conforming tetrahedral grid whose cells
+    /// each hold at most one patch, so facets meet only along shared edges.
+    pub non_self_intersecting: bool,
+    /// The mesh has exactly one edge-connected component.
+    pub connected: bool,
+    /// The number of components found.
+    pub components: usize,
+    /// Proven two-sided distance bound of the output, in millimetres.
+    pub max_deviation: Rational,
+}
+
+/// A certified lattice mesh with its verdict.
+#[derive(Clone, Debug)]
+pub struct Output {
+    /// The mesh; write it with `Mesh::write_stl` or `Mesh::write_obj`.
+    pub mesh: printing::Mesh,
+    /// The checks that passed.
+    pub verdict: Verdict,
+}
+
 /// A body with its lattice stage compiled.
 #[derive(Clone, Debug)]
 pub struct Stage {
@@ -141,6 +168,37 @@ impl Stage {
     /// The output settings.
     pub fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    /// Builds the certified mesh at the settings' accuracy. The mesh is closed, free of
+    /// self-intersection and connected, or the call refuses; nothing partial is
+    /// returned. Refusals: `field.print-disconnected`, `field.print-unresolved` (also
+    /// when the minimum detail forbids the refinement the boundary needs),
+    /// `field.print-topology`, `field.print-budget`, `field.print-grid`,
+    /// `field.print-vertices`, and the decider's deadline and cancellation outcomes.
+    pub fn export(&self, dec: &mut Decider) -> Result<Output, Refusal> {
+        let floor = &self.settings.minimum_detail * &Rational::from_ratio(1, 4).unwrap();
+        let mesh = printing::mesh_plan_floor(
+            &self.plan,
+            &self.settings.print_options(),
+            Some(&floor),
+            dec,
+        )?;
+        let components = mesh.component_count();
+        if components != 1 {
+            return Err(Refusal::new(
+                "field.print-disconnected",
+                format!("the print output has {components} connected components, expected one"),
+            ));
+        }
+        let verdict = Verdict {
+            closed: true,
+            non_self_intersecting: true,
+            connected: true,
+            components,
+            max_deviation: mesh.max_deviation.clone(),
+        };
+        Ok(Output { mesh, verdict })
     }
 
     /// Leaves the stage: the unchanged body recipe, with the lattice parameters and

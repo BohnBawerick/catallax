@@ -689,6 +689,19 @@ pub fn mesh_plan_connected(
 
 /// Builds a watertight output from the field alone. No B-rep builder is called.
 pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Mesh, Refusal> {
+    mesh_plan_floor(plan, options, None, dec)
+}
+
+/// As [`mesh_plan`], but boundary-coverage refinement may not go below a grid edge of
+/// `floor`. A request that would need a finer grid refuses as `field.print-unresolved`
+/// instead of chasing a feature smaller than the floor. The requested accuracy still
+/// sets the starting grid, so the floor never loosens the proven distance bound.
+pub(crate) fn mesh_plan_floor(
+    plan: &Plan,
+    options: &Options,
+    floor: Option<&Rational>,
+    dec: &mut Decider,
+) -> Result<Mesh, Refusal> {
     if options.tolerance <= q(0) || options.max_cells == 0 || options.max_vertices < 4 {
         return Err(refusal(
             "field.print-options",
@@ -816,6 +829,12 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
             return Err(refusal(
                 "field.print-unresolved",
                 "boundary coverage did not settle on the print grid",
+            ));
+        }
+        if floor.is_some_and(|floor| &builder.edge.mul_pow2(-1) < floor) {
+            return Err(refusal(
+                "field.print-unresolved",
+                "boundary coverage needs a grid finer than the minimum detail allows",
             ));
         }
         builder.edge = builder.edge.mul_pow2(-1);

@@ -90,7 +90,7 @@ of its model supports. Added seam geometry and ring origins are checked too.
 | 1 | `contract` | Default options, exact header and fixed entities, all fourteen entity counts, 170 total entities, corners and exact report |
 | 2 | Every export via `common::reader` | Consecutive IDs, existing references, depth-first first-visit numbering, no unreachable entities; unselected store entries do not change output |
 | 3 | `tools/step-regressions/test_periodic_bands.py` | Complete cylinder/frustum bands, ring and seam pcurves, outward and reversed-hole orientations |
-| 6 | `contract` | Cone apex loop and rounded angle; apex export is not covered by the band repair |
+| 6 | `contract` and `tools/step-regressions/test_periodic_bands.py` | Cone apex starts the band seam, no vertex loop, rounded angle; raw import of pointed cones and drill tips |
 | 4, 5 | `tools/step-regressions/test_loopless_faces.py` | Full sphere and torus raw import, poles, seams, validity and analytic volume at two poses |
 | 7 | `contract` | Apostrophe, backslash, BMP and supplementary Unicode, control characters, empty name, literal escape-looking text and syntax-looking strings |
 | 8 | `contract` | Empty list, empty bodies, mixed empty and solid bodies |
@@ -109,7 +109,8 @@ of its model supports. Added seam geometry and ring origins are checked too.
 Branch-node regressions preserve the existing shared physical vertex; periodic chart cuts may add other vertices and seams. Surface and curve definitions are matched to the source model, with ordering and sharing checked by IDs, not just aggregate counts. Loopless torus seams carry two pcurves on their unchanged analytic circles. A loopless sphere uses a sole vertex loop for the complete natural domain.
 
 Complete cylindrical and conical bands with two vertex-free ring loops retain
-their existing seam encoding. Regular partial cylinders and pole-free spherical
+their existing seam encoding. A cone face bounded by one such ring and a vertex
+loop at its own apex is a band whose seam starts at the apex. Regular partial cylinders and pole-free spherical
 faces use exact shared-edge cuts and bounded, parameter-coupled pcurves. Source
 loop-corner incidence is preserved at touching vertices; disconnected chart
 components receive distinct face/surface identities. No kernel topology is

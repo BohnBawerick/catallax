@@ -135,7 +135,7 @@ fn primitive_entity_counts_and_added_topology() {
         (cylinder, (3, 3, 2), (2, 1)),
         (sphere, (1, 0, 1), (1, 0)),
         (torus, (1, 2, 1), (1, 2)),
-        (cone, (2, 1, 2), (1, 0)),
+        (cone, (2, 2, 2), (1, 1)),
     ] {
         let (file, answer) = export(&model, &[body], &StepOptions::default());
         let report = answer.value;

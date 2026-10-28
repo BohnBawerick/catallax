@@ -6,7 +6,7 @@ use std::rc::Rc;
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Decider, FactKind, Outcome, Real, Refusal, StrictOrder, StrictSign};
 use catallax_shapes::{CurveId, GeomKey, Point3, Surface, SurfaceId, Vector3};
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, VertexId};
 
 use crate::number;
 
@@ -25,8 +25,11 @@ pub(crate) struct Ring {
 
 pub(crate) struct Band {
     pub surface: SurfaceId,
-    pub edges: [EdgeId; 2],
-    pub forward: [bool; 2],
+    /// Ring edges from low to high. A band ending at its cone's apex has
+    /// only the high ring.
+    pub edges: Vec<EdgeId>,
+    pub forward: Vec<bool>,
+    pub apex: Option<VertexId>,
     pub low_v: Real,
     pub v_scale: Real,
     pub radius_bound: Real,
@@ -58,7 +61,8 @@ struct SourceBand {
     axis: Vector3,
     reference: Vector3,
     v_scale: Real,
-    rings: [SourceRing; 2],
+    rings: Vec<SourceRing>,
+    apex: Option<VertexId>,
 }
 
 impl Plan {
@@ -78,7 +82,7 @@ impl Plan {
                             Surface::Sphere(_) | Surface::Torus(_)
                                 if definition.loops.is_empty() => {}
                             Surface::Cylinder(_) | Surface::Cone(_)
-                                if ring_edges(model, face).is_some() =>
+                                if band_loops(model, face).is_some() =>
                             {
                                 has_band = true
                             }
@@ -154,14 +158,24 @@ impl Plan {
                 source.face,
                 Rc::new(Band {
                     surface: source.surface,
-                    edges: source.rings.each_ref().map(|r| r.edge),
+                    edges: source.rings.iter().map(|r| r.edge).collect(),
                     forward: source
                         .rings
-                        .each_ref()
-                        .map(|r| r.increasing == (model.edge(r.edge).sense == Sense::Same)),
-                    low_v: source.rings[0].v.clone(),
+                        .iter()
+                        .map(|r| r.increasing == (model.edge(r.edge).sense == Sense::Same))
+                        .collect(),
+                    apex: source.apex,
+                    // The written cone's apex is its v origin.
+                    low_v: if source.apex.is_some() {
+                        Real::zero()
+                    } else {
+                        source.rings[0].v.clone()
+                    },
                     v_scale: source.v_scale.clone(),
-                    radius_bound: &source.rings[0].radius + &source.rings[1].radius,
+                    radius_bound: source
+                        .rings
+                        .iter()
+                        .fold(Real::zero(), |sum, r| &sum + &r.radius),
                     seam_direction,
                 }),
             );
@@ -199,8 +213,10 @@ impl Plan {
     }
 }
 
-fn ring_edges(model: &Model, face: FaceId) -> Option<[EdgeId; 2]> {
-    let [a, b] = model.face(face).loops.as_slice() else {
+// Two complete rings, or for a cone one complete ring and a vertex loop.
+fn band_loops(model: &Model, face: FaceId) -> Option<(Vec<EdgeId>, Option<VertexId>)> {
+    let definition = model.face(face);
+    let [a, b] = definition.loops.as_slice() else {
         return None;
     };
     let edge = |loop_id| {
@@ -214,7 +230,12 @@ fn ring_edges(model: &Model, face: FaceId) -> Option<[EdgeId; 2]> {
         let definition = model.edge(edge);
         (definition.start.is_none() && definition.end.is_none()).then_some(edge)
     };
-    Some([edge(*a)?, edge(*b)?])
+    let cone = matches!(model.geom().surface(definition.surface), Surface::Cone(_));
+    match (model.loop_(*a), model.loop_(*b)) {
+        (Loop::Vertex(v), _) if cone => Some((vec![edge(*b)?], Some(*v))),
+        (_, Loop::Vertex(v)) if cone => Some((vec![edge(*a)?], Some(*v))),
+        _ => Some((vec![edge(*a)?, edge(*b)?], None)),
+    }
 }
 
 fn source_band(
@@ -223,7 +244,7 @@ fn source_band(
     dec: &mut Decider,
 ) -> Result<Option<SourceBand>, Refusal> {
     let face_definition = model.face(face);
-    let Some(edges) = ring_edges(model, face) else {
+    let Some((edges, apex)) = band_loops(model, face) else {
         return Ok(None);
     };
     let surface = model.geom().surface(face_definition.surface);
@@ -242,8 +263,21 @@ fn source_band(
         ),
         _ => return Ok(None),
     };
-    let mut rings = [None, None];
-    for (index, edge) in edges.into_iter().enumerate() {
+    if let Some(vertex) = apex {
+        let point = model.geom().position(model.vertex(vertex).point);
+        let constructed = [
+            (&point.x, &origin.x),
+            (&point.y, &origin.y),
+            (&point.z, &origin.z),
+        ]
+        .into_iter()
+        .all(|(a, b)| a.same_definition(b));
+        if !constructed && !zero(&point.minus(origin).norm_squared(), dec)? {
+            return Ok(None);
+        }
+    }
+    let mut rings = Vec::with_capacity(edges.len());
+    for edge in edges {
         let definition = model.edge(edge);
         let CurveForm::Circle {
             center,
@@ -298,7 +332,7 @@ fn source_band(
             Outcome::Refused(refusal) => return Err(refusal),
             _ => return Ok(None),
         };
-        rings[index] = Some(SourceRing {
+        rings.push(SourceRing {
             edge,
             curve: definition.curve,
             center,
@@ -309,12 +343,13 @@ fn source_band(
             increasing,
         });
     }
-    let mut rings = rings.map(Option::unwrap);
-    match dec.compare(&rings[0].v, &rings[1].v) {
-        Outcome::Proven(StrictOrder::Greater) => rings.swap(0, 1),
-        Outcome::Proven(StrictOrder::Less) => {}
-        Outcome::Refused(refusal) => return Err(refusal),
-        _ => return Ok(None),
+    if rings.len() == 2 {
+        match dec.compare(&rings[0].v, &rings[1].v) {
+            Outcome::Proven(StrictOrder::Greater) => rings.swap(0, 1),
+            Outcome::Proven(StrictOrder::Less) => {}
+            Outcome::Refused(refusal) => return Err(refusal),
+            _ => return Ok(None),
+        }
     }
     Ok(Some(SourceBand {
         face,
@@ -323,6 +358,7 @@ fn source_band(
         reference,
         v_scale: slant,
         rings,
+        apex,
     }))
 }
 

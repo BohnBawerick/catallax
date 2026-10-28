@@ -6,7 +6,7 @@
 //! calling [`Stage::new`] again with the edited recipe, so nothing computed from
 //! the earlier body can be reused.
 
-use crate::{Plan, printing};
+use crate::{Plan, display::PreviewOptions, printing};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::{
     Grade, LatticeCell, Number, Operation, Pose, Recipe, RecipeError, Step, StepId,
@@ -73,6 +73,23 @@ pub struct Output {
     pub mesh: printing::Mesh,
     /// The checks that passed.
     pub verdict: Verdict,
+}
+
+/// Whether a result carries a proof at the user's settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Proof {
+    /// A coarse display only. It is not the export and is not at the user's accuracy.
+    Unproved,
+}
+
+/// A display of the lattice shown before the export is proved.
+#[derive(Clone, Debug)]
+pub struct Preview {
+    /// The coarse mesh. Its `max_deviation` is that of this coarse grid alone and says
+    /// nothing about the export.
+    pub mesh: printing::Mesh,
+    /// Always [`Proof::Unproved`].
+    pub proof: Proof,
 }
 
 /// A body with its lattice stage compiled.
@@ -170,6 +187,15 @@ impl Stage {
         &self.settings
     }
 
+    /// Builds a coarse display from the lattice field alone, at the preview's own
+    /// tolerance and limits rather than the settings'. Closedness and connectivity are
+    /// not required of it. Nothing from the body's B-rep is used. Refusals are the
+    /// print mesher's: `field.print-budget`, `field.print-grid`, `field.print-vertices`
+    /// and `field.print-options`, plus the decider's deadline and cancellation outcomes.
+    pub fn preview(&self, options: &PreviewOptions, dec: &mut Decider) -> Result<Preview, Refusal> {
+        preview_plan(&self.plan, options, dec)
+    }
+
     /// Builds the certified mesh at the settings' accuracy. The mesh is closed, free of
     /// self-intersection and connected, or the call refuses; nothing partial is
     /// returned. Refusals: `field.print-disconnected`, `field.print-unresolved` (also
@@ -217,5 +243,48 @@ pub fn check_no_cad_after_lattice(recipe: &Recipe) -> Result<(), Refusal> {
             format!("step {step} reads lattice {lattice}; return before the lattice to edit"),
         ),
         other => Refusal::new("field.recipe", other.to_string()),
+    })
+}
+
+/// The coarse unproved display of any compiled plan that holds a lattice. The
+/// field adapter calls this when the certified display refuses a lattice.
+pub fn preview_plan(
+    plan: &Plan,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<Preview, Refusal> {
+    let mesh = printing::mesh_plan(
+        plan,
+        &printing::Options {
+            tolerance: options.tolerance.clone(),
+            max_cells: options.max_cells,
+            max_vertices: options.max_vertices,
+        },
+        dec,
+    )?;
+    Ok(Preview {
+        mesh,
+        proof: Proof::Unproved,
+    })
+}
+
+/// Preview controls scaled to the plan: a visual target of one thirty-second of its
+/// longest bounding-box side, with the default cell and vertex limits. The target is
+/// not a guaranteed limit and is unrelated to any export accuracy.
+pub fn default_preview_options(plan: &Plan, dec: &mut Decider) -> Result<PreviewOptions, Refusal> {
+    let bounds = printing::bounds(plan, dec)?;
+    let extent = (0..3)
+        .map(|i| &bounds[i][1] - &bounds[i][0])
+        .max()
+        .expect("three axes");
+    let defaults = PreviewOptions::default();
+    let tolerance = &extent * &Rational::from_ratio(1, 32).unwrap();
+    Ok(PreviewOptions {
+        tolerance: if tolerance.sign() == Sign::Positive {
+            tolerance
+        } else {
+            defaults.tolerance
+        },
+        ..defaults
     })
 }

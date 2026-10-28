@@ -187,6 +187,19 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                 {'id': 'body', 'op': 'boolean', 'kind': 'intersect', 'target': 'a', 'tool': 'b'}],
             'result': 'body'}, (3, 3, 2), 16 * math.pi / 3)
 
+    def test_pole_on_a_trim_writes_another_sphere_frame(self):
+        # One octant of a ball: its spherical face has a corner at the ball's
+        # own pole, which no chart or cap of that frame admits. The face is
+        # written with another exact frame whose poles lie outside it.
+        # Volume: 4*pi/3.
+        for rotation in [('1', '0', '0', '0'), ('1', '2', '3', '4')]:
+            with self.subTest(rotation=rotation):
+                corner = pose('7/3', '-11/7', '13/5', rotation)
+                self.check_intersection([
+                    {'op': 'block', 'size': ['3', '3', '3'], 'pose': corner},
+                    {'op': 'sphere', 'radius': '2', 'pose': corner}],
+                    (4, 6, 4), 4 * math.pi / 3)
+
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),
                               (pose('7/3', '-11/7', '13/5', ('1', '2', '3', '4')),

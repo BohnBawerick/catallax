@@ -551,40 +551,56 @@ fn skipped_carriers_keep_the_complete_section_order() {
     // cross the closed section curves. Its STEP bytes depend on which cut each
     // closed curve starts at.
     let q = |n: i64, d: i64| Rational::from_ratio(n, d).unwrap();
-    let section = |prune: bool| {
-        let mut model = Model::new();
-        let mut dec = Decider::default();
-        let a = block(&mut model, [r(2), r(2), r(2)], &pose(-1, -1, -1)).unwrap();
+    let crossing = |model: &mut Model, dec: &mut Decider| {
+        let a = block(model, [r(2), r(2), r(2)], &pose(-1, -1, -1)).unwrap();
         let rotation = Rotation::from_quaternion(q(1, 2), q(1, 3), q(1, 5), q(1, 7)).unwrap();
         let translation = RVector3::new(q(-33491, 37178), q(3161, 1923), q(-34021, 92945));
-        let placement = Pose::new(rotation, translation.into(), &mut dec).unwrap();
-        let b = cylinder(&mut model, r(2), r(4), &placement).unwrap();
-        let graph = crate::graph::section(&mut model, a, b, prune, &mut dec)
-            .unwrap()
-            .value;
-        let at = |point: Option<catallax_shapes::PointId>| {
-            point.map(|point| {
-                let p = model.geom().position(point);
-                [&p.x, &p.y, &p.z].map(|c| format!("{:.6}", c.to_f64()))
-            })
-        };
-        let edges: Vec<_> = graph
-            .edges()
-            .iter()
-            .map(|edge| {
-                (
-                    edge.curve,
-                    at(edge.start),
-                    at(edge.end),
-                    edge.faces_of_first.clone(),
-                    edge.faces_of_second.clone(),
-                )
-            })
-            .collect();
-        let points: Vec<_> = graph.points().iter().map(|&p| at(Some(p))).collect();
-        (edges, points, graph.marks.len())
+        let placement = Pose::new(rotation, translation.into(), dec).unwrap();
+        (a, cylinder(model, r(2), r(4), &placement).unwrap())
     };
-    let complete = section(false);
-    assert!(complete.0.len() > 2);
-    assert_eq!(section(true), complete);
+    // Coplanar top and bottom faces overlap, so a carrier could keep a piece
+    // inside the common region without a meeting generating pair.
+    let overlap = |model: &mut Model, _: &mut Decider| {
+        let a = block(model, [r(6), r(4), r(2)], &Pose::identity()).unwrap();
+        (
+            a,
+            block(model, [r(4), r(6), r(2)], &pose(3, -1, 0)).unwrap(),
+        )
+    };
+    type Scene<'a> = &'a dyn Fn(&mut Model, &mut Decider) -> (BodyId, BodyId);
+    let scenes: [Scene; 2] = [&crossing, &overlap];
+    for scene in scenes {
+        let section = |prune: bool| {
+            let mut model = Model::new();
+            let mut dec = Decider::default();
+            let (a, b) = scene(&mut model, &mut dec);
+            let graph = crate::graph::section(&mut model, a, b, prune, &mut dec)
+                .unwrap()
+                .value;
+            let at = |point: Option<catallax_shapes::PointId>| {
+                point.map(|point| {
+                    let p = model.geom().position(point);
+                    [&p.x, &p.y, &p.z].map(|c| format!("{:.6}", c.to_f64()))
+                })
+            };
+            let edges: Vec<_> = graph
+                .edges()
+                .iter()
+                .map(|edge| {
+                    (
+                        edge.curve,
+                        at(edge.start),
+                        at(edge.end),
+                        edge.faces_of_first.clone(),
+                        edge.faces_of_second.clone(),
+                    )
+                })
+                .collect();
+            let points: Vec<_> = graph.points().iter().map(|&p| at(Some(p))).collect();
+            (edges, points, graph.marks.len())
+        };
+        let complete = section(false);
+        assert!(complete.0.len() > 2);
+        assert_eq!(section(true), complete);
+    }
 }

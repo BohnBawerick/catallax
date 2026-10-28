@@ -5,13 +5,16 @@ Pieces: 1, 5, application benchmarks
 Change: rational Boolean construction retains the complete ordered carrier pool.
 Existing finite-face exclusion certificates mark which carriers have a
 potentially meeting generating face pair. Carriers without one omit the
-curve/surface query pass. The covered-pair skip still applies between active
-carriers, and to a skipped carrier paired with an earlier active carrier that
-covers it; every other pair with a skipped carrier is queried. When a skipped carrier's crossing
-could change the first cut of a kept closed carrier or the order of isolated
-points, the graph queries that carrier and restores the complete pass's order,
-so section edges and isolated points keep the complete pass's order. Optional
-bound witnesses remain in a private model fork, not in the canonical graph.
+curve/surface query pass, unless two coincident faces may overlap, which turns
+pruning off for that graph. The covered-pair skip still applies between active
+carriers. A skipped carrier's crossings with an active carrier come from the
+curve/curve query or, when the active carrier covers it, from that carrier's
+hits; pairs of two skipped carriers are not queried. When a skipped carrier's
+crossing could change the first cut of a kept closed carrier or the order of
+isolated points, the graph queries that carrier and restores the complete
+pass's order, so section edges and isolated points keep the complete pass's
+order. Optional bound witnesses remain in a private model fork, not in the
+canonical graph.
 
 The exact literal leaves `-1`, `0` and `1` share immutable storage. Integer
 construction avoids a temporary rational for these values. Arithmetic nodes are

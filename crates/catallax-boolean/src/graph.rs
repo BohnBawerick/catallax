@@ -116,22 +116,22 @@ fn add_curve(
 }
 
 /// Canonicalizes the hits of `curve` on every operand surface in query order.
-/// Returns the raw hits, their marks and the surfaces whose whole meeting with
-/// `curve` is now canonical.
+/// Returns the raw hits, their marks and, for each surface whose whole meeting
+/// with `curve` is now canonical, that meeting's canonical points.
 fn carrier_hits(
     model: &mut Model,
     curve: CurveId,
     surfaces: &[SurfaceId],
     points: &mut Vec<PointId>,
     dec: &mut Decider,
-) -> Result<(Vec<PointId>, MarkLog, BTreeSet<SurfaceId>), Refusal> {
+) -> Result<(Vec<PointId>, MarkLog, Complete), Refusal> {
     let mut found = Vec::new();
     let mut marks = MarkLog::new();
-    let mut complete = BTreeSet::new();
+    let mut complete = Complete::new();
     for &surface in surfaces {
         let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
         if !matches!(answer.value, CurveSurface::Contained) {
-            complete.insert(surface);
+            complete.insert(surface, Vec::new());
         }
         if let CurveSurface::Meets(hits) = answer.value {
             for hit in hits {
@@ -145,7 +145,9 @@ fn carrier_hits(
                         "intersection branch membership lacks an incidence proof",
                     ));
                 }
-                canonical_point(model, points, hit.point, dec, "boolean.imprint-ambiguous")?;
+                let canonical =
+                    canonical_point(model, points, hit.point, dec, "boolean.imprint-ambiguous")?;
+                complete.get_mut(&surface).unwrap().push(canonical);
                 found.push(hit.point);
             }
         }
@@ -153,6 +155,10 @@ fn carrier_hits(
     }
     Ok((found, marks, complete))
 }
+
+/// Each surface whose whole meeting with a carrier is canonical, with the
+/// canonical points of that meeting.
+type Complete = BTreeMap<SurfaceId, Vec<PointId>>;
 
 /// Borrowed graph state shared by every carrier's pieces.
 struct Context<'a> {
@@ -489,6 +495,10 @@ pub(crate) fn section(
     let mut pruning_model = (prune && !algebraic).then(|| model.clone());
     let mut finite_bounds = crate::bounds::FaceBounds::new(false);
     let mut active = Vec::new();
+    // A coincident face pair that may overlap has a two-dimensional common
+    // region, where a carrier can keep a section piece without a potentially
+    // meeting generating pair.
+    let mut overlapping_coincidence = false;
     for &fa in &first {
         for &fb in &second {
             let sa = model.face(fa).surface;
@@ -531,6 +541,7 @@ pub(crate) fn section(
             match pair {
                 SurfacePair::Disjoint => {}
                 SurfacePair::Coincident { .. } => {
+                    overlapping_coincidence |= relevant(dec);
                     for face in [fa, fb] {
                         let surface = model.face(face).surface;
                         for curve in face_edges(model, face) {
@@ -584,6 +595,12 @@ pub(crate) fn section(
             }
         }
     }
+    // Otherwise every section piece lies on a carrier of a potentially meeting
+    // pair, so a skipped carrier keeps no piece and a point found only on
+    // skipped carriers is neither a kept cut nor an isolated point.
+    if overlapping_coincidence {
+        active.fill(true);
+    }
     let surfaces: Vec<SurfaceId> = first
         .iter()
         .chain(&second)
@@ -593,7 +610,7 @@ pub(crate) fn section(
         .collect();
     let mut marks = MarkLog::new();
     // Surfaces whose whole meeting with each carrier is now canonical.
-    let mut complete: Vec<BTreeSet<SurfaceId>> = vec![BTreeSet::new(); pool.len()];
+    let mut complete: Vec<Complete> = vec![Complete::new(); pool.len()];
     let mut order = Order {
         finder: points.iter().map(|&p| (p, 0)).collect(),
         ..Order::default()
@@ -618,16 +635,36 @@ pub(crate) fn section(
             // Two carriers meet only on each other's supports. When one
             // carrier's complete meeting with the other's support is already
             // canonical, the pair can add no point; equality is never inferred.
-            // A skipped carrier has no complete meetings of its own. Its pair
-            // with an earlier active carrier that covers it can still be
-            // skipped: every crossing was then found by that carrier or before
-            // it, so the complete pass would not find it first through the
-            // skipped one.
-            let covered = |c: usize, d: usize| !supports[c].is_disjoint(&complete[d]);
+            let covered =
+                |c: usize, d: usize| supports[c].iter().any(|s| complete[d].contains_key(s));
             let skip = match (active[i], active[j]) {
                 (true, true) => covered(i, j) || covered(j, i),
+                // A skipped carrier has no complete meetings of its own. A
+                // later one's crossings were all found by the earlier active
+                // carrier or before it, so its hits could not come first.
                 (true, false) => covered(j, i),
-                (false, _) => false,
+                // An earlier skipped carrier could find a crossing first. Its
+                // crossings with a covering active carrier are that carrier's
+                // canonical hits on the skipped carrier's supports.
+                (false, true) if covered(i, j) => {
+                    for surface in &supports[i] {
+                        for &point in complete[j].get(surface).into_iter().flatten() {
+                            if order.finder.get(&point).is_some_and(|&found| i >= found) {
+                                continue;
+                            }
+                            if coincident(
+                                on_curve(model.geom(), pool[i], point, dec),
+                                "boolean.imprint-ambiguous",
+                            )? {
+                                order.crossers.entry(point).or_default().insert(i);
+                            }
+                        }
+                    }
+                    true
+                }
+                // Crossings of two skipped carriers lie on no kept piece.
+                (false, false) => true,
+                (false, true) => false,
             };
             if skip {
                 continue;

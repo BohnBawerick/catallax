@@ -8,3 +8,19 @@
 mod wire;
 
 pub use wire::*;
+mod build;
+mod consume;
+mod curved;
+mod exact;
+mod gap;
+mod intersect;
+mod part21;
+mod recognize;
+mod repair;
+
+pub use build::{build_file, build_solid};
+pub use consume::{import_step_bodies, sha256_hex};
+pub use gap::{ImportOptions, propose};
+pub use intersect::check_self_intersection;
+pub use recognize::*;
+pub use repair::{Imported, apply, canonical_bytes, rebuild};

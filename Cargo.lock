@@ -157,8 +157,17 @@ dependencies = [
 name = "catallax-import"
 version = "0.1.0"
 dependencies = [
+ "catallax-boolean",
+ "catallax-intersect",
+ "catallax-measure",
+ "catallax-numbers",
+ "catallax-recipe",
+ "catallax-shapes",
+ "catallax-step",
+ "catallax-topology",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

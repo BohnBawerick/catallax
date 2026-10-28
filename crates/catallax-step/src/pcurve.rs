@@ -577,7 +577,15 @@ impl Projection {
         let xyz = self.written.placement.point(written, p);
         let u = lift(&xyz[1], &xyz[0], &target, &self.pi, dec)?;
         let xyz = xyz.map(Jet::<1>::constant);
-        Ok(self.map.inverse(&xyz, u, &self.pi, true, dec)?[0]
+        let mut uv = self.map.inverse(&xyz, u, &self.pi, true, dec)?[0].clone();
+        // A vertex on a chart cut takes the cut's own parameter, so every
+        // pcurve along that side writes one u value. The raw translator pairs
+        // seam pcurves by the exact direction of their end-to-end chord. The
+        // fit bounds the change against each curve's ideal endpoint.
+        if side != crate::wire::Side::Interior {
+            uv[0] = target;
+        }
+        Ok(uv
             .each_ref()
             .map(|value| number::ball_number(value, self.digits).value))
     }

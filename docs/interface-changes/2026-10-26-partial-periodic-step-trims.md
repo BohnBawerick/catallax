@@ -26,6 +26,13 @@ The source carrier and kernel topology are unchanged. No geometry regularization
 is introduced, and existing regularization records and displacement bounds are
 preserved through the export-only face/edge remapping.
 
+A vertex on a chart cut writes the cut's exact parameter, so every pcurve along
+one side of the cut shares one `u` value. The pinned raw translator pairs a
+seam's two pcurves by the exact direction of each pcurve's end-to-end chord.
+Inverting rounded vertex points could leave `u` values one binary64 step apart,
+and the translator then paired a cylinder band's seam the wrong way round. The
+endpoint replacement term in the certified bound covers the change.
+
 `StepReport.faces` counts emitted chart fragments. `added_vertices` includes
 chart-cut vertices; `added_edges` includes the net increase from splitting
 existing edges as well as new seams. `approximated_curves` counts emitted 3D

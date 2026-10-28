@@ -16,8 +16,9 @@ The required CI job discovers all `tools/step-regressions/test_*.py` with
 cylinders, both frustum directions, rational poses, reversed through-hole
 walls, enclosed cylindrical voids and algebraic countersinks.
 `test_partial_periodic_trims.py` adds a public cylinder/sphere intersection,
-touching branch vertices, a closed cylinder/sphere branch, and spherical lenses
-at identity and a rational pose. Each of these imports the file through two
+touching branch vertices, a closed cylinder/sphere branch, spherical lenses at
+identity and a rational pose, and a public block/cylinder union whose two
+cylinder band seams each meet two cut vertices. Each of these imports the file through two
 procedures: raw translation and the standard reader. Each procedure must give a
 valid shape with one solid, the expected face, edge and vertex counts, and a
 converged adaptive volume within the diagnostic tube of the expected volume.

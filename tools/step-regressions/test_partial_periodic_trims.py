@@ -34,10 +34,10 @@ def converged_volume(shape):
     return values[-1], max(values) - min(values)
 
 
-def intersection(primitives):
+def intersection(primitives, kind='intersect'):
     return {'format': 'catallax-recipe/3', 'name': 'public periodic trim',
             'steps': [dict(primitives[0], id='a'), dict(primitives[1], id='b'),
-                      {'id': 'body', 'op': 'boolean', 'kind': 'intersect',
+                      {'id': 'body', 'op': 'boolean', 'kind': kind,
                        'target': 'a', 'tool': 'b'}], 'result': 'body'}
 
 
@@ -57,9 +57,9 @@ class PartialPeriodicTrimImports(unittest.TestCase):
         self.assertEqual(manifest['marks'], [])
         return Path(case['path']), manifest
 
-    def check_intersection(self, primitives, topology, expected_volume):
+    def check_intersection(self, primitives, topology, expected_volume, kind='intersect'):
         with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
-            directory, _ = self.answer(intersection(primitives), Path(temporary))
+            directory, _ = self.answer(intersection(primitives, kind), Path(temporary))
             path = directory / 'answer.step'
             raw = raw_solid(path)
             reader = STEPControl_Reader()
@@ -101,6 +101,19 @@ class PartialPeriodicTrimImports(unittest.TestCase):
             {'op': 'cylinder', 'radius': '1', 'height': '6', 'pose': pose(z='-3')},
             {'op': 'sphere', 'radius': '2', 'pose': pose(x='2')}],
             (2, 1, 1), 3.100408279750527)
+
+    def test_cut_vertices_share_the_seam_parameter(self):
+        # Public block/cylinder union with a cylinder band on each side. Each
+        # band's seam meets two cut vertices. Inverting their rounded points
+        # gave u values one binary64 step apart, and raw translation paired
+        # that seam's pcurves the wrong way round. Independent OCCT Boolean volume.
+        self.check_intersection([
+            {'op': 'block', 'size': ['64.834', '68.884', '35.02'],
+             'pose': pose('60829/7000', '75771/7000', '462887/7000', ('-5', '-1', '-1', '-8'))},
+            {'op': 'cylinder', 'radius': '3.934', 'height': '68.225',
+             'pose': pose('-244605379/7000000', '907370213/45500000', '3159971679/45500000',
+                          ('-14', '5', '-8', '-25'))}],
+            (10, 18, 12), 157588.97339949687, kind='union')
 
     def test_uncertified_pole_keeps_the_answer(self):
         # The ball's frame puts its poles on the y axis. Its membership search

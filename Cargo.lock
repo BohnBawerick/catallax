@@ -134,6 +134,7 @@ dependencies = [
  "catallax-features",
  "catallax-intersect",
  "catallax-measure",
+ "catallax-mesh",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",

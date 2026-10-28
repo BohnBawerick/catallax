@@ -1,22 +1,19 @@
 //! Qualified print outputs. Route selection never retries another representation.
 use catallax_field::{
     Plan,
-    printing::{Mesh, Options},
+    printing::{Mesh, Options, native_field},
 };
 use catallax_numbers::{Decider, Rational, Refusal};
-use catallax_recipe::{Number, Operation, Recipe};
+use catallax_recipe::{Number, Recipe};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fs,
     io::{BufWriter, Write},
     path::Path,
 };
 mod brep;
-mod nesting;
-mod qualification;
 
 #[derive(Clone, Copy, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -86,28 +83,6 @@ pub(crate) fn request_refused(
     let mut result = refused(code, detail);
     result["printing"] = settings(route, &options);
     result
-}
-fn native_field(recipe: &Recipe) -> bool {
-    let steps: BTreeMap<_, _> = recipe.steps.iter().map(|s| (&s.id, &s.op)).collect();
-    let mut pending = vec![&recipe.result];
-    let mut seen = BTreeSet::new();
-    while let Some(id) = pending.pop() {
-        if !seen.insert(id) {
-            continue;
-        }
-        let op = steps[id];
-        if matches!(
-            op,
-            Operation::Lattice { .. }
-                | Operation::Gyroid { .. }
-                | Operation::SmoothBlend { .. }
-                | Operation::ImportMesh { .. }
-        ) {
-            return true;
-        }
-        pending.extend(op.inputs().into_iter().map(|(id, _)| id));
-    }
-    false
 }
 fn settings(route: Route, options: &Options) -> Value {
     json!({"route":route.name(),"file":null,"format":"binary-stl","metadata":"catallax-print-stl/1","units":"mm",
@@ -196,10 +171,7 @@ pub(crate) fn evaluate(problem: &Value, out: &Path, force_field: bool) -> std::i
                 } else {
                     Plan::compile_checked(&recipe,&mut dec).and_then(|plan| {
                     field = json!({"faces":plan.faces().len(),"proven_empty":plan.is_proven_empty()});
-                    catallax_field::printing::mesh_plan(&plan,&options,&mut dec)
-                }).map(|mesh| {
-                    let tessellation_bound = mesh.max_deviation.clone();
-                    brep::Output {mesh, model_bound:Rational::zero(),tessellation_bound,rounding_bound:Rational::zero()}
+                    catallax_field::printing::brep::field(&plan,&options,&mut dec)
                 })
                 }
             }
@@ -209,19 +181,19 @@ pub(crate) fn evaluate(problem: &Value, out: &Path, force_field: bool) -> std::i
             Ok(output) => output,
             Err(error) => return Ok(refused(error.code, error.detail)),
         };
-        let header = match header(route, &options, &mut output) {
+        let header = match output.header() {
             Ok(header) => header,
             Err(error) => return Ok(refused(error.code, error.detail)),
         };
         record["file"] = json!("print.stl");
         record["watertight"] = json!(true);
-        record["vertices"] = json!(output.mesh.positions.len());
-        record["triangles"] = json!(output.mesh.triangles.len());
-        record["cells"] = json!(output.mesh.cells);
-        record["model_bound_mm"] = json!(output.model_bound.to_string());
-        record["tessellation_bound_mm"] = json!(output.tessellation_bound.to_string());
-        record["encoding_rounding_bound_mm"] = json!(output.rounding_bound.to_string());
-        record["deviation_bound_mm"] = json!(output.mesh.max_deviation.to_string());
+        record["vertices"] = json!(output.mesh().positions.len());
+        record["triangles"] = json!(output.mesh().triangles.len());
+        record["cells"] = json!(output.mesh().cells);
+        record["model_bound_mm"] = json!(output.model_bound().to_string());
+        record["tessellation_bound_mm"] = json!(output.tessellation_bound().to_string());
+        record["encoding_rounding_bound_mm"] = json!(output.rounding_bound().to_string());
+        record["deviation_bound_mm"] = json!(output.mesh().max_deviation.to_string());
         record["completeness"] = json!("proven-two-sided");
         record["topology"] = json!("closed-opposite-edges-and-cyclic-vertex-links");
         record["orientation"] = json!("material-outward-including-cavities");
@@ -230,7 +202,7 @@ pub(crate) fn evaluate(problem: &Value, out: &Path, force_field: bool) -> std::i
         } else {
             "interval-excluded cells and witnessed neighbouring boundary cells"
         });
-        let files = match publish(out, &output.mesh, &header, &record) {
+        let files = match publish(out, output.mesh(), &header, &record) {
             Ok(files) => files,
             Err(error) => {
                 crate::prepare_output(out)?;
@@ -241,72 +213,13 @@ pub(crate) fn evaluate(problem: &Value, out: &Path, force_field: bool) -> std::i
         Ok(
             json!({"format":"catallax-manifest/3","status":"answered","exact":false,"marks":[],"step":null,"refusal":null,
             "field":field,"files":files,"face_measurements":{"format":"catallax-face-measurements/1","faces":[],"edit":null,
-            "display":{"file":"display.obj","vertices":output.mesh.positions.len(),"triangles":output.mesh.triangles.len(),
-                "chord_tolerance_mm":options.tolerance.to_string(),"deviation_bound_mm":output.mesh.max_deviation.to_string(),
-                "coverage":"same encoded qualified print mesh","cells":output.mesh.cells}}}),
+            "display":{"file":"display.obj","vertices":output.mesh().positions.len(),"triangles":output.mesh().triangles.len(),
+                "chord_tolerance_mm":options.tolerance.to_string(),"deviation_bound_mm":output.mesh().max_deviation.to_string(),
+                "coverage":"same encoded qualified print mesh","cells":output.mesh().cells}}}),
         )
     })()?;
     result["printing"] = record;
     Ok(result)
-}
-fn upward(bound: &Rational) -> Result<(f64, Rational), Refusal> {
-    let mut value = bound.to_f64_nearest();
-    if !value.is_finite() {
-        return Err(Refusal::new(
-            "print.metadata-range",
-            "certificate bound exceeds binary64 metadata range",
-        ));
-    }
-    if Rational::from_f64_exact(value).unwrap() < *bound {
-        value = value.next_up();
-    }
-    Rational::from_f64_exact(value)
-        .map(|q| (value, q))
-        .ok_or_else(|| {
-            Refusal::new(
-                "print.metadata-range",
-                "certificate bound exceeds binary64 metadata range",
-            )
-        })
-}
-fn header(route: Route, options: &Options, output: &mut brep::Output) -> Result<[u8; 80], Refusal> {
-    let accuracy = options.tolerance.to_string();
-    let (n, d) = accuracy.split_once('/').unwrap_or((&accuracy, "1"));
-    let n: i64 = n.parse().map_err(|_| Refusal::new("print.metadata-range","accuracy numerator does not fit STL metadata; use an exactly representable requested accuracy"))?;
-    let d: u64 = d.parse().map_err(|_| {
-        Refusal::new(
-            "print.metadata-range",
-            "accuracy denominator does not fit STL metadata; requested accuracy was not truncated",
-        )
-    })?;
-    let (u, model) = upward(&output.model_bound)?;
-    let (v, tessellation) = upward(&output.tessellation_bound)?;
-    let (r, rounding) = upward(&output.rounding_bound)?;
-    let (w, total) = upward(&(&(&model + &tessellation) + &rounding))?;
-    if total > options.tolerance {
-        return Err(Refusal::new(
-            "print.metadata-accuracy",
-            "lossless conservative header bounds exceed requested accuracy",
-        ));
-    }
-    output.model_bound = model;
-    output.tessellation_bound = tessellation;
-    output.rounding_bound = rounding;
-    output.mesh.max_deviation = total;
-    let mut bytes = [0u8; 80];
-    bytes[..8].copy_from_slice(b"CXPRINT1");
-    bytes[8] = if route == Route::Brep { 1 } else { 2 };
-    bytes[9] = 1; // millimetres
-    bytes[10] = 1; // binary32 little endian
-    bytes[11] = if route == Route::Field { 1 } else { 0 }; // cell cap applicability
-    bytes[12..20].copy_from_slice(&n.to_le_bytes());
-    bytes[20..28].copy_from_slice(&d.to_le_bytes());
-    bytes[28..36].copy_from_slice(&(options.max_cells as u64).to_le_bytes());
-    bytes[36..44].copy_from_slice(&(options.max_vertices as u64).to_le_bytes());
-    for (offset, value) in [(44, u), (52, v), (60, r), (68, w)] {
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    Ok(bytes)
 }
 struct Hashed<W> {
     out: W,

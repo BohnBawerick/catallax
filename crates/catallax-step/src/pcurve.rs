@@ -335,11 +335,28 @@ pub(crate) enum SurfaceMap {
     Cone {
         slope: Ball,
     },
+    /// The written major radius. Callers certify that the outer equator, the
+    /// written chart's v seam, is outside the trimmed domain.
+    Torus {
+        major: Ball,
+    },
 }
 
 impl SurfaceMap {
     pub fn regular(&self, coordinates: &[Jet<1>; 3]) -> bool {
-        (coordinates[0].coefficients[0].square() + coordinates[1].coefficients[0].square()).lo()
+        let radial =
+            coordinates[0].coefficients[0].square() + coordinates[1].coefficients[0].square();
+        if radial.lo() <= Rational::zero() {
+            return false;
+        }
+        let Self::Torus { major } = self else {
+            return true;
+        };
+        // Points near the core circle have no separated tube angle.
+        let Some(radial) = radial.sqrt() else {
+            return false;
+        };
+        ((&radial - major).square() + coordinates[2].coefficients[0].square()).lo()
             > Rational::zero()
     }
 
@@ -370,6 +387,16 @@ impl SurfaceMap {
                     .recip()
                     .expect("positive cone metric");
                 z.add(&radial.scale(slope)).scale(&inverse)
+            }
+            Self::Torus { major } => {
+                let radial = x.square().add(&y.square()).sqrt()?;
+                let offset = radial.sub(&Jet::constant(major.clone()));
+                let constant = if constants {
+                    uv::positive_angle(&z.coefficients[0], &offset.coefficients[0], pi, dec)?
+                } else {
+                    scalar(0, pi.precision())
+                };
+                Jet::angle(z, &offset, constant)?
             }
         };
         Ok(std::array::from_fn(|i| {
@@ -403,6 +430,7 @@ pub(crate) enum SurfaceParameters {
     Cylinder { radius: Rational },
     Sphere { radius: Rational },
     Cone { angle: Rational },
+    Torus { major: Rational, minor: Rational },
 }
 
 pub(crate) struct Surface {
@@ -502,6 +530,7 @@ impl Projection {
             catallax_shapes::Surface::Cylinder(s) => (&s.origin, &s.axis, &s.ref_dir),
             catallax_shapes::Surface::Sphere(s) => (&s.center, &s.axis, &s.ref_dir),
             catallax_shapes::Surface::Cone(s) => (&s.apex, &s.axis, &s.ref_dir),
+            catallax_shapes::Surface::Torus(s) => (&s.center, &s.axis, &s.ref_dir),
             _ => unreachable!("periodic projection on another carrier"),
         };
         let source = SourceFrame::new(origin, axis, reference, precision, dec)?;
@@ -519,6 +548,9 @@ impl Projection {
                         .ok_or_else(|| number::budget("written cone angle is not acute"))?,
                 }
             }
+            SurfaceParameters::Torus { major, .. } => SurfaceMap::Torus {
+                major: ball(major, precision),
+            },
         };
         Ok(Self {
             written,
@@ -533,6 +565,8 @@ impl Projection {
         match &self.written.parameters {
             SurfaceParameters::Cylinder { radius } => radius.clone().max(Rational::one()),
             SurfaceParameters::Sphere { radius } => radius.clone(),
+            // Both partial derivatives are bounded by the outer equator radius.
+            SurfaceParameters::Torus { major, minor } => major + minor,
             SurfaceParameters::Cone { .. } => {
                 let SurfaceMap::Cone { slope } = &self.map else {
                     unreachable!()

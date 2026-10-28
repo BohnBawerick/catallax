@@ -1013,21 +1013,29 @@ impl<'a> Exporter<'a> {
         let mut extent_error = placement.error.clone();
         let mut fields = vec![text("''"), placement.id.into()];
         let mut parameters = None;
+        let mut written = Vec::with_capacity(sizes.len());
         for size in &sizes {
             let n = number::real(size, self.digits(), self.dec)?;
             base_error = &base_error + &n.error;
-            if capture {
-                parameters = Some(match surface {
-                    Surface::Cylinder(_) => crate::pcurve::SurfaceParameters::Cylinder {
-                        radius: n.value.clone(),
-                    },
-                    Surface::Sphere(_) => crate::pcurve::SurfaceParameters::Sphere {
-                        radius: n.value.clone(),
-                    },
-                    _ => unreachable!("captured surface size is not cylindrical or spherical"),
-                });
-            }
+            written.push(n.value);
             fields.push(text(n.text));
+        }
+        if capture && !written.is_empty() {
+            parameters = Some(match (surface, written.as_slice()) {
+                (Surface::Cylinder(_), [radius]) => crate::pcurve::SurfaceParameters::Cylinder {
+                    radius: radius.clone(),
+                },
+                (Surface::Sphere(_), [radius]) => crate::pcurve::SurfaceParameters::Sphere {
+                    radius: radius.clone(),
+                },
+                (Surface::Torus(_), [major, minor]) => crate::pcurve::SurfaceParameters::Torus {
+                    major: major.clone(),
+                    minor: minor.clone(),
+                },
+                _ => unreachable!(
+                    "captured surface sizes are not cylindrical, spherical or toroidal"
+                ),
+            });
         }
         match surface {
             Surface::Sphere(s) => {

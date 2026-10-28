@@ -15,6 +15,9 @@ pub(crate) struct Crossing {
     pub edge: EdgeId,
     pub point: PointId,
     pub height: Real,
+    /// Signed distance from the torus core circle along the meridian
+    /// reference; zero on other carriers.
+    pub offset: Real,
     /// The normalized, surface-CCW boundary enters the meridian's upper side.
     pub enters: bool,
     pub increasing: bool,
@@ -34,10 +37,15 @@ pub(crate) fn meridian(
     face: FaceId,
     dec: &mut Decider,
 ) -> Result<Meridian, Refusal> {
+    let mut major = None;
     let (origin, axis, reference) = match geometry.store.surface(model.face(face).surface) {
         Surface::Cylinder(s) => (s.origin.clone(), s.axis.clone(), s.ref_dir.clone()),
         Surface::Sphere(s) => (s.center.clone(), s.axis.clone(), s.ref_dir.clone()),
         Surface::Cone(s) => (s.apex.clone(), s.axis.clone(), s.ref_dir.clone()),
+        Surface::Torus(s) => {
+            major = Some(s.major.clone());
+            (s.center.clone(), s.axis.clone(), s.ref_dir.clone())
+        }
         _ => unreachable!("meridian on a non-periodic carrier"),
     };
     let axis = number::unit(&axis);
@@ -116,10 +124,14 @@ pub(crate) fn meridian(
                             regular = false;
                             break;
                         }
+                        let offset = major.as_ref().map_or_else(Real::zero, |major| {
+                            &radial.dot(&number::unit(&reference)) - major
+                        });
                         crossings.push(Crossing {
                             edge: boundary.edge,
                             point: hit.point,
                             height: radial.dot(&axis),
+                            offset,
                             enters: (direction == Sign::Positive) == boundary.forward,
                             increasing: direction == Sign::Positive,
                         });
@@ -133,15 +145,10 @@ pub(crate) fn meridian(
         if !regular {
             continue;
         }
-        trim::try_sort(&mut crossings, |a, b| {
-            Ok(match trim::sign(&(&a.height - &b.height), dec)? {
-                Sign::Negative => std::cmp::Ordering::Less,
-                Sign::Zero => std::cmp::Ordering::Equal,
-                Sign::Positive => std::cmp::Ordering::Greater,
-            })
-        })?;
+        let torus = major.is_some();
+        trim::try_sort(&mut crossings, |a, b| order(a, b, torus, dec))?;
         for pair in crossings.windows(2) {
-            if trim::sign(&(&pair[0].height - &pair[1].height), dec)? == Sign::Zero {
+            if order(&pair[0], &pair[1], torus, dec)? == std::cmp::Ordering::Equal {
                 regular = false;
                 break;
             }
@@ -162,6 +169,112 @@ pub(crate) fn meridian(
     Err(number::budget(
         "no transverse periodic meridian certificate",
     ))
+}
+
+/// The written toroidal chart puts its v seam on the outer equator. Accept a
+/// torus face only when that whole circle is outside the face: no boundary arc
+/// meets it, and the meridian's crossings alternate from entering to exiting
+/// in tube-angle order, so the meridian arc through the equator is exterior.
+/// A disjoint connected circle with one exterior point is exterior throughout.
+pub(crate) fn torus_seam_outside(
+    geometry: &mut Geometry,
+    model: &Model,
+    face: FaceId,
+    meridian: &Meridian,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let Surface::Torus(torus) = geometry.store.surface(model.face(face).surface).clone() else {
+        unreachable!("torus seam check on another carrier")
+    };
+    if meridian.crossings.is_empty() || !meridian.crossings.len().is_multiple_of(2) {
+        return Ok(false);
+    }
+    for (index, crossing) in meridian.crossings.iter().enumerate() {
+        if crossing.enters != index.is_multiple_of(2)
+            || (trim::sign(&crossing.height, dec)? == Sign::Zero
+                && trim::sign(&crossing.offset, dec)? != Sign::Negative)
+        {
+            return Ok(false);
+        }
+    }
+    let axis = number::unit(&torus.axis);
+    let major_sq = torus.major.square();
+    let outer = |geometry: &Geometry, point: PointId, dec: &mut Decider| {
+        let radial = geometry.store.position(point).minus(&torus.center);
+        let height = radial.dot(&axis);
+        let distance = &(&radial.dot(&radial) - &(&height * &height)) - &major_sq;
+        Ok::<_, Refusal>(trim::sign(&distance, dec)? != Sign::Negative)
+    };
+    let reference = number::unit(&torus.ref_dir);
+    let equator = geometry.plane(torus.center.clone(), axis.clone(), reference, dec)?;
+    for boundary in geometry.boundaries(model, face, dec)?.iter() {
+        match geometry
+            .intersections(boundary.curve, equator, dec)?
+            .as_ref()
+        {
+            CurveSurface::Disjoint => {}
+            CurveSurface::Contained => {
+                // A contained trim curve is one of the two equator circles.
+                let point = match boundary.from {
+                    Some(point) => point,
+                    None => {
+                        let origin = geometry
+                            .store
+                            .curve(boundary.curve)
+                            .parameter_origin(&geometry.store);
+                        geometry.point(origin)
+                    }
+                };
+                if outer(geometry, point, dec)? {
+                    return Ok(false);
+                }
+            }
+            CurveSurface::Meets(hits) => {
+                for hit in hits {
+                    if geometry.on_arc(boundary, hit.point, dec)? != Location::Outside
+                        && outer(geometry, hit.point, dec)?
+                    {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Order crossings along the meridian. A torus meridian is a tube circle, so
+/// its crossings are ordered by the tube angle in `[0, 2pi)`, starting on the
+/// outer equator; other carriers order by height along the axis.
+fn order(
+    a: &Crossing,
+    b: &Crossing,
+    torus: bool,
+    dec: &mut Decider,
+) -> Result<std::cmp::Ordering, Refusal> {
+    let ordering = |sign| match sign {
+        Sign::Negative => std::cmp::Ordering::Less,
+        Sign::Zero => std::cmp::Ordering::Equal,
+        Sign::Positive => std::cmp::Ordering::Greater,
+    };
+    if !torus {
+        return Ok(ordering(trim::sign(&(&a.height - &b.height), dec)?));
+    }
+    let mut half = |crossing: &Crossing| -> Result<u8, Refusal> {
+        Ok(match trim::sign(&crossing.height, dec)? {
+            Sign::Positive => 1,
+            Sign::Negative => 3,
+            Sign::Zero if trim::sign(&crossing.offset, dec)? == Sign::Negative => 2,
+            Sign::Zero => 0,
+        })
+    };
+    let (first, second) = (half(a)?, half(b)?);
+    if first != second || first % 2 == 0 {
+        return Ok(first.cmp(&second));
+    }
+    // Within one open half circle the earlier angle turns positively to the later.
+    let turn = &(&a.offset * &b.height) - &(&a.height * &b.offset);
+    Ok(ordering(trim::sign(&turn, dec)?).reverse())
 }
 
 pub(crate) struct Plan {

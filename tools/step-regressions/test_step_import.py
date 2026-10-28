@@ -89,6 +89,11 @@ class StepImportTests(unittest.TestCase):
                 self.assert_import(directory, model_faces - 1)
                 report = self.assert_regularization(directory, gap)
                 self.assertEqual(report['faces'], model_faces - 1)
+                if result == 'op_140':
+                    # A rounded-away planar sliver remains after the slot cut.
+                    # Partial cylinder charts must not rewrite an export whose
+                    # other edges the raw translator cannot resolve.
+                    self.assertEqual(manifest['step']['added_edges'], 0)
 
     def test_parallel_gaps_in_multiple_axes_and_operand_orders(self):
         gap = Fraction(1, 10**30)

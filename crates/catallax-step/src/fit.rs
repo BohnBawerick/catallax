@@ -8,7 +8,7 @@ use catallax_numbers::{Ball, Decider, Rational, Refusal};
 use crate::StepOptions;
 use crate::number::{self, Point};
 
-const DEGREE: usize = 7;
+pub(crate) const DEGREE: usize = 7;
 
 pub(crate) struct Fit {
     pub(crate) points: Vec<Point>,
@@ -53,6 +53,68 @@ pub(crate) fn fit(
     options: &StepOptions,
     dec: &Decider,
 ) -> Result<Fit, Refusal> {
+    fit_spans(
+        trace,
+        start,
+        end,
+        reverse,
+        (options.significant_digits, &options.curve_tolerance),
+        dec,
+        |_, _, _| {},
+    )
+}
+
+pub(crate) struct TraceSpan {
+    pub piece: usize,
+    pub from: Rational,
+    pub to: Rational,
+}
+
+pub(crate) fn fit_with_ranges(
+    trace: &CurveTrace,
+    start: &Point,
+    end: &Point,
+    reverse: bool,
+    options: &StepOptions,
+    dec: &Decider,
+) -> Result<(Fit, Vec<TraceSpan>), Refusal> {
+    let mut ranges = Vec::new();
+    // A chart projects the written space curve back onto its carrier. Reserve
+    // the remaining requested error for that projection and its pcurve fit.
+    let tolerance = &options.curve_tolerance / &Rational::from_i64(4);
+    let fit = fit_spans(
+        trace,
+        start,
+        end,
+        reverse,
+        (options.significant_digits, &tolerance),
+        dec,
+        |piece, from, to| {
+            ranges.push(TraceSpan {
+                piece,
+                from: from.clone(),
+                to: to.clone(),
+            });
+        },
+    )?;
+    if reverse {
+        ranges.reverse();
+        for range in &mut ranges {
+            std::mem::swap(&mut range.from, &mut range.to);
+        }
+    }
+    Ok((fit, ranges))
+}
+
+fn fit_spans(
+    trace: &CurveTrace,
+    start: &Point,
+    end: &Point,
+    reverse: bool,
+    (digits, tolerance): (u32, &Rational),
+    dec: &Decider,
+    mut accepted: impl FnMut(usize, &Rational, &Rational),
+) -> Result<Fit, Refusal> {
     dec.check_deadline()?;
     let policy = dec.policy();
     assert!(!trace.pieces().is_empty(), "empty curve trace");
@@ -64,11 +126,7 @@ pub(crate) fn fit(
         .ok_or_else(|| number::budget("too many initial spline spans"))?;
     let p = number::work_precision(
         policy,
-        options
-            .significant_digits
-            .max(1)
-            .saturating_mul(4)
-            .saturating_add(32),
+        digits.max(1).saturating_mul(4).saturating_add(32),
         initial_operations,
     )
     .ok_or_else(|| number::budget("no work available for an initial spline fit"))?;
@@ -76,7 +134,7 @@ pub(crate) fn fit(
     // Reserve every initial span before spending anything on refinement.
     let mut remaining = policy.max_work - cost * pieces;
     let mut spans = Vec::new();
-    for piece in trace.pieces() {
+    for (piece_index, piece) in trace.pieces().iter().enumerate() {
         let (lo, hi) = piece.range();
         let whole = Ball::from_rational(&lo, p).hull(&Ball::from_rational(&hi, p));
         if whole.lo() < lo || whole.hi() > hi {
@@ -84,27 +142,29 @@ pub(crate) fn fit(
                 "trace range cannot be enclosed at working precision",
             ));
         }
-        let initial = span(piece, &lo, &hi, p, options.significant_digits, &whole, dec)?;
+        let initial = span(piece, &lo, &hi, p, digits, &whole, dec)?;
         // Its work was reserved above.
         let mut pending = vec![(lo, hi, initial)];
         while let Some((lo, hi, current)) = pending.pop() {
             dec.check_deadline()?;
             let error = current.error();
             // Once decimal/enclosure error dominates, subdivision cannot help.
-            let useful = &current.remainder * &Rational::from_i64(4)
-                > error.clone().max(options.curve_tolerance.clone());
-            if error > options.curve_tolerance && useful && remaining >= cost.saturating_mul(2) {
+            let useful =
+                &current.remainder * &Rational::from_i64(4) > error.clone().max(tolerance.clone());
+            if &error > tolerance && useful && remaining >= cost.saturating_mul(2) {
                 remaining -= cost * 2;
                 let mid = (&lo + &hi).mul_pow2(-1);
-                let left = span(piece, &lo, &mid, p, options.significant_digits, &whole, dec)?;
-                let right = span(piece, &mid, &hi, p, options.significant_digits, &whole, dec)?;
+                let left = span(piece, &lo, &mid, p, digits, &whole, dec)?;
+                let right = span(piece, &mid, &hi, p, digits, &whole, dec)?;
                 if left.error().max(right.error()) < error {
                     pending.push((mid.clone(), hi, right));
                     pending.push((lo, mid, left));
                 } else {
+                    accepted(piece_index, &lo, &hi);
                     spans.push(current);
                 }
             } else {
+                accepted(piece_index, &lo, &hi);
                 spans.push(current);
             }
         }
@@ -139,7 +199,7 @@ pub(crate) fn fit(
         // the next exactly representable decimal so low digit counts cannot
         // collapse distinct knots and change the fitted curve.
         let next = (&knot + &Rational::one())
-            .to_decimal_bounds(options.significant_digits.max(1))
+            .to_decimal_bounds(digits.max(1))
             .1;
         knot = number::formatted_value(&next);
         knots.push(knot.clone());
@@ -199,34 +259,10 @@ fn span(
         * width.mul_pow2(-1).pow((DEGREE + 1) as i32).unwrap();
     let mut ideals = Vec::with_capacity(DEGREE + 1);
     let mut points = Vec::with_capacity(DEGREE + 1);
-    for j in 0..=DEGREE {
-        let mut control: [[Rational; 2]; 3] =
-            std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
-        for (k, coefficient) in coefficients.iter().enumerate() {
-            let factor = (0..=k.min(j)).fold(Rational::zero(), |s, l| {
-                let term =
-                    Rational::from_ratio(binomial(k, l) * binomial(j, l), binomial(DEGREE, l))
-                        .unwrap()
-                        * Rational::from_ratio(-1, 2)
-                            .unwrap()
-                            .pow((k - l) as i32)
-                            .unwrap();
-                s + term
-            }) * width.pow(k as i32).unwrap();
-            for i in 0..3 {
-                let a = &coefficient[i].lo() * &factor;
-                let b = &coefficient[i].hi() * &factor;
-                control[i][0] = &control[i][0] + &a.clone().min(b.clone());
-                control[i][1] = &control[i][1] + &a.max(b);
-            }
-        }
-        points.push(Point {
-            xyz: control
-                .each_ref()
-                .map(|b| number::rounded(&b[0], &b[1], digits)),
-        });
+    taylor_controls(&coefficients, &width, digits, |xyz, control| {
+        points.push(Point { xyz });
         ideals.push(control);
-    }
+    });
     for (index, t) in [(0, lo), (DEGREE, hi)] {
         let raw = Ball::from_rational(t, precision);
         let parameter = if inside(&raw) { &raw } else { whole };
@@ -247,6 +283,62 @@ fn span(
         remainder,
         bounds,
     })
+}
+
+/// Convert an enclosed Taylor polynomial on a centered interval to rounded
+/// Bezier controls, retaining the unrounded enclosure for its error proof.
+pub(crate) fn taylor_controls<const N: usize>(
+    coefficients: &[[Ball; N]],
+    width: &Rational,
+    digits: u32,
+    mut push: impl FnMut([number::Number; N], [[Rational; 2]; N]),
+) {
+    let degree = coefficients.len() - 1;
+    for j in 0..=degree {
+        let mut control: [[Rational; 2]; N] =
+            std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
+        for (k, coefficient) in coefficients.iter().enumerate() {
+            let factor = (0..=k.min(j)).fold(Rational::zero(), |s, l| {
+                let term =
+                    Rational::from_ratio(binomial(k, l) * binomial(j, l), binomial(degree, l))
+                        .unwrap()
+                        * Rational::from_ratio(-1, 2)
+                            .unwrap()
+                            .pow((k - l) as i32)
+                            .unwrap();
+                s + term
+            }) * width.pow(k as i32).unwrap();
+            for i in 0..N {
+                let a = &coefficient[i].lo() * &factor;
+                let b = &coefficient[i].hi() * &factor;
+                control[i][0] = &control[i][0] + &a.clone().min(b.clone());
+                control[i][1] = &control[i][1] + &a.max(b);
+            }
+        }
+        push(
+            control
+                .each_ref()
+                .map(|b| number::rounded(&b[0], &b[1], digits)),
+            control,
+        );
+    }
+}
+
+pub(crate) fn bezier_power<const N: usize>(
+    mut differences: [[Rational; N]; DEGREE + 1],
+) -> [[Rational; N]; DEGREE + 1] {
+    let mut powers = std::array::from_fn(|_| std::array::from_fn(|_| Rational::zero()));
+    for (k, power) in powers.iter_mut().enumerate() {
+        let factor = Rational::from_i64(binomial(DEGREE, k));
+        for (value, difference) in power.iter_mut().zip(&differences[0]) {
+            *value = difference * &factor;
+        }
+        for j in 0..DEGREE - k {
+            differences[j] =
+                std::array::from_fn(|axis| &differences[j + 1][axis] - &differences[j][axis]);
+        }
+    }
+    powers
 }
 
 fn binomial(n: usize, k: usize) -> i64 {

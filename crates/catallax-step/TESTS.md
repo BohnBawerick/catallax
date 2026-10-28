@@ -11,15 +11,38 @@ cargo test -p catallax-step --release
 python3 crates/catallax-step/tests/verify_exact.py
 ```
 
-The required CI job runs `tools/step-regressions/test_loopless_faces.py` and
-`test_periodic_bands.py` with `cadquery-ocp==8.0.1.1.0`. They check full spheres,
-tori, cylinders and both frustum directions at identity and rational
-rotated/translated poses, a reversed cylindrical through-hole wall, an enclosed
-cylindrical void, and 82/100-degree algebraic countersinks at the unchanged
-100,000,000-work request allowance.
-Checks cover native topology, degenerate sphere poles, validity and positive
-analytic volume. Direct `StepToTopoDS_Builder` translation bypasses the
-reader's default ShapeFix processing. SameParameter remains disabled.
+The required CI job discovers all `tools/step-regressions/test_*.py` with
+`cadquery-ocp==8.0.1.1.0`. Complete-face and band checks cover spheres, tori,
+cylinders, both frustum directions, rational poses, reversed through-hole
+walls, enclosed cylindrical voids and algebraic countersinks.
+`test_partial_periodic_trims.py` adds a public cylinder/sphere intersection,
+touching branch vertices, a closed cylinder/sphere branch, spherical lenses at
+identity and a rational pose, and a public block/cylinder union whose two
+cylinder band seams each meet two cut vertices. Each of these imports the file through two
+procedures: raw translation and the standard reader. Each procedure must give a
+valid shape with one solid, the expected face, edge and vertex counts, and a
+converged adaptive volume within the diagnostic tube of the expected volume.
+Only the raw procedure asserts no healing: direct `StepToTopoDS_Builder`
+translation bypasses the reader's default ShapeFix processing and keeps
+SameParameter disabled. Three scenes in the same file pin the legacy fallback and
+check only the export: a transverse ball frame whose pole has no membership
+certificate still answers within the request allowance with no added edges,
+touching spherical trims keep a file with no pcurves, and a ball cut by a plane
+passing 1e-15 from both of its frame's poles keeps an exact answer and a file
+with no pcurves.
+
+`test_step_import.py` reads files through `check-step.py`, which uses only the
+standard reader with its default processing. That check requires a valid
+shape and the expected number of distinct faces across the whole shape. It
+does not count solids or translate raw, and it reports the kernel volume
+comparison as unmeasured. The tests also check the regularization report. The parallel-gap cases compare the
+standard reader's volume with 168 within 1e-9. On the full slot-cut capture,
+whose rounded planar sliver the raw translator cannot resolve, the test pins
+the legacy encoding by requiring no added edges.
+
+The Rust `partial` target preserves the 100,000,000-work request allowance,
+the legacy encoding of unresolved subprecision trims, and whole-export legacy
+topology for mixed conical scenes in both body orders.
 
 Run **all tests**, including the eight cases retained behind individual ignore reasons:
 
@@ -73,15 +96,19 @@ of its model supports. Added seam geometry and ring origins are checked too.
 | 20 | `contract` | Expired deadline returns `numbers.deadline` without altering output, or exactly the normal bytes/report/marks |
 | Refusals and other rules | `contract`, `refusals` | `step.io-error` with exact error detail after immediate and partial writes; `intersect.unsupported-curve` propagated unchanged and atomically; zero digits clamp to one; uncertainty rounds upward; body marks are not copied into exporter marks |
 
-The cases with branch nodes additionally check that both fitted curves use the same existing vertex rather than adding seam vertices. Surface and curve definitions are matched to the source model, with ordering and sharing checked by IDs, not just aggregate counts. Loopless torus seams carry two pcurves on their unchanged analytic circles. A loopless sphere uses a sole vertex loop for the complete natural domain.
+Branch-node regressions preserve the existing shared physical vertex; periodic chart cuts may add other vertices and seams. Surface and curve definitions are matched to the source model, with ordering and sharing checked by IDs, not just aggregate counts. Loopless torus seams carry two pcurves on their unchanged analytic circles. A loopless sphere uses a sole vertex loop for the complete natural domain.
 
-Complete cylindrical and conical bands with two vertex-free ring loops get an
-export-only seam and iso-parameter ring pcurves. Connected bands choose a common
-physical meridian without changing their exact carriers. Independent rational
-tests bound decimal period rounding at one, five and seventeen significant
-digits. Arbitrarily trimmed periodic faces and apex cones retain their previous
-encoding and remain known raw-import gaps. A file containing such unsupported
-faces does not receive a partial band cutover.
+Complete cylindrical and conical bands with two vertex-free ring loops retain
+their existing seam encoding. Regular partial cylinders and pole-free spherical
+faces use exact shared-edge cuts and bounded, parameter-coupled pcurves. Source
+loop-corner incidence is preserved at touching vertices; disconnected chart
+components receive distinct face/surface identities. No kernel topology is
+modified. Elliptic cylinders, cone faces, arbitrary torus trims, spherical faces
+whose poles belong to the domain, touching spherical trims, and unresolved
+rounded edges anywhere in the export retain their previous encoding. Uncharted planar caps must keep native analytic boundaries;
+opaque boundaries reject the whole export's partial cutover. Complete bands
+remain on their earlier path. Distinct endpoints must remain separated by the larger of the requested
+distance tolerance and `1e-7`, plus their certified rounding errors.
 
 Longitudinal seam directions come from the certified carrier frame, not from
 normalizing an algebraic endpoint-height difference. Full-carrier incidence

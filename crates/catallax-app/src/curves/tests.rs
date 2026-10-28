@@ -207,17 +207,19 @@ fn edit_resolves_stable_origin_then_matches_retained_definition_and_step() {
 }
 
 fn check_step_edge(body: &ApplicationBody, query: &EdgeCurve, radius: i64) {
+    let options = catallax_step::StepOptions::default();
     let mut bytes = Vec::new();
     let report = catallax_step::write_step(
         &body.built.model,
         &[body.built.result],
-        &Default::default(),
+        &options,
         &mut Decider::default(),
         &mut bytes,
     )
     .unwrap();
     assert_eq!(report.value.approximated_curves, 0);
-    assert_eq!(report.value.max_deviation, Rational::zero());
+    // Exact 3D circles still have certified auxiliary-pcurve fitting and rounding bounds.
+    assert!(report.value.max_deviation <= options.curve_tolerance);
     let text = String::from_utf8(bytes).unwrap();
     let entities: std::collections::BTreeMap<_, _> = text
         .lines()
@@ -266,10 +268,17 @@ fn check_step_edge(body: &ApplicationBody, query: &EdgeCurve, radius: i64) {
             .filter(|v| v.starts_with("EDGE_CURVE("))
             .any(|entity| {
                 let ids = refs(entity);
+                let curve = entities[&ids[2]];
+                let curve =
+                    if curve.starts_with("SURFACE_CURVE(") || curve.starts_with("SEAM_CURVE(") {
+                        entities[&refs(curve)[0]]
+                    } else {
+                        curve
+                    };
                 vertex_point(ids[0]) == start
                     && vertex_point(ids[1]) == end
-                    && entities[&ids[2]].starts_with("CIRCLE(")
-                    && entities[&ids[2]].ends_with(&format!(",{radius}.);"))
+                    && curve.starts_with("CIRCLE(")
+                    && curve.ends_with(&format!(",{radius}.);"))
                     && entity.ends_with(if query.sense == Sense::Same {
                         ",.T.);"
                     } else {

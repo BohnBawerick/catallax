@@ -11,6 +11,9 @@ use crate::graph::{Graph, Id, boolean, refs, string, text};
 use crate::number::{self, Number, Point};
 use crate::{StepOptions, StepReport};
 
+#[path = "export/charts.rs"]
+mod charts;
+
 type Bounds = [[Rational; 2]; 3];
 
 struct Vertex {
@@ -28,6 +31,7 @@ struct Topology {
     vertices: BTreeMap<VertexId, Rc<Vertex>>,
     edges: BTreeMap<EdgeId, Rc<Edge>>,
     ring_vertices: BTreeMap<EdgeId, Rc<Vertex>>,
+    chart: Option<charts::ChartTopology>,
 }
 
 struct Curve {
@@ -40,10 +44,16 @@ struct Curve {
     diameter: Rational,
 }
 
+struct CurveProduct {
+    curve: Curve,
+    written: Option<crate::pcurve::Curve>,
+}
+
 struct Placement {
     id: Id,
     origin: Point,
     error: Rational,
+    written: Option<Rc<crate::pcurve::Placement>>,
 }
 
 struct SurfaceGeometry {
@@ -65,6 +75,7 @@ pub(crate) struct Exporter<'a> {
     edge_errors: BTreeMap<EdgeId, Rational>,
     bands: crate::band::Plan,
     band_period: Option<Rc<Number>>,
+    chart_state: Option<charts::State>,
 }
 
 impl<'a> Exporter<'a> {
@@ -81,6 +92,7 @@ impl<'a> Exporter<'a> {
             edge_errors: BTreeMap::new(),
             bands: crate::band::Plan::default(),
             band_period: None,
+            chart_state: None,
         }
     }
 
@@ -93,6 +105,13 @@ impl<'a> Exporter<'a> {
         self.report.regularizations = records;
         self.face_errors = face_errors;
         self.edge_errors = edge_errors;
+        self
+    }
+
+    pub(crate) fn charts(mut self, plan: crate::chart::Plan) -> Self {
+        self.report.added_edges += plan.added_edges;
+        self.report.added_vertices += plan.added_vertices;
+        self.chart_state = Some(charts::State::new(plan));
         self
     }
 
@@ -135,6 +154,7 @@ impl<'a> Exporter<'a> {
         origin: &Point3,
         axis: &Vector3,
         reference: &Vector3,
+        capture: bool,
     ) -> Result<Placement, Refusal> {
         let p = number::point(origin, self.digits(), self.dec)?;
         let z = number::direction(axis, self.digits(), self.dec)?;
@@ -143,6 +163,15 @@ impl<'a> Exporter<'a> {
         // For a unit u, |normalize(w)-u| <= 2|w-u|. Gram-Schmidt gives
         // |dx|+|dy|+|dz| <= 8|reference-e1|+12|axis-e3|.
         let error = x.error() * Rational::from_i64(8) + z.error() * Rational::from_i64(12);
+        let written = if capture {
+            Some(Rc::new(crate::pcurve::Placement::new(
+                p.xyz.each_ref().map(|n| n.value.clone()),
+                z.xyz.each_ref().map(|n| n.value.clone()),
+                x.xyz.each_ref().map(|n| n.value.clone()),
+            )?))
+        } else {
+            None
+        };
         let location = self.point_entity(&p);
         let axis = self.direction_entity(&z);
         let reference = self.direction_entity(&x);
@@ -154,6 +183,7 @@ impl<'a> Exporter<'a> {
             id,
             origin: p,
             error,
+            written,
         })
     }
 
@@ -175,24 +205,13 @@ impl<'a> Exporter<'a> {
         if let Some(vertex) = topology.vertices.get(&id) {
             return Ok(vertex.clone());
         }
-        let point_id = self.model.vertex(id).point;
-        // The public enclosure call is required even for explicit rational points.
-        let [x, y, z] = self.model.geom().enclose_point(
-            point_id,
-            &self
-                .options
-                .curve_tolerance
-                .abs()
-                .max(Rational::from_ratio(1, 1_000_000_000).unwrap()),
-            self.dec,
-        )?;
-        let position = self.model.geom().position(point_id);
-        let point = Point {
-            xyz: [
-                number::enclosed(&position.x, x, self.digits(), self.dec)?,
-                number::enclosed(&position.y, y, self.digits(), self.dec)?,
-                number::enclosed(&position.z, z, self.digits(), self.dec)?,
-            ],
+        let point = match self
+            .chart_state
+            .as_mut()
+            .and_then(|state| state.plan.written_vertices.remove(&id))
+        {
+            Some(point) => point,
+            None => number::vertex(self.model, id, self.options, self.dec)?,
         };
         let vertex = self.vertex_point(point);
         topology.vertices.insert(id, vertex.clone());
@@ -208,12 +227,38 @@ impl<'a> Exporter<'a> {
         } else {
             curve_form(self.model.geom(), id, self.dec)?
         };
-        let curve = self.curve_geometry(&form)?.map(Rc::new);
+        let capture = self
+            .chart_state
+            .as_ref()
+            .is_some_and(|state| state.plan.curves.contains(&id));
+        let curve = match self.curve_geometry(&form, capture)? {
+            Some(product) => {
+                if let Some(written) = product.written {
+                    self.chart_state
+                        .as_mut()
+                        .expect("captured chart geometry")
+                        .analytic
+                        .insert(
+                            id,
+                            Rc::new(charts::Analytic {
+                                written,
+                                exact: form,
+                            }),
+                        );
+                }
+                Some(Rc::new(product.curve))
+            }
+            None => None,
+        };
         self.curves.insert(id, curve.clone());
         Ok(curve)
     }
 
-    fn curve_geometry(&mut self, form: &CurveForm) -> Result<Option<Curve>, Refusal> {
+    fn curve_geometry(
+        &mut self,
+        form: &CurveForm,
+        capture: bool,
+    ) -> Result<Option<CurveProduct>, Refusal> {
         let curve = match form {
             CurveForm::Line { origin, dir } => {
                 let p = number::point(origin, self.digits(), self.dec)?;
@@ -226,13 +271,20 @@ impl<'a> Exporter<'a> {
                 let id = self
                     .graph
                     .add("LINE", vec![text("''"), location.into(), vector.into()]);
-                Curve {
-                    id,
-                    error: p.error(),
-                    line_origin: Some(p.xyz.map(|n| n.value)),
-                    bounds: None,
-                    aspect: d.error() * Rational::from_i64(2),
-                    diameter: Rational::zero(),
+                let written = capture.then(|| crate::pcurve::Curve::Line {
+                    origin: p.xyz.each_ref().map(|n| n.value.clone()),
+                    direction: d.xyz.each_ref().map(|n| n.value.clone()),
+                });
+                CurveProduct {
+                    curve: Curve {
+                        id,
+                        error: p.error(),
+                        line_origin: Some(p.xyz.map(|n| n.value)),
+                        bounds: None,
+                        aspect: d.error() * Rational::from_i64(2),
+                        diameter: Rational::zero(),
+                    },
+                    written,
                 }
             }
             CurveForm::Circle {
@@ -242,7 +294,7 @@ impl<'a> Exporter<'a> {
                 ref_dir,
             } => {
                 let radius = number::real(&number::sqrt_real(radius_sq), self.digits(), self.dec)?;
-                self.ellipse(center, normal, ref_dir, radius, None)?
+                self.ellipse(center, normal, ref_dir, radius, None, capture)?
             }
             CurveForm::Ellipse {
                 center,
@@ -253,7 +305,7 @@ impl<'a> Exporter<'a> {
             } => {
                 let major = number::real(&number::sqrt_real(major_sq), self.digits(), self.dec)?;
                 let minor = number::real(&number::sqrt_real(minor_sq), self.digits(), self.dec)?;
-                self.ellipse(center, normal, major_dir, major, Some(minor))?
+                self.ellipse(center, normal, major_dir, major, Some(minor), capture)?
             }
             CurveForm::Parabola {
                 vertex,
@@ -262,7 +314,10 @@ impl<'a> Exporter<'a> {
                 focal,
             } => {
                 let focal = number::real(focal, self.digits(), self.dec)?;
-                self.open_conic("PARABOLA", vertex, normal, axis_dir, vec![focal])?
+                CurveProduct {
+                    curve: self.open_conic("PARABOLA", vertex, normal, axis_dir, vec![focal])?,
+                    written: None,
+                }
             }
             CurveForm::Hyperbola {
                 center,
@@ -277,15 +332,27 @@ impl<'a> Exporter<'a> {
                 let minor =
                     number::real(&number::sqrt_real(conjugate_sq), self.digits(), self.dec)?;
                 if *branch == catallax_numbers::StrictSign::Negative {
-                    self.open_conic(
-                        "HYPERBOLA",
-                        center,
-                        &normal.scaled(&Real::from_i64(-1)),
-                        &axis_dir.scaled(&Real::from_i64(-1)),
-                        vec![major, minor],
-                    )?
+                    CurveProduct {
+                        curve: self.open_conic(
+                            "HYPERBOLA",
+                            center,
+                            &normal.scaled(&Real::from_i64(-1)),
+                            &axis_dir.scaled(&Real::from_i64(-1)),
+                            vec![major, minor],
+                        )?,
+                        written: None,
+                    }
                 } else {
-                    self.open_conic("HYPERBOLA", center, normal, axis_dir, vec![major, minor])?
+                    CurveProduct {
+                        curve: self.open_conic(
+                            "HYPERBOLA",
+                            center,
+                            normal,
+                            axis_dir,
+                            vec![major, minor],
+                        )?,
+                        written: None,
+                    }
                 }
             }
             CurveForm::Branch => return Ok(None),
@@ -302,7 +369,7 @@ impl<'a> Exporter<'a> {
         reference: &Vector3,
         dimensions: Vec<Number>,
     ) -> Result<Curve, Refusal> {
-        let placement = self.placement(center, normal, reference)?;
+        let placement = self.placement(center, normal, reference, false)?;
         let mut aspect = placement.error;
         let mut fields = vec![text("''"), placement.id.into()];
         for dimension in dimensions {
@@ -333,11 +400,21 @@ impl<'a> Exporter<'a> {
         reference: &Vector3,
         major: Number,
         minor: Option<Number>,
-    ) -> Result<Curve, Refusal> {
+        capture: bool,
+    ) -> Result<CurveProduct, Refusal> {
         if major.value <= Rational::zero() {
             return Err(number::budget("rounded radius is not positive"));
         }
-        let placement = self.placement(center, axis, reference)?;
+        let placement = self.placement(center, axis, reference, capture)?;
+        let written = placement
+            .written
+            .map(|placement| crate::pcurve::Curve::Ellipse {
+                placement,
+                major: major.value.clone(),
+                minor: minor
+                    .as_ref()
+                    .map_or_else(|| major.value.clone(), |n| n.value.clone()),
+            });
         let radius_upper = &major.value.abs() + &major.error;
         let mut error =
             placement.origin.error() + &radius_upper * &placement.error + major.error.clone();
@@ -363,13 +440,16 @@ impl<'a> Exporter<'a> {
                 &(&n.value + &n.error) + &radius_upper,
             ]
         });
-        Ok(Curve {
-            id,
-            error,
-            line_origin: None,
-            bounds: Some(bounds),
-            aspect,
-            diameter: radius_upper * Rational::from_i64(2),
+        Ok(CurveProduct {
+            curve: Curve {
+                id,
+                error,
+                line_origin: None,
+                bounds: Some(bounds),
+                aspect,
+                diameter: radius_upper * Rational::from_i64(2),
+            },
+            written,
         })
     }
 
@@ -416,7 +496,20 @@ impl<'a> Exporter<'a> {
             }
             _ => panic!("edge has only one endpoint"),
         };
+        let capture = self.has_chart_edge(id, topology);
+        let mut geometry = None;
         let (curve, bounds, same, error) = if let Some(curve) = self.analytic_curve(source.curve)? {
+            if capture {
+                let captured = self
+                    .chart_state
+                    .as_ref()
+                    .expect("chart edge")
+                    .analytic
+                    .get(&source.curve)
+                    .ok_or_else(unsupported)?
+                    .clone();
+                geometry = Some(charts::Geometry::Analytic(captured));
+            }
             let bounds = curve
                 .bounds
                 .clone()
@@ -446,14 +539,29 @@ impl<'a> Exporter<'a> {
             let trace =
                 catallax_intersect::trace(self.model.geom(), source.curve, from, to, self.dec)?
                     .value;
-            let fit = crate::fit::fit(
-                &trace,
-                &start.point,
-                &end.point,
-                source.sense == Sense::Reversed,
-                self.options,
-                self.dec,
-            )?;
+            let (fit, spans) = if capture {
+                let (fit, spans) = crate::fit::fit_with_ranges(
+                    &trace,
+                    &start.point,
+                    &end.point,
+                    source.sense == Sense::Reversed,
+                    self.options,
+                    self.dec,
+                )?;
+                (fit, Some(spans))
+            } else {
+                (
+                    crate::fit::fit(
+                        &trace,
+                        &start.point,
+                        &end.point,
+                        source.sense == Sense::Reversed,
+                        self.options,
+                        self.dec,
+                    )?,
+                    None,
+                )
+            };
             let points = fit
                 .points
                 .iter()
@@ -485,11 +593,26 @@ impl<'a> Exporter<'a> {
                     text(".UNSPECIFIED."),
                 ],
             );
+            if let Some(spans) = spans {
+                geometry = Some(charts::Geometry::spline(&fit, trace, spans));
+            }
             self.report.approximated_curves += 1;
             (curve, fit.bounds, true, fit.error)
         };
         let curve = if let Some(ring) = self.bands.rings.get(&id).cloned() {
             self.ring_curve(curve, &bounds, &ring, error)?
+        } else if let Some(geometry) = geometry.as_ref() {
+            self.chart_edge(
+                id,
+                charts::EdgeInput {
+                    curve,
+                    geometry,
+                    bounds: &bounds,
+                    error: &error,
+                    same,
+                },
+                topology,
+            )?
         } else {
             self.deviation(error);
             curve
@@ -642,7 +765,7 @@ impl<'a> Exporter<'a> {
             origin: origin.clone(),
             dir: band.seam_direction.clone(),
         };
-        let curve = self.curve_geometry(&form)?.unwrap();
+        let curve = self.curve_geometry(&form, false)?.unwrap().curve;
         let period = self.band_period()?;
         let v = number::real(&band.low_v, self.digits(), self.dec)?;
         self.surface(band.surface)?;
@@ -690,7 +813,7 @@ impl<'a> Exporter<'a> {
         along_u: bool,
         parameter_error: &Rational,
     ) -> Result<Id, Refusal> {
-        let curve = self.curve_geometry(form)?.unwrap();
+        let curve = self.curve_geometry(form, false)?.unwrap().curve;
         self.deviation(&arc_error(&curve, vertex, vertex) + parameter_error);
         let context = self.graph.add(
             "GEOMETRIC_REPRESENTATION_CONTEXT",
@@ -827,7 +950,9 @@ impl<'a> Exporter<'a> {
         if let Surface::EllipticCylinder(s) = surface {
             let major = number::real(&number::sqrt_real(&s.major_sq), self.digits(), self.dec)?;
             let minor = number::real(&number::sqrt_real(&s.minor_sq), self.digits(), self.dec)?;
-            let ellipse = self.ellipse(&s.origin, &s.axis, &s.major_dir, major, Some(minor))?;
+            let ellipse = self
+                .ellipse(&s.origin, &s.axis, &s.major_dir, major, Some(minor), false)?
+                .curve;
             let axis = number::direction(&s.axis, self.digits(), self.dec)?;
             let direction = self.direction_entity(&axis);
             let vector = self
@@ -875,17 +1000,33 @@ impl<'a> Exporter<'a> {
             ),
             _ => return Err(unsupported()),
         };
+        let capture = self
+            .chart_state
+            .as_ref()
+            .is_some_and(|state| state.plan.surfaces.contains(&id));
         let placement = if let Some(reference) = self.bands.references.get(&id).cloned() {
-            self.placement(origin, axis, &reference)?
+            self.placement(origin, axis, &reference, capture)?
         } else {
-            self.placement(origin, axis, reference)?
+            self.placement(origin, axis, reference, capture)?
         };
         let mut base_error = placement.origin.error();
         let mut extent_error = placement.error.clone();
         let mut fields = vec![text("''"), placement.id.into()];
+        let mut parameters = None;
         for size in &sizes {
             let n = number::real(size, self.digits(), self.dec)?;
             base_error = &base_error + &n.error;
+            if capture {
+                parameters = Some(match surface {
+                    Surface::Cylinder(_) => crate::pcurve::SurfaceParameters::Cylinder {
+                        radius: n.value.clone(),
+                    },
+                    Surface::Sphere(_) => crate::pcurve::SurfaceParameters::Sphere {
+                        radius: n.value.clone(),
+                    },
+                    _ => unreachable!("captured surface size is not cylindrical or spherical"),
+                });
+            }
             fields.push(text(n.text));
         }
         match surface {
@@ -915,10 +1056,28 @@ impl<'a> Exporter<'a> {
                     number::certified(number::floor_ball(&angle, self.digits()), self.digits())?;
                 extent_error = (&extent_error + &n.error)
                     * (Rational::one() + number::upper(&s.slope, self.dec)?);
+                if capture {
+                    parameters = Some(crate::pcurve::SurfaceParameters::Cone {
+                        angle: n.value.clone(),
+                    });
+                }
                 fields.push(text("0."));
                 fields.push(text(n.text));
             }
             _ => {}
+        }
+        if let Some(parameters) = parameters {
+            self.chart_state
+                .as_mut()
+                .expect("captured chart surface")
+                .surfaces
+                .insert(
+                    id,
+                    Rc::new(crate::pcurve::Surface {
+                        placement: placement.written.expect("captured chart placement"),
+                        parameters,
+                    }),
+                );
         }
         let geometry = SurfaceGeometry {
             id: self.graph.add(name, fields),
@@ -1028,7 +1187,15 @@ impl<'a> Exporter<'a> {
     ) -> Result<Id, Refusal> {
         let mut faces = Vec::new();
         for face in &self.model.shell(id).faces {
-            faces.push(self.face(*face, reverse, topology)?);
+            if self
+                .chart_state
+                .as_ref()
+                .is_some_and(|state| state.plan.faces.contains_key(face))
+            {
+                self.chart_faces(*face, reverse, topology, &mut faces)?;
+            } else {
+                faces.push(self.face(*face, reverse, topology)?);
+            }
         }
         Ok(self
             .graph
@@ -1052,11 +1219,57 @@ impl<'a> Exporter<'a> {
         bodies: &[BodyId],
         envelope: Option<BodyId>,
     ) -> Answered<(String, StepReport)> {
-        self.bands = crate::band::Plan::prepare(
-            self.model,
-            bodies.iter().copied().chain(envelope),
-            self.dec,
-        )?;
+        if self.chart_state.is_none() {
+            self.bands = crate::band::Plan::prepare(
+                self.model,
+                bodies.iter().copied().chain(envelope),
+                self.dec,
+            )?;
+            // Charts are an optional encoding. Only an exhausted request
+            // allowance or deadline may turn their failure into a refusal;
+            // otherwise the scene keeps its legacy encoding. Charts that miss
+            // the requested tolerance would turn an exact answer inexact, so
+            // they are not used either.
+            if self.bands.faces.is_empty() {
+                let charted = crate::partial::prepare(
+                    self.model,
+                    bodies.iter().copied().chain(envelope),
+                    self.options,
+                    self.dec,
+                )
+                .and_then(|prepared| {
+                    let Some(prepared) = prepared else {
+                        return Ok(None);
+                    };
+                    let (face_errors, edge_errors) =
+                        prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
+                    let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
+                    Exporter::new(&prepared.model, self.options, self.dec)
+                        .regularizations(
+                            self.report.regularizations.clone(),
+                            face_errors,
+                            edge_errors,
+                        )
+                        .charts(prepared.plan)
+                        .build_parts(&prepared.bodies[..bodies.len()], envelope)
+                        .map(Some)
+                });
+                match charted {
+                    Ok(Some(answer))
+                        if answer.value.1.max_deviation <= self.options.curve_tolerance =>
+                    {
+                        return Ok(answer);
+                    }
+                    Ok(_) => {}
+                    Err(refusal)
+                        if !matches!(
+                            refusal.code,
+                            "numbers.operation-budget" | "numbers.deadline"
+                        ) => {}
+                    Err(refusal) => return Err(refusal),
+                }
+            }
+        }
         let mut solids = Vec::new();
         for id in bodies {
             let body = self.model.body(*id);
@@ -1067,7 +1280,7 @@ impl<'a> Exporter<'a> {
             }
             for lump in &body.lumps {
                 let lump = self.model.lump(*lump);
-                let mut topology = Topology::default();
+                let mut topology = self.topology(&lump.shells);
                 let outer = self.shell(lump.shells[0], false, &mut topology)?;
                 let solid = if lump.shells.len() == 1 {
                     self.graph.add(
@@ -1095,6 +1308,7 @@ impl<'a> Exporter<'a> {
                         vec![text("''"), outer.into(), refs(voids)],
                     )
                 };
+                self.finish_chart_edges(&topology)?;
                 solids.push(solid);
                 self.report.solids += 1;
             }
@@ -1109,10 +1323,11 @@ impl<'a> Exporter<'a> {
             }
             let mut shells = Vec::new();
             for lump in &body.lumps {
-                let mut topology = Topology::default();
+                let mut topology = self.topology(&self.model.lump(*lump).shells);
                 for (index, shell) in self.model.lump(*lump).shells.iter().enumerate() {
                     shells.push(self.shell(*shell, index != 0, &mut topology)?);
                 }
+                self.finish_chart_edges(&topology)?;
             }
             solids.push(self.graph.add(
                 "SHELL_BASED_SURFACE_MODEL",

@@ -224,5 +224,82 @@ class ReplayTransitionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "both STEP files"):
             self.compare([before], [after], corrections=[approval])
 
+    def test_reviewed_correction_may_change_approximated_curve_count(self):
+        before = self.case("before", step=b"invalid synthetic STEP", step_fields={"approximated_curves": 0})
+        after = self.case("after", step=b"corrected synthetic STEP", step_fields={"approximated_curves": 2})
+        approval = self.correction(before, after, ("step.approximated_curves",))
+        self.assertEqual(self.compare([before], [after], corrections=[approval])["corrections"], 1)
+
+    def refusal(self, name, code="numbers.operation-budget", stage="carrier", detail="ran out"):
+        case = self.case(name, status="refused")
+        path = Path(case["path"]) / "manifest.json"
+        manifest = release.read_json(path)
+        manifest["refusal"] = {"code": code, "step": "f2", "stage": stage, "detail": detail}
+        release.write_json(path, manifest)
+        return case
+
+    def refusal_move(self, before, after, fields):
+        approval = self.approval(before, after)
+        return {"index": 0, "class": "same-code-refusal-stage",
+                "request_sha256": approval["request_sha256"],
+                "before_sha256": approval["refusal_sha256"], "after_sha256": approval["answer_sha256"],
+                "manifest_fields": list(fields),
+                "sources": [{"pr": "https://github.com/BohnBawerick/catallax/pull/162", "commit": "e" * 40}]}
+
+    def test_same_code_refusal_may_move_to_a_later_stage(self):
+        before = self.refusal("before")
+        after = self.refusal("after", stage="membership", detail="ran out later")
+        approval = self.refusal_move(before, after, ("refusal.stage", "refusal.detail"))
+        result = self.compare([before], [after], corrections=[approval])
+        self.assertEqual(result, {"cases": 1, "equal": False, "failures": [], "upgrades": 0, "corrections": 1})
+        with self.assertRaisesRegex(ValueError, "unlisted refusal change"):
+            self.compare([before], [after])
+        for field in ("request_sha256", "before_sha256", "after_sha256", "manifest_fields"):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(approval)
+                changed[field] = ["refusal.stage"] if field == "manifest_fields" else "0" * 64
+                with self.assertRaisesRegex(ValueError, "correction differs|manifest scope"):
+                    self.compare([before], [after], corrections=[changed])
+
+    def test_refusal_stage_class_cannot_hide_a_new_code_or_other_changes(self):
+        before = self.refusal("before")
+        after = self.refusal("after", code="boolean.self-touching-shell", stage="membership")
+        approval = self.refusal_move(before, after, ("refusal.stage",))
+        with self.assertRaisesRegex(ValueError, "refusal code changed"):
+            self.compare([before], [after], corrections=[approval])
+        for change in ("marks", "answer.igs"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                previous_root, self.root = self.root, Path(directory)
+                try:
+                    before = self.refusal("before")
+                    after = self.refusal("after", stage="membership")
+                    if change == "answer.igs":
+                        (Path(after["path"]) / change).write_bytes(b"unrelated output")
+                    else:
+                        path = Path(after["path"]) / "manifest.json"
+                        manifest = release.read_json(path)
+                        manifest[change] = ["new"]
+                        release.write_json(path, manifest)
+                    approval = self.refusal_move(before, after, ("refusal.stage",))
+                    with self.assertRaisesRegex(ValueError, "unapproved manifest scope|another output"):
+                        self.compare([before], [after], corrections=[approval])
+                finally:
+                    self.root = previous_root
+
+    def test_correction_classes_follow_the_status_transition(self):
+        before, after = self.corrected_pair()
+        step_row = self.correction(before, after, ("step.added_edges",))
+        wrong = {key: value for key, value in step_row.items() if key != "evidence"}
+        wrong.update(**{"class": "same-code-refusal-stage", "manifest_fields": ["refusal.stage"]})
+        with self.assertRaisesRegex(ValueError, "unsupported correction class"):
+            self.compare([before], [after], corrections=[wrong])
+        old, new = self.refusal("old"), self.refusal("new", stage="membership")
+        approval = self.refusal_move(old, new, ("refusal.stage",))
+        as_step = approval | {"class": "invalid-to-valid-step", "manifest_fields": [],
+                              "evidence": step_row["evidence"]}
+        with self.assertRaisesRegex(ValueError, "unsupported correction class"):
+            self.compare([old], [new], corrections=[as_step])
+
+
 if __name__ == "__main__":
     unittest.main()

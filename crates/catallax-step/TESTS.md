@@ -19,9 +19,12 @@ walls, enclosed cylindrical voids and algebraic countersinks.
 touching branch vertices, a closed cylinder/sphere branch, spherical lenses at
 identity and a rational pose, and a public block/cylinder union whose two
 cylinder band seams each meet two cut vertices. An L-shaped prism minus a ball
-at two poses checks that an interior pole moves onto an export-only cap, and a
+at two poses checks that an interior pole moves onto an export-only cap, a
 ball cut by a plane passing 1e-15 from both of its frame's poles checks the
-retry on the perpendicular frame. Each
+retry on the perpendicular frame, one octant of a ball at two poses checks
+that a pole on a trim gets another sphere frame, and a dimple touching the outer
+boundary of a reversed planar face checks that the split planar loop starts at
+its repeated vertex. Each
 of these imports the file through two procedures: raw translation and the
 standard reader. Each procedure must give a
 valid shape with one solid, the expected face, edge and vertex counts, and a
@@ -111,8 +114,11 @@ faces use exact shared-edge cuts and bounded, parameter-coupled pcurves. Source
 loop-corner incidence is preserved at touching vertices; disconnected chart
 components receive distinct face/surface identities. No kernel topology is
 modified. An interior spherical pole moves onto an export-only cap behind a
-latitude ring. Elliptic cylinders, cone faces, arbitrary torus trims, poles on a
-trim or without a membership certificate, touching spherical trims, and
+latitude ring. A sphere whose pole lies on a trim is written with the first of a
+fixed list of exact frames whose poles are certified outside each of its faces,
+or inside one where a cap applies. Elliptic cylinders, cone faces, arbitrary
+torus trims, poles without a membership certificate, spheres that no listed
+frame admits, touching spherical trims, and
 unresolved rounded edges anywhere in the export retain their previous encoding. Uncharted planar caps must keep native analytic boundaries;
 opaque boundaries reject the whole export's partial cutover. Complete bands
 remain on their earlier path. Distinct endpoints must remain separated by the larger of the requested

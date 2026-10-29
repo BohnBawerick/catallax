@@ -16,6 +16,7 @@ mod chart;
 mod cut;
 mod export;
 mod fit;
+mod frames;
 mod graph;
 mod number;
 mod partial;

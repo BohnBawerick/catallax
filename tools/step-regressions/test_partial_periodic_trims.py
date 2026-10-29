@@ -187,6 +187,40 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                 {'id': 'body', 'op': 'boolean', 'kind': 'intersect', 'target': 'a', 'tool': 'b'}],
             'result': 'body'}, (3, 3, 2), 16 * math.pi / 3)
 
+    def test_pole_on_a_trim_writes_another_sphere_frame(self):
+        # One octant of a ball: its spherical face has a corner at the ball's
+        # own pole, which no chart or cap of that frame admits. The face is
+        # written with another exact frame whose poles lie outside it.
+        # Volume: 4*pi/3.
+        for rotation in [('1', '0', '0', '0'), ('1', '2', '3', '4')]:
+            with self.subTest(rotation=rotation):
+                corner = pose('7/3', '-11/7', '13/5', rotation)
+                self.check_intersection([
+                    {'op': 'block', 'size': ['3', '3', '3'], 'pose': corner},
+                    {'op': 'sphere', 'radius': '2', 'pose': corner}],
+                    (4, 6, 4), 4 * math.pi / 3)
+
+    def test_trim_touching_a_reversed_planar_boundary(self):
+        # A unit ball centred on a block's bottom face, which comes from the
+        # tool block and so is written reversed. The dimple's circle touches
+        # the face's outer boundary at one vertex, and the spherical chart
+        # splits that circle, so the planar loop passes the vertex twice.
+        # Volume: 48 - 2*pi/3.
+        for rotation in [('1', '0', '0', '0'), ('1', '2', '3', '4')]:
+            with self.subTest(rotation=rotation):
+                self.check_recipe({
+                    'format': 'catallax-recipe/3', 'name': 'touching dimple', 'steps': [
+                        {'id': 'a', 'op': 'block', 'size': ['4', '3', '5'], 'pose': pose(z='-1')},
+                        {'id': 'b', 'op': 'block', 'size': ['6', '5', '2'],
+                         'pose': pose('-1', '-1', '-2')},
+                        {'id': 'c', 'op': 'boolean', 'kind': 'subtract', 'target': 'a',
+                         'tool': 'b'},
+                        {'id': 's', 'op': 'sphere', 'radius': '1',
+                         'pose': pose('2', '2', '0', rotation)},
+                        {'id': 'd', 'op': 'boolean', 'kind': 'subtract', 'target': 'c',
+                         'tool': 's'}],
+                    'result': 'd'}, (8, 17, 11), 48 - 2 * math.pi / 3)
+
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),
                               (pose('7/3', '-11/7', '13/5', ('1', '2', '3', '4')),

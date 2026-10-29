@@ -2,10 +2,10 @@
 //! certify that both chart poles are outside the requested trimmed domain.
 //! An interior pole first moves onto its own export-only cap.
 
-use crate::{chart, cut, number, poles, trim, wire};
+use crate::{chart, cut, frames, number, poles, trim, wire};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{Curve, Surface};
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, Shell};
+use catallax_topology::{BodyId, Coedge, EdgeId, FaceId, Loop, Model, Sense, Shell};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct Prepared {
@@ -28,14 +28,15 @@ pub(crate) fn prepare(
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
     if !reframe {
-        return prepare_charts(model, bodies, options, true, dec);
+        return prepare_charts(model, bodies, options, true, true, dec);
     }
     let bodies: Vec<_> = bodies.collect();
-    let reframed = poles::reframe(model, &bodies);
+    let reframed = frames::perpendicular(model, &bodies);
     let Some(mut prepared) = prepare_charts(
         &reframed.model,
         reframed.bodies.iter().copied(),
         options,
+        true,
         true,
         dec,
     )?
@@ -54,6 +55,7 @@ fn prepare_charts(
     bodies: impl Iterator<Item = BodyId> + Clone,
     options: &crate::StepOptions,
     split_poles: bool,
+    boundary_frames: bool,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
     let faces = || {
@@ -94,6 +96,8 @@ fn prepare_charts(
     let mut selected = BTreeSet::new();
     let mut poles = BTreeMap::new();
     let mut interior = Vec::new();
+    // A pole on a trim fits neither chart nor cap in the stored frame.
+    let mut boundary_poles = BTreeSet::new();
     for face in faces() {
         if selected.contains(&face) {
             continue;
@@ -115,8 +119,14 @@ fn prepare_charts(
                     match geometry.sphere_contains(model, face, point, dec)? {
                         Some(trim::Location::Outside) => {}
                         Some(trim::Location::Inside) if split_poles => inside[index] = true,
+                        Some(trim::Location::Boundary) if boundary_frames => {
+                            boundary_poles.insert(definition.surface);
+                        }
                         _ => return Ok(None),
                     }
+                }
+                if boundary_poles.contains(&definition.surface) {
+                    continue;
                 }
                 if inside.contains(&true) {
                     interior.push((face, inside));
@@ -128,6 +138,35 @@ fn prepare_charts(
         selected.insert(face);
     }
     let bodies: Vec<_> = bodies.collect();
+    if !boundary_poles.is_empty() {
+        let Some(reframed) = frames::reframe(
+            model,
+            &bodies,
+            &boundary_poles,
+            split_poles,
+            &mut geometry,
+            dec,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(mut prepared) = prepare_charts(
+            &reframed.model,
+            reframed.bodies.iter().copied(),
+            options,
+            split_poles,
+            false,
+            dec,
+        )?
+        else {
+            return Ok(None);
+        };
+        for (source, framed) in reframed.faces {
+            let charted = prepared.face_map.get(&framed).copied().unwrap_or(framed);
+            prepared.face_map.insert(source, charted);
+        }
+        return Ok(Some(prepared));
+    }
     if !interior.is_empty() {
         let Some(split) = poles::split(model, &bodies, &interior, &mut geometry, dec)? else {
             return Ok(None);
@@ -136,6 +175,7 @@ fn prepare_charts(
             &split.model,
             split.bodies.iter().copied(),
             options,
+            false,
             false,
             dec,
         )?
@@ -256,6 +296,38 @@ fn prepare_charts(
     Ok(Some(prepared))
 }
 
+/// A split edge can leave a loop passing one vertex twice, where a closed
+/// trim touches the rest of its boundary. On a reversed planar face the raw
+/// translator's wire check rejects such a loop unless it starts at that
+/// vertex. Other faces keep their loop start, and with it their bytes.
+fn start_at_repeated_vertex(model: &Model, wire: &mut [Coedge]) {
+    let starts: Vec<_> = wire
+        .iter()
+        .map(|coedge| {
+            let edge = model.edge(coedge.edge);
+            let (a, b) = if edge.sense == Sense::Same {
+                (edge.start, edge.end)
+            } else {
+                (edge.end, edge.start)
+            };
+            if coedge.sense == edge.sense { a } else { b }
+        })
+        .collect();
+    let mut seen = BTreeSet::new();
+    let Some(repeated) = starts
+        .iter()
+        .flatten()
+        .find(|vertex| !seen.insert(**vertex))
+    else {
+        return;
+    };
+    let first = starts
+        .iter()
+        .position(|vertex| *vertex == Some(*repeated))
+        .expect("a repeated vertex starts a coedge");
+    wire.rotate_left(first);
+}
+
 // Uncharted caps may gain exact subdivisions, but must keep the same native
 // analytic space curves. An opaque intersection could otherwise receive the
 // chart fitter's different 3D approximation without a proven chart for this face.
@@ -368,7 +440,12 @@ pub(crate) fn prepare_regular(
             for id in &source.loops {
                 loops.push(match model.loop_(*id) {
                     Loop::Coedges(coedges) => {
-                        let expanded = splits.expand(&prepared, coedges);
+                        let mut expanded = splits.expand(&prepared, coedges);
+                        if source.sense == Sense::Reversed
+                            && matches!(model.geom().surface(source.surface), Surface::Plane(_))
+                        {
+                            start_at_repeated_vertex(&prepared, &mut expanded);
+                        }
                         let coedges = expanded
                             .into_iter()
                             .map(|coedge| prepared.add_coedge(coedge))

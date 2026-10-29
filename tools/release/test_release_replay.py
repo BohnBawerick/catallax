@@ -301,5 +301,36 @@ class ReplayTransitionTests(unittest.TestCase):
             self.compare([old], [new], corrections=[as_step])
 
 
+    def test_reviewed_refusal_change_binds_a_new_code(self):
+        before = self.refusal("before")
+        after = self.refusal("after", code="boolean.self-touching-shell", stage="membership")
+        path = Path(after["path"]) / "manifest.json"
+        manifest = release.read_json(path)
+        manifest["question_id"] = "read later"
+        release.write_json(path, manifest)
+        fields = ("question_id", "refusal.code", "refusal.stage")
+        approval = self.refusal_move(before, after, fields) | {"class": "reviewed-refusal-change"}
+        self.assertEqual(self.compare([before], [after], corrections=[approval])["corrections"], 1)
+        with self.assertRaisesRegex(ValueError, "manifest scope"):
+            self.compare([before], [after], corrections=[approval | {"manifest_fields": fields[1:]}])
+        with self.assertRaisesRegex(ValueError, "refusal code changed"):
+            self.compare([before], [after], corrections=[approval | {"class": "same-code-refusal-stage"}])
+        same = self.refusal("same", stage="membership")
+        reviewed = self.refusal_move(before, same, ("refusal.stage",)) | {"class": "reviewed-refusal-change"}
+        with self.assertRaisesRegex(ValueError, "keeps its code"):
+            self.compare([before], [same], corrections=[reviewed])
+
+    def test_reviewed_refusal_change_cannot_hide_other_changes(self):
+        before = self.refusal("before")
+        after = self.refusal("after", code="boolean.self-touching-shell")
+        path = Path(after["path"]) / "manifest.json"
+        manifest = release.read_json(path)
+        manifest["marks"] = ["new"]
+        release.write_json(path, manifest)
+        approval = self.refusal_move(before, after, ("refusal.code",)) | {"class": "reviewed-refusal-change"}
+        with self.assertRaisesRegex(ValueError, "unapproved manifest scope"):
+            self.compare([before], [after], corrections=[approval])
+
+
 if __name__ == "__main__":
     unittest.main()

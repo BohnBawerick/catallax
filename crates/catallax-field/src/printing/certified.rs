@@ -385,7 +385,7 @@ pub(crate) fn mesh(
                 "the candidate grid did not resolve a boundary; minimum detail was retained",
             ));
         }
-        let mut classifier = Classifier::new(plan, dec)?;
+        let mut classifier = Classifier::for_print(plan, dec)?;
         let mut failed = cover_mesh(
             &mut mesh,
             &mut classifier,

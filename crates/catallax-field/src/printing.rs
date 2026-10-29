@@ -308,6 +308,16 @@ pub(crate) struct Classifier<'a> {
 }
 impl<'a> Classifier<'a> {
     pub(crate) fn new(plan: &'a Plan, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::with_profile_extrusions(plan, dec, false)
+    }
+    fn for_print(plan: &'a Plan, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::with_profile_extrusions(plan, dec, true)
+    }
+    fn with_profile_extrusions(
+        plan: &'a Plan,
+        dec: &mut Decider,
+        profile_extrusions: bool,
+    ) -> Result<Self, Refusal> {
         let mut definitions = Vec::with_capacity(plan.leaves.len());
         for (i, leaf) in plan.leaves.iter().enumerate() {
             // Compaction retains source leaves for face history. Keep their
@@ -349,7 +359,7 @@ impl<'a> Classifier<'a> {
                     }
                     definitions.push(Some(Definition::Cell(supports)));
                 }
-                geometry::Leaf::Feature(feature) => {
+                geometry::Leaf::Feature(feature) if profile_extrusions => {
                     let Some(planes) = feature.convex_planes(dec)? else {
                         return Err(refusal(
                             "field.print-coverage",
@@ -820,7 +830,7 @@ pub(crate) fn mesh_plan_floor(
             ));
         }
     }
-    let classifier = Classifier::new(plan, dec)?;
+    let classifier = Classifier::for_print(plan, dec)?;
     let mut builder = Builder {
         classifier,
         workspace: Workspace::default(),

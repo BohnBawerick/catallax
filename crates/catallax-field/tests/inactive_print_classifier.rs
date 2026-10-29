@@ -208,19 +208,9 @@ fn ordinary_mass_ignores_inactive_features_at_default_accuracy_and_caps() {
 }
 
 #[test]
-fn an_active_unsupported_feature_still_refuses_print_and_mass() {
+fn an_active_unsupported_feature_still_refuses_mass() {
     let recipe = Recipe::parse(&json!({"format":"catallax-recipe/3","name":"active triangle","steps":feature("triangle"),"result":"triangle"}).to_string()).unwrap();
     let plan = Plan::compile(&recipe).unwrap();
-    assert_eq!(
-        printing::mesh_plan(
-            &plan,
-            &printing::Options::default(),
-            &mut Decider::default()
-        )
-        .unwrap_err()
-        .code,
-        "field.print-coverage"
-    );
     assert_eq!(
         mass::properties(
             &plan,

@@ -104,7 +104,7 @@ impl Grid {
         dec: &mut Decider,
     ) -> Result<(Mesh, Vec<(usize, Cell)>), Refusal> {
         let mut builder = Builder {
-            classifier: Classifier::new(plan, dec)?,
+            classifier: Classifier::for_print(plan, dec)?,
             workspace: Workspace::default(),
             origin: self.origin.clone(),
             edge: self.edge.clone(),

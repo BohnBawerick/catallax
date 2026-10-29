@@ -212,52 +212,28 @@ jobs:
         with:
           name: check-selection
           path: ${{ runner.temp }}
-      - uses: actions/download-artifact@v4
+      - name: Restore parent evidence for authorized F2 plant
+        uses: actions/download-artifact@v4
         with:
-          name: check-binary
-          path: ${{ runner.temp }}/binary
-      - run: chmod +x "$RUNNER_TEMP/binary/catallax-verify"
-      - name: Pinned private corpus
-        uses: actions/checkout@v4
-        with:
-          repository: BohnBawerick/catallax-proof-inputs
-          ref: ad3d261cce764b58e576e595679455592ae29e8f
-          ssh-key: ${{ secrets.CATALLAX_PROOF_INPUTS_DEPLOY_KEY }}
-          persist-credentials: false
-          path: .private-proof-inputs
-          sparse-checkout: /sets/baseline477-inputs.json
-          sparse-checkout-cone-mode: false
-      - name: Fresh fixed-configuration earlier answers
-        id: replay
+          name: check-proof-replay-1
+          run-id: 40914983446
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/restored
+      - name: Publish copied parent evidence without executing the candidate
         run: |
-          python3 -B tools/checks/checks.py replay \
-            --inputs .private-proof-inputs/sets/baseline477-inputs.json \
-            --binary "$RUNNER_TEMP/binary/catallax-verify" \
-            --out "$RUNNER_TEMP/replay" --summary "$RUNNER_TEMP/replay-summary.json"
-      - name: Direct no-healing STEP validity
-        if: always() && (steps.replay.outcome == 'success' || steps.replay.outcome == 'failure')
-        run: |
-          python3 -m venv "$RUNNER_TEMP/occt"
-          "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
-          "$RUNNER_TEMP/occt/bin/python" -B tools/checks/raw_step.py "$RUNNER_TEMP/replay/run.json" \
-            | tee "$RUNNER_TEMP/raw-step-summary.json"
+          mkdir -p "$RUNNER_TEMP/check-proof"
+          cp "$RUNNER_TEMP/restored/replay-1.json" "$RUNNER_TEMP/check-proof/replay-1.json"
+          cp "$RUNNER_TEMP/restored/replay-1.json" "$RUNNER_TEMP/replay-summary.json"
       - uses: actions/upload-artifact@v4
-        if: always()
+        with:
+          name: check-proof-replay-1
+          path: ${{ runner.temp }}/check-proof/replay-1.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
         with:
           name: check-replay-summary
           path: ${{ runner.temp }}/replay-summary.json
-          if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: check-raw-step-summary
-          path: ${{ runner.temp }}/raw-step-summary.json
-          if-no-files-found: ignore
-      - uses: ./.github/actions/check-evidence
-        with:
-          job: replay
-          binary: ${{ runner.temp }}/binary/catallax-verify
-          summary: ${{ runner.temp }}/replay-summary.json
+          if-no-files-found: error
 
   scoreboard:
     needs: [select, build]

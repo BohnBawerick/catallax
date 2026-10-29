@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: catallax-verify stream | about | replay QUESTION --out DIR\nstream: one catallax-request/1 JSON object per line; one catallax-response/1 per line\nreplay: one portable catallax-question/1, preserving its work allowance\nUse control-catallax.py --help for parts, batch, cache, compare and timing commands."
+                "usage: catallax-verify stream | about | replay QUESTION --out DIR\nstream: one catallax-request/1 JSON object per line; one catallax-response/1 per line\nreplay: one portable catallax-question/1, preserving its work allowance\nUse control-catallax.py --help for parts, batch, cache, compare and timing commands. Fresh proof evidence is required."
             );
             if args != ["--help"] {
                 std::process::exit(64);

@@ -62,16 +62,48 @@ blind_test!(case06_cone_apex_and_transcendental_angle, {
     let mut m = Model::new();
     let b = cone(&mut m, n(3), n(0), n(4), &Pose::identity()).unwrap();
     let (_, a, s) = export(&m, &[b], &options(17));
-    report(&a, [1, 2, 1, 2, 1, 0, 0], false);
+    report(&a, [1, 2, 2, 2, 1, 1, 0], false);
     assert!(a.value.max_deviation > n(0));
     assert!(a.value.max_deviation <= r("1e-7"));
     assert!(a.marks.is_empty());
-    let id = s.ids("VERTEX_LOOP");
-    assert_eq!(id.len(), 1);
+    // The apex starts the band's seam instead of bounding a vertex loop.
+    assert_eq!(s.count("VERTEX_LOOP"), 0);
+    let [seam] = s.ids("SEAM_CURVE")[..] else {
+        panic!("one seam")
+    };
+    let [edge] = s
+        .ids("EDGE_CURVE")
+        .into_iter()
+        .filter(|id| reference(&s.entities[id].args[3]) == seam)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one seam edge")
+    };
+    let e = &s.entities[&edge];
+    assert_eq!(s.xyz(s.vertex(reference(&e.args[1]))), [n(0), n(0), n(4)]);
+    assert_eq!(s.xyz(s.vertex(reference(&e.args[2]))), [n(3), n(0), n(0)]);
+    let cone_face = s
+        .ids("ADVANCED_FACE")
+        .into_iter()
+        .find(|id| s.entities[&reference(&s.entities[id].args[2])].kind == "CONICAL_SURFACE")
+        .unwrap();
+    let bounds = &s.entities[&cone_face].args[1];
+    let [bound] = refs(bounds)[..] else {
+        panic!("one bound")
+    };
+    let edge_loop = s.e(reference(&s.e(bound, "FACE_BOUND").args[1]), "EDGE_LOOP");
+    let uses: Vec<_> = refs(&edge_loop.args[1])
+        .into_iter()
+        .map(|id| {
+            let use_ = s.e(id, "ORIENTED_EDGE");
+            (reference(&use_.args[3]) == edge, use_.args[4].clone())
+        })
+        .collect();
     assert_eq!(
-        s.xyz(s.vertex(reference(&s.entities[&id[0]].args[1]))),
-        [n(0), n(0), n(4)]
+        uses[1..],
+        [(true, ".F.".to_string()), (true, ".T.".to_string())]
     );
+    assert!(!uses[0].0);
     let id = s.ids("CONICAL_SURFACE")[0];
     let e = &s.entities[&id];
     assert_eq!(e.args[2], "0.");

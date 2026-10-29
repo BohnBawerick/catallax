@@ -753,16 +753,31 @@ impl<'a> Exporter<'a> {
         band: &crate::band::Band,
         topology: &mut Topology,
     ) -> Result<(Id, Bounds), Refusal> {
-        let low = self.edge(band.edges[0], topology)?;
-        let high = self.edge(band.edges[1], topology)?;
-        let mut bounds = Some(low.bounds.clone());
-        include_bounds(&mut bounds, &high.bounds);
+        let mut rings = Vec::with_capacity(band.edges.len());
+        for edge in &band.edges {
+            rings.push(self.edge(*edge, topology)?);
+        }
+        let mut bounds = None;
+        for ring in &rings {
+            include_bounds(&mut bounds, &ring.bounds);
+        }
         let bounds = bounds.unwrap();
-        let a = topology.ring_vertices[&band.edges[0]].clone();
-        let b = topology.ring_vertices[&band.edges[1]].clone();
-        let origin = &self.bands.rings[&band.edges[0]].origin;
+        let high = band.edges.len() - 1;
+        let b = topology.ring_vertices[&band.edges[high]].clone();
+        // A band ending at its cone's apex starts its seam there, as the
+        // written cone's v origin. Its loop then has no low ring.
+        let (a, origin) = if let Some(apex) = band.apex {
+            let vertex = self.vertex(apex, topology)?;
+            let origin = self.model.geom().position(self.model.vertex(apex).point);
+            (vertex, origin)
+        } else {
+            (
+                topology.ring_vertices[&band.edges[0]].clone(),
+                self.bands.rings[&band.edges[0]].origin.clone(),
+            )
+        };
         let form = CurveForm::Line {
-            origin: origin.clone(),
+            origin,
             dir: band.seam_direction.clone(),
         };
         let curve = self.curve_geometry(&form, false)?.unwrap().curve;
@@ -791,13 +806,15 @@ impl<'a> Exporter<'a> {
         let parameter_error = &number::upper(&band.radius_bound, self.dec)? * &period.error
             + &v.error * &number::upper(&band.v_scale, self.dec)?;
         self.deviation(line_error + parameter_error + self.surface_error(band.surface, &bounds));
-        let uses = [
-            (high.id, !band.forward[1]),
-            (seam, false),
-            (low.id, band.forward[0]),
-            (seam, true),
-        ];
-        let uses = uses.map(|(edge, same)| self.oriented(edge, same));
+        let mut uses = vec![(rings[high].id, !band.forward[high]), (seam, false)];
+        if band.apex.is_none() {
+            uses.push((rings[0].id, band.forward[0]));
+        }
+        uses.push((seam, true));
+        let uses: Vec<_> = uses
+            .into_iter()
+            .map(|(edge, same)| self.oriented(edge, same))
+            .collect();
         Ok((
             self.graph.add("EDGE_LOOP", vec![text("''"), refs(uses)]),
             bounds,

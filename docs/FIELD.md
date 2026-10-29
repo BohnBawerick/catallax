@@ -8,9 +8,11 @@ Lattice point queries compile the periodic beam definitions of RECIPE section 4.
 
 ## Watertight field printing
 
-`catallax_field::printing::mesh_plan` accepts a plan, explicit output tolerance, cell and vertex limits, and the caller's decider. It supports primitive solid cells, analytic constraint cells and periodic beams composed by the existing Boolean tape. Other leaf definitions refuse with `field.print-coverage`; no B-rep builder is used.
+`catallax_field::printing::mesh_plan` accepts a plan, explicit output tolerance, cell and vertex limits, and the caller's decider. It supports primitive solid cells, analytic constraint cells, certified convex planar profile extrusions and periodic beams composed by the existing Boolean tape. Other leaf definitions refuse with `field.print-coverage`; no B-rep builder is used.
 
 Interval classification excludes boxes proven wholly inside or outside. Primitive queries use their local frame before evaluating squared radii, avoiding cancellation from expanded world-coordinate polynomials. Beam intervals use cached coefficients and outward-rounded expanded beam bounds. The Boolean traversal skips operands that cannot change a proven result.
+
+Planar extrusion coverage reuses the field's exact convex-plane certificate. Every profile vertex must lie in every oriented halfspace before printing treats the extrusion as their intersection. Concave, holed and curved profiles are not accepted by this route.
 
 Corner membership reuses strict leaf states from the interval query at that same exact point. Only unresolved or unvisited leaves need exact classification. Regularised Boolean contacts still use the authoritative evaluator's active-face, planar-sector and transverse-boundary witnesses. Printing does not evaluate discarded distance bounds or analytic normals; its facets retain their existing outward-orientation check. This reuse is local to printing and does not change field mass classification.
 
@@ -30,7 +32,7 @@ The certificate covers both directions independently. For mesh-to-boundary dista
 
 The existing closedness, vertex-link and single-component gates still apply. Non-self-intersection follows from the conforming tetrahedral construction. `printing::mesh_plan` retains its original uniform-grid route and bytes.
 
-Call `Output::labelled_stl(self)` on the successful stage output to write `catallax-print-stl/1`. It labels that same proven mesh, retains the exact requested accuracy and caps, and returns the metadata-rounded verdict with the bytes. It does not remesh through another route.
+Call `Output::labelled_stl(self)` on the successful stage output to write `catallax-print-stl/1`. It labels that same proven mesh, retains the exact requested accuracy and caps, and returns the metadata-rounded verdict with the bytes. It does not remesh through another route. The certified geometry and verdict are private; `Output::mesh()` and `Output::verdict()` borrow them read-only. A caller may clone the ordinary mesh for editing, but cannot put it back into a certified output.
 
 The constant axis-aligned cubic preview samples the existing tentative field on its own bounded grid. It remains `Proof::Unproved`; its `max_deviation` is a sampling scale, not a proven distance bound. Other lattice previews retain the interval-driven route. Preview geometry never supplies an export certificate.
 

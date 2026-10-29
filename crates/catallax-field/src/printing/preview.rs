@@ -60,7 +60,7 @@ pub(crate) fn mesh(
         return Err(refusal("field.print-budget", "preview cell limit reached"));
     }
     let mut builder = Builder {
-        classifier: Classifier::new(plan, dec)?,
+        classifier: Classifier::for_print(plan, dec)?,
         workspace: Workspace::default(),
         origin,
         edge,

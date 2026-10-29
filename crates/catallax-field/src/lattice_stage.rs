@@ -69,14 +69,30 @@ pub struct Verdict {
 /// A certified lattice mesh with its verdict.
 #[derive(Clone, Debug)]
 pub struct Output {
-    /// The certified mesh. Use `Output::labelled_stl` for a metadata-bearing file.
-    pub mesh: printing::Mesh,
-    /// The checks that passed.
-    pub verdict: Verdict,
+    mesh: printing::Mesh,
+    verdict: Verdict,
     options: printing::Options,
 }
 
 impl Output {
+    /// The certified geometry, borrowed without mutation.
+    ///
+    /// ```compile_fail,E0596
+    /// use catallax_field::lattice_stage::Output;
+    /// fn alter_then_label(output: Output) {
+    ///     output.mesh().positions[0][0] += 1000.0;
+    ///     let _ = output.labelled_stl();
+    /// }
+    /// ```
+    pub fn mesh(&self) -> &printing::Mesh {
+        &self.mesh
+    }
+
+    /// The checks bound to this output's immutable geometry.
+    pub fn verdict(&self) -> &Verdict {
+        &self.verdict
+    }
+
     /// Writes this stage's certified mesh with the `catallax-print-stl/1` field label.
     /// The returned verdict includes the conservative metadata rounding.
     pub fn labelled_stl(self) -> Result<(Vec<u8>, Self), Refusal> {

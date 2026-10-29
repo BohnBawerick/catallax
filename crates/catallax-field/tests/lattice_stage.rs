@@ -218,8 +218,8 @@ fn the_same_thin_beam_exports_when_the_minimum_detail_allows_the_refinement() {
     )
     .unwrap();
     let output = stage.export(&mut Decider::default()).unwrap();
-    assert_eq!(output.verdict.components, 1);
-    assert!(output.verdict.max_deviation <= q("1"));
+    assert_eq!(output.verdict().components, 1);
+    assert!(output.verdict().max_deviation <= q("1"));
 }
 
 #[test]
@@ -232,14 +232,14 @@ fn a_connected_lattice_exports_with_an_independently_checked_verdict() {
     )
     .unwrap();
     let output = stage.export(&mut Decider::default()).unwrap();
-    let v = &output.verdict;
+    let v = output.verdict();
     assert!(v.closed && v.non_self_intersecting && v.connected);
     assert!(v.max_deviation <= loose().accuracy);
-    assert_eq!(output.mesh.component_count(), 1);
-    assert_eq!(self_intersections(&output.mesh), 0);
+    assert_eq!(output.mesh().component_count(), 1);
+    assert_eq!(self_intersections(output.mesh()), 0);
     let mut stl = Vec::new();
-    output.mesh.write_stl(&mut stl).unwrap();
-    assert_eq!(stl.len(), 84 + 50 * output.mesh.triangles.len());
+    output.mesh().write_stl(&mut stl).unwrap();
+    assert_eq!(stl.len(), 84 + 50 * output.mesh().triangles.len());
 }
 
 #[test]
@@ -354,8 +354,8 @@ fn the_preview_is_coarse_unproved_and_independent_of_the_export_settings() {
     assert_eq!(preview.proof, Proof::Unproved);
     assert!(!preview.mesh.triangles.is_empty());
     let output = stage.export(&mut Decider::default()).unwrap();
-    assert!(preview.mesh.max_deviation >= output.verdict.max_deviation);
-    assert!(preview.mesh.triangles.len() <= output.mesh.triangles.len());
+    assert!(preview.mesh.max_deviation >= output.verdict().max_deviation);
+    assert!(preview.mesh.triangles.len() <= output.mesh().triangles.len());
 }
 
 #[test]
@@ -462,13 +462,13 @@ fn check_acceptance_mesh(
 }
 
 fn check_acceptance_verdict(output: &catallax_field::lattice_stage::Output) {
-    let v = &output.verdict;
+    let v = output.verdict();
     assert!(v.closed && v.non_self_intersecting && v.connected);
     assert_eq!(v.components, 1);
     assert!(v.max_deviation > q("0") && v.max_deviation <= q("0.1"));
-    assert_eq!(output.mesh.max_deviation, v.max_deviation);
-    assert!(output.mesh.cells <= 2_000_000);
-    assert!(output.mesh.positions.len() <= 1_000_000);
+    assert_eq!(output.mesh().max_deviation, v.max_deviation);
+    assert!(output.mesh().cells <= 2_000_000);
+    assert!(output.mesh().positions.len() <= 1_000_000);
 }
 
 /// K1, fixed by the independent V7 designer: four nodes and one handle.
@@ -477,7 +477,7 @@ fn k1_labelled_stage_file_contains_its_proven_four_cell_mesh() {
     let stage = acceptance_stage(["10", "10", "5"], ["-2.5", "-2.5", "-2.5"]);
     let output = stage.export(&mut Decider::default()).unwrap();
     check_acceptance_verdict(&output);
-    let before = output.verdict.max_deviation.clone();
+    let before = output.verdict().max_deviation.clone();
     let (bytes, output) = output.labelled_stl().unwrap();
     check_acceptance_verdict(&output);
     assert_eq!(&bytes[..8], b"CXPRINT1");
@@ -500,13 +500,13 @@ fn k1_labelled_stage_file_contains_its_proven_four_cell_mesh() {
     };
     let bound = contribution(68);
     assert!(bound >= before && bound <= q("0.1"));
-    assert_eq!(bound, output.verdict.max_deviation);
+    assert_eq!(bound, output.verdict().max_deviation);
     assert_eq!(contribution(44), q("0"));
     assert_eq!(contribution(60), q("0"));
     assert!(&(&contribution(44) + &contribution(52)) + &contribution(60) <= bound);
     assert_eq!(&bytes[76..80], &[0; 4]);
     let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
-    assert_eq!(count, output.mesh.triangles.len());
+    assert_eq!(count, output.mesh().triangles.len());
     assert_eq!(bytes.len(), 84 + 50 * count);
     let mut positions = Vec::new();
     let mut triangles = Vec::new();
@@ -540,10 +540,62 @@ fn k2_thirty_cell_lattice_proves_at_point_one_with_default_caps() {
     let output = stage.export(&mut Decider::default()).unwrap();
     check_acceptance_verdict(&output);
     check_acceptance_mesh(
-        &output.mesh.positions,
-        &output.mesh.triangles,
+        &output.mesh().positions,
+        &output.mesh().triangles,
         [["-12.5", "12.5"], ["-7.5", "7.5"], ["-2.5", "7.5"]],
-        &output.verdict.max_deviation,
+        &output.verdict().max_deviation,
         -58,
     );
+}
+
+fn profile_body(depth: &str) -> Recipe {
+    Recipe::parse(&format!(
+        r#"{{"format":"catallax-recipe/3","name":"S1 profile","steps":[{{"id":"profile","op":"sketch","plane":{{"rotation":["1","0","0","0"],"translation":["0","0","-2.5"]}},"loops":[[{{"kind":"line","id":"a","to":["12.5","-7.5"]}},{{"kind":"line","id":"b","to":["12.5","7.5"]}},{{"kind":"line","id":"c","to":["-12.5","7.5"]}},{{"kind":"line","id":"d","to":["-12.5","-7.5"]}}]]}},{{"id":"boss","op":"extrude","profile":"profile","distance":"{depth}"}}],"result":"boss"}}"#
+    ))
+    .unwrap()
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "V7 S1 profile exports run in release mode")]
+fn s1_profile_extrusion_rebuild_and_density_edit_certify_at_the_approved_fallback() {
+    use catallax_field::lattice_stage::{Proof, default_preview_options};
+    for (depth, radius, top, euler) in [
+        ("10", "1", "7.5", -58),
+        ("15", "1", "12.5", -102),
+        ("15", "2.25", "12.5", -102),
+    ] {
+        let (_, mut spec, mut settings) =
+            acceptance_stage(["25", "15", "10"], ["-12.5", "-7.5", "-2.5"]).return_before_lattice();
+        spec.radius = serde_json::from_str(&format!(r#"{{"constant":"{radius}"}}"#)).unwrap();
+        settings.accuracy = q("0.5");
+        let (output, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            let mut dec = Decider::default();
+            let stage = Stage::new(&profile_body(depth), spec, settings, &mut dec).unwrap();
+            let controls = default_preview_options(stage.plan(), &mut dec).unwrap();
+            assert_eq!(
+                stage.preview(&controls, &mut dec).unwrap().proof,
+                Proof::Unproved
+            );
+            stage.export(&mut dec).unwrap()
+        });
+        assert!(!work.exhausted);
+        assert!(output.verdict().closed);
+        assert!(output.verdict().non_self_intersecting);
+        assert!(output.verdict().connected);
+        assert_eq!(output.verdict().components, 1);
+        assert!(output.mesh().cells <= 2_000_000);
+        assert!(output.mesh().positions.len() <= 1_000_000);
+        let (bytes, output) = output.labelled_stl().unwrap();
+        assert_eq!(i64::from_le_bytes(bytes[12..20].try_into().unwrap()), 1);
+        assert_eq!(u64::from_le_bytes(bytes[20..28].try_into().unwrap()), 2);
+        assert!(output.verdict().max_deviation > q("0"));
+        assert!(output.verdict().max_deviation <= q("0.5"));
+        check_acceptance_mesh(
+            &output.mesh().positions,
+            &output.mesh().triangles,
+            [["-12.5", "12.5"], ["-7.5", "7.5"], ["-2.5", top]],
+            &output.verdict().max_deviation,
+            euler,
+        );
+    }
 }

@@ -431,3 +431,28 @@ fn a_lattice_of_separate_struts_is_refused_not_published() {
     let loose = printing::mesh_plan(&plan, &coarse(), &mut Decider::default()).unwrap();
     assert!(loose.component_count() > 1);
 }
+
+#[test]
+fn concave_profile_supports_are_not_mistaken_for_a_convex_solid() {
+    let recipe = Recipe::parse(
+        r#"{"format":"catallax-recipe/3","name":"concave extrusion","steps":[
+        {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+            {"kind":"line","id":"a","to":["2","0"]},
+            {"kind":"line","id":"b","to":["2","1"]},
+            {"kind":"line","id":"c","to":["1","1"]},
+            {"kind":"line","id":"d","to":["1","2"]},
+            {"kind":"line","id":"e","to":["0","2"]},
+            {"kind":"line","id":"f","to":["0","0"]}
+        ]]},
+        {"id":"boss","op":"extrude","profile":"profile","distance":"2"}
+        ],"result":"boss"}"#,
+    )
+    .unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    assert_eq!(
+        printing::mesh_plan(&plan, &Options::default(), &mut Decider::default())
+            .unwrap_err()
+            .code,
+        "field.print-coverage"
+    );
+}

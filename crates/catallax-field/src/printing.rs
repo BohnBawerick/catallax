@@ -222,6 +222,22 @@ fn range(terms: &Terms, xyz: &[Interval; 3]) -> Interval {
         },
     )
 }
+fn constraint_terms(
+    constraint: &geometry::Constraint,
+    dec: &mut Decider,
+) -> Result<Terms, Refusal> {
+    constraint
+        .polynomial
+        .terms()
+        .into_iter()
+        .map(|(monomial, coefficient)| {
+            Ok((
+                monomial.exponents().try_into().expect("three coordinates"),
+                geometry::enclose(&coefficient, 192, dec)?.to_interval(),
+            ))
+        })
+        .collect()
+}
 struct Primitive {
     kind: Kind,
     matrix: [[Interval; 3]; 3],
@@ -329,14 +345,22 @@ impl<'a> Classifier<'a> {
                 geometry::Leaf::Cell(_) => {
                     let mut supports = Vec::new();
                     for constraint in leaf.constraints() {
-                        let mut terms = Vec::new();
-                        for (monomial, coefficient) in constraint.polynomial.terms() {
-                            terms.push((
-                                monomial.exponents().try_into().expect("three coordinates"),
-                                geometry::enclose(&coefficient, 192, dec)?.to_interval(),
-                            ));
-                        }
-                        supports.push(terms);
+                        supports.push(constraint_terms(constraint, dec)?);
+                    }
+                    definitions.push(Some(Definition::Cell(supports)));
+                }
+                geometry::Leaf::Feature(feature) => {
+                    let Some(planes) = feature.convex_planes(dec)? else {
+                        return Err(refusal(
+                            "field.print-coverage",
+                            "print interval coverage requires analytic solid cells or periodic beams",
+                        ));
+                    };
+                    let mut supports = Vec::with_capacity(planes.len());
+                    for plane in planes {
+                        let constraint =
+                            geometry::constraint(catallax_shapes::Surface::Plane(plane))?;
+                        supports.push(constraint_terms(&constraint, dec)?);
                     }
                     definitions.push(Some(Definition::Cell(supports)));
                 }

@@ -305,6 +305,9 @@ impl Output {
     pub fn mesh(&self) -> &Mesh {
         &self.mesh
     }
+    pub(crate) fn into_field_mesh(self) -> Mesh {
+        self.mesh
+    }
     /// Complete model-to-definition contribution.
     pub fn model_bound(&self) -> &Rational {
         &self.model_bound
@@ -326,7 +329,11 @@ impl Output {
 /// Qualifies the native-field route with the same retained output controls.
 /// This never retries a failed B-rep request as a field request.
 pub fn field(plan: &crate::Plan, options: &Options, dec: &mut Decider) -> Result<Output, Refusal> {
-    let mesh = super::mesh_plan(plan, options, dec)?;
+    field_output(super::mesh_plan(plan, options, dec)?, options)
+}
+
+/// Retains an already-certified field mesh without meshing the plan again.
+pub(crate) fn field_output(mesh: Mesh, options: &Options) -> Result<Output, Refusal> {
     let tessellation_bound = mesh.max_deviation.clone();
     Ok(Output {
         mesh,

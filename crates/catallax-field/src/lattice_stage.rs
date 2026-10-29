@@ -73,6 +73,22 @@ pub struct Output {
     pub mesh: printing::Mesh,
     /// The checks that passed.
     pub verdict: Verdict,
+    options: printing::Options,
+}
+
+impl Output {
+    /// Writes this stage's certified mesh with the `catallax-print-stl/1` field label.
+    /// The returned verdict includes the conservative metadata rounding.
+    pub fn labelled_stl(self) -> Result<(Vec<u8>, Self), Refusal> {
+        let Self { mesh, mut verdict, options } = self;
+        let (bytes, encoded) = printing::brep::field_output(mesh, &options)?.stl()?;
+        verdict.max_deviation = encoded.mesh().max_deviation.clone();
+        Ok((bytes, Self {
+            mesh: encoded.into_field_mesh(),
+            verdict,
+            options,
+        }))
+    }
 }
 
 /// Whether a result carries a proof at the user's settings.
@@ -204,12 +220,12 @@ impl Stage {
     /// `field.print-vertices`, and the decider's deadline and cancellation outcomes.
     pub fn export(&self, dec: &mut Decider) -> Result<Output, Refusal> {
         let floor = &self.settings.minimum_detail * &Rational::from_ratio(1, 4).unwrap();
-        let mesh = printing::mesh_plan_floor(
-            &self.plan,
-            &self.settings.print_options(),
-            Some(&floor),
-            dec,
-        )?;
+        let options = self.settings.print_options();
+        let mesh = if options.tolerance < floor {
+            printing::certified::mesh(&self.plan, &options, &floor, dec)?
+        } else {
+            printing::mesh_plan_floor(&self.plan, &options, Some(&floor), dec)?
+        };
         let components = mesh.component_count();
         if components != 1 {
             return Err(Refusal::new(
@@ -224,7 +240,7 @@ impl Stage {
             components,
             max_deviation: mesh.max_deviation.clone(),
         };
-        Ok(Output { mesh, verdict })
+        Ok(Output { mesh, verdict, options: self.settings.print_options() })
     }
 
     /// Leaves the stage: the unchanged body recipe, with the lattice parameters and
@@ -253,15 +269,15 @@ pub fn preview_plan(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<Preview, Refusal> {
-    let mesh = printing::mesh_plan(
-        plan,
-        &printing::Options {
-            tolerance: options.tolerance.clone(),
-            max_cells: options.max_cells,
-            max_vertices: options.max_vertices,
-        },
-        dec,
-    )?;
+    let controls = printing::Options {
+        tolerance: options.tolerance.clone(),
+        max_cells: options.max_cells,
+        max_vertices: options.max_vertices,
+    };
+    let mesh = match printing::preview::mesh(plan, &controls, dec)? {
+        Some(mesh) => mesh,
+        None => printing::mesh_plan(plan, &controls, dec)?,
+    };
     Ok(Preview {
         mesh,
         proof: Proof::Unproved,

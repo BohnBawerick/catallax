@@ -16,6 +16,8 @@ use std::{
 
 pub mod brep;
 mod membership;
+pub(crate) mod preview;
+pub(crate) mod certified;
 
 type Index = [u32; 3];
 type Terms = Vec<([u32; 3], Interval)>;
@@ -507,6 +509,7 @@ struct Builder<'a> {
     grid_vertices: Vec<Index>,
     mesh: Mesh,
     options: &'a Options,
+    root_steps: u32,
 }
 impl Builder<'_> {
     fn point(&self, index: Index) -> [Rational; 3] {
@@ -533,7 +536,7 @@ impl Builder<'_> {
         }
         Ok((corners, signs))
     }
-    fn vertex(&mut self, a: Index, b: Index) -> Result<usize, Refusal> {
+    fn vertex(&mut self, a: Index, b: Index, dec: &mut Decider) -> Result<usize, Refusal> {
         let key = if a < b { (a, b) } else { (b, a) };
         if let Some(&id) = self.edge_vertices.get(&key) {
             return Ok(id);
@@ -541,9 +544,19 @@ impl Builder<'_> {
         if self.mesh.positions.len() >= self.options.max_vertices {
             return Err(refusal("field.print-budget", "print vertex limit reached"));
         }
-        let position: [Rational; 3] = std::array::from_fn(|i| {
-            &self.origin[i] + &(&self.edge * &q(a[i] as i64 + b[i] as i64)).mul_pow2(-1)
-        });
+        let mut lo = self.point(a);
+        let mut hi = self.point(b);
+        let sign = self.corner_signs[&a];
+        for _ in 0..self.root_steps {
+            let midpoint = std::array::from_fn(|i| (&lo[i] + &hi[i]).mul_pow2(-1));
+            if self.classifier.inside(&midpoint, &mut self.workspace, dec)? == sign {
+                lo = midpoint;
+            } else {
+                hi = midpoint;
+            }
+        }
+        let position: [Rational; 3] =
+            std::array::from_fn(|i| (&lo[i] + &hi[i]).mul_pow2(-1));
         let rounded = position.each_ref().map(|r| r.to_f64_nearest() as f32);
         for i in 0..3 {
             if !rounded[i].is_finite()
@@ -618,19 +631,19 @@ impl Builder<'_> {
                     (outside[0], &inside)
                 };
                 let vertices = [
-                    self.vertex(corners[one], corners[others[0]])?,
-                    self.vertex(corners[one], corners[others[1]])?,
-                    self.vertex(corners[one], corners[others[2]])?,
+                    self.vertex(corners[one], corners[others[0]], dec)?,
+                    self.vertex(corners[one], corners[others[1]], dec)?,
+                    self.vertex(corners[one], corners[others[2]], dec)?,
                 ];
                 self.triangle(vertices, direction)?;
             } else {
                 let [i, j] = [inside[0], inside[1]];
                 let [k, l] = [outside[0], outside[1]];
                 let v = [
-                    self.vertex(corners[i], corners[k])?,
-                    self.vertex(corners[i], corners[l])?,
-                    self.vertex(corners[j], corners[k])?,
-                    self.vertex(corners[j], corners[l])?,
+                    self.vertex(corners[i], corners[k], dec)?,
+                    self.vertex(corners[i], corners[l], dec)?,
+                    self.vertex(corners[j], corners[k], dec)?,
+                    self.vertex(corners[j], corners[l], dec)?,
                 ];
                 self.triangle([v[0], v[1], v[3]], direction)?;
                 self.triangle([v[0], v[3], v[2]], direction)?;
@@ -728,6 +741,16 @@ pub(crate) fn mesh_plan_floor(
     floor: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<Mesh, Refusal> {
+    mesh_plan_roots(plan, options, floor, 0, dec)
+}
+
+fn mesh_plan_roots(
+    plan: &Plan,
+    options: &Options,
+    floor: Option<&Rational>,
+    root_steps: u32,
+    dec: &mut Decider,
+) -> Result<Mesh, Refusal> {
     if options.tolerance <= q(0) || options.max_cells == 0 || options.max_vertices < 4 {
         return Err(refusal(
             "field.print-options",
@@ -789,6 +812,7 @@ pub(crate) fn mesh_plan_floor(
             cells: 0,
         },
         options,
+        root_steps,
     };
     loop {
         let count = 1u32 << depth;

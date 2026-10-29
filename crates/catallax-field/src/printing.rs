@@ -15,7 +15,9 @@ use std::{
 };
 
 pub mod brep;
+pub(crate) mod certified;
 mod membership;
+pub(crate) mod preview;
 
 type Index = [u32; 3];
 type Terms = Vec<([u32; 3], Interval)>;
@@ -50,7 +52,7 @@ pub fn native_field(recipe: &Recipe) -> bool {
 pub struct Options {
     /// Two-sided distance limit in millimetres.
     pub tolerance: Rational,
-    /// Maximum octree cells visited across all refinement attempts.
+    /// Maximum meshing and certificate cells visited across all refinement attempts.
     pub max_cells: usize,
     /// Maximum mesh vertices.
     pub max_vertices: usize,
@@ -72,9 +74,10 @@ pub struct Mesh {
     pub positions: Vec<[f32; 3]>,
     /// Outward-oriented facet vertex indices.
     pub triangles: Vec<[usize; 3]>,
-    /// Proven two-sided distance bound, including output representation.
+    /// Proven two-sided print bound, including output representation.
+    /// An explicitly unproved preview instead reports its sampling scale.
     pub max_deviation: Rational,
-    /// Total visited octree cells, including unsuccessful refinements.
+    /// Total visited meshing and certificate cells, including unsuccessful refinements.
     pub cells: usize,
 }
 /// Bytes gathered before one write. Unbuffered sinks such as files otherwise
@@ -507,33 +510,13 @@ struct Builder<'a> {
     grid_vertices: Vec<Index>,
     mesh: Mesh,
     options: &'a Options,
+    root_steps: u32,
 }
 impl Builder<'_> {
     fn point(&self, index: Index) -> [Rational; 3] {
         std::array::from_fn(|i| &self.origin[i] + &(&self.edge * &q(index[i] as i64)))
     }
-    fn corners(
-        &mut self,
-        index: Index,
-        dec: &mut Decider,
-    ) -> Result<([Index; 8], [bool; 8]), Refusal> {
-        let corners: [Index; 8] = std::array::from_fn(|bits| {
-            std::array::from_fn(|i| index[i] + ((bits >> i) & 1) as u32)
-        });
-        let mut signs = [false; 8];
-        for (i, corner) in corners.iter().enumerate() {
-            if let Some(&sign) = self.corner_signs.get(corner) {
-                signs[i] = sign;
-            } else {
-                signs[i] =
-                    self.classifier
-                        .inside(&self.point(*corner), &mut self.workspace, dec)?;
-                self.corner_signs.insert(*corner, signs[i]);
-            }
-        }
-        Ok((corners, signs))
-    }
-    fn vertex(&mut self, a: Index, b: Index) -> Result<usize, Refusal> {
+    fn vertex(&mut self, a: Index, b: Index, dec: &mut Decider) -> Result<usize, Refusal> {
         let key = if a < b { (a, b) } else { (b, a) };
         if let Some(&id) = self.edge_vertices.get(&key) {
             return Ok(id);
@@ -541,9 +524,28 @@ impl Builder<'_> {
         if self.mesh.positions.len() >= self.options.max_vertices {
             return Err(refusal("field.print-budget", "print vertex limit reached"));
         }
-        let position: [Rational; 3] = std::array::from_fn(|i| {
-            &self.origin[i] + &(&self.edge * &q(a[i] as i64 + b[i] as i64)).mul_pow2(-1)
-        });
+        let position: [Rational; 3] = if self.root_steps == 0 {
+            std::array::from_fn(|i| {
+                &self.origin[i] + &(&self.edge * &q(a[i] as i64 + b[i] as i64)).mul_pow2(-1)
+            })
+        } else {
+            let mut lo = self.point(a);
+            let mut hi = self.point(b);
+            let sign = self.corner_signs[&a];
+            for _ in 0..self.root_steps {
+                let midpoint = std::array::from_fn(|i| (&lo[i] + &hi[i]).mul_pow2(-1));
+                if self
+                    .classifier
+                    .inside(&midpoint, &mut self.workspace, dec)?
+                    == sign
+                {
+                    lo = midpoint;
+                } else {
+                    hi = midpoint;
+                }
+            }
+            std::array::from_fn(|i| (&lo[i] + &hi[i]).mul_pow2(-1))
+        };
         let rounded = position.each_ref().map(|r| r.to_f64_nearest() as f32);
         for i in 0..3 {
             if !rounded[i].is_finite()
@@ -583,7 +585,28 @@ impl Builder<'_> {
         Ok(())
     }
     fn polygonise(&mut self, index: Index, dec: &mut Decider) -> Result<bool, Refusal> {
-        let (corners, signs) = self.corners(index, dec)?;
+        let corners: [Index; 8] = std::array::from_fn(|bits| {
+            std::array::from_fn(|i| index[i] + ((bits >> i) & 1) as u32)
+        });
+        self.polygonise_corners(corners, dec)
+    }
+    fn polygonise_corners(
+        &mut self,
+        corners: [Index; 8],
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let mut signs = [false; 8];
+        for (i, corner) in corners.iter().enumerate() {
+            signs[i] = if let Some(&sign) = self.corner_signs.get(corner) {
+                sign
+            } else {
+                let sign =
+                    self.classifier
+                        .inside(&self.point(*corner), &mut self.workspace, dec)?;
+                self.corner_signs.insert(*corner, sign);
+                sign
+            };
+        }
         if signs.iter().all(|s| *s) || signs.iter().all(|s| !*s) {
             return Ok(false);
         }
@@ -618,19 +641,19 @@ impl Builder<'_> {
                     (outside[0], &inside)
                 };
                 let vertices = [
-                    self.vertex(corners[one], corners[others[0]])?,
-                    self.vertex(corners[one], corners[others[1]])?,
-                    self.vertex(corners[one], corners[others[2]])?,
+                    self.vertex(corners[one], corners[others[0]], dec)?,
+                    self.vertex(corners[one], corners[others[1]], dec)?,
+                    self.vertex(corners[one], corners[others[2]], dec)?,
                 ];
                 self.triangle(vertices, direction)?;
             } else {
                 let [i, j] = [inside[0], inside[1]];
                 let [k, l] = [outside[0], outside[1]];
                 let v = [
-                    self.vertex(corners[i], corners[k])?,
-                    self.vertex(corners[i], corners[l])?,
-                    self.vertex(corners[j], corners[k])?,
-                    self.vertex(corners[j], corners[l])?,
+                    self.vertex(corners[i], corners[k], dec)?,
+                    self.vertex(corners[i], corners[l], dec)?,
+                    self.vertex(corners[j], corners[k], dec)?,
+                    self.vertex(corners[j], corners[l], dec)?,
                 ];
                 self.triangle([v[0], v[1], v[3]], direction)?;
                 self.triangle([v[0], v[3], v[2]], direction)?;
@@ -789,6 +812,7 @@ pub(crate) fn mesh_plan_floor(
             cells: 0,
         },
         options,
+        root_steps: 0,
     };
     loop {
         let count = 1u32 << depth;

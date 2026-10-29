@@ -22,6 +22,18 @@ The verification CLI accepts `catallax-print/1` through `print`, or through `fie
 
 The dedicated benchmark builds with `cargo build --release -p catallax-field --bench printing -j 1`. Run its `target/release/deps/printing-*` executable with a `catallax-print/1` request, an external output directory and a positive repetition count. It records compilation, meshing, file STL, file OBJ and compile/mesh/write milliseconds in `samples.json`, plus separate in-memory STL and OBJ serializer-only milliseconds that are excluded from the complete-request total and checked byte-equal to the file output, with the unchanged 100M verification work allowance, requested controls, cell count and mesh counts. It writes the final STL and OBJ through plain `File` sinks like the verification adapter. Pin baseline and candidate executables to the same allowed core, retain both byte streams, and alternate order. Measure the complete public request with the verification driver's matched pairs as well; neither lower work nor mesh-only timing proves the complete 1000 ms wait target.
 
+### Terminal lattice output
+
+`lattice_stage::Stage::export` uses a separate candidate mesh and distance proof when the requested accuracy is below the minimum-detail grid floor. The candidate is a conforming rectilinear Kuhn grid with exact corner membership and bisected crossing edges. Its initial grid is finer near the bounding clip planes. Failed proof patches seed local coordinate-plane refinement; propagation keeps adjoining cells conforming. Later geometry refinement still respects the minimum-detail floor.
+
+The certificate covers both directions independently. For mesh-to-boundary distance, each triangle patch lies between translated boxes proven inside and outside the field. The translation's Euclidean length is at most the reported bound. For boundary-to-mesh distance, interval exclusion covers the entire field box; every remaining box must lie within the bound of one actual mesh triangle. Convex combinations of certified corner-to-triangle witnesses cover the box. Search heuristics choose witnesses only; they cannot accept a distance. Candidate, failed-attempt and certificate cells all count against the supplied cap. No partial mesh is returned.
+
+The existing closedness, vertex-link and single-component gates still apply. Non-self-intersection follows from the conforming tetrahedral construction. `printing::mesh_plan` retains its original uniform-grid route and bytes.
+
+Call `Output::labelled_stl(self)` on the successful stage output to write `catallax-print-stl/1`. It labels that same proven mesh, retains the exact requested accuracy and caps, and returns the metadata-rounded verdict with the bytes. It does not remesh through another route.
+
+The constant axis-aligned cubic preview samples the existing tentative field on its own bounded grid. It remains `Proof::Unproved`; its `max_deviation` is a sampling scale, not a proven distance bound. Other lattice previews retain the interval-driven route. Preview geometry never supplies an export certificate.
+
 ## Field moments and mass stand-ins
 
 `catallax_field::mass::properties` measures the original field definition, not a print mesh. It accepts separate `Accuracy` values for volume, centroid and centroidal inertia, a classified-cell limit, and the caller's decider. Units are mm³, mm and mm⁵ for unit density. Existing `catallax_measure::Accuracy` width semantics and defaults are unchanged.

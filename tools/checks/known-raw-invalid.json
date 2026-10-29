@@ -1,0 +1,22 @@
+{
+  "format": "catallax-known-raw-invalid/1",
+  "rulings": [
+    {
+      "id": "captain-2026-10-29-r1-known-raw-invalid",
+      "authority": "captain",
+      "source": "Captain ruling relayed by firstmate on 29 October 2026",
+      "decision": "Go with the recomended",
+      "approved": [
+        {
+          "index": 262,
+          "step_sha256": "770dfffc0237a182539afff13d14b0307dbbf928be5a089bc43a665ee06319e1"
+        },
+        {
+          "index": 431,
+          "step_sha256": "4229c04a36d92d059398573423059238c34732ba8d220933094c260c7ef4a9a3"
+        }
+      ]
+    }
+  ],
+  "known_raw_invalid": [262, 431]
+}

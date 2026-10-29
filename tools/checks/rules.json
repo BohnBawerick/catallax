@@ -1,0 +1,10 @@
+{
+  "format": "catallax-check-rules/1",
+  "workers": 4,
+  "corpus_commit": "ad3d261cce764b58e576e595679455592ae29e8f",
+  "corpus_sha256": "9674f9617d544100912696702182ec00d3a2fc1fbf0683303108763d09d87271",
+  "jobs": {"fmt": 1, "clippy": 1, "tests": 4, "build": 1, "replay": 1, "scoreboard": 1},
+  "replay_paths": ["crates/**", "Cargo.*", "rust-toolchain*", ".claude/skills/verify-catallax/scripts/**", "tools/checks/**", ".github/**"],
+  "full_paths": ["Cargo.*", "rust-toolchain*", ".cargo/**", "tools/checks/**", ".github/**"],
+  "documentation_paths": ["docs/**", "README.md", "LICENSE"]
+}

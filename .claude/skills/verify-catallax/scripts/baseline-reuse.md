@@ -143,6 +143,8 @@ remain unchanged. Reuse evidence does not establish fresh baseline latency.
 Run the public synthetic mutation suite with the normal driver test discovery.
 Its build attestations are deliberately synthetic fixtures. The implementation
 alone establishes no saved time; a real future matching baseline is required.
-Any driver/comparator change, including this one, still requires parent-owned
-FULL SIX qualification after green CI. No private corpus is needed by these
-tests, and none is included here.
+Ordinary merges and nightly audits, including driver/comparator changes, run one
+fixed configuration. FULL SIX qualification belongs only to a milestone-closing
+release and is reused when the kernel pin is unchanged. The retained `qualify`
+command remains available for that release path. No private corpus is needed by
+these tests, and none is included here.

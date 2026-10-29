@@ -1,0 +1,37 @@
+name: Exact-candidate check evidence
+description: Publish only job identity and aggregate evidence, never replay inputs
+inputs:
+  job:
+    description: Independently declared check job
+    required: true
+  partition:
+    description: One-based partition index
+    default: "1"
+  binary:
+    description: Executable actually used by this job
+    default: ""
+  summary:
+    description: Privacy-safe replay aggregate
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Record exact-run identity
+      shell: bash
+      env:
+        JOB: ${{ inputs.job }}
+        PARTITION: ${{ inputs.partition }}
+        BINARY: ${{ inputs.binary }}
+        SUMMARY: ${{ inputs.summary }}
+      run: |
+        flags=()
+        if [[ -n "$BINARY" ]]; then flags+=(--binary "$BINARY"); fi
+        if [[ -n "$SUMMARY" ]]; then flags+=(--summary "$SUMMARY"); fi
+        python3 -B tools/checks/checks.py evidence --plan "$RUNNER_TEMP/selection.json" \
+          --job "$JOB" --partition "$PARTITION" "${flags[@]}" \
+          --out "$RUNNER_TEMP/check-proof/$JOB-$PARTITION.json"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: check-proof-${{ inputs.job }}-${{ inputs.partition }}
+        path: ${{ runner.temp }}/check-proof/${{ inputs.job }}-${{ inputs.partition }}.json
+        if-no-files-found: error

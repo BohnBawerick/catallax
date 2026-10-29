@@ -1,0 +1,105 @@
+{
+  "commit": "6809d42b9405b7d9baac49e6d229e8f8d420e0c5",
+  "decisions": {
+    "build": {
+      "reason": "pre-R1 full workspace check workflow",
+      "selected": true
+    },
+    "clippy": {
+      "reason": "pre-R1 full workspace check workflow",
+      "selected": true
+    },
+    "fmt": {
+      "reason": "pre-R1 full workspace check workflow",
+      "selected": true
+    },
+    "tests": {
+      "reason": "pre-R1 full workspace check workflow",
+      "selected": true
+    }
+  },
+  "format": "catallax-check-timing/1",
+  "head": "6809d42b9405b7d9baac49e6d229e8f8d420e0c5",
+  "jobs": [
+    {
+      "conclusion": "success",
+      "job": "clippy",
+      "queue_basis": "job.created_at",
+      "queue_ms": 2000,
+      "wall_ms": 29000
+    },
+    {
+      "conclusion": "success",
+      "job": "tests (4)",
+      "queue_basis": "job.created_at",
+      "queue_ms": 2000,
+      "wall_ms": 685000
+    },
+    {
+      "conclusion": "success",
+      "job": "fmt",
+      "queue_basis": "job.created_at",
+      "queue_ms": 2000,
+      "wall_ms": 10000
+    },
+    {
+      "conclusion": "success",
+      "job": "tests (2)",
+      "queue_basis": "job.created_at",
+      "queue_ms": 2000,
+      "wall_ms": 757000
+    },
+    {
+      "conclusion": "success",
+      "job": "tests (1)",
+      "queue_basis": "job.created_at",
+      "queue_ms": 2000,
+      "wall_ms": 864000
+    },
+    {
+      "conclusion": "success",
+      "job": "tests (3)",
+      "queue_basis": "job.created_at",
+      "queue_ms": 2000,
+      "wall_ms": 571000
+    },
+    {
+      "conclusion": "success",
+      "job": "build",
+      "queue_basis": "job.created_at",
+      "queue_ms": 2000,
+      "wall_ms": 460000
+    },
+    {
+      "conclusion": "skipped",
+      "job": "release-evidence",
+      "queue_basis": "job.created_at",
+      "queue_ms": 0,
+      "wall_ms": 0
+    },
+    {
+      "conclusion": "skipped",
+      "job": "release-dry-run",
+      "queue_basis": "job.created_at",
+      "queue_ms": 0,
+      "wall_ms": 0
+    },
+    {
+      "conclusion": "success",
+      "job": "check",
+      "queue_basis": "job.created_at",
+      "queue_ms": 2000,
+      "wall_ms": 3000
+    }
+  ],
+  "label": "pre-R1-main",
+  "provenance": "Public pre-R1 main run. Selection decisions reconstructed from check.yml at 6809d42b; no replay job existed.",
+  "replay_elapsed_ms": 0,
+  "replay_kind": "not-selected",
+  "rerun_count": 0,
+  "restored_replay_elapsed_ms": null,
+  "run_attempt": 1,
+  "run_url": "https://github.com/BohnBawerick/catallax/actions/runs/40840579152",
+  "selected_cases": 0,
+  "time_to_gate_ms": 873000
+}

@@ -58,9 +58,67 @@ Run the final kernel evidence and package dry run at the exact candidate commit.
 
 The joint ordinary-parts cut requires the application bracket, edited collar, safe-edit recovery, checked exports and requested drill-point measurement, plus the rounded-boss correctness assessment for all affected shipped paths. Canonical P1 remains a separate full-path gate. Missing acceptance evidence or an unresolved shared-output correctness defect holds the tag; neither a deadline nor a passing package job overrides that hold.
 
-The correction mechanism below is release-only and does not infer validity from differing bytes. The captain must approve the enumerated correction list and its retained independent evidence before it lands; driver support requires FULL SIX qualification. A previously accepted source change or a reader's healed import is not per-case approval. Do not change the baseline, relax the ordinary strict comparator or relabel a historical dry run to bypass this gate.
+The correction mechanism below is release-only and does not infer validity from differing bytes. The captain must approve the enumerated correction list and its retained independent evidence before it lands. Ordinary merges and nightly audits use one fixed replay configuration, including driver and comparator changes. Full baseline/candidate 1/2/4 qualification belongs only to a milestone-closing release and is reused when the kernel pin is unchanged. A previously accepted source change or a reader's healed import is not per-case approval. Do not change the baseline, relax the ordinary strict comparator or relabel a historical dry run to bypass this gate.
 
 The [review inventory](../tools/release/review-candidates.json) records the 118 changes observed between v0.1.0 and the first 0.1.1 candidate. It is historical: the release gate does not read it and it approves nothing. Its three-output fingerprints omit IGES. The 0.1.1 approval files were generated instead from a fresh replay of the merged candidate. That replay covers 359 changed cases: 32 refusal upgrades, 326 invalid-to-valid STEP corrections and one captain-reviewed refusal change. Each STEP correction passed the direct no-healing STEP gate, raw-invalid before and raw-valid after, and its `evidence.sha256` pins the retained gate report. Rows whose change could not be bisected take their public source from this inventory.
+
+## Merge checks
+
+`tools/checks/rules.json` declares the required jobs independently of workflow
+`needs`. `tools/checks/checks.py select` unions the base and candidate rules and
+workspace Cargo dependency graphs, including dev, build, optional and
+target-specific dependencies. Renames use both paths. Shared build inputs,
+check-policy changes and unknown paths select every crate. Documentation-only
+changes still run formatting and policy checks without a kernel replay.
+
+The earlier-answer inventory is `tools/checks/earlier-answers.json`. It retains
+all 477 request and accepted-answer digests. Operation families are derived from
+the requests; every owner is `unknown`. Changes in the verification binary's
+build closure therefore run all 477 at four workers, fresh and without cache
+reuse. Target-part and shared verification examples also select their test
+consumers. The target-part scoreboard now reports to the same final `check` gate.
+
+The replay job checks out the private proof-input repository at the commit in
+the rules, using the read-only `CATALLAX_PROOF_INPUTS_DEPLOY_KEY` Actions secret,
+then sparsely checks out only the approved corpus file and verifies its digest
+before execution. Judge and survey packs are not checked out. Forks without that credential
+cannot satisfy replay. Do not use `pull_request_target` to grant them access.
+Public artifacts contain only selection decisions, job identities and aggregate
+replay evidence. Inputs, per-case manifests, geometry and question ids stay off
+public logs and artifacts.
+
+The final gate rejects missing, cancelled, unexpected, selected-but-skipped or
+stale jobs and missing test partitions. Evidence binds the tested merge commit,
+head commit, run and attempt, binary, corpus, metadata and driver identities.
+Replay evidence additionally requires four fresh workers, zero cache hits and
+the selected case count. Earlier-answer comparison is strict in R1, including
+all published output bytes. Metadata changes cannot authorize a new answer.
+The standing-disposition update procedure is separate follow-up work.
+
+The captain's 29 October 2026 option-A ruling, "Go with the recomended",
+grandfathers exactly the inherited raw-invalid STEP files at indices 262 and
+431, with their exact hashes in `tools/checks/known-raw-invalid.json`. This is
+not a validity claim. The direct no-healing audit still checks every selected
+STEP output. An unlisted raw-invalid file or changed bytes in a listed file
+while it remains raw-invalid fail. A listed file becoming raw-valid is an
+approved invalid-to-valid upgrade and must leave the active list.
+
+The ruling's scope is fingerprinted in the checker. A new list entry or an
+edited ruling cannot authorize itself. Expansion requires an explicit captain
+ruling and a reviewed update of the trusted ruling fingerprint. The selector
+validates both policy versions, and job evidence binds the current policy hash.
+The policy table covers unchanged inherited failures, new invalid files,
+changed invalid bytes, unapproved additions and valid-upgrade removal.
+
+`release.py`, release evidence and packaging retain their existing qualification
+contract. Aligning routine-release tiers with the joint milestone plan and adding
+a nightly audit are outside this bootstrap.
+
+The observational `timings` job runs after `check` and publishes the
+`check-timings` artifact with per-job queue/wall times, time to gate, replay
+elapsed time and selection decisions. It cannot measure its own completion.
+Record final-head control and planted-fault timings with run/artifact links in
+the pull request body, not in a new commit that would change the tested head.
 
 ## Generate the replay aggregate
 

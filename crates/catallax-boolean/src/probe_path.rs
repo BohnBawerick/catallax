@@ -4,7 +4,7 @@
 use crate::geometry::{equation_is_source_contact, natural_ends, on_arc, r, sign, unit};
 use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
 use catallax_shapes::{
-    Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, SurfaceId, Vector3,
+    Circle, Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, SurfaceId, Vector3,
 };
 use catallax_topology::{EdgeId, Model};
 
@@ -82,14 +82,6 @@ impl P {
     fn pow(&self, n: u32) -> Self {
         (0..n).fold(Self::constant(Real::one()), |p, _| p.mul(self))
     }
-    fn is_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
-        for x in &self.0 {
-            if coefficient_sign(x, dec)? != Sign::Zero {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
     fn excludes_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
         let mut first = 0;
         let expected = loop {
@@ -123,6 +115,50 @@ impl P {
             }
         }
         Ok(true)
+    }
+}
+
+enum BarrierPolynomial {
+    Power(P),
+    Bernstein([Real; 3]),
+}
+
+impl BarrierPolynomial {
+    fn coefficients(&self) -> &[Real] {
+        match self {
+            Self::Power(polynomial) => &polynomial.0,
+            Self::Bernstein(coefficients) => coefficients,
+        }
+    }
+
+    fn is_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
+        for coefficient in self.coefficients() {
+            if coefficient_sign(coefficient, dec)? != Sign::Zero {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn excludes_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
+        match self {
+            Self::Power(polynomial) => polynomial.excludes_zero(dec),
+            Self::Bernstein(coefficients) => {
+                let mut expected = Sign::Zero;
+                for (index, coefficient) in coefficients.iter().enumerate() {
+                    let value = coefficient_sign(coefficient, dec)?;
+                    if expected == Sign::Zero {
+                        // Leading zero controls factor a permitted source contact.
+                        expected = value;
+                    } else if value != expected
+                        && (value != Sign::Zero || index == coefficients.len() - 1)
+                    {
+                        return Ok(false);
+                    }
+                }
+                Ok(expected != Sign::Zero)
+            }
+        }
     }
 }
 
@@ -446,6 +482,24 @@ fn straight_contact(equation: &RealPoly, p: &Point3, q: &Point3, degree: u32) ->
     P(vec![Real::zero(), first.clone(), end - first])
 }
 
+/// Restrict a circle's sphere equation to a straight path from another circle.
+/// Subtracting the source sphere eliminates every quadratic source coordinate.
+fn straight_circles(
+    source: &Circle,
+    barrier: &Circle,
+    p: &Point3,
+    q: &Point3,
+) -> BarrierPolynomial {
+    let shift = source.center.minus(&barrier.center);
+    let start = Real::from_i64(2) * shift.dot(&p.minus(&source.center))
+        + shift.norm_squared()
+        + (&source.radius_sq - &barrier.radius_sq);
+    let end_offset = q.minus(&barrier.center);
+    let end = &end_offset.norm_squared() - &barrier.radius_sq;
+    let middle = &end_offset.dot(&p.minus(&barrier.center)) - &barrier.radius_sq;
+    BarrierPolynomial::Bernstein([start, middle, end])
+}
+
 /// The source position is an exact arc probe on the supplied source curve.
 pub(crate) fn adjacent(
     model: &Model,
@@ -453,7 +507,7 @@ pub(crate) fn adjacent(
     source: (PointId, &Point3, CurveId),
     q: &Point3,
     left: &Vector3,
-    barriers: &[EdgeId],
+    barriers: &mut [EdgeId],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let (source, p, source_curve) = source;
@@ -465,16 +519,12 @@ pub(crate) fn adjacent(
         )
     })?;
     let opposite_carrier = -&carrier;
-    let source_equations = model
-        .geom()
-        .curve(source_curve)
-        .equations(model.geom())
-        .ok_or_else(|| {
-            catallax_numbers::Refusal::new(
-                "boolean.parametric-query",
-                "curve equation unavailable; this boolean path needs a finite parametric solver",
-            )
-        })?;
+    let source_equations = model.geom().curve_equations(source_curve).ok_or_else(|| {
+        catallax_numbers::Refusal::new(
+            "boolean.parametric-query",
+            "curve equation unavailable; this boolean path needs a finite parametric solver",
+        )
+    })?;
     // A plane's chart interpolation is the straight segment exactly when
     // both endpoints lie on the carrier. The source arc supplies its proof.
     let straight = matches!(surface, Surface::Plane(_))
@@ -502,8 +552,11 @@ pub(crate) fn adjacent(
         {
             continue;
         }
-        let mut clear = true;
-        for &edge_id in barriers {
+        // Clearance is a conjunction over barriers, so their order changes
+        // only cost. A blocking barrier moves first: nearby probes from the
+        // same source usually meet it again.
+        let mut blocked = None;
+        for (index, &edge_id) in barriers.iter().enumerate() {
             let edge = model.edge(edge_id);
             let curve = model.geom().curve(edge.curve);
             // On a rotational carrier, a complete incident coaxial circle is
@@ -541,12 +594,12 @@ pub(crate) fn adjacent(
                 }
             }
             let conic_contact = model.geom().has_conic_incidence(edge.curve, source);
-            let mut equations: Vec<_> = curve.equations(model.geom()).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
+            let mut equations: Vec<_> = model.geom().curve_equations(edge.curve).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
                 .iter()
                 .enumerate()
-                .map(|(index, e)| -> Result<P, Refusal> {
+                .map(|(index, e)| -> Result<BarrierPolynomial, Refusal> {
                     let contact = equation_is_source_contact(
-                        model, source, source_curve, edge.curve, index, e, &source_equations,
+                        model, source, source_curve, edge.curve, index, e, source_equations,
                     );
                     let contact = if !contact && conic_contact {
                         dec.note_fact_decision();
@@ -564,6 +617,12 @@ pub(crate) fn adjacent(
                             } else {
                                 numerator(e, &path, dec)?
                             }
+                        } else if straight
+                            && index == 1
+                            && let (Curve::Circle(source), Curve::Circle(barrier)) =
+                                (model.geom().curve(source_curve), curve)
+                        {
+                            return Ok(straight_circles(source, barrier, p, q));
                         } else {
                             numerator(e, &path, dec)?
                         };
@@ -573,12 +632,12 @@ pub(crate) fn adjacent(
                         // zero without inferring another branch's membership.
                         polynomial.0[0] = Real::zero();
                     }
-                    Ok(polynomial)
+                    Ok(BarrierPolynomial::Power(polynomial))
                 })
                 .collect::<Result<_, _>>()?;
             // Separation is existential. Try coefficients whose cached bounds
             // already exclude zero before asking for exact contact proofs.
-            equations.sort_by_key(|p| p.0.iter().all(|c| c.approx().sign().is_none()));
+            equations.sort_by_key(|p| p.coefficients().iter().all(|c| c.approx().sign().is_none()));
             let mut separated = false;
             for equation in &equations {
                 if equation.excludes_zero(dec)? {
@@ -607,7 +666,7 @@ pub(crate) fn adjacent(
                         "boolean.imprint-ambiguous",
                     )?
                 {
-                    clear = false;
+                    blocked = Some(index);
                     break;
                 }
                 let mut avoids_ends = true;
@@ -636,13 +695,14 @@ pub(crate) fn adjacent(
                     }
                 }
                 if !avoids_ends {
-                    clear = false;
+                    blocked = Some(index);
                     break;
                 }
             }
         }
-        if clear {
-            return Ok(true);
+        match blocked {
+            None => return Ok(true),
+            Some(index) => barriers[..=index].rotate_right(1),
         }
     }
     Ok(false)
@@ -763,5 +823,81 @@ mod tests {
             );
         }
         assert!(!polynomial.excludes_zero(&mut dec).unwrap());
+    }
+
+    #[test]
+    fn circle_source_reduction_keeps_crossings_tangencies_and_endpoint_hits() {
+        let root2 = Real::from_i64(2).sqrt();
+        let root3 = Real::from_i64(3).sqrt();
+        let source = Circle {
+            center: RPoint3::new(r(0), r(0), r(0)).to_real(),
+            normal: unit(2),
+            radius_sq: Real::from_i64(5),
+            ref_dir: unit(0),
+        };
+        let p = Point3::new(root2.clone(), root3.clone(), Real::zero());
+        let barrier = Circle {
+            center: RPoint3::new(r(4), r(0), r(0)).to_real(),
+            radius_sq: Real::one(),
+            ..source.clone()
+        };
+        let tangent_barrier = Circle {
+            center: Point3::new(
+                &root2 + &Real::from_i64(2),
+                &root3 + &Real::one(),
+                Real::zero(),
+            ),
+            ..barrier.clone()
+        };
+        let mut dec = Decider::default();
+        assert!(
+            dec.sign(&(&p.minus(&source.center).norm_squared() - &source.radius_sq))
+                .is_coincident()
+        );
+        for (barrier, q, clear) in [
+            (&barrier, RPoint3::new(r(1), r(1), r(0)).to_real(), true),
+            (&barrier, RPoint3::new(r(6), r(0), r(0)).to_real(), false),
+            (&barrier, RPoint3::new(r(4), r(0), r(0)).to_real(), false),
+            (&barrier, RPoint3::new(r(5), r(0), r(0)).to_real(), false),
+            (
+                &tangent_barrier,
+                Point3::new(&root2 + &Real::one(), root3.clone(), Real::zero()),
+                true,
+            ),
+            (
+                &tangent_barrier,
+                Point3::new(&root2 + &Real::from_i64(4), root3.clone(), Real::zero()),
+                false,
+            ),
+        ] {
+            assert_eq!(
+                straight_circles(&source, barrier, &p, &q)
+                    .excludes_zero(&mut dec)
+                    .unwrap(),
+                clear,
+            );
+        }
+    }
+
+    #[test]
+    fn bernstein_clearance_keeps_source_contacts_and_later_hits() {
+        let mut dec = Decider::default();
+        for (coefficients, clear) in [
+            ([0, 0, 2], true),
+            ([0, 2, 1], true),
+            ([0, -1, -2], true),
+            ([1, 0, 1], true),
+            ([0, 0, 0], false),
+            ([0, 1, 0], false),
+            ([0, 1, -1], false),
+            ([1, -1, 1], false),
+        ] {
+            assert_eq!(
+                BarrierPolynomial::Bernstein(coefficients.map(Real::from_i64))
+                    .excludes_zero(&mut dec)
+                    .unwrap(),
+                clear,
+            );
+        }
     }
 }

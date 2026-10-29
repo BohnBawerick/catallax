@@ -2,17 +2,17 @@ use crate::{
     Contact, CurveForm, CurveHit, CurveSurface,
     chart::{self, Chart},
     math::*,
-    pair::Plan,
+    pair::{CylinderTorusMode, Frame, Plan},
     query,
     solve::{self, Solutions},
 };
 use catallax_numbers::{
     Answer, Answered, BoundKind, Decider, Fact, FactKind, FactOrigin, Mark, MarkLog, Outcome,
-    Rational, Real, RealPoly, Refusal, Sign,
+    Rational, Real, RealPoly, Refusal, Sign, StrictSign,
 };
 use catallax_shapes::{
-    Circle, Curve, CurveId, Cylinder, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Point3,
-    PointDef, Position, Surface, SurfaceId, Vector3,
+    Circle, Curve, CurveId, Cylinder, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Plane,
+    Point3, PointDef, Position, Surface, SurfaceId, Vector3,
 };
 use std::sync::Arc;
 
@@ -163,6 +163,9 @@ fn keep_branch(
             Ok(false) => return Ok(None),
             Err(e) => return Err(Refusal::from(e)),
         }
+    }
+    if let Some(keep) = query::interval_component_contains(geom, c, p, plan.as_deref(), dec)? {
+        return Ok(keep.then_some(false));
     }
     let Some(d) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
         return Ok(Some(false));
@@ -502,10 +505,107 @@ fn cylinder_excludes_plane(
     Ok(sign(&separation, dec)? == Sign::Positive)
 }
 
+fn cylinder_torus_excludes_plane(
+    witness: &Point3,
+    plane: &Plane,
+    plan: &Plan,
+    dec: &Decider,
+) -> Result<bool, Refusal> {
+    let Some(Frame::CylinderTorus {
+        origin,
+        e1,
+        e2,
+        e3,
+        radius,
+        radial_shift,
+        radial_slope,
+        lo,
+        span,
+        lower_radius,
+        upper_radius,
+        mode,
+        ..
+    }) = &plan.frame
+    else {
+        return Ok(false);
+    };
+    // Bound the complete component in its orthonormal frame, then project the
+    // plane into that frame. Bounding world coordinates first loses correlations
+    // under a rigid placement. Strict exclusion keeps endpoints and tangencies.
+    let attempt = || -> Result<bool, Refusal> {
+        let enclose = |value: &Real| dec.enclose_at(value, 128);
+        let x = enclose(lo)?.hull(&enclose(&(lo + span))?);
+        let Some(mut y) = (&enclose(radius)?.square() - &x.square()).sqrt() else {
+            return Ok(false);
+        };
+        let Some(radial) = (&enclose(radial_shift)? + &(&enclose(radial_slope)? * &x)).sqrt()
+        else {
+            return Ok(false);
+        };
+        let Some(mut z) =
+            (&(&enclose(upper_radius)? - &radial) * &(&radial - &enclose(lower_radius)?)).sqrt()
+        else {
+            return Ok(false);
+        };
+        match mode {
+            CylinderTorusMode::Single => {
+                y = y.hull(&(-&y));
+                z = z.hull(&(-&z));
+            }
+            CylinderTorusMode::Axial | CylinderTorusMode::Transverse => {
+                let (selected, both, axis) = if *mode == CylinderTorusMode::Axial {
+                    (&mut z, &mut y, e3)
+                } else {
+                    (&mut y, &mut z, e2)
+                };
+                match enclose(&witness.minus(origin).dot(axis))?.sign() {
+                    Some(StrictSign::Positive) => {}
+                    Some(StrictSign::Negative) => *selected = -&*selected,
+                    None => return Ok(false),
+                }
+                *both = both.hull(&(-&*both));
+            }
+        }
+        let mut distance = enclose(&origin.minus(&plane.origin).dot(&plane.normal))?;
+        for (axis, bound) in [e1, e2, e3].into_iter().zip([x, y, z]) {
+            distance = &distance + &(&enclose(&axis.dot(&plane.normal))? * &bound);
+        }
+        Ok(!distance.contains_zero())
+    };
+    match attempt() {
+        Err(refusal) if refusal.code != "numbers.deadline" => Ok(false),
+        answer => answer,
+    }
+}
+
+fn torus_excludes_plane(
+    torus: &catallax_shapes::Torus,
+    plane: &Plane,
+    dec: &Decider,
+) -> Result<bool, Refusal> {
+    // The complete ring torus projects onto [-h,h], where
+    // h = R |normal_radial| + r |normal|. Strict separation preserves contacts.
+    let radial_sq = plane.normal.cross(&torus.axis).norm_squared() / torus.axis.norm_squared();
+    let extent = &torus.major * &root_real(&radial_sq)
+        + &torus.minor * &root_real(&plane.normal.norm_squared());
+    let separation = torus
+        .center
+        .minus(&plane.origin)
+        .dot(&plane.normal)
+        .square()
+        - extent.square();
+    match dec.enclose_at(&separation, 128) {
+        Ok(bound) => Ok(bound.sign() == Some(StrictSign::Positive)),
+        Err(refusal) if refusal.code == "numbers.deadline" => Err(refusal),
+        Err(_) => Ok(false),
+    }
+}
+
 fn branch_plane_disjoint(
     geom: &GeomStore,
     curve: CurveId,
     surface: SurfaceId,
+    plan: Option<&Plan>,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let (Curve::Intersection(branch), Surface::Plane(plane)) =
@@ -516,11 +616,19 @@ fn branch_plane_disjoint(
     // The entire carrier lies on each support. This excludes no point at
     // tangency and asserts nothing about trim membership or orientation.
     for support in &branch.surfaces {
-        if let Surface::Cylinder(cylinder) = geom.surface(*support)
-            && cylinder_excludes_plane(cylinder, &plane.origin, &plane.normal, dec)?
-        {
+        let excluded = match geom.surface(*support) {
+            Surface::Cylinder(cylinder) => {
+                cylinder_excludes_plane(cylinder, &plane.origin, &plane.normal, dec)?
+            }
+            Surface::Torus(torus) => torus_excludes_plane(torus, plane, dec)?,
+            _ => false,
+        };
+        if excluded {
             return Ok(true);
         }
+    }
+    if let Some(plan) = plan {
+        return cylinder_torus_excludes_plane(&geom.position(branch.witness), plane, plan, dec);
     }
     Ok(false)
 }
@@ -579,6 +687,67 @@ fn circular_cylinder(
     })
 }
 
+// Encloses the circle's axis-aligned box relative to the apex and evaluates
+// the double cone's equation there. A strictly signed value proves that no
+// point of the circle meets either nappe; zero in the enclosure proves nothing.
+// Rational pairs keep the direct solver and its accounting. An algebraic pair
+// far from the cone would otherwise eliminate its coefficients first.
+fn circle_misses_cone(
+    form: &CurveForm,
+    surface: &Surface,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let (
+        CurveForm::Circle {
+            center,
+            normal,
+            radius_sq,
+            ..
+        },
+        Surface::Cone(cone),
+    ) = (form, surface)
+    else {
+        return Ok(false);
+    };
+    if center.as_rational().is_some()
+        && normal.as_rational().is_some()
+        && radius_sq.rational_ref().is_some()
+        && surface.has_rational_definition()
+    {
+        return Ok(false);
+    }
+    let mut local = cone.clone();
+    local.apex = Point3::origin();
+    let Some(implicit) = Surface::Cone(local).implicit() else {
+        return Ok(false);
+    };
+    let enclosed = (|| {
+        let radius_sq = dec.enclose_at(radius_sq, 128)?;
+        let normal_sq = normal.norm_squared();
+        let offset = center.minus(&cone.apex);
+        let mut bounds = Vec::with_capacity(3);
+        for (n, x) in [
+            (&normal.x, &offset.x),
+            (&normal.y, &offset.y),
+            (&normal.z, &offset.z),
+        ] {
+            let factor = dec.enclose_at(&(&Real::one() - &(&n.square() / &normal_sq)), 128)?;
+            let Some(width) = (&radius_sq * &factor).sqrt() else {
+                return Ok(None);
+            };
+            let x = dec.enclose_at(x, 128)?;
+            bounds.push((&x - &width).hull(&(&x + &width)));
+        }
+        implicit.eval_ball(&bounds, dec).map(Some)
+    })();
+    // The exclusion is optional. An unsettled enclosure keeps the solver.
+    match enclosed {
+        Ok(value) => Ok(value.is_some_and(|value| !value.contains_zero())),
+        Err(refusal) if refusal.code == "numbers.deadline" => Err(refusal),
+        Err(_) => Ok(false),
+    }
+}
+
 pub(super) fn intersect(
     geom: &mut GeomStore,
     c: CurveId,
@@ -594,11 +763,15 @@ pub(super) fn intersect(
         return Ok(Answer::exact(CurveSurface::Contained));
     }
     let form = query::form(geom, c, dec)?;
-    if matches!(form, CurveForm::Branch) && branch_plane_disjoint(geom, c, s, dec)? {
+    if matches!(form, CurveForm::Branch) && branch_plane_disjoint(geom, c, s, plan.as_deref(), dec)?
+    {
         return Ok(Answer::exact(CurveSurface::Disjoint));
     }
     if let Some(answer) = circular_section(geom, c, s, &form, dec)? {
         return Ok(Answer::exact(answer));
+    }
+    if circle_misses_cone(&form, geom.surface(s), dec)? {
+        return Ok(Answer::exact(CurveSurface::Disjoint));
     }
     let implicit = geom.implicit(s).ok_or_else(|| {
         Refusal::new(
@@ -857,6 +1030,116 @@ mod tests {
             .unwrap(),
         ));
         assert_never_kept(&geom, curve, surface, point(1, 0, -1).to_real());
+    }
+
+    // A cone with slope sqrt(3) and apex at the offset, and a horizontal circle
+    // of the given squared radius centred at (x, 0, z) from that apex.
+    fn circle_and_cone(
+        offset: i64,
+        x: Real,
+        z: i64,
+        radius_sq: Real,
+    ) -> (GeomStore, CurveId, SurfaceId) {
+        let mut dec = Decider::default();
+        let shift = |p: [Real; 3]| {
+            let [x, y, z] = p;
+            Point3::new(
+                &x + &Real::from_i64(offset),
+                &y - &Real::from_i64(offset),
+                &z + &Real::from_i64(offset),
+            )
+        };
+        let mut geom = GeomStore::new();
+        let surface = geom.add_surface(Surface::Cone(
+            Cone::new(
+                shift([Real::zero(), Real::zero(), Real::zero()]),
+                vector(0, 0, 1).into(),
+                Real::from_i64(3).sqrt(),
+                vector(1, 0, 0).into(),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let curve = geom.add_curve(Curve::Circle(
+            Circle::new(
+                shift([x, Real::zero(), Real::from_i64(z)]),
+                vector(0, 0, 1).into(),
+                radius_sq,
+                vector(1, 0, 0).into(),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        (geom, curve, surface)
+    }
+
+    #[test]
+    fn a_circle_away_from_both_nappes_of_an_algebraic_cone_is_excluded_exactly() {
+        for offset in [0, 1_000_000] {
+            // At height one the cone has radius sqrt(3); the unit circle spans x in [9, 11].
+            // The lower nappe is the same distance away at height minus one.
+            for z in [1, -1] {
+                let (mut geom, curve, surface) =
+                    circle_and_cone(offset, Real::from_i64(10), z, Real::one());
+                let mut dec = Decider::default();
+                let form = query::form(&geom, curve, &mut dec).unwrap();
+                assert!(circle_misses_cone(&form, geom.surface(surface), &mut dec).unwrap());
+                let answer = intersect(&mut geom, curve, surface, &mut dec).unwrap();
+                assert!(answer.marks.is_empty());
+                assert!(
+                    matches!(answer.value, CurveSurface::Disjoint),
+                    "offset {offset}, z {z}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn circles_touching_or_crossing_an_algebraic_cone_keep_the_solver() {
+        let three = Real::from_i64(3).sqrt();
+        for offset in [0, 1_000_000] {
+            // Crossing: the unit circle about x = 2 meets the radius sqrt(3) section twice.
+            // Touching: the circle about x = 3 has radius 3 - sqrt(3) and touches at x = sqrt(3).
+            for (x, radius_sq, expected) in [
+                (Real::from_i64(2), Real::one(), 2),
+                (Real::from_i64(3), (&Real::from_i64(3) - &three).square(), 1),
+            ] {
+                let (mut geom, curve, surface) = circle_and_cone(offset, x, 1, radius_sq);
+                let mut dec = Decider::default();
+                let form = query::form(&geom, curve, &mut dec).unwrap();
+                assert!(!circle_misses_cone(&form, geom.surface(surface), &mut dec).unwrap());
+                let answer = intersect(&mut geom, curve, surface, &mut dec).unwrap();
+                let CurveSurface::Meets(hits) = answer.value else {
+                    panic!("offset {offset}: expected {expected} hits")
+                };
+                assert_eq!(hits.len(), expected, "offset {offset}");
+                if expected == 1 {
+                    assert_eq!(hits[0].contact, Contact::Tangent);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rational_circle_and_cone_pairs_keep_the_direct_solver() {
+        let mut dec = Decider::default();
+        let cone = Surface::Cone(
+            Cone::new(
+                point(0, 0, 0).into(),
+                vector(0, 0, 1).into(),
+                r(1).into(),
+                vector(1, 0, 0).into(),
+                &mut dec,
+            )
+            .unwrap(),
+        );
+        let form = CurveForm::Circle {
+            center: point(10, 0, 1).into(),
+            normal: vector(0, 0, 1).into(),
+            radius_sq: r(1).into(),
+            ref_dir: vector(1, 0, 0).into(),
+        };
+        assert!(!circle_misses_cone(&form, &cone, &mut dec).unwrap());
     }
 
     #[test]

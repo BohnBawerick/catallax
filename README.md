@@ -45,7 +45,7 @@ The [five-tool target-part comparison](https://kernel.zigrawbohnbawerick.org/com
 - `catallax-numbers` supplies exact arithmetic, certified enclosures and decisions, polynomial roots, construction facts and marks. The shared algebraic foundation adds `RealPoly` and certified sine/cosine construction for rational-degree angles.
 - `catallax-shapes` stores exact algebraic placements and analytic dimensions, including elliptic-cylinder definitions, with proven parameter enclosures. Derived points retain their definitions. These definitions do not imply complete recipe coverage for every kind.
 - `catallax-topology` builds blocks, cylinders, spheres, cones and tori in append-only curved topology and checks structural faults.
-- `catallax-intersect` handles plane, cylinder and sphere pairs, closed-form cone/torus configurations, branch-aware curve queries and certified finite conic traces. General noncoaxial cone and torus branch tracing remains unfinished.
+- `catallax-intersect` handles plane, cylinder and sphere pairs, closed-form cone/torus configurations, and cylinder/torus and cone/torus pairs with parallel, distinct axes. Branch-aware queries and certified finite traces retain disconnected components, shared nodes, cusp limits, seams and trim endpoints. Skew cylinder/torus and cone/torus tracing remain unfinished.
 - `catallax-boolean` implements unite, subtract and intersect through intersect, imprint, classify, keep and sew. Torus regions bounded by finite parallel and meridian arcs retain their seams and endpoints; P3 center sections work through the junction-radius edit. Ambiguous and unsupported cases remain unfinished work.
 - `catallax-measure` computes proven body mass properties, face centroids and areas, edge lengths and half-arc-length points, and body/face axis-aligned bounds. Construction does not measure: properties run when asked, and the legacy commands still measure every answer. Mass properties on finite offset and rounded faces are proven ([PR72](https://github.com/BohnBawerick/catallax/pull/72)); the field measures lattices separately (below).
 - `catallax-step` exports deterministic STEP AP242 with analytic geometry, certified spline fits for intersection branches and a deviation report. The legacy contract has interoperability limits, including no seam curves.
@@ -212,16 +212,16 @@ Planar orientation predicates charge this allowance even when interval filtering
 settles their signs without exact arithmetic. Bridge and ear searches therefore
 cannot bypass cancellation or the work limit through their filtered fast path.
 
-`catallax_app::lifecycle::Controller` delivers an opt-in revision-bound unproved
-preview before certified meshing. The caller chooses the preview/proof split of
-one allowance, then schedules the returned single-use proof job. Confirmation
-provides the retained exact body and a certified replacement display; failure
-keeps its typed refusal with the edit. New edits invalidate old completions,
-and saved selection names resolve only against the same revision's confirmed
-result. Both caps are reserved up front from the caller, never duplicated by
-deferral. Actual phase work is reported separately from reservations. See the
-[lifecycle interface contract](docs/interface-changes/2026-10-26-application-preview-lifecycle.md)
-for scheduling, budget accounting and development timing.
+`catallax_app::lifecycle::Controller` can deliver a revision-bound construction
+display before exact B-rep evaluation, using the independent field compiler.
+Unsupported definitions or incomplete displays refuse rather than showing a
+substitute shape. The caller reserves one preview/proof allocation and schedules
+the returned proof job. Confirmation retains an incremental exact checkpoint and
+certified display. Failure restores the last proved display, but does not allow
+that older body to be exported as the failed input. Cancellation invalidates queued
+work. Selection origins resolve only against the same revision's confirmed result.
+See the [construction and snapback contract](docs/interface-changes/2026-10-27-construction-preview-and-snapback.md)
+for representation types, output gates, budget accounting and exercised limits.
 
 
 ## Where to start

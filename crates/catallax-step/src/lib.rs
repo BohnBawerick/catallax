@@ -12,11 +12,21 @@ use catallax_topology::{BodyId, Model};
 
 mod band;
 mod certified_spline;
+mod chart;
+mod cut;
 mod export;
 mod fit;
+mod frames;
 mod graph;
 mod number;
+mod partial;
+mod pcurve;
+mod poles;
 mod regularize;
+mod trim;
+mod uv;
+mod uv_loop;
+mod wire;
 
 pub use certified_spline::{CertifiedSplineStepOptions, write_spline_prism_step};
 
@@ -61,9 +71,9 @@ pub struct StepReport {
     pub max_deviation: Rational,
     /// Intersection branches written as fitted splines.
     pub approximated_curves: usize,
-    /// Vertices added because STEP needs them (ring origins, natural-boundary poles).
+    /// Vertices added for ring origins, natural poles, or periodic chart cuts.
     pub added_vertices: usize,
-    /// Explicit edges added because STEP needs them (periodic band and torus seams).
+    /// Net explicit edges added by seams and shared-edge splits for periodic charts.
     pub added_edges: usize,
     /// Solids written.
     pub solids: usize,

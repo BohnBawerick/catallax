@@ -1,0 +1,6 @@
+## 2026-10-27: reviewed P5 roll-over recipe migration
+
+Pieces: recipe language, B-rep and field recipe evaluation, target-part verification
+Change: `parts/P5-flanged-housing.json` changes only its format from `catallax-recipe/3` to `/4`, selecting the version-4 default `roll_over` interpretation in [RECIPE.md section 4.5.1](../RECIPE.md#451-ends-corners-and-overflow). The eight operations, dimensions, IDs, origin references, result and authored radius-2-to-2.5 edit are unchanged. The public comparison case pins the migrated source digest.
+Why: the junction's contact foot reaches the countersink mouths. Continuing that contact uses the reviewed version-4 overflow meaning rather than silently changing a version-3 recipe's interpretation.
+Migration: use the migrated P5 fixture for the continuation work. The reader still accepts version 3 unchanged; `crates/catallax-recipe/tests/fixtures/P5-flanged-housing-v3.json` retains the previous public definition. The migration regression parses both versions, compares their complete typed operation graphs and names, applies the same authored radius edit and verifies both save/reopen round trips. No explicit overflow field is needed for the version-4 default. This source migration does not implement the envelope, construct the full housing, or establish SolidDraft original/edit/export acceptance.

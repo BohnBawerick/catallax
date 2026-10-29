@@ -1073,6 +1073,8 @@ Version 4 changes loft correspondence and segment-count handling, sharp-join thi
 
 Do not relabel every version 3 recipe mechanically. Unchanged operations can migrate after reference validation. A loft containing arcs or unequal authored segmentation needs explicit review of correspondence; preserve the old version when its old solid is intended. Thicken edits involving sharp joins need review of the sectors and new `round` roles. The no-refresh `near` rule and split-ID policy govern new editing actions, not a rewrite of old saved ids. The reader now accepts version 4 end-condition syntax without changing version 3 fixtures, canonical output or exchange-contract formats. Schema and interpreter work for the other version 4 additions remains separate.
 
+The canonical [P5 flanged housing](../parts/P5-flanged-housing.json) has a [reviewed version-4 migration](interface-changes/2026-10-27-p5-roll-over-recipe-migration.md) for default roll-over at the countersink mouths. Only its format changes: the operation graph, names and radius-2-to-2.5 edit remain fixed, and the version-3 reader is unchanged. The retained legacy fixture and migration check establish graph preservation, not completed envelope construction or application acceptance.
+
 
 Choices:
 

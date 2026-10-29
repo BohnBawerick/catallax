@@ -2,7 +2,7 @@ use crate::{
     CurveForm, Cyclic,
     chart::{self, Chart},
     math::*,
-    pair::{self, Plan},
+    pair::{self, Frame, Plan},
 };
 use catallax_numbers::{
     Ball, Decider, FactKind, Outcome, Rational, Real, Refusal, Sign, StrictOrder, StrictSign,
@@ -183,6 +183,28 @@ pub(super) fn curve_domain(
     }
     Ok(true)
 }
+pub(super) fn interval_component_contains(
+    geom: &GeomStore,
+    curve: CurveId,
+    point: &Point3,
+    plan: Option<&Plan>,
+    dec: &mut Decider,
+) -> Result<Option<bool>, Refusal> {
+    let Some(Frame::ConeTorus(frame)) = plan.and_then(|plan| plan.frame.as_ref()) else {
+        return Ok(None);
+    };
+    let Curve::Intersection(branch) = geom.curve(curve) else {
+        unreachable!("interval-set branch");
+    };
+    let component = frame
+        .component(&geom.position(branch.witness), dec)
+        .map_err(Refusal::from)?;
+    frame
+        .contains(component, point, dec)
+        .map(Some)
+        .map_err(Refusal::from)
+}
+
 pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) -> Outcome<Apart> {
     let plan = match validate(geom, c, dec) {
         Ok(p) => p,
@@ -204,6 +226,12 @@ pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) ->
             Ok(false) => return Outcome::Proven(Apart),
             Err(e) => return e.outcome(),
         }
+    }
+    match interval_component_contains(geom, c, &geom.position(p), plan.as_deref(), dec) {
+        Ok(Some(true)) => return Outcome::ProvenCoincident(proof),
+        Ok(Some(false)) => return Outcome::Proven(Apart),
+        Ok(None) => {}
+        Err(refusal) => return Outcome::Refused(refusal),
     }
     let Some(divider) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
         return Outcome::ProvenCoincident(proof);
@@ -778,8 +806,7 @@ pub(super) fn tangent(
             for (t, is_end) in [(Real::zero(), false), (Real::one(), true)] {
                 let here = ch.position(&t);
                 if sign(&here.minus(&position).norm_squared(), dec)? == Sign::Zero {
-                    let j = ch.exact_jets(&t, 1);
-                    let v = Vector3::new(j[1][0].clone(), j[1][1].clone(), j[1][2].clone());
+                    let v = ch.endpoint_tangent(is_end);
                     if is_end {
                         arriving = Some(v);
                     } else {

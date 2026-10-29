@@ -8,6 +8,8 @@ use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_shapes::{Curve, PointId, Surface};
 use catallax_topology::{FaceId, Loop, LoopId, Model, Sense};
 
+mod cylinder_patch;
+
 fn ring(model: &Model, l: LoopId) -> Option<(catallax_topology::EdgeId, Sense)> {
     let Loop::Coedges(cs) = model.loop_(l) else {
         return None;
@@ -292,6 +294,11 @@ pub(crate) fn locate(
 ) -> Result<Option<Location>, Refusal> {
     let f = model.face(face);
     let surface = model.geom().surface(f.surface);
+    if let Surface::Cylinder(cylinder) = surface
+        && let Some(location) = cylinder_patch::locate(model, face, cylinder, point, dec)?
+    {
+        return Ok(Some(location));
+    }
     match surface {
         Surface::Plane(plane) => {
             let native_arcs = native_planar_loops(model, f.loops.iter().copied());

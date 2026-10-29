@@ -1,7 +1,7 @@
 use super::*;
 use catallax_numbers::{
     Ball, BoxRoots, BudgetPolicy, Coincidence, Decider, Fact, FactKind, FactOrigin, MPoly, Outcome,
-    PolySystem, Rational, Real, RootBox, Sign, StrictSign, ZeroProof,
+    PolySystem, Rational, Real, RealPoly, RootBox, Sign, StrictSign, ZeroProof,
 };
 use std::{
     sync::Arc,
@@ -502,6 +502,53 @@ fn sides_near_carriers_and_scaled_placed_families() {
             );
         }
     }
+}
+
+#[test]
+fn cached_curve_equations_follow_their_store() {
+    let line = |origin: RPoint3, dir: RVector3| {
+        Curve::Line(Line::new(origin.into(), dir.into(), &mut Decider::default()).unwrap())
+    };
+    let same = |cached: Option<&[RealPoly]>, fresh: Option<Vec<RealPoly>>| {
+        let (cached, fresh) = (cached.unwrap(), fresh.unwrap());
+        assert_eq!(cached.len(), fresh.len());
+        assert!(cached.iter().zip(&fresh).all(|(a, b)| a.same_definition(b)));
+    };
+    let mut store = GeomStore::new();
+    let shared = store.add_curve(line(p(1, 2, 3), v(2, -1, 0)));
+    let s = store.add_surface(shapes()[3].clone());
+    let plane = store.add_surface(Surface::Plane(
+        Plane::new(
+            (p(0, 0, 2)).into(),
+            (v(0, 0, 1)).into(),
+            (v(1, 0, 0)).into(),
+            &mut Decider::default(),
+        )
+        .unwrap(),
+    ));
+    let witness = explicit(&mut store, p(1, 2, 2));
+    let section = store.add_curve(Curve::Intersection(IntersectionCurve {
+        surfaces: [s, plane],
+        witness,
+    }));
+    // Clones share cells for curves they both hold; a curve added after the
+    // split gets its own cell in each clone.
+    let mut a = store.clone();
+    let mut b = store.clone();
+    let before = format!("{a:?}");
+    same(a.curve_equations(shared), a.curve(shared).equations(&a));
+    assert_eq!(format!("{a:?}"), before, "filling a cell changed the store");
+    same(
+        b.curve_equations(shared),
+        store.curve(shared).equations(&store),
+    );
+    let ca = a.add_curve(line(p(0, 0, 0), v(1, 0, 0)));
+    let cb = b.add_curve(line(p(0, 5, 0), v(0, 0, 1)));
+    assert_eq!(ca, cb);
+    for (store, c) in [(&a, ca), (&b, cb), (&a, section), (&b, section)] {
+        same(store.curve_equations(c), store.curve(c).equations(store));
+    }
+    assert!(!a.curve_equations(ca).unwrap()[0].same_definition(&b.curve_equations(cb).unwrap()[0]));
 }
 
 #[test]

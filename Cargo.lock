@@ -43,6 +43,7 @@ name = "catallax-app"
 version = "0.1.1"
 dependencies = [
  "catallax-features",
+ "catallax-field",
  "catallax-intersect",
  "catallax-measure",
  "catallax-mesh",
@@ -133,6 +134,7 @@ dependencies = [
  "catallax-features",
  "catallax-intersect",
  "catallax-measure",
+ "catallax-mesh",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",
@@ -150,6 +152,23 @@ dependencies = [
  "catallax-shapes",
  "catallax-step",
  "catallax-topology",
+]
+
+[[package]]
+name = "catallax-import"
+version = "0.1.1"
+dependencies = [
+ "catallax-boolean",
+ "catallax-intersect",
+ "catallax-measure",
+ "catallax-numbers",
+ "catallax-recipe",
+ "catallax-shapes",
+ "catallax-step",
+ "catallax-topology",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -534,10 +534,12 @@ for support sharing and cost aggregation. Work counters require an active
 
 
 The default tolerance is 0.01 mm, with at most one million distinct vertices
-and two million visited parameter cells. Plane, cylinder, cone, sphere and
-ring-torus charts use rational unit frames and dimensions. Unsupported frames
-and surfaces return `field.display-unsupported`. A result without a certified
-compact domain returns `field.display-unbounded`; invalid controls return
+and two million visited parameter cells. Planar charts accept rational nonunit
+spans, including 45-degree chamfer planes whose unit tangents are irrational.
+Other chart kinds retain their existing frame and dimension requirements.
+Unsupported frames and surfaces return `field.display-unsupported`. A result
+without a certified compact domain returns `field.display-unbounded`; invalid
+controls return
 `field.display-options`. Limits and unresolved refinement return
 `field.display-budget`, with visited cells and maximum depth per support.
 Coordinate range or rounding failures return `field.display-precision`.
@@ -556,9 +558,23 @@ profile and sweep. Cells outside every coactive source box are rejected before
 trim queries. These are defining bounds, not fitted boxes or sampled extents.
 
 Project these boxes onto a planar chart's two axes, or a cylinder chart's
-height axis, before subdivision. The hull of the coactive source projections
-still covers the entire named support domain. Every leaf also uses its own box
-to prove regional absence, including leaves unrelated to the candidate face.
+height axis, before subdivision. For a nonunit planar tangent, divide its
+projection by its squared length to obtain chart coordinates. The hull of the
+coactive source projections still covers the entire named support domain.
+Every leaf also uses its own box to prove regional absence, including leaves
+unrelated to the candidate face.
+
+For a rational planar tangent `v`, let `s = v·v` and `n = sum(abs(v_i))`.
+Use its unit vector when `sqrt(s)` is rational; otherwise use `v*n/s`.
+The latter has length at least one, preserving the global parameter extent,
+and its L1 norm `n²/s` bounds physical displacement. Planar second derivatives
+remain zero. Zero or degenerate spans refuse rather than dividing by zero.
+
+The cached extruded-profile membership check does not interpret semantic
+`Bevel` aliases. Display resolves those names through the exact retained
+feature definition with the same decider and work allowance, rather than
+treating an unsupported cached role as proof that the face is absent.
+Other cached role decisions are unchanged.
 
 Chart coordinates are enclosed directly with outward binary64 interval
 arithmetic and cached rational-frame enclosures. Quarter-circle cosine and

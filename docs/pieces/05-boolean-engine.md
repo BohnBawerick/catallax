@@ -99,6 +99,10 @@ Where two faces lie on the same surface, their common region is two-dimensional;
 
 Section edges are split at every point where the set of faces they lie on changes, and at every vertex of either body that lies on them, so that each section edge lies on one fixed set of faces. They are otherwise as long as possible. Every curve is one piece 4 made (`intersect_surfaces`) or an edge curve of an operand; every end point is a point of the store.
 
+Finite trim membership is required on both operands. The smaller face set is queried first; an exact empty result settles that conjunction without querying the other operand. Retained sections still carry complete face lists in each operand's original order, and isolated contacts still require membership on both boundaries. Canonical witnesses, mandatory cuts and curve-interval construction are unchanged. Every performed predicate uses the caller's decider and work allowance.
+
+Two carriers meet only on surfaces containing them. A carrier records the surfaces proven to contain it: both supports of a section component, or the face surface of a coincident face's edge. When another carrier's meeting with one of those surfaces was disjoint or a complete hit list, every meeting point of the pair is already canonical, so the pair query is skipped. A contained result never covers a pair.
+
 `edges()` lists the section edges and `points()` the isolated points, in a deterministic order that is not part of the contract.
 
 ### Imprint
@@ -110,6 +114,21 @@ Section edges are split at every point where the set of faces they lie on change
 - Every edge of each body is split at every section point on it.
 
 The pieces satisfy the classification rule: **the interior of each piece, apart from the isolated points of the graph, lies entirely inside the other body, entirely outside it, or entirely on its boundary**. This is what imprint is for, and tests check it through `classify` and `face_point`.
+
+An inward probe is adjacent only after its whole chart path is certified free
+of boundary barriers. On a proven straight planar path from a native circle,
+subtracting the source circle's sphere equation from another circle's sphere
+equation keeps the barrier polynomial affine in the exact source coordinates.
+Native-circle quadratics retain their Bernstein control coefficients directly;
+general chart restrictions retain their power coefficients.
+The path polynomial is unchanged. Its plane equation, finite-arc checks,
+permitted source contact and strict destination exclusion still apply; no
+carrier or canonical witness is removed.
+
+Clearance requires every barrier to be excluded, so barrier order affects only
+cost. One witness search keeps its own barrier order. A barrier that blocks a
+candidate moves first, and the remaining barriers keep their order. Every
+candidate still checks every barrier before it is accepted.
 
 Accessors: `pieces_of_first()` and `pieces_of_second()` list the pieces of each body, and `common_edges()` the common edges, in deterministic orders that are not part of the contract.
 
@@ -192,8 +211,8 @@ trace piece, parameter interval and precision. The cache retains at most 4096
 entries; a full cache computes further boxes without storing them. Cancellation
 is checked on hits. Drop the batch before leaving its budget scope or changing
 existing geometry or topology. Auxiliary query geometry may be appended.
-Outside the closed-form planar line/circle cases below, ordinary construction and
-single-point queries retain their previous proof order.
+Outside the closed-form planar and cylindrical cases below, ordinary
+construction and single-point queries retain their previous proof order.
 
 Planar loops of lines and circular arcs use signed chord crossings and an exact
 circular-segment correction. An oriented arc minus its chord bounds the part of
@@ -211,6 +230,19 @@ Queries on a selected arc or its finite chord retain the closed-trim fallback;
 an artificial chord is not a face boundary. Other carriers retain the certified
 probe and trace paths. This does not prune or rewrite the section graph's ordered
 carrier and point definitions.
+
+A cylindrical face with one four-coedge loop may be a product of a closed
+axial interval and a circular arc. The classifier requires two native circular
+caps and two distinct axial line generators, with retained endpoint incidence
+and exact loop closure. It proves matching cylinder radii and axes, ordered
+cap heights and compatible cap and generator travel before using that product.
+Generators may be native lines or validated line components of parallel
+cylinder intersections; an analytic line form's direction is not assumed to
+be its natural orientation. Coedge endpoints establish finite generator travel.
+The axial interval and oriented cap chord then classify interior, exterior and
+closed boundary, including major arcs and reversed face uses. Unsupported
+representations and missing incidence retain the ordinary membership path.
+Every performed predicate retains the caller's decider and remaining allowance.
 
 
 ## Decisions, outcomes and marks

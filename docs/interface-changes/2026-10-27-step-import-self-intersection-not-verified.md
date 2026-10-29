@@ -1,0 +1,6 @@
+## 2026-10-27: STEP import refusal `self_intersection_not_verified`
+
+Pieces: `catallax-import`, application adapter (SolidDraft)
+Change: Adds the refusal `{"code": "self_intersection_not_verified", "solid": "#n", "faces": ["#a", "#b"], "reason": "..."}` to `ImportRefusal`. `check_self_intersection` and every import entry now test curved faces and circular or elliptical edges with the certified intersection engine, not only planar polygons. They return `self_intersecting` when a pair intersects and `self_intersection_not_verified` when a pair cannot be decided; a pass means every pair was decided. It is an incomplete outcome, not a geometry claim: the solid is neither accepted nor called impossible. Extends [the `self_intersecting` refusal](2026-10-27-step-import-self-intersecting-refusal.md), whose planar-only limit it replaces. Rules are in [the contract](../pieces/08-step-import-repair.md#self-intersection).
+Why: a closed, non-self-intersecting result is required of every import, curved bodies included, and an undecided pair must never read as a pass.
+Migration: An application that matches `ImportRefusal` exhaustively adds the new case. It should tell the user that the file could not be verified, name the two faces and show the reason.

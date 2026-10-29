@@ -171,3 +171,16 @@ The optional formal pass has its own smaller work reservation and dispatches fro
 Native quartic definitions retain the pre-existing generator/tower dispatch as well. The independent quartic regression uses the certificate `alpha^4-alpha-1=0`, raises its residual to the sixteenth power, repeats optional attempts and still requires exact zero within 100,000 request work units. An opaque expansion must not preempt the method that can use the defining polynomial.
 
 The formal helper counts newly entered nodes before descending, including ancestors not yet in its memo. Matching opaque atom definitions is iterative, work charged and separately bounded. Two public regressions use 1,024-level expressions under 3,000 request work units: direct traversal must decline while leaving a positive sign filter available, and two independently constructed square-root radicands must decline without recursive definition matching consuming the request.
+
+## Shared literal leaves
+
+`Real::zero`, `Real::one`, `Real::from_i64` and `Real::from_rational` share the
+immutable literal leaves `-1`, `0` and `1`. Other leaves and all arithmetic nodes
+keep their existing construction. An arithmetic expression whose rational value
+is one of these literals is not replaced by that leaf.
+
+The existing hidden-undefined, postorder refusal, zero-work, repeated-decision,
+cold/warm and threaded contracts remain the checks for this storage change.
+Literal node identity must not be used as persistent feature ownership.
+Independent replay must retain earlier manifests and strict STEP, and same-build
+worker-count comparisons must retain work and operation traces as well.

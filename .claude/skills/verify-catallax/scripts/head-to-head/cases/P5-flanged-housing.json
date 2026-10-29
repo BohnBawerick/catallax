@@ -1,7 +1,7 @@
 {
   "format": "catallax-head-to-head-case/1",
   "recipe": "P5-flanged-housing.json",
-  "recipe_sha256": "b110df500795e795c91e0fa5f35a7f7f5601e74d35230d1b523c78397b90cd05",
+  "recipe_sha256": "db85284055d5426d867eec527c39e7fbd0ecdf817e3f826846063550b00036de",
   "edit": {
     "step": "filleted",
     "path": [

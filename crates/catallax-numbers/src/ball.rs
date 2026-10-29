@@ -24,6 +24,9 @@ impl Ball {
         if r.is_integer() {
             return Self::from_integer(r.numerator(), p);
         }
+        if let Some(ball) = Self::from_small_ratio(r, p) {
+            return ball;
+        }
         Self::from_positive_ratio(
             Binary::from_integer(r.numerator().clone()),
             Binary::from_integer(r.denominator().clone()),
@@ -59,9 +62,43 @@ impl Ball {
             precision: p,
         }
     }
+    // `from_positive_ratio` in machine arithmetic. Dividing the residual by the
+    // denominator commutes with its power-of-two scale.
+    fn from_small_ratio(r: &Rational, p: u32) -> Option<Self> {
+        const LIMIT: u64 = 1 << 62;
+        let n = r.numerator().to_i64()?;
+        let d = r.denominator().to_i64()?;
+        if p > 63 || n.unsigned_abs() >= LIMIT || d <= 0 || d.unsigned_abs() >= LIMIT {
+            return None;
+        }
+        let (x, y) = (i128::from(n), i128::from(d));
+        let (mid, s, residual) = binary::div_round_i128(x, y, p, false);
+        let (rad, t, _) = binary::div_round_i128(residual, y, p, true);
+        Some(Self {
+            mid: Binary::from_i128(mid).mul_pow2(-s),
+            rad: Binary::from_i128(rad).mul_pow2(-t - s.max(0)),
+            precision: p,
+        })
+    }
     /// Contains an integer at the requested precision.
     pub fn from_integer(n: &Integer, precision: u32) -> Self {
+        if let Some(value) = n.to_i64() {
+            return Self::from_i64(value, precision);
+        }
         Self::centered(Binary::from_integer(n.clone()), Binary::zero(), precision)
+    }
+    // `centered` with a zero radius, in machine arithmetic: an i64, its rounded
+    // midpoint and the residual all fit in an i128.
+    fn from_i64(value: i64, precision: u32) -> Self {
+        let p = precision.max(1);
+        let center = i128::from(value);
+        let mid = binary::round_i128(center, p, false);
+        let rad = binary::round_i128((center - mid).abs(), p, true);
+        Self {
+            mid: Binary::from_i128(mid),
+            rad: Binary::from_i128(rad),
+            precision: p,
+        }
     }
     /// Working precision.
     pub fn precision(&self) -> u32 {

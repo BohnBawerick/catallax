@@ -148,6 +148,32 @@ pub(crate) fn point(value: &Point3, digits: u32, dec: &mut Decider) -> Result<Po
     })
 }
 
+pub(crate) fn vertex(
+    model: &catallax_topology::Model,
+    id: catallax_topology::VertexId,
+    options: &crate::StepOptions,
+    dec: &mut Decider,
+) -> Result<Point, Refusal> {
+    let point_id = model.vertex(id).point;
+    // Observe the public enclosure/deadline contract even for rational points.
+    let [x, y, z] = model.geom().enclose_point(
+        point_id,
+        &options
+            .curve_tolerance
+            .abs()
+            .max(Rational::from_ratio(1, 1_000_000_000).unwrap()),
+        dec,
+    )?;
+    let position = model.geom().position(point_id);
+    Ok(Point {
+        xyz: [
+            enclosed(&position.x, x, options.significant_digits.max(1), dec)?,
+            enclosed(&position.y, y, options.significant_digits.max(1), dec)?,
+            enclosed(&position.z, z, options.significant_digits.max(1), dec)?,
+        ],
+    })
+}
+
 pub(crate) fn sqrt(value: &Rational) -> Real {
     let n = integer_sqrt(value.numerator());
     let d = integer_sqrt(value.denominator());

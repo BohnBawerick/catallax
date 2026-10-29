@@ -37,7 +37,7 @@ Verify an individual download with `gh attestation verify FILE --repo BohnBaweri
 2. Set the workspace version and refresh `Cargo.lock` with Cargo on the release branch. No milestone bump is made merely to install the machinery.
 3. Add `docs/milestones/MN.md`, such as `M1.md`, as required by PLAN item 21. Record landed and parked work, reasons, P0 and target-part numbers including regressions, and the next milestone's must-show list. Patch releases update that milestone's note.
 4. Commit the version and milestone note on the release branch. Require a green full-suite `check.yml` push run on that exact commit and matching release branch. The tag workflow rejects a commit without one.
-5. On the replay machine, build baseline and candidate verification programs and use the verification driver for the full 477 inputs. Preserve every earlier answer's manifest and strict STEP bytes, the original inputs and work allowances. Run baseline at one worker and the same candidate binary freshly at one, two and four workers. No cache hits, missing manifests or internal errors are allowed. The only permitted baseline differences are explicitly approved refusal-to-answer upgrades. Candidate worker runs must remain strictly equal.
+5. On the replay machine, build baseline and candidate verification programs and use the verification driver for the full 477 inputs. Preserve every earlier answer's manifest and strict output bytes except an explicitly approved transition described below; preserve the original inputs and work allowances without exceptions. Run baseline at one worker and the same candidate binary freshly at one, two and four workers. No cache hits, missing manifests or internal errors are allowed. Candidate worker runs remain strictly equal, with no approval exceptions.
 6. Generate the public aggregate as below, then run the evidence workflow on the exact candidate commit. It generates the target scoreboard independently in CI. Inspect refusals, edits, STEP imports and not-run checks; the scoreboard is not proof of complete SolidDraft acceptance.
 7. Run the non-publishing release dry run against that commit and evidence run. Inspect all platform smoke checks, SBOM, generated notes, checksums and attestations. Link the green run in the release preparation PR or milestone review.
 8. Only then create and push the release tag from the checked release commit. Watch the release workflow. It publishes only after every platform, universal archive, evidence gate and attestation succeeds.
@@ -48,7 +48,7 @@ The freeze holds release scope, not `main`. Finish exact-pin application accepta
 
 For an `X.Y.0` milestone release, use the previous release tag as the replay baseline. When no earlier release exists, use the candidate commit immediately before the version-and-milestone-note merge, the release commit's first parent. That first-release merge must change only release metadata and documentation, not kernel code or recipes. Record the selected baseline and why in the milestone review. Per-change preservation replays remain the cumulative evidence for the kernel work preceding that baseline.
 
-Every changed baseline case must have been `refused` and now be `answered`, with an entry in the committed `tools/release/replay-upgrades.json`. Changed answers, answers becoming refusals, changed refusals and unlisted upgrades fail. Unchanged refusals remain refusals, not successful answers. The list must describe exactly the upgrades against the selected baseline, with no unused entries. Keep it empty for releases without upgrades.
+Every changed baseline case must be either a reviewed refusal-to-answer upgrade in `tools/release/replay-upgrades.json` or an enumerated invalid-to-valid STEP correction in `tools/release/replay-corrections.json`. Both files must be committed. Changed refusals, answers becoming refusals, unexplained successful-answer changes and unlisted differences fail. Each list must describe exactly its used approvals, with no duplicate or overlapping positions and no unused entries. An empty list approves nothing.
 
 ### Joint SolidDraft release handoff
 
@@ -58,7 +58,9 @@ Run the final kernel evidence and package dry run at the exact candidate commit.
 
 The joint ordinary-parts cut requires the application bracket, edited collar, safe-edit recovery, checked exports and requested drill-point measurement, plus the rounded-boss correctness assessment for all affected shipped paths. Canonical P1 remains a separate full-path gate. Missing acceptance evidence or an unresolved shared-output correctness defect holds the tag; neither a deadline nor a passing package job overrides that hold.
 
-The current aggregate permits only the refusal upgrades described above. Any proposed invalid-to-valid correction of a previously successful output requires an enumerated reviewed policy and qualified release-driver support before tagging. Approval to investigate such a policy is not an approval of any particular changed output. Do not change the baseline, relax byte comparison or relabel a historical dry run to bypass this gate.
+The correction mechanism below is release-only and does not infer validity from differing bytes. The captain must approve the enumerated correction list and its retained independent evidence before it lands; driver support requires FULL SIX qualification. A previously accepted source change or a reader's healed import is not per-case approval. Do not change the baseline, relax the ordinary strict comparator or relabel a historical dry run to bypass this gate.
+
+The [review inventory](../tools/release/review-candidates.json) records the 118 observed changes between the previous release and the frozen candidate. It is not consumed by the release gate and approves nothing. Its three-output legacy fingerprints omit IGES and cannot be copied into the four-output approval schema. Source attribution remains unresolved for index 189; final geometry validity/equivalence remains unproven for all 99 answered STEP changes; index 354 is a changed refusal outside the current exception classes. The inventory's integrity evidence hash is not independent geometry validation. Resolve those holds and obtain the required subject hashes and review evidence before promoting any entry.
 
 ## Generate the replay aggregate
 
@@ -76,9 +78,9 @@ python3 -B tools/release/release.py replay-summary \
   --out "$PROOF/replay-summary.json"
 ```
 
-Pass multiple runtime input paths to `run` when needed. The aggregate command rechecks saved artifact hashes and runs the driver's strict comparisons itself. It derives commit identities from the saved manifests and exports counts and the upgrade-list SHA-256 rather than case IDs, paths, recipes or geometry. Summary format `catallax-release-replay/2` records the baseline comparison's `upgrades` count separately from `equal`; a permitted upgrade does not claim byte equality. Candidate worker comparisons still require `equal: true`. Regenerate older summaries with this policy rather than relabelling their format.
+Pass multiple runtime input paths to `run` when needed. The aggregate rechecks saved artifact hashes and runs the driver's strict comparisons itself. It exports counts, source identities and both approval-file SHA-256 values, never input names, paths, recipes or geometry. Summary format `catallax-release-replay/3` records separate `upgrades` and `corrections` counts for the baseline comparison. Any approved difference requires `equal: false`; it is not byte equality. Candidate worker comparisons require `equal: true` without exceptions. Regenerate older summaries rather than relabelling their format.
 
-The command rejects uncommitted upgrade-list changes. CI checks that the summary's upgrade-list digest and count match the file at the selected commit. It also rejects a stale candidate, incomplete replay, cached run or worker-count mismatch. Keep the full per-case proof on the replay machine for audit.
+The command rejects uncommitted approval files. CI checks both file digests and counts against the selected candidate tree and binds the baseline to `replay-corrections.json`'s `baseline_sha`. It rejects stale candidates, incomplete or cached runs, internal errors, changed inputs/allowances and worker-count mismatches. Keep the full per-case proof on the replay machine for audit.
 
 ### Approve refusal upgrades
 
@@ -91,9 +93,29 @@ Review each new answer and its saved artifacts before adding an entry. Commit on
 | `refusal_sha256` | `release.answer_digest(driver, baseline_case_directory)` |
 | `answer_sha256` | `release.answer_digest(driver, candidate_case_directory)` |
 
-`answer_digest` hashes a JSON object with `manifest` set to the driver's existing `comparable` manifest and `files` containing SHA-256 values for `answer.step`, `display.obj` and `print.stl`. Missing files are `null`. The driver hashes canonical UTF-8 JSON with sorted keys, compact separators and `ensure_ascii=False`. As in strict comparisons, only build identity, statistics and `face_measurements.display.first_mesh_ms` are excluded from manifest equality. All answer content and output bytes remain pinned.
+`answer_digest` hashes a JSON object with `manifest` set to the driver's existing `comparable` manifest and `files` containing SHA-256 values for `answer.step`, `display.obj`, `print.stl` and `answer.igs`. Missing files are `null`. The driver hashes canonical UTF-8 JSON with sorted keys, compact separators and `ensure_ascii=False`. Only the existing build identity, statistics and `face_measurements.display.first_mesh_ms` exclusions apply. All other answer content and compared output bytes remain pinned.
 
-The file has format `catallax-replay-upgrades/1` and an `upgrades` array. Indices must be unique and in range, and all three digests must be lowercase 64-digit SHA-256 values. The aggregate checks the unchanged request, original refusal and exact new answer against each entry. It never generates approvals automatically. After committing reviewed entries, rebuild the candidate and replay all cases at all worker counts from that commit before generating the public summary.
+The file has format `catallax-replay-upgrades/2` and an `upgrades` array. Version 2 fingerprints also cover IGES. Indices must be unique and in range, and all three digests must be lowercase 64-digit SHA-256 values. The aggregate checks the unchanged request, original refusal and exact new answer against each entry. It never generates approvals automatically. Older fingerprints must be regenerated with the new helper, not relabelled.
+
+### Approve corrected STEP outputs
+
+The correction file has format `catallax-replay-corrections/1`, an immutable selected `baseline_sha` and a `corrections` array. Its baseline must be the approved previous release, not a convenient newer checkpoint. Each row has exactly these fields:
+
+| Field | Value |
+| --- | --- |
+| `index` | Unique zero-based position in the ordered 477-case replay |
+| `class` | `invalid-to-valid-step`, a reviewed invalid earlier STEP repaired into a valid STEP under the unchanged request |
+| `request_sha256` | Request fingerprint with only `out` removed |
+| `before_sha256`, `after_sha256` | `answer_digest` values for the original and corrected answers |
+| `manifest_fields` | Exact changed-field set, drawn only from `step.added_edges`, `step.added_vertices`, `step.max_deviation`; empty for a byte-only correction |
+| `sources` | Nonempty list of `{pr, commit}` objects identifying public correction PR URLs and full source-fix commits |
+| `evidence` | `{sha256, before_step_sha256, after_step_sha256}` binding retained independent validation evidence and both exact STEP byte streams |
+
+Both answers and both STEP files must exist. The driver permits only the listed STEP reporting fields and STEP bytes to change. It rejects altered properties, topology/origin results, marks, request settings or any OBJ, STL or IGES change, even if a full answer fingerprint was listed. Export-added entity counts do not establish model-topology changes. Changed refusals and valid-to-different-valid exports are not corrections of this class.
+
+The committed row is a reviewer attestation, not an automatic geometry verdict. Before approval, validate the baseline invalidity and the candidate's finite trims, material, applicable error bounds and file topology independently for those exact files. Retain the original grids and probes; do not discard points or change tolerances. Evidence hashes pin that review and must identify these STEP subjects. Unknown validity or equivalence remains a release hold. Do not commit private case contents, identifiers, machine paths or checker details.
+
+After reviewed entries land, rebuild and replay the complete candidate freshly at one, two and four workers before generating the exact-source summary. Do not put the eventual candidate commit into its own committed approval data: derive it from the rebuilt manifests, while the summary binds the approval-file digests. Adding an approval or changing source invalidates affected earlier candidate evidence.
 
 At a clean candidate commit on the versioned release branch, submit only the generated public JSON:
 

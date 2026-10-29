@@ -16,6 +16,9 @@ LABELS = ("baseline-w1", "candidate-w1", "candidate-w2", "candidate-w4")
 COMPARISONS = ("baseline-w1 vs candidate-w1", "candidate-w1 vs candidate-w2", "candidate-w1 vs candidate-w4")
 COUNT = 477
 UPGRADES = ROOT / "tools/release/replay-upgrades.json"
+CORRECTIONS = ROOT / "tools/release/replay-corrections.json"
+OUTPUTS = ("answer.step", "display.obj", "print.stl", "answer.igs")
+STEP_CORRECTION_FIELDS = {"step.added_edges", "step.added_vertices", "step.max_deviation"}
 
 
 def require(condition, message):
@@ -44,7 +47,7 @@ def git(*args):
 def read_upgrades():
     document = read_json(UPGRADES)
     require(set(document) == {"format", "upgrades"} and
-            document["format"] == "catallax-replay-upgrades/1", "unsupported upgrades file")
+            document["format"] == "catallax-replay-upgrades/2", "unsupported upgrades file")
     rows = document["upgrades"]
     require(isinstance(rows, list), "upgrades must be a list")
     seen = set()
@@ -60,43 +63,128 @@ def read_upgrades():
     return rows
 
 
+def read_corrections():
+    document = read_json(CORRECTIONS)
+    require(isinstance(document, dict) and set(document) == {"format", "baseline_sha", "corrections"},
+            "unexpected corrections fields")
+    require(document["format"] == "catallax-replay-corrections/1", "unsupported corrections file")
+    require(isinstance(document["baseline_sha"], str) and
+            re.fullmatch(r"[0-9a-f]{40}", document["baseline_sha"]), "invalid corrections baseline")
+    require(isinstance(document["corrections"], list), "corrections must be a list")
+    seen = set()
+    for row in document["corrections"]:
+        require(isinstance(row, dict) and set(row) == {
+            "index", "class", "request_sha256", "before_sha256", "after_sha256",
+            "manifest_fields", "sources", "evidence"}, "unexpected correction fields")
+        require(type(row["index"]) is int and 0 <= row["index"] < COUNT and row["index"] not in seen,
+                "invalid or duplicate correction index")
+        seen.add(row["index"])
+        require(row["class"] == "invalid-to-valid-step", "unsupported correction class")
+        require(all(isinstance(row[key], str) and re.fullmatch(r"[0-9a-f]{64}", row[key])
+                    for key in ("request_sha256", "before_sha256", "after_sha256")),
+                "invalid correction digest")
+        fields = row["manifest_fields"]
+        require(isinstance(fields, list) and all(isinstance(field, str) for field in fields) and
+                len(fields) == len(set(fields)) and set(fields) <= STEP_CORRECTION_FIELDS,
+                "unsupported correction manifest scope")
+        sources = row["sources"]
+        require(isinstance(sources, list) and sources, "missing correction source")
+        for source in sources:
+            require(isinstance(source, dict) and set(source) == {"pr", "commit"} and
+                    isinstance(source["pr"], str) and re.fullmatch(
+                        r"https://github\.com/BohnBawerick/catallax/pull/[1-9][0-9]*", source["pr"]) and
+                    isinstance(source["commit"], str) and re.fullmatch(r"[0-9a-f]{40}", source["commit"]),
+                    "invalid correction source")
+        require(len({source["pr"] for source in sources}) == len(sources), "duplicate correction source")
+        evidence = row["evidence"]
+        require(isinstance(evidence, dict) and set(evidence) == {
+            "sha256", "before_step_sha256", "after_step_sha256"} and all(
+                isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+                for value in evidence.values()), "invalid correction evidence")
+    return document
+
+
 def answer_digest(driver, directory):
     directory = Path(directory)
     return driver.digest({
         "manifest": driver.comparable(read_json(directory / "manifest.json")),
         "files": {name: sha256(directory / name) if (directory / name).exists() else None
-                  for name in ("answer.step", "display.obj", "print.stl")}})
+                  for name in OUTPUTS}})
 
 
-def compare_baseline(driver, baseline, candidate, upgrades):
+def compare_baseline(driver, baseline, candidate, upgrades, corrections):
     result = driver.compare(baseline, candidate)
     before, after = [read_json(path)["cases"] for path in (baseline, candidate)]
     approvals = {row["index"]: row for row in upgrades}
-    used = set()
+    repairs = {row["index"]: row for row in corrections}
+    require(len(approvals) == len(upgrades) and len(repairs) == len(corrections),
+            "duplicate replay approval")
+    require(not approvals.keys() & repairs.keys(), "overlapping replay approvals")
+    used, corrected = set(), set()
     for failure in result["failures"]:
-        require(failure["cause"] == "manifest", "replay differs; inspect the local comparison")
+        require(failure["cause"] in ("manifest", "step-bytes"),
+                "replay differs; inspect the local comparison")
         index = failure["index"]
-        old, new = [Path(cases[index]["path"]) for cases in (before, after)]
+        old, new = [(Path(report).parent / cases[index]["path"]).resolve()
+                    for report, cases in ((baseline, before), (candidate, after))]
         old_manifest, new_manifest = [read_json(path / "manifest.json") for path in (old, new)]
-        require(old_manifest["status"] == "refused" and new_manifest["status"] == "answered",
-                "replay differs; only refusal-to-answer upgrades are permitted")
-        require(index in approvals, "unlisted upgrade")
         request = read_json(old / "request.json")
         request.pop("out", None)
-        expected = {"index": index, "request_sha256": driver.digest(request),
-                    "refusal_sha256": answer_digest(driver, old),
-                    "answer_sha256": answer_digest(driver, new)}
-        require(approvals[index] == expected, "approved upgrade differs")
-        used.add(index)
+        if old_manifest["status"] == "refused" and new_manifest["status"] == "answered":
+            require(index in approvals, "unlisted upgrade")
+            expected = {"index": index, "request_sha256": driver.digest(request),
+                        "refusal_sha256": answer_digest(driver, old),
+                        "answer_sha256": answer_digest(driver, new)}
+            require(approvals[index] == expected, "approved upgrade differs")
+            used.add(index)
+        elif old_manifest["status"] == new_manifest["status"] == "answered":
+            require(index in repairs, "replay differs; unlisted output correction")
+            row = repairs[index]
+            require(row["class"] == "invalid-to-valid-step", "unsupported correction class")
+            require(row["request_sha256"] == driver.digest(request) and
+                    row["before_sha256"] == answer_digest(driver, old) and
+                    row["after_sha256"] == answer_digest(driver, new), "approved correction differs")
+            left, right = [driver.comparable(manifest) for manifest in (old_manifest, new_manifest)]
+            left_step, right_step = [manifest.get("step") for manifest in (left, right)]
+            require(isinstance(left_step, dict) and isinstance(right_step, dict) and
+                    left_step.keys() == right_step.keys() and
+                    left_step.get("file") == right_step.get("file") == "answer.step",
+                    "correction requires the same STEP publication")
+            changed = {"step." + key for key in left_step if left_step[key] != right_step[key]}
+            require(changed == set(row["manifest_fields"]) and changed <= STEP_CORRECTION_FIELDS and
+                    {key: value for key, value in left.items() if key != "step"} ==
+                    {key: value for key, value in right.items() if key != "step"},
+                    "correction changes unapproved manifest scope")
+            require((old / "answer.step").is_file() and (new / "answer.step").is_file(),
+                    "correction requires both STEP files")
+            old_step, new_step = [sha256(path / "answer.step") for path in (old, new)]
+            require(old_step != new_step and old_step == row["evidence"]["before_step_sha256"] and
+                    new_step == row["evidence"]["after_step_sha256"], "correction STEP evidence differs")
+            require(all(
+                (sha256(old / name) if (old / name).exists() else None) ==
+                (sha256(new / name) if (new / name).exists() else None)
+                for name in OUTPUTS if name != "answer.step"), "correction changes another output")
+            corrected.add(index)
+        else:
+            require(False, "replay differs; unsupported status transition")
     require(used == set(approvals), "unused upgrade approval")
-    return {"cases": result["cases"], "equal": result["equal"], "failures": [], "upgrades": len(used)}
+    require(corrected == set(repairs), "unused correction approval")
+    return {"cases": result["cases"], "equal": result["equal"], "failures": [],
+            "upgrades": len(used), "corrections": len(corrected)}
 
 
 def check_summary(summary, commit, allow_historical=False):
-    require(set(summary) == {"format", "base_sha", "candidate_sha", "runs", "comparisons", "upgrades_sha256"}, "unexpected replay fields")
-    require(summary["format"] == "catallax-release-replay/2", "unsupported replay summary")
+    require(set(summary) == {"format", "base_sha", "candidate_sha", "runs", "comparisons",
+                             "upgrades_sha256", "corrections_sha256"}, "unexpected replay fields")
+    require(summary["format"] == "catallax-release-replay/3", "unsupported replay summary")
     upgrades = read_upgrades()
     require(summary["upgrades_sha256"] == sha256(UPGRADES), "replay upgrades file differs")
+    correction_policy = read_corrections()
+    corrections = correction_policy["corrections"]
+    require(summary["corrections_sha256"] == sha256(CORRECTIONS), "replay corrections file differs")
+    require(summary["base_sha"] == correction_policy["baseline_sha"], "corrections baseline differs")
+    require(not {row["index"] for row in upgrades} & {row["index"] for row in corrections},
+            "overlapping replay approvals")
     require(re.fullmatch(r"[0-9a-f]{40}", summary["base_sha"]), "invalid baseline commit")
     require(re.fullmatch(r"[0-9a-f]{40}", summary["candidate_sha"]), "invalid candidate commit")
     require(allow_historical or summary["candidate_sha"] == commit, "replay is not from the selected commit")
@@ -111,8 +199,10 @@ def check_summary(summary, commit, allow_historical=False):
     require(len({summary["runs"][name]["binary_sha256"] for name in LABELS[1:]}) == 1, "worker runs use different candidate binaries")
     require(set(summary["comparisons"]) == set(COMPARISONS), "missing replay comparisons")
     baseline = summary["comparisons"][COMPARISONS[0]]
-    require(baseline == {"cases": COUNT, "equal": not upgrades, "failures": [], "upgrades": len(upgrades)},
-            "replay comparison differs")
+    require(type(baseline.get("equal")) is bool and type(baseline.get("upgrades")) is int and
+            type(baseline.get("corrections")) is int and baseline == {
+                "cases": COUNT, "equal": not (upgrades or corrections), "failures": [],
+                "upgrades": len(upgrades), "corrections": len(corrections)}, "replay comparison differs")
     for name in COMPARISONS[1:]:
         require(summary["comparisons"][name] == {"cases": COUNT, "equal": True, "failures": []},
                 "replay comparison differs")
@@ -130,8 +220,10 @@ def replay_summary(args):
     driver = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(driver)
     upgrades = read_upgrades()
-    require(git("show", f"HEAD:{UPGRADES.relative_to(ROOT).as_posix()}") == UPGRADES.read_text().strip(),
-            "upgrades file must be committed")
+    correction_policy = read_corrections()
+    for path in (UPGRADES, CORRECTIONS):
+        committed = subprocess.check_output(["git", "show", f"HEAD:{path.relative_to(ROOT).as_posix()}"], cwd=ROOT)
+        require(committed == path.read_bytes(), "approval files must be committed")
     paths = dict(zip(LABELS, map(Path, args.runs)))
     summaries, commits = {}, {}
     for name, path in paths.items():
@@ -156,19 +248,22 @@ def replay_summary(args):
                            "outcomes": outcomes, "work_total": work, "elapsed_ms": report["elapsed_ms"],
                            "binary_sha256": report["config"]["binary_sha256"]}
     require(len({commits[name] for name in LABELS[1:]}) == 1, "candidate commits differ")
+    require(commits[LABELS[0]] == correction_policy["baseline_sha"], "corrections baseline differs")
     comparisons = {}
     for name in COMPARISONS:
         left, right = name.split(" vs ")
         if name == COMPARISONS[0]:
-            result = compare_baseline(driver, paths[left], paths[right], upgrades)
+            result = compare_baseline(driver, paths[left], paths[right], upgrades, correction_policy["corrections"])
         else:
             result = driver.compare(paths[left], paths[right])
             require(result["equal"], "candidate worker replay differs; inspect the local comparison")
         comparisons[name] = result
-    summary = {"format": "catallax-release-replay/2", "upgrades_sha256": sha256(UPGRADES), "base_sha": commits[LABELS[0]],
+    summary = {"format": "catallax-release-replay/3", "upgrades_sha256": sha256(UPGRADES),
+               "corrections_sha256": sha256(CORRECTIONS), "base_sha": commits[LABELS[0]],
                "candidate_sha": commits[LABELS[1]], "runs": summaries, "comparisons": comparisons}
     write_json(args.out, check_summary(summary, commits[LABELS[1]]))
-    print(f"477 earlier cases preserved with {len(upgrades)} approved upgrades; public aggregate written to {args.out}")
+    print(f"477 cases audited with {len(upgrades)} approved upgrades and "
+          f"{len(correction_policy['corrections'])} approved output corrections; public aggregate written to {args.out}")
 
 
 def check_evidence(directory, commit, allow_historical=False):

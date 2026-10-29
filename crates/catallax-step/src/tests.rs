@@ -135,7 +135,7 @@ fn primitive_entity_counts_and_added_topology() {
         (cylinder, (3, 3, 2), (2, 1)),
         (sphere, (1, 0, 1), (1, 0)),
         (torus, (1, 2, 1), (1, 2)),
-        (cone, (2, 1, 2), (1, 0)),
+        (cone, (2, 2, 2), (1, 1)),
     ] {
         let (file, answer) = export(&model, &[body], &StepOptions::default());
         let report = answer.value;
@@ -565,45 +565,55 @@ fn branch_body_with_sense(source_sense: Sense) -> (Model, BodyId) {
 
 fn check_spline(file: &str, report: &StepReport) {
     let es = entities(file);
-    let (_, spline) = es
-        .iter()
-        .find(|(n, _)| *n == "B_SPLINE_CURVE_WITH_KNOTS")
-        .unwrap();
-    let degree: usize = spline[1].parse().unwrap();
-    let controls = references(spline[2])
-        .iter()
-        .map(|id| cartesian(&es[*id - 1].1))
-        .collect::<Vec<_>>();
-    let (_, edge) = es.iter().find(|(n, _)| *n == "EDGE_CURVE").unwrap();
-    for (index, end) in [(0, edge[1]), (controls.len() - 1, edge[2])] {
-        let vertex = references(end)[0];
-        let point = references(es[vertex - 1].1[1])[0];
-        assert_eq!(controls[index], cartesian(&es[point - 1].1));
-    }
-    assert_eq!(spline[4], ".T.");
-    let multiplicities = fields(spline[6].trim_matches(['(', ')']));
-    assert_eq!(multiplicities[0].parse::<usize>().unwrap(), degree + 1);
-    assert_eq!(
-        multiplicities.last().unwrap().parse::<usize>().unwrap(),
-        degree + 1
-    );
-    for span in controls.windows(degree + 1).step_by(degree) {
-        for j in 0..=8 {
-            let t = Rational::from_ratio(j, 8).unwrap();
-            let mut ps = span.to_vec();
-            for level in (1..=degree).rev() {
-                for k in 0..level {
-                    ps[k] = std::array::from_fn(|i| {
-                        &ps[k][i] * &(Rational::one() - t.clone()) + &ps[k + 1][i] * &t
-                    });
+    for (_, edge) in es.iter().filter(|(name, _)| *name == "EDGE_CURVE") {
+        let mut curve = references(edge[3])[0];
+        if matches!(es[curve - 1].0, "SURFACE_CURVE" | "SEAM_CURVE") {
+            curve = references(es[curve - 1].1[1])[0];
+        }
+        let (name, spline) = &es[curve - 1];
+        if *name != "B_SPLINE_CURVE_WITH_KNOTS" {
+            continue;
+        }
+        let degree: usize = spline[1].parse().unwrap();
+        let controls = references(spline[2])
+            .iter()
+            .map(|id| cartesian(&es[*id - 1].1))
+            .collect::<Vec<_>>();
+        let ends = if edge[4] == ".T." {
+            [edge[1], edge[2]]
+        } else {
+            [edge[2], edge[1]]
+        };
+        for (index, end) in [(0, ends[0]), (controls.len() - 1, ends[1])] {
+            let vertex = references(end)[0];
+            let point = references(es[vertex - 1].1[1])[0];
+            assert_eq!(controls[index], cartesian(&es[point - 1].1));
+        }
+        let multiplicities = fields(spline[6].trim_matches(['(', ')']));
+        assert_eq!(multiplicities[0].parse::<usize>().unwrap(), degree + 1);
+        assert_eq!(
+            multiplicities.last().unwrap().parse::<usize>().unwrap(),
+            degree + 1
+        );
+        for span in controls.windows(degree + 1).step_by(degree) {
+            for j in 0..=8 {
+                let t = Rational::from_ratio(j, 8).unwrap();
+                let mut ps = span.to_vec();
+                for level in (1..=degree).rev() {
+                    for k in 0..level {
+                        ps[k] = std::array::from_fn(|i| {
+                            &ps[k][i] * &(Rational::one() - t.clone()) + &ps[k + 1][i] * &t
+                        });
+                    }
                 }
+                let p = &ps[0];
+                let cylinder_residual = (&p[0] * &p[0] + &p[1] * &p[1] - Rational::one()).abs();
+                let sphere_residual =
+                    ((&p[0] - &q("2")).pow(2).unwrap() + &p[1] * &p[1] + &p[2] * &p[2] - q("4"))
+                        .abs();
+                assert!(cylinder_residual <= &report.max_deviation * &q("2"));
+                assert!(sphere_residual <= &report.max_deviation * &q("4"));
             }
-            let p = &ps[0];
-            let cylinder_residual = (&p[0] * &p[0] + &p[1] * &p[1] - Rational::one()).abs();
-            let sphere_residual =
-                ((&p[0] - &q("2")).pow(2).unwrap() + &p[1] * &p[1] + &p[2] * &p[2] - q("4")).abs();
-            assert!(cylinder_residual <= &report.max_deviation * &q("2"));
-            assert!(sphere_residual <= &report.max_deviation * &q("4"));
         }
     }
     assert_walk(file);
@@ -798,15 +808,29 @@ fn irrational_intersection_circles_remain_analytic() {
     assert!(model.check(body).is_empty());
     let (file, answer) = export(&model, &[body], &StepOptions::default());
     assert_eq!(answer.value.approximated_curves, 0);
-    assert_eq!(answer.value.added_vertices, 2);
+    // Each cap's pole moves behind an export-only ring with one chart vertex.
+    assert_eq!(answer.value.added_vertices, 4);
     assert!(answer.value.max_deviation > Rational::zero());
     assert!(answer.value.max_deviation <= StepOptions::default().curve_tolerance);
     let es = entities(&file);
-    assert_eq!(es.iter().filter(|(name, _)| *name == "CIRCLE").count(), 2);
-    assert!(
-        es.iter()
-            .all(|(name, _)| *name != "B_SPLINE_CURVE_WITH_KNOTS")
-    );
+    // Two trim circles, two pole rings and one meridian seam per cap chart.
+    assert_eq!(es.iter().filter(|(name, _)| *name == "CIRCLE").count(), 6);
+    // Every edge keeps an exact analytic 3D master: circles, and lines for
+    // the cylinder's chart seam. Splines appear only as bounded pcurves.
+    for (name, args) in &es {
+        if *name != "EDGE_CURVE" {
+            continue;
+        }
+        let mut id = references(args[3])[0];
+        if matches!(es[id - 1].0, "SURFACE_CURVE" | "SEAM_CURVE") {
+            id = references(es[id - 1].1[1])[0];
+        }
+        assert!(
+            matches!(es[id - 1].0, "CIRCLE" | "LINE"),
+            "{}",
+            es[id - 1].0
+        );
+    }
     assert_walk(&file);
 }
 
@@ -841,22 +865,7 @@ fn reversed_branch_edge_fits_in_the_edges_direction() {
     let (reverse, b) = branch_body_with_sense(Sense::Reversed);
     let (a, ar) = export(&forward, &[a], &StepOptions::default());
     let (b, br) = export(&reverse, &[b], &StepOptions::default());
-    let controls = |file: &str| {
-        let es = entities(file);
-        let (_, curve) = es
-            .iter()
-            .find(|(name, _)| *name == "B_SPLINE_CURVE_WITH_KNOTS")
-            .unwrap();
-        references(curve[2])
-            .iter()
-            .map(|id| cartesian(&es[*id - 1].1))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        controls(&a),
-        controls(&b).into_iter().rev().collect::<Vec<_>>()
-    );
-    assert_eq!(ar.value.max_deviation, br.value.max_deviation);
+    check_spline(&a, &ar.value);
     check_spline(&b, &br.value);
 }
 
@@ -1057,8 +1066,13 @@ fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
     assert!(answer.value.max_deviation > Rational::zero());
     assert!(answer.marks.is_empty());
     let es = entities(&file);
-    assert_eq!(es.iter().filter(|(name, _)| *name == "LINE").count(), 4);
-    assert_eq!(es.iter().filter(|(name, _)| *name == "CIRCLE").count(), 2);
+    for (_, edge) in es.iter().filter(|(name, _)| *name == "EDGE_CURVE") {
+        let mut curve = references(edge[3])[0];
+        if matches!(es[curve - 1].0, "SURFACE_CURVE" | "SEAM_CURVE") {
+            curve = references(es[curve - 1].1[1])[0];
+        }
+        assert!(matches!(es[curve - 1].0, "LINE" | "CIRCLE"));
+    }
     assert_walk(&file);
 }
 
@@ -1141,7 +1155,17 @@ fn decimal_accuracy_is_certified_or_refused_without_writing() {
     let (file, answer) = export(&model, &[body], &options);
     assert!(answer.marks.is_empty());
     let es = entities(&file);
-    let (_, circle) = es.iter().find(|(name, _)| *name == "CIRCLE").unwrap();
+    // The trim circle has radius sqrt(24). The pole ring and the chart's
+    // meridian circles have other radii.
+    let (_, circle) = es
+        .iter()
+        .find(|(name, args)| {
+            *name == "CIRCLE" && {
+                let radius = step_real(args[2]);
+                radius > q("4.8") && radius < q("4.95")
+            }
+        })
+        .unwrap();
     let radius = step_real(circle[2]);
     let unit = q("1e-39");
     assert!((&radius - &unit).pow(2).unwrap() <= q("24"));

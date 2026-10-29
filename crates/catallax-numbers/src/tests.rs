@@ -84,6 +84,48 @@ fn exact_parsing_normalization_and_error_precedence() {
 }
 
 #[test]
+fn machine_sized_rationals_match_the_big_integer_route() {
+    // Scaling by 2^128 moves an operand out of the machine-word range; the
+    // results scale exactly. Rational::new normalizes through big integers.
+    let mut parts = vec![1, 2, 3, 5, 7, 12, 100, 4501, i64::MAX];
+    for k in [31, 32, 52, 53, 61, 62] {
+        parts.extend([(1_i64 << k) - 1, 1 << k, (1 << k) + 1]);
+    }
+    let mut state = 0x2545_f491_4f6c_dd1d_u64;
+    for _ in 0..60 {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        parts.push((((state >> 1) >> (state % 62)) as i64).max(1));
+    }
+    let values: Vec<Rational> = parts
+        .iter()
+        .flat_map(|&n| [n, -n, 0])
+        .flat_map(|n| {
+            parts
+                .iter()
+                .map(move |&d| Rational::from_ratio(n, d).unwrap())
+        })
+        .step_by(97)
+        .collect();
+    for x in &values {
+        let big = x.mul_pow2(128);
+        for y in &values {
+            let (n, d) = (x.numerator(), x.denominator());
+            let (m, e) = (y.numerator(), y.denominator());
+            let sum = x + y;
+            assert_eq!(sum, Rational::new(&(n * e) + &(m * d), d * e).unwrap());
+            assert_eq!(x - y, Rational::new(&(n * e) - &(m * d), d * e).unwrap());
+            assert_eq!(x * y, Rational::new(n * m, d * e).unwrap());
+            assert_eq!(x.cmp(y), (n * e).cmp(&(m * d)));
+            assert_eq!(&big + &y.mul_pow2(128), sum.mul_pow2(128));
+            assert_eq!(&big * y, (x * y).mul_pow2(128));
+            assert_eq!(big.cmp(&y.mul_pow2(128)), x.cmp(y));
+        }
+    }
+}
+
+#[test]
 fn floor_division_and_large_integer_field_laws() {
     for (a, d, quotient, remainder) in [
         (7, -3, -3, -2),
@@ -246,6 +288,73 @@ fn ball_rounding_domains_and_sqrt_containment() {
     assert!(ball("0", 64).recip().is_none());
     assert!(ball("1001/1000", 64).asin().is_none());
     assert!(Ball::atan2(&ball("0", 64), &ball("0", 64)).is_none());
+}
+
+#[test]
+fn machine_sized_enclosures_match_the_big_integer_route() {
+    // Scaling by 2^128 moves every value out of the machine-integer range, onto
+    // the big-integer route. Rounding to significant bits and to doubles both
+    // commute with that exact scaling.
+    let scale = Rational::one().mul_pow2(128);
+    let mut values = vec![0, 1, 3, 5, 7, 100, 255, 4501, i64::MAX, i64::MIN];
+    for k in 1..63 {
+        values.extend([1 << k, (1 << k) - 1, (1 << k) + 1, 3 << (k - 1)]);
+    }
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    for _ in 0..200 {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        values.push((state >> (state % 61)) as i64);
+    }
+    values.extend(values.clone().into_iter().map(i64::wrapping_neg));
+    let precisions = [0, 1, 2, 3, 7, 52, 53, 63, 64, 65, 128];
+    for &n in &values {
+        let n = Integer::from_i64(n);
+        for p in precisions {
+            let fast = Ball::from_integer(&n, p);
+            let slow = Ball::from_integer(&n.mul_pow2(128), p);
+            assert_eq!(fast.precision(), slow.precision());
+            assert_eq!(&fast.mid() * &scale, slow.mid());
+            assert_eq!(&fast.rad() * &scale, slow.rad());
+        }
+    }
+    let exact = 1_i64 << 53;
+    let denominators = [
+        1,
+        2,
+        3,
+        7,
+        10,
+        100,
+        4096,
+        999_983,
+        exact - 1,
+        exact,
+        exact + 1,
+        (1 << 62) - 1,
+        1 << 62,
+    ];
+    for &n in &values {
+        for d in denominators {
+            let r = Rational::from_ratio(n, d).unwrap();
+            let scaled = r.mul_pow2(128);
+            if n.unsigned_abs() <= 1 << 54 {
+                let fast = Interval::from_rational(&r);
+                let slow = Interval::from_rational(&scaled);
+                assert!(interval_contains(fast, &r));
+                assert_eq!(fast.lo() * 2f64.powi(128), slow.lo());
+                assert_eq!(fast.hi() * 2f64.powi(128), slow.hi());
+            }
+            for p in precisions {
+                let fast = Ball::from_rational(&r, p);
+                let slow = Ball::from_rational(&scaled, p);
+                assert!(fast.contains(&r));
+                assert_eq!(&fast.mid() * &scale, slow.mid());
+                assert_eq!(&fast.rad() * &scale, slow.rad());
+            }
+        }
+    }
 }
 
 #[test]

@@ -26,6 +26,9 @@ impl Ord for Rational {
         if sign != Ordering::Equal {
             return sign;
         }
+        if let (Some((a, b)), Some((c, d))) = (self.small(), other.small()) {
+            return (a * d).cmp(&(c * b));
+        }
         (&self.n.0 * &other.d.0).cmp(&(&other.n.0 * &self.d.0))
     }
 }
@@ -355,6 +358,10 @@ impl Rational {
         if self.is_zero() {
             return if subtract { -rhs } else { rhs.clone() };
         }
+        if let (Some((a, b)), Some((c, d))) = (self.small(), rhs.small()) {
+            let c = if subtract { -c } else { c };
+            return Self::reduced(a * d + c * b, b * d);
+        }
         let a = self.d.0.trailing_zeros().unwrap();
         let b = rhs.d.0.trailing_zeros().unwrap();
         if self.d.0.bits() == a + 1 && rhs.d.0.bits() == b + 1 {
@@ -415,6 +422,33 @@ impl Rational {
     pub(crate) fn sub(&self, rhs: &Self) -> Self {
         self.add_sub(rhs, true)
     }
+    // Parts below 2^62 in magnitude keep every product and sum of two
+    // operands below 2^125, so machine arithmetic is exact.
+    fn small(&self) -> Option<(i128, i128)> {
+        const LIMIT: u64 = 1 << 62;
+        let n = self.n.0.to_i64()?;
+        let d = self.d.0.to_i64()?;
+        (n.unsigned_abs() < LIMIT && d.unsigned_abs() < LIMIT)
+            .then(|| (i128::from(n), i128::from(d)))
+    }
+    // The normal form of `n / d` for a positive `d`, which is unique.
+    fn reduced(n: i128, d: i128) -> Self {
+        debug_assert!(d > 0);
+        let g = gcd(n.unsigned_abs(), d.unsigned_abs());
+        // 128-bit division is a library call; skip it or divide in 64 bits.
+        let (n, d) = if g == 1 {
+            (n, d)
+        } else if let (Ok(n), Ok(d), Ok(g)) = (i64::try_from(n), i64::try_from(d), i64::try_from(g))
+        {
+            (i128::from(n / g), i128::from(d / g))
+        } else {
+            (n / g as i128, d / g as i128)
+        };
+        Self {
+            n: Integer(BigInt::from(n)),
+            d: Integer(BigInt::from(d)),
+        }
+    }
     pub(crate) fn mul(&self, rhs: &Self) -> Self {
         if self.is_zero() || rhs.is_zero() {
             return Self::zero();
@@ -424,6 +458,9 @@ impl Rational {
         }
         if rhs.n.0.is_one() && rhs.d.0.is_one() {
             return self.clone();
+        }
+        if let (Some((a, b)), Some((c, d))) = (self.small(), rhs.small()) {
+            return Self::reduced(a * c, b * d);
         }
         let a = self.d.0.trailing_zeros().unwrap();
         let b = rhs.d.0.trailing_zeros().unwrap();
@@ -457,6 +494,24 @@ impl Rational {
         Self {
             n: -&self.n,
             d: self.d.clone(),
+        }
+    }
+}
+// Binary GCD; `gcd(0, b)` is `b`.
+fn gcd(mut a: u128, mut b: u128) -> u128 {
+    if a == 0 || b == 0 {
+        return a | b;
+    }
+    let twos = (a | b).trailing_zeros();
+    a >>= a.trailing_zeros();
+    loop {
+        b >>= b.trailing_zeros();
+        if a > b {
+            std::mem::swap(&mut a, &mut b);
+        }
+        b -= a;
+        if b == 0 {
+            return a << twos;
         }
     }
 }

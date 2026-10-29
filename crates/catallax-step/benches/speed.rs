@@ -14,6 +14,10 @@ use catallax_topology::{Model, block, cone, cylinder, sphere, torus};
 // Compile the actual private fitter here instead of maintaining a second
 // implementation or adding a public benchmark-only API to catallax-step.
 #[path = "../src/fit.rs"]
+#[expect(
+    dead_code,
+    reason = "The space-curve benchmark omits chart range/power helpers; the library checks all of them"
+)]
 mod fit;
 #[path = "../src/number.rs"]
 #[expect(

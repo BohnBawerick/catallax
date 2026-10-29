@@ -96,6 +96,40 @@ class PeriodicBandImports(unittest.TestCase):
                                       1000 - math.pi * (4 + 6 * height),
                                       Path(temporary), f'countersink-{angle}')
 
+    def test_cones_that_end_at_their_apex(self):
+        poses = [
+            {'rotation': ['1', '0', '0', '0'], 'translation': ['0', '0', '0']},
+            {'rotation': ['1', '2', '3', '4'], 'translation': ['7/3', '-11/7', '13/5']},
+        ]
+        with tempfile.TemporaryDirectory(prefix='catallax-periodic-apex-') as temporary:
+            for posed, pose in enumerate(poses):
+                with self.subTest(pose=posed):
+                    recipe = {'format': 'catallax-recipe/3', 'name': 'pointed cone',
+                              'steps': [{'id': 'body', 'op': 'cone', 'base_radius': '3',
+                                         'top_radius': '0', 'height': '4', 'pose': pose}],
+                              'result': 'body'}
+                    self.check_recipe(recipe, (2, 2, 2), 12 * math.pi, Path(temporary),
+                                      f'apex-{posed}')
+
+    def test_blind_drill_tips_share_their_wall_seam(self):
+        with tempfile.TemporaryDirectory(prefix='catallax-periodic-drill-') as temporary:
+            for angle, xs in ((90, ['10']), (118, ['10']), (90, ['-10', '10'])):
+                with self.subTest(angle=angle, holes=len(xs)):
+                    recipe = {'format': 'catallax-recipe/3', 'name': 'drill tips', 'steps': [
+                        {'id': 'plate', 'op': 'block', 'size': ['60', '40', '10'],
+                         'pose': {'rotation': ['1', '0', '0', '0'],
+                                  'translation': ['-30', '-20', '0']}},
+                        {'id': 'hole', 'op': 'hole', 'target': 'plate',
+                         'at': [{'id': f'h{i}', 'point': [x, '0', '10'],
+                                 'direction': ['0', '0', '-1']} for i, x in enumerate(xs)],
+                         'diameter': '4', 'depth': {'blind': '5'}, 'tip': {'cone': str(angle)}}],
+                              'result': 'hole'}
+                    tip = 2 / math.tan(math.radians(angle / 2))
+                    holes = len(xs)
+                    self.check_recipe(recipe, (6 + 2 * holes, 12 + 4 * holes, 8 + 3 * holes),
+                                      24000 - holes * math.pi * (20 + 4 * tip / 3),
+                                      Path(temporary), f'drill-{angle}-{holes}')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -8,6 +8,100 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+fn lattice_steps() -> Value {
+    json!([
+        block("region", ["4", "4", "4"], ["0", "0", "0"]),
+        {"id":"beams", "op":"lattice", "region":"region", "cell":"cubic", "size":"2",
+         "frame":{"rotation":["1","0","0","0"], "translation":["0","0","0"]},
+         "radius":{"constant":"0.25"}}
+    ])
+}
+
+#[test]
+fn retained_body_refuses_result_reachable_lattice_before_stl_encoding() {
+    use catallax_field::printing::{Options, brep};
+    use catallax_numbers::Decider;
+    use catallax_recipe::Recipe;
+
+    let mut r = request(lattice_steps(), "beams");
+    r.problem["route"] = json!("brep");
+    let recipe = Recipe::parse(&r.problem["recipe"].to_string()).unwrap();
+    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+    assert_eq!(built.stand_ins.len(), 1);
+    let result = brep::mesh(&built, &Options::default(), &mut Decider::default())
+        .and_then(|output| output.stl());
+    let refusal = match result {
+        Err(refusal) => refusal,
+        Ok((bytes, _)) => panic!(
+            "lattice stand-in was certified as a {}-byte solid STL",
+            bytes.len()
+        ),
+    };
+    assert_eq!(refusal.code, "print.brep-field-definition");
+    let response = answer(&r).unwrap();
+    assert_eq!(response["manifest"]["refusal"]["code"], refusal.code);
+    assert!(!r.out.join("print.stl").exists());
+    assert!(!r.out.join("display.obj").exists());
+    fs::remove_dir_all(r.out).unwrap();
+}
+
+#[test]
+fn retained_body_allows_unused_lattice_and_matches_cli_box_bytes() {
+    use catallax_field::printing::{Options, brep};
+    use catallax_numbers::Decider;
+    use catallax_recipe::Recipe;
+
+    let r = request(lattice_steps(), "region");
+    let recipe = Recipe::parse(&r.problem["recipe"].to_string()).unwrap();
+    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+    assert_eq!(built.stand_ins.len(), 1);
+    let (bytes, output) = brep::mesh(&built, &Options::default(), &mut Decider::default())
+        .unwrap()
+        .stl()
+        .unwrap();
+    assert_eq!(output.route(), "brep");
+    let response = answer(&r).unwrap();
+    assert_eq!(response["manifest"]["status"], "answered", "{response}");
+    assert_eq!(response["manifest"]["printing"]["route"], "brep");
+    assert_eq!(bytes, fs::read(r.out.join("print.stl")).unwrap());
+    fs::remove_dir_all(r.out).unwrap();
+}
+
+#[test]
+fn retained_body_print_api_matches_cli_bytes_and_retains_proven_settings() {
+    use catallax_field::printing::{Options, brep};
+    use catallax_numbers::{Decider, Rational};
+    use catallax_recipe::Recipe;
+
+    let cases = [
+        json!([block("box", ["4", "4", "1"], ["0", "0", "0"])]),
+        json!([block("box", ["0.1", "0.2", "0.3"], ["0.1", "0.1", "0.1"])]),
+        json!([
+            block("outer", ["4", "4", "4"], ["0", "0", "0"]),
+            block("inner", ["2", "2", "2"], ["1", "1", "1"]),
+            {"id":"box", "op":"boolean", "kind":"subtract", "target":"outer", "tool":"inner"}
+        ]),
+    ];
+    for steps in cases {
+        let r = request(steps, "box");
+        let recipe = Recipe::parse(&r.problem["recipe"].to_string()).unwrap();
+        let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+        let mut options = Options::default();
+        let proof = brep::mesh(&built, &options, &mut Decider::default()).unwrap();
+        options.tolerance = Rational::one();
+        options.max_vertices = 4;
+        assert_eq!(proof.options(), &Options::default());
+        let (bytes, proof) = proof.stl().unwrap();
+        assert!(proof.mesh().max_deviation <= proof.options().tolerance);
+        let response = answer(&r).unwrap();
+        assert_eq!(response["manifest"]["status"], "answered", "{response}");
+        assert_eq!(bytes, fs::read(r.out.join("print.stl")).unwrap());
+        assert!(brep::mesh(&built, &options, &mut Decider::default()).is_err());
+        fs::remove_dir_all(r.out).unwrap();
+    }
+}
+
 fn request(steps: Value, result: &str) -> Request {
     Request {
         format: "catallax-request/1".into(),

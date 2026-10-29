@@ -513,9 +513,7 @@ pub(super) fn cylinder_torus(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     if !coaxial(&t.center, &t.axis, &c.origin, &c.axis, dec)? {
-        return Err(traced(
-            "non-coaxial cylinder/torus intersection requires certified branch tracing",
-        ));
+        return super::cylinder_torus::parallel(c, t, sigma, dec);
     }
     let discriminant = sq(&t.minor) - sq(&(&c.radius() - &t.major));
     if sign(&discriminant, dec)? == Sign::Negative {
@@ -654,9 +652,7 @@ pub(super) fn cone_torus(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     if !coaxial(&c.apex, &c.axis, &t.center, &t.axis, dec)? {
-        return Err(traced(
-            "non-coaxial cone/torus intersection requires certified branch tracing",
-        ));
+        return super::cone_torus::parallel(c, t, sigma, dec);
     }
     let axis_sq = c.axis.norm_squared();
     let length = if rational {

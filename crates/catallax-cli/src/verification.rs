@@ -293,6 +293,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 let diagnostics = display_diagnostics(&plan, &diagnostics);
                 let mesh = match mesh {
                     Ok(mesh) => mesh,
+                    Err(error) if error.code == "field.display-lattice" => {
+                        return lattice_preview(&plan, &request.out, display_started, &mut dec);
+                    }
                     Err(error) => {
                         let mut manifest = refused(error.code, error.detail);
                         manifest["display_diagnostics"] = diagnostics;
@@ -472,4 +475,37 @@ fn display_diagnostics(
     })).collect();
     json!({"format":"catallax-display-diagnostics/1","total":cost(&report.total),"common":cost(&report.common),
         "faces":faces,"supports":supports})
+}
+
+/// The certified display refuses periodic beams. The lattice stage shows them from the
+/// field alone as an unproved coarse mesh, which is never reported as exact.
+fn lattice_preview(
+    plan: &catallax_field::Plan,
+    out: &std::path::Path,
+    started: Instant,
+    dec: &mut Decider,
+) -> std::io::Result<Value> {
+    let options = match catallax_field::lattice_stage::default_preview_options(plan, dec) {
+        Ok(options) => options,
+        Err(error) => return Ok(refused(error.code, error.detail)),
+    };
+    let preview = match catallax_field::lattice_stage::preview_plan(plan, &options, dec) {
+        Ok(preview) => preview,
+        Err(error) => return Ok(refused(error.code, error.detail)),
+    };
+    let mut file = fs::File::create(out.join("display.obj"))?;
+    preview.mesh.write_obj(&mut file)?;
+    Ok(json!({
+        "format":"catallax-manifest/3","status":"answered","exact":false,
+        "field":{"faces":plan.faces().len(),"proven_empty":plan.is_proven_empty()},
+        "face_measurements":{
+            "format":"catallax-face-measurements/1","faces":[],"edit":null,
+            "display":{"first_mesh_ms":started.elapsed().as_secs_f64() * 1000.0,
+                "file":"display.obj","proof":"unproved",
+                "vertices":preview.mesh.positions.len(),"triangles":preview.mesh.triangles.len(),
+                "chord_tolerance_mm":options.tolerance.to_string(),
+                "cells":preview.mesh.cells}
+        },
+        "marks":[],"refusal":null,"step":null
+    }))
 }

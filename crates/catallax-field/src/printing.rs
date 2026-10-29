@@ -8,19 +8,45 @@
 
 use crate::{Instruction, Location, Plan, Workspace, geometry, lattice::BoxState, metric::Kind};
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
-use catallax_recipe::BooleanKind;
+use catallax_recipe::{BooleanKind, Operation, Recipe};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
 
+pub mod brep;
 mod membership;
 
 type Index = [u32; 3];
 type Terms = Vec<([u32; 3], Interval)>;
 
+/// Whether the validated recipe's requested result depends on a field-only definition.
+/// Unused field steps do not change the requested result's print route.
+pub fn native_field(recipe: &Recipe) -> bool {
+    let steps: BTreeMap<_, _> = recipe.steps.iter().map(|s| (&s.id, &s.op)).collect();
+    let mut pending = vec![&recipe.result];
+    let mut seen = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let op = steps[id];
+        if matches!(
+            op,
+            Operation::Lattice { .. }
+                | Operation::Gyroid { .. }
+                | Operation::SmoothBlend { .. }
+                | Operation::ImportMesh { .. }
+        ) {
+            return true;
+        }
+        pending.extend(op.inputs().into_iter().map(|(id, _)| id));
+    }
+    false
+}
+
 /// Print-output controls. These do not change the model or its tolerances.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Options {
     /// Two-sided distance limit in millimetres.
     pub tolerance: Rational,
@@ -689,6 +715,19 @@ pub fn mesh_plan_connected(
 
 /// Builds a watertight output from the field alone. No B-rep builder is called.
 pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Mesh, Refusal> {
+    mesh_plan_floor(plan, options, None, dec)
+}
+
+/// As [`mesh_plan`], but boundary-coverage refinement may not go below a grid edge of
+/// `floor`. A request that would need a finer grid refuses as `field.print-unresolved`
+/// instead of chasing a feature smaller than the floor. The requested accuracy still
+/// sets the starting grid, so the floor never loosens the proven distance bound.
+pub(crate) fn mesh_plan_floor(
+    plan: &Plan,
+    options: &Options,
+    floor: Option<&Rational>,
+    dec: &mut Decider,
+) -> Result<Mesh, Refusal> {
     if options.tolerance <= q(0) || options.max_cells == 0 || options.max_vertices < 4 {
         return Err(refusal(
             "field.print-options",
@@ -816,6 +855,12 @@ pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Me
             return Err(refusal(
                 "field.print-unresolved",
                 "boundary coverage did not settle on the print grid",
+            ));
+        }
+        if floor.is_some_and(|floor| &builder.edge.mul_pow2(-1) < floor) {
+            return Err(refusal(
+                "field.print-unresolved",
+                "boundary coverage needs a grid finer than the minimum detail allows",
             ));
         }
         builder.edge = builder.edge.mul_pow2(-1);

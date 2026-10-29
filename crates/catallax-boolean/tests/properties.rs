@@ -167,6 +167,48 @@ fn coincident_sections_preserve_a_cavity_and_curve_contact() {
     }
 }
 
+#[test]
+fn clipped_parallel_cylinder_products_keep_outer_and_reversed_inner_arcs() {
+    for (operation, expected_index) in [(BoolOp::Unite, 0), (BoolOp::Subtract, 1)] {
+        let mut model = Model::new();
+        let a = cyl_at(5, 4, [0, 0, 0], false).build(&mut model);
+        let b = cyl_at(5, 4, [4, 0, 0], false).build(&mut model);
+        let clip = block_at([20, 10, 2], [-10, -10, 1]).build(&mut model);
+        let mut dec = Decider::default();
+        // The first result has circular caps and intersection-defined axial
+        // generators. Its second Boolean must use the finite retained arcs.
+        let curved = boolean(&mut model, a, b, operation, &mut dec).unwrap();
+        let answer = boolean(&mut model, curved.body, clip, BoolOp::Intersect, &mut dec).unwrap();
+        assert!(curved.marks.is_empty() && answer.marks.is_empty());
+        topology_rules(&model, answer.body);
+        use Location::{Inside, On, Outside};
+        for (coordinates, expected) in [
+            (["-3", "-3", "2"], [Inside, Inside]),
+            (["7", "-3", "2"], [Inside, Outside]),
+            (["2", "-4", "2"], [Inside, Outside]),
+            (["2", "-5", "2"], [Outside, Outside]),
+            (["0", "-5", "2"], [On, On]),
+            (["4", "-5", "2"], [On, Outside]),
+            (["0", "-3", "2"], [Inside, On]),
+            (["2", "0", "2"], [On, Outside]),
+            (["-3", "0", "2"], [On, On]),
+            (["-3", "1", "2"], [Outside, Outside]),
+            (["-3", "-1", "0"], [Outside, Outside]),
+            (["-3", "-1", "1"], [On, On]),
+            (["-3", "-1", "3"], [On, On]),
+            (["-3", "-1", "4"], [Outside, Outside]),
+        ] {
+            query(
+                &mut model,
+                answer.body,
+                &p(coordinates[0], coordinates[1], coordinates[2]),
+                expected[expected_index],
+                &mut dec,
+            );
+        }
+    }
+}
+
 blind_test!(cases_41_to_44_chains, {
     for number in 41..=44 {
         run_chain(number, &r(1), &Pose::identity());

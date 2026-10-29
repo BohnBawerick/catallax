@@ -16,6 +16,7 @@ members = [
     "crates/catallax-features",
     "crates/catallax-compare",
     "crates/catallax-app",
+    "crates/catallax-import",
 ]
 
 [workspace.package]
@@ -41,6 +42,7 @@ catallax-field = { path = "crates/catallax-field" }
 catallax-features = { path = "crates/catallax-features" }
 catallax-compare = { path = "crates/catallax-compare" }
 catallax-app = { path = "crates/catallax-app" }
+catallax-import = { path = "crates/catallax-import" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

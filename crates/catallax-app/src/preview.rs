@@ -7,6 +7,8 @@ use catallax_recipe::Recipe;
 
 use crate::{Error, Names, bounded_build, result_names};
 
+pub use catallax_field::display::PreviewOptions as ConstructionOptions;
+
 /// Unproved display and picking names for one retained body.
 #[derive(Clone, Debug)]
 pub struct PreviewDisplay {
@@ -62,5 +64,48 @@ pub fn build_preview(
         let built = evaluate(recipe, decider).map_err(Error::Build)?;
         let preview = preview_body(&built, options, decider)?;
         Ok(PreviewApplicationBody { built, preview })
+    })
+}
+
+/// Construction display from immutable definitions, before B-rep evaluation.
+/// Registry indices are local to this preview and are never B-rep handles.
+#[derive(Clone, Debug)]
+pub struct ConstructionDisplay {
+    /// Unproved triangles. Incomplete cell covers are refused before delivery.
+    pub mesh: catallax_field::display::PreviewMesh,
+    /// Origins of displayed faces only, keyed by preview registry index.
+    pub origins: std::collections::BTreeMap<usize, catallax_recipe::Origin>,
+}
+
+/// Constructs a selectable display without first constructing an exact B-rep.
+/// Unsupported field definitions and incomplete displays refuse explicitly.
+/// This call shares the active allowance and supplies no export certificate.
+pub fn construction_preview(
+    recipe: &Recipe,
+    options: &ConstructionOptions,
+    decider: &mut Decider,
+) -> Result<ConstructionDisplay, Error> {
+    bounded_build(|| {
+        let plan = catallax_field::Plan::compile_checked(recipe, decider)
+            .map_err(Error::ConstructionPreview)?;
+        let mesh = catallax_field::display::preview_plan(&plan, options, decider)
+            .map_err(Error::ConstructionPreview)?;
+        if mesh.unresolved_cells != 0 {
+            return Err(Error::ConstructionPreview(catallax_numbers::Refusal::new(
+                "application.preview-incomplete",
+                format!(
+                    "{} construction display cells remain unresolved",
+                    mesh.unresolved_cells
+                ),
+            )));
+        }
+        let mut origins = std::collections::BTreeMap::new();
+        for triangle in &mesh.triangles {
+            let index = triangle.face.index();
+            origins
+                .entry(index)
+                .or_insert_with(|| plan.faces()[index].origin.clone());
+        }
+        Ok(ConstructionDisplay { mesh, origins })
     })
 }

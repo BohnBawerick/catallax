@@ -740,6 +740,7 @@ fn search<T>(
             "no whole-face probe settled the query",
         ));
     }
+    let mut order = barriers.to_vec();
     for &loop_id in &f.loops {
         let Loop::Coedges(cs) = model.loop_(loop_id) else {
             continue;
@@ -814,7 +815,7 @@ fn search<T>(
                     (point, &p, edge.curve),
                     &candidate,
                     &inward,
-                    barriers,
+                    &mut order,
                     dec,
                 ) {
                     Ok(true) => {}

@@ -125,6 +125,11 @@ The path polynomial is unchanged. Its plane equation, finite-arc checks,
 permitted source contact and strict destination exclusion still apply; no
 carrier or canonical witness is removed.
 
+Clearance requires every barrier to be excluded, so barrier order affects only
+cost. One witness search keeps its own barrier order. A barrier that blocks a
+candidate moves first, and the remaining barriers keep their order. Every
+candidate still checks every barrier before it is accepted.
+
 Accessors: `pieces_of_first()` and `pieces_of_second()` list the pieces of each body, and `common_edges()` the common edges, in deterministic orders that are not part of the contract.
 
 ### Classify

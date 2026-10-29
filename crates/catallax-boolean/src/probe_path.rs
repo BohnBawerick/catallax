@@ -507,7 +507,7 @@ pub(crate) fn adjacent(
     source: (PointId, &Point3, CurveId),
     q: &Point3,
     left: &Vector3,
-    barriers: &[EdgeId],
+    barriers: &mut [EdgeId],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let (source, p, source_curve) = source;
@@ -552,8 +552,11 @@ pub(crate) fn adjacent(
         {
             continue;
         }
-        let mut clear = true;
-        for &edge_id in barriers {
+        // Clearance is a conjunction over barriers, so their order changes
+        // only cost. A blocking barrier moves first: nearby probes from the
+        // same source usually meet it again.
+        let mut blocked = None;
+        for (index, &edge_id) in barriers.iter().enumerate() {
             let edge = model.edge(edge_id);
             let curve = model.geom().curve(edge.curve);
             // On a rotational carrier, a complete incident coaxial circle is
@@ -663,7 +666,7 @@ pub(crate) fn adjacent(
                         "boolean.imprint-ambiguous",
                     )?
                 {
-                    clear = false;
+                    blocked = Some(index);
                     break;
                 }
                 let mut avoids_ends = true;
@@ -692,13 +695,14 @@ pub(crate) fn adjacent(
                     }
                 }
                 if !avoids_ends {
-                    clear = false;
+                    blocked = Some(index);
                     break;
                 }
             }
         }
-        if clear {
-            return Ok(true);
+        match blocked {
+            None => return Ok(true),
+            Some(index) => barriers[..=index].rotate_right(1),
         }
     }
     Ok(false)

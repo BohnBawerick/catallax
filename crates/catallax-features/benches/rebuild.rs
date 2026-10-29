@@ -161,8 +161,125 @@ fn counterfactual(built: &Built) {
     }
 }
 
+fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+    args.iter().position(|arg| arg == name).map(|index| {
+        args.get(index + 1)
+            .filter(|value| !value.starts_with("--"))
+            .unwrap_or_else(|| panic!("{name} requires a value"))
+            .as_str()
+    })
+}
+
+fn input_benchmark(path: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let recipe = Recipe::parse(&std::fs::read_to_string(path)?)?;
+    let repetitions = option(args, "--repeat")
+        .map(str::parse::<usize>)
+        .transpose()?
+        .unwrap_or(1);
+    assert!(repetitions > 0);
+    let output = option(args, "--step-output");
+    for iteration in 0..repetitions {
+        let start = Instant::now();
+        let (built, operations) = with_operation_log(|| evaluate(&recipe, &mut Decider::default()));
+        let built = built?;
+        let build_ms = start.elapsed().as_secs_f64() * 1000.0;
+        assert!(built.model.check(built.result).is_empty());
+        println!(
+            "{}",
+            json!({"mode":"input","iteration":iteration,"build_ms":build_ms,
+                "faces":built.model.counts(built.result).faces,
+                "operations":operations.iter().map(|entry| json!({
+                    "step":entry.id,"operation":entry.operation,"wall_ms":entry.wall_ms,
+                    "decision_work":entry.after.as_ref().map(|after| after.work-entry.before.work)
+                })).collect::<Vec<_>>()})
+        );
+        if let Some(path) = output {
+            std::fs::write(path, export(&built))?;
+        }
+    }
+    if !args.iter().any(|arg| arg == "--stages") {
+        return Ok(());
+    }
+    let mut checkpoint = None;
+    for (index, step) in recipe.steps.iter().enumerate() {
+        if let catallax_recipe::Operation::Boolean { target, tool, kind } = &step.op {
+            let built = checkpoint
+                .as_ref()
+                .map(catallax_features::EvaluationCheckpoint::built)
+                .expect("boolean has earlier operands");
+            let mut model = built.model.clone();
+            let mut dec = Decider::default();
+            let op = match kind {
+                catallax_recipe::BooleanKind::Union => catallax_boolean::BoolOp::Unite,
+                catallax_recipe::BooleanKind::Subtract => catallax_boolean::BoolOp::Subtract,
+                catallax_recipe::BooleanKind::Intersect => catallax_boolean::BoolOp::Intersect,
+            };
+            macro_rules! timed {
+                ($stage:literal, $call:expr) => {{
+                    let before = dec.stats().clone();
+                    let start = Instant::now();
+                    let answer = $call?;
+                    println!(
+                        "{}",
+                        json!({"step":step.id.as_str(),"stage":$stage,
+                            "wall_ms":start.elapsed().as_secs_f64()*1000.0,
+                            "work":dec.stats().work-before.work,
+                            "decisions":dec.stats().decisions-before.decisions})
+                    );
+                    answer.value
+                }};
+            }
+            let graph = timed!(
+                "intersect",
+                catallax_boolean::intersect(
+                    &mut model,
+                    built.bodies[target],
+                    built.bodies[tool],
+                    &mut dec
+                )
+            );
+            let imprinted = timed!(
+                "imprint",
+                catallax_boolean::imprint(&mut model, &graph, &mut dec)
+            );
+            let classes = timed!(
+                "classify",
+                catallax_boolean::classify(&mut model, &imprinted, &mut dec)
+            );
+            let start = Instant::now();
+            let selection = catallax_boolean::keep(&classes, &imprinted, op);
+            println!(
+                "{}",
+                json!({"step":step.id.as_str(),"stage":"keep",
+                    "wall_ms":start.elapsed().as_secs_f64()*1000.0})
+            );
+            let result = timed!(
+                "sew",
+                catallax_boolean::sew(&mut model, &imprinted, &selection, &mut dec)
+            );
+            assert!(model.check(result).is_empty());
+        }
+        let mut prefix = recipe.clone();
+        prefix.steps.truncate(index + 1);
+        if step.op.kind() == catallax_recipe::ValueKind::Body {
+            prefix.result = step.id.clone();
+            checkpoint = Some(evaluate_incremental(
+                &prefix,
+                checkpoint,
+                &mut Decider::default(),
+            )?);
+        }
+    }
+    Ok(())
+}
+
 fn main() {
-    let flag = |name| std::env::args().any(|arg| arg == name);
+    let args: Vec<_> = std::env::args().collect();
+    if let Some(path) = option(&args, "--input") {
+        input_benchmark(path, &args).unwrap();
+        return;
+    }
+    let flag = |name| args.iter().any(|arg| arg == name);
     let distinct = flag("--distinct");
     let recipe = recipe(distinct);
     let fork = flag("--fork");

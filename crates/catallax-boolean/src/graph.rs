@@ -115,6 +115,228 @@ fn add_curve(
     Ok(index)
 }
 
+/// Canonicalizes the hits of `curve` on every operand surface in query order.
+/// Returns the raw hits, their marks and, for each surface whose whole meeting
+/// with `curve` is now canonical, that meeting's canonical points.
+fn carrier_hits(
+    model: &mut Model,
+    curve: CurveId,
+    surfaces: &[SurfaceId],
+    points: &mut Vec<PointId>,
+    dec: &mut Decider,
+) -> Result<(Vec<PointId>, MarkLog, Complete), Refusal> {
+    let mut found = Vec::new();
+    let mut marks = MarkLog::new();
+    let mut complete = Complete::new();
+    for &surface in surfaces {
+        let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
+        if !matches!(answer.value, CurveSurface::Contained) {
+            complete.insert(surface, Vec::new());
+        }
+        if let CurveSurface::Meets(hits) = answer.value {
+            for hit in hits {
+                if !model.geom().facts().holds(
+                    FactKind::Incident,
+                    GeomKey::Point(hit.point),
+                    GeomKey::Curve(curve),
+                ) {
+                    return Err(refusal(
+                        "boolean.imprint-ambiguous",
+                        "intersection branch membership lacks an incidence proof",
+                    ));
+                }
+                let canonical =
+                    canonical_point(model, points, hit.point, dec, "boolean.imprint-ambiguous")?;
+                complete.get_mut(&surface).unwrap().push(canonical);
+                found.push(hit.point);
+            }
+        }
+        marks.extend(&answer.marks);
+    }
+    Ok((found, marks, complete))
+}
+
+/// Each surface whose whole meeting with a carrier is canonical, with the
+/// canonical points of that meeting.
+type Complete = BTreeMap<SurfaceId, Vec<PointId>>;
+
+/// Borrowed graph state shared by every carrier's pieces.
+struct Context<'a> {
+    first: &'a [FaceId],
+    second: &'a [FaceId],
+    mandatory: &'a BTreeSet<PointId>,
+    point_faces: &'a BTreeMap<PointId, SharedFaces>,
+}
+
+/// The section pieces of `curve` between consecutive sorted `cuts`.
+fn carrier_pieces(
+    model: &mut Model,
+    curve: CurveId,
+    cuts: &[PointId],
+    closed: bool,
+    context: &Context<'_>,
+    regions: &mut RegionCache,
+    dec: &mut Decider,
+) -> Result<Vec<SectionEdge>, Refusal> {
+    let arcs = if !closed {
+        cuts.windows(2)
+            .map(|w| (Some(w[0]), Some(w[1])))
+            .collect::<Vec<_>>()
+    } else if cuts.is_empty() {
+        vec![(None, None)]
+    } else {
+        (0..cuts.len())
+            .map(|i| (Some(cuts[i]), Some(cuts[(i + 1) % cuts.len()])))
+            .collect()
+    };
+    let mut pieces: Vec<SectionEdge> = Vec::new();
+    for (start, end) in arcs {
+        let sample = curve_sample(model, curve, start, end, dec)?;
+        let Some((faces_of_first, faces_of_second)) =
+            shared_faces(model, context.first, context.second, sample, regions, dec)?
+        else {
+            continue;
+        };
+        let edge = SectionEdge {
+            curve,
+            start,
+            end,
+            faces_of_first,
+            faces_of_second,
+        };
+        if let Some(last) = pieces.last_mut()
+            && last.end == edge.start
+            && same_faces(last, &edge)
+            && edge.start.is_some_and(|p| {
+                !context.mandatory.contains(&p)
+                    && context.point_faces.get(&p).is_some_and(|(first, second)| {
+                        first == &edge.faces_of_first && second == &edge.faces_of_second
+                    })
+            })
+        {
+            last.end = edge.end;
+            continue;
+        }
+        pieces.push(edge);
+    }
+    if closed && pieces.len() > 1 {
+        let n = pieces.len();
+        if pieces[n - 1].end == pieces[0].start
+            && same_faces(&pieces[n - 1], &pieces[0])
+            && pieces[0].start.is_some_and(|p| {
+                !context.mandatory.contains(&p)
+                    && context.point_faces.get(&p).is_some_and(|(first, second)| {
+                        first == &pieces[0].faces_of_first && second == &pieces[0].faces_of_second
+                    })
+            })
+        {
+            let last = pieces.pop().expect("nonempty sections");
+            pieces[0].start = last.start;
+        }
+    }
+    if closed
+        && pieces.len() == 1
+        && pieces[0].start == pieces[0].end
+        && pieces[0].start.is_some_and(|p| {
+            !context.mandatory.contains(&p)
+                && context.point_faces.get(&p).is_some_and(|(first, second)| {
+                    first == &pieces[0].faces_of_first && second == &pieces[0].faces_of_second
+                })
+        })
+    {
+        pieces[0].start = None;
+        pieces[0].end = None;
+    }
+    Ok(pieces)
+}
+
+/// Discovery order of the complete curve/surface pass, recovered after
+/// skipping inactive carriers. The skipped carriers are queried only when
+/// their hits could come first.
+#[derive(Default)]
+struct Order {
+    /// The active carrier whose hits first found each point; seeds are 0.
+    finder: BTreeMap<PointId, usize>,
+    /// Skipped carriers that cross each point before its finder.
+    crossers: BTreeMap<PointId, BTreeSet<usize>>,
+    /// Position in the pruned discovery order.
+    index: BTreeMap<PointId, usize>,
+    /// Hits of each queried skipped carrier, in query order.
+    hits: BTreeMap<usize, Vec<PointId>>,
+}
+
+impl Order {
+    /// The complete pass's discovery key of `point`: its carrier and position.
+    fn key(
+        &mut self,
+        model: &mut Model,
+        pool: &[CurveId],
+        surfaces: &[SurfaceId],
+        point: PointId,
+        dec: &mut Decider,
+    ) -> Result<(usize, usize), Refusal> {
+        for skipped in self.crossers.get(&point).cloned().unwrap_or_default() {
+            if let std::collections::btree_map::Entry::Vacant(entry) = self.hits.entry(skipped) {
+                let (found, ..) =
+                    carrier_hits(model, pool[skipped], surfaces, &mut Vec::new(), dec)?;
+                entry.insert(found);
+            }
+            for (rank, &hit) in self.hits[&skipped].iter().enumerate() {
+                let mut known = vec![point];
+                if canonical_point(model, &mut known, hit, dec, "boolean.imprint-ambiguous")?
+                    == point
+                {
+                    return Ok((skipped, rank));
+                }
+            }
+        }
+        let finder = self.finder.get(&point).copied().unwrap_or(usize::MAX);
+        Ok((finder, self.index[&point]))
+    }
+
+    /// The position in sorted `cuts` of the cut the complete pass finds first.
+    fn first(
+        &mut self,
+        model: &mut Model,
+        pool: &[CurveId],
+        surfaces: &[SurfaceId],
+        cuts: &[PointId],
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let mut candidates: Vec<_> = (0..cuts.len())
+            .filter_map(|i| Some((*self.crossers.get(&cuts[i])?.first()?, i)))
+            .collect();
+        if candidates.is_empty() {
+            return Ok(0);
+        }
+        candidates.sort_unstable();
+        let mut best = (usize::MAX, usize::MAX);
+        let mut start = 0;
+        for (i, &cut) in cuts.iter().enumerate() {
+            if !self.crossers.contains_key(&cut) {
+                let key = (
+                    self.finder.get(&cut).copied().unwrap_or(usize::MAX),
+                    self.index[&cut],
+                );
+                if key < best {
+                    (best, start) = (key, i);
+                }
+            }
+        }
+        // A skipped carrier's hit comes first only from an earlier carrier.
+        for (lower, i) in candidates {
+            if lower > best.0 {
+                break;
+            }
+            let key = self.key(model, pool, surfaces, cuts[i], dec)?;
+            if key < best {
+                (best, start) = (key, i);
+            }
+        }
+        Ok(start)
+    }
+}
+
 pub(crate) fn containing_faces(
     model: &mut Model,
     faces: &[FaceId],
@@ -207,6 +429,18 @@ pub(crate) fn intersect(
     b: BodyId,
     dec: &mut Decider,
 ) -> Answered<IntersectionGraph> {
+    section(model, a, b, true, dec)
+}
+
+/// The section graph. `prune` lets finite-face exclusions skip curve/surface
+/// queries; the graph is the same either way.
+pub(crate) fn section(
+    model: &mut Model,
+    a: BodyId,
+    b: BodyId,
+    prune: bool,
+    dec: &mut Decider,
+) -> Answered<IntersectionGraph> {
     assert_ne!(a, b, "boolean operands must be distinct bodies");
     for body in [a, b] {
         if !matches!(model.body(body).kind, BodyKind::Solid | BodyKind::Empty) {
@@ -253,9 +487,18 @@ pub(crate) fn intersect(
         }
     }
     let mut pairs: BTreeMap<(SurfaceId, SurfaceId), SurfacePair> = BTreeMap::new();
+    // Preserve every canonical carrier and its insertion order. Optional bound
+    // witnesses stay on a fork, outside the graph's canonical point pool.
     // Surfaces proven to contain each carrier: both supports of a section
     // component, or the face surface carrying a coincident face's edge.
     let mut supports: Vec<BTreeSet<SurfaceId>> = Vec::new();
+    let mut pruning_model = (prune && !algebraic).then(|| model.clone());
+    let mut finite_bounds = crate::bounds::FaceBounds::new(false);
+    let mut active = Vec::new();
+    // A coincident face pair that may overlap has a two-dimensional common
+    // region, where a carrier can keep a section piece without a potentially
+    // meeting generating pair.
+    let mut overlapping_coincidence = false;
     for &fa in &first {
         for &fb in &second {
             let sa = model.face(fa).surface;
@@ -286,13 +529,26 @@ pub(crate) fn intersect(
                 pairs.insert((sa, sb), answer.value.clone());
                 answer.value
             };
+            // Disjoint and point-only supports have no carrier activity to
+            // prove. Cache the optional finite bound only when adding a curve.
+            let mut relevance = None;
+            let mut relevant = |dec: &mut Decider| {
+                *relevance.get_or_insert_with(|| match &mut pruning_model {
+                    Some(probe) => !finite_bounds.excludes(probe, fa, fb, dec),
+                    None => true,
+                })
+            };
             match pair {
                 SurfacePair::Disjoint => {}
                 SurfacePair::Coincident { .. } => {
+                    overlapping_coincidence |= relevant(dec);
                     for face in [fa, fb] {
                         let surface = model.face(face).surface;
                         for curve in face_edges(model, face) {
+                            let relevant = relevant(dec);
                             let index = add_curve(model, &mut pool, curve, dec)?;
+                            active.resize(pool.len(), false);
+                            active[index] |= relevant;
                             supports.resize(pool.len(), BTreeSet::new());
                             supports[index].insert(surface);
                         }
@@ -315,7 +571,10 @@ pub(crate) fn intersect(
                                 singular: nodes,
                                 ..
                             } => {
+                                let relevant = relevant(dec);
                                 let index = add_curve(model, &mut pool, curve, dec)?;
+                                active.resize(pool.len(), false);
+                                active[index] |= relevant;
                                 supports.resize(pool.len(), BTreeSet::new());
                                 supports[index].extend([sa, sb]);
                                 for node in nodes {
@@ -336,6 +595,12 @@ pub(crate) fn intersect(
             }
         }
     }
+    // Otherwise every section piece lies on a carrier of a potentially meeting
+    // pair, so a skipped carrier keeps no piece and a point found only on
+    // skipped carriers is neither a kept cut nor an isolated point.
+    if overlapping_coincidence {
+        active.fill(true);
+    }
     let surfaces: Vec<SurfaceId> = first
         .iter()
         .chain(&second)
@@ -345,35 +610,24 @@ pub(crate) fn intersect(
         .collect();
     let mut marks = MarkLog::new();
     // Surfaces whose whole meeting with each carrier is now canonical.
-    let mut complete: Vec<BTreeSet<SurfaceId>> = vec![BTreeSet::new(); pool.len()];
+    let mut complete: Vec<Complete> = vec![Complete::new(); pool.len()];
+    let mut order = Order {
+        finder: points.iter().map(|&p| (p, 0)).collect(),
+        ..Order::default()
+    };
     for (index, &curve) in pool.iter().enumerate() {
-        for &surface in &surfaces {
-            let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
-            if !matches!(answer.value, CurveSurface::Contained) {
-                complete[index].insert(surface);
-            }
-            if let CurveSurface::Meets(hits) = answer.value {
-                for hit in hits {
-                    if !model.geom().facts().holds(
-                        FactKind::Incident,
-                        GeomKey::Point(hit.point),
-                        GeomKey::Curve(curve),
-                    ) {
-                        return Err(refusal(
-                            "boolean.imprint-ambiguous",
-                            "intersection branch membership lacks an incidence proof",
-                        ));
-                    }
-                    canonical_point(
-                        model,
-                        &mut points,
-                        hit.point,
-                        dec,
-                        "boolean.imprint-ambiguous",
-                    )?;
-                }
-            }
-            marks.extend(&answer.marks);
+        // An inactive carrier has no potentially meeting generating face pair.
+        // The complete curve/pair pass below still includes its crossings.
+        if !active[index] {
+            continue;
+        }
+        let known = points.len();
+        let (_, found_marks, found_complete) =
+            carrier_hits(model, curve, &surfaces, &mut points, dec)?;
+        marks.extend(&found_marks);
+        complete[index] = found_complete;
+        for &point in &points[known..] {
+            order.finder.insert(point, index);
         }
     }
     for i in 0..pool.len() {
@@ -381,8 +635,38 @@ pub(crate) fn intersect(
             // Two carriers meet only on each other's supports. When one
             // carrier's complete meeting with the other's support is already
             // canonical, the pair can add no point; equality is never inferred.
-            let covered = |c: usize, d: usize| !supports[c].is_disjoint(&complete[d]);
-            if covered(i, j) || covered(j, i) {
+            let covered =
+                |c: usize, d: usize| supports[c].iter().any(|s| complete[d].contains_key(s));
+            let skip = match (active[i], active[j]) {
+                (true, true) => covered(i, j) || covered(j, i),
+                // A skipped carrier has no complete meetings of its own. A
+                // later one's crossings were all found by the earlier active
+                // carrier or before it, so its hits could not come first.
+                (true, false) => covered(j, i),
+                // An earlier skipped carrier could find a crossing first. Its
+                // crossings with a covering active carrier are that carrier's
+                // canonical hits on the skipped carrier's supports.
+                (false, true) if covered(i, j) => {
+                    for surface in &supports[i] {
+                        for &point in complete[j].get(surface).into_iter().flatten() {
+                            if order.finder.get(&point).is_some_and(|&found| i >= found) {
+                                continue;
+                            }
+                            if coincident(
+                                on_curve(model.geom(), pool[i], point, dec),
+                                "boolean.imprint-ambiguous",
+                            )? {
+                                order.crossers.entry(point).or_default().insert(i);
+                            }
+                        }
+                    }
+                    true
+                }
+                // Crossings of two skipped carriers lie on no kept piece.
+                (false, false) => true,
+                (false, true) => false,
+            };
+            if skip {
                 continue;
             }
             let crate::curve_pair::Meetings::Points(meetings) =
@@ -391,10 +675,23 @@ pub(crate) fn intersect(
                 continue;
             };
             for point in meetings {
-                canonical_point(model, &mut points, point, dec, "boolean.imprint-ambiguous")?;
+                let canonical =
+                    canonical_point(model, &mut points, point, dec, "boolean.imprint-ambiguous")?;
+                // The complete pass could find this crossing first through
+                // the skipped carrier.
+                let skipped = if active[i] { j } else { i };
+                if active[i] != active[j]
+                    && order
+                        .finder
+                        .get(&canonical)
+                        .is_none_or(|&found| skipped < found)
+                {
+                    order.crossers.entry(canonical).or_default().insert(skipped);
+                }
             }
         }
     }
+    order.index = points.iter().enumerate().map(|(i, &p)| (p, i)).collect();
     let mut point_faces = BTreeMap::new();
     for &point in &points {
         if let Some(faces) = shared_faces(model, &first, &second, point, &mut regions, dec)? {
@@ -414,75 +711,21 @@ pub(crate) fn intersect(
         }
         sort_points(model, curve, &mut cuts, dec)?;
         let closed = curve_is_closed(model.geom(), curve, dec)?;
-        let arcs = if !closed {
-            cuts.windows(2)
-                .map(|w| (Some(w[0]), Some(w[1])))
-                .collect::<Vec<_>>()
-        } else if cuts.is_empty() {
-            vec![(None, None)]
-        } else {
-            (0..cuts.len())
-                .map(|i| (Some(cuts[i]), Some(cuts[(i + 1) % cuts.len()])))
-                .collect()
+        let context = Context {
+            first: &first,
+            second: &second,
+            mandatory: &mandatory,
+            point_faces: &point_faces,
         };
-        let mut pieces: Vec<SectionEdge> = Vec::new();
-        for (start, end) in arcs {
-            let sample = curve_sample(model, curve, start, end, dec)?;
-            let Some((faces_of_first, faces_of_second)) =
-                shared_faces(model, &first, &second, sample, &mut regions, dec)?
-            else {
-                continue;
-            };
-            let edge = SectionEdge {
-                curve,
-                start,
-                end,
-                faces_of_first,
-                faces_of_second,
-            };
-            if let Some(last) = pieces.last_mut()
-                && last.end == edge.start
-                && same_faces(last, &edge)
-                && edge.start.is_some_and(|p| {
-                    !mandatory.contains(&p)
-                        && point_faces.get(&p).is_some_and(|(first, second)| {
-                            first == &edge.faces_of_first && second == &edge.faces_of_second
-                        })
-                })
-            {
-                last.end = edge.end;
-                continue;
+        let mut pieces = carrier_pieces(model, curve, &cuts, closed, &context, &mut regions, dec)?;
+        // A closed carrier starts at the cut the pass found first. Restore the
+        // complete pass's choice when a skipped carrier could change it.
+        if closed && !pieces.is_empty() {
+            let start = order.first(model, &pool, &surfaces, &cuts, dec)?;
+            if start != 0 {
+                cuts.rotate_left(start);
+                pieces = carrier_pieces(model, curve, &cuts, closed, &context, &mut regions, dec)?;
             }
-            pieces.push(edge);
-        }
-        if closed && pieces.len() > 1 {
-            let n = pieces.len();
-            if pieces[n - 1].end == pieces[0].start
-                && same_faces(&pieces[n - 1], &pieces[0])
-                && pieces[0].start.is_some_and(|p| {
-                    !mandatory.contains(&p)
-                        && point_faces.get(&p).is_some_and(|(first, second)| {
-                            first == &pieces[0].faces_of_first
-                                && second == &pieces[0].faces_of_second
-                        })
-                })
-            {
-                let last = pieces.pop().expect("nonempty sections");
-                pieces[0].start = last.start;
-            }
-        }
-        if closed
-            && pieces.len() == 1
-            && pieces[0].start == pieces[0].end
-            && pieces[0].start.is_some_and(|p| {
-                !mandatory.contains(&p)
-                    && point_faces.get(&p).is_some_and(|(first, second)| {
-                        first == &pieces[0].faces_of_first && second == &pieces[0].faces_of_second
-                    })
-            })
-        {
-            pieces[0].start = None;
-            pieces[0].end = None;
         }
         edges.extend(pieces);
     }
@@ -509,6 +752,14 @@ pub(crate) fn intersect(
         if !on_section {
             isolated.push(point);
         }
+    }
+    if isolated.iter().any(|p| order.crossers.contains_key(p)) {
+        let mut keyed = Vec::with_capacity(isolated.len());
+        for point in isolated {
+            keyed.push((order.key(model, &pool, &surfaces, point, dec)?, point));
+        }
+        keyed.sort_unstable_by_key(|&(key, _)| key);
+        isolated = keyed.into_iter().map(|(_, point)| point).collect();
     }
     let graph = IntersectionGraph {
         a,

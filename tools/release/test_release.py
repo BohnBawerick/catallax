@@ -197,6 +197,18 @@ class ReplayPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manifest scope"):
             release.read_corrections()
 
+    def test_reviewed_refusal_rows_must_name_the_code_change(self):
+        reviewed = self.refusal_move() | {"class": "reviewed-refusal-change",
+                                          "manifest_fields": ["question_id", "refusal.code"]}
+        self.save_corrections([reviewed])
+        self.assertEqual(release.read_corrections()["corrections"][0]["class"], "reviewed-refusal-change")
+        for mutation in ({"manifest_fields": ["refusal.stage"]}, {"manifest_fields": ["refusal.code", "marks"]},
+                         {"evidence": self.correction()["evidence"]}):
+            with self.subTest(mutation=mutation):
+                self.save_corrections([reviewed | mutation])
+                with self.assertRaises(ValueError):
+                    release.read_corrections()
+
     def test_upgrade_and_correction_cannot_share_a_position(self):
         self.save_corrections([self.correction()])
         release.write_json(release.UPGRADES, {"format": "catallax-replay-upgrades/2", "upgrades": [

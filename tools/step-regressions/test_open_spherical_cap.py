@@ -53,7 +53,9 @@ class OpenSphericalCapImports(unittest.TestCase):
                     self.assertEqual(manifest['marks'], [])
                     step = Path(case['path']) / 'answer.step'
                     self.assertTrue(step.is_file())
-                    checked = CHECK(str(step), 5)
+                    # Each spherical face contains its pole, which moves onto an
+                    # export-only cap: five model faces, seven exported faces.
+                    checked = CHECK(str(step), 7)
                     self.assertEqual(checked['status'], 'passed', checked)
                     reader = STEPControl_Reader()
                     self.assertEqual(reader.ReadFile(str(step)), IFSelect_RetDone)
@@ -90,9 +92,10 @@ class OpenSphericalCapImports(unittest.TestCase):
                         self.assertIn(kind, counts)
                         counts[kind] += 1
                         explorer.Next()
+                    # Each spherical face gains its pole cap.
                     self.assertEqual(counts, {GeomAbs_Plane: 1,
                                               GeomAbs_Cylinder: 2,
-                                              GeomAbs_Sphere: 2})
+                                              GeomAbs_Sphere: 4})
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 # STEP export blind tests
 
-The blind tests use `docs/pieces/07-step-export.md`, the judge file contract, and the public interfaces of pieces 1 to 5. The loopless-face import regressions additionally use pinned OpenCASCADE without healing, sewing or SameParameter.
+The blind tests use `docs/pieces/07-step-export.md`, the judge file contract, and the public interfaces of pieces 1 to 5. The loopless-face import regressions additionally use pinned OpenCASCADE through the configured direct translation, which bypasses caller-side processing, sewing and SameParameter; internal repair inside the reader remains unproven.
 
 ## Commands
 
@@ -18,18 +18,21 @@ walls, enclosed cylindrical voids and algebraic countersinks.
 `test_partial_periodic_trims.py` adds a public cylinder/sphere intersection,
 touching branch vertices, a closed cylinder/sphere branch, spherical lenses at
 identity and a rational pose, and a public block/cylinder union whose two
-cylinder band seams each meet two cut vertices. Each of these imports the file through two
-procedures: raw translation and the standard reader. Each procedure must give a
+cylinder band seams each meet two cut vertices. An L-shaped prism minus a ball
+at two poses checks that an interior pole moves onto an export-only cap, and a
+ball cut by a plane passing 1e-15 from both of its frame's poles checks the
+retry on the perpendicular frame. Each
+of these imports the file through two procedures: raw translation and the
+standard reader. Each procedure must give a
 valid shape with one solid, the expected face, edge and vertex counts, and a
 converged adaptive volume within the diagnostic tube of the expected volume.
-Only the raw procedure asserts no healing: direct `StepToTopoDS_Builder`
-translation bypasses the reader's default ShapeFix processing and keeps
-SameParameter disabled. Three scenes in the same file pin the legacy fallback and
-check only the export: a transverse ball frame whose pole has no membership
-certificate still answers within the request allowance with no added edges,
-touching spherical trims keep a file with no pcurves, and a ball cut by a plane
-passing 1e-15 from both of its frame's poles keeps an exact answer and a file
-with no pcurves.
+The raw procedure is the configured direct `StepToTopoDS_Builder`
+translation. It bypasses caller-side processing: it never calls `TransferRoots`
+or `ProcessShape`, and it keeps SameParameter and max precision off. Internal
+repair inside the reader remains unproven. Two scenes in the same file pin the
+legacy fallback and check only the export: a transverse ball frame whose pole has no membership
+certificate still answers within the request allowance with no added edges, and
+touching spherical trims keep a file with no pcurves.
 `test_p3_round_charts.py` exports the public P3 filleted boss at both junction
 radii and checks raw and standard validity, finite face parameter domains, one
 STEP face per source face, converged volume against an independent construction
@@ -107,9 +110,10 @@ their existing seam encoding. Regular partial cylinders and pole-free spherical
 faces use exact shared-edge cuts and bounded, parameter-coupled pcurves. Source
 loop-corner incidence is preserved at touching vertices; disconnected chart
 components receive distinct face/surface identities. No kernel topology is
-modified. Elliptic cylinders, cone faces, arbitrary torus trims, spherical faces
-whose poles belong to the domain, touching spherical trims, and unresolved
-rounded edges anywhere in the export retain their previous encoding. Uncharted planar caps must keep native analytic boundaries;
+modified. An interior spherical pole moves onto an export-only cap behind a
+latitude ring. Elliptic cylinders, cone faces, arbitrary torus trims, poles on a
+trim or without a membership certificate, touching spherical trims, and
+unresolved rounded edges anywhere in the export retain their previous encoding. Uncharted planar caps must keep native analytic boundaries;
 opaque boundaries reject the whole export's partial cutover. Complete bands
 remain on their earlier path. Distinct endpoints must remain separated by the larger of the requested
 distance tolerance and `1e-7`, plus their certified rounding errors.

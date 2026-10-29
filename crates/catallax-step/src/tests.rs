@@ -808,15 +808,29 @@ fn irrational_intersection_circles_remain_analytic() {
     assert!(model.check(body).is_empty());
     let (file, answer) = export(&model, &[body], &StepOptions::default());
     assert_eq!(answer.value.approximated_curves, 0);
-    assert_eq!(answer.value.added_vertices, 2);
+    // Each cap's pole moves behind an export-only ring with one chart vertex.
+    assert_eq!(answer.value.added_vertices, 4);
     assert!(answer.value.max_deviation > Rational::zero());
     assert!(answer.value.max_deviation <= StepOptions::default().curve_tolerance);
     let es = entities(&file);
-    assert_eq!(es.iter().filter(|(name, _)| *name == "CIRCLE").count(), 2);
-    assert!(
-        es.iter()
-            .all(|(name, _)| *name != "B_SPLINE_CURVE_WITH_KNOTS")
-    );
+    // Two trim circles, two pole rings and one meridian seam per cap chart.
+    assert_eq!(es.iter().filter(|(name, _)| *name == "CIRCLE").count(), 6);
+    // Every edge keeps an exact analytic 3D master: circles, and lines for
+    // the cylinder's chart seam. Splines appear only as bounded pcurves.
+    for (name, args) in &es {
+        if *name != "EDGE_CURVE" {
+            continue;
+        }
+        let mut id = references(args[3])[0];
+        if matches!(es[id - 1].0, "SURFACE_CURVE" | "SEAM_CURVE") {
+            id = references(es[id - 1].1[1])[0];
+        }
+        assert!(
+            matches!(es[id - 1].0, "CIRCLE" | "LINE"),
+            "{}",
+            es[id - 1].0
+        );
+    }
     assert_walk(&file);
 }
 
@@ -1141,7 +1155,17 @@ fn decimal_accuracy_is_certified_or_refused_without_writing() {
     let (file, answer) = export(&model, &[body], &options);
     assert!(answer.marks.is_empty());
     let es = entities(&file);
-    let (_, circle) = es.iter().find(|(name, _)| *name == "CIRCLE").unwrap();
+    // The trim circle has radius sqrt(24). The pole ring and the chart's
+    // meridian circles have other radii.
+    let (_, circle) = es
+        .iter()
+        .find(|(name, args)| {
+            *name == "CIRCLE" && {
+                let radius = step_real(args[2]);
+                radius > q("4.8") && radius < q("4.95")
+            }
+        })
+        .unwrap();
     let radius = step_real(circle[2]);
     let unit = q("1e-39");
     assert!((&radius - &unit).pow(2).unwrap() <= q("24"));

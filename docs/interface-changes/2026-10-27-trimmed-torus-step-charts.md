@@ -22,7 +22,7 @@ Meridian crossings on a torus are ordered by exact tube-angle comparisons
 instead of height. No source topology, carrier, tolerance or request budget changes.
 
 Why: The legacy encoding of P3 had six curved faces with unbounded cylindrical V
-domains and a full periodic torus chart. The non-repairing raw translator
+domains and a full periodic torus chart. The raw translator
 rejected them and imported 17578.905 mm^3 instead of 14428.640 mm^3.
 
 Migration: None for callers. `StepReport` fields and manifest formats are

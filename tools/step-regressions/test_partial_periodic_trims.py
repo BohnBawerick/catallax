@@ -1,4 +1,4 @@
-"""Public regular periodic trims; raw translation remains non-repairing."""
+"""Public regular periodic trims; raw translation bypasses caller-side processing."""
 from fractions import Fraction
 import json
 import math
@@ -59,15 +59,19 @@ class PartialPeriodicTrimImports(unittest.TestCase):
         return Path(case['path']), manifest
 
     def check_intersection(self, primitives, topology, expected_volume, kind='intersect'):
+        self.check_recipe(intersection(primitives, kind), topology, expected_volume)
+
+    def check_recipe(self, recipe, topology, expected_volume):
         with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
-            directory, _ = self.answer(intersection(primitives, kind), Path(temporary))
+            directory, _ = self.answer(recipe, Path(temporary))
             path = directory / 'answer.step'
             raw = raw_solid(path)
             reader = STEPControl_Reader()
             self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
             self.assertGreater(reader.TransferRoots(), 0)
             # This second procedure intentionally includes standard reader
-            # processing. Only raw_solid is the no-healing assertion.
+            # processing. Only raw_solid bypasses caller-side processing;
+            # internal repair inside the reader remains unproven.
             for mode, shape in [('raw', raw), ('standard', reader.OneShape())]:
                 with self.subTest(reader=mode):
                     self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
@@ -127,24 +131,6 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                  'pose': pose(x='1/8', rotation=('1', '-1', '0', '0'))}]), Path(temporary))
             self.assertEqual(manifest['step']['added_edges'], 0)
 
-    def test_trim_close_to_a_pole_keeps_an_exact_answer(self):
-        # A radius-two ball cut by the plane 3x + 4y = 5e-15. The trim misses
-        # both poles of the ball's frame by 1e-15, so charts on that frame miss
-        # the requested tolerance. Such charts are not used: the scene keeps
-        # its legacy encoding and the answer stays exact.
-        offset = Fraction(1, 10**15)
-        recipe = {'format': 'catallax-recipe/3', 'name': 'trim close to a pole', 'steps': [
-            {'id': 'a', 'op': 'sphere', 'radius': '2', 'pose': pose()},
-            {'id': 'b', 'op': 'block', 'size': ['10', '10', '10'],
-             'pose': pose(str(Fraction(3, 5) * offset + 4), str(Fraction(4, 5) * offset - 3),
-                          '-5', ('2', '0', '0', '1'))},
-            {'id': 'body', 'op': 'boolean', 'kind': 'intersect', 'target': 'a', 'tool': 'b'}],
-            'result': 'body'}
-        with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
-            directory, manifest = self.answer(recipe, Path(temporary))
-            self.assertEqual(manifest['step']['added_edges'], 0)
-            self.assertNotIn('PCURVE', (directory / 'answer.step').read_text())
-
     def test_touching_spherical_trims_keep_legacy_encoding(self):
         # The first intersection leaves spherical trims touching at one
         # vertex. Its partial charts crossed themselves in the parameter
@@ -166,6 +152,40 @@ class PartialPeriodicTrimImports(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
             directory, _ = self.answer(recipe, Path(temporary))
             self.assertNotIn('PCURVE', (directory / 'answer.step').read_text())
+
+    def test_interior_sphere_pole_moves_onto_an_export_cap(self):
+        # An L-shaped prism minus a unit ball centred on its top face. The
+        # dimple contains the ball's lower pole, so no chart of its own frame
+        # is pole-free. An export-only latitude ring moves that pole onto a cap
+        # written with a perpendicular frame. Volume: 22 - 2*pi/3.
+        for rotation in [('1', '0', '0', '0'), ('1', '2', '3', '4')]:
+            with self.subTest(rotation=rotation):
+                self.check_recipe({
+                    'format': 'catallax-recipe/3', 'name': 'spherical dimple', 'steps': [
+                        {'id': 'a', 'op': 'block', 'size': ['4', '2', '2'], 'pose': pose()},
+                        {'id': 'b', 'op': 'block', 'size': ['1', '3', '2'], 'pose': pose(y='2')},
+                        {'id': 'l', 'op': 'boolean', 'kind': 'union', 'target': 'a', 'tool': 'b'},
+                        {'id': 's', 'op': 'sphere', 'radius': '1',
+                         'pose': pose('2', '1', '2', rotation)},
+                        {'id': 'd', 'op': 'boolean', 'kind': 'subtract', 'target': 'l',
+                         'tool': 's'}],
+                    'result': 'd'}, (11, 25, 16), 22 - 2 * math.pi / 3)
+
+    def test_trim_close_to_a_pole_uses_a_perpendicular_frame(self):
+        # A radius-two ball cut by the plane 3x + 4y = 5e-15. The trim misses
+        # both poles of the ball's frame by 1e-15, so charts on that frame
+        # need more pcurve spans than reach the tolerance, and the answer must
+        # not lose its exactness. The retry on the perpendicular frame moves the
+        # old poles away from the trim. Volume: half the ball, 16*pi/3.
+        offset = Fraction(1, 10**15)
+        self.check_recipe({
+            'format': 'catallax-recipe/3', 'name': 'trim close to a pole', 'steps': [
+                {'id': 'a', 'op': 'sphere', 'radius': '2', 'pose': pose()},
+                {'id': 'b', 'op': 'block', 'size': ['10', '10', '10'],
+                 'pose': pose(str(Fraction(3, 5) * offset + 4), str(Fraction(4, 5) * offset - 3),
+                              '-5', ('2', '0', '0', '1'))},
+                {'id': 'body', 'op': 'boolean', 'kind': 'intersect', 'target': 'a', 'tool': 'b'}],
+            'result': 'body'}, (3, 3, 2), 16 * math.pi / 3)
 
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),

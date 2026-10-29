@@ -32,7 +32,7 @@ pub struct Settings {
     pub accuracy: Rational,
     /// Smallest feature in millimetres the output is promised to keep.
     pub minimum_detail: Rational,
-    /// Maximum octree cells visited across all refinement attempts.
+    /// Maximum candidate-grid and certificate cells visited across all attempts.
     pub max_cells: usize,
     /// Maximum mesh vertices.
     pub max_vertices: usize,
@@ -69,7 +69,7 @@ pub struct Verdict {
 /// A certified lattice mesh with its verdict.
 #[derive(Clone, Debug)]
 pub struct Output {
-    /// The mesh; write it with `Mesh::write_stl` or `Mesh::write_obj`.
+    /// The certified mesh. Use `Output::labelled_stl` for a metadata-bearing file.
     pub mesh: printing::Mesh,
     /// The checks that passed.
     pub verdict: Verdict,
@@ -80,14 +80,21 @@ impl Output {
     /// Writes this stage's certified mesh with the `catallax-print-stl/1` field label.
     /// The returned verdict includes the conservative metadata rounding.
     pub fn labelled_stl(self) -> Result<(Vec<u8>, Self), Refusal> {
-        let Self { mesh, mut verdict, options } = self;
+        let Self {
+            mesh,
+            mut verdict,
+            options,
+        } = self;
         let (bytes, encoded) = printing::brep::field_output(mesh, &options)?.stl()?;
         verdict.max_deviation = encoded.mesh().max_deviation.clone();
-        Ok((bytes, Self {
-            mesh: encoded.into_field_mesh(),
-            verdict,
-            options,
-        }))
+        Ok((
+            bytes,
+            Self {
+                mesh: encoded.into_field_mesh(),
+                verdict,
+                options,
+            },
+        ))
     }
 }
 
@@ -101,8 +108,8 @@ pub enum Proof {
 /// A display of the lattice shown before the export is proved.
 #[derive(Clone, Debug)]
 pub struct Preview {
-    /// The coarse mesh. Its `max_deviation` is that of this coarse grid alone and says
-    /// nothing about the export.
+    /// The coarse mesh. Its `max_deviation` is a sampling scale, not a proven
+    /// distance bound or a statement about the export.
     pub mesh: printing::Mesh,
     /// Always [`Proof::Unproved`].
     pub proof: Proof,
@@ -240,7 +247,11 @@ impl Stage {
             components,
             max_deviation: mesh.max_deviation.clone(),
         };
-        Ok(Output { mesh, verdict, options: self.settings.print_options() })
+        Ok(Output {
+            mesh,
+            verdict,
+            options,
+        })
     }
 
     /// Leaves the stage: the unchanged body recipe, with the lattice parameters and

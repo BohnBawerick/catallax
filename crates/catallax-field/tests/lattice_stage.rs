@@ -378,3 +378,172 @@ fn a_preview_over_its_cell_limit_refuses_without_a_partial_mesh() {
         .unwrap_err();
     assert_eq!(error.code, "field.print-budget");
 }
+
+fn acceptance_stage(size: [&str; 3], translation: [&str; 3]) -> Stage {
+    let recipe = Recipe::parse(&format!(
+        r#"{{"format":"catallax-recipe/3","name":"V7","steps":[{{"id":"box","op":"block","size":{size:?},"pose":{{"rotation":["1","0","0","0"],"translation":{translation:?}}}}}],"result":"box"}}"#
+    )).unwrap();
+    Stage::new(
+        &recipe,
+        LatticeSpec {
+            cell: LatticeCell::Cubic,
+            size: Number::parse("5").unwrap(),
+            radius: serde_json::from_str(r#"{"constant":"1"}"#).unwrap(),
+            frame: spec().frame,
+        },
+        Settings {
+            accuracy: q("0.1"),
+            minimum_detail: q("0.5"),
+            ..settings()
+        },
+        &mut Decider::default(),
+    )
+    .unwrap()
+}
+
+fn check_acceptance_mesh(
+    positions: &[[f32; 3]],
+    triangles: &[[usize; 3]],
+    bounds: [[&str; 2]; 3],
+    deviation: &Rational,
+    euler: i64,
+) {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut welded = BTreeMap::new();
+    let ids: Vec<usize> = positions
+        .iter()
+        .map(|p| {
+            let key = p.map(|x| {
+                if x.to_bits() & 0x7fff_ffff == 0 {
+                    0
+                } else {
+                    x.to_bits()
+                }
+            });
+            let next = welded.len();
+            *welded.entry(key).or_insert(next)
+        })
+        .collect();
+    let mut edges = BTreeSet::new();
+    let mut adjacency = vec![Vec::new(); welded.len()];
+    for t in triangles {
+        let [a, b, c] = t.map(|i| ids[i]);
+        assert!(a != b && b != c && a != c);
+        for (a, b) in [(a, b), (b, c), (c, a)] {
+            edges.insert((a.min(b), a.max(b)));
+            adjacency[a].push(b);
+            adjacency[b].push(a);
+        }
+    }
+    assert_eq!(
+        welded.len() as i64 - edges.len() as i64 + triangles.len() as i64,
+        euler
+    );
+    let mut seen = vec![false; welded.len()];
+    let mut pending = vec![0];
+    while let Some(i) = pending.pop() {
+        if seen[i] {
+            continue;
+        }
+        seen[i] = true;
+        pending.extend(&adjacency[i]);
+    }
+    assert!(
+        seen.into_iter().all(|v| v),
+        "welded mesh must have one component"
+    );
+    for p in positions {
+        for i in 0..3 {
+            let coordinate = Rational::from_f64_exact(p[i] as f64).unwrap();
+            assert!(coordinate >= &q(bounds[i][0]) - deviation);
+            assert!(coordinate <= &q(bounds[i][1]) + deviation);
+        }
+    }
+}
+
+fn check_acceptance_verdict(output: &catallax_field::lattice_stage::Output) {
+    let v = &output.verdict;
+    assert!(v.closed && v.non_self_intersecting && v.connected);
+    assert_eq!(v.components, 1);
+    assert!(v.max_deviation > q("0") && v.max_deviation <= q("0.1"));
+    assert_eq!(output.mesh.max_deviation, v.max_deviation);
+    assert!(output.mesh.cells <= 2_000_000);
+    assert!(output.mesh.positions.len() <= 1_000_000);
+}
+
+/// K1, fixed by the independent V7 designer: four nodes and one handle.
+#[test]
+fn k1_labelled_stage_file_contains_its_proven_four_cell_mesh() {
+    let stage = acceptance_stage(["10", "10", "5"], ["-2.5", "-2.5", "-2.5"]);
+    let output = stage.export(&mut Decider::default()).unwrap();
+    check_acceptance_verdict(&output);
+    let before = output.verdict.max_deviation.clone();
+    let (bytes, output) = output.labelled_stl().unwrap();
+    check_acceptance_verdict(&output);
+    assert_eq!(&bytes[..8], b"CXPRINT1");
+    assert_eq!(&bytes[8..12], &[2, 1, 1, 1]);
+    assert_eq!(i64::from_le_bytes(bytes[12..20].try_into().unwrap()), 1);
+    assert_eq!(u64::from_le_bytes(bytes[20..28].try_into().unwrap()), 10);
+    assert_eq!(
+        u64::from_le_bytes(bytes[28..36].try_into().unwrap()),
+        2_000_000
+    );
+    assert_eq!(
+        u64::from_le_bytes(bytes[36..44].try_into().unwrap()),
+        1_000_000
+    );
+    let contribution = |start| {
+        Rational::from_f64_exact(f64::from_le_bytes(
+            bytes[start..start + 8].try_into().unwrap(),
+        ))
+        .unwrap()
+    };
+    let bound = contribution(68);
+    assert!(bound >= before && bound <= q("0.1"));
+    assert_eq!(bound, output.verdict.max_deviation);
+    assert_eq!(contribution(44), q("0"));
+    assert_eq!(contribution(60), q("0"));
+    assert!(&(&contribution(44) + &contribution(52)) + &contribution(60) <= bound);
+    assert_eq!(&bytes[76..80], &[0; 4]);
+    let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
+    assert_eq!(count, output.mesh.triangles.len());
+    assert_eq!(bytes.len(), 84 + 50 * count);
+    let mut positions = Vec::new();
+    let mut triangles = Vec::new();
+    for facet in bytes[84..].as_chunks::<50>().0 {
+        let base = positions.len();
+        for v in 0..3 {
+            positions.push(std::array::from_fn(|i| {
+                let start = 12 + v * 12 + i * 4;
+                f32::from_le_bytes(facet[start..start + 4].try_into().unwrap())
+            }));
+        }
+        triangles.push([base, base + 1, base + 2]);
+    }
+    check_acceptance_mesh(
+        &positions,
+        &triangles,
+        [["-2.5", "7.5"], ["-2.5", "7.5"], ["-2.5", "2.5"]],
+        &bound,
+        0,
+    );
+}
+
+/// K2, fixed by the independent V7 designer: S1 has 30 nodes and 30 handles.
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "V7 K2 is a release-mode proof-cost acceptance"
+)]
+fn k2_thirty_cell_lattice_proves_at_point_one_with_default_caps() {
+    let stage = acceptance_stage(["25", "15", "10"], ["-12.5", "-7.5", "-2.5"]);
+    let output = stage.export(&mut Decider::default()).unwrap();
+    check_acceptance_verdict(&output);
+    check_acceptance_mesh(
+        &output.mesh.positions,
+        &output.mesh.triangles,
+        [["-12.5", "12.5"], ["-7.5", "7.5"], ["-2.5", "7.5"]],
+        &output.verdict.max_deviation,
+        -58,
+    );
+}

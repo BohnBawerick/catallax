@@ -21,7 +21,10 @@ OUTPUTS = ("answer.step", "display.obj", "print.stl", "answer.igs")
 STEP_CORRECTION_FIELDS = {"step.added_edges", "step.added_vertices", "step.max_deviation",
                           "step.approximated_curves"}
 REFUSAL_STAGE_FIELDS = {"refusal.step", "refusal.stage", "refusal.detail"}
+REVIEWED_REFUSAL_FIELDS = REFUSAL_STAGE_FIELDS | {"refusal.code", "question_id"}
 STEP_CLASS, REFUSAL_CLASS = "invalid-to-valid-step", "same-code-refusal-stage"
+REVIEWED_REFUSAL_CLASS = "reviewed-refusal-change"
+REFUSAL_SCOPES = {REFUSAL_CLASS: REFUSAL_STAGE_FIELDS, REVIEWED_REFUSAL_CLASS: REVIEWED_REFUSAL_FIELDS}
 
 
 def require(condition, message):
@@ -76,7 +79,7 @@ def read_corrections():
     require(isinstance(document["corrections"], list), "corrections must be a list")
     seen = set()
     for row in document["corrections"]:
-        require(isinstance(row, dict) and row.get("class") in (STEP_CLASS, REFUSAL_CLASS),
+        require(isinstance(row, dict) and row.get("class") in (STEP_CLASS, *REFUSAL_SCOPES),
                 "unsupported correction class")
         # A refusal publishes no STEP, so a refusal-stage row has no STEP evidence to bind.
         keys = {"index", "class", "request_sha256", "before_sha256", "after_sha256",
@@ -90,10 +93,12 @@ def read_corrections():
                     for key in ("request_sha256", "before_sha256", "after_sha256")),
                 "invalid correction digest")
         fields = row["manifest_fields"]
-        scope = STEP_CORRECTION_FIELDS if row["class"] == STEP_CLASS else REFUSAL_STAGE_FIELDS
+        scope = STEP_CORRECTION_FIELDS if row["class"] == STEP_CLASS else REFUSAL_SCOPES[row["class"]]
         require(isinstance(fields, list) and all(isinstance(field, str) for field in fields) and
                 len(fields) == len(set(fields)) and set(fields) <= scope and
-                (row["class"] == STEP_CLASS or fields), "unsupported correction manifest scope")
+                (row["class"] == STEP_CLASS or fields) and
+                (row["class"] != REVIEWED_REFUSAL_CLASS or "refusal.code" in fields),
+                "unsupported correction manifest scope")
         sources = row["sources"]
         require(isinstance(sources, list) and sources, "missing correction source")
         for source in sources:
@@ -103,7 +108,7 @@ def read_corrections():
                     isinstance(source["commit"], str) and re.fullmatch(r"[0-9a-f]{40}", source["commit"]),
                     "invalid correction source")
         require(len({source["pr"] for source in sources}) == len(sources), "duplicate correction source")
-        if row["class"] == REFUSAL_CLASS:
+        if row["class"] != STEP_CLASS:
             continue
         evidence = row["evidence"]
         require(isinstance(evidence, dict) and set(evidence) == {
@@ -149,19 +154,22 @@ def compare_baseline(driver, baseline, candidate, upgrades, corrections):
         elif old_manifest["status"] == new_manifest["status"] == "refused":
             require(index in repairs, "replay differs; unlisted refusal change")
             row = repairs[index]
-            require(row["class"] == REFUSAL_CLASS, "unsupported correction class")
+            require(row["class"] in REFUSAL_SCOPES, "unsupported correction class")
             require(row["request_sha256"] == driver.digest(request) and
                     row["before_sha256"] == answer_digest(driver, old) and
                     row["after_sha256"] == answer_digest(driver, new), "approved correction differs")
             left, right = [driver.comparable(manifest) for manifest in (old_manifest, new_manifest)]
             left_refusal, right_refusal = left["refusal"], right["refusal"]
             require(isinstance(left_refusal, dict) and isinstance(right_refusal, dict) and
-                    left_refusal.keys() == right_refusal.keys() and
-                    left_refusal["code"] == right_refusal["code"], "refusal code changed")
+                    left_refusal.keys() == right_refusal.keys(), "refusal changed shape")
+            # Only a captain-reviewed row may change the code; a stage move must keep it.
+            same_code = left_refusal["code"] == right_refusal["code"]
+            require(same_code or row["class"] == REVIEWED_REFUSAL_CLASS, "refusal code changed")
+            require(not same_code or row["class"] == REFUSAL_CLASS, "reviewed refusal keeps its code")
             changed = {"refusal." + key for key in left_refusal if left_refusal[key] != right_refusal[key]}
-            require(changed == set(row["manifest_fields"]) and changed <= REFUSAL_STAGE_FIELDS and
-                    {key: value for key, value in left.items() if key != "refusal"} ==
-                    {key: value for key, value in right.items() if key != "refusal"},
+            changed |= {key for key in left.keys() | right.keys()
+                        if key != "refusal" and left.get(key) != right.get(key)}
+            require(changed == set(row["manifest_fields"]) and changed <= REFUSAL_SCOPES[row["class"]],
                     "correction changes unapproved manifest scope")
             require(all(not (old / name).exists() and not (new / name).exists() for name in OUTPUTS),
                     "correction changes another output")

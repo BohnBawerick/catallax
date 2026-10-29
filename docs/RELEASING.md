@@ -48,7 +48,7 @@ The freeze holds release scope, not `main`. Finish exact-pin application accepta
 
 For an `X.Y.0` milestone release, use the previous release tag as the replay baseline. When no earlier release exists, use the candidate commit immediately before the version-and-milestone-note merge, the release commit's first parent. That first-release merge must change only release metadata and documentation, not kernel code or recipes. Record the selected baseline and why in the milestone review. Per-change preservation replays remain the cumulative evidence for the kernel work preceding that baseline.
 
-Every changed baseline case must be either a reviewed refusal-to-answer upgrade in `tools/release/replay-upgrades.json` or an enumerated invalid-to-valid STEP correction in `tools/release/replay-corrections.json`. Both files must be committed. Changed refusals, answers becoming refusals, unexplained successful-answer changes and unlisted differences fail. Each list must describe exactly its used approvals, with no duplicate or overlapping positions and no unused entries. An empty list approves nothing.
+Every changed baseline case must be either a reviewed refusal-to-answer upgrade in `tools/release/replay-upgrades.json` or an enumerated correction in `tools/release/replay-corrections.json`: an invalid-to-valid STEP correction or a same-code refusal-stage move. Both files must be committed. Refusals that change code, answers becoming refusals, unexplained successful-answer changes and unlisted differences fail. Each list must describe exactly its used approvals, with no duplicate or overlapping positions and no unused entries. An empty list approves nothing.
 
 ### Joint SolidDraft release handoff
 
@@ -60,7 +60,7 @@ The joint ordinary-parts cut requires the application bracket, edited collar, sa
 
 The correction mechanism below is release-only and does not infer validity from differing bytes. The captain must approve the enumerated correction list and its retained independent evidence before it lands; driver support requires FULL SIX qualification. A previously accepted source change or a reader's healed import is not per-case approval. Do not change the baseline, relax the ordinary strict comparator or relabel a historical dry run to bypass this gate.
 
-The [review inventory](../tools/release/review-candidates.json) records the 118 observed changes between the previous release and the frozen candidate. It is not consumed by the release gate and approves nothing. Its three-output legacy fingerprints omit IGES and cannot be copied into the four-output approval schema. Source attribution remains unresolved for index 189; final geometry validity/equivalence remains unproven for all 99 answered STEP changes; index 354 is a changed refusal outside the current exception classes. The inventory's integrity evidence hash is not independent geometry validation. Resolve those holds and obtain the required subject hashes and review evidence before promoting any entry.
+The [review inventory](../tools/release/review-candidates.json) records the 118 observed changes between the previous release and the frozen candidate. It is not consumed by the release gate and approves nothing. Its three-output legacy fingerprints omit IGES and cannot be copied into the four-output approval schema. Source attribution remains unresolved for index 189; final geometry validity/equivalence remains unproven for all 99 answered STEP changes; index 354 changes its refusal code, which no exception class covers. The inventory's integrity evidence hash is not independent geometry validation. Resolve those holds and obtain the required subject hashes and review evidence before promoting any entry.
 
 ## Generate the replay aggregate
 
@@ -104,14 +104,16 @@ The correction file has format `catallax-replay-corrections/1`, an immutable sel
 | Field | Value |
 | --- | --- |
 | `index` | Unique zero-based position in the ordered 477-case replay |
-| `class` | `invalid-to-valid-step`, a reviewed invalid earlier STEP repaired into a valid STEP under the unchanged request |
+| `class` | `invalid-to-valid-step`, a reviewed invalid earlier STEP repaired into a valid STEP under the unchanged request, or `same-code-refusal-stage` (below) |
 | `request_sha256` | Request fingerprint with only `out` removed |
 | `before_sha256`, `after_sha256` | `answer_digest` values for the original and corrected answers |
-| `manifest_fields` | Exact changed-field set, drawn only from `step.added_edges`, `step.added_vertices`, `step.max_deviation`; empty for a byte-only correction |
+| `manifest_fields` | Exact changed-field set, drawn only from `step.added_edges`, `step.added_vertices`, `step.max_deviation`, `step.approximated_curves`; empty for a byte-only correction |
 | `sources` | Nonempty list of `{pr, commit}` objects identifying public correction PR URLs and full source-fix commits |
 | `evidence` | `{sha256, before_step_sha256, after_step_sha256}` binding retained independent validation evidence and both exact STEP byte streams |
 
 Both answers and both STEP files must exist. The driver permits only the listed STEP reporting fields and STEP bytes to change. It rejects altered properties, topology/origin results, marks, request settings or any OBJ, STL or IGES change, even if a full answer fingerprint was listed. Export-added entity counts do not establish model-topology changes. Changed refusals and valid-to-different-valid exports are not corrections of this class.
+
+A `same-code-refusal-stage` row records a refusal that keeps its code but now stops at a different step or Boolean stage. It has the same fields except `evidence`, because a refusal publishes no STEP. `before_sha256` and `after_sha256` are the `answer_digest` values of the two refusals. `manifest_fields` is the exact nonempty changed set, drawn only from `refusal.step`, `refusal.stage` and `refusal.detail`. The driver requires both cases to be refusals with the same code, no output file on either side and every other manifest field unchanged. A refusal that changes its code still fails.
 
 The committed row is a reviewer attestation, not an automatic geometry verdict. Before approval, validate the baseline invalidity and the candidate's finite trims, material, applicable error bounds and file topology independently for those exact files. Retain the original grids and probes; do not discard points or change tolerances. Evidence hashes pin that review and must identify these STEP subjects. Unknown validity or equivalence remains a release hold. Do not commit private case contents, identifiers, machine paths or checker details.
 

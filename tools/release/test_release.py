@@ -173,6 +173,30 @@ class ReplayPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate correction"):
             release.read_corrections()
 
+    def refusal_move(self):
+        row = self.correction() | {"class": "same-code-refusal-stage",
+                                   "manifest_fields": ["refusal.stage", "refusal.detail"]}
+        del row["evidence"]
+        return row
+
+    def test_same_code_refusal_stage_rows_have_their_own_scope(self):
+        self.save_corrections([self.refusal_move(), self.correction() | {
+            "index": 1, "manifest_fields": ["step.approximated_curves"]}])
+        self.assertEqual(len(release.read_corrections()["corrections"]), 2)
+        mutations = (
+            {"manifest_fields": []}, {"manifest_fields": ["refusal.code"]},
+            {"manifest_fields": ["step.added_edges"]}, {"manifest_fields": ["status"]},
+            {"evidence": self.correction()["evidence"]}, {"sources": []},
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                self.save_corrections([self.refusal_move() | mutation])
+                with self.assertRaises(ValueError):
+                    release.read_corrections()
+        self.save_corrections([self.correction() | {"manifest_fields": ["refusal.stage"]}])
+        with self.assertRaisesRegex(ValueError, "manifest scope"):
+            release.read_corrections()
+
     def test_upgrade_and_correction_cannot_share_a_position(self):
         self.save_corrections([self.correction()])
         release.write_json(release.UPGRADES, {"format": "catallax-replay-upgrades/2", "upgrades": [

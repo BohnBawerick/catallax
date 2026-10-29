@@ -307,6 +307,8 @@ The points of the curve are those of its closure: for an intersection curve that
 
 **Facts first.** When `holds(Incident, Curve(c), Surface(s))` is true, the answer is `Contained`, settled by one `Decider::note_fact_decision` call and no arithmetic. This covers every intersection curve against either of its own surfaces.
 
+**Circles far from a cone.** When a circle and a cone are not both rational, the circle's axis-aligned box, taken relative to the apex, is enclosed and the cone's equation is evaluated over it. A strictly signed enclosure answers `Disjoint` before any elimination: no point of the circle lies on either nappe. An enclosure that contains zero, including every touching or crossing circle, or one that cannot be settled, keeps the solver below. Rational pairs keep the solver and its accounting. This is what lets two blind drill points with irrational tip slopes share one hole feature.
+
 **Contact.** A hit is `Crossing` when the sign of `f_s` (the surface's implicit) changes along the curve through the hit, and `Tangent` when it does not. So a hit of odd multiplicity along the curve is `Crossing` and one of even multiplicity is `Tangent`.
 
 An exact tangent contact with proven branch membership records `Tangent(Curve(c), Surface(s))` at its new point, with origin `Construction("intersect.curve-surface")`. Bounded contact guesses and uncertain merges never become facts. On a later query, the same curve, surface and exact point definition settle contact with one `note_fact_decision` and no arithmetic. Other hits of that pair still get their own contact decisions.

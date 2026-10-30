@@ -3,16 +3,20 @@
 use catallax_intersect::trace;
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
 use catallax_shapes::{
-    Curve, Point3,
+    Curve, Point3, RPoint3, RVector3, Surface,
     distance::{self, Bounds, Domain, Finite, Membership, Options},
 };
 use catallax_topology::{FaceId, Loop, Model, Sense};
 use std::cell::RefCell;
 
+/// Dyadic probe levels of the parallel planar witness search: at most 85 points.
+const PLANAR_LEVELS: u32 = 3;
+
 /// Reusable analytic chart cover and exact boundary-loop traces for one face.
 /// Valid only while the model's face definitions and boundary loops are unchanged.
 pub struct PreparedFace {
     face: FaceId,
+    extent: crate::BoundingBox,
     domain: Domain,
     boundary: Vec<[Ball; 3]>,
     finite: Option<Finite>,
@@ -38,9 +42,9 @@ impl PreparedFace {
         if !bounds.marks.is_empty() {
             return Err(marked());
         }
-        let bounds = bounds.value;
+        let extent = bounds.value;
         let bounds = std::array::from_fn(|i| {
-            Ball::from_rational(&bounds.min[i], 128).hull(&Ball::from_rational(&bounds.max[i], 128))
+            Ball::from_rational(&extent.min[i], 128).hull(&Ball::from_rational(&extent.max[i], 128))
         });
         let domain = Domain::new(model.geom().surface(model.face(face).surface), bounds, dec)?;
         let mut boundary = Vec::new();
@@ -88,6 +92,7 @@ impl PreparedFace {
         let finite = Self::recognize(model, face, dec)?;
         Ok(Self {
             face,
+            extent,
             domain,
             boundary,
             finite,
@@ -204,6 +209,103 @@ impl PreparedFace {
             dec,
         )
     }
+    /// Bounds minimum distance to a parallel planar face in the same model.
+    /// Both supporting planes need exact rational frames; their gap is a global
+    /// lower bound. A probed point admitted by this face's exact trim, whose
+    /// perpendicular translate the other trim admits, attains the gap. Probes
+    /// are dyadic grid centres over both faces' overlapping boxes, coarsest
+    /// first, and count as visited cells. Without such a witness the general
+    /// trimmed search answers. A curved face refuses `measure.nonplanar-face`,
+    /// planes that are not parallel refuse `measure.nonparallel-faces`, and an
+    /// inexact frame refuses `measure.irrational-plane`.
+    pub fn parallel_face_to_face(
+        &self,
+        other: &Self,
+        model: &mut Model,
+        options: &Options,
+        dec: &mut Decider,
+    ) -> Result<Bounds, Refusal> {
+        let (origin, normal) = plane(model, self.face)?;
+        let (other_origin, other_normal) = plane(model, other.face)?;
+        if !normal.cross(&other_normal).is_zero() {
+            return Err(Refusal::new(
+                "measure.nonparallel-faces",
+                format!(
+                    "faces {:?} and {:?} are not parallel",
+                    self.face, other.face
+                ),
+            ));
+        }
+        let along = &normal.dot(&other_origin.minus(&origin)) / &normal.norm_squared();
+        let shift = normal.scaled(&along);
+        let gap = crate::pair::root(shift.norm_squared(), dec)?;
+        let o = [&origin.x, &origin.y, &origin.z];
+        let n = [&normal.x, &normal.y, &normal.z];
+        let v = [&shift.x, &shift.y, &shift.z];
+        let axis = (0..3).max_by_key(|k| n[*k].abs()).unwrap();
+        let [i, j] = [(axis + 1) % 3, (axis + 2) % 3];
+        let range = |k: usize| {
+            let lo = (&other.extent.min[k] - v[k]).max(self.extent.min[k].clone());
+            let hi = (&other.extent.max[k] - v[k]).min(self.extent.max[k].clone());
+            (lo <= hi).then_some((lo, hi))
+        };
+        let (Some((lo_i, hi_i)), Some((lo_j, hi_j))) = (range(i), range(j)) else {
+            return self.face_to_face(other, model, options, dec);
+        };
+        let mut probes = 0;
+        for level in 0..=PLANAR_LEVELS {
+            let count = 1i64 << level;
+            let at = |lo: &Rational, hi: &Rational, m: i64| {
+                lo + &(&(hi - lo) * &Rational::from_ratio(2 * m + 1, 2 * count).unwrap())
+            };
+            for u in 0..count {
+                for w in 0..count {
+                    dec.check_deadline()?;
+                    let mut p = [Rational::zero(), Rational::zero(), Rational::zero()];
+                    p[i] = at(&lo_i, &hi_i, u);
+                    p[j] = at(&lo_j, &hi_j, w);
+                    let offset = &(n[i] * &(&p[i] - o[i])) + &(n[j] * &(&p[j] - o[j]));
+                    p[axis] = o[axis] - &(&offset / n[axis]);
+                    let [x, y, z] = p;
+                    let p = RPoint3::new(x, y, z);
+                    let q = p.plus(&shift);
+                    probes += 1;
+                    if catallax_boolean::face_contains(model, self.face, &p, dec)?
+                        && catallax_boolean::face_contains(model, other.face, &q, dec)?
+                    {
+                        return Ok(Bounds {
+                            converged: gap.width() <= options.width,
+                            lower: gap.lo,
+                            upper: Some(gap.hi),
+                            witnesses: Some([p.into(), q.into()]),
+                            cells: probes,
+                        });
+                    }
+                }
+            }
+        }
+        self.face_to_face(other, model, options, dec)
+    }
+}
+
+/// Exact rational origin and normal of a planar face's supporting plane.
+fn plane(model: &Model, face: FaceId) -> Result<(RPoint3, RVector3), Refusal> {
+    let Surface::Plane(plane) = model.geom().surface(model.face(face).surface) else {
+        return Err(Refusal::new(
+            "measure.nonplanar-face",
+            format!("face {face:?} is not planar"),
+        ));
+    };
+    plane
+        .origin
+        .as_rational()
+        .zip(plane.normal.as_rational())
+        .ok_or_else(|| {
+            Refusal::new(
+                "measure.irrational-plane",
+                format!("face {face:?} has no exact rational plane frame"),
+            )
+        })
 }
 
 #[cfg(test)]

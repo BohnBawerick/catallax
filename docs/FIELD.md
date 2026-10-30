@@ -364,6 +364,18 @@ edge or an arc keeps the complete search, as does a request whose width the
 direct enclosure cannot meet. `cargo bench -p catallax-measure --bench distance`
 prints cells and latency against the general search.
 
+`PreparedFace::parallel_face_to_face` answers two planar faces whose supporting
+planes have exact rational frames and parallel normals. The plane gap is a
+global lower bound. Exact dyadic grid centres over both faces' overlapping boxes,
+coarsest first and at most 85, are probed; a point admitted by this face's exact
+trim whose perpendicular translate the other trim admits attains the gap, and
+each probe counts as a visited cell. Holed or filleted caps therefore answer
+their gap without a parameter search. Without such a witness, including faces
+whose projections do not overlap, the general `face_to_face` search answers, so
+disjoint patches never return the plane gap. Curved faces refuse
+`measure.nonplanar-face`, other planes `measure.nonparallel-faces`, and inexact
+frames `measure.irrational-plane`. `face_to_face` itself is unchanged.
+
 `Options::width` requests an enclosure width, not geometric acceptance.
 `max_cells` limits refinement. Exhaustion returns the attained bounds with
 `converged=false`; `upper=None` means no admitted witness was established.

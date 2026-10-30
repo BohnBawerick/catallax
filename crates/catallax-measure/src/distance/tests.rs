@@ -665,3 +665,57 @@ fn irrational_spherical_witnesses_match_independent_mpfr_oracles() {
 
 #[path = "conical_tests.rs"]
 mod conical;
+
+#[test]
+fn parallel_planar_gap_keeps_an_irrational_root_bounded() {
+    // A parallelogram prism whose slanted sides lie on x - y = 0 and x - y = 1.
+    let recipe = serde_json::json!({
+        "format": "catallax-recipe/3", "name": "parallelogram prism", "result": "prism",
+        "steps": [
+            {"id": "profile", "op": "sketch",
+             "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]},
+             "loops": [[{"kind": "line", "id": "bottom", "to": ["1", "0"]},
+                        {"kind": "line", "id": "right", "to": ["2", "1"]},
+                        {"kind": "line", "id": "top", "to": ["1", "1"]},
+                        {"kind": "line", "id": "left", "to": ["0", "0"]}]]},
+            {"id": "prism", "op": "extrude", "profile": "profile", "distance": "1"}
+        ]
+    });
+    let recipe = catallax_recipe::Recipe::parse(&recipe.to_string()).unwrap();
+    let body =
+        catallax_app::build_incremental_without_display(&recipe, None, &mut Decider::default())
+            .unwrap();
+    let built = body.checkpoint.built();
+    let mut model = built.model.clone();
+    let slanted: Vec<FaceId> = model
+        .faces_of_body(built.result)
+        .into_iter()
+        .filter(|f| match model.geom().surface(model.face(*f).surface) {
+            Surface::Plane(plane) => plane.normal.as_rational().is_some_and(|n| {
+                n.cross(&catallax_shapes::RVector3::new(q(1), q(-1), q(0)))
+                    .is_zero()
+            }),
+            _ => false,
+        })
+        .collect();
+    let [a, b] = slanted.as_slice() else {
+        panic!("two slanted sides: {slanted:?}");
+    };
+    let mut dec = Decider::default();
+    let prepared = [*a, *b].map(|f| PreparedFace::new(&model, f, &mut dec).unwrap());
+    let options = Options {
+        width: Rational::parse("1e-8").unwrap(),
+        max_cells: 4096,
+    };
+    let answer = prepared[0]
+        .parallel_face_to_face(&prepared[1], &mut model, &options, &mut dec)
+        .unwrap();
+    let upper = answer.upper.clone().unwrap();
+    let half = Rational::from_ratio(1, 2).unwrap();
+    assert!(answer.converged, "{answer:?}");
+    assert!(answer.lower < upper, "1/sqrt(2) is irrational: {answer:?}");
+    assert!(&answer.lower * &answer.lower <= half && half <= &upper * &upper);
+    let [s, t] = answer.witnesses.unwrap();
+    assert!(catallax_boolean::face_contains(&mut model, *a, &s, &mut dec).unwrap());
+    assert!(catallax_boolean::face_contains(&mut model, *b, &t, &mut dec).unwrap());
+}

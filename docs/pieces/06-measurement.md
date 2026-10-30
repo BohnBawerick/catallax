@@ -62,6 +62,7 @@ For a body `b` and its material `M` (the closure of the open set its shells boun
 - **inertia**: the unit-density tensor about the centroid `c`, with diagonal entry `integral ((p_j-c_j)^2 + (p_k-c_k)^2)` and off-diagonal entry `-integral (p_i-c_i)(p_j-c_j)`, expressed in model axes and length units to the fifth power;
 - **face area and centroid**: area and first area moments of the part of the surface inside its loops;
 - **edge length and midpoint**: trimmed arc length and its half-arc-length point;
+- **straight edge pairs**: the minimum distance between two closed finite line segments, the distance between their midpoints, and a proven parallel or perpendicular direction angle;
 - **bounds**: inclusive axis-aligned limits for the exact body or face, without display padding.
 
 The model-based APIs below measure the body as built. When that body carries marks (it was built through not-exact decisions), the enclosures are proven for that body, which may differ from the true answer within those marks (`JUDGE-INTERFACE.md`, ND10). This piece does not add the body's marks to its answer; they stay on the body, and the front end reports both. The certified-prism APIs above instead measure the explicitly retained original target and keep its represented-model error separate.
@@ -152,7 +153,13 @@ separation and inertia parallel-axis rules above are unchanged.
 | `measure.budget-exhausted` | no enclosure of a property was reached within the budget |
 | `measure.bounds-not-separated` | an exact extrema ordering or membership predicate is unresolved |
 | `measure.unbounded-face` | a face or edge has no finite trimmed extrema |
-| `measure.unsupported-curve` | a future curve kind has no extrema definition |
+| `measure.unsupported-curve` | a future curve kind has no extrema definition, or an edge pair names an edge that is not a finite straight line |
+| `measure.irrational-endpoint` | an edge pair names a line edge whose ends are not exact rationals |
+| `measure.degenerate-edge` | an edge pair names a line edge whose ends coincide |
+| `measure.angle-domain` | an edge-pair direction angle is neither proven parallel nor proven perpendicular |
+| `measure.nonplanar-face` | a parallel planar face distance names a curved face |
+| `measure.nonparallel-faces` | a parallel planar face distance names planes that are not parallel |
+| `measure.irrational-plane` | a parallel planar face distance names a plane without an exact rational frame |
 
 Refusals of pieces 1, 2, 4 and the reused piece 5 trim classifier pass through unchanged.
 
@@ -160,7 +167,7 @@ Refusals of pieces 1, 2, 4 and the reused piece 5 trim classifier pass through u
 
 These may panic. None can come from a question file:
 
-- a `BodyId` or `FaceId` from another model, or out of range;
+- a `BodyId`, `FaceId` or `EdgeId` from another model, or out of range;
 - a body that fails `Model::check`;
 - an `Accuracy` with a negative part.
 
@@ -195,6 +202,9 @@ pub fn face_area(model: &Model, face: FaceId, accuracy: &Accuracy, dec: &mut Dec
 pub fn face_centroid(model: &Model, face: FaceId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<[Enclosure; 3]>;
 pub fn edge_length(model: &Model, edge: EdgeId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
 pub fn edge_midpoint(model: &Model, edge: EdgeId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<[Enclosure; 3]>;
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum EdgePairRequest { MinimumDistance, MidpointDistance, DirectionAngleDegrees }
+pub fn edge_pair(model: &Model, a: EdgeId, b: EdgeId, request: EdgePairRequest, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundingBox { pub min: [Rational; 3], pub max: [Rational; 3] }
 pub fn bounding_box(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Option<BoundingBox>>;
@@ -217,6 +227,20 @@ have direct formulas. Other arcs use certified speed quadrature; midpoint panels
 enclose every parameter interval whose cumulative length can contain half the
 total. Budget exhaustion retains the last proven length or midpoint enclosure
 with its accuracy mark.
+
+`edge_pair` reads one scalar from two finite straight edges: line carriers with
+two vertices whose positions are exact rationals and differ. Minimum distance
+minimizes over both closed parameter intervals with exact rational arithmetic,
+so parallel, skew, touching and endpoint-clamped pairs are answered alike.
+Midpoint distance joins the two `edge_midpoint` points. Both distances take one
+square root of an exact rational square: zero and rational roots stay exact,
+otherwise an outward enclosure of nonzero width, at up to 256 bits, carries the ordinary
+accuracy mark when wider than requested. The direction angle is unoriented: an
+exact zero cross product answers 0 degrees, an exact zero dot product 90, and
+reversing either edge changes neither. Other angles refuse. Each request
+first checks the operation allowance and deadline. A circle or other curve, or
+a line without two vertices, refuses `measure.unsupported-curve`; inexact ends
+refuse `measure.irrational-endpoint`; equal ends refuse `measure.degenerate-edge`.
 
 Bounds have inclusive rational limits and no display chord padding. An empty
 body has no box. Bounds select vertices, exact axis extrema of conic edges and

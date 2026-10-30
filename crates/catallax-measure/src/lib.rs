@@ -1,7 +1,8 @@
 //! Piece 6 of catallax: measurement.
 //!
 //! Body mass properties, face centroids and areas, edge arc lengths and midpoints,
-//! and axis-aligned bounds, as proven enclosures from exact definitions.
+//! straight edge-pair distances and angles, and axis-aligned bounds, as proven
+//! enclosures from exact definitions.
 //!
 //! The contract is `docs/pieces/06-measurement.md`.
 //!
@@ -47,6 +48,7 @@ mod engine;
 pub use bounds::BoundingBox;
 mod integrate;
 mod offset_prism;
+mod pair;
 mod planar;
 mod ring;
 mod surface;
@@ -55,6 +57,7 @@ mod torus;
 pub use offset_prism::{
     elliptic_offset_prism_mass_properties, elliptic_offset_prism_volume_area_centroid,
 };
+pub use pair::EdgePairRequest;
 
 /// A proven enclosure `[lo, hi]` with exact rational ends.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -555,6 +558,24 @@ pub fn edge_midpoint(
     dec: &mut Decider,
 ) -> Answered<[Enclosure; 3]> {
     edge::midpoint(model, edge, accuracy, dec)
+}
+
+/// Certified scalar for two finite straight edges with exact rational ends.
+/// Minimum distance ranges over both closed segments. Midpoint distance joins
+/// their native half-arc-length points. The unoriented direction angle is
+/// answered only when exact predicates prove the carriers parallel or
+/// perpendicular. Rational distances stay exact; irrational roots are outward
+/// enclosures. Curved, unbounded, irrationally ended or zero-length edges and
+/// oblique angles refuse with typed codes.
+pub fn edge_pair(
+    model: &Model,
+    a: catallax_topology::EdgeId,
+    b: catallax_topology::EdgeId,
+    request: EdgePairRequest,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<Enclosure> {
+    pair::measure(model, a, b, request, accuracy, dec)
 }
 
 /// Proven enclosing box of a body. An empty body has no box.

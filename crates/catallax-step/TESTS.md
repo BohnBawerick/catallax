@@ -50,6 +50,22 @@ standard reader's volume with 168 within 1e-9. On the full slot-cut capture,
 whose rounded planar sliver the raw translator cannot resolve, the test pins
 the legacy encoding by requiring no added edges.
 
+The Rust `ribbon` target builds exact plate-and-flange steps and checks that a
+step at or below the 1e-7 mm floor is removed from the file, including one rounded
+to zero length, with its displacement bound and removal counts reconciling the
+report with the unchanged model. It also covers a step above the floor, uniformly
+tiny bodies at scales 1e-30 and 1e-20, a width over a tenth of the length, a thin
+plate, a wall with a hole, the smaller-wall choice and a shell with a vertex loop.
+
+`test_narrow_steps.py` replays three captured SolidDraft recipes, in
+`crates/catallax-cli/tests/fixtures/soliddraft-narrow*.json`. At e79835b each
+writes the supplied SolidDraft STEP bytes apart from the product name. Width 120
+and the last width below the floor must read as nine faces through both the raw
+and the standard reader, at their expected volumes and within the reported
+deviation of the exact volume. The first width above the floor stays at eleven
+faces. That file and copies of the width 120 recipe scaled by 1e-20 and 1e-30 must
+match SHA-256 values pinned from e79835b.
+
 The Rust `partial` target preserves the 100,000,000-work request allowance,
 the legacy encoding of unresolved subprecision trims, and whole-export legacy
 topology for mixed conical scenes in both body orders.

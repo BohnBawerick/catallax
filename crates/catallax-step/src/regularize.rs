@@ -1,6 +1,8 @@
-//! Export-only reconnection of a straight, parallel wire gap lost by decimal
-//! rounding. The exact model is never edited. A contained overlapping segment
-//! joins the two wires, and its two parallel neighbouring faces become one.
+//! Export-only repairs of planar topology a STEP reader cannot resolve. The
+//! exact model is never edited. A straight, parallel wire gap lost by decimal
+//! rounding is reconnected: a contained overlapping segment joins the two
+//! wires, and its two parallel neighbouring faces become one. A step narrower
+//! than the shortest readable edge is removed by the `ribbon` module.
 
 use std::collections::BTreeMap;
 
@@ -12,6 +14,8 @@ use catallax_topology::{
 };
 
 use crate::{StepOptions, StepRegularization, number};
+
+mod ribbon;
 
 type P = [Rational; 3];
 type Wires = Vec<Vec<Coedge>>;
@@ -30,6 +34,11 @@ struct Contact {
     b: (usize, usize),
     neighbours: [FaceId; 2],
     bound: Rational,
+}
+
+enum Repair {
+    Gap(Contact),
+    Ribbon(ribbon::Ribbon),
 }
 
 fn sub(a: &P, b: &P) -> P {
@@ -239,7 +248,7 @@ fn find(
     shell: ShellId,
     options: &StepOptions,
     dec: &mut Decider,
-) -> Result<Option<Contact>, Refusal> {
+) -> Result<Option<Repair>, Refusal> {
     let limit = options
         .curve_tolerance
         .clone()
@@ -247,6 +256,19 @@ fn find(
     if limit < Rational::zero() {
         return Ok(None);
     }
+    if let Some(contact) = find_gap(model, shell, options, &limit, dec)? {
+        return Ok(Some(Repair::Gap(contact)));
+    }
+    Ok(ribbon::find(model, shell, options, &limit, dec)?.map(Repair::Ribbon))
+}
+
+fn find_gap(
+    model: &Model,
+    shell: ShellId,
+    options: &StepOptions,
+    limit: &Rational,
+    dec: &mut Decider,
+) -> Result<Option<Contact>, Refusal> {
     let digits = options.significant_digits.max(1);
     for &face in &model.shell(shell).faces {
         let f = model.face(face);
@@ -278,15 +300,8 @@ fn find(
                             (cb, ca, &rb, &ra, (j, bi), (i, ai)),
                         ] {
                             if overlap(x, y)
-                                && let Some((neighbours, bound)) = certify(
-                                    model,
-                                    shell,
-                                    face,
-                                    [outer, inner],
-                                    digits,
-                                    &limit,
-                                    dec,
-                                )?
+                                && let Some((neighbours, bound)) =
+                                    certify(model, shell, face, [outer, inner], digits, limit, dec)?
                             {
                                 return Ok(Some(Contact {
                                     face,
@@ -406,6 +421,8 @@ fn apply(prepared: &mut Prepared, shell: ShellId, contact: Contact) -> ShellId {
         edges: [a.edge, b.edge],
         merged_faces: [fa, fb],
         max_deviation: contact.bound,
+        removed_faces: 1,
+        removed_edges: 0,
     });
     let faces = model
         .shell(shell)
@@ -438,17 +455,17 @@ pub(crate) fn prepare(
     'search: for &body in bodies {
         for &lump in &model.body(body).lumps {
             for &shell in &model.lump(lump).shells {
-                if let Some(contact) = find(model, shell, options, dec)? {
-                    first = Some((shell, contact));
+                if let Some(repair) = find(model, shell, options, dec)? {
+                    first = Some((shell, repair));
                     break 'search;
                 }
             }
         }
     }
-    let Some((first_shell, first_contact)) = first else {
+    let Some((first_shell, first_repair)) = first else {
         return Ok(None);
     };
-    let mut first = Some(first_contact);
+    let mut first = Some(first_repair);
     let mut prepared = Prepared {
         model: model.clone(),
         bodies: Vec::with_capacity(bodies.len()),
@@ -461,14 +478,19 @@ pub(crate) fn prepare(
         for lump in &mut body.lumps {
             let mut value = model.lump(*lump).clone();
             for shell in &mut value.shells {
-                let mut contact = if *shell == first_shell && first.is_some() {
+                let mut repair = if *shell == first_shell && first.is_some() {
                     first.take()
                 } else {
                     find(&prepared.model, *shell, options, dec)?
                 };
-                while let Some(found) = contact {
-                    *shell = apply(&mut prepared, *shell, found);
-                    contact = find(&prepared.model, *shell, options, dec)?;
+                while let Some(found) = repair {
+                    *shell = match found {
+                        Repair::Gap(contact) => apply(&mut prepared, *shell, contact),
+                        Repair::Ribbon(ribbon) => {
+                            ribbon::apply(&mut prepared, *shell, ribbon, dec)?
+                        }
+                    };
+                    repair = find(&prepared.model, *shell, options, dec)?;
                 }
             }
             *lump = prepared.model.add_lump(value);

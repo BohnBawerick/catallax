@@ -1,0 +1,195 @@
+{
+  "format": "catallax-question/1",
+  "max_work": 100000000,
+  "problem": {
+    "format": "catallax-recipe/4",
+    "name": "SolidDraft",
+    "result": "op_93",
+    "steps": [
+      {
+        "id": "op_1",
+        "loops": [
+          [
+            {
+              "id": "l0s0",
+              "kind": "line",
+              "to": [
+                "120.0000001",
+                "0"
+              ]
+            },
+            {
+              "id": "l0s1",
+              "kind": "line",
+              "to": [
+                "120.0000001",
+                "90"
+              ]
+            },
+            {
+              "id": "l0s2",
+              "kind": "line",
+              "to": [
+                "-0.00000009999999334925402",
+                "90"
+              ]
+            },
+            {
+              "id": "l0s3",
+              "kind": "line",
+              "to": [
+                "-0.00000009999999328225399",
+                "0"
+              ]
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "10",
+        "id": "op_3",
+        "op": "extrude",
+        "profile": "op_1"
+      },
+      {
+        "id": "op_31",
+        "loops": [
+          [
+            {
+              "id": "l0s0",
+              "kind": "line",
+              "to": [
+                "10",
+                "0"
+              ]
+            },
+            {
+              "id": "l0s1",
+              "kind": "line",
+              "to": [
+                "10",
+                "90"
+              ]
+            },
+            {
+              "id": "l0s2",
+              "kind": "line",
+              "to": [
+                "0",
+                "90"
+              ]
+            },
+            {
+              "id": "l0s3",
+              "kind": "line",
+              "to": [
+                "0",
+                "0"
+              ]
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "60",
+        "id": "op_33",
+        "op": "extrude",
+        "profile": "op_31"
+      },
+      {
+        "id": "op_61",
+        "kind": "union",
+        "op": "boolean",
+        "target": "op_3",
+        "tool": "op_33"
+      },
+      {
+        "id": "op_84",
+        "loops": [
+          [
+            {
+              "centre": [
+                "70",
+                "45"
+              ],
+              "id": "l0s0",
+              "kind": "circle",
+              "radius": "6"
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "10"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "-1"
+        ],
+        "distance": "12.625883697795357",
+        "id": "op_86",
+        "op": "extrude",
+        "profile": "op_84"
+      },
+      {
+        "id": "op_93",
+        "kind": "subtract",
+        "op": "boolean",
+        "target": "op_61",
+        "tool": "op_86"
+      }
+    ]
+  },
+  "source": "recipe"
+}

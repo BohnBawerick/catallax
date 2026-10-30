@@ -178,7 +178,49 @@ neighbouring face pair and proven `max_deviation`. The report's topology counts
 describe the file, which can now have fewer faces than the unchanged exact model.
 The seam/ring `added_edges` and `added_vertices` counters retain their meanings.
 Files with separated written wires follow the original writer and keep their
-bytes. Other classes of export regularization are not implied by this rule.
+bytes.
+
+#### Planar steps too narrow to read
+
+OpenCASCADE cannot translate an edge of at most 1e-7 mm: its raw translator
+rejects the shape, and its standard reader removes the edge and loses area on the
+walls beside it. That floor is fixed and does not follow the file's declared
+uncertainty. An exact planar face can be such a ribbon: a four-edge wire with two
+straight end edges at or below the floor, written, between two longer straight
+edges at least ten times their length. The exporter removes that ribbon when its
+two long edges border planar walls facing the same way, so the ribbon is a step
+between them, and one wall can move onto the other's plane.
+
+A wall can move when it has one wire of straight edges, every neighbour across
+those edges is planar and still contains the moved edge, and each of its vertices
+has one edge outside the wall. A ribbon vertex then lands on the far end of its
+end edge. Any other vertex slides along its outside edge to the kept plane. Of the
+walls that can move, the one with the smaller area moves, which changes the file's
+volume least. All of this is exact and spends no decision work until a short-ended
+ribbon exists. A shell holding a vertex loop keeps its topology.
+
+The moved wall maps piecewise linearly, so no point of it, the ribbon or a
+neighbour's trim moves further than a vertex does. The largest L1 vertex movement
+is the repair's displacement bound, which must not exceed the requested
+`curve_tolerance` or the 1 nm modelling tolerance. Changed faces and edges carry
+that bound in their error, so `max_deviation` includes it. A larger bound, or any
+failed check, keeps the original topology and bytes.
+
+Each repair removes the ribbon and the moved wall, two faces, and the ribbon's
+four edges. `StepRegularization::removed_faces` and `removed_edges` record the
+count for both repair classes, so a consumer can reconcile the file with the exact
+body: exact faces equal `StepReport.faces` plus every record's `removed_faces`, and
+exact edges plus `added_edges` equal `StepReport.edges` plus every record's
+`removed_edges`. The exact model, its names, its measured properties and its marks
+do not change. The written solid differs from the exact one by at most the reported
+deviation; a 1e-7 mm step on a 900 mm2 wall changes the file's volume by 9e-5 mm3.
+
+A step wider than the floor keeps its bytes, however close. So does a whole body
+scaled down until every edge is short, because its long edges fall below the floor
+or its width stays large against its length. Other narrow shapes, such as a ribbon
+with more than four edges or a curved neighbour, keep the original topology and
+remain uncorrected. Other classes of export regularization are not implied by
+these rules.
 
 
 ### Geometry

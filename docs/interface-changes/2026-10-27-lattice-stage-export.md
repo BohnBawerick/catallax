@@ -27,3 +27,13 @@ Change: printing accepts planar profile extrusions only after the existing exact
 Change: `Output.mesh` and `Output.verdict` are private. Read them with `mesh()` and `verdict()`. Certified labels can no longer be written after mutating the certified geometry or verdict. The preview mesh remains mutable and unproved.
 
 Migration: replace stage-output `.mesh` and `.verdict` reads with `.mesh()` and `.verdict()`. Clone the borrowed mesh if an ordinary, uncertified editable copy is needed. `labelled_stl` still consumes the original certified output.
+
+## 2026-10-30: S1 export at one tenth millimetre
+
+Pieces: 5, catallax-field `printing`.
+
+Change: the adaptive stage route uses parametric boundary coverage and a quarter-cell candidate-grid phase for intersections of axis-plane cells and one constant origin-aligned cubic lattice. Every plane and relevant periodic cylinder is covered by outward interval chart boxes. Other definitions retain the existing volume coverage and grid phase. Mesh-to-boundary, topology, minimum-detail and refusal checks stay in place.
+
+S1's three profile states now certify at `1/10` mm under the unchanged 2,000,000-cell, 1,000,000-vertex and 100M work limits. The labelled header still records the exact request and passed caps; cap-caused stops return `field.print-budget` without a partial output.
+
+Migration: none. `Stage::export`, `Output::labelled_stl` and the settings contract are unchanged. The SolidDraft companion must adopt this kernel commit and qualify its own 0.1 mm scenario before the application slice is complete.

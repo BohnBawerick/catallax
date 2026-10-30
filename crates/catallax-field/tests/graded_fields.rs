@@ -1064,23 +1064,25 @@ fn the_neck_refuses_by_type_or_keeps_one_component() {
         ["field.print-budget", "field.print-unresolved"].contains(&code),
         "{code}"
     );
-    let (result, _) = with_operation_budget(KERNEL_WORK, || {
+    println!("Neck-cap: {code}");
+    let (result, work) = with_operation_budget(KERNEL_WORK, || {
         let mut dec = Decider::default();
         Staged::new(&neck(), neck_settings(2_000_000), &mut dec)?.export(&mut dec)
     });
     match result {
         Ok(output) => assert_eq!(output.verdict().components, 1),
-        Err(error) => assert!(
-            [
-                "field.print-budget",
-                "field.print-unresolved",
-                "numbers.operation-budget"
-            ]
-            .contains(&error.code),
-            "{}: {}",
-            error.code,
-            error.detail
-        ),
+        Err(error) => {
+            println!(
+                "Neck-detail: {} {} work {}",
+                error.code, error.detail, work.used
+            );
+            assert!(
+                ["field.print-budget", "field.print-unresolved"].contains(&error.code),
+                "{}: {}",
+                error.code,
+                error.detail
+            )
+        }
     }
 }
 

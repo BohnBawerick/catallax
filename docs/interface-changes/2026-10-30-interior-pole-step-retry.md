@@ -19,10 +19,15 @@ volume within the existing area-times-tolerance comparison.
 
 Merge correction metadata now admits the approved `invalid-to-valid-step` class
 only for an index on the base revision's active known-raw-invalid list, at its
-trusted approved STEP hash. The declaration pins before and after digests and a
-commitment to every unchanged comparable manifest field. The direct STEP audit
-also checks the corrected solid's volume and maximum deviation. The merge-check
-contract is documented in [RELEASING](../RELEASING.md#merge-checks).
+trusted approved STEP hash. The declaration pins before and after digests.
+For new corrections, CI builds the accepted base revision and replays only the
+changed indices. The base manifest must match its accepted full comparable hash
+before the checker derives the protected-field digest from it. The candidate's
+commitment and protected fields must match that authenticated base value; a
+self-supplied commitment cannot authorize a new exactness, mark or property.
+The direct STEP audit also checks the corrected solid's volume and maximum
+deviation. The merge-check contract is documented in
+[RELEASING](../RELEASING.md#merge-checks).
 
 This merge corrects 431 only. Firstmate authorized splitting the original V8
 merge A under its E-4 rule. Answer 262 keeps its approved legacy bytes and remains

@@ -12,6 +12,7 @@ class GateTests(unittest.TestCase):
                                  'corpus_sha256': 'corpus', 'metadata_sha256': 'metadata',
                                  'driver_sha256': 'driver', 'raw_policy_sha256': 'raw-policy',
                                  'corrections_sha256': 'corrections'},
+                     'correction_base_answers': [{'index': 262}],
                      'selection': {'jobs': {'fmt': 1, 'clippy': 1, 'tests': 4, 'build': 1, 'replay': 1},
                                    'selected_cases': 477},
                      'declared': ['fmt', 'clippy', 'tests', 'build', 'replay', 'scoreboard']}
@@ -24,7 +25,8 @@ class GateTests(unittest.TestCase):
                               binary_sha256='binary' if name in {'build', 'replay'} else None,
                               result='success')
                 if name == 'replay':
-                    record.update(workers=4, fresh=True, cache_hits=0, selected_cases=477)
+                    record.update(workers=4, fresh=True, cache_hits=0, selected_cases=477,
+                                  verified_corrections=[262])
                 self.records.append(record)
 
     def errors(self, reported=None, records=None, plan=None):
@@ -51,7 +53,7 @@ class GateTests(unittest.TestCase):
     def test_g4_c4_identity_mismatches(self):
         for field in ('commit', 'run_id', 'binary_sha256', 'corpus_sha256',
                       'metadata_sha256', 'driver_sha256', 'raw_policy_sha256',
-                      'corrections_sha256', 'cache_hits', 'workers', 'fresh'):
+                      'corrections_sha256', 'cache_hits', 'workers', 'fresh', 'verified_corrections'):
             with self.subTest(field=field):
                 records = copy.deepcopy(self.records)
                 replay = next(r for r in records if r['job'] == 'replay')
@@ -184,7 +186,7 @@ class StepCorrectionTests(unittest.TestCase):
         approved = policy['rulings'][0]['approved'][0]['step_sha256']
         before = {
             'index': 262, 'request_sha256': 'a' * 64, 'family': 'mixed', 'owner': 'unknown',
-            'accepted_answer_sha256': 'b' * 64, 'accepted_manifest_sha256': 'c' * 64,
+            'accepted_answer_sha256': 'b' * 64,
             'accepted_files': {'answer.step': approved, 'display.obj': None,
                                'print.stl': None, 'answer.igs': None}}
         manifest = {
@@ -192,13 +194,14 @@ class StepCorrectionTests(unittest.TestCase):
             'properties': {'volume': {'lo': '1', 'hi': '1'}},
             'step': {'added_edges': 2, 'added_vertices': 1,
                      'max_deviation': '1e-9', 'approximated_curves': 1}}
+        before['accepted_manifest_sha256'] = driver.digest(manifest)
         unchanged = copy.deepcopy(manifest)
         for field in checks.STEP_CORRECTION_FIELDS:
             unchanged['step'].pop(field.split('.')[1])
         correction = {
             'index': 262, 'class': 'invalid-to-valid-step', 'request_sha256': 'a' * 64,
             'before_sha256': 'b' * 64, 'after_sha256': 'd' * 64,
-            'before_manifest_sha256': 'c' * 64,
+            'before_manifest_sha256': before['accepted_manifest_sha256'],
             'after_manifest_sha256': driver.digest(manifest),
             'before_step_sha256': approved, 'after_step_sha256': 'e' * 64,
             'manifest_fields': sorted(checks.STEP_CORRECTION_FIELDS),
@@ -213,7 +216,8 @@ class StepCorrectionTests(unittest.TestCase):
             ('not on base known list', 'unlisted', True),
             ('before bytes differ from captain ruling', 'before-hash', True),
             ('properties changed', 'properties', True),
-            ('inventory changed without a correction', 'missing', True)]
+            ('inventory changed without a correction', 'missing', True),
+            ('protected field and self-supplied commitment changed', 'self-commitment', True)]
         for name, fault, fails in cases:
             with self.subTest(case=name):
                 base, candidate, row, base_policy, output = copy.deepcopy(
@@ -228,11 +232,20 @@ class StepCorrectionTests(unittest.TestCase):
                     output['properties']['volume']['hi'] = '2'
                     row['after_manifest_sha256'] = driver.digest(output)
                     candidate['accepted_manifest_sha256'] = row['after_manifest_sha256']
+                elif fault == 'self-commitment':
+                    output['exact'] = False
+                    row['after_manifest_sha256'] = driver.digest(output)
+                    candidate['accepted_manifest_sha256'] = row['after_manifest_sha256']
+                    row['after_sha256'] = candidate['accepted_answer_sha256'] = 'f' * 64
+                    forged = copy.deepcopy(output)
+                    for field in checks.STEP_CORRECTION_FIELDS:
+                        forged['step'].pop(field.split('.')[1], None)
+                    row['unchanged_manifest_sha256'] = driver.digest(forged)
                 rows = [] if fault == 'missing' else [row]
                 errors = checks.metadata_errors(
                     [base], [candidate],
                     {'format': 'catallax-replay-corrections/1', 'corrections': rows}, base_policy)
-                errors += checks.correction_manifest_errors(output, row, driver)
+                errors += checks.correction_manifest_errors(output, row, driver, manifest)
                 candidate_policy = copy.deepcopy(base_policy)
                 candidate_policy['known_raw_invalid'] = []
                 errors += checks.raw_step_errors(

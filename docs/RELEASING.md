@@ -100,9 +100,23 @@ The before STEP hash must match both the base inventory and its trusted captain
 ruling. Each correction pins the request, before and after answer, manifest and
 STEP digests, the changed STEP fields, and a digest of the base comparable
 manifest without `step.added_edges`, `step.added_vertices`,
-`step.max_deviation` and `step.approximated_curves`. The candidate must match that
-digest after removing the same fields. Family, owner, request and other output
-files cannot change.
+`step.max_deviation` and `step.approximated_curves`. Family, owner, request and
+other output files cannot change.
+
+That committed digest has no authority on its own. For newly corrected indices,
+the selector retains the base inventory rows in the check plan. The build job
+archives the plan's base revision and builds a separate verifier. The replay job
+runs only those indices through that base verifier, checks their requests,
+answers, STEP files and full comparable manifests against the base inventory
+digests, then derives the protected-field digest from the authenticated base
+manifest itself. Both the committed digest and the candidate's protected fields
+must match that derived value. A candidate cannot authorize its own changed
+fields by recomputing its declaration.
+
+The replay summary records `verified_corrections`, which must name every newly
+corrected index at the final gate. Unchanged inventories require no base build
+or base replay. `checks.py replay` consumes `--plan` and requires `--base-binary`
+when that plan contains newly corrected indices. Base manifests stay private.
 
 The replay checks the committed candidate digests. The direct no-healing audit
 also requires each corrected file to be a valid single solid, within the default

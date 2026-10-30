@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -197,12 +198,21 @@ def valid_digest(value):
     return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
 
 
-def correction_manifest_errors(manifest, correction, driver):
+def protected_manifest_digest(manifest, driver):
     comparable = driver.comparable(manifest)
     comparable['step'] = dict(comparable['step'])
     for field in STEP_CORRECTION_FIELDS:
         comparable['step'].pop(field.split('.')[1], None)
-    if driver.digest(comparable) != correction['unchanged_manifest_sha256']:
+    return driver.digest(comparable)
+
+
+def correction_manifest_errors(manifest, correction, driver, base_manifest):
+    if driver.digest(driver.comparable(base_manifest)) != correction['before_manifest_sha256']:
+        return ['base manifest does not match the accepted before manifest']
+    protected = protected_manifest_digest(base_manifest, driver)
+    if protected != correction['unchanged_manifest_sha256']:
+        return ['correction commitment does not match the authenticated base manifest']
+    if protected_manifest_digest(manifest, driver) != protected:
         return ['correction changes a manifest field outside the four STEP fields']
     return []
 
@@ -280,7 +290,8 @@ def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
             expected['binary_sha256'] = None
         if name == 'replay':
             expected.update(workers=4, fresh=True, cache_hits=0,
-                            selected_cases=plan['selection']['selected_cases'])
+                            selected_cases=plan['selection']['selected_cases'],
+                            verified_corrections=[row['index'] for row in plan['correction_base_answers']])
         for field, value in expected.items():
             if type(record.get(field)) is not type(value) or record.get(field) != value:
                 errors.append(f'{name}: stale {field}: evidence={record.get(field)!r}, candidate={value!r}')
@@ -324,6 +335,8 @@ def prepare(args):
     if args.release_dry_run:
         selection['jobs']['release-dry-run'] = 1
     plan = {'format': 'catallax-check-plan/1', 'base': args.base, 'head': args.head,
+            'correction_base_answers': [before for before, after in zip(base_metadata, candidate_metadata)
+                                        if before != after],
             'declared': sorted(set(base_rules['jobs']) | set(candidate_rules['jobs']) |
                                {'select', 'release-evidence', 'release-dry-run', 'timings'}),
             'identity': {'commit': git('rev-parse', 'HEAD').decode().strip(),
@@ -350,6 +363,7 @@ def prepare(args):
             for name in candidate_rules['jobs']:
                 out.write(f'{name}={str(name in selection["jobs"]).lower()}\n')
             out.write('packages=' + ' '.join('-p ' + name for name in selection['packages']) + '\n')
+            out.write('base_corrections=' + str(bool(plan['correction_base_answers'])).lower() + '\n')
     print(json.dumps(selection, sort_keys=True))
 
 
@@ -393,32 +407,94 @@ def gate(args):
     print('Every selected check and partition passed with exact-candidate evidence')
 
 
+def build_base(args):
+    plan = read(args.plan)
+    if not plan['correction_base_answers']:
+        raise ValueError('no new STEP corrections require a base verifier')
+    target = ROOT / 'target' / 'check-base'
+    with tempfile.TemporaryDirectory(prefix='catallax-base-verifier-') as temporary:
+        with tarfile.open(fileobj=io.BytesIO(git('archive', plan['base']))) as archive:
+            archive.extractall(temporary, filter='data')
+        subprocess.run([
+            'cargo', 'build', '--release', '--locked', '-p', 'catallax-cli',
+            '--bin', 'catallax-verify', '--manifest-path', str(Path(temporary) / 'Cargo.toml'),
+            '--target-dir', str(target)], cwd=temporary, check=True)
+    destination = Path(args.out)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(target / 'release' / 'catallax-verify', destination)
+    print(json.dumps({'base_commit': plan['base'], 'binary_sha256': sha(destination)}))
+
+
+def run_fresh(driver, binary, requests, out, workers):
+    run_args = argparse.Namespace(binary=binary, inputs=[str(requests)], source='auto',
+                                 adapter=None, out=str(out), cache=None, cores=None,
+                                 max_work=100_000_000, workers=workers, fresh=True, dry_run=False)
+    try:
+        driver.run(run_args)
+    except Exception:
+        raise ValueError('replay execution failed; private diagnostics retained on runner') from None
+    return read(Path(out) / 'run.json')
+
+
+def correction_bases(args, plan, driver, release, inputs):
+    accepted = plan['correction_base_answers']
+    if not accepted:
+        return {}
+    if not args.base_binary:
+        raise ValueError('new STEP corrections require the base verifier')
+    source = Path(args.out) / 'base-requests.jsonl'
+    source.parent.mkdir(parents=True, exist_ok=True)
+    with source.open('w') as stream:
+        for row in accepted:
+            stream.write(driver.canonical({'max_work': 100_000_000, **inputs[row['index']],
+                                           'format': driver.CONTRACT}) + '\n')
+    report = run_fresh(driver, args.base_binary, source, Path(args.out) / 'base', 1)
+    if (len(report['cases']) != len(accepted)
+            or report['execution']['worker_exits'] != {'0': 0}
+            or report['config']['binary_sha256'] != sha(args.base_binary)):
+        raise ValueError('incomplete base correction replay')
+    manifests = {}
+    for row, case in zip(accepted, report['cases']):
+        directory = Path(case['path'])
+        request = read(directory / 'request.json')
+        request.pop('out', None)
+        manifest = case['response']['manifest']
+        if (driver.digest(request) != row['request_sha256']
+                or driver.digest(driver.comparable(manifest)) != row['accepted_manifest_sha256']
+                or release.answer_digest(driver, directory) != row['accepted_answer_sha256']
+                or sha(directory / 'answer.step') != row['accepted_files']['answer.step']
+                or case['cache_hit'] or case['response']['work']['used'] > 100_000_000):
+            raise ValueError(f"index {row['index']}: base replay does not match the accepted answer")
+        manifests[row['index']] = manifest
+    return manifests
+
+
 def replay(args):
     started = time.monotonic()
     rules, metadata = read(ROOT / RULES), read(ROOT / INVENTORY)
     corrections = {row['index']: row for row in read(ROOT / CORRECTIONS)['corrections']}
+    plan = read(args.plan)
+    if (plan['identity']['metadata_sha256'] != sha(ROOT / INVENTORY)
+            or plan['identity']['corrections_sha256'] != sha(ROOT / CORRECTIONS)
+            or plan['identity']['commit'] != git('rev-parse', 'HEAD').decode().strip()):
+        raise ValueError('stale correction replay plan')
     if sha(args.inputs) != rules['corpus_sha256']:
         raise ValueError('corpus_sha256 mismatch')
     if len(os.sched_getaffinity(0)) < 4:
         raise ValueError('fixed replay requires at least four available cores')
     driver = load_module('catallax_merge_driver', ROOT / DRIVER)
     release = load_module('catallax_merge_release', ROOT / 'tools/release/release.py')
+    inputs = read(args.inputs)
+    base_manifests = correction_bases(args, plan, driver, release, inputs)
     # Do not invoke the CLI: its ordinary JSON summary contains private ids.
     # The pinned file is an array; the public driver accepts request JSONL.
     normalized = Path(args.out) / 'replay-requests.jsonl'
     normalized.parent.mkdir(parents=True, exist_ok=True)
     with normalized.open('w') as stream:
-        for row in read(args.inputs):
+        for row in inputs:
             stream.write(driver.canonical({'max_work': 100_000_000, **row,
                                            'format': driver.CONTRACT}) + '\n')
-    run_args = argparse.Namespace(binary=args.binary, inputs=[str(normalized)], source='auto',
-                                 adapter=None, out=args.out, cache=None, cores=None,
-                                 max_work=100_000_000, workers=4, fresh=True, dry_run=False)
-    try:
-        driver.run(run_args)
-    except Exception:
-        raise ValueError('replay execution failed; private diagnostics retained on runner') from None
-    report = read(Path(args.out) / 'run.json')
+    report = run_fresh(driver, args.binary, normalized, args.out, 4)
     execution = report['execution']
     if execution['workers'] != 4 or execution['fresh'] is not True:
         raise ValueError('replay requires four fresh workers')
@@ -427,6 +503,7 @@ def replay(args):
     if report['config']['binary_sha256'] != sha(args.binary):
         raise ValueError('binary_sha256 changed during replay')
     failures, outcomes, work = [], Counter(), 0
+    verified_corrections = []
     cases = report['cases']
     if len(cases) != len(metadata) or len(cases) != 477:
         raise ValueError('replay needs 477 complete cases')
@@ -450,7 +527,8 @@ def replay(args):
                            if (sha(directory / name) if (directory / name).exists() else None)
                            != accepted['accepted_files'][name]]
                 cause = 'STEP bytes' if changed == ['answer.step'] else 'output bytes'
-        if index in corrections and correction_manifest_errors(manifest, corrections[index], driver):
+        if index in base_manifests and correction_manifest_errors(
+                manifest, corrections[index], driver, base_manifests[index]):
             cause = 'unapproved correction manifest field'
         if response['work']['used'] > 100_000_000:
             cause = 'above 100M work'
@@ -459,6 +537,8 @@ def replay(args):
         if cause:
             failures.append({'index': index, 'request_sha256': fingerprint, 'cause': cause,
                              'answer_sha256': answer_sha256})
+        elif index in base_manifests:
+            verified_corrections.append(index)
         refusal = manifest.get('refusal')
         outcomes[refusal['code'] if refusal else manifest['status']] += 1
         work += response['work']['used']
@@ -466,6 +546,7 @@ def replay(args):
                'cache_hits': sum(c['cache_hit'] for c in cases),
                'selected_cases': len(cases), 'elapsed_ms': (time.monotonic() - started) * 1000,
                'outcomes': dict(outcomes), 'work_total': work,
+               'verified_corrections': verified_corrections,
                'equal_cases': len(cases) - len(failures), 'failures': failures}
     write(args.summary, summary)
     print(json.dumps(summary, sort_keys=True))
@@ -488,6 +569,10 @@ def main():
     p.add_argument('--github-output')
     p.add_argument('--out', required=True)
     p.set_defaults(function=prepare)
+    p = commands.add_parser('build-base')
+    p.add_argument('--plan', required=True)
+    p.add_argument('--out', required=True)
+    p.set_defaults(function=build_base)
     p = commands.add_parser('evidence')
     p.add_argument('--plan', required=True)
     p.add_argument('--job', required=True)
@@ -503,6 +588,8 @@ def main():
     p.add_argument('--jobs', required=True)
     p.set_defaults(function=gate)
     p = commands.add_parser('replay')
+    p.add_argument('--plan', required=True)
+    p.add_argument('--base-binary')
     p.add_argument('--inputs', required=True)
     p.add_argument('--binary', required=True)
     p.add_argument('--out', required=True)

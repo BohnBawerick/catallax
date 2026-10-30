@@ -2,10 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_intersect::{Component, SurfacePair};
+use catallax_intersect::{Component, CurveSurface, Cyclic, SurfacePair};
 use catallax_numbers::{Decider, Outcome, Real, Refusal, Sign};
 use catallax_recipe::{EdgeSelection, Origin, Role, StepId};
-use catallax_shapes::{Curve, Line, Point3, PointDef, Surface};
+use catallax_shapes::{Curve, Line, Point3, PointDef, PointId, Surface};
 use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex, VertexId};
 
 use crate::{
@@ -199,6 +199,93 @@ fn rail(run: &Run, face: FaceId) -> Result<&Line, Refusal> {
         return Err(bad("vertex trimming needs straight rails"));
     };
     Ok(line)
+}
+fn decided<T>(outcome: Outcome<T>) -> Result<Option<T>, Refusal> {
+    match outcome {
+        Outcome::Proven(value) => Ok(Some(value)),
+        Outcome::ProvenCoincident(_) => Ok(None),
+        Outcome::Refused(e) => Err(e),
+        Outcome::NotExact(e) => Err(Refusal::new(e.code, e.detail)),
+    }
+}
+/// Whether a point of the edge's carrier lies on its trimmed arc, ends included.
+fn on_trimmed(model: &Model, edge: EdgeId, p: PointId, dec: &mut Decider) -> Result<bool, Refusal> {
+    let e = model.edge(edge);
+    let (Some(start), Some(end)) = (e.start, e.end) else {
+        return Err(bad("a curved end wall needs a bounded input edge"));
+    };
+    let geom = model.geom();
+    if decided(catallax_intersect::on_curve(geom, e.curve, p, dec))?.is_some() {
+        return Ok(false);
+    }
+    let [start, end] = [start, end].map(|v| model.vertex(v).point);
+    let point = geom.position(p);
+    for v in [start, end] {
+        if same(&point, &geom.position(v), dec)? {
+            return Ok(true);
+        }
+    }
+    let (from, to) = if e.sense == Sense::Same {
+        (start, end)
+    } else {
+        (end, start)
+    };
+    if catallax_intersect::curve_is_closed(geom, e.curve, dec)? {
+        let order = catallax_intersect::cyclic_order(geom, e.curve, [from, p, to], dec);
+        return Ok(decided(order)? == Some(Cyclic::Forward));
+    }
+    let first = decided(catallax_intersect::order_on_curve(
+        geom, e.curve, from, p, dec,
+    ))?;
+    let second = decided(catallax_intersect::order_on_curve(
+        geom, e.curve, p, to, dec,
+    ))?;
+    Ok(first.is_some() && first == second)
+}
+/// Where a straight rail leaves its support across a curved end wall: the
+/// carrier hit on that support's input edge to the wall at this vertex. The
+/// carrier's other hit lies beyond the edge and is never a strip end.
+fn wall_foot(
+    model: &mut Model,
+    uses: &Uses,
+    run: &Run,
+    face: FaceId,
+    wall: FaceId,
+    old: VertexId,
+    dec: &mut Decider,
+) -> Result<Point3, Refusal> {
+    let boundary = uses
+        .iter()
+        .find(|(edge, incident)| {
+            let e = model.edge(**edge);
+            (e.start == Some(old) || e.end == Some(old))
+                && incident.iter().any(|(f, _)| *f == face)
+                && incident.iter().any(|(f, _)| *f == wall)
+        })
+        .map(|(edge, _)| *edge)
+        .ok_or_else(|| bad("a strip support does not meet its end wall at the vertex"))?;
+    let line = model
+        .geom_mut()
+        .add_curve(Curve::Line(rail(run, face)?.clone()));
+    let surface = model.face(wall).surface;
+    let meeting =
+        catallax_intersect::intersect_curve_surface(model.geom_mut(), line, surface, dec)?.value;
+    let CurveSurface::Meets(hits) = meeting else {
+        return Err(bad("a contact rail does not cross its curved end wall"));
+    };
+    let mut foot = None;
+    for hit in hits {
+        if on_trimmed(model, boundary, hit.point, dec)? && foot.replace(hit.point).is_some() {
+            return Err(bad("a contact rail meets its end-wall edge twice"));
+        }
+    }
+    let foot = foot.ok_or_else(|| {
+        Refusal::new(
+            "fillet.unsupported-overflow",
+            "a contact rail leaves its end-wall edge and needs neighbour continuation",
+        )
+    })?;
+    Ok(model.geom().position(foot))
 }
 fn plane(model: &Model, face: FaceId) -> Result<&catallax_shapes::Plane, Refusal> {
     let Surface::Plane(p) = model.geom().surface(model.face(face).surface) else {
@@ -464,8 +551,22 @@ pub(crate) fn build(
             [i] => {
                 let faces = runs[*i].faces;
                 let third = *incident.iter().find(|f| !faces.contains(f)).unwrap();
-                let a = line_plane(rail(&runs[*i], faces[0])?, plane(model, third)?, dec)?;
-                let b = line_plane(rail(&runs[*i], faces[1])?, plane(model, third)?, dec)?;
+                // A cylindrical end wall cuts the extended strip; its end
+                // curve is the blend/wall intersection, not an invented cap.
+                let (a, b) = if matches!(
+                    model.geom().surface(model.face(third).surface),
+                    Surface::Cylinder(_)
+                ) {
+                    (
+                        wall_foot(model, &uses, &runs[*i], faces[0], third, old, dec)?,
+                        wall_foot(model, &uses, &runs[*i], faces[1], third, old, dec)?,
+                    )
+                } else {
+                    (
+                        line_plane(rail(&runs[*i], faces[0])?, plane(model, third)?, dec)?,
+                        line_plane(rail(&runs[*i], faces[1])?, plane(model, third)?, dec)?,
+                    )
+                };
                 let [a, b] = [vertex(model, a), vertex(model, b)];
                 for (face, v) in faces.into_iter().zip([a, b]) {
                     runs[*i].ends.insert((old, face), v);

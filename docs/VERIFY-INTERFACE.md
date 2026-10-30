@@ -472,14 +472,16 @@ Configured name-edit checks run and checkpoint before display or sampled compari
 
 For each exported STEP, a separate process opens the file in OpenCASCADE, transfers its roots, checks validity without repair, compares unique face count and records imported volume. The STEP hash and binding version accompany the result. `step_check.status=passed` covers import, topology and face count only. The recipe adapter does not measure kernel volume; `volume_comparison` explicitly reports `step.kernel-volume-unmeasured`. No volume-deviation or full target-part acceptance claim follows from a passing import. No STEP is `step.no-export` with its build refusal, not a silently skipped part.
 
-For a decimal-collapsed planar wire gap, or a planar step narrower than the
-shortest readable edge, the exact model and its manifest counts stay unchanged
+For a decimal-collapsed planar wire gap, or a planar step or wedge narrower than
+the shortest readable edge, the exact model and its manifest counts stay unchanged
 while STEP topology is repaired within the existing tolerance.
 Only such exports also write `step-regularizations.json`, format
 `catallax-step-regularizations/1`. It records the file's `faces`, `edges`,
 `vertices`, total `max_deviation_mm` and a `regularizations` array of model face,
 edge and merged-face handles with each whole-gap displacement bound and the
-`removed_faces` and `removed_edges` that repair took out of the file.
+`removed_faces` and `removed_edges` that repair took out of the file. A repair
+that follows another can name a face or edge an earlier repair made in the
+writer's copy rather than a model handle.
 Bounds in this diagnostic sidecar are exact rational strings. The scoreboard
 uses its exported face count for native import, otherwise the model face count.
 Stale sidecars are removed with stale geometry on rebuild or refusal.

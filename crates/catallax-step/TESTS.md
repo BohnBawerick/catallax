@@ -45,10 +45,12 @@ and three section probes that move with the edit.
 standard reader with its default processing. That check requires a valid
 shape and the expected number of distinct faces across the whole shape. It
 does not count solids or translate raw, and it reports the kernel volume
-comparison as unmeasured. The tests also check the regularization report. The parallel-gap cases compare the
+comparison as unmeasured. The tests also check the regularization report: the
+gap's reconnection and the two wedges it leaves, and that the raw translator
+then reads a valid solid. The parallel-gap cases compare the
 standard reader's volume with 168 within 1e-9. On the full slot-cut capture,
-whose rounded planar sliver the raw translator cannot resolve, the test pins
-the legacy encoding by requiring no added edges.
+which no longer keeps a sliver, the slot's two partial cylinder chart edges are
+written.
 
 The Rust `ribbon` target builds exact plate-and-flange steps and checks that a
 step at or below the 1e-7 mm floor is removed from the file, including one rounded
@@ -65,6 +67,23 @@ and the standard reader, at their expected volumes and within the reported
 deviation of the exact volume. The first width above the floor stays at eleven
 faces. That file and copies of the width 120 recipe scaled by 1e-20 and 1e-30 must
 match SHA-256 values pinned from e79835b.
+
+The Rust `wedge` target builds recipes for a plate whose front leans forward
+under an inset flange and for a plate whose side leans out under a flange along
+it. It checks that both wedges close, one after the other, and that a three-sided
+wedge leaves with its moved wall, with displacement bounds and removal counts
+reconciling the report with the unchanged model. It also covers wedges just above
+the floor and a uniformly tiny leaning plate at scales 1e-30, 1e-20 and 1e-8.
+
+`test_wedge_steps.py` replays the SolidDraft GUI-framed bracket and the same
+bracket without its bore, in `crates/catallax-cli/tests/fixtures/soliddraft-gui-*.json`,
+and the first union alone. Each must read as one valid solid through both the raw
+and the standard reader, with the face count and the volume, to six decimals, of
+the same bracket drawn with exact frames: 15 faces and 170521.057873, 14 faces and
+174366.367281, and 8 faces and 168000. The reports must reconcile with the exact
+face and edge counts. The exact-frame brackets, `soliddraft-flush-*.json`, and the
+two ribbons `test_narrow_steps.py` collapses must match SHA-256 values pinned from
+e7f307b.
 
 The Rust `partial` target preserves the 100,000,000-work request allowance,
 the legacy encoding of unresolved subprecision trims, and whole-export legacy

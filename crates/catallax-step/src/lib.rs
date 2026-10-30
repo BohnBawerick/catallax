@@ -60,7 +60,9 @@ impl Default for StepOptions {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct StepRegularization {
     /// Model face holding the ribbon: the face whose two decimal-rounded
-    /// boundary wires overlap, or the narrow step face removed from the file.
+    /// boundary wires overlap, the narrow step face removed from the file, or
+    /// the face whose wire closes over a narrow wedge. A repair that follows
+    /// another can name a face or edge of the writer's copy instead.
     pub face: catallax_topology::FaceId,
     /// The two straight edges bounding the collapsed ribbon: outer and
     /// contained inner, or the moved wall's and the kept wall's.

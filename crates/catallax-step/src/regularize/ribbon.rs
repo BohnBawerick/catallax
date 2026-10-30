@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
-use catallax_shapes::{Curve, Line, Point3, PointDef, Surface, Vector3};
+use catallax_shapes::{Curve, CurveId, Line, Point3, PointDef, Surface, Vector3};
 use catallax_topology::{
     Coedge, Edge, EdgeId, FaceId, Model, Sense, Shell, ShellId, Vertex, VertexId,
 };
@@ -23,11 +23,23 @@ const REMOVED_FACES: usize = 2;
 const REMOVED_EDGES: usize = 4;
 
 /// Where a vertex of the moved wall goes.
-enum Slide {
-    /// Onto the kept end of a ribbon end edge.
+pub(super) enum Slide {
+    /// Onto the kept end of a short edge that closes.
     Onto(VertexId),
     /// Along its one edge outside the wall, to the kept wall's plane.
     To(P),
+}
+
+/// A certified move of one planar wall onto another wall's plane.
+pub(super) struct Move {
+    /// Every wall vertex that moves. Any other stays where it is.
+    pub(super) slides: BTreeMap<VertexId, Slide>,
+    /// Every wall vertex's position after the move.
+    pub(super) after: BTreeMap<VertexId, P>,
+    /// Largest L1 vertex displacement.
+    pub(super) bound: Rational,
+    /// Squared doubled area of the wall, to move the smaller of two walls.
+    pub(super) area: Rational,
 }
 
 pub(super) struct Ribbon {
@@ -37,12 +49,10 @@ pub(super) struct Ribbon {
     moved: Coedge,
     kept: Coedge,
     end_edges: [EdgeId; 2],
-    slides: BTreeMap<VertexId, Slide>,
-    bound: Rational,
-    area: Rational,
+    moving: Move,
 }
 
-fn plane(model: &Model, face: FaceId) -> Option<(P, P)> {
+pub(super) fn plane(model: &Model, face: FaceId) -> Option<(P, P)> {
     let Surface::Plane(s) = model.geom().surface(model.face(face).surface) else {
         return None;
     };
@@ -50,20 +60,20 @@ fn plane(model: &Model, face: FaceId) -> Option<(P, P)> {
     Some((point(&s.origin)?, point(&normal)?))
 }
 
-fn written_length_squared(model: &Model, c: &Coedge, digits: u32) -> Option<Rational> {
+pub(super) fn written_length_squared(model: &Model, c: &Coedge, digits: u32) -> Option<Rational> {
     let [a, b] = positions(model, c)?.map(|p| rounded(&p, digits));
     let d = sub(&b, &a);
     Some(dot(&d, &d))
 }
 
-fn straight(model: &Model, edge: EdgeId, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn straight(model: &Model, edge: EdgeId, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(matches!(
         curve_form(model.geom(), model.edge(edge).curve, dec)?,
         CurveForm::Line { .. }
     ))
 }
 
-fn position(model: &Model, vertex: VertexId) -> Option<P> {
+pub(super) fn position(model: &Model, vertex: VertexId) -> Option<P> {
     point(&model.geom().position(model.vertex(vertex).point))
 }
 
@@ -186,6 +196,38 @@ fn certify(
             return Ok(None);
         }
     }
+    let onto = [(end_a.edge, b0), (end_b.edge, d1)];
+    let Some(moving) = move_wall(model, shell, wall, target, moved.edge, &onto, limit, dec)? else {
+        return Ok(None);
+    };
+    Ok(Some(Ribbon {
+        face,
+        wall,
+        target,
+        moved: moved.clone(),
+        kept: kept.clone(),
+        end_edges: [end_a.edge, end_b.edge],
+        moving,
+    }))
+}
+
+/// Certifies moving `wall` onto `target`'s plane, every vertex either onto
+/// the vertex `onto` names for its outside edge or along that edge. Every
+/// check is exact: a failure keeps the original topology and its original bytes.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn move_wall(
+    model: &Model,
+    shell: ShellId,
+    wall: FaceId,
+    target: FaceId,
+    moved: EdgeId,
+    onto: &[(EdgeId, VertexId)],
+    limit: &Rational,
+    dec: &mut Decider,
+) -> Result<Option<Move>, Refusal> {
+    let Some(target_plane) = plane(model, target) else {
+        return Ok(None);
+    };
     let wall_wires = coedges(model, wall);
     let (Some([wall_wire]), Some(_)) = (
         wall_wires
@@ -216,19 +258,18 @@ fn certify(
             .copied()
             .filter(|e| !wall_edges.contains(e))
             .collect();
-        let [other] = others.as_slice() else {
-            return Ok(None);
-        };
         let Some(from) = position(model, vertex) else {
             return Ok(None);
         };
-        let onto = if *other == end_a.edge {
-            Some(b0)
-        } else if *other == end_b.edge {
-            Some(d1)
-        } else {
-            None
+        let [other] = others.as_slice() else {
+            // A vertex where more faces meet can only stay where it is.
+            if on_plane(&from, &target_plane) {
+                after_move.insert(vertex, from);
+                continue;
+            }
+            return Ok(None);
         };
+        let onto = onto.iter().find(|(edge, _)| edge == other).map(|(_, v)| *v);
         let (slide, to) = if let Some(onto) = onto {
             let Some(to) = position(model, onto) else {
                 return Ok(None);
@@ -278,30 +319,39 @@ fn certify(
         let (to_a, to_b) = (&after_move[&a], &after_move[&b]);
         let part = cross(&position(model, a).unwrap(), &position(model, b).unwrap());
         sum = std::array::from_fn(|i| &sum[i] + &part[i]);
-        if c.edge == moved.edge {
+        if c.edge == moved {
             continue;
         }
-        let Some(beyond) = neighbour(model, shell, wall, c.edge) else {
+        let Some(face) = neighbour(model, shell, wall, c.edge) else {
             return Ok(None);
         };
-        let Some(beyond) = plane(model, beyond).filter(|_| beyond != target) else {
+        let Some(beyond) = plane(model, face).filter(|_| face != target) else {
             return Ok(None);
         };
-        if to_a == to_b || !on_plane(to_a, &beyond) || !on_plane(to_b, &beyond) {
+        // A vertex landing on one the face beyond already has stays as true to
+        // that face as it was.
+        let lies = |v: VertexId, to: &P| {
+            on_plane(to, &beyond)
+                || matches!(slides.get(&v), Some(Slide::Onto(o)) if has_vertex(model, face, *o))
+        };
+        if to_a == to_b || !lies(a, to_a) || !lies(b, to_b) {
             return Ok(None);
         }
     }
-    Ok(Some(Ribbon {
-        face,
-        wall,
-        target,
-        moved: moved.clone(),
-        kept: kept.clone(),
-        end_edges: [end_a.edge, end_b.edge],
+    Ok(Some(Move {
         slides,
+        after: after_move,
         bound,
         area: dot(&sum, &sum),
     }))
+}
+
+fn has_vertex(model: &Model, face: FaceId, vertex: VertexId) -> bool {
+    coedges(model, face)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|c| ends(model, &c).is_some_and(|pair| pair.contains(&vertex)))
 }
 
 fn far_end(model: &Model, edge: EdgeId, vertex: VertexId) -> Option<VertexId> {
@@ -331,7 +381,9 @@ pub(super) fn find(
             [&long_b, &end_a, &long_a, &end_b],
         ] {
             if let Some(found) = certify(model, shell, face, wire, limit, dec)?
-                && best.as_ref().is_none_or(|b| found.area < b.area)
+                && best
+                    .as_ref()
+                    .is_none_or(|b| found.moving.area < b.moving.area)
             {
                 best = Some(found);
             }
@@ -351,14 +403,22 @@ fn rational_point(p: &P) -> Point3 {
     )
 }
 
-pub(super) fn apply(
+/// Old-to-new vertices and edges of one move.
+pub(super) type Copies = (BTreeMap<VertexId, VertexId>, BTreeMap<EdgeId, EdgeId>);
+
+/// Creates the moved wall's vertices and edges, and every edge whose ends
+/// moved, carrying `moving.bound` into their errors. Returns the old-to-new
+/// vertex and edge maps; `removed` edges leave the file and get no copy.
+pub(super) fn move_edges(
     prepared: &mut Prepared,
     shell: ShellId,
-    ribbon: Ribbon,
+    wall: FaceId,
+    moving: &Move,
+    removed: &BTreeSet<EdgeId>,
     dec: &mut Decider,
-) -> Result<ShellId, Refusal> {
+) -> Result<Copies, Refusal> {
     let model = &mut prepared.model;
-    let vertices: BTreeMap<VertexId, VertexId> = ribbon
+    let vertices: BTreeMap<VertexId, VertexId> = moving
         .slides
         .iter()
         .map(|(old, slide)| {
@@ -375,13 +435,8 @@ pub(super) fn apply(
         })
         .collect();
     let mapped = |v: Option<VertexId>| v.map(|v| vertices.get(&v).copied().unwrap_or(v));
-    let wall_wire = coedges(model, ribbon.wall).unwrap().remove(0);
+    let wall_wire = coedges(model, wall).unwrap().remove(0);
     let wall_edges: BTreeSet<EdgeId> = wall_wire.iter().map(|c| c.edge).collect();
-    let removed: BTreeSet<EdgeId> = ribbon
-        .end_edges
-        .into_iter()
-        .chain([ribbon.moved.edge, ribbon.kept.edge])
-        .collect();
     let mut edges = BTreeMap::new();
     let old_faces = model.shell(shell).faces.clone();
     for &face in &old_faces {
@@ -397,17 +452,7 @@ pub(super) fn apply(
                     position(model, end.unwrap()),
                 );
                 let (a, b) = (a.unwrap(), b.unwrap());
-                let d = sub(&b, &a);
-                let line = Line::new(
-                    rational_point(&a),
-                    Vector3::new(
-                        Real::from(d[0].clone()),
-                        Real::from(d[1].clone()),
-                        Real::from(d[2].clone()),
-                    ),
-                    dec,
-                )?;
-                let curve = model.geom_mut().add_curve(Curve::Line(line));
+                let curve = line(model, &a, &b, dec)?;
                 let edge = model.add_edge(Edge {
                     curve,
                     sense: Sense::Same,
@@ -429,23 +474,62 @@ pub(super) fn apply(
     }
     for (old, new) in &edges {
         let error =
-            prepared.edge_errors.get(old).cloned().unwrap_or_default() + ribbon.bound.clone();
+            prepared.edge_errors.get(old).cloned().unwrap_or_default() + moving.bound.clone();
         prepared.edge_errors.insert(*new, error);
     }
-    let rewrite = |wires: Wires| -> Wires {
-        wires
-            .into_iter()
-            .map(|wire| {
-                wire.into_iter()
-                    .filter(|c| !removed.contains(&c.edge))
-                    .map(|c| Coedge {
-                        edge: edges.get(&c.edge).copied().unwrap_or(c.edge),
-                        sense: c.sense,
-                    })
-                    .collect()
-            })
-            .collect()
-    };
+    Ok((vertices, edges))
+}
+
+/// Adds the straight carrier from `a` to `b`.
+pub(super) fn line(model: &mut Model, a: &P, b: &P, dec: &mut Decider) -> Result<CurveId, Refusal> {
+    let d = sub(b, a);
+    let line = Line::new(
+        rational_point(a),
+        Vector3::new(
+            Real::from(d[0].clone()),
+            Real::from(d[1].clone()),
+            Real::from(d[2].clone()),
+        ),
+        dec,
+    )?;
+    Ok(model.geom_mut().add_curve(Curve::Line(line)))
+}
+
+/// Replaces wire edges by their copies and drops the removed ones.
+pub(super) fn rewrite(
+    wires: Wires,
+    removed: &BTreeSet<EdgeId>,
+    edges: &BTreeMap<EdgeId, EdgeId>,
+) -> Wires {
+    wires
+        .into_iter()
+        .map(|wire| {
+            wire.into_iter()
+                .filter(|c| !removed.contains(&c.edge))
+                .map(|c| Coedge {
+                    edge: edges.get(&c.edge).copied().unwrap_or(c.edge),
+                    sense: c.sense,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+pub(super) fn apply(
+    prepared: &mut Prepared,
+    shell: ShellId,
+    ribbon: Ribbon,
+    dec: &mut Decider,
+) -> Result<ShellId, Refusal> {
+    let removed: BTreeSet<EdgeId> = ribbon
+        .end_edges
+        .into_iter()
+        .chain([ribbon.moved.edge, ribbon.kept.edge])
+        .collect();
+    let (_, edges) = move_edges(prepared, shell, ribbon.wall, &ribbon.moving, &removed, dec)?;
+    let model = &mut prepared.model;
+    let wall_wire = coedges(model, ribbon.wall).unwrap().remove(0);
+    let old_faces = model.shell(shell).faces.clone();
     let mut faces = Vec::with_capacity(old_faces.len() - 1);
     for &face in &old_faces {
         if face == ribbon.face || face == ribbon.wall {
@@ -461,7 +545,7 @@ pub(super) fn apply(
                 }
             }
         }
-        let new_wires = rewrite(wires.clone());
+        let new_wires = rewrite(wires.clone(), &removed, &edges);
         if new_wires == wires {
             faces.push(face);
             continue;
@@ -474,14 +558,14 @@ pub(super) fn apply(
             .unwrap_or_default();
         prepared
             .face_errors
-            .insert(stored, own.max(wall) + ribbon.bound.clone());
+            .insert(stored, own.max(wall) + ribbon.moving.bound.clone());
         faces.push(stored);
     }
     prepared.records.push(StepRegularization {
         face: ribbon.face,
         edges: [ribbon.moved.edge, ribbon.kept.edge],
         merged_faces: [ribbon.wall, ribbon.target],
-        max_deviation: ribbon.bound,
+        max_deviation: ribbon.moving.bound,
         removed_faces: REMOVED_FACES,
         removed_edges: REMOVED_EDGES,
     });

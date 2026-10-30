@@ -2,7 +2,8 @@
 //! exact model is never edited. A straight, parallel wire gap lost by decimal
 //! rounding is reconnected: a contained overlapping segment joins the two
 //! wires, and its two parallel neighbouring faces become one. A step narrower
-//! than the shortest readable edge is removed by the `ribbon` module.
+//! than the shortest readable edge is removed by the `ribbon` module, and a
+//! wedge closing to such an edge by the `wedge` module.
 
 use std::collections::BTreeMap;
 
@@ -16,6 +17,7 @@ use catallax_topology::{
 use crate::{StepOptions, StepRegularization, number};
 
 mod ribbon;
+mod wedge;
 
 type P = [Rational; 3];
 type Wires = Vec<Vec<Coedge>>;
@@ -39,6 +41,7 @@ struct Contact {
 enum Repair {
     Gap(Contact),
     Ribbon(ribbon::Ribbon),
+    Wedge(wedge::Wedge),
 }
 
 fn sub(a: &P, b: &P) -> P {
@@ -259,7 +262,10 @@ fn find(
     if let Some(contact) = find_gap(model, shell, options, &limit, dec)? {
         return Ok(Some(Repair::Gap(contact)));
     }
-    Ok(ribbon::find(model, shell, options, &limit, dec)?.map(Repair::Ribbon))
+    if let Some(ribbon) = ribbon::find(model, shell, options, &limit, dec)? {
+        return Ok(Some(Repair::Ribbon(ribbon)));
+    }
+    Ok(wedge::find(model, shell, options, &limit, dec)?.map(Repair::Wedge))
 }
 
 fn find_gap(
@@ -489,6 +495,7 @@ pub(crate) fn prepare(
                         Repair::Ribbon(ribbon) => {
                             ribbon::apply(&mut prepared, *shell, ribbon, dec)?
                         }
+                        Repair::Wedge(wedge) => wedge::apply(&mut prepared, *shell, wedge, dec)?,
                     };
                     repair = find(&prepared.model, *shell, options, dec)?;
                 }

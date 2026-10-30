@@ -584,11 +584,11 @@ fn open_strip(
     let Loop::Coedges(coedges) = model.loop_(face.loops[0]) else {
         return Ok(false);
     };
-    if coedges.len() != 4 {
+    if coedges.len() < 4 {
         return Ok(false);
     }
-    let mut chains: [Vec<Sample>; 4] = std::array::from_fn(|_| Vec::new());
-    let mut axial = [false; 4];
+    let mut chains = vec![Vec::<Sample>::new(); coedges.len()];
+    let mut axial = vec![false; coedges.len()];
     for (i, &coedge) in coedges.iter().enumerate() {
         let coedge = model.coedge(coedge);
         let vertices = &boundaries.mesh.edges[boundaries.edges[&coedge.edge]].vertices;
@@ -617,14 +617,31 @@ fn open_strip(
             return Ok(false);
         }
     }
-    let caps: Vec<_> = (0..4).filter(|&i| !axial[i]).collect();
-    if caps.len() != 2 || (caps[0] + 2) % 4 != caps[1] {
+    // Two rulings split the loop into two caps. A cap may join several edges,
+    // such as a slot end wall's top arc and the blend that cuts it.
+    let rulings: Vec<_> = (0..coedges.len()).filter(|&i| axial[i]).collect();
+    let &[first, second] = &rulings[..] else {
+        return Ok(false);
+    };
+    let caps = [first + 1..second, second + 1..first + coedges.len()];
+    if caps.iter().any(|cap| cap.is_empty()) {
         return Ok(false);
     }
     let mut lower = None;
     let mut upper = None;
-    for index in caps {
-        let mut chain = std::mem::take(&mut chains[index]);
+    for cap in caps {
+        let mut chain = Vec::<Sample>::new();
+        for index in cap {
+            let next = std::mem::take(&mut chains[index % coedges.len()]);
+            if chain
+                .last()
+                .is_some_and(|last| last.vertex != next[0].vertex)
+            {
+                return Ok(false);
+            }
+            let joined = usize::from(!chain.is_empty());
+            chain.extend(next.into_iter().skip(joined));
+        }
         let mut direction = None;
         for i in 1..chain.len() {
             chain[i].uv = align(chain[i].uv, chain[i - 1].uv, chart.periodic);

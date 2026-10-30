@@ -653,6 +653,16 @@ pub(crate) enum Leaf {
     Gyroid(Box<crate::gyroid::Gyroid>),
 }
 impl Leaf {
+    /// Whether a lattice radius or gyroid level is a linear grade whose anchors differ
+    /// along one part axis.
+    pub(crate) fn axis_graded(&self) -> bool {
+        match self {
+            Self::Lattice(lattice) => lattice.axis_graded(),
+            Self::Gyroid(gyroid) => gyroid.graded(),
+            _ => false,
+        }
+    }
+
     pub(crate) fn constraints(&self) -> &[Constraint] {
         match self {
             Self::Primitive(a) => &a.constraints,

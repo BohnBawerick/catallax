@@ -1,4 +1,5 @@
-//! Lattice cell templates and parameter checks shared by both kernels.
+//! Lattice cell templates and the lattice and gyroid parameter checks shared by both
+//! kernels.
 //!
 //! RECIPE.md section 4.15 defines a lattice as the beams `P(a (k + n_i))` to
 //! `P(a (k + n_j))` over every integer vector `k`. The preset templates below are
@@ -178,6 +179,27 @@ pub fn validate(
         ));
     }
     cell_template(cell)
+}
+
+/// Checks the impossible gyroid parameters of RECIPE.md section 4.16 that both
+/// kernels read: a non-positive period and a linear level with coincident anchors.
+/// Which functions the field certifies is the field kernel's own check.
+pub fn validate_gyroid(period: &Rational, level: &Grade) -> Result<(), Refusal> {
+    if period.sign() != catallax_numbers::Sign::Positive {
+        return Err(Refusal::new(
+            "gyroid.impossible",
+            "a gyroid period must be positive",
+        ));
+    }
+    if let Grade::Linear { from, to, .. } = level
+        && from == to
+    {
+        return Err(Refusal::new(
+            "gyroid.impossible",
+            "a linear grade needs two distinct points",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

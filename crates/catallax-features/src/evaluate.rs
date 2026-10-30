@@ -1096,6 +1096,24 @@ fn evaluate_impl(
                         radius: source.radius.clone(),
                     }
                 }
+                Operation::Gyroid {
+                    region,
+                    period,
+                    level,
+                    ..
+                } => {
+                    // The gyroid is field-only too, carried by the same region envelope.
+                    crate::lattice::validate_gyroid(period.value(), level)?;
+                    let source = &bodies[region];
+                    stand_ins.push(StandIn {
+                        step: step.id.clone(),
+                        region: region.clone(),
+                    });
+                    BodyValue {
+                        body: source.body,
+                        radius: source.radius.clone(),
+                    }
+                }
                 Operation::Offset { body, distance } if certification.is_some() => {
                     let input = &bodies[body];
                     let (body, radius) = certification

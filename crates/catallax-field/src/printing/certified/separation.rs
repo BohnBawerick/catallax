@@ -1,5 +1,11 @@
 //! Boundary-to-mesh coverage for an intersection of axis planes and one gyroid.
 //!
+//! Below, `c` is the level's unclamped affine extension. The plan's exact bounds, which
+//! contain the clip box, must lie between the anchor planes of a graded level, so
+//! `g - c` is smooth, has the Hessian of `g` and agrees with the gyroid's own residual
+//! on every point of the clip box. Every statement about `S` below then holds for the
+//! clamped level too.
+//!
 //! The candidate mesh bounds a polyhedral solid `S`, so a segment from a point of
 //! `S` to a point outside it meets the mesh. Coverage therefore needs no nearest
 //! triangle. Each boundary point `p` receives two nearby points on opposite sides
@@ -42,7 +48,9 @@ pub(super) struct Clip<'a> {
 }
 
 impl<'a> Clip<'a> {
-    pub(super) fn new(classifier: &Classifier<'a>) -> Option<Self> {
+    /// The clip of a supported plan whose exact bounds are `bounds`. A graded level
+    /// must be affine over those bounds, which contain the clip box.
+    pub(super) fn new(classifier: &Classifier<'a>, bounds: &[[Rational; 2]; 3]) -> Option<Self> {
         let plan = classifier.plan;
         if plan.instructions.iter().any(
             |i| matches!(i, Instruction::Boolean { kind, .. } if *kind != BooleanKind::Intersect),
@@ -101,11 +109,13 @@ impl<'a> Clip<'a> {
             }
         }
         let (leaf, gyroid) = network?;
-        Some(Self {
+        let lower = [lower[0]?, lower[1]?, lower[2]?];
+        let upper = [upper[0]?, upper[1]?, upper[2]?];
+        gyroid.level_piece(bounds).is_some().then_some(Self {
             gyroid,
             leaf,
-            lower: [lower[0]?, lower[1]?, lower[2]?],
-            upper: [upper[0]?, upper[1]?, upper[2]?],
+            lower,
+            upper,
         })
     }
 
@@ -212,7 +222,7 @@ impl<'a, 'b> Separation<'a, 'b> {
     fn solid_free(&self, box_: &[Interval; 3], dec: &mut Decider) -> Result<bool, Refusal> {
         let gyroid = self.clip.gyroid;
         let centre = box_.map(|b| b.lo() * 0.5 + b.hi() * 0.5);
-        let Some(jet) = gyroid.jet(centre.map(point)) else {
+        let Some(jet) = gyroid.affine_jet(centre.map(point)) else {
             return Ok(false);
         };
         let radius = length(std::array::from_fn(|i| box_[i].hi() - box_[i].lo()));
@@ -243,7 +253,7 @@ impl<'a, 'b> Separation<'a, 'b> {
     /// outside `S` within the bound.
     fn separated(&self, box_: &[Interval; 3]) -> bool {
         let gyroid = self.clip.gyroid;
-        let Some(residual) = gyroid.residual(box_) else {
+        let Some(residual) = gyroid.affine_residual(box_) else {
             return false;
         };
         let Some(range) = self.clearance(box_) else {
@@ -255,13 +265,13 @@ impl<'a, 'b> Separation<'a, 'b> {
             // a point beyond the plane by the patch-vertex reach is outside `S`.
             let d = range.map(|r| 0.0_f64.clamp(r[0], r[1]));
             let inner = moved(d);
-            let Some(deeper) = gyroid.residual(&inner) else {
+            let Some(deeper) = gyroid.affine_residual(&inner) else {
                 return false;
             };
             return length(d).hi() < self.bound.lo() && (deeper + self.margin(&inner)).hi() < 0.0;
         }
         let centre = box_.map(|b| b.lo() * 0.5 + b.hi() * 0.5);
-        let Some(jet) = gyroid.jet(centre.map(point)) else {
+        let Some(jet) = gyroid.affine_jet(centre.map(point)) else {
             return false;
         };
         let slope = jet.gradient.map(|v| v.mid());
@@ -353,7 +363,7 @@ pub(super) fn bracket_along_gradient(
 ) -> Result<bool, Refusal> {
     let (leaf, gyroid) = clip.gyroid();
     let centre: Vector = std::array::from_fn(|i| (patch[0][i] + patch[1][i] + patch[2][i]) / 3.0);
-    let Some(jet) = gyroid.jet(centre.map(point)) else {
+    let Some(jet) = gyroid.affine_jet(centre.map(point)) else {
         return Ok(false);
     };
     let slope = jet.gradient.map(|v| v.mid());

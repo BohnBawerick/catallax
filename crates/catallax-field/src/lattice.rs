@@ -13,6 +13,7 @@
 //! the lattice boundary, which is what the plan's residual bounds require. For
 //! a constant radius `L = 1` and the value is the exact distance outside.
 
+use crate::grade::GradeDef;
 use crate::metric::{PRECISION, Scalar};
 use crate::{Location, geometry};
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal, Sign};
@@ -35,30 +36,27 @@ struct Beam {
     fast_hi: [f64; 3],
 }
 
-#[derive(Clone, Debug)]
-struct Linear {
-    from: [Rational; 3],
-    direction: [Rational; 3],
-    length_sq: Rational,
-    start: Rational,
-    end: Rational,
-}
-
-#[derive(Clone, Debug)]
-enum GradeDef {
-    Constant(Rational),
-    Linear(Box<Linear>),
-}
-
 /// Whether a box is proven inside, proven outside, or unresolved.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum BoxState {
+pub enum BoxState {
     /// Strictly inside on the closed box.
     Inside,
     /// Strictly outside on the closed box.
     Outside,
     /// Not settled by interval arithmetic at this box size.
     Unknown,
+}
+
+/// One grid line that is a nearest beam everywhere in a box, with the grade's piece
+/// there. On that box the leaf is `β - ρ`, with `β` the distance to the line.
+#[derive(Clone, Debug)]
+pub(crate) struct LinePiece {
+    /// The axis the line is parallel to.
+    axis: usize,
+    /// The line's coordinates on the other two axes; the entry on `axis` is unused.
+    line: [Interval; 3],
+    /// The grade's gradient on the box.
+    slope: [Interval; 3],
 }
 
 /// A compiled lattice leaf.
@@ -227,43 +225,9 @@ impl Lattice {
                     )
                 })?
         };
-        let (grade, lipschitz) = match grade {
-            Grade::Constant(r) => (GradeDef::Constant(r.value().clone()), q(1)),
-            Grade::Linear {
-                from,
-                to,
-                start,
-                end,
-            } => {
-                let from = from.0.each_ref().map(|n| n.value().clone());
-                let to = to.0.each_ref().map(|n| n.value().clone());
-                let direction: [Rational; 3] = std::array::from_fn(|i| &to[i] - &from[i]);
-                let length_sq = rational_dot(&direction, &direction);
-                let length_lo = Ball::from_rational(&length_sq, PRECISION)
-                    .sqrt()
-                    .expect("positive squared length")
-                    .lo();
-                let slope = (end.value() - start.value()).abs();
-                let lipschitz = &q(1)
-                    + &slope.checked_div(&length_lo).ok_or_else(|| {
-                        Refusal::new(
-                            "lattice.impossible",
-                            "a linear grade needs two distinct points",
-                        )
-                    })?;
-                (
-                    GradeDef::Linear(Box::new(Linear {
-                        from,
-                        direction,
-                        length_sq,
-                        start: start.value().clone(),
-                        end: end.value().clone(),
-                    })),
-                    lipschitz,
-                )
-            }
-            Grade::Distance { .. } => unreachable!("validate refuses distance grades"),
-        };
+        let grade = GradeDef::compile(grade, "lattice.impossible")?
+            .expect("validate refuses distance grades");
+        let lipschitz = &q(1) + &grade.slope_bound();
         Ok(Self {
             cubic: matches!(cell, LatticeCell::Cubic),
             fast_inverse: fast_matrix(&inverse_rotation),
@@ -291,22 +255,123 @@ impl Lattice {
         self.beams.is_empty()
     }
 
+    /// Whether the cell is cubic and its frame a signed axis permutation.
+    fn axis_cubic(&self) -> bool {
+        self.cubic
+            && self.rotation.iter().all(|row| {
+                row.iter().filter(|v| !v.is_zero()).count() == 1
+                    && row.iter().any(|v| v.abs() == q(1))
+            })
+    }
+
     /// Parameters of a constant cubic grid aligned with the model axes.
     pub(crate) fn axis_cubic_grid(&self) -> Option<([Rational; 3], Rational, Rational)> {
-        if !self.cubic {
+        if !self.axis_cubic() {
             return None;
         }
         let GradeDef::Constant(radius) = &self.grade else {
             return None;
         };
-        for row in &self.rotation {
-            if row.iter().filter(|v| !v.is_zero()).count() != 1
-                || !row.iter().any(|v| v.abs() == q(1))
-            {
+        Some((self.translation.clone(), self.size.clone(), radius.clone()))
+    }
+
+    /// The smallest radius of a cubic grid aligned with the model axes, constant or
+    /// graded.
+    pub(crate) fn axis_cubic_radius(&self) -> Option<&Rational> {
+        self.axis_cubic().then_some(&self.radius_range[0])
+    }
+
+    /// Whether the radius is a linear grade whose anchors differ along one part axis.
+    pub(crate) fn axis_graded(&self) -> bool {
+        self.grade.axis().is_some()
+    }
+
+    /// The axis and positions of an axis grade's anchor planes.
+    pub(crate) fn grade_planes(&self) -> Option<(usize, [Rational; 2])> {
+        self.grade.planes()
+    }
+
+    /// The grid line nearest every point of a closed rational box of an axis cubic
+    /// grid, decided exactly, when it is the same line throughout, the box keeps away
+    /// from it and the grade is one piece there. The cubic beams are the grid lines
+    /// `x_i ∈ t_i + aℤ` parallel to each axis, whatever the signed axis permutation
+    /// of the frame. The lines parallel to `axis` are nearest wherever the distance
+    /// to the grid along `axis` is at least the distance along each other axis.
+    pub(crate) fn line_piece(&self, bounds: &[[Rational; 2]; 3]) -> Option<LinePiece> {
+        if !self.axis_cubic() {
+            return None;
+        }
+        let piece = self.grade.exact_piece(
+            &std::array::from_fn(|i| bounds[i][0].clone()),
+            &std::array::from_fn(|i| bounds[i][1].clone()),
+        )?;
+        let half = self.size.mul_pow2(-1);
+        let mut line: [Rational; 3] = std::array::from_fn(|_| q(0));
+        let mut near: [[Rational; 2]; 3] = std::array::from_fn(|_| [q(0), q(0)]);
+        for i in 0..3 {
+            let index = (&(&(&bounds[i][0] - &self.translation[i]) / &self.size)
+                + &Rational::from_ratio(1, 2).unwrap())
+                .floor();
+            let at = &self.translation[i] + &(&Rational::from_integer(index) * &self.size);
+            if bounds[i][1] > &at + &half {
                 return None;
             }
+            let a = (&bounds[i][0] - &at).abs();
+            let b = (&bounds[i][1] - &at).abs();
+            let lower = if bounds[i][0] <= at && at <= bounds[i][1] {
+                q(0)
+            } else {
+                a.clone().min(b.clone())
+            };
+            near[i] = [lower, a.max(b)];
+            line[i] = at;
         }
-        Some((self.translation.clone(), self.size.clone(), radius.clone()))
+        let axis = (0..3).max_by(|&a, &b| near[a][0].cmp(&near[b][0]))?;
+        if (0..3).any(|g| g != axis && near[g][1] > near[axis][0])
+            || (0..3).all(|i| i == axis || near[i][0].is_zero())
+        {
+            return None;
+        }
+        Some(LinePiece {
+            axis,
+            line: line.each_ref().map(Interval::from_rational),
+            slope: self.grade.piece_gradient(piece),
+        })
+    }
+
+    /// `β - ρ` over a box inside a line piece's box.
+    pub(crate) fn line_value(&self, piece: &LinePiece, world: &[Interval; 3]) -> Option<Interval> {
+        let [j, k] = [(piece.axis + 1) % 3, (piece.axis + 2) % 3];
+        let beta =
+            ((world[j] - piece.line[j]).square() + (world[k] - piece.line[k]).square()).sqrt()?;
+        Some(beta - self.grade.interval(world))
+    }
+
+    /// `∇(β - ρ)` and its Hessian over a box inside a line piece's box. The radius is
+    /// affine there, so the Hessian is that of `β`.
+    pub(crate) fn line_derivatives(
+        &self,
+        piece: &LinePiece,
+        world: &[Interval; 3],
+    ) -> Option<([Interval; 3], [[Interval; 3]; 3])> {
+        let [j, k] = [(piece.axis + 1) % 3, (piece.axis + 2) % 3];
+        let xj = world[j] - piece.line[j];
+        let xk = world[k] - piece.line[k];
+        let beta = (xj.square() + xk.square()).sqrt()?;
+        if beta.lo() <= 0.0 {
+            return None;
+        }
+        let cube = beta * beta * beta;
+        let zero = Interval::point(0.0).unwrap();
+        let mut gradient = piece.slope.map(|v| zero - v);
+        gradient[j] = gradient[j] + xj / beta;
+        gradient[k] = gradient[k] + xk / beta;
+        let mut hessian = [[zero; 3]; 3];
+        hessian[j][j] = xk.square() / cube;
+        hessian[k][k] = xj.square() / cube;
+        hessian[j][k] = zero - xj * xk / cube;
+        hessian[k][j] = hessian[j][k];
+        Some((gradient, hessian))
     }
 
     fn local(&self, p: &[Rational; 3]) -> [Rational; 3] {
@@ -318,64 +383,13 @@ impl Lattice {
         apply_fast(&self.fast_inverse, &shifted)
     }
     fn radius(&self, p: &[Rational; 3]) -> Rational {
-        match &self.grade {
-            GradeDef::Constant(r) => r.clone(),
-            GradeDef::Linear(linear) => {
-                let Linear {
-                    from,
-                    direction,
-                    length_sq,
-                    start,
-                    end,
-                } = linear.as_ref();
-                let rel: [Rational; 3] = std::array::from_fn(|i| &p[i] - &from[i]);
-                let t = rational_dot(&rel, direction)
-                    .checked_div(length_sq)
-                    .expect("distinct grade points");
-                let t = t.max(q(0)).min(q(1));
-                start + &(&t * &(end - start))
-            }
-        }
+        self.grade.value(p)
     }
     fn fast_radius(&self, p: [f64; 3]) -> f64 {
-        match &self.grade {
-            GradeDef::Constant(r) => f(r),
-            GradeDef::Linear(linear) => {
-                let Linear {
-                    from,
-                    direction,
-                    length_sq,
-                    start,
-                    end,
-                } = linear.as_ref();
-                let rel: [f64; 3] = std::array::from_fn(|i| p[i] - f(&from[i]));
-                let t = dot(&rel, &direction.each_ref().map(f)) / f(length_sq);
-                let t = t.clamp(0.0, 1.0);
-                f(start) + t * (f(end) - f(start))
-            }
-        }
+        self.grade.fast(p)
     }
     fn interval_radius(&self, p: &[Interval; 3]) -> Interval {
-        match &self.grade {
-            GradeDef::Constant(r) => Interval::from_rational(r),
-            GradeDef::Linear(linear) => {
-                let Linear {
-                    from,
-                    direction,
-                    length_sq,
-                    start,
-                    end,
-                } = linear.as_ref();
-                let rel: [Interval; 3] =
-                    std::array::from_fn(|i| p[i] - Interval::from_rational(&from[i]));
-                let t = (0..3).fold(Interval::point(0.0).unwrap(), |s, i| {
-                    s + rel[i] * Interval::from_rational(&direction[i])
-                }) / Interval::from_rational(length_sq);
-                let t = clamp01(t);
-                Interval::from_rational(start)
-                    + t * (Interval::from_rational(end) - Interval::from_rational(start))
-            }
-        }
+        self.grade.interval(p)
     }
 
     /// Exact squared distance to the nearest beam, with every nearest beam's
@@ -564,40 +578,8 @@ impl Lattice {
             });
         }
         let mut rate = rate.expect("at least one nearest beam");
-        if let GradeDef::Linear(linear) = &self.grade {
-            let Linear {
-                from,
-                direction,
-                length_sq,
-                start,
-                end,
-            } = linear.as_ref();
-            let rel: [Rational; 3] = std::array::from_fn(|i| &p[i] - &from[i]);
-            let t = rational_dot(&rel, direction)
-                .checked_div(length_sq)
-                .expect("distinct grade points");
-            let along = &(&Real::from(direction[0].clone()) * &d.x)
-                + &(&(&Real::from(direction[1].clone()) * &d.y)
-                    + &(&Real::from(direction[2].clone()) * &d.z));
-            let along_sign = geometry::sign(&along, dec)?;
-            let ramp = if t > q(0) && t < q(1) {
-                true
-            } else if t == q(0) {
-                along_sign == Sign::Positive
-            } else if t == q(1) {
-                along_sign == Sign::Negative
-            } else {
-                false
-            };
-            if ramp {
-                let slope = Real::from(
-                    &(end - start)
-                        .checked_div(length_sq)
-                        .expect("distinct grade points")
-                        * &self.radius(p),
-                );
-                rate = &rate - &(&slope * &along);
-            }
+        if let Some(change) = self.grade.rate(p, d, dec)? {
+            rate = &rate - &(&change * &Real::from(self.radius(p)));
         }
         Ok(match geometry::sign(&rate, dec)? {
             Sign::Negative => Location::Inside,
@@ -635,14 +617,7 @@ impl Lattice {
         self.fast_inverse = fast_matrix(&self.inverse_rotation);
         self.fast_translation = self.translation.each_ref().map(f);
         self.rotation = rotation;
-        if let GradeDef::Linear(linear) = &mut self.grade {
-            let Linear {
-                from, direction, ..
-            } = linear.as_mut();
-            let moved = apply(&m, from);
-            *from = std::array::from_fn(|i| &moved[i] + &t[i]);
-            *direction = apply(&m, direction);
-        }
+        self.grade.transform(&m, &t);
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 //! Explicit massless-envelope STEP outputs backed by field moment enclosures.
 use catallax_field::{Plan, mass};
 use catallax_measure::{Accuracy as QuantityAccuracy, Enclosure};
-use catallax_numbers::{Decider, Rational};
+use catallax_numbers::{Decider, Rational, Refusal};
 use catallax_recipe::{Number, Recipe};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -48,6 +48,49 @@ fn scalars(values: &[Rational; 3]) -> [String; 3] {
 }
 fn accuracy(value: &QuantityAccuracy) -> Value {
     json!({"relative":value.relative.to_string(),"absolute":value.absolute.to_string()})
+}
+
+/// Rejects a proposed surrogate whose exact properties leave a field enclosure.
+fn check_target(
+    measured: &mass::Properties,
+    surrogate: &catallax_features::stand_in::StandInBodies,
+) -> Result<(), Refusal> {
+    let inertia_limit = Rational::from_ratio(1, 1_000_000_000).expect("nonzero denominator");
+    if surrogate.inertia_residual >= inertia_limit {
+        return Err(Refusal::new(
+            "stand-in.inertia-not-matched",
+            format!(
+                "closed-form surrogate inertia residual {} exceeds the strict 1e-9 mm5 comparison",
+                surrogate.inertia_residual
+            ),
+        ));
+    }
+    if !measured.contains(&surrogate.achieved) {
+        return Err(Refusal::new(
+            "stand-in.properties-not-matched",
+            format!(
+                "surrogate properties exceed the field enclosures; exact inertia residual {}",
+                surrogate.inertia_residual
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects exchanged surrogate bounds, including STEP rounding, that leave a field
+/// enclosure. Nothing is published before this check passes.
+fn check_exchange(
+    measured: &mass::Properties,
+    exchanged: &mass::SurrogateProperties,
+) -> Result<(), Refusal> {
+    if measured.encloses(exchanged) {
+        Ok(())
+    } else {
+        Err(Refusal::new(
+            "stand-in.exchange-not-enclosed",
+            "STEP-rounded surrogate property bounds exceed the original field enclosures",
+        ))
+    }
 }
 
 pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
@@ -122,24 +165,8 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
         Ok(surrogate) => surrogate,
         Err(error) => return Ok(refused(error.code, error.detail)),
     };
-    let inertia_limit = Rational::from_ratio(1, 1_000_000_000).expect("nonzero denominator");
-    if surrogate.inertia_residual >= inertia_limit {
-        return Ok(refused(
-            "stand-in.inertia-not-matched",
-            format!(
-                "closed-form surrogate inertia residual {} exceeds the strict 1e-9 mm5 comparison",
-                surrogate.inertia_residual
-            ),
-        ));
-    }
-    if !measured.contains(&surrogate.achieved) {
-        return Ok(refused(
-            "stand-in.properties-not-matched",
-            format!(
-                "surrogate properties exceed the field enclosures; exact inertia residual {}",
-                surrogate.inertia_residual
-            ),
-        ));
+    if let Err(error) = check_target(&measured, &surrogate) {
+        return Ok(refused(error.code, error.detail));
     }
     let options = catallax_step::StepOptions {
         product_name: format!("{} field stand-in", recipe.name),
@@ -148,13 +175,14 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
     };
     let span =
         catallax_numbers::OperationSpan::begin("brep", &recipe.result, "stand-in-step", &dec);
+    let mut bytes = Vec::new();
     let exported = catallax_step::write_stand_in_step(
         &built.model,
         built.result,
         &surrogate.bodies,
         &options,
         &mut dec,
-        &mut fs::File::create(out.join("answer.step"))?,
+        &mut bytes,
     );
     span.finish(
         &dec,
@@ -169,12 +197,10 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
         Ok(properties) => properties,
         Err(error) => return Ok(refused(error.code, error.detail)),
     };
-    if !measured.encloses(&exchanged) {
-        return Ok(refused(
-            "stand-in.exchange-not-enclosed",
-            "STEP-rounded surrogate property bounds exceed the original field enclosures",
-        ));
+    if let Err(error) = check_exchange(&measured, &exchanged) {
+        return Ok(refused(error.code, error.detail));
     }
+    fs::write(out.join("answer.step"), &bytes)?;
     let marks: Vec<_> = exported
         .marks
         .iter()
@@ -195,4 +221,84 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
                 "inertia":exchanged.inertia.each_ref().map(|row|row.each_ref().map(bound))},
             "inertia_residual":surrogate.inertia_residual.to_string()}}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// G0's valid recipe and its successful moment, surrogate and exchange evidence.
+    fn g0_evidence() -> (
+        mass::Properties,
+        catallax_features::stand_in::StandInBodies,
+        mass::SurrogateProperties,
+    ) {
+        let recipe = Recipe::parse(
+            r#"{"format":"catallax-recipe/4","name":"V7d-G0","steps":[
+            {"id":"region","op":"block","size":["2","2","2"],"pose":{"rotation":["1","0","0","0"],"translation":["-1","-1","-1"]}},
+            {"id":"field","op":"gyroid","region":"region","period":"10",
+             "level":{"linear":{"from":["0","0","-1"],"to":["0","0","1"],"start":"-1/10","end":"1/10"}},
+             "kind":"network","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"field"}"#,
+        )
+        .unwrap();
+        let width = |absolute: &str| QuantityAccuracy {
+            relative: Rational::zero(),
+            absolute: Rational::parse(absolute).unwrap(),
+        };
+        let accuracy = mass::Accuracy {
+            volume: width("1/100"),
+            centroid: width("1/1000"),
+            inertia: width("1/10"),
+        };
+        let mut dec = Decider::default();
+        let mut built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+        let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+        let measured =
+            mass::properties(&plan, &accuracy, &mass::Options::default(), &mut dec).unwrap();
+        let target = measured.estimate.clone().unwrap();
+        let surrogate =
+            catallax_features::stand_in::equivalent_blocks(&mut built.model, &target).unwrap();
+        let mut bytes = Vec::new();
+        let exported = catallax_step::write_stand_in_step(
+            &built.model,
+            built.result,
+            &surrogate.bodies,
+            &catallax_step::StepOptions {
+                significant_digits: 32,
+                ..Default::default()
+            },
+            &mut dec,
+            &mut bytes,
+        )
+        .unwrap();
+        let exchanged =
+            mass::surrogate_properties(&surrogate, &exported.value.max_deviation).unwrap();
+        (measured, surrogate, exchanged)
+    }
+
+    /// The designer's target mutation: a proposed surrogate volume one cubic millimetre
+    /// above the field's volume enclosure fails before anything is written.
+    #[test]
+    fn a_target_outside_the_field_volume_is_rejected() {
+        let (measured, mut surrogate, exchanged) = g0_evidence();
+        check_target(&measured, &surrogate).unwrap();
+        check_exchange(&measured, &exchanged).unwrap();
+        surrogate.achieved.volume = &measured.volume.hi + &Rational::one();
+        assert_eq!(
+            check_target(&measured, &surrogate).unwrap_err().code,
+            "stand-in.properties-not-matched"
+        );
+    }
+
+    /// The designer's rounding-inclusion mutation: an exported volume upper bound one
+    /// cubic millimetre above the field's enclosure fails the exchange check.
+    #[test]
+    fn exchanged_bounds_outside_the_field_volume_are_rejected() {
+        let (measured, _, mut exchanged) = g0_evidence();
+        exchanged.volume.hi = &measured.volume.hi + &Rational::one();
+        assert_eq!(
+            check_exchange(&measured, &exchanged).unwrap_err().code,
+            "stand-in.exchange-not-enclosed"
+        );
+    }
 }

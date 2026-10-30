@@ -6,7 +6,8 @@
 //! distances are at most four cell edges. Binary32 coordinates are admitted only
 //! when exact, so STL rounding cannot invalidate the bound.
 
-use crate::{Instruction, Location, Plan, Workspace, geometry, lattice::BoxState, metric::Kind};
+pub use crate::lattice::BoxState;
+use crate::{Instruction, Location, Plan, Workspace, geometry, metric::Kind};
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe};
 use std::{
@@ -506,6 +507,37 @@ impl<'a> Classifier<'a> {
         }
     }
 }
+/// The print certificate's interval classification of a closed rational box. `Unknown`
+/// is a box the intervals do not settle, such as one holding both material and void;
+/// it is never a guess either way. Refusals: `field.print-box` when a lower corner
+/// exceeds its upper corner, the classifier's `field.print-coverage` for a definition
+/// without interval coverage, and the decider's work and deadline outcomes.
+pub fn classify_box(
+    plan: &Plan,
+    lo: &[Rational; 3],
+    hi: &[Rational; 3],
+    dec: &mut Decider,
+) -> Result<BoxState, Refusal> {
+    if (0..3).any(|i| lo[i] > hi[i]) {
+        return Err(refusal(
+            "field.print-box",
+            "each lower box corner must not exceed its upper corner",
+        ));
+    }
+    if plan.is_proven_empty() {
+        dec.check_deadline()?;
+        return Ok(BoxState::Outside);
+    }
+    let cover: [Interval; 3] = std::array::from_fn(|i| {
+        Interval::new(
+            Interval::from_rational(&lo[i]).lo(),
+            Interval::from_rational(&hi[i]).hi(),
+        )
+        .unwrap()
+    });
+    Classifier::for_print(plan, dec)?.classify(&cover, dec)
+}
+
 pub(crate) fn bounds(plan: &Plan, dec: &mut Decider) -> Result<[[Rational; 2]; 3], Refusal> {
     let mut tape: Vec<Option<[[Rational; 2]; 3]>> = Vec::with_capacity(plan.instructions.len());
     for instruction in &plan.instructions {
@@ -782,18 +814,24 @@ pub fn mesh_plan_connected(
 }
 
 /// Builds a watertight output from the field alone. No B-rep builder is called.
-/// A gyroid at an accuracy of one hundredth of its period or finer uses the adaptive
-/// certificate, because the uniform grid would need an edge of a quarter of the
-/// accuracy over the whole surface.
+/// A gyroid at an accuracy of one hundredth of its period or finer, and every axis
+/// graded lattice or gyroid, use the adaptive certificate, because the uniform grid
+/// would need an edge of a quarter of the accuracy over the whole surface.
 pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Mesh, Refusal> {
     let fine_gyroid = plan.leaves.iter().any(|leaf| {
         matches!(leaf, geometry::Leaf::Gyroid(gyroid)
             if &options.tolerance * &q(100) <= *gyroid.period())
     });
-    if fine_gyroid {
+    if fine_gyroid || graded(plan) {
         return certified::mesh(plan, options, &q(0), dec);
     }
     mesh_plan_floor(plan, options, None, dec)
+}
+
+/// Whether the plan holds an axis graded lattice or gyroid. Such fields have no
+/// uniform-grid print route.
+pub(crate) fn graded(plan: &Plan) -> bool {
+    plan.leaves.iter().any(geometry::Leaf::axis_graded)
 }
 
 /// As [`mesh_plan`], but boundary-coverage refinement may not go below a grid edge of

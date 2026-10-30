@@ -6,17 +6,17 @@ pub(crate) fn mesh(
     options: &Options,
     dec: &mut Decider,
 ) -> Result<Option<Mesh>, Refusal> {
-    // This sampling pitch resolves the supported constant cubic beams and one
-    // eighth of a gyroid period. Other fields keep their existing interval-driven
-    // preview route.
+    // This sampling pitch resolves the supported cubic beams at their smallest
+    // radius and one eighth of a gyroid period. Other fields keep their existing
+    // interval-driven preview route.
     let mut feature: Option<Rational> = None;
     for leaf in &plan.leaves {
         let size = match leaf {
             geometry::Leaf::Lattice(lattice) => {
-                let Some((_, _, r)) = lattice.axis_cubic_grid() else {
+                let Some(r) = lattice.axis_cubic_radius() else {
                     return Ok(None);
                 };
-                r
+                r.clone()
             }
             geometry::Leaf::Gyroid(gyroid) => gyroid.period().mul_pow2(-3),
             _ => continue,

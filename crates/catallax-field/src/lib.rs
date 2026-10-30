@@ -24,6 +24,7 @@ mod end_condition;
 mod features;
 mod fillet;
 mod geometry;
+mod grade;
 mod gyroid;
 mod lattice;
 pub mod lattice_stage;
@@ -44,6 +45,7 @@ mod samples;
 mod support;
 
 pub use end_condition::CurvedField;
+pub use grade::grade_range;
 
 use std::collections::{BTreeMap, BTreeSet};
 

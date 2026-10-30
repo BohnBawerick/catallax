@@ -95,6 +95,34 @@ fn boundaries_are_exact_on_their_supports() {
 }
 
 #[test]
+fn an_irrational_contact_law_keeps_exact_boundaries() {
+    // t^2 is irrational here, so no row collapses to a rational leaf; the same
+    // rows and proofs still have to hold.
+    let mut dec = Decider::default();
+    let offset = q("288").sqrt();
+    let definition = RollingEnvelopeDefinition::new(
+        p(q("0"), q("5"), q("0")),
+        v(0, 1, 0),
+        v(1, 0, 0),
+        q("12"),
+        q("4"),
+        offset,
+        q("2"),
+        [q("1"), q("1")],
+        &mut dec,
+    )
+    .unwrap();
+    let envelope = RollingEnvelope::fit(definition.clone(), &mut dec).unwrap();
+    let target = Rational::from_ratio(ROLLING_ENVELOPE_TARGET_NM, 1_000_000).unwrap();
+    assert!(envelope.bound().upper <= target);
+    for sign in [Sign::Negative, Sign::Positive] {
+        for corner in definition.corners(sign) {
+            assert!(envelope.on_boundary(&corner, &mut dec).unwrap());
+        }
+    }
+}
+
+#[test]
 fn side_follows_the_ball_and_refuses_off_the_chart() {
     for radius in ["2", "2.5"] {
         let mut dec = Decider::default();

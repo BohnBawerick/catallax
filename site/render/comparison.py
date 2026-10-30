@@ -33,18 +33,26 @@ def render_index(source, index, check=False):
         total = sum(row['samples'] for row in subset if row['phase'] == 'construction')
         highlight = ' class="is-us"' if engine == 'catallax' else ''
         summary_rows.append(
-            '    <div class="bench__row" role="row">\n'
-            f'      <span role="cell">{escape(data["tools"][engine]["name"])}</span>\n'
-            f'      <span role="cell"{highlight} data-v="{construction}"><b>{construction}</b></span>'
-            f'<span role="cell"{highlight} data-v="{edit}"><b>{edit}</b></span>'
-            f'<span role="cell" data-v="{total}"><b>{total}</b></span>\n'
-            '    </div>')
+            '        <tr class="bench__row" role="row">\n'
+            f'          <th scope="row" role="rowheader">{escape(data["tools"][engine]["name"])}</th>\n'
+            f'          <td role="cell"{highlight} data-v="{construction}"><b>{construction}</b></td>'
+            f'<td role="cell"{highlight} data-v="{edit}"><b>{edit}</b></td>'
+            f'<td role="cell" data-v="{total}"><b>{total}</b></td>\n'
+            '        </tr>')
+    # The rows lay out as a grid, so explicit roles keep the table semantics.
     table = (
-        '  <div class="bench__table" role="table" aria-label="Five-tool completed builds">\n'
-        '    <div class="bench__row bench__row--head label" role="row">\n'
-        '      <span role="columnheader">Tool</span><span role="columnheader">Construction</span>'
-        '<span role="columnheader">Parameter edit</span><span role="columnheader">Samples per phase</span>\n'
-        '    </div>\n' + '\n'.join(summary_rows) + '\n  </div>')
+        '  <div class="bench__table">\n'
+        '    <table role="table">\n'
+        '      <caption class="sr-only">Five-tool completed builds</caption>\n'
+        '      <thead role="rowgroup">\n'
+        '        <tr class="bench__row bench__row--head label" role="row">\n'
+        '          <th scope="col" role="columnheader">Tool</th><th scope="col" role="columnheader">Construction</th>'
+        '<th scope="col" role="columnheader">Parameter edit</th><th scope="col" role="columnheader">Samples per phase</th>\n'
+        '        </tr>\n'
+        '      </thead>\n'
+        '      <tbody role="rowgroup">\n' + '\n'.join(summary_rows) + '\n      </tbody>\n'
+        '    </table>\n'
+        '  </div>')
     paragraph = (
         '<p class="bench__foot" id="comparison-summary">'
         f'Completed builds across {len(parts)} targets and {data["timing"]["measured_pairs"]} measured samples per tool and target. '
@@ -198,6 +206,8 @@ def render(source, output):
     output.write_text(f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Target-part comparison | Catallax</title><meta name="description" content="Measured construction, parameter rebuilds and correctness on thirteen fixed CAD targets across five tools.">
+<meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b0c0d">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Catallax + SolidDraft"><meta property="og:title" content="Target-part comparison | Catallax"><meta property="og:description" content="Measured construction, parameter rebuilds and correctness on thirteen fixed CAD targets across five tools."><meta property="og:url" content="https://kernel.zigrawbohnbawerick.org/comparison.html"><meta property="og:image" content="https://kernel.zigrawbohnbawerick.org/media/og-card.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="brand/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="brand/tokens.css"><link rel="stylesheet" href="css/site.css"><link rel="stylesheet" href="css/comparison.css"></head>
 <body><a class="skip" href="#main">Skip to content</a><header class="comparison-nav"><a href="/">Catallax</a><nav aria-label="Comparison sections"><a href="#speed">Timings</a><a href="#correctness">Correctness</a><a href="#range">Target range</a><a href="#method">Method</a></nav></header>
 <main id="main" class="comparison"><h1>Same targets.<br>Five tools.</h1><p class="intro">Construction and one parameter edit on thirteen fixed P0–P5 parts. Timings and correctness are reported separately. A quick refusal is not a completed part.</p>

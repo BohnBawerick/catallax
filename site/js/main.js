@@ -1,4 +1,5 @@
-/* Site motion. Personality: premium, rigid metal. Signature ease expo.out, no overshoot. */
+/* Site motion. Personality: premium, rigid metal. Signature ease expo.out, no overshoot.
+   The page is complete without this file: motion decorates content that is already readable and reachable. */
 (() => {
   'use strict';
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -26,6 +27,66 @@
     }).observe(el);
   }
 
+  // Set up a below-the-fold element only as it nears the viewport, which keeps load light.
+  function whenNear(el, setup) {
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { io.disconnect(); setup(); }
+    }, { rootMargin: '100% 0px' });
+    io.observe(el);
+  }
+
+  // True when any value differs from the last call, so a still canvas can skip its draw.
+  function changes() {
+    let last = '';
+    return (...values) => {
+      const key = values.join();
+      if (key === last) return false;
+      last = key;
+      return true;
+    };
+  }
+
+  /* Pause control: one state, shown by a button beside each moving element ---- */
+  const PAUSE_KEY = 'catallax-motion';
+  const stored = () => { try { return localStorage.getItem(PAUSE_KEY); } catch { return null; } };
+  const remember = value => { try { localStorage.setItem(PAUSE_KEY, value); } catch { /* the page still works */ } };
+  let paused = reduce || stored() === 'paused';
+  const motionBtns = $$('.motion'), videos = $$('video'), nearVideos = new Set();
+  const showPaused = () => motionBtns.forEach(b => { $('[data-motion-verb]', b).textContent = paused ? 'Resume' : 'Pause'; });
+  motionBtns.forEach(btn => {
+    btn.hidden = reduce;
+    btn.addEventListener('click', () => {
+      paused = !paused;
+      remember(paused ? 'paused' : 'playing');
+      showPaused();
+      videos.forEach(v => { if (paused) v.pause(); else if (nearVideos.has(v)) v.play().catch(() => {}); });
+    });
+  });
+  showPaused();
+
+  /* Videos: start near the viewport, never offscreen. Reduced motion gets poster + controls. */
+  videos.forEach(v => {
+    if (reduce) return;
+    v.controls = false;
+    new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { nearVideos.add(v); if (!paused) v.play().catch(() => {}); }
+      else { nearVideos.delete(v); v.pause(); }
+    }, { rootMargin: '25% 0px' }).observe(v);
+  });
+
+  /* Navigation menu under the desktop breakpoint ------------------------------ */
+  const nav = $('.nav'), menu = $('.nav__toggle'), menuLinks = $('.nav__links');
+  const setMenu = open => {
+    nav.classList.toggle('is-open', open);
+    menu.setAttribute('aria-expanded', open);
+    menu.textContent = open ? 'Close' : 'Menu';
+  };
+  const menuOpen = () => nav.classList.contains('is-open');
+  menu.addEventListener('click', () => setMenu(!menuOpen()));
+  menuLinks.addEventListener('click', e => { if (e.target.closest('a')) setMenu(false); });
+  document.addEventListener('pointerdown', e => { if (menuOpen() && !nav.contains(e.target)) setMenu(false); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen()) { setMenu(false); menu.focus(); } });
+
   /* Hero: draggable wireframe ------------------------------------------- */
   const heroCanvas = $('.hero__canvas');
   const hero = new Renderer(heroCanvas, { fov: 0.72 });
@@ -33,12 +94,14 @@
   const gear = gen.gear();
   for (let i = 0; i < gear.v.length; i += 3) { const y = gear.v[i + 1]; gear.v[i + 1] = gear.v[i + 2]; gear.v[i + 2] = -y; }
   const shapes = { gear, torus: gen.torus(), lattice: gen.lattice() };
+  const shapeNames = { gear: 'a spur gear', torus: 'a torus', lattice: 'a cube with a construction grid' };
   const S = { mesh: shapes.gear, yaw: 0.6, pitch: -0.5, vyaw: 0, vpitch: 0, progress: reduce ? 1 : 0, mx: 0, my: 0, x: 1.3, y: 0.05, k: 1.25 };
-  const AUTO = reduce ? 0 : 0.16; // rad/s
-  let drag = null;
+  const AUTO = 0.16; // rad/s
+  let drag = null, heroStale = true, heroDrawn = 0;
 
   function layoutHero() {
     hero.resize();
+    heroStale = true;
     const wide = innerWidth > 900;
     Object.assign(S, wide ? { x: hero.w / hero.h * 0.82, y: 0.1, k: 1.15 } : { x: 0, y: 0.8, k: 0.72 });
   }
@@ -46,42 +109,55 @@
   new ResizeObserver(layoutHero).observe(heroCanvas);
 
   heroCanvas.addEventListener('pointerdown', e => {
-    drag = { x: e.clientX, y: e.clientY };
+    if (drag) return; // a second finger never steals the orbit
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
     heroCanvas.setPointerCapture(e.pointerId);
   });
   heroCanvas.addEventListener('pointermove', e => {
     const r = heroCanvas.getBoundingClientRect();
     S.mx = (e.clientX - r.left) / r.width - 0.5;
     S.my = (e.clientY - r.top) / r.height - 0.5;
-    if (!drag) return;
+    if (!drag || e.pointerId !== drag.id) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    drag = { x: e.clientX, y: e.clientY };
+    drag.x = e.clientX; drag.y = e.clientY;
     S.vyaw = dx * 0.008;
     S.vpitch = dy * 0.006;
     S.yaw += S.vyaw;
     S.pitch = Math.max(-1.4, Math.min(1.4, S.pitch + S.vpitch));
   });
-  const endDrag = () => { drag = null; if (reduce) S.vyaw = S.vpitch = 0; };
-  heroCanvas.addEventListener('pointerup', endDrag);
-  heroCanvas.addEventListener('pointercancel', endDrag);
+  const endDrag = e => {
+    if (!drag || (e.pointerId !== undefined && e.pointerId !== drag.id)) return;
+    drag = null;
+    if (reduce) S.vyaw = S.vpitch = 0;
+  };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => heroCanvas.addEventListener(type, endDrag));
+  addEventListener('blur', endDrag);
 
   const hud = Object.fromEntries($$('[data-hud]').map(el => [el.dataset.hud, el]));
   let fps = 60, hudT = 0;
   const deg = r => ((r * 180 / Math.PI) % 360 + 360) % 360;
   const pmx = { x: 0, y: 0 };
+  const heroChanged = changes();
 
   loopWhileVisible(heroCanvas, (dt, now) => {
     if (!drag) {
-      S.yaw += S.vyaw + AUTO * dt;
+      S.yaw += S.vyaw + (paused ? 0 : AUTO * dt);
       S.pitch = Math.max(-1.4, Math.min(1.4, S.pitch + S.vpitch));
       S.vyaw *= 0.94; S.vpitch *= 0.9;
     }
     // Hover parallax eases toward the pointer; skipped under reduced motion.
     if (!reduce) { pmx.x += (S.mx - pmx.x) * 0.06; pmx.y += (S.my - pmx.y) * 0.06; }
+    if (dt) fps += (1 / dt - fps) * 0.05;
+    // Slow ambient rotation needs no more than 30 fps; a still solid needs no draw at all.
+    const busy = drag || S.progress < 1 || heroStale;
+    if (!busy && now - heroDrawn < 32) return;
+    const moved = heroChanged(S.yaw.toFixed(4), S.pitch.toFixed(4), S.progress, pmx.x.toFixed(3), pmx.y.toFixed(3), S.x, S.y, S.k, S.mesh.edgeCount);
+    if (!moved && !heroStale) return;
+    heroStale = false;
+    heroDrawn = now;
     const model = mat.chain(mat.translate(S.x, S.y, 0), mat.rotateX(S.pitch + pmx.y * 0.25), mat.rotateY(S.yaw + pmx.x * 0.35), mat.scale(S.k));
     hero.clear();
     const out = hero.draw(S.mesh, model, { progress: S.progress, styles, head: P.oxide });
-    if (dt) fps += (1 / dt - fps) * 0.05;
     if (out && now - hudT > 120) {
       hudT = now;
       hud.yaw.textContent = deg(S.yaw).toFixed(1).padStart(5, '0');
@@ -96,13 +172,17 @@
     }
   });
 
+  // The solid builds edge by edge. The headline's entrance lives in CSS, so it runs from first paint.
+  if (!reduce) gsap.to(S, { progress: 1, duration: 2.4, ease: 'power2.inOut', delay: 0.2 });
+
   const shapeBtns = $$('.shape');
   shapeBtns.forEach(btn => btn.addEventListener('click', () => {
     const next = shapes[btn.dataset.shape];
     if (next === S.mesh) return;
     shapeBtns.forEach(b => { b.classList.toggle('is-active', b === btn); b.setAttribute('aria-pressed', b === btn); });
+    heroCanvas.setAttribute('aria-label', `Rotating wireframe of ${shapeNames[btn.dataset.shape]}. Drag to orbit.`);
     gsap.killTweensOf(S, 'progress');
-    if (reduce) { S.mesh = next; S.progress = 1; return; }
+    if (reduce) { S.mesh = next; S.progress = 1; heroStale = true; return; }
     gsap.timeline()
       .to(S, { progress: 0, duration: 0.45, ease: 'power2.in' })
       .add(() => { S.mesh = next; })
@@ -110,10 +190,16 @@
   }));
 
   /* Kernel anatomy: one canvas, four layers ------------------------------ */
+  const anatomy = $('.anatomy');
   const aCanvas = $('.anatomy__canvas');
   const ana = new Renderer(aCanvas, { fov: 0.7 });
   ana.view = mat.translate(0, 0, -4.1);
-  new ResizeObserver(() => ana.resize()).observe(aCanvas);
+  let anaStale = true;
+  new ResizeObserver(() => { ana.resize(); anaStale = true; }).observe(aCanvas);
+
+  // The section pins only when its text fits. Shorter viewports and high zoom read it as a plain list.
+  const PIN_ROOM = '(min-height: 640px)';
+  anatomy.classList.toggle('is-pinned', matchMedia(PIN_ROOM).matches);
 
   const brep = gen.box(0.6, 0.6, 0.6);
   [0, 1, 2, 3].forEach(i => { brep.tag[i] = 2; });     // one face loop, in oxide
@@ -126,16 +212,20 @@
     gen.cylinder({ r: 0.44, y0: -0.42, y1: 0.42, seg: 48, rails: 16, tag: 2, railTag: 1 }));
   const sphere = gen.sphere({ r: 1 });
   const layers = [brep, nurbs, bool, sphere].map((mesh, i) => ({ mesh, alpha: i ? 0 : 1, progress: reduce ? 1 : 0 }));
-  let cur = 0, rot = 0.6, aT = 0, anaStarted = reduce;
+  let cur = 0, rot = 0.6, aT = 0, anaStarted = reduce, pinned = false;
+  const anaChanged = changes();
 
   loopWhileVisible(aCanvas, dt => {
     if (!anaStarted) showStep(0);   // build layer 01 as the section scrolls in
-    if (!reduce) { rot += dt * 0.3; aT += dt; }
-    if (!reduce && layers[1].alpha > 0) {   // let two control points breathe
+    if (!paused) { rot += dt * 0.3; aT += dt; }
+    if (!paused && layers[1].alpha > 0) {   // let two control points breathe
       ctrl[1][2][1] = 0.55 * Math.sin(aT * 1.1) + 0.1;
       ctrl[2][1][1] = -0.45 * Math.sin(aT * 0.8 + 1);
       gen.patch(ctrl, 14, nurbs);
     }
+    const moved = anaChanged(rot, aT, ...layers.flatMap(l => [l.alpha, l.progress]));
+    if (!moved && !anaStale) return;
+    anaStale = false;
     const model = mat.chain(mat.rotateX(-0.5), mat.rotateY(rot), mat.scale(1.05));
     ana.clear();
     for (const l of layers) ana.draw(l.mesh, model, { progress: l.progress, alpha: l.alpha, styles, head: P.oxide, dots: P.oxide });
@@ -153,16 +243,16 @@
     const out = steps[from], inn = steps[i];
     if (reduce) {
       layers.forEach((layer, k) => { layer.alpha = k === i ? 1 : 0; layer.progress = 1; });
-      gsap.set(out, { autoAlpha: 0 });
-      gsap.set(inn, { autoAlpha: 1, y: 0 });
-      gsap.set($$('.step__specs li', inn), { autoAlpha: 1, y: 0 });
+      if (pinned) { gsap.set(out, { opacity: 0 }); gsap.set(inn, { opacity: 1, y: 0 }); }
       return;
     }
     if (from !== i) gsap.to(layers[from], { alpha: 0, duration: 0.45, ease: 'power2.in', overwrite: true });
     gsap.fromTo(layers[i], { alpha: 1, progress: 0 }, { progress: 1, duration: 1.4, ease: 'power2.inOut', overwrite: true });
-    if (out !== inn) gsap.to(out, { autoAlpha: 0, y: -28, duration: 0.35, ease: 'power2.in', overwrite: true });
-    gsap.fromTo(inn, { autoAlpha: 0, y: 36 }, { autoAlpha: 1, y: 0, duration: 0.8, delay: from !== i ? 0.18 : 0, overwrite: true });
-    gsap.fromTo($$('.step__specs li', inn), { autoAlpha: 0, y: 10 }, { autoAlpha: 1, y: 0, duration: 0.5, stagger: 0.06, delay: 0.35 });
+    if (!pinned) return;
+    // Opacity, not visibility: every layer stays in the reading order for screen readers.
+    if (out !== inn) gsap.to(out, { opacity: 0, y: -28, duration: 0.35, ease: 'power2.in', overwrite: true });
+    gsap.fromTo(inn, { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.8, delay: from !== i ? 0.18 : 0, overwrite: true });
+    gsap.fromTo($$('.step__specs li', inn), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5, stagger: 0.06, delay: 0.35 });
   }
 
   /* Code highlighting ------------------------------------------------------ */
@@ -178,9 +268,25 @@
     }
     return html + esc(line.slice(at));
   };
+
+  // Highlight at load: it changes the block height, and a shift later would move anchor targets mid-scroll.
   $$('code[data-rust]').forEach(code => {
     code.innerHTML = code.textContent.split('\n').map(l => `<span class="ln">${highlight(l)}</span>`).join('');
   });
+
+  // Code windows type themselves out line by line as they arrive, then park a caret.
+  if (!reduce) $$('.window').forEach(win => whenNear(win, () => {
+    const lines = $$('.ln', win);
+    gsap.set(lines, { clipPath: 'inset(0 100% 0 0)' });
+    const tl = gsap.timeline({ paused: true, onComplete: () => lines.at(-1).insertAdjacentHTML('beforeend', '<span class="caret"></span>') });
+    let t = 0;
+    lines.forEach(ln => {
+      const n = ln.textContent.length, d = Math.min(0.32, 0.004 * n + 0.03);
+      tl.to(ln, { clipPath: 'inset(0 0% 0 0)', duration: d, ease: `steps(${Math.max(1, Math.min(n, 48))})` }, t);
+      t += d * 0.55;
+    });
+    ScrollTrigger.create({ trigger: win, start: 'top 78%', once: true, onEnter: () => tl.play() });
+  }));
 
   /* Counters + benchmark bars (DOM prep, safe before fonts) --------------- */
   $$('.bench__row:not(.bench__row--head)').forEach(row => {
@@ -199,12 +305,6 @@
   const tickClock = () => { clock.textContent = fmt.format(new Date()); };
   tickClock();
   setInterval(tickClock, 30000);
-
-  /* Videos: pause offscreen; reduced motion gets poster + controls -------- */
-  $$('video').forEach(v => {
-    if (reduce) { v.removeAttribute('autoplay'); v.pause(); v.controls = true; return; }
-    new IntersectionObserver(([e]) => { if (e.isIntersecting) v.play().catch(() => {}); else v.pause(); }).observe(v);
-  });
 
   /* Crosshair cursor ------------------------------------------------------- */
   if (fine) {
@@ -246,15 +346,27 @@
   }
 
   /* Everything that measures text waits for fonts ------------------------ */
-  document.fonts.ready.then(() => {
-    // Preserve the four-layer scroller; reduced motion switches layers without scrubbing.
-    gsap.to('.anatomy__rail i', {
-      scaleY: 1, ease: 'none',
-      scrollTrigger: {
-        trigger: '.anatomy', start: 'top top', end: '+=300%', pin: true, scrub: !reduce,
-        onEnter: () => showStep(cur),
-        onUpdate: self => showStep(Math.min(3, Math.floor(self.progress * 4))),
-      },
+  const nextTask = () => new Promise(resolve => { setTimeout(resolve); });
+
+  document.fonts.ready.then(async () => {
+    // Preserve the four-layer scroller. matchMedia reverts it if the viewport loses the room for it.
+    gsap.matchMedia().add(PIN_ROOM, () => {
+      pinned = true;
+      anatomy.classList.add('is-pinned');
+      gsap.to('.anatomy__rail i', {
+        scaleY: 1, ease: 'none',
+        scrollTrigger: {
+          trigger: '.anatomy', start: 'top top', end: '+=300%', pin: true, scrub: true,
+          onEnter: () => showStep(cur),
+          onUpdate: self => showStep(Math.min(3, Math.floor(self.progress * 4))),
+        },
+      });
+      return () => {
+        pinned = false;
+        anatomy.classList.remove('is-pinned');
+        gsap.set([...steps, ...$$('.step__specs li')], { clearProps: 'opacity,transform' });
+        showStep(0);
+      };
     });
 
     if (reduce) {
@@ -262,39 +374,27 @@
       ScrollTrigger.refresh();
       return;
     }
-
-    // Intro: headline lines rise from a mask, wireframe builds edge by edge.
-    const title = SplitText.create('.hero__title .line', { type: 'lines', mask: 'lines' });
-    gsap.timeline({ delay: 0.1 })
-      .from('.nav > *', { y: -16, autoAlpha: 0, stagger: 0.06, duration: 0.7 }, 0)
-      .from(title.lines, { yPercent: 108, duration: 1.2, stagger: 0.09 }, 0.15)
-      .from('.hero__kicker span', { y: 12, autoAlpha: 0, stagger: 0.06, duration: 0.7 }, 0.25)
-      .from('.hero__lede', { y: 24, autoAlpha: 0 }, 0.6)
-      .from('.hero__ctas', { y: 20, autoAlpha: 0 }, 0.72)
-      .from('.hud, .hero__frame i', { autoAlpha: 0, duration: 0.8, stagger: 0.05, ease: 'power2.out' }, 0.8)
-      .to(S, { progress: 1, duration: 2.4, ease: 'power2.inOut' }, 0.2);
+    await nextTask();
 
     // Hero parallax out: copy lifts faster than the solid.
-    gsap.to('.hero__copy', { yPercent: -22, autoAlpha: 0.15, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true } });
+    gsap.to('.hero__copy', { yPercent: -22, opacity: 0.15, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true } });
     gsap.to(heroCanvas, { yPercent: 18, ease: 'none', scrollTrigger: { trigger: '.hero', start: 'top top', end: 'bottom top', scrub: true } });
 
     // Progress bar and hide-on-scroll nav.
-    const nav = $('.nav');
     gsap.to('.progress', { scaleX: 1, ease: 'none', scrollTrigger: { start: 0, end: 'max', scrub: true } });
-    ScrollTrigger.create({ start: 0, end: 'max', onUpdate: s => nav.classList.toggle('is-hidden', s.direction === 1 && s.scroll() > 240) });
+    ScrollTrigger.create({ start: 0, end: 'max', onUpdate: s => { if (!menuOpen()) nav.classList.toggle('is-hidden', s.direction === 1 && s.scroll() > 240); } });
 
-    // Manifesto: words brighten as they scroll through the reading line.
-    const words = SplitText.create('[data-words]', { type: 'words' });
-    gsap.fromTo(words.words, { opacity: 0.14 }, {
-      opacity: 1, stagger: 0.1, ease: 'none',
-      scrollTrigger: { trigger: '[data-words]', start: 'top 80%', end: 'bottom 50%', scrub: true },
-    });
+    // Manifesto: text brightens as it crosses the reading line. A mask leaves the DOM, link and reading order alone.
+    const manifesto = $('.manifesto__text');
+    manifesto.classList.add('is-scrubbed');
+    gsap.fromTo(manifesto, { '--reveal': '0%' }, { '--reveal': '110%', ease: 'none', scrollTrigger: { trigger: manifesto, start: 'top 80%', end: 'bottom 50%', scrub: true } });
+    await nextTask();
 
-    // Section headings: line mask reveal, re-split on resize.
-    $$('[data-lines]').forEach(el => SplitText.create(el, {
-      type: 'lines', mask: 'lines', autoSplit: true,
-      onSplit: self => gsap.from(self.lines, { yPercent: 110, duration: 1.1, stagger: 0.08, scrollTrigger: { trigger: el, start: 'top 85%', once: true } }),
-    }));
+    // Section headings: line mask reveal, split only as each nears the viewport, re-split on resize.
+    $$('[data-lines]').forEach(el => whenNear(el, () => SplitText.create(el, {
+      type: 'lines', mask: 'lines', linesClass: 'split-line', autoSplit: true,
+      onSplit: self => gsap.from(self.lines, { yPercent: 135, duration: 1.1, stagger: 0.08, scrollTrigger: { trigger: el, start: 'top 85%', once: true } }),
+    })));
 
     // Assembly video: slow push-in parallax, copy drifts against it.
     gsap.fromTo('.assembly__media video', { scale: 1.2, yPercent: -5 }, { scale: 1, yPercent: 5, ease: 'none', scrollTrigger: { trigger: '.assembly', start: 'top bottom', end: 'bottom top', scrub: true } });
@@ -302,11 +402,26 @@
 
     // Card art parallax inside the tilt cards.
     $$('.card__art').forEach(svg => gsap.fromTo(svg, { y: 24 }, { y: -24, ease: 'none', scrollTrigger: { trigger: svg, start: 'top bottom', end: 'bottom top', scrub: true } }));
+    await nextTask();
 
-    // Generic entrance: rise 28px, stagger in batches.
-    const rise = '.why__copy > p, .why__copy .btn, .why__terms .label, .why__list li, .thanks__copy > p, .thanks__sources .label, .thanks__list li, .works__list li, .works__not, .support__works > .label, .manifesto__sig, .stat, .code__lede, .code__notes li, .card, .bench__lede, .bench__row, .bench__foot, .ci__copy > p:not(.label), .ci__list li, .ci__term, .contact__lede, .contact__ctas, .assembly__note';
-    gsap.set(rise, { y: 28, autoAlpha: 0 });
-    ScrollTrigger.batch(rise, { start: 'top 90%', once: true, onEnter: b => gsap.to(b, { y: 0, autoAlpha: 1, stagger: 0.07, duration: 0.9, overwrite: 'auto' }) });
+    // Generic entrance: rise 28px in batches. Opacity, not visibility, so hidden copy stays focusable and readable by assistive tech.
+    const RISE = '.why__copy > p, .why__copy .btn, .why__terms .label, .why__list li, .thanks__copy > p, .thanks__sources .label, .thanks__list li, .works__list li, .works__not, .support__works > .label, .manifesto__sig, .stat, .code__lede, .code__notes li, .card, .bench__lede, .bench__row, .bench__foot, .ci__copy > p:not(.label), .ci__list li, .ci__term, .contact__lede, .contact__ctas, .assembly__note';
+    const below = $$(RISE).filter(el => el.getBoundingClientRect().top > innerHeight);
+    gsap.set(below, { y: 28, opacity: 0 });
+    const riser = new IntersectionObserver(entries => {
+      const batch = entries.filter(e => e.isIntersecting).map(e => e.target);
+      if (!batch.length) return;
+      batch.forEach(el => riser.unobserve(el));
+      gsap.to(batch, { y: 0, opacity: 1, stagger: 0.07, duration: 0.9, overwrite: 'auto' });
+    }, { rootMargin: '0px 0px -10% 0px' });
+    below.forEach(el => riser.observe(el));
+    // A keyboard user can reach a link before its block has risen.
+    addEventListener('focusin', e => {
+      const el = e.target.closest(RISE);
+      if (!el || !below.includes(el)) return;
+      riser.unobserve(el);
+      gsap.to(el, { y: 0, opacity: 1, duration: 0.3, overwrite: 'auto' });
+    });
 
     // Counters.
     $$('[data-count]').forEach(el => {
@@ -317,20 +432,6 @@
 
     // Benchmark bars grow from zero.
     gsap.from('.bench .bar', { scaleX: 0, duration: 1.4, stagger: 0.03, scrollTrigger: { trigger: '.bench__table', start: 'top 75%', once: true } });
-
-    // Code windows type themselves out, line by line, then park a caret.
-    $$('.window').forEach(win => {
-      const lines = $$('.ln', win);
-      gsap.set(lines, { clipPath: 'inset(0 100% 0 0)' });
-      const tl = gsap.timeline({ paused: true, onComplete: () => lines.at(-1).insertAdjacentHTML('beforeend', '<span class="caret"></span>') });
-      let t = 0;
-      lines.forEach(ln => {
-        const n = ln.textContent.length, d = Math.min(0.32, 0.004 * n + 0.03);
-        tl.to(ln, { clipPath: 'inset(0 0% 0 0)', duration: d, ease: `steps(${Math.max(1, Math.min(n, 48))})` }, t);
-        t += d * 0.55;
-      });
-      ScrollTrigger.create({ trigger: win, start: 'top 78%', once: true, onEnter: () => tl.play() });
-    });
 
     ScrollTrigger.refresh();
   });

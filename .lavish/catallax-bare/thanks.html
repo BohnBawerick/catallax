@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Special thanks</title>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="brand/fonts.css">
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="bare.css">
+<link rel="stylesheet" href="read.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="frame" aria-hidden="true"></div>
+<header class="bar">
+  <a class="bar__brand" href="index.html" aria-label="Catallax, home" data-home><img src="brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="why.html">Why</a>
+  <a class="bar__link" href="thanks.html" aria-current="page">Thanks</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+  <a class="bar__link bar__link--hot" href="https://github.com/sponsors/BohnBawerick" target="_blank" rel="noopener">Support</a>
+</header>
+<main id="main" class="read">
+  <header class="read__head">
+    <h1>
+      <span class="ln"><span>Knowledge,</span></span>
+      <span class="ln"><span>published <em>free</em>.</span></span>
+    </h1>
+    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>
+  </header>
+  <div class="read__grid">
+    <div class="read__body">
+      <p class="read__lede">Catallax stands on decades of work published openly for anyone to study: foundational papers, candid engineering retrospectives, open standards, and public source code. That is how mathematics and engineering are meant to move.</p>
+      <p>None of this work entered Catallax as copied source code. What we drew from are the published ideas: a mathematical definition, a formal proof, an architectural lesson, or a hard-won mistake named plainly.</p>
+      <p class="read__plain">Clean-room implementation: Catallax is written from scratch and shares no source code or affiliation with the projects and authors below. We cite them in gratitude for their published research and open technical writing.</p>
+    </div>
+    <section class="read__side read__side--wide">
+      <h2 class="mono">Published work &amp; architectural lineage</h2>
+      <ul class="read__refs">
+      <li><p>Six years of open development on <a href="https://github.com/hannobraun/fornjot" target="_blank" rel="noopener">Fornjot</a>, a B-rep kernel in Rust, and the candid retrospective <a href="https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/" target="_blank" rel="noopener">"Shutting Down Fornjot"</a>. Its six documented architectural lessons directly informed our build sequence and strict kernel invariants.</p></li>
+      <li><p><a href="https://github.com/mkeeter/fidget" target="_blank" rel="noopener">Fidget</a> and <a href="https://libfive.com/" target="_blank" rel="noopener">libfive</a>. Catallax’s implicit field evaluator draws directly from their architectural design: fixed-order evaluation tapes, independent point queries, and reusable evaluator storage.</p></li>
+      <li><p><a href="https://dev.opencascade.org/" target="_blank" rel="noopener">The open-source B-rep standard</a> used as one of our external verification oracles to open and validate every STEP file Catallax exports.</p></li>
+      <li><p><a href="https://github.com/virtualritz/monstertruck" target="_blank" rel="noopener">monstertruck</a>, <a href="https://github.com/elgar328/nacre" target="_blank" rel="noopener">Nacre</a>, and <a href="https://github.com/gilbertorconde/ogeom-rs" target="_blank" rel="noopener">ogeom-rs</a>, open-source Rust B-rep kernels whose public architectures served as valuable reference points when benchmarking our B-rep topology against existing implementations.</p></li>
+      <li><p><a href="https://doi.org/10.1016/S0010-4485(00)00036-1" target="_blank" rel="noopener">"Consistent updates in dual representation systems"</a> (2000). The mathematical foundation behind verifying that two distinct geometric representations model the exact same solid.</p></li>
+      <li><p>"Constant-radius blending in solid modeling" (1984) and <a href="https://faculty.cc.gatech.edu/~jarek/papers/Offsets.pdf" target="_blank" rel="noopener">"Offsetting operations in solid modeling"</a> (1986), establishing the mathematical formulation of the rolling-ball fillet as an offset construction.</p></li>
+      <li><span class="mono">Farouki and Sverrisson</span><p><a href="https://doi.org/10.1016/0010-4485(96)00008-5" target="_blank" rel="noopener">"Approximation of rolling-ball blends for free-form parametric surfaces"</a> (1996). How a blend is approximated to a prescribed precision.</p></li>
+      <li><span class="mono">Jackson · Parasolid</span><p><a href="https://doi.org/10.1145/218013.218067" target="_blank" rel="noopener">Parasolid's tolerant-modelling paper</a> (1995). The reasons behind our local tolerance caps and the rule that tolerance growth must be contained.</p></li>
+      <li><span class="mono">Hedberg et al.</span><p><a href="https://doi.org/10.1115/1.4032697" target="_blank" rel="noopener">"Testing the digital thread"</a> (2016). The gap limits exchanged models carry in automotive and defence work.</p></li>
+      <li><span class="mono">STEP Tools</span><p><a href="https://www.steptools.com/docs/stp_aim/html/" target="_blank" rel="noopener">Public documentation</a> of the STEP AP242 entities our exporter writes.</p></li>
+      </ul>
+    </section>
+  </div>
+</main>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Sheet</small><span>3 of 3</span></div>
+  <div class="block__cell"><small>Title</small><span>Special thanks</span></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://pedro.zigrawbohnbawerick.org/" target="_blank" rel="noopener">Pedro De Paiva</a></div>
+  <div class="block__cell"><small>Licence</small><span>MIT</span></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="why.html">Why</a></span></div>
+</footer>
+<script src="read.js"></script>
+</body>
+</html>

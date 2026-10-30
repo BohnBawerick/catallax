@@ -284,9 +284,7 @@ fn paths(
             result
         }
         Surface::Cone(s) => {
-            let Some([u, v, axis]) = crate::points::analytic_frame(&s.axis, &s.ref_dir) else {
-                return Ok(Vec::new());
-            };
+            let [u, v, axis] = crate::points::cone_frame(s);
             let coordinates = |point: &Point3| {
                 let d = point.minus(&s.apex);
                 [d.dot(&u), d.dot(&v), d.dot(&axis)]

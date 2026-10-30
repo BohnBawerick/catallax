@@ -52,6 +52,18 @@ pub(crate) fn analytic_frame(axis: &Vector3, reference: &Vector3) -> Option<[Vec
     let v = axis.cross(&u);
     Some([u, v, axis])
 }
+pub(crate) fn cone_frame(cone: &catallax_shapes::Cone) -> [Vector3; 3] {
+    // A rational rigid motion may give the seam a non-Pythagorean length.
+    // Cone probes and their certified paths must use the same exact frame.
+    let axis = cone
+        .axis
+        .scaled(&(Real::one() / root(&cone.axis.norm_squared())));
+    let u = cone
+        .ref_dir
+        .scaled(&(Real::one() / root(&cone.ref_dir.norm_squared())));
+    let v = axis.cross(&u);
+    [u, v, axis]
+}
 fn rational_circle(t: &Rational) -> [Rational; 2] {
     let squared = t * t;
     let denominator = &r(1) + &squared;
@@ -207,9 +219,7 @@ fn exact_probe(
             Ok(None)
         }
         Surface::Cone(s) => {
-            let Some([u, v, axis]) = analytic_frame(&s.axis, &s.ref_dir) else {
-                return Ok(None);
-            };
+            let [u, v, axis] = cone_frame(s);
             let d = target.minus(&s.apex);
             let height = dec.enclose(&d.dot(&axis), width)?.mid();
             if height.sign() != Sign::Positive {

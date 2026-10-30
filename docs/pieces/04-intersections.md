@@ -101,6 +101,15 @@ For a vector `v`, `|v|` means `sqrt(v . v)` as a `Real`, and `v^` means `v / |v|
 
 Unimplemented intersecting poses return `intersect.traced-pair-required`. The rational fast path retains the established `intersect.algebraic-direction-required` cases so existing native answers stay unchanged. Algebraic definitions use `Real` directions and certified coefficient decisions rather than that rational-only direction restriction. These temporary coverage codes do not mean impossible geometry.
 
+The Boolean caller can exclude finite parallel cone bands, or a cone band and
+a parallel cylinder, without tracing their unbounded supports. It first
+certifies each cone band between its complete coaxial rings, then bounds its
+radius by the larger ring radius. Strict external tube separation, or strict
+containment inside a cylinder, excludes a meeting. Axis distances and exact
+cone probe frames retain these proofs under rational rigid placements.
+Touching or overlapping tubes do not authorize an exclusion; truly meeting
+cone pairs still require tracing.
+
 Curve queries include closed conics from these pairs and finite open-conic arcs. Membership retains the cone nappe, generator-ray and component selectors. A polynomial carrier alone does not establish membership. An unresolved cone nappe or new conic divider makes hit construction refuse with the originating numeric code; it cannot retain the other component with a mark. Legacy bounded divider marks are unchanged.
 
 ## Where two surfaces meet

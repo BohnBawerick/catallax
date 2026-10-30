@@ -102,13 +102,29 @@ pub(crate) fn build(
         let Loop::Coedges(coedges) = model.loop_(definition.loops[0]) else {
             return Ok(false);
         };
-        if coedges.len() != 4 {
+        if coedges.len() < 4 {
             return Ok(false);
         }
-        for &coedge in coedges {
-            let rail = chain(model, &[coedge], chart, boundaries);
-            if rail.len() >= 2 && (rail.last().unwrap().1[0] - rail[0].1[0]).abs() > 1e-12 {
-                rails.push(rail);
+        // Rails are the runs of curved coedges between rulings. A run may join
+        // several edges, such as a slot end wall's top arc and the blend that cuts it.
+        let curved: Vec<_> = coedges
+            .iter()
+            .map(|&coedge| {
+                let rail = chain(model, &[coedge], chart, boundaries);
+                rail.len() >= 2 && (rail.last().unwrap().1[0] - rail[0].1[0]).abs() > 1e-12
+            })
+            .collect();
+        let Some(ruling) = curved.iter().position(|curved| !curved) else {
+            return Ok(false);
+        };
+        let mut run = Vec::new();
+        for i in 1..=coedges.len() {
+            let index = (ruling + i) % coedges.len();
+            if curved[index] {
+                run.push(coedges[index]);
+            } else if !run.is_empty() {
+                rails.push(chain(model, &run, chart, boundaries));
+                run.clear();
             }
         }
     }

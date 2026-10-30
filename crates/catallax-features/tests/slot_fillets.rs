@@ -1,12 +1,21 @@
 //! Extruded slot top boundary: a straight strip runs past its rail ends and is
 //! cut by the two cylindrical end walls, with exact volumes, terminal curves,
-//! radius-independent names and an immutable input after refusal.
+//! radius-independent names, an immutable input after refusal and a closed
+//! display at the application's default limits.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs::OpenOptions,
+    io::Write,
+    time::{Duration, Instant},
+};
 
 use catallax_boolean::{Containment, classify_point};
 use catallax_features::{BuildError, Built, evaluate, evaluate_incremental};
-use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, Real, StrictSign};
+use catallax_mesh::{Mesh, MeshOptions, PreviewOptions, mesh_body, preview_mesh_body};
+use catallax_numbers::{
+    BudgetPolicy, Decider, Outcome, Rational, Real, StrictSign, with_operation_budget,
+};
 use catallax_recipe::{Recipe, Role, StepId};
 use catallax_shapes::{Curve, Point3, RPoint3, Surface};
 use catallax_topology::{Loop, Sense};
@@ -229,6 +238,139 @@ fn a_straight_strip_ends_on_both_cylindrical_end_walls() {
                 (["0", "0", "1"], Containment::Inside),
             ],
         );
+    }
+}
+
+/// `catallax_app::DEFAULT_BUILD_WORK`: construction and display share it.
+const APPLICATION_WORK: u64 = 20_000_000;
+/// Speed target for one display mesh. Clock time is reported and never fails a check.
+const MESH_TARGET: Duration = Duration::from_secs(1);
+
+/// SolidDraft's default display: the default chord and a 15 degree normal limit.
+fn display_options() -> MeshOptions {
+    MeshOptions {
+        angular_deviation: Some(Rational::parse("0.2617993877991494").unwrap()),
+        ..MeshOptions::default()
+    }
+}
+
+/// A passing test's output is hidden, so CI also gets the warning in its step summary.
+fn report_warning(warning: &str) {
+    eprintln!("warning: {warning}");
+    let summary = std::env::var_os("GITHUB_STEP_SUMMARY")
+        .and_then(|path| OpenOptions::new().append(true).open(path).ok());
+    if let Some(mut summary) = summary {
+        let _ = writeln!(summary, "- warning: {warning}");
+    }
+}
+
+/// Builds and meshes one recipe inside a single application allowance, as
+/// `catallax_app::build` does.
+fn display(recipe: &Recipe, options: &MeshOptions, case: &str) -> (Built, Mesh) {
+    let mut dec = Decider::default();
+    let ((built, mesh, elapsed), work) = with_operation_budget(APPLICATION_WORK, || {
+        let built = evaluate(recipe, &mut dec).unwrap_or_else(|e| panic!("{case}: {e}"));
+        let start = Instant::now();
+        let mesh = mesh_body(&built.model, built.result, options, &mut dec);
+        (built, mesh, start.elapsed())
+    });
+    assert!(!work.exhausted, "{case} exhausted the work cap: {work:?}");
+    if elapsed >= MESH_TARGET {
+        report_warning(&format!(
+            "{case} mesh took {elapsed:?}, target {MESH_TARGET:?}"
+        ));
+    }
+    let mesh = mesh.unwrap_or_else(|e| panic!("{case}: {e:?}")).value;
+    (built, mesh)
+}
+
+#[test]
+fn the_rounded_slot_meshes_closed_at_the_default_display_limits() {
+    let options = display_options();
+    let (_, plain) = display(&recipe(&[], "0", 3), &options, "plain slot");
+    for radius in ["1", "4"] {
+        let case = format!("r={radius}");
+        let (built, mesh) = display(&recipe(&["top"], radius, 3), &options, &case);
+        let model = &built.model;
+        assert!(mesh.unavailable_controls.is_empty(), "{case}");
+        let faces = model.faces_of_body(built.result);
+        let meshed: BTreeSet<_> = mesh.faces.iter().map(|f| f.face).collect();
+        assert_eq!(
+            meshed,
+            faces.iter().copied().collect::<BTreeSet<_>>(),
+            "{case}"
+        );
+        assert_eq!(mesh.edges.len(), model.edges_of_body(built.result).len());
+
+        // Closed and oriented: every segment has two opposite uses, including
+        // every shared edge polyline, and the genus-0 surface has V - E + F = 2.
+        let mut incidence = BTreeMap::<_, (usize, i32)>::new();
+        for triangle in &mesh.triangles {
+            for i in 0..3 {
+                let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+                let uses = incidence.entry((a.min(b), a.max(b))).or_default();
+                uses.0 += 1;
+                uses.1 += if a < b { 1 } else { -1 };
+            }
+        }
+        assert!(incidence.values().all(|uses| *uses == (2, 0)), "{case}");
+        assert_eq!(mesh.triangles.len(), 2 * mesh.positions.len() - 4, "{case}");
+        for edge in &mesh.edges {
+            assert!(edge.max_chord_error <= options.chord_tolerance, "{case}");
+            for pair in edge.vertices.windows(2) {
+                let key = (pair[0].min(pair[1]), pair[0].max(pair[1]));
+                assert_eq!(incidence.get(&key), Some(&(2, 0)), "{case}");
+            }
+        }
+        let polylines: BTreeMap<_, _> = mesh.edges.iter().map(|e| (e.edge, e)).collect();
+        for face in &mesh.faces {
+            assert!(face.max_chord_error <= options.chord_tolerance, "{case}");
+            assert_eq!(face.max_angular_deviation, options.angular_deviation);
+            // Both end walls and the strip are ruled strips between their
+            // boundary samples: a disc with S boundary segments and no
+            // interior vertex has S - 2 triangles.
+            let definition = model.face(face.face);
+            if !matches!(
+                model.geom().surface(definition.surface),
+                Surface::Cylinder(_)
+            ) {
+                continue;
+            }
+            let [boundary] = definition.loops[..] else {
+                panic!("{case}: a cylindrical face has one loop");
+            };
+            let Loop::Coedges(cs) = model.loop_(boundary) else {
+                panic!("{case}: a cylindrical face has a coedge boundary");
+            };
+            let segments: usize = cs
+                .iter()
+                .map(|c| polylines[&model.coedge(*c).edge].vertices.len() - 1)
+                .sum();
+            assert_eq!(face.triangles.len(), segments - 2, "{case}");
+        }
+        // At these radii the strip cuts more triangles from the top cap than it
+        // and its two wall cuts add. When an end wall's cap could not join two
+        // edges, each wall alone took about 60,000 triangles at the default
+        // chord and never met the normal limit.
+        assert!(
+            mesh.triangles.len() <= plain.triangles.len(),
+            "{case}: {} triangles, unrounded {}",
+            mesh.triangles.len(),
+            plain.triangles.len()
+        );
+
+        let (preview, work) = with_operation_budget(APPLICATION_WORK, || {
+            preview_mesh_body(
+                model,
+                built.result,
+                &PreviewOptions::from(&options),
+                &mut Decider::default(),
+            )
+        });
+        assert!(!work.exhausted, "{case} preview: {work:?}");
+        let preview = preview.unwrap_or_else(|e| panic!("{case} preview: {e:?}"));
+        assert_eq!(preview.faces.len(), faces.len());
+        assert!(preview.faces.iter().all(|f| !f.triangles.is_empty()));
     }
 }
 

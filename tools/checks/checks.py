@@ -20,6 +20,10 @@ RULES = 'tools/checks/rules.json'
 INVENTORY = 'tools/checks/earlier-answers.json'
 DRIVER = '.claude/skills/verify-catallax/scripts/control-catallax.py'
 RAW_POLICY = 'tools/checks/known-raw-invalid.json'
+CORRECTIONS = 'tools/checks/replay-corrections.json'
+STEP_CORRECTION_FIELDS = {
+    'step.added_edges', 'step.added_vertices',
+    'step.max_deviation', 'step.approximated_curves'}
 # Captain's 29 October 2026 option-A ruling. Data cannot grant itself authority.
 RAW_STEP_RULING_DIGESTS = {
     '7755b0bd5ef52fd26b40197d73a8e9d767683b78644b24d496795dc0b4217e9e'}
@@ -148,9 +152,58 @@ def union_selection(base, candidate):
             'reasons': sorted(set(base['reasons'] + candidate['reasons']))}
 
 
-def metadata_errors(base, candidate):
-    if base != candidate:
-        return ['accepted-answer metadata changed without base approval']
+def metadata_errors(base, candidate, corrections=None, base_policy=None):
+    if base == candidate:
+        return []
+    failure = ['accepted-answer metadata changed without base approval']
+    if not corrections or corrections.get('format') != 'catallax-replay-corrections/1':
+        return failure
+    if not base_policy or raw_step_errors([], base_policy):
+        return failure
+    rows = corrections.get('corrections', [])
+    if len({row['index'] for row in rows}) != len(rows) or len(base) != len(candidate):
+        return failure
+    approved = {row['index']: row['step_sha256']
+                for ruling in base_policy['rulings'] for row in ruling['approved']}
+    by_index = {row['index']: row for row in rows}
+    for before, after in zip(base, candidate):
+        if before == after:
+            continue
+        index = before['index']
+        correction = by_index.get(index)
+        if not correction or index not in base_policy['known_raw_invalid']:
+            return failure
+        if (correction.get('class') != 'invalid-to-valid-step'
+                or correction.get('request_sha256') != before['request_sha256']
+                or correction.get('before_sha256') != before['accepted_answer_sha256']
+                or correction.get('before_manifest_sha256') != before['accepted_manifest_sha256']
+                or correction.get('before_step_sha256') != before['accepted_files']['answer.step']
+                or correction.get('before_step_sha256') != approved.get(index)
+                or not set(correction.get('manifest_fields', [])) <= STEP_CORRECTION_FIELDS
+                or not valid_digest(correction.get('unchanged_manifest_sha256'))):
+            return failure
+        expected = json.loads(json.dumps(before))
+        expected['accepted_answer_sha256'] = correction.get('after_sha256')
+        expected['accepted_manifest_sha256'] = correction.get('after_manifest_sha256')
+        expected['accepted_files']['answer.step'] = correction.get('after_step_sha256')
+        if (expected != after or any(not valid_digest(value) for value in (
+                expected['accepted_answer_sha256'], expected['accepted_manifest_sha256'],
+                expected['accepted_files']['answer.step']))):
+            return failure
+    return []
+
+
+def valid_digest(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+
+
+def correction_manifest_errors(manifest, correction, driver):
+    comparable = driver.comparable(manifest)
+    comparable['step'] = dict(comparable['step'])
+    for field in STEP_CORRECTION_FIELDS:
+        comparable['step'].pop(field.split('.')[1], None)
+    if driver.digest(comparable) != correction['unchanged_manifest_sha256']:
+        return ['correction changes a manifest field outside the four STEP fields']
     return []
 
 
@@ -246,10 +299,11 @@ def prepare(args):
     base_rules = json.loads(git('show', f'{args.base}:{RULES}')) if git_has(args.base, RULES) else read(ROOT / RULES)
     base_metadata = json.loads(git('show', f'{args.base}:{INVENTORY}')) if git_has(args.base, INVENTORY) else read(ROOT / INVENTORY)
     candidate_rules, candidate_metadata = read(ROOT / RULES), read(ROOT / INVENTORY)
-    errors = metadata_errors(base_metadata, candidate_metadata)
+    base_policy = (json.loads(git('show', f'{args.base}:{RAW_POLICY}'))
+                   if git_has(args.base, RAW_POLICY) else read(ROOT / RAW_POLICY))
+    errors = metadata_errors(base_metadata, candidate_metadata, read(ROOT / CORRECTIONS), base_policy)
     errors += raw_step_errors([], read(ROOT / RAW_POLICY))
-    if git_has(args.base, RAW_POLICY):
-        errors += raw_step_errors([], json.loads(git('show', f'{args.base}:{RAW_POLICY}')))
+    errors += raw_step_errors([], base_policy)
     if errors:
         raise ValueError('; '.join(errors))
     if base_rules['workers'] != 4 or candidate_rules['workers'] != 4:
@@ -277,6 +331,7 @@ def prepare(args):
                          'run_id': str(args.run_id), 'run_attempt': str(args.run_attempt),
                          'corpus_sha256': base_rules['corpus_sha256'],
                          'raw_policy_sha256': sha(ROOT / RAW_POLICY),
+                         'corrections_sha256': sha(ROOT / CORRECTIONS),
                          'metadata_sha256': sha(ROOT / INVENTORY), 'driver_sha256': sha(ROOT / DRIVER)},
             'selection': selection}
     plan['decisions'] = {
@@ -319,6 +374,7 @@ def gate(args):
                'run_id': os.environ.get('GITHUB_RUN_ID', 'local'),
                'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
                'raw_policy_sha256': sha(ROOT / RAW_POLICY),
+               'corrections_sha256': sha(ROOT / CORRECTIONS),
                'metadata_sha256': sha(ROOT / INVENTORY), 'driver_sha256': sha(ROOT / DRIVER)}
     for field, value in current.items():
         if plan['identity'].get(field) != value:
@@ -340,6 +396,7 @@ def gate(args):
 def replay(args):
     started = time.monotonic()
     rules, metadata = read(ROOT / RULES), read(ROOT / INVENTORY)
+    corrections = {row['index']: row for row in read(ROOT / CORRECTIONS)['corrections']}
     if sha(args.inputs) != rules['corpus_sha256']:
         raise ValueError('corpus_sha256 mismatch')
     if len(os.sched_getaffinity(0)) < 4:
@@ -393,6 +450,8 @@ def replay(args):
                            if (sha(directory / name) if (directory / name).exists() else None)
                            != accepted['accepted_files'][name]]
                 cause = 'STEP bytes' if changed == ['answer.step'] else 'output bytes'
+        if index in corrections and correction_manifest_errors(manifest, corrections[index], driver):
+            cause = 'unapproved correction manifest field'
         if response['work']['used'] > 100_000_000:
             cause = 'above 100M work'
         if case['cache_hit'] or manifest.get('status') == 'internal-error':

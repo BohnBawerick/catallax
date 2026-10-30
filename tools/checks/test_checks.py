@@ -10,7 +10,8 @@ class GateTests(unittest.TestCase):
     def setUp(self):
         self.plan = {'identity': {'commit': 'candidate', 'run_id': '123', 'run_attempt': '1',
                                  'corpus_sha256': 'corpus', 'metadata_sha256': 'metadata',
-                                 'driver_sha256': 'driver', 'raw_policy_sha256': 'raw-policy'},
+                                 'driver_sha256': 'driver', 'raw_policy_sha256': 'raw-policy',
+                                 'corrections_sha256': 'corrections'},
                      'selection': {'jobs': {'fmt': 1, 'clippy': 1, 'tests': 4, 'build': 1, 'replay': 1},
                                    'selected_cases': 477},
                      'declared': ['fmt', 'clippy', 'tests', 'build', 'replay', 'scoreboard']}
@@ -50,7 +51,7 @@ class GateTests(unittest.TestCase):
     def test_g4_c4_identity_mismatches(self):
         for field in ('commit', 'run_id', 'binary_sha256', 'corpus_sha256',
                       'metadata_sha256', 'driver_sha256', 'raw_policy_sha256',
-                      'cache_hits', 'workers', 'fresh'):
+                      'corrections_sha256', 'cache_hits', 'workers', 'fresh'):
             with self.subTest(field=field):
                 records = copy.deepcopy(self.records)
                 replay = next(r for r in records if r['job'] == 'replay')
@@ -67,8 +68,8 @@ class GateTests(unittest.TestCase):
                  '0203b8b177ca59e519192e31b591c51d3668e031ed6a83e0cae0539f84a8bdcd'}]
         changed = [{'index': 7, 'accepted_answer_sha256': 'changed'}]
         self.assertEqual(checks.metadata_errors(base, base), [])
-        # C3(a) and C3(b) share this preflight: kernel changes cannot grant an
-        # approval because the comparison takes only base and candidate metadata.
+        # C3(a) and C3(b) cannot grant approval without an admissible correction
+        # backed by the base revision's trusted raw-invalid ruling.
         self.assertIn('without base approval', checks.metadata_errors(base, changed)[0])
 
 
@@ -142,6 +143,7 @@ class SelectorTests(unittest.TestCase):
 class RawStepPolicyTests(unittest.TestCase):
     def test_captain_ruling_table(self):
         policy = checks.read(checks.ROOT / checks.RAW_POLICY)
+        policy['known_raw_invalid'] = [262, 431]
         observed = [
             {'index': 262, 'step_sha256': '770dfffc0237a182539afff13d14b0307dbbf928be5a089bc43a665ee06319e1', 'valid': False},
             {'index': 431, 'step_sha256': '4229c04a36d92d059398573423059238c34732ba8d220933094c260c7ef4a9a3', 'valid': False}]
@@ -172,6 +174,71 @@ class RawStepPolicyTests(unittest.TestCase):
                     self.assertEqual(errors, [])
                 else:
                     self.assertTrue(any(expected_error in error for error in errors), errors)
+
+
+class StepCorrectionTests(unittest.TestCase):
+    def test_invalid_to_valid_correction_table(self):
+        driver = checks.load_module('correction_test_driver', checks.ROOT / checks.DRIVER)
+        policy = checks.read(checks.ROOT / checks.RAW_POLICY)
+        policy['known_raw_invalid'] = [262, 431]
+        approved = policy['rulings'][0]['approved'][0]['step_sha256']
+        before = {
+            'index': 262, 'request_sha256': 'a' * 64, 'family': 'mixed', 'owner': 'unknown',
+            'accepted_answer_sha256': 'b' * 64, 'accepted_manifest_sha256': 'c' * 64,
+            'accepted_files': {'answer.step': approved, 'display.obj': None,
+                               'print.stl': None, 'answer.igs': None}}
+        manifest = {
+            'status': 'answered', 'exact': True, 'marks': [],
+            'properties': {'volume': {'lo': '1', 'hi': '1'}},
+            'step': {'added_edges': 2, 'added_vertices': 1,
+                     'max_deviation': '1e-9', 'approximated_curves': 1}}
+        unchanged = copy.deepcopy(manifest)
+        for field in checks.STEP_CORRECTION_FIELDS:
+            unchanged['step'].pop(field.split('.')[1])
+        correction = {
+            'index': 262, 'class': 'invalid-to-valid-step', 'request_sha256': 'a' * 64,
+            'before_sha256': 'b' * 64, 'after_sha256': 'd' * 64,
+            'before_manifest_sha256': 'c' * 64,
+            'after_manifest_sha256': driver.digest(manifest),
+            'before_step_sha256': approved, 'after_step_sha256': 'e' * 64,
+            'manifest_fields': sorted(checks.STEP_CORRECTION_FIELDS),
+            'unchanged_manifest_sha256': driver.digest(unchanged)}
+        after = copy.deepcopy(before)
+        after.update(accepted_answer_sha256=correction['after_sha256'],
+                     accepted_manifest_sha256=correction['after_manifest_sha256'])
+        after['accepted_files']['answer.step'] = correction['after_step_sha256']
+        cases = [
+            ('exact approved correction', None, False),
+            ('candidate still raw-invalid', 'invalid', True),
+            ('not on base known list', 'unlisted', True),
+            ('before bytes differ from captain ruling', 'before-hash', True),
+            ('properties changed', 'properties', True),
+            ('inventory changed without a correction', 'missing', True)]
+        for name, fault, fails in cases:
+            with self.subTest(case=name):
+                base, candidate, row, base_policy, output = copy.deepcopy(
+                    (before, after, correction, policy, manifest))
+                valid = fault != 'invalid'
+                if fault == 'unlisted':
+                    base_policy['known_raw_invalid'].remove(262)
+                elif fault == 'before-hash':
+                    base['accepted_files']['answer.step'] = 'f' * 64
+                    row['before_step_sha256'] = 'f' * 64
+                elif fault == 'properties':
+                    output['properties']['volume']['hi'] = '2'
+                    row['after_manifest_sha256'] = driver.digest(output)
+                    candidate['accepted_manifest_sha256'] = row['after_manifest_sha256']
+                rows = [] if fault == 'missing' else [row]
+                errors = checks.metadata_errors(
+                    [base], [candidate],
+                    {'format': 'catallax-replay-corrections/1', 'corrections': rows}, base_policy)
+                errors += checks.correction_manifest_errors(output, row, driver)
+                candidate_policy = copy.deepcopy(base_policy)
+                candidate_policy['known_raw_invalid'] = []
+                errors += checks.raw_step_errors(
+                    [{'index': 262, 'step_sha256': row['after_step_sha256'], 'valid': valid}],
+                    candidate_policy)
+                self.assertEqual(bool(errors), fails, errors)
 
 
 if __name__ == '__main__':

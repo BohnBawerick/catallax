@@ -1259,11 +1259,13 @@ impl<'a> Exporter<'a> {
             // once more with every sphere on its perpendicular frame.
             if self.bands.faces.is_empty() {
                 for reframe in [false, true] {
+                    let mut retry_frame = false;
                     let charted = crate::partial::prepare(
                         self.model,
                         bodies.iter().copied().chain(envelope),
                         self.options,
                         reframe,
+                        &mut retry_frame,
                         self.dec,
                     )
                     .and_then(|prepared| {
@@ -1290,6 +1292,7 @@ impl<'a> Exporter<'a> {
                             return Ok(answer);
                         }
                         Ok(Some(_)) => {}
+                        Ok(None) if retry_frame => {}
                         Ok(None) => break,
                         Err(refusal)
                             if !matches!(

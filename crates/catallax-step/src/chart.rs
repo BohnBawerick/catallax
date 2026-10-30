@@ -35,6 +35,7 @@ pub(crate) fn meridian(
     geometry: &mut Geometry,
     model: &Model,
     face: FaceId,
+    interior_cut: bool,
     dec: &mut Decider,
 ) -> Result<Meridian, Refusal> {
     let mut major = None;
@@ -154,6 +155,9 @@ pub(crate) fn meridian(
             }
         }
         if regular {
+            if interior_cut && crossings.is_empty() {
+                continue;
+            }
             let meridian = Meridian {
                 reference,
                 crossings,

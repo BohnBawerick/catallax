@@ -39,10 +39,15 @@ def unique(shape, kind):
 
 
 def raw_solid(path):
+    solids = raw_solids(path)
+    if len(solids) != 1:
+        raise AssertionError(f'expected one STEP solid, got {len(solids)}')
+    return solids[0]
+
+
+def raw_solids(path):
     reader = STEPControl_Reader()
-    # OCCT 8's reader enables FixShape by default. Its processing-flags bitset
-    # is not exposed by the pinned Python binding. Translate the STEP solid
-    # directly instead of calling TransferRoots and then trying to undo repairs.
+    # Translate each STEP solid directly, without TransferRoots or ShapeFix.
     settings = {'read.stdsameparameter.mode': 0, 'read.maxprecision.mode': 0}
     previous = {name: Interface_Static.IVal_s(name) for name in settings}
     try:
@@ -54,22 +59,23 @@ def raw_solid(path):
         model = reader.StepModel()
         solids = [model.Value(i) for i in range(1, model.NbEntities() + 1)
                   if isinstance(model.Value(i), StepShape_ManifoldSolidBrep)]
-        if len(solids) != 1:
-            raise AssertionError(f'expected one STEP solid, got {len(solids)}')
-        process = Transfer_TransientProcess()
-        process.SetModel(model)
-        builder = StepToTopoDS_Builder()
-        builder.SetPrecision(1e-7)
-        builder.SetMaxTol(1e-7)
-        if isinstance(solids[0], StepShape_BrepWithVoids):
-            # Positional dispatch selects the base-solid overload and drops
-            # void shells. The keyword selects the raw void-aware translator.
-            builder.Init(theBRepWithVoids=solids[0], theTP=process)
-        else:
-            builder.Init(solids[0], process)
-        if not builder.IsDone():
-            raise AssertionError(f'cannot translate {path}')
-        return builder.Value()
+        if not solids:
+            raise AssertionError(f'no STEP solids in {path}')
+        shapes = []
+        for solid in solids:
+            process = Transfer_TransientProcess()
+            process.SetModel(model)
+            builder = StepToTopoDS_Builder()
+            builder.SetPrecision(1e-7)
+            builder.SetMaxTol(1e-7)
+            if isinstance(solid, StepShape_BrepWithVoids):
+                builder.Init(theBRepWithVoids=solid, theTP=process)
+            else:
+                builder.Init(solid, process)
+            if not builder.IsDone():
+                raise AssertionError(f'cannot translate {path}')
+            shapes.append(builder.Value())
+        return shapes
     finally:
         for name, value in previous.items():
             Interface_Static.SetIVal_s(name, value)

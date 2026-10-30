@@ -65,15 +65,20 @@ def corrected_properties_valid(path, manifest):
     if len(shapes) != 1 or not BRepCheck_Analyzer(shapes[0]).IsValid():
         return False
     shape = shapes[0]
-    values = []
-    for epsilon in (1e-6, 1e-7, 1e-8):
-        properties = GProp_GProps()
-        error = BRepGProp.VolumePropertiesGK_s(
-            shape, properties, epsilon, True, False, False, False, False)
-        if error < 0 or not math.isfinite(properties.Mass()):
-            return False
-        values.append(properties.Mass())
-    if abs(values[-1] - values[-2]) > max(1, abs(values[-1])) * 1e-10:
+    # Use the cheap sequence only when it converges. A fine pass must use its
+    # own spread, not inherit a wider margin from an unconverged coarse pass.
+    for epsilons in ((1e-6, 1e-7, 1e-8), (1e-10, 1e-12, 1e-14)):
+        values = []
+        for epsilon in epsilons:
+            properties = GProp_GProps()
+            error = BRepGProp.VolumePropertiesGK_s(
+                shape, properties, epsilon, True, False, False, False, False)
+            if error < 0 or not math.isfinite(properties.Mass()):
+                return False
+            values.append(properties.Mass())
+        if abs(values[-1] - values[-2]) <= max(1, abs(values[-1])) * 1e-10:
+            break
+    else:
         return False
     area = GProp_GProps()
     BRepGProp.SurfaceProperties_s(shape, area, 1e-12, False)

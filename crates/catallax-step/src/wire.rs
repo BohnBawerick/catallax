@@ -32,11 +32,17 @@ pub(crate) struct FaceCut {
 }
 
 pub(crate) struct ChartFace {
+    pub touching: bool,
     pub sides: BTreeMap<CoedgeId, [Side; 2]>,
     pub seams: BTreeSet<EdgeId>,
 }
 
 impl FaceCut {
+    pub fn split_touching(mut self, model: &Model) -> Result<Self, Refusal> {
+        self.loops = split_touching_walks(model, self.loops, &self.seams)?;
+        Ok(self)
+    }
+
     pub fn store(self, model: &mut Model, source: FaceId) -> (FaceId, ChartFace) {
         let sense = model.face(source).sense;
         let mut loops = Vec::with_capacity(self.loops.len());
@@ -68,6 +74,7 @@ impl FaceCut {
         (
             face,
             ChartFace {
+                touching: false,
                 sides,
                 seams: self.seams,
             },
@@ -400,4 +407,48 @@ pub(crate) fn cut_face(
         loops,
         seams,
     })
+}
+
+/// Separate lobes that meet only at a trim vertex before UV nesting.
+fn split_touching_walks(
+    model: &Model,
+    mut pending: Vec<Vec<Use>>,
+    seams: &BTreeSet<EdgeId>,
+) -> Result<Vec<Vec<Use>>, Refusal> {
+    let mut loops = Vec::new();
+    pending.reverse();
+    while let Some(mut wire) = pending.pop() {
+        let mut starts = BTreeMap::new();
+        let mut repeated = None;
+        for (index, edge_use) in wire.iter().enumerate() {
+            let edge = model.edge(edge_use.coedge.edge);
+            let (vertex, side) = if edge_use.coedge.sense == Sense::Same {
+                (
+                    edge.start,
+                    edge_use.sides[usize::from(edge.sense != Sense::Same)],
+                )
+            } else {
+                (
+                    edge.end,
+                    edge_use.sides[usize::from(edge.sense == Sense::Same)],
+                )
+            };
+            let vertex = vertex.expect("finite chart edge");
+            if let Some(first) = starts.insert((vertex, side), index) {
+                repeated = Some((first, index));
+                break;
+            }
+        }
+        if let Some((first, second)) = repeated {
+            let tail = wire.split_off(second);
+            let cycle = wire.split_off(first);
+            wire.extend(tail);
+            pending.push(wire);
+            pending.push(cycle);
+        } else {
+            seam_first(&mut wire, seams)?;
+            loops.push(wire);
+        }
+    }
+    Ok(loops)
 }

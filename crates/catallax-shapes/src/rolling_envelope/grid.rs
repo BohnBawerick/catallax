@@ -1,11 +1,12 @@
 //! A structured display grid of the carrier with a recomputed chord bound.
 //!
-//! Each cell is one subdivided Bezier patch. Its controls lie within `e` of the
-//! bilinear map through the cell's corners at the matching Greville points, so
-//! the rational surface and the cell's two triangles stay within
-//! `e + twist + (max w / min w - 1) * diameter` of each other in both directions:
-//! `twist` covers the quad's split, and the weight term the difference between
-//! rational and plain Bernstein combinations of the same points.
+//! Each cell is one subdivided rational Bezier patch P / W. Against the bilinear
+//! map B through its corners, S - B = (P - B W) / W. Both P and B W are polynomials
+//! of one degree higher in each direction, so the Bernstein coefficients of the
+//! numerator over the smallest weight bound the distance at matching parameters.
+//! That bound follows the patch's real curvature, whereas comparing rational
+//! controls with their Greville points adds a term from the weights' own slope.
+//! The quad's split then adds its twist.
 
 use super::*;
 
@@ -51,48 +52,67 @@ fn along(cell: Vec<Patch>, axis: usize) -> Vec<Patch> {
 
 impl Patch {
     fn corners(&self) -> Result<[[Ball; 3]; 4], Refusal> {
-        let points = self.cartesian()?;
-        let at = |i: usize, j: usize| points[i * 3 + j].clone();
-        Ok([at(0, 0), at(DEGREE, 0), at(0, 2), at(DEGREE, 2)])
+        let at = |i: usize, j: usize| -> Result<[Ball; 3], Refusal> {
+            let h = &self.net[i * 3 + j];
+            let divide = |value: &Ball| {
+                value
+                    .checked_div(&h[3])
+                    .ok_or_else(|| unresolved("subdivided envelope weight is not positive"))
+            };
+            Ok([divide(&h[0])?, divide(&h[1])?, divide(&h[2])?])
+        };
+        Ok([at(0, 0)?, at(DEGREE, 0)?, at(0, 2)?, at(DEGREE, 2)?])
     }
     fn chord(&self) -> Result<Rational, Refusal> {
-        let points = self.cartesian()?;
         let [a, c, d, e] = self.corners()?;
         let bits = a[0].precision();
-        let mut error = Rational::zero();
-        for i in 0..=DEGREE {
-            for j in 0..=2 {
-                let x = b(
-                    &Rational::from_ratio(i as i64, DEGREE as i64).expect("degree"),
-                    bits,
-                );
-                let y = b(&Rational::from_ratio(j as i64, 2).expect("two"), bits);
-                let rest = |t: &Ball| &b(&Rational::one(), bits) - t;
-                let bilinear: [Ball; 3] = std::array::from_fn(|k| {
-                    &(&(&a[k] * &(&rest(&x) * &rest(&y))) + &(&c[k] * &(&x * &rest(&y))))
-                        + &(&(&d[k] * &(&rest(&x) * &y)) + &(&e[k] * &(&x * &y)))
-                });
-                error = error.max(l1(&points[i * 3 + j], &bilinear));
+        let zero: [Ball; 3] = std::array::from_fn(|_| b(&Rational::zero(), bits));
+        // (1 - t) and t raise a Bernstein coefficient i of degree n to i and i + 1.
+        let lifted = |degree: usize, step: usize, i: usize| {
+            (if step == 0 { degree + 1 - i } else { i + 1 }) as i64
+        };
+        let corners = [[&a, &d], [&c, &e]];
+        let mut numerator = Rational::zero();
+        for k in 0..=DEGREE + 1 {
+            for l in 0..=3usize {
+                let mut sum = zero.clone();
+                for (step_u, along_v) in corners.iter().enumerate() {
+                    let Some(i) = k.checked_sub(step_u).filter(|i| *i <= DEGREE) else {
+                        continue;
+                    };
+                    for (step_v, corner) in along_v.iter().enumerate() {
+                        let Some(j) = l.checked_sub(step_v).filter(|j| *j <= 2) else {
+                            continue;
+                        };
+                        let h = &self.net[i * 3 + j];
+                        let factor = b(
+                            &Rational::from_ratio(
+                                lifted(DEGREE, step_u, i) * lifted(2, step_v, j),
+                                (DEGREE as i64 + 1) * 3,
+                            )
+                            .expect("degree"),
+                            bits,
+                        );
+                        for (m, value) in sum.iter_mut().enumerate() {
+                            *value = &*value + &(&(&h[m] - &(&corner[m] * &h[3])) * &factor);
+                        }
+                    }
+                }
+                numerator = numerator.max(l1(&sum, &zero));
             }
+        }
+        let low = self.net.iter().fold(None::<Rational>, |low, h| {
+            let w = h[3].lo();
+            Some(low.map_or(w.clone(), |value| value.min(w)))
+        });
+        let low = low.expect("controls");
+        if low <= Rational::zero() {
+            return Err(unresolved("subdivided envelope weight is not positive"));
         }
         let twist: [Ball; 3] = std::array::from_fn(|k| {
             &(&(&(&a[k] - &c[k]) - &d[k]) + &e[k]) * &b(&Rational::from_ratio(1, 4).unwrap(), bits)
         });
-        let zero: [Ball; 3] = std::array::from_fn(|_| b(&Rational::zero(), bits));
-        let diameter = points[1..]
-            .iter()
-            .fold(Rational::zero(), |worst, p| worst.max(l1(p, &points[0])));
-        let weights = self.net.iter().map(|h| &h[3]);
-        let (mut low, mut high) = (None::<Rational>, None::<Rational>);
-        for w in weights {
-            low = Some(low.map_or(w.lo(), |value| value.min(w.lo())));
-            high = Some(high.map_or(w.hi(), |value| value.max(w.hi())));
-        }
-        let (low, high) = (low.expect("controls"), high.expect("controls"));
-        if low <= Rational::zero() {
-            return Err(unresolved("subdivided envelope weight is not positive"));
-        }
-        Ok(error + l1(&twist, &zero) + (high / low - Rational::one()) * diameter)
+        Ok(numerator / low + l1(&twist, &zero))
     }
 }
 

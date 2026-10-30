@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -20,6 +21,10 @@ RULES = 'tools/checks/rules.json'
 INVENTORY = 'tools/checks/earlier-answers.json'
 DRIVER = '.claude/skills/verify-catallax/scripts/control-catallax.py'
 RAW_POLICY = 'tools/checks/known-raw-invalid.json'
+CORRECTIONS = 'tools/checks/replay-corrections.json'
+STEP_CORRECTION_FIELDS = {
+    'step.added_edges', 'step.added_vertices',
+    'step.max_deviation', 'step.approximated_curves'}
 # Captain's 29 October 2026 option-A ruling. Data cannot grant itself authority.
 RAW_STEP_RULING_DIGESTS = {
     '7755b0bd5ef52fd26b40197d73a8e9d767683b78644b24d496795dc0b4217e9e'}
@@ -148,9 +153,67 @@ def union_selection(base, candidate):
             'reasons': sorted(set(base['reasons'] + candidate['reasons']))}
 
 
-def metadata_errors(base, candidate):
-    if base != candidate:
-        return ['accepted-answer metadata changed without base approval']
+def metadata_errors(base, candidate, corrections=None, base_policy=None):
+    if base == candidate:
+        return []
+    failure = ['accepted-answer metadata changed without base approval']
+    if not corrections or corrections.get('format') != 'catallax-replay-corrections/1':
+        return failure
+    if not base_policy or raw_step_errors([], base_policy):
+        return failure
+    rows = corrections.get('corrections', [])
+    if len({row['index'] for row in rows}) != len(rows) or len(base) != len(candidate):
+        return failure
+    approved = {row['index']: row['step_sha256']
+                for ruling in base_policy['rulings'] for row in ruling['approved']}
+    by_index = {row['index']: row for row in rows}
+    for before, after in zip(base, candidate):
+        if before == after:
+            continue
+        index = before['index']
+        correction = by_index.get(index)
+        if not correction or index not in base_policy['known_raw_invalid']:
+            return failure
+        if (correction.get('class') != 'invalid-to-valid-step'
+                or correction.get('request_sha256') != before['request_sha256']
+                or correction.get('before_sha256') != before['accepted_answer_sha256']
+                or correction.get('before_manifest_sha256') != before['accepted_manifest_sha256']
+                or correction.get('before_step_sha256') != before['accepted_files']['answer.step']
+                or correction.get('before_step_sha256') != approved.get(index)
+                or not set(correction.get('manifest_fields', [])) <= STEP_CORRECTION_FIELDS
+                or not valid_digest(correction.get('unchanged_manifest_sha256'))):
+            return failure
+        expected = json.loads(json.dumps(before))
+        expected['accepted_answer_sha256'] = correction.get('after_sha256')
+        expected['accepted_manifest_sha256'] = correction.get('after_manifest_sha256')
+        expected['accepted_files']['answer.step'] = correction.get('after_step_sha256')
+        if (expected != after or any(not valid_digest(value) for value in (
+                expected['accepted_answer_sha256'], expected['accepted_manifest_sha256'],
+                expected['accepted_files']['answer.step']))):
+            return failure
+    return []
+
+
+def valid_digest(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
+
+
+def protected_manifest_digest(manifest, driver):
+    comparable = driver.comparable(manifest)
+    comparable['step'] = dict(comparable['step'])
+    for field in STEP_CORRECTION_FIELDS:
+        comparable['step'].pop(field.split('.')[1], None)
+    return driver.digest(comparable)
+
+
+def correction_manifest_errors(manifest, correction, driver, base_manifest):
+    if driver.digest(driver.comparable(base_manifest)) != correction['before_manifest_sha256']:
+        return ['base manifest does not match the accepted before manifest']
+    protected = protected_manifest_digest(base_manifest, driver)
+    if protected != correction['unchanged_manifest_sha256']:
+        return ['correction commitment does not match the authenticated base manifest']
+    if protected_manifest_digest(manifest, driver) != protected:
+        return ['correction changes a manifest field outside the four STEP fields']
     return []
 
 
@@ -227,7 +290,8 @@ def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
             expected['binary_sha256'] = None
         if name == 'replay':
             expected.update(workers=4, fresh=True, cache_hits=0,
-                            selected_cases=plan['selection']['selected_cases'])
+                            selected_cases=plan['selection']['selected_cases'],
+                            verified_corrections=[row['index'] for row in plan['correction_base_answers']])
         for field, value in expected.items():
             if type(record.get(field)) is not type(value) or record.get(field) != value:
                 errors.append(f'{name}: stale {field}: evidence={record.get(field)!r}, candidate={value!r}')
@@ -246,10 +310,11 @@ def prepare(args):
     base_rules = json.loads(git('show', f'{args.base}:{RULES}')) if git_has(args.base, RULES) else read(ROOT / RULES)
     base_metadata = json.loads(git('show', f'{args.base}:{INVENTORY}')) if git_has(args.base, INVENTORY) else read(ROOT / INVENTORY)
     candidate_rules, candidate_metadata = read(ROOT / RULES), read(ROOT / INVENTORY)
-    errors = metadata_errors(base_metadata, candidate_metadata)
+    base_policy = (json.loads(git('show', f'{args.base}:{RAW_POLICY}'))
+                   if git_has(args.base, RAW_POLICY) else read(ROOT / RAW_POLICY))
+    errors = metadata_errors(base_metadata, candidate_metadata, read(ROOT / CORRECTIONS), base_policy)
     errors += raw_step_errors([], read(ROOT / RAW_POLICY))
-    if git_has(args.base, RAW_POLICY):
-        errors += raw_step_errors([], json.loads(git('show', f'{args.base}:{RAW_POLICY}')))
+    errors += raw_step_errors([], base_policy)
     if errors:
         raise ValueError('; '.join(errors))
     if base_rules['workers'] != 4 or candidate_rules['workers'] != 4:
@@ -270,6 +335,8 @@ def prepare(args):
     if args.release_dry_run:
         selection['jobs']['release-dry-run'] = 1
     plan = {'format': 'catallax-check-plan/1', 'base': args.base, 'head': args.head,
+            'correction_base_answers': [before for before, after in zip(base_metadata, candidate_metadata)
+                                        if before != after],
             'declared': sorted(set(base_rules['jobs']) | set(candidate_rules['jobs']) |
                                {'select', 'release-evidence', 'release-dry-run', 'timings'}),
             'identity': {'commit': git('rev-parse', 'HEAD').decode().strip(),
@@ -277,6 +344,7 @@ def prepare(args):
                          'run_id': str(args.run_id), 'run_attempt': str(args.run_attempt),
                          'corpus_sha256': base_rules['corpus_sha256'],
                          'raw_policy_sha256': sha(ROOT / RAW_POLICY),
+                         'corrections_sha256': sha(ROOT / CORRECTIONS),
                          'metadata_sha256': sha(ROOT / INVENTORY), 'driver_sha256': sha(ROOT / DRIVER)},
             'selection': selection}
     plan['decisions'] = {
@@ -295,6 +363,8 @@ def prepare(args):
             for name in candidate_rules['jobs']:
                 out.write(f'{name}={str(name in selection["jobs"]).lower()}\n')
             out.write('packages=' + ' '.join('-p ' + name for name in selection['packages']) + '\n')
+            out.write('base_corrections=' + str(bool(plan['correction_base_answers'])).lower() + '\n')
+            out.write('base_commit=' + args.base + '\n')
     print(json.dumps(selection, sort_keys=True))
 
 
@@ -319,6 +389,7 @@ def gate(args):
                'run_id': os.environ.get('GITHUB_RUN_ID', 'local'),
                'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
                'raw_policy_sha256': sha(ROOT / RAW_POLICY),
+               'corrections_sha256': sha(ROOT / CORRECTIONS),
                'metadata_sha256': sha(ROOT / INVENTORY), 'driver_sha256': sha(ROOT / DRIVER)}
     for field, value in current.items():
         if plan['identity'].get(field) != value:
@@ -337,31 +408,97 @@ def gate(args):
     print('Every selected check and partition passed with exact-candidate evidence')
 
 
+def build_base(args):
+    plan = read(args.plan)
+    if not plan['correction_base_answers']:
+        raise ValueError('no new STEP corrections require a base verifier')
+    source = Path(args.source).resolve()
+    head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD']).decode().strip()
+    if head != plan['base']:
+        raise ValueError('base verifier checkout does not match the selected base')
+    if subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain']).strip():
+        raise ValueError('base verifier checkout is not clean')
+    target = ROOT / 'target' / 'check-base'
+    subprocess.run([
+        'cargo', 'build', '--release', '--locked', '-p', 'catallax-cli',
+        '--bin', 'catallax-verify', '--manifest-path', str(source / 'Cargo.toml'),
+        '--target-dir', str(target)], cwd=source, check=True)
+    destination = Path(args.out)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(target / 'release' / 'catallax-verify', destination)
+    print(json.dumps({'base_commit': plan['base'], 'binary_sha256': sha(destination)}))
+
+
+def run_fresh(driver, binary, requests, out, workers):
+    run_args = argparse.Namespace(binary=binary, inputs=[str(requests)], source='auto',
+                                 adapter=None, out=str(out), cache=None, cores=None,
+                                 max_work=100_000_000, workers=workers, fresh=True, dry_run=False)
+    try:
+        driver.run(run_args)
+    except Exception:
+        raise ValueError('replay execution failed; private diagnostics retained on runner') from None
+    return read(Path(out) / 'run.json')
+
+
+def correction_bases(args, plan, driver, release, inputs):
+    accepted = plan['correction_base_answers']
+    if not accepted:
+        return {}
+    if not args.base_binary:
+        raise ValueError('new STEP corrections require the base verifier')
+    source = Path(args.out) / 'base-requests.jsonl'
+    source.parent.mkdir(parents=True, exist_ok=True)
+    with source.open('w') as stream:
+        for row in accepted:
+            stream.write(driver.canonical({'max_work': 100_000_000, **inputs[row['index']],
+                                           'format': driver.CONTRACT}) + '\n')
+    report = run_fresh(driver, args.base_binary, source, Path(args.out) / 'base', 1)
+    if (len(report['cases']) != len(accepted)
+            or report['execution']['worker_exits'] != {'0': 0}
+            or report['config']['binary_sha256'] != sha(args.base_binary)):
+        raise ValueError('incomplete base correction replay')
+    manifests = {}
+    for row, case in zip(accepted, report['cases']):
+        directory = Path(case['path'])
+        request = read(directory / 'request.json')
+        request.pop('out', None)
+        manifest = case['response']['manifest']
+        if (driver.digest(request) != row['request_sha256']
+                or driver.digest(driver.comparable(manifest)) != row['accepted_manifest_sha256']
+                or release.answer_digest(driver, directory) != row['accepted_answer_sha256']
+                or sha(directory / 'answer.step') != row['accepted_files']['answer.step']
+                or case['cache_hit'] or case['response']['work']['used'] > 100_000_000):
+            raise ValueError(f"index {row['index']}: base replay does not match the accepted answer")
+        manifests[row['index']] = manifest
+    return manifests
+
+
 def replay(args):
     started = time.monotonic()
     rules, metadata = read(ROOT / RULES), read(ROOT / INVENTORY)
+    corrections = {row['index']: row for row in read(ROOT / CORRECTIONS)['corrections']}
+    plan = read(args.plan)
+    if (plan['identity']['metadata_sha256'] != sha(ROOT / INVENTORY)
+            or plan['identity']['corrections_sha256'] != sha(ROOT / CORRECTIONS)
+            or plan['identity']['commit'] != git('rev-parse', 'HEAD').decode().strip()):
+        raise ValueError('stale correction replay plan')
     if sha(args.inputs) != rules['corpus_sha256']:
         raise ValueError('corpus_sha256 mismatch')
     if len(os.sched_getaffinity(0)) < 4:
         raise ValueError('fixed replay requires at least four available cores')
     driver = load_module('catallax_merge_driver', ROOT / DRIVER)
     release = load_module('catallax_merge_release', ROOT / 'tools/release/release.py')
+    inputs = read(args.inputs)
+    base_manifests = correction_bases(args, plan, driver, release, inputs)
     # Do not invoke the CLI: its ordinary JSON summary contains private ids.
     # The pinned file is an array; the public driver accepts request JSONL.
     normalized = Path(args.out) / 'replay-requests.jsonl'
     normalized.parent.mkdir(parents=True, exist_ok=True)
     with normalized.open('w') as stream:
-        for row in read(args.inputs):
+        for row in inputs:
             stream.write(driver.canonical({'max_work': 100_000_000, **row,
                                            'format': driver.CONTRACT}) + '\n')
-    run_args = argparse.Namespace(binary=args.binary, inputs=[str(normalized)], source='auto',
-                                 adapter=None, out=args.out, cache=None, cores=None,
-                                 max_work=100_000_000, workers=4, fresh=True, dry_run=False)
-    try:
-        driver.run(run_args)
-    except Exception:
-        raise ValueError('replay execution failed; private diagnostics retained on runner') from None
-    report = read(Path(args.out) / 'run.json')
+    report = run_fresh(driver, args.binary, normalized, args.out, 4)
     execution = report['execution']
     if execution['workers'] != 4 or execution['fresh'] is not True:
         raise ValueError('replay requires four fresh workers')
@@ -370,6 +507,7 @@ def replay(args):
     if report['config']['binary_sha256'] != sha(args.binary):
         raise ValueError('binary_sha256 changed during replay')
     failures, outcomes, work = [], Counter(), 0
+    verified_corrections = []
     cases = report['cases']
     if len(cases) != len(metadata) or len(cases) != 477:
         raise ValueError('replay needs 477 complete cases')
@@ -393,6 +531,9 @@ def replay(args):
                            if (sha(directory / name) if (directory / name).exists() else None)
                            != accepted['accepted_files'][name]]
                 cause = 'STEP bytes' if changed == ['answer.step'] else 'output bytes'
+        if index in base_manifests and correction_manifest_errors(
+                manifest, corrections[index], driver, base_manifests[index]):
+            cause = 'unapproved correction manifest field'
         if response['work']['used'] > 100_000_000:
             cause = 'above 100M work'
         if case['cache_hit'] or manifest.get('status') == 'internal-error':
@@ -400,6 +541,8 @@ def replay(args):
         if cause:
             failures.append({'index': index, 'request_sha256': fingerprint, 'cause': cause,
                              'answer_sha256': answer_sha256})
+        elif index in base_manifests:
+            verified_corrections.append(index)
         refusal = manifest.get('refusal')
         outcomes[refusal['code'] if refusal else manifest['status']] += 1
         work += response['work']['used']
@@ -407,6 +550,7 @@ def replay(args):
                'cache_hits': sum(c['cache_hit'] for c in cases),
                'selected_cases': len(cases), 'elapsed_ms': (time.monotonic() - started) * 1000,
                'outcomes': dict(outcomes), 'work_total': work,
+               'verified_corrections': verified_corrections,
                'equal_cases': len(cases) - len(failures), 'failures': failures}
     write(args.summary, summary)
     print(json.dumps(summary, sort_keys=True))
@@ -429,6 +573,11 @@ def main():
     p.add_argument('--github-output')
     p.add_argument('--out', required=True)
     p.set_defaults(function=prepare)
+    p = commands.add_parser('build-base')
+    p.add_argument('--plan', required=True)
+    p.add_argument('--source', required=True)
+    p.add_argument('--out', required=True)
+    p.set_defaults(function=build_base)
     p = commands.add_parser('evidence')
     p.add_argument('--plan', required=True)
     p.add_argument('--job', required=True)
@@ -444,6 +593,8 @@ def main():
     p.add_argument('--jobs', required=True)
     p.set_defaults(function=gate)
     p = commands.add_parser('replay')
+    p.add_argument('--plan', required=True)
+    p.add_argument('--base-binary')
     p.add_argument('--inputs', required=True)
     p.add_argument('--binary', required=True)
     p.add_argument('--out', required=True)

@@ -77,8 +77,9 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                 with self.subTest(reader=mode):
                     self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
                     self.assertEqual(len(unique(shape, TopAbs_SOLID)), 1)
-                    self.assertEqual(tuple(len(unique(shape, kind)) for kind in
-                                           (TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX)), topology)
+                    if topology is not None:
+                        self.assertEqual(tuple(len(unique(shape, kind)) for kind in
+                                               (TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX)), topology)
                     volume, spread = converged_volume(shape)
                     area = GProp_GProps()
                     BRepGProp.SurfaceProperties_s(shape, area, 1e-12, False)
@@ -153,6 +154,14 @@ class PartialPeriodicTrimImports(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
             directory, _ = self.answer(recipe, Path(temporary))
             self.assertNotIn('PCURVE', (directory / 'answer.step').read_text())
+
+    def test_pole_near_a_trim_uses_a_perpendicular_frame(self):
+        # Ball minus the cap of height 4.999 on the negative x side.
+        self.check_intersection([
+            {'op': 'sphere', 'radius': '5', 'pose': pose()},
+            {'op': 'block', 'size': ['10.001', '20', '20'],
+             'pose': pose('-0.001', '-10', '-10')}],
+            None, 261.87792761444194)
 
     def test_interior_sphere_pole_moves_onto_an_export_cap(self):
         # An L-shaped prism minus a unit ball centred on its top face. The

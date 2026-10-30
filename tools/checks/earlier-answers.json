@@ -6036,12 +6036,12 @@
   {
     "index": 431,
     "request_sha256": "702e3f7269127510284052253d7963313ef98bf2d227927a04f7f86b55cdbf69",
-    "accepted_answer_sha256": "d55f4d556cac258cd65109c44067d4779eedda153c4499c9820c8adcf2779549",
+    "accepted_answer_sha256": "757616fa5adb79326fbaabe77581a6190a8a2924955f3eed3795d4fab6fe36ad",
     "family": "intersect",
     "owner": "unknown",
-    "accepted_manifest_sha256": "ad4a39228b9f7d24a1c6634018539239381e87acfa112d1d213091f679fd9be6",
+    "accepted_manifest_sha256": "68a52476265d27b0e4b75b71d5323434b8083691a92400bf1d6b16c265b730d8",
     "accepted_files": {
-      "answer.step": "4229c04a36d92d059398573423059238c34732ba8d220933094c260c7ef4a9a3",
+      "answer.step": "04ba7290c02495522130d52e22862ee3d5600adbf019dc31e621c134c1a2507d",
       "display.obj": null,
       "print.stl": null,
       "answer.igs": null

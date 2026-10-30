@@ -20,15 +20,17 @@ pub(crate) struct Prepared {
 /// and for complete bands already handled without changing their STEP bytes.
 /// With `reframe`, every trimmed spherical face is first moved onto its
 /// sphere's perpendicular frame.
+/// `retry_frame` is set only for a certified interior pole with no clear cap.
 pub(crate) fn prepare(
     model: &Model,
     bodies: impl Iterator<Item = BodyId> + Clone,
     options: &crate::StepOptions,
     reframe: bool,
+    retry_frame: &mut bool,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
     if !reframe {
-        return prepare_charts(model, bodies, options, true, true, dec);
+        return prepare_charts(model, bodies, options, true, true, retry_frame, dec);
     }
     let bodies: Vec<_> = bodies.collect();
     let reframed = frames::perpendicular(model, &bodies);
@@ -38,6 +40,7 @@ pub(crate) fn prepare(
         options,
         true,
         true,
+        retry_frame,
         dec,
     )?
     else {
@@ -56,6 +59,7 @@ fn prepare_charts(
     options: &crate::StepOptions,
     split_poles: bool,
     boundary_frames: bool,
+    retry_frame: &mut bool,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
     let faces = || {
@@ -156,6 +160,7 @@ fn prepare_charts(
             options,
             split_poles,
             false,
+            retry_frame,
             dec,
         )?
         else {
@@ -169,6 +174,7 @@ fn prepare_charts(
     }
     if !interior.is_empty() {
         let Some(split) = poles::split(model, &bodies, &interior, &mut geometry, dec)? else {
+            *retry_frame = true;
             return Ok(None);
         };
         let Some(mut prepared) = prepare_charts(
@@ -177,6 +183,7 @@ fn prepare_charts(
             options,
             false,
             false,
+            retry_frame,
             dec,
         )?
         else {

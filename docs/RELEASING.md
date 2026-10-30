@@ -89,11 +89,42 @@ public logs and artifacts.
 
 The final gate rejects missing, cancelled, unexpected, selected-but-skipped or
 stale jobs and missing test partitions. Evidence binds the tested merge commit,
-head commit, run and attempt, binary, corpus, metadata and driver identities.
-Replay evidence additionally requires four fresh workers, zero cache hits and
-the selected case count. Earlier-answer comparison is strict in R1, including
-all published output bytes. Metadata changes cannot authorize a new answer.
-The standing-disposition update procedure is separate follow-up work.
+head commit, run and attempt, binary, corpus, metadata, correction-list and driver
+identities. Replay evidence additionally requires four fresh workers, zero cache
+hits and the selected case count. Earlier-answer comparison remains byte-strict
+except for the narrow invalid-to-valid STEP correction path below.
+
+`tools/checks/replay-corrections.json` admits only `invalid-to-valid-step`
+corrections for indices on the base revision's active known-raw-invalid list.
+The before STEP hash must match both the base inventory and its trusted captain
+ruling. Each correction pins the request, before and after answer, manifest and
+STEP digests, the changed STEP fields, and a digest of the base comparable
+manifest without `step.added_edges`, `step.added_vertices`,
+`step.max_deviation` and `step.approximated_curves`. Family, owner, request and
+other output files cannot change.
+
+That committed digest has no authority on its own. For newly corrected indices,
+the selector retains the base inventory rows in the check plan. The build job
+checks out the plan's base revision, verifies its clean HEAD and builds a
+separate verifier. The replay job runs only those indices through that verifier,
+then checks their requests,
+answers, STEP files and full comparable manifests against the base inventory
+digests, then derives the protected-field digest from the authenticated base
+manifest itself. Both the committed digest and the candidate's protected fields
+must match that derived value. A candidate cannot authorize its own changed
+fields by recomputing its declaration.
+
+The replay summary records `verified_corrections`, which must name every newly
+corrected index at the final gate. Unchanged inventories require no base build
+or base replay. `checks.py replay` consumes `--plan` and requires `--base-binary`
+when that plan contains newly corrected indices. Base manifests stay private.
+
+The replay checks the committed candidate digests. The direct no-healing audit
+also requires each corrected file to be a valid single solid, within the default
+1e-7 STEP deviation, with its converged imported volume inside the unchanged
+certified volume interval widened by imported face area x 1e-7 and integration
+spread. Other metadata changes still cannot authorize a new answer.
+Release correction rows and release qualification remain separate release work.
 
 The captain's 29 October 2026 option-A ruling, "Go with the recomended",
 grandfathers exactly the inherited raw-invalid STEP files at indices 262 and

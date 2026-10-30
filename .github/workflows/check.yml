@@ -39,6 +39,8 @@ jobs:
       replay: ${{ steps.select.outputs.replay }}
       scoreboard: ${{ steps.select.outputs.scoreboard }}
       packages: ${{ steps.select.outputs.packages }}
+      base_corrections: ${{ steps.select.outputs.base_corrections }}
+      base_commit: ${{ steps.select.outputs.base_commit }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -189,6 +191,25 @@ jobs:
           "$RUNNER_TEMP/occt/bin/python" -B -m unittest discover -s tools/step-regressions -v
       - name: Generated comparison page
         run: python3 -B site/render/comparison.py --check
+      - name: Check out accepted base for STEP corrections
+        if: needs.select.outputs.base_corrections == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select.outputs.base_commit }}
+          path: .ci-base-source
+          persist-credentials: false
+      - name: Build accepted-base verifier for STEP corrections
+        if: needs.select.outputs.base_corrections == 'true'
+        run: |
+          python3 -B tools/checks/checks.py build-base --plan "$RUNNER_TEMP/selection.json" \
+            --source "$GITHUB_WORKSPACE/.ci-base-source" \
+            --out "$RUNNER_TEMP/base-binary/catallax-verify-base"
+      - uses: actions/upload-artifact@v4
+        if: needs.select.outputs.base_corrections == 'true'
+        with:
+          name: check-base-binary
+          path: ${{ runner.temp }}/base-binary/catallax-verify-base
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: check-binary
@@ -216,6 +237,11 @@ jobs:
         with:
           name: check-binary
           path: ${{ runner.temp }}/binary
+      - uses: actions/download-artifact@v4
+        if: needs.select.outputs.base_corrections == 'true'
+        with:
+          name: check-base-binary
+          path: ${{ runner.temp }}/base-binary
       - run: chmod +x "$RUNNER_TEMP/binary/catallax-verify"
       - name: Pinned private corpus
         uses: actions/checkout@v4
@@ -229,8 +255,16 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Fresh fixed-configuration earlier answers
         id: replay
+        env:
+          BASE_CORRECTIONS: ${{ needs.select.outputs.base_corrections }}
         run: |
+          flags=()
+          if [[ "$BASE_CORRECTIONS" == true ]]; then
+            chmod +x "$RUNNER_TEMP/base-binary/catallax-verify-base"
+            flags+=(--base-binary "$RUNNER_TEMP/base-binary/catallax-verify-base")
+          fi
           python3 -B tools/checks/checks.py replay \
+            --plan "$RUNNER_TEMP/selection.json" "${flags[@]}" \
             --inputs .private-proof-inputs/sets/baseline477-inputs.json \
             --binary "$RUNNER_TEMP/binary/catallax-verify" \
             --out "$RUNNER_TEMP/replay" --summary "$RUNNER_TEMP/replay-summary.json"

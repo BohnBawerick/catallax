@@ -270,6 +270,81 @@ fn face_box(
     Ok(Some(std::array::from_fn(|i| a[i].hull(&b[i]))))
 }
 
+fn band_radius_upper(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Rational, Refusal> {
+    let mut radius = Rational::zero();
+    for lp in &model.face(face).loops {
+        if let Loop::Coedges(coedges) = model.loop_(*lp) {
+            for coedge in coedges {
+                let edge = model.edge(model.coedge(*coedge).edge);
+                let Curve::Circle(circle) = model.geom().curve(edge.curve) else {
+                    unreachable!("face_box certified a complete circular band");
+                };
+                radius = radius.max(enclose(&circle.radius_sq.sqrt(), dec)?.hi());
+            }
+        }
+    }
+    Ok(radius)
+}
+
+// The caller certified this cone face as the band between complete rings.
+// Bound it by a tube and compare parallel axes, independent of world boxes.
+fn cone_band_misses_surface(
+    model: &mut Model,
+    face: FaceId,
+    other: FaceId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    if !matches!(
+        model.geom().surface(model.face(face).surface),
+        Surface::Cone(_)
+    ) {
+        return Ok(false);
+    }
+    if matches!(
+        model.geom().surface(model.face(other).surface),
+        Surface::Cone(_)
+    ) && face_box(model, other, false, dec)?.is_none()
+    {
+        return Ok(false);
+    }
+    let Surface::Cone(cone) = model.geom().surface(model.face(face).surface) else {
+        unreachable!()
+    };
+    let (origin, axis, radius, cylinder_inner) =
+        match model.geom().surface(model.face(other).surface) {
+            Surface::Cylinder(cylinder) => {
+                let radius = enclose(&cylinder.radius_sq.sqrt(), dec)?;
+                (
+                    &cylinder.origin,
+                    &cylinder.axis,
+                    radius.hi(),
+                    Some(radius.lo()),
+                )
+            }
+            Surface::Cone(other_cone) => (
+                &other_cone.apex,
+                &other_cone.axis,
+                band_radius_upper(model, other, dec)?,
+                None,
+            ),
+            _ => return Ok(false),
+        };
+    if !zero(&cone.axis.cross(axis).norm_squared(), dec)? {
+        return Ok(false);
+    }
+    let distance_sq = cone.apex.minus(origin).cross(axis).norm_squared() / axis.norm_squared();
+    let cone_radius = band_radius_upper(model, face, dec)?;
+    let radii = &cone_radius + &radius;
+    if enclose(&distance_sq, dec)?.lo() > &radii * &radii {
+        return Ok(true);
+    }
+    // Only a cylinder has a constant-radius interior that excludes this tube.
+    if let Some(inner) = cylinder_inner {
+        return Ok(enclose(&distance_sq.sqrt(), dec)?.hi() + cone_radius < inner);
+    }
+    Ok(false)
+}
+
 pub(crate) struct FaceBounds {
     algebraic: bool,
     boxes: BTreeMap<FaceId, Option<[Ball; 3]>>,
@@ -357,6 +432,9 @@ impl FaceBounds {
                 if !value.contains_zero() {
                     return Ok(true);
                 }
+                if cone_band_misses_surface(model, bounded, other, dec)? {
+                    return Ok(true);
+                }
             }
         }
         Ok(false)
@@ -368,6 +446,90 @@ mod tests {
     use super::*;
     use catallax_shapes::{Pose, Vector3};
     use catallax_topology::{Face, Sense, cylinder};
+
+    #[test]
+    fn cone_tube_separation_preserves_tangency_and_crossings() {
+        use catallax_shapes::{RVector3, Rotation};
+        let r = Rational::from_i64;
+        for (quaternion, offset) in [([1, 0, 0, 0], 0), ([1, 2, 3, 4], 1_000_000)] {
+            let rotation = Rotation::from_quaternion(
+                r(quaternion[0]),
+                r(quaternion[1]),
+                r(quaternion[2]),
+                r(quaternion[3]),
+            )
+            .unwrap();
+            let pose = Pose::from_rational(rotation, RVector3::new(r(offset), r(11), r(-13)));
+            let mut model = Model::new();
+            let cone = catallax_topology::cone(&mut model, r(4), r(2), r(2), &pose).unwrap();
+            let cone_face = model
+                .faces_of_body(cone)
+                .into_iter()
+                .find(|f| {
+                    matches!(
+                        model.geom().surface(model.face(*f).surface),
+                        Surface::Cone(_)
+                    )
+                })
+                .unwrap();
+            let mut dec = Decider::default();
+            assert!(
+                face_box(&mut model, cone_face, false, &mut dec)
+                    .unwrap()
+                    .is_some()
+            );
+            for (distance, radius, excluded) in [
+                (8, 3, true),
+                (7, 3, false),
+                (6, 3, false),
+                (7, 12, true),
+                (8, 12, false),
+                (9, 12, false),
+            ] {
+                let mut placed = pose.clone();
+                placed.translation = placed.translation.plus(&pose.apply_vector(&Vector3::new(
+                    r(distance).into(),
+                    Real::zero(),
+                    Real::zero(),
+                )));
+                let cylinder = cylinder(&mut model, r(radius), r(2), &placed).unwrap();
+                let wall = model
+                    .faces_of_body(cylinder)
+                    .into_iter()
+                    .find(|f| {
+                        matches!(
+                            model.geom().surface(model.face(*f).surface),
+                            Surface::Cylinder(_)
+                        )
+                    })
+                    .unwrap();
+                assert_eq!(
+                    cone_band_misses_surface(&mut model, cone_face, wall, &mut dec).unwrap(),
+                    excluded,
+                    "distance {distance}, radius {radius}, quaternion {quaternion:?}"
+                );
+                if radius == 3 {
+                    let other =
+                        catallax_topology::cone(&mut model, r(3), r(1), r(2), &placed).unwrap();
+                    let wall = model
+                        .faces_of_body(other)
+                        .into_iter()
+                        .find(|f| {
+                            matches!(
+                                model.geom().surface(model.face(*f).surface),
+                                Surface::Cone(_)
+                            )
+                        })
+                        .unwrap();
+                    assert_eq!(
+                        cone_band_misses_surface(&mut model, cone_face, wall, &mut dec).unwrap(),
+                        excluded,
+                        "cone distance {distance}, quaternion {quaternion:?}"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn support_exclusion_keeps_local_gaps_under_common_translation() {

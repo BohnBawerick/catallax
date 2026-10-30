@@ -127,27 +127,112 @@ fn a_through_counterbore_keeps_its_ledge_but_has_no_blind_floor_or_tip() {
 
 #[test]
 fn p5_countersunk_hole_keeps_the_revolved_housing_and_both_drill_surfaces() {
-    let mut value: Value =
-        serde_json::from_str(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
-    value["steps"].as_array_mut().unwrap().truncate(2);
-    value["steps"].as_array_mut().unwrap().push(json!({"id":"drilled","op":"hole","target":"housing","at":[{"id":"bolt","point":["17","5","0"],"direction":["0","-1","0"]}],"diameter":"4","depth":"through","tip":"flat","head":{"countersink":{"diameter":"8","angle":"90"}}}));
-    value["result"] = json!("drilled");
-    let recipe = Recipe::parse(&value.to_string()).unwrap();
-    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
-    assert!(built.model.check(built.result).is_empty());
-    let parts: Vec<_> = built
-        .model
-        .faces_of_body(built.result)
-        .iter()
-        .flat_map(|f| built.model.face_origins(*f))
-        .filter_map(|o| match o.role {
-            Role::Hole { part, .. } => Some(part),
-            _ => None,
-        })
-        .collect();
-    assert!(parts.contains(&HolePart::Countersink), "{parts:?}");
-    assert!(parts.contains(&HolePart::Wall), "{parts:?}");
-    assert!(!parts.contains(&HolePart::Entry), "{parts:?}");
+    use catallax_numbers::{Ball, with_operation_budget};
+    use catallax_shapes::{RVector3, Rotation};
+
+    for (quaternion, translation) in [
+        ([1, 0, 0, 0], [0, 0, 0]),
+        ([1, 0, 0, 0], [7, 11, -13]),
+        ([2, 0, 1, 0], [0, 0, 0]),
+        ([1, 2, 3, 4], [7, 11, -13]),
+    ] {
+        let rotation = Rotation::from_quaternion(
+            Rational::from_i64(quaternion[0]),
+            Rational::from_i64(quaternion[1]),
+            Rational::from_i64(quaternion[2]),
+            Rational::from_i64(quaternion[3]),
+        )
+        .unwrap();
+        let transform = |coordinates: &Value, point: bool| {
+            let coordinates: [Rational; 3] =
+                std::array::from_fn(|i| Rational::parse(coordinates[i].as_str().unwrap()).unwrap());
+            let v = rotation.apply(
+                &RVector3::new(
+                    coordinates[0].clone(),
+                    coordinates[1].clone(),
+                    coordinates[2].clone(),
+                )
+                .to_real(),
+            );
+            let v = [v.x, v.y, v.z];
+            json!(std::array::from_fn::<_, 3, _>(|i| {
+                (v[i].as_rational().unwrap()
+                    + Rational::from_i64(if point { translation[i] } else { 0 }))
+                .to_string()
+            }))
+        };
+        let mut value: Value =
+            serde_json::from_str(include_str!("../../../parts/holes/P5-countersinks.json"))
+                .unwrap();
+        value["steps"][0]["plane"] = json!({
+            "rotation": quaternion.map(|q| q.to_string()),
+            "translation": translation.map(|q| q.to_string())
+        });
+        for key in ["point", "direction"] {
+            value["steps"][1]["axis"][key] =
+                transform(&value["steps"][1]["axis"][key], key == "point");
+            for at in value["steps"][2]["at"].as_array_mut().unwrap() {
+                at[key] = transform(&at[key], key == "point");
+            }
+        }
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let (built, work) =
+            with_operation_budget(100_000_000, || evaluate(&recipe, &mut Decider::default()));
+        let built = built.unwrap_or_else(|e| panic!("{quaternion:?}, {translation:?}: {e}"));
+        assert!(!work.exhausted, "{work:?}");
+        assert!(built.model.check(built.result).is_empty());
+        assert!(built.model.body(built.result).marks.is_empty());
+        let origins: Vec<_> = built
+            .model
+            .faces_of_body(built.result)
+            .iter()
+            .flat_map(|f| built.model.face_origins(*f))
+            .collect();
+        for k in 0..4 {
+            for (part, count) in [
+                (HolePart::Countersink, 1),
+                (HolePart::Wall, 1),
+                (HolePart::Entry, 0),
+            ] {
+                assert_eq!(
+                    origins
+                        .iter()
+                        .filter(|o| {
+                            o.step.as_str() == "drilled"
+                                && matches!(&o.role, Role::Hole { at, part: p }
+                            if at.as_str() == format!("bolt-{k}") && *p == part)
+                        })
+                        .count(),
+                    count,
+                    "bolt-{k}, {part:?}"
+                );
+            }
+        }
+        for segment in [
+            "flange-bottom",
+            "flange-rim",
+            "flange-top",
+            "body-wall",
+            "body-top",
+            "inner-wall",
+        ] {
+            assert!(
+                origins.iter().any(|o| o.step.as_str() == "housing"
+                    && matches!(&o.role, Role::Side { segment: s, .. } if s.as_str() == segment)),
+                "lost housing origin {segment}"
+            );
+        }
+        let volume = catallax_measure::volume(
+            &built.model,
+            built.result,
+            &Default::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let expected =
+            Ball::from_rational(&Rational::from_ratio(11932, 3).unwrap(), 128) * Ball::pi(128);
+        assert!(volume.value.lo <= expected.lo() && expected.hi() <= volume.value.hi);
+    }
 }
 
 #[test]

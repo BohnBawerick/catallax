@@ -7,26 +7,27 @@ use catallax_recipe::Recipe;
 use catallax_shapes::RPoint3;
 use serde_json::{Value, json};
 
-// The identity, and (x,y,z) -> (x,-z,y) + (7,11,-13) as an exact rigid move.
-const PLACEMENTS: [bool; 2] = [false, true];
+// Identity, exact axis swap plus translation, and the app's corner placement.
+const PLACEMENTS: [u8; 3] = [0, 1, 2];
 
 fn q(s: &str) -> Rational {
     Rational::parse(s).unwrap()
 }
-fn place(moved: bool, [x, y, z]: [&str; 3]) -> [Rational; 3] {
-    if moved {
-        [q(x) + q("7"), -q(z) + q("11"), q(y) - q("13")]
-    } else {
-        [q(x), q(y), q(z)]
+fn place(moved: u8, [x, y, z]: [&str; 3]) -> [Rational; 3] {
+    match moved {
+        0 => [q(x), q(y), q(z)],
+        1 => [q(x) + q("7"), -q(z) + q("11"), q(y) - q("13")],
+        2 => [q(x) + q("30"), q(y) + q("20"), q(z)],
+        _ => unreachable!(),
     }
 }
-fn direction(moved: bool, [x, y, z]: [&str; 3]) -> Value {
+fn direction(moved: u8, [x, y, z]: [&str; 3]) -> Value {
     let [x, y, z] = [q(x), q(y), q(z)];
-    let v = if moved { [x, -z, y] } else { [x, y, z] };
+    let v = if moved == 1 { [x, -z, y] } else { [x, y, z] };
     json!(v.map(|c| c.to_string()))
 }
-fn pose(moved: bool, translation: [&str; 3]) -> Value {
-    let rotation = if moved {
+fn pose(moved: u8, translation: [&str; 3]) -> Value {
+    let rotation = if moved == 1 {
         ["1", "1", "0", "0"]
     } else {
         ["1", "0", "0", "0"]
@@ -35,7 +36,7 @@ fn pose(moved: bool, translation: [&str; 3]) -> Value {
     json!({"rotation":rotation,"translation":t.map(|c| c.to_string())})
 }
 fn hole(
-    moved: bool,
+    moved: u8,
     target: &str,
     at: &[[&str; 2]],
     depth: Value,
@@ -56,7 +57,7 @@ fn hole(
     }
     h
 }
-fn boss(moved: bool) -> [Value; 2] {
+fn boss(moved: u8) -> [Value; 2] {
     [
         json!({"id":"boss","op":"cylinder","radius":"5","height":"10","pose":pose(moved, ["15","0","10"])}),
         json!({"id":"body","op":"boolean","kind":"union","target":"plate","tool":"boss"}),
@@ -65,7 +66,7 @@ fn boss(moved: bool) -> [Value; 2] {
 
 // Builds a 60 x 40 x 10 plate, then the steps, under the application's
 // operation allowance. Each probe is checked against the independent field.
-fn check(name: &str, moved: bool, mut steps: Vec<Value>, probes: &[([&str; 3], bool)]) {
+fn check(name: &str, moved: u8, mut steps: Vec<Value>, probes: &[([&str; 3], bool)]) {
     let result = steps.last().unwrap()["id"].clone();
     steps.insert(
         0,
@@ -236,4 +237,74 @@ fn a_plain_hole_builds_beside_a_bevel_cone() {
             ],
         );
     }
+}
+
+#[test]
+fn a_boss_builds_between_the_apps_existing_countersinks() {
+    let recipe = Recipe::parse(
+        &json!({
+            "format":"catallax-recipe/3", "name":"app countersinks then boss",
+            "steps":[
+                {"id":"plate","op":"block","size":["60","40","5"],
+                 "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+                {"id":"drilled","op":"hole","target":"plate","at":[
+                    {"id":"left","point":["15","20","5"],"direction":["0","0","-1"]},
+                    {"id":"right","point":["45","20","5"],"direction":["0","0","-1"]}
+                 ],"diameter":"5","depth":"through","tip":"flat",
+                 "head":{"countersink":{"diameter":"9","angle":"90"}}},
+                {"id":"boss","op":"cylinder","radius":"8","height":"10",
+                 "pose":{"rotation":["1","0","0","0"],"translation":["30","20","5"]}},
+                {"id":"body","op":"boolean","kind":"union","target":"drilled","tool":"boss"}
+            ], "result":"body"
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let (built, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        evaluate(&recipe, &mut Decider::default())
+    });
+    let mut built = built.unwrap_or_else(|e| panic!("{e}: {work:?}"));
+    assert!(!work.exhausted);
+    assert!(built.model.check(built.result).is_empty());
+    assert!(built.model.body(built.result).marks.is_empty());
+    let field = Plan::compile(&recipe).unwrap();
+    let mut workspace = Workspace::default();
+    for (point, material) in [
+        (["15", "20", "2"], false),
+        (["45", "20", "2"], false),
+        (["30", "20", "10"], true),
+        (["39", "20", "10"], false),
+        (["20", "20", "2"], true),
+        (["19", "20", "19/4"], false),
+    ] {
+        let [x, y, z] = point.map(q);
+        let p = RPoint3::new(x, y, z);
+        assert_eq!(
+            classify_point(&mut built.model, built.result, &p, &mut Decider::default()).proven(),
+            Some(&if material {
+                Containment::Inside
+            } else {
+                Containment::Outside
+            })
+        );
+        assert_eq!(
+            field.proven(&p, &mut workspace).location,
+            if material {
+                Location::Inside
+            } else {
+                Location::Outside
+            }
+        );
+    }
+    let volume = catallax_measure::volume(
+        &built.model,
+        built.result,
+        &Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let expected = catallax_numbers::Ball::from_rational(&q("12000"), 128)
+        + catallax_numbers::Ball::from_rational(&q("3313/6"), 128)
+            * catallax_numbers::Ball::pi(128);
+    assert!(volume.value.lo <= expected.lo() && expected.hi() <= volume.value.hi);
 }

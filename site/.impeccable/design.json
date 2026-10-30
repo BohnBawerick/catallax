@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-30T00:00:00+00:00",
+  "title": "Design System: Catallax + SolidDraft",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#0b0c0d",
+        "tonalRamp": [
+          "oklch(0.15 0.001 248.0)",
+          "oklch(0.25 0.002 248.0)",
+          "oklch(0.35 0.002 248.0)",
+          "oklch(0.45 0.003 248.0)",
+          "oklch(0.55 0.003 248.0)",
+          "oklch(0.70 0.002 248.0)",
+          "oklch(0.85 0.002 248.0)",
+          "oklch(0.95 0.001 248.0)"
+        ]
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "#131619",
+        "tonalRamp": [
+          "oklch(0.15 0.003 248.2)",
+          "oklch(0.25 0.005 248.2)",
+          "oklch(0.35 0.007 248.2)",
+          "oklch(0.45 0.007 248.2)",
+          "oklch(0.55 0.008 248.2)",
+          "oklch(0.70 0.007 248.2)",
+          "oklch(0.85 0.005 248.2)",
+          "oklch(0.95 0.003 248.2)"
+        ]
+      },
+      "steel": {
+        "role": "neutral",
+        "displayName": "Steel",
+        "canonical": "#262b30",
+        "tonalRamp": [
+          "oklch(0.15 0.005 248.2)",
+          "oklch(0.25 0.008 248.2)",
+          "oklch(0.35 0.010 248.2)",
+          "oklch(0.45 0.011 248.2)",
+          "oklch(0.55 0.012 248.2)",
+          "oklch(0.70 0.011 248.2)",
+          "oklch(0.85 0.008 248.2)",
+          "oklch(0.95 0.005 248.2)"
+        ]
+      },
+      "slate": {
+        "role": "neutral",
+        "displayName": "Slate",
+        "canonical": "#7b838b",
+        "tonalRamp": [
+          "oklch(0.15 0.006 248.1)",
+          "oklch(0.25 0.010 248.1)",
+          "oklch(0.35 0.013 248.1)",
+          "oklch(0.45 0.015 248.1)",
+          "oklch(0.55 0.015 248.1)",
+          "oklch(0.70 0.014 248.1)",
+          "oklch(0.85 0.010 248.1)",
+          "oklch(0.95 0.006 248.1)"
+        ]
+      },
+      "fog": {
+        "role": "neutral",
+        "displayName": "Fog",
+        "canonical": "#b4b0a6",
+        "tonalRamp": [
+          "oklch(0.15 0.006 88.7)",
+          "oklch(0.25 0.010 88.7)",
+          "oklch(0.35 0.013 88.7)",
+          "oklch(0.45 0.014 88.7)",
+          "oklch(0.55 0.015 88.7)",
+          "oklch(0.70 0.014 88.7)",
+          "oklch(0.85 0.010 88.7)",
+          "oklch(0.95 0.006 88.7)"
+        ]
+      },
+      "bone": {
+        "role": "neutral",
+        "displayName": "Bone",
+        "canonical": "#ede7da",
+        "tonalRamp": [
+          "oklch(0.15 0.008 86.1)",
+          "oklch(0.25 0.012 86.1)",
+          "oklch(0.35 0.016 86.1)",
+          "oklch(0.45 0.018 86.1)",
+          "oklch(0.55 0.019 86.1)",
+          "oklch(0.70 0.017 86.1)",
+          "oklch(0.85 0.012 86.1)",
+          "oklch(0.95 0.008 86.1)"
+        ]
+      },
+      "oxide": {
+        "role": "primary",
+        "displayName": "Oxide",
+        "canonical": "#ff5b1f",
+        "tonalRamp": [
+          "oklch(0.15 0.086 38.0)",
+          "oklch(0.25 0.140 38.0)",
+          "oklch(0.35 0.179 38.0)",
+          "oklch(0.45 0.202 38.0)",
+          "oklch(0.55 0.210 38.0)",
+          "oklch(0.70 0.192 38.0)",
+          "oklch(0.85 0.140 38.0)",
+          "oklch(0.95 0.086 38.0)"
+        ]
+      },
+      "signal": {
+        "role": "secondary",
+        "displayName": "Signal",
+        "canonical": "#a6e36b",
+        "tonalRamp": [
+          "oklch(0.15 0.067 131.4)",
+          "oklch(0.25 0.109 131.4)",
+          "oklch(0.35 0.140 131.4)",
+          "oklch(0.45 0.158 131.4)",
+          "oklch(0.55 0.164 131.4)",
+          "oklch(0.70 0.150 131.4)",
+          "oklch(0.85 0.109 131.4)",
+          "oklch(0.95 0.067 131.4)"
+        ]
+      },
+      "datum": {
+        "role": "secondary",
+        "displayName": "Datum",
+        "canonical": "#7cc7ff",
+        "tonalRamp": [
+          "oklch(0.15 0.045 242.2)",
+          "oklch(0.25 0.073 242.2)",
+          "oklch(0.35 0.093 242.2)",
+          "oklch(0.45 0.105 242.2)",
+          "oklch(0.55 0.109 242.2)",
+          "oklch(0.70 0.100 242.2)",
+          "oklch(0.85 0.073 242.2)",
+          "oklch(0.95 0.045 242.2)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "hero": {
+        "displayName": "Hero",
+        "purpose": "The h1 only."
+      },
+      "display": {
+        "displayName": "Display",
+        "purpose": "Section headings."
+      },
+      "accent": {
+        "displayName": "Accent",
+        "purpose": "One italic word in a headline."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Prose, capped at about 58ch."
+      },
+      "small": {
+        "displayName": "Small",
+        "purpose": "Lists and secondary copy."
+      },
+      "note": {
+        "displayName": "Note",
+        "purpose": "Captions and footnotes."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Section names, readouts and table headers."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Rust excerpts."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Every entrance and hover. No overshoot."
+      },
+      {
+        "name": "dur-quick",
+        "value": "180ms",
+        "purpose": "Color and border changes."
+      },
+      {
+        "name": "dur-standard",
+        "value": "480ms",
+        "purpose": "Fills, underlines and the nav."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "nav",
+        "value": "1100px"
+      },
+      {
+        "name": "stack",
+        "value": "900px"
+      },
+      {
+        "name": "phone",
+        "value": "560px"
+      },
+      {
+        "name": "pin-min-height",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action on a view.",
+      "html": "<a class=\"ds-btn ds-btn--primary\" href=\"#\">Support the project</a>",
+      "css": ".ds-btn { position: relative; display: inline-flex; padding: 15px 24px; border-radius: 999px; border: 1px solid var(--steel, #262b30); color: var(--bone, #ede7da); font: 500 0.9375rem \"Bricolage Grotesque\", Arial, sans-serif; letter-spacing: -0.01em; text-decoration: none; overflow: hidden; isolation: isolate; transition: color 480ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn::before { content: \"\"; position: absolute; inset: 0; z-index: -1; background: var(--bone, #ede7da); transform: translateY(101%); transition: transform 480ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn:hover { color: var(--ink, #0b0c0d); border-color: var(--bone, #ede7da); } .ds-btn:hover::before { transform: none; } .ds-btn:focus-visible { outline: 2px solid var(--oxide, #ff5b1f); outline-offset: 3px; } .ds-btn--primary { background: var(--oxide, #ff5b1f); border-color: var(--oxide, #ff5b1f); color: var(--ink, #0b0c0d); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary actions beside a primary button.",
+      "html": "<a class=\"ds-ghost\" href=\"#\">Why it is free</a>",
+      "css": ".ds-ghost { display: inline-flex; padding: 15px 24px; border-radius: 999px; border: 1px solid var(--steel, #262b30); color: var(--bone, #ede7da); font: 500 0.9375rem \"Bricolage Grotesque\", Arial, sans-serif; text-decoration: none; transition: background 180ms, color 180ms; } .ds-ghost:hover { background: var(--bone, #ede7da); color: var(--ink, #0b0c0d); } .ds-ghost:focus-visible { outline: 2px solid var(--oxide, #ff5b1f); outline-offset: 3px; }"
+    },
+    {
+      "name": "Control Pill",
+      "kind": "chip",
+      "refersTo": "control-pill",
+      "description": "Menu, pause and Ko-fi controls.",
+      "html": "<button class=\"ds-pill\" type=\"button\">Pause motion</button>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px; font: 500 0.72rem \"JetBrains Mono\", monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fog, #b4b0a6); background: transparent; border: 1px solid var(--steel, #262b30); border-radius: 999px; cursor: pointer; transition: color 180ms, border-color 180ms; } .ds-pill:hover { color: var(--bone, #ede7da); border-color: var(--slate, #7b838b); } .ds-pill:focus-visible { outline: 2px solid var(--oxide, #ff5b1f); outline-offset: 3px; }"
+    },
+    {
+      "name": "Shape Picker",
+      "kind": "custom",
+      "refersTo": "shape-active",
+      "description": "Segmented control for the hero solid.",
+      "html": "<div class=\"ds-seg\" role=\"group\" aria-label=\"Choose a solid\"><button class=\"ds-seg__b is-on\" type=\"button\" aria-pressed=\"true\">Gear</button><button class=\"ds-seg__b\" type=\"button\" aria-pressed=\"false\">Donut</button><button class=\"ds-seg__b\" type=\"button\" aria-pressed=\"false\">Cube</button></div>",
+      "css": ".ds-seg { display: inline-flex; padding: 4px; border: 1px solid var(--steel, #262b30); border-radius: 999px; } .ds-seg__b { font: 500 0.72rem \"JetBrains Mono\", monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fog, #b4b0a6); background: none; border: 0; padding: 9px 16px; border-radius: 999px; cursor: pointer; transition: background 180ms, color 180ms; } .ds-seg__b:hover { color: var(--bone, #ede7da); } .ds-seg__b.is-on { background: var(--bone, #ede7da); color: var(--ink, #0b0c0d); } .ds-seg__b:focus-visible { outline: 2px solid var(--oxide, #ff5b1f); outline-offset: 3px; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Linked or static panel with a wireframe mark.",
+      "html": "<article class=\"ds-card\"><p class=\"ds-card__tag\">Explicit · B-rep</p><h3 class=\"ds-card__title\">Boundary Representation</h3><p class=\"ds-card__text\">Exact topology, out in the open.</p></article>",
+      "css": ".ds-card { padding: 30px; background: var(--graphite, #131619); border: 1px solid var(--steel, #262b30); border-radius: 18px; transition: border-color 480ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-card:hover { border-color: var(--slate, #7b838b); } .ds-card__tag { margin: 0 0 40px; font: 500 0.72rem \"JetBrains Mono\", monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--oxide, #ff5b1f); } .ds-card__title { margin: 0 0 10px; font: 560 2rem \"Bricolage Grotesque\", Arial, sans-serif; letter-spacing: -0.04em; color: var(--bone, #ede7da); } .ds-card__text { margin: 0; color: var(--fog, #b4b0a6); }"
+    },
+    {
+      "name": "Code Window",
+      "kind": "custom",
+      "refersTo": "code-window",
+      "description": "Rust excerpt copied from the repository.",
+      "html": "<figure class=\"ds-win\"><figcaption class=\"ds-win__bar\">catallax-numbers / outcome.rs</figcaption><pre class=\"ds-win__code\">pub enum Outcome&lt;T&gt; {\n    Proven(T),\n}</pre></figure>",
+      "css": ".ds-win { margin: 0; background: var(--graphite, #131619); border: 1px solid var(--steel, #262b30); border-radius: 14px; overflow: hidden; } .ds-win__bar { padding: 13px 16px; border-bottom: 1px solid var(--steel, #262b30); font: 500 0.75rem \"JetBrains Mono\", monospace; color: var(--slate, #7b838b); } .ds-win__code { margin: 0; padding: 22px 24px 26px; font: 400 0.844rem/1.72 \"JetBrains Mono\", monospace; color: var(--fog, #b4b0a6); white-space: pre-wrap; }"
+    },
+    {
+      "name": "Navigation Link",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Uppercase mono link with a growing underline.",
+      "html": "<a class=\"ds-nav\" href=\"#\">Benchmarks</a>",
+      "css": ".ds-nav { font: 500 0.75rem \"JetBrains Mono\", monospace; letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none; color: var(--fog, #b4b0a6); background: linear-gradient(var(--oxide, #ff5b1f), var(--oxide, #ff5b1f)) 0 100% / 0 1px no-repeat; padding-bottom: 3px; transition: background-size 480ms cubic-bezier(0.16, 1, 0.3, 1), color 180ms; } .ds-nav:hover { background-size: 100% 1px; color: var(--bone, #ede7da); } .ds-nav:focus-visible { outline: 2px solid var(--oxide, #ff5b1f); outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Inspection Bench",
+    "overview": "A part sits on a dark bench under one hot light, and everything around it is measured. The wireframe solids are that part. The labels, readouts and drawing marks are the instruments. Orange is the light: it lands on the single thing that matters in a view and nowhere else.\n\nThe page is dense with real material. It shows Rust from the repository, a real CLI drawing, committed benchmark data and a real build transcript, and it trusts a technical reader to look. The tone is a machined surface, hard-edged and exact, with one italic word as the only soft thing in a headline. Motion follows the token comment, \"premium, rigid metal\": fast out, no overshoot, nothing bouncing.\n\nThis name and the language around it were inferred from the shipped site. The owner has not chosen them.",
+    "keyCharacteristics": [
+      "One dark theme. There is no light mode.",
+      "One accent color on near-neutral surfaces.",
+      "Three typefaces, each with one job.",
+      "Drawing marks as ornament: corner ticks, hairlines, a faint 96px grid.",
+      "Everything readable and reachable before any JavaScript runs."
+    ],
+    "rules": [
+      {
+        "name": "The One Hot Light Rule",
+        "body": "Oxide marks a single focal point per view. A second orange element in the same view should be a reason to remove one.",
+        "section": "colors"
+      },
+      {
+        "name": "The Check Both Surfaces Rule",
+        "body": "Any new secondary text color must clear 4.5:1 on Graphite as well as on Ink. Slate once passed on Ink alone and failed on every panel.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Italic Word Rule",
+        "body": "A headline gets at most one Instrument Serif Italic word, and that word carries the idea. Never set a whole line in it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Source Rule",
+        "body": "Write labels in sentence case and let CSS uppercase them. Hard-coded capitals read badly in screen readers and in copied text.",
+        "section": "typography"
+      },
+      {
+        "name": "The Mono Means Measured Rule",
+        "body": "JetBrains Mono is for code, data, readouts and labels. It is not a costume for prose.",
+        "section": "typography"
+      },
+      {
+        "name": "The Grow, Don't Clip Rule",
+        "body": "Copy stays in normal flow. Absolute positioning is for decoration only.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Bench Rule",
+        "body": "Surfaces rest on the bench. A panel earns separation with a tone step and a hairline, never a shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do read every color from `brand/tokens.css`. The canvas uses the same tokens.",
+      "Do animate opacity and transform only, using `--ease-out` or GSAP's `expo.out`.",
+      "Do keep copy in normal flow, so it can grow under zoom, text spacing and small screens.",
+      "Do put a pause control beside anything that moves on its own.",
+      "Do pad SplitText line masks, so descenders and italic overhang stay inside the clip.",
+      "Do link a claim to the evidence for it."
+    ],
+    "donts": [
+      "Don't use `visibility` or `autoAlpha` for reveals. They remove content from the tab order and the accessibility tree.",
+      "Don't run SplitText over an element containing a link. It strips the link's accessible name and breaks its underline.",
+      "Don't hide text that has already painted in order to animate it in.",
+      "Don't add shadows, fake window controls, pulsing status dots or marquees. They were removed on purpose.",
+      "Don't number the sections.",
+      "Don't add a kicker to a new heading that already names its section. The nine existing section labels stay because those headings are slogans and the labels say what each section is. This is a known exception and the design detector still reports it."
+    ]
+  }
+}

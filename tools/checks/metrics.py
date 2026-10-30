@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from time import sleep
 
 REPOSITORY = 'BohnBawerick/catallax'
 GITHUB_CLI = os.environ.get('CATALLAX_GITHUB_CLI', 'gh-axi')
@@ -17,7 +18,7 @@ def api(path):
     command = [GITHUB_CLI, 'api', path, '--jq', 'tojson | @base64']
     if GITHUB_CLI == 'gh-axi':
         command.append('--full')
-    encoded = subprocess.check_output(command, text=True)
+    encoded = subprocess.check_output(command, text=True, stderr=subprocess.PIPE, timeout=30)
     return json.loads(base64.b64decode(encoded))
 
 
@@ -34,14 +35,31 @@ def main():
     parser.add_argument('--replay-summary')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
-    run = api(f'repos/{REPOSITORY}/actions/runs/{args.run_id}')
-    jobs, page = [], 1
-    while True:
-        batch = api(f'repos/{REPOSITORY}/actions/runs/{args.run_id}/attempts/{run["run_attempt"]}/jobs?per_page=100&page={page}')['jobs']
-        jobs.extend(batch)
-        if len(batch) < 100:
+    for attempt in range(4):
+        try:
+            run = api(f'repos/{REPOSITORY}/actions/runs/{args.run_id}')
+            per_page = 100 if attempt < 2 else 30
+            jobs, page = [], 1
+            while True:
+                batch = api(f'repos/{REPOSITORY}/actions/runs/{args.run_id}/attempts/{run["run_attempt"]}/jobs?per_page={per_page}&page={page}')['jobs']
+                jobs.extend(batch)
+                if len(batch) < per_page:
+                    break
+                page += 1
             break
-        page += 1
+        except (subprocess.SubprocessError, OSError, ValueError, KeyError) as error:
+            detail = getattr(error, 'stderr', None) or str(error)
+            if isinstance(detail, bytes):
+                detail = detail.decode(errors='replace')
+            if attempt < 3:
+                sleep(20 * (attempt + 1))
+                continue
+            result = {'format': 'catallax-check-timing/1', 'label': args.label,
+                      'status': 'timings unavailable', 'error': detail.strip()}
+            Path(args.out).write_text(json.dumps(result, sort_keys=True, indent=2) + '\n')
+            annotation = detail.strip().replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+            print(f'::warning::timings unavailable after 4 attempts: {annotation}')
+            return
     selection = json.loads(Path(args.selection).read_text())
     replay = json.loads(Path(args.replay_summary).read_text()) if args.replay_summary else {
         'selected_cases': 0, 'elapsed_ms': 0}

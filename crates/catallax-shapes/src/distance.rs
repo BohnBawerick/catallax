@@ -155,7 +155,7 @@ impl Domain {
             Surface::Sphere(s) => [s.radius.clone(), Real::zero()],
             Surface::Torus(s) => [s.major.clone(), s.minor.clone()],
             Surface::EllipticCylinder(s) => [s.major_sq.sqrt(), s.minor_sq.sqrt()],
-            Surface::BSpline(_) => return Err(uncovered()),
+            Surface::TorusSheet(_) | Surface::BSpline(_) => return Err(uncovered()),
         };
         let dimensions = [
             dec.enclose_budgeted_at(&dimensions[0], BITS)?,

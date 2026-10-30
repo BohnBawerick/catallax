@@ -22,6 +22,7 @@ pub(crate) fn center(s: &Surface) -> Option<&Point3> {
     match s {
         Surface::Sphere(s) => Some(&s.center),
         Surface::Torus(s) => Some(&s.center),
+        Surface::TorusSheet(s) => Some(&s.center),
         _ => None,
     }
 }

@@ -438,6 +438,7 @@ impl RegionCache {
         surface_id: Option<catallax_shapes::SurfaceId>,
     ) -> Result<Vec<i64>, Refusal> {
         dec.check_deadline()?;
+        let surface = &*crate::geometry::chart(surface);
         if let Surface::Torus(torus) = surface
             && let Some(signature) =
                 crate::torus_region::signature(model, torus, loop_groups, point, dec)?
@@ -605,12 +606,15 @@ impl RegionCache {
             }
         }
         if PROBE
-            && !matches!(model.geom().surface(f.surface), Surface::Torus(_))
+            && !matches!(
+                model.geom().surface(f.surface),
+                Surface::Torus(_) | Surface::TorusSheet(_)
+            )
             && let Some(location) = crate::probed_region::locate(model, face, point, dec)?
         {
             return Ok(location);
         }
-        let surface = model.geom().surface(f.surface).clone();
+        let surface = crate::geometry::chart(model.geom().surface(f.surface)).into_owned();
         let groups = vec![f.loops.clone()];
         let value = if PROBE {
             self.signatures(model, &surface, &groups, point, dec)?

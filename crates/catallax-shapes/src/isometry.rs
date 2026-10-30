@@ -2,7 +2,7 @@
 
 use crate::{
     Circle, Cone, Curve, Cylinder, Ellipse, EllipticCylinder, Line, Plane, Point3, Pose, RPoint3,
-    RVector3, Rotation, Sphere, Surface, Torus, Vector3,
+    RVector3, Rotation, Sphere, Surface, Torus, TorusSheet, Vector3,
 };
 use catallax_numbers::{Decider, Rational, Real, Refusal, sin_cos_degrees};
 
@@ -286,6 +286,13 @@ impl Isometry {
                 ref_dir: v(&s.ref_dir),
             }),
             Surface::Torus(s) => Surface::Torus(Torus {
+                center: p(&s.center),
+                axis: v(&s.axis),
+                major: s.major.clone(),
+                minor: s.minor.clone(),
+                ref_dir: v(&s.ref_dir),
+            }),
+            Surface::TorusSheet(s) => Surface::TorusSheet(TorusSheet {
                 center: p(&s.center),
                 axis: v(&s.axis),
                 major: s.major.clone(),

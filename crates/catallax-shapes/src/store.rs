@@ -335,6 +335,7 @@ impl GeomStore {
             let coaxial = match surface {
                 Surface::Cylinder(_) | Surface::Cone(_) => true,
                 Surface::Torus(torus) => crate::intent::parallel(&circle.normal, &torus.axis),
+                Surface::TorusSheet(sheet) => crate::intent::parallel(&circle.normal, &sheet.axis),
                 _ => false,
             };
             let concentric = crate::intent::center(surface)
@@ -646,6 +647,14 @@ impl GeomStore {
                         && zero(&a.radius - &b.radius, dec)?
                 }
                 (Surface::Torus(a), Surface::Torus(b)) => {
+                    (known(FactKind::Concentric, dec)
+                        || zero(a.center.minus(&b.center).norm_squared(), dec)?)
+                        && zero(&a.major - &b.major, dec)?
+                        && zero(&a.minor - &b.minor, dec)?
+                        && (known(FactKind::Parallel, dec)
+                            || zero(a.axis.cross(&b.axis).norm_squared(), dec)?)
+                }
+                (Surface::TorusSheet(a), Surface::TorusSheet(b)) => {
                     (known(FactKind::Concentric, dec)
                         || zero(a.center.minus(&b.center).norm_squared(), dec)?)
                         && zero(&a.major - &b.major, dec)?

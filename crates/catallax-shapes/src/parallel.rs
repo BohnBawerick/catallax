@@ -72,6 +72,12 @@ impl Surface {
                 torus.minor = minor;
                 Self::Torus(torus)
             }
+            Self::TorusSheet(_) => {
+                return Err(Refusal::new(
+                    "offset.spindle-carrier",
+                    "a parallel of a torus outer sheet needs its own bounded sheet domain",
+                ));
+            }
             Self::EllipticCylinder(_) | Self::BSpline(_) => {
                 return Err(Refusal::new(
                     "offset.derived-carrier",

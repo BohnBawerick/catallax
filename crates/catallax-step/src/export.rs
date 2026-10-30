@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Answer, Answered, BoundKind, Decider, Mark, Rational, Real, Refusal};
-use catallax_shapes::{CurveId, Point3, Surface, SurfaceId, Vector3};
+use catallax_shapes::{CurveId, Point3, Surface, SurfaceId, Torus, TorusSheet, Vector3};
 use catallax_topology::{BodyId, BodyKind, EdgeId, FaceId, Loop, Model, Sense, ShellId, VertexId};
 
 use crate::graph::{Graph, Id, boolean, refs, string, text};
@@ -991,6 +991,10 @@ impl<'a> Exporter<'a> {
             );
             return Ok(());
         }
+        let capture = self
+            .chart_state
+            .as_ref()
+            .is_some_and(|state| state.plan.surfaces.contains(&id));
         let (origin, axis, reference, name, sizes) = match surface {
             Surface::Plane(s) => (&s.origin, &s.normal, &s.ref_dir, "PLANE", vec![]),
             Surface::Cylinder(s) => (
@@ -1015,12 +1019,17 @@ impl<'a> Exporter<'a> {
                 "TOROIDAL_SURFACE",
                 vec![s.major.clone(), s.minor.clone()],
             ),
+            // Only a charted trimmed face reaches here: its pcurves keep the
+            // face on the regular outer sheet of the written spindle torus.
+            Surface::TorusSheet(s) if capture => (
+                &s.center,
+                &s.axis,
+                &s.ref_dir,
+                "TOROIDAL_SURFACE",
+                vec![s.major.clone(), s.minor.clone()],
+            ),
             _ => return Err(unsupported()),
         };
-        let capture = self
-            .chart_state
-            .as_ref()
-            .is_some_and(|state| state.plan.surfaces.contains(&id));
         let placement = if let Some(reference) = self.bands.references.get(&id).cloned() {
             self.placement(origin, axis, &reference, capture)?
         } else {
@@ -1045,10 +1054,12 @@ impl<'a> Exporter<'a> {
                 (Surface::Sphere(_), [radius]) => crate::pcurve::SurfaceParameters::Sphere {
                     radius: radius.clone(),
                 },
-                (Surface::Torus(_), [major, minor]) => crate::pcurve::SurfaceParameters::Torus {
-                    major: major.clone(),
-                    minor: minor.clone(),
-                },
+                (Surface::Torus(_) | Surface::TorusSheet(_), [major, minor]) => {
+                    crate::pcurve::SurfaceParameters::Torus {
+                        major: major.clone(),
+                        minor: minor.clone(),
+                    }
+                }
                 _ => unreachable!(
                     "captured surface sizes are not cylindrical, spherical or toroidal"
                 ),
@@ -1059,9 +1070,10 @@ impl<'a> Exporter<'a> {
                 base_error = base_error + &number::upper(&s.radius, self.dec)? * &extent_error;
                 extent_error = Rational::zero();
             }
-            Surface::Torus(s) => {
+            Surface::Torus(Torus { major, minor, .. })
+            | Surface::TorusSheet(TorusSheet { major, minor, .. }) => {
                 base_error =
-                    base_error + &number::upper(&(&s.major + &s.minor), self.dec)? * &extent_error;
+                    base_error + &number::upper(&(major + minor), self.dec)? * &extent_error;
                 extent_error = Rational::zero();
             }
             Surface::Cylinder(s) => {

@@ -531,6 +531,7 @@ impl Projection {
             catallax_shapes::Surface::Sphere(s) => (&s.center, &s.axis, &s.ref_dir),
             catallax_shapes::Surface::Cone(s) => (&s.apex, &s.axis, &s.ref_dir),
             catallax_shapes::Surface::Torus(s) => (&s.center, &s.axis, &s.ref_dir),
+            catallax_shapes::Surface::TorusSheet(s) => (&s.center, &s.axis, &s.ref_dir),
             _ => unreachable!("periodic projection on another carrier"),
         };
         let source = SourceFrame::new(origin, axis, reference, precision, dec)?;

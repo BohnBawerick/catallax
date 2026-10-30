@@ -227,6 +227,7 @@ pub(crate) fn cut_face(
         Surface::Sphere(s) => s.ref_dir = meridian.reference.clone(),
         Surface::Cone(s) => s.ref_dir = meridian.reference.clone(),
         Surface::Torus(s) => s.ref_dir = meridian.reference.clone(),
+        Surface::TorusSheet(s) => s.ref_dir = meridian.reference.clone(),
         _ => unreachable!("chart walk on a non-periodic carrier"),
     }
     let surface = model.geom_mut().add_surface(surface);
@@ -338,6 +339,12 @@ pub(crate) fn cut_face(
             // The tube circle's angle is the torus v parameter: it starts on
             // the outer equator and increases toward the axis direction.
             Surface::Torus(s) => Curve::Circle(Circle {
+                center: s.center.plus(&reference.scaled(&s.major)),
+                normal: meridian.reference.cross(&s.axis),
+                radius_sq: s.minor.square(),
+                ref_dir: meridian.reference.clone(),
+            }),
+            Surface::TorusSheet(s) => Curve::Circle(Circle {
                 center: s.center.plus(&reference.scaled(&s.major)),
                 normal: meridian.reference.cross(&s.axis),
                 radius_sq: s.minor.square(),

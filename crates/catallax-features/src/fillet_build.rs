@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use catallax_intersect::{Component, CurveSurface, Cyclic, SurfacePair};
 use catallax_numbers::{Decider, Outcome, Real, Refusal, Sign};
 use catallax_recipe::{EdgeSelection, Origin, Role, StepId};
-use catallax_shapes::{Curve, Line, Point3, PointDef, PointId, Surface};
+use catallax_shapes::{
+    Circle, Curve, Line, Point3, PointDef, PointId, Surface, Torus, TorusSheet, Vector3,
+};
 use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex, VertexId};
 
 use crate::{
@@ -287,6 +289,218 @@ fn wall_foot(
     })?;
     Ok(model.geom().position(foot))
 }
+fn unit(v: &Vector3) -> Vector3 {
+    v.scaled(&(&Real::one() / &v.norm_squared().sqrt()))
+}
+/// The ball centre of a strip in the normal plane of its edge through `at`.
+fn spine(definition: &FilletDefinition, at: &Point3) -> Result<Point3, Refusal> {
+    match &definition.surface {
+        Surface::Cylinder(c) => {
+            let d = at.minus(&c.origin);
+            Ok(c.origin
+                .plus(&c.axis.scaled(&(d.dot(&c.axis) / c.axis.norm_squared()))))
+        }
+        Surface::Torus(Torus {
+            center,
+            axis,
+            major,
+            ..
+        })
+        | Surface::TorusSheet(TorusSheet {
+            center,
+            axis,
+            major,
+            ..
+        }) => {
+            let d = at.minus(center);
+            let radial = d.minus(&axis.scaled(&(d.dot(axis) / axis.norm_squared())));
+            Ok(center.plus(&unit(&radial).scaled(major)))
+        }
+        _ => Err(bad("tangent strip joins need cylinder or torus strips")),
+    }
+}
+/// Two strips meeting where their edges are tangent and their outer supports
+/// are tangent share one ball and one cross-section circle: the meridian
+/// through the vertex. No corner face has finite area there. Returns that
+/// circle and the common contacts on the shared and the outer supports.
+fn tangent_join(
+    model: &mut Model,
+    first: &Run,
+    second: &Run,
+    common: FaceId,
+    outer: [FaceId; 2],
+    old: VertexId,
+    dec: &mut Decider,
+) -> Result<Option<(Circle, Point3, Point3)>, Refusal> {
+    let point = model.vertex(old).point;
+    let at = model.geom().position(point);
+    let [t, u] = [first, second].map(|run| {
+        catallax_intersect::tangent_at(model.geom(), model.edge(run.edge).curve, point, dec)
+            .map(|[_, leaving]| leaving)
+    });
+    let (t, u) = (t?, u?);
+    if sign(&t.cross(&u).norm_squared(), dec)? != Sign::Zero {
+        return Ok(None);
+    }
+    if first.definition.convex != second.definition.convex {
+        return Err(bad(
+            "a tangent join of convex and concave strips needs a transition",
+        ));
+    }
+    let centre = spine(&first.definition, &at)?;
+    if !same(&centre, &spine(&second.definition, &at)?, dec)? {
+        return Err(bad(
+            "tangent strips have different ball centres at their join",
+        ));
+    }
+    let reach = if first.definition.convex {
+        first.definition.radius.clone()
+    } else {
+        -&first.definition.radius
+    };
+    let mut foot = |face: FaceId| -> Result<Point3, Refusal> {
+        Ok(centre.plus(&unit(&outward(model, face, &at, dec)?).scaled(&reach)))
+    };
+    let p = foot(common)?;
+    let [qa, qb] = [foot(outer[0])?, foot(outer[1])?];
+    if !same(&qa, &qb, dec)? {
+        return Err(bad(
+            "tangent strips need tangent outer supports at their join",
+        ));
+    }
+    // Each contact must lie on its own strip's contact curve.
+    for (run, face, at) in [
+        (first, common, &p),
+        (second, common, &p),
+        (first, outer[0], &qa),
+        (second, outer[1], &qa),
+    ] {
+        let index = run.faces.iter().position(|f| *f == face).unwrap();
+        let curve = model
+            .geom_mut()
+            .add_curve(run.definition.contacts[index].clone());
+        let id = model.geom_mut().add_point(PointDef::Explicit(at.clone()));
+        if decided(catallax_intersect::on_curve(model.geom(), curve, id, dec))?.is_some() {
+            return Err(bad(
+                "a tangent join contact leaves its strip's contact curve",
+            ));
+        }
+    }
+    let circle = Circle {
+        center: centre.clone(),
+        normal: t,
+        radius_sq: first.definition.radius.square(),
+        ref_dir: p.minus(&centre),
+    };
+    Ok(Some((circle, p, qa)))
+}
+/// The shorter meridian arc from the shared contact to the outer contact.
+fn meridian_edge(
+    model: &mut Model,
+    meridian: Circle,
+    from: VertexId,
+    to: VertexId,
+    dec: &mut Decider,
+) -> Result<EdgeId, Refusal> {
+    let [p, q] = [from, to].map(|v| model.geom().position(model.vertex(v).point));
+    let turn = p
+        .minus(&meridian.center)
+        .cross(&q.minus(&meridian.center))
+        .dot(&meridian.normal);
+    let sense = match sign(&turn, dec)? {
+        Sign::Positive => Sense::Same,
+        Sign::Negative => Sense::Reversed,
+        Sign::Zero => return Err(bad("a tangent join meridian has no shorter arc")),
+    };
+    let curve = model.geom_mut().add_curve(Curve::Circle(meridian));
+    Ok(model.add_edge(Edge {
+        curve,
+        sense,
+        start: Some(from),
+        end: Some(to),
+    }))
+}
+/// Whether two analytic faces are tangent with agreeing normals at a point.
+/// A parametric face has no event normal here and never continues a run.
+fn tangent_faces(
+    model: &Model,
+    a: FaceId,
+    b: FaceId,
+    at: &Point3,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    if [a, b].into_iter().any(|f| {
+        matches!(
+            model.geom().surface(model.face(f).surface),
+            Surface::BSpline(_)
+        )
+    }) {
+        return Ok(false);
+    }
+    let na = outward(model, a, at, dec)?;
+    let nb = outward(model, b, at, dec)?;
+    Ok(sign(&na.cross(&nb).norm_squared(), dec)? == Sign::Zero
+        && sign(&na.dot(&nb), dec)? == Sign::Positive)
+}
+/// Version 4 roll-over at a smooth input boundary. Where a contact foot
+/// reaches an edge across which its face continues tangentially, the run
+/// continues along the edge between the strip's other face and the next face.
+/// A continued edge keeps the blend name of the selected edge it continues;
+/// explicitly selected edges keep their own. Connection alone never starts a
+/// run: the faces must be tangent at the event vertex.
+fn continue_tangent(
+    model: &Model,
+    uses: &Uses,
+    selected: Vec<EdgeId>,
+    dec: &mut Decider,
+) -> Result<Vec<(EdgeId, EdgeId)>, Refusal> {
+    let touches = |edge: EdgeId, v: VertexId| {
+        let e = model.edge(edge);
+        e.start == Some(v) || e.end == Some(v)
+    };
+    let between = |edge: &EdgeId, a: FaceId, b: FaceId| {
+        uses[edge].iter().any(|(f, _)| *f == a) && uses[edge].iter().any(|(f, _)| *f == b)
+    };
+    let mut sources: BTreeMap<EdgeId, EdgeId> = selected.iter().map(|e| (*e, *e)).collect();
+    let mut pending = selected;
+    while let Some(edge) = pending.pop() {
+        let source = sources[&edge];
+        let [(first, _), (second, _)] = uses[&edge].as_slice() else {
+            continue;
+        };
+        let e = model.edge(edge);
+        for v in [e.start, e.end].into_iter().flatten() {
+            let at = model.geom().position(model.vertex(v).point);
+            for (stay, leave) in [(*first, *second), (*second, *first)] {
+                for (boundary, incident) in uses {
+                    if *boundary == edge || !touches(*boundary, v) {
+                        continue;
+                    }
+                    let [(a, _), (b, _)] = incident.as_slice() else {
+                        continue;
+                    };
+                    let next = match (*a == leave, *b == leave) {
+                        (true, false) => *b,
+                        (false, true) => *a,
+                        _ => continue,
+                    };
+                    if next == stay || !tangent_faces(model, leave, next, &at, dec)? {
+                        continue;
+                    }
+                    if let Some(continued) = uses
+                        .keys()
+                        .find(|h| **h != edge && touches(**h, v) && between(h, stay, next))
+                        && !sources.contains_key(continued)
+                    {
+                        sources.insert(*continued, source);
+                        pending.push(*continued);
+                    }
+                }
+            }
+        }
+    }
+    Ok(sources.into_iter().collect())
+}
 fn plane(model: &Model, face: FaceId) -> Result<&catallax_shapes::Plane, Refusal> {
     let Surface::Plane(p) = model.geom().surface(model.face(face).surface) else {
         return Err(bad(
@@ -426,6 +640,7 @@ pub(crate) fn build(
     body: BodyId,
     selection: &EdgeSelection,
     radius: &Real,
+    roll_over: bool,
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
@@ -440,14 +655,19 @@ pub(crate) fn build(
     if selected.is_empty() {
         return Ok((body, Vec::new()));
     }
+    let selected = if roll_over {
+        continue_tangent(model, &uses, selected, dec)?
+    } else {
+        selected.into_iter().map(|edge| (edge, edge)).collect()
+    };
     let mut runs = Vec::with_capacity(selected.len());
-    for edge in selected {
+    for (edge, source) in selected {
         let incident = &uses[&edge];
         let [(a, sa), (b, sb)] = incident.as_slice() else {
             return Err(bad("a selected edge must have two incident faces"));
         };
         let name = model
-            .edge_name(body, edge)
+            .edge_name(body, source)
             .ok_or_else(|| bad("a selected edge needs an unambiguous origin-pair name"))?;
         let faces = [*a, *b];
         let definition = FilletDefinition::new(
@@ -505,7 +725,9 @@ pub(crate) fn build(
             {
                 continue;
             }
-            if separated(&a.definition.surface, &b.definition.surface, dec)? {
+            if separated(&a.definition.surface, &b.definition.surface, dec)?
+                || a.definition.sectors_apart(&b.definition, dec)?
+            {
                 continue;
             }
             let a = model.geom_mut().add_surface(a.definition.surface.clone());
@@ -608,14 +830,21 @@ pub(crate) fn build(
                     .ok_or_else(|| bad("selected strips do not share a support at their end"))?;
                 let a = *runs[*i].faces.iter().find(|f| **f != common).unwrap();
                 let b = *runs[*j].faces.iter().find(|f| **f != common).unwrap();
-                let p = line_line(rail(&runs[*i], common)?, rail(&runs[*j], common)?, dec)?;
-                let qa = line_plane(rail(&runs[*i], a)?, plane(model, b)?, dec)?;
-                let qb = line_plane(rail(&runs[*j], b)?, plane(model, a)?, dec)?;
-                if !same(&qa, &qb, dec)? {
-                    return Err(bad(
-                        "unequal endpoint contacts require a corner continuation patch",
-                    ));
-                }
+                let join = tangent_join(model, &runs[*i], &runs[*j], common, [a, b], old, dec)?;
+                let (p, qa) = match &join {
+                    Some((_, p, q)) => (p.clone(), q.clone()),
+                    None => {
+                        let p = line_line(rail(&runs[*i], common)?, rail(&runs[*j], common)?, dec)?;
+                        let qa = line_plane(rail(&runs[*i], a)?, plane(model, b)?, dec)?;
+                        let qb = line_plane(rail(&runs[*j], b)?, plane(model, a)?, dec)?;
+                        if !same(&qa, &qb, dec)? {
+                            return Err(bad(
+                                "unequal endpoint contacts require a corner continuation patch",
+                            ));
+                        }
+                        (p, qa)
+                    }
+                };
                 let p = vertex(model, p);
                 let q = vertex(model, qa);
                 for index in [*i, *j] {
@@ -625,15 +854,18 @@ pub(crate) fn build(
                             .insert((old, face), if face == common { p } else { q });
                     }
                 }
-                let cap = connector(
-                    model,
-                    &runs[*i].definition.surface,
-                    &runs[*j].definition.surface,
-                    p,
-                    q,
-                    &[&runs[*i].definition, &runs[*j].definition],
-                    dec,
-                )?;
+                let cap = match join {
+                    Some((meridian, ..)) => meridian_edge(model, meridian, p, q, dec)?,
+                    None => connector(
+                        model,
+                        &runs[*i].definition.surface,
+                        &runs[*j].definition.surface,
+                        p,
+                        q,
+                        &[&runs[*i].definition, &runs[*j].definition],
+                        dec,
+                    )?,
+                };
                 for index in [*i, *j] {
                     runs[index].caps.insert(old, cap);
                 }

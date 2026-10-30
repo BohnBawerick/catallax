@@ -748,12 +748,98 @@ fn circle_misses_cone(
     }
 }
 
+/// Meets an outer torus sheet through its complete quartic carrier, keeping
+/// only hits on the outer sheet. A hit on the axis is the carrier's
+/// self-intersection, and a contained curve must be a whole coaxial circle.
+fn outer_sheet(
+    geom: &mut GeomStore,
+    c: CurveId,
+    s: SurfaceId,
+    sheet: &catallax_shapes::TorusSheet,
+    dec: &mut Decider,
+) -> Answered<CurveSurface> {
+    let carrier = geom.add_surface(Surface::Torus(catallax_shapes::Torus {
+        center: sheet.center.clone(),
+        axis: sheet.axis.clone(),
+        major: sheet.major.clone(),
+        minor: sheet.minor.clone(),
+        ref_dir: sheet.ref_dir.clone(),
+    }));
+    let answer = intersect(geom, c, carrier, dec)?;
+    let hits = match answer.value {
+        CurveSurface::Disjoint => return Ok(answer),
+        CurveSurface::Contained => {
+            let coaxial = match query::form(geom, c, dec)? {
+                CurveForm::Circle { center, normal, .. } => {
+                    sign(&normal.cross(&sheet.axis).norm_squared(), dec)? == Sign::Zero
+                        && sign(
+                            &center
+                                .minus(&sheet.center)
+                                .cross(&sheet.axis)
+                                .norm_squared(),
+                            dec,
+                        )? == Sign::Zero
+                }
+                _ => false,
+            };
+            if !coaxial {
+                return Err(Refusal::new(
+                    "intersect.partial-containment-required",
+                    "a curve on a spindle carrier may leave its outer sheet",
+                ));
+            }
+            // A coaxial circle on the carrier lies on one sheet; test one point.
+            let point = geom.curve(c).parameter_origin(geom);
+            return match geom.side_of(s, &point, dec) {
+                Outcome::ProvenCoincident(_) => {
+                    Ok(Answer::with_marks(CurveSurface::Contained, answer.marks))
+                }
+                Outcome::Proven(_) => Ok(Answer::with_marks(CurveSurface::Disjoint, answer.marks)),
+                Outcome::Refused(e) => Err(e),
+                Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+            };
+        }
+        CurveSurface::Meets(hits) => hits,
+    };
+    let mut kept = Vec::with_capacity(hits.len());
+    for hit in hits {
+        let position = geom.position(hit.point);
+        let d = position.minus(&sheet.center);
+        let height = d.dot(&sheet.axis);
+        let radial = d.minus(&sheet.axis.scaled(&(&height / &sheet.axis.norm_squared())));
+        if sign(&radial.norm_squared(), dec)? == Sign::Zero {
+            return Err(Refusal::new(
+                "intersect.singular-surface-point",
+                "a curve meets the spindle carrier at its self-intersection",
+            ));
+        }
+        match geom.side_of(s, &position, dec) {
+            Outcome::ProvenCoincident(_) => kept.push(hit),
+            Outcome::Proven(_) => {}
+            Outcome::Refused(e) => return Err(e),
+            Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+        }
+    }
+    Ok(Answer::with_marks(
+        if kept.is_empty() {
+            CurveSurface::Disjoint
+        } else {
+            CurveSurface::Meets(kept)
+        },
+        answer.marks,
+    ))
+}
+
 pub(super) fn intersect(
     geom: &mut GeomStore,
     c: CurveId,
     s: SurfaceId,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
+    if let Surface::TorusSheet(sheet) = geom.surface(s) {
+        let sheet = sheet.clone();
+        return outer_sheet(geom, c, s, &sheet, dec);
+    }
     let plan = query::validate(geom, c, dec)?;
     if geom
         .facts()

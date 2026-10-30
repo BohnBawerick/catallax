@@ -81,16 +81,21 @@ fn assert_volume(built: &Built, want: &str) {
     let want = Rational::parse(want).unwrap();
     let tolerance = Rational::parse("1e-5").unwrap();
     assert!(&volume.hi - &volume.lo <= tolerance, "{volume:?}");
-    assert!(&want - &tolerance <= volume.lo && volume.hi <= &want + &tolerance);
+    assert!(
+        &want - &tolerance <= volume.lo && volume.hi <= &want + &tolerance,
+        "{} not within 1e-5 of {}",
+        volume.lo.to_f64_nearest(),
+        want.to_f64_nearest()
+    );
 }
 fn classify(built: &mut Built, points: &[([&str; 3], Containment)]) {
     for (p, want) in points {
         let [x, y, z] = p.map(|v| Rational::parse(v).unwrap());
         let point = RPoint3::new(x, y, z);
+        let actual = classify_point(&mut built.model, built.result, &point, &mut decider());
         assert!(
-            matches!(classify_point(&mut built.model, built.result, &point, &mut decider()),
-                Outcome::Proven(actual) if actual == *want),
-            "at {p:?}"
+            matches!(actual, Outcome::Proven(actual) if actual == *want),
+            "at {p:?}: {actual:?}"
         );
     }
 }
@@ -286,4 +291,198 @@ fn oversized_slot_rounds_refuse_without_touching_the_retained_input() {
         assert_eq!(origins(retained), names);
     }
     assert_volume(base.built(), "4785.398163397448");
+}
+
+const LOOP: [&str; 4] = ["bottom", "right", "top", "left"];
+
+fn kinds(built: &Built) -> BTreeMap<String, usize> {
+    let mut kinds = BTreeMap::new();
+    for face in built.model.faces_of_body(built.result) {
+        let surface = built.model.geom().surface(built.model.face(face).surface);
+        *kinds.entry(format!("{:?}", surface.kind())).or_insert(0) += 1;
+    }
+    kinds
+}
+fn is_blend(built: &Built, face: catallax_topology::FaceId) -> bool {
+    built
+        .model
+        .face_origins(face)
+        .iter()
+        .any(|o| matches!(o.role, Role::Blend { .. }))
+}
+fn blend_names(built: &Built) -> BTreeSet<catallax_recipe::Origin> {
+    let mut names = BTreeSet::new();
+    for face in built.model.faces_of_body(built.result) {
+        if is_blend(built, face) {
+            names.extend(built.model.face_origins(face).iter().cloned());
+        }
+    }
+    names
+}
+/// Origin sets of the faces that are not blends, as a set.
+fn input_origins(built: &Built) -> BTreeSet<Vec<catallax_recipe::Origin>> {
+    built
+        .model
+        .faces_of_body(built.result)
+        .into_iter()
+        .filter(|f| !is_blend(built, *f))
+        .map(|f| built.model.face_origins(f).to_vec())
+        .collect()
+}
+/// Every edge between two blend pieces is a shared exact meridian circle,
+/// used once by a cylinder strip and once by a toroidal piece, with equal
+/// unit normals at both ends: a tangent join with no corner face.
+fn assert_tangent_meridians(built: &Built) -> usize {
+    let model = &built.model;
+    let mut owners: BTreeMap<_, Vec<_>> = BTreeMap::new();
+    for face in model.faces_of_body(built.result) {
+        for lp in &model.face(face).loops {
+            let Loop::Coedges(cs) = model.loop_(*lp) else {
+                continue;
+            };
+            for c in cs {
+                owners.entry(model.coedge(*c).edge).or_default().push(face);
+            }
+        }
+    }
+    let mut dec = decider();
+    let mut meridians = 0;
+    for (edge, faces) in owners {
+        let [a, b] = faces[..] else {
+            panic!("edge {edge:?} has {} uses", faces.len());
+        };
+        if !(is_blend(built, a) && is_blend(built, b)) {
+            continue;
+        }
+        meridians += 1;
+        let e = model.edge(edge);
+        assert!(matches!(model.geom().curve(e.curve), Curve::Circle(_)));
+        let mut surfaces: Vec<_> = [a, b]
+            .map(|f| model.geom().surface(model.face(f).surface).kind())
+            .into_iter()
+            .map(|k| format!("{k:?}"))
+            .collect();
+        surfaces.sort();
+        assert_eq!(surfaces[0], "Cylinder");
+        assert!(surfaces[1].starts_with("Torus"), "{surfaces:?}");
+        for v in [e.start, e.end].into_iter().flatten() {
+            let p = model.geom().position(model.vertex(v).point);
+            let [na, nb] = [a, b].map(|f| {
+                let face = model.face(f);
+                let n = model
+                    .geom()
+                    .surface(face.surface)
+                    .normal_at(&p, &mut dec)
+                    .unwrap();
+                if face.sense == Sense::Same {
+                    n
+                } else {
+                    n.scaled(&int(-1))
+                }
+            });
+            assert!(zero(na.cross(&nb).norm_squared(), &mut dec));
+            assert!(positive(&na.dot(&nb), &mut dec));
+        }
+    }
+    meridians
+}
+
+#[test]
+fn the_top_boundary_rounds_as_one_tangent_loop_at_every_radius() {
+    let base = evaluate(&recipe(&[], "0", 3), &mut decider()).unwrap();
+    let inputs = input_origins(&base);
+    assert_eq!(inputs.len(), 6);
+    let mut explicit = None;
+    for (radius, volume) in [
+        (1, "4761.789286491508"),
+        (2, "4692.167397995440"),
+        (4, "4422.113039563441"),
+    ] {
+        let r = radius.to_string();
+        for (segments, version) in [(&LOOP[..], 3), (&LOOP[..], 4), (&["right"][..], 4)] {
+            let mut built = evaluate(&recipe(segments, &r, version), &mut decider())
+                .unwrap_or_else(|e| panic!("r={radius} {segments:?} v{version}: {e}"));
+            assert_eq!(built.model.check(built.result), vec![]);
+            assert_eq!(
+                kinds(&built),
+                BTreeMap::from([
+                    ("Cylinder".into(), 4),
+                    ("Plane".into(), 4),
+                    // Radius 4 leaves the ring torus for its outer sheet.
+                    ((if radius == 4 { "TorusSheet" } else { "Torus" }).into(), 2)
+                ])
+            );
+            assert_eq!(assert_tangent_meridians(&built), 4);
+            assert_eq!(input_origins(&built), inputs);
+            assert_volume(&built, volume);
+            let ([x, ..], [tx, ..]) = (
+                [format!("{}/10", 10 * (25 - radius) - 1)],
+                [format!("{}/10", 10 * (25 - radius) + 5)],
+            );
+            let side = format!("{}", 10 - radius);
+            classify(
+                &mut built,
+                &[
+                    (["0", "49/10", "99/10"], Containment::Outside),
+                    (["0", "-49/10", "99/10"], Containment::Outside),
+                    (["249/10", "0", "99/10"], Containment::Outside),
+                    (["0", "0", "1"], Containment::Inside),
+                    (["0", "49/10", "1/10"], Containment::Inside),
+                    // At z=10-r the side contact keeps the full end radius 5;
+                    // just below the top the capsule radius is about 5-r.
+                    (["249/10", "0", side.as_str()], Containment::Inside),
+                    (["251/10", "0", side.as_str()], Containment::Outside),
+                    ([x.as_str(), "0", "9999/1000"], Containment::Inside),
+                    ([tx.as_str(), "0", "9999/1000"], Containment::Outside),
+                ],
+            );
+            let names = blend_names(&built);
+            if segments.len() == 1 {
+                // The continued loop keeps the one selected arc's name.
+                assert_eq!(names.len(), 1);
+                let arc = names.iter().next().unwrap();
+                assert!(
+                    explicit
+                        .as_ref()
+                        .is_some_and(|e: &BTreeSet<_>| e.contains(arc))
+                );
+            } else {
+                assert_eq!(names.len(), 4);
+                if let Some(previous) = &explicit {
+                    assert_eq!(previous, &names, "radius edits keep the four names");
+                }
+                explicit = Some(names);
+            }
+        }
+    }
+}
+
+#[test]
+fn permuted_and_repeated_references_build_the_same_loop() {
+    let reference = evaluate(&recipe(&LOOP, "4", 4), &mut decider()).unwrap();
+    let permuted = evaluate(
+        &recipe(&["left", "top", "right", "bottom", "top"], "4", 4),
+        &mut decider(),
+    )
+    .unwrap();
+    assert_eq!(origins(&permuted), origins(&reference));
+    assert_eq!(export(&permuted), export(&reference));
+}
+
+#[test]
+fn two_straight_strips_with_meeting_carriers_round_disjoint_sectors() {
+    for (radius, volume) in [(1, "4767.090708834183"), (4, "4476.080429032569")] {
+        let built = evaluate(
+            &recipe(&["bottom", "top"], &radius.to_string(), 3),
+            &mut decider(),
+        )
+        .unwrap_or_else(|e| panic!("r={radius}: {e}"));
+        assert_eq!(built.model.check(built.result), vec![]);
+        assert_eq!(
+            kinds(&built),
+            BTreeMap::from([("Cylinder".into(), 4), ("Plane".into(), 4)])
+        );
+        assert_eq!(blend_names(&built).len(), 2);
+        assert_volume(&built, volume);
+    }
 }

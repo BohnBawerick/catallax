@@ -729,6 +729,13 @@ fn a_box_across_an_anchor_plane_keeps_the_clamped_range() {
     let hi = [q("0"), q("0"), q("1001/1000")];
     let range = catallax_field::grade_range(&level, &lo, &hi, &mut Decider::default()).unwrap();
     assert_eq!(range, [q("999/10000"), q("1/10")]);
+    // The full field query over the same box is Unknown or proven Outside, never Inside.
+    let mut dec = Decider::default();
+    let plan = Plan::compile_checked(&parse(&g0()), &mut dec).unwrap();
+    assert_ne!(
+        classify_box(&plan, &lo, &hi, &mut dec).unwrap(),
+        BoxState::Inside
+    );
     let (result, work) = with_operation_budget(0, || {
         catallax_field::grade_range(&level, &lo, &hi, &mut Decider::default())
     });
@@ -754,7 +761,8 @@ fn a_box_holding_both_sides_is_unresolved() {
         .unwrap();
         (plan, state)
     });
-    assert!(!work.exhausted);
+    // Setup work is recorded separately; it is not the negative leg.
+    assert!(!work.exhausted && work.used > 0);
     assert_eq!(state, BoxState::Unknown);
     let point = RPoint3::new(q("0"), q("0"), q("1/1000"));
     let answer = plan

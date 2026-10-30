@@ -124,15 +124,21 @@ fn a_zero_outer_allowance_refuses_before_any_geometry() {
         r.max_work = 0;
         let response = answer(&r).unwrap();
         let manifest = &response["manifest"];
+        assert_eq!(manifest["status"], "refused");
         assert_eq!(
             manifest["refusal"]["code"], "numbers.operation-budget",
             "{response}"
         );
-        assert_eq!(manifest["printing"]["route"], "field");
-        assert!(manifest["printing"]["deviation_bound_mm"].is_null());
+        let printing = &manifest["printing"];
+        assert_eq!(printing["route"], "field");
+        assert!(printing["file"].is_null() && printing["deviation_bound_mm"].is_null());
+        assert!(printing.get("sha256").is_none_or(Value::is_null));
+        assert!(manifest.get("files").is_none_or(Value::is_null));
         assert_eq!(response["work"]["exhausted"], true);
         assert_eq!(response["work"]["used"], 0);
-        assert!(!r.out.join("print.stl").exists() && !r.out.join("display.obj").exists());
+        for name in ["print.stl", "display.obj", "answer.step"] {
+            assert!(!r.out.join(name).exists(), "{name}");
+        }
         fs::remove_dir_all(r.out).unwrap();
     }
 }

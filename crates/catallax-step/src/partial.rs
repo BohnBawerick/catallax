@@ -202,10 +202,8 @@ fn prepare_charts(
     let Some(mut prepared) = prepare_regular(model, &bodies, selected, geometry, dec)? else {
         return Ok(None);
     };
-    // Two trims touching at a tangency meet at one parameter point. Cylinder
-    // charts preserve that corner incidence, but a spherical chart face whose
-    // wires pass the same vertex on the same chart side twice can cross itself
-    // in the parameter plane. Keep its legacy bytes.
+    // A touching spherical domain needs simple chart cycles and coupled
+    // pcurve fits. Other repeated corners still keep the legacy encoding.
     for (&face, chart) in &prepared.plan.faces {
         if !matches!(
             prepared
@@ -218,6 +216,9 @@ fn prepare_charts(
         }
         let mut corners = BTreeSet::new();
         for id in &prepared.model.face(face).loops {
+            if chart.touching {
+                corners.clear();
+            }
             let Loop::Coedges(coedges) = prepared.model.loop_(*id) else {
                 continue;
             };
@@ -389,6 +390,36 @@ fn circular_boundary(model: &Model, face: FaceId) -> bool {
         })
 }
 
+fn touching_spherical_trims(model: &Model, face: FaceId) -> bool {
+    if !matches!(
+        model.geom().surface(model.face(face).surface),
+        Surface::Sphere(_)
+    ) {
+        return false;
+    }
+    let mut starts = BTreeSet::new();
+    for id in &model.face(face).loops {
+        let Loop::Coedges(coedges) = model.loop_(*id) else {
+            continue;
+        };
+        for id in coedges {
+            let coedge = model.coedge(*id);
+            let edge = model.edge(coedge.edge);
+            let vertex = if coedge.sense == Sense::Same {
+                edge.start
+            } else {
+                edge.end
+            };
+            if let Some(vertex) = vertex
+                && !starts.insert(vertex)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 pub(crate) fn prepare_regular(
     model: &Model,
     bodies: &[BodyId],
@@ -399,8 +430,13 @@ pub(crate) fn prepare_regular(
     assert!(!faces.is_empty(), "empty periodic preparation");
     let mut cuts = cut::Cuts::default();
     let mut meridians = BTreeMap::new();
+    let mut touching = BTreeSet::new();
     for face in faces {
-        let mut meridian = chart::meridian(&mut geometry, model, face, dec)?;
+        let coupled = touching_spherical_trims(model, face);
+        if coupled {
+            touching.insert(face);
+        }
+        let mut meridian = chart::meridian(&mut geometry, model, face, coupled, dec)?;
         if matches!(
             geometry.store.surface(model.face(face).surface),
             Surface::Torus(_)
@@ -420,9 +456,13 @@ pub(crate) fn prepare_regular(
     let mut face_map = BTreeMap::new();
     let mut charts = BTreeMap::new();
     for (face, meridian) in meridians {
-        let chart = wire::cut_face(&mut prepared, face, meridian, &splits)?;
+        let mut chart = wire::cut_face(&mut prepared, face, meridian, &splits)?;
+        if touching.contains(&face) {
+            chart = chart.split_touching(&prepared)?;
+        }
         added_edges += chart.seams.len();
-        let (replacement, chart) = chart.store(&mut prepared, face);
+        let (replacement, mut chart) = chart.store(&mut prepared, face);
+        chart.touching = touching.contains(&face);
         face_map.insert(face, replacement);
         charts.insert(replacement, chart);
     }

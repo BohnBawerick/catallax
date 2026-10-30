@@ -14,7 +14,7 @@ from OCP.IFSelect import IFSelect_RetDone
 from OCP.STEPControl import STEPControl_Reader
 from OCP.TopAbs import TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_SOLID
 
-from test_loopless_faces import BINARY, DRIVER, raw_solid, unique
+from test_loopless_faces import BINARY, DRIVER, raw_solid, raw_solids, unique
 
 
 def pose(x='0', y='0', z='0', rotation=('1', '0', '0', '0')):
@@ -133,11 +133,8 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                  'pose': pose(x='1/8', rotation=('1', '-1', '0', '0'))}]), Path(temporary))
             self.assertEqual(manifest['step']['added_edges'], 0)
 
-    def test_touching_spherical_trims_keep_legacy_encoding(self):
-        # The first intersection leaves spherical trims touching at one
-        # vertex. Its partial charts crossed themselves in the parameter
-        # plane and failed both readers; the legacy file reads under the
-        # standard reader, so this scene keeps its legacy encoding.
+    def test_touching_spherical_trims_are_raw_valid(self):
+        # The ball part and the disjoint block sliver retain their own volumes.
         tilt = ('1', '1', '1', '1')
         recipe = {'format': 'catallax-recipe/3', 'name': 'touching spherical trims', 'steps': [
             {'id': 'a', 'op': 'cylinder', 'radius': '3', 'height': '6',
@@ -152,8 +149,33 @@ class PartialPeriodicTrimImports(unittest.TestCase):
             {'id': 's3', 'op': 'boolean', 'kind': 'subtract', 'target': 's2', 'tool': 'c3'}],
             'result': 's3'}
         with tempfile.TemporaryDirectory(prefix='catallax-partial-periodic-') as temporary:
-            directory, _ = self.answer(recipe, Path(temporary))
-            self.assertNotIn('PCURVE', (directory / 'answer.step').read_text())
+            directory, manifest = self.answer(recipe, Path(temporary))
+            self.assertEqual(manifest['result']['lumps'], 2)
+            self.assertEqual(manifest['result']['shells'], 2)
+            path = directory / 'answer.step'
+            raw = raw_solids(path)
+            self.assertEqual(len(raw), 2)
+            reader = STEPControl_Reader()
+            self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
+            self.assertGreater(reader.TransferRoots(), 0)
+            standard = reader.OneShape()
+            self.assertTrue(BRepCheck_Analyzer(standard).IsValid())
+            standard_solids = unique(standard, TopAbs_SOLID)
+            self.assertEqual(len(standard_solids), 2)
+            for mode, solids in [('raw', raw), ('standard', standard_solids)]:
+                with self.subTest(reader=mode):
+                    measured = []
+                    for solid in solids:
+                        self.assertTrue(BRepCheck_Analyzer(solid).IsValid())
+                        self.assertEqual(len(unique(solid, TopAbs_SOLID)), 1)
+                        volume, spread = converged_volume(solid)
+                        area = GProp_GProps()
+                        BRepGProp.SurfaceProperties_s(solid, area, 1e-12, False)
+                        measured.append((volume, area.Mass(), spread))
+                    measured.sort()
+                    for expected, (volume, area, spread) in zip(
+                            (9.6903047541e-05, 0.26465101313186), measured):
+                        self.assertLessEqual(abs(volume - expected), area * 1e-7 + spread)
 
     def test_pole_near_a_trim_uses_a_perpendicular_frame(self):
         # Ball minus the cap of height 4.999 on the negative x side.

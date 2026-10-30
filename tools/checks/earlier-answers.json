@@ -3670,12 +3670,12 @@
   {
     "index": 262,
     "request_sha256": "389f7b1dcc631b22399de15ad2f09fe3a981f559fd4b04659010734ade34b3a5",
-    "accepted_answer_sha256": "47a323cfb18a577098f95ebfae32b002303e4d5d88f7769ef6e0734f54578fad",
+    "accepted_answer_sha256": "8119a300c928c879d0765bb1c2dfeddd8fd5b1d4fa8de38e0aeedfa4c178579f",
     "family": "mixed",
     "owner": "unknown",
-    "accepted_manifest_sha256": "49306c0b9a451826a3da49ca007d1b34136c952a193f8a89e0bf94edfddac675",
+    "accepted_manifest_sha256": "a6e24baba2854a87c1293061fa94d2824312756561e71a0938252c83d1cd346e",
     "accepted_files": {
-      "answer.step": "770dfffc0237a182539afff13d14b0307dbbf928be5a089bc43a665ee06319e1",
+      "answer.step": "f1b7c33c9c4990a57ad37c21ad8f3aea0780f529674e6d98c54c5e5486d2db6e",
       "display.obj": null,
       "print.stl": null,
       "answer.igs": null

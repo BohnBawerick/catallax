@@ -67,6 +67,12 @@ impl State {
     }
 }
 
+struct Joint {
+    ends: [Id; 2],
+    metric: Rational,
+    error: Rational,
+}
+
 struct Association {
     fit: Option<uv::Fit>,
     id: Id,
@@ -74,6 +80,7 @@ struct Association {
     surface: Id,
     same: bool,
     seam_side: Option<Side>,
+    joint: Option<Joint>,
 }
 
 struct Wrapper {
@@ -213,7 +220,13 @@ impl Exporter<'_> {
         Ok(vertex)
     }
 
-    fn uv_representation(&mut self, fit: &uv::Fit, ends: [Id; 2], context: Id) -> Id {
+    fn uv_representation(
+        &mut self,
+        fit: &uv::Fit,
+        ends: [Id; 2],
+        context: Id,
+        existing: Option<Id>,
+    ) -> Id {
         let mut points = Vec::with_capacity(fit.points.len());
         for (i, point) in fit.points.iter().enumerate() {
             let id = if i == 0 {
@@ -257,10 +270,14 @@ impl Exporter<'_> {
                 text(".UNSPECIFIED."),
             ],
         );
-        self.graph.add(
-            "DEFINITIONAL_REPRESENTATION",
-            vec![text("''"), refs([curve]), context.into()],
-        )
+        let fields = vec![text("''"), refs([curve]), context.into()];
+        if let Some(id) = existing {
+            self.graph
+                .replace(id, "DEFINITIONAL_REPRESENTATION", fields);
+            id
+        } else {
+            self.graph.add("DEFINITIONAL_REPRESENTATION", fields)
+        }
     }
 
     pub(super) fn chart_edge(
@@ -348,6 +365,7 @@ impl Exporter<'_> {
             let definition = &self.chart_state.as_ref().unwrap().plan.faces[&face];
             let mut sides = definition.sides[&coedge];
             let seam = definition.seams.contains(&id);
+            let coupled = definition.touching;
             if input.same != source_natural {
                 sides.reverse();
             }
@@ -401,8 +419,9 @@ impl Exporter<'_> {
                     ],
                 });
             }
-            let tolerance = &self.options.curve_tolerance
-                / &(&projection.metric(&bounds, None) * &Rational::from_i64(16));
+            let global_metric = projection.metric(&bounds, None);
+            let tolerance =
+                &self.options.curve_tolerance / &(&global_metric * &Rational::from_i64(16));
             let budget = if let Some(budget) = reservation.take() {
                 budget
             } else {
@@ -424,9 +443,18 @@ impl Exporter<'_> {
                 + &geometry.extent_error * &extent
                 + projection.metric(&bounds, Some(&fit)) * fit.error.clone()
                 + self.face_errors.get(&face).cloned().unwrap_or_default();
+            let joint = coupled.then(|| Joint {
+                ends: [start.id, end.id],
+                metric: global_metric,
+                error: error.clone(),
+            });
             self.deviation(error);
             let surface = self.surfaces[&surface_id].id;
-            let representation = self.uv_representation(&fit, [start.id, end.id], context);
+            let representation = if coupled {
+                self.graph.add("DEFINITIONAL_REPRESENTATION", Vec::new())
+            } else {
+                self.uv_representation(&fit, [start.id, end.id], context, None)
+            };
             let pcurve = self.graph.add(
                 "PCURVE",
                 vec![text("''"), surface.into(), representation.into()],
@@ -440,6 +468,7 @@ impl Exporter<'_> {
                     surface,
                     same: input.same,
                     seam_side: seam.then_some(sides[0]),
+                    joint,
                 },
             );
             coedges[index] = Some(coedge);
@@ -460,6 +489,110 @@ impl Exporter<'_> {
             coedges,
         });
         Ok(wrapper)
+    }
+
+    fn couple_chart_face(
+        &mut self,
+        face: FaceId,
+        wires: &[Vec<(CoedgeId, bool)>],
+        topology: &mut super::Topology,
+    ) -> Result<(), Refusal> {
+        let pairs = {
+            let chart = topology.chart.as_ref().unwrap();
+            let definition = &self.chart_state.as_ref().unwrap().plan.faces[&face];
+            let corner = |coedge: CoedgeId, same: bool| {
+                let edge = self.model.edge(self.model.coedge(coedge).edge);
+                let vertex = if same { edge.start } else { edge.end }.expect("finite chart edge");
+                let side =
+                    definition.sides[&coedge][usize::from(same != (edge.sense == Sense::Same))];
+                (vertex, side)
+            };
+            let mut counts = BTreeMap::new();
+            for wire in wires {
+                for &(coedge, same) in wire {
+                    *counts.entry(corner(coedge, same)).or_insert(0usize) += 1;
+                }
+            }
+            let mut pairs = Vec::new();
+            for wire in wires {
+                for (index, &(coedge, same)) in wire.iter().enumerate() {
+                    if counts[&corner(coedge, same)] < 2 {
+                        continue;
+                    }
+                    let (previous, previous_same) = wire[(index + wire.len() - 1) % wire.len()];
+                    if previous == coedge {
+                        return Err(unsupported());
+                    }
+                    pairs.push([
+                        (coedge, same == chart.associations[&coedge].same),
+                        (
+                            previous,
+                            previous_same != chart.associations[&previous].same,
+                        ),
+                    ]);
+                }
+            }
+            pairs
+        };
+        for pair in pairs {
+            let repairs = {
+                let chart = topology.chart.as_ref().unwrap();
+                let curves = pair.map(|(id, _)| &chart.associations[&id]);
+                let mut amplitude: Option<Rational> = None;
+                for curve in curves {
+                    let joint = curve.joint.as_ref().ok_or_else(unsupported)?;
+                    let remaining = &self.options.curve_tolerance - &joint.error;
+                    if remaining <= Rational::zero() || joint.metric <= Rational::zero() {
+                        return Err(unsupported());
+                    }
+                    let allowed = remaining / (&joint.metric * &Rational::from_i64(2));
+                    amplitude = Some(match amplitude {
+                        Some(old) => old.min(allowed),
+                        None => allowed,
+                    });
+                }
+                crate::joint::pair(
+                    (curves[0].fit.as_ref().unwrap(), pair[0].1),
+                    (curves[1].fit.as_ref().unwrap(), pair[1].1),
+                    &amplitude.unwrap(),
+                    self.digits(),
+                    self.dec,
+                )?
+                .ok_or_else(unsupported)?
+            };
+            for ((id, _), repair) in pair.into_iter().zip(repairs) {
+                let association = topology
+                    .chart
+                    .as_mut()
+                    .unwrap()
+                    .associations
+                    .get_mut(&id)
+                    .unwrap();
+                let joint = association.joint.as_mut().unwrap();
+                joint.error = &joint.error + &(&joint.metric * &repair.displacement);
+                if joint.error > self.options.curve_tolerance {
+                    return Err(unsupported());
+                }
+                self.deviation(joint.error.clone());
+                repair.apply(association.fit.as_mut().unwrap());
+            }
+        }
+        let chart = topology.chart.as_mut().unwrap();
+        let context = chart.context.expect("chart parameter context");
+        for wire in wires {
+            for &(id, _) in wire {
+                let association = chart.associations.get_mut(&id).unwrap();
+                if let Some(joint) = association.joint.take() {
+                    self.uv_representation(
+                        association.fit.as_ref().unwrap(),
+                        joint.ends,
+                        context,
+                        Some(association.representation),
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn finish_chart_edges(&mut self, topology: &super::Topology) -> Result<(), Refusal> {
@@ -530,6 +663,9 @@ impl Exporter<'_> {
                     .add("EDGE_LOOP", vec![text("''"), refs(oriented)]),
             );
             wires.push(wire);
+        }
+        if self.chart_state.as_ref().unwrap().plan.faces[&id].touching {
+            self.couple_chart_face(id, &wires, topology)?;
         }
         let groups = {
             let topology = topology.chart.as_ref().unwrap();

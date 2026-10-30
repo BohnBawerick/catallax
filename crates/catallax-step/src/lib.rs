@@ -18,6 +18,7 @@ mod export;
 mod fit;
 mod frames;
 mod graph;
+mod joint;
 mod number;
 mod partial;
 mod pcurve;

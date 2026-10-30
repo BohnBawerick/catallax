@@ -114,6 +114,29 @@ fn wrappers_and_recipes_refuse_unknown_controls_and_functions() {
     }
 }
 
+/// Work-zero-L and Work-zero-G: an unmodified valid print with an outer allowance of
+/// zero refuses at the first checkpoint with the outer allowance's code, with no geometry
+/// and no file (designer ruling on the zero-work rows).
+#[test]
+fn a_zero_outer_allowance_refuses_before_any_geometry() {
+    for recipe in [d0(), g0()] {
+        let mut r = request("print", print(recipe, "1/10"));
+        r.max_work = 0;
+        let response = answer(&r).unwrap();
+        let manifest = &response["manifest"];
+        assert_eq!(
+            manifest["refusal"]["code"], "numbers.operation-budget",
+            "{response}"
+        );
+        assert_eq!(manifest["printing"]["route"], "field");
+        assert!(manifest["printing"]["deviation_bound_mm"].is_null());
+        assert_eq!(response["work"]["exhausted"], true);
+        assert_eq!(response["work"]["used"], 0);
+        assert!(!r.out.join("print.stl").exists() && !r.out.join("display.obj").exists());
+        fs::remove_dir_all(r.out).unwrap();
+    }
+}
+
 /// Designer sections 4 and 8: graded prints answer on the field route with a labelled
 /// file whose metadata and hash match the published bytes, within the kernel allowance.
 #[test]

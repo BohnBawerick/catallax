@@ -718,35 +718,54 @@ fn grade_queries_return_exact_clamped_values() {
 }
 
 /// Q-clamp: a box across the end anchor plane keeps the exact clamped range, not the
-/// value at its centre or an unclamped endpoint.
+/// value at its centre or an unclamped endpoint. After that successful evaluation, the
+/// same evaluation with an isolated zero operation allowance refuses at its first
+/// checkpoint (designer ruling on the zero-work rows).
 #[test]
 fn a_box_across_an_anchor_plane_keeps_the_clamped_range() {
     let level: catallax_recipe::Grade =
         serde_json::from_value(g0()["steps"][1]["level"].clone()).unwrap();
-    let range = catallax_field::grade_range(
-        &level,
-        &[q("0"), q("0"), q("999/1000")],
-        &[q("0"), q("0"), q("1001/1000")],
-        &mut Decider::default(),
-    )
-    .unwrap();
+    let lo = [q("0"), q("0"), q("999/1000")];
+    let hi = [q("0"), q("0"), q("1001/1000")];
+    let range = catallax_field::grade_range(&level, &lo, &hi, &mut Decider::default()).unwrap();
     assert_eq!(range, [q("999/10000"), q("1/10")]);
+    let (result, work) = with_operation_budget(0, || {
+        catallax_field::grade_range(&level, &lo, &hi, &mut Decider::default())
+    });
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted && work.used == 0);
 }
 
 /// Q-uncertain: a box holding material and void witnesses is unresolved, never wholly
-/// inside or outside.
+/// inside or outside. After a separately recorded successful compilation, the proven
+/// point query at `(0, 0, 1/1000)` with an isolated zero operation allowance refuses
+/// at its first checkpoint (designer ruling on the zero-work rows).
 #[test]
 fn a_box_holding_both_sides_is_unresolved() {
-    let mut dec = Decider::default();
-    let plan = Plan::compile_checked(&parse(&g0()), &mut dec).unwrap();
-    let state = classify_box(
-        &plan,
-        &[q("-1/1000"), q("-1/1000"), q("-1/1000")],
-        &[q("1/1000"), q("1/1000"), q("1/1000")],
-        &mut dec,
-    )
-    .unwrap();
+    let ((plan, state), work) = with_operation_budget(KERNEL_WORK, || {
+        let mut dec = Decider::default();
+        let plan = Plan::compile_checked(&parse(&g0()), &mut dec).unwrap();
+        let state = classify_box(
+            &plan,
+            &[q("-1/1000"), q("-1/1000"), q("-1/1000")],
+            &[q("1/1000"), q("1/1000"), q("1/1000")],
+            &mut dec,
+        )
+        .unwrap();
+        (plan, state)
+    });
+    assert!(!work.exhausted);
     assert_eq!(state, BoxState::Unknown);
+    let point = RPoint3::new(q("0"), q("0"), q("1/1000"));
+    let answer = plan
+        .proven_checked(&point, &mut Workspace::default(), &mut Decider::default())
+        .unwrap();
+    assert_eq!(answer.location, Location::Outside);
+    let (result, work) = with_operation_budget(0, || {
+        plan.proven_checked(&point, &mut Workspace::default(), &mut Decider::default())
+    });
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted && work.used == 0);
 }
 
 fn with_radius(base: Value, change: impl FnOnce(&mut Value)) -> Value {

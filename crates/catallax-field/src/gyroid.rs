@@ -457,12 +457,14 @@ impl Gyroid {
         Some(jet.value + Interval::new(lo - curved, hi + curved).unwrap())
     }
 
-    /// Exact classification of a rational point.
+    /// Exact classification of a rational point. It checks the operation allowance
+    /// first, so a query with none left refuses even where intervals would decide it.
     pub(crate) fn location(
         &self,
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
+        dec.check_deadline()?;
         if let Some(value) = self.residual(&p.each_ref().map(Interval::from_rational)) {
             if value.lo() > 0.0 {
                 return Ok(Location::Outside);

@@ -509,15 +509,21 @@ impl<'a> Classifier<'a> {
 }
 /// The print certificate's interval classification of a closed rational box. `Unknown`
 /// is a box the intervals do not settle, such as one holding both material and void;
-/// it is never a guess either way. Refusals are the classifier's: `field.print-coverage`
-/// for a definition without interval coverage, and the decider's work and deadline
-/// outcomes.
+/// it is never a guess either way. Refusals: `field.print-box` when a lower corner
+/// exceeds its upper corner, the classifier's `field.print-coverage` for a definition
+/// without interval coverage, and the decider's work and deadline outcomes.
 pub fn classify_box(
     plan: &Plan,
     lo: &[Rational; 3],
     hi: &[Rational; 3],
     dec: &mut Decider,
 ) -> Result<BoxState, Refusal> {
+    if (0..3).any(|i| lo[i] > hi[i]) {
+        return Err(refusal(
+            "field.print-box",
+            "each lower box corner must not exceed its upper corner",
+        ));
+    }
     if plan.is_proven_empty() {
         dec.check_deadline()?;
         return Ok(BoxState::Outside);

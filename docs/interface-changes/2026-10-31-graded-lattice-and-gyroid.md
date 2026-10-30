@@ -16,7 +16,7 @@ Migration: An application may pass a linear grade in `LatticeSpec::radius` or `G
 ### Public additions
 
 - `catallax_field::grade_range(grade, lo, hi, dec)` returns the exact clamped range of a constant or linear grade over a closed rational box. Refusals: `field.grade-box`, `field.grade-unsupported`, `field.grade-impossible`, and the decider's work and deadline outcomes.
-- `catallax_field::printing::classify_box(plan, lo, hi, dec)` returns the print certificate's interval `BoxState`; `printing::BoxState` is now public.
+- `catallax_field::printing::classify_box(plan, lo, hi, dec)` returns the print certificate's interval `BoxState`; `printing::BoxState` is now public. Refusals: `field.print-box`, `field.print-coverage`, and the decider's work and deadline outcomes.
 - `catallax_features::lattice::validate_gyroid(period, level)` checks the gyroid parameters both kernels read.
 
 ### Behaviour

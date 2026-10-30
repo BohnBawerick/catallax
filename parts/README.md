@@ -22,7 +22,7 @@ These are versioned `catallax-recipe` inputs for the roadmap's P0–P6 scoreboar
 
 Stock quaternions are homogeneous and normalized by the existing exact placement code. Recipes keep operation IDs and origin references fixed. Do not rename them to accommodate a kernel failure. Change dimensions only as a reviewed corpus revision, with a new report and an explanation of why the old input was wrong.
 
-Full P5 status: the eight-step recipe builds its 22-face solid, with four torus and four rolling-envelope blend faces, at about 2.0M work for radius 2 and for its 5/2 edit. It then stops at `numbers.geometric-gap-unproven`, because the fitted faces have no certified exchange yet. STEP, display and volume are also still missing for this body, so P5 is not an answered part.
+Full P5 status: the eight-step recipe builds its 22-face solid, with four torus and four rolling-envelope blend faces, and the ordinary driver answers it with a certified manifest/4 record, raw-valid STEP and a volume enclosure of the original definition. Four fitted faces are named exceptions, each within 1/10000 mm, so `exact` is `false`. Inertia remains a typed refusal, and rotated frames, a rail clear of or tangent to the mouth and radius 7/2 keep their refusals.
 
 `holes/P1-bolt-holes.json` and `holes/P5-countersinks.json` isolate the named-hole feature gates with the same fixed P1/P5 dimensions. They are not completed target parts: P1's slot chain remains in the full bracket, and P5's pattern and junction fillet remain in the full housing. The hole cases use one placement group rather than replacing the pattern operation's acceptance test.
 

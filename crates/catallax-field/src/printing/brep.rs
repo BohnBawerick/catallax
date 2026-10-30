@@ -47,8 +47,7 @@ pub fn mesh_certified(
     certified.verify(dec)?;
     check_body(certified.built(), options)?;
     let model_bound = certified
-        .result_certificate()
-        .record()
+        .result_record()
         .uniform_bound
         .as_ref()
         .ok_or_else(|| {

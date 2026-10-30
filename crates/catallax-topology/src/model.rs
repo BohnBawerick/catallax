@@ -59,6 +59,7 @@ pub struct Model {
     coedge_owners: Vector<Option<(LoopId, FaceId)>>,
     face_origins: OrdMap<FaceId, Vec<Origin>>,
     edge_constructions: OrdMap<EdgeId, Vec<EdgeName>>,
+    blend_bases: OrdMap<BodyId, BodyId>,
 }
 
 impl Model {
@@ -275,6 +276,19 @@ impl Model {
             })
             .collect();
         VertexName::new(origins).ok()
+    }
+
+    /// Records the unfilleted body a fitted blend changed. Measurement reads a
+    /// fitted junction as this body plus the blend's exact ring.
+    pub fn record_blend_base(&mut self, blend: BodyId, base: BodyId) {
+        self.body(blend);
+        self.body(base);
+        self.blend_bases.insert(blend, base);
+    }
+
+    /// The unfilleted body behind a fitted blend.
+    pub fn blend_base(&self, blend: BodyId) -> Option<BodyId> {
+        self.blend_bases.get(&blend).copied()
     }
 
     /// Adds a shell.

@@ -17,7 +17,7 @@ Sources:
 | Source | Problem format | Result |
 | --- | --- | --- |
 | `question` | `exact-brep-question/2` | Full geometric manifest and optional STEP. Parse all legacy fields, but ignore `limits.deadline_ms` during evaluation. |
-| `recipe` | `catallax-recipe/3`, `catallax-recipe/4` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. |
+| `recipe` | `catallax-recipe/3`, `catallax-recipe/4` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. A result with fitted rolling-envelope faces instead answers with the certified manifest/4 record described under [Certified recipe bodies](#certified-recipe-bodies-opt-in), because manifest/3 promises exact geometry. |
 | `recipe` | `catallax-stand-in/1` | Explicit field-moment measurement and an opt-in massless surface envelope plus unit-density STEP solids. This does not convert the field boundary to B-rep. |
 | `compare` | `catallax-recipe/3`, `catallax-recipe/4` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
 | `field` | `catallax-recipe/3`, `catallax-recipe/4` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
@@ -232,9 +232,11 @@ A budget refusal discards published geometry and marks as before. The log keeps 
 ## Certified recipe bodies (opt-in)
 
 An existing `catallax-request/1` with `source:"recipe"` can carry a
-`catallax-certified-recipe/1` problem. The nested `recipe` remains unchanged
-`catallax-recipe/3`; ordinary recipe, question, comparison and face-check inputs
-retain manifest/3 and their existing semantics. `about` advertises the additive
+`catallax-certified-recipe/1` problem. The nested `recipe` is unchanged
+`catallax-recipe/3` or `catallax-recipe/4`, read under its own version's rules.
+Ordinary recipe, question, comparison and face-check inputs retain manifest/3 and
+their existing semantics, except that an ordinary recipe whose result has fitted
+rolling-envelope faces answers with manifest/4. `about` advertises the additive
 `certified_recipe` and `certified_manifest` versions without changing its default.
 
 The public [certified recipe example](../.claude/skills/verify-catallax/references/examples/certified-recipe.json)
@@ -244,7 +246,7 @@ the adapter selects `recipe`. The wrapper contains:
 
 | Field | Contract |
 | --- | --- |
-| `recipe` | Required recipe/3 object. |
+| `recipe` | Required recipe/3 or recipe/4 object. |
 | `outputs.mesh` | Optional `{chord_tolerance,max_vertices}`; writes `display.obj`. Chord tolerance is in mm and concerns the represented model, not its exact target. |
 | `outputs.step` | Optional `{file_tolerance,decimal_places}`; writes `answer.step` only after certification. The nonnegative tolerance bounds file-to-model distance in mm. |
 | `properties` | Optional `{relative,absolute,inertia}`; nonnegative requested enclosure widths. `inertia` defaults false. |
@@ -255,8 +257,9 @@ the adapter selects `recipe`. The wrapper contains:
 syntax, including exact rational strings. Unknown wrapper/option fields are
 invalid input.
 
-Only this opt-in problem produces `catallax-manifest/4`. Its `result` uses the
-existing analytic kind tags plus genuine `bspline` surface and curve tags.
+Only this opt-in problem and a fitted ordinary recipe produce `catallax-manifest/4`.
+Its `result` uses the existing analytic kind tags plus genuine `bspline` surface and
+curve tags.
 The first supported spline body has one side, two complete planar cap disks,
 two shared physical ring edges and no model vertices. Its finite spline domain
 and knots are reported in `certificate.spline`; `u=0` and `u=4` identify a C1
@@ -304,6 +307,39 @@ assuming a surviving reference means an unchanged handle or a unique match.
 For deterministic comparison, exclude diagnostic clocks and build identity as
 before, but compare certificates, knots, domains, consumer outcomes, names and
 artifact bytes.
+
+
+### Fitted rolling-envelope bodies
+
+The full P5 housing is the second certified family. Its fillet continues over
+four countersink mouths as four torus pieces and four rational B-spline faces.
+An ordinary `source:"recipe"` request answers this body with manifest/4, with a
+default STEP request of `{"file_tolerance":"1/10000000","decimal_places":15}` and a
+volume, area and centroid request of `{"relative":"1/1000000000","absolute":"1/1000000000"}`.
+The opt-in wrapper gives the same record for a recipe/4 problem, with the caller's outputs.
+
+`exact` is `false`. `certificate.regions` has one region per model face. Only
+the four `rolling-envelope` regions carry an `exception`, each naming its checked
+carrier bound, its hard limit and proved lower bounds on the neighbouring edge
+and face. An exact face beside a carrier reports
+`domain.kind:"exact-surface-with-fitted-trims"` and `fitted_trim_bound_mm`, since
+its surface is exact while one of its boundaries is a carrier row.
+`certificate.spline` lists each fitted surface, and `retained_target.kind` is
+`rolling-envelope-junction`.
+
+`step.regions` gives each region its own `file_to_definition_bound_mm`: the file
+bound plus that region's own carrier or trim bound. A body-wide value stays in
+`step.file_to_definition_bound_mm`. No `answer.step` appears unless the whole file is
+proved within `file_tolerance`; otherwise `step` refuses with
+`step.tolerance-not-reached` or the first budget refusal, and the certified
+body stays answered. `display` bounds concern the represented model, as for the first
+family, and an envelope face reports `AngularDeviation` as an unavailable control
+because its grid certifies position only.
+
+`properties.values` enclose the original definition, measured as the unfilleted
+base plus the exact ring, and contain nothing from the carrier. `inertia:true`
+refuses with `measure.unsupported-surface`. `field_points` refuse with
+`field.certified-prism-branch`.
 
 ## Whole-face local tolerances
 

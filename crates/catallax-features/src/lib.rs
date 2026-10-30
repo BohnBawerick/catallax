@@ -89,7 +89,10 @@ pub mod sharp_thicken;
 pub mod stand_in;
 mod stock;
 
-pub use certified::{BodyCertificate, CertificateKey, CertifiedBuilt, PrismTarget};
+pub use certified::{
+    BodyCertificate, CertificateKey, CertifiedBuilt, EnvelopeRegion, JunctionCertificate,
+    PrismTarget, certify_junction,
+};
 pub use draft_build::ConsumedFace;
 pub use evaluate::{
     BuildError, Built, EvaluationCheckpoint, ImportFiles, StandIn, evaluate, evaluate_certified,

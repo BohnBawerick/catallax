@@ -3,6 +3,7 @@
 //! their geometric authority before a certified build can leave this module.
 
 mod geometry;
+mod junction;
 mod source;
 
 use crate::{Built, EllipticOffsetFit, Profile, fit_elliptic_offset};
@@ -19,6 +20,8 @@ use catallax_shapes::{
 };
 use catallax_topology::{Body, BodyId, BodyKind, Model};
 use geometry::{PrismTopology, ProfileSupport};
+pub(crate) use junction::FIT_MARK;
+pub use junction::{EnvelopeRegion, JunctionCertificate};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -343,6 +346,7 @@ pub struct CertifiedBuilt {
     evidence: EvidenceBook<CertificateKey>,
     decisions: DecisionBook<CertificateKey>,
     certificates: BTreeMap<StepId, Arc<BodyCertificate>>,
+    junction: Option<Arc<JunctionCertificate>>,
 }
 impl CertifiedBuilt {
     /// Actual B-rep and unchanged immutable recipe snapshot.
@@ -361,13 +365,34 @@ impl CertifiedBuilt {
     pub fn certificate(&self, step: &StepId) -> Option<&BodyCertificate> {
         self.certificates.get(step).map(Arc::as_ref)
     }
-    /// Final result certificate; construction refuses rather than returning a missing record.
+    /// Final prism certificate; construction refuses rather than returning a
+    /// missing record. A fitted junction's result has [`Self::junction`] instead.
     pub fn result_certificate(&self) -> &BodyCertificate {
         self.certificate(&self.built.recipe().result)
             .expect("certified final result invariant")
     }
+    /// Final junction certificate, when the result has rolling-envelope faces.
+    pub fn junction(&self) -> Option<&JunctionCertificate> {
+        self.junction.as_deref()
+    }
+    /// Complete numeric record of the final result, of either certified family.
+    pub fn result_record(&self) -> &GeometricCertificate<CertificateKey> {
+        match self.junction() {
+            Some(junction) => junction.record(),
+            None => self.result_certificate().record(),
+        }
+    }
     /// Revalidates actual geometry and numeric evidence before a consumer publishes it.
     pub fn verify(&self, dec: &mut Decider) -> Result<(), Refusal> {
+        if let Some(junction) = self.junction() {
+            return junction.verify_record(
+                &self.built.model,
+                junction.record(),
+                &self.evidence,
+                &self.decisions,
+                dec,
+            );
+        }
         self.result_certificate().verify_record(
             &self.built.model,
             self.result_certificate().record(),
@@ -386,6 +411,13 @@ struct PreparedBody {
     choice: (CertificateKey, RecordedChoice<CertificateKey>),
     fit_target: Option<Rational>,
     parent: Option<CertificateKey>,
+}
+
+/// Certifies an ordinary evaluation whose result has rolling-envelope faces.
+/// Any other result keeps the opt-in refusal.
+pub fn certify_junction(built: Built, dec: &mut Decider) -> Result<CertifiedBuilt, Refusal> {
+    let recipe = built.recipe().clone();
+    CertificationContext::new(&recipe).finish(built, dec)
 }
 
 pub(crate) struct CertificationContext<'a> {
@@ -421,17 +453,34 @@ impl<'a> CertificationContext<'a> {
         self.revision = Some(revision);
         Ok(revision)
     }
-    pub fn finish(self, built: Built, dec: &mut Decider) -> Result<CertifiedBuilt, Refusal> {
+    pub fn finish(mut self, built: Built, dec: &mut Decider) -> Result<CertifiedBuilt, Refusal> {
+        let mut junction = None;
         if !self.certificates.contains_key(&built.recipe().result) {
-            return Err(unsupported(
-                "the opt-in final result has no supported complete prism certificate",
-            ));
+            if built.model.blend_base(built.result).is_some() {
+                let revision = self.retain()?;
+                junction = junction::certify(
+                    &built.model,
+                    built.result,
+                    &built.recipe().result,
+                    revision,
+                    &mut self.evidence,
+                    &mut self.decisions,
+                    dec,
+                )?
+                .map(Arc::new);
+            }
+            if junction.is_none() {
+                return Err(unsupported(
+                    "the opt-in final result has no supported complete prism certificate",
+                ));
+            }
         }
         let result = CertifiedBuilt {
             built,
             evidence: self.evidence,
             decisions: self.decisions,
             certificates: self.certificates,
+            junction,
         };
         result.verify(dec)?;
         Ok(result)

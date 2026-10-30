@@ -607,3 +607,64 @@ fn the_field_adapter_shows_a_lattice_as_an_unproved_preview() {
     assert!(plain["manifest"]["face_measurements"]["display"]["proof"].is_null());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a_fitted_recipe_answers_with_its_certificate_through_both_routes() {
+    let recipe: Value =
+        serde_json::from_str(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
+    let wrapped = json!({"format":"catallax-certified-recipe/1","recipe":recipe,"outputs":{}});
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-fitted-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&dir).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("stream")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    for (i, problem) in [recipe, wrapped].iter().enumerate() {
+        writeln!(
+            input,
+            "{}",
+            json!({"format":"catallax-request/1","source":"recipe","problem":problem,
+                "max_work":20_000_000,"out":dir.join(i.to_string())})
+        )
+        .unwrap();
+    }
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let rows: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(rows.len(), 2);
+    for row in &rows {
+        let manifest = &row["manifest"];
+        assert_eq!(manifest["format"], "catallax-manifest/4");
+        assert_eq!(manifest["status"], "answered");
+        assert_eq!(manifest["exact"], false);
+        let regions = manifest["certificate"]["regions"].as_array().unwrap();
+        assert_eq!(regions.len(), 22);
+        assert_eq!(
+            regions
+                .iter()
+                .filter(|region| !region["exception"].is_null())
+                .count(),
+            4
+        );
+    }
+    assert_eq!(rows[0]["manifest"]["step"]["status"], "answered");
+    assert!(dir.join("0/answer.step").exists());
+    assert!(!dir.join("1/answer.step").exists());
+    assert_eq!(
+        rows[0]["manifest"]["certificate"]["identity"]["target"],
+        rows[1]["manifest"]["certificate"]["identity"]["target"]
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}

@@ -2,11 +2,13 @@
 
 use std::fmt::Write as _;
 
-use catallax_features::{CertificateKey, CertifiedBuilt};
+use catallax_features::{CertificateKey, CertifiedBuilt, JunctionCertificate};
 use catallax_numbers::{
     CertificateIdentity, CertificateScope, DecisionEvidence, EvidenceBound, EvidenceUnit,
     ExceptionSource, FeatureSizeLowerBound, GeometricProof, LocalException,
 };
+use catallax_shapes::{BoundaryRow, Surface};
+use catallax_topology::FaceId;
 use serde_json::{Value, json};
 
 pub(super) fn key(value: &CertificateKey) -> String {
@@ -99,7 +101,87 @@ fn exception(exception: &LocalException<CertificateKey>) -> Value {
         "narrowest_neighbouring_face":size(&exception.narrowest_face)})
 }
 
+fn evidence_records(built: &CertifiedBuilt) -> Vec<Value> {
+    built.evidence().iter().map(|(id, record)| json!({"id":key(id),"identity":identity(&record.identity),
+        "bound":record.bound.as_ref().map(bound),"proof":proof(&record.proof),
+        "dependencies":record.dependencies.iter().map(key).collect::<Vec<_>>(),
+        "context":{"producer":record.context.producer,"step":record.context.step.as_ref().map(key),"stage":record.context.stage}})).collect()
+}
+fn decide_once(built: &CertifiedBuilt) -> Vec<Value> {
+    built.decisions().iter().map(|(id, choice)| json!({"decision":key(id),"branch":key(&choice.branch),"evidence":key(&choice.evidence)})).collect()
+}
+fn row_name(row: BoundaryRow) -> &'static str {
+    match row {
+        BoundaryRow::Rail => "rail",
+        BoundaryRow::Mouth => "mouth",
+        BoundaryRow::Negative => "negative-meridian",
+        BoundaryRow::Positive => "positive-meridian",
+    }
+}
+// One region per model face. Only the named envelopes are exceptions; an exact
+// face beside one reports the fitted row that trims it.
+fn junction_record(built: &CertifiedBuilt, certificate: &JunctionCertificate) -> Value {
+    let book = built.evidence();
+    let model = &built.built().model;
+    let fitted = |face: FaceId| {
+        certificate
+            .envelopes()
+            .iter()
+            .find(|envelope| envelope.face() == face)
+    };
+    let regions: Vec<_> = certificate.faces().iter().map(|&face| {
+        let region = certificate.region_for_face(face).expect("checked complete face-to-region binding");
+        let surface = model.geom().surface(model.face(face).surface);
+        let (role, domain) = if let Some(envelope) = fitted(face) {
+            let Surface::BSpline(support) = surface else { unreachable!("checked fitted face") };
+            ("rolling-envelope", json!({"kind":"complete-finite-spline-patch",
+                "bounds":support.carrier().domain().map(|bounds| bounds.map(|bound| bound.to_string())),
+                "physical_boundaries":envelope.edges().iter().map(|(edge, row)| json!({"edge":edge.index(),"row":row_name(*row)})).collect::<Vec<_>>()}))
+        } else {
+            let role = match surface {
+                Surface::Plane(_) => "plane",
+                Surface::Cylinder(_) => "cylinder",
+                Surface::Cone(_) => "cone",
+                Surface::Torus(_) => "torus",
+                _ => "exact-surface",
+            };
+            let trim = certificate.face_bound(face);
+            (role, if trim.is_zero() {
+                json!({"kind":"complete-exact-face"})
+            } else {
+                json!({"kind":"exact-surface-with-fitted-trims","fitted_trim_bound_mm":trim.to_string()})
+            })
+        };
+        json!({"id":key(&region.identity.representation),"face":face.index(),"role":role,"origins":model.face_origins(face),
+            "identity":identity(&region.identity),"evidence":key(&region.evidence),"domain":domain,"exception":region.exception.as_ref().map(exception)})
+    }).collect();
+    let spline: Vec<_> = certificate.envelopes().iter().map(|envelope| {
+        let Surface::BSpline(support) = model.geom().surface(model.face(envelope.face()).surface) else {
+            unreachable!("checked fitted face")
+        };
+        let carrier = support.carrier();
+        json!({"face":envelope.face().index(),"kind":"rational-bspline","degrees":carrier.degrees(),"control_count":carrier.control_count(),
+            "knots":carrier.knots().map(|knots| knots.iter().map(ToString::to_string).collect::<Vec<_>>()),
+            "domain":carrier.domain().map(|bounds| bounds.map(ToString::to_string)),
+            "fit_bound":bound(envelope.bound())})
+    }).collect();
+    let record = certificate.record();
+    json!({"identity":identity(&record.identity),"evidence":key(&record.evidence),"regions":regions,
+        "uniform_signed_distance_bound":record.uniform_bound.as_ref().map(bound),
+        "bounded_decisions":record.decisions.iter().map(key).collect::<Vec<_>>(),"decide_once":decide_once(built),"evidence_records":evidence_records(built),
+        "settings":{"modelling_tolerance_mm":book.tolerance().millimetres().to_string(),
+            "kernel_fit_target_mm":book.local_settings().kernel_target_mm().to_string(),
+            "producer_fit_target_mm":certificate.fit_target_mm().to_string(),
+            "kernel_hard_cap_mm":book.local_settings().kernel_cap_mm().to_string(),"import_hard_cap_mm":book.local_settings().import_cap_mm().to_string()},
+        "retained_target":{"kind":"rolling-envelope-junction","blend_base_body":certificate.base().index(),
+            "envelope_faces":certificate.envelopes().iter().map(|envelope| envelope.face().index()).collect::<Vec<_>>(),"empty":false},
+        "spline":spline})
+}
+
 pub(super) fn record(built: &CertifiedBuilt) -> Value {
+    if let Some(junction) = built.junction() {
+        return junction_record(built, junction);
+    }
     let certificate = built.result_certificate();
     let book = built.evidence();
     let model = &built.built().model;
@@ -123,11 +205,8 @@ pub(super) fn record(built: &CertifiedBuilt) -> Value {
         json!({"id":key(&region.identity.representation),"face":face.index(),"role":role,"origins":model.face_origins(face),
             "identity":identity(&region.identity),"evidence":key(&region.evidence),"domain":domain,"exception":region.exception.as_ref().map(exception)})
     }).collect();
-    let evidence: Vec<_> = book.iter().map(|(id, record)| json!({"id":key(id),"identity":identity(&record.identity),
-        "bound":record.bound.as_ref().map(bound),"proof":proof(&record.proof),
-        "dependencies":record.dependencies.iter().map(key).collect::<Vec<_>>(),
-        "context":{"producer":record.context.producer,"step":record.context.step.as_ref().map(key),"stage":record.context.stage}})).collect();
-    let decisions: Vec<_> = built.decisions().iter().map(|(id, choice)| json!({"decision":key(id),"branch":key(&choice.branch),"evidence":key(&choice.evidence)})).collect();
+    let evidence = evidence_records(built);
+    let decisions = decide_once(built);
     let spline = certificate.spline().map(|spline| {
         let carrier = spline.carrier();
         json!({"kind":"bspline","degrees":carrier.degrees(),"control_count":carrier.control_count(),

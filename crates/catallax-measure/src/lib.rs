@@ -47,6 +47,7 @@ mod edge;
 mod engine;
 pub use bounds::BoundingBox;
 mod integrate;
+mod junction;
 mod offset_prism;
 mod pair;
 mod planar;
@@ -178,6 +179,12 @@ pub fn mass_properties(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<MassProperties> {
+    if junction::of(model, body)?.is_some() {
+        return Err(Refusal::new(
+            "measure.unsupported-surface",
+            "second moments of a fitted rolling-envelope blend are not covered",
+        ));
+    }
     let mut traces = engine::TraceCache::grouped();
     let base = base_properties(model, body, accuracy, &mut traces, dec)?;
     let inertia = inertia_from_centroid(
@@ -227,6 +234,9 @@ fn base_properties(
     dec: &mut Decider,
 ) -> Answered<VolumeAreaCentroid> {
     accuracy.validate();
+    if let Some(junction) = junction::of(model, body)? {
+        return junction.properties(model, accuracy, junction::Scope::Represented, traces, dec);
+    }
     let volume = scalar(
         model,
         body,
@@ -270,6 +280,31 @@ fn base_properties(
         },
         marks,
     ))
+}
+
+/// Volume, area and centroid of a fitted blend's exact definition, without the
+/// carrier's displacement. Any other body refuses.
+pub fn blend_definition_properties(
+    model: &Model,
+    body: BodyId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<VolumeAreaCentroid> {
+    accuracy.validate();
+    junction::of(model, body)?
+        .ok_or_else(|| {
+            Refusal::new(
+                "measure.unsupported-surface",
+                "this body has no fitted blend definition",
+            )
+        })?
+        .properties(
+            model,
+            accuracy,
+            junction::Scope::Definition,
+            &mut engine::TraceCache::grouped(),
+            dec,
+        )
 }
 
 /// Symmetric unit-density inertia tensor, in model axes and model length units
@@ -497,6 +532,7 @@ pub fn face_area(
     dec: &mut Decider,
 ) -> Answered<Enclosure> {
     accuracy.validate();
+    junction::refuse_fitted_face(model, face)?;
     let faces = [face];
     let anchor = engine::anchor(model, &faces);
     let mut answer = engine::measure(
@@ -522,6 +558,7 @@ pub fn face_centroid(
     dec: &mut Decider,
 ) -> Answered<[Enclosure; 3]> {
     accuracy.validate();
+    junction::refuse_fitted_face(model, face)?;
     let anchor = engine::anchor(model, &[face]);
     let answer = engine::measure(
         model,
@@ -545,6 +582,7 @@ pub fn edge_length(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<Enclosure> {
+    junction::refuse_fitted_edge(model, edge)?;
     let answer = edge::measure(model, edge, accuracy, false, dec)?;
     Ok(Answer::with_marks(answer.value.0, answer.marks))
 }
@@ -557,6 +595,7 @@ pub fn edge_midpoint(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<[Enclosure; 3]> {
+    junction::refuse_fitted_edge(model, edge)?;
     edge::midpoint(model, edge, accuracy, dec)
 }
 
@@ -618,6 +657,9 @@ fn scalar(
     dec: &mut Decider,
 ) -> Answered<Enclosure> {
     accuracy.validate();
+    if let Some(junction) = junction::of(model, body)? {
+        return junction.scalar(model, accuracy, property, traces, dec);
+    }
     let faces = solid_faces(model, body)?;
     if model.body(body).kind == BodyKind::Empty {
         return Ok(Answer::exact(Enclosure::exact(Rational::zero())));

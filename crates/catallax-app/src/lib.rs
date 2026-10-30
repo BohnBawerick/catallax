@@ -21,7 +21,7 @@ pub use preview::{
     build_preview, construction_preview, preview_body,
 };
 pub mod soliddraft;
-pub use certified::{CertifiedApplicationBody, build_certified};
+pub use certified::{CertifiedApplicationBody, build_certified, certify_built};
 
 use std::{collections::BTreeMap, fmt};
 

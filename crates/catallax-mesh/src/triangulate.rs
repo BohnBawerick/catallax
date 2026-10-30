@@ -1039,24 +1039,34 @@ pub(crate) fn build(
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     let faces = model.faces_of_body(body);
-    if faces.iter().any(|face| {
-        matches!(
-            model.geom().surface(model.face(*face).surface),
-            Surface::BSpline(_)
-        )
-    }) {
+    let junction = crate::junction::prepare(model, &faces, options, dec)?;
+    if junction.is_none()
+        && faces.iter().any(|face| {
+            matches!(
+                model.geom().surface(model.face(*face).surface),
+                Surface::BSpline(_)
+            )
+        })
+    {
         return crate::spline_prism::build(model, body, &faces, options, dec);
     }
+    let fitted = |face: FaceId| junction.as_ref().is_some_and(|j| j.contains(face));
     let mut charts = faces
         .iter()
+        .filter(|&&f| !fitted(f))
         .map(|&f| Ok((f, regular_chart(model, f, options, dec)?)))
         .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
-    let mut boundaries = edges::sample(model, body, &charts, options, dec)?;
+    let mut boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
     let boundary_limit = boundaries.mesh.positions.len();
     let mut prior_chords = BTreeSet::new();
     for face in faces {
         let start = boundaries.mesh.triangles.len();
-        if let Surface::Plane(plane) = &charts[&face].surface {
+        if fitted(face) {
+            junction
+                .as_ref()
+                .expect("fitted face")
+                .triangulate(face, &mut boundaries, options)?;
+        } else if let Surface::Plane(plane) = &charts[&face].surface {
             crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
                 |e| Refusal::new(e.code, format!("face {}: {}", face.index(), e.detail)),
             )?;

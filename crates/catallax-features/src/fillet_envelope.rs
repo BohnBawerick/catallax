@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use catallax_numbers::{Decider, Real, Refusal, Sign};
+use catallax_numbers::{BoundKind, Decider, Mark, Rational, Real, Refusal, Sign};
 use catallax_shapes::{
     BSplineCurve, Circle, Cone, Curve, Point3, PointDef, RollingEnvelope,
     RollingEnvelopeDefinition, SplineBoundary, Surface, Vector3,
@@ -676,7 +676,17 @@ pub(crate) fn build(
     }
     let mut output = input;
     output.lumps = lumps;
+    let fit = envelopes.iter().fold(Rational::zero(), |worst, envelope| {
+        worst.max(envelope.bound().upper.clone())
+    });
+    output.marks.push(Mark::new(
+        crate::certified::FIT_MARK,
+        BoundKind::Distance,
+        fit,
+        "fitted rolling-envelope faces; the mark alone is not authority",
+    ));
     let output = model.add_body(output);
+    model.record_blend_base(output, body);
     let faults = model.check(output);
     if !faults.is_empty() {
         return Err(Refusal::new(

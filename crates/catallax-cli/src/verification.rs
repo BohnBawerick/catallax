@@ -383,6 +383,14 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             } else {
                 None
             };
+            if built.model.blend_base(built.result).is_some() {
+                let mut manifest =
+                    crate::certified_recipe::fitted_recipe(&recipe, built, &request.out, &mut dec)?;
+                if let Some(measurements) = measurements {
+                    manifest["face_measurements"] = measurements;
+                }
+                return Ok(manifest);
+            }
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
             let summary = crate::result_summary(

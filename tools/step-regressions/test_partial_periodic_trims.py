@@ -43,13 +43,14 @@ def intersection(primitives, kind='intersect'):
 
 
 class PartialPeriodicTrimImports(unittest.TestCase):
-    def answer(self, recipe, root):
+    def answer(self, recipe, root, max_work=100_000_000):
         source = root / 'recipe.json'
         source.write_text(json.dumps(recipe))
         out = root / 'run'
         completed = subprocess.run(
             [str(DRIVER), 'run', str(source), '--source', 'recipe', '--binary',
-             str(BINARY), '--out', str(out), '--fresh', '--workers', '1', '--json'],
+             str(BINARY), '--max-work', str(max_work), '--out', str(out), '--fresh',
+             '--workers', '1', '--json'],
             capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(completed.stdout)['outcomes'], {'answered': 1})
         case = json.loads((out / 'run.json').read_text())['cases'][0]
@@ -220,6 +221,63 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                         {'id': 'd', 'op': 'boolean', 'kind': 'subtract', 'target': 'c',
                          'tool': 's'}],
                     'result': 'd'}, (8, 17, 11), 48 - 2 * math.pi / 3)
+
+    def test_moved_collar_hole_is_raw_valid_and_replays_identically(self):
+        # P2's chamfered collar with a plain through hole of radius 1, whose
+        # radial extent [8, 10] stops short of the bevels' [11, 12]. The matrix
+        # is quaternion (1, 2, 3, 4), acting on columns.
+        matrix = [[Fraction(-2, 3), Fraction(2, 15), Fraction(11, 15)],
+                  [Fraction(2, 3), Fraction(-1, 3), Fraction(2, 3)],
+                  [Fraction(1, 3), Fraction(14, 15), Fraction(2, 15)]]
+
+        def transform(coordinates, point):
+            offset = [7, 11, -13] if point else [0, 0, 0]
+            return [str(sum(a * Fraction(b) for a, b in zip(row, coordinates)) + t)
+                    for row, t in zip(matrix, offset)]
+
+        root = Path(__file__).resolve().parents[2]
+        recipe = json.loads((root / 'parts/P2-collar.json').read_text())
+        recipe['name'] = 'moved collar plain hole'
+        recipe['steps'][0]['plane'] = {
+            'rotation': ['1', '2', '3', '4'], 'translation': ['7', '11', '-13']}
+        recipe['steps'][1]['axis'] = {'point': transform([0, 0, 0], True),
+                                      'direction': transform([0, 1, 0], False)}
+        recipe['steps'].append({
+            'id': 'drilled', 'op': 'hole', 'target': recipe['result'],
+            'at': [{'id': 'radial-0', 'point': transform([9, 12, 0], True),
+                    'direction': transform([0, -1, 0], False)}],
+            'diameter': '2', 'depth': 'through', 'tip': 'flat'})
+        recipe['result'] = 'drilled'
+        with tempfile.TemporaryDirectory(prefix='catallax-collar-hole-') as temporary:
+            temporary = Path(temporary)
+            directory, _ = self.answer(recipe, temporary, max_work=20_000_000)
+            path = directory / 'answer.step'
+            raw = raw_solid(path)
+            reader = STEPControl_Reader()
+            self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
+            self.assertGreater(reader.TransferRoots(), 0)
+            for mode, shape in [('raw', raw), ('standard', reader.OneShape())]:
+                with self.subTest(reader=mode):
+                    self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
+                    self.assertEqual(len(unique(shape, TopAbs_SOLID)), 1)
+                    volume, spread = converged_volume(shape)
+                    area = GProp_GProps()
+                    BRepGProp.SurfaceProperties_s(shape, area, 1e-12, False)
+                    # Annulus minus two bevels and the hole: 3782*pi/3.
+                    self.assertLessEqual(abs(volume - 3782 * math.pi / 3),
+                                         area.Mass() * 1e-7 + spread)
+
+            # The saved request reproduces its answer in a separate process.
+            replay = temporary / 'replay'
+            subprocess.run(
+                [str(DRIVER), 'run', str(directory / 'question.json'), '--binary', str(BINARY),
+                 '--out', str(replay), '--fresh', '--workers', '1', '--json'],
+                capture_output=True, text=True, check=True)
+            completed = subprocess.run(
+                [str(DRIVER), 'compare', str(temporary / 'run/run.json'),
+                 str(replay / 'run.json')],
+                capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_spherical_lens_at_identity_and_rational_pose(self):
         for first, second in [(pose(), pose(x='6')),

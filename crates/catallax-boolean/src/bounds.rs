@@ -270,24 +270,35 @@ fn face_box(
     Ok(Some(std::array::from_fn(|i| a[i].hull(&b[i]))))
 }
 
-fn band_radius_upper(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Rational, Refusal> {
-    let mut radius = Rational::zero();
+// A lower bound on the smaller ring radius and an upper bound on the larger.
+// The apex of a band that reaches it is a ring of radius zero.
+fn band_radii(
+    model: &Model,
+    face: FaceId,
+    dec: &mut Decider,
+) -> Result<(Rational, Rational), Refusal> {
+    let mut inner = None;
+    let mut outer = Rational::zero();
     for lp in &model.face(face).loops {
-        if let Loop::Coedges(coedges) = model.loop_(*lp) {
-            for coedge in coedges {
-                let edge = model.edge(model.coedge(*coedge).edge);
+        let radius = match model.loop_(*lp) {
+            Loop::Coedges(coedges) => {
+                let edge = model.edge(model.coedge(coedges[0]).edge);
                 let Curve::Circle(circle) = model.geom().curve(edge.curve) else {
                     unreachable!("face_box certified a complete circular band");
                 };
-                radius = radius.max(enclose(&circle.radius_sq.sqrt(), dec)?.hi());
+                enclose(&circle.radius_sq.sqrt(), dec)?
             }
-        }
+            Loop::Vertex(_) => Ball::from_rational(&Rational::zero(), 128),
+        };
+        outer = outer.max(radius.hi());
+        inner = Some(inner.map_or(radius.lo(), |r: Rational| r.min(radius.lo())));
     }
-    Ok(radius)
+    Ok((inner.expect("a certified band has two ends"), outer))
 }
 
 // The caller certified this cone face as the band between complete rings.
-// Bound it by a tube and compare parallel axes, independent of world boxes.
+// Bound it by an annular tube and compare parallel axes, independent of world
+// boxes.
 fn cone_band_misses_surface(
     model: &mut Model,
     face: FaceId,
@@ -324,7 +335,7 @@ fn cone_band_misses_surface(
             Surface::Cone(other_cone) => (
                 &other_cone.apex,
                 &other_cone.axis,
-                band_radius_upper(model, other, dec)?,
+                band_radii(model, other, dec)?.1,
                 None,
             ),
             _ => return Ok(false),
@@ -333,9 +344,16 @@ fn cone_band_misses_surface(
         return Ok(false);
     }
     let distance_sq = cone.apex.minus(origin).cross(axis).norm_squared() / axis.norm_squared();
-    let cone_radius = band_radius_upper(model, face, dec)?;
+    let (ring_radius, cone_radius) = band_radii(model, face, dec)?;
     let radii = &cone_radius + &radius;
-    if enclose(&distance_sq, dec)?.lo() > &radii * &radii {
+    let distance_bound = enclose(&distance_sq, dec)?;
+    if distance_bound.lo() > &radii * &radii {
+        return Ok(true);
+    }
+    // A tube strictly inside the smaller ring stays off the band even where
+    // its support meets the unbounded cone beyond the band.
+    let clearance = &ring_radius - &radius;
+    if clearance.sign() == Sign::Positive && distance_bound.hi() < &clearance * &clearance {
         return Ok(true);
     }
     // Only a cylinder has a constant-radius interior that excludes this tube.
@@ -444,12 +462,11 @@ impl FaceBounds {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use catallax_shapes::{Pose, Vector3};
+    use catallax_shapes::{Pose, RVector3, Rotation, Vector3};
     use catallax_topology::{Face, Sense, cylinder};
 
     #[test]
     fn cone_tube_separation_preserves_tangency_and_crossings() {
-        use catallax_shapes::{RVector3, Rotation};
         let r = Rational::from_i64;
         for (quaternion, offset) in [([1, 0, 0, 0], 0), ([1, 2, 3, 4], 1_000_000)] {
             let rotation = Rotation::from_quaternion(
@@ -527,6 +544,85 @@ mod tests {
                         "cone distance {distance}, quaternion {quaternion:?}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn tube_inside_the_smaller_ring_excludes_only_a_strict_clearance() {
+        let r = Rational::from_i64;
+        for (quaternion, offset) in [([1, 0, 0, 0], 0), ([1, 2, 3, 4], 1_000_000)] {
+            let rotation = Rotation::from_quaternion(
+                r(quaternion[0]),
+                r(quaternion[1]),
+                r(quaternion[2]),
+                r(quaternion[3]),
+            )
+            .unwrap();
+            let pose = Pose::from_rational(rotation, RVector3::new(r(offset), r(11), r(-13)));
+            let faces_of = |model: &Model, body, cone: bool| {
+                model
+                    .faces_of_body(body)
+                    .into_iter()
+                    .find(|f| {
+                        let surface = model.geom().surface(model.face(*f).surface);
+                        matches!(
+                            (surface, cone),
+                            (Surface::Cone(_), true) | (Surface::Cylinder(_), false)
+                        )
+                    })
+                    .unwrap()
+            };
+            let mut model = Model::new();
+            let ring = catallax_topology::cone(&mut model, r(6), r(4), r(2), &pose).unwrap();
+            let ring = faces_of(&model, ring, true);
+            // Apex, ending at radius zero: the same tube runs straight through it.
+            let tip = catallax_topology::cone(&mut model, r(6), r(0), r(6), &pose).unwrap();
+            let tip = faces_of(&model, tip, true);
+            let mut dec = Decider::default();
+            assert!(
+                face_box(&mut model, ring, false, &mut dec)
+                    .unwrap()
+                    .is_some()
+            );
+            assert!(
+                face_box(&mut model, tip, false, &mut dec)
+                    .unwrap()
+                    .is_some()
+            );
+            let q = |s: &str| Rational::parse(s).unwrap();
+            for (distance, radius, excluded) in [
+                ("0", "1", true),
+                ("2", "1", true),
+                ("2999/1000", "1", true),
+                ("3", "1", false),
+                ("7/2", "1", false),
+                ("1", "3", false),
+            ] {
+                let mut placed = pose.clone();
+                placed.translation = placed.translation.plus(&pose.apply_vector(&Vector3::new(
+                    q(distance).into(),
+                    Real::zero(),
+                    Real::zero(),
+                )));
+                let tube = cylinder(&mut model, q(radius), r(2), &placed).unwrap();
+                let wall = faces_of(&model, tube, false);
+                assert_eq!(
+                    cone_band_misses_surface(&mut model, ring, wall, &mut dec).unwrap(),
+                    excluded,
+                    "distance {distance}, radius {radius}, quaternion {quaternion:?}"
+                );
+                assert!(
+                    !cone_band_misses_surface(&mut model, tip, wall, &mut dec).unwrap(),
+                    "apex, distance {distance}, radius {radius}, quaternion {quaternion:?}"
+                );
+                let other = catallax_topology::cone(&mut model, q(radius), r(0), r(2), &placed);
+                let other = faces_of(&model, other.unwrap(), true);
+                assert_eq!(
+                    cone_band_misses_surface(&mut model, ring, other, &mut dec).unwrap(),
+                    excluded,
+                    "cone distance {distance}, radius {radius}, quaternion {quaternion:?}"
+                );
             }
         }
     }

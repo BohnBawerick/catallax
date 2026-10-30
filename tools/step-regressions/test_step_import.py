@@ -18,6 +18,7 @@ BINARY = Path(os.environ.get('CATALLAX_VERIFY_BINARY', ROOT / 'target/release/ca
 DRIVER = ROOT / '.claude/skills/verify-catallax/scripts/control-catallax.py'
 CHECK = runpy.run_path(str(DRIVER.with_name('check-step.py')))['check']
 CAPTURE = ROOT / 'crates/catallax-cli/tests/fixtures/soliddraft-slot-cut.json'
+HANG_LIMIT_SECONDS = 600
 
 
 def bracket(gap, rotation=None, reverse=False):
@@ -146,11 +147,11 @@ class StepImportTests(unittest.TestCase):
                     self.assert_import(directory, 11)
                     self.assertFalse((directory / 'step-regularizations.json').exists())
             child.stdin.close()
-            self.assertEqual(child.wait(timeout=30), 0, child.stderr.read())
+            self.assertEqual(child.wait(timeout=HANG_LIMIT_SECONDS), 0, child.stderr.read())
         finally:
             if child.poll() is None:
                 child.terminate()
-                child.wait(timeout=30)
+                child.wait(timeout=HANG_LIMIT_SECONDS)
             child.stdout.close()
             child.stderr.close()
 

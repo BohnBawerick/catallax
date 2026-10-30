@@ -1,6 +1,7 @@
 """R1 acceptance cases G1-G6, S1-S3 and C3-C4 from the independent designer."""
 import copy
 from pathlib import Path
+import re
 import unittest
 
 import checks
@@ -252,6 +253,22 @@ class StepCorrectionTests(unittest.TestCase):
                     [{'index': 262, 'step_sha256': row['after_step_sha256'], 'valid': valid}],
                     candidate_policy)
                 self.assertEqual(bool(errors), fails, errors)
+
+
+class HangLimitTests(unittest.TestCase):
+    def test_every_hang_guard_uses_the_one_ten_minute_limit(self):
+        python = r'^HANG_LIMIT_SECONDS = (\d+)$'
+        for path, pattern in [('.claude/skills/verify-catallax/scripts/control-catallax.py', python),
+                              ('tools/step-regressions/test_step_import.py', python),
+                              ('tools/edge-hunt/test_edge_hunt.py', python),
+                              ('crates/catallax-cli/tests/exchange.rs', r'let limit = Duration::from_secs\((\d+)\);')]:
+            with self.subTest(path=path):
+                found = re.findall(pattern, (checks.ROOT / path).read_text(), re.M)
+                self.assertEqual(found, ['600'])
+        nextest = (checks.ROOT / '.config/nextest.toml').read_text()
+        period, count = re.search(r'period = "(\d+)s", terminate-after = (\d+)', nextest).groups()
+        self.assertEqual(int(period) * int(count), 600)
+        self.assertIn('--profile ci', (checks.ROOT / '.github/workflows/check.yml').read_text())
 
 
 if __name__ == '__main__':

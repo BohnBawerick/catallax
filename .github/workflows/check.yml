@@ -150,7 +150,7 @@ jobs:
           PACKAGES: ${{ needs.select.outputs.packages }}
         run: |
           read -r -a packages <<< "$PACKAGES"
-          cargo nextest run "${packages[@]}" --release --partition "count:$SHARD/4" --no-fail-fast --test-threads 2
+          cargo nextest run "${packages[@]}" --release --profile ci --partition "count:$SHARD/4" --no-fail-fast --test-threads 2
       - name: Selected documentation tests
         if: matrix.shard == 1
         env:

@@ -1,0 +1,4 @@
+# Hang detector for required checks: a test running after ten minutes is stuck.
+# Clock time fails nothing else; the timings job records it.
+[profile.ci]
+slow-timeout = { period = "60s", terminate-after = 10 }

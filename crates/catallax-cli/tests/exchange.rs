@@ -530,7 +530,7 @@ fn boolean_deadlines_abandon_work_and_publish_only_a_refusal() {
             .spawn()
             .unwrap();
         // Hang guard only, not a deadline latency or machine-speed assertion.
-        let limit = Duration::from_secs(60);
+        let limit = Duration::from_secs(600);
         let status = loop {
             if let Some(status) = child.try_wait().unwrap() {
                 break status;

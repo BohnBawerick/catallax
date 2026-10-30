@@ -27,6 +27,8 @@ signal.signal(signal.SIGINT, interrupt)
 signal.signal(signal.SIGTERM, interrupt)
 
 CONTRACT = 'catallax-request/1'
+# Waits for an exit or an answer use this one limit. It detects hangs and never judges speed.
+HANG_LIMIT_SECONDS = 600
 TARGETS = {'stock': 100, 'boolean': 500, 'recipe': 1000, 'field': 1000, 'compare': 2000, 'name-edit': 1000, 'iges': 1000}
 
 
@@ -154,7 +156,7 @@ class Worker:
         except BrokenPipeError:
             pass
         try:
-            self.child.wait(timeout=5)
+            self.child.wait(timeout=HANG_LIMIT_SECONDS)
         except subprocess.TimeoutExpired:
             self.child.terminate()
             self.child.wait()

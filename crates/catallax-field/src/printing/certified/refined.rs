@@ -7,7 +7,11 @@ pub(super) struct Grid {
     axes: [Vec<u32>; 3],
 }
 impl Grid {
-    pub(super) fn new(bounds: &[[Rational; 2]; 3], options: &Options) -> Result<Self, Refusal> {
+    pub(super) fn new(
+        bounds: &[[Rational; 2]; 3],
+        options: &Options,
+        quarter_phase: bool,
+    ) -> Result<Self, Refusal> {
         let accuracy = &options.tolerance;
         let mut coarse = q(1);
         while coarse > accuracy * &q(4) {
@@ -16,8 +20,16 @@ impl Grid {
         while coarse.mul_pow2(1) <= accuracy * &q(4) {
             coarse = coarse.mul_pow2(1);
         }
+        // Shift only the supported parametric route. Keep the general route's
+        // candidate grid unchanged, including its exact clip-plane insertions.
+        let shift = if quarter_phase {
+            coarse.mul_pow2(-2)
+        } else {
+            q(0)
+        };
         let origin = std::array::from_fn(|i| {
-            &(&coarse * &Rational::from_integer((&bounds[i][0] / &coarse).floor())) - &coarse
+            &(&(&coarse * &Rational::from_integer((&bounds[i][0] / &coarse).floor())) - &coarse)
+                + &shift
         });
         let mut axes: [Vec<u32>; 3] = std::array::from_fn(|_| Vec::new());
         for i in 0..3 {

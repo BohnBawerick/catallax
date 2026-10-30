@@ -555,19 +555,27 @@ fn profile_body(depth: &str) -> Recipe {
     .unwrap()
 }
 
+/// Reads the labelled header fields the V7 tests fix: requested accuracy and caps.
+fn labelled_header(bytes: &[u8]) -> (i64, u64, u64, u64) {
+    let word = |start: usize| u64::from_le_bytes(bytes[start..start + 8].try_into().unwrap());
+    (word(12) as i64, word(20), word(28), word(36))
+}
+
+/// V7 tenth-millimetre increment, fixed by the independent designer: S1's three profile
+/// states certify at 1/10 mm within the default caps and the 100M work budget.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "V7 S1 profile exports run in release mode")]
-fn s1_profile_extrusion_rebuild_and_density_edit_certify_at_the_approved_fallback() {
+fn s1_profile_extrusion_rebuild_and_density_edit_certify_at_point_one() {
     use catallax_field::lattice_stage::{Proof, default_preview_options};
     for (depth, radius, top, euler) in [
         ("10", "1", "7.5", -58),
         ("15", "1", "12.5", -102),
-        ("15", "2.25", "12.5", -102),
+        ("15", "1.5", "12.5", -102),
     ] {
-        let (_, mut spec, mut settings) =
+        let (_, mut spec, settings) =
             acceptance_stage(["25", "15", "10"], ["-12.5", "-7.5", "-2.5"]).return_before_lattice();
         spec.radius = serde_json::from_str(&format!(r#"{{"constant":"{radius}"}}"#)).unwrap();
-        settings.accuracy = q("0.5");
+        assert_eq!(settings.accuracy, q("1/10"));
         let (output, work) = catallax_numbers::with_operation_budget(100_000_000, || {
             let mut dec = Decider::default();
             let stage = Stage::new(&profile_body(depth), spec, settings, &mut dec).unwrap();
@@ -578,18 +586,11 @@ fn s1_profile_extrusion_rebuild_and_density_edit_certify_at_the_approved_fallbac
             );
             stage.export(&mut dec).unwrap()
         });
-        assert!(!work.exhausted);
-        assert!(output.verdict().closed);
-        assert!(output.verdict().non_self_intersecting);
-        assert!(output.verdict().connected);
-        assert_eq!(output.verdict().components, 1);
-        assert!(output.mesh().cells <= 2_000_000);
-        assert!(output.mesh().positions.len() <= 1_000_000);
+        assert!(!work.exhausted, "{depth} {radius}: {work:?}");
+        check_acceptance_verdict(&output);
         let (bytes, output) = output.labelled_stl().unwrap();
-        assert_eq!(i64::from_le_bytes(bytes[12..20].try_into().unwrap()), 1);
-        assert_eq!(u64::from_le_bytes(bytes[20..28].try_into().unwrap()), 2);
-        assert!(output.verdict().max_deviation > q("0"));
-        assert!(output.verdict().max_deviation <= q("0.5"));
+        check_acceptance_verdict(&output);
+        assert_eq!(labelled_header(&bytes), (1, 10, 2_000_000, 1_000_000));
         check_acceptance_mesh(
             &output.mesh().positions,
             &output.mesh().triangles,
@@ -597,5 +598,44 @@ fn s1_profile_extrusion_rebuild_and_density_edit_certify_at_the_approved_fallbac
             &output.verdict().max_deviation,
             euler,
         );
+    }
+}
+
+/// Every acceptable S1 depth-15 mesh is one closed surface with Euler characteristic
+/// -102, so E = 3(V + 102) <= V(V - 1)/2 and it needs at least 29 vertices. A 28-vertex
+/// cap leaves no acceptable output: the stage must refuse, whatever its proof method.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "V7 S1 profile exports run in release mode")]
+fn s1_depth_fifteen_under_a_provably_too_small_vertex_cap_refuses() {
+    let (_, mut spec, mut settings) =
+        acceptance_stage(["25", "15", "10"], ["-12.5", "-7.5", "-2.5"]).return_before_lattice();
+    spec.radius = serde_json::from_str(r#"{"constant":"1.5"}"#).unwrap();
+    settings.max_vertices = 28;
+    let stage = Stage::new(&profile_body("15"), spec, settings, &mut Decider::default()).unwrap();
+    let error = stage.export(&mut Decider::default()).unwrap_err();
+    assert_eq!(error.code, "field.print-budget", "{}", error.detail);
+}
+
+/// Under a small cell cap the stage either certifies within that cap at the requested
+/// accuracy and records it, or refuses with the budget code. It never answers with a
+/// coarser mesh or a larger cap.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "V7 S1 profile exports run in release mode")]
+fn s1_depth_fifteen_under_a_small_cell_cap_certifies_within_it_or_refuses() {
+    let (_, mut spec, mut settings) =
+        acceptance_stage(["25", "15", "10"], ["-12.5", "-7.5", "-2.5"]).return_before_lattice();
+    spec.radius = serde_json::from_str(r#"{"constant":"1.5"}"#).unwrap();
+    settings.max_cells = 1_000;
+    let stage = Stage::new(&profile_body("15"), spec, settings, &mut Decider::default()).unwrap();
+    match stage.export(&mut Decider::default()) {
+        Err(error) => assert_eq!(error.code, "field.print-budget", "{}", error.detail),
+        Ok(output) => {
+            let v = output.verdict();
+            assert!(v.closed && v.non_self_intersecting && v.connected && v.components == 1);
+            assert!(v.max_deviation > q("0") && v.max_deviation <= q("1/10"));
+            assert!(output.mesh().cells <= 1_000);
+            let (bytes, _) = output.labelled_stl().unwrap();
+            assert_eq!(labelled_header(&bytes), (1, 10, 1_000, 1_000_000));
+        }
     }
 }

@@ -6,6 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_features::evaluate;
+use catallax_measure::{
+    Accuracy, blend_definition_properties, face_area, mass_properties, volume_area_centroid,
+};
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, with_operation_budget};
 use catallax_recipe::{Origin, Recipe, Role};
 use catallax_shapes::{ROLLING_ENVELOPE_TARGET_NM, SplineSupport, Surface};
@@ -289,5 +292,46 @@ fn uncovered_contact_strata_keep_their_typed_refusal() {
         let refusal = evaluate(&parsed(&recipe), &mut decider()).unwrap_err();
         let text = format!("{refusal:?}");
         assert!(text.contains("fillet.unsupported-overflow"), "{text}");
+    }
+}
+
+#[test]
+fn volume_encloses_the_definition_and_the_fitted_carrier() {
+    let half = Rational::from_ratio(1, 2).unwrap();
+    for (recipe, reference, margin) in [
+        (canonical(), 12558.681699123754, 0.02),
+        (with_radius("5/2"), 12591.90560450861, 0.03),
+        (translated([7, 11, -13]), 12558.681699123754, 0.02),
+        (scaled(&half), 1569.8352123904692, 0.005),
+    ] {
+        let mut dec = decider();
+        let built = evaluate(&parsed(&recipe), &mut dec).unwrap();
+        let accuracy = Accuracy {
+            relative: Rational::parse("1e-9").unwrap(),
+            absolute: Rational::parse("1e-9").unwrap(),
+        };
+        let definition =
+            blend_definition_properties(&built.model, built.result, &accuracy, &mut dec)
+                .unwrap()
+                .value;
+        let represented = volume_area_centroid(&built.model, built.result, &accuracy, &mut dec)
+            .unwrap()
+            .value;
+        let middle = (&definition.volume.lo + &definition.volume.hi) / Rational::from_i64(2);
+        assert!((middle.to_f64_nearest() - reference).abs() < 1e-5);
+        assert!(definition.volume.width() <= Rational::parse("1e-4").unwrap());
+        assert!(represented.volume.lo <= definition.volume.lo);
+        assert!(definition.volume.hi <= represented.volume.hi);
+        assert!(represented.volume.width() <= Rational::parse(&margin.to_string()).unwrap());
+        let refusal = mass_properties(&built.model, built.result, &accuracy, &mut dec).unwrap_err();
+        assert_eq!(refusal.code, "measure.unsupported-surface");
+        // Exactly the five faces a rail trims refuse, before any work.
+        let refused = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .filter(|face| face_area(&built.model, *face, &accuracy, &mut dec).is_err())
+            .count();
+        assert_eq!(refused, 5);
     }
 }

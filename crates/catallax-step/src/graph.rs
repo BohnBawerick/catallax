@@ -11,6 +11,8 @@ pub(crate) enum Field {
     Text(Cow<'static, str>),
     Ref(Id),
     List(Vec<Field>),
+    /// One named partial entity of an external-mapping complex instance.
+    Part(&'static str, Vec<Field>),
 }
 
 impl From<Id> for Field {
@@ -42,6 +44,18 @@ impl Graph {
         let id = Id(self.entities.len());
         self.entities.push(Entity { name, fields });
         id
+    }
+
+    /// A complex instance. STEP requires its parts in alphabetical name order.
+    pub(crate) fn add_complex(&mut self, parts: Vec<(&'static str, Vec<Field>)>) -> Id {
+        debug_assert!(parts.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        self.add(
+            "",
+            parts
+                .into_iter()
+                .map(|(name, fields)| Field::Part(name, fields))
+                .collect(),
+        )
     }
 
     pub(crate) fn duplicate(&mut self, id: Id) -> Id {
@@ -84,7 +98,7 @@ impl Field {
     fn references_reversed(&self, children: &mut Vec<Id>) {
         match self {
             Self::Ref(id) => children.push(*id),
-            Self::List(fields) => {
+            Self::List(fields) | Self::Part(_, fields) => {
                 for field in fields.iter().rev() {
                     field.references_reversed(children);
                 }
@@ -102,13 +116,19 @@ impl Field {
                 write_fields(fields, numbers, out);
                 out.push(')');
             }
+            Self::Part(name, fields) => {
+                out.push_str(name);
+                out.push('(');
+                write_fields(fields, numbers, out);
+                out.push(')');
+            }
         }
     }
 }
 
 fn write_fields(fields: &[Field], numbers: &[usize], out: &mut String) {
     for (i, field) in fields.iter().enumerate() {
-        if i != 0 {
+        if i != 0 && !matches!(field, Field::Part(..)) {
             out.push(',');
         }
         field.write(numbers, out);

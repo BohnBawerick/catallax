@@ -1,6 +1,6 @@
 //! Opt-in bounded geometry; ordinary exact application builds are unchanged.
 
-use catallax_features::{CertifiedBuilt, evaluate_certified};
+use catallax_features::{BuildError, Built, CertifiedBuilt, certify_junction, evaluate_certified};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
 use catallax_numbers::{Answer, Answered, Decider, Refusal};
 use catallax_recipe::Recipe;
@@ -39,6 +39,10 @@ impl CertifiedApplicationBody {
         accuracy: &catallax_measure::Accuracy,
         dec: &mut Decider,
     ) -> Answered<catallax_measure::MassProperties> {
+        if self.built.junction().is_some() {
+            let built = self.built.built();
+            return catallax_measure::mass_properties(&built.model, built.result, accuracy, dec);
+        }
         let target = self.built.result_certificate().target();
         if target.is_empty() {
             let built = self.built.built();
@@ -59,6 +63,15 @@ impl CertifiedApplicationBody {
         accuracy: &catallax_measure::Accuracy,
         dec: &mut Decider,
     ) -> Answered<catallax_measure::VolumeAreaCentroid> {
+        if self.built.junction().is_some() {
+            let built = self.built.built();
+            return catallax_measure::blend_definition_properties(
+                &built.model,
+                built.result,
+                accuracy,
+                dec,
+            );
+        }
         let target = self.built.result_certificate().target();
         if target.is_empty() {
             let built = self.built.built();
@@ -72,6 +85,29 @@ impl CertifiedApplicationBody {
             )
         }
     }
+}
+
+/// Certifies an ordinary evaluation with rolling-envelope faces, without
+/// rebuilding it.
+pub fn certify_built(
+    built: Built,
+    display: Option<&MeshOptions>,
+    dec: &mut Decider,
+) -> Result<CertifiedApplicationBody, Error> {
+    crate::bounded_build(|| {
+        let step = built.recipe().result.clone();
+        let built = certify_junction(built, dec)
+            .map_err(|refusal| Error::Build(BuildError::Geometry { step, refusal }))?;
+        let represented = built.built();
+        let display =
+            display.map(|options| mesh_body(&represented.model, represented.result, options, dec));
+        let names = result_names(&represented.model, represented.result);
+        Ok(CertifiedApplicationBody {
+            built,
+            display,
+            names,
+        })
+    })
 }
 
 /// Builds the complete certified feature result and its names. A display is

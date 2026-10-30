@@ -19,6 +19,7 @@ mod fit;
 mod frames;
 mod graph;
 mod joint;
+mod junction;
 mod number;
 mod partial;
 mod pcurve;
@@ -123,6 +124,42 @@ pub fn write_step<W: Write>(
         value: report,
         marks: answer.marks,
     })
+}
+
+/// Writes a certified body with rolling-envelope faces. `max_deviation` bounds
+/// the file against the represented model; compose it with the model's
+/// definition certificate. A bound over the requested tolerance writes nothing.
+pub fn write_rolling_junction_step<W: Write>(
+    model: &Model,
+    body: BodyId,
+    options: &CertifiedSplineStepOptions,
+    dec: &mut Decider,
+    out: &mut W,
+) -> Answered<StepReport> {
+    let mut bytes = Vec::new();
+    let answer = write_step(
+        model,
+        &[body],
+        &StepOptions {
+            product_name: options.product_name.clone(),
+            curve_tolerance: options.file_tolerance.clone(),
+            significant_digits: options.decimal_places.saturating_add(2),
+        },
+        dec,
+        &mut bytes,
+    )?;
+    if answer.value.max_deviation > options.file_tolerance {
+        return Err(catallax_numbers::Refusal::new(
+            "step.tolerance-not-reached",
+            format!(
+                "rounded geometry reaches {} mm, exceeding the requested {} mm file tolerance",
+                answer.value.max_deviation, options.file_tolerance
+            ),
+        ));
+    }
+    out.write_all(&bytes)
+        .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
+    Ok(answer)
 }
 
 /// Writes a massless surface envelope and separately selected unit-density

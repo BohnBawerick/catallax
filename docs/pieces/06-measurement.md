@@ -339,3 +339,20 @@ The numbers are written to the benchmark output so later runs can be compared.
 - Moments of inertia and other integrals (later, on the same machinery).
 - Measuring meshes or sampled geometry, ever.
 - Any tolerance. This piece has none.
+
+## Fitted rolling-envelope blends
+
+The engine has no chart for a fitted carrier or for a cylinder trimmed by its
+rail, so it keeps `measure.unsupported-surface` for them. `volume`, `area` and
+`volume_area_centroid` instead read such a body through `Model::blend_base`, as
+the unfilleted base plus the blend's exact ring: one circular section over the
+untouched angle and one sector integral per mouth, each from the exact rolling-ball
+definition. These results enclose the definition and the fitted carrier.
+`blend_definition_properties` leaves out the carrier's displacement. Each sector
+integral is enclosed panel by panel, and the volume between an envelope and its
+carrier is bounded by the tube argument in `junction.rs`. Area stays the
+definition's, because a position bound says nothing about a carrier's area.
+`mass_properties` refuses, since no second moment is covered. So do `face_area`,
+`face_centroid`, `edge_length` and `edge_midpoint` for a rail and the faces it
+trims, immediately and at no work, because a fitted rail has no certified arc
+integral. Every other face and edge of such a body measures as before.

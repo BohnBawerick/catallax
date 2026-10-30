@@ -80,8 +80,7 @@ fn app_refusal(error: &catallax_app::Error) -> Value {
 }
 fn composed(app: &CertifiedApplicationBody, output_error: &Rational) -> Option<String> {
     app.built()
-        .result_certificate()
-        .record()
+        .result_record()
         .uniform_bound
         .as_ref()
         .map(|model| (&model.upper + output_error).to_string())
@@ -254,6 +253,9 @@ fn step(
     };
     let certified = app.built();
     let built = certified.built();
+    if let Some(junction) = certified.junction() {
+        return junction_step(app, junction, options, out, dec);
+    }
     let certificate = certified.result_certificate();
     let mut bytes = Vec::new();
     let report = if certificate.target().is_empty() {
@@ -295,6 +297,45 @@ fn step(
         let region = certificate.region_for_face(face).expect("complete geometry-bound region");
         json!({"model_region":certificate::key(&region.identity.representation),"face":face.index(),"file_region":format!("face_{}",face.index()),
             "file_to_model_bound_mm":report.max_deviation.to_string(),"file_to_definition_bound_mm":composed(app,&report.max_deviation)})
+    }).collect();
+    Ok(
+        json!({"status":"answered","file":"answer.step","scope":"represented-model","requested_file_to_model_mm":options.file_tolerance,
+        "decimal_places":options.decimal_places,"file_to_model_bound_mm":report.max_deviation.to_string(),
+        "file_to_definition_bound_mm":composed(app,&report.max_deviation),"regions":regions,
+        "added_vertices":report.added_vertices,"added_edges":report.added_edges}),
+    )
+}
+// Every region composes its own bound with the file's. Nothing reaches the
+// answer directory until the whole file is proved.
+fn junction_step(
+    app: &CertifiedApplicationBody,
+    junction: &catallax_features::JunctionCertificate,
+    options: &StepOptions,
+    out: &Path,
+    dec: &mut Decider,
+) -> std::io::Result<Value> {
+    let built = app.built().built();
+    let mut bytes = Vec::new();
+    let report = match catallax_step::write_rolling_junction_step(
+        &built.model,
+        built.result,
+        &catallax_step::CertifiedSplineStepOptions {
+            product_name: built.recipe().name.clone(),
+            file_tolerance: options.file_tolerance.value().clone(),
+            decimal_places: options.decimal_places,
+        },
+        dec,
+        &mut bytes,
+    ) {
+        Ok(answer) => answer.value,
+        Err(error) => return Ok(consumer_refusal(&error)),
+    };
+    fs::write(out.join("answer.step"), bytes)?;
+    let regions: Vec<_> = junction.faces().iter().map(|&face| {
+        let region = junction.region_for_face(face).expect("complete geometry-bound region");
+        json!({"model_region":certificate::key(&region.identity.representation),"face":face.index(),"file_region":format!("face_{}",face.index()),
+            "file_to_model_bound_mm":report.max_deviation.to_string(),
+            "file_to_definition_bound_mm":(junction.face_bound(face) + report.max_deviation.clone()).to_string()})
     }).collect();
     Ok(
         json!({"status":"answered","file":"answer.step","scope":"represented-model","requested_file_to_model_mm":options.file_tolerance,
@@ -358,9 +399,14 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
         Ok(request) => request,
         Err(error) => return Ok(invalid(error)),
     };
-    if request.format != FORMAT || request.recipe["format"] != "catallax-recipe/3" {
+    if request.format != FORMAT
+        || !matches!(
+            request.recipe["format"].as_str(),
+            Some("catallax-recipe/3" | "catallax-recipe/4")
+        )
+    {
         return Ok(invalid(
-            "expected certified-recipe/1 containing unchanged recipe/3",
+            "expected certified-recipe/1 containing unchanged recipe/3 or recipe/4",
         ));
     }
     if request.properties.as_ref().is_some_and(|p| {
@@ -394,32 +440,62 @@ pub(crate) fn evaluate(problem: &Value, out: &Path) -> std::io::Result<Value> {
         Ok(app) => app,
         Err(error) => return Ok(app_refusal(&error)),
     };
+    respond(&app, &recipe, &request, out, &mut dec)
+}
+
+/// The ordinary driver's answer for a body with fitted faces: the same manifest/4
+/// record as the opt-in wrapper, because manifest/3 promises exact geometry.
+pub(crate) fn fitted_recipe(
+    recipe: &Recipe,
+    built: catallax_features::Built,
+    out: &Path,
+    dec: &mut Decider,
+) -> std::io::Result<Value> {
+    let app = match catallax_app::certify_built(built, None, dec) {
+        Ok(app) => app,
+        Err(error) => return Ok(app_refusal(&error)),
+    };
+    let request: Request = serde_json::from_value(json!({
+        "format":FORMAT,"recipe":Value::Null,
+        "outputs":{"step":{"file_tolerance":"1/10000000","decimal_places":15}},
+        "properties":{"relative":"1/1000000000","absolute":"1/1000000000"}}))
+    .expect("fixed ordinary outputs");
+    respond(&app, recipe, &request, out, dec)
+}
+
+fn respond(
+    app: &CertifiedApplicationBody,
+    recipe: &Recipe,
+    request: &Request,
+    out: &Path,
+    dec: &mut Decider,
+) -> std::io::Result<Value> {
     let built = app.built().built();
     let summary = match crate::result_summary(
         &built.model,
         built.result,
-        &mut dec,
+        dec,
         crate::SummaryExchange::Certified,
     ) {
         Ok(summary) => summary,
         Err(error) => return Ok(refused(error.code, error.detail)),
     };
-    let record = app.built().result_certificate().record();
+    let record = app.built().result_record();
     let exact = record
         .regions
         .values()
         .all(|region| region.exception.is_none())
         && record.decisions.is_empty();
-    let display = display(&app, request.outputs.mesh.as_ref(), out)?;
-    let properties = properties(&app, request.properties.as_ref(), &mut dec);
-    let field = field(&app, &request.field_points, &mut dec)
-        .unwrap_or_else(|error| consumer_refusal(&error));
-    let step = step(&app, request.outputs.step.as_ref(), out, &mut dec)?;
-    let edit = edit(&app, &recipe, request.edit.as_ref(), &mut dec)
+    let display = display(app, request.outputs.mesh.as_ref(), out)?;
+    let properties = properties(app, request.properties.as_ref(), dec);
+    let field =
+        field(app, &request.field_points, dec).unwrap_or_else(|error| consumer_refusal(&error));
+    let step = step(app, request.outputs.step.as_ref(), out, dec)?;
+    let edit = edit(app, recipe, request.edit.as_ref(), dec)
         .unwrap_or_else(|error| consumer_refusal(&error));
     Ok(
         json!({"format":"catallax-manifest/4","status":"answered","exact":exact,"result":summary,
-        "certificate":certificate::record(app.built()),"names":names(&app),"display":display,"properties":properties,"field":field,"step":step,"edit":edit,
+        "certificate":certificate::record(app.built()),"names":names(app),"display":display,"properties":properties,"field":field,"step":step,"edit":edit,
         "marks":built.model.body(built.result).marks.iter().map(|mark|crate::mark_entry(mark,None)).collect::<Vec<_>>(),
         "refusal":null,"replay":"question.json"}),
     )

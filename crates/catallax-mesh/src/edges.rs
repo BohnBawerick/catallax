@@ -312,10 +312,52 @@ impl Sampler<'_> {
     }
 }
 
+// One envelope row, kept on the envelope grid so both its faces share it.
+fn seeded(
+    model: &Model,
+    id: EdgeId,
+    seed: &crate::junction::Seed,
+    options: &MeshOptions,
+    dec: &mut Decider,
+    result: &mut Boundaries,
+) -> Result<(), Refusal> {
+    let edge = model.edge(id);
+    let (Some(start), Some(end)) = (edge.start, edge.end) else {
+        return Err(failure("a rolling-envelope row has two ends"));
+    };
+    let first = result.vertex(model, start, options, dec)?;
+    let last = result.vertex(model, end, options, dec)?;
+    let mut error = seed.error.clone();
+    let mut vertices = Vec::with_capacity(seed.points.len());
+    vertices.push(first);
+    let inner = seed.points.len() - 2;
+    for i in 0..inner {
+        let point = if seed.forward {
+            &seed.points[i + 1]
+        } else {
+            &seed.points[inner - i]
+        };
+        reserve_position(result.mesh.positions.len(), options)?;
+        let position = chart::position(point)?;
+        error = error.max(&seed.error + &chart::residual(&position, point));
+        vertices.push(result.mesh.positions.len());
+        result.mesh.positions.push(position);
+    }
+    vertices.push(last);
+    result.edges.insert(id, result.mesh.edges.len());
+    result.mesh.edges.push(EdgeMesh {
+        edge: id,
+        vertices,
+        max_chord_error: error,
+    });
+    Ok(())
+}
+
 pub(crate) fn sample(
     model: &Model,
     body: BodyId,
     charts: &BTreeMap<catallax_topology::FaceId, Chart>,
+    junction: Option<&crate::junction::Junction>,
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Boundaries, Refusal> {
@@ -347,6 +389,10 @@ pub(crate) fn sample(
         }
     }
     for edge_id in model.edges_of_body(body) {
+        if let Some(seed) = junction.and_then(|junction| junction.seed(edge_id)) {
+            seeded(model, edge_id, seed, options, dec, &mut result)?;
+            continue;
+        }
         let edge = model.edge(edge_id);
         let (from, to) = if edge.sense == Sense::Same {
             (edge.start, edge.end)

@@ -54,6 +54,28 @@ topology separately from the exact finite-decimal proof. An external kernel's
 nonadaptive volume estimate is not a certified property enclosure.
 
 
+## Rolling-envelope junction export
+
+`write_rolling_junction_step(model, body, &CertifiedSplineStepOptions, dec, out)`
+writes a certified body with rolling-envelope faces through the ordinary exporter
+and refuses with `step.tolerance-not-reached` before any byte leaves if
+`max_deviation` exceeds `file_tolerance`. Only a body with such a face reaches
+this plan, so every other file keeps its bytes.
+
+Each envelope is one complex rational degree-(8,2) B-spline surface. Its four
+boundary edges are complex rational B-spline curves over that surface's own
+rounded control rows, so a shared row cannot drift from the surface. A reader
+without pcurves cannot place a curve on a curved face, so each row also has a straight
+line on the envelope and a cubic pcurve on its analytic neighbour.
+The neighbour's parameter is an arctangent of the row's parameter, which no
+polynomial matches. `RollingEnvelope::parameter_table` fits it with cubic Hermite
+pieces from interval jets at 10^-11 rad, and the bound times the chart's radius
+joins `max_deviation`.
+
+Cylinder and cone faces beside a junction end in chains of arcs and rows, so
+their seams start at a chain vertex and need no boundary split. Tori take the
+cylinder's cut, which keeps an arc's circle parameter equal on both faces.
+
 ## What this piece is for
 
 Piece 7 writes bodies as STEP AP242 files (ISO 10303-21 text) that other kernels read as valid solids. It is the outbound half of conversion at the border (DESIGN.md): exact geometry becomes ordinary STEP entities, and the export proves and reports the largest distance between what it wrote and the exact model.

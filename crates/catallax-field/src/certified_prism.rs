@@ -48,6 +48,12 @@ impl<'a> CertifiedPrismField<'a> {
     /// Checks the geometry-bound record before retaining the immutable body.
     pub fn new(built: &'a CertifiedBuilt, dec: &mut Decider) -> Result<Self, Refusal> {
         built.verify(dec)?;
+        if built.junction().is_some() {
+            return Err(Refusal::new(
+                "field.certified-prism-branch",
+                "this consumer covers certified prisms, not fitted junctions",
+            ));
+        }
         let target = built.result_certificate().target();
         let frame = if target.is_empty() {
             None

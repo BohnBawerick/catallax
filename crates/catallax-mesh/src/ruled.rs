@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
-use catallax_shapes::Surface;
+use catallax_shapes::{Curve, Surface};
 use catallax_topology::{FaceId, Loop, Model, Sense};
 
 use crate::{
@@ -120,6 +120,15 @@ fn layers(
     unreachable!("a positive row count always includes the upper rail")
 }
 
+fn fitted_rail(model: &Model, face: &catallax_topology::Face) -> bool {
+    face.loops.iter().any(|boundary| {
+        matches!(model.loop_(*boundary), Loop::Coedges(coedges) if coedges.iter().any(|coedge| {
+            let edge = model.edge(model.coedge(*coedge).edge);
+            matches!(model.geom().curve(edge.curve), Curve::BSpline(_))
+        }))
+    })
+}
+
 /// Returns false when the sampled trim is not a certified strip or band, or
 /// needs general refinement. The periodic triangulator then handles that face.
 pub(crate) fn build(
@@ -138,7 +147,11 @@ pub(crate) fn build(
     if face.loops.len() == 1 {
         return open_strip(model, face_id, chart, boundaries, options, dec);
     }
-    if matches!(chart.surface, Surface::Cylinder(_)) {
+    // A cylinder trimmed by a rolling-envelope rail has no horizontal row for the
+    // general grid to align with, while its rulings stitch directly. Rounded
+    // rail parameters also stop its winding from summing to exactly one turn.
+    let railed = fitted_rail(model, face);
+    if matches!(chart.surface, Surface::Cylinder(_)) && !railed {
         return Ok(false);
     }
     if face.loops.len() != 2 {
@@ -196,7 +209,12 @@ pub(crate) fn build(
             direction = Some(delta > 0.0);
             winding += delta;
         }
-        if winding.abs().to_bits() != 1.0f64.to_bits() {
+        let whole = if railed {
+            (winding.abs() - 1.0).abs() <= 1e-9
+        } else {
+            winding.abs().to_bits() == 1.0f64.to_bits()
+        };
+        if !whole {
             return Ok(false);
         }
         if !direction.unwrap() {

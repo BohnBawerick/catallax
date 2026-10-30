@@ -10,9 +10,15 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, VertexId};
 
 use crate::number;
 
+pub(crate) enum Parameter {
+    Exact(Real),
+    /// A multiple of a quarter turn, on a torus's tube angle.
+    QuarterTurns(i64),
+}
+
 pub(crate) struct Association {
     pub surface: SurfaceId,
-    pub v: Real,
+    pub v: Parameter,
     pub v_scale: Real,
     pub increasing: bool,
 }
@@ -34,6 +40,16 @@ pub(crate) struct Band {
     pub v_scale: Real,
     pub radius_bound: Real,
     pub seam_direction: Vector3,
+    /// A closed chain of trimmed edges in place of one complete ring.
+    pub chain: Option<Chain>,
+}
+
+/// Coedges of one closed boundary, walked from the seam vertex in the chart's
+/// increasing direction at the low end and its decreasing one at the high end.
+pub(crate) struct Chain {
+    pub uses: Vec<(EdgeId, bool)>,
+    pub vertex: VertexId,
+    pub at_low: bool,
 }
 
 #[derive(Default)]
@@ -42,27 +58,31 @@ pub(crate) struct Plan {
     pub rings: BTreeMap<EdgeId, Rc<Ring>>,
     pub curves: BTreeMap<CurveId, CurveForm>,
     pub references: BTreeMap<SurfaceId, Vector3>,
+    pub envelope_edges: BTreeMap<EdgeId, Rc<crate::junction::EnvelopeEdge>>,
+    /// Circular arcs of a junction, with one exact line per curved face.
+    pub arcs: BTreeMap<EdgeId, Rc<Ring>>,
 }
 
-struct SourceRing {
-    edge: EdgeId,
-    curve: CurveId,
-    center: Point3,
-    normal: Vector3,
-    radius_sq: Real,
-    radius: Real,
-    v: Real,
-    increasing: bool,
+pub(crate) struct SourceRing {
+    pub(crate) edge: EdgeId,
+    pub(crate) curve: CurveId,
+    pub(crate) center: Point3,
+    pub(crate) normal: Vector3,
+    pub(crate) radius_sq: Real,
+    pub(crate) radius: Real,
+    pub(crate) v: Real,
+    pub(crate) increasing: bool,
 }
 
-struct SourceBand {
-    face: FaceId,
-    surface: SurfaceId,
-    axis: Vector3,
-    reference: Vector3,
-    v_scale: Real,
-    rings: Vec<SourceRing>,
-    apex: Option<VertexId>,
+pub(crate) struct SourceBand {
+    pub(crate) face: FaceId,
+    pub(crate) surface: SurfaceId,
+    pub(crate) axis: Vector3,
+    pub(crate) reference: Vector3,
+    pub(crate) v_scale: Real,
+    pub(crate) rings: Vec<SourceRing>,
+    pub(crate) apex: Option<VertexId>,
+    pub(crate) chain: Option<(Chain, Real, Real)>,
 }
 
 impl Plan {
@@ -71,6 +91,9 @@ impl Plan {
         bodies: impl Iterator<Item = BodyId> + Clone,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        if crate::junction::present(model, bodies.clone()) {
+            return crate::junction::plan(model, bodies, dec);
+        }
         let mut has_band = false;
         for body in bodies.clone() {
             for lump in &model.body(body).lumps {
@@ -123,94 +146,117 @@ impl Plan {
                 }
             }
         }
-        // Connected bands must cut shared rings at the same physical meridian.
-        // A reference rotation changes the parametrisation, not the carrier.
-        let mut parents: Vec<_> = (0..sources.len()).collect();
-        let mut edge_owners = BTreeMap::new();
-        let mut curve_owners = BTreeMap::new();
-        let mut surface_owners = BTreeMap::new();
-        for (index, band) in sources.iter().enumerate() {
-            if let Some(previous) = surface_owners.insert(band.surface, index) {
+        Ok(assemble(model, sources))
+    }
+}
+
+// Connected bands must cut shared rings at the same physical meridian. A
+// reference rotation changes the parametrisation, not the carrier. A chain
+// fixes its component's reference, because its seam starts at a vertex.
+pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
+    let mut parents: Vec<_> = (0..sources.len()).collect();
+    let mut edge_owners = BTreeMap::new();
+    let mut curve_owners = BTreeMap::new();
+    let mut surface_owners = BTreeMap::new();
+    for (index, band) in sources.iter().enumerate() {
+        if let Some(previous) = surface_owners.insert(band.surface, index) {
+            join(&mut parents, index, previous);
+        }
+        for ring in &band.rings {
+            if let Some(previous) = edge_owners.insert(ring.edge, index) {
                 join(&mut parents, index, previous);
             }
-            for ring in &band.rings {
-                if let Some(previous) = edge_owners.insert(ring.edge, index) {
-                    join(&mut parents, index, previous);
-                }
-                if let Some(previous) = curve_owners.insert(ring.curve, index) {
-                    join(&mut parents, index, previous);
-                }
+            if let Some(previous) = curve_owners.insert(ring.curve, index) {
+                join(&mut parents, index, previous);
             }
         }
-        let mut plan = Self::default();
-        let mut rings: BTreeMap<EdgeId, Ring> = BTreeMap::new();
-        for (index, source) in sources.iter().enumerate() {
-            let reference = &sources[root(&mut parents, index)].reference;
-            plan.references.insert(source.surface, reference.clone());
-            // Use the certified carrier frame, not a normalized difference
-            // of algebraic endpoint heights that must be re-proved unit.
-            let seam_direction = match model.geom().surface(source.surface) {
-                Surface::Cylinder(_) => source.axis.clone(),
-                Surface::Cone(cone) => source.axis.plus(&reference.scaled(&cone.slope)),
-                _ => unreachable!(),
-            };
-            plan.faces.insert(
-                source.face,
-                Rc::new(Band {
-                    surface: source.surface,
-                    edges: source.rings.iter().map(|r| r.edge).collect(),
-                    forward: source
-                        .rings
-                        .iter()
-                        .map(|r| r.increasing == (model.edge(r.edge).sense == Sense::Same))
-                        .collect(),
-                    apex: source.apex,
-                    // The written cone's apex is its v origin.
-                    low_v: if source.apex.is_some() {
-                        Real::zero()
-                    } else {
-                        source.rings[0].v.clone()
-                    },
-                    v_scale: source.v_scale.clone(),
-                    radius_bound: source
-                        .rings
-                        .iter()
-                        .fold(Real::zero(), |sum, r| &sum + &r.radius),
-                    seam_direction,
-                }),
-            );
-            for ring in &source.rings {
-                let origin = number::point_plus(&ring.center, reference, &ring.radius);
-                rings
-                    .entry(ring.edge)
-                    .or_insert_with(|| Ring {
-                        origin,
-                        radius: ring.radius.clone(),
-                        associations: Vec::with_capacity(2),
-                    })
-                    .associations
-                    .push(Association {
-                        surface: source.surface,
-                        v: ring.v.clone(),
-                        v_scale: source.v_scale.clone(),
-                        increasing: ring.increasing,
-                    });
-                plan.curves
-                    .entry(ring.curve)
-                    .or_insert_with(|| CurveForm::Circle {
-                        center: ring.center.clone(),
-                        normal: ring.normal.clone(),
-                        radius_sq: ring.radius_sq.clone(),
-                        ref_dir: reference.clone(),
-                    });
-            }
-        }
-        plan.rings = rings
-            .into_iter()
-            .map(|(edge, ring)| (edge, Rc::new(ring)))
-            .collect();
-        Ok(plan)
     }
+    let mut plan = Plan::default();
+    let mut rings: BTreeMap<EdgeId, Ring> = BTreeMap::new();
+    let mut chains = BTreeMap::new();
+    for (index, source) in sources.iter().enumerate() {
+        if source.chain.is_some() {
+            chains.insert(root(&mut parents, index), &source.reference);
+        }
+    }
+    for (index, source) in sources.iter().enumerate() {
+        let parent = root(&mut parents, index);
+        let reference = chains
+            .get(&parent)
+            .copied()
+            .unwrap_or(&sources[parent].reference);
+        plan.references.insert(source.surface, reference.clone());
+        // Use the certified carrier frame, not a normalized difference
+        // of algebraic endpoint heights that must be re-proved unit.
+        let seam_direction = match model.geom().surface(source.surface) {
+            Surface::Cylinder(_) => source.axis.clone(),
+            Surface::Cone(cone) => source.axis.plus(&reference.scaled(&cone.slope)),
+            _ => unreachable!(),
+        };
+        plan.faces.insert(
+            source.face,
+            Rc::new(Band {
+                surface: source.surface,
+                edges: source.rings.iter().map(|r| r.edge).collect(),
+                forward: source
+                    .rings
+                    .iter()
+                    .map(|r| r.increasing == (model.edge(r.edge).sense == Sense::Same))
+                    .collect(),
+                apex: source.apex,
+                // The written cone's apex is its v origin.
+                low_v: match &source.chain {
+                    Some((chain, v, _)) if chain.at_low => v.clone(),
+                    _ if source.apex.is_some() => Real::zero(),
+                    _ => source.rings[0].v.clone(),
+                },
+                v_scale: source.v_scale.clone(),
+                radius_bound: source.rings.iter().fold(
+                    source
+                        .chain
+                        .as_ref()
+                        .map_or_else(Real::zero, |(_, _, radius)| radius.clone()),
+                    |sum, r| &sum + &r.radius,
+                ),
+                seam_direction,
+                chain: source.chain.as_ref().map(|(chain, _, _)| Chain {
+                    uses: chain.uses.clone(),
+                    vertex: chain.vertex,
+                    at_low: chain.at_low,
+                }),
+            }),
+        );
+        for ring in &source.rings {
+            let origin = number::point_plus(&ring.center, reference, &ring.radius);
+            rings
+                .entry(ring.edge)
+                .or_insert_with(|| Ring {
+                    origin,
+                    radius: ring.radius.clone(),
+                    associations: Vec::with_capacity(2),
+                })
+                .associations
+                .push(Association {
+                    surface: source.surface,
+                    v: Parameter::Exact(ring.v.clone()),
+                    v_scale: source.v_scale.clone(),
+                    increasing: ring.increasing,
+                });
+            plan.curves
+                .entry(ring.curve)
+                .or_insert_with(|| CurveForm::Circle {
+                    center: ring.center.clone(),
+                    normal: ring.normal.clone(),
+                    radius_sq: ring.radius_sq.clone(),
+                    ref_dir: reference.clone(),
+                });
+        }
+    }
+    plan.rings = rings
+        .into_iter()
+        .map(|(edge, ring)| (edge, Rc::new(ring)))
+        .collect();
+    plan
 }
 
 // Two complete rings, or for a cone one complete ring and a vertex loop.
@@ -238,7 +284,7 @@ fn band_loops(model: &Model, face: FaceId) -> Option<(Vec<EdgeId>, Option<Vertex
     }
 }
 
-fn source_band(
+pub(crate) fn source_band(
     model: &Model,
     face: FaceId,
     dec: &mut Decider,
@@ -248,20 +294,8 @@ fn source_band(
         return Ok(None);
     };
     let surface = model.geom().surface(face_definition.surface);
-    let (origin, axis, reference, slant) = match surface {
-        Surface::Cylinder(s) => (
-            &s.origin,
-            number::unit(&s.axis),
-            number::unit(&s.ref_dir),
-            Real::one(),
-        ),
-        Surface::Cone(s) => (
-            &s.apex,
-            number::unit(&s.axis),
-            number::unit(&s.ref_dir),
-            number::sqrt_real(&(Real::one() + &s.slope * &s.slope)),
-        ),
-        _ => return Ok(None),
+    let Some((origin, axis, reference, slant)) = carrier_frame(surface) else {
+        return Ok(None);
     };
     if let Some(vertex) = apex {
         let point = model.geom().position(model.vertex(vertex).point);
@@ -278,6 +312,61 @@ fn source_band(
     }
     let mut rings = Vec::with_capacity(edges.len());
     for edge in edges {
+        let Some(ring) = source_ring(model, face, edge, dec)? else {
+            return Ok(None);
+        };
+        rings.push(ring);
+    }
+    if rings.len() == 2 {
+        match dec.compare(&rings[0].v, &rings[1].v) {
+            Outcome::Proven(StrictOrder::Greater) => rings.swap(0, 1),
+            Outcome::Proven(StrictOrder::Less) => {}
+            Outcome::Refused(refusal) => return Err(refusal),
+            _ => return Ok(None),
+        }
+    }
+    Ok(Some(SourceBand {
+        face,
+        surface: face_definition.surface,
+        axis,
+        reference,
+        v_scale: slant,
+        rings,
+        apex,
+        chain: None,
+    }))
+}
+
+pub(crate) fn carrier_frame(surface: &Surface) -> Option<(&Point3, Vector3, Vector3, Real)> {
+    match surface {
+        Surface::Cylinder(s) => Some((
+            &s.origin,
+            number::unit(&s.axis),
+            number::unit(&s.ref_dir),
+            Real::one(),
+        )),
+        Surface::Cone(s) => Some((
+            &s.apex,
+            number::unit(&s.axis),
+            number::unit(&s.ref_dir),
+            number::sqrt_real(&(Real::one() + &s.slope * &s.slope)),
+        )),
+        _ => None,
+    }
+}
+
+pub(crate) fn source_ring(
+    model: &Model,
+    face: FaceId,
+    edge: EdgeId,
+    dec: &mut Decider,
+) -> Result<Option<SourceRing>, Refusal> {
+    let face_definition = model.face(face);
+    let surface = model.geom().surface(face_definition.surface);
+    let Some((origin, axis, ..)) = carrier_frame(surface) else {
+        return Ok(None);
+    };
+    {
         let definition = model.edge(edge);
         let CurveForm::Circle {
             center,
@@ -332,7 +421,7 @@ fn source_band(
             Outcome::Refused(refusal) => return Err(refusal),
             _ => return Ok(None),
         };
-        rings.push(SourceRing {
+        Ok(Some(SourceRing {
             edge,
             curve: definition.curve,
             center,
@@ -341,25 +430,8 @@ fn source_band(
             radius_sq,
             v: height,
             increasing,
-        });
+        }))
     }
-    if rings.len() == 2 {
-        match dec.compare(&rings[0].v, &rings[1].v) {
-            Outcome::Proven(StrictOrder::Greater) => rings.swap(0, 1),
-            Outcome::Proven(StrictOrder::Less) => {}
-            Outcome::Refused(refusal) => return Err(refusal),
-            _ => return Ok(None),
-        }
-    }
-    Ok(Some(SourceBand {
-        face,
-        surface: face_definition.surface,
-        axis,
-        reference,
-        v_scale: slant,
-        rings,
-        apex,
-    }))
 }
 
 fn zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {

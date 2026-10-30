@@ -95,6 +95,31 @@ fn boundaries_are_exact_on_their_supports() {
 }
 
 #[test]
+fn sector_moments_enclose_the_independent_quadrature() {
+    // Independent double-precision quadrature of the sphere contacts, orders
+    // 24 to 192; per-mouth added volume, and envelope area, in the design report.
+    let width = Rational::from_ratio(1, 10_000_000).unwrap();
+    for (radius, volume, area) in [
+        ("2", 2.7663756712568, 10.4708859085411),
+        ("2.5", 4.4384692937995, 14.3088003990685),
+    ] {
+        let dec = Decider::default();
+        let moments = definition(radius, "12", &mut Decider::default())
+            .unwrap()
+            .contact_moments(&width, &dec)
+            .unwrap();
+        for (ball, expected) in [(&moments.volume, volume), (&moments.envelope_area, area)] {
+            assert!(
+                (ball.mid().to_f64_nearest() - expected).abs() < 1e-7,
+                "{radius}: {} against {expected}",
+                ball.mid().to_f64_nearest()
+            );
+            assert!(ball.rad() * Rational::from_i64(2) <= width);
+        }
+    }
+}
+
+#[test]
 fn an_irrational_contact_law_keeps_exact_boundaries() {
     // t^2 is irrational here, so no row collapses to a rational leaf; the same
     // rows and proofs still have to hold.

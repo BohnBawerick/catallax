@@ -77,7 +77,8 @@ pub struct PreviewMesh {
 ///
 /// This synchronous call uses the caller's decider and active work allowance.
 /// It never starts, replaces, or enlarges an allowance and never calls
-/// [`crate::mesh_body`]. Failure returns no partial preview.
+/// [`crate::mesh_body`]. Failure returns no partial preview. A rolling-envelope
+/// body has no chart for a cheaper sampling, so it shares the structured grid.
 pub fn preview_mesh_body(
     model: &Model,
     body: BodyId,
@@ -95,6 +96,9 @@ pub fn preview_mesh_body(
             "mesh.preview-invalid-options",
             "visual targets must be positive and max_vertices at least four",
         ));
+    }
+    if crate::junction::present(model, body) {
+        return crate::junction::preview(model, body, options, dec);
     }
     if model.faces_of_body(body).iter().any(|&face| {
         matches!(

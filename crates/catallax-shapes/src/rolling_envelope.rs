@@ -14,7 +14,18 @@ use crate::{BSplineSurface, Isometry, Point3, Pose, Rotation, Vector3, math};
 use catallax_numbers::{
     Ball, Decider, EvidenceBound, EvidenceUnit, Outcome, Rational, Real, Refusal, Sign, StrictSign,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+#[path = "rolling_envelope/boundary.rs"]
+mod boundary;
+#[path = "rolling_envelope/grid.rs"]
+mod grid;
+#[path = "rolling_envelope/moments.rs"]
+mod moments;
+
+pub use boundary::{BoundaryRow, ParameterTable};
+pub use grid::EnvelopeGrid;
+pub use moments::{ContactMoments, JunctionSection};
 
 fn refusal(detail: impl Into<String>) -> Refusal {
     Refusal::new("shapes.rolling-envelope", detail)
@@ -423,7 +434,19 @@ struct Rows {
     cosine: Jet,
 }
 
-fn rows(k: &Constants, s: &Jet, fitted: Option<&Jet>) -> Result<Rows, Refusal> {
+// The ball and its mouth contact at one station, as jets in s.
+struct Station {
+    cos: Jet,
+    sin: Jet,
+    cx: Jet,
+    cz: Jet,
+    rho: Jet,
+    height: Jet,
+    rx: Jet,
+    rz: Jet,
+}
+
+fn station_jets(k: &Constants, s: &Jet) -> Result<Station, Refusal> {
     let one = k.c(&k.one);
     let u = s.scale(&k.t);
     let u2 = u.square();
@@ -441,6 +464,32 @@ fn rows(k: &Constants, s: &Jet, fitted: Option<&Jet>) -> Result<Rows, Refusal> {
     let height = k.c(&k.radius.square()).sub(&gap.square()).sqrt()?;
     let rx = k.c(d).add(&cx.sub(&k.c(d)).scale(&k.mouth).div(&rho)?);
     let rz = cz.scale(&k.mouth).div(&rho)?;
+    Ok(Station {
+        cos,
+        sin,
+        cx,
+        cz,
+        rho,
+        height,
+        rx,
+        rz,
+    })
+}
+
+fn rows(k: &Constants, s: &Jet, fitted: Option<&Jet>) -> Result<Rows, Refusal> {
+    let Station {
+        cos,
+        sin,
+        cx,
+        cz,
+        rho,
+        height,
+        rx,
+        rz,
+    } = station_jets(k, s)?;
+    let one = k.c(&k.one);
+    let den = one.add(&s.scale(&k.t).square());
+    let d = &k.offset;
     let mouth = cz.neg().div(&rho.add(&k.c(d)).sub(&cx))?;
     let r_inv = b(&Rational::one(), k.one.precision())
         .checked_div(&k.radius)
@@ -708,8 +757,83 @@ struct Data {
     definition: RollingEnvelopeDefinition,
     nodes: Vec<Node>,
     carrier: BSplineSurface,
+    net: Arc<Net>,
     bound: EvidenceBound,
     reversing: bool,
+}
+
+// Enclosed homogeneous controls in the definition frame, u-major. Rigid copies
+// share one net, so no consumer pays to re-enclose a patterned carrier.
+#[derive(Debug)]
+struct Net {
+    bits: u32,
+    controls: Vec<[Ball; 4]>,
+    grid: Mutex<Option<(Rational, Arc<EnvelopeGrid>)>>,
+    moments: Mutex<Option<(Rational, Arc<ContactMoments>)>>,
+}
+
+impl Net {
+    fn new(
+        def: &RollingEnvelopeDefinition,
+        carrier: &BSplineSurface,
+        dec: &Decider,
+    ) -> Result<Self, Refusal> {
+        let bits = 128.min(dec.policy().max_precision_bits);
+        let enclosed = LocalFrame::new(def, bits, dec)?;
+        let controls = carrier
+            .controls()
+            .iter()
+            .zip(carrier.weights())
+            .map(|(point, weight)| {
+                let w = dec.enclose_at(weight, bits)?;
+                let [x, y, z] = enclosed.local(&math::point(point, bits, dec)?);
+                Ok([&x * &w, &y * &w, &z * &w, w])
+            })
+            .collect::<Result<Vec<_>, Refusal>>()?;
+        Ok(Self {
+            bits,
+            controls,
+            grid: Mutex::new(None),
+            moments: Mutex::new(None),
+        })
+    }
+}
+
+// Enclosed definition frame of one placed copy.
+struct LocalFrame {
+    origin: [Ball; 3],
+    axes: [[Ball; 3]; 3],
+}
+
+impl LocalFrame {
+    fn new(def: &RollingEnvelopeDefinition, bits: u32, dec: &Decider) -> Result<Self, Refusal> {
+        let vector = |v: &Vector3| -> Result<[Ball; 3], Refusal> {
+            Ok([
+                dec.enclose_at(&v.x, bits)?,
+                dec.enclose_at(&v.y, bits)?,
+                dec.enclose_at(&v.z, bits)?,
+            ])
+        };
+        Ok(Self {
+            origin: math::point(&def.origin, bits, dec)?,
+            axes: [
+                vector(&def.toward)?,
+                vector(&def.axis)?,
+                vector(&def.across)?,
+            ],
+        })
+    }
+    fn local(&self, point: &[Ball; 3]) -> [Ball; 3] {
+        let d: [Ball; 3] = std::array::from_fn(|i| &point[i] - &self.origin[i]);
+        self.axes.each_ref().map(|axis| dot(&d, axis))
+    }
+    fn world(&self, local: &[Ball; 3]) -> [Ball; 3] {
+        std::array::from_fn(|i| {
+            (0..3).fold(self.origin[i].clone(), |sum, axis| {
+                sum + &self.axes[axis][i] * &local[axis]
+            })
+        })
+    }
 }
 
 /// Kernel-made approximation target from ARCHITECTURE's composable-error policy.
@@ -742,13 +866,15 @@ impl RollingEnvelope {
         }
         let carrier = build(&definition, &nodes, dec)?;
         check_transitions(&definition, &carrier, dec)?;
-        check_regular(&definition, &carrier, dec)?;
+        let net = Arc::new(Net::new(&definition, &carrier, dec)?);
+        check_regular(&carrier, &net, dec)?;
         check_clearance(&definition, &nodes, dec)?;
         Ok(Self {
             data: Arc::new(Data {
                 definition,
                 nodes,
                 carrier,
+                net,
                 bound: EvidenceBound {
                     upper,
                     unit: EvidenceUnit::Millimetres,
@@ -815,6 +941,25 @@ impl RollingEnvelope {
         }
         Ok(copy)
     }
+    /// Enclosed world controls and weights of the carrier, in its order.
+    /// Every rigid copy derives them from one shared enclosed net.
+    pub fn enclosed_controls(&self, dec: &Decider) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
+        let frame = LocalFrame::new(&self.data.definition, self.data.net.bits, dec)?;
+        self.data
+            .net
+            .controls
+            .iter()
+            .map(|h| {
+                let divide = |value: &Ball| {
+                    value
+                        .checked_div(&h[3])
+                        .ok_or_else(|| unresolved("carrier weight is not positive"))
+                };
+                let local = [divide(&h[0])?, divide(&h[1])?, divide(&h[2])?];
+                Ok((frame.world(&local), h[3].clone()))
+            })
+            .collect()
+    }
     /// Represented geometry over `[-1,1] x [0,1]`.
     pub fn carrier(&self) -> &BSplineSurface {
         &self.data.carrier
@@ -845,6 +990,7 @@ impl RollingEnvelope {
                 definition: self.data.definition.mapped(pose),
                 nodes: self.data.nodes.clone(),
                 carrier: self.data.carrier.mapped(pose),
+                net: self.data.net.clone(),
                 bound: self.data.bound.clone(),
                 reversing: self.data.reversing != pose.reversing(),
             }),
@@ -973,14 +1119,9 @@ impl RollingEnvelope {
         dec: &Decider,
     ) -> Result<Option<[Ball; 2]>, Refusal> {
         dec.check_deadline()?;
-        let bits = point
-            .iter()
-            .map(Ball::precision)
-            .max()
-            .expect("three coordinates")
-            .max(64)
-            .min(dec.policy().max_precision_bits);
-        let mut patches = Patch::all(&self.data.carrier, bits, dec)?;
+        let bits = self.data.net.bits;
+        let point = LocalFrame::new(&self.data.definition, bits, dec)?.local(point);
+        let mut patches = Patch::all(&self.data.carrier, &self.data.net);
         for _ in 0..24 {
             dec.check_deadline()?;
             let mut next = Vec::with_capacity(patches.len() * 2);
@@ -1025,18 +1166,17 @@ impl RollingEnvelope {
         if self.on_boundary(point, dec)? {
             return Ok(Sign::Zero);
         }
-        let bits = 128.min(dec.policy().max_precision_bits);
-        let def = &self.data.definition;
-        let p = math::point(point, bits, dec)?;
-        let frame = Frame::new(def, bits, dec)?;
-        let target = frame.project(&p);
-        let mut patches = Patch::all(&self.data.carrier, bits, dec)?;
+        let bits = self.data.net.bits;
+        let local = LocalFrame::new(&self.data.definition, bits, dec)?
+            .local(&math::point(point, bits, dec)?);
+        let target = project(&local);
+        let mut patches = Patch::all(&self.data.carrier, &self.data.net);
         for _ in 0..64 {
             dec.check_deadline()?;
             let mut next = Vec::new();
             let mut signs = Vec::new();
             for patch in patches {
-                let image = patch.projected(&frame)?;
+                let image = patch.projected()?;
                 if !meets(&image[0], &target[0]) || !meets(&image[1], &target[1]) {
                     continue;
                 }
@@ -1080,36 +1220,10 @@ fn dot(a: &[Ball; 3], c: &[Ball; 3]) -> Ball {
     &(&(&a[0] * &c[0]) + &(&a[1] * &c[1])) + &(&a[2] * &c[2])
 }
 
-// Enclosed chart directions: F = (across . S, (toward - axis) . S) is the
-// certified injective projection; `lift`, along toward + axis, measures the
-// side. In a right-handed frame across x (toward - axis) = toward + axis.
-struct Frame {
-    first: [Ball; 3],
-    second: [Ball; 3],
-    lift: [Ball; 3],
-}
-impl Frame {
-    fn new(def: &RollingEnvelopeDefinition, bits: u32, dec: &Decider) -> Result<Self, Refusal> {
-        let enclose = |v: &Vector3| -> Result<[Ball; 3], Refusal> {
-            Ok([
-                dec.enclose_at(&v.x, bits)?,
-                dec.enclose_at(&v.y, bits)?,
-                dec.enclose_at(&v.z, bits)?,
-            ])
-        };
-        Ok(Self {
-            first: enclose(&def.across)?,
-            second: enclose(&def.toward.minus(&def.axis))?,
-            lift: enclose(&def.toward.plus(&def.axis))?,
-        })
-    }
-    fn project(&self, p: &[Ball; 3]) -> [Ball; 3] {
-        [
-            dot(p, &self.first),
-            dot(p, &self.second),
-            dot(p, &self.lift),
-        ]
-    }
+// Chart directions in the definition frame: F = (z, x - y) is the certified
+// injective projection, and x + y, along toward + axis, measures the side.
+fn project(p: &[Ball; 3]) -> [Ball; 3] {
+    [p[2].clone(), &p[0] - &p[1], &p[0] + &p[1]]
 }
 
 // One rational Bezier patch of the carrier, degree (6, 2), as enclosed
@@ -1120,27 +1234,18 @@ struct Patch {
     net: Vec<[Ball; 4]>,
 }
 impl Patch {
-    fn all(carrier: &BSplineSurface, bits: u32, dec: &Decider) -> Result<Vec<Self>, Refusal> {
-        let mut patches = Vec::new();
-        for (index, span) in carrier.spans(0).enumerate() {
-            let mut net = Vec::with_capacity((DEGREE + 1) * 3);
-            for i in index * DEGREE..=index * DEGREE + DEGREE {
-                for j in 0..3 {
-                    let p = &carrier.controls()[i * 3 + j];
-                    let w = dec.enclose_at(&carrier.weights()[i * 3 + j], bits)?;
-                    let c = math::point(p, bits, dec)?;
-                    net.push([&c[0] * &w, &c[1] * &w, &c[2] * &w, w]);
-                }
-            }
-            patches.push(Self {
+    fn all(carrier: &BSplineSurface, net: &Net) -> Vec<Self> {
+        carrier
+            .spans(0)
+            .enumerate()
+            .map(|(index, span)| Self {
                 cell: [
                     [span[0].clone(), span[1].clone()],
                     [Rational::zero(), Rational::one()],
                 ],
-                net,
-            });
-        }
-        Ok(patches)
+                net: net.controls[index * DEGREE * 3..(index * DEGREE + DEGREE + 1) * 3].to_vec(),
+            })
+            .collect()
     }
     fn split(self) -> [Self; 2] {
         // A span's u extent is about a tenth of v's; compare in a metric that
@@ -1185,8 +1290,8 @@ impl Patch {
                 .fold(points[0][i].clone(), |hull, p| hull.hull(&p[i]))
         }))
     }
-    fn projected(&self, frame: &Frame) -> Result<[Ball; 3], Refusal> {
-        let points: Vec<_> = self.cartesian()?.iter().map(|p| frame.project(p)).collect();
+    fn projected(&self) -> Result<[Ball; 3], Refusal> {
+        let points: Vec<_> = self.cartesian()?.iter().map(project).collect();
         Ok(std::array::from_fn(|i| {
             points[1..]
                 .iter()
@@ -1681,36 +1786,20 @@ fn positive_bernstein(c: &[Real], bits: u32, dec: &Decider) -> Result<bool, Refu
 // Gale-Nikaido on the closed chart rectangle: with F = (across . S,
 // (toward - axis) . S), a Jacobian that is a P-matrix everywhere makes F, hence
 // the carrier, injective; its positive determinant proves regularity and puts
-// the chart normal on the ball side, toward + axis. On each Bezier patch the
+// the chart normal on the ball side, toward + axis. The definition frame is
+// right-handed by construction, across = toward x axis, and the net holds the
+// actual carrier controls in that frame. On each Bezier patch the
 // signs are those of polynomials in the homogeneous planar map H = (w, G1, G2):
 //   dG1/du: w G1_u - w_u G1,  dG2/dv: w G2_v - w_v G2,  det J: det(H, H_u, H_v),
 // proved by positive Bernstein coefficients after bounded subdivision.
-fn check_regular(
-    def: &RollingEnvelopeDefinition,
-    carrier: &BSplineSurface,
-    dec: &mut Decider,
-) -> Result<(), Refusal> {
-    let bits = 128.min(dec.policy().max_precision_bits);
-    let frame = Frame::new(def, bits, dec)?;
-    let cross = |a: &[Ball; 3], c: &[Ball; 3]| -> [Ball; 3] {
-        [
-            &(&a[1] * &c[2]) - &(&a[2] * &c[1]),
-            &(&a[2] * &c[0]) - &(&a[0] * &c[2]),
-            &(&a[0] * &c[1]) - &(&a[1] * &c[0]),
-        ]
-    };
-    if dot(&cross(&frame.first, &frame.second), &frame.lift).lo() <= Rational::zero() {
-        return Err(refusal("envelope frame is not right-handed"));
-    }
+fn check_regular(carrier: &BSplineSurface, net: &Net, dec: &mut Decider) -> Result<(), Refusal> {
+    let bits = net.bits;
     let mut stack = Vec::new();
-    for patch in Patch::all(carrier, bits, dec)? {
+    for patch in Patch::all(carrier, net) {
         let planar: Vec<[Ball; 3]> = patch
             .net
             .iter()
-            .map(|h| {
-                let x = [h[0].clone(), h[1].clone(), h[2].clone()];
-                [h[3].clone(), dot(&x, &frame.first), dot(&x, &frame.second)]
-            })
+            .map(|h| [h[3].clone(), h[2].clone(), &h[0] - &h[1]])
             .collect();
         stack.push((planar, patch.cell, 0));
     }

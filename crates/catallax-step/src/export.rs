@@ -13,6 +13,8 @@ use crate::{StepOptions, StepReport};
 
 #[path = "export/charts.rs"]
 mod charts;
+#[path = "export/envelope.rs"]
+mod envelope;
 
 type Bounds = [[Rational; 2]; 3];
 
@@ -76,6 +78,7 @@ pub(crate) struct Exporter<'a> {
     bands: crate::band::Plan,
     band_period: Option<Rc<Number>>,
     chart_state: Option<charts::State>,
+    envelopes: BTreeMap<SurfaceId, Rc<envelope::Written>>,
 }
 
 impl<'a> Exporter<'a> {
@@ -93,6 +96,7 @@ impl<'a> Exporter<'a> {
             bands: crate::band::Plan::default(),
             band_period: None,
             chart_state: None,
+            envelopes: BTreeMap::new(),
         }
     }
 
@@ -471,6 +475,9 @@ impl<'a> Exporter<'a> {
         if let Some(edge) = topology.edges.get(&id) {
             return Ok(edge.clone());
         }
+        if let Some(plan) = self.bands.envelope_edges.get(&id).cloned() {
+            return self.envelope_edge(id, &plan, topology);
+        }
         let source = self.model.edge(id).clone();
         let (start, end) = match (source.start, source.end) {
             (Some(a), Some(b)) => (self.vertex(a, topology)?, self.vertex(b, topology)?),
@@ -599,7 +606,13 @@ impl<'a> Exporter<'a> {
             self.report.approximated_curves += 1;
             (curve, fit.bounds, true, fit.error)
         };
-        let curve = if let Some(ring) = self.bands.rings.get(&id).cloned() {
+        let curve = if let Some(ring) = self
+            .bands
+            .rings
+            .get(&id)
+            .or_else(|| self.bands.arcs.get(&id))
+            .cloned()
+        {
             self.ring_curve(curve, &bounds, &ring, error)?
         } else if let Some(geometry) = geometry.as_ref() {
             self.chart_edge(
@@ -698,6 +711,24 @@ impl<'a> Exporter<'a> {
         Ok(period)
     }
 
+    fn quarter_turns(&mut self, turns: i64) -> Result<Number, Refusal> {
+        let precision = number::work_precision(
+            self.dec.policy(),
+            self.digits().saturating_mul(4).saturating_add(32),
+            2,
+        )
+        .ok_or_else(|| number::budget("no work available for a quarter turn"))?;
+        let pi = catallax_numbers::Ball::pi_checked(precision, self.dec)?;
+        let turn = catallax_numbers::Ball::from_rational(
+            &Rational::from_ratio(turns, 2).expect("nonzero denominator"),
+            precision,
+        );
+        number::certified(
+            number::ball_number(&(&pi * &turn), self.digits()),
+            self.digits(),
+        )
+    }
+
     fn ring_curve(
         &mut self,
         curve: Id,
@@ -710,7 +741,10 @@ impl<'a> Exporter<'a> {
         let mut pcurves = Vec::with_capacity(ring.associations.len());
         for association in &ring.associations {
             self.surface(association.surface)?;
-            let v = number::real(&association.v, self.digits(), self.dec)?;
+            let v = match &association.v {
+                crate::band::Parameter::Exact(v) => number::real(v, self.digits(), self.dec)?,
+                crate::band::Parameter::QuarterTurns(turns) => self.quarter_turns(*turns)?,
+            };
             let surface = self.surfaces[&association.surface].id;
             pcurves.push(self.pcurve_line(
                 surface,
@@ -761,12 +795,36 @@ impl<'a> Exporter<'a> {
         for ring in &rings {
             include_bounds(&mut bounds, &ring.bounds);
         }
+        let mut chain_uses = Vec::new();
+        if let Some(chain) = &band.chain {
+            for (edge, same) in &chain.uses {
+                let edge = self.edge(*edge, topology)?;
+                include_bounds(&mut bounds, &edge.bounds);
+                chain_uses.push((edge.id, *same));
+            }
+        }
         let bounds = bounds.unwrap();
         let high = band.edges.len() - 1;
-        let b = topology.ring_vertices[&band.edges[high]].clone();
+        let chain_vertex = band
+            .chain
+            .as_ref()
+            .map(|chain| self.vertex(chain.vertex, topology))
+            .transpose()?;
+        let chain_high = band.chain.as_ref().is_some_and(|chain| !chain.at_low);
+        let b = if chain_high {
+            chain_vertex.clone().unwrap()
+        } else {
+            topology.ring_vertices[&band.edges[high]].clone()
+        };
         // A band ending at its cone's apex starts its seam there, as the
         // written cone's v origin. Its loop then has no low ring.
-        let (a, origin) = if let Some(apex) = band.apex {
+        let (a, origin) = if let Some(chain) = band.chain.as_ref().filter(|chain| chain.at_low) {
+            let origin = self
+                .model
+                .geom()
+                .position(self.model.vertex(chain.vertex).point);
+            (chain_vertex.unwrap(), origin)
+        } else if let Some(apex) = band.apex {
             let vertex = self.vertex(apex, topology)?;
             let origin = self.model.geom().position(self.model.vertex(apex).point);
             (vertex, origin)
@@ -806,8 +864,15 @@ impl<'a> Exporter<'a> {
         let parameter_error = &number::upper(&band.radius_bound, self.dec)? * &period.error
             + &v.error * &number::upper(&band.v_scale, self.dec)?;
         self.deviation(line_error + parameter_error + self.surface_error(band.surface, &bounds));
-        let mut uses = vec![(rings[high].id, !band.forward[high]), (seam, false)];
-        if band.apex.is_none() {
+        let mut uses = if chain_high {
+            chain_uses.clone()
+        } else {
+            vec![(rings[high].id, !band.forward[high])]
+        };
+        uses.push((seam, false));
+        if band.chain.as_ref().is_some_and(|chain| chain.at_low) {
+            uses.extend(chain_uses);
+        } else if band.apex.is_none() {
             uses.push((rings[0].id, band.forward[0]));
         }
         uses.push((seam, true));
@@ -964,6 +1029,10 @@ impl<'a> Exporter<'a> {
             return Ok(());
         }
         let surface = self.model.geom().surface(id);
+        if matches!(surface, Surface::BSpline(_)) {
+            self.written_envelope(id)?;
+            return Ok(());
+        }
         if let Surface::EllipticCylinder(s) = surface {
             let major = number::real(&number::sqrt_real(&s.major_sq), self.digits(), self.dec)?;
             let minor = number::real(&number::sqrt_real(&s.minor_sq), self.digits(), self.dec)?;

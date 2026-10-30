@@ -1,0 +1,6 @@
+## 2026-10-30: straight fillet strips end on cylindrical walls
+
+Pieces: 4, 5 (catallax-features `fillet_build`)
+Change: A selected straight edge between two planes may now end at a vertex whose third face is a cylinder, such as the top edge of an extruded slot's straight wall meeting its arc end. The strip continues along its extended rail and is cut by that wall. Each contact rail ends at its carrier hit on the support's own input edge to the wall, and the terminal edge is the exact blend/wall intersection branch, including its tangent node on the wall. No planar cap, sphere or spline face is added.
+Why: Filleting one straight top edge of a slot refused with `fillet.unsupported-topology` because line-strip ends required planar neighbours. The extruded slot needs the strip cut by the end cylinders; truncating at the straight segment's ends would remove the wrong material.
+Migration: None for callers. Requests that select such an edge now answer instead of refusing; every other planar-end, two-strip and corner path is unchanged, and the oversized radius-6 slot cases keep their typed refusals. A rail that misses its end-wall edge refuses with `fillet.unsupported-overflow`. Arc edges, tangent-chain continuation and simultaneous line/arc joins remain unsupported. The field kernel still refuses finite line strips without perpendicular end planes.

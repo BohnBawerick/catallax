@@ -296,6 +296,75 @@ fn sampled_carrier_points_lie_on_the_exact_envelope() {
 }
 
 #[test]
+fn the_display_grid_bound_follows_the_carrier() {
+    let tolerance = Rational::from_ratio(1, 200).unwrap();
+    for (radius, cells) in [("2", 1024), ("2.5", 2048)] {
+        let mut dec = Decider::default();
+        let envelope = fit(radius, &mut dec);
+        let grid = envelope.display_grid(&tolerance, 1 << 20, &dec).unwrap();
+        assert!(grid.chord <= tolerance);
+        assert!((grid.columns - 1) * (grid.rows - 1) <= cells, "{radius}");
+
+        let carrier = envelope.carrier();
+        let mut knots = carrier.knots()[0].to_vec();
+        knots.dedup();
+        let per_span = (grid.columns - 1) / (knots.len() - 1);
+        // Halved knot intervals in u, with a half step for a cell's centre.
+        let u = |half_column: usize| {
+            let (span, step) = (half_column / (2 * per_span), half_column % (2 * per_span));
+            let width = &knots[(span + 1).min(knots.len() - 1)] - &knots[span];
+            &knots[span]
+                + &(&width * &Rational::from_ratio(step as i64, 2 * per_span as i64).unwrap())
+        };
+        let v = |half_row: usize| {
+            Rational::from_ratio(half_row as i64, 2 * (grid.rows as i64 - 1)).unwrap()
+        };
+        let at = |column: usize, row: usize| -> [f64; 3] {
+            grid.points[column * grid.rows + row]
+                .each_ref()
+                .map(|x| x.mid().to_f64_nearest())
+        };
+        let carrier_at = |half_column: usize, half_row: usize| -> [f64; 3] {
+            carrier
+                .evaluate(
+                    &Ball::from_rational(&u(half_column), 128),
+                    &Ball::from_rational(&v(half_row), 128),
+                    &dec,
+                )
+                .unwrap()
+                .map(|x| x.mid().to_f64_nearest())
+        };
+        let l1 = |a: [f64; 3], c: [f64; 3]| (0..3).map(|i| (a[i] - c[i]).abs()).sum::<f64>();
+        let mut worst = 0.0f64;
+        for column in (0..grid.columns - 1).step_by(3) {
+            for row in (0..grid.rows - 1).step_by(3) {
+                let corners = [
+                    at(column, row),
+                    at(column + 1, row),
+                    at(column, row + 1),
+                    at(column + 1, row + 1),
+                ];
+                if column == 0 {
+                    assert!(l1(corners[0], carrier_at(0, 2 * row)) < 1e-9);
+                }
+                let centre =
+                    std::array::from_fn(|i| corners.iter().map(|c| c[i]).sum::<f64>() / 4.0);
+                worst = worst.max(l1(centre, carrier_at(2 * column + 1, 2 * row + 1)));
+            }
+        }
+        let chord = grid.chord.to_f64_nearest();
+        assert!(
+            worst <= chord,
+            "{radius}: sampled {worst} over bound {chord}"
+        );
+        assert!(
+            4.0 * worst >= chord,
+            "{radius}: bound {chord} over sampled {worst}"
+        );
+    }
+}
+
+#[test]
 fn patterned_holes_reuse_one_fit() {
     let mut dec = Decider::default();
     let envelope = fit("2", &mut dec);

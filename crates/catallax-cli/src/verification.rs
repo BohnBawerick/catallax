@@ -372,7 +372,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             if !built.stand_ins.is_empty() {
                 return Ok(refused(
                     "field.stand-in-export",
-                    "the lattice envelope alone is not a mass-equivalent stand-in",
+                    "a field envelope alone is not a mass-equivalent stand-in",
                 ));
             }
             let measurements = if let Some(checks) = checks {

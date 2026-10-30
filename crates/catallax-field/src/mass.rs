@@ -15,6 +15,7 @@ use std::{
 };
 
 mod columns;
+mod graph;
 
 type Bounds = [[Rational; 2]; 3];
 const PAIRS: [(usize, usize); 6] = [(0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2)];
@@ -635,6 +636,9 @@ pub fn properties(
         });
     }
     if let Some(properties) = columns::properties(plan, &bounds, accuracy, options, dec) {
+        return properties;
+    }
+    if let Some(properties) = graph::properties(plan, accuracy, options, dec) {
         return properties;
     }
     let anchor = std::array::from_fn(|i| (&bounds[i][0] + &bounds[i][1]).mul_pow2(-1));

@@ -372,8 +372,26 @@ pub(crate) fn mesh(
     let body_bounds = bounds(plan, dec)?;
     let mut classifier = Classifier::for_print(plan, dec)?;
     let charts = parametric::Charts::new(&classifier, &body_bounds);
-    let clip = separation::Clip::new(&classifier);
-    let mut grid = refined::Grid::new(&body_bounds, options, charts.is_some(), clip.is_some())?;
+    let clip = separation::Clip::new(&classifier, &body_bounds);
+    // A graded gyroid keeps one thirty-second of its period as the coarse pitch at
+    // every accuracy, so a coarse request still meets the curvature bound.
+    let pitch = plan
+        .leaves
+        .iter()
+        .filter_map(|leaf| match leaf {
+            geometry::Leaf::Gyroid(gyroid) if gyroid.graded() => {
+                Some(gyroid.period() * &Rational::from_ratio(1, 32).unwrap())
+            }
+            _ => None,
+        })
+        .min();
+    let mut grid = refined::Grid::new(
+        &body_bounds,
+        options,
+        charts.is_some(),
+        clip.is_some(),
+        pitch.as_ref(),
+    )?;
     let rounded = options.tolerance.to_f64_nearest();
     let bound = Rational::from_f64_exact(rounded.next_down()).ok_or_else(|| {
         refusal(

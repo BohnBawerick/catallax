@@ -6,6 +6,7 @@
 //! The stage owns no cache: editing the body means calling [`Stage::new`] again with
 //! the edited recipe, so nothing computed from the earlier body can be reused.
 
+use crate::grade::{GradeDef, check_certified};
 use crate::{Plan, display::PreviewOptions, printing};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::{
@@ -21,7 +22,9 @@ pub struct LatticeSpec {
     pub size: Number,
     /// Places the cell grid.
     pub frame: Pose,
-    /// Beam radius.
+    /// Beam radius in millimetres, read at the query point. It controls density. A
+    /// linear grade must have anchors that differ along one part axis, endpoints of
+    /// at most a quarter of the cell size and a slope of at most `1/2`.
     pub radius: Grade,
 }
 
@@ -30,8 +33,10 @@ pub struct LatticeSpec {
 pub struct GyroidSpec {
     /// Length of one period.
     pub period: Number,
-    /// The dimensionless level of the gyroid function that bounds the solid. Only a
-    /// constant level is supported.
+    /// The dimensionless level of the gyroid function that bounds the solid: a
+    /// constant, or a linear grade whose anchors differ along one part axis, with
+    /// endpoints in `[-1/4, 1/4]` and a slope of at most `1/10` per millimetre. It
+    /// is not a wall thickness.
     pub level: Grade,
     /// Only [`GyroidKind::Network`] is supported.
     pub kind: GyroidKind,
@@ -52,8 +57,21 @@ pub trait TerminalField {
 impl TerminalField for LatticeSpec {
     const STEP: &'static str = "lattice";
     fn validate(&self) -> Result<(), Refusal> {
-        catallax_features::lattice::validate(&self.cell, self.size.value(), &self.radius)
-            .map(|_| ())
+        catallax_features::lattice::validate(&self.cell, self.size.value(), &self.radius)?;
+        let grade = GradeDef::compile(&self.radius, "lattice.impossible")?
+            .expect("validation refuses distance grades");
+        check_certified(
+            &grade,
+            [
+                "lattice.grade-function-unsupported",
+                "lattice.grade-range-unsupported",
+            ],
+            [
+                &Rational::zero(),
+                &(self.size.value() * &Rational::from_ratio(1, 4).unwrap()),
+            ],
+            &Rational::from_ratio(1, 2).unwrap(),
+        )
     }
     fn operation(&self, region: StepId) -> Operation {
         Operation::Lattice {
@@ -69,7 +87,7 @@ impl TerminalField for LatticeSpec {
 impl TerminalField for GyroidSpec {
     const STEP: &'static str = "gyroid";
     fn validate(&self) -> Result<(), Refusal> {
-        crate::gyroid::Gyroid::new(self.period.value(), &self.level, self.kind, &self.frame)
+        crate::gyroid::Gyroid::certified(self.period.value(), &self.level, self.kind, &self.frame)
             .map(|_| ())
     }
     fn operation(&self, region: StepId) -> Operation {
@@ -206,8 +224,13 @@ impl<S: TerminalField> Stage<S> {
     /// Refusals: `lattice.cad-after-lattice` when the body already contains a
     /// lattice or gyroid, `lattice.settings` for non-positive accuracy, detail or
     /// limits, `lattice.impossible` or `gyroid.impossible` for impossible field
-    /// parameters, `gyroid.unsupported` for a sheet, graded or framed gyroid, and the
-    /// field's own codes when the body cannot be compiled.
+    /// parameters (including coincident grade anchors), `lattice.unsupported-grade`
+    /// or `gyroid.unsupported` for a distance grade, a sheet or a framed gyroid,
+    /// `lattice.grade-function-unsupported` or `gyroid.grade-function-unsupported`
+    /// for linear anchors that do not differ along one part axis,
+    /// `lattice.grade-range-unsupported` or `gyroid.grade-range-unsupported` for an
+    /// endpoint or slope outside the certified range, and the field's own codes when
+    /// the body cannot be compiled. A grade with equal endpoints is its constant.
     pub fn new(
         body: &Recipe,
         spec: S,
@@ -297,7 +320,7 @@ impl<S: TerminalField> Stage<S> {
     pub fn export(&self, dec: &mut Decider) -> Result<Output, Refusal> {
         let floor = &self.settings.minimum_detail * &Rational::from_ratio(1, 4).unwrap();
         let options = self.settings.print_options();
-        let mesh = if options.tolerance < floor {
+        let mesh = if options.tolerance < floor || printing::graded(&self.plan) {
             printing::certified::mesh(&self.plan, &options, &floor, dec)?
         } else {
             printing::mesh_plan_floor(&self.plan, &options, Some(&floor), dec)?

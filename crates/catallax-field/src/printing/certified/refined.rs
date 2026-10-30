@@ -7,11 +7,13 @@ pub(super) struct Grid {
     axes: [Vec<u32>; 3],
 }
 impl Grid {
+    /// `pitch` caps the coarse spacing below what the accuracy alone would choose.
     pub(super) fn new(
         bounds: &[[Rational; 2]; 3],
         options: &Options,
         quarter_phase: bool,
         clip_lines: bool,
+        pitch: Option<&Rational>,
     ) -> Result<Self, Refusal> {
         let accuracy = &options.tolerance;
         let mut coarse = q(1);
@@ -20,6 +22,9 @@ impl Grid {
         }
         while coarse.mul_pow2(1) <= accuracy * &q(4) {
             coarse = coarse.mul_pow2(1);
+        }
+        while pitch.is_some_and(|pitch| coarse > *pitch) {
+            coarse = coarse.mul_pow2(-1);
         }
         // Shift only the supported parametric route. Keep the general route's
         // candidate grid unchanged, including its exact clip-plane insertions.

@@ -144,15 +144,29 @@ fn subtracting_lattice_cannot_use_its_region_as_an_outer_envelope() {
         "field.stand-in-envelope-coverage"
     );
 }
+/// V7d-K extends the moments to the network gyroid. One period of a level-zero network
+/// fills exactly half its box: `p -> (4, 4, 4) - p` maps the box to itself and `g` to
+/// `-g`, exchanging material and void, and the surface has no volume.
 #[test]
-fn a_gyroid_has_no_mass_route_in_this_increment() {
+fn a_constant_gyroid_fills_half_of_one_period_box() {
     let recipe = Recipe::parse(r#"{"format":"catallax-recipe/3","name":"gyroid","steps":[{"id":"box","op":"block","size":["4","4","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"net","op":"gyroid","region":"box","period":"4","level":{"constant":"0"},"kind":"network","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"net"}"#).unwrap();
-    let error = mass::properties(
+    let width = |absolute: &str| QuantityAccuracy {
+        relative: q("0"),
+        absolute: q(absolute),
+    };
+    let result = mass::properties(
         &Plan::compile(&recipe).unwrap(),
-        &Accuracy::default(),
+        &Accuracy {
+            volume: width("1"),
+            centroid: width("1/10"),
+            inertia: width("4"),
+        },
         &Options::default(),
         &mut Decider::default(),
     )
-    .unwrap_err();
-    assert_eq!(error.code, "field.print-coverage");
+    .unwrap();
+    assert!(result.volume.contains(&q("32")) && result.volume.width() <= q("1"));
+    for value in result.centroid.as_ref().unwrap() {
+        assert!(value.width() <= q("1/10"));
+    }
 }

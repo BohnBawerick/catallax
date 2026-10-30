@@ -1,10 +1,47 @@
 """R1 acceptance cases G1-G6, S1-S3 and C3-C4 from the independent designer."""
 import copy
+import contextlib
+import io
+import json
+import tempfile
+from unittest.mock import patch
+
+import metrics
 from pathlib import Path
 import re
 import unittest
 
 import checks
+
+
+class TimingTests(unittest.TestCase):
+    def test_jobs_502_records_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stub = root / 'gh'
+            stub.write_text("#!/usr/bin/env python3\n"
+                            "import base64, json, sys\n"
+                            f"with open({str(root / 'calls')!r}, 'a') as log: log.write(sys.argv[2] + '\\n')\n"
+                            "if '/jobs?' in sys.argv[2]:\n"
+                            "    print('gh: Bad Gateway (HTTP 502)', file=sys.stderr)\n"
+                            "    sys.exit(1)\n"
+                            "print(base64.b64encode(json.dumps({'run_attempt': 1}).encode()).decode())\n")
+            stub.chmod(0o755)
+            output = root / 'timings.json'
+            console = io.StringIO()
+            with patch.object(metrics, 'GITHUB_CLI', str(stub)), \
+                    patch.object(metrics, 'sleep') as sleep, \
+                    patch('sys.argv', ['metrics.py', '--run-id', '123', '--label', 'test',
+                                       '--selection', str(root / 'selection.json'),
+                                       '--out', str(output)]), contextlib.redirect_stdout(console):
+                metrics.main()
+            self.assertEqual(json.loads(output.read_text())['status'], 'timings unavailable')
+            self.assertIn('::warning::', console.getvalue())
+            self.assertIn('HTTP 502', console.getvalue())
+            calls = (root / 'calls').read_text().splitlines()
+            self.assertEqual([url.split('?')[1] for url in calls if '/jobs?' in url],
+                             ['per_page=100&page=1'] * 2 + ['per_page=30&page=1'] * 2)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [20, 40, 60])
 
 
 class GateTests(unittest.TestCase):

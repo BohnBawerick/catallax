@@ -31,8 +31,8 @@ use catallax_numbers::{Answer, Decider, Refusal, operation_budget_active, with_o
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, VertexId};
 
-/// Default aggregate arithmetic allowance for one application build and display.
-/// An existing caller-owned operation allowance takes precedence.
+/// Default arithmetic allowance for an eager build with display, an exact-only
+/// build, or a separate display request. A caller-owned allowance takes precedence.
 pub const DEFAULT_BUILD_WORK: u64 = 20_000_000;
 
 fn bounded_build<T>(run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
@@ -78,6 +78,34 @@ pub struct IncrementalApplicationBody {
     pub display: Answer<Mesh>,
     /// Picking names of that result.
     pub names: Names,
+}
+
+/// A checked exact result and picking names, without an unrequested display mesh.
+#[derive(Clone, Debug)]
+pub struct EvaluatedApplicationBody {
+    /// Owned prefix, reusable by either incremental application entry.
+    pub checkpoint: EvaluationCheckpoint,
+    /// Picking names of the exact result, independent of display.
+    pub names: Names,
+}
+
+impl EvaluatedApplicationBody {
+    /// Requests the certified mesh of this checkpoint, retaining its marks.
+    ///
+    /// This does not cache the mesh. Callers retain displays only for bodies they
+    /// show. Each request spends the active caller allowance, or receives the
+    /// default application guard when no allowance is active. A display refusal
+    /// leaves the exact checkpoint and names available.
+    pub fn display(
+        &self,
+        options: &MeshOptions,
+        decider: &mut Decider,
+    ) -> Result<Answer<Mesh>, Error> {
+        bounded_build(|| {
+            let built = self.checkpoint.built();
+            mesh_body(&built.model, built.result, options, decider).map_err(Error::Display)
+        })
+    }
 }
 
 impl ApplicationBody {
@@ -164,7 +192,7 @@ pub enum Error {
     Display(Refusal),
     /// Definition-native early display could not construct a complete preview.
     ConstructionPreview(Refusal),
-    /// The default whole-build work allowance expired; no body is published.
+    /// The default application work allowance expired; no new result is published.
     ResourceLimit,
     /// A preview/proof allocation could not be reserved from the caller.
     Allocation(Refusal),
@@ -247,15 +275,41 @@ pub fn build_incremental(
     })
 }
 
+/// Resumes an unchanged prefix and checks the exact result without meshing it.
+///
+/// Names and continuation semantics match [`build_incremental`]. Request display
+/// separately through [`EvaluatedApplicationBody::display`] only when needed.
+/// Build and display each honor the active caller allowance, or the default
+/// application guard when called without one.
+pub fn build_incremental_without_display(
+    recipe: &Recipe,
+    prefix: Option<EvaluationCheckpoint>,
+    decider: &mut Decider,
+) -> Result<EvaluatedApplicationBody, Error> {
+    bounded_build(|| {
+        let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
+        let built = checkpoint.built();
+        check_result(built)?;
+        let names = result_names(&built.model, built.result);
+        Ok(EvaluatedApplicationBody { checkpoint, names })
+    })
+}
+
+fn check_result(built: &Built) -> Result<(), Error> {
+    let faults = built.model.check(built.result);
+    if faults.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::InvalidBody(faults))
+    }
+}
+
 fn display_and_names(
     built: &Built,
     options: &MeshOptions,
     decider: &mut Decider,
 ) -> Result<(Answer<Mesh>, Names), Error> {
-    let faults = built.model.check(built.result);
-    if !faults.is_empty() {
-        return Err(Error::InvalidBody(faults));
-    }
+    check_result(built)?;
     let display =
         mesh_body(&built.model, built.result, options, decider).map_err(Error::Display)?;
     let names = result_names(&built.model, built.result);

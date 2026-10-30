@@ -1141,8 +1141,9 @@ The slot's digest compares two builds by rounded geometry. Catallax compares bui
 - `soliddraft::convert(json)` reads `soliddraft-recipe/1` and returns a checked `catallax-recipe/3` plus an original-tag to step-id table. It retains the description, normalises tags without collisions, uses shortest round-trip decimal numbers, and gives profile segments their `l{i}s{j}` names. Rectangle arithmetic happens after conversion to exact numbers.
 - Named and offset XY, YZ and ZX planes convert exactly. Full frames convert to rational quaternions, with exact checks that their axes stay within the source frame tolerance of `1e-9`. Loop joins use SolidDraft's `1e-7` mm tolerance before making shared endpoints exact. Arcs use rational stereographic projection onto their circles, with an exact endpoint displacement check.
 - `build(&recipe, &mesh_options, &mut decider)` returns `ApplicationBody`. Its `built` contains the exact model, result body, intermediate bodies and immutable recipe definition. Its `display` retains the mesh answer's marks. Its `names` maps every result face to its complete origin set and every edge or vertex to its optional persistent name.
-- Only the requested result is topology-checked, meshed and collected into picking maps by the application entry. Intermediate bodies retain their exact topology and origins, but their display limits cannot refuse a different requested result. Callers can explicitly query or mesh those bodies through the existing model APIs.
-- `build_soliddraft(json, &mesh_options, &mut decider)` converts and builds in one call, returning the body and the tag table. Neither entry computes mass properties or writes STEP as part of rebuilding.
+- The eager entries topology-check, mesh and collect picking maps only for the requested result. Intermediate bodies retain their exact topology and origins, but their display limits cannot refuse a different requested result. Callers can explicitly query or mesh those bodies through the existing model APIs.
+- `build_incremental_without_display(&recipe, prefix, &mut decider)` checks the requested exact result and returns its checkpoint and picking names without meshing it. Request a certified mesh later with `EvaluatedApplicationBody::display`; bodies used only as tools or rebuild prefixes need no display.
+- `build_soliddraft(json, &mesh_options, &mut decider)` converts and builds in one call, returning the body and the tag table. These build entries do not compute mass properties or write STEP as part of rebuilding.
 - `ApplicationBody::mass_properties(&accuracy, &mut decider)` requests proven volume, area, centroid and unit-density centroidal inertia for that result. `ApplicationBody::inertia` requests only the tensor. Both borrow the body; a measurement refusal leaves the build and display available. The tensor is a symmetric 3-by-3 enclosure matrix in model axes, with negative products of inertia off the diagonal and length units to the fifth power.
 - `ApplicationBody::face_centroid`, `edge_length` and `edge_midpoint` request proven enclosures for exact picking handles. The midpoint is halfway along the trimmed arc. `bounding_box` requests the result body's axis-aligned box; `face_bounding_box` requests one face's box. Bounds have no display chord padding. All queries borrow the existing build and leave it usable after a refusal.
 - Display options can request an angular-deviation bound in radians and a maximum triangle/polyline edge length. Face reports include an aspect-ratio bound. A requested aspect limit that is not certified appears in `Mesh::unavailable_controls`; callers must not treat it as a guarantee.
@@ -1193,12 +1194,30 @@ returns `IncrementalApplicationBody` with `checkpoint`, `display` and `names`.
 The application checks topology and derives display from `checkpoint.built()`.
 It honors the same aggregate application work guard and caller-owned allowance
 as `build`; prefix reuse does not reset or enlarge either limit.
+
+For edit rebuilds that do not need a certified mesh immediately,
+`catallax_app::build_incremental_without_display(&recipe, prefix, &mut decider)`
+returns `EvaluatedApplicationBody` with `checkpoint` and the same `names`.
+It performs the same exact suffix evaluation and result topology check, without
+calling the mesher. Both incremental entries accept the same checkpoints.
+`body.display(&mesh_options, &mut decider)` later returns the certified
+`Answer<Mesh>`, including its marks, from that retained exact result. It does not
+cache the mesh; the caller owns display retention. A display refusal leaves the
+checkpoint and names usable and retains the mesher's refusal code.
+
+The no-display build and each later display request spend the current caller
+allowance without resetting or enlarging it. Without an active caller allowance,
+each call has its own `DEFAULT_BUILD_WORK` guard and reports
+`application.work-limit` if that guard expires. The eager entry still bounds
+build and display together. A successful no-display build does not certify a
+display or promise that a later display request will succeed.
+
 SolidDraft should keep the checkpoint with each body handle and pass
 `Some(saved.clone())` into the next merged recipe. Keep `saved` for undo, redo,
 branch edits and concurrent exact queries. A failed continuation leaves it usable.
 `into_built()` also keeps retained checkpoints isolated if the extracted model
 is later changed. Conversion and backend integration stay on the caller's side.
-Neither build entry requests measurement or comparison. Diagnostic timing remains
+None of these build entries requests measurement or comparison. Diagnostic timing remains
 opt-in through the existing operation recorder.
 
 The public 320 by 20 by 10 mm benchmark cuts thirty 2 by 4 mm holes, either at the

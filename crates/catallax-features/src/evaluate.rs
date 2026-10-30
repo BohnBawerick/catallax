@@ -10,6 +10,10 @@ use catallax_topology::{BodyId, BodyKind, Model};
 use im::OrdMap;
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
+/// Immutable STEP source bytes, keyed by the SHA-256 saved in the recipe.
+/// File names are labels, not paths the evaluator opens.
+pub type ImportFiles<'a> = BTreeMap<String, &'a [u8]>;
+
 /// A complete build. Intermediate input bodies remain immutable and queryable.
 #[derive(Clone, Debug)]
 pub struct Built {
@@ -326,7 +330,24 @@ fn through(
 /// cuts, booleans, patterns and mirrors.
 /// Other recipe operations retain their unfinished-operation refusal, not a partial body.
 pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError> {
-    evaluate_impl(recipe, None, EvaluationState::default(), 0, dec)
+    evaluate_impl(
+        recipe,
+        &ImportFiles::new(),
+        None,
+        EvaluationState::default(),
+        0,
+        dec,
+    )
+    .map(|state| state.finish(Arc::new(recipe.clone())))
+}
+
+/// Builds a recipe with caller-supplied immutable STEP sources.
+pub fn evaluate_with_files(
+    recipe: &Recipe,
+    files: &ImportFiles<'_>,
+    dec: &mut Decider,
+) -> Result<Built, BuildError> {
+    evaluate_impl(recipe, files, None, EvaluationState::default(), 0, dec)
         .map(|state| state.finish(Arc::new(recipe.clone())))
 }
 
@@ -343,6 +364,17 @@ pub fn evaluate_incremental(
     prefix: Option<EvaluationCheckpoint>,
     dec: &mut Decider,
 ) -> Result<EvaluationCheckpoint, BuildError> {
+    evaluate_incremental_with_files(recipe, prefix, &ImportFiles::new(), dec)
+}
+
+/// Evaluates a suffix with immutable STEP sources, including sources in the prefix.
+/// Missing or changed bytes are recipe errors even when geometry could be reused.
+pub fn evaluate_incremental_with_files(
+    recipe: &Recipe,
+    prefix: Option<EvaluationCheckpoint>,
+    files: &ImportFiles<'_>,
+    dec: &mut Decider,
+) -> Result<EvaluationCheckpoint, BuildError> {
     let (state, start) = match prefix {
         Some(prefix)
             if prefix.policy == *dec.policy()
@@ -354,7 +386,7 @@ pub fn evaluate_incremental(
         }
         _ => (EvaluationState::default(), 0),
     };
-    let mut state = evaluate_impl(recipe, None, state, start, dec)?;
+    let mut state = evaluate_impl(recipe, files, None, state, start, dec)?;
     let profiles = std::mem::take(&mut state.profiles);
     let bodies = state.bodies.clone();
     Ok(EvaluationCheckpoint {
@@ -374,6 +406,7 @@ pub fn evaluate_certified(
     let mut certification = crate::certified::CertificationContext::new(recipe);
     let state = evaluate_impl(
         recipe,
+        &ImportFiles::new(),
         Some(&mut certification),
         EvaluationState::default(),
         0,
@@ -394,12 +427,34 @@ pub fn evaluate_certified(
 
 fn evaluate_impl(
     recipe: &Recipe,
+    files: &ImportFiles<'_>,
     mut certification: Option<&mut crate::certified::CertificationContext<'_>>,
     state: EvaluationState,
     start: usize,
     dec: &mut Decider,
 ) -> Result<EvaluationState, BuildError> {
     recipe.check().map_err(BuildError::Recipe)?;
+    for step in &recipe.steps {
+        if let Operation::ImportStep { file, .. } = &step.op {
+            let source = files.get(&file.sha256).ok_or_else(|| {
+                BuildError::Recipe(RecipeError::Parse {
+                    message: format!(
+                        "step {}: missing STEP source {} with sha256 {}",
+                        step.id, file.name, file.sha256
+                    ),
+                })
+            })?;
+            let actual = catallax_import::sha256_hex(source);
+            if actual != file.sha256 {
+                return Err(BuildError::Recipe(RecipeError::Parse {
+                    message: format!(
+                        "step {}: STEP source {} sha256 mismatch: expected {}, actual {actual}",
+                        step.id, file.name, file.sha256
+                    ),
+                }));
+            }
+        }
+    }
     let EvaluationState {
         mut model,
         mut profiles,
@@ -419,6 +474,88 @@ fn evaluate_impl(
             }
             Ok(Some(match &step.op {
                 Operation::Sketch { .. } => return Ok(None),
+                Operation::ImportStep {
+                    file,
+                    pose,
+                    decisions,
+                } => {
+                    let prefix = format!("repair:{}:", &file.sha256[..12]);
+                    let decisions = decisions
+                        .iter()
+                        .map(|(question, value)| {
+                            let id = question.strip_prefix(&prefix).filter(|id| {
+                                id.strip_prefix('g').is_some_and(|index| {
+                                    !index.is_empty() && index.bytes().all(|c| c.is_ascii_digit())
+                                })
+                            });
+                            match (id, value.as_str()) {
+                                (Some(id), "decline") => Ok(catallax_import::Decision::Decline {
+                                    id: id.to_string(),
+                                }),
+                                _ => Err(Refusal::new(
+                                    "import.invalid-decision",
+                                    format!("question {question}: only decline of a question about these bytes is supported"),
+                                )),
+                            }
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let imported = catallax_import::apply(
+                        model,
+                        files[&file.sha256],
+                        &file.name,
+                        &Default::default(),
+                        &decisions,
+                        Some(&step.id),
+                    )
+                    .map_err(import_refusal)?;
+                    let count = imported.bodies.len() + imported.left_open.len();
+                    if count != 1 {
+                        let solids = imported
+                            .bodies
+                            .iter()
+                            .map(|(name, _)| name.as_str())
+                            .chain(imported.left_open.iter().map(String::as_str))
+                            .collect::<Vec<_>>();
+                        return Err(Refusal::new(
+                            "import.multibody",
+                            format!(
+                                "the file holds {count} solids [{}]; a recipe step holds one body",
+                                solids.join(", ")
+                            ),
+                        ));
+                    }
+                    if !imported.left_open.is_empty() {
+                        return Err(Refusal::new(
+                            "import.left-open",
+                            format!(
+                                "{} not imported until the gap is resolved. The original file was never changed",
+                                imported.left_open.join(", ")
+                            ),
+                        ));
+                    }
+                    let raw = imported.bodies[0].1;
+                    let body = if pose == &catallax_recipe::Pose::identity() {
+                        raw
+                    } else {
+                        let placement = crate::profile::placement(pose, dec)?;
+                        catallax_topology::transformed_body(
+                            model,
+                            raw,
+                            &Isometry::from(&placement),
+                            Clone::clone,
+                        )
+                    };
+                    let bounds =
+                        catallax_measure::bounding_box(model, body, &Default::default(), dec)?
+                            .value
+                            .ok_or_else(|| {
+                                Refusal::new("import.not-solid", "the imported body has no bounds")
+                            })?;
+                    let radius = (0..3).fold(Rational::zero(), |sum, i| {
+                        sum + bounds.min[i].abs().max(bounds.max[i].abs())
+                    });
+                    BodyValue { body, radius }
+                }
                 Operation::Extrude {
                     profile,
                     distance,
@@ -1074,4 +1211,23 @@ fn evaluate_impl(
         chamfers,
         stand_ins,
     })
+}
+
+fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
+    use catallax_import::ImportRefusal;
+    let code = match &error {
+        ImportRefusal::Malformed { .. } => "import.malformed",
+        ImportRefusal::Unsupported { .. } => "import.unsupported",
+        ImportRefusal::UnknownUnit { .. } => "import.unknown-unit",
+        ImportRefusal::HashMismatch { .. } => "import.hash-mismatch",
+        ImportRefusal::NotSolid { .. } => "import.not-solid",
+        ImportRefusal::InvalidDecision { .. } => "import.invalid-decision",
+        ImportRefusal::ValidationFailed { .. } => "import.validation-failed",
+        ImportRefusal::SelfIntersecting { .. } => "import.self-intersecting",
+        ImportRefusal::SelfIntersectionNotVerified { .. } => {
+            "import.self-intersection-not-verified"
+        }
+        ImportRefusal::ResourceLimit => "import.resource-limit",
+    };
+    Refusal::new(code, format!("{error:?}"))
 }

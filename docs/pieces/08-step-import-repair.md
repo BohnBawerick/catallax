@@ -1,6 +1,6 @@
 # Piece 8: STEP import and bounded gap repair (contract)
 
-Status: contract only. No importer exists on main. `docs/DESIGN.md` records "The importer is not built yet", `catallax-step` only writes, and `Operation::ImportStep` in `catallax-recipe` is a schema entry with no consumer. This file fixes the narrow first supported path so the build can start from written text. It does not claim any implemented behavior.
+Status: `catallax-import` implements the reader, body construction, repair policy and change records described below. The file-carrying feature and application build entries evaluate `Operation::ImportStep` for one solid, with saved declines and immutable source verification. SolidDraft preview, persistence and checked-export integration remain the separate V9-S companion. See `docs/interface-changes/2026-10-30-step-import-recipe-evaluation.md` for the build contract.
 
 ## Why this is not a slice yet
 

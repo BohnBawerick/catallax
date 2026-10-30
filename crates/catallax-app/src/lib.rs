@@ -25,7 +25,10 @@ pub use certified::{CertifiedApplicationBody, build_certified};
 
 use std::{collections::BTreeMap, fmt};
 
-use catallax_features::{BuildError, Built, EvaluationCheckpoint, evaluate, evaluate_incremental};
+use catallax_features::{
+    BuildError, Built, EvaluationCheckpoint, ImportFiles, evaluate, evaluate_incremental,
+    evaluate_incremental_with_files,
+};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
 use catallax_numbers::{Answer, Decider, Refusal, operation_budget_active, with_operation_budget};
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
@@ -266,6 +269,29 @@ pub fn build_incremental(
 ) -> Result<IncrementalApplicationBody, Error> {
     bounded_build(|| {
         let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
+        let (display, names) = display_and_names(checkpoint.built(), options, decider)?;
+        Ok(IncrementalApplicationBody {
+            checkpoint,
+            display,
+            names,
+        })
+    })
+}
+
+/// Builds an exact checkpoint, display and names with immutable STEP source bytes.
+///
+/// Sources are keyed by the SHA-256 in each import step. Every source must be
+/// supplied even for a reused prefix; missing or changed bytes are recipe errors.
+pub fn build_incremental_with_files(
+    recipe: &Recipe,
+    prefix: Option<EvaluationCheckpoint>,
+    files: &ImportFiles<'_>,
+    options: &MeshOptions,
+    decider: &mut Decider,
+) -> Result<IncrementalApplicationBody, Error> {
+    bounded_build(|| {
+        let checkpoint = evaluate_incremental_with_files(recipe, prefix, files, decider)
+            .map_err(Error::Build)?;
         let (display, names) = display_and_names(checkpoint.built(), options, decider)?;
         Ok(IncrementalApplicationBody {
             checkpoint,

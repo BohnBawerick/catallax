@@ -948,11 +948,20 @@ impl Surface {
                     return Ok(b / &(minor * &(major * major - minor * minor)));
                 }
             }
-            // `|(D - minor)(D + minor)| <= b` gives `|D - minor| <= b/minor`
-            // for the distance `D` to the tube centre on this sheet's side.
+            // In a meridian half-plane the residual is `D^2 - minor^2` for the
+            // distance `D` to the tube centre. Where the nearest tube point is
+            // retained, `|D - minor| <= b/minor`. Elsewhere the point lies in
+            // the triangle between the tube centre and the axis points
+            // `(0, +-h)`, `h^2 = minor^2 - major^2`, and there `b >= h|p - e|`
+            // for the nearer axis point `e`. A horn sheet has no such triangle.
             Self::TorusSheet(s) => {
-                if let Some(minor) = s.minor.rational_ref() {
-                    return Ok(b / minor);
+                if let (Some(major), Some(minor)) = (s.major.rational_ref(), s.minor.rational_ref())
+                {
+                    let h_sq = minor * minor - major * major;
+                    return Ok(match h_sq.recip() {
+                        Some(inverse) => b * &math::sqrt_upper(&inverse),
+                        None => b / minor,
+                    });
                 }
             }
             Self::EllipticCylinder(_) => {}
@@ -965,7 +974,7 @@ impl Surface {
             Self::Cone(s) => (&bound / &s.axis.norm_squared()).sqrt(),
             Self::Sphere(s) => &bound / &s.radius,
             Self::Torus(s) => &bound / &(&s.minor * &(&s.major.square() - &s.minor.square())),
-            Self::TorusSheet(s) => &bound / &s.minor,
+            Self::TorusSheet(s) => &bound / &(s.minor.square() - s.major.square()).sqrt(),
             Self::EllipticCylinder(s) => &bound * &s.major_sq.sqrt(),
             Self::BSpline(_) => return Err(no_global_equation()),
         };

@@ -12,6 +12,9 @@ import unittest
 
 # Required here, not an optional skip: CI must actually run the native checker.
 import OCP  # noqa: F401
+from OCP.BRepCheck import BRepCheck_Analyzer
+
+from test_loopless_faces import raw_solid
 
 ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(os.environ.get('CATALLAX_VERIFY_BINARY', ROOT / 'target/release/catallax-verify')).resolve()
@@ -66,13 +69,21 @@ class StepImportTests(unittest.TestCase):
         self.assertEqual(result['status'], 'passed', result)
         return result
 
+    def assert_raw_valid(self, directory):
+        self.assertTrue(BRepCheck_Analyzer(raw_solid(directory / 'answer.step')).IsValid())
+
     def assert_regularization(self, directory, expected_gap):
+        # The gap's reconnection leaves a wedge in front of the stand closing to
+        # an edge too short to read, and closing it a strip beside the stand.
         report = json.loads((directory / 'step-regularizations.json').read_text())
-        self.assertEqual(len(report['regularizations']), 1)
-        bound = Fraction(report['regularizations'][0]['max_deviation_mm'])
-        self.assertEqual(bound, expected_gap)
-        self.assertLessEqual(bound, Fraction(1, 1_000_000))
-        self.assertGreaterEqual(Fraction(report['max_deviation_mm']), bound)
+        records = report['regularizations']
+        self.assertEqual([(r['removed_faces'], r['removed_edges']) for r in records],
+                         [(1, 0), (1, 2), (1, 2)])
+        self.assertEqual(Fraction(records[0]['max_deviation_mm']), expected_gap)
+        for record in records:
+            bound = Fraction(record['max_deviation_mm'])
+            self.assertLessEqual(bound, Fraction(1, 1_000_000))
+            self.assertGreaterEqual(Fraction(report['max_deviation_mm']), bound)
         return report
 
     def test_captured_slot_cut_and_earlier_bracket_prefixes(self):
@@ -87,14 +98,14 @@ class StepImportTests(unittest.TestCase):
                 question['problem']['result'] = result
                 directory, manifest = self.export(question)
                 self.assertEqual(manifest['result']['faces'], model_faces)
-                self.assert_import(directory, model_faces - 1)
+                self.assert_import(directory, model_faces - 3)
                 report = self.assert_regularization(directory, gap)
-                self.assertEqual(report['faces'], model_faces - 1)
+                self.assertEqual(report['faces'], model_faces - 3)
+                self.assert_raw_valid(directory)
                 if result == 'op_140':
-                    # A rounded-away planar sliver remains after the slot cut.
-                    # Partial cylinder charts must not rewrite an export whose
-                    # other edges the raw translator cannot resolve.
-                    self.assertEqual(manifest['step']['added_edges'], 0)
+                    # With no sliver left, the slot's partial cylinder charts
+                    # are written too.
+                    self.assertEqual(manifest['step']['added_edges'], 2)
 
     def test_parallel_gaps_in_multiple_axes_and_operand_orders(self):
         gap = Fraction(1, 10**30)
@@ -105,9 +116,10 @@ class StepImportTests(unittest.TestCase):
             with self.subTest(rotation=rotation, reverse=reverse):
                 directory, manifest = self.export(bracket(gap, rotation, reverse))
                 self.assertEqual(manifest['result']['faces'], 11)
-                result = self.assert_import(directory, 10)
+                result = self.assert_import(directory, 8)
                 report = self.assert_regularization(directory, gap)
-                self.assertEqual(report['faces'], 10)
+                self.assertEqual(report['faces'], 8)
+                self.assert_raw_valid(directory)
                 self.assertAlmostEqual(result['volume_mm3'], 168.0, delta=1e-9)
 
     def test_resolvable_gap_and_standalone_slot_stay_unregularized(self):
@@ -141,7 +153,7 @@ class StepImportTests(unittest.TestCase):
                     self.assertFalse((directory / 'answer.step').exists())
                     self.assertFalse((directory / 'step-regularizations.json').exists())
                 elif gap < Fraction(1, 1_000_000):
-                    self.assert_import(directory, 10)
+                    self.assert_import(directory, 8)
                     self.assert_regularization(directory, gap)
                 else:
                     self.assert_import(directory, 11)

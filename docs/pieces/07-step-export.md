@@ -193,8 +193,11 @@ between them, and one wall can move onto the other's plane.
 
 A wall can move when it has one wire of straight edges, every neighbour across
 those edges is planar and still contains the moved edge, and each of its vertices
-has one edge outside the wall. A ribbon vertex then lands on the far end of its
-end edge. Any other vertex slides along its outside edge to the kept plane. Of the
+has one edge outside the wall or already lies on the kept plane. A ribbon vertex
+then lands on the far end of its end edge. Any other vertex with one outside edge
+slides along it to the kept plane, and a vertex with more stays where it is. A
+vertex that lands on a vertex the neighbour already has needs no other check
+against that neighbour, whose earlier repair may already carry a deviation. Of the
 walls that can move, the one with the smaller area moves, which changes the file's
 volume least. All of this is exact and spends no decision work until a short-ended
 ribbon exists. A shell holding a vertex loop keeps its topology.
@@ -217,10 +220,33 @@ deviation; a 1e-7 mm step on a 900 mm2 wall changes the file's volume by 9e-5 mm
 
 A step wider than the floor keeps its bytes, however close. So does a whole body
 scaled down until every edge is short, because its long edges fall below the floor
-or its width stays large against its length. Other narrow shapes, such as a ribbon
-with more than four edges or a curved neighbour, keep the original topology and
-remain uncorrected. Other classes of export regularization are not implied by
-these rules.
+or its width stays large against its length.
+
+#### Planar wedges too narrow to read
+
+A planar face's wire can also turn back on itself across one straight edge at or
+below the floor, written, between two straight edges at least ten times its
+length. When those two edges border planar walls facing the same way, the face
+holds a wedge closing to that short edge, and the exporter closes it. One wall
+moves onto the other's plane by the rules above: its vertex on the short edge
+lands on the edge's other end, so the two long edges fold onto one line. The short
+edge and both long edges leave the file, the moved wall becomes part of the kept
+one, and one straight edge joins the long edges' far ends unless they are one
+vertex. A three-sided wedge face is then empty and leaves too. The new edge's
+error is the larger of the two long edges' errors plus the displacement bound.
+
+Each repair removes the moved wall and, for a three-sided wedge, the wedge face:
+one or two faces. It removes the three edges and adds the joining edge when there
+is one: two or three edges. The new edge can itself be too short to read, as when
+a plate's front leans 2e-17 mm proud of a flange and the flange starts 2e-28 mm in
+from the plate's side; the next repair then closes the wedge it bounds. A wedge
+wider than the floor, or scaled down with its whole body, keeps its bytes as a
+step does.
+
+Other narrow shapes, such as a ribbon with more than four edges, a narrowing with
+no short edge, or a curved neighbour, keep the original topology and remain
+uncorrected. Other classes of export regularization are not implied by these
+rules.
 
 
 ### Geometry

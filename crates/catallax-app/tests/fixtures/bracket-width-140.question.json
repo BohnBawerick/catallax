@@ -1,0 +1,506 @@
+{
+  "format": "catallax-question/1",
+  "max_work": 100000000,
+  "problem": {
+    "format": "catallax-recipe/4",
+    "name": "SolidDraft",
+    "result": "op_675",
+    "steps": [
+      {
+        "id": "op_467",
+        "loops": [
+          [
+            {
+              "id": "l0s0",
+              "kind": "line",
+              "to": [
+                "130",
+                "0"
+              ]
+            },
+            {
+              "id": "l0s1",
+              "kind": "line",
+              "to": [
+                "130",
+                "90"
+              ]
+            },
+            {
+              "id": "l0s2",
+              "kind": "line",
+              "to": [
+                "-9.99999999999999",
+                "90"
+              ]
+            },
+            {
+              "id": "l0s3",
+              "kind": "line",
+              "to": [
+                "-9.99999999999999",
+                "0"
+              ]
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "10",
+        "id": "op_469",
+        "op": "extrude",
+        "profile": "op_467"
+      },
+      {
+        "id": "op_497",
+        "loops": [
+          [
+            {
+              "id": "l0s0",
+              "kind": "line",
+              "to": [
+                "10",
+                "0"
+              ]
+            },
+            {
+              "id": "l0s1",
+              "kind": "line",
+              "to": [
+                "10",
+                "90"
+              ]
+            },
+            {
+              "id": "l0s2",
+              "kind": "line",
+              "to": [
+                "0",
+                "90"
+              ]
+            },
+            {
+              "id": "l0s3",
+              "kind": "line",
+              "to": [
+                "0",
+                "0"
+              ]
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "72",
+        "id": "op_499",
+        "op": "extrude",
+        "profile": "op_497"
+      },
+      {
+        "id": "op_527",
+        "kind": "union",
+        "op": "boolean",
+        "target": "op_469",
+        "tool": "op_499"
+      },
+      {
+        "id": "op_550",
+        "loops": [
+          [
+            {
+              "centre": [
+                "70",
+                "45"
+              ],
+              "id": "l0s0",
+              "kind": "circle",
+              "radius": "12"
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "30",
+        "id": "op_552",
+        "op": "extrude",
+        "profile": "op_550"
+      },
+      {
+        "id": "op_559",
+        "kind": "union",
+        "op": "boolean",
+        "target": "op_527",
+        "tool": "op_552"
+      },
+      {
+        "id": "op_565",
+        "loops": [
+          [
+            {
+              "centre": [
+                "70",
+                "45"
+              ],
+              "id": "l0s0",
+              "kind": "circle",
+              "radius": "6"
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "40",
+        "id": "op_567",
+        "op": "extrude",
+        "profile": "op_565"
+      },
+      {
+        "id": "op_574",
+        "kind": "subtract",
+        "op": "boolean",
+        "target": "op_559",
+        "tool": "op_567"
+      },
+      {
+        "id": "op_581",
+        "loops": [
+          [
+            {
+              "centre": [
+                "25",
+                "23"
+              ],
+              "id": "l0s0",
+              "kind": "circle",
+              "radius": "4.5"
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "12",
+        "id": "op_583",
+        "op": "extrude",
+        "profile": "op_581"
+      },
+      {
+        "id": "op_590",
+        "kind": "subtract",
+        "op": "boolean",
+        "target": "op_574",
+        "tool": "op_583"
+      },
+      {
+        "id": "op_597",
+        "loops": [
+          [
+            {
+              "centre": [
+                "25",
+                "67"
+              ],
+              "id": "l0s0",
+              "kind": "circle",
+              "radius": "4.5"
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "12",
+        "id": "op_599",
+        "op": "extrude",
+        "profile": "op_597"
+      },
+      {
+        "id": "op_606",
+        "kind": "subtract",
+        "op": "boolean",
+        "target": "op_590",
+        "tool": "op_599"
+      },
+      {
+        "id": "op_613",
+        "loops": [
+          [
+            {
+              "centre": [
+                "115",
+                "23"
+              ],
+              "id": "l0s0",
+              "kind": "circle",
+              "radius": "4.5"
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "12",
+        "id": "op_615",
+        "op": "extrude",
+        "profile": "op_613"
+      },
+      {
+        "id": "op_622",
+        "kind": "subtract",
+        "op": "boolean",
+        "target": "op_606",
+        "tool": "op_615"
+      },
+      {
+        "id": "op_629",
+        "loops": [
+          [
+            {
+              "centre": [
+                "115",
+                "67"
+              ],
+              "id": "l0s0",
+              "kind": "circle",
+              "radius": "4.5"
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "0",
+          "0",
+          "1"
+        ],
+        "distance": "12",
+        "id": "op_631",
+        "op": "extrude",
+        "profile": "op_629"
+      },
+      {
+        "id": "op_638",
+        "kind": "subtract",
+        "op": "boolean",
+        "target": "op_622",
+        "tool": "op_631"
+      },
+      {
+        "id": "op_645",
+        "loops": [
+          [
+            {
+              "id": "l0s0",
+              "kind": "line",
+              "to": [
+                "65",
+                "25"
+              ]
+            },
+            {
+              "id": "l0s1",
+              "kind": "line",
+              "to": [
+                "65",
+                "37"
+              ]
+            },
+            {
+              "id": "l0s2",
+              "kind": "line",
+              "to": [
+                "25",
+                "37"
+              ]
+            },
+            {
+              "id": "l0s3",
+              "kind": "line",
+              "to": [
+                "25",
+                "25"
+              ]
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "-1",
+            "-1",
+            "-1",
+            "-1"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "direction": [
+          "1",
+          "0",
+          "0"
+        ],
+        "distance": "12",
+        "id": "op_647",
+        "op": "extrude",
+        "profile": "op_645"
+      },
+      {
+        "id": "op_675",
+        "kind": "subtract",
+        "op": "boolean",
+        "target": "op_638",
+        "tool": "op_647"
+      }
+    ]
+  },
+  "source": "recipe"
+}

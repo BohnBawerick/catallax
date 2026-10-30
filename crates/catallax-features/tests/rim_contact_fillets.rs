@@ -1,110 +1,273 @@
 //! P5 flanged housing: the junction fillet continues over the four countersink
 //! mouths as torus pieces between the holes and one checked rolling-envelope
-//! face per hole, for the authored radius 2 and its edit to 5/2.
+//! face per hole, for the authored radius 2, its edit to 5/2, and the translated
+//! and scaled definitions, all inside one application allowance.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_features::evaluate;
-use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational};
-use catallax_recipe::{Operation, Origin, Recipe, Role};
+use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, with_operation_budget};
+use catallax_recipe::{Origin, Recipe, Role};
 use catallax_shapes::{ROLLING_ENVELOPE_TARGET_NM, SplineSupport, Surface};
 use catallax_topology::Loop;
+use serde_json::{Value, json};
 
-fn recipe(radius: &str) -> Recipe {
-    let mut recipe = Recipe::parse(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
-    let last = recipe.steps.len() - 1;
-    let Operation::Fillet { radius: r, .. } = &mut recipe.steps[last].op else {
-        panic!("P5 ends with its junction fillet");
-    };
-    *r = serde_json::from_value(serde_json::json!(radius)).unwrap();
+const APPLICATION_ALLOWANCE: u64 = 20_000_000;
+
+fn canonical() -> Value {
+    serde_json::from_str(include_str!("../../../parts/P5-flanged-housing.json")).unwrap()
+}
+fn step<'a>(recipe: &'a mut Value, id: &str) -> &'a mut Value {
+    recipe["steps"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|step| step["id"] == id)
+        .unwrap()
+}
+fn number(value: &Value) -> Rational {
+    Rational::parse(value.as_str().unwrap()).unwrap()
+}
+fn rational(value: &Rational) -> Value {
+    json!(value.to_string())
+}
+fn with_radius(radius: &str) -> Value {
+    let mut recipe = canonical();
+    step(&mut recipe, "filleted")["radius"] = json!(radius);
     recipe
+}
+// Definition points of the sketch plane, both tool poses and both axes.
+fn placed_points(recipe: &mut Value, mut edit: impl FnMut(&mut Value)) {
+    edit(&mut step(recipe, "section")["plane"]["translation"]);
+    edit(&mut step(recipe, "housing")["axis"]["point"]);
+    edit(&mut step(recipe, "drill")["pose"]["translation"]);
+    edit(&mut step(recipe, "sink")["pose"]["translation"]);
+    edit(&mut step(recipe, "hole-pattern")["layout"]["circular"]["axis"]["point"]);
+}
+fn translated(by: [i64; 3]) -> Value {
+    let mut recipe = canonical();
+    placed_points(&mut recipe, |point| {
+        for (i, by) in by.iter().enumerate() {
+            point[i] = rational(&(number(&point[i]) + Rational::from_i64(*by)));
+        }
+    });
+    recipe
+}
+// A definition edit: every length of the part, including the fillet radius.
+fn scaled(factor: &Rational) -> Value {
+    let times = |value: &mut Value| *value = rational(&(number(value) * factor.clone()));
+    let mut recipe = canonical();
+    placed_points(&mut recipe, |point| {
+        point.as_array_mut().unwrap().iter_mut().for_each(times);
+    });
+    let section = step(&mut recipe, "section");
+    for segment in section["loops"][0].as_array_mut().unwrap() {
+        segment["to"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .for_each(times);
+    }
+    for (id, lengths) in [
+        ("drill", &["radius", "height"][..]),
+        ("sink", &["base_radius", "top_radius", "height"]),
+        ("filleted", &["radius"]),
+    ] {
+        for length in lengths {
+            times(&mut step(&mut recipe, id)[*length]);
+        }
+    }
+    recipe
+}
+// Quaternion (1,2,3,4) on every frame, point and axis direction: rotation
+// matrix over the squared norm 30, and pose rotations composed on the left.
+fn rotated() -> Value {
+    const MATRIX: [[i64; 3]; 3] = [[-20, 4, 22], [20, -10, 20], [10, 28, 4]];
+    let turn = |vector: &mut Value| {
+        let old: Vec<Rational> = (0..3).map(|i| number(&vector[i])).collect();
+        for (i, row) in MATRIX.iter().enumerate() {
+            let sum = (0..3).fold(Rational::zero(), |sum, j| {
+                sum + old[j].clone() * Rational::from_ratio(row[j], 30).unwrap()
+            });
+            vector[i] = rational(&sum);
+        }
+    };
+    let compose = |rotation: &mut Value| {
+        let [w, x, y, z] =
+            [0, 1, 2, 3].map(|i| rotation[i].as_str().unwrap().parse::<i64>().unwrap());
+        *rotation = json!([
+            (w - 2 * x - 3 * y - 4 * z).to_string(),
+            (x + 2 * w + 3 * z - 4 * y).to_string(),
+            (y + 3 * w + 4 * x - 2 * z).to_string(),
+            (z + 4 * w + 2 * y - 3 * x).to_string(),
+        ]);
+    };
+    let mut recipe = canonical();
+    placed_points(&mut recipe, turn);
+    compose(&mut step(&mut recipe, "section")["plane"]["rotation"]);
+    compose(&mut step(&mut recipe, "drill")["pose"]["rotation"]);
+    compose(&mut step(&mut recipe, "sink")["pose"]["rotation"]);
+    turn(&mut step(&mut recipe, "housing")["axis"]["direction"]);
+    turn(&mut step(&mut recipe, "hole-pattern")["layout"]["circular"]["axis"]["direction"]);
+    recipe
+}
+fn parsed(recipe: &Value) -> Recipe {
+    Recipe::parse(&recipe.to_string()).unwrap()
 }
 fn decider() -> Decider {
     Decider::new(BudgetPolicy {
-        max_work: 100_000_000,
+        max_work: APPLICATION_ALLOWANCE,
         ..Default::default()
     })
+}
+
+// The exact contact law one row must retain, in millimetres.
+struct Contact {
+    origin: [Rational; 3],
+    radius: Rational,
+    scale: Rational,
+}
+
+fn ratio(numerator: i64, denominator: i64) -> Rational {
+    Rational::from_ratio(numerator, denominator).unwrap()
 }
 
 #[test]
 fn p5_junction_continues_over_countersink_mouths() {
     let target = Rational::from_ratio(ROLLING_ENVELOPE_TARGET_NM, 1_000_000).unwrap();
+    let whole = Rational::one();
+    let plain = |origin: [i64; 3], radius: Rational, scale: &Rational| Contact {
+        origin: origin.map(Rational::from_i64),
+        radius,
+        scale: scale.clone(),
+    };
+    let half = ratio(1, 2);
+    let double = Rational::from_i64(2);
+    let rows = [
+        (canonical(), plain([0, 5, 0], ratio(2, 1), &whole)),
+        (with_radius("5/2"), plain([0, 5, 0], ratio(5, 2), &whole)),
+        (
+            translated([7, 11, -13]),
+            plain([7, 16, -13], ratio(2, 1), &whole),
+        ),
+        (
+            scaled(&half),
+            Contact {
+                origin: [Rational::zero(), ratio(5, 2), Rational::zero()],
+                radius: Rational::one(),
+                scale: half.clone(),
+            },
+        ),
+        (scaled(&double), plain([0, 10, 0], ratio(4, 1), &double)),
+    ];
     let mut names: Option<BTreeSet<Origin>> = None;
-    for radius in ["2", "5/2"] {
-        let mut dec = decider();
-        let built = evaluate(&recipe(radius), &mut dec).unwrap();
-        let model = &built.model;
-        assert_eq!(model.check(built.result), vec![]);
-        let faces = model.faces_of_body(built.result);
-        assert_eq!(faces.len(), 22);
-        let (mut tori, mut envelopes) = (0, 0);
-        let mut blends = BTreeSet::new();
-        for face in &faces {
-            let surface = model.geom().surface(model.face(*face).surface);
-            let blend = model
-                .face_origins(*face)
-                .iter()
-                .any(|o| matches!(o.role, Role::Blend { .. }));
-            match surface {
-                Surface::Torus(_) => {
-                    assert!(blend);
-                    tori += 1;
-                }
-                Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
-                    assert!(blend);
-                    assert!(envelope.bound().upper <= target);
-                    envelopes += 1;
-                }
-                _ => assert!(!blend, "only the junction strip carries the blend origin"),
-            }
-            if blend {
-                blends.extend(model.face_origins(*face).iter().cloned());
-            }
-        }
-        assert_eq!((tori, envelopes), (4, 4));
-        // Every piece keeps the one blend name, unchanged by the radius edit.
-        assert_eq!(blends.len(), 1);
-        if let Some(previous) = &names {
-            assert_eq!(previous, &blends);
-        }
-        names = Some(blends);
-
-        // Every boundary vertex lies exactly on every face it bounds, and the
-        // shell is the genus-five surface of a bored housing with four holes.
-        let mut vertices = BTreeSet::new();
-        let mut edges = BTreeSet::new();
-        let mut rings = BTreeSet::new();
-        let mut loops = 0i64;
-        let geom = model.geom();
-        for face in &faces {
-            let surface = model.face(*face).surface;
-            for lp in &model.face(*face).loops {
-                loops += 1;
-                let Loop::Coedges(cs) = model.loop_(*lp) else {
-                    continue;
+    for (row, (recipe, contact)) in rows.iter().enumerate() {
+        let recipe = parsed(recipe);
+        let (all, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {
+            let mut dec = decider();
+            let built = evaluate(&recipe, &mut dec).unwrap();
+            let model = &built.model;
+            assert_eq!(model.check(built.result), vec![]);
+            let faces = model.faces_of_body(built.result);
+            assert_eq!(faces.len(), 22);
+            let mut kinds = BTreeMap::new();
+            let mut all = BTreeSet::new();
+            let mut blends = BTreeSet::new();
+            for face in &faces {
+                let surface = model.geom().surface(model.face(*face).surface);
+                let blend = model
+                    .face_origins(*face)
+                    .iter()
+                    .any(|o| matches!(o.role, Role::Blend { .. }));
+                let kind = match surface {
+                    Surface::Plane(_) => "plane",
+                    Surface::Cylinder(_) => "cylinder",
+                    Surface::Cone(_) => "cone",
+                    Surface::Torus(_) => "torus",
+                    Surface::BSpline(_) => "envelope",
+                    other => panic!("P5 has no {other:?} face"),
                 };
-                for c in cs {
-                    let edge = model.coedge(*c).edge;
-                    edges.insert(edge);
-                    let e = model.edge(edge);
-                    if e.start.is_none() {
-                        rings.insert(edge);
+                *kinds.entry(kind).or_insert(0) += 1;
+                match surface {
+                    Surface::Torus(_) => assert!(blend),
+                    Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+                        assert!(blend);
+                        assert!(envelope.bound().upper <= target);
+                        let definition = envelope.definition();
+                        let exact = |value: &catallax_numbers::Real| value.as_rational().unwrap();
+                        let point = definition.origin();
+                        assert_eq!(
+                            [exact(&point.x), exact(&point.y), exact(&point.z)],
+                            contact.origin
+                        );
+                        assert_eq!(exact(definition.radius()), contact.radius);
+                        let length = |mm: i64| Rational::from_i64(mm) * contact.scale.clone();
+                        assert_eq!(exact(definition.body()), length(12));
+                        assert_eq!(exact(definition.mouth()), length(4));
+                        assert_eq!(exact(definition.offset()), length(17));
                     }
-                    for v in [e.start, e.end].into_iter().flatten() {
-                        vertices.insert(v);
-                        let point = geom.position(model.vertex(v).point);
-                        assert!(matches!(
-                            geom.side_of(surface, &point, &mut dec),
-                            Outcome::ProvenCoincident(_)
-                        ));
+                    _ => assert!(!blend, "only the junction strip carries the blend origin"),
+                }
+                all.extend(model.face_origins(*face).iter().cloned());
+                if blend {
+                    blends.extend(model.face_origins(*face).iter().cloned());
+                }
+            }
+            let expected = [
+                ("cone", 4),
+                ("cylinder", 7),
+                ("envelope", 4),
+                ("plane", 3),
+                ("torus", 4),
+            ];
+            assert_eq!(kinds, BTreeMap::from(expected));
+            // Every piece keeps the one blend name, unchanged by the radius edit.
+            assert_eq!(blends.len(), 1);
+
+            // Every boundary vertex lies exactly on every face it bounds, and the
+            // shell is the genus-five surface of a bored housing with four holes.
+            let mut vertices = BTreeSet::new();
+            let mut edges = BTreeSet::new();
+            let mut rings = BTreeSet::new();
+            let mut loops = 0i64;
+            let geom = model.geom();
+            for face in &faces {
+                let surface = model.face(*face).surface;
+                for lp in &model.face(*face).loops {
+                    loops += 1;
+                    let Loop::Coedges(cs) = model.loop_(*lp) else {
+                        continue;
+                    };
+                    for c in cs {
+                        let edge = model.coedge(*c).edge;
+                        edges.insert(edge);
+                        let e = model.edge(edge);
+                        if e.start.is_none() {
+                            rings.insert(edge);
+                        }
+                        for v in [e.start, e.end].into_iter().flatten() {
+                            vertices.insert(v);
+                            let point = geom.position(model.vertex(v).point);
+                            assert!(matches!(
+                                geom.side_of(surface, &point, &mut dec),
+                                Outcome::ProvenCoincident(_)
+                            ));
+                        }
                     }
                 }
             }
+            let euler = vertices.len() as i64 + rings.len() as i64 - edges.len() as i64
+                + 2 * faces.len() as i64
+                - loops;
+            assert_eq!(euler, 2 * (1 - 5));
+            all
+        });
+        assert!(!work.exhausted);
+        // Face origins, the source names included, survive every row.
+        if let Some(previous) = &names {
+            assert_eq!(previous, &all, "row {row}");
         }
-        let euler = vertices.len() as i64 + rings.len() as i64 - edges.len() as i64
-            + 2 * faces.len() as i64
-            - loops;
-        assert_eq!(euler, 2 * (1 - 5));
+        names = Some(all);
     }
 }
 
@@ -112,7 +275,19 @@ fn p5_junction_continues_over_countersink_mouths() {
 fn a_ball_that_would_roll_onto_the_countersink_cone_refuses() {
     // Beyond 2 + sqrt(2) the contact leaves the mouth edge for the cone face,
     // a different continuation; it must refuse rather than build this one.
-    let refusal = evaluate(&recipe("7/2"), &mut decider()).unwrap_err();
+    let refusal = evaluate(&parsed(&with_radius("7/2")), &mut decider()).unwrap_err();
     let text = format!("{refusal:?}");
     assert!(text.contains("shapes.rolling-envelope"), "{text}");
+}
+
+#[test]
+fn uncovered_contact_strata_keep_their_typed_refusal() {
+    // Each case is a separate coverage gap, not impossible geometry: a plane
+    // rail 0.001 mm clear of the mouth, a rail exactly tangent to it, and a
+    // junction in a definition frame outside the covered axis placement.
+    for recipe in [with_radius("999/1000"), with_radius("1"), rotated()] {
+        let refusal = evaluate(&parsed(&recipe), &mut decider()).unwrap_err();
+        let text = format!("{refusal:?}");
+        assert!(text.contains("fillet.unsupported-overflow"), "{text}");
+    }
 }

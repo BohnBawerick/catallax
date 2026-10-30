@@ -145,7 +145,9 @@ pub struct RollingEnvelopeDefinition {
 }
 
 // Exact transition constants: the ball leaves the mouth edge for the plane at
-// cylinder angle +-theta0, with t0 = tan(theta0 / 2).
+// cylinder angle +-theta0, with t0 = tan(theta0 / 2). `square` is t0^2 and
+// `mouth` the mouth reparametrisation over t0 at the negative transition, both
+// free of the square root in `z`.
 #[derive(Clone, Debug)]
 struct Transition {
     centre: Real,
@@ -153,6 +155,8 @@ struct Transition {
     x: Real,
     z: Real,
     t: Real,
+    square: Real,
+    mouth: Real,
 }
 
 impl RollingEnvelopeDefinition {
@@ -307,12 +311,16 @@ impl RollingEnvelopeDefinition {
         let x = &centre * &cos;
         let z = (&centre.square() - &x.square()).sqrt();
         let t = &z / &(&centre + &x);
+        let square = &(&centre - &x) / &(&centre + &x);
+        let mouth = &(&centre + &x) / &(&(&self.mouth + &self.offset) - &x);
         Transition {
             centre,
             cos,
             x,
             z,
             t,
+            square,
+            mouth,
         }
     }
     fn world(&self, local: [&Real; 3]) -> Point3 {
@@ -327,6 +335,28 @@ impl RollingEnvelopeDefinition {
     fn local(&self, point: &Point3) -> [Real; 3] {
         let d = point.minus(&self.origin);
         [d.dot(&self.toward), d.dot(&self.axis), d.dot(&self.across)]
+    }
+    // The carrier control and weight of one homogeneous row entry. Origin and
+    // frame apply to each part, so rational parts stay single leaves.
+    fn control(&self, row: &[Split; 4], i: usize, t: &Real) -> (Point3, Real) {
+        let o = &self.origin;
+        let frame = [
+            [&o.x, &self.toward.x, &self.axis.x, &self.across.x],
+            [&o.y, &self.toward.y, &self.axis.y, &self.across.y],
+            [&o.z, &self.toward.z, &self.axis.z, &self.across.z],
+        ];
+        let weight = row[3].at(i, t);
+        let [x, y, z] = frame.map(|[origin, toward, axis, across]| {
+            let part = |c: [&Real; 4]| {
+                [(origin, c[3]), (toward, c[0]), (axis, c[1]), (across, c[2])]
+                    .iter()
+                    .fold(Real::zero(), |sum, (f, v)| plus(&sum, &times(f, v)))
+            };
+            let even = part([0, 1, 2, 3].map(|c| &row[c].even[i]));
+            let odd = part([0, 1, 2, 3].map(|c| &row[c].odd[i]));
+            &join(&even, &odd, t) / &weight
+        });
+        (Point3::new(x, y, z), weight)
     }
     /// Exact transition corners: cylinder foot and mouth/plane foot at `sign`.
     pub fn corners(&self, sign: Sign) -> [Point3; 2] {
@@ -515,6 +545,28 @@ fn binomial(n: usize, k: usize) -> Rational {
     }
     value
 }
+fn is_zero(value: &Real) -> bool {
+    value.rational_ref().is_some_and(Rational::is_zero)
+}
+fn plus(a: &Real, c: &Real) -> Real {
+    if is_zero(a) {
+        c.clone()
+    } else if is_zero(c) {
+        a.clone()
+    } else {
+        a + c
+    }
+}
+fn times(a: &Real, c: &Real) -> Real {
+    if is_zero(a) || is_zero(c) {
+        Real::zero()
+    } else {
+        a * c
+    }
+}
+fn join(even: &Real, odd: &Real, t: &Real) -> Real {
+    plus(even, &times(t, odd))
+}
 fn product(a: &[Real], c: &[Real]) -> Vec<Real> {
     let (m, n) = (a.len() - 1, c.len() - 1);
     (0..=m + n)
@@ -522,7 +574,10 @@ fn product(a: &[Real], c: &[Real]) -> Vec<Real> {
             let mut sum = Real::zero();
             for i in k.saturating_sub(n)..=k.min(m) {
                 let factor = binomial(m, i) * binomial(n, k - i) / binomial(m + n, k);
-                sum = &sum + &(&(&a[i] * &c[k - i]) * &Real::from_rational(factor));
+                sum = plus(
+                    &sum,
+                    &times(&times(&a[i], &c[k - i]), &Real::from_rational(factor)),
+                );
             }
             sum
         })
@@ -537,7 +592,7 @@ fn elevate(a: &[Real], degree: usize) -> Vec<Real> {
         for i in 1..n {
             let left = Real::from_rational(q(i as i64) / q(n as i64));
             let right = Real::from_rational(Rational::one() - q(i as i64) / q(n as i64));
-            next.push(&(&a[i - 1] * &left) + &(&a[i] * &right));
+            next.push(plus(&times(&a[i - 1], &left), &times(&a[i], &right)));
         }
         next.push(a[n - 1].clone());
         a = next;
@@ -549,8 +604,84 @@ fn combine(a: &[Real], c: &[Real], sa: &Real, sc: &Real) -> Vec<Real> {
     let (a, c) = (elevate(a, degree), elevate(c, degree));
     a.iter()
         .zip(&c)
-        .map(|(x, y)| &(x * sa) + &(y * sc))
+        .map(|(x, y)| plus(&times(x, sa), &times(y, sc)))
         .collect()
+}
+
+// One span coordinate in Bernstein form, as even + t * odd for the transition
+// tangent t. With rational node data t is the only irrational in a span and t^2
+// is rational, so keeping the parts apart lets Real's exact cache collapse each
+// to one leaf instead of retaining a deep expression over t in every control.
+#[derive(Clone)]
+struct Split {
+    even: Vec<Real>,
+    odd: Vec<Real>,
+}
+impl Split {
+    fn even(even: Vec<Real>) -> Self {
+        let odd = vec![Real::zero(); even.len()];
+        Self { even, odd }
+    }
+    fn odd(odd: Vec<Real>) -> Self {
+        let even = vec![Real::zero(); odd.len()];
+        Self { even, odd }
+    }
+    fn scaled(&self, factor: &Real) -> Self {
+        let scale = |p: &[Real]| p.iter().map(|x| times(x, factor)).collect();
+        Self {
+            even: scale(&self.even),
+            odd: scale(&self.odd),
+        }
+    }
+    fn combine(&self, other: &Self, sa: &Real, sc: &Real) -> Self {
+        Self {
+            even: combine(&self.even, &other.even, sa, sc),
+            odd: combine(&self.odd, &other.odd, sa, sc),
+        }
+    }
+    fn product(&self, other: &Self, square: &Real) -> Self {
+        let one = Real::one();
+        Self {
+            even: combine(
+                &product(&self.even, &other.even),
+                &product(&self.odd, &other.odd),
+                &one,
+                square,
+            ),
+            odd: combine(
+                &product(&self.even, &other.odd),
+                &product(&self.odd, &other.even),
+                &one,
+                &one,
+            ),
+        }
+    }
+    fn elevated(&self, degree: usize) -> Self {
+        Self {
+            even: elevate(&self.even, degree),
+            odd: elevate(&self.odd, degree),
+        }
+    }
+    fn at(&self, i: usize, t: &Real) -> Real {
+        join(&self.even[i], &self.odd[i], t)
+    }
+    fn values(&self, t: &Real) -> Vec<Real> {
+        (0..self.even.len()).map(|i| self.at(i, t)).collect()
+    }
+}
+
+// Station parametrisation of one span, [1 + u^2, 1 - u^2, 2u] for u = t s:
+// the exact cosine and sine are the last two over the first.
+fn station(t: &Transition, span: [&Rational; 2]) -> [Split; 3] {
+    let one = Real::one();
+    let u = Split::odd(span.map(|s| Real::from_rational(s.clone())).to_vec());
+    let u2 = u.product(&u, &t.square);
+    let ones = Split::even(vec![one.clone(); 3]);
+    [
+        ones.combine(&u2, &one, &one),
+        ones.combine(&u2, &one, &(-&one)),
+        u.elevated(2).scaled(&Real::from_i64(2)),
+    ]
 }
 fn cubic(span: [&Rational; 2], values: [&Real; 2], slopes: [&Rational; 2]) -> Vec<Real> {
     let third = Real::from_rational((span[1] - span[0]) / q(3));
@@ -1150,8 +1281,8 @@ fn produce(
         }
         let end = i == 0 || i == spans;
         if end {
-            let z = if i == 0 { -&t.z } else { t.z.clone() };
             values[HEIGHT] = def.radius.clone();
+            let z = if i == 0 { -&t.z } else { t.z.clone() };
             values[MOUTH] = -(&z / &(&(&def.mouth + &def.offset) - &t.x));
             // The transition apex is the plane/cylinder corner below the rail.
             values[TANGENT] = Real::zero();
@@ -1283,9 +1414,10 @@ fn recompute_bound(
 
 // Local homogeneous Bernstein rows of one span, [rail, middle, mouth], each
 // as [x, y, z, w] in the definition frame, elevated to the carrier degree.
-fn span_rows(def: &RollingEnvelopeDefinition, pair: &[Node]) -> [[Vec<Real>; 4]; 3] {
+fn span_rows(def: &RollingEnvelopeDefinition, pair: &[Node]) -> [[Split; 4]; 3] {
     let t = def.transition();
     let one = Real::one();
+    let square = &t.square;
     let span = [&pair[0].s, &pair[1].s];
     let f = |j: usize| {
         cubic(
@@ -1294,69 +1426,63 @@ fn span_rows(def: &RollingEnvelopeDefinition, pair: &[Node]) -> [[Vec<Real>; 4];
             [&pair[0].slopes[j], &pair[1].slopes[j]],
         )
     };
-    let u = vec![
-        &t.t * &Real::from_rational(span[0].clone()),
-        &t.t * &Real::from_rational(span[1].clone()),
-    ];
-    let u2 = product(&u, &u);
-    let ones = vec![one.clone(); 3];
-    let den = combine(&ones, &u2, &one, &one);
-    // (1 - u^2, 2u) / (1 + u^2) is the exact cosine and sine of the station.
-    let cos = combine(&ones, &u2, &one, &(-&one));
-    let sin: Vec<Real> = elevate(&u, 2)
-        .iter()
-        .map(|c| c * &Real::from_i64(2))
-        .collect();
-    let scaled = |p: &[Real], c: &Real| -> Vec<Real> { p.iter().map(|x| x * c).collect() };
+    let [den, cos, sin] = station(&t, span);
+    let rail_x = cos.scaled(&def.body);
+    let rail_z = sin.scaled(&def.body);
     // Rail row: (body (1-u^2), height (1+u^2), 2 body u) / (1+u^2).
     let rail = [
-        scaled(&cos, &def.body),
-        product(&f(HEIGHT), &den),
-        scaled(&sin, &def.body),
+        rail_x.clone(),
+        Split::even(f(HEIGHT)).product(&den, square),
+        rail_z.clone(),
         den.clone(),
     ];
     // Middle row: the rail point moved within the cylinder's tangent plane by
     // the fitted tangential and axial offsets, times the fitted middle weight.
-    let tangent = f(TANGENT);
-    let x = combine(
-        &scaled(&cos, &def.body),
-        &product(&tangent, &sin),
-        &one,
-        &(-&one),
-    );
-    let z = combine(
-        &scaled(&sin, &def.body),
-        &product(&tangent, &cos),
-        &one,
-        &one,
-    );
-    let height = combine(&f(HEIGHT), &f(AXIAL), &one, &one);
-    let weight = f(WEIGHT);
+    let tangent = Split::even(f(TANGENT));
+    let x = rail_x.combine(&tangent.product(&sin, square), &one, &(-&one));
+    let z = rail_z.combine(&tangent.product(&cos, square), &one, &one);
+    let height = Split::even(combine(&f(HEIGHT), &f(AXIAL), &one, &one));
+    let weight = Split::even(f(WEIGHT));
     let middle = [
-        product(&weight, &x),
-        product(&weight, &product(&height, &den)),
-        product(&weight, &z),
-        product(&weight, &den),
+        weight.product(&x, square),
+        weight.product(&height.product(&den, square), square),
+        weight.product(&z, square),
+        weight.product(&den, square),
     ];
-    // Mouth row: the mouth circle at angle pi + 2 atan(w).
-    let w = f(MOUTH);
-    let w2 = product(&w, &w);
-    let ones6 = vec![one.clone(); 7];
-    let mouth_den = combine(&ones6, &w2, &one, &one);
+    // Mouth row: the mouth circle at angle pi + 2 atan(w). Its parameter is an
+    // exact odd multiple of t at a transition and rational at interior nodes.
+    let parts = pair.iter().map(|node| {
+        if node.s.abs() == Rational::one() {
+            let odd = -&(&t.mouth * &Real::from_rational(node.s.clone()));
+            (Real::zero(), odd)
+        } else {
+            (node.values[MOUTH].clone(), Real::zero())
+        }
+    });
+    let (even, odd): (Vec<Real>, Vec<Real>) = parts.unzip();
+    let flat = Rational::zero();
+    let w = Split {
+        even: cubic(
+            span,
+            [&even[0], &even[1]],
+            [&pair[0].slopes[MOUTH], &pair[1].slopes[MOUTH]],
+        ),
+        odd: cubic(span, [&odd[0], &odd[1]], [&flat, &flat]),
+    };
+    let w2 = w.product(&w, square);
+    let ones6 = Split::even(vec![one.clone(); 7]);
+    let mouth_den = ones6.combine(&w2, &one, &one);
     let mouth = [
-        combine(
-            &mouth_den,
-            &combine(&ones6, &w2, &one, &(-&one)),
+        mouth_den.combine(
+            &ones6.combine(&w2, &one, &(-&one)),
             &def.offset,
             &(-&def.mouth),
         ),
-        vec![Real::zero(); 7],
-        w.iter()
-            .map(|c| &(c * &def.mouth) * &Real::from_i64(-2))
-            .collect(),
+        Split::even(vec![Real::zero(); 7]),
+        w.scaled(&(&def.mouth * &Real::from_i64(-2))),
         mouth_den,
     ];
-    [rail, middle, mouth].map(|row| row.map(|c| elevate(&c, DEGREE)))
+    [rail, middle, mouth].map(|row| row.map(|c| c.elevated(DEGREE)))
 }
 
 // Builds the carrier from node data alone: degree (6, 2), C0 knots at nodes.
@@ -1365,6 +1491,7 @@ fn build(
     nodes: &[Node],
     dec: &mut Decider,
 ) -> Result<BSplineSurface, Refusal> {
+    let t = def.transition();
     let mut controls = Vec::with_capacity((nodes.len() - 1) * DEGREE * 3 + 3);
     let mut weights = Vec::with_capacity(controls.capacity());
     let mut knots = vec![Rational::from_i64(-1); DEGREE + 1];
@@ -1376,10 +1503,9 @@ fn build(
         let take = if last { DEGREE + 1 } else { DEGREE };
         for i in 0..take {
             for row in &rows {
-                let w = &row[3][i];
-                let local = [&(&row[0][i] / w), &(&row[1][i] / w), &(&row[2][i] / w)];
-                controls.push(def.world(local));
-                weights.push(w.clone());
+                let (control, weight) = def.control(row, i, &t.t);
+                controls.push(control);
+                weights.push(weight);
             }
         }
         let knot = pair[1].s.clone();
@@ -1486,22 +1612,13 @@ fn check_clearance(
         dec.check_deadline()?;
         let rows = span_rows(def, pair);
         let span = [&pair[0].s, &pair[1].s];
-        let u = vec![
-            &t.t * &Real::from_rational(span[0].clone()),
-            &t.t * &Real::from_rational(span[1].clone()),
-        ];
-        let u2 = product(&u, &u);
-        let ones = vec![one.clone(); 3];
-        let den = combine(&ones, &u2, &one, &one);
-        let cos = combine(&ones, &u2, &one, &(-&one));
-        let sin: Vec<Real> = elevate(&u, 2)
-            .iter()
-            .map(|c| c * &Real::from_i64(2))
-            .collect();
+        let [den, cos, sin] = station(&t, span);
         let [x, _, z, w] = &rows[2];
-        let radial = combine(&product(x, &cos), &product(z, &sin), &one, &one);
-        let gap = combine(&radial, &product(w, &den), &one, &(-&def.body));
-        if !positive_bernstein(&gap, bits, dec)? {
+        let radial = x
+            .product(&cos, &t.square)
+            .combine(&z.product(&sin, &t.square), &one, &one);
+        let gap = radial.combine(&w.product(&den, &t.square), &one, &(-&def.body));
+        if !positive_bernstein(&gap.values(&t.t), bits, dec)? {
             return Err(refusal("envelope mouth row is not clear of the cylinder"));
         }
         let cubic_of = |j: usize| {
@@ -1528,7 +1645,7 @@ fn check_clearance(
                 continue;
             }
             for row in &rows {
-                let (xh, zh) = (e(&row[0][column])?, e(&row[2][column])?);
+                let (xh, zh) = (e(&row[0].at(column, &t.t))?, e(&row[2].at(column, &t.t))?);
                 let plus = &(&x0 * &zh) - &(&z0 * &xh);
                 let minus = -&(&(&x0 * &zh) + &(&z0 * &xh));
                 if plus.hi() >= Rational::zero() || minus.hi() >= Rational::zero() {

@@ -2,6 +2,7 @@
 use super::{BoxState, Classifier};
 use crate::{Instruction, Location, Workspace, combine, polynomial_sign};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
+use catallax_recipe::BooleanKind;
 
 impl Classifier<'_> {
     pub(super) fn corner_location(
@@ -52,9 +53,30 @@ impl Classifier<'_> {
         }
         if let Some(proven) = plan.planar_location(point, storage, dec)? {
             location = proven;
-        } else if plan.boundary_witness(point, storage, dec)? {
+        } else if plan.boundary_witness(point, storage, dec)?
+            || self.on_intersected_boundary(&storage.locations)
+        {
             location = Location::Boundary;
         }
         Ok(location)
+    }
+
+    /// A point on the boundary of a leaf that an intersection requires is not in the
+    /// intersection's interior, which is all a grid corner needs to know. Such a
+    /// corner can have no fixed witness ray, as where a gyroid meets a box corner.
+    fn on_intersected_boundary(&self, locations: &[Location]) -> bool {
+        let mut pending = vec![self.plan.root];
+        while let Some(node) = pending.pop() {
+            match self.plan.instructions[node] {
+                Instruction::Leaf(_) if locations[node] == Location::Boundary => return true,
+                Instruction::Boolean {
+                    kind: BooleanKind::Intersect,
+                    a,
+                    b,
+                } => pending.extend([a, b]),
+                _ => (),
+            }
+        }
+        false
     }
 }

@@ -445,6 +445,32 @@ fn a_cad_step_after_a_lattice_is_not_terminal() {
 }
 
 #[test]
+fn a_cad_step_after_a_gyroid_is_not_terminal() {
+    let gyroid = r#"{"format":"catallax-recipe/3","name":"terminal gyroid","steps":[{"id":"region","op":"block","size":["4","4","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"net","op":"gyroid","region":"region","period":"2","level":{"constant":"0"},"kind":"network","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"net"}"#;
+    assert_eq!(
+        Recipe::parse(gyroid).unwrap().check_lattice_terminal(),
+        Ok(())
+    );
+    let text = gyroid
+        .replace(r#""result":"net""#, r#""result":"after""#)
+        .replace(
+            "}],\"result",
+            r#"},{"id":"after","op":"offset","body":"net","distance":"0.1"}],"result"#,
+        );
+    let error = Recipe::parse(&text)
+        .unwrap()
+        .check_lattice_terminal()
+        .unwrap_err();
+    assert_eq!(
+        error,
+        RecipeError::LatticeNotTerminal {
+            step: StepId::new("after").unwrap(),
+            lattice: StepId::new("net").unwrap(),
+        }
+    );
+}
+
+#[test]
 fn a_union_of_a_lattice_is_not_terminal() {
     let error = every_operation().check_lattice_terminal().unwrap_err();
     assert!(matches!(

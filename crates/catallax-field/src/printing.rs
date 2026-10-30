@@ -299,6 +299,7 @@ enum Definition {
     Primitive(Box<Primitive>),
     Cell(Vec<Terms>),
     Lattice,
+    Gyroid,
 }
 pub(crate) struct Classifier<'a> {
     plan: &'a Plan,
@@ -375,6 +376,10 @@ impl<'a> Classifier<'a> {
                     definitions.push(Some(Definition::Cell(supports)));
                 }
                 geometry::Leaf::Lattice(_) => definitions.push(Some(Definition::Lattice)),
+                // Mass and other interval consumers do not cover gyroids yet.
+                geometry::Leaf::Gyroid(_) if profile_extrusions => {
+                    definitions.push(Some(Definition::Gyroid));
+                }
                 _ => {
                     return Err(refusal(
                         "field.print-coverage",
@@ -422,6 +427,12 @@ impl<'a> Classifier<'a> {
                                     unreachable!("compiled lattice")
                                 };
                                 lattice.box_state(xyz, dec)?
+                            }
+                            Definition::Gyroid => {
+                                let geometry::Leaf::Gyroid(gyroid) = &self.plan.leaves[i] else {
+                                    unreachable!("compiled gyroid")
+                                };
+                                gyroid.box_state(xyz, dec)?
                             }
                             Definition::Cell(supports) => {
                                 let mut inside = true;
@@ -771,7 +782,17 @@ pub fn mesh_plan_connected(
 }
 
 /// Builds a watertight output from the field alone. No B-rep builder is called.
+/// A gyroid at an accuracy of one hundredth of its period or finer uses the adaptive
+/// certificate, because the uniform grid would need an edge of a quarter of the
+/// accuracy over the whole surface.
 pub fn mesh_plan(plan: &Plan, options: &Options, dec: &mut Decider) -> Result<Mesh, Refusal> {
+    let fine_gyroid = plan.leaves.iter().any(|leaf| {
+        matches!(leaf, geometry::Leaf::Gyroid(gyroid)
+            if &options.tolerance * &q(100) <= *gyroid.period())
+    });
+    if fine_gyroid {
+        return certified::mesh(plan, options, &q(0), dec);
+    }
     mesh_plan_floor(plan, options, None, dec)
 }
 

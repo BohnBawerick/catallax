@@ -6,6 +6,7 @@
 //! and an outside box, translated by a vector whose Euclidean length is at most the bound.
 use super::*;
 mod refined;
+mod separation;
 
 type Point = [f64; 3];
 type Triangle = [Point; 3];
@@ -241,6 +242,7 @@ fn bracket(
 fn cover_mesh(
     mesh: &mut Mesh,
     classifier: &mut Classifier<'_>,
+    clip: Option<&separation::Clip<'_>>,
     bound: Interval,
     cache: &mut BTreeSet<FacetKey>,
     options: &Options,
@@ -256,6 +258,11 @@ fn cover_mesh(
         patches.push((triangle(mesh, id), 0u32));
         while let Some((patch, depth)) = patches.pop() {
             spend(&mut mesh.cells, options, dec)?;
+            if let Some(clip) = clip
+                && separation::bracket_along_gradient(clip, &patch, classifier, bound, dec)?
+            {
+                continue;
+            }
             let box_: [Interval; 3] = std::array::from_fn(|i| {
                 Interval::new(
                     patch.iter().map(|p| p[i]).fold(f64::INFINITY, f64::min),
@@ -365,7 +372,8 @@ pub(crate) fn mesh(
     let body_bounds = bounds(plan, dec)?;
     let mut classifier = Classifier::for_print(plan, dec)?;
     let charts = parametric::Charts::new(&classifier, &body_bounds);
-    let mut grid = refined::Grid::new(&body_bounds, options, charts.is_some())?;
+    let clip = separation::Clip::new(&classifier);
+    let mut grid = refined::Grid::new(&body_bounds, options, charts.is_some(), clip.is_some())?;
     let rounded = options.tolerance.to_f64_nearest();
     let bound = Rational::from_f64_exact(rounded.next_down()).ok_or_else(|| {
         refusal(
@@ -390,6 +398,7 @@ pub(crate) fn mesh(
         let mut failed = cover_mesh(
             &mut mesh,
             &mut classifier,
+            clip.as_ref(),
             interval,
             &mut cache,
             options,
@@ -415,6 +424,13 @@ pub(crate) fn mesh(
                     options,
                     dec,
                 )
+            } else if let Some(clip) = &clip {
+                match separation::Separation::new(clip, &grid, interval) {
+                    Some(test) => {
+                        test.cover(&mut mesh, &mut classifier, &body_bounds, options, dec)
+                    }
+                    None => Ok(Some(0)),
+                }
             } else {
                 cover_surface(
                     &mut mesh,
@@ -473,6 +489,30 @@ pub(crate) fn mesh(
         })?;
     }
     unreachable!()
+}
+
+/// An axis plane of a convex support: its axis, coefficient and enclosed position.
+fn axis_plane(support: &Terms) -> Option<(usize, Interval, Interval)> {
+    let mut constant = point(0.0);
+    let mut linear = None;
+    for (powers, coefficient) in support {
+        if *powers == [0, 0, 0] {
+            constant = constant + *coefficient;
+        } else {
+            let axis = (0..3).find(|&i| *powers == std::array::from_fn(|j| u32::from(i == j)))?;
+            if linear.is_some() || coefficient.lo() <= 0.0 && coefficient.hi() >= 0.0 {
+                return None;
+            }
+            linear = Some((axis, *coefficient));
+        }
+    }
+    let (normal, coefficient) = linear?;
+    let position = (point(0.0) - constant) / coefficient;
+    (position.lo().is_finite() && position.hi().is_finite()).then_some((
+        normal,
+        coefficient,
+        position,
+    ))
 }
 
 /// Complete boundary charts for an intersection of axis planes and one constant
@@ -620,28 +660,7 @@ mod parametric {
                     }
                     Some(Definition::Cell(supports)) => {
                         for support in supports {
-                            let mut constant = point(0.0);
-                            let mut linear = None;
-                            for (powers, coefficient) in support {
-                                if *powers == [0, 0, 0] {
-                                    constant = constant + *coefficient;
-                                } else {
-                                    let axis = (0..3).find(|&i| {
-                                        *powers == std::array::from_fn(|j| u32::from(i == j))
-                                    })?;
-                                    if linear.is_some()
-                                        || coefficient.lo() <= 0.0 && coefficient.hi() >= 0.0
-                                    {
-                                        return None;
-                                    }
-                                    linear = Some((axis, *coefficient));
-                                }
-                            }
-                            let (normal, coefficient) = linear?;
-                            let position = (point(0.0) - constant) / coefficient;
-                            if !position.lo().is_finite() || !position.hi().is_finite() {
-                                return None;
-                            }
+                            let (normal, _, position) = axis_plane(support)?;
                             planes.push(Patch::Plane {
                                 normal,
                                 position,

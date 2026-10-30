@@ -41,7 +41,7 @@ fn leaf_bound(leaf: &Leaf, dec: &mut Decider) -> Result<Option<Bounds>, Refusal>
         Leaf::Primitive(p) => return p.sample_bounds().map(Some),
         Leaf::Feature(f) => return f.sample_bounds(),
         Leaf::Draft(region) => return region.sample_bounds().map(Some),
-        Leaf::Lattice(_) => return Ok(None),
+        Leaf::Lattice(_) | Leaf::Gyroid(_) => return Ok(None),
         Leaf::Cell(_) => (),
     }
     let constraints = leaf.constraints();

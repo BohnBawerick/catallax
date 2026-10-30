@@ -11,6 +11,7 @@ impl Grid {
         bounds: &[[Rational; 2]; 3],
         options: &Options,
         quarter_phase: bool,
+        clip_lines: bool,
     ) -> Result<Self, Refusal> {
         let accuracy = &options.tolerance;
         let mut coarse = q(1);
@@ -60,6 +61,14 @@ impl Grid {
                 for j in bin.saturating_sub(1)..=bin.min(n as u32 - 1) {
                     axes[i].extend([j * 16 + 4, j * 16 + 8, j * 16 + 12]);
                 }
+                if clip_lines {
+                    // One line next to each clip plane, so that a sharp tip where
+                    // a curved wall crosses a clip edge stays within the bound.
+                    let line = (&(boundary - &origin[i]) / &coarse.mul_pow2(-4))
+                        .to_f64_nearest()
+                        .round() as u32;
+                    axes[i].extend([line.saturating_sub(1), line + 1]);
+                }
             }
             axes[i].sort_unstable();
             axes[i].dedup();
@@ -69,6 +78,47 @@ impl Grid {
             edge: coarse.mul_pow2(-4),
             axes,
         })
+    }
+    /// A coordinate of an axis line, enclosed.
+    fn coordinate(&self, axis: usize, line: u32) -> Interval {
+        Interval::from_rational(&(&self.origin[axis] + &(&self.edge * &q(line as i64))))
+    }
+    /// The largest grid spacing along `axis` over the cells that meet `span`.
+    pub(super) fn width(&self, axis: usize, span: Interval) -> f64 {
+        let lines = &self.axes[axis];
+        let last = lines.len() - 1;
+        let first = lines
+            .partition_point(|&j| self.coordinate(axis, j).hi() <= span.lo())
+            .saturating_sub(1)
+            .min(last - 1);
+        let end = lines
+            .partition_point(|&j| self.coordinate(axis, j).lo() < span.hi())
+            .clamp(first + 1, last);
+        (first..end)
+            .map(|j| (self.coordinate(axis, lines[j + 1]) - self.coordinate(axis, lines[j])).hi())
+            .fold(0.0, f64::max)
+    }
+    /// The union of cells strictly inside the clip planes: the first line above each
+    /// lower plane to the last line below each upper plane.
+    pub(super) fn clean_zone(
+        &self,
+        lower: &[Interval; 3],
+        upper: &[Interval; 3],
+    ) -> Option<[[f64; 2]; 3]> {
+        let mut zone = [[0.0; 2]; 3];
+        for i in 0..3 {
+            let lines = &self.axes[i];
+            let first = lines.partition_point(|&j| self.coordinate(i, j).lo() <= lower[i].hi());
+            let last = lines.partition_point(|&j| self.coordinate(i, j).hi() < upper[i].lo());
+            if first + 1 >= last {
+                return None;
+            }
+            zone[i] = [
+                self.coordinate(i, lines[first]).hi(),
+                self.coordinate(i, lines[last - 1]).lo(),
+            ];
+        }
+        Some(zone)
     }
     pub(super) fn refine(
         &mut self,

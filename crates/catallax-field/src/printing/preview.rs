@@ -6,18 +6,24 @@ pub(crate) fn mesh(
     options: &Options,
     dec: &mut Decider,
 ) -> Result<Option<Mesh>, Refusal> {
-    // This sampling pitch resolves the supported constant cubic beams. Other
-    // fields keep their existing interval-driven preview route.
-    let mut radius: Option<Rational> = None;
+    // This sampling pitch resolves the supported constant cubic beams and one
+    // eighth of a gyroid period. Other fields keep their existing interval-driven
+    // preview route.
+    let mut feature: Option<Rational> = None;
     for leaf in &plan.leaves {
-        if let geometry::Leaf::Lattice(lattice) = leaf {
-            let Some((_, _, r)) = lattice.axis_cubic_grid() else {
-                return Ok(None);
-            };
-            radius = Some(radius.map_or(r.clone(), |previous| previous.min(r)));
-        }
+        let size = match leaf {
+            geometry::Leaf::Lattice(lattice) => {
+                let Some((_, _, r)) = lattice.axis_cubic_grid() else {
+                    return Ok(None);
+                };
+                r
+            }
+            geometry::Leaf::Gyroid(gyroid) => gyroid.period().mul_pow2(-3),
+            _ => continue,
+        };
+        feature = Some(feature.map_or(size.clone(), |previous| previous.min(size)));
     }
-    let Some(radius) = radius else {
+    let Some(feature) = feature else {
         return Ok(None);
     };
     if options.tolerance <= q(0) || options.max_cells == 0 || options.max_vertices < 4 {
@@ -26,7 +32,7 @@ pub(crate) fn mesh(
             "positive tolerance and limits required",
         ));
     }
-    let target = options.tolerance.clone().min(radius);
+    let target = options.tolerance.clone().min(feature);
     let mut edge = q(1);
     while edge > target {
         edge = edge.mul_pow2(-1);

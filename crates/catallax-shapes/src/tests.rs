@@ -1291,3 +1291,65 @@ fn torus_outer_sheet_keeps_its_own_side_normal_and_chart() {
     assert!((u - half_pi.clone()).contains_zero());
     assert!((v - half_pi).contains_zero());
 }
+
+#[test]
+fn torus_sheet_distance_bounds_reach_the_axis_points() {
+    use crate::TorusSheet;
+    let real = |n: i64| Real::from_i64(n);
+    let mut store = GeomStore::new();
+    let mut sheet = |major: Real, minor: Real| {
+        store.add_surface(Surface::TorusSheet(
+            TorusSheet::new(
+                Point3::new(real(0), real(0), real(0)),
+                Vector3::new(real(0), real(0), real(1)),
+                major,
+                minor,
+                Vector3::new(real(1), real(0), real(0)),
+                &mut Decider::default(),
+            )
+            .unwrap(),
+        ))
+    };
+    // The residual at the centre of the (1, 4) sheet is -15. Its meridian
+    // projection falls on the discarded inner part; the nearest retained
+    // points are the axis points (0,0,+-sqrt(15)), not 15/4 away.
+    let spindle = sheet(real(1), real(4));
+    let horn = sheet(real(4), real(4));
+    // 20^2 + 99^2 = 101^2, so this sheet meets the axis at (0,0,+-20).
+    let near_horn = sheet(real(99), real(101));
+    let root_two = Real::from_i64(2).sqrt();
+    let irrational_horn = sheet(root_two.clone(), root_two);
+    let fifteen = Rational::from_i64(15);
+    let bound = store
+        .surface(spindle)
+        .distance_bound(&fifteen, &Decider::default());
+    assert!(bound.is_ok_and(|bound| &bound * &bound >= fifteen));
+    assert_eq!(
+        store
+            .surface(horn)
+            .distance_bound(&fifteen, &Decider::default()),
+        Ok(Rational::from_ratio(15, 4).unwrap())
+    );
+    // An irrational horn sheet cannot separate h from zero; it refuses
+    // rather than certify a minor-radius conversion.
+    assert_eq!(
+        store
+            .surface(irrational_horn)
+            .distance_bound(&fifteen, &Decider::default())
+            .unwrap_err()
+            .code,
+        "numbers.divisor-not-separated"
+    );
+    // Just below the axis point the distance is 2^-43 while the residual is
+    // about 40 * 2^-43, which a minor-radius conversion understates.
+    let below = &Rational::from_i64(20) - &Rational::from_ratio(1, 1 << 43).unwrap();
+    let mut dec = Decider::new(BudgetPolicy {
+        max_precision_bits: 16,
+        max_work: 1000,
+    });
+    let point = Point3::new(real(0), real(0), Real::from(below.clone()));
+    match store.side_of(near_horn, &point, &mut dec) {
+        Outcome::NotExact(n) => assert!(&n.bound + &below >= Rational::from_i64(20), "{n:?}"),
+        other => panic!("bounded decision: {other:?}"),
+    }
+}

@@ -98,7 +98,9 @@ impl Plan {
             Operation::ExtrudeThrough { target, .. } | Operation::Hole { target, .. } => {
                 (Some(target), None)
             }
-            Operation::Lattice { region, .. } => (Some(region), None),
+            Operation::Lattice { region, .. } | Operation::Gyroid { region, .. } => {
+                (Some(region), None)
+            }
             Operation::Pattern { body, .. }
             | Operation::Fillet { body, .. }
             | Operation::Chamfer { body, .. }

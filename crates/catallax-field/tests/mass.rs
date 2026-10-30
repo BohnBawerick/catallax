@@ -144,3 +144,15 @@ fn subtracting_lattice_cannot_use_its_region_as_an_outer_envelope() {
         "field.stand-in-envelope-coverage"
     );
 }
+#[test]
+fn a_gyroid_has_no_mass_route_in_this_increment() {
+    let recipe = Recipe::parse(r#"{"format":"catallax-recipe/3","name":"gyroid","steps":[{"id":"box","op":"block","size":["4","4","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"net","op":"gyroid","region":"box","period":"4","level":{"constant":"0"},"kind":"network","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"net"}"#).unwrap();
+    let error = mass::properties(
+        &Plan::compile(&recipe).unwrap(),
+        &Accuracy::default(),
+        &Options::default(),
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "field.print-coverage");
+}

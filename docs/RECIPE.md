@@ -878,6 +878,8 @@ Graded density, as PRD section 4 means it, is a lattice radius or gyroid level g
 
 **Impossible.** `a <= 0`. A sheet with a level of zero or less anywhere, which is zero thickness. A linear grade with `f = g`. A distance grade with `D <= 0`.
 
+**Field support.** The field kernel evaluates a network with a constant level and an identity `frame`. Sheets, other grades and other frames refuse with `gyroid.unsupported`. A valid network level may be zero or negative. The B-rep kernel does not evaluate gyroids.
+
 - **A level band, not a true thickness.** The function is the definition, and both kernels hold it exactly (PRD section 3.1). The alternative is the set within `t/2` of the surface `g = 0`. Wall thickness would then be exact in millimetres, but the field would need the distance to an implicit surface, which only numerics can find.
 
 ### 4.17 Smooth blend

@@ -233,9 +233,9 @@ impl Source {
                 return Err(failure("a source leaf has no scoped face definitions"));
             }
             let part = match &plan.leaves[leaf] {
-                geometry::Leaf::Lattice(_) => {
+                geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) => {
                     return Err(failure(
-                        "field-only beams are not planar draft source faces",
+                        "field-only surfaces are not planar draft source faces",
                     ));
                 }
                 geometry::Leaf::Feature(feature) => {

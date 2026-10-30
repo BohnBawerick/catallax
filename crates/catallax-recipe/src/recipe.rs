@@ -96,13 +96,16 @@ impl Recipe {
         crate::check::check(self)
     }
 
-    /// Checks that every lattice step is terminal: no step reads a lattice, so no
-    /// CAD operation, boolean or second lattice follows it. [`Recipe::check`] does not
-    /// require this; an application that treats the lattice as its last feature calls
-    /// this on the history it is about to build.
+    /// Checks that every lattice or gyroid step is terminal: no step reads one, so no
+    /// CAD operation, boolean or second terminal field follows it. [`Recipe::check`]
+    /// does not require this; an application that treats the field as its last feature
+    /// calls this on the history it is about to build.
     pub fn check_lattice_terminal(&self) -> Result<(), RecipeError> {
         for (i, lattice) in self.steps.iter().enumerate() {
-            if !matches!(lattice.op, Operation::Lattice { .. }) {
+            if !matches!(
+                lattice.op,
+                Operation::Lattice { .. } | Operation::Gyroid { .. }
+            ) {
                 continue;
             }
             if let Some(reader) = self.steps[i + 1..]
@@ -232,11 +235,11 @@ pub enum RecipeError {
         /// The import step.
         step: StepId,
     },
-    /// A step reads a lattice where the lattice must be the last feature.
+    /// A step reads a lattice or gyroid where that field must be the last feature.
     LatticeNotTerminal {
         /// The reading step.
         step: StepId,
-        /// The lattice step it reads.
+        /// The lattice or gyroid step it reads.
         lattice: StepId,
     },
     /// The result is not a step that makes a body.
@@ -349,7 +352,7 @@ impl fmt::Display for RecipeError {
             }
             RecipeError::LatticeNotTerminal { step, lattice } => write!(
                 f,
-                "step {step} reads lattice {lattice}, but a lattice must be the last feature"
+                "step {step} reads terminal field {lattice}, but a lattice or gyroid must be the last feature"
             ),
             RecipeError::Result { result } => {
                 write!(f, "result {result} is not a step that makes a body")

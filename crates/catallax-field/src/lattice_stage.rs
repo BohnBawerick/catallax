@@ -1,15 +1,15 @@
-//! The final lattice stage of a finished body.
+//! The final field stage of a finished body.
 //!
-//! A [`Stage`] is built from the body's recipe, the lattice parameters and the
-//! user's output settings. It adds one lattice step that reads the body's result
-//! and makes that step the result. The stage owns no cache: editing the body means
-//! calling [`Stage::new`] again with the edited recipe, so nothing computed from
-//! the earlier body can be reused.
+//! A [`Stage`] is built from the body's recipe, the parameters of one terminal
+//! field, a [`LatticeSpec`] or a [`GyroidSpec`], and the user's output settings. It
+//! adds one field step that reads the body's result and makes that step the result.
+//! The stage owns no cache: editing the body means calling [`Stage::new`] again with
+//! the edited recipe, so nothing computed from the earlier body can be reused.
 
 use crate::{Plan, display::PreviewOptions, printing};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::{
-    Grade, LatticeCell, Number, Operation, Pose, Recipe, RecipeError, Step, StepId,
+    Grade, GyroidKind, LatticeCell, Number, Operation, Pose, Recipe, RecipeError, Step, StepId,
 };
 
 /// The lattice the user chose. These survive returning before the lattice.
@@ -25,7 +25,65 @@ pub struct LatticeSpec {
     pub radius: Grade,
 }
 
-/// The user's output settings. Only these two relax for a lattice export.
+/// The gyroid the user chose. These survive returning before the gyroid.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GyroidSpec {
+    /// Length of one period.
+    pub period: Number,
+    /// The dimensionless level of the gyroid function that bounds the solid. Only a
+    /// constant level is supported.
+    pub level: Grade,
+    /// Only [`GyroidKind::Network`] is supported.
+    pub kind: GyroidKind,
+    /// Places the gyroid. Only the part frame is supported.
+    pub frame: Pose,
+}
+
+/// One terminal field a [`Stage`] can add to a body.
+pub trait TerminalField {
+    /// The preferred step id; a taken id gains a numeric suffix.
+    const STEP: &'static str;
+    /// Refuses parameters whose own definition is impossible.
+    fn validate(&self) -> Result<(), Refusal>;
+    /// The field step over `region`.
+    fn operation(&self, region: StepId) -> Operation;
+}
+
+impl TerminalField for LatticeSpec {
+    const STEP: &'static str = "lattice";
+    fn validate(&self) -> Result<(), Refusal> {
+        catallax_features::lattice::validate(&self.cell, self.size.value(), &self.radius)
+            .map(|_| ())
+    }
+    fn operation(&self, region: StepId) -> Operation {
+        Operation::Lattice {
+            region,
+            cell: self.cell.clone(),
+            size: self.size.clone(),
+            frame: self.frame.clone(),
+            radius: self.radius.clone(),
+        }
+    }
+}
+
+impl TerminalField for GyroidSpec {
+    const STEP: &'static str = "gyroid";
+    fn validate(&self) -> Result<(), Refusal> {
+        crate::gyroid::Gyroid::new(self.period.value(), &self.level, self.kind, &self.frame)
+            .map(|_| ())
+    }
+    fn operation(&self, region: StepId) -> Operation {
+        Operation::Gyroid {
+            region,
+            period: self.period.clone(),
+            level: self.level.clone(),
+            kind: self.kind,
+            frame: self.frame.clone(),
+        }
+    }
+}
+
+/// The user's output settings. Only these two relax for a terminal field export.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     /// Two-sided distance limit of the output in millimetres.
@@ -66,7 +124,7 @@ pub struct Verdict {
     pub max_deviation: Rational,
 }
 
-/// A certified lattice mesh with its verdict.
+/// A certified terminal field mesh with its verdict.
 #[derive(Clone, Debug)]
 pub struct Output {
     mesh: printing::Mesh,
@@ -121,7 +179,7 @@ pub enum Proof {
     Unproved,
 }
 
-/// A display of the lattice shown before the export is proved.
+/// A display of the terminal field shown before the export is proved.
 #[derive(Clone, Debug)]
 pub struct Preview {
     /// The coarse mesh. Its `max_deviation` is a sampling scale, not a proven
@@ -131,38 +189,39 @@ pub struct Preview {
     pub proof: Proof,
 }
 
-/// A body with its lattice stage compiled.
+/// A body with its terminal field stage compiled.
 #[derive(Clone, Debug)]
-pub struct Stage {
+pub struct Stage<S = LatticeSpec> {
     body: Recipe,
-    spec: LatticeSpec,
+    spec: S,
     settings: Settings,
     recipe: Recipe,
     lattice: StepId,
     plan: Plan,
 }
 
-impl Stage {
+impl<S: TerminalField> Stage<S> {
     /// Builds the stage over `body`, whose result is the finished body.
     ///
     /// Refusals: `lattice.cad-after-lattice` when the body already contains a
-    /// lattice, `lattice.settings` for non-positive accuracy, detail or limits,
-    /// `lattice.impossible` for impossible lattice parameters, and the field's own
-    /// codes when the body cannot be compiled.
+    /// lattice or gyroid, `lattice.settings` for non-positive accuracy, detail or
+    /// limits, `lattice.impossible` or `gyroid.impossible` for impossible field
+    /// parameters, `gyroid.unsupported` for a sheet, graded or framed gyroid, and the
+    /// field's own codes when the body cannot be compiled.
     pub fn new(
         body: &Recipe,
-        spec: LatticeSpec,
+        spec: S,
         settings: Settings,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         if body
             .steps
             .iter()
-            .any(|s| matches!(s.op, Operation::Lattice { .. }))
+            .any(|s| matches!(s.op, Operation::Lattice { .. } | Operation::Gyroid { .. }))
         {
             return Err(Refusal::new(
                 "lattice.cad-after-lattice",
-                "the body already contains a lattice; return before it to edit",
+                "the body already contains a terminal field; return before it to edit",
             ));
         }
         if settings.accuracy.sign() != Sign::Positive
@@ -175,11 +234,11 @@ impl Stage {
                 "positive accuracy, minimum detail and cell limit, and at least four vertices required",
             ));
         }
-        catallax_features::lattice::validate(&spec.cell, spec.size.value(), &spec.radius)?;
+        spec.validate()?;
         let lattice = (0..)
             .map(|n| match n {
-                0 => "lattice".to_string(),
-                n => format!("lattice-{n}"),
+                0 => S::STEP.to_string(),
+                n => format!("{}-{n}", S::STEP),
             })
             .find_map(|name| {
                 let id = StepId::new(&name).ok()?;
@@ -189,13 +248,7 @@ impl Stage {
         let mut recipe = body.clone();
         recipe.steps.push(Step {
             id: lattice.clone(),
-            op: Operation::Lattice {
-                region: body.result.clone(),
-                cell: spec.cell.clone(),
-                size: spec.size.clone(),
-                frame: spec.frame.clone(),
-                radius: spec.radius.clone(),
-            },
+            op: spec.operation(body.result.clone()),
         });
         recipe.result = lattice.clone();
         let plan = Plan::compile_checked(&recipe, dec)?;
@@ -209,11 +262,11 @@ impl Stage {
         })
     }
 
-    /// The body recipe plus the lattice step, which is its result.
+    /// The body recipe plus the field step, which is its result.
     pub fn recipe(&self) -> &Recipe {
         &self.recipe
     }
-    /// The id of the lattice step.
+    /// The id of the field step.
     pub fn lattice_step(&self) -> &StepId {
         &self.lattice
     }
@@ -226,7 +279,7 @@ impl Stage {
         &self.settings
     }
 
-    /// Builds a coarse display from the lattice field alone, at the preview's own
+    /// Builds a coarse display from the terminal field alone, at the preview's own
     /// tolerance and limits rather than the settings'. Closedness and connectivity are
     /// not required of it. Nothing from the body's B-rep is used. Refusals are the
     /// print mesher's: `field.print-budget`, `field.print-grid`, `field.print-vertices`
@@ -270,27 +323,28 @@ impl Stage {
         })
     }
 
-    /// Leaves the stage: the unchanged body recipe, with the lattice parameters and
+    /// Leaves the stage: the unchanged body recipe, with the field parameters and
     /// settings to put back after the body is edited.
-    pub fn return_before_lattice(self) -> (Recipe, LatticeSpec, Settings) {
+    pub fn return_before_lattice(self) -> (Recipe, S, Settings) {
         (self.body, self.spec, self.settings)
     }
 }
 
 /// Appends nothing and reports whether a CAD step may follow `recipe`'s result.
-/// A lattice anywhere in a history makes every later step a CAD-after-lattice.
+/// A lattice or gyroid anywhere in a history makes every step that reads it a
+/// CAD-after-lattice.
 pub fn check_no_cad_after_lattice(recipe: &Recipe) -> Result<(), Refusal> {
     recipe.check_lattice_terminal().map_err(|e| match e {
         RecipeError::LatticeNotTerminal { step, lattice } => Refusal::new(
             "lattice.cad-after-lattice",
-            format!("step {step} reads lattice {lattice}; return before the lattice to edit"),
+            format!("step {step} reads {lattice}; return before the terminal field to edit"),
         ),
         other => Refusal::new("field.recipe", other.to_string()),
     })
 }
 
-/// The coarse unproved display of any compiled plan that holds a lattice. The
-/// field adapter calls this when the certified display refuses a lattice.
+/// The coarse unproved display of any compiled plan that holds a terminal field.
+/// The field adapter calls this when the certified display refuses that field.
 pub fn preview_plan(
     plan: &Plan,
     options: &PreviewOptions,

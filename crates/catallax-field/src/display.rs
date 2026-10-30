@@ -550,14 +550,15 @@ fn mesh_plan_inner(
             "positive tolerance and cell limit, and at least four vertices required",
         ));
     }
-    if plan
-        .leaves
-        .iter()
-        .any(|leaf| matches!(leaf, crate::geometry::Leaf::Lattice(_)))
-    {
+    if plan.leaves.iter().any(|leaf| {
+        matches!(
+            leaf,
+            crate::geometry::Leaf::Lattice(_) | crate::geometry::Leaf::Gyroid(_)
+        )
+    }) {
         return Err(failure(
             "field.display-lattice",
-            "periodic beams need a watertight field isosurface exporter; support charts do not cover them",
+            "periodic fields need a watertight field isosurface exporter; support charts do not cover them",
         ));
     }
     let mesh = Mesh {

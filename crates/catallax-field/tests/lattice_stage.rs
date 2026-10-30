@@ -1,10 +1,10 @@
 //! The final lattice stage: request building, refusals and rebuild from an edited body.
 use catallax_field::{
     Location, Workspace,
-    lattice_stage::{LatticeSpec, Settings, Stage, check_no_cad_after_lattice},
+    lattice_stage::{GyroidSpec, LatticeSpec, Settings, Stage, check_no_cad_after_lattice},
 };
 use catallax_numbers::{Decider, Rational};
-use catallax_recipe::{Grade, LatticeCell, Number, Pose, Recipe};
+use catallax_recipe::{Grade, GyroidKind, LatticeCell, Number, Pose, Recipe};
 use catallax_shapes::RPoint3;
 
 fn q(value: &str) -> Rational {
@@ -638,4 +638,404 @@ fn s1_depth_fifteen_under_a_small_cell_cap_certifies_within_it_or_refuses() {
             assert_eq!(labelled_header(&bytes), (1, 10, 1_000, 1_000_000));
         }
     }
+}
+
+fn gyroid_spec(level: &str) -> GyroidSpec {
+    GyroidSpec {
+        period: Number::parse("10").unwrap(),
+        level: serde_json::from_str(&format!(r#"{{"constant":"{level}"}}"#)).unwrap(),
+        kind: GyroidKind::Network,
+        frame: spec().frame,
+    }
+}
+fn gyroid_settings() -> Settings {
+    Settings {
+        accuracy: q("1/10"),
+        minimum_detail: q("1/2"),
+        max_cells: 2_000_000,
+        max_vertices: 1_000_000,
+    }
+}
+/// The sketch-plus-extrude body of the V7c scenario: a 20 by 20 rectangle at z = -5.
+fn gyroid_body(depth: &str) -> Recipe {
+    Recipe::parse(&format!(
+        r#"{{"format":"catallax-recipe/3","name":"V7c body","steps":[{{"id":"profile","op":"sketch","plane":{{"rotation":["1","0","0","0"],"translation":["0","0","-5"]}},"loops":[[{{"kind":"line","id":"a","to":["10","-10"]}},{{"kind":"line","id":"b","to":["10","10"]}},{{"kind":"line","id":"c","to":["-10","10"]}},{{"kind":"line","id":"d","to":["-10","-10"]}}]]}},{{"id":"boss","op":"extrude","profile":"profile","distance":"{depth}"}}],"result":"boss"}}"#
+    ))
+    .unwrap()
+}
+
+/// An independent reading of one `catallax-print-stl/1` gyroid file, from the V7c
+/// design's D1 and D3-D6. It uses no kernel value but the file's own bytes.
+mod gyroid_oracle {
+    use super::*;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    type V = [f64; 3];
+    const PERIOD: f64 = 10.0;
+    const LIPSCHITZ: f64 = 2.176_559_237_081_062;
+
+    fn g(p: V) -> f64 {
+        let [x, y, z] = p.map(|v| v * std::f64::consts::TAU / PERIOD);
+        x.sin() * y.cos() + y.sin() * z.cos() + z.sin() * x.cos()
+    }
+    fn sub(a: V, b: V) -> V {
+        [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    }
+    fn dot(a: V, b: V) -> f64 {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    }
+    fn cross(a: V, b: V) -> V {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    }
+    fn distance(p: V, t: [V; 3]) -> f64 {
+        let along = |a: V, b: V| {
+            let e = sub(b, a);
+            let u = (dot(sub(p, a), e) / dot(e, e)).clamp(0.0, 1.0);
+            let d = sub(p, [a[0] + u * e[0], a[1] + u * e[1], a[2] + u * e[2]]);
+            dot(d, d)
+        };
+        let n = cross(sub(t[1], t[0]), sub(t[2], t[0]));
+        let inside = (0..3).all(|k| dot(n, cross(sub(t[(k + 1) % 3], t[k]), sub(p, t[k]))) >= 0.0);
+        let squared = if inside {
+            dot(sub(p, t[0]), n).powi(2) / dot(n, n)
+        } else {
+            along(t[0], t[1])
+                .min(along(t[1], t[2]))
+                .min(along(t[2], t[0]))
+        };
+        squared.sqrt()
+    }
+
+    /// D4's fixed boundary samples: cyclic permutations of the level's seeds, moved by
+    /// whole periods within the box. The negative seeds of the corrected G2 also need
+    /// their positive copies, so its translations run one period further in x and y.
+    fn samples(level: &Rational, top: f64) -> Vec<V> {
+        let ([a, b], shifts): ([f64; 2], &[f64]) = if level.is_zero() {
+            ([0.0, 5.0], &[-10.0, 0.0])
+        } else {
+            assert_eq!(*level, q("-1/2"));
+            ([-5.0 / 6.0, -25.0 / 6.0], &[-10.0, 0.0, 10.0])
+        };
+        let mut points = Vec::new();
+        for seed in [a, b] {
+            for shift in 0..3 {
+                let mut p = [0.0; 3];
+                p[shift] = seed;
+                for &i in shifts {
+                    for &j in shifts {
+                        for k in [0.0, 10.0] {
+                            let t: V = [p[0] + i, p[1] + j, p[2] + k];
+                            let inside = t[0].abs() <= 10.0
+                                && t[1].abs() <= 10.0
+                                && t[2] >= -5.0
+                                && t[2] <= top;
+                            if inside && !points.contains(&t) {
+                                points.push(t);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        points
+    }
+
+    /// D1's open material patches on each face of the box, with their outward normals.
+    fn faces(top: f64) -> Vec<(V, V)> {
+        let mut points = vec![
+            ([10.0, -2.5, 0.0], [1.0, 0.0, 0.0]),
+            ([-10.0, -2.5, 0.0], [-1.0, 0.0, 0.0]),
+            ([0.0, 10.0, -2.5], [0.0, 1.0, 0.0]),
+            ([0.0, -10.0, -2.5], [0.0, -1.0, 0.0]),
+            ([-2.5, 0.0, -5.0], [0.0, 0.0, -1.0]),
+            ([-2.5, 0.0, top], [0.0, 0.0, 1.0]),
+        ];
+        for (p, _) in &mut points {
+            assert!(g(*p) < -0.999, "a face patch of D1 is material");
+        }
+        points
+    }
+
+    /// Checks D1 and D3-D6 on written bytes, for a state's level and upper face.
+    pub(super) fn check(bytes: &[u8], level: &Rational, top: f64, caps: (u64, u64)) {
+        let word = |at: usize| u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
+        let real = |at: usize| f64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
+        assert_eq!(&bytes[..8], b"CXPRINT1");
+        assert_eq!(&bytes[8..12], &[2, 1, 1, 1]);
+        assert_eq!((word(12), word(20)), (1, 10));
+        assert_eq!((word(28), word(36)), caps);
+        let parts = [real(44), real(52), real(60), real(68)];
+        assert!(parts.iter().all(|v| v.is_finite() && *v >= 0.0));
+        let exact = parts.map(|v| Rational::from_f64_exact(v).unwrap());
+        let w = &exact[3];
+        assert!(*w > q("0") && *w <= q("1/10"));
+        assert!(&(&exact[0] + &exact[1]) + &exact[2] <= *w);
+        assert_eq!(&bytes[76..80], &[0; 4]);
+        let count = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
+        assert!(count > 0);
+        assert_eq!(bytes.len(), 84 + 50 * count);
+
+        let mut welded = BTreeMap::new();
+        let mut points: Vec<V> = Vec::new();
+        let mut facets = Vec::with_capacity(count);
+        for facet in bytes[84..].as_chunks::<50>().0 {
+            let mut ids = [0usize; 3];
+            for (v, id) in ids.iter_mut().enumerate() {
+                let c: [f32; 3] = std::array::from_fn(|i| {
+                    let at = 12 + v * 12 + i * 4;
+                    f32::from_le_bytes(facet[at..at + 4].try_into().unwrap())
+                });
+                assert!(c.iter().all(|x| x.is_finite()));
+                let key = c.map(|x| if x == 0.0 { 0 } else { x.to_bits() });
+                let next = points.len();
+                *id = *welded.entry(key).or_insert(next);
+                if *id == next {
+                    points.push(c.map(f64::from));
+                }
+            }
+            assert!(ids[0] != ids[1] && ids[1] != ids[2] && ids[2] != ids[0]);
+            facets.push(ids);
+        }
+        assert!(points.len() as u64 <= caps.1);
+
+        // Each undirected edge has exactly one facet in each direction.
+        let mut directed = BTreeSet::new();
+        let mut links: Vec<Vec<(usize, usize)>> = vec![Vec::new(); points.len()];
+        for &[a, b, c] in &facets {
+            for (p, x, y) in [(a, b, c), (b, c, a), (c, a, b)] {
+                assert!(directed.insert((p, x)), "edge repeated in one direction");
+                links[p].push((x, y));
+            }
+        }
+        for &(a, b) in &directed {
+            assert!(directed.contains(&(b, a)), "edge lacks its opposite");
+        }
+        // Each vertex link is a single cycle, and the surface is one component.
+        for link in &links {
+            let next: BTreeMap<usize, usize> = link.iter().copied().collect();
+            assert_eq!(next.len(), link.len());
+            let mut walk = link[0].0;
+            for _ in 1..link.len() {
+                walk = next[&walk];
+                assert_ne!(walk, link[0].0, "vertex link has two cycles");
+            }
+            assert_eq!(next[&walk], link[0].0);
+        }
+        let mut seen = vec![false; points.len()];
+        let mut pending = vec![0];
+        while let Some(i) = pending.pop() {
+            if !std::mem::replace(&mut seen[i], true) {
+                pending.extend(links[i].iter().map(|l| l.0));
+            }
+        }
+        assert!(seen.iter().all(|v| *v), "one edge-connected component");
+
+        // D1: the box bound; D3: every vertex near the level or a clipping face.
+        let w = w.to_f64_nearest();
+        let c = level.to_f64_nearest();
+        let reach = LIPSCHITZ * w;
+        let (low, high) = ([-10.0, -10.0, -5.0], [10.0, 10.0, top]);
+        for p in &points {
+            for i in 0..3 {
+                assert!(p[i] >= low[i] - w && p[i] <= high[i] + w, "{p:?}");
+            }
+            let value = g(*p);
+            let near_face = (0..3).any(|i| p[i] <= low[i] + w || p[i] >= high[i] - w);
+            assert!(
+                (value - c).abs() <= reach + 1e-8 || (value <= c + reach + 1e-8 && near_face),
+                "{p:?} has g = {value}"
+            );
+        }
+
+        // D4: fixed boundary samples, by point-to-triangle distance.
+        let triangles: Vec<[V; 3]> = facets.iter().map(|t| t.map(|v| points[v])).collect();
+        let samples = samples(level, top);
+        if !level.is_zero() {
+            assert_eq!(samples.len(), 84);
+        }
+        for p in samples {
+            let nearest = triangles
+                .iter()
+                .map(|t| distance(p, *t))
+                .fold(f64::INFINITY, f64::min);
+            assert!(nearest <= w + 1e-8, "{p:?} is {nearest} from the mesh");
+        }
+        // D1 and D5: the box faces are reached and face outward there.
+        for (p, normal) in faces(top) {
+            let (nearest, facet) = triangles
+                .iter()
+                .map(|t| (distance(p, *t), t))
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .unwrap();
+            assert!(nearest <= w + 1e-8, "{p:?} is {nearest} from the mesh");
+            let n = cross(sub(facet[1], facet[0]), sub(facet[2], facet[0]));
+            assert!(dot(n, normal) > 0.0, "{p:?} faces inward");
+        }
+    }
+}
+
+/// K-G2, fixed by the independent V7c designer: the rebuilt body and the level both reach
+/// the geometry, at `1/10` mm within the default caps and one 100M allowance covering
+/// compilation, preview, export and labelling. G2 uses level `-1/2`: at `1/2` this box
+/// holds a separate exact corner piece, so that level has no one-component export.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "V7c gyroid exports run in release mode")]
+fn gyroid_profile_states_certify_at_point_one() {
+    use catallax_field::lattice_stage::{Proof, default_preview_options};
+    for (depth, level, top) in [("10", "0", 5.0), ("20", "0", 15.0), ("20", "-1/2", 15.0)] {
+        let mut preview_time = std::time::Duration::ZERO;
+        let started = std::time::Instant::now();
+        let ((output, bytes), work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            let mut dec = Decider::default();
+            let stage = Stage::new(
+                &gyroid_body(depth),
+                gyroid_spec(level),
+                gyroid_settings(),
+                &mut dec,
+            )
+            .unwrap();
+            let controls = default_preview_options(stage.plan(), &mut dec).unwrap();
+            let previewing = std::time::Instant::now();
+            let preview = stage.preview(&controls, &mut dec).unwrap();
+            preview_time = previewing.elapsed();
+            assert_eq!(preview.proof, Proof::Unproved);
+            assert!(!preview.mesh.triangles.is_empty());
+            let output = stage.export(&mut dec).unwrap();
+            check_acceptance_verdict(&output);
+            let (bytes, output) = output.labelled_stl().unwrap();
+            (output, bytes)
+        });
+        let total_time = started.elapsed();
+        assert!(!work.exhausted, "{depth} {level}: {work:?}");
+        check_acceptance_verdict(&output);
+        assert_eq!(labelled_header(&bytes), (1, 10, 2_000_000, 1_000_000));
+        gyroid_oracle::check(&bytes, &q(level), top, (2_000_000, 1_000_000));
+        println!(
+            "gyroid depth {depth} level {level}: cells {} vertices {} facets {} work {} preview {preview_time:?} total {total_time:?}",
+            output.mesh().cells,
+            output.mesh().positions.len(),
+            output.mesh().triangles.len(),
+            work.used,
+        );
+    }
+}
+
+/// K-G3, fixed by the independent V7c designer: a smaller cap either holds a fully
+/// certified output or refuses with the budget code. It never coarsens the request.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "V7c gyroid exports run in release mode")]
+fn gyroid_small_caps_never_change_the_request() {
+    for (max_cells, max_vertices) in [(1_000, 1_000_000), (2_000_000, 4)] {
+        let settings = Settings {
+            max_cells,
+            max_vertices,
+            ..gyroid_settings()
+        };
+        let stage = Stage::new(
+            &gyroid_body("20"),
+            gyroid_spec("-1/2"),
+            settings,
+            &mut Decider::default(),
+        )
+        .unwrap();
+        match stage.export(&mut Decider::default()) {
+            Err(error) => assert_eq!(error.code, "field.print-budget", "{}", error.detail),
+            Ok(output) => {
+                let (bytes, _) = output.labelled_stl().unwrap();
+                gyroid_oracle::check(
+                    &bytes,
+                    &q("-1/2"),
+                    15.0,
+                    (max_cells as u64, max_vertices as u64),
+                );
+            }
+        }
+    }
+    for (max_cells, max_vertices) in [(0, 1_000_000), (2_000_000, 3)] {
+        let settings = Settings {
+            max_cells,
+            max_vertices,
+            ..gyroid_settings()
+        };
+        let error = Stage::new(
+            &gyroid_body("20"),
+            gyroid_spec("-1/2"),
+            settings,
+            &mut Decider::default(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "lattice.settings");
+    }
+}
+
+/// Terminal rule: no second field or CAD step may follow a gyroid, in either order.
+#[test]
+fn a_gyroid_is_terminal_like_a_lattice() {
+    let mut dec = Decider::default();
+    let gyroid = Stage::new(
+        &gyroid_body("10"),
+        gyroid_spec("0"),
+        gyroid_settings(),
+        &mut dec,
+    )
+    .unwrap();
+    assert_eq!(gyroid.lattice_step().as_str(), "gyroid");
+    assert_eq!(gyroid.recipe().result, *gyroid.lattice_step());
+    let error = Stage::new(gyroid.recipe(), spec(), settings(), &mut dec).unwrap_err();
+    assert_eq!(error.code, "lattice.cad-after-lattice");
+    let error = Stage::new(
+        gyroid.recipe(),
+        gyroid_spec("0"),
+        gyroid_settings(),
+        &mut dec,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "lattice.cad-after-lattice");
+    let lattice = first_again();
+    let error = Stage::new(
+        lattice.recipe(),
+        gyroid_spec("0"),
+        gyroid_settings(),
+        &mut dec,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "lattice.cad-after-lattice");
+    let (body, kept, _) = gyroid.return_before_lattice();
+    assert_eq!(body, gyroid_body("10"));
+    assert_eq!(kept, gyroid_spec("0"));
+
+    let reading = Recipe::parse(
+        r#"{"format":"catallax-recipe/3","name":"x","steps":[{"id":"region","op":"block","size":["4","4","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"net","op":"gyroid","region":"region","period":"4","level":{"constant":"0"},"kind":"network","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"after","op":"offset","body":"net","distance":"0.1"}],"result":"after"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        check_no_cad_after_lattice(&reading).unwrap_err().code,
+        "lattice.cad-after-lattice"
+    );
+}
+
+/// The design's public print input: a plain block region through the generic print route,
+/// which needs no stage. The same certificate applies, and no B-rep builder is involved.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "V7c gyroid exports run in release mode")]
+fn a_block_region_certifies_through_the_generic_print_route() {
+    let recipe = Recipe::parse(
+        r#"{"format":"catallax-recipe/3","name":"V7c public gyroid diagnostic","steps":[{"id":"region","op":"block","size":["20","20","10"],"pose":{"rotation":["1","0","0","0"],"translation":["-10","-10","-5"]}},{"id":"gyroid","op":"gyroid","region":"region","period":"10","level":{"constant":"0"},"kind":"network","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"gyroid"}"#,
+    )
+    .unwrap();
+    let mut dec = Decider::default();
+    let plan = catallax_field::Plan::compile_checked(&recipe, &mut dec).unwrap();
+    let options = catallax_field::printing::Options {
+        tolerance: q("1/10"),
+        max_cells: 2_000_000,
+        max_vertices: 1_000_000,
+    };
+    let mesh = catallax_field::printing::mesh_plan(&plan, &options, &mut dec).unwrap();
+    assert_eq!(mesh.component_count(), 1);
+    assert!(mesh.max_deviation > q("0") && mesh.max_deviation <= q("1/10"));
+    assert!(mesh.cells <= 2_000_000 && mesh.positions.len() <= 1_000_000);
 }

@@ -24,6 +24,7 @@ mod end_condition;
 mod features;
 mod fillet;
 mod geometry;
+mod gyroid;
 mod lattice;
 pub mod lattice_stage;
 /// Certified field-only volume, centroid and inertia queries.
@@ -751,6 +752,27 @@ impl Plan {
                             plan.boolean(BooleanKind::Intersect, steps[region], beams, dec)?
                         }
                     }
+                    Operation::Gyroid {
+                        region,
+                        period,
+                        level,
+                        kind,
+                        frame,
+                    } => {
+                        let gyroid = gyroid::Gyroid::new(period.value(), level, *kind, frame)?;
+                        match gyroid.saturated() {
+                            Some(true) => steps[region],
+                            Some(false) => 0,
+                            None => {
+                                let network = plan.leaf(
+                                    geometry::Leaf::Gyroid(Box::new(gyroid)),
+                                    vec![],
+                                    dec,
+                                )?;
+                                plan.boolean(BooleanKind::Intersect, steps[region], network, dec)?
+                            }
+                        }
+                    }
                     _ => {
                         let (leaf, faces) = geometry::compile(&step.op, &step.id, dec)?;
                         plan.leaf(leaf, faces, dec)?
@@ -770,7 +792,9 @@ impl Plan {
                         step_faces[target].clone()
                     }
                     Operation::Shell { body, .. } => step_faces[body].clone(),
-                    Operation::Lattice { region, .. } => step_faces[region].clone(),
+                    Operation::Lattice { region, .. } | Operation::Gyroid { region, .. } => {
+                        step_faces[region].clone()
+                    }
                     Operation::Pattern { body, .. }
                     | Operation::Fillet { body, .. }
                     | Operation::Chamfer { body, .. }

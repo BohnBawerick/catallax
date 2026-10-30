@@ -55,6 +55,7 @@ impl Plan {
                         geometry::Leaf::Feature(_)
                             | geometry::Leaf::Draft(_)
                             | geometry::Leaf::Lattice(_)
+                            | geometry::Leaf::Gyroid(_)
                     ) =>
                 {
                     for constraint in self.leaves[leaf].constraints() {

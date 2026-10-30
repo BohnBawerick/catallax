@@ -436,3 +436,137 @@ fn non_rational_transform_of_a_lattice_still_refuses() {
     let error = print_plan(false).transformed(&pose, &mut dec).unwrap_err();
     assert_eq!(error.code, "field.lattice-frame");
 }
+
+fn gyroid_recipe(period: &str, grade: &str, kind: &str) -> Recipe {
+    Recipe::parse(&format!(
+        r#"{{"format":"catallax-recipe/3","name":"V7c gyroid","steps":[{{"id":"region","op":"block","size":["20","20","10"],"pose":{{"rotation":["1","0","0","0"],"translation":["-10","-10","-5"]}}}},{{"id":"gyroid","op":"gyroid","region":"region","period":"{period}","level":{grade},"kind":"{kind}","frame":{{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}}}],"result":"gyroid"}}"#
+    ))
+    .unwrap()
+}
+fn constant(level: &str) -> String {
+    format!(r#"{{"constant":"{level}"}}"#)
+}
+
+/// K-G1, fixed by the independent V7c designer: the exact sign, phase, period scaling,
+/// clipping and valid non-positive levels of the network gyroid.
+#[test]
+fn gyroid_points_follow_period_level_and_region() {
+    use Location::{Boundary, Inside, Outside};
+    type Points<'a> = &'a [([&'a str; 3], Location)];
+    let table: [(&str, &str, Points); 4] = [
+        (
+            "10",
+            "0",
+            &[
+                (["0", "0", "0"], Boundary),
+                (["5/2", "0", "0"], Outside),
+                (["-5/2", "0", "0"], Inside),
+                (["0", "5/2", "0"], Outside),
+                (["0", "0", "5/2"], Outside),
+                (["-15/2", "0", "0"], Outside),
+                (["5/6", "0", "0"], Outside),
+                (["25/6", "0", "0"], Outside),
+                (["-21/2", "0", "0"], Outside),
+                (["5", "0", "0"], Boundary),
+            ],
+        ),
+        (
+            "10",
+            "1/2",
+            &[
+                (["0", "0", "0"], Inside),
+                (["5/2", "0", "0"], Outside),
+                (["-5/2", "0", "0"], Inside),
+                (["0", "5/2", "0"], Outside),
+                (["0", "0", "5/2"], Outside),
+                (["-15/2", "0", "0"], Outside),
+                (["5/6", "0", "0"], Boundary),
+                (["25/6", "0", "0"], Boundary),
+                (["-21/2", "0", "0"], Outside),
+            ],
+        ),
+        (
+            "10",
+            "-1/2",
+            &[
+                (["0", "0", "0"], Outside),
+                (["-5/2", "0", "0"], Inside),
+                (["-5/6", "0", "0"], Boundary),
+            ],
+        ),
+        ("20", "0", &[(["5", "0", "0"], Outside)]),
+    ];
+    for (period, level, points) in table {
+        let plan = Plan::compile(&gyroid_recipe(period, &constant(level), "network")).unwrap();
+        let mut storage = Workspace::default();
+        let mut dec = Decider::default();
+        for (xyz, expected) in points {
+            let [x, y, z] = xyz.map(q);
+            let answer = plan
+                .proven_checked(&RPoint3::new(x, y, z), &mut storage, &mut dec)
+                .unwrap();
+            assert_eq!(answer.location, *expected, "a={period} c={level} {xyz:?}");
+            assert!(
+                matches!(answer.value, catallax_field::Value::Residual(_)),
+                "a gyroid residual is not a distance"
+            );
+        }
+        assert!(
+            !plan
+                .fast([1.0, 2.0, 3.0], &mut storage)
+                .unwrap()
+                .true_distance_formula
+        );
+    }
+}
+
+/// K-G1's refusals: deferred functions stay explicit and an impossible period is not
+/// mistaken for one.
+#[test]
+fn gyroid_definitions_outside_this_increment_refuse() {
+    let linear = r#"{"linear":{"from":["0","0","0"],"to":["10","0","0"],"start":"0","end":"1/2"}}"#;
+    for (recipe, code) in [
+        (gyroid_recipe("10", linear, "network"), "gyroid.unsupported"),
+        (
+            gyroid_recipe("10", &constant("1/2"), "sheet"),
+            "gyroid.unsupported",
+        ),
+        (
+            gyroid_recipe("0", &constant("0"), "network"),
+            "gyroid.impossible",
+        ),
+        (
+            gyroid_recipe("-10", &constant("0"), "network"),
+            "gyroid.impossible",
+        ),
+    ] {
+        assert_eq!(Plan::compile(&recipe).unwrap_err().code, code);
+    }
+}
+
+/// A translated frame is outside the part-frame support, not silently the identity.
+#[test]
+fn a_gyroid_outside_the_part_frame_refuses() {
+    let text = serde_json::to_string(&gyroid_recipe("10", &constant("0"), "network")).unwrap();
+    let moved = text.replace(
+        r#""frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}"#,
+        r#""frame":{"rotation":["1","0","0","0"],"translation":["1","0","0"]}"#,
+    );
+    assert_ne!(text, moved);
+    let recipe = Recipe::parse(&moved).unwrap();
+    assert_eq!(
+        Plan::compile(&recipe).unwrap_err().code,
+        "gyroid.unsupported"
+    );
+}
+
+/// Levels at or beyond the range of `g` need no surface: `|g| <= 3/2`.
+#[test]
+fn gyroid_levels_beyond_its_range_are_the_region_or_empty() {
+    let full = Plan::compile(&gyroid_recipe("10", &constant("3/2"), "network")).unwrap();
+    let none = Plan::compile(&gyroid_recipe("10", &constant("-3/2"), "network")).unwrap();
+    let mut storage = Workspace::default();
+    let point = RPoint3::new(q("5/2"), q("0"), q("0"));
+    assert_eq!(full.proven(&point, &mut storage).location, Location::Inside);
+    assert!(none.is_proven_empty());
+}

@@ -218,7 +218,11 @@ pub fn check_region_envelope(plan: &Plan) -> Result<(), Refusal> {
         }
         match plan.instructions[node] {
             Instruction::Leaf(leaf)
-                if sign & 2 != 0 && matches!(plan.leaves[leaf], geometry::Leaf::Lattice(_)) =>
+                if sign & 2 != 0
+                    && matches!(
+                        plan.leaves[leaf],
+                        geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_)
+                    ) =>
             {
                 return Err(failure(
                     "field.stand-in-envelope-coverage",

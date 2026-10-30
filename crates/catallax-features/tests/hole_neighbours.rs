@@ -2,9 +2,9 @@
 use catallax_boolean::{Containment, classify_point};
 use catallax_features::evaluate;
 use catallax_field::{Location, Plan, Workspace};
-use catallax_numbers::{Decider, Rational};
-use catallax_recipe::Recipe;
-use catallax_shapes::RPoint3;
+use catallax_numbers::{Ball, Decider, Rational, with_operation_budget};
+use catallax_recipe::{Origin, Recipe, Role};
+use catallax_shapes::{RPoint3, Surface};
 use serde_json::{Value, json};
 
 // Identity, exact axis swap plus translation, and the app's corner placement.
@@ -236,6 +236,195 @@ fn a_plain_hole_builds_beside_a_bevel_cone() {
                 (["15", "19/4", "79/4"], false),
             ],
         );
+    }
+}
+
+// Quaternion (1, 2, 3, 4) as an exact matrix acting on columns, and its offset.
+const COLLAR_ROTATION: [[&str; 3]; 3] = [
+    ["-2/3", "2/15", "11/15"],
+    ["2/3", "-1/3", "2/3"],
+    ["1/3", "14/15", "2/15"],
+];
+const COLLAR_OFFSET: [&str; 3] = ["7", "11", "-13"];
+
+fn collar_vector(moved: bool, v: [&str; 3]) -> [Rational; 3] {
+    let v = v.map(q);
+    if !moved {
+        return v;
+    }
+    COLLAR_ROTATION
+        .map(|row| (0..3).fold(Rational::zero(), |sum, i| sum + q(row[i]) * v[i].clone()))
+}
+fn collar_point(moved: bool, p: [&str; 3]) -> [Rational; 3] {
+    let [x, y, z] = collar_vector(moved, p);
+    if !moved {
+        return [x, y, z];
+    }
+    let [a, b, c] = COLLAR_OFFSET.map(q);
+    [x + a, y + b, z + c]
+}
+fn strings(v: [Rational; 3]) -> Value {
+    json!(v.map(|c| c.to_string()))
+}
+
+// P2's turned collar with one hole of the given centre and direction.
+fn collar(moved: bool, point: [&str; 3], direction: [&str; 3]) -> Recipe {
+    let plane = if moved {
+        json!({"rotation":["1","2","3","4"],"translation":COLLAR_OFFSET})
+    } else {
+        json!({"rotation":["1","0","0","0"],"translation":["0","0","0"]})
+    };
+    let side = |segment: &str| json!({"step":"ring","role":{"side":{"segment":segment}}});
+    Recipe::parse(
+        &json!({"format":"catallax-recipe/3","name":"collar plain hole","steps":[
+            {"id":"section","op":"sketch","plane":plane,"loops":[[
+                {"kind":"line","id":"bottom","to":["12","0"]},
+                {"kind":"line","id":"right","to":["12","12"]},
+                {"kind":"line","id":"top","to":["6","12"]},
+                {"kind":"line","id":"left","to":["6","0"]}
+            ]]},
+            {"id":"ring","op":"revolve","profile":"section","axis":{
+                "point":strings(collar_point(moved, ["0", "0", "0"])),
+                "direction":strings(collar_vector(moved, ["0", "1", "0"]))},"angle":"360"},
+            {"id":"collar","op":"chamfer","body":"ring","distance":"1","edges":[
+                {"between":[side("right"), side("bottom")]},
+                {"between":[side("right"), side("top")]}
+            ]},
+            {"id":"drilled","op":"hole","target":"collar","at":[{"id":"radial-0",
+                "point":strings(collar_point(moved, point)),
+                "direction":strings(collar_vector(moved, direction))}],
+                "diameter":"2","depth":"through","tip":"flat"}
+        ],"result":"drilled"})
+        .to_string(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_plain_hole_strictly_inside_a_bevel_ring_builds() {
+    // The hole's radial extent is [a - 1, a + 1] and each bevel's is [11, 12].
+    for moved in [false, true] {
+        for a in ["9", "9999/1000"] {
+            let recipe = collar(moved, [a, "12", "0"], ["0", "-1", "0"]);
+            let (built, work) =
+                with_operation_budget(20_000_000, || evaluate(&recipe, &mut Decider::default()));
+            let mut built = built.unwrap_or_else(|e| panic!("{a}, moved {moved}: {e}: {work:?}"));
+            assert!(!work.exhausted);
+            assert!(built.model.check(built.result).is_empty());
+            assert!(built.model.body(built.result).marks.is_empty());
+
+            let field = Plan::compile(&recipe).unwrap();
+            let mut workspace = Workspace::default();
+            for (point, material) in [
+                ([a, "6", "0"], false),
+                ([a, "6", "3/2"], true),
+                (["0", "6", "0"], false),
+                (["47/4", "47/4", "0"], false),
+                (["11", "47/4", "0"], true),
+            ] {
+                let [x, y, z] = collar_point(moved, point);
+                let point = RPoint3::new(x, y, z);
+                let (solid, located) = if material {
+                    (Containment::Inside, Location::Inside)
+                } else {
+                    (Containment::Outside, Location::Outside)
+                };
+                assert_eq!(
+                    classify_point(
+                        &mut built.model,
+                        built.result,
+                        &point,
+                        &mut Decider::default()
+                    )
+                    .proven(),
+                    Some(&solid),
+                    "{a}, moved {moved}, {point:?}"
+                );
+                assert_eq!(
+                    field.proven(&point, &mut workspace).location,
+                    located,
+                    "{a}, moved {moved}, {point:?}"
+                );
+            }
+
+            let origin = |value: Value| serde_json::from_value::<Origin>(value).unwrap();
+            let wall =
+                origin(json!({"step":"drilled","role":{"hole":{"at":"radial-0","part":"wall"}}}));
+            let faces = built.model.faces_of_body(built.result);
+            let named = |origin: &Origin| {
+                faces
+                    .iter()
+                    .copied()
+                    .filter(|f| built.model.face_origins(*f).contains(origin))
+                    .collect::<Vec<_>>()
+            };
+            let walls = named(&wall);
+            assert_eq!(walls.len(), 1);
+            assert!(matches!(
+                built
+                    .model
+                    .geom()
+                    .surface(built.model.face(walls[0]).surface),
+                Surface::Cylinder(_)
+            ));
+            let origins: Vec<_> = faces
+                .iter()
+                .flat_map(|f| built.model.face_origins(*f))
+                .collect();
+            assert!(
+                origins
+                    .iter()
+                    .all(|o| !matches!(o.role, Role::Hole { .. }) || **o == wall),
+                "{origins:?}"
+            );
+            let mut bevels: Vec<_> = origins
+                .iter()
+                .filter(|o| matches!(o.role, Role::Bevel { .. }))
+                .collect();
+            bevels.sort();
+            bevels.dedup();
+            assert_eq!(bevels.len(), 2, "{origins:?}");
+            for segment in ["right", "left"] {
+                let side = origin(json!({"step":"ring","role":{"side":{"segment":segment}}}));
+                assert!(!named(&side).is_empty(), "{segment}: {origins:?}");
+            }
+
+            let volume = catallax_measure::volume(
+                &built.model,
+                built.result,
+                &Default::default(),
+                &mut Decider::default(),
+            )
+            .unwrap()
+            .value;
+            let expected = Ball::from_rational(&q("3782/3"), 128) * Ball::pi(128);
+            assert!(volume.lo <= expected.hi() && expected.lo() <= volume.hi);
+            assert!(volume.width() <= q("1/200"));
+        }
+    }
+}
+
+#[test]
+fn a_hole_meeting_a_bevel_keeps_its_typed_refusal() {
+    let mut rows = Vec::new();
+    for moved in [false, true] {
+        // Exact contact at (11, 12, 0), then a genuine crossing curve.
+        rows.push(collar(moved, ["10", "12", "0"], ["0", "-1", "0"]));
+        rows.push(collar(moved, ["21/2", "12", "0"], ["0", "-1", "0"]));
+    }
+    // A skew axis crosses the retained upper cone, so no parallel tube applies.
+    rows.push(collar(false, ["21/2", "12", "0"], ["1", "-1", "1"]));
+    for recipe in rows {
+        let (built, work) =
+            with_operation_budget(20_000_000, || evaluate(&recipe, &mut Decider::default()));
+        assert!(!work.exhausted, "{work:?}");
+        match built {
+            Err(catallax_features::BuildError::Geometry { step, refusal }) => {
+                assert_eq!(step.as_str(), "drilled");
+                assert_eq!(refusal.code, "intersect.traced-pair-required");
+            }
+            other => panic!("{:?}", other.map(|_| "built")),
+        }
     }
 }
 

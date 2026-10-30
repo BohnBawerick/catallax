@@ -17,6 +17,8 @@ pub enum SurfaceKind {
     Sphere,
     /// Torus.
     Torus,
+    /// Outer sheet of a horn or spindle torus.
+    TorusSheet,
     /// Elliptic cylinder.
     EllipticCylinder,
     /// Certified finite B-spline support.
@@ -100,6 +102,26 @@ pub struct Torus {
     /// Positive core-circle radius.
     pub major: Real,
     /// Positive tube radius, less than the major radius.
+    pub minor: Real,
+    /// Nonzero perpendicular seam direction.
+    pub ref_dir: Vector3,
+}
+
+/// The outer sheet of a horn or spindle torus, `0 < major <= minor`: the
+/// points `center + (major + minor cos v) e(u) + minor sin v axis` with
+/// `major + minor cos v > 0`, oriented away from the tube centre circle. The
+/// self-intersecting inner sheet is not part of this support, so its side is
+/// that of the outer tube, `(rho - major)^2 + z^2 - minor^2`, not the sign of
+/// the complete quartic carrier. It has no global polynomial equation.
+#[derive(Clone, Debug)]
+pub struct TorusSheet {
+    /// Centre.
+    pub center: Point3,
+    /// Nonzero axis direction.
+    pub axis: Vector3,
+    /// Positive core-circle radius, at most the tube radius.
+    pub major: Real,
+    /// Positive tube radius.
     pub minor: Real,
     /// Nonzero perpendicular seam direction.
     pub ref_dir: Vector3,
@@ -282,6 +304,60 @@ impl Torus {
         })
     }
 }
+impl TorusSheet {
+    /// Validates field domains before proving `0 < major <= minor`.
+    pub fn new(
+        center: Point3,
+        axis: Vector3,
+        major: Real,
+        minor: Real,
+        ref_dir: Vector3,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        math::validate_point(&center, dec)?;
+        math::validate_vector(&axis, dec)?;
+        math::validate(&major, dec)?;
+        math::validate(&minor, dec)?;
+        math::validate_vector(&ref_dir, dec)?;
+        math::directions(&axis, &ref_dir, dec)?;
+        math::positive(&major, "shapes.non-positive-radius", dec)?;
+        math::positive(&minor, "shapes.non-positive-radius", dec)?;
+        if math::sign(&(&minor - &major), dec)? == Sign::Negative {
+            return Err(Refusal::new(
+                "shapes.torus-sheet-ring",
+                "a ring torus is a complete torus, not an outer sheet",
+            ));
+        }
+        math::perpendicular(&axis, &ref_dir, dec)?;
+        Ok(Self {
+            center,
+            axis,
+            major,
+            minor,
+            ref_dir,
+        })
+    }
+
+    /// Axial height and distance from the axis, both relative to the centre.
+    fn cylindrical(&self, p: &Point3) -> (Vector3, Real, Real) {
+        let d = p.minus(&self.center);
+        let norm = self.axis.norm_squared();
+        let height = d.dot(&self.axis);
+        let radial = d.minus(&self.axis.scaled(&(&height / &norm)));
+        let rho = radial.norm_squared().sqrt();
+        (radial, rho, &height / &norm.sqrt())
+    }
+
+    /// Outward normal covector away from the tube centre on this sheet's side.
+    pub fn normal(&self, p: &Point3) -> Vector3 {
+        let (radial, rho, _) = self.cylindrical(p);
+        let d = p.minus(&self.center);
+        let norm = self.axis.norm_squared();
+        let axial = self.axis.scaled(&(&d.dot(&self.axis) / &norm));
+        radial.scaled(&(&(&rho - &self.major) / &rho)).plus(&axial)
+    }
+}
+
 impl EllipticCylinder {
     /// Validates the strict ellipse axes. Equal axes must be reduced to a
     /// circular cylinder by the defining operation before calling this constructor.
@@ -332,6 +408,8 @@ pub enum Surface {
     Sphere(Sphere),
     /// Ring torus.
     Torus(Torus),
+    /// Outer sheet of a horn or spindle torus.
+    TorusSheet(TorusSheet),
     /// Elliptic cylinder.
     EllipticCylinder(EllipticCylinder),
     /// Genuine finite B-spline carrier with its producer's checked chart family.
@@ -347,6 +425,7 @@ impl Surface {
             Self::Cone(_) => SurfaceKind::Cone,
             Self::Sphere(_) => SurfaceKind::Sphere,
             Self::Torus(_) => SurfaceKind::Torus,
+            Self::TorusSheet(_) => SurfaceKind::TorusSheet,
             Self::EllipticCylinder(_) => SurfaceKind::EllipticCylinder,
             Self::BSpline(_) => SurfaceKind::BSpline,
         }
@@ -360,6 +439,7 @@ impl Surface {
             Self::Cone(s) => [Some(&s.slope), None],
             Self::Sphere(s) => [Some(&s.radius), None],
             Self::Torus(s) => [Some(&s.major), Some(&s.minor)],
+            Self::TorusSheet(s) => [Some(&s.major), Some(&s.minor)],
             Self::EllipticCylinder(s) => [Some(&s.major_sq), Some(&s.minor_sq)],
             Self::BSpline(_) => return None,
         };
@@ -433,6 +513,9 @@ impl Surface {
     /// Global analytic equation at its specified scaling. A finite multi-span
     /// spline has no such equation; absence is not the zero polynomial.
     pub fn implicit(&self) -> Option<RealPoly> {
+        if let Self::TorusSheet(_) = self {
+            return None;
+        }
         let (origin, axis, _) = self.definition_frame()?;
         let d = math::displacement(origin);
         let constant = |r| RealPoly::constant(3, r);
@@ -453,6 +536,7 @@ impl Surface {
                 let a = q + constant(&s.major.square() - &s.minor.square());
                 &a * &a - radial.scale(&(&Real::from_i64(4) * &s.major.square()))
             }
+            Self::TorusSheet(_) => unreachable!("an outer sheet has no polynomial"),
             Self::EllipticCylinder(s) => {
                 let second = s.axis.cross(&s.major_dir);
                 let a = math::dot(&d, &s.major_dir);
@@ -468,6 +552,9 @@ impl Surface {
     /// Gradient of the analytic equation. Parametric normals instead require
     /// a finite chart preimage and are queried with `normal_at`.
     pub fn gradient(&self, p: &Point3) -> Option<Vector3> {
+        if let Self::TorusSheet(s) = self {
+            return Some(s.normal(p).scaled(&Real::from_i64(2)));
+        }
         let (origin, axis, _) = self.definition_frame()?;
         let d = p.minus(origin);
         let n = axis.norm_squared();
@@ -488,6 +575,7 @@ impl Surface {
                 d.scaled(&(&Real::from_i64(4) * &q))
                     .minus(&radial.scaled(&(&Real::from_i64(8) * &major_sq)))
             }
+            Self::TorusSheet(_) => unreachable!("handled above"),
             Self::EllipticCylinder(s) => {
                 let second = s.axis.cross(&s.major_dir);
                 s.major_dir
@@ -544,6 +632,13 @@ impl Surface {
                 minor: s.minor.clone(),
                 ref_dir: pose.apply_vector(&s.ref_dir),
             }),
+            Self::TorusSheet(s) => Self::TorusSheet(TorusSheet {
+                center: pose.apply_point(&s.center),
+                axis: pose.apply_vector(&s.axis),
+                major: s.major.clone(),
+                minor: s.minor.clone(),
+                ref_dir: pose.apply_vector(&s.ref_dir),
+            }),
             Self::EllipticCylinder(s) => Self::EllipticCylinder(EllipticCylinder {
                 origin: pose.apply_point(&s.origin),
                 axis: pose.apply_vector(&s.axis),
@@ -562,7 +657,7 @@ impl Surface {
             Self::Cylinder(_) | Self::EllipticCylinder(_) => [ParamKind::Periodic, ParamKind::Line],
             Self::Cone(_) => [ParamKind::Periodic, ParamKind::Ray],
             Self::Sphere(_) => [ParamKind::Periodic, ParamKind::Latitude],
-            Self::Torus(_) => [ParamKind::Periodic, ParamKind::Periodic],
+            Self::Torus(_) | Self::TorusSheet(_) => [ParamKind::Periodic, ParamKind::Periodic],
             Self::BSpline(spline) => spline.param_kinds(),
         }
     }
@@ -592,13 +687,10 @@ impl Surface {
                 let radial = &radius * &v.cos();
                 [&radial * &u.cos(), &radial * &u.sin(), radius * v.sin()]
             }
-            Self::Torus(s) => {
-                let radial = r(&s.major)? + r(&s.minor)? * v.cos();
-                [
-                    &radial * &u.cos(),
-                    &radial * &u.sin(),
-                    r(&s.minor)? * v.sin(),
-                ]
+            Self::Torus(Torus { major, minor, .. })
+            | Self::TorusSheet(TorusSheet { major, minor, .. }) => {
+                let radial = r(major)? + r(minor)? * v.cos();
+                [&radial * &u.cos(), &radial * &u.sin(), r(minor)? * v.sin()]
             }
             Self::EllipticCylinder(s) => [
                 r(&s.major_sq.sqrt())? * u.cos(),
@@ -672,11 +764,12 @@ impl Surface {
                     ),
                 ]
             }
-            Self::Torus(s) => {
-                let minor = r(&s.minor)?;
+            Self::Torus(Torus { major, minor, .. })
+            | Self::TorusSheet(TorusSheet { major, minor, .. }) => {
+                let minor = r(minor)?;
                 let cos_v = v.cos();
                 [
-                    math::scale(&tangent, &(r(&s.major)? + &minor * &cos_v)),
+                    math::scale(&tangent, &(r(major)? + &minor * &cos_v)),
                     math::scale(
                         &math::add(
                             &math::scale(&radial, &(-v.sin())),
@@ -722,8 +815,9 @@ impl Surface {
             if mid.dot(&second).is_zero() && mid.dot(&reference).sign() != Sign::Negative {
                 return Ok(None);
             }
-            if let Self::Torus(s) = self
-                && let Some(major) = s.major.rational_ref()
+            if let Self::Torus(Torus { major, .. }) | Self::TorusSheet(TorusSheet { major, .. }) =
+                self
+                && let Some(major) = major.rational_ref()
                 && mid.dot(&axis).is_zero()
                 && mid.norm_squared() >= major * major
             {
@@ -769,7 +863,9 @@ impl Surface {
                 let half = Ball::pi(work) * math::ball(&Rational::from_ratio(1, 2).unwrap(), work);
                 half.hull(&(-&half))
             }),
-            Self::Torus(s) => angle(&(rho - dec.enclose_at(&s.major, work)?), &z),
+            Self::Torus(Torus { major, .. }) | Self::TorusSheet(TorusSheet { major, .. }) => {
+                angle(&(rho - dec.enclose_at(major, work)?), &z)
+            }
             _ => unreachable!(),
         };
         Ok(Some([
@@ -785,6 +881,7 @@ impl Surface {
             Self::Cone(s) => (&s.apex, &s.axis, &s.ref_dir),
             Self::Sphere(s) => (&s.center, &s.axis, &s.ref_dir),
             Self::Torus(s) => (&s.center, &s.axis, &s.ref_dir),
+            Self::TorusSheet(s) => (&s.center, &s.axis, &s.ref_dir),
             Self::EllipticCylinder(s) => (&s.origin, &s.axis, &s.major_dir),
             Self::BSpline(_) => return None,
         })
@@ -806,6 +903,10 @@ impl Surface {
                     - Real::from_i64(4)
                         * major_sq
                         * (q - d.dot(axis).square() / axis.norm_squared())
+            }
+            Self::TorusSheet(s) => {
+                let (_, rho, z) = s.cylindrical(p);
+                (&rho - &s.major).square() + z.square() - s.minor.square()
             }
             Self::EllipticCylinder(s) => {
                 let second = s.axis.cross(&s.major_dir);
@@ -847,6 +948,13 @@ impl Surface {
                     return Ok(b / &(minor * &(major * major - minor * minor)));
                 }
             }
+            // `|(D - minor)(D + minor)| <= b` gives `|D - minor| <= b/minor`
+            // for the distance `D` to the tube centre on this sheet's side.
+            Self::TorusSheet(s) => {
+                if let Some(minor) = s.minor.rational_ref() {
+                    return Ok(b / minor);
+                }
+            }
             Self::EllipticCylinder(_) => {}
             Self::BSpline(_) => return Err(no_global_equation()),
         }
@@ -857,6 +965,7 @@ impl Surface {
             Self::Cone(s) => (&bound / &s.axis.norm_squared()).sqrt(),
             Self::Sphere(s) => &bound / &s.radius,
             Self::Torus(s) => &bound / &(&s.minor * &(&s.major.square() - &s.minor.square())),
+            Self::TorusSheet(s) => &bound / &s.minor,
             Self::EllipticCylinder(s) => &bound * &s.major_sq.sqrt(),
             Self::BSpline(_) => return Err(no_global_equation()),
         };

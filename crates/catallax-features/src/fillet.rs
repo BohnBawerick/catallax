@@ -2,7 +2,9 @@
 
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::Origin;
-use catallax_shapes::{Circle, Curve, Cylinder, Isometry, Line, Point3, Surface, Torus, Vector3};
+use catallax_shapes::{
+    Circle, Curve, Cylinder, Isometry, Line, Point3, Surface, Torus, TorusSheet, Vector3,
+};
 
 use crate::profile::sign;
 
@@ -176,6 +178,60 @@ impl FilletDefinition {
         Ok(sign(&(&x - &(&dot * &y)), dec)? != Sign::Negative
             && sign(&(&y - &(&dot * &x)), dec)? != Sign::Negative)
     }
+
+    /// Proves two parallel line strips' blend regions disjoint, although their
+    /// complete carriers may meet. Each region lies in the prism over its
+    /// cross-section kite: ball centre, both contacts and the edge. Kites are
+    /// convex, so one of their side normals separates disjoint pairs.
+    pub(crate) fn sectors_apart(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
+        let kite = |strip: &Self| {
+            let (Surface::Cylinder(c), [Curve::Line(a), Curve::Line(b)], Curve::Line(e)) =
+                (&strip.surface, &strip.contacts, &strip.edge)
+            else {
+                return None;
+            };
+            Some((
+                c.axis.clone(),
+                [&c.origin, &a.origin, &e.origin, &b.origin].map(Point3::clone),
+            ))
+        };
+        let (Some((axis, first)), Some((other_axis, second))) = (kite(self), kite(other)) else {
+            return Ok(false);
+        };
+        if sign(&axis.cross(&other_axis).norm_squared(), dec)? != Sign::Zero {
+            return Ok(false);
+        }
+        for points in [&first, &second] {
+            for i in 0..4 {
+                // Every side normal is perpendicular to the common axis, so
+                // projections ignore the kites' axial stations.
+                let side = points[(i + 1) % 4].minus(&points[i]);
+                let normal = axis.cross(&side);
+                let range = |kite: &[Point3; 4], dec: &mut Decider| -> Result<_, Refusal> {
+                    let values = kite.each_ref().map(|p| p.minus(&points[i]).dot(&normal));
+                    let mut low = values[0].clone();
+                    let mut high = values[0].clone();
+                    for value in &values[1..] {
+                        if sign(&(value - &low), dec)? == Sign::Negative {
+                            low = value.clone();
+                        }
+                        if sign(&(value - &high), dec)? == Sign::Positive {
+                            high = value.clone();
+                        }
+                    }
+                    Ok((low, high))
+                };
+                let (al, ah) = range(&first, dec)?;
+                let (bl, bh) = range(&second, dec)?;
+                if sign(&(&bl - &ah), dec)? == Sign::Positive
+                    || sign(&(&al - &bh), dec)? == Sign::Positive
+                {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
 }
 
 fn plane_cylinder(
@@ -217,7 +273,12 @@ fn plane_cylinder(
     let centre = edge.center.plus(&n.scaled(&(-(k * radius))));
     let shift = &(k * &Real::from_i64(if same[1] { 1 } else { -1 })) * radius;
     let major = &cylinder.radius() - &shift;
-    if sign(&(&major - radius), dec)? != Sign::Positive {
+    // A wall contact on the axis side needs the ring torus. One away from
+    // the axis keeps the tube angles of the outer quarter, where the distance
+    // from the axis is at least `major`; for `0 < major <= radius` that
+    // quarter lies on the regular outer sheet of a horn or spindle torus.
+    let ring = sign(&(&major - radius), dec)? == Sign::Positive;
+    if !ring && sign(&major, dec)? != Sign::Positive {
         return Err(bad(
             "this contact requires a horn or spindle torus and its sheet continuation",
         ));
@@ -230,14 +291,25 @@ fn plane_cylinder(
             ref_dir: edge.ref_dir.clone(),
         })
     };
-    Ok((
+    let surface = if ring {
         Surface::Torus(Torus {
             center: centre.clone(),
             axis: cylinder.axis.clone(),
             major: major.clone(),
             minor: radius.clone(),
             ref_dir: edge.ref_dir.clone(),
-        }),
+        })
+    } else {
+        Surface::TorusSheet(TorusSheet {
+            center: centre.clone(),
+            axis: cylinder.axis.clone(),
+            major: major.clone(),
+            minor: radius.clone(),
+            ref_dir: edge.ref_dir.clone(),
+        })
+    };
+    Ok((
+        surface,
         [
             circle(edge.center.clone(), major.square()),
             circle(centre, cylinder.radius_sq.clone()),
@@ -269,10 +341,23 @@ fn bounds(
             (coordinate(&c.origin), c.radius())
         }
         Surface::Sphere(s) => (coordinate(&s.center), s.radius.clone()),
-        Surface::Torus(t) => {
-            let axial = component(&t.axis);
-            let radial = (Real::one() - axial.square() / t.axis.norm_squared()).sqrt();
-            (coordinate(&t.center), &(&t.major * &radial) + &t.minor)
+        Surface::Torus(Torus {
+            center,
+            axis,
+            major,
+            minor,
+            ..
+        })
+        | Surface::TorusSheet(TorusSheet {
+            center,
+            axis,
+            major,
+            minor,
+            ..
+        }) => {
+            let axial = component(axis);
+            let radial = (Real::one() - axial.square() / axis.norm_squared()).sqrt();
+            (coordinate(center), &(major * &radial) + minor)
         }
         _ => return Ok(None),
     };

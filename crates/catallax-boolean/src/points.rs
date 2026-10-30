@@ -704,7 +704,7 @@ fn search<T>(
     mut accept: impl FnMut(&mut Model, PointId, &Point3, &mut Decider) -> Result<Option<T>, Refusal>,
 ) -> Result<T, Refusal> {
     let f = model.face(face).clone();
-    let surface = model.geom().surface(f.surface).clone();
+    let surface = crate::geometry::chart(model.geom().surface(f.surface)).into_owned();
     if f.loops.is_empty() {
         if let Surface::Torus(torus) = &surface {
             let frame = analytic_frame(&torus.axis, &torus.ref_dir).ok_or_else(|| {

@@ -5,7 +5,7 @@ use catallax_numbers::{
     Decider, Fact, FactKind, FactOrigin, Outcome, Rational, Real, RealPoly, Refusal, Sign,
     StrictOrder, StrictSign,
 };
-use catallax_shapes::{Curve, CurveId, GeomKey, PointId, RVector3, Vector3};
+use catallax_shapes::{Curve, CurveId, GeomKey, PointId, RVector3, Surface, Torus, Vector3};
 use catallax_topology::{EdgeId, Model, Sense};
 
 // Geometric search counts are independent of arithmetic working precision.
@@ -13,6 +13,22 @@ use catallax_topology::{EdgeId, Model, Sense};
 // a geometric answer.
 pub(crate) const DIRECTION_ATTEMPTS: u32 = 64;
 pub(crate) const PROBE_DEPTHS: u32 = 256;
+
+/// The chart carrier used for membership in a trimmed face. An outer torus
+/// sheet has the ring torus's `(u, v)` chart; its trims keep the face where
+/// `major + minor cos v > 0`, and a queried point is already on the sheet.
+pub(crate) fn chart(surface: &Surface) -> std::borrow::Cow<'_, Surface> {
+    match surface {
+        Surface::TorusSheet(s) => std::borrow::Cow::Owned(Surface::Torus(Torus {
+            center: s.center.clone(),
+            axis: s.axis.clone(),
+            major: s.major.clone(),
+            minor: s.minor.clone(),
+            ref_dir: s.ref_dir.clone(),
+        })),
+        _ => std::borrow::Cow::Borrowed(surface),
+    }
+}
 
 pub(crate) fn refusal(code: &'static str, detail: impl Into<String>) -> Refusal {
     Refusal::new(code, detail)

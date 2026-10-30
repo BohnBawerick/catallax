@@ -509,7 +509,7 @@ pub(crate) fn adjacent(
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let (source, p, source_curve) = source;
-    let surface = model.geom().surface(surface_id);
+    let surface = &*crate::geometry::chart(model.geom().surface(surface_id));
     let carrier = surface.implicit().ok_or_else(|| {
         catallax_numbers::Refusal::new(
             "boolean.parametric-query",

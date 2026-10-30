@@ -38,12 +38,29 @@ pub(crate) fn meridian(
     interior_cut: bool,
     dec: &mut Decider,
 ) -> Result<Meridian, Refusal> {
+    meridian_with(geometry, model, face, interior_cut, true, dec)
+}
+
+/// With `exterior` false, the first meridian that crosses the face is
+/// returned: a probe through a partial torus face, not a chart cut.
+fn meridian_with(
+    geometry: &mut Geometry,
+    model: &Model,
+    face: FaceId,
+    interior_cut: bool,
+    exterior: bool,
+    dec: &mut Decider,
+) -> Result<Meridian, Refusal> {
     let mut major = None;
     let (origin, axis, reference) = match geometry.store.surface(model.face(face).surface) {
         Surface::Cylinder(s) => (s.origin.clone(), s.axis.clone(), s.ref_dir.clone()),
         Surface::Sphere(s) => (s.center.clone(), s.axis.clone(), s.ref_dir.clone()),
         Surface::Cone(s) => (s.apex.clone(), s.axis.clone(), s.ref_dir.clone()),
         Surface::Torus(s) => {
+            major = Some(s.major.clone());
+            (s.center.clone(), s.axis.clone(), s.ref_dir.clone())
+        }
+        Surface::TorusSheet(s) => {
             major = Some(s.major.clone());
             (s.center.clone(), s.axis.clone(), s.ref_dir.clone())
         }
@@ -162,6 +179,12 @@ pub(crate) fn meridian(
                 reference,
                 crossings,
             };
+            if !exterior {
+                if !meridian.crossings.is_empty() {
+                    return Ok(meridian);
+                }
+                continue;
+            }
             if meridian.crossings.is_empty() || attempt >= 4 {
                 return Ok(meridian);
             }
@@ -187,30 +210,53 @@ pub(crate) fn torus_seam_outside(
     meridian: &Meridian,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    let Surface::Torus(torus) = geometry.store.surface(model.face(face).surface).clone() else {
-        unreachable!("torus seam check on another carrier")
+    // An outer torus sheet has the same written chart and v seam.
+    let (center, axis, major, ref_dir) = match geometry.store.surface(model.face(face).surface) {
+        Surface::Torus(s) => (&s.center, &s.axis, &s.major, &s.ref_dir),
+        Surface::TorusSheet(s) => (&s.center, &s.axis, &s.major, &s.ref_dir),
+        _ => unreachable!("torus seam check on another carrier"),
+    };
+    let (center, axis, major, ref_dir) =
+        (center.clone(), axis.clone(), major.clone(), ref_dir.clone());
+    // An exterior chart cut misses a partial face; probe its tube angles
+    // through the face instead.
+    let probe;
+    let meridian = if meridian.crossings.is_empty() {
+        probe = meridian_with(geometry, model, face, false, false, dec)?;
+        &probe
+    } else {
+        meridian
     };
     if meridian.crossings.is_empty() || !meridian.crossings.len().is_multiple_of(2) {
         return Ok(false);
     }
+    // The first crossing may enter on the outer equator itself: a convex
+    // plane/cylinder round is trimmed by its wall contact there. Its face then
+    // starts at tube angle zero and never reaches the seam's other side.
+    let mut on_seam = false;
     for (index, crossing) in meridian.crossings.iter().enumerate() {
-        if crossing.enters != index.is_multiple_of(2)
-            || (trim::sign(&crossing.height, dec)? == Sign::Zero
-                && trim::sign(&crossing.offset, dec)? != Sign::Negative)
-        {
+        if crossing.enters != index.is_multiple_of(2) {
             return Ok(false);
         }
+        if trim::sign(&crossing.height, dec)? == Sign::Zero
+            && trim::sign(&crossing.offset, dec)? != Sign::Negative
+        {
+            if index != 0 || trim::sign(&crossing.offset, dec)? == Sign::Zero {
+                return Ok(false);
+            }
+            on_seam = true;
+        }
     }
-    let axis = number::unit(&torus.axis);
-    let major_sq = torus.major.square();
+    let axis = number::unit(&axis);
+    let major_sq = major.square();
     let outer = |geometry: &Geometry, point: PointId, dec: &mut Decider| {
-        let radial = geometry.store.position(point).minus(&torus.center);
+        let radial = geometry.store.position(point).minus(&center);
         let height = radial.dot(&axis);
         let distance = &(&radial.dot(&radial) - &(&height * &height)) - &major_sq;
         Ok::<_, Refusal>(trim::sign(&distance, dec)? != Sign::Negative)
     };
-    let reference = number::unit(&torus.ref_dir);
-    let equator = geometry.plane(torus.center.clone(), axis.clone(), reference, dec)?;
+    let reference = number::unit(&ref_dir);
+    let equator = geometry.plane(center.clone(), axis.clone(), reference, dec)?;
     for boundary in geometry.boundaries(model, face, dec)?.iter() {
         match geometry
             .intersections(boundary.curve, equator, dec)?
@@ -229,15 +275,30 @@ pub(crate) fn torus_seam_outside(
                         geometry.point(origin)
                     }
                 };
-                if outer(geometry, point, dec)? {
+                if !on_seam && outer(geometry, point, dec)? {
                     return Ok(false);
                 }
             }
             CurveSurface::Meets(hits) => {
                 for hit in hits {
-                    if geometry.on_arc(boundary, hit.point, dec)? != Location::Outside
-                        && outer(geometry, hit.point, dec)?
-                    {
+                    // With the face above a seam trim, other trims may only
+                    // end on the seam, arriving from above it.
+                    let location = geometry.on_arc(boundary, hit.point, dec)?;
+                    if location == Location::Outside || !outer(geometry, hit.point, dec)? {
+                        continue;
+                    }
+                    if !(on_seam && location == Location::Boundary) {
+                        return Ok(false);
+                    }
+                    let inside = catallax_intersect::arc_point(
+                        &geometry.store,
+                        boundary.curve,
+                        boundary.from,
+                        boundary.to,
+                        dec,
+                    )?
+                    .value;
+                    if trim::sign(&inside.minus(&center).dot(&axis), dec)? != Sign::Positive {
                         return Ok(false);
                     }
                 }

@@ -460,7 +460,7 @@ fn sides_near_carriers_and_scaled_placed_families() {
                     s.major = &s.major * &real_scale;
                     s.minor = &s.minor * &real_scale;
                 }
-                Surface::EllipticCylinder(_) | Surface::BSpline(_) => {
+                Surface::TorusSheet(_) | Surface::EllipticCylinder(_) | Surface::BSpline(_) => {
                     unreachable!("stock-family fixtures")
                 }
             }
@@ -1219,4 +1219,75 @@ fn inverse_parameters_enclose_boxes_across_both_angle_cuts() {
         .unwrap()
         .unwrap();
     assert!(uv[1].contains(&7.into()));
+}
+
+#[test]
+fn torus_outer_sheet_keeps_its_own_side_normal_and_chart() {
+    use crate::TorusSheet;
+    let mut dec = Decider::default();
+    let real = |n: i64| Real::from_i64(n);
+    let p = |x: i64, y: i64, z: i64| Point3::new(real(x), real(y), real(z));
+    let new = |major: i64, minor: i64, dec: &mut Decider| {
+        TorusSheet::new(
+            p(0, 0, 0),
+            Vector3::new(real(0), real(0), real(2)),
+            real(major),
+            real(minor),
+            Vector3::new(real(3), real(0), real(0)),
+            dec,
+        )
+    };
+    assert_eq!(
+        new(4, 1, &mut dec).unwrap_err().code,
+        "shapes.torus-sheet-ring"
+    );
+    let sheet = new(1, 4, &mut dec).unwrap();
+    assert!(
+        new(4, 4, &mut dec).is_ok(),
+        "a horn torus has an outer sheet"
+    );
+    let mut store = GeomStore::new();
+    let s = store.add_surface(Surface::TorusSheet(sheet));
+    // Tube angles 0, pi/2 and atan(4/3) on the outer tube about the core
+    // point (1,0,0), and the same angles on another meridian.
+    let q = |x: &str, y: &str, z: &str| {
+        Point3::new(
+            Real::from(Rational::parse(x).unwrap()),
+            Real::from(Rational::parse(y).unwrap()),
+            Real::from(Rational::parse(z).unwrap()),
+        )
+    };
+    for point in [p(5, 0, 0), p(1, 0, 4), q("17/5", "0", "16/5"), p(0, -5, 0)] {
+        assert!(matches!(
+            store.side_of(s, &point, &mut dec),
+            Outcome::ProvenCoincident(_)
+        ));
+    }
+    // (3,0,0) lies on the complete quartic carrier's inner lemon, yet it is
+    // inside the outer tube, not on the sheet.
+    assert!(store.surface(s).implicit().is_none());
+    assert!(matches!(
+        store.side_of(s, &p(3, 0, 0), &mut dec),
+        Outcome::Proven(Side::Back)
+    ));
+    assert!(matches!(
+        store.side_of(s, &p(6, 0, 0), &mut dec),
+        Outcome::Proven(Side::Front)
+    ));
+    let normal = store.surface(s).normal_at(&p(1, 0, 4), &mut dec).unwrap();
+    assert!(matches!(dec.sign(&normal.x), Outcome::ProvenCoincident(_)));
+    assert!(matches!(
+        dec.sign(&normal.z),
+        Outcome::Proven(StrictSign::Positive)
+    ));
+    // The chart is the torus chart: (0,1,4) has u = v = pi/2.
+    let ball = |x: i64| Ball::from_rational(&Rational::from_i64(x), 128);
+    let [u, v] = store
+        .surface(s)
+        .parameters_of(&[ball(0), ball(1), ball(4)], &dec)
+        .unwrap()
+        .unwrap();
+    let half_pi = Ball::pi(128) * Ball::from_rational(&Rational::from_ratio(1, 2).unwrap(), 128);
+    assert!((u - half_pi.clone()).contains_zero());
+    assert!((v - half_pi).contains_zero());
 }

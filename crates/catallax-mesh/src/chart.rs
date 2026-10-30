@@ -75,6 +75,23 @@ pub(crate) struct Chart {
 
 impl Chart {
     pub(crate) fn new(surface: &Surface, dec: &Decider) -> Result<Self, Refusal> {
+        // An outer torus sheet shares the ring torus's chart, normal and
+        // second-derivative bounds. Its trimmed faces keep `major + minor cos v`
+        // positive, where that chart's outward normal is the sheet's.
+        let sheet;
+        let surface = match surface {
+            Surface::TorusSheet(s) => {
+                sheet = Surface::Torus(catallax_shapes::Torus {
+                    center: s.center.clone(),
+                    axis: s.axis.clone(),
+                    major: s.major.clone(),
+                    minor: s.minor.clone(),
+                    ref_dir: s.ref_dir.clone(),
+                });
+                &sheet
+            }
+            _ => surface,
+        };
         let (origin, axis, reference, periodic) = match surface {
             Surface::Plane(s) => (&s.origin, &s.normal, &s.ref_dir, [false, false]),
             Surface::Cylinder(s) => (&s.origin, &s.axis, &s.ref_dir, [true, false]),

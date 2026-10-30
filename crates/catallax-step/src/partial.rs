@@ -74,7 +74,10 @@ fn prepare_charts(
         !definition.loops.is_empty()
             && matches!(
                 model.geom().surface(definition.surface),
-                Surface::Cylinder(_) | Surface::Sphere(_) | Surface::Torus(_)
+                Surface::Cylinder(_)
+                    | Surface::Sphere(_)
+                    | Surface::Torus(_)
+                    | Surface::TorusSheet(_)
             )
     }) {
         return Ok(None);
@@ -87,7 +90,7 @@ fn prepare_charts(
         match model.geom().surface(definition.surface) {
             Surface::Plane(_) if unchanged_planar_boundary(model, face) => {}
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
-            Surface::Torus(_) if circular_boundary(model, face) => {}
+            Surface::Torus(_) | Surface::TorusSheet(_) if circular_boundary(model, face) => {}
             Surface::Cylinder(_) | Surface::Sphere(_)
                 if definition
                     .loops
@@ -109,7 +112,7 @@ fn prepare_charts(
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
             Surface::Cylinder(_) => {}
-            Surface::Torus(_) if !definition.loops.is_empty() => {}
+            Surface::Torus(_) | Surface::TorusSheet(_) if !definition.loops.is_empty() => {}
             Surface::Sphere(sphere) if !definition.loops.is_empty() => {
                 let points = *poles.entry(definition.surface).or_insert_with(|| {
                     let radius = number::unit(&sphere.axis).scaled(&sphere.radius);
@@ -439,7 +442,7 @@ pub(crate) fn prepare_regular(
         let mut meridian = chart::meridian(&mut geometry, model, face, coupled, dec)?;
         if matches!(
             geometry.store.surface(model.face(face).surface),
-            Surface::Torus(_)
+            Surface::Torus(_) | Surface::TorusSheet(_)
         ) && !chart::torus_seam_outside(&mut geometry, model, face, &meridian, dec)?
         {
             return Ok(None);

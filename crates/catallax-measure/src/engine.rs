@@ -49,6 +49,9 @@ struct Arc<'a> {
     exact: Option<[Rational; 5]>,
     meridian: Option<(&'a Point3, i64)>,
     parallel: Option<Parallel>,
+    /// A meridian arc of an outer torus sheet: `du` vanishes along it, so it
+    /// only advances the lifted tube angle to its exact endpoint value.
+    still: bool,
 }
 struct Parallel {
     cosine: Real,
@@ -82,6 +85,7 @@ pub(crate) fn anchor(model: &Model, faces: &[FaceId]) -> RPoint3 {
         Surface::Cone(c) => &c.apex,
         Surface::Sphere(s) => &s.center,
         Surface::Torus(t) => &t.center,
+        Surface::TorusSheet(t) => &t.center,
         Surface::EllipticCylinder(c) => &c.origin,
         _ => return RPoint3::origin(),
     };
@@ -236,6 +240,27 @@ pub(crate) fn measure(
     if policy.max_precision_bits == 0 || policy.max_work == 0 {
         return Err(budget());
     }
+    // An outer torus sheet uses the ring torus's (u, v) chart and forms. Its
+    // trimmed face stays where `major + minor cos v > 0`, so boundary
+    // coordinates `cos v = (rho - major)/minor` are those of its own sheet.
+    let sheets: HashMap<FaceId, Surface> = pending
+        .iter()
+        .filter_map(
+            |(id, _)| match model.geom().surface(model.face(*id).surface) {
+                Surface::TorusSheet(s) if !model.face(*id).loops.is_empty() => Some((
+                    *id,
+                    Surface::Torus(catallax_shapes::Torus {
+                        center: s.center.clone(),
+                        axis: s.axis.clone(),
+                        major: s.major.clone(),
+                        minor: s.minor.clone(),
+                        ref_dir: s.ref_dir.clone(),
+                    }),
+                )),
+                _ => None,
+            },
+        )
+        .collect();
     let mut prepared = Vec::new();
     for (id, planar) in pending {
         if let Some(planar) = planar {
@@ -248,6 +273,7 @@ pub(crate) fn measure(
         let face = model.face(id);
         let surface = model.geom().surface(face.surface);
         let closed = face.loops.is_empty();
+        let surface = sheets.get(&id).unwrap_or(surface);
         let analytic_only = finite_distance_face(model, id);
         let rectangle = match surface {
             Surface::Torus(torus) if analytic_only => {
@@ -284,6 +310,7 @@ pub(crate) fn measure(
                 "surface kind has no measurement definition",
             )
         })?;
+        let sheet = sheets.contains_key(&id);
         let mut boundaries = Vec::new();
         let loops = if rectangle.is_some() {
             &[][..]
@@ -424,6 +451,8 @@ pub(crate) fn measure(
                         } else {
                             None
                         };
+                        let still =
+                            sheet && sheet_meridian(surface, model.geom().curve(edge.curve), dec)?;
                         arcs.push(Arc {
                             trace,
                             reversed: (edge.sense == Sense::Reversed)
@@ -433,6 +462,7 @@ pub(crate) fn measure(
                             exact,
                             meridian,
                             parallel,
+                            still,
                         });
                     }
                 }
@@ -961,6 +991,12 @@ fn integrate_torus(
         let mut v = initial_v.clone();
         for arc in boundary {
             let pieces = arc.trace.as_ref().unwrap().pieces();
+            if arc.still
+                && let Some(turn) = sheet_turn(arc, pieces, programs, work)?
+            {
+                v = work.add(&v, &turn)?;
+                continue;
+            }
             for j in 0..pieces.len() {
                 let piece = &pieces[if arc.reversed {
                     pieces.len() - 1 - j
@@ -999,6 +1035,69 @@ fn integrate_torus(
         }
     }
     finish_torus(face, sums, &programs.full, &programs.indices, indices, work)
+}
+
+/// The tube-angle change along an outer-sheet meridian arc. Every point of
+/// the sheet has `major + minor cos v > 0`, so its tube angle has a unique
+/// representative in `(-pi, pi)`, and the arc stays inside that interval.
+/// An enclosure not separated from the cut at `pi` falls back to quadrature.
+fn sheet_turn(
+    arc: &Arc<'_>,
+    pieces: &[catallax_intersect::TracePiece],
+    programs: &crate::torus::Boundary,
+    work: &mut Work,
+) -> Result<Option<Ball>, Stop> {
+    let pi = work.pi()?;
+    let two = work.rational(&Rational::from_i64(2))?;
+    let turn = work.mul(&pi, &two)?;
+    let mut ends = Vec::with_capacity(2);
+    for last in [false, true] {
+        let piece = if last != arc.reversed {
+            pieces.last().unwrap()
+        } else {
+            &pieces[0]
+        };
+        let (lo, hi) = piece.range();
+        let argument = work.rational(&if last != arc.reversed { hi } else { lo })?;
+        let position = piece.evaluate(&argument, work.dec)?;
+        let coordinates = programs.coordinates.point(&position, &[], work)?;
+        // `angle` returns `(-pi/2, 3pi/2)`; fold `(pi, 3pi/2)` below the cut.
+        let mut angle = crate::integrate::angle(&coordinates[2], &coordinates[3], work)?;
+        if angle.lo() > pi.hi() {
+            angle = work.sub(&angle, &turn)?;
+        } else if angle.hi() >= pi.lo() {
+            return Ok(None);
+        }
+        ends.push(angle);
+    }
+    Ok(Some(work.sub(&ends[1], &ends[0])?))
+}
+
+/// Whether a circle is a tube circle of an outer sheet's chart torus: radius
+/// `minor`, centred on the core circle, in the meridian plane through it.
+fn sheet_meridian(surface: &Surface, curve: &Curve, dec: &mut Decider) -> Result<bool, Refusal> {
+    let (Surface::Torus(torus), Curve::Circle(circle)) = (surface, curve) else {
+        return Ok(false);
+    };
+    let offset = circle.center.minus(&torus.center);
+    let zero = |value: Real, dec: &mut Decider| -> Result<bool, Refusal> {
+        match dec.sign(&value) {
+            Outcome::ProvenCoincident(_) => Ok(true),
+            Outcome::Proven(_) => Ok(false),
+            Outcome::Refused(e) => Err(e),
+            Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        }
+    };
+    Ok(zero(&circle.radius_sq - &torus.minor.square(), dec)?
+        && zero(offset.dot(&torus.axis), dec)?
+        && zero(offset.norm_squared() - torus.major.square(), dec)?
+        && zero(
+            circle
+                .normal
+                .cross(&offset.cross(&torus.axis))
+                .norm_squared(),
+            dec,
+        )?)
 }
 
 fn finish_torus(

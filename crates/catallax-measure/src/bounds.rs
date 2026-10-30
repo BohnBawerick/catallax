@@ -11,7 +11,7 @@ use catallax_intersect::{
 use catallax_numbers::{
     Answer, Answered, BudgetPolicy, Decider, MarkLog, Outcome, Rational, Real, Refusal,
 };
-use catallax_shapes::{Point3, PointDef, Surface, Vector3};
+use catallax_shapes::{Point3, PointDef, Surface, Torus, TorusSheet, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -362,22 +362,36 @@ fn interior_candidates(surface: &Surface, dec: &mut Decider) -> Result<Vec<Point
                 pair(&mut points, &s.center, &axis(i).scaled(&s.radius));
             }
         }
-        Surface::Torus(t) => {
-            let normal = unit(&t.axis);
+        // Candidates off an outer sheet fail the face-membership test.
+        Surface::Torus(Torus {
+            center,
+            axis: torus_axis,
+            major,
+            minor,
+            ref_dir,
+        })
+        | Surface::TorusSheet(TorusSheet {
+            center,
+            axis: torus_axis,
+            major,
+            minor,
+            ref_dir,
+        }) => {
+            let normal = unit(torus_axis);
             let n = [&normal.x, &normal.y, &normal.z];
             for (i, component) in n.into_iter().enumerate() {
                 let perpendicular = axis(i).minus(&normal.scaled(component));
                 let radial = if nonzero(&perpendicular.norm_squared(), dec)? {
                     unit(&perpendicular)
                 } else {
-                    unit(&t.ref_dir)
+                    unit(ref_dir)
                 };
-                let major = radial.scaled(&t.major);
-                let minor = axis(i).scaled(&t.minor);
-                pair(&mut points, &t.center.plus(&major), &minor);
+                let major = radial.scaled(major);
+                let minor = axis(i).scaled(minor);
+                pair(&mut points, &center.plus(&major), &minor);
                 pair(
                     &mut points,
-                    &t.center.plus(&major.scaled(&Real::from(-1))),
+                    &center.plus(&major.scaled(&Real::from(-1))),
                     &minor,
                 );
             }

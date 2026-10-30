@@ -47,5 +47,6 @@ pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
 pub use surface::{
     Cone, Cylinder, EllipticCylinder, ParamKind, Plane, Sphere, Surface, SurfaceKind, Torus,
+    TorusSheet,
 };
 pub use vector::{Point3, RPoint3, RVector3, Vector3};

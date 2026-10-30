@@ -79,11 +79,14 @@ fn power(x: Interval, n: usize) -> Interval {
         }
     }
 }
+/// Outward fixed-point endpoints. Scaling by a power of two is exact, so only the
+/// final floor and ceiling round, and both round outward.
 fn fixed(value: Interval) -> Option<[i128; 2]> {
-    let scale = (SCALE as f64).exp2();
+    let scale = (1u64 << SCALE) as f64;
     let lo = (value.lo() * scale).floor();
     let hi = (value.hi() * scale).ceil();
-    let limit = 2f64.powi(100);
+    // Far below i128's range even after summing millions of cells.
+    let limit = 1e30;
     (lo.is_finite() && hi.is_finite() && lo.abs() < limit && hi.abs() < limit)
         .then_some([lo as i128, hi as i128])
 }

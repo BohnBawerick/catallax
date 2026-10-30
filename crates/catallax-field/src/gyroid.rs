@@ -159,8 +159,7 @@ impl Gyroid {
                 "a gyroid frame must be the part frame",
             ));
         }
-        // A graded level only ever lies in [-1/4, 1/4]; zero stands in where a
-        // constant level is read.
+        // `interval_level` and `fast_level` serve a constant level only.
         let level = grade.constant().cloned().unwrap_or_else(Rational::zero);
         let lipschitz = &(&Rational::from_i64(22) / period) + &grade.slope_bound();
         let turns = &Rational::one() / period;
@@ -205,7 +204,7 @@ impl Gyroid {
         self.wave_squared * point(3.5)
     }
 
-    /// An upper bound on `|∇g|`.
+    /// An upper bound on `|∇(g - c)|`.
     pub(crate) fn lipschitz(&self) -> Interval {
         Interval::from_rational(&self.lipschitz)
     }
@@ -232,15 +231,6 @@ impl Gyroid {
     /// Whether the level is a non-constant grade.
     pub(crate) fn graded(&self) -> bool {
         self.grade.constant().is_none()
-    }
-
-    /// Whether the level is one affine function over a closed rational box, so the
-    /// unclamped grade equals the level there.
-    pub(crate) fn affine_over(&self, bounds: &[[Rational; 2]; 3]) -> bool {
-        self.grade.affine_over(
-            &std::array::from_fn(|i| bounds[i][0].clone()),
-            &std::array::from_fn(|i| bounds[i][1].clone()),
-        )
     }
 
     /// `sin` and `cos` of one turn coordinate, or `None` beyond reduction range.

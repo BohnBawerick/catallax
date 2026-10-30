@@ -1105,6 +1105,22 @@ fn a_disconnected_constant_gyroid_refuses_without_deleting_the_corner() {
         error.detail
     );
     println!("Disconnected-G: {} {}", error.code, error.detail);
+    // A constant level keeps its uniform route below a detail floor of a quarter of
+    // the accuracy. With the V7c detail of 1/2 the certified route settles the
+    // topology: the corner piece refuses the export.
+    let (result, _) = with_operation_budget(KERNEL_WORK, || {
+        let mut dec = Decider::default();
+        Staged::new(
+            &value,
+            Settings {
+                minimum_detail: q("1/2"),
+                ..settings()
+            },
+            &mut dec,
+        )?
+        .export(&mut dec)
+    });
+    assert_eq!(result.unwrap_err().code, "field.print-disconnected");
 }
 
 /// After-field: a step that reads the terminal field is refused by the recipe's terminal
@@ -1146,4 +1162,46 @@ fn a_subtracted_field_is_not_covered_by_its_region_envelope() {
         mass::check_region_envelope(&plan).unwrap_err().code,
         "field.stand-in-envelope-coverage"
     );
+}
+
+/// The app's route to the same region: a rectangle sketched on the source box's lower
+/// face and extruded through its height, then the same terminal field.
+fn sketched(value: &Value) -> Value {
+    let region = &value["steps"][0];
+    let [sx, sy, sz] = [0, 1, 2].map(|i| q(region["size"][i].as_str().unwrap()));
+    let [tx, ty, tz] = [0, 1, 2].map(|i| q(region["pose"]["translation"][i].as_str().unwrap()));
+    let corner = |x: &Rational, y: &Rational| json!([x.to_string(), y.to_string()]);
+    let [x0, x1, y0, y1] = [tx.clone(), &tx + &sx, ty.clone(), &ty + &sy];
+    let mut r = value.clone();
+    r["steps"][0] = json!({"id":"profile","op":"sketch",
+        "plane":{"rotation":["1","0","0","0"],"translation":["0","0",tz.to_string()]},
+        "loops":[[{"kind":"line","id":"a","to":corner(&x1, &y0)},{"kind":"line","id":"b","to":corner(&x1, &y1)},
+                  {"kind":"line","id":"c","to":corner(&x0, &y1)},{"kind":"line","id":"d","to":corner(&x0, &y0)}]]});
+    let steps = r["steps"].as_array_mut().unwrap();
+    steps.insert(
+        1,
+        json!({"id":"region","op":"extrude","profile":"profile","distance":sz.to_string()}),
+    );
+    r
+}
+
+/// Designer sections 3 and 8: the app's sketch-and-extrude region states the same
+/// field, so it exports within the allowance and its moments meet the same references.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "V7d moments run in release mode")]
+fn a_sketched_region_states_the_same_field() {
+    for (name, value) in [("D0", d0()), ("G0", g0())] {
+        let value = sketched(&value);
+        let ((bytes, output), work) = app_export(&value, settings());
+        assert!(!work.exhausted && work.used < APP_WORK, "{name} {work:?}");
+        assert_eq!(output.verdict().components, 1);
+        check_file(&bytes, "1/10", tight_bounds(name));
+        let (properties, work) = moments(&value);
+        assert!(!work.exhausted && work.used < APP_WORK, "{name} {work:?}");
+        if name == "D0" {
+            check_d(name, &properties, 0, [q("0"), q("0"), q("0")]);
+        } else {
+            check_g(name, &properties, 0);
+        }
+    }
 }

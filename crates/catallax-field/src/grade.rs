@@ -294,12 +294,6 @@ impl GradeDef {
         }
     }
 
-    /// Whether the grade is one affine function over a closed rational box: between
-    /// its anchor planes inclusive, or wholly on one side of them.
-    pub(crate) fn affine_over(&self, lo: &[Rational; 3], hi: &[Rational; 3]) -> bool {
-        self.exact_piece(lo, hi).is_some()
-    }
-
     /// The axis and positions of the two anchor planes of a grade whose anchors
     /// differ along one part axis.
     pub(crate) fn planes(&self) -> Option<(usize, [Rational; 2])> {

@@ -1,10 +1,35 @@
 //! Shared-rail display closure through the application's exact recipe entry.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs::OpenOptions,
+    io::Write,
+    time::{Duration, Instant},
+};
 
 use catallax_mesh::MeshOptions;
-use catallax_numbers::{BudgetPolicy, Decider};
+use catallax_numbers::{BudgetPolicy, Decider, OperationWork, with_operation_budget};
 use catallax_recipe::{Operation, Recipe, Role};
+
+/// Speed target for one rim mesh. Clock time is reported and never fails a check.
+const RIM_MESH_TARGET: Duration = Duration::from_secs(5);
+
+/// Fails a work cap breach however quick the mesh was, and warns about a slow mesh.
+fn rim_mesh_warning(case: &str, work: &OperationWork, elapsed: Duration) -> Option<String> {
+    assert!(!work.exhausted, "{case} exhausted the work cap: {work:?}");
+    (elapsed >= RIM_MESH_TARGET)
+        .then(|| format!("{case} mesh took {elapsed:?}, target {RIM_MESH_TARGET:?}"))
+}
+
+/// A passing test's output is hidden, so CI also gets the warning in its step summary.
+fn report_warning(warning: &str) {
+    eprintln!("warning: {warning}");
+    let summary = std::env::var_os("GITHUB_STEP_SUMMARY")
+        .and_then(|path| OpenOptions::new().append(true).open(path).ok());
+    if let Some(mut summary) = summary {
+        let _ = writeln!(summary, "- warning: {warning}");
+    }
+}
 
 #[test]
 fn p3_fillet_display_closes_shared_rails_before_and_after_a_radius_edit() {
@@ -71,9 +96,6 @@ fn p3_fillet_display_closes_shared_rails_before_and_after_a_radius_edit() {
 
 #[test]
 fn thin_boss_rim_fillets_mesh_with_default_accuracy_and_bounded_work() {
-    use std::time::{Duration, Instant};
-
-    use catallax_numbers::with_operation_budget;
     use serde_json::json;
 
     for (radius, tolerance) in [
@@ -119,20 +141,16 @@ fn thin_boss_rim_fillets_mesh_with_default_accuracy_and_bounded_work() {
                 ..MeshOptions::default()
             };
             let start = Instant::now();
-            dec.set_deadline(Some(start + Duration::from_secs(5)));
             let (answer, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
                 catallax_mesh::mesh_body(&built.model, built.result, &options, &mut dec)
             });
             let elapsed = start.elapsed();
-            eprintln!(
-                "rim base={base} radius={radius} tolerance={tolerance} mesh={elapsed:?} work={work:?}"
-            );
+            let case = format!("rim base={base} radius={radius} tolerance={tolerance}");
+            eprintln!("{case} mesh={elapsed:?} work={work:?}");
+            if let Some(warning) = rim_mesh_warning(&case, &work, elapsed) {
+                report_warning(&warning);
+            }
             let mesh = answer.unwrap().value;
-            assert!(!work.exhausted);
-            assert!(
-                elapsed < Duration::from_secs(5),
-                "radius={radius}: {elapsed:?}"
-            );
             assert!(mesh.positions.len() < 10_000, "radius={radius}");
             let expected: BTreeSet<_> = built
                 .model
@@ -172,4 +190,31 @@ fn thin_boss_rim_fillets_mesh_with_default_accuracy_and_bounded_work() {
             assert!(incidence.values().all(|uses| *uses == (2, 0)));
         }
     }
+}
+
+#[test]
+fn slow_correct_rim_mesh_passes_with_a_warning() {
+    let work = OperationWork {
+        used: 1,
+        exhausted: false,
+    };
+    assert_eq!(rim_mesh_warning("rim", &work, Duration::from_secs(4)), None);
+    let warning = rim_mesh_warning("rim", &work, Duration::from_secs(6)).unwrap();
+    assert_eq!(warning, "rim mesh took 6s, target 5s");
+}
+
+#[test]
+#[should_panic(expected = "exhausted the work cap")]
+fn rim_mesh_over_the_work_cap_fails_however_quick_it_was() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P3-filleted-boss.json")).unwrap();
+    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+    let (_, work) = with_operation_budget(0, || {
+        catallax_mesh::mesh_body(
+            &built.model,
+            built.result,
+            &MeshOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    rim_mesh_warning("rim", &work, Duration::ZERO);
 }

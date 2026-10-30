@@ -86,6 +86,28 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(self.driver.parts_sources(argparse.Namespace(compare=False, print_tolerance='0.5')), ('recipe', 'field', 'print'))
 
 
+class WorkerShutdownTests(unittest.TestCase):
+    """Replay requires exit code 0 from every worker, so shutdown speed must not decide it."""
+
+    def setUp(self):
+        self.driver = load_driver()
+        self.root = tempfile.TemporaryDirectory()
+        self.addCleanup(self.root.cleanup)
+
+    def worker(self, after_input):
+        path = Path(self.root.name) / 'worker'
+        path.write_text(f'#!/usr/bin/env python3\nimport sys, time\nsys.stdin.read()\n{after_input}\n')
+        path.chmod(0o755)
+        return self.driver.Worker(path)
+
+    def test_slow_but_clean_exit_counts_as_clean(self):
+        self.assertEqual(self.worker('time.sleep(6)').close(), 0)
+
+    def test_worker_that_never_exits_is_still_stopped(self):
+        self.driver.HANG_LIMIT_SECONDS = 0.5
+        self.assertNotEqual(self.worker('time.sleep(600)').close(), 0)
+
+
 @unittest.skipUnless(BINARY.exists(), 'build catallax-verify first')
 class DriverTests(unittest.TestCase):
     def setUp(self):
@@ -226,20 +248,21 @@ class DriverTests(unittest.TestCase):
         destination = self.out / 'resume'
         args = ['run', str(corpus), '--binary', str(BINARY), '--out', str(destination), '--json']
         child = subprocess.Popen([str(DRIVER), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        limit = load_driver().HANG_LIMIT_SECONDS
         try:
-            deadline = time.monotonic() + 30
+            deadline = time.monotonic() + limit
             checkpoint = destination / 'checkpoint-0.jsonl'
             while not checkpoint.exists():
                 if child.poll() is not None or time.monotonic() > deadline:
                     self.fail('worker did not publish a checkpoint')
                 time.sleep(0.01)
             child.terminate()
-            child.communicate(timeout=30)
+            child.communicate(timeout=limit)
             self.assertNotEqual(child.returncode, 0)
         finally:
             if child.poll() is None:
                 child.terminate()
-                child.communicate(timeout=30)
+                child.communicate(timeout=limit)
         result = self.command(*args[:-1])
         self.assertEqual(result['cases'], 500)
         self.assertGreater(result['cache_hits'], 0)

@@ -105,8 +105,9 @@ other output files cannot change.
 
 That committed digest has no authority on its own. For newly corrected indices,
 the selector retains the base inventory rows in the check plan. The build job
-archives the plan's base revision and builds a separate verifier. The replay job
-runs only those indices through that base verifier, checks their requests,
+checks out the plan's base revision, verifies its clean HEAD and builds a
+separate verifier. The replay job runs only those indices through that verifier,
+then checks their requests,
 answers, STEP files and full comparable manifests against the base inventory
 digests, then derives the protected-field digest from the authenticated base
 manifest itself. Both the committed digest and the candidate's protected fields

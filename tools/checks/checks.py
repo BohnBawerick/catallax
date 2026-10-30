@@ -364,6 +364,7 @@ def prepare(args):
                 out.write(f'{name}={str(name in selection["jobs"]).lower()}\n')
             out.write('packages=' + ' '.join('-p ' + name for name in selection['packages']) + '\n')
             out.write('base_corrections=' + str(bool(plan['correction_base_answers'])).lower() + '\n')
+            out.write('base_commit=' + args.base + '\n')
     print(json.dumps(selection, sort_keys=True))
 
 
@@ -411,14 +412,17 @@ def build_base(args):
     plan = read(args.plan)
     if not plan['correction_base_answers']:
         raise ValueError('no new STEP corrections require a base verifier')
+    source = Path(args.source).resolve()
+    head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD']).decode().strip()
+    if head != plan['base']:
+        raise ValueError('base verifier checkout does not match the selected base')
+    if subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain']).strip():
+        raise ValueError('base verifier checkout is not clean')
     target = ROOT / 'target' / 'check-base'
-    with tempfile.TemporaryDirectory(prefix='catallax-base-verifier-') as temporary:
-        with tarfile.open(fileobj=io.BytesIO(git('archive', plan['base']))) as archive:
-            archive.extractall(temporary, filter='data')
-        subprocess.run([
-            'cargo', 'build', '--release', '--locked', '-p', 'catallax-cli',
-            '--bin', 'catallax-verify', '--manifest-path', str(Path(temporary) / 'Cargo.toml'),
-            '--target-dir', str(target)], cwd=temporary, check=True)
+    subprocess.run([
+        'cargo', 'build', '--release', '--locked', '-p', 'catallax-cli',
+        '--bin', 'catallax-verify', '--manifest-path', str(source / 'Cargo.toml'),
+        '--target-dir', str(target)], cwd=source, check=True)
     destination = Path(args.out)
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(target / 'release' / 'catallax-verify', destination)
@@ -571,6 +575,7 @@ def main():
     p.set_defaults(function=prepare)
     p = commands.add_parser('build-base')
     p.add_argument('--plan', required=True)
+    p.add_argument('--source', required=True)
     p.add_argument('--out', required=True)
     p.set_defaults(function=build_base)
     p = commands.add_parser('evidence')

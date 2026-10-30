@@ -51,17 +51,27 @@ impl Default for StepOptions {
     }
 }
 
-/// A straight wire gap eliminated only in the exported topology.
+/// A planar repair made only in the exported topology.
+///
+/// The exact body's face count equals `StepReport::faces` plus every record's
+/// `removed_faces`, and its explicit edge count, before the writer's seams and
+/// rings, equals `StepReport::edges` plus every record's `removed_edges`.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct StepRegularization {
-    /// Model face whose two decimal-rounded boundary wires overlap.
+    /// Model face holding the ribbon: the face whose two decimal-rounded
+    /// boundary wires overlap, or the narrow step face removed from the file.
     pub face: catallax_topology::FaceId,
-    /// Outer and contained inner straight edges bounding the collapsed ribbon.
+    /// The two straight edges bounding the collapsed ribbon: outer and
+    /// contained inner, or the moved wall's and the kept wall's.
     pub edges: [catallax_topology::EdgeId; 2],
-    /// Parallel neighbouring faces joined across that ribbon.
+    /// Neighbouring faces joined across that ribbon.
     pub merged_faces: [catallax_topology::FaceId; 2],
     /// Proven whole-ribbon displacement bound in millimetres.
     pub max_deviation: Rational,
+    /// Faces this repair took out of the file.
+    pub removed_faces: usize,
+    /// Net explicit edges this repair took out of the file.
+    pub removed_edges: usize,
 }
 
 /// What an export wrote and how far it is from the exact model.

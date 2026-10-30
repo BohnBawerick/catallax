@@ -145,6 +145,8 @@ pub(crate) fn write_step_regularizations(
                 "edges": record.edges.map(|edge| edge.index()),
                 "merged_faces": record.merged_faces.map(|face| face.index()),
                 "max_deviation_mm": record.max_deviation.to_string(),
+                "removed_faces": record.removed_faces,
+                "removed_edges": record.removed_edges,
             })
         })
         .collect();

@@ -5,12 +5,12 @@
 .comparison { max-width: 1440px; padding: 70px var(--gutter) 50px; margin-inline: auto; }
 .comparison h1 { color: var(--bone); font-size: clamp(3.2rem, 7vw, 6rem); line-height: 1; letter-spacing: -.035em; margin: 0 0 28px; }
 .comparison .intro { font-size: clamp(20px, 2.1vw, 28px); line-height: 1.4; max-width: 55ch; color: var(--bone); }
-.comparison p { max-width: 74ch; }
+.comparison p { max-width: 56ch; }
 .comparison section[id] { margin-top: 90px; scroll-margin-top: 24px; }
 .comparison h2 { font-size: clamp(28px, 3.5vw, 45px); color: var(--bone); line-height: 1.15; letter-spacing: -.025em; margin: 0 0 22px; }
 .comparison h3 { font-size: 22px; color: var(--bone); margin: 36px 0 8px; }
 .comparison label { display: inline-block; margin: 0 14px 12px 0; }
-.comparison select { font: inherit; color: var(--bone); background: var(--graphite); border: 1px solid var(--slate); border-radius: 4px; padding: 10px 36px 10px 12px; max-width: 100%; }
+.comparison select { font: inherit; color: var(--bone); background: var(--graphite); border: 1px solid var(--slate); border-radius: var(--radius-xs); padding: 10px 36px 10px 12px; max-width: 100%; }
 .comparison select:hover { border-color: var(--oxide); }
 .comparison a { text-underline-offset: 4px; }
 .comparison a:hover { color: var(--oxide); }

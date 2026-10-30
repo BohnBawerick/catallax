@@ -21,15 +21,16 @@
 }
 
 :root {
+  color-scheme: dark;
+
   /* Color */
   --ink: #0b0c0d;
   --graphite: #131619;
   --steel: #262b30;
-  --slate: #737b83;
+  --slate: #7b838b;
   --fog: #b4b0a6;
   --bone: #ede7da;
   --oxide: #ff5b1f;
-  --oxide-deep: #b8400f;
   --signal: #a6e36b;
   --datum: #7cc7ff;
 
@@ -37,12 +38,20 @@
   --font-display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
   --font-serif: "Instrument Serif", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --text-label: 0.72rem;
+  --text-note: 0.875rem;
+  --text-small: 0.9375rem;
+  --text-body: 1.0625rem;
+
+  /* Shape */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
 
   /* Motion: personality "Premium / rigid metal". No overshoot. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --dur-quick: 180ms;
   --dur-standard: 480ms;
-  --dur-slow: 900ms;
 }

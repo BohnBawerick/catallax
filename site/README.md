@@ -18,7 +18,19 @@ The site states the intended direction of Catallax and SolidDraft. Keep the owne
 
 The SolidDraft image is real application output, not interface artwork. `media/soliddraft-bracket-a3.svg` is an unmodified copy of the committed CLI drawing fixture at the revision recorded in `evidence.json`. Its source exit test invokes `soliddraft draw bracket.json --template iso-a3` with a fixed `SOURCE_DATE_EPOCH` and compares the SVG byte for byte. It was not regenerated for the site and is not evidence of Catallax integration. Keep the source revision and checksum when replacing it.
 
-Both projects use the same GitHub Sponsors and Ko-fi links. The manifesto from the repository README opens the page. Keep the special-thanks section near the bottom, with the Fornjot non-affiliation statement and links only to work the repository actually cites, the open-to-kernel-work contact, the plain link to https://zigrawbohnbawerick.org/ and the custom domain. Never claim the paid apps fund the work.
+Both projects use the same GitHub Sponsors and Ko-fi links. Keep the special-thanks section near the bottom, with the Fornjot non-affiliation statement and links only to work the repository actually cites, the open-to-kernel-work contact, the plain link to https://zigrawbohnbawerick.org/ and the custom domain. Never claim the paid apps fund the work.
+
+## Motion rules
+
+The page must be complete without `js/main.js`. Motion only decorates content that is already readable and reachable.
+
+- Reveals animate opacity and transform, never `visibility` or `autoAlpha`. Hidden copy must stay in the tab order and the accessibility tree.
+- The hero headline's entrance is CSS, so it runs from first paint. Do not hide text after it has painted.
+- SplitText must not touch an element that contains a link. The manifesto uses a scrubbed mask for that reason.
+- The kernel anatomy section pins only at `min-height: 640px`. Below that it stays a plain list, which also serves no-JS and high zoom.
+- Anything that moves on its own needs a `.motion` button beside it. All of them share one pause state.
+
+Design tokens and rules are in [DESIGN.md](DESIGN.md), and product facts are in [PRODUCT.md](PRODUCT.md).
 
 ## Evidence and video capture
 
@@ -28,7 +40,7 @@ Both projects use the same GitHub Sponsors and Ko-fi links. The manifesto from t
 CARGO_TARGET_DIR=/tmp/catallax-site-target nice -n 10 node site/render/collect-evidence.mjs
 ```
 
-This runs a real workspace release build, numbers library tests and a compiled workspace test inventory. Rust lines include tests, comments and blank lines. The test count excludes ignored tests and doctests; it counts each compiled binary target. The transcript makes paths repository-relative. No source or test result is invented for the video.
+This runs a real workspace release build, numbers library tests and a compiled workspace test inventory. It also rewrites the visible snapshot revision and date under the counters. Rust lines include tests, comments and blank lines. The test count excludes ignored tests and doctests; it counts each compiled binary target. The transcript makes paths repository-relative. No source or test result is invented for the video.
 
 Serve the site, then capture both films through a dedicated `chrome-devtools-axi` session and ffmpeg:
 
@@ -41,7 +53,7 @@ nice -n 10 ffmpeg -y -ss 11 -i site/media/release-build.mp4 -frames:v 1 site/med
 
 Set `SITE_URL` to use another preview port. `capture.mjs` renders each frame deterministically; the terminal film selects real transcript lines and compresses their timing. It is labelled as edited for time and is not a full-suite recording. The assembly film and interactive wireframes are art, not claims of generated models or shipped features.
 
-Check desktop and phone layouts with reduced motion both enabled and disabled. Confirm the hero shape controls, orbit drag, all anatomy layers, video playback, external links and the Perth clock. Keep browser screenshots and scratch output outside the repository.
+Check desktop and phone layouts with reduced motion both enabled and disabled. Confirm the hero shape controls, orbit drag, all anatomy layers, the phone menu, the pause control, video playback, external links and the Perth clock. Keep browser screenshots and scratch output outside the repository.
 
 Third-party files retain their own terms; see `THIRD-PARTY.txt`.
 

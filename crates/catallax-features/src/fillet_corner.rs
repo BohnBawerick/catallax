@@ -1,4 +1,4 @@
-//! Exact spherical corners where three perpendicular convex planar strips meet.
+//! Exact spherical corners where three convex planar strips meet.
 
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::Origin;
@@ -8,9 +8,9 @@ use crate::{fillet::FilletDefinition, profile::sign};
 
 /// The exact generating definition of one trihedral rolling-ball corner.
 ///
-/// Three mutually perpendicular planes meet at a convex vertex and all three
-/// incident straight edges carry the same radius. The ball touching all three
-/// planes sweeps the sphere sector in the positive cone of their outward normals.
+/// Three independent planes meet at a convex vertex and all three incident
+/// straight edges carry the same radius. The ball touching all three planes
+/// sweeps the sphere sector in the positive cone of their outward normals.
 #[derive(Clone, Debug)]
 pub struct CornerDefinition {
     /// Persistent `corner.vertex` origin, independent of the radius.
@@ -19,6 +19,8 @@ pub struct CornerDefinition {
     pub supports: [Surface; 3],
     /// Unit outward material normals of the three supports.
     pub normals: [Vector3; 3],
+    /// The input vertex where the three supports meet.
+    pub vertex: Point3,
     /// Positive rolling radius in millimetres.
     pub radius: Real,
     /// The exact sphere about the three inward offsets.
@@ -43,9 +45,10 @@ fn unit(v: &Vector3) -> Vector3 {
 }
 
 impl CornerDefinition {
-    /// Proves the three strips form the equal-radius perpendicular convex
-    /// corner and reduces it to its exact sphere. Every other junction is
-    /// refused; this does not trim or publish a solid.
+    /// Proves the three strips form an equal-radius convex corner of independent
+    /// planes whose ball centre lies behind the vertex along every incident
+    /// edge, and reduces it to its exact sphere. Every other junction is refused;
+    /// this does not trim or publish a solid.
     pub fn new(
         origin: Origin,
         strips: [&FilletDefinition; 3],
@@ -96,12 +99,8 @@ impl CornerDefinition {
                 unit(&p.normal).scaled(&Real::from_i64(if *same { 1 } else { -1 }))
             })
             .collect();
-        for (i, j) in [(0, 1), (1, 2), (0, 2)] {
-            if sign(&normals[i].dot(&normals[j]), dec)? != Sign::Zero {
-                return Err(bad(
-                    "an exact spherical corner needs mutually perpendicular supports",
-                ));
-            }
+        if sign(&normals[0].dot(&normals[1].cross(&normals[2])), dec)? == Sign::Zero {
+            return Err(bad("an exact spherical corner needs independent supports"));
         }
         let radius = strips[0].radius.clone();
         // The ball centre lies at depth `radius` behind every support. On the
@@ -129,18 +128,55 @@ impl CornerDefinition {
                 return Err(bad("the three strip axes do not meet at one ball centre"));
             }
         }
+        for (i, (support, _)) in supports.iter().enumerate() {
+            let Surface::Plane(p) = support else {
+                unreachable!()
+            };
+            let depth = &centre.minus(&p.origin).dot(&normals[i]) + &radius;
+            if sign(&depth, dec)? != Sign::Zero {
+                return Err(bad("the ball centre is not at radius behind every support"));
+            }
+        }
+        // The vertex is on the first edge, at depth zero behind the third
+        // support. A centre past it along any edge would extend that strip
+        // beyond the vertex, which neither evaluator's strip region covers.
+        let Curve::Line(edge) = &strips[0].edge else {
+            return Err(bad("a planar strip must reduce to a cylinder"));
+        };
+        let reach = -&edge.origin.minus(&p.origin).dot(n) / edge.dir.dot(n);
+        let vertex = edge.origin.plus(&edge.dir.scaled(&reach));
+        for (strip, [a, b]) in strips.iter().zip(&indices) {
+            let Curve::Line(edge) = &strip.edge else {
+                return Err(bad("a planar strip must reduce to a cylinder"));
+            };
+            let far = (0..3).find(|i| i != a && i != b).unwrap();
+            let along = centre.minus(&vertex).dot(&edge.dir) * -edge.dir.dot(&normals[far]);
+            if sign(&along, dec)? != Sign::Positive {
+                return Err(bad(
+                    "a ball centre beyond the vertex needs a general corner patch",
+                ));
+            }
+        }
         let feet: [Point3; 3] = std::array::from_fn(|i| centre.plus(&normals[i].scaled(&radius)));
+        // Perpendicular contact normals already form the sphere's frame.
+        let tilt = normals[0].dot(&normals[2]);
+        let reference = if sign(&tilt, dec)? == Sign::Zero {
+            normals[0].clone()
+        } else {
+            normals[0].minus(&normals[2].scaled(&tilt))
+        };
         let surface = Surface::Sphere(Sphere::new(
             centre,
             radius.clone(),
             normals[2].clone(),
-            normals[0].clone(),
+            reference,
             dec,
         )?);
         Ok(Self {
             origin,
             supports: [0, 1, 2].map(|i| supports[i].0.clone()),
             normals: [0, 1, 2].map(|i| normals[i].clone()),
+            vertex,
             radius,
             surface,
             feet,
@@ -156,8 +192,8 @@ impl CornerDefinition {
         &s.center
     }
 
-    /// The quarter circle shared with one strip, running from the strip's
-    /// first contact foot to its second along the sector boundary.
+    /// The great circle shared with one strip, whose shorter arc runs from the
+    /// strip's first contact foot to its second along the sector boundary.
     pub fn boundary(&self, strip: usize) -> Curve {
         let [a, b] = self.strips[strip];
         Curve::Circle(Circle {
@@ -168,12 +204,21 @@ impl CornerDefinition {
         })
     }
 
+    /// For each normal, the vector whose dot product with a displacement gives
+    /// that displacement's coefficient on the normal. A displacement is in the
+    /// positive cone when every coefficient is nonnegative.
+    pub fn dual_basis(&self) -> [Vector3; 3] {
+        let [a, b, c] = &self.normals;
+        let volume = Real::one() / a.dot(&b.cross(c));
+        [b.cross(c), c.cross(a), a.cross(b)].map(|v| v.scaled(&volume))
+    }
+
     /// Whether a point's direction from the centre lies in the closed sector
     /// spanned by the three outward normals.
     pub fn in_sector(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         let d = p.minus(self.centre());
-        for n in &self.normals {
-            if sign(&d.dot(n), dec)? == Sign::Negative {
+        for dual in self.dual_basis() {
+            if sign(&d.dot(&dual), dec)? == Sign::Negative {
                 return Ok(false);
             }
         }

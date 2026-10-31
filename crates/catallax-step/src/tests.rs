@@ -1537,3 +1537,57 @@ fn stalled_tiny_positive_decimal_is_not_snapped_to_zero() {
         Err(error) if error.code == "step.budget-exhausted"
     ));
 }
+
+fn sqrt2() -> catallax_numbers::Real {
+    catallax_numbers::Real::from_i64(2).sqrt()
+}
+
+fn tiny(exponent: u32) -> catallax_numbers::Real {
+    let scale = catallax_numbers::Integer::from_i64(10).pow(exponent);
+    catallax_numbers::Real::from_rational(Rational::new(1.into(), scale).unwrap())
+}
+
+#[test]
+fn a_written_decimal_is_exact_only_with_an_equality_proof() {
+    use catallax_numbers::Real;
+    let mut dec = Decider::default();
+    let zero = crate::number::real(&(sqrt2().square() - Real::from_i64(2)), 17, &mut dec).unwrap();
+    assert_eq!((zero.text.as_str(), zero.error), ("0.", Rational::zero()));
+
+    let small = crate::number::real(&(sqrt2() * tiny(40)), 17, &mut dec).unwrap();
+    assert!(small.value > Rational::parse("1.4e-40").unwrap());
+    assert!(!small.error.is_zero());
+
+    // The enclosure midpoint rounds to 1, but the value is not 1.
+    let near = crate::number::real(&(Real::one() + sqrt2() * tiny(20)), 17, &mut dec).unwrap();
+    assert_eq!(near.text, "1.");
+    assert!(near.error > Rational::parse("1.41e-20").unwrap());
+    assert!(near.error < Rational::parse("1.42e-20").unwrap());
+}
+
+#[test]
+fn a_direction_component_is_exact_only_with_an_equality_proof() {
+    use catallax_numbers::Real;
+    use catallax_shapes::Vector3;
+    let mut dec = Decider::default();
+    let along = Vector3::new(Real::from_i64(-1) * sqrt2(), Real::zero(), Real::zero());
+    let along = crate::number::direction(&along, 17, &mut dec).unwrap();
+    assert_eq!(along.xyz[0].text, "-1.");
+    assert!(along.error().is_zero());
+
+    let fifths = |n: i64| &sqrt2() * &Real::from_rational(Rational::from_ratio(n, 5).unwrap());
+    let oblique = Vector3::new(fifths(3), fifths(4), Real::zero());
+    let oblique = crate::number::direction(&oblique, 17, &mut dec).unwrap();
+    assert_eq!(
+        oblique.xyz.each_ref().map(|n| n.text.as_str()),
+        ["0.6", "0.8", "0."]
+    );
+    assert!(oblique.error().is_zero());
+
+    // 1/sqrt(1 + 2e-40) is 1 - 1e-40 to first order, and still rounds to 1.
+    let tilted = Vector3::new(Real::one(), sqrt2() * tiny(20), Real::zero());
+    let tilted = crate::number::direction(&tilted, 17, &mut dec).unwrap();
+    assert_eq!(tilted.xyz[0].text, "1.");
+    assert!(tilted.xyz[0].error > Rational::parse("9e-41").unwrap());
+    assert!(tilted.xyz[1].value > Rational::parse("1.4e-20").unwrap());
+}

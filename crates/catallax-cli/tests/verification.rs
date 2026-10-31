@@ -506,6 +506,120 @@ fn standard_hole_angles_build_at_the_existing_request_allowance() {
 }
 
 #[test]
+fn planar_drafts_export_checked_step_at_the_application_allowance() {
+    use catallax_cli::verification::{Request, answer};
+    use catallax_measure::{Accuracy, face_centroid};
+    use catallax_numbers::{Decider, Rational};
+    use catallax_recipe::{ElementId, Origin, Recipe, Role, StepId};
+    let side = |segment: &str| Role::Side {
+        segment: ElementId::new(segment).unwrap(),
+        path: None,
+    };
+    for (angle, fixture) in [
+        (3.0_f64, include_str!("fixtures/planar-draft/draft-3.json")),
+        (5.0, include_str!("fixtures/planar-draft/draft-5.json")),
+    ] {
+        let problem: Value = serde_json::from_str(fixture).unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "catallax-planar-draft-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let request = |out: std::path::PathBuf, max_work| Request {
+            format: "catallax-request/1".into(),
+            source: "recipe".into(),
+            problem: problem.clone(),
+            out,
+            max_work,
+        };
+        let response = answer(&request(dir.join("application"), 20_000_000)).unwrap();
+        let manifest = &response["manifest"];
+        assert_eq!(manifest["status"], "answered", "{response}");
+        assert_eq!(manifest["format"], "catallax-manifest/3");
+        assert_eq!(manifest["exact"], true);
+        assert_eq!(manifest["marks"], json!([]));
+        assert_eq!(response["work"]["exhausted"], false, "{response}");
+        assert_eq!(response["work"]["limit"], 20_000_000);
+        assert_eq!(manifest["result"]["kind"], "solid");
+        assert_eq!(manifest["result"]["lumps"], 1);
+        assert_eq!(manifest["result"]["shells"], 1);
+        assert_eq!(manifest["result"]["faces_by_kind"], json!({"plane":6}));
+        assert_eq!(manifest["result"]["edges_by_kind"], json!({"line":12}));
+        assert_eq!(manifest["result"]["vertices"], 8);
+        assert_eq!(manifest["step"]["approximated_curves"], 0);
+        let deviation =
+            Rational::parse(manifest["step"]["max_deviation"].as_str().unwrap()).unwrap();
+        assert!(!deviation.is_zero() && deviation <= Rational::from_ratio(1, 10_000_000).unwrap());
+        let bytes = fs::read(dir.join("application/answer.step")).unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        assert_eq!(text.matches("=ADVANCED_FACE(").count(), 6);
+        assert_eq!(text.matches("=PLANE(").count(), 6);
+        assert!(!text.contains("B_SPLINE"));
+
+        let replay = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+            .args([
+                "replay",
+                dir.join("application/question.json").to_str().unwrap(),
+                "--out",
+                dir.join("fresh").to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(replay.status.success());
+        let replay: Value = serde_json::from_slice(&replay.stdout).unwrap();
+        assert_eq!(replay["work"]["limit"], 20_000_000);
+        assert_eq!(replay["manifest"], response["manifest"]);
+        assert_eq!(fs::read(dir.join("fresh/answer.step")).unwrap(), bytes);
+        let wider = answer(&request(dir.join("replay"), 100_000_000)).unwrap();
+        assert_eq!(wider["manifest"], response["manifest"]);
+        assert_eq!(fs::read(dir.join("replay/answer.step")).unwrap(), bytes);
+
+        // The manifest has no origins. Each one must name the right support.
+        let recipe = Recipe::parse(fixture).unwrap();
+        let mut dec = Decider::default();
+        let built =
+            catallax_app::build_incremental_without_display(&recipe, None, &mut dec).unwrap();
+        let t = angle.to_radians().tan();
+        let expected = [
+            (Role::Start, [0.0, 0.0, 0.0]),
+            (Role::End, [0.0, 0.0, 20.0]),
+            (side("right"), [20.0 - 10.0 * t, 0.0, 10.0]),
+            (side("left"), [10.0 * t - 20.0, 0.0, 10.0]),
+            (
+                side("top"),
+                [0.0, 15.0, (10.0 - 40.0 * t / 6.0) / (1.0 - t / 2.0)],
+            ),
+            (
+                side("bottom"),
+                [0.0, -15.0, (10.0 - 40.0 * t / 6.0) / (1.0 - t / 2.0)],
+            ),
+        ];
+        assert_eq!(built.names.faces.len(), expected.len());
+        for (role, centroid) in expected {
+            let origin = [Origin {
+                step: StepId::new("base").unwrap(),
+                role,
+            }];
+            let (face, _) = built
+                .names
+                .faces
+                .iter()
+                .find(|(_, origins)| origins[..] == origin)
+                .unwrap_or_else(|| panic!("no face for {origin:?}"));
+            let model = &built.checkpoint.built().model;
+            let found = face_centroid(model, *face, &Accuracy::default(), &mut dec).unwrap();
+            for (bounds, expected) in found.value.iter().zip(centroid) {
+                assert!(
+                    (bounds.lo.to_f64_nearest() - expected).abs() < 1e-9,
+                    "{origin:?}"
+                );
+            }
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[test]
 fn captured_slot_cut_answers_with_the_default_work_allowance() {
     use catallax_cli::verification::{Request, answer};
     let captured: Value =

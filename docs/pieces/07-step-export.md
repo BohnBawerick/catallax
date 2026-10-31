@@ -54,6 +54,18 @@ topology separately from the exact finite-decimal proof. An external kernel's
 nonadaptive volume estimate is not a certified property enclosure.
 
 
+## Exact direction components
+
+A written direction is `v / sqrt(n)` with `n = v.v`. When a component's enclosure
+holds its nonzero decimal `q`, the two share a sign, so `v_i^2 = q^2 n` decides
+equality with no radical or division. A proof of it gives that component zero
+error, as the comparison with `v_i / sqrt(n)` would, at far less work on a nested
+tower. An inconclusive result falls back to that comparison, and a zero decimal
+keeps it. No decimal is ever taken as exact from its enclosure alone. The file
+and its bounds stay the same, and the 3- and 5-degree planar drafts in
+`crates/catallax-cli/tests/fixtures/planar-draft` now export inside one 20M
+request. This covers those drafts, not every rational angle or general draft.
+
 ## Torus band beside a cone
 
 A body whose complete rings include a torus band and a cone band has no chart

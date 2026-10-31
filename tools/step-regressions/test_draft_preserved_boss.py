@@ -28,12 +28,14 @@ from raw_step import raw_shapes
 
 FIXTURES = ROOT / 'crates/catallax-features/tests/fixtures/draft-preserved-boss'
 # Removing only the draft, drafting before the boss, or keeping only one of the boss
-# and bore leaves these files untouched.
+# and bore leaves these files untouched, nested or not.
 CONTROLS = {'M-U': '49c5c3133675ea6f00793768e5383fbf0393dcc95a65cfd49150dee3bbf3909e',
             'M-A': '5f254fadca235d061b4c3fe3ebc44ad8c6e82ed048f18b399a928f1294f038df',
             'N-U': '3a57d729dc2efc6e73ef51c3f8231ca7775845f702534eafd1f2892973ad6a23',
             'N-BORE': '4d1c2588ae3fd0323ff5aef16cc4a39cfaddbe3d944f0a0b3789b394d2237fad',
-            'N-BOSS': '6c5c06b729ad2f4cd0cc5ad1925e48f6e5982786480d79fb318707a08bd4e619'}
+            'N-BOSS': '6c5c06b729ad2f4cd0cc5ad1925e48f6e5982786480d79fb318707a08bd4e619',
+            'O-U': '471d47afe3ec7056d09671e993b140aa69f8bec0fc69bb7a3d5a1547c64c849e',
+            'O-A': '210d0a9bd5c73cd8b62ab0d385730a483190419cad6cf201f92ca7a27c73a1f8'}
 TANGENT = math.tan(math.radians(3))
 SECANT = 1 / math.cos(math.radians(3))
 BOSS = 80 * math.pi
@@ -58,6 +60,15 @@ BORED = Part(VOLUME - 180 * math.pi, AREA + 102 * math.pi, 160 * math.pi,
              (((0, 0, 10), TopAbs_IN), ((-8, 0, 10), TopAbs_OUT), ((-8, 0, 20), TopAbs_OUT),
               ((6, 2, 22), TopAbs_IN), ((11, 2, 22), TopAbs_OUT), ((6, 2, 20), TopAbs_IN),
               ((19, 0, 19), TopAbs_IN), ((21, 0, 10), TopAbs_OUT)))
+# The radius-2 bore through both removes 100pi, of which the boss held 20pi and the base
+# 80pi, adds its side, 100pi, and opens a disk of 4pi in the bottom and in the boss's end.
+# The shoulder keeps its one exclusion and carries no third ring.
+NESTED = Part(VOLUME - 100 * math.pi, AREA + 92 * math.pi, 140 * math.pi,
+              {0: CAPS[0] - 4 * math.pi, 20: CAPS[20], 25: CAPS[25] - 4 * math.pi},
+              {0: 4 * math.pi, 20: 8 * math.pi, 25: 12 * math.pi}, {2: {-1}, 4: {1}},
+              (((0, 0, 10), TopAbs_IN), ((7, 2, 10), TopAbs_OUT), ((7, 2, 22), TopAbs_OUT),
+               ((7, 2, 20), TopAbs_OUT), ((3, 2, 22), TopAbs_IN), ((3, 2, 20), TopAbs_IN),
+               ((11, 2, 22), TopAbs_OUT), ((19, 0, 19), TopAbs_IN), ((21, 0, 10), TopAbs_OUT)))
 HEIGHT_AXIS = tuple(float(row[2]) for row in RQ)
 TRANSLATION = tuple(float(value) for value in T)
 
@@ -239,6 +250,10 @@ class PreservedBoss(unittest.TestCase):
     def test_placed_bored_part_answers_raw_valid_and_replays_at_both_allowances(self):
         self.assert_exchange('N-R', 'd0718c5b8f0b4f3d8c2b4a6e9827c965c3361620ad4ee82d8119f6727d10fe85',
                              BORED, 2)
+
+    def test_placed_nested_part_answers_raw_valid_and_replays_at_both_allowances(self):
+        self.assert_exchange('O-R', 'e9a7c0fc6d3c1939811cc46b7d26931c678e2cbdc22d31a5c7968dbbeb086d6f',
+                             NESTED, 2)
 
     def test_undrafted_and_boss_after_draft_controls_keep_their_bytes(self):
         for name, digest in CONTROLS.items():

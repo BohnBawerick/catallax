@@ -127,6 +127,11 @@ pub fn certify_clear<'a>(
     Ok(caps)
 }
 
+/// The squared distance between two parallel axes.
+fn axis_offset(a: &Cylinder, b: &Cylinder) -> Real {
+    b.origin.minus(&a.origin).cross(&a.axis).norm_squared() / a.axis.norm_squared()
+}
+
 /// Proves two walls strictly separated. Parallel walls are nearest along their
 /// common normal, so the axis distance `d` must exceed the radii's sum. Squaring
 /// `d^2-a^2-b^2 > 2ab` twice keeps the proof exact without a root. An exact
@@ -135,13 +140,45 @@ pub fn certify_disjoint(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result
     if sign(&a.axis.cross(&b.axis).norm_squared(), dec)? != Sign::Zero {
         return Err(unsupported("preserved walls need parallel axes"));
     }
-    let offset = b.origin.minus(&a.origin).cross(&a.axis).norm_squared() / a.axis.norm_squared();
-    let spare = offset - a.radius_sq.clone() - b.radius_sq.clone();
+    let spare = axis_offset(a, b) - a.radius_sq.clone() - b.radius_sq.clone();
     let reach = Real::from_i64(4) * (&a.radius_sq * &b.radius_sq);
     if sign(&spare, dec)? != Sign::Positive
         || sign(&(spare.square() - reach), dec)? != Sign::Positive
     {
         return Err(unsupported("preserved walls touch or cross each other"));
+    }
+    Ok(())
+}
+
+/// Whether `inner`'s axis lies strictly inside the wall of `outer`. A wall about such
+/// an axis can only nest there, and one about any other axis can only stand apart, so
+/// this names which of the two proofs a pair of parallel walls has to pass.
+pub fn axis_inside(outer: &Cylinder, inner: &Cylinder, dec: &mut Decider) -> Result<bool, Refusal> {
+    Ok(sign(&(axis_offset(outer, inner) - outer.radius_sq.clone()), dec)? == Sign::Negative)
+}
+
+/// Proves `inner` strictly inside `outer`. Parallel walls are nearest along their
+/// common normal, so the axis distance `d` must fall short of the radii's difference.
+/// With `outer` the larger, squaring `a^2+b^2-d^2 > 2ab` twice keeps the proof exact
+/// without a root. An exact contact refuses, and a wall of any thickness stands.
+pub fn certify_nested(
+    outer: &Cylinder,
+    inner: &Cylinder,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    if sign(&outer.axis.cross(&inner.axis).norm_squared(), dec)? != Sign::Zero {
+        return Err(unsupported("preserved walls need parallel axes"));
+    }
+    let (a, b) = (&outer.radius_sq, &inner.radius_sq);
+    let spare = a.clone() + b.clone() - axis_offset(outer, inner);
+    let reach = Real::from_i64(4) * (a * b);
+    if sign(&(a - b), dec)? != Sign::Positive
+        || sign(&spare, dec)? != Sign::Positive
+        || sign(&(spare.square() - reach), dec)? != Sign::Positive
+    {
+        return Err(unsupported(
+            "a nested wall touches or crosses its outer wall",
+        ));
     }
     Ok(())
 }
@@ -186,9 +223,11 @@ impl BoredCell {
 
     /// Exact strict material membership, excluding every bore and boundary.
     pub fn contains_interior(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
-        if !self.outer.contains_interior(point, dec)? {
-            return Ok(false);
-        }
+        Ok(self.outer.contains_interior(point, dec)? && self.clear_of_bores(point, dec)?)
+    }
+
+    /// Whether a point lies strictly outside every bore's complete cylinder.
+    pub fn clear_of_bores(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         for Bore { cylinder, .. } in &self.bores {
             let radial = point.minus(&cylinder.origin).cross(&cylinder.axis);
             let excess =

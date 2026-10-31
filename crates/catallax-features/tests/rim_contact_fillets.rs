@@ -1603,7 +1603,7 @@ fn finite_lines_cross_the_fitted_patch_exactly_once() {
                 }
             }
         }
-        let mut vertical = |model: &mut Model, x: Rational| {
+        let vertical = |model: &mut Model, x: Rational| {
             let through = rational_point(row.point([x, ratio(0, 1), ratio(0, 1)]));
             let direction = rational_vector(row.direction(along_y()));
             let line = Line::new(through, direction, &mut decider()).unwrap();

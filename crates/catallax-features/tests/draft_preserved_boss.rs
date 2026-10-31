@@ -1,14 +1,21 @@
-//! Planar draft under a preserved raised boss, checked in both kernels.
+//! Planar draft under a preserved raised boss, alone or beside a separate through
+//! bore, checked in both kernels.
 //!
 //! Every expected value comes from the part's definition. No expectation reads
 //! a kernel result, and neither kernel's answer supplies the other's.
 use catallax_boolean::{Containment, classify_point, face_contains};
+use catallax_features::draft::{
+    DraftDefinition,
+    bored::Bore,
+    bossed::{Boss, BossedCell},
+    cell::{PlanarCell, PlanePatch},
+};
 use catallax_features::{BuildError, Built, ConsumedFace, evaluate};
 use catallax_field::{FaceState, Location, Plan, Workspace};
 use catallax_measure::Enclosure;
 use catallax_numbers::{Decider, Integer, Outcome, Rational, Real, with_operation_budget};
-use catallax_recipe::{ElementId, Origin, Recipe, Role, StepId};
-use catallax_shapes::{Curve, Point3, RPoint3, Surface, Vector3};
+use catallax_recipe::{ElementId, HolePart, Origin, Recipe, Role, StepId};
+use catallax_shapes::{Curve, Cylinder, Plane, Point3, RPoint3, Surface, Vector3};
 use catallax_topology::{BodyKind, FaceId, Loop, Sense};
 use serde_json::{Value as Json, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -147,38 +154,52 @@ impl Reference {
     /// The base section `30(2W-2zt)` over 0 <= z <= 20 and the radius-4, height-5
     /// boss about (6,2,45/2), with radial variance 4 and axial variance 25/12. The
     /// boss's end replaces the shoulder disk it covers, so only its side adds area.
-    fn local(half_width: &str, degrees: &str) -> Self {
+    /// A bored part also loses the radius-3 cylinder about (-8,0,10), with radial
+    /// variance 9/4 and axial variance 100/3. That adds its side, 120pi, and removes
+    /// two cap disks, 18pi.
+    fn local(half_width: &str, degrees: &str, bored: bool) -> Self {
         let [t, secant] = slope(degrees);
         let w = q(half_width);
         let (w2, w3) = (&w * &w, &(&w * &w) * &w);
         let scaled = |x: &Rational, by: &str| Bound::exact(&(x * &q(by)));
         let (t2, t3) = (t.square(), t.square().mul(&t));
         let boss = pi().times("80");
+        let bore = pi().times(if bored { "180" } else { "0" });
         let base = scaled(&w, "1200").sub(&t.times("12000"));
-        let volume = base.add(&boss);
+        let volume = base.add(&boss).sub(&bore);
         let area = scaled(&w, "200")
             .sub(&t.times("2000"))
             .add(&secant.times("1200"))
-            .add(&pi().times("40"));
+            .add(&pi().times("40"))
+            .add(&bore.times("17/30"));
         let first = [
-            boss.times("6"),
+            boss.times("6").add(&bore.times("8")),
             boss.times("2"),
             scaled(&w, "12000")
                 .sub(&t.times("160000"))
-                .add(&boss.times("45/2")),
+                .add(&boss.times("45/2"))
+                .sub(&bore.times("10")),
         ];
         let second = [
             scaled(&w3, "400")
                 .sub(&t.mul(&scaled(&w2, "12000")))
                 .add(&t2.mul(&scaled(&w, "160000")))
                 .sub(&t3.times("800000"))
-                .add(&boss.times("40")),
-            base.times("75").add(&boss.times("8")),
+                .add(&boss.times("40"))
+                .sub(&bore.times("265/4")),
+            base.times("75")
+                .add(&boss.times("8"))
+                .sub(&bore.times("9/4")),
             scaled(&w, "160000")
                 .sub(&t.times("2400000"))
-                .add(&boss.times("1525/3")),
+                .add(&boss.times("1525/3"))
+                .sub(&bore.times("400/3")),
         ];
-        let cross = [boss.times("12"), boss.times("135"), boss.times("45")];
+        let cross = [
+            boss.times("12"),
+            boss.times("135").add(&bore.times("80")),
+            boss.times("45"),
+        ];
         let per_volume = volume.inverse();
         let squared = |i: usize| first[i].square().mul(&per_volume);
         let diagonal =
@@ -266,22 +287,70 @@ struct Case {
     frame: Option<Frame>,
     /// Whether (19,0,19) keeps inside this slope: `19t < W-19`.
     edit_point: Location,
+    /// The through bore's wall, on a part that has one.
+    bore: Option<Origin>,
 }
 
-fn cases() -> Vec<Case> {
-    let case = |name, half_width, degrees, scale, frame, edit_point| Case {
+fn case(
+    name: &'static str,
+    half_width: &'static str,
+    degrees: &'static str,
+    scale: &'static str,
+    frame: Option<Frame>,
+    edit_point: Location,
+) -> Case {
+    Case {
         name,
         half_width,
         degrees,
         scale,
         frame,
         edit_point,
-    };
+        bore: None,
+    }
+}
+
+fn cases() -> Vec<Case> {
     vec![
         case("M-N", "20", "3", "1", None, Location::Inside),
         case("M-E", "20", "5", "1", None, Location::Outside),
         case("M-R", "20", "3", "1", Some(oblique()), Location::Inside),
         case("M-S", "31", "45", "1/2", None, Location::Outside),
+    ]
+}
+
+fn hole_wall() -> Origin {
+    origin(
+        "hole",
+        Role::Hole {
+            at: ElementId::new("left").unwrap(),
+            part: HolePart::Wall,
+        },
+    )
+}
+
+fn bored_cases() -> Vec<Case> {
+    let with = |case: Case, bore: Origin| Case {
+        bore: Some(bore),
+        ..case
+    };
+    vec![
+        with(
+            case("N-N", "20", "3", "1", None, Location::Inside),
+            hole_wall(),
+        ),
+        with(
+            case("N-E", "20", "5", "1", None, Location::Outside),
+            side("tool", "wall"),
+        ),
+        with(
+            case("N-R", "20", "3", "1", Some(oblique()), Location::Inside),
+            hole_wall(),
+        ),
+        with(
+            case("N-S", "32", "45", "1/2", None, Location::Outside),
+            hole_wall(),
+        ),
     ]
 }
 
@@ -313,7 +382,8 @@ impl Case {
         })
     }
     fn reference(&self) -> Reference {
-        let reference = Reference::local(self.half_width, self.degrees).scaled(self.scale);
+        let reference =
+            Reference::local(self.half_width, self.degrees, self.bore.is_some()).scaled(self.scale);
         match &self.frame {
             Some(frame) => reference.placed(frame),
             None => reference,
@@ -379,23 +449,29 @@ fn check_topology(case: &Case, built: &Built) {
     let model = &built.model;
     assert!(model.check(built.result).is_empty(), "{}", case.name);
     let counts = model.counts(built.result);
+    let bored = usize::from(case.bore.is_some());
     assert_eq!(
         (counts.lumps, counts.shells, counts.faces, counts.loops),
-        (1, 1, 8, 10),
+        (1, 1, 8 + bored, 10 + 4 * bored),
         "{}",
         case.name
     );
     assert_eq!(
         (counts.edges, counts.ring_edges, counts.vertices),
-        (14, 2, 8)
+        (14 + 2 * bored, 2 + 2 * bored, 8)
     );
     assert!(built.consumed.is_empty());
     let degrees = q(case.degrees).to_f64_nearest();
     let t = (degrees * std::f64::consts::PI / 180.0).tan();
     let w = q(case.half_width).to_f64_nearest();
     let planes = [
-        (origin("base", Role::Start), [0.0, 0.0, -1.0], 0.0, 1),
-        (shoulder(), [0.0, 0.0, 1.0], 20.0, 2),
+        (
+            origin("base", Role::Start),
+            [0.0, 0.0, -1.0],
+            0.0,
+            1 + bored,
+        ),
+        (shoulder(), [0.0, 0.0, 1.0], 20.0, 2 + bored),
         (top(), [0.0, 0.0, 1.0], 25.0, 1),
         (side("base", "bottom"), [0.0, -1.0, 0.0], 15.0, 1),
         (side("base", "top"), [0.0, 1.0, 0.0], 15.0, 1),
@@ -405,7 +481,7 @@ fn check_topology(case: &Case, built: &Built) {
     let mut wall_rings = Vec::new();
     let mut plane_rings = Vec::new();
     let mut names = BTreeSet::new();
-    let mut disks = 0;
+    let mut characteristic = 0;
     for face in model.faces_of_body(built.result) {
         let f = model.face(face);
         let origins = model.face_origins(face);
@@ -441,9 +517,7 @@ fn check_topology(case: &Case, built: &Built) {
                     "{origins:?} {value} {offset}"
                 );
                 assert_eq!(loops.len(), *wires, "{origins:?}");
-                if *wires == 1 {
-                    disks += 1;
-                }
+                characteristic += 2 - *wires as i64;
                 for wire in &loops {
                     match wire.as_slice() {
                         [ring] => plane_rings.push(model.coedge(*ring).edge),
@@ -452,15 +526,20 @@ fn check_topology(case: &Case, built: &Built) {
                 }
             }
             Surface::Cylinder(cylinder) => {
-                assert_eq!(origins[0], side("boss", "wall"));
-                assert_eq!(f.sense, Sense::Same, "the wall bounds material on its axis");
-                let scaled = &q("4") * &q(case.scale);
+                let (sense, wall_radius, foot, ends) = if case.bore.as_ref() == Some(&origins[0]) {
+                    (Sense::Reversed, "3", [-8.0, 0.0], [0.0, 20.0])
+                } else {
+                    assert_eq!(origins[0], side("boss", "wall"));
+                    (Sense::Same, "4", [6.0, 2.0], [20.0, 25.0])
+                };
+                assert_eq!(f.sense, sense, "the wall bounds material on its axis");
+                let scaled = &q(wall_radius) * &q(case.scale);
                 let radius = &scaled * &scaled;
                 assert_eq!(cylinder.radius_sq.rational_ref(), Some(&radius));
                 let axis = case.local(vector(&cylinder.axis), false);
                 assert!(axis[0].abs() < 1e-9 && axis[1].abs() < 1e-9 && axis[2] != 0.0);
                 let at = case.local(xyz(&cylinder.origin), true);
-                assert!((at[0] - 6.0).abs() < 1e-9 && (at[1] - 2.0).abs() < 1e-9);
+                assert!((at[0] - foot[0]).abs() < 1e-9 && (at[1] - foot[1]).abs() < 1e-9);
                 let mut heights = Vec::new();
                 for cycle in &loops {
                     let [coedge] = cycle.as_slice() else {
@@ -475,27 +554,31 @@ fn check_topology(case: &Case, built: &Built) {
                     };
                     assert_eq!(circle.radius_sq.rational_ref(), Some(&radius));
                     let centre = case.local(xyz(&circle.center), true);
-                    assert!((centre[0] - 6.0).abs() < 1e-9 && (centre[1] - 2.0).abs() < 1e-9);
+                    assert!(
+                        (centre[0] - foot[0]).abs() < 1e-9 && (centre[1] - foot[1]).abs() < 1e-9
+                    );
                     heights.push((centre[2] * 1e6).round() / 1e6);
                 }
                 heights.sort_by(f64::total_cmp);
-                assert_eq!(heights, [20.0, 25.0]);
+                assert_eq!(heights, ends);
             }
             surface => panic!("unexpected {surface:?}"),
         }
     }
-    // Eight distinct names, none of them the buried `boss.Start`.
-    assert_eq!(names.len(), 8);
+    // A distinct name per face, none of them the buried `boss.Start`.
+    assert_eq!(names.len(), 8 + bored);
     assert!(!names.contains(&origin("boss", Role::Start)));
     wall_rings.sort();
     plane_rings.sort();
     assert_eq!(wall_rings, plane_rings);
-    // Six disks, one annulus and one band: rings add nothing, so V-E+F is 2 and
-    // the shell has genus zero. A disk left in the joint would break the count.
-    assert_eq!(disks, 6);
+    // Bands add nothing and each plane adds 2-wires. Rings have no vertices, so
+    // V-E+F over that sum is 2-2g: genus zero alone, one through a bore. A disk
+    // left in the joint would break the count.
+    let bored = bored as i64;
+    assert_eq!(characteristic, 6 - 2 * bored);
     assert_eq!(
-        counts.vertices as i64 - (counts.edges - counts.ring_edges) as i64 + disks,
-        2
+        counts.vertices as i64 - (counts.edges - counts.ring_edges) as i64 + characteristic,
+        2 - 2 * bored
     );
 }
 
@@ -510,67 +593,105 @@ const MATERIAL: [([&str; 3], Location); 7] = [
     (["-10", "0", "20"], Location::Boundary),
 ];
 
+/// The same rows on a bored part, whose witnesses stay clear of the bore.
+const BORED_MATERIAL: [([&str; 3], Location); 10] = [
+    (["0", "0", "10"], Location::Inside),
+    (["-8", "0", "10"], Location::Outside),
+    (["-8", "0", "20"], Location::Outside),
+    (["6", "2", "22"], Location::Inside),
+    (["11", "2", "22"], Location::Outside),
+    (["6", "2", "20"], Location::Inside),
+    (["-5", "0", "10"], Location::Boundary),
+    (["10", "2", "22"], Location::Boundary),
+    (["6", "2", "25"], Location::Boundary),
+    (["-10", "5", "20"], Location::Boundary),
+];
+
+/// Whether a point lies on a named face's retained trim, not merely its carrier.
+type Trim = (Origin, [&'static str; 3], bool);
+
+/// Both kernels' answers at a case's material and retained-face witnesses.
+fn check_kernels(case: &Case, material: &[([&str; 3], Location)], trims: &[Trim]) {
+    let source = recipe(&fixture(case.name));
+    let (built, _) = with_operation_budget(WORK, || evaluate(&source, &mut Decider::default()));
+    let mut built = built.unwrap_or_else(|e| panic!("{} {e:?}", case.name));
+    check_topology(case, &built);
+    let (plan, _) = with_operation_budget(WORK, || {
+        Plan::compile_checked(&source, &mut Decider::default())
+    });
+    let plan = plan.unwrap_or_else(|e| panic!("{} {e:?}", case.name));
+    assert!(plan.consumed_faces().is_empty());
+    let beyond = (&q(case.half_width) + &q("1")).to_string();
+    let mut rows = material.to_vec();
+    rows.push((["19", "0", "19"], case.edit_point));
+    rows.push(([beyond.as_str(), "0", "10"], Location::Outside));
+    let mut storage = Workspace::default();
+    for (point, expected) in rows {
+        let at = case.point(point);
+        let (field, work) = with_operation_budget(WORK, || {
+            plan.proven_checked(&at, &mut storage, &mut Decider::default())
+        });
+        let field = field.unwrap_or_else(|e| panic!("{} {point:?} {e:?} {work:?}", case.name));
+        assert_eq!(field.location, expected, "{} field {point:?}", case.name);
+        let (native, _) = with_operation_budget(WORK, || {
+            classify_point(&mut built.model, built.result, &at, &mut Decider::default())
+        });
+        assert!(
+            match expected {
+                Location::Inside => matches!(native, Outcome::Proven(Containment::Inside)),
+                Location::Outside => matches!(native, Outcome::Proven(Containment::Outside)),
+                _ => matches!(native, Outcome::ProvenCoincident(_)),
+            },
+            "{} native {point:?}: {native:?}",
+            case.name
+        );
+    }
+    for (name, point, on) in trims {
+        let (face, on, point) = (named(&built, name), *on, *point);
+        let at = case.point(point);
+        let contains = face_contains(&mut built.model, face, &at, &mut Decider::default()).unwrap();
+        assert_eq!(contains, on, "{} native {name:?} {point:?}", case.name);
+        let state = plan
+            .face_query(plan.select(name).unwrap(), &at, &mut storage)
+            .unwrap()
+            .state;
+        let expected = if on {
+            FaceState::OnFace
+        } else {
+            FaceState::NotOnFace
+        };
+        assert_eq!(state, expected, "{} field {name:?} {point:?}", case.name);
+    }
+}
+
 #[test]
 fn both_kernels_draft_the_base_under_an_unchanged_boss() {
+    // A carrier is not a face: the shoulder stops at the joint, the top at the
+    // boss's rim.
+    let trims = [
+        (shoulder(), ["6", "2", "20"], false),
+        (shoulder(), ["-10", "0", "20"], true),
+        (top(), ["6", "2", "25"], true),
+        (top(), ["11", "2", "25"], false),
+    ];
     for case in cases() {
-        let source = recipe(&fixture(case.name));
-        let (built, _) = with_operation_budget(WORK, || evaluate(&source, &mut Decider::default()));
-        let mut built = built.unwrap_or_else(|e| panic!("{} {e:?}", case.name));
-        check_topology(&case, &built);
-        let (plan, _) = with_operation_budget(WORK, || {
-            Plan::compile_checked(&source, &mut Decider::default())
-        });
-        let plan = plan.unwrap_or_else(|e| panic!("{} {e:?}", case.name));
-        assert!(plan.consumed_faces().is_empty());
-        let beyond = (&q(case.half_width) + &q("1")).to_string();
-        let mut rows = MATERIAL.to_vec();
-        rows.push((["19", "0", "19"], case.edit_point));
-        rows.push(([beyond.as_str(), "0", "10"], Location::Outside));
-        let mut storage = Workspace::default();
-        for (point, expected) in rows {
-            let at = case.point(point);
-            let (field, work) = with_operation_budget(WORK, || {
-                plan.proven_checked(&at, &mut storage, &mut Decider::default())
-            });
-            let field = field.unwrap_or_else(|e| panic!("{} {point:?} {e:?} {work:?}", case.name));
-            assert_eq!(field.location, expected, "{} field {point:?}", case.name);
-            let (native, _) = with_operation_budget(WORK, || {
-                classify_point(&mut built.model, built.result, &at, &mut Decider::default())
-            });
-            assert!(
-                match expected {
-                    Location::Inside => matches!(native, Outcome::Proven(Containment::Inside)),
-                    Location::Outside => matches!(native, Outcome::Proven(Containment::Outside)),
-                    _ => matches!(native, Outcome::ProvenCoincident(_)),
-                },
-                "{} native {point:?}: {native:?}",
-                case.name
-            );
-        }
-        // A carrier is not a face: the shoulder stops at the joint, the top at
-        // the boss's rim.
-        let (shoulder_face, top_face) = (named(&built, &shoulder()), named(&built, &top()));
-        for (name, face, point, on) in [
-            (shoulder(), shoulder_face, ["6", "2", "20"], false),
-            (shoulder(), shoulder_face, ["-10", "0", "20"], true),
-            (top(), top_face, ["6", "2", "25"], true),
-            (top(), top_face, ["11", "2", "25"], false),
-        ] {
-            let at = case.point(point);
-            let contains =
-                face_contains(&mut built.model, face, &at, &mut Decider::default()).unwrap();
-            assert_eq!(contains, on, "{} native {name:?} {point:?}", case.name);
-            let state = plan
-                .face_query(plan.select(&name).unwrap(), &at, &mut storage)
-                .unwrap()
-                .state;
-            let expected = if on {
-                FaceState::OnFace
-            } else {
-                FaceState::NotOnFace
-            };
-            assert_eq!(state, expected, "{} field {name:?} {point:?}", case.name);
-        }
+        check_kernels(&case, &MATERIAL, &trims);
+    }
+}
+
+#[test]
+fn both_kernels_draft_the_base_between_a_boss_and_a_bore() {
+    // The shoulder excludes both, the bottom excludes the bore's other mouth.
+    let trims = [
+        (shoulder(), ["-8", "0", "20"], false),
+        (shoulder(), ["6", "2", "20"], false),
+        (shoulder(), ["-10", "5", "20"], true),
+        (origin("base", Role::Start), ["-8", "0", "0"], false),
+        (top(), ["6", "2", "25"], true),
+        (top(), ["11", "2", "25"], false),
+    ];
+    for case in bored_cases() {
+        check_kernels(&case, &BORED_MATERIAL, &trims);
     }
 }
 
@@ -583,7 +704,7 @@ fn overlap(e: &Enclosure, reference: &Bound, what: &str) {
 
 #[test]
 fn requested_properties_overlap_independent_enclosures() {
-    for case in cases() {
+    for case in cases().into_iter().chain(bored_cases()) {
         let built = evaluate(&recipe(&fixture(case.name)), &mut Decider::default()).unwrap();
         let (answer, _) = with_operation_budget(WORK, || {
             catallax_measure::mass_properties(
@@ -620,11 +741,12 @@ fn agree(bound: &Bound, row: &str) {
 #[test]
 fn bounds_and_published_table_rows_match_the_definition() {
     // The rounded report rows must agree with these formulas to their digits.
-    for (w, degrees, scale, row) in [
+    for (w, degrees, scale, bored, row) in [
         (
             "20",
             "3",
             "1",
+            false,
             [
                 "23622.434060890689",
                 "5222.494962775014",
@@ -643,6 +765,7 @@ fn bounds_and_published_table_rows_match_the_definition() {
             "20",
             "5",
             "1",
+            false,
             [
                 "23201.463449976095",
                 "5155.270184143761",
@@ -661,6 +784,7 @@ fn bounds_and_published_table_rows_match_the_definition() {
             "31",
             "45",
             "1/2",
+            false,
             [
                 "3181.415926535898",
                 "1505.679995247826",
@@ -675,8 +799,65 @@ fn bounds_and_published_table_rows_match_the_definition() {
                 "-219.097686725",
             ],
         ),
+        (
+            "20",
+            "3",
+            "1",
+            true,
+            [
+                "23056.947383244526",
+                "5542.937413441173",
+                "0.261606959266",
+                "0.021800579939",
+                "10.045334773285",
+                "2553493.766463869",
+                "3728061.626771019",
+                "4681688.489811493",
+                "-2884.430947229",
+                "-18576.103011385",
+                "-6260.397564667",
+            ],
+        ),
+        (
+            "20",
+            "5",
+            "1",
+            true,
+            [
+                "22635.976772329933",
+                "5475.712634809919",
+                "0.266472171957",
+                "0.022206014330",
+                "9.984186505798",
+                "2507930.140251863",
+                "3560937.444777136",
+                "4496981.934805322",
+                "-2881.985424597",
+                "-18944.940671387",
+                "-6291.134036334",
+            ],
+        ),
+        (
+            "32",
+            "45",
+            "1/2",
+            true,
+            [
+                "3260.730091830128",
+                "1635.790607914366",
+                "0.115615554742",
+                "0.009634629562",
+                "4.293516974949",
+                "88424.776914693",
+                "186226.847615212",
+                "221597.607480990",
+                "-90.615609834",
+                "-855.386448314",
+                "-218.544359663",
+            ],
+        ),
     ] {
-        let reference = Reference::local(w, degrees).scaled(scale);
+        let reference = Reference::local(w, degrees, bored).scaled(scale);
         let [x, y, z] = &reference.centroid;
         let i = &reference.inertia;
         for (bound, row) in [
@@ -699,7 +880,11 @@ fn bounds_and_published_table_rows_match_the_definition() {
         }
     }
     // Bottom edges and the boss's end retain every extremum of the local box.
-    for case in cases().iter().filter(|case| case.frame.is_none()) {
+    for case in cases()
+        .iter()
+        .chain(&bored_cases())
+        .filter(|case| case.frame.is_none())
+    {
         let built = evaluate(&recipe(&fixture(case.name)), &mut Decider::default()).unwrap();
         let boxed = catallax_measure::bounding_box(
             &built.model,
@@ -722,9 +907,10 @@ fn bounds_and_published_table_rows_match_the_definition() {
     }
 }
 
-#[test]
-fn certified_display_is_closed_selectable_and_keeps_the_joint_open() {
-    let source = recipe(&fixture("M-N"));
+/// A closed certified display with one selectable region per named face, leaving
+/// the joint open and, on a bored part, the bore's mouth.
+fn check_display(name: &str, faces: usize, bored: bool) {
+    let source = recipe(&fixture(name));
     let built = evaluate(&source, &mut Decider::default()).unwrap();
     let options = catallax_mesh::MeshOptions::default();
     let mesh = catallax_mesh::mesh_body(
@@ -735,7 +921,7 @@ fn certified_display_is_closed_selectable_and_keeps_the_joint_open() {
     )
     .unwrap()
     .value;
-    assert_eq!(mesh.faces.len(), 8);
+    assert_eq!(mesh.faces.len(), faces);
     assert!(mesh.unavailable_controls.is_empty());
     assert!(
         mesh.faces
@@ -758,6 +944,10 @@ fn certified_display_is_closed_selectable_and_keeps_the_joint_open() {
             let x = (p[0][0] + p[1][0] + p[2][0]) / 3.0;
             let y = (p[0][1] + p[1][1] + p[2][1]) / 3.0;
             assert!((x - 6.0).hypot(y - 2.0) >= 4.0 - chord, "joint at {x} {y}");
+            assert!(
+                !bored || (x + 8.0).hypot(y) >= 3.0 - chord,
+                "bore at {x} {y}"
+            );
         }
         for i in 0..3 {
             let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
@@ -769,8 +959,14 @@ fn certified_display_is_closed_selectable_and_keeps_the_joint_open() {
         .keys()
         .flat_map(|face| built.model.face_origins(*face))
         .collect();
-    assert_eq!((regions.len(), names.len()), (8, 8));
+    assert_eq!((regions.len(), names.len()), (faces, faces));
     assert!(edges.values().all(|counts| *counts == [1, 1]));
+}
+
+#[test]
+fn certified_display_is_closed_selectable_and_keeps_the_joint_open() {
+    check_display("M-N", 8, false);
+    check_display("N-N", 9, true);
 }
 
 fn refusal(source: &Json) -> (String, String) {
@@ -794,19 +990,29 @@ fn coverage() -> (String, String) {
 
 #[test]
 fn contact_crossing_and_invalid_angle_keep_their_typed_refusals() {
-    for name in ["M-T", "M-X"] {
+    for name in ["M-T", "M-X", "N-T", "N-X"] {
         assert_eq!(refusal(&fixture(name)), coverage(), "{name}");
     }
-    assert_eq!(
-        refusal(&fixture("M-BAD")),
-        ("draft.angle".into(), "draft.angle".into())
-    );
+    for name in ["M-BAD", "N-BAD"] {
+        assert_eq!(
+            refusal(&fixture(name)),
+            ("draft.angle".into(), "draft.angle".into())
+        );
+    }
 }
 
 const DRAFT: usize = 5;
+const HOLE: usize = 5;
+const BORED_DRAFT: usize = 6;
 
 fn edited(edit: &dyn Fn(&mut Json)) -> Json {
     let mut source = fixture("M-N");
+    edit(&mut source);
+    source
+}
+
+fn bored(edit: &dyn Fn(&mut Json)) -> Json {
+    let mut source = fixture("N-N");
     edit(&mut source);
     source
 }
@@ -831,6 +1037,143 @@ fn the_new_branch_admits_only_an_unselected_axial_boss() {
     ] {
         assert_eq!(refusal(&source), coverage(), "{source}");
     }
+}
+
+#[test]
+fn the_combined_branch_admits_no_selected_wall_or_shoulder() {
+    for face in [
+        json!({"step":"hole","role":{"hole":{"at":"left","part":"wall"}}}),
+        json!({"step":"boss","role":{"side":{"segment":"wall"}}}),
+        json!({"step":"base","role":"end"}),
+    ] {
+        let source = bored(&|s| {
+            s["steps"][BORED_DRAFT]["faces"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"face": face}));
+        });
+        assert_eq!(refusal(&source), coverage(), "{source}");
+    }
+    // A second bore beside the boss, and a bore through it, stay outside the family.
+    for source in [
+        bored(&|s| {
+            s["steps"][HOLE]["at"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id":"right","point":["-8","9","20"],"direction":["0","0","-1"]}));
+        }),
+        bored(&|s| s["steps"][HOLE]["at"][0]["point"] = json!(["6", "2", "25"])),
+    ] {
+        assert_eq!(refusal(&source), coverage(), "{source}");
+    }
+}
+
+#[test]
+fn the_combined_proof_owns_the_gap_between_boss_and_bore() {
+    let vector = |x: &str, y: &str, z: &str| Vector3::new(q(x).into(), q(y).into(), q(z).into());
+    let plane = |origin: [&str; 3], normal: [&str; 3]| {
+        let [x, y, z] = origin.map(|x| q(x).into());
+        let [a, b, c] = normal;
+        Plane {
+            origin: Point3::new(x, y, z),
+            normal: vector(a, b, c),
+            ref_dir: if a == "0" && b == "0" {
+                vector("1", "0", "0")
+            } else {
+                vector("0", "0", "1")
+            },
+        }
+    };
+    let cylinder = |x: &str, radius: &str| Cylinder {
+        origin: Point3::new(q(x).into(), Real::zero(), Real::zero()),
+        axis: vector("0", "0", "1"),
+        radius_sq: (&q(radius) * &q(radius)).into(),
+        ref_dir: vector("1", "0", "0"),
+    };
+    let dec = &mut Decider::default();
+    // Both footprints stay far inside these walls at every separation below, so
+    // only the proof between them can tell these rows apart.
+    let supports = [
+        (["0", "0", "0"], ["0", "0", "-1"]),
+        (["0", "0", "20"], ["0", "0", "1"]),
+        (["-40", "0", "0"], ["-1", "0", "0"]),
+        (["40", "0", "0"], ["1", "0", "0"]),
+        (["0", "-40", "0"], ["0", "-1", "0"]),
+        (["0", "40", "0"], ["0", "1", "0"]),
+    ]
+    .map(|(origin, normal)| PlanePatch {
+        plane: plane(origin, normal),
+        origins: Vec::new(),
+    });
+    let outer = PlanarCell::new(supports.to_vec(), dec).unwrap().unwrap();
+    let definition = DraftDefinition::new(
+        vector("0", "0", "1"),
+        plane(["0", "0", "0"], ["0", "0", "1"]),
+        &q("3"),
+        dec,
+    )
+    .unwrap();
+    let boss = Boss {
+        cylinder: cylinder("0", "4"),
+        origins: Vec::new(),
+        top: plane(["0", "0", "25"], ["0", "0", "1"]),
+        top_origins: Vec::new(),
+    };
+    // Radii 4 and 3 touch at 7, overlap at 13/2, and leave a 1e-7 mm gap above 7.
+    for (separation, admitted) in [("7", false), ("13/2", false), ("70000001/10000000", true)] {
+        let bore = Bore {
+            cylinder: cylinder(separation, "3"),
+            origins: Vec::new(),
+        };
+        let answer = BossedCell::new(outer.clone(), boss.clone(), vec![bore], &definition, dec);
+        match answer {
+            Ok(cell) => assert!(admitted && cell.bored.is_some(), "{separation}"),
+            Err(refusal) => {
+                assert!(!admitted, "{separation} {refusal:?}");
+                assert_eq!(refusal.code, "draft.unsupported-arrangement");
+            }
+        }
+    }
+}
+
+#[test]
+fn saved_regions_keep_the_whole_combined_part_or_refuse_the_bore() {
+    let kept = recipe(&bored(&|s| {
+        s["steps"][BORED_DRAFT]["keep_regions"] = json!([["6", "2", "22"]]);
+    }));
+    let mut built = evaluate(&kept, &mut Decider::default()).unwrap();
+    let counts = built.model.counts(built.result);
+    assert_eq!((counts.lumps, counts.faces), (1, 9));
+    let plan = Plan::compile_checked(&kept, &mut Decider::default()).unwrap();
+    let mut storage = Workspace::default();
+    for (point, expected) in [
+        (["0", "0", "10"], Location::Inside),
+        (["-8", "0", "10"], Location::Outside),
+    ] {
+        let at = RPoint3::new(q(point[0]), q(point[1]), q(point[2]));
+        let field = plan
+            .proven_checked(&at, &mut storage, &mut Decider::default())
+            .unwrap();
+        assert_eq!(field.location, expected, "field {point:?}");
+        let native = classify_point(&mut built.model, built.result, &at, &mut Decider::default());
+        assert!(
+            match expected {
+                Location::Inside => matches!(native, Outcome::Proven(Containment::Inside)),
+                _ => matches!(native, Outcome::Proven(Containment::Outside)),
+            },
+            "native {point:?}: {native:?}"
+        );
+    }
+    let inside_bore = bored(&|s| {
+        s["steps"][BORED_DRAFT]["keep_regions"] = json!([["-8", "0", "10"]]);
+    });
+    assert_eq!(
+        refusal(&inside_bore),
+        (
+            "draft.invalid-keep-region".into(),
+            "draft.invalid-keep-region".into()
+        )
+    );
 }
 
 #[test]

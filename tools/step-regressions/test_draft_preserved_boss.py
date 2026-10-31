@@ -1,4 +1,5 @@
-"""A placed drafted part keeps its unselected raised boss on the public route."""
+"""A placed drafted part keeps its unselected boss and bore on the public route."""
+from collections import namedtuple
 from fractions import Fraction
 import hashlib
 import json
@@ -14,7 +15,7 @@ from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepGProp import BRepGProp
 from OCP.GeomAbs import GeomAbs_Circle, GeomAbs_Cylinder, GeomAbs_Plane
 from OCP.GProp import GProp_GProps
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_IN, TopAbs_OUT
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_IN, TopAbs_OUT, TopAbs_REVERSED
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 from OCP.gp import gp_Pnt
@@ -26,10 +27,13 @@ from test_partial_periodic_trims import BINARY, DRIVER
 from raw_step import raw_shapes
 
 FIXTURES = ROOT / 'crates/catallax-features/tests/fixtures/draft-preserved-boss'
-DIGEST = '91a5192fe48d89b87e7f4782b126d41aa2396bfeedfc0fc9a44608d7e8277615'
-# Removing only the draft, or drafting before the boss, leaves these files untouched.
+# Removing only the draft, drafting before the boss, or keeping only one of the boss
+# and bore leaves these files untouched.
 CONTROLS = {'M-U': '49c5c3133675ea6f00793768e5383fbf0393dcc95a65cfd49150dee3bbf3909e',
-            'M-A': '5f254fadca235d061b4c3fe3ebc44ad8c6e82ed048f18b399a928f1294f038df'}
+            'M-A': '5f254fadca235d061b4c3fe3ebc44ad8c6e82ed048f18b399a928f1294f038df',
+            'N-U': '3a57d729dc2efc6e73ef51c3f8231ca7775845f702534eafd1f2892973ad6a23',
+            'N-BORE': '4d1c2588ae3fd0323ff5aef16cc4a39cfaddbe3d944f0a0b3789b394d2237fad',
+            'N-BOSS': '6c5c06b729ad2f4cd0cc5ad1925e48f6e5982786480d79fb318707a08bd4e619'}
 TANGENT = math.tan(math.radians(3))
 SECANT = 1 / math.cos(math.radians(3))
 BOSS = 80 * math.pi
@@ -43,6 +47,17 @@ MATERIAL = (((0, 0, 10), TopAbs_IN), ((6, 2, 22), TopAbs_IN), ((11, 2, 22), TopA
 # Plane area across the axis by local height: the bottom, the shoulder less its joint
 # and the boss's end.
 CAPS = {0: 1200, 20: 1200 - 1200 * TANGENT - 16 * math.pi, 25: 16 * math.pi}
+Part = namedtuple('Part', 'volume area walls caps rings senses material')
+BOSSED = Part(VOLUME, AREA, 40 * math.pi, CAPS, {20: 8 * math.pi, 25: 8 * math.pi}, {4: {1}},
+              MATERIAL)
+# The radius-3 bore removes 180pi from the base, adds its side, 120pi, and opens a disk
+# of 9pi in both caps. Its wall faces its axis, and the boss's wall faces away.
+BORED = Part(VOLUME - 180 * math.pi, AREA + 102 * math.pi, 160 * math.pi,
+             {0: CAPS[0] - 9 * math.pi, 20: CAPS[20] - 9 * math.pi, 25: CAPS[25]},
+             {0: 6 * math.pi, 20: 14 * math.pi, 25: 8 * math.pi}, {3: {-1}, 4: {1}},
+             (((0, 0, 10), TopAbs_IN), ((-8, 0, 10), TopAbs_OUT), ((-8, 0, 20), TopAbs_OUT),
+              ((6, 2, 22), TopAbs_IN), ((11, 2, 22), TopAbs_OUT), ((6, 2, 20), TopAbs_IN),
+              ((19, 0, 19), TopAbs_IN), ((21, 0, 10), TopAbs_OUT)))
 HEIGHT_AXIS = tuple(float(row[2]) for row in RQ)
 TRANSLATION = tuple(float(value) for value in T)
 
@@ -111,6 +126,21 @@ def ring_lengths(shape):
     return totals
 
 
+def wall_senses(shape):
+    """Each cylindrical wall's outward sense along its radius, by nominal radius."""
+    senses = {}
+    for face in each(shape, TopAbs_FACE):
+        surface = BRepAdaptor_Surface(TopoDS.Face(face))
+        if surface.GetType() != GeomAbs_Cylinder:
+            continue
+        cylinder = surface.Cylinder()
+        sense = 1 if cylinder.Direct() else -1
+        if face.Orientation() == TopAbs_REVERSED:
+            sense = -sense
+        senses.setdefault(round(cylinder.Radius()), set()).add(sense)
+    return senses
+
+
 class PreservedBoss(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='catallax-preserved-boss-')
@@ -130,7 +160,7 @@ class PreservedBoss(unittest.TestCase):
         case = json.loads((out / 'run.json').read_text())['cases'][0]
         return Path(case['path']), case['response']
 
-    def assert_solid(self, shape):
+    def assert_solid(self, shape, part):
         found = solids(shape)
         self.assertEqual(len(found), 1)
         self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
@@ -138,33 +168,34 @@ class PreservedBoss(unittest.TestCase):
             self.assertTrue(BRepCheck_Analyzer(face).IsValid())
         kinds = faces(shape)
         self.assertEqual(kinds.pop(GeomAbs_Plane), 7)
-        self.assertGreaterEqual(kinds.pop(GeomAbs_Cylinder), 1)
+        self.assertGreaterEqual(kinds.pop(GeomAbs_Cylinder), len(part.senses))
         self.assertEqual(kinds, {})
         area = surface_area(shape)
         tolerance = area * 1e-7
-        self.assertAlmostEqual(area, AREA, delta=tolerance)
-        self.assertAlmostEqual(wall_area(shape), 40 * math.pi, delta=tolerance)
+        self.assertAlmostEqual(area, part.area, delta=tolerance)
+        self.assertAlmostEqual(wall_area(shape), part.walls, delta=tolerance)
+        self.assertEqual(wall_senses(shape), part.senses)
         covered = cap_areas(shape)
-        self.assertEqual(sorted(covered), sorted(CAPS))
-        for level, expected in CAPS.items():
+        self.assertEqual(sorted(covered), sorted(part.caps))
+        for level, expected in part.caps.items():
             self.assertAlmostEqual(covered[level], expected, delta=tolerance)
         rings = ring_lengths(shape)
-        self.assertEqual(sorted(rings), [20, 25], 'both rings stay shared')
-        for length in rings.values():
-            self.assertAlmostEqual(length, 8 * math.pi, delta=1e-6)
+        self.assertEqual(sorted(rings), sorted(part.rings), 'every ring stays shared')
+        for level, length in part.rings.items():
+            self.assertAlmostEqual(rings[level], length, delta=1e-6)
         values = integrated(shape)
         self.assertTrue(all(math.isfinite(value) for value in values), values)
         spread = abs(values[2] - values[1])
         self.assertLessEqual(spread, 1e-10 * max(1, abs(values[2])))
-        self.assertLessEqual(abs(values[2] - VOLUME), max(1e-6, area * 1e-7 + spread))
-        for point, state in MATERIAL:
+        self.assertLessEqual(abs(values[2] - part.volume), max(1e-6, area * 1e-7 + spread))
+        for point, state in part.material:
             probe = gp_Pnt(*(float(value) for value in moved(RQ, point, T)))
             self.assertEqual(BRepClass3d_SolidClassifier(found[0], probe, 1e-7).State(), state,
                              point)
 
-    def test_placed_part_answers_raw_valid_and_replays_at_both_allowances(self):
-        source = FIXTURES / 'M-R.json'
-        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), DIGEST)
+    def assert_exchange(self, name, digest, part, walls):
+        source = FIXTURES / (name + '.json')
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), digest)
         recipe = json.loads(source.read_text())
         directory, response = self.run_case(recipe, APPLICATION)
         self.assertEqual(response['work']['limit'], APPLICATION)
@@ -175,8 +206,8 @@ class PreservedBoss(unittest.TestCase):
         self.assertTrue(manifest['exact'])
         self.assertEqual(manifest['marks'], [])
         summary = manifest['result']
-        self.assertEqual(summary['faces_by_kind'], {'plane': 7, 'cylinder': 1})
-        self.assertEqual(summary['edges_by_kind'], {'line': 12, 'circle': 2})
+        self.assertEqual(summary['faces_by_kind'], {'plane': 7, 'cylinder': walls})
+        self.assertEqual(summary['edges_by_kind'], {'line': 12, 'circle': 2 * walls})
         self.assertEqual((summary['lumps'], summary['shells'], summary['vertices']), (1, 1, 8))
         written = manifest['step']
         self.assertLessEqual(Fraction(written['max_deviation']), FILE_TO_MODEL)
@@ -185,8 +216,8 @@ class PreservedBoss(unittest.TestCase):
         self.assertGreater(step.stat().st_size, 0)
         shapes = raw_shapes(step)
         self.assertEqual(len(shapes), 1)
-        self.assert_solid(shapes[0])
-        self.assert_solid(ordinary_shape(step))
+        self.assert_solid(shapes[0], part)
+        self.assert_solid(ordinary_shape(step), part)
         question = json.loads((directory / 'question.json').read_text())
         self.assertEqual(question['max_work'], APPLICATION)
         fresh = self.root / 'fresh'
@@ -200,6 +231,14 @@ class PreservedBoss(unittest.TestCase):
         wider, other = self.run_case(recipe, REPLAY)
         self.assertEqual(comparable(other['manifest']), comparable(manifest))
         self.assertEqual((wider / 'answer.step').read_bytes(), step.read_bytes())
+
+    def test_placed_part_answers_raw_valid_and_replays_at_both_allowances(self):
+        self.assert_exchange('M-R', '91a5192fe48d89b87e7f4782b126d41aa2396bfeedfc0fc9a44608d7e8277615',
+                             BOSSED, 1)
+
+    def test_placed_bored_part_answers_raw_valid_and_replays_at_both_allowances(self):
+        self.assert_exchange('N-R', 'd0718c5b8f0b4f3d8c2b4a6e9827c965c3361620ad4ee82d8119f6727d10fe85',
+                             BORED, 2)
 
     def test_undrafted_and_boss_after_draft_controls_keep_their_bytes(self):
         for name, digest in CONTROLS.items():

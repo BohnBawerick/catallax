@@ -127,13 +127,13 @@ pub fn certify_clear<'a>(
     Ok(caps)
 }
 
-/// Proves two bores strictly separated. Parallel walls are nearest along their
+/// Proves two walls strictly separated. Parallel walls are nearest along their
 /// common normal, so the axis distance `d` must exceed the radii's sum. Squaring
 /// `d^2-a^2-b^2 > 2ab` twice keeps the proof exact without a root. An exact
 /// contact refuses, and a gap of any positive size stands unchanged.
 pub fn certify_disjoint(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result<(), Refusal> {
     if sign(&a.axis.cross(&b.axis).norm_squared(), dec)? != Sign::Zero {
-        return Err(unsupported("preserved bores need parallel axes"));
+        return Err(unsupported("preserved walls need parallel axes"));
     }
     let offset = b.origin.minus(&a.origin).cross(&a.axis).norm_squared() / a.axis.norm_squared();
     let spare = offset - a.radius_sq.clone() - b.radius_sq.clone();
@@ -141,7 +141,7 @@ pub fn certify_disjoint(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result
     if sign(&spare, dec)? != Sign::Positive
         || sign(&(spare.square() - reach), dec)? != Sign::Positive
     {
-        return Err(unsupported("preserved bores touch or cross each other"));
+        return Err(unsupported("preserved walls touch or cross each other"));
     }
     Ok(())
 }

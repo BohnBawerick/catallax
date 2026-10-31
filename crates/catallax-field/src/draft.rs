@@ -4,7 +4,7 @@ use crate::{Face, Instruction, Location, Plan, geometry, metric::PRECISION};
 use catallax_features::draft::{
     DraftDefinition,
     arrangement::Polyhedron,
-    bored,
+    bored::{self, Bore},
     bossed::{Boss, BossedCell},
     capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
@@ -40,9 +40,10 @@ pub(crate) struct PreservedBoss {
 }
 
 /// Curved source material the draft leaves in place around its planar target.
-pub(crate) enum Preserved {
-    Bores(PreservedBores),
-    Boss(Box<PreservedBoss>),
+/// At least one part is present.
+pub(crate) struct Preserved {
+    pub(crate) bores: Option<PreservedBores>,
+    pub(crate) boss: Option<Box<PreservedBoss>>,
 }
 
 #[derive(Clone, Debug)]
@@ -1286,9 +1287,10 @@ impl Plan {
                     "preserved source material needs a convex planar envelope",
                 ));
             };
-            match preserved {
-                Preserved::Bores(preserved) => {
-                    let cylinders: Vec<_> = preserved.bores.iter().map(|b| &b.cylinder).collect();
+            let bores = preserved.bores.iter().flat_map(|bores| &bores.bores);
+            match &preserved.boss {
+                None => {
+                    let cylinders: Vec<_> = bores.map(|bore| &bore.cylinder).collect();
                     bored::certify_bores(
                         cell.supports.iter().map(|support| &support.plane),
                         &cylinders,
@@ -1296,9 +1298,19 @@ impl Plan {
                     )
                     .map_err(crate::draft_source::source_refusal)?;
                 }
-                Preserved::Boss(preserved) => {
+                Some(boss) => {
+                    let bores = bores
+                        .map(|bore| Bore {
+                            cylinder: bore.cylinder.clone(),
+                            origins: bore
+                                .walls
+                                .iter()
+                                .map(|wall| self.faces[*wall].origin.clone())
+                                .collect(),
+                        })
+                        .collect();
                     let cell =
-                        BossedCell::new(cell.clone(), preserved.boss.clone(), definition, dec)
+                        BossedCell::new(cell.clone(), boss.boss.clone(), bores, definition, dec)
                             .map_err(crate::draft_source::source_refusal)?;
                     components = vec![Candidate::Bossed(Box::new(cell))];
                 }
@@ -1309,11 +1321,8 @@ impl Plan {
             for p in points {
                 let [x, y, z] = p.0.each_ref().map(|n| n.value().clone().into());
                 let point = Point3::new(x, y, z);
-                let tools = match preserved {
-                    Some(Preserved::Bores(preserved)) => preserved.tools.as_slice(),
-                    _ => &[],
-                };
-                for tool in tools {
+                let tools = preserved.and_then(|preserved| preserved.bores.as_ref());
+                for tool in tools.iter().flat_map(|bores| &bores.tools) {
                     if self.register_location(*tool, &point, dec)? != Location::Outside {
                         return Err(Refusal::new(
                             "draft.invalid-keep-region",
@@ -1423,14 +1432,11 @@ impl Plan {
             .collect();
         // Walls survive with any retained material. Each is one physical face.
         if result == 0 {
-            match preserved {
-                Some(Preserved::Bores(preserved)) => {
-                    physical_sources.extend(preserved.bores.iter().map(|bore| bore.walls.clone()));
-                }
-                Some(Preserved::Boss(preserved)) => {
-                    physical_sources.extend([preserved.wall.clone(), preserved.top.clone()]);
-                }
-                None => (),
+            if let Some(bores) = preserved.and_then(|preserved| preserved.bores.as_ref()) {
+                physical_sources.extend(bores.bores.iter().map(|bore| bore.walls.clone()));
+            }
+            if let Some(boss) = preserved.and_then(|preserved| preserved.boss.as_ref()) {
+                physical_sources.extend([boss.wall.clone(), boss.top.clone()]);
             }
         }
         for group in physical_sources {

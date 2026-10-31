@@ -1,7 +1,7 @@
 //! P5 flanged housing: the junction fillet continues over the four countersink
 //! mouths as torus pieces between the holes and one checked rolling-envelope
-//! face per hole, for the authored radius 2, its edit to 5/2, and the translated
-//! and scaled definitions, all inside one application allowance.
+//! face per hole, for the authored radius 2, its edit to 5/2, and the translated,
+//! scaled and rotated definitions, all inside one application allowance.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -82,37 +82,71 @@ fn scaled(factor: &Rational) -> Value {
     }
     recipe
 }
-// Quaternion (1,2,3,4) on every frame, point and axis direction: rotation
-// matrix over the squared norm 30, and pose rotations composed on the left.
-fn rotated() -> Value {
-    const MATRIX: [[i64; 3]; 3] = [[-20, 4, 22], [20, -10, 20], [10, 28, 4]];
-    let turn = |vector: &mut Value| {
-        let old: Vec<Rational> = (0..3).map(|i| number(&vector[i])).collect();
-        for (i, row) in MATRIX.iter().enumerate() {
-            let sum = (0..3).fold(Rational::zero(), |sum, j| {
-                sum + old[j].clone() * Rational::from_ratio(row[j], 30).unwrap()
+// An exact rigid placement: rotation matrix over its denominator and the same
+// rotation as a quaternion.
+struct Placement {
+    matrix: [[i64; 3]; 3],
+    over: i64,
+    quaternion: [i64; 4],
+}
+const RZ: Placement = Placement {
+    matrix: [[3, -4, 0], [4, 3, 0], [0, 0, 5]],
+    over: 5,
+    quaternion: [2, 0, 0, 1],
+};
+const RQ: Placement = Placement {
+    matrix: [[-20, 4, 22], [20, -10, 20], [10, 28, 4]],
+    over: 30,
+    quaternion: [1, 2, 3, 4],
+};
+const T: [i64; 3] = [7, 11, -13];
+const NO_MOVE: [i64; 3] = [0, 0, 0];
+impl Placement {
+    fn point(&self, point: [Rational; 3], by: [i64; 3]) -> [Rational; 3] {
+        std::array::from_fn(|i| {
+            let row = (0..3).fold(Rational::zero(), |sum, j| {
+                sum + point[j].clone() * ratio(self.matrix[i][j], self.over)
             });
-            vector[i] = rational(&sum);
-        }
-    };
-    let compose = |rotation: &mut Value| {
-        let [w, x, y, z] =
-            [0, 1, 2, 3].map(|i| rotation[i].as_str().unwrap().parse::<i64>().unwrap());
-        *rotation = json!([
-            (w - 2 * x - 3 * y - 4 * z).to_string(),
-            (x + 2 * w + 3 * z - 4 * y).to_string(),
-            (y + 3 * w + 4 * x - 2 * z).to_string(),
-            (z + 4 * w + 2 * y - 3 * x).to_string(),
-        ]);
-    };
-    let mut recipe = canonical();
-    placed_points(&mut recipe, turn);
-    compose(&mut step(&mut recipe, "section")["plane"]["rotation"]);
-    compose(&mut step(&mut recipe, "drill")["pose"]["rotation"]);
-    compose(&mut step(&mut recipe, "sink")["pose"]["rotation"]);
-    turn(&mut step(&mut recipe, "housing")["axis"]["direction"]);
-    turn(&mut step(&mut recipe, "hole-pattern")["layout"]["circular"]["axis"]["direction"]);
-    recipe
+            row + Rational::from_i64(by[i])
+        })
+    }
+    // The placed definition: every frame, point and axis direction moves before
+    // evaluation, so nothing rotates the finished body.
+    fn recipe(&self, by: [i64; 3], radius: &str) -> Value {
+        let point = |vector: &mut Value, by: [i64; 3]| {
+            let old = std::array::from_fn(|i| number(&vector[i]));
+            let new = self.point(old, by);
+            *vector = json!(new.each_ref().map(rational));
+        };
+        let compose = |rotation: &mut Value| {
+            let [a, b, c, d] = self.quaternion;
+            let [w, x, y, z] =
+                [0, 1, 2, 3].map(|i| rotation[i].as_str().unwrap().parse::<i64>().unwrap());
+            *rotation = json!(
+                [
+                    a * w - b * x - c * y - d * z,
+                    a * x + b * w + c * z - d * y,
+                    a * y - b * z + c * w + d * x,
+                    a * z + b * y - c * x + d * w,
+                ]
+                .map(|part| part.to_string())
+            );
+        };
+        let mut recipe = with_radius(radius);
+        placed_points(&mut recipe, |vector| point(vector, by));
+        compose(&mut step(&mut recipe, "section")["plane"]["rotation"]);
+        compose(&mut step(&mut recipe, "drill")["pose"]["rotation"]);
+        compose(&mut step(&mut recipe, "sink")["pose"]["rotation"]);
+        point(
+            &mut step(&mut recipe, "housing")["axis"]["direction"],
+            NO_MOVE,
+        );
+        point(
+            &mut step(&mut recipe, "hole-pattern")["layout"]["circular"]["axis"]["direction"],
+            NO_MOVE,
+        );
+        recipe
+    }
 }
 fn parsed(recipe: &Value) -> Recipe {
     Recipe::parse(&recipe.to_string()).unwrap()
@@ -127,6 +161,7 @@ fn decider() -> Decider {
 // The exact contact law one row must retain, in millimetres.
 struct Contact {
     origin: [Rational; 3],
+    axis: [Rational; 3],
     radius: Rational,
     scale: Rational,
 }
@@ -139,10 +174,18 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
 fn p5_junction_continues_over_countersink_mouths() {
     let target = Rational::from_ratio(ROLLING_ENVELOPE_TARGET_NM, 1_000_000).unwrap();
     let whole = Rational::one();
+    let up = [0, 1, 0].map(Rational::from_i64);
     let plain = |origin: [i64; 3], radius: Rational, scale: &Rational| Contact {
         origin: origin.map(Rational::from_i64),
+        axis: up.clone(),
         radius,
         scale: scale.clone(),
+    };
+    let moved = |placement: &Placement, by: [i64; 3], radius: Rational| Contact {
+        origin: placement.point([0, 5, 0].map(Rational::from_i64), by),
+        axis: placement.point(up.clone(), NO_MOVE),
+        radius,
+        scale: whole.clone(),
     };
     let half = ratio(1, 2);
     let double = Rational::from_i64(2);
@@ -157,11 +200,15 @@ fn p5_junction_continues_over_countersink_mouths() {
             scaled(&half),
             Contact {
                 origin: [Rational::zero(), ratio(5, 2), Rational::zero()],
+                axis: up.clone(),
                 radius: Rational::one(),
                 scale: half.clone(),
             },
         ),
         (scaled(&double), plain([0, 10, 0], ratio(4, 1), &double)),
+        (RZ.recipe(NO_MOVE, "2"), moved(&RZ, NO_MOVE, ratio(2, 1))),
+        (RZ.recipe(T, "5/2"), moved(&RZ, T, ratio(5, 2))),
+        (RQ.recipe(NO_MOVE, "2"), moved(&RQ, NO_MOVE, ratio(2, 1))),
     ];
     let mut names: Option<BTreeSet<Origin>> = None;
     for (row, (recipe, contact)) in rows.iter().enumerate() {
@@ -202,6 +249,11 @@ fn p5_junction_continues_over_countersink_mouths() {
                         assert_eq!(
                             [exact(&point.x), exact(&point.y), exact(&point.z)],
                             contact.origin
+                        );
+                        let axis = definition.axis();
+                        assert_eq!(
+                            [exact(&axis.x), exact(&axis.y), exact(&axis.z)],
+                            contact.axis
                         );
                         assert_eq!(exact(definition.radius()), contact.radius);
                         let length = |mm: i64| Rational::from_i64(mm) * contact.scale.clone();
@@ -286,12 +338,27 @@ fn a_ball_that_would_roll_onto_the_countersink_cone_refuses() {
 #[test]
 fn uncovered_contact_strata_keep_their_typed_refusal() {
     // Each case is a separate coverage gap, not impossible geometry: a plane
-    // rail 0.001 mm clear of the mouth, a rail exactly tangent to it, and a
-    // junction in a definition frame outside the covered axis placement.
-    for recipe in [with_radius("999/1000"), with_radius("1"), rotated()] {
+    // rail 0.001 mm clear of the mouth, a rail exactly tangent to it, the moved
+    // tangent and contact-change radii, and a tube too short to carry the rail.
+    let mut short = RZ.recipe(T, "2");
+    for segment in step(&mut short, "section")["loops"][0]
+        .as_array_mut()
+        .unwrap()
+    {
+        if segment["id"] == "body-wall" || segment["id"] == "body-top" {
+            segment["to"][1] = json!("6");
+        }
+    }
+    for (recipe, code) in [
+        (with_radius("999/1000"), "fillet.unsupported-overflow"),
+        (with_radius("1"), "fillet.unsupported-overflow"),
+        (RZ.recipe(T, "1"), "fillet.unsupported-overflow"),
+        (RZ.recipe(T, "7/2"), "shapes.rolling-envelope"),
+        (short, "fillet.unsupported-overflow"),
+    ] {
         let refusal = evaluate(&parsed(&recipe), &mut decider()).unwrap_err();
         let text = format!("{refusal:?}");
-        assert!(text.contains("fillet.unsupported-overflow"), "{text}");
+        assert!(text.contains(code), "{text}");
     }
 }
 
@@ -303,6 +370,9 @@ fn volume_encloses_the_definition_and_the_fitted_carrier() {
         (with_radius("5/2"), 12591.90560450861, 0.03),
         (translated([7, 11, -13]), 12558.681699123754, 0.02),
         (scaled(&half), 1569.8352123904692, 0.005),
+        (RZ.recipe(NO_MOVE, "2"), 12558.681699123754, 0.02),
+        (RZ.recipe(T, "5/2"), 12591.90560450861, 0.03),
+        (RQ.recipe(NO_MOVE, "2"), 12558.681699123754, 0.02),
     ] {
         let mut dec = decider();
         let built = evaluate(&parsed(&recipe), &mut dec).unwrap();
@@ -319,6 +389,10 @@ fn volume_encloses_the_definition_and_the_fitted_carrier() {
             .value;
         let middle = (&definition.volume.lo + &definition.volume.hi) / Rational::from_i64(2);
         assert!((middle.to_f64_nearest() - reference).abs() < 1e-5);
+        let rounding = Rational::parse("1e-8").unwrap();
+        let exact = Rational::parse(&reference.to_string()).unwrap();
+        assert!(definition.volume.lo <= exact.clone() + rounding.clone());
+        assert!(exact - rounding <= definition.volume.hi);
         assert!(definition.volume.width() <= Rational::parse("1e-4").unwrap());
         assert!(represented.volume.lo <= definition.volume.lo);
         assert!(definition.volume.hi <= represented.volume.hi);

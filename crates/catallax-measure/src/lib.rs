@@ -36,8 +36,9 @@
 //! accuracy; `CATALLAX_MEASURE_BENCH_CASE=cylinder` selects a case by name.
 
 use catallax_numbers::{
-    Answer, Answered, Ball, BoundKind, Decider, Mark, MarkLog, Rational, Refusal, Sign,
+    Answer, Answered, Ball, BoundKind, Decider, Mark, MarkLog, Rational, Real, Refusal, Sign,
 };
+use catallax_shapes::{Point3, Vector3};
 use catallax_topology::{BodyId, BodyKind, FaceId, Model};
 
 mod bounds;
@@ -636,6 +637,19 @@ pub fn face_bounding_box(
     dec: &mut Decider,
 ) -> Answered<BoundingBox> {
     bounds::face(model, face, accuracy, dec)
+}
+
+/// Exact reals whose least and greatest enclose `direction . (p - origin)` over
+/// a finite face, in any placement, or `None` when the face has no closed form.
+/// Only plane, cylinder and cone faces bounded by lines and circles qualify.
+pub fn face_heights(
+    model: &Model,
+    face: FaceId,
+    origin: &Point3,
+    direction: &Vector3,
+    dec: &mut Decider,
+) -> Result<Option<Vec<Real>>, Refusal> {
+    bounds::face_heights(model, face, origin, direction, dec)
 }
 
 fn solid_faces(model: &Model, body: BodyId) -> Result<Vec<FaceId>, Refusal> {

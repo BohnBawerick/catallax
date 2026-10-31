@@ -20,6 +20,47 @@ fn recipe(radius: &str) -> Recipe {
         .unwrap()["radius"] = json!(radius);
     Recipe::parse(&recipe.to_string()).unwrap()
 }
+// The definition under the exact rotation (3/5,-4/5;4/5,3/5) about z, quaternion
+// (2,0,0,1), then the translation (7,11,-13). Every frame, point and axis moves
+// before evaluation, so nothing rotates the finished body.
+fn placed(radius: &str) -> Recipe {
+    let source = include_str!("../../../parts/P5-flanged-housing.json");
+    let mut recipe: Value = serde_json::from_str(source).unwrap();
+    let moved = |vector: &mut Value, by: [i64; 3]| {
+        let [x, y, z] = [0, 1, 2].map(|i| Rational::parse(vector[i].as_str().unwrap()).unwrap());
+        let fifths = |value: i64| Rational::from_ratio(value, 5).unwrap();
+        let new = [
+            fifths(3) * x.clone() - fifths(4) * y.clone() + Rational::from_i64(by[0]),
+            fifths(4) * x + fifths(3) * y + Rational::from_i64(by[1]),
+            z + Rational::from_i64(by[2]),
+        ];
+        *vector = json!(new.map(|part| part.to_string()));
+    };
+    let compose = |rotation: &mut Value| {
+        let [w, x, y, z] =
+            [0, 1, 2, 3].map(|i| rotation[i].as_str().unwrap().parse::<i64>().unwrap());
+        *rotation =
+            json!([2 * w - z, 2 * x - y, 2 * y + x, 2 * z + w].map(|part| part.to_string()));
+    };
+    for step in recipe["steps"].as_array_mut().unwrap() {
+        for key in ["plane", "pose"] {
+            if !step[key].is_null() {
+                moved(&mut step[key]["translation"], [7, 11, -13]);
+                compose(&mut step[key]["rotation"]);
+            }
+        }
+        for path in ["/axis", "/layout/circular/axis"] {
+            if let Some(axis) = step.pointer_mut(path) {
+                moved(&mut axis["point"], [7, 11, -13]);
+                moved(&mut axis["direction"], [0, 0, 0]);
+            }
+        }
+        if step["id"] == "filleted" {
+            step["radius"] = json!(radius);
+        }
+    }
+    Recipe::parse(&recipe.to_string()).unwrap()
+}
 fn decider() -> Decider {
     Decider::new(BudgetPolicy {
         max_work: 20_000_000,
@@ -29,14 +70,19 @@ fn decider() -> Decider {
 
 #[test]
 fn the_mixed_body_displays_as_one_closed_mesh() {
-    for radius in ["2", "5/2"] {
+    for (radius, recipe) in [
+        ("2", recipe("2")),
+        ("5/2", recipe("5/2")),
+        ("placed 2", placed("2")),
+        ("placed 5/2", placed("5/2")),
+    ] {
         let options = MeshOptions {
             chord_tolerance: Rational::from_ratio(1, 50).unwrap(),
             angular_deviation: Some(Rational::from_ratio(1, 2).unwrap()),
             ..Default::default()
         };
         let mut dec = decider();
-        let app = build_certified(&recipe(radius), Some(&options), &mut dec).unwrap();
+        let app = build_certified(&recipe, Some(&options), &mut dec).unwrap();
         let mesh = &app.display().unwrap().as_ref().unwrap().value;
         assert_eq!(mesh.faces.len(), 22);
         assert_eq!(mesh.edges.len(), 41);

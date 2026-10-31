@@ -1,18 +1,24 @@
 """P5 through the ordinary driver: a certified mixed body and a raw-valid STEP file."""
 from fractions import Fraction
 import json
+import math
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
 from OCP.BRepAdaptor import BRepAdaptor_Surface
 from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepGProp import BRepGProp
 from OCP.GeomAbs import (GeomAbs_BSplineSurface, GeomAbs_Cone, GeomAbs_Cylinder, GeomAbs_Plane,
                          GeomAbs_Torus)
 from OCP.GProp import GProp_GProps
-from OCP.TopAbs import TopAbs_FACE
+from OCP.gp import gp_Pnt
+from OCP.IFSelect import IFSelect_RetDone
+from OCP.STEPControl import STEPControl_Reader
+from OCP.TopAbs import TopAbs_FACE, TopAbs_IN, TopAbs_OUT, TopAbs_SOLID
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 
@@ -20,12 +26,24 @@ from test_loopless_faces import raw_solid
 from test_partial_periodic_trims import BINARY, DRIVER
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tools/checks'))
+
+from raw_step import raw_shapes  # noqa: E402
 APPLICATION = 20_000_000
 REPLAY = 100_000_000
 FACES = {GeomAbs_Plane: 3, GeomAbs_Cylinder: 7, GeomAbs_Cone: 4, GeomAbs_Torus: 4,
          GeomAbs_BSplineSurface: 4}
 SUMMARY = {'plane': 3, 'cylinder': 7, 'cone': 4, 'torus': 4, 'bspline': 4}
 FILE_TO_MODEL = Fraction(1, 10_000_000)
+RZ = ((Fraction(3, 5), Fraction(-4, 5), 0), (Fraction(4, 5), Fraction(3, 5), 0), (0, 0, 1))
+RQ = ((Fraction(-2, 3), Fraction(2, 15), Fraction(11, 15)),
+      (Fraction(2, 3), Fraction(-1, 3), Fraction(2, 3)),
+      (Fraction(1, 3), Fraction(14, 15), Fraction(2, 15)))
+T = (7, 11, -13)
+# Definition points strictly away from the boundary: inside at r2, inside at r5/2.
+MATERIAL = (((10, 15, 0), True, True), ((0, 15, 0), False, False), ((17, 2, 0), False, False),
+            ((0, 2, 20), True, True), ((Fraction(15, 2), Fraction(11, 2), 10), True, True),
+            ((Fraction(15, 2), Fraction(29, 5), 10), False, True))
 
 
 def canonical():
@@ -72,17 +90,20 @@ def scaled(factor):
     return recipe
 
 
-def rotated():
-    """Quaternion (1,2,3,4) on every frame, point and axis direction."""
-    matrix = ((-20, 4, 22), (20, -10, 20), (10, 28, 4))
-    turn = lambda vector: [
-        str(sum(Fraction(value) * Fraction(entry, 30) for value, entry in zip(vector, row)))
-        for row in matrix]
+def moved(matrix, point, by=(0, 0, 0)):
+    return [sum(Fraction(value) * entry for value, entry in zip(point, row)) + offset
+            for row, offset in zip(matrix, by)]
+
+
+def rigid(matrix, quaternion, by=(0, 0, 0), value='2'):
+    """The rotation on every frame, point and axis direction, before evaluation."""
+    turn = lambda point, by=(0, 0, 0): [str(part) for part in moved(matrix, point, by)]
     def compose(rotation):
+        a, b, c, d = quaternion
         w, x, y, z = map(int, rotation)
-        return [str(w - 2 * x - 3 * y - 4 * z), str(x + 2 * w + 3 * z - 4 * y),
-                str(y + 3 * w + 4 * x - 2 * z), str(z + 4 * w + 2 * y - 3 * x)]
-    recipe = placed(canonical(), turn)
+        return [str(a * w - b * x - c * y - d * z), str(a * x + b * w + c * z - d * y),
+                str(a * y - b * z + c * w + d * x), str(a * z + b * y - c * x + d * w)]
+    recipe = placed(radius(value), lambda point: turn(point, by))
     for name, key in (('section', 'plane'), ('drill', 'pose'), ('sink', 'pose')):
         step(recipe, name)[key]['rotation'] = compose(step(recipe, name)[key]['rotation'])
     axis = step(recipe, 'housing')['axis']
@@ -107,8 +128,10 @@ def integrated(shape):
     values = []
     for tolerance in (1e-6, 1e-7, 1e-8):
         properties = GProp_GProps()
-        BRepGProp.VolumePropertiesGK_s(shape, properties, tolerance, True, False, False, False,
-                                       False)
+        error = BRepGProp.VolumePropertiesGK_s(shape, properties, tolerance, True, False, False,
+                                               False, False)
+        if error < 0:
+            raise AssertionError(f'volume integration failed: {error}')
         values.append(properties.Mass())
     return values
 
@@ -117,6 +140,27 @@ def surface_area(shape):
     properties = GProp_GProps()
     BRepGProp.SurfaceProperties_s(shape, properties)
     return properties.Mass()
+
+
+def solids(shape):
+    found = []
+    explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+    while explorer.More():
+        found.append(TopoDS.Solid(explorer.Current()))
+        explorer.Next()
+    return found
+
+
+def ordinary_shape(path):
+    reader = STEPControl_Reader()
+    if reader.ReadFile(str(path)) != IFSelect_RetDone or reader.TransferRoots() < 1:
+        raise AssertionError(f'cannot read {path}')
+    return reader.OneShape()
+
+
+def comparable(manifest):
+    """A manifest without the build identity, the one part a rerun may change."""
+    return {key: value for key, value in manifest.items() if key != 'kernel'}
 
 
 class FlangedHousing(unittest.TestCase):
@@ -168,32 +212,75 @@ class FlangedHousing(unittest.TestCase):
         self.assertLessEqual(abs(values[2] - reference),
                              margin + surface_area(shape) * 1e-7 + spread)
 
+    def assert_placed_file(self, path, manifest, reference, margin, matrix, by, edited):
+        """The file itself: raw and ordinary solids, volume and material at the placed pose."""
+        written = manifest['step']['regions']
+        self.assertEqual({region['model_region'] for region in written},
+                         {region['id'] for region in manifest['certificate']['regions']})
+        self.assertEqual(len({region['file_region'] for region in written}), 22)
+        carried = {}
+        for region in manifest['certificate']['regions']:
+            bound = (region['exception'] or {}).get('enclosure', {}).get('hi', 0)
+            carried[region['id']] = max(
+                Fraction(bound), Fraction(region['domain'].get('fitted_trim_bound_mm', 0)))
+        for region in written:
+            model = carried[region['model_region']]
+            self.assertLessEqual(Fraction(region['file_to_model_bound_mm']), FILE_TO_MODEL)
+            self.assertLessEqual(Fraction(region['file_to_definition_bound_mm']),
+                                 FILE_TO_MODEL + model)
+        shapes = raw_shapes(path)
+        self.assertEqual(len(shapes), 1)
+        for shape in (shapes[0], ordinary_shape(path)):
+            found = solids(shape)
+            self.assertEqual(len(found), 1)
+            self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
+            explorer = TopExp_Explorer(shape, TopAbs_FACE)
+            while explorer.More():
+                self.assertTrue(BRepCheck_Analyzer(explorer.Current()).IsValid())
+                explorer.Next()
+            values = integrated(shape)
+            self.assertTrue(all(math.isfinite(value) for value in values), values)
+            spread = abs(values[2] - values[1])
+            self.assertLessEqual(spread, 1e-10 * max(1, abs(values[2])))
+            self.assertLessEqual(abs(values[2] - reference),
+                                 margin + surface_area(shape) * 1e-7 + spread)
+            for point, *inside in MATERIAL:
+                probe = gp_Pnt(*(float(value) for value in moved(matrix, point, by)))
+                state = BRepClass3d_SolidClassifier(found[0], probe, 1e-7).State()
+                self.assertEqual(state, TopAbs_IN if inside[edited] else TopAbs_OUT, point)
+
     def test_rows_build_export_and_replay(self):
         rows = (
-            ('canonical', canonical(), 12558.681699123754, 0.02),
-            ('edited', radius('5/2'), 12591.905604508610, 0.03),
-            ('translated', translated((7, 11, -13)), 12558.681699123754, 0.02),
-            ('half', scaled('1/2'), 1569.8352123904692, 0.005),
-            ('double', scaled('2'), 100469.45359299003, 0.08),
+            ('canonical', canonical(), 12558.681699123754, 0.02, None),
+            ('edited', radius('5/2'), 12591.905604508610, 0.03, None),
+            ('translated', translated(T), 12558.681699123754, 0.02, None),
+            ('half', scaled('1/2'), 1569.8352123904692, 0.005, None),
+            ('double', scaled('2'), 100469.45359299003, 0.08, None),
+            ('rotated', rigid(RQ, (1, 2, 3, 4)), 12558.681699123754, 0.02,
+             (RQ, (0, 0, 0), False)),
+            ('moved edit', rigid(RZ, (2, 0, 0, 1), T, '5/2'), 12591.905604508610, 0.03,
+             (RZ, T, True)),
         )
-        for name, recipe, reference, margin in rows:
+        for name, recipe, reference, margin, pose in rows:
             with self.subTest(name):
                 directory, manifest = self.run_case(recipe, APPLICATION)
                 self.assert_body(directory, manifest, reference, margin)
+                if pose:
+                    self.assert_placed_file(directory / 'answer.step', manifest, reference,
+                                            margin, *pose)
                 wider, other = self.run_case(recipe, REPLAY)
                 self.assertEqual(other['status'], 'answered')
                 self.assertEqual((wider / 'answer.step').read_bytes(),
                                  (directory / 'answer.step').read_bytes())
-                self.assertEqual(other['certificate'], manifest['certificate'])
+                self.assertEqual(comparable(other), comparable(manifest))
                 replay, again = self.run_case(
                     json.loads((directory / 'question.json').read_text()), APPLICATION)
-                self.assertEqual(again['certificate'], manifest['certificate'])
+                self.assertEqual(comparable(again), comparable(manifest))
                 self.assertEqual((replay / 'answer.step').read_bytes(),
                                  (directory / 'answer.step').read_bytes())
 
     def test_uncovered_strata_keep_their_refusals(self):
         rows = (
-            ('rotated', rotated(), 'fillet.unsupported-overflow'),
             ('near-miss', radius('999/1000'), 'fillet.unsupported-overflow'),
             ('tangent', radius('1'), 'fillet.unsupported-overflow'),
             ('too-large', radius('7/2'), 'shapes.rolling-envelope'),

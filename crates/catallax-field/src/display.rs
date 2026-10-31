@@ -23,6 +23,7 @@ mod chart;
 mod diagnostics;
 mod extrude_algebraic;
 pub(crate) mod membership;
+pub(crate) mod obstruction;
 mod preview;
 use boolean::{Boolean, Germ, State};
 use chart::{Chart, Pullback};
@@ -867,6 +868,9 @@ fn mesh_plan_inner(
             axis.sort();
             axis.dedup();
         }
+    }
+    if gaps.is_some() {
+        obstruction::check(&builder, &patches, dec)?;
     }
     let mut stack: Vec<_> = patches
         .iter()

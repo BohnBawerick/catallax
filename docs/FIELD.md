@@ -601,6 +601,9 @@ controls return
 `field.display-options`. Limits and unresolved refinement return
 `field.display-budget`, with visited cells and maximum depth per support.
 Coordinate range or rounding failures return `field.display-precision`.
+The unproved preview also returns `field.display-trim-obstruction` before any
+traversal when it proves that the unused half of a capsule wall's cylinder
+crosses a planar support where no display vertex can cover it.
 No refusal switches to the B-rep.
 
 ### Coverage and deviation proof

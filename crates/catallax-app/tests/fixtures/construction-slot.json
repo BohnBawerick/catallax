@@ -1,0 +1,20 @@
+{
+  "format":"catallax-recipe/4", "name":"SolidDraft",
+  "steps":[
+    {"id":"op_1","op":"sketch","plane":{"rotation":["-1","0","0","0"],"translation":["0","0","0"]},"loops":[[{"kind":"line","id":"l0s0","to":["120","0"]},{"kind":"line","id":"l0s1","to":["120","90"]},{"kind":"line","id":"l0s2","to":["0","90"]},{"kind":"line","id":"l0s3","to":["0","0"]}]]},
+    {"id":"op_3","op":"extrude","profile":"op_1","distance":"14","direction":["0","0","1"]},
+    {"id":"op_31","op":"sketch","plane":{"rotation":["-1","-1","0","0"],"translation":["0","0","0"]},"loops":[[{"kind":"line","id":"l0s0","to":["120","0"]},{"kind":"line","id":"l0s1","to":["120","60"]},{"kind":"line","id":"l0s2","to":["0","60"]},{"kind":"line","id":"l0s3","to":["0","0"]}]]},
+    {"id":"op_33","op":"extrude","profile":"op_31","distance":"10","direction":["0","1","0"]},
+    {"id":"op_61","op":"boolean","kind":"union","target":"op_3","tool":"op_33"},
+    {"id":"op_78","op":"sketch","plane":{"rotation":["-1","0","0","0"],"translation":["0","0","10"]},"loops":[[{"kind":"circle","id":"l0s0","centre":["85","55"],"radius":"12"}]]},
+    {"id":"op_80","op":"extrude","profile":"op_78","distance":"24","direction":["0","0","1"]},
+    {"id":"op_87","op":"boolean","kind":"union","target":"op_61","tool":"op_80"},
+    {"id":"op_91","op":"sketch","plane":{"rotation":["-1","0","0","0"],"translation":["0","0","34"]},"loops":[[{"kind":"circle","id":"l0s0","centre":["85","55"],"radius":"6"}]]},
+    {"id":"op_93","op":"extrude","profile":"op_91","distance":"36.61588369630986","direction":["0","0","-1"]},
+    {"id":"op_100","op":"boolean","kind":"subtract","target":"op_87","tool":"op_93"},
+    {"id":"op_107","op":"sketch","plane":{"rotation":["-1","-1","0","0"],"translation":["0","0","0"]},"loops":[[{"kind":"arc","id":"l0s3","centre":["46","35"],"to":["46","29"],"turn":"ccw"},{"kind":"line","id":"l0s0","to":["74","29"]},{"kind":"arc","id":"l0s1","centre":["74","35"],"to":["74","41"],"turn":"ccw"},{"kind":"line","id":"l0s2","to":["46","41"]}]]},
+    {"id":"op_109","op":"extrude","profile":"op_107","distance":"10","direction":["0","1","0"]},
+    {"id":"op_137","op":"boolean","kind":"subtract","target":"op_100","tool":"op_109"}
+  ],
+  "result":"op_137"
+}

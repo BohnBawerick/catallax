@@ -83,6 +83,21 @@ impl Chart {
         matches!(self.kind, Kind::Disk)
     }
 
+    pub(super) fn is_plane(&self) -> bool {
+        matches!(self.kind, Kind::Plane)
+    }
+
+    /// Whether this planar chart's closed domain holds a point of its plane.
+    pub(super) fn plane_contains(&self, p: &[Rational; 3]) -> bool {
+        (0..2).all(|axis| {
+            let frame = &self.frame[axis];
+            let along = (0..3).fold(q(0), |sum, i| sum + &frame[i] * &(&p[i] - &self.origin[i]));
+            let squared = frame.iter().fold(q(0), |sum, x| sum + x * x);
+            let parameter = &along / &squared;
+            parameter >= self.domain.range[axis][0] && parameter <= self.domain.range[axis][1]
+        })
+    }
+
     /// A nonzero affine pullback can vanish only on a set with no open planar
     /// patch. No point sample or coefficient enclosure is an identity proof.
     pub(super) fn has_nonzero_planar_restriction(

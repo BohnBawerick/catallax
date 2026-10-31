@@ -388,6 +388,24 @@ impl<'a> Classifier<'a> {
     }
 }
 
+/// The exact world-to-profile map, when the placement has a rational form.
+pub(super) fn rational_frame(inverse: &Isometry) -> Option<([[Rational; 3]; 3], [Rational; 3])> {
+    let mut matrix = std::array::from_fn(|_| std::array::from_fn(|_| q(0)));
+    for (i, row) in inverse.matrix().iter().enumerate() {
+        for (j, value) in row.iter().enumerate() {
+            matrix[i][j] = value.as_rational()?;
+        }
+    }
+    Some((
+        matrix,
+        [
+            inverse.translation.x.as_rational()?,
+            inverse.translation.y.as_rational()?,
+            inverse.translation.z.as_rational()?,
+        ],
+    ))
+}
+
 pub(crate) struct Extrusion<'a> {
     matrix: [[Rational; 3]; 3],
     translation: [Rational; 3],
@@ -413,19 +431,10 @@ impl<'a> Extrusion<'a> {
         {
             return None;
         }
-        let mut matrix = std::array::from_fn(|_| std::array::from_fn(|_| q(0)));
-        for (i, row) in inverse.matrix().iter().enumerate() {
-            for (j, value) in row.iter().enumerate() {
-                matrix[i][j] = value.as_rational()?;
-            }
-        }
+        let (matrix, translation) = rational_frame(inverse)?;
         Some(Self {
             matrix,
-            translation: [
-                inverse.translation.x.as_rational()?,
-                inverse.translation.y.as_rational()?,
-                inverse.translation.z.as_rational()?,
-            ],
+            translation,
             vector,
             through,
             loops,

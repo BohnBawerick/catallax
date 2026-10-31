@@ -860,6 +860,17 @@ impl Feature {
         };
         crate::display::membership::Classifier::new(&self.inverse, vector, *through, &self.loops)
     }
+    // Exact stadium section of a plain extrusion, for the preview's obstruction
+    // proof. Blended, chamfered and other swept definitions have none.
+    pub(crate) fn display_capsule(&self) -> Option<crate::display::obstruction::Capsule<'_>> {
+        if self.algebraic_end.is_some() || self.fillet.is_some() || self.chamfer.is_some() {
+            return None;
+        }
+        let Sweep::Extrude { vector, through } = &self.sweep else {
+            return None;
+        };
+        crate::display::obstruction::Capsule::new(&self.inverse, vector, *through, &self.loops)
+    }
     // Query-only reuse of certified elementary fillet sectors. Unsupported
     // sectors and non-rational ray directions retain the existing evaluator.
     fn fillet_query_classifier(&self) -> Option<crate::display::membership::Classifier<'_>> {

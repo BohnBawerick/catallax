@@ -3,7 +3,8 @@
 //! The preview reads the same operation definitions and uses the same charts,
 //! trim predicates and cell classification as [`super::mesh_plan`]. It differs
 //! only where the certified request would refuse a cell: that cell is counted
-//! and left empty. No B-rep geometry, sampling or hull fills a gap.
+//! and left empty. A buried carrier that can never resolve refuses before any
+//! cell. No B-rep geometry, sampling or hull fills a gap.
 
 use super::{Mesh, Options, Triangle, mesh_plan_inner};
 use crate::Plan;
@@ -65,7 +66,8 @@ pub(super) fn is_cell_limit(refusal: &Refusal) -> bool {
 ///
 /// Charge this call to the caller's allowance; it neither resets nor enlarges an
 /// active one. An exhausted allowance or deadline, the vertex limit, an
-/// unsupported chart or a lattice refuses without a partial preview.
+/// unsupported chart, a proved trim obstruction or a lattice refuses without a
+/// partial preview.
 pub fn preview_plan(
     plan: &Plan,
     options: &PreviewOptions,

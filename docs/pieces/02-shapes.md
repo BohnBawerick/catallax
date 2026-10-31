@@ -150,6 +150,14 @@ Supported side and incidence queries use this checked finite chart. Consumers
 requiring a global polynomial must handle `None` with an explicit coverage
 refusal; they must not use a target ellipse as the spline's geometry.
 
+`SplineSupport::misses_point` and `misses_line` prove a point or a whole line
+off the complete finite carrier. With positive weights every nonzero tensor
+span lies in the convex hull of its own controls, so each span's hull must
+clear the target strictly, on the represented controls and with no tolerance.
+`true` is a nonincidence proof and gives no global side of the support. `false`
+claims nothing, and the caller keeps its side or coverage refusal.
+`side_at` still refuses `shapes.bspline-domain` outside its certified chart.
+
 
 
 ### Acceptance of the migration

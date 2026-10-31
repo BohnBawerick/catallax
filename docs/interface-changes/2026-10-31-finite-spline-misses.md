@@ -1,0 +1,6 @@
+## 2026-10-31: proved finite misses of a spline support
+
+Pieces: 2, 4, 5, features
+Change: `SplineSupport` gains `misses_point` and `misses_line`, which prove a point or a whole line clear of the complete finite carrier from the control hull of every nonzero tensor span. `intersect_curve_surface` now answers an exact, unmarked `CurveSurface::Disjoint` for a line proved clear of a spline support. `classify_point` and `face_contains` skip the side request for a point proved clear of a spline support, so a fitted P5 body answers native containment for points whose rays miss every fitted patch.
+Why: a point nowhere near a finite patch has no need of a global side of it, and a line clear of the whole carrier has no need of a finite parametric solver. Both refused before, which stopped native containment on every fitted body.
+Migration: a caller that matched `shapes.bspline-domain` or `intersect.parametric-surface` for a proved miss now gets the answer. `false` from either proof claims nothing, so those refusals stay for a direct side request outside the certified chart, for a line that really meets a patch and for any miss the hulls cannot prove. Finite transverse crossings of a fitted patch are still refused. No fitted surface, fit target, tolerance, recipe format, writer or manifest changes.

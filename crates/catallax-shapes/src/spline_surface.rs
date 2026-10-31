@@ -10,6 +10,9 @@ use std::{
     sync::Arc,
 };
 
+// A proposal bound, not a tolerance: an unfinished search only leaves a miss unproved.
+const HULL_SEARCH_STEPS: usize = 64;
+
 #[derive(Debug)]
 struct Data {
     carrier: BSplineSurface,
@@ -99,6 +102,90 @@ impl SplineSupport {
         match self {
             Self::EllipticOffset(surface) => surface.parameters_of_box(point, dec),
             Self::RollingEnvelope(surface) => surface.parameters_of_box(point, dec),
+        }
+    }
+
+    /// Proves a point off the complete finite carrier. `false` claims nothing:
+    /// it is not incidence, and `true` gives no global side of the support.
+    pub fn misses_point(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        math::validate_point(point, dec)?;
+        self.hulls_miss(point, None, dec)
+    }
+
+    /// Proves a whole line off the complete finite carrier. `false` claims
+    /// nothing: it is not a meeting, and the caller keeps its own refusal.
+    pub fn misses_line(
+        &self,
+        origin: &Point3,
+        direction: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        math::validate_point(origin, dec)?;
+        math::validate_vector(direction, dec)?;
+        self.hulls_miss(origin, Some(direction), dec)
+    }
+
+    // Every tensor span of the represented carrier lies in the hull of its own
+    // controls, so this proves a miss of the actual patch, not of a target law.
+    // Controls are taken relative to the origin; a line's component along its
+    // direction goes, leaving the line at zero. A hull that keeps zero, or that
+    // no bounded search can clear, proves nothing.
+    fn hulls_miss(
+        &self,
+        origin: &Point3,
+        direction: Option<&Vector3>,
+        dec: &Decider,
+    ) -> Result<bool, Refusal> {
+        dec.check_deadline()?;
+        let controls = self.enclosed_controls(dec)?;
+        let bits = controls[0][0].precision();
+        let origin = math::point(origin, bits, dec)?;
+        let direction = direction
+            .map(|direction| vector_box(direction, bits, dec))
+            .transpose()?;
+        let flattened: Vec<[Ball; 3]> = controls
+            .iter()
+            .map(|control| {
+                let offset: [Ball; 3] = std::array::from_fn(|i| &control[i] - &origin[i]);
+                match &direction {
+                    None => offset,
+                    // The positive factor d.d keeps this free of a division.
+                    Some(d) => {
+                        let length = ball_dot(d, d);
+                        let along = ball_dot(&offset, d);
+                        std::array::from_fn(|i| &(&length * &offset[i]) - &(&along * &d[i]))
+                    }
+                }
+            })
+            .collect();
+        for span in self.carrier().span_controls() {
+            dec.check_deadline()?;
+            let points: Vec<&[Ball; 3]> = span.iter().map(|&i| &flattened[i]).collect();
+            if !clear_of_zero(&points, bits, dec)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    // Enclosed world controls of the carrier, in its u-major order.
+    fn enclosed_controls(&self, dec: &Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+        let maximum = dec.policy().max_precision_bits;
+        if maximum == 0 {
+            return Err(precision_refusal());
+        }
+        match self {
+            Self::EllipticOffset(surface) => surface
+                .carrier()
+                .controls()
+                .iter()
+                .map(|control| math::point(control, maximum.min(128), dec))
+                .collect(),
+            Self::RollingEnvelope(surface) => Ok(surface
+                .enclosed_controls(dec)?
+                .into_iter()
+                .map(|(control, _)| control)
+                .collect()),
         }
     }
 
@@ -704,6 +791,34 @@ fn split_half_planes(mut row: [Ball; 6], half: &Ball) -> [[Ball; 6]; 2] {
         left.map(|value| value.expect("all left Bernstein coefficients assigned")),
         right.map(|value| value.expect("all right Bernstein coefficients assigned")),
     ]
+}
+
+// Gilbert's minimum-norm search for the hull point nearest zero. It only
+// proposes a direction, so rounding here cannot prove anything: the answer is
+// that every point's whole enclosure lies strictly on the positive side of it.
+fn clear_of_zero(points: &[&[Ball; 3]], bits: u32, dec: &Decider) -> Result<bool, Refusal> {
+    let mut nearest = points[0].clone();
+    for _ in 0..HULL_SEARCH_STEPS {
+        dec.check_deadline()?;
+        let (depth, deepest) = points
+            .iter()
+            .map(|point| (ball_dot(point, &nearest).lo(), *point))
+            .min_by(|a, b| a.0.cmp(&b.0))
+            .expect("a tensor span has controls");
+        if depth > Rational::zero() {
+            return Ok(true);
+        }
+        let edge: [Ball; 3] = std::array::from_fn(|i| &deepest[i] - &nearest[i]);
+        let Some(share) = (-ball_dot(&nearest, &edge)).checked_div(&ball_dot(&edge, &edge)) else {
+            return Ok(false);
+        };
+        let share = Ball::from_rational(
+            &share.mid().max(Rational::zero()).min(Rational::one()),
+            bits,
+        );
+        nearest = std::array::from_fn(|i| &nearest[i] + &(&share * &edge[i]));
+    }
+    Ok(false)
 }
 
 fn ball_bounds(lo: &Rational, hi: &Rational, precision: u32) -> Ball {

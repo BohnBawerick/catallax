@@ -859,6 +859,11 @@ pub(super) fn intersect(
     if circle_misses_cone(&form, geom.surface(s), dec)? {
         return Ok(Answer::exact(CurveSurface::Disjoint));
     }
+    if let (CurveForm::Line { origin, dir }, Surface::BSpline(support)) = (&form, geom.surface(s))
+        && support.misses_line(origin, dir, dec)?
+    {
+        return Ok(Answer::exact(CurveSurface::Disjoint));
+    }
     let implicit = geom.implicit(s).ok_or_else(|| {
         Refusal::new(
             "intersect.parametric-surface",

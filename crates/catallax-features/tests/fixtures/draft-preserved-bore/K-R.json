@@ -1,0 +1,137 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "K-R",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "translation": [
+          "7",
+          "11",
+          "-13"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "20",
+              "-15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-20",
+              "-15"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "20"
+    },
+    {
+      "id": "tool",
+      "op": "cylinder",
+      "radius": "5",
+      "height": "22",
+      "pose": {
+        "rotation": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "translation": [
+          "94/15",
+          "31/3",
+          "-197/15"
+        ]
+      }
+    },
+    {
+      "id": "drilled",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "base",
+      "tool": "tool"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "drilled",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "right"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "left"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "11/15",
+        "2/3",
+        "2/15"
+      ],
+      "neutral": {
+        "point": [
+          "7",
+          "11",
+          "-13"
+        ],
+        "normal": [
+          "11/15",
+          "2/3",
+          "2/15"
+        ]
+      },
+      "angle": "3"
+    }
+  ],
+  "result": "drafted"
+}

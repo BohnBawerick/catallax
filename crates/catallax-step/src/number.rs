@@ -113,9 +113,23 @@ fn enclosed_by(
     }
     loop {
         let mut number = rounded(&b.lo(), &b.hi(), digits);
+        let scale = b.mid().abs().max(b.rad());
+        let requested = scale
+            * Rational::new(
+                Integer::one(),
+                Integer::from_i64(10).pow(digits.max(1).saturating_add(8)),
+            )
+            .unwrap();
         // Perfect-square expressions may still have a nonzero binary radius.
-        // Certify equality only when the written decimal is inside the ball.
-        if !b.rad().is_zero() && b.contains(&number.value) {
+        // Certify equality only when the written decimal is inside the ball. A
+        // tighter enclosure usually excludes it; only a surviving candidate pays
+        // for a proof, whose zero test can be algebraically huge.
+        if !b.rad().is_zero()
+            && b.contains(&number.value)
+            && dec
+                .enclose(value, &requested)
+                .map_or(true, |tight| tight.contains(&number.value))
+        {
             match equal(&number.value, &b, dec) {
                 Outcome::ProvenCoincident(_) => number.error = Rational::zero(),
                 Outcome::Refused(refusal) => return Err(refusal),
@@ -127,13 +141,6 @@ fn enclosed_by(
         }
         // Repeat a relative request when cancellation hid the magnitude.
         // A stalled budget-limited enclosure cannot certify the text.
-        let scale = b.mid().abs().max(b.rad());
-        let requested = scale
-            * Rational::new(
-                Integer::one(),
-                Integer::from_i64(10).pow(digits.max(1).saturating_add(8)),
-            )
-            .unwrap();
         if requested.is_zero() {
             return Err(budget("no decimal accuracy certificate"));
         }

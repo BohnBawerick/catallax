@@ -620,6 +620,45 @@ fn planar_drafts_export_checked_step_at_the_application_allowance() {
 }
 
 #[test]
+fn placed_preserved_bore_draft_answers_at_the_application_allowance() {
+    use catallax_cli::verification::{Request, answer};
+    let problem: Value = serde_json::from_str(include_str!(
+        "../../catallax-features/tests/fixtures/draft-preserved-bore/K-R.json"
+    ))
+    .unwrap();
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-preserved-bore-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let response = answer(&Request {
+        format: "catallax-request/1".into(),
+        source: "recipe".into(),
+        problem,
+        out: dir.clone(),
+        max_work: 20_000_000,
+    })
+    .unwrap();
+    let manifest = &response["manifest"];
+    assert_eq!(manifest["status"], "answered", "{response}");
+    assert_eq!(manifest["format"], "catallax-manifest/3");
+    assert_eq!(manifest["exact"], true);
+    assert_eq!(manifest["marks"], json!([]));
+    assert_eq!(response["work"]["exhausted"], false, "{response}");
+    assert_eq!(
+        manifest["result"]["faces_by_kind"],
+        json!({"plane":6,"cylinder":1})
+    );
+    assert_eq!(
+        manifest["result"]["edges_by_kind"],
+        json!({"line":12,"circle":2})
+    );
+    assert_eq!(manifest["step"]["approximated_curves"], 0);
+    assert!(!fs::read(dir.join("answer.step")).unwrap().is_empty());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn captured_slot_cut_answers_with_the_default_work_allowance() {
     use catallax_cli::verification::{Request, answer};
     let captured: Value =

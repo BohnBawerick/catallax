@@ -18,8 +18,9 @@ use catallax_numbers::{
 };
 use catallax_recipe::{ElementId, Origin, Recipe, Role, StepId};
 use catallax_shapes::{
-    BSplineCurve, Curve, Line, Point3, PointDef, ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope,
-    SplineSupport, Surface, Vector3,
+    BSplineCurve, Cone, Curve, CurveId, IntersectionCurve, Line, Meet, MeetOf, Plane, Point3,
+    PointDef, Position, ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope, SplineSupport, Surface,
+    Vector3,
 };
 use catallax_topology::{
     BodyId, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell, Vertex, VertexId,
@@ -1665,6 +1666,74 @@ fn a_line_across_the_patch_gets_both_crossings_in_order() {
     assert!(z[0].hi() < zero && zero < z[1].lo());
     let balance = (&z[0] + &z[1]).hi().abs().max((&z[0] + &z[1]).lo().abs());
     assert!(balance < ratio(1, 1000));
+}
+
+// The plane x=13 cuts the cone with this apex, axis (0,1,1) and slope 1 along
+// two rays. The generator through `witness` runs along y from the apex at
+// (13,apex,0), on the supporting line of BM, and stops there.
+fn generator(model: &mut Model, apex: i64, witness: i64) -> CurveId {
+    let geom = model.geom_mut();
+    let plane = geom.add_surface(Surface::Plane(Plane {
+        origin: rational_point([ratio(13, 1), ratio(0, 1), ratio(0, 1)]),
+        normal: rational_vector([ratio(1, 1), ratio(0, 1), ratio(0, 1)]),
+        ref_dir: rational_vector([ratio(0, 1), ratio(1, 1), ratio(0, 1)]),
+    }));
+    let cone = geom.add_surface(Surface::Cone(Cone {
+        apex: rational_point([ratio(13, 1), ratio(apex, 1), ratio(0, 1)]),
+        axis: rational_vector([ratio(0, 1), ratio(1, 1), ratio(1, 1)]),
+        slope: Real::one(),
+        ref_dir: rational_vector([ratio(1, 1), ratio(0, 1), ratio(0, 1)]),
+    }));
+    let witness = geom.add_point(PointDef::Meet(Meet {
+        of: MeetOf::Surfaces(vec![plane, cone]),
+        position: Position::Closed(rational_point([
+            ratio(13, 1),
+            ratio(witness, 1),
+            ratio(0, 1),
+        ])),
+    }));
+    geom.add_curve(Curve::Intersection(IntersectionCurve {
+        surfaces: [plane, cone],
+        witness,
+    }))
+}
+
+// BM's only root is M at y=5. A cone generator on BM's line keeps M only when
+// its ray reaches it, so the line's root is never published for a ray that stops
+// short of M.
+#[test]
+fn a_cone_generator_meets_the_patch_only_on_its_retained_ray() {
+    let row = &line_rows()[0];
+    let mut built = evaluate(&parsed(&row.recipe), &mut decider()).unwrap();
+    let body = built.result;
+    let (face, _) = mouth_support(&built.model, body, row);
+    let surface = built.model.face(face).surface;
+    let stops_short = generator(&mut built.model, 10, 11);
+    let answer =
+        intersect_curve_surface(built.model.geom_mut(), stops_short, surface, &mut decider());
+    let answer = answer.unwrap();
+    assert!(
+        matches!(answer.value, CurveSurface::Disjoint),
+        "{:?}",
+        answer.value
+    );
+    assert!(answer.marks.is_empty());
+
+    let reaches = generator(&mut built.model, 0, 1);
+    let answer =
+        intersect_curve_surface(built.model.geom_mut(), reaches, surface, &mut decider()).unwrap();
+    assert!(answer.marks.is_empty());
+    let CurveSurface::Meets(hits) = answer.value else {
+        panic!("{:?}", answer.value);
+    };
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].contact, Touch::Crossing);
+    let m = rational_point([ratio(13, 1), ratio(5, 1), ratio(0, 1)]);
+    let gap = built.model.geom().position(hits[0].point).minus(&m);
+    assert!(matches!(
+        decider().sign(&gap.norm_squared()),
+        Outcome::ProvenCoincident(_)
+    ));
 }
 
 // A root in an end span also carries the irrational transition weight.

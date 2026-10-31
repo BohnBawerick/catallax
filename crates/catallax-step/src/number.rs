@@ -1,6 +1,8 @@
 //! Decimal rounding and rational error accounting. No platform floating point.
 
-use catallax_numbers::{Ball, BudgetPolicy, Decider, Integer, Outcome, Rational, Real, Refusal};
+use catallax_numbers::{
+    Ball, BudgetPolicy, Decider, Integer, Outcome, Rational, Real, Refusal, StrictOrder,
+};
 use catallax_shapes::{Point3, Vector3};
 
 #[derive(Clone)]
@@ -67,27 +69,44 @@ pub(crate) fn rational(value: &Rational, digits: u32) -> Number {
     rounded(value, value, digits)
 }
 
-pub(crate) fn real(value: &Real, digits: u32, dec: &mut Decider) -> Result<Number, Refusal> {
-    // Even rational coordinates use enclose, so the deadline is observed here.
+fn request(value: &Real, digits: u32) -> Rational {
     let scale = value.as_rational().unwrap_or_else(Rational::one).abs();
-    let requested = if scale.is_zero() {
+    let scale = if scale.is_zero() {
         Rational::one()
     } else {
         scale
-    } * Rational::new(
-        Integer::one(),
-        Integer::from_i64(10).pow(digits.max(1).saturating_add(8)),
-    )
-    .unwrap();
-    let b = dec.enclose(value, &requested)?;
+    };
+    scale
+        * Rational::new(
+            Integer::one(),
+            Integer::from_i64(10).pow(digits.max(1).saturating_add(8)),
+        )
+        .unwrap()
+}
+
+pub(crate) fn real(value: &Real, digits: u32, dec: &mut Decider) -> Result<Number, Refusal> {
+    // Even rational coordinates use enclose, so the deadline is observed here.
+    let b = dec.enclose(value, &request(value, digits))?;
     enclosed(value, b, digits, dec)
 }
 
 pub(crate) fn enclosed(
     value: &Real,
+    b: Ball,
+    digits: u32,
+    dec: &mut Decider,
+) -> Result<Number, Refusal> {
+    enclosed_by(value, b, digits, dec, |number, _, dec| {
+        dec.compare(value, &Real::from_rational(number.clone()))
+    })
+}
+
+fn enclosed_by(
+    value: &Real,
     mut b: Ball,
     digits: u32,
     dec: &mut Decider,
+    mut equal: impl FnMut(&Rational, &Ball, &mut Decider) -> Outcome<StrictOrder>,
 ) -> Result<Number, Refusal> {
     if let Some(q) = value.as_rational() {
         return Ok(rational(&q, digits));
@@ -97,7 +116,7 @@ pub(crate) fn enclosed(
         // Perfect-square expressions may still have a nonzero binary radius.
         // Certify equality only when the written decimal is inside the ball.
         if !b.rad().is_zero() && b.contains(&number.value) {
-            match dec.compare(value, &Real::from_rational(number.value.clone())) {
+            match equal(&number.value, &b, dec) {
                 Outcome::ProvenCoincident(_) => number.error = Rational::zero(),
                 Outcome::Refused(refusal) => return Err(refusal),
                 _ => {}
@@ -210,7 +229,37 @@ pub(crate) fn unit(value: &Vector3) -> Vector3 {
 
 pub(crate) fn direction(value: &Vector3, digits: u32, dec: &mut Decider) -> Result<Point, Refusal> {
     let v = unit(value);
-    point(&Point3::new(v.x, v.y, v.z), digits, dec)
+    let norm_squared = value.norm_squared();
+    Ok(Point {
+        xyz: [
+            component(&v.x, &value.x, &norm_squared, digits, dec)?,
+            component(&v.y, &value.y, &norm_squared, digits, dec)?,
+            component(&v.z, &value.z, &norm_squared, digits, dec)?,
+        ],
+    })
+}
+
+/// One component of `source / sqrt(norm_squared)`. A ball holding the component
+/// and a nonzero decimal gives them one sign, so `source^2 = decimal^2 *
+/// norm_squared` proves equality without the radical.
+fn component(
+    value: &Real,
+    source: &Real,
+    norm_squared: &Real,
+    digits: u32,
+    dec: &mut Decider,
+) -> Result<Number, Refusal> {
+    let b = dec.enclose(value, &request(value, digits))?;
+    enclosed_by(value, b, digits, dec, |decimal, b, dec| {
+        let decimal = Real::from_rational(decimal.clone());
+        if !b.contains_zero() {
+            match dec.compare(&source.square(), &(&decimal.square() * norm_squared)) {
+                Outcome::NotExact(_) => {}
+                settled => return settled,
+            }
+        }
+        dec.compare(value, &decimal)
+    })
 }
 
 pub(crate) fn ball_number(value: &Ball, digits: u32) -> Number {

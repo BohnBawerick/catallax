@@ -32,6 +32,9 @@ impl Classifier<'_> {
         if location != Location::Indeterminate {
             return Ok(location);
         }
+        if self.on_intersected_boundary(&storage.locations) {
+            return Ok(Location::Boundary);
+        }
         // Regularised Boolean contacts need the same active faces and exact
         // planar/transverse witnesses as Plan::proven_checked. A leaf boundary
         // alone cannot decide whether a Boolean seam is inside or outside.
@@ -53,9 +56,7 @@ impl Classifier<'_> {
         }
         if let Some(proven) = plan.planar_location(point, storage, dec)? {
             location = proven;
-        } else if plan.boundary_witness(point, storage, dec)?
-            || self.on_intersected_boundary(&storage.locations)
-        {
+        } else if plan.boundary_witness(point, storage, dec)? {
             location = Location::Boundary;
         }
         Ok(location)
@@ -64,6 +65,7 @@ impl Classifier<'_> {
     /// A point on the boundary of a leaf that an intersection requires is not in the
     /// intersection's interior, which is all a grid corner needs to know. Such a
     /// corner can have no fixed witness ray, as where a gyroid meets a box corner.
+    /// Checking this before the contact queries skips the costliest corner work.
     fn on_intersected_boundary(&self, locations: &[Location]) -> bool {
         let mut pending = vec![self.plan.root];
         while let Some(node) = pending.pop() {

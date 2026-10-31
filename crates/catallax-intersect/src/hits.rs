@@ -830,6 +830,30 @@ fn outer_sheet(
     ))
 }
 
+// A finite support's proved crossings. Meeting points record their incidence,
+// which ties each to this support and its closed chart.
+fn finite_hits(
+    geom: &mut GeomStore,
+    c: CurveId,
+    s: SurfaceId,
+    positions: Vec<Point3>,
+) -> CurveSurface {
+    if positions.is_empty() {
+        return CurveSurface::Disjoint;
+    }
+    let hits = positions
+        .into_iter()
+        .map(|position| CurveHit {
+            point: geom.add_point(PointDef::Meet(Meet {
+                of: MeetOf::CurveSurface(c, s),
+                position: Position::Closed(position),
+            })),
+            contact: Contact::Crossing,
+        })
+        .collect();
+    CurveSurface::Meets(hits)
+}
+
 pub(super) fn intersect(
     geom: &mut GeomStore,
     c: CurveId,
@@ -859,10 +883,13 @@ pub(super) fn intersect(
     if circle_misses_cone(&form, geom.surface(s), dec)? {
         return Ok(Answer::exact(CurveSurface::Disjoint));
     }
-    if let (CurveForm::Line { origin, dir }, Surface::BSpline(support)) = (&form, geom.surface(s))
-        && support.misses_line(origin, dir, dec)?
-    {
-        return Ok(Answer::exact(CurveSurface::Disjoint));
+    if let (CurveForm::Line { origin, dir }, Surface::BSpline(support)) = (&form, geom.surface(s)) {
+        if support.misses_line(origin, dir, dec)? {
+            return Ok(Answer::exact(CurveSurface::Disjoint));
+        }
+        if let Some(positions) = support.line_hits(origin, dir, dec)? {
+            return Ok(Answer::exact(finite_hits(geom, c, s, positions)));
+        }
     }
     let implicit = geom.implicit(s).ok_or_else(|| {
         Refusal::new(

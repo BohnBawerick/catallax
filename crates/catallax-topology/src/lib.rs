@@ -20,6 +20,6 @@ pub use entity::{
     LumpId, Sense, Shell, ShellId, Vertex, VertexId,
 };
 pub use model::{EntityCounts, Model, TopologyFault};
-pub use rolling_junction::envelope_rows;
+pub use rolling_junction::{envelope_retains_chart, envelope_rows};
 pub use spline_prism::SplinePrism;
 pub use transform::transformed_body;

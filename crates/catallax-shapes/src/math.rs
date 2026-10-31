@@ -137,6 +137,32 @@ pub(crate) fn point(p: &Point3, precision: u32, dec: &Decider) -> Result<[Ball; 
     ])
 }
 
+/// A fresh query point: charged, and refused above the caller's precision.
+pub(crate) fn budgeted_point(
+    p: &Point3,
+    precision: u32,
+    dec: &mut Decider,
+) -> Result<[Ball; 3], Refusal> {
+    Ok([
+        dec.enclose_budgeted_at(&p.x, precision)?,
+        dec.enclose_budgeted_at(&p.y, precision)?,
+        dec.enclose_budgeted_at(&p.z, precision)?,
+    ])
+}
+
+/// A fresh query vector, under the same limits as [`budgeted_point`].
+pub(crate) fn budgeted_vector(
+    v: &Vector3,
+    precision: u32,
+    dec: &mut Decider,
+) -> Result<[Ball; 3], Refusal> {
+    Ok([
+        dec.enclose_budgeted_at(&v.x, precision)?,
+        dec.enclose_budgeted_at(&v.y, precision)?,
+        dec.enclose_budgeted_at(&v.z, precision)?,
+    ])
+}
+
 fn rational_squared_norm(v: &[&Rational; 3]) -> Rational {
     v[0] * v[0] + v[1] * v[1] + v[2] * v[2]
 }

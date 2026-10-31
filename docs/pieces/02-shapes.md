@@ -158,6 +158,22 @@ clear the target strictly, on the represented controls and with no tolerance.
 claims nothing, and the caller keeps its side or coverage refusal.
 `side_at` still refuses `shapes.bspline-domain` outside its certified chart.
 
+`SplineSupport::line_hits` gives every point where a whole line meets a rolling
+envelope's closed carrier, in line order, and `None` for a support with no
+finite solver. Bernstein hulls keep every hit inside surviving chart cells. A
+rectangle of cells owns at most one hit, by a contracting interval Jacobian
+that also covers its knots, and that Jacobian's fixed sign makes the hit a
+crossing. A hit clear of every knot and row is a certified root of its span's
+rational equations, with the transition tangent and end weight as variables
+fixed by their squares. A hit on a knot or row is an exact point of that
+section. A rectangle with no such Jacobian refuses, so a tangency never becomes
+a hit or a miss.
+
+Finite spline queries stay at or below the caller's precision. A stored net is
+rounded outward to that precision and never refined past it. Fresh query
+points, directions and frames go through `Decider::enclose_budgeted_at`, so
+their work is charged and a precision above the ceiling refuses.
+
 
 
 ### Acceptance of the migration

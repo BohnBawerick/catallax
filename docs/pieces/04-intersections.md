@@ -56,10 +56,15 @@ isolation: unsupported pairs retain an explicit coverage refusal.
 
 `intersect_curve_surface` answers an exact, unmarked `Disjoint` for a line that
 `SplineSupport::misses_line` proves clear of the complete finite carrier, after
-curve validation and recorded facts. Any other line against a spline support
-keeps `intersect.parametric-surface`, including a line that really meets the
-patch. There is no finite spline solver yet, so an empty hit list always means
-a proved miss.
+curve validation and recorded facts. A line that may meet a rolling envelope
+gets `SplineSupport::line_hits`: every point where the whole line meets the
+closed finite carrier, each an exact `Contact::Crossing`, once, in line order.
+A hit at an internal knot or on a boundary row appears once, as an exact point
+of that section; any other hit is a certified root of its span's own equations.
+A tangency, or a contact the enclosures cannot separate from a knot or row,
+keeps `intersect.parametric-surface`, as does a line in the mouth plane. Any
+other line against a spline support keeps that refusal too, so an elliptic
+offset has no finite solver yet. An empty hit list always means a proved miss.
 
 `trace_elliptic_offset_quarter` traces the retained exact normal-offset law on
 the principal quarter `0 <= theta <= pi/2` for nominal property integration.

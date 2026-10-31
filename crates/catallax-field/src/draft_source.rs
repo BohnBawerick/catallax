@@ -562,13 +562,14 @@ impl Plan {
 
     /// Proves the tool holds the axis over every interval between its end planes
     /// inside the caps. Bands share one wall, so the whole section is removed.
+    /// Returns one axis point per interval.
     fn check_through(
         &self,
         tool: usize,
         cylinder: &Cylinder,
         caps: [&Plane; 2],
         dec: &mut Decider,
-    ) -> Result<(), Refusal> {
+    ) -> Result<Vec<Point3>, Refusal> {
         let mut planes = Vec::new();
         self.tool_bands(tool, cylinder, &mut planes, dec)?;
         let lower = bored::axis_point(cylinder, caps[0]);
@@ -591,15 +592,18 @@ impl Plan {
             }
             stops.insert(index, stop);
         }
+        let mut middles = Vec::with_capacity(stops.len() - 1);
         for pair in stops.windows(2) {
             let half = pair[1]
                 .minus(&pair[0])
                 .scaled(&(Real::one() / Real::from_i64(2)));
-            if self.register_location(tool, &pair[0].plus(&half), dec)? != Location::Inside {
+            let middle = pair[0].plus(&half);
+            if self.register_location(tool, &middle, dec)? != Location::Inside {
                 return Err(failure("a preserved bore must pass through both caps"));
             }
+            middles.push(middle);
         }
-        Ok(())
+        Ok(middles)
     }
 
     /// Recognises a recipe-defined subtraction of one complete cylinder from a
@@ -676,7 +680,21 @@ impl Plan {
         if caps.iter().any(|cap| selected.contains(cap)) {
             return Err(failure("a selected bore cap moves the cap-hole trim"));
         }
-        self.check_through(b, &cylinder, caps.map(|cap| &skin.patches[cap].plane), dec)?;
+        let middles =
+            self.check_through(b, &cylinder, caps.map(|cap| &skin.patches[cap].plane), dec)?;
+        // A band beyond the caps, such as a hole's entry, bounds no source material.
+        let mut crossing = Vec::with_capacity(walls.len());
+        for wall in walls {
+            let mut within = false;
+            for middle in &middles {
+                within |= leaf_location(&self.leaves[self.faces[wall].leaf], middle, dec)?
+                    == Location::Inside;
+            }
+            if within {
+                crossing.push(wall);
+            }
+        }
+        let walls = crossing;
         Ok(Some((
             target.clone(),
             skin,

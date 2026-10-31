@@ -3,15 +3,15 @@
 //! Every expected value comes from the part's definition. No expectation reads
 //! a kernel result, and neither kernel's answer supplies the other's.
 use catallax_boolean::{Containment, classify_point};
-use catallax_features::{BuildError, Built, evaluate};
+use catallax_features::{BuildError, Built, ConsumedFace, evaluate};
 use catallax_field::{FaceState, Location, Plan, Workspace};
 use catallax_measure::Enclosure;
 use catallax_numbers::{Decider, Integer, Outcome, Rational, Real, with_operation_budget};
 use catallax_recipe::{ElementId, HolePart, Origin, Recipe, Role, StepId};
 use catallax_shapes::{Curve, Point3, RPoint3, Surface, Vector3};
-use catallax_topology::{Loop, Sense};
+use catallax_topology::{BodyKind, Loop, Sense};
 use serde_json::{Value as Json, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One ordinary application request's allowance.
 const WORK: u64 = 20_000_000;
@@ -744,19 +744,52 @@ fn the_new_branch_admits_only_a_separated_unselected_axial_through_bore() {
     let built = evaluate(&kept, &mut Decider::default()).unwrap();
     assert_eq!(built.model.counts(built.result).faces, 7);
     Plan::compile_checked(&kept, &mut Decider::default()).unwrap();
-    // A plane missing the body retains nothing in either kernel.
-    let empty = recipe(&edited(&|s| {
-        s["steps"][draft]["neutral"]["point"][2] = json!("100");
-    }));
-    assert_eq!(
-        evaluate(&empty, &mut Decider::default())
-            .map(|built| built.model.body(built.result).kind)
-            .unwrap(),
-        catallax_topology::BodyKind::Empty
-    );
-    assert!(
-        Plan::compile_checked(&empty, &mut Decider::default())
-            .unwrap()
-            .is_proven_empty()
-    );
+}
+
+/// Comparable `(source, by)` removal history, independent of list order.
+fn history(consumed: &[ConsumedFace]) -> BTreeSet<(BTreeSet<Origin>, BTreeSet<Origin>)> {
+    consumed
+        .iter()
+        .map(|face| {
+            (
+                face.source.iter().cloned().collect(),
+                face.by.iter().cloned().collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn an_empty_result_reports_the_same_removed_faces_in_both_kernels() {
+    for (name, draft, wall) in [
+        ("K-E", 4, side("tool", "wall")),
+        (
+            "K-H",
+            3,
+            Origin {
+                step: StepId::new("hole").unwrap(),
+                role: Role::Hole {
+                    at: ElementId::new("centre").unwrap(),
+                    part: HolePart::Wall,
+                },
+            },
+        ),
+    ] {
+        let neutral: &dyn Fn(&mut Json) =
+            &|s| s["steps"][draft]["neutral"]["point"][2] = json!("100");
+        let keep: &dyn Fn(&mut Json) = &|s| s["steps"][draft]["keep_regions"] = json!([]);
+        for edit in [neutral, keep] {
+            let mut source = fixture(name);
+            edit(&mut source);
+            let source = recipe(&source);
+            let built = evaluate(&source, &mut Decider::default()).unwrap();
+            assert_eq!(built.model.body(built.result).kind, BodyKind::Empty);
+            let plan = Plan::compile_checked(&source, &mut Decider::default()).unwrap();
+            assert!(plan.is_proven_empty());
+            let native = history(&built.consumed);
+            assert_eq!(native.len(), 7, "{name}");
+            assert!(native.iter().any(|(removed, _)| removed.contains(&wall)));
+            assert_eq!(history(plan.consumed_faces()), native, "{name}");
+        }
+    }
 }

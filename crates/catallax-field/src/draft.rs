@@ -1249,7 +1249,7 @@ impl Plan {
         };
         let Candidates {
             components,
-            source_faces: physical_sources,
+            source_faces: mut physical_sources,
         } = self.draft_cells(
             (leaf, boundary.zip(patches.as_ref())),
             source_faces,
@@ -1375,6 +1375,12 @@ impl Plan {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
+        // The wall survives with any retained material. It is one physical face.
+        if let Some(bore) = bore
+            && result == 0
+        {
+            physical_sources.push(bore.walls.clone());
+        }
         for group in physical_sources {
             if !group
                 .iter()

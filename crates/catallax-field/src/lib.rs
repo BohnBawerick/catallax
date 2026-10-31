@@ -474,7 +474,9 @@ impl Plan {
                                 &step.id,
                                 dec,
                             )?;
-                            plan.preserve_faces(&bore.walls);
+                            if drafted != 0 {
+                                plan.preserve_faces(&bore.walls);
+                            }
                             return plan
                                 .boolean(BooleanKind::Subtract, drafted, bore.register, dec)
                                 .map(Some);

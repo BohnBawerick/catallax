@@ -1202,6 +1202,28 @@ fn face_heights_follow_the_face_in_any_placement() {
         }
         values.into_iter().collect::<Vec<_>>()
     };
+    // Each rim of the frustum sits at one height along the axis and reaches its
+    // own radius across it, so the larger rim bounds the side face sideways.
+    let mut rims = Vec::new();
+    let mut across_rims = Vec::new();
+    for edge in model.edges_of_body(body) {
+        rims.push(exact(
+            &edge_heights(&model, edge, &origin, &axis, &mut dec)
+                .unwrap()
+                .unwrap(),
+            &mut dec,
+        ));
+        across_rims.push(exact(
+            &edge_heights(&model, edge, &origin, &across, &mut dec)
+                .unwrap()
+                .unwrap(),
+            &mut dec,
+        ));
+    }
+    rims.sort();
+    across_rims.sort();
+    assert_eq!(rims, [vec![0], vec![2]]);
+    assert_eq!(across_rims, [vec![-4, 4], vec![-2, 2]]);
     let mut along = Vec::new();
     let mut sideways = Vec::new();
     let mut box_reach = false;

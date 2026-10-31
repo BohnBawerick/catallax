@@ -1,4 +1,4 @@
-"""P5 through the ordinary driver: a certified mixed body and a raw-valid STEP file."""
+"""P5 through the ordinary driver: certified mixed and exact analytic bodies, raw-valid STEP."""
 from fractions import Fraction
 import json
 import math
@@ -44,6 +44,16 @@ T = (7, 11, -13)
 MATERIAL = (((10, 15, 0), True, True), ((0, 15, 0), False, False), ((17, 2, 0), False, False),
             ((0, 2, 20), True, True), ((Fraction(15, 2), Fraction(11, 2), 10), True, True),
             ((Fraction(15, 2), Fraction(29, 5), 10), False, True))
+# The rail 1/1000 clear of every mouth: one torus and the fourteen drilled regions.
+CLEAR_RADIUS = '999/1000'
+CLEAR_VOLUME = 12511.609716045489
+CLEAR_FACES = {GeomAbs_Plane: 3, GeomAbs_Cylinder: 7, GeomAbs_Cone: 4, GeomAbs_Torus: 1}
+CLEAR_SUMMARY = {'plane': 3, 'cylinder': 7, 'cone': 4, 'torus': 1}
+CLEAR_MATERIAL = (((10, 15, 0), True), ((0, 15, 0), False), ((17, 2, 0), False),
+                  ((0, 2, 20), True), ((Fraction(15, 2), Fraction(51, 10), 10), True),
+                  ((Fraction(15, 2), Fraction(26, 5), 10), False),
+                  ((Fraction(25999, 2000), Fraction(50001, 10000), 0), False),
+                  ((Fraction(25999, 2000), Fraction(49999, 10000), 0), True))
 
 
 def canonical():
@@ -228,6 +238,11 @@ class FlangedHousing(unittest.TestCase):
             self.assertLessEqual(Fraction(region['file_to_model_bound_mm']), FILE_TO_MODEL)
             self.assertLessEqual(Fraction(region['file_to_definition_bound_mm']),
                                  FILE_TO_MODEL + model)
+        self.assert_solids(path, reference, margin, matrix, by,
+                           [(point, inside[edited]) for point, *inside in MATERIAL])
+
+    def assert_solids(self, path, reference, margin, matrix, by, material):
+        """One valid solid from the raw and ordinary reads, with its volume and material."""
         shapes = raw_shapes(path)
         self.assertEqual(len(shapes), 1)
         for shape in (shapes[0], ordinary_shape(path)):
@@ -244,10 +259,23 @@ class FlangedHousing(unittest.TestCase):
             self.assertLessEqual(spread, 1e-10 * max(1, abs(values[2])))
             self.assertLessEqual(abs(values[2] - reference),
                                  margin + surface_area(shape) * 1e-7 + spread)
-            for point, *inside in MATERIAL:
+            for point, inside in material:
                 probe = gp_Pnt(*(float(value) for value in moved(matrix, point, by)))
                 state = BRepClass3d_SolidClassifier(found[0], probe, 1e-7).State()
-                self.assertEqual(state, TopAbs_IN if inside[edited] else TopAbs_OUT, point)
+                self.assertEqual(state, TopAbs_IN if inside else TopAbs_OUT, point)
+
+    def assert_replays(self, recipe, directory, manifest):
+        """The wider allowance and the saved question give the same answer and bytes."""
+        wider, other = self.run_case(recipe, REPLAY)
+        self.assertEqual(other['status'], 'answered')
+        self.assertEqual((wider / 'answer.step').read_bytes(),
+                         (directory / 'answer.step').read_bytes())
+        self.assertEqual(comparable(other), comparable(manifest))
+        replay, again = self.run_case(
+            json.loads((directory / 'question.json').read_text()), APPLICATION)
+        self.assertEqual(comparable(again), comparable(manifest))
+        self.assertEqual((replay / 'answer.step').read_bytes(),
+                         (directory / 'answer.step').read_bytes())
 
     def test_rows_build_export_and_replay(self):
         rows = (
@@ -268,20 +296,25 @@ class FlangedHousing(unittest.TestCase):
                 if pose:
                     self.assert_placed_file(directory / 'answer.step', manifest, reference,
                                             margin, *pose)
-                wider, other = self.run_case(recipe, REPLAY)
-                self.assertEqual(other['status'], 'answered')
-                self.assertEqual((wider / 'answer.step').read_bytes(),
-                                 (directory / 'answer.step').read_bytes())
-                self.assertEqual(comparable(other), comparable(manifest))
-                replay, again = self.run_case(
-                    json.loads((directory / 'question.json').read_text()), APPLICATION)
-                self.assertEqual(comparable(again), comparable(manifest))
-                self.assertEqual((replay / 'answer.step').read_bytes(),
-                                 (directory / 'answer.step').read_bytes())
+                self.assert_replays(recipe, directory, manifest)
+
+    def test_a_clear_rail_exports_one_exact_torus(self):
+        recipe = rigid(RQ, (1, 2, 3, 4), T, CLEAR_RADIUS)
+        directory, manifest = self.run_case(recipe, APPLICATION)
+        self.assertEqual(manifest['format'], 'catallax-manifest/3')
+        self.assertEqual(manifest['status'], 'answered')
+        self.assertTrue(manifest['exact'])
+        self.assertEqual(manifest['marks'], [])
+        self.assertEqual(manifest['result']['faces_by_kind'], CLEAR_SUMMARY)
+        self.assertLessEqual(Fraction(manifest['step']['max_deviation']), FILE_TO_MODEL)
+        path = directory / 'answer.step'
+        self.assert_solids(path, CLEAR_VOLUME, 0, RQ, T, CLEAR_MATERIAL)
+        for shape in (raw_shapes(path)[0], ordinary_shape(path)):
+            self.assertEqual(faces(shape), CLEAR_FACES)
+        self.assert_replays(recipe, directory, manifest)
 
     def test_uncovered_strata_keep_their_refusals(self):
         rows = (
-            ('near-miss', radius('999/1000'), 'fillet.unsupported-overflow'),
             ('tangent', radius('1'), 'fillet.unsupported-overflow'),
             ('too-large', radius('7/2'), 'shapes.rolling-envelope'),
         )

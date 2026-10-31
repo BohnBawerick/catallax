@@ -1,4 +1,4 @@
-//! Export-only cuts for complete cylindrical and conical bands.
+//! Export-only cuts for complete cylindrical, conical and toroidal bands.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -71,6 +71,8 @@ pub(crate) struct SourceRing {
     pub(crate) radius_sq: Real,
     pub(crate) radius: Real,
     pub(crate) v: Real,
+    /// The tube angle on a torus, which replaces `v`.
+    pub(crate) turns: Option<i64>,
     pub(crate) increasing: bool,
 }
 
@@ -95,6 +97,8 @@ impl Plan {
             return crate::junction::plan(model, bodies, dec);
         }
         let mut has_band = false;
+        let mut has_cone = false;
+        let mut has_torus = false;
         for body in bodies.clone() {
             for lump in &model.body(body).lumps {
                 for shell in &model.lump(*lump).shells {
@@ -107,7 +111,14 @@ impl Plan {
                             Surface::Cylinder(_) | Surface::Cone(_)
                                 if band_loops(model, face).is_some() =>
                             {
-                                has_band = true
+                                has_band = true;
+                                has_cone |= matches!(
+                                    model.geom().surface(definition.surface),
+                                    Surface::Cone(_)
+                                );
+                            }
+                            Surface::Torus(_) if band_loops(model, face).is_some() => {
+                                has_torus = true
                             }
                             _ => return Ok(Self::default()),
                         }
@@ -115,7 +126,9 @@ impl Plan {
                 }
             }
         }
-        if !has_band {
+        // A torus band beside a cone has no chart route, so only that scene
+        // comes here. Every other torus keeps its charted bytes.
+        if !has_band || (has_torus && !has_cone) {
             return Ok(Self::default());
         }
         let mut sources = Vec::new();
@@ -136,6 +149,12 @@ impl Plan {
                                 let Some(band) = source_band(model, face, dec)? else {
                                     // Do not partly change a file that still needs the
                                     // arbitrary-trim or singular-apex export contract.
+                                    return Ok(Self::default());
+                                };
+                                sources.push(band);
+                            }
+                            Surface::Torus(_) => {
+                                let Some(band) = torus_band(model, face, dec)? else {
                                     return Ok(Self::default());
                                 };
                                 sources.push(band);
@@ -191,6 +210,8 @@ pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
         let seam_direction = match model.geom().surface(source.surface) {
             Surface::Cylinder(_) => source.axis.clone(),
             Surface::Cone(cone) => source.axis.plus(&reference.scaled(&cone.slope)),
+            // The seam is a tube circle, which turns about this axis's normal.
+            Surface::Torus(_) => source.axis.clone(),
             _ => unreachable!(),
         };
         plan.faces.insert(
@@ -208,6 +229,8 @@ pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
                 low_v: match &source.chain {
                     Some((chain, v, _)) if chain.at_low => v.clone(),
                     _ if source.apex.is_some() => Real::zero(),
+                    // The seam circle's own parameter is the tube angle.
+                    _ if source.rings[0].turns.is_some() => Real::zero(),
                     _ => source.rings[0].v.clone(),
                 },
                 v_scale: source.v_scale.clone(),
@@ -238,7 +261,9 @@ pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
                 .associations
                 .push(Association {
                     surface: source.surface,
-                    v: Parameter::Exact(ring.v.clone()),
+                    v: ring
+                        .turns
+                        .map_or_else(|| Parameter::Exact(ring.v.clone()), Parameter::QuarterTurns),
                     v_scale: source.v_scale.clone(),
                     increasing: ring.increasing,
                 });
@@ -429,9 +454,120 @@ pub(crate) fn source_ring(
             radius: number::sqrt_real(&radius_sq),
             radius_sq,
             v: height,
+            turns: None,
             increasing,
         }))
     }
+}
+
+// The band of a torus between a tube-side parallel at a quarter turn and its
+// innermost parallel, as a concave ring fillet leaves it. The tube angle of a
+// ring is an exact quarter turn; any other parallel keeps the unseamed encoder.
+fn torus_band(
+    model: &Model,
+    face: FaceId,
+    dec: &mut Decider,
+) -> Result<Option<SourceBand>, Refusal> {
+    let definition = model.face(face);
+    let Surface::Torus(torus) = model.geom().surface(definition.surface) else {
+        return Ok(None);
+    };
+    let Some((edges, None)) = band_loops(model, face) else {
+        return Ok(None);
+    };
+    let axis = number::unit(&torus.axis);
+    let mut rings = Vec::with_capacity(2);
+    for edge in edges {
+        let source = model.edge(edge);
+        let CurveForm::Circle {
+            center,
+            normal,
+            radius_sq,
+            ..
+        } = curve_form(model.geom(), source.curve, dec)?
+        else {
+            return Ok(None);
+        };
+        let offset = center.minus(&torus.center);
+        if !zero(&normal.cross(&axis).norm_squared(), dec)?
+            || !zero(&offset.cross(&axis).norm_squared(), dec)?
+        {
+            return Ok(None);
+        }
+        let height = offset.dot(&axis);
+        let radius = number::sqrt_real(&radius_sq);
+        let turns = if zero(&height, dec)? {
+            if !zero(&(&radius - &(&torus.major - &torus.minor)), dec)? {
+                return Ok(None);
+            }
+            2
+        } else {
+            if !zero(&(&radius - &torus.major), dec)? {
+                return Ok(None);
+            }
+            if zero(&(&height - &torus.minor), dec)? {
+                1
+            } else if zero(&(&height + &torus.minor), dec)? {
+                3
+            } else {
+                return Ok(None);
+            }
+        };
+        let increasing = match dec.sign(&normal.dot(&axis)) {
+            Outcome::Proven(sign) => sign == StrictSign::Positive,
+            Outcome::Refused(refusal) => return Err(refusal),
+            _ => return Ok(None),
+        };
+        rings.push(SourceRing {
+            edge,
+            curve: source.curve,
+            center,
+            normal,
+            radius,
+            radius_sq,
+            v: Real::zero(),
+            turns: Some(turns),
+            increasing,
+        });
+    }
+    rings.sort_by_key(|ring| ring.turns);
+    if rings[0].turns == rings[1].turns {
+        return Ok(None);
+    }
+    // Two parallels bound two bands. The low ring runs with the chart's u, read
+    // on the face's side, only on the quarter between them.
+    let low = &rings[0];
+    let along = model.edge(low.edge).sense == Sense::Same;
+    let uses = ring_use(model, face, low.edge)?;
+    if (low.increasing == (along == uses)) != (definition.sense == Sense::Same) {
+        return Ok(None);
+    }
+    Ok(Some(SourceBand {
+        face,
+        surface: definition.surface,
+        axis,
+        reference: number::unit(&torus.ref_dir),
+        v_scale: torus.minor.clone(),
+        rings,
+        apex: None,
+        chain: None,
+    }))
+}
+
+// Whether a ring's coedge in this face follows its edge.
+fn ring_use(model: &Model, face: FaceId, edge: EdgeId) -> Result<bool, Refusal> {
+    for lp in &model.face(face).loops {
+        if let Loop::Coedges(coedges) = model.loop_(*lp)
+            && let [coedge] = coedges.as_slice()
+            && model.coedge(*coedge).edge == edge
+        {
+            return Ok(model.coedge(*coedge).sense == Sense::Same);
+        }
+    }
+    Err(Refusal::new(
+        "step.not-solid",
+        "a band ring is not a loop of its face",
+    ))
 }
 
 fn zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {

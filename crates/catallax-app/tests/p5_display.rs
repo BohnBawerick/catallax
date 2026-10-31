@@ -144,6 +144,58 @@ fn the_mixed_body_displays_as_one_closed_mesh() {
 }
 
 #[test]
+fn the_separated_junction_displays_one_blend_region() {
+    let options = MeshOptions {
+        chord_tolerance: Rational::from_ratio(1, 50).unwrap(),
+        angular_deviation: Some(Rational::from_ratio(1, 2).unwrap()),
+        ..Default::default()
+    };
+    let mut dec = decider();
+    let body = catallax_app::build(&recipe("999/1000"), &options, &mut dec).unwrap();
+    let mesh = &body.display.value;
+    assert_eq!(mesh.faces.len(), 15);
+    // 38 loops of one ring each, every ring shared by two faces.
+    assert_eq!(mesh.edges.len(), 19);
+    for face in &mesh.faces {
+        assert!(!face.triangles.is_empty(), "{face:?}");
+        assert!(face.max_chord_error <= options.chord_tolerance);
+    }
+    let mut uses = BTreeMap::<(usize, usize), (u32, i32)>::new();
+    for triangle in &mesh.triangles {
+        for i in 0..3 {
+            let (a, c) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+            let entry = uses.entry((a.min(c), a.max(c))).or_default();
+            entry.0 += 1;
+            entry.1 += if a < c { 1 } else { -1 };
+        }
+    }
+    assert!(uses.values().all(|&use_| use_ == (2, 0)));
+    assert!(
+        mesh.unavailable_controls.is_empty(),
+        "{:?}",
+        mesh.unavailable_controls
+    );
+    assert_eq!(body.names.faces.len(), 15);
+    let blends: Vec<_> = body
+        .names
+        .faces
+        .iter()
+        .filter(|(_, origins)| {
+            origins
+                .iter()
+                .any(|origin: &Origin| matches!(origin.role, Role::Blend { .. }))
+        })
+        .collect();
+    assert_eq!(blends.len(), 1);
+    // An exact body has no fitted region: the opt-in route claims nothing.
+    let refusal = build_certified(&recipe("999/1000"), None, &mut decider()).unwrap_err();
+    assert!(
+        format!("{refusal:?}").contains("features.unsupported-offset-family"),
+        "{refusal:?}"
+    );
+}
+
+#[test]
 fn the_ordinary_application_build_displays_the_same_faces() {
     let mut dec = decider();
     let options = MeshOptions {

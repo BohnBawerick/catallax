@@ -12,12 +12,17 @@
 //! touched coaxial-parallel countersink cone below the plane or a face whose
 //! finite extent along the axis lies strictly below it or above the ball.
 //! Anything else keeps refusing.
+//!
+//! The same ring needs no continuation when every mouth lies strictly beyond
+//! the plane rail: [`strip_clear`] proves that from the finite faces, however
+//! the unbounded supports meet, and the ordinary torus strip then applies.
 
 use std::collections::BTreeMap;
 
+use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{BoundKind, Decider, Mark, Rational, Real, Refusal, Sign};
 use catallax_shapes::{
-    BSplineCurve, Circle, Cone, Curve, Point3, PointDef, RollingEnvelope,
+    BSplineCurve, Circle, Cone, Curve, Cylinder, Point3, PointDef, RollingEnvelope,
     RollingEnvelopeDefinition, SplineBoundary, Surface, Vector3,
 };
 use catallax_topology::{
@@ -76,18 +81,30 @@ struct Feet {
     forward: bool,
 }
 
-/// Builds the continued ring, or returns `None` when the overflow is not this
-/// stratum so the caller keeps its original refusal.
-pub(crate) fn build(
-    model: &mut Model,
-    body: BodyId,
+// One closed concave ring between a plane and a perpendicular cylinder.
+struct Ring {
+    plane_index: usize,
+    plane_face: FaceId,
+    cylinder_face: FaceId,
+    cylinder: Cylinder,
+    // The plane's outward normal, the ball's side.
+    axis: Vector3,
+    // Where the cylinder axis meets the plane.
+    origin: Point3,
+    body_radius: Real,
+    radius: Real,
+    // Plane rail radius and ball-centre circle radius.
+    centre: Real,
+}
+
+fn ring(
+    model: &Model,
     edge: EdgeId,
     faces: [FaceId; 2],
     definition: &FilletDefinition,
-    uses: &Uses,
     dec: &mut Decider,
-) -> Result<Option<BodyId>, Refusal> {
-    let input = model.edge(edge).clone();
+) -> Result<Option<Ring>, Refusal> {
+    let input = model.edge(edge);
     let (Curve::Circle(_), None, None, false) = (
         model.geom().curve(input.curve),
         input.start,
@@ -106,7 +123,6 @@ pub(crate) fn build(
         _ => return Ok(None),
     };
     let plane_face = faces[plane_index];
-    let cylinder_face = faces[1 - plane_index];
     // The ball sits on the plane face's outward side.
     let outward = if model.face(plane_face).sense == Sense::Same {
         1
@@ -122,6 +138,154 @@ pub(crate) fn build(
     let body_radius = real_sqrt(&cylinder.radius_sq);
     let radius = torus.minor.clone();
     let centre = &body_radius + &radius;
+    Ok(Some(Ring {
+        plane_index,
+        plane_face,
+        cylinder_face: faces[1 - plane_index],
+        cylinder,
+        axis,
+        origin,
+        body_radius,
+        radius,
+        centre,
+    }))
+}
+
+// The boundary edges of a face other than the ring's own, or `None` when the
+// face has a loop this proof cannot walk.
+fn other_edges(model: &Model, face: FaceId, ring: EdgeId) -> Option<Vec<EdgeId>> {
+    let mut edges = Vec::new();
+    for lp in &model.face(face).loops {
+        let Loop::Coedges(cs) = model.loop_(*lp) else {
+            return None;
+        };
+        edges.extend(
+            cs.iter()
+                .map(|c| model.coedge(*c).edge)
+                .filter(|e| *e != ring),
+        );
+    }
+    Some(edges)
+}
+
+// Whether a cylinder runs along the line through `origin` in direction `axis`.
+fn coaxial(
+    c: &Cylinder,
+    origin: &Point3,
+    axis: &Vector3,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    Ok(zero(&c.axis.cross(axis).norm_squared(), dec)?
+        && zero(&c.origin.minus(origin).cross(axis).norm_squared(), dec)?)
+}
+
+/// Proves the ordinary strip of a closed ring meets no other finite face, so
+/// the supports' intersection elsewhere needs no continuation.
+///
+/// With `s` the distance from the axis and `h` the height above the plane, the
+/// strip and the material it adds lie in the band `body <= s <= rail`,
+/// `0 <= h <= radius`. The bands it covers on the plane and on the cylinder
+/// hold no boundary but the ring's, so both rails stay in the open input faces
+/// and the replaced faces keep their trims. A face of a solid meets the open
+/// plane or cylinder face nowhere, so one at or below the plane, at or above
+/// the cylinder rail, or on a coaxial cylinder beyond the band stays clear of
+/// it. A face reaching into the band's height range keeps the refusal, however
+/// far its support runs from the strip.
+pub(crate) fn strip_clear(
+    model: &Model,
+    body: BodyId,
+    edge: EdgeId,
+    faces: [FaceId; 2],
+    definition: &FilletDefinition,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let Some(ring) = ring(model, edge, faces, definition, dec)? else {
+        return Ok(false);
+    };
+    // A ball inside a bore rolls on the rail nearer the axis: another ring.
+    let Surface::Torus(torus) = &definition.surface else {
+        return Ok(false);
+    };
+    if !zero(&(&torus.major - &ring.centre), dec)? {
+        return Ok(false);
+    }
+    let Some(plane_edges) = other_edges(model, ring.plane_face, edge) else {
+        return Ok(false);
+    };
+    for other in plane_edges {
+        // The whole circle of an arc is outside the rail disc, or encloses it.
+        let CurveForm::Circle {
+            center, radius_sq, ..
+        } = curve_form(model.geom(), model.edge(other).curve, dec)?
+        else {
+            return Ok(false);
+        };
+        let offset = real_sqrt(&center.minus(&ring.origin).norm_squared());
+        let nearest = &offset - &real_sqrt(&radius_sq);
+        if !positive(&(nearest.square() - ring.centre.square()), dec)? {
+            return Ok(false);
+        }
+    }
+    let Some(cylinder_edges) = other_edges(model, ring.cylinder_face, edge) else {
+        return Ok(false);
+    };
+    for other in cylinder_edges {
+        let Some(heights) =
+            catallax_measure::edge_heights(model, other, &ring.origin, &ring.axis, dec)?
+        else {
+            return Ok(false);
+        };
+        for height in &heights {
+            if !positive(&(height - &ring.radius), dec)? {
+                return Ok(false);
+            }
+        }
+    }
+    for face in model.faces_of_body(body) {
+        if face == ring.plane_face || face == ring.cylinder_face {
+            continue;
+        }
+        if let Surface::Cylinder(c) = model.geom().surface(model.face(face).surface)
+            && coaxial(c, &ring.origin, &ring.axis, dec)?
+            && (positive(&(&c.radius_sq - &ring.centre.square()), dec)?
+                || positive(&(&ring.cylinder.radius_sq - &c.radius_sq), dec)?)
+        {
+            continue;
+        }
+        if !above(model, face, &ring.origin, &ring.axis, &ring.radius, dec)?
+            && !below_plane(model, face, &ring.origin, &ring.axis, false, dec)?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Builds the continued ring, or returns `None` when the overflow is not this
+/// stratum so the caller keeps its original refusal.
+pub(crate) fn build(
+    model: &mut Model,
+    body: BodyId,
+    edge: EdgeId,
+    faces: [FaceId; 2],
+    definition: &FilletDefinition,
+    uses: &Uses,
+    dec: &mut Decider,
+) -> Result<Option<BodyId>, Refusal> {
+    let Some(ring) = ring(model, edge, faces, definition, dec)? else {
+        return Ok(None);
+    };
+    let Ring {
+        plane_index,
+        plane_face,
+        cylinder_face,
+        cylinder,
+        axis,
+        origin,
+        body_radius,
+        radius,
+        centre,
+    } = ring;
 
     // Touched mouths: single-edge hole loops of the plane face whose other face
     // is a coaxial-parallel cone that narrows below the plane.
@@ -222,14 +386,13 @@ pub(crate) fn build(
         // and outside the body cylinder, so a coaxial cylinder wholly beyond
         // either is clear even when its finite face reaches the plane.
         if let Surface::Cylinder(c) = &other
-            && zero(&c.axis.cross(&axis).norm_squared(), dec)?
-            && zero(&c.origin.minus(&origin).cross(&axis).norm_squared(), dec)?
+            && coaxial(c, &origin, &axis, dec)?
             && (positive(&(&c.radius_sq - &(&centre + &radius).square()), dec)?
                 || positive(&(&cylinder.radius_sq - &c.radius_sq), dec)?)
         {
             continue;
         }
-        if !above_ball(model, face, &origin, &axis, &radius, dec)?
+        if !above(model, face, &origin, &axis, &(&radius + &radius), dec)?
             && !below_plane(model, face, &origin, &axis, true, dec)?
         {
             return Ok(None);
@@ -701,22 +864,20 @@ pub(crate) fn build(
     Ok(Some(output))
 }
 
-// Whether a face's finite extent lies strictly beyond the highest point of the
-// ball, whose diameter stands on the plane.
-fn above_ball(
+// Whether a face's finite extent lies strictly above a height over the plane.
+fn above(
     model: &Model,
     face: FaceId,
     origin: &Point3,
     axis: &Vector3,
-    radius: &Real,
+    top: &Real,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let Some(heights) = catallax_measure::face_heights(model, face, origin, axis, dec)? else {
         return Ok(false);
     };
-    let top = radius + radius;
     for height in &heights {
-        if !positive(&(height - &top), dec)? {
+        if !positive(&(height - top), dec)? {
             return Ok(false);
         }
     }

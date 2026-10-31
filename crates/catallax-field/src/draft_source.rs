@@ -6,7 +6,7 @@
 
 use crate::{
     Instruction, Location, Plan,
-    draft::{Cell, Preserved, PreservedBore, PreservedBores, PreservedBoss},
+    draft::{Cell, Preserved, PreservedBore, PreservedBores, PreservedBoss, PreservedHead},
     geometry,
 };
 use catallax_features::draft::{
@@ -18,7 +18,7 @@ use catallax_features::draft::{
 };
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, FaceRef, Operation, Origin, Recipe, StepId};
-use catallax_shapes::{Cylinder, Isometry, Plane, Point3, Surface, Vector3};
+use catallax_shapes::{Cone, Cylinder, Isometry, Plane, Point3, Surface, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone)]
@@ -60,12 +60,28 @@ type Steps<'a> = (
     &'a BTreeMap<StepId, usize>,
     &'a BTreeMap<StepId, Vec<usize>>,
 );
-/// One subtraction's tool register and the faces it added.
-type ToolChain = (usize, Vec<usize>);
+/// One subtraction's tool register, the faces it added, and whether a recipe hole
+/// defined it.
+type ToolChain = (usize, Vec<usize>, bool);
 /// One bore inside a subtraction's tool, and the end planes of its bands.
 struct ToolBore {
     cylinder: Cylinder,
     planes: Vec<Plane>,
+    /// The leaves carrying this cylinder.
+    leaves: Vec<usize>,
+    /// The cone opening a countersunk bore.
+    head: Option<ToolHead>,
+    /// Wider bands of the same tool, each of which must stay beyond the head's cap.
+    entries: Vec<ToolBore>,
+}
+/// One conical band of a subtraction's tool.
+struct ToolHead {
+    cone: Cone,
+    planes: Vec<Plane>,
+    leaf: usize,
+    /// Whether a recipe hole defines this band and its wall from one station. Their
+    /// shared ring then needs no exact comparison with that station's plane.
+    stationed: bool,
 }
 /// One bore with its subtraction's tool register and added faces.
 type ChainBore<'a> = (usize, &'a [usize], ToolBore);
@@ -536,11 +552,13 @@ impl Plan {
     }
 
     /// Groups a tool's walls by bore. Each band is bounded only by end planes
-    /// and its cylinders, and stacked bands of one bore share a cylinder.
+    /// and its cylinders or its one cone, and stacked bands of one bore share a
+    /// cylinder.
     fn tool_bores(
         &self,
         register: usize,
         bores: &mut Vec<ToolBore>,
+        heads: &mut Vec<ToolHead>,
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
         let leaf = match self.instructions[register] {
@@ -550,12 +568,38 @@ impl Plan {
                 a,
                 b,
             } => {
-                self.tool_bores(a, bores, dec)?;
-                return self.tool_bores(b, bores, dec);
+                self.tool_bores(a, bores, heads, dec)?;
+                return self.tool_bores(b, bores, heads, dec);
             }
             _ => return Err(failure("a preserved bore needs a union of tool bands")),
         };
         let constraints = self.leaves[leaf].constraints();
+        let mut cones = constraints.iter().filter_map(|c| match c.surface() {
+            Surface::Cone(cone) => Some(cone),
+            _ => None,
+        });
+        if let Some(cone) = cones.next() {
+            let mut planes = Vec::new();
+            for constraint in constraints {
+                match constraint.surface() {
+                    Surface::Plane(plane)
+                        if geometry::sign(&plane.normal.cross(&cone.axis).norm_squared(), dec)?
+                            == Sign::Zero =>
+                    {
+                        planes.push(plane.clone());
+                    }
+                    Surface::Cone(_) if cones.next().is_none() => (),
+                    _ => return Err(failure("a preserved bore tool has an unsupported face")),
+                }
+            }
+            heads.push(ToolHead {
+                cone: cone.clone(),
+                planes,
+                leaf,
+                stationed: false,
+            });
+            return Ok(());
+        }
         let mut owners = Vec::new();
         for constraint in constraints {
             let Surface::Cylinder(band) = constraint.surface() else {
@@ -572,9 +616,15 @@ impl Plan {
                 bores.push(ToolBore {
                     cylinder: band.clone(),
                     planes: Vec::new(),
+                    leaves: Vec::new(),
+                    head: None,
+                    entries: Vec::new(),
                 });
                 bores.len() - 1
             }));
+            bores[*owners.last().expect("just pushed")]
+                .leaves
+                .push(leaf);
         }
         if owners.is_empty() {
             return Err(failure("a preserved bore tool has an unsupported face"));
@@ -599,9 +649,66 @@ impl Plan {
         Ok(())
     }
 
+    /// Reads one subtraction's tool. A tool with one cone is one countersunk bore: its
+    /// narrowest cylinder is the wall, and anything wider must be its entry.
+    fn tool_walls(
+        &self,
+        tool: usize,
+        stationed: bool,
+        dec: &mut Decider,
+    ) -> Result<Vec<ToolBore>, Refusal> {
+        let (mut bores, mut heads) = (Vec::new(), Vec::new());
+        self.tool_bores(tool, &mut bores, &mut heads, dec)?;
+        if heads.is_empty() {
+            return Ok(bores);
+        }
+        if heads.len() > 1 || bores.is_empty() {
+            return Err(failure("a preserved bore tool has an unsupported face"));
+        }
+        let mut narrowest = 0;
+        for (index, bore) in bores.iter().enumerate() {
+            let excess = &bore.cylinder.radius_sq - &bores[narrowest].cylinder.radius_sq;
+            if geometry::sign(&excess, dec)? == Sign::Negative {
+                narrowest = index;
+            }
+        }
+        let mut wall = bores.swap_remove(narrowest);
+        wall.head = heads.pop().map(|head| ToolHead { stationed, ..head });
+        wall.entries = bores;
+        Ok(vec![wall])
+    }
+
+    /// Proves a countersunk tool removes only its two bands from the source. Wider
+    /// bands lie wholly beyond the cap the cone opens on, so they bound no material.
+    fn check_head(
+        &self,
+        bore: &ToolBore,
+        head: &ToolHead,
+        skin: &Skin,
+        caps: [usize; 2],
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        let planes = skin.patches.iter().map(|patch| &patch.plane);
+        let mouth = bored::certify_head(planes, &bore.cylinder, &head.cone, caps, dec)
+            .map_err(source_refusal)?;
+        let opening = &skin.patches[mouth].plane;
+        for entry in &bore.entries {
+            for plane in &entry.planes {
+                let height = plane.origin.minus(&opening.origin).dot(&opening.normal);
+                if geometry::sign(&height, dec)? == Sign::Negative {
+                    return Err(failure("a countersink's entry reaches into its target"));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Proves the tool holds the axis over every interval between its end planes
     /// inside the caps. Bands share one wall, so the whole section is removed.
-    /// Another bore's band cannot be the witness: the bores are proved apart.
+    /// Another bore's band cannot be the witness: the bores are proved apart. Under
+    /// a head, the cone's own band holds every interval past their shared ring and a
+    /// band of the wall every interval short of it, so each height keeps its radius.
+    /// That ring is a stop, already present for a recipe hole's station.
     /// Returns one axis point per interval.
     fn check_through(
         &self,
@@ -617,8 +724,21 @@ impl Plan {
         }
         let height = |p: &Point3| p.minus(&lower).dot(&cylinder.axis);
         let mut stops = vec![lower.clone(), upper];
-        for plane in &bore.planes {
-            let stop = bored::axis_point(cylinder, plane);
+        let head_planes = bore.head.iter().flat_map(|head| &head.planes);
+        let mut bounds: Vec<_> = bore
+            .planes
+            .iter()
+            .chain(head_planes)
+            .map(|plane| bored::axis_point(cylinder, plane))
+            .collect();
+        let seam = bore
+            .head
+            .as_ref()
+            .map(|head| bored::seam(cylinder, &head.cone));
+        if bore.head.as_ref().is_some_and(|head| !head.stationed) {
+            bounds.extend(seam.clone());
+        }
+        for stop in bounds {
             let mut index = 0;
             while index < stops.len()
                 && geometry::sign(&(height(&stops[index]) - height(&stop)), dec)? == Sign::Negative
@@ -639,7 +759,27 @@ impl Plan {
                 .minus(&pair[0])
                 .scaled(&(Real::one() / Real::from_i64(2)));
             let middle = pair[0].plus(&half);
-            if self.register_location(tool, &middle, dec)? != Location::Inside {
+            let inside = |leaf: usize, dec: &mut Decider| {
+                Ok::<_, Refusal>(
+                    leaf_location(&self.leaves[leaf], &middle, dec)? == Location::Inside,
+                )
+            };
+            let held = match (&bore.head, &seam) {
+                (Some(head), Some(seam)) => {
+                    let past = middle.minus(seam).dot(&head.cone.axis);
+                    if geometry::sign(&past, dec)? == Sign::Positive {
+                        inside(head.leaf, dec)?
+                    } else {
+                        let mut held = false;
+                        for leaf in &bore.leaves {
+                            held |= inside(*leaf, dec)?;
+                        }
+                        held
+                    }
+                }
+                _ => self.register_location(tool, &middle, dec)? == Location::Inside,
+            };
+            if !held {
                 return Err(failure("a preserved bore must pass through both caps"));
             }
             middles.push(middle);
@@ -689,7 +829,11 @@ impl Plan {
                 .copied()
                 .filter(|f| faces[target].binary_search(f).is_err())
                 .collect();
-            chain.push((b, added));
+            let hole = matches!(
+                recipe.step(step).map(|s| &s.op),
+                Some(Operation::Hole { .. })
+            );
+            chain.push((b, added, hole));
             step = target;
         }
     }
@@ -765,17 +909,15 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<Vec<ChainBore<'a>>, Refusal> {
         let mut bores = Vec::new();
-        for (tool, added) in chain {
+        for (tool, added, hole) in chain {
             if refs
                 .iter()
                 .any(|r| added.iter().any(|f| r.face.matches(&self.faces[*f].origin)))
             {
                 return Err(failure("a selected bore needs a curved arrangement"));
             }
-            let mut found = Vec::new();
-            self.tool_bores(*tool, &mut found, dec)?;
             bores.extend(
-                found
+                self.tool_walls(*tool, *hole, dec)?
                     .into_iter()
                     .map(|bore| (*tool, added.as_slice(), bore)),
             );
@@ -804,6 +946,11 @@ impl Plan {
             dec,
         )
         .map_err(source_refusal)?;
+        for (.., bore) in &bores {
+            if let Some(head) = &bore.head {
+                self.check_head(bore, head, skin, caps, dec)?;
+            }
+        }
         let selected = skin.resolve_faces(refs, dec)?;
         if caps.iter().any(|cap| selected.contains(cap)) {
             return Err(failure("a selected bore cap moves the cap-hole trim"));
@@ -833,13 +980,22 @@ impl Plan {
                     walls.push(*wall);
                 }
             }
+            let head = bore.head.map(|head| PreservedHead {
+                walls: added
+                    .iter()
+                    .copied()
+                    .filter(|f| matches!(self.faces[*f].surface, Surface::Cone(_)))
+                    .collect(),
+                cone: head.cone,
+            });
             preserved.push(PreservedBore {
                 walls,
                 cylinder: bore.cylinder,
+                head,
             });
         }
         Ok(PreservedBores {
-            tools: chain.iter().map(|(tool, _)| *tool).collect(),
+            tools: chain.iter().map(|(tool, ..)| *tool).collect(),
             bores: preserved,
         })
     }
@@ -990,6 +1146,12 @@ impl Plan {
         if boss_tool.is_some() && bores.len() > 1 {
             return Ok(None);
         }
+        // A countersunk bore stands alone.
+        if (boss_tool.is_some() || bores.len() > 1)
+            && bores.iter().any(|(.., bore)| bore.head.is_some())
+        {
+            return Err(failure("a preserved bore tool has an unsupported face"));
+        }
         let skin = self.draft_source_skin(recipe, target, registers, faces, dec)?;
         if !skin.is_convex(dec)? {
             return Err(failure(if boss_tool.is_some() {
@@ -1040,6 +1202,9 @@ impl Plan {
         if let Some(preserved) = &preserved.bores {
             for bore in &preserved.bores {
                 self.preserve_faces(&bore.walls);
+                if let Some(head) = &bore.head {
+                    self.preserve_faces(&head.walls);
+                }
             }
             for tool in &preserved.tools {
                 result = self.boolean(BooleanKind::Subtract, result, *tool, dec)?;

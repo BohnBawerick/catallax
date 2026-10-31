@@ -1,0 +1,140 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "P-A",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "20",
+              "-15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-20",
+              "-15"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "20"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "base",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "right"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "left"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "0",
+        "0",
+        "1"
+      ],
+      "neutral": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "normal": [
+          "0",
+          "0",
+          "1"
+        ]
+      },
+      "angle": "3"
+    },
+    {
+      "id": "hole",
+      "op": "hole",
+      "target": "drafted",
+      "at": [
+        {
+          "id": "eccentric",
+          "point": [
+            "6",
+            "2",
+            "20"
+          ],
+          "direction": [
+            "0",
+            "0",
+            "-1"
+          ]
+        }
+      ],
+      "diameter": "4",
+      "depth": "through",
+      "tip": "flat",
+      "head": {
+        "countersink": {
+          "diameter": "8",
+          "angle": "90"
+        }
+      }
+    }
+  ],
+  "result": "hole"
+}

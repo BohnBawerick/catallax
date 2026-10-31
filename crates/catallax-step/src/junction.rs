@@ -524,8 +524,11 @@ fn torus_arcs(
     Ok(())
 }
 
-/// The plan of a ring fillet touching its mouths, or the default plan when
-/// another face needs the arbitrary-trim contract.
+/// The plan of a ring fillet touching its mouths, with every other body in the
+/// write. A scene without such a ring keeps the default plan. A face that has
+/// no seam plan beside one refuses, since dropping the plan for the whole write
+/// would lose the seams of every periodic face. That includes a later Boolean:
+/// sewing merges the contact caps back, and no file can carry the pinched plane.
 pub(crate) fn tangent_plan(
     model: &Model,
     bodies: impl Iterator<Item = BodyId> + Clone,
@@ -534,13 +537,19 @@ pub(crate) fn tangent_plan(
     let mut sources = Vec::new();
     let mut tori = Vec::new();
     let mut chains = Vec::new();
+    let mut unplanned = false;
     for face in faces(model, bodies) {
-        let band = match model.geom().surface(model.face(face).surface) {
+        let definition = model.face(face);
+        let band = match model.geom().surface(definition.surface) {
             Surface::Plane(_) => continue,
-            Surface::Torus(_) => {
-                tori.push(face);
-                torus_chain_band(model, face, dec)?
-            }
+            Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => continue,
+            Surface::Torus(_) => match torus_chain_band(model, face, dec)? {
+                Some(band) => {
+                    tori.push(face);
+                    Some(band)
+                }
+                None => band::torus_band(model, face, dec)?,
+            },
             Surface::Cylinder(_) | Surface::Cone(_) => match band::source_band(model, face, dec)? {
                 Some(band) => Some(band),
                 None => {
@@ -550,10 +559,18 @@ pub(crate) fn tangent_plan(
             },
             _ => None,
         };
-        let Some(band) = band else {
-            return Ok(Plan::default());
-        };
-        sources.push(band);
+        match band {
+            Some(band) => sources.push(band),
+            None => unplanned = true,
+        }
+    }
+    if tori.is_empty() {
+        return Ok(Plan::default());
+    }
+    if unplanned {
+        return Err(unsupported(
+            "a face written beside a tangent fillet ring has no seam plan",
+        ));
     }
     let mut plan = band::assemble(model, sources);
     for face in chains {

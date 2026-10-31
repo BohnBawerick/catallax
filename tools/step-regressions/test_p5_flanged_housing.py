@@ -347,6 +347,39 @@ class FlangedHousing(unittest.TestCase):
             self.assertEqual(faces(shape), TANGENT_FACES)
         self.assert_replays(recipe, directory, manifest)
 
+    def test_a_tangent_pattern_writes_every_seam(self):
+        recipe = radius(TANGENT_RADIUS)
+        recipe['steps'].append({'id': 'row', 'op': 'pattern', 'body': 'filleted', 'layout': {
+            'linear': {'vector': ['100', '0', '0'], 'count': 2}}})
+        recipe['result'] = 'row'
+        directory, manifest = self.run_case(recipe, APPLICATION)
+        self.assertEqual(manifest['status'], 'answered')
+        self.assertEqual(manifest['result']['lumps'], 2)
+        path = directory / 'answer.step'
+        self.assertEqual(len(raw_shapes(path)), 2)
+        for shape in raw_shapes(path):
+            self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
+            self.assertEqual(faces(shape), TANGENT_FACES)
+            self.assertAlmostEqual(integrated(shape)[2], TANGENT_VOLUME, delta=1e-6)
+        found = solids(ordinary_shape(path))
+        self.assertEqual(len(found), 2)
+        for solid in found:
+            self.assertTrue(BRepCheck_Analyzer(solid).IsValid())
+
+    def test_a_later_boolean_refuses_the_pinched_plane(self):
+        """Sewing merges the contact caps back, and no raw-valid file holds that plane."""
+        recipe = radius(TANGENT_RADIUS)
+        recipe['steps'] += [
+            {'id': 'ball', 'op': 'sphere', 'radius': '3',
+             'pose': {'rotation': ['1', '0', '0', '0'], 'translation': ['100', '0', '0']}},
+            {'id': 'joined', 'op': 'boolean', 'kind': 'union', 'target': 'filleted',
+             'tool': 'ball'}]
+        recipe['result'] = 'joined'
+        directory, manifest = self.run_case(recipe, APPLICATION)
+        self.assertEqual(manifest['status'], 'refused')
+        self.assertEqual(manifest['refusal']['code'], 'step.unsupported-geometry')
+        self.assertFalse((directory / 'answer.step').exists())
+
     def test_uncovered_strata_keep_their_refusals(self):
         rows = (
             ('too-large', radius('7/2'), 'shapes.rolling-envelope'),

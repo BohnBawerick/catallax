@@ -466,7 +466,7 @@ pub(crate) fn source_ring(
 // The band of a torus between a tube-side parallel at a quarter turn and its
 // innermost parallel, as a concave ring fillet leaves it. The tube angle of a
 // ring is an exact quarter turn; any other parallel keeps the unseamed encoder.
-fn torus_band(
+pub(crate) fn torus_band(
     model: &Model,
     face: FaceId,
     dec: &mut Decider,

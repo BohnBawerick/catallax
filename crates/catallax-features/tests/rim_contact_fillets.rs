@@ -1155,3 +1155,53 @@ fn a_rail_touching_every_mouth_keeps_one_exact_torus() {
         }
     }
 }
+
+// The tangent housing with a far sphere and a far separated housing beside it.
+fn with_separate_bodies() -> Value {
+    let mut recipe = with_radius("1");
+    let mut far = translated([100, 0, 0]);
+    step(&mut far, "filleted")["radius"] = json!("1/2");
+    let mut steps = far["steps"].to_string();
+    for id in [
+        "section",
+        "housing",
+        "drill",
+        "sink",
+        "countersink",
+        "hole-pattern",
+        "drilled",
+        "filleted",
+    ] {
+        steps = steps.replace(&format!("\"{id}\""), &format!("\"far-{id}\""));
+    }
+    let list = recipe["steps"].as_array_mut().unwrap();
+    list.extend(serde_json::from_str::<Vec<Value>>(&steps).unwrap());
+    list.push(json!({
+        "id": "ball",
+        "op": "sphere",
+        "radius": "3",
+        "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "100"]},
+    }));
+    recipe
+}
+
+#[test]
+fn every_body_written_beside_a_tangent_ring_keeps_its_seams() {
+    let built = evaluate(&parsed(&with_separate_bodies()), &mut decider()).unwrap();
+    // Seven cylinders, four cones and the torus of each housing carry one seam.
+    for (other, seams) in [("ball", 12), ("far-filleted", 24)] {
+        let body = built.bodies[&StepId::new(other).unwrap()];
+        let mut file = Vec::new();
+        catallax_step::write_step(
+            &built.model,
+            &[built.result, body],
+            &Default::default(),
+            &mut decider(),
+            &mut file,
+        )
+        .unwrap();
+        let file = String::from_utf8(file).unwrap();
+        assert_eq!(file.matches("SEAM_CURVE").count(), seams, "{other}");
+        assert_eq!(file.matches("MANIFOLD_SOLID_BREP").count(), 2, "{other}");
+    }
+}

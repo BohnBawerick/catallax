@@ -10,7 +10,8 @@
 //! Only this stratum is covered: one closed concave circular ring between a
 //! plane and a perpendicular cylinder, with every intruding face either a
 //! touched coaxial-parallel countersink cone below the plane or a face whose
-//! finite bounds lie strictly below it. Anything else keeps refusing.
+//! finite extent along the axis lies strictly below it or above the ball.
+//! Anything else keeps refusing.
 
 use std::collections::BTreeMap;
 
@@ -207,7 +208,8 @@ pub(crate) fn build(
         }
     }
     // Every other face must be clear of the strip: separated whole supports,
-    // or finite bounds strictly on the material side of the plane.
+    // or finite extent strictly on the material side of the plane or beyond
+    // the top of the ball.
     for face in model.faces_of_body(body) {
         if face == plane_face || face == cylinder_face || touched_faces.contains(&face) {
             continue;
@@ -227,7 +229,9 @@ pub(crate) fn build(
         {
             continue;
         }
-        if !below_plane(model, face, &origin, &axis, true, dec)? {
+        if !above_ball(model, face, &origin, &axis, &radius, dec)?
+            && !below_plane(model, face, &origin, &axis, true, dec)?
+        {
             return Ok(None);
         }
     }
@@ -697,8 +701,31 @@ pub(crate) fn build(
     Ok(Some(output))
 }
 
-// Whether a face's finite bounds lie on the material side of the plane,
-// strictly or touching it.
+// Whether a face's finite extent lies strictly beyond the highest point of the
+// ball, whose diameter stands on the plane.
+fn above_ball(
+    model: &Model,
+    face: FaceId,
+    origin: &Point3,
+    axis: &Vector3,
+    radius: &Real,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let Some(heights) = catallax_measure::face_heights(model, face, origin, axis, dec)? else {
+        return Ok(false);
+    };
+    let top = radius + radius;
+    for height in &heights {
+        if !positive(&(height - &top), dec)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+// Whether a face lies on the material side of the plane, strictly or touching
+// it. The face's own heights answer in any placement; the world box is the
+// fallback for faces without closed-form heights, or whose arcs they overstate.
 fn below_plane(
     model: &Model,
     face: FaceId,
@@ -707,6 +734,16 @@ fn below_plane(
     strict: bool,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
+    if let Some(heights) = catallax_measure::face_heights(model, face, origin, axis, dec)? {
+        let mut below = true;
+        for height in &heights {
+            let side = sign(height, dec)?;
+            below &= side == Sign::Negative || (!strict && side == Sign::Zero);
+        }
+        if below {
+            return Ok(true);
+        }
+    }
     let bounds = catallax_measure::face_bounding_box(
         model,
         face,

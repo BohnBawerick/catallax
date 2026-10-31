@@ -15,6 +15,7 @@ use catallax_shapes::{Point3, PointDef, Surface, Torus, TorusSheet, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod height;
 mod spline;
 
 /// An inclusive axis-aligned box containing the exact geometry, in model coordinates.
@@ -644,3 +645,4 @@ pub(crate) fn face(
     let mut query = Query::new(model, None, accuracy, dec)?;
     Ok(query.face(face, dec)?.finish(accuracy))
 }
+pub(crate) use height::face as face_heights;

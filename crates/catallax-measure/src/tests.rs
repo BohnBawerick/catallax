@@ -1,6 +1,7 @@
 use super::*;
-use catallax_numbers::BudgetPolicy;
+use catallax_numbers::{BudgetPolicy, Outcome};
 use catallax_shapes::{Pose, RPoint3, RVector3, Rotation};
+use std::collections::BTreeSet;
 
 fn r(n: i64) -> Rational {
     Rational::from_i64(n)
@@ -1172,6 +1173,81 @@ fn trimmed_boxes_include_only_exactly_admitted_axis_extrema() {
             bounds.max[i]
         );
     }
+}
+
+#[test]
+fn face_heights_follow_the_face_in_any_placement() {
+    // A frustum of radii 4 and 2 and height 2 about an oblique rational axis.
+    let rotation = Rotation::from_quaternion(r(1), r(2), r(3), r(4)).unwrap();
+    let pose = Pose::from_rational(rotation, vector(7, 11, -13));
+    let mut model = Model::new();
+    let body = catallax_topology::cone(&mut model, r(4), r(2), r(2), &pose).unwrap();
+    let fifteenths = |x, y, z| {
+        let part = |n| Real::from_rational(Rational::from_ratio(n, 15).unwrap());
+        Vector3::new(part(x), part(y), part(z))
+    };
+    let (axis, across) = (fifteenths(11, 10, 2), fifteenths(-10, 10, 5));
+    let origin = Point3::new(Real::from_i64(7), Real::from_i64(11), Real::from_i64(-13));
+    let mut dec = Decider::default();
+    let exact = |heights: &[Real], dec: &mut Decider| {
+        let mut values = BTreeSet::new();
+        for height in heights {
+            let value = [-4, -2, 0, 2, 4].into_iter().find(|candidate| {
+                matches!(
+                    dec.sign(&(height - &Real::from_i64(*candidate))),
+                    Outcome::ProvenCoincident(_)
+                )
+            });
+            values.insert(value.expect("an exact height"));
+        }
+        values.into_iter().collect::<Vec<_>>()
+    };
+    let mut along = Vec::new();
+    let mut sideways = Vec::new();
+    let mut box_reach = false;
+    for face in model.faces_of_body(body) {
+        let height = |d: &Vector3, dec: &mut Decider| face_heights(&model, face, &origin, d, dec);
+        along.push(exact(&height(&axis, &mut dec).unwrap().unwrap(), &mut dec));
+        sideways.push(exact(
+            &height(&across, &mut dec).unwrap().unwrap(),
+            &mut dec,
+        ));
+        // Every height is at most 2, yet a world box has corners above that.
+        let bounds = face_bounding_box(&model, face, &Accuracy::default(), &mut dec)
+            .unwrap()
+            .value;
+        for corner in 0..8 {
+            let pick = |i: usize| {
+                Real::from_rational(if corner & (1 << i) == 0 {
+                    bounds.min[i].clone()
+                } else {
+                    bounds.max[i].clone()
+                })
+            };
+            let top = Point3::new(pick(0), pick(1), pick(2))
+                .minus(&origin)
+                .dot(&axis);
+            box_reach |= matches!(
+                dec.sign(&(top - Real::from_i64(2))),
+                Outcome::Proven(catallax_numbers::StrictSign::Positive)
+            );
+        }
+    }
+    along.sort();
+    sideways.sort();
+    assert_eq!(along, [vec![0], vec![0, 2], vec![2]]);
+    assert_eq!(sideways, [vec![-4, -2, 2, 4], vec![-4, 4], vec![-2, 2]]);
+    assert!(box_reach);
+
+    // A sphere has an interior extreme, so it has no boundary heights.
+    let mut model = Model::new();
+    let sphere = catallax_topology::sphere(&mut model, r(5), &Pose::identity()).unwrap();
+    let face = model.faces_of_body(sphere)[0];
+    assert!(
+        face_heights(&model, face, &origin, &axis, &mut dec)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]

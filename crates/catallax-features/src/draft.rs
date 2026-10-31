@@ -14,7 +14,7 @@ pub mod annular;
 /// Oriented multi-cell planar support arrangements and patch provenance.
 #[path = "draft_arrangement.rs"]
 pub mod arrangement;
-/// One unchanged bore strictly inside a convex planar draft envelope.
+/// Unchanged bores strictly inside a convex planar draft envelope.
 #[path = "draft_bored.rs"]
 pub mod bored;
 /// Exact cylindrical cells with independently extended planar caps.

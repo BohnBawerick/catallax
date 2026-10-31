@@ -1,0 +1,157 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "L-T",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "32",
+              "-15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "32",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-32",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-32",
+              "-15"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "20"
+    },
+    {
+      "id": "hole-left",
+      "op": "hole",
+      "target": "base",
+      "at": [
+        {
+          "id": "left",
+          "point": [
+            "-8",
+            "0",
+            "20"
+          ],
+          "direction": [
+            "0",
+            "0",
+            "-1"
+          ]
+        }
+      ],
+      "diameter": "6",
+      "depth": "through",
+      "tip": "flat"
+    },
+    {
+      "id": "hole-right",
+      "op": "hole",
+      "target": "hole-left",
+      "at": [
+        {
+          "id": "right",
+          "point": [
+            "8",
+            "0",
+            "20"
+          ],
+          "direction": [
+            "0",
+            "0",
+            "-1"
+          ]
+        }
+      ],
+      "diameter": "8",
+      "depth": "through",
+      "tip": "flat"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "hole-right",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "right"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "left"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "0",
+        "0",
+        "1"
+      ],
+      "neutral": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "normal": [
+          "0",
+          "0",
+          "1"
+        ]
+      },
+      "angle": "45"
+    }
+  ],
+  "result": "drafted"
+}

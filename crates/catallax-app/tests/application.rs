@@ -782,3 +782,23 @@ fn p3_fillet_faces_are_pickable_watertight_and_named_after_radius_edit() {
         }
     }
 }
+
+#[test]
+fn a_part_drafted_around_two_bores_displays_eight_named_regions() {
+    let recipe = catallax_recipe::Recipe::parse(include_str!(
+        "../../catallax-features/tests/fixtures/draft-preserved-bore/L-N.json"
+    ))
+    .unwrap();
+    let (body, _) = catallax_numbers::with_operation_budget(20_000_000, || {
+        catallax_app::build(&recipe, &MeshOptions::default(), &mut Decider::default())
+    });
+    let body = body.unwrap();
+    let mesh = &body.display.value;
+    assert!(mesh.unavailable_controls.is_empty());
+    let regions: std::collections::BTreeSet<_> = mesh.triangles.iter().map(|t| t.face).collect();
+    let names: std::collections::BTreeSet<_> = regions
+        .iter()
+        .flat_map(|face| body.names.faces[face].iter())
+        .collect();
+    assert_eq!((regions.len(), names.len()), (8, 8), "{names:?}");
+}

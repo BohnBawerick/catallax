@@ -18,11 +18,16 @@ use std::collections::BTreeSet;
 #[path = "draft_annular.rs"]
 mod annular;
 
-/// The recipe's bore tool, removed again after its target is drafted.
+/// One bore a recipe tool removes, kept unchanged by the draft.
 pub(crate) struct PreservedBore {
-    pub(crate) register: usize,
     pub(crate) walls: Vec<usize>,
     pub(crate) cylinder: Cylinder,
+}
+
+/// The recipe's bore tools, removed again after their target is drafted.
+pub(crate) struct PreservedBores {
+    pub(crate) tools: Vec<usize>,
+    pub(crate) bores: Vec<PreservedBore>,
 }
 
 #[derive(Clone, Debug)]
@@ -1193,7 +1198,7 @@ impl Plan {
         ),
         refs: &[FaceRef],
         definition: &DraftDefinition,
-        (keep_regions, bore): (Option<&[catallax_recipe::Point3]>, Option<&PreservedBore>),
+        (keep_regions, preserved): (Option<&[catallax_recipe::Point3]>, Option<&PreservedBores>),
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
@@ -1257,15 +1262,16 @@ impl Plan {
             definition,
             dec,
         )?;
-        if let Some(bore) = bore {
+        if let Some(preserved) = preserved {
             let [Candidate::Region(Cell::Planar(cell))] = components.as_slice() else {
                 return Err(crate::draft_source::failure(
                     "a preserved bore needs a convex planar envelope",
                 ));
             };
-            bored::certify_clear(
+            let cylinders: Vec<_> = preserved.bores.iter().map(|b| &b.cylinder).collect();
+            bored::certify_bores(
                 cell.supports.iter().map(|support| &support.plane),
-                &bore.cylinder,
+                &cylinders,
                 dec,
             )
             .map_err(crate::draft_source::source_refusal)?;
@@ -1275,13 +1281,13 @@ impl Plan {
             for p in points {
                 let [x, y, z] = p.0.each_ref().map(|n| n.value().clone().into());
                 let point = Point3::new(x, y, z);
-                if let Some(bore) = bore
-                    && self.register_location(bore.register, &point, dec)? != Location::Outside
-                {
-                    return Err(Refusal::new(
-                        "draft.invalid-keep-region",
-                        "saved region point is on a boundary or outside all candidate material",
-                    ));
+                for tool in preserved.iter().flat_map(|p| &p.tools) {
+                    if self.register_location(*tool, &point, dec)? != Location::Outside {
+                        return Err(Refusal::new(
+                            "draft.invalid-keep-region",
+                            "saved region point is on a boundary or outside all candidate material",
+                        ));
+                    }
                 }
                 let mut found = false;
                 for (i, cell) in components.iter().enumerate() {
@@ -1375,11 +1381,11 @@ impl Plan {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        // The wall survives with any retained material. It is one physical face.
-        if let Some(bore) = bore
+        // Walls survive with any retained material. Each is one physical face.
+        if let Some(preserved) = preserved
             && result == 0
         {
-            physical_sources.push(bore.walls.clone());
+            physical_sources.extend(preserved.bores.iter().map(|bore| bore.walls.clone()));
         }
         for group in physical_sources {
             if !group

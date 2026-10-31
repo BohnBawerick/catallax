@@ -1,0 +1,163 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "L-B",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "20",
+              "-15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-20",
+              "-15"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "20"
+    },
+    {
+      "id": "tool-left",
+      "op": "cylinder",
+      "radius": "3",
+      "height": "22",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "-8",
+          "0",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "hole-left",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "base",
+      "tool": "tool-left"
+    },
+    {
+      "id": "tool-right",
+      "op": "cylinder",
+      "radius": "4",
+      "height": "22",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "8",
+          "0",
+          "-1"
+        ]
+      }
+    },
+    {
+      "id": "hole-right",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "hole-left",
+      "tool": "tool-right"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "hole-right",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "right"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "left"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "0",
+        "0",
+        "1"
+      ],
+      "neutral": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "normal": [
+          "0",
+          "0",
+          "1"
+        ]
+      },
+      "angle": "5"
+    }
+  ],
+  "result": "drafted"
+}

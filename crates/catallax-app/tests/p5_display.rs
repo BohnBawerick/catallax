@@ -253,7 +253,7 @@ fn the_tangent_junction_displays_one_closed_mesh() {
             .positions
             .iter()
             .enumerate()
-            .filter(|(_, p)| **p == contact)
+            .filter(|(_, p)| p.iter().zip(contact).all(|(a, b)| (a - b).abs() < 1e-9))
             .map(|(i, _)| i)
             .collect();
         let [vertex] = found[..] else {

@@ -4,7 +4,7 @@ use crate::draft::{
     DraftDefinition,
     annular::{AnnularCell, AnnularWall},
     arrangement::{Patch, Polyhedron, Skin},
-    bored::{self, Bore, BoredCell},
+    bored::{self, Bore, BoredCell, Head},
     bossed::{self, Boss, BossedCell},
     capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
@@ -40,10 +40,19 @@ struct BoreRing {
     cap: FaceId,
 }
 
-/// One inward bore wall and the two rings that trim it.
+/// The cone that opens a bore, and the ring it shares with the bore's wall. In `seam`,
+/// the wall's sense is the bore wall's and the cap's sense is the cone's.
+struct SourceHead {
+    face: FaceId,
+    seam: BoreRing,
+}
+
+/// One inward bore wall and the two rings that trim it. Under a head, the ring on
+/// the head's cap belongs to the cone, and `head.seam` trims this wall instead.
 struct SourceBore {
     wall: FaceId,
     rings: [BoreRing; 2],
+    head: Option<SourceHead>,
 }
 
 /// A planar envelope's source wires and its unselected bore walls.
@@ -53,11 +62,19 @@ struct BoredSource {
     bores: Vec<SourceBore>,
 }
 
+/// A preserved cone's sense, the cap holding its mouth ring, and its shared ring.
+struct BoundHead {
+    sense: Sense,
+    mouth: FaceId,
+    seam: BoreRing,
+}
+
 /// One preserved wall's sense, and its rings bound to their cap supports. `None`
 /// binds a ring to the boss's end, which no support of the base carries.
 struct BoundBore {
     rings: [(BoreRing, Option<usize>); 2],
     sense: Sense,
+    head: Option<BoundHead>,
 }
 
 /// A planar base's source wires around one outward wall. The wall and top are
@@ -133,6 +150,11 @@ impl Cell {
                     cell.bores
                         .iter()
                         .flat_map(|bore| bore.origins.iter().cloned()),
+                )
+                .chain(
+                    cell.head
+                        .iter()
+                        .flat_map(|(head, _)| head.origins.iter().cloned()),
                 )
                 .collect(),
             Self::Bossed(cell, ..) => Self::Planar(cell.outer.clone())
@@ -834,9 +856,13 @@ fn planar(
     })
 }
 
-/// A wall's two complete rings, each with the one planar loop that shares it.
+/// A wall's two complete rings, each with the one neighbouring loop that shares it.
 /// `None` when the wall has any other boundary.
-fn wall_rings(model: &Model, wall: FaceId, planes: &[FaceId]) -> Option<[(BoreRing, LoopId); 2]> {
+fn wall_rings(
+    model: &Model,
+    wall: FaceId,
+    neighbours: &[FaceId],
+) -> Option<[(BoreRing, LoopId); 2]> {
     let mut rings = Vec::with_capacity(2);
     for lp in &model.face(wall).loops {
         let Loop::Coedges(cs) = model.loop_(*lp) else {
@@ -851,7 +877,7 @@ fn wall_rings(model: &Model, wall: FaceId, planes: &[FaceId]) -> Option<[(BoreRi
         if edge.start.is_some() || edge.end.is_some() || !matches!(curve, Curve::Circle(_)) {
             return None;
         }
-        let mut uses = planes.iter().flat_map(|face| {
+        let mut uses = neighbours.iter().flat_map(|face| {
             model
                 .face(*face)
                 .loops
@@ -883,8 +909,39 @@ fn wall_rings(model: &Model, wall: FaceId, planes: &[FaceId]) -> Option<[(BoreRi
     rings.try_into().ok()
 }
 
+/// Reads one inward cone and wall that share a ring and each end on a plane, as the
+/// wall's rings on those planes and its head. Any other chain returns `None`.
+fn countersunk_rings(
+    model: &Model,
+    wall: FaceId,
+    cone: FaceId,
+    planes: &[FaceId],
+) -> Option<([(BoreRing, LoopId); 2], SourceHead)> {
+    let beside = |other: FaceId| [planes, &[other]].concat();
+    let [a, b] = wall_rings(model, wall, &beside(cone))?;
+    let [c, d] = wall_rings(model, cone, &beside(wall))?;
+    let (seam, far) = match (a.0.cap == cone, b.0.cap == cone) {
+        (true, false) => (a, b),
+        (false, true) => (b, a),
+        _ => return None,
+    };
+    let mouth = match (c.0.cap == wall, d.0.cap == wall) {
+        (true, false) => d,
+        (false, true) => c,
+        _ => return None,
+    };
+    Some((
+        [far, mouth],
+        SourceHead {
+            face: cone,
+            seam: seam.0,
+        },
+    ))
+}
+
 /// Recognises planar faces around inward walls, each trimmed by two complete
-/// rings. Any other shape returns `None`, keeping its established route.
+/// rings, or around one wall opened by one inward cone through a shared ring. Any
+/// other shape returns `None`, keeping its established route.
 fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, Refusal> {
     let unsupported = || {
         Refusal::new(
@@ -893,23 +950,34 @@ fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, 
         )
     };
     let mut walls = Vec::new();
+    let mut cones = Vec::new();
     let mut planes = Vec::new();
     for face in faces {
+        let inward = model.face(*face).sense == Sense::Reversed;
         match model.geom().surface(model.face(*face).surface) {
-            Surface::Cylinder(_) if model.face(*face).sense == Sense::Reversed => walls.push(*face),
+            Surface::Cylinder(_) if inward => walls.push(*face),
+            Surface::Cone(_) if inward => cones.push(*face),
             Surface::Plane(_) => planes.push(*face),
             _ => return Ok(None),
         }
     }
-    if walls.is_empty() {
+    if walls.is_empty() || (!cones.is_empty() && (walls.len(), cones.len()) != (1, 1)) {
         return Ok(None);
     }
     let mut holes = BTreeSet::new();
     let mut caps = BTreeSet::new();
     let mut bores = Vec::with_capacity(walls.len());
     for wall in walls {
-        let [(a, a_hole), (b, b_hole)] =
-            wall_rings(model, wall, &planes).ok_or_else(unsupported)?;
+        let ([(a, a_hole), (b, b_hole)], head) = match cones.first() {
+            Some(cone) => match countersunk_rings(model, wall, *cone, &planes) {
+                Some((rings, head)) => (rings, Some(head)),
+                None => return Ok(None),
+            },
+            None => (
+                wall_rings(model, wall, &planes).ok_or_else(unsupported)?,
+                None,
+            ),
+        };
         if a.cap == b.cap {
             return Err(unsupported());
         }
@@ -918,6 +986,7 @@ fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, 
         bores.push(SourceBore {
             wall,
             rings: [a, b],
+            head,
         });
     }
     // A blind floor or a shoulder has only rings. Every bore needs the same two
@@ -1001,6 +1070,7 @@ fn bossed_source(model: &Model, faces: &[FaceId]) -> Result<Option<BossedSource>
         bores.push(SourceBore {
             wall: bore,
             rings: [c, d],
+            head: None,
         });
     }
     planes.retain(|face| *face != top.cap);
@@ -1013,6 +1083,27 @@ fn bossed_source(model: &Model, faces: &[FaceId]) -> Result<Option<BossedSource>
         bores,
         through,
     }))
+}
+
+/// The unchanged definition of an unselected source cone.
+fn preserved_head(model: &Model, source: &SourceHead, refs: &[FaceRef]) -> Result<Head, Refusal> {
+    let origins = model.face_origins(source.face).to_vec();
+    if refs
+        .iter()
+        .any(|r| origins.iter().any(|origin| r.face.matches(origin)))
+    {
+        return Err(Refusal::new(
+            "draft.unsupported-arrangement",
+            "a selected countersink needs a curved arrangement",
+        ));
+    }
+    let Surface::Cone(cone) = model.geom().surface(model.face(source.face).surface) else {
+        unreachable!("source heads keep a conical wall")
+    };
+    Ok(Head {
+        cone: cone.clone(),
+        origins,
+    })
 }
 
 /// The unchanged definitions of unselected source bores.
@@ -1079,9 +1170,23 @@ fn bind_bores(
         if rings[0].1 == rings[1].1 || !rings.iter().all(held) {
             return Err(lost());
         }
+        let head = bore.head.as_ref().map(|head| BoundHead {
+            sense: model.face(head.face).sense,
+            mouth: bore.rings[1].cap,
+            seam: head.seam.clone(),
+        });
+        // The definition's mouth and the shared ring's topology must name one cap.
+        if let (Some(head), Some((_, mouth))) = (&head, &cell.head)
+            && !rings
+                .iter()
+                .any(|(ring, support)| ring.cap == head.mouth && *support == Some(*mouth))
+        {
+            return Err(lost());
+        }
         bound.push(BoundBore {
             rings,
             sense: model.face(bore.wall).sense,
+            head,
         });
     }
     Ok(bound)
@@ -1096,7 +1201,13 @@ fn bored_cell(
     dec: &mut Decider,
 ) -> Result<(BTreeSet<FaceId>, Cell), Refusal> {
     let unsupported = |detail| Refusal::new("draft.unsupported-arrangement", detail);
-    let bores = preserved_bores(model, &source.bores, refs)?;
+    let mut bores = preserved_bores(model, &source.bores, refs)?;
+    let heads = source
+        .bores
+        .iter()
+        .filter_map(|bore| bore.head.as_ref())
+        .map(|head| preserved_head(model, head, refs))
+        .collect::<Result<Vec<_>, _>>()?;
     let selected = source.skin.resolve_faces(refs, dec)?;
     let chosen = selected.iter().map(|i| source.planes[*i]).collect();
     if !source.skin.is_convex(dec)? {
@@ -1104,17 +1215,23 @@ fn bored_cell(
             "a preserved bore needs a convex planar envelope",
         ));
     }
+    let planes = source.skin.patches.iter().map(|patch| &patch.plane);
     let cylinders: Vec<_> = bores.iter().map(|bore| &bore.cylinder).collect();
-    let caps = bored::certify_bores(
-        source.skin.patches.iter().map(|patch| &patch.plane),
-        &cylinders,
-        dec,
-    )?;
+    let caps = bored::certify_bores(planes.clone(), &cylinders, dec)?;
+    if let [head] = heads.as_slice() {
+        bored::certify_head(planes, cylinders[0], &head.cone, caps, dec)?;
+    }
     if caps.iter().any(|cap| selected.contains(cap)) {
         return Err(unsupported("a selected bore cap moves the cap-hole trim"));
     }
     let outer = convex_cell(&source.skin, &selected, definition, dec)?;
-    let cell = BoredCell::new(outer, bores, definition, dec)?;
+    let cell = match heads.into_iter().next() {
+        Some(head) => {
+            let bore = bores.pop().expect("a head opens the source's only bore");
+            BoredCell::countersunk(outer, bore, head, definition, dec)?
+        }
+        None => BoredCell::new(outer, bores, definition, dec)?,
+    };
     let bound = bind_bores(model, &source.bores, &cell, None)?;
     Ok((chosen, Cell::Bored(Box::new(cell), bound)))
 }
@@ -1219,20 +1336,30 @@ fn ring_edge(model: &mut Model, ring: &BoreRing) -> EdgeId {
     })
 }
 
-/// Each bore's wall, and its rings as holes in the two caps.
+/// Each bore's wall, its rings as holes in the two caps, and any cone between the
+/// wall and one of them, joined to the wall by one shared ring.
 fn bore_faces(
     model: &mut Model,
     bores: &[Bore],
+    head: Option<&Head>,
     bound: &[BoundBore],
 ) -> (Vec<HolePath>, Vec<WallFace>) {
     let mut holes = Vec::with_capacity(2 * bound.len());
-    let mut walls = Vec::with_capacity(bound.len());
+    let mut walls = Vec::with_capacity(bound.len() + 1);
     for (bore, bound) in bores.iter().zip(bound) {
         let mut paths = Vec::with_capacity(2);
+        let mut cone_paths = Vec::with_capacity(2);
         for (ring, support) in &bound.rings {
             let edge = ring_edge(model, ring);
             holes.push((*support, vec![(edge, ring.cap_sense)]));
-            paths.push(vec![(edge, ring.wall_sense)]);
+            let opened = bound.head.as_ref().is_some_and(|h| h.mouth == ring.cap);
+            let path = if opened { &mut cone_paths } else { &mut paths };
+            path.push(vec![(edge, ring.wall_sense)]);
+        }
+        if let Some(BoundHead { seam, .. }) = &bound.head {
+            let edge = ring_edge(model, seam);
+            paths.push(vec![(edge, seam.wall_sense)]);
+            cone_paths.push(vec![(edge, seam.cap_sense)]);
         }
         walls.push((
             Surface::Cylinder(bore.cylinder.clone()),
@@ -1240,6 +1367,14 @@ fn bore_faces(
             paths,
             bore.origins.clone(),
         ));
+        if let (Some(head), Some(bound)) = (head, &bound.head) {
+            walls.push((
+                Surface::Cone(head.cone.clone()),
+                bound.sense,
+                cone_paths,
+                head.origins.clone(),
+            ));
+        }
     }
     (holes, walls)
 }
@@ -1254,7 +1389,7 @@ fn assemble_bossed(
     let [shoulder, end] = rings;
     let boss = &cell.boss;
     let bores = cell.bored.as_ref().map_or(&[][..], |bored| &bored.bores);
-    let (mut holes, bore_walls) = bore_faces(model, bores, bound);
+    let (mut holes, bore_walls) = bore_faces(model, bores, None, bound);
     let mut wires = vec![vec![(upper, end.cap_sense)]];
     wires.extend(
         holes
@@ -1285,7 +1420,8 @@ fn assemble_bossed(
 }
 
 fn assemble_bored(model: &mut Model, cell: &BoredCell, bound: &[BoundBore]) -> BodyId {
-    let (holes, walls) = bore_faces(model, &cell.bores, bound);
+    let head = cell.head.as_ref().map(|(head, _)| head);
+    let (holes, walls) = bore_faces(model, &cell.bores, head, bound);
     assemble(model, &cell.outer, &holes, walls)
 }
 

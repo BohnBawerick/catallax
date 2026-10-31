@@ -215,6 +215,20 @@ no disk remains across the joint. A bore older than the boss stops under it, so 
 must still pass the separation proof, and a contact or crossing of the two walls
 refuses.
 
+One countersunk through hole, alone, stays too. Its tool holds one cone, and the
+narrowest cylinder is the hole's wall. Any wider band must lie wholly beyond the cap
+the cone opens on, as a hole's entry does, so it bounds no source material. The cone
+must be coaxial with the wall, and their shared ring must lie strictly between the
+caps. The wall's rings pass the ordinary clearance, and the wider mouth ring then
+passes the same exact test against every other plane of both the source and the
+drafted envelope. Each radius is affine along its band, so those rings cover both
+bands, and the cone's extension past either ring bounds nothing. Past the shared
+ring the cone's own band must hold the axis up to the cap, and short of it a band
+of the wall must. A recipe hole defines both bands from one station, so that station
+is the shared ring. A tool built by Booleans has no such definition, so its ring is
+compared exactly with its bands' ends, and a ledge refuses. The tool then cuts the
+drafted target as it did in the recipe, and the wall and cone keep their names.
+
 Drafted planar caps can extend and trim an unchanged cylindrical side. Their
 heights are affine over the exact radial disk; nonnegative thickness clips its
 footprint. Cap intersections are native circles or ellipses, with an exact chord

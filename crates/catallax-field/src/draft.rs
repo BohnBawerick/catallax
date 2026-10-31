@@ -13,16 +13,23 @@ use catallax_features::draft::{
 };
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{FaceRef, Origin, StepId};
-use catallax_shapes::{Cylinder, Isometry, Plane, Point3, RPoint3, Surface, Vector3};
+use catallax_shapes::{Cone, Cylinder, Isometry, Plane, Point3, RPoint3, Surface, Vector3};
 use std::collections::BTreeSet;
 
 #[path = "draft_annular.rs"]
 mod annular;
 
+/// The cone a recipe tool removes with its bore, kept unchanged by the draft.
+pub(crate) struct PreservedHead {
+    pub(crate) walls: Vec<usize>,
+    pub(crate) cone: Cone,
+}
+
 /// One bore a recipe tool removes, kept unchanged by the draft.
 pub(crate) struct PreservedBore {
     pub(crate) walls: Vec<usize>,
     pub(crate) cylinder: Cylinder,
+    pub(crate) head: Option<PreservedHead>,
 }
 
 /// The recipe's bore tools, removed again after their target is drafted.
@@ -1294,13 +1301,23 @@ impl Plan {
             let bores = preserved.bores.iter().flat_map(|bores| &bores.bores);
             match &preserved.boss {
                 None => {
-                    let cylinders: Vec<_> = bores.map(|bore| &bore.cylinder).collect();
-                    bored::certify_bores(
-                        cell.supports.iter().map(|support| &support.plane),
-                        &cylinders,
-                        dec,
-                    )
-                    .map_err(crate::draft_source::source_refusal)?;
+                    let bores: Vec<_> = bores.collect();
+                    let cylinders: Vec<_> = bores.iter().map(|bore| &bore.cylinder).collect();
+                    let planes = cell.supports.iter().map(|support| &support.plane);
+                    let caps = bored::certify_bores(planes.clone(), &cylinders, dec)
+                        .map_err(crate::draft_source::source_refusal)?;
+                    for bore in bores {
+                        if let Some(head) = &bore.head {
+                            bored::certify_head(
+                                planes.clone(),
+                                &bore.cylinder,
+                                &head.cone,
+                                caps,
+                                dec,
+                            )
+                            .map_err(crate::draft_source::source_refusal)?;
+                        }
+                    }
                 }
                 Some(boss) => {
                     let bores = bores
@@ -1442,6 +1459,8 @@ impl Plan {
         if result == 0 {
             if let Some(bores) = preserved.and_then(|preserved| preserved.bores.as_ref()) {
                 physical_sources.extend(bores.bores.iter().map(|bore| bore.walls.clone()));
+                let heads = bores.bores.iter().flat_map(|bore| &bore.head);
+                physical_sources.extend(heads.map(|head| head.walls.clone()));
             }
             if let Some(boss) = preserved.and_then(|preserved| preserved.boss.as_ref()) {
                 physical_sources.extend([boss.wall.clone(), boss.top.clone()]);

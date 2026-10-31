@@ -187,6 +187,16 @@ faces and exact leaves, and each unchanged wall keeps its name. A contact, a
 crossing, a selected bore or cap, an oblique neutral plane and any other curved
 source remain unsupported.
 
+A union of a convex planar target and one complete cylinder standing on one of its
+caps drafts the target and unites the same tool again. The tool's end must lie on
+the cap and its axis along pull. The disk it stands on must stay strictly inside
+every other halfspace of the source and drafted envelopes, at the cap only: a
+convex envelope lies below its cap, so a drafted plane's extension above the cap
+bounds nothing and may cross the boss. The joined disk stays interior, the named
+cap stops at it and the wall and end keep their names. A contact, a crossing, a
+selected wall, end or cap and an oblique neutral plane remain unsupported, and so
+does a tool sunk into the target, although the B-rep sees only its ring and answers.
+
 Drafted planar caps can extend and trim an unchanged cylindrical side. Their
 heights are affine over the exact radial disk; nonnegative thickness clips its
 footprint. Cap intersections are native circles or ellipses, with an exact chord

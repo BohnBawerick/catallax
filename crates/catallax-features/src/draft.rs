@@ -17,6 +17,9 @@ pub mod arrangement;
 /// Unchanged bores strictly inside a convex planar draft envelope.
 #[path = "draft_bored.rs"]
 pub mod bored;
+/// One unchanged raised cylinder on a stationary cap of a convex planar envelope.
+#[path = "draft_bossed.rs"]
+pub mod bossed;
 /// Exact cylindrical cells with independently extended planar caps.
 #[path = "draft_capped.rs"]
 pub mod capped;

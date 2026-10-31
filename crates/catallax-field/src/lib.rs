@@ -458,7 +458,7 @@ impl Plan {
                             angle.value(),
                             dec,
                         )?;
-                        if let Some((target, skin, preserved)) = plan.preserved_bores(
+                        if let Some((target, skin, preserved)) = plan.preserved_source(
                             recipe,
                             body,
                             faces,
@@ -474,16 +474,7 @@ impl Plan {
                                 &step.id,
                                 dec,
                             )?;
-                            if drafted != 0 {
-                                for bore in &preserved.bores {
-                                    plan.preserve_faces(&bore.walls);
-                                }
-                            }
-                            let mut result = drafted;
-                            for tool in &preserved.tools {
-                                result = plan.boolean(BooleanKind::Subtract, result, *tool, dec)?;
-                            }
-                            return Ok(Some(result));
+                            return plan.restore_preserved(drafted, &preserved, dec).map(Some);
                         }
                         let filtered_planar = faces.iter().any(|reference| {
                             !reference.touching.is_empty() || reference.near.is_some()

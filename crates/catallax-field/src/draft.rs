@@ -5,6 +5,7 @@ use catallax_features::draft::{
     DraftDefinition,
     arrangement::Polyhedron,
     bored,
+    bossed::{Boss, BossedCell},
     capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
     near,
@@ -28,6 +29,20 @@ pub(crate) struct PreservedBore {
 pub(crate) struct PreservedBores {
     pub(crate) tools: Vec<usize>,
     pub(crate) bores: Vec<PreservedBore>,
+}
+
+/// One boss a recipe tool adds, kept unchanged by the draft.
+pub(crate) struct PreservedBoss {
+    pub(crate) tool: usize,
+    pub(crate) boss: Boss,
+    pub(crate) wall: Vec<usize>,
+    pub(crate) top: Vec<usize>,
+}
+
+/// Curved source material the draft leaves in place around its planar target.
+pub(crate) enum Preserved {
+    Bores(PreservedBores),
+    Boss(Box<PreservedBoss>),
 }
 
 #[derive(Clone, Debug)]
@@ -767,6 +782,7 @@ impl Region {
 enum Candidate {
     Region(Cell),
     Capped(Box<CappedCylinder>),
+    Bossed(Box<BossedCell>),
 }
 
 impl Candidate {
@@ -774,12 +790,14 @@ impl Candidate {
         match self {
             Self::Region(cell) => cell.contains_interior(p, dec),
             Self::Capped(cell) => cell.contains_interior(p, dec),
+            Self::Bossed(cell) => cell.contains_interior(p, dec),
         }
     }
     fn anchored(&self, definition: &DraftDefinition, dec: &mut Decider) -> Result<bool, Refusal> {
         match self {
             Self::Region(cell) => cell.anchored(definition, dec),
             Self::Capped(cell) => cell.anchored(&definition.neutral, dec),
+            Self::Bossed(cell) => cell.anchored(&definition.neutral, dec),
         }
     }
 }
@@ -1198,7 +1216,7 @@ impl Plan {
         ),
         refs: &[FaceRef],
         definition: &DraftDefinition,
-        (keep_regions, preserved): (Option<&[catallax_recipe::Point3]>, Option<&PreservedBores>),
+        (keep_regions, preserved): (Option<&[catallax_recipe::Point3]>, Option<&Preserved>),
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
@@ -1253,7 +1271,7 @@ impl Plan {
             None
         };
         let Candidates {
-            components,
+            mut components,
             source_faces: mut physical_sources,
         } = self.draft_cells(
             (leaf, boundary.zip(patches.as_ref())),
@@ -1265,23 +1283,37 @@ impl Plan {
         if let Some(preserved) = preserved {
             let [Candidate::Region(Cell::Planar(cell))] = components.as_slice() else {
                 return Err(crate::draft_source::failure(
-                    "a preserved bore needs a convex planar envelope",
+                    "preserved source material needs a convex planar envelope",
                 ));
             };
-            let cylinders: Vec<_> = preserved.bores.iter().map(|b| &b.cylinder).collect();
-            bored::certify_bores(
-                cell.supports.iter().map(|support| &support.plane),
-                &cylinders,
-                dec,
-            )
-            .map_err(crate::draft_source::source_refusal)?;
+            match preserved {
+                Preserved::Bores(preserved) => {
+                    let cylinders: Vec<_> = preserved.bores.iter().map(|b| &b.cylinder).collect();
+                    bored::certify_bores(
+                        cell.supports.iter().map(|support| &support.plane),
+                        &cylinders,
+                        dec,
+                    )
+                    .map_err(crate::draft_source::source_refusal)?;
+                }
+                Preserved::Boss(preserved) => {
+                    let cell =
+                        BossedCell::new(cell.clone(), preserved.boss.clone(), definition, dec)
+                            .map_err(crate::draft_source::source_refusal)?;
+                    components = vec![Candidate::Bossed(Box::new(cell))];
+                }
+            }
         }
         let mut retained = vec![false; components.len()];
         if let Some(points) = keep_regions {
             for p in points {
                 let [x, y, z] = p.0.each_ref().map(|n| n.value().clone().into());
                 let point = Point3::new(x, y, z);
-                for tool in preserved.iter().flat_map(|p| &p.tools) {
+                let tools = match preserved {
+                    Some(Preserved::Bores(preserved)) => preserved.tools.as_slice(),
+                    _ => &[],
+                };
+                for tool in tools {
                     if self.register_location(*tool, &point, dec)? != Location::Outside {
                         return Err(Refusal::new(
                             "draft.invalid-keep-region",
@@ -1323,6 +1355,16 @@ impl Plan {
                 }
                 Ok(())
             };
+            let planar = match &cell {
+                Candidate::Region(Cell::Planar(c)) => Some(c),
+                Candidate::Bossed(c) => Some(&c.outer),
+                _ => None,
+            };
+            for (s, cycle) in planar.iter().flat_map(|c| c.supports.iter().zip(&c.cycles)) {
+                if !cycle.is_empty() {
+                    add(Surface::Plane(s.plane.clone()), &s.origins)?;
+                }
+            }
             match &cell {
                 Candidate::Region(Cell::Annular(c)) => {
                     add(c.outer.surface.clone(), &c.outer.origins)?;
@@ -1331,13 +1373,7 @@ impl Plan {
                         add(Surface::Plane(p.clone()), origins)?;
                     }
                 }
-                Candidate::Region(Cell::Planar(c)) => {
-                    for (s, cycle) in c.supports.iter().zip(&c.cycles) {
-                        if !cycle.is_empty() {
-                            add(Surface::Plane(s.plane.clone()), &s.origins)?;
-                        }
-                    }
-                }
+                Candidate::Region(Cell::Planar(_)) | Candidate::Bossed(_) => (),
                 Candidate::Region(Cell::Round(c)) => {
                     add(c.surface.clone(), &c.origins)?;
                     for (p, origins) in c.caps.iter().flatten() {
@@ -1362,6 +1398,10 @@ impl Plan {
                 Candidate::Capped(cell) => {
                     geometry::Leaf::Cell(geometry::Cell::from_capped(cell, dec)?)
                 }
+                // The tool stays in the tape and adds the boss back.
+                Candidate::Bossed(cell) => {
+                    geometry::Leaf::Draft(Region::new(Cell::Planar(cell.outer), dec)?)
+                }
             };
             let register = self.leaf(leaf, faces, dec)?;
             result = if result == 0 {
@@ -1382,10 +1422,16 @@ impl Plan {
             .into_iter()
             .collect();
         // Walls survive with any retained material. Each is one physical face.
-        if let Some(preserved) = preserved
-            && result == 0
-        {
-            physical_sources.extend(preserved.bores.iter().map(|bore| bore.walls.clone()));
+        if result == 0 {
+            match preserved {
+                Some(Preserved::Bores(preserved)) => {
+                    physical_sources.extend(preserved.bores.iter().map(|bore| bore.walls.clone()));
+                }
+                Some(Preserved::Boss(preserved)) => {
+                    physical_sources.extend([preserved.wall.clone(), preserved.top.clone()]);
+                }
+                None => (),
+            }
         }
         for group in physical_sources {
             if !group

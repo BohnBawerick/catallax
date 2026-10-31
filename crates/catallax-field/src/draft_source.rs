@@ -6,13 +6,14 @@
 
 use crate::{
     Instruction, Location, Plan,
-    draft::{Cell, PreservedBore, PreservedBores},
+    draft::{Cell, Preserved, PreservedBore, PreservedBores, PreservedBoss},
     geometry,
 };
 use catallax_features::draft::{
     DraftDefinition,
     arrangement::{Patch, Skin},
     bored,
+    bossed::{self, Boss},
     cell::{PlanarCell, PlanePatch},
 };
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
@@ -501,8 +502,8 @@ fn merge(a: &[usize], b: &[usize], output: &mut Vec<usize>) {
     }
 }
 impl Plan {
-    /// Republishes the unchanged wall as faces of the drafted result.
-    pub(crate) fn preserve_faces(&mut self, faces: &[usize]) {
+    /// Republishes unchanged faces as faces of the drafted result.
+    fn preserve_faces(&mut self, faces: &[usize]) {
         for face in faces {
             self.faces.push(self.faces[*face].clone());
         }
@@ -754,6 +755,202 @@ impl Plan {
                 bores: preserved,
             },
         )))
+    }
+
+    /// Recognises a recipe-defined union of a planar target and one complete
+    /// cylinder standing on one of its caps. Like the bore proof, this reads recipe
+    /// faces and exact leaves, never a B-rep. Any other curved source returns `None`
+    /// and keeps its refusal.
+    pub(crate) fn preserved_boss(
+        &self,
+        recipe: &Recipe,
+        body: &StepId,
+        refs: &[FaceRef],
+        definition: &DraftDefinition,
+        (registers, faces): (&BTreeMap<StepId, usize>, &BTreeMap<StepId, Vec<usize>>),
+        dec: &mut Decider,
+    ) -> Result<Option<(StepId, Skin, PreservedBoss)>, Refusal> {
+        let Some(Operation::Boolean {
+            kind: BooleanKind::Union,
+            target,
+            tool,
+        }) = recipe.step(body).map(|s| &s.op)
+        else {
+            return Ok(None);
+        };
+        let planar = |step: &StepId| {
+            faces[step]
+                .iter()
+                .all(|f| matches!(self.faces[*f].surface, Surface::Plane(_)))
+        };
+        let (target, tool) = match (planar(target), planar(tool)) {
+            (true, false) => (target, tool),
+            (false, true) => (tool, target),
+            _ => return Ok(None),
+        };
+        let register = registers[tool];
+        let (
+            Instruction::Boolean {
+                kind: BooleanKind::Union,
+                ..
+            },
+            Instruction::Leaf(leaf),
+        ) = (
+            self.instructions[registers[body]],
+            self.instructions[register],
+        )
+        else {
+            return Ok(None);
+        };
+        let mut wall = None;
+        let mut ends = Vec::new();
+        for constraint in self.leaves[leaf].constraints() {
+            match constraint.surface() {
+                Surface::Cylinder(cylinder) if wall.is_none() => wall = Some(cylinder),
+                Surface::Plane(plane) => ends.push(plane),
+                _ => return Ok(None),
+            }
+        }
+        let (Some(cylinder), &[first, second]) = (wall, ends.as_slice()) else {
+            return Ok(None);
+        };
+        let skin = self.draft_source_skin(recipe, target, registers, faces, dec)?;
+        if !skin.is_convex(dec)? {
+            return Err(failure("a preserved boss needs a convex planar envelope"));
+        }
+        let value = |plane: &Plane, point: &Point3| point.minus(&plane.origin).dot(&plane.normal);
+        // The tool starts on a cap and rises beyond it. The B-rep sees only that
+        // cap's ring, so a tool sunk into the target stays outside this proof.
+        let mut found = None;
+        for (low, high) in [(first, second), (second, first)] {
+            for (index, patch) in skin.patches.iter().enumerate() {
+                let carrier = patch.plane.normal.cross(&low.normal).norm_squared();
+                if geometry::sign(&carrier, dec)? == Sign::Zero
+                    && geometry::sign(&value(&patch.plane, &low.origin), dec)? == Sign::Zero
+                    && geometry::sign(&value(&patch.plane, &high.origin), dec)? == Sign::Positive
+                {
+                    found = Some((index, high));
+                }
+            }
+        }
+        let Some((shoulder, high)) = found else {
+            return Err(failure(
+                "a preserved boss must stand on a cap of its target",
+            ));
+        };
+        let mut top = high.clone();
+        let outward = top.normal.dot(&skin.patches[shoulder].plane.normal);
+        if geometry::sign(&outward, dec)? == Sign::Negative {
+            top.normal = top.normal.scaled(&Real::from_i64(-1));
+        }
+        let mut walls = Vec::new();
+        let mut caps = Vec::new();
+        for face in &faces[tool] {
+            match &self.faces[*face].surface {
+                Surface::Cylinder(_) => walls.push(*face),
+                Surface::Plane(plane)
+                    if geometry::sign(&value(&top, &plane.origin), dec)? == Sign::Zero =>
+                {
+                    caps.push(*face);
+                }
+                _ => (),
+            }
+        }
+        let names = |faces: &[usize]| -> Vec<Origin> {
+            faces
+                .iter()
+                .map(|f| self.faces[*f].origin.clone())
+                .collect()
+        };
+        let (origins, top_origins) = (names(&walls), names(&caps));
+        if refs.iter().any(|r| {
+            origins
+                .iter()
+                .chain(&top_origins)
+                .any(|origin| r.face.matches(origin))
+        }) {
+            return Err(failure("a selected boss needs a curved arrangement"));
+        }
+        bored::check_axial(cylinder, definition, dec).map_err(source_refusal)?;
+        let boss = Boss {
+            cylinder: cylinder.clone(),
+            origins,
+            top,
+            top_origins,
+        };
+        let cap =
+            bossed::certify_footprint(skin.patches.iter().map(|patch| &patch.plane), &boss, dec)
+                .map_err(source_refusal)?;
+        if cap != shoulder {
+            return Err(failure(
+                "a preserved boss must stand on a cap of its target",
+            ));
+        }
+        if skin.resolve_faces(refs, dec)?.contains(&cap) {
+            return Err(failure("a selected shoulder moves the boss's ring"));
+        }
+        Ok(Some((
+            target.clone(),
+            skin,
+            PreservedBoss {
+                tool: register,
+                boss,
+                wall: walls,
+                top: caps,
+            },
+        )))
+    }
+
+    /// The planar target and the curved material to keep around its draft.
+    pub(crate) fn preserved_source(
+        &self,
+        recipe: &Recipe,
+        body: &StepId,
+        refs: &[FaceRef],
+        definition: &DraftDefinition,
+        steps: (&BTreeMap<StepId, usize>, &BTreeMap<StepId, Vec<usize>>),
+        dec: &mut Decider,
+    ) -> Result<Option<(StepId, Skin, Preserved)>, Refusal> {
+        if let Some((target, skin, bores)) =
+            self.preserved_bores(recipe, body, refs, definition, steps, dec)?
+        {
+            return Ok(Some((target, skin, Preserved::Bores(bores))));
+        }
+        Ok(self
+            .preserved_boss(recipe, body, refs, definition, steps, dec)?
+            .map(|(target, skin, boss)| (target, skin, Preserved::Boss(Box::new(boss)))))
+    }
+
+    /// Applies the recipe's own tools to a drafted target, republishing the
+    /// unchanged walls. Nothing returns once the target itself is gone.
+    pub(crate) fn restore_preserved(
+        &mut self,
+        drafted: usize,
+        preserved: &Preserved,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        match preserved {
+            Preserved::Bores(preserved) => {
+                if drafted != 0 {
+                    for bore in &preserved.bores {
+                        self.preserve_faces(&bore.walls);
+                    }
+                }
+                let mut result = drafted;
+                for tool in &preserved.tools {
+                    result = self.boolean(BooleanKind::Subtract, result, *tool, dec)?;
+                }
+                Ok(result)
+            }
+            Preserved::Boss(preserved) => {
+                if drafted == 0 {
+                    return Ok(0);
+                }
+                self.preserve_faces(&preserved.wall);
+                self.preserve_faces(&preserved.top);
+                self.boolean(BooleanKind::Union, drafted, preserved.tool, dec)
+            }
+        }
     }
 
     pub(crate) fn draft_source_skin(

@@ -42,6 +42,22 @@ pub fn axis_point(cylinder: &Cylinder, plane: &Plane) -> Point3 {
     cylinder.origin.plus(&cylinder.axis.scaled(&height))
 }
 
+/// Whether a circle about the axis at `centre` lies strictly inside a halfspace.
+/// The circular maximum is the axis value plus radius times the normal's radial
+/// length, compared on squares so the proof needs no root.
+pub fn ring_clear(
+    wall: &Plane,
+    cylinder: &Cylinder,
+    centre: &Point3,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let along = wall.normal.dot(&cylinder.axis);
+    let radial = wall.normal.norm_squared() - along.square() / cylinder.axis.norm_squared();
+    let offset = value(wall, centre);
+    Ok(sign(&offset, dec)? == Sign::Negative
+        && sign(&(offset.square() - &cylinder.radius_sq * &radial), dec)? == Sign::Positive)
+}
+
 /// An unselected wall has no neutral curve, but this bounded family keeps its
 /// axial mouths parallel to the neutral section: pull, axis and normal agree.
 pub fn check_axial(
@@ -54,22 +70,20 @@ pub fn check_axial(
     };
     if !parallel(&cylinder.axis, dec)? || !parallel(&definition.neutral.normal, dec)? {
         return Err(unsupported(
-            "a preserved bore needs its axis and the neutral normal along pull",
+            "a preserved wall needs its axis and the neutral normal along pull",
         ));
     }
     Ok(())
 }
 
 /// Finds the two opposed caps and proves the finite cylinder between them is
-/// strictly inside every other halfspace. A wall value is affine along the axis
-/// and its circular maximum is the axis value plus radius times the normal's
-/// radial length, so strict inequalities at both rings cover the whole height.
+/// strictly inside every other halfspace. A wall value is affine along the axis,
+/// so strict inequalities at both rings cover the whole height.
 pub fn certify_clear<'a>(
     planes: impl Iterator<Item = &'a Plane> + Clone,
     cylinder: &Cylinder,
     dec: &mut Decider,
 ) -> Result<[usize; 2], Refusal> {
-    let axis_sq = cylinder.axis.norm_squared();
     let mut lower = None;
     let mut upper = None;
     for (index, plane) in planes.clone().enumerate() {
@@ -102,13 +116,8 @@ pub fn certify_clear<'a>(
         if caps.contains(&index) {
             continue;
         }
-        let along = wall.normal.dot(&cylinder.axis);
-        let radial = wall.normal.norm_squared() - along.square() / axis_sq.clone();
         for centre in &centres {
-            let offset = value(wall, centre);
-            if sign(&offset, dec)? != Sign::Negative
-                || sign(&(offset.square() - &cylinder.radius_sq * &radial), dec)? != Sign::Positive
-            {
+            if !ring_clear(wall, cylinder, centre, dec)? {
                 return Err(unsupported(
                     "the bore touches or crosses a wall of its planar envelope",
                 ));

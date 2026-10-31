@@ -1,7 +1,7 @@
 //! The full P5 housing through the certified application route: one closed
 //! mesh across every boundary, per-face bounds and stable picking names.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_app::{ApplicationBody, build_certified};
 use catallax_mesh::{MeshControl, MeshOptions, PreviewOptions, preview_mesh_body};
@@ -193,6 +193,90 @@ fn the_separated_junction_displays_one_blend_region() {
         format!("{refusal:?}").contains("features.unsupported-offset-family"),
         "{refusal:?}"
     );
+}
+
+#[test]
+fn the_tangent_junction_displays_one_closed_mesh() {
+    let options = MeshOptions {
+        chord_tolerance: Rational::from_ratio(1, 50).unwrap(),
+        angular_deviation: Some(Rational::from_ratio(1, 2).unwrap()),
+        ..Default::default()
+    };
+    let mut dec = decider();
+    let body = catallax_app::build(&recipe("1"), &options, &mut dec).unwrap();
+    let mesh = &body.display.value;
+    assert!(
+        mesh.unavailable_controls.is_empty(),
+        "{:?}",
+        mesh.unavailable_controls
+    );
+    // Every patch is a selectable name with its own certified triangles.
+    assert_eq!(mesh.faces.len(), body.names.faces.len());
+    for face in &mesh.faces {
+        assert!(!face.triangles.is_empty(), "{face:?}");
+        assert!(face.max_chord_error <= options.chord_tolerance);
+        assert!(!body.names.faces[&face.face].is_empty());
+    }
+    for edge in &mesh.edges {
+        assert!(edge.max_chord_error <= options.chord_tolerance);
+    }
+    let blends = body
+        .names
+        .faces
+        .values()
+        .filter(|origins| {
+            origins
+                .iter()
+                .any(|origin: &Origin| matches!(origin.role, Role::Blend { .. }))
+        })
+        .count();
+    assert_eq!(blends, 1);
+    let mut uses = BTreeMap::<(usize, usize), (u32, i32)>::new();
+    for triangle in &mesh.triangles {
+        for i in 0..3 {
+            let (a, c) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
+            let entry = uses.entry((a.min(c), a.max(c))).or_default();
+            entry.0 += 1;
+            entry.1 += if a < c { 1 } else { -1 };
+        }
+    }
+    assert!(uses.values().all(|&use_| use_ == (2, 0)));
+    // Each contact is one mesh vertex whose triangles close one fan through
+    // the torus, both plane cusps and the cone.
+    for contact in [
+        [13.0, 5.0, 0.0],
+        [0.0, 5.0, 13.0],
+        [-13.0, 5.0, 0.0],
+        [0.0, 5.0, -13.0],
+    ] {
+        let found: Vec<_> = mesh
+            .positions
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| **p == contact)
+            .map(|(i, _)| i)
+            .collect();
+        let [vertex] = found[..] else {
+            panic!("one mesh vertex at {contact:?}: {found:?}");
+        };
+        let mut link = BTreeMap::new();
+        let mut around = BTreeSet::new();
+        for triangle in &mesh.triangles {
+            if let Some(i) = triangle.vertices.iter().position(|v| *v == vertex) {
+                let next = triangle.vertices[(i + 1) % 3];
+                let last = triangle.vertices[(i + 2) % 3];
+                assert!(link.insert(next, last).is_none());
+                around.insert(triangle.face);
+            }
+        }
+        let first = *link.keys().next().unwrap();
+        let (mut at, mut steps) = (link[&first], 1);
+        while at != first {
+            (at, steps) = (link[&at], steps + 1);
+        }
+        assert_eq!(steps, link.len(), "one fan at {contact:?}");
+        assert_eq!(around.len(), 4, "{contact:?}");
+    }
 }
 
 #[test]

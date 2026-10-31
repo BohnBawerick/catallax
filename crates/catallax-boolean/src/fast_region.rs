@@ -25,13 +25,33 @@ fn ring(model: &Model, l: LoopId) -> Option<(catallax_topology::EdgeId, Sense)> 
     Some((c.edge, product(e.sense, c.sense)))
 }
 
+// A loop of arcs that walks one circle once, one way, bounds what a ring on
+// that circle bounds.
+fn split_ring(model: &Model, l: LoopId) -> Option<(catallax_topology::EdgeId, Sense)> {
+    let Loop::Coedges(cs) = model.loop_(l) else {
+        return None;
+    };
+    let first = model.coedge(*cs.first()?);
+    let e = model.edge(first.edge);
+    let travel = product(e.sense, first.sense);
+    cs.iter()
+        .map(|c| model.coedge(*c))
+        .all(|c| {
+            let edge = model.edge(c.edge);
+            edge.curve == e.curve && product(edge.sense, c.sense) == travel
+        })
+        .then_some((first.edge, travel))
+}
+
 fn ring_side(
     model: &Model,
     l: LoopId,
     p: PointId,
+    split: bool,
     dec: &mut Decider,
 ) -> Result<Option<(Sign, Sense)>, Refusal> {
-    let Some((edge, travel)) = ring(model, l) else {
+    let whole = ring(model, l).or_else(|| split.then(|| split_ring(model, l)).flatten());
+    let Some((edge, travel)) = whole else {
         return Ok(None);
     };
     let CurveForm::Circle { center, normal, .. } =
@@ -249,7 +269,7 @@ fn signature(
             if matches!(model.loop_(loops[0]), Loop::Vertex(_)) {
                 return Ok(Some(0));
             }
-            let Some((side, _)) = ring_side(model, loops[0], point, dec)? else {
+            let Some((side, _)) = ring_side(model, loops[0], point, false, dec)? else {
                 return Ok(None);
             };
             match side {
@@ -348,7 +368,8 @@ pub(crate) fn locate(
                     }
                     continue;
                 }
-                let Some((side, travel)) = ring_side(model, l, point, dec)? else {
+                let split = matches!(surface, Surface::Cone(_));
+                let Some((side, travel)) = ring_side(model, l, point, split, dec)? else {
                     return Ok(None);
                 };
                 let front = travel == f.sense;

@@ -20,6 +20,10 @@ use crate::{
 
 #[path = "fillet_envelope.rs"]
 mod fillet_envelope;
+#[path = "fillet_tangent.rs"]
+mod fillet_tangent;
+
+use fillet_envelope::Clearance;
 
 type Uses = BTreeMap<EdgeId, Vec<(FaceId, Sense)>>;
 
@@ -693,17 +697,38 @@ pub(crate) fn build(
     }
     for run in &runs {
         if let Err(refusal) = guard(model, body, run, &uses, dec) {
-            // A lone closed ring may clear every countersink mouth, or continue
-            // over them; every other overflow, and any ring outside that
-            // stratum, still refuses.
+            // A lone closed ring may clear every countersink mouth, touch them
+            // at single points, or continue over them; every other overflow,
+            // and any ring outside that stratum, still refuses.
             let continuable = refusal.code == "fillet.unsupported-overflow"
                 || refusal.code.starts_with("intersect.");
             if !continuable || runs.len() != 1 {
                 return Err(refusal);
             }
-            if fillet_envelope::strip_clear(model, body, run.edge, run.faces, &run.definition, dec)?
-            {
-                continue;
+            match fillet_envelope::strip_clear(
+                model,
+                body,
+                run.edge,
+                run.faces,
+                &run.definition,
+                dec,
+            )? {
+                Clearance::Clear => continue,
+                Clearance::Tangent(mouths) => {
+                    if let Some(result) = fillet_tangent::build(
+                        model,
+                        body,
+                        run.edge,
+                        run.faces,
+                        &run.definition,
+                        &mouths,
+                        &uses,
+                        dec,
+                    )? {
+                        return Ok((result, vec![run.definition.clone()]));
+                    }
+                }
+                Clearance::Blocked => {}
             }
             if let Some(result) = fillet_envelope::build(
                 model,

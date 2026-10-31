@@ -15,7 +15,9 @@
 //!
 //! The same ring needs no continuation when every mouth lies strictly beyond
 //! the plane rail: [`strip_clear`] proves that from the finite faces, however
-//! the unbounded supports meet, and the ordinary torus strip then applies.
+//! the unbounded supports meet, and the ordinary torus strip then applies. A
+//! mouth exactly on the rail touches it at one point; that proof reports the
+//! mouth and `fillet_tangent` builds the same torus with shared contacts.
 
 use std::collections::BTreeMap;
 
@@ -26,7 +28,7 @@ use catallax_shapes::{
     RollingEnvelopeDefinition, SplineBoundary, Surface, Vector3,
 };
 use catallax_topology::{
-    BodyId, Edge, EdgeId, FaceId, Loop, Lump, Model, Sense, Shell, Vertex, VertexId,
+    Body, BodyId, Edge, EdgeId, FaceId, Loop, Lump, Model, Sense, Shell, Vertex, VertexId,
 };
 
 use crate::{
@@ -35,31 +37,31 @@ use crate::{
     profile::sign,
 };
 
-type Uses = BTreeMap<EdgeId, Vec<(FaceId, Sense)>>;
+pub(super) type Uses = BTreeMap<EdgeId, Vec<(FaceId, Sense)>>;
 
-fn bad(detail: impl Into<String>) -> Refusal {
+pub(super) fn bad(detail: impl Into<String>) -> Refusal {
     Refusal::new("fillet.unsupported-overflow", detail)
 }
-fn real_sqrt(value: &Real) -> Real {
+pub(super) fn real_sqrt(value: &Real) -> Real {
     value
         .as_rational()
         .and_then(|r| crate::extrude::sqrt(&r))
         .map(Real::from)
         .unwrap_or_else(|| value.sqrt())
 }
-fn unit(v: &Vector3) -> Vector3 {
+pub(super) fn unit(v: &Vector3) -> Vector3 {
     v.scaled(&(&Real::one() / &real_sqrt(&v.norm_squared())))
 }
-fn zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(sign(value, dec)? == Sign::Zero)
 }
-fn positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(sign(value, dec)? == Sign::Positive)
 }
 fn sense_sign(sense: Sense) -> i8 {
     if sense == Sense::Same { 1 } else { -1 }
 }
-fn vertex(model: &mut Model, p: Point3) -> VertexId {
+pub(super) fn vertex(model: &mut Model, p: Point3) -> VertexId {
     let point = model.geom_mut().add_point(PointDef::Explicit(p));
     model.add_vertex(Vertex { point })
 }
@@ -82,22 +84,22 @@ struct Feet {
 }
 
 // One closed concave ring between a plane and a perpendicular cylinder.
-struct Ring {
-    plane_index: usize,
-    plane_face: FaceId,
-    cylinder_face: FaceId,
+pub(super) struct Ring {
+    pub(super) plane_index: usize,
+    pub(super) plane_face: FaceId,
+    pub(super) cylinder_face: FaceId,
     cylinder: Cylinder,
     // The plane's outward normal, the ball's side.
-    axis: Vector3,
+    pub(super) axis: Vector3,
     // Where the cylinder axis meets the plane.
-    origin: Point3,
+    pub(super) origin: Point3,
     body_radius: Real,
     radius: Real,
     // Plane rail radius and ball-centre circle radius.
-    centre: Real,
+    pub(super) centre: Real,
 }
 
-fn ring(
+pub(super) fn ring(
     model: &Model,
     edge: EdgeId,
     faces: [FaceId; 2],
@@ -153,7 +155,7 @@ fn ring(
 
 // The boundary edges of a face other than the ring's own, or `None` when the
 // face has a loop this proof cannot walk.
-fn other_edges(model: &Model, face: FaceId, ring: EdgeId) -> Option<Vec<EdgeId>> {
+pub(super) fn other_edges(model: &Model, face: FaceId, ring: EdgeId) -> Option<Vec<EdgeId>> {
     let mut edges = Vec::new();
     for lp in &model.face(face).loops {
         let Loop::Coedges(cs) = model.loop_(*lp) else {
@@ -179,6 +181,17 @@ fn coaxial(
         && zero(&c.origin.minus(origin).cross(axis).norm_squared(), dec)?)
 }
 
+/// What a ring's finite faces leave of its ordinary strip.
+pub(crate) enum Clearance {
+    /// No other boundary reaches the strip.
+    Clear,
+    /// Only these plane boundaries reach it, each touching the plane rail at
+    /// one point from outside the rail disc.
+    Tangent(Vec<EdgeId>),
+    /// Unproven, or a face enters the strip.
+    Blocked,
+}
+
 /// Proves the ordinary strip of a closed ring meets no other finite face, so
 /// the supports' intersection elsewhere needs no continuation.
 ///
@@ -190,7 +203,9 @@ fn coaxial(
 /// plane or cylinder face nowhere, so one at or below the plane, at or above
 /// the cylinder rail, or on a coaxial cylinder beyond the band stays clear of
 /// it. A face reaching into the band's height range keeps the refusal, however
-/// far its support runs from the strip.
+/// far its support runs from the strip. Two coplanar circles outside each other
+/// at the sum of their radii share exactly one point, so a mouth circle there
+/// leaves every other point of the rail in the open face.
 pub(crate) fn strip_clear(
     model: &Model,
     body: BodyId,
@@ -198,46 +213,49 @@ pub(crate) fn strip_clear(
     faces: [FaceId; 2],
     definition: &FilletDefinition,
     dec: &mut Decider,
-) -> Result<bool, Refusal> {
+) -> Result<Clearance, Refusal> {
     let Some(ring) = ring(model, edge, faces, definition, dec)? else {
-        return Ok(false);
+        return Ok(Clearance::Blocked);
     };
     // A ball inside a bore rolls on the rail nearer the axis: another ring.
     let Surface::Torus(torus) = &definition.surface else {
-        return Ok(false);
+        return Ok(Clearance::Blocked);
     };
     if !zero(&(&torus.major - &ring.centre), dec)? {
-        return Ok(false);
+        return Ok(Clearance::Blocked);
     }
     let Some(plane_edges) = other_edges(model, ring.plane_face, edge) else {
-        return Ok(false);
+        return Ok(Clearance::Blocked);
     };
+    let mut tangent = Vec::new();
     for other in plane_edges {
         // The whole circle of an arc is outside the rail disc, or encloses it.
         let CurveForm::Circle {
             center, radius_sq, ..
         } = curve_form(model.geom(), model.edge(other).curve, dec)?
         else {
-            return Ok(false);
+            return Ok(Clearance::Blocked);
         };
         let offset = real_sqrt(&center.minus(&ring.origin).norm_squared());
         let nearest = &offset - &real_sqrt(&radius_sq);
-        if !positive(&(nearest.square() - ring.centre.square()), dec)? {
-            return Ok(false);
+        if zero(&(&nearest - &ring.centre), dec)? {
+            tangent.push(other);
+        } else if !positive(&(nearest.square() - ring.centre.square()), dec)? {
+            return Ok(Clearance::Blocked);
         }
     }
     let Some(cylinder_edges) = other_edges(model, ring.cylinder_face, edge) else {
-        return Ok(false);
+        return Ok(Clearance::Blocked);
     };
     for other in cylinder_edges {
         let Some(heights) =
             catallax_measure::edge_heights(model, other, &ring.origin, &ring.axis, dec)?
         else {
-            return Ok(false);
+            return Ok(Clearance::Blocked);
         };
         for height in &heights {
             if !positive(&(height - &ring.radius), dec)? {
-                return Ok(false);
+                return Ok(Clearance::Blocked);
             }
         }
     }
@@ -255,10 +273,43 @@ pub(crate) fn strip_clear(
         if !above(model, face, &ring.origin, &ring.axis, &ring.radius, dec)?
             && !below_plane(model, face, &ring.origin, &ring.axis, false, dec)?
         {
-            return Ok(false);
+            return Ok(Clearance::Blocked);
         }
     }
-    Ok(true)
+    Ok(if tangent.is_empty() {
+        Clearance::Clear
+    } else {
+        Clearance::Tangent(tangent)
+    })
+}
+
+/// Exact counter-clockwise order about an axis, from a reference direction.
+pub(super) struct Turning<'a> {
+    pub(super) origin: &'a Point3,
+    pub(super) reference: &'a Vector3,
+    pub(super) second: Vector3,
+}
+
+impl Turning<'_> {
+    fn key(&self, p: &Point3, dec: &mut Decider) -> Result<(u8, Real, Real), Refusal> {
+        let d = p.minus(self.origin);
+        let (x, y) = (d.dot(self.reference), d.dot(&self.second));
+        let upper = positive(&y, dec)? || (zero(&y, dec)? && positive(&x, dec)?);
+        Ok((u8::from(!upper), x, y))
+    }
+    pub(super) fn before(
+        &self,
+        a: &Point3,
+        b: &Point3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let (ha, xa, ya) = self.key(a, dec)?;
+        let (hb, xb, yb) = self.key(b, dec)?;
+        if ha != hb {
+            return Ok(ha < hb);
+        }
+        positive(&(&(&xa * &yb) - &(&ya * &xb)), dec)
+    }
 }
 
 /// Builds the continued ring, or returns `None` when the overflow is not this
@@ -402,20 +453,10 @@ pub(crate) fn build(
     // Order the holes counter-clockwise about the axis and require their
     // transition spans to alternate without overlap.
     let reference = holes[0].definition.toward().clone();
-    let second = axis.cross(&reference);
-    let angle_key = |p: &Point3, dec: &mut Decider| -> Result<(u8, Real, Real), Refusal> {
-        let d = p.minus(&origin);
-        let (x, y) = (d.dot(&reference), d.dot(&second));
-        let upper = positive(&y, dec)? || (zero(&y, dec)? && positive(&x, dec)?);
-        Ok((u8::from(!upper), x, y))
-    };
-    let before = |a: &Point3, b: &Point3, dec: &mut Decider| -> Result<bool, Refusal> {
-        let (ha, xa, ya) = angle_key(a, dec)?;
-        let (hb, xb, yb) = angle_key(b, dec)?;
-        if ha != hb {
-            return Ok(ha < hb);
-        }
-        positive(&(&(&xa * &yb) - &(&ya * &xb)), dec)
+    let turning = Turning {
+        origin: &origin,
+        reference: &reference,
+        second: axis.cross(&reference),
     };
     let mut feet_points = Vec::with_capacity(holes.len());
     for hole in &holes {
@@ -437,7 +478,7 @@ pub(crate) fn build(
     for i in 1..order.len() {
         let mut j = i;
         while j > 0
-            && before(
+            && turning.before(
                 &feet_points[order[j]].0[1],
                 &feet_points[order[j - 1]].0[1],
                 dec,
@@ -455,7 +496,7 @@ pub(crate) fn build(
         .collect();
     let mut wraps = 0;
     for k in 0..sequence.len() {
-        if !before(sequence[k], sequence[(k + 1) % sequence.len()], dec)? {
+        if !turning.before(sequence[k], sequence[(k + 1) % sequence.len()], dec)? {
             wraps += 1;
         }
     }
@@ -506,18 +547,8 @@ pub(crate) fn build(
             definition.contacts[1].clone(),
         ]
     };
-    let ccw_sense = |curve: &Curve, dec: &mut Decider| -> Result<Sense, Refusal> {
-        let Curve::Circle(c) = curve else {
-            return Err(bad("rail contact is not a circle"));
-        };
-        Ok(if positive(&c.normal.dot(&axis), dec)? {
-            Sense::Same
-        } else {
-            Sense::Reversed
-        })
-    };
-    let cylinder_sense = ccw_sense(&cylinder_contact, dec)?;
-    let plane_sense = ccw_sense(&plane_contact, dec)?;
+    let cylinder_sense = ccw_sense(&cylinder_contact, &axis, dec)?;
+    let plane_sense = ccw_sense(&plane_contact, &axis, dec)?;
     let cylinder_rail = model.geom_mut().add_curve(cylinder_contact);
     let plane_rail = model.geom_mut().add_curve(plane_contact);
     let meridian = |model: &mut Model, foot: [VertexId; 2]| -> EdgeId {
@@ -602,11 +633,7 @@ pub(crate) fn build(
             end: Some(end),
         }));
         let mouth_curve = model.edge(hole.edge).curve;
-        let sense = if positive(&hole.circle.normal.dot(&axis), dec)? {
-            Sense::Same
-        } else {
-            Sense::Reversed
-        };
+        let sense = ccw_sense(&Curve::Circle(hole.circle.clone()), &axis, dec)?;
         let near_point = hole.circle.center.plus(
             &hole
                 .definition
@@ -645,34 +672,8 @@ pub(crate) fn build(
         mouths.push([near, far]);
     }
 
-    // Traversal direction of each replaced closed edge in its old faces.
-    let turn =
-        |model: &Model, face: FaceId, closed: EdgeId, dec: &mut Decider| -> Result<i8, Refusal> {
-            let used = uses[&closed]
-                .iter()
-                .find(|(f, _)| *f == face)
-                .map(|(_, s)| *s)
-                .ok_or_else(|| bad("replaced boundary is not on its face"))?;
-            let e = model.edge(closed);
-            let Curve::Circle(c) = model.geom().curve(e.curve) else {
-                return Err(bad("replaced boundary is not a circle"));
-            };
-            let normal = if positive(&c.normal.dot(&axis), dec)? {
-                1
-            } else {
-                -1
-            };
-            Ok(normal * sense_sign(e.sense) * sense_sign(used))
-        };
-    let with = |direction: i8| {
-        if direction > 0 {
-            Sense::Same
-        } else {
-            Sense::Reversed
-        }
-    };
-    let plane_turn = turn(model, plane_face, edge, dec)?;
-    let cylinder_turn = turn(model, cylinder_face, edge, dec)?;
+    let plane_turn = turn(model, uses, &axis, plane_face, edge, dec)?;
+    let cylinder_turn = turn(model, uses, &axis, cylinder_face, edge, dec)?;
 
     // Rebuilt plane loop: plane arcs plus far mouth arcs.
     let mut plane_loop = Vec::new();
@@ -681,9 +682,9 @@ pub(crate) fn build(
     }
     let mut cone_loops = Vec::new();
     for (i, hole) in holes.iter().enumerate() {
-        let hole_turn = turn(model, plane_face, hole.edge, dec)?;
+        let hole_turn = turn(model, uses, &axis, plane_face, hole.edge, dec)?;
         plane_loop.push((mouths[i][1], Some(with(hole_turn))));
-        let cone_turn = turn(model, hole.face, hole.edge, dec)?;
+        let cone_turn = turn(model, uses, &axis, hole.face, hole.edge, dec)?;
         cone_loops.push(chain(
             model,
             vec![
@@ -781,31 +782,6 @@ pub(crate) fn build(
 
     // Replace the plane, cylinder and touched cone faces.
     let mut replaced = BTreeMap::new();
-    let rebuild =
-        |model: &mut Model, face: FaceId, drop: &[EdgeId], add: Vec<(EdgeId, Sense)>| -> FaceId {
-            let old = model.face(face).clone();
-            let mut paths = Vec::with_capacity(old.loops.len());
-            for lp in &old.loops {
-                let Loop::Coedges(cs) = model.loop_(*lp) else {
-                    continue;
-                };
-                let path: Vec<_> = cs
-                    .iter()
-                    .map(|c| {
-                        let c = model.coedge(*c);
-                        (c.edge, c.sense)
-                    })
-                    .collect();
-                if path.iter().any(|(e, _)| drop.contains(e)) {
-                    continue;
-                }
-                paths.push(path);
-            }
-            paths.push(add);
-            let surface = model.geom().surface(old.surface).clone();
-            let origins = model.face_origins(face).to_vec();
-            crate::extrude::face(model, surface, old.sense, paths, None, origins)
-        };
     let mut plane_drop = vec![edge];
     plane_drop.extend(holes.iter().map(|h| h.edge));
     replaced.insert(
@@ -823,26 +799,7 @@ pub(crate) fn build(
         );
     }
 
-    let input = model.body(body).clone();
-    let mut lumps = Vec::with_capacity(input.lumps.len());
-    for lump in &input.lumps {
-        let mut shells = Vec::new();
-        for shell in model.lump(*lump).shells.clone() {
-            let old = model.shell(shell).faces.clone();
-            let owner = old.contains(&plane_face);
-            let mut out: Vec<FaceId> = old
-                .iter()
-                .map(|f| replaced.get(f).copied().unwrap_or(*f))
-                .collect();
-            if owner {
-                out.extend(new_faces.iter().copied());
-            }
-            shells.push(model.add_shell(Shell { faces: out }));
-        }
-        lumps.push(model.add_lump(Lump { shells }));
-    }
-    let mut output = input;
-    output.lumps = lumps;
+    let mut output = with_faces(model, body, plane_face, &replaced, &new_faces);
     let fit = envelopes.iter().fold(Rational::zero(), |worst, envelope| {
         worst.max(envelope.bound().upper.clone())
     });
@@ -854,6 +811,123 @@ pub(crate) fn build(
     ));
     let output = model.add_body(output);
     model.record_blend_base(output, body);
+    checked(model, output).map(Some)
+}
+
+// The sense that runs a circle counter-clockwise about the axis.
+pub(super) fn ccw_sense(
+    curve: &Curve,
+    axis: &Vector3,
+    dec: &mut Decider,
+) -> Result<Sense, Refusal> {
+    let Curve::Circle(c) = curve else {
+        return Err(bad("rail contact is not a circle"));
+    };
+    Ok(if positive(&c.normal.dot(axis), dec)? {
+        Sense::Same
+    } else {
+        Sense::Reversed
+    })
+}
+
+// Traversal direction of a replaced closed edge in one of its old faces.
+pub(super) fn turn(
+    model: &Model,
+    uses: &Uses,
+    axis: &Vector3,
+    face: FaceId,
+    closed: EdgeId,
+    dec: &mut Decider,
+) -> Result<i8, Refusal> {
+    let used = uses[&closed]
+        .iter()
+        .find(|(f, _)| *f == face)
+        .map(|(_, s)| *s)
+        .ok_or_else(|| bad("replaced boundary is not on its face"))?;
+    let e = model.edge(closed);
+    let Curve::Circle(c) = model.geom().curve(e.curve) else {
+        return Err(bad("replaced boundary is not a circle"));
+    };
+    let normal = if positive(&c.normal.dot(axis), dec)? {
+        1
+    } else {
+        -1
+    };
+    Ok(normal * sense_sign(e.sense) * sense_sign(used))
+}
+
+// The sense of an arc that runs counter-clockwise, traversed in a direction.
+pub(super) fn with(direction: i8) -> Sense {
+    if direction > 0 {
+        Sense::Same
+    } else {
+        Sense::Reversed
+    }
+}
+
+// A face with some boundary loops dropped and one added, keeping its names.
+pub(super) fn rebuild(
+    model: &mut Model,
+    face: FaceId,
+    drop: &[EdgeId],
+    add: Vec<(EdgeId, Sense)>,
+) -> FaceId {
+    let old = model.face(face).clone();
+    let mut paths = Vec::with_capacity(old.loops.len());
+    for lp in &old.loops {
+        let Loop::Coedges(cs) = model.loop_(*lp) else {
+            continue;
+        };
+        let path: Vec<_> = cs
+            .iter()
+            .map(|c| {
+                let c = model.coedge(*c);
+                (c.edge, c.sense)
+            })
+            .collect();
+        if path.iter().any(|(e, _)| drop.contains(e)) {
+            continue;
+        }
+        paths.push(path);
+    }
+    paths.push(add);
+    let surface = model.geom().surface(old.surface).clone();
+    let origins = model.face_origins(face).to_vec();
+    crate::extrude::face(model, surface, old.sense, paths, None, origins)
+}
+
+// The body with faces replaced and new ones added to the owner's shell.
+pub(super) fn with_faces(
+    model: &mut Model,
+    body: BodyId,
+    owner: FaceId,
+    replaced: &BTreeMap<FaceId, FaceId>,
+    new_faces: &[FaceId],
+) -> Body {
+    let input = model.body(body).clone();
+    let mut lumps = Vec::with_capacity(input.lumps.len());
+    for lump in &input.lumps {
+        let mut shells = Vec::new();
+        for shell in model.lump(*lump).shells.clone() {
+            let old = model.shell(shell).faces.clone();
+            let owned = old.contains(&owner);
+            let mut out: Vec<FaceId> = old
+                .iter()
+                .map(|f| replaced.get(f).copied().unwrap_or(*f))
+                .collect();
+            if owned {
+                out.extend(new_faces.iter().copied());
+            }
+            shells.push(model.add_shell(Shell { faces: out }));
+        }
+        lumps.push(model.add_lump(Lump { shells }));
+    }
+    let mut output = input;
+    output.lumps = lumps;
+    output
+}
+
+pub(super) fn checked(model: &Model, output: BodyId) -> Result<BodyId, Refusal> {
     let faults = model.check(output);
     if !faults.is_empty() {
         return Err(Refusal::new(
@@ -861,7 +935,7 @@ pub(crate) fn build(
             format!("{faults:?}"),
         ));
     }
-    Ok(Some(output))
+    Ok(output)
 }
 
 // Whether a face's finite extent lies strictly above a height over the plane.
@@ -931,7 +1005,7 @@ fn below_plane(
 
 // The cone's narrowing slope below the plane when its axis is the mouth axis
 // and its section in the plane is the mouth circle; otherwise None.
-fn narrowing(
+pub(super) fn narrowing(
     cone: &Cone,
     circle: &Circle,
     axis: &Vector3,
@@ -960,7 +1034,7 @@ fn narrowing(
 
 // Orders coedges into one closed loop. A fixed sense is kept; a free one is
 // chosen so the loop continues.
-fn chain(
+pub(super) fn chain(
     model: &Model,
     mut items: Vec<(EdgeId, Option<Sense>)>,
 ) -> Result<Vec<(EdgeId, Sense)>, Refusal> {

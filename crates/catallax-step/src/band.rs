@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Decider, FactKind, Outcome, Real, Refusal, StrictOrder, StrictSign};
-use catallax_shapes::{CurveId, GeomKey, Point3, Surface, SurfaceId, Vector3};
+use catallax_shapes::{CurveId, GeomKey, Point3, Surface, SurfaceId, Torus, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, VertexId};
 
 use crate::number;
@@ -95,6 +95,9 @@ impl Plan {
     ) -> Result<Self, Refusal> {
         if crate::junction::present(model, bodies.clone()) {
             return crate::junction::plan(model, bodies, dec);
+        }
+        if crate::junction::tangent_present(model, bodies.clone()) {
+            return crate::junction::tangent_plan(model, bodies, dec);
         }
         let mut has_band = false;
         let mut has_cone = false;
@@ -478,57 +481,10 @@ fn torus_band(
     let axis = number::unit(&torus.axis);
     let mut rings = Vec::with_capacity(2);
     for edge in edges {
-        let source = model.edge(edge);
-        let CurveForm::Circle {
-            center,
-            normal,
-            radius_sq,
-            ..
-        } = curve_form(model.geom(), source.curve, dec)?
-        else {
+        let Some(ring) = torus_ring(model, torus, &axis, edge, dec)? else {
             return Ok(None);
         };
-        let offset = center.minus(&torus.center);
-        if !zero(&normal.cross(&axis).norm_squared(), dec)?
-            || !zero(&offset.cross(&axis).norm_squared(), dec)?
-        {
-            return Ok(None);
-        }
-        let height = offset.dot(&axis);
-        let radius = number::sqrt_real(&radius_sq);
-        let turns = if zero(&height, dec)? {
-            if !zero(&(&radius - &(&torus.major - &torus.minor)), dec)? {
-                return Ok(None);
-            }
-            2
-        } else {
-            if !zero(&(&radius - &torus.major), dec)? {
-                return Ok(None);
-            }
-            if zero(&(&height - &torus.minor), dec)? {
-                1
-            } else if zero(&(&height + &torus.minor), dec)? {
-                3
-            } else {
-                return Ok(None);
-            }
-        };
-        let increasing = match dec.sign(&normal.dot(&axis)) {
-            Outcome::Proven(sign) => sign == StrictSign::Positive,
-            Outcome::Refused(refusal) => return Err(refusal),
-            _ => return Ok(None),
-        };
-        rings.push(SourceRing {
-            edge,
-            curve: source.curve,
-            center,
-            normal,
-            radius,
-            radius_sq,
-            v: Real::zero(),
-            turns: Some(turns),
-            increasing,
-        });
+        rings.push(ring);
     }
     rings.sort_by_key(|ring| ring.turns);
     if rings[0].turns == rings[1].turns {
@@ -554,8 +510,69 @@ fn torus_band(
     }))
 }
 
+// A torus parallel at an exact quarter turn of the tube, or `None`.
+pub(crate) fn torus_ring(
+    model: &Model,
+    torus: &Torus,
+    axis: &Vector3,
+    edge: EdgeId,
+    dec: &mut Decider,
+) -> Result<Option<SourceRing>, Refusal> {
+    let source = model.edge(edge);
+    let CurveForm::Circle {
+        center,
+        normal,
+        radius_sq,
+        ..
+    } = curve_form(model.geom(), source.curve, dec)?
+    else {
+        return Ok(None);
+    };
+    let offset = center.minus(&torus.center);
+    if !zero(&normal.cross(axis).norm_squared(), dec)?
+        || !zero(&offset.cross(axis).norm_squared(), dec)?
+    {
+        return Ok(None);
+    }
+    let height = offset.dot(axis);
+    let radius = number::sqrt_real(&radius_sq);
+    let turns = if zero(&height, dec)? {
+        if !zero(&(&radius - &(&torus.major - &torus.minor)), dec)? {
+            return Ok(None);
+        }
+        2
+    } else {
+        if !zero(&(&radius - &torus.major), dec)? {
+            return Ok(None);
+        }
+        if zero(&(&height - &torus.minor), dec)? {
+            1
+        } else if zero(&(&height + &torus.minor), dec)? {
+            3
+        } else {
+            return Ok(None);
+        }
+    };
+    let increasing = match dec.sign(&normal.dot(axis)) {
+        Outcome::Proven(sign) => sign == StrictSign::Positive,
+        Outcome::Refused(refusal) => return Err(refusal),
+        _ => return Ok(None),
+    };
+    Ok(Some(SourceRing {
+        edge,
+        curve: source.curve,
+        center,
+        normal,
+        radius,
+        radius_sq,
+        v: Real::zero(),
+        turns: Some(turns),
+        increasing,
+    }))
+}
+
 // Whether a ring's coedge in this face follows its edge.
-fn ring_use(model: &Model, face: FaceId, edge: EdgeId) -> Result<bool, Refusal> {
+pub(crate) fn ring_use(model: &Model, face: FaceId, edge: EdgeId) -> Result<bool, Refusal> {
     for lp in &model.face(face).loops {
         if let Loop::Coedges(coedges) = model.loop_(*lp)
             && let [coedge] = coedges.as_slice()

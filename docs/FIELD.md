@@ -203,7 +203,17 @@ Each passes its own proof, and their footprints must also lie strictly apart, pr
 exactly as for two bores. Clearing every wall says nothing about that gap. Parallel
 walls so separated never meet, so the tools commute: the boss is always united first
 and the bore subtracted after, whichever came first in the recipe. Several bores
-beside a boss and a bore through a boss remain unsupported.
+beside a boss remain unsupported.
+
+A bore newer than the boss may instead run through it. Its axis lies inside the
+boss's wall, and that selects the second proof: the bore's footprint must lie strictly
+inside the boss's, again exactly on the squares. Its tool must hold the axis from the
+far cap to the boss's end, not only to the shoulder, so a floor in either material
+refuses. The tool then cuts the united boss as it did in the recipe. The boss's end
+keeps its name with the bore's mouth in it, the shoulder stops at the boss alone and
+no disk remains across the joint. A bore older than the boss stops under it, so it
+must still pass the separation proof, and a contact or crossing of the two walls
+refuses.
 
 Drafted planar caps can extend and trim an unchanged cylindrical side. Their
 heights are affine over the exact radial disk; nonnegative thickness clips its

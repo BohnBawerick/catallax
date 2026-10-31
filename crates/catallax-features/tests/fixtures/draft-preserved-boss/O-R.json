@@ -1,0 +1,177 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "O-R",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "translation": [
+          "7",
+          "11",
+          "-13"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "20",
+              "-15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-20",
+              "-15"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "20"
+    },
+    {
+      "id": "boss-profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "translation": [
+          "269/15",
+          "83/3",
+          "-97/15"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "wall",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "4"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "boss",
+      "op": "extrude",
+      "profile": "boss-profile",
+      "distance": "5"
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "base",
+      "tool": "boss"
+    },
+    {
+      "id": "hole",
+      "op": "hole",
+      "target": "joined",
+      "at": [
+        {
+          "id": "eccentric",
+          "point": [
+            "314/15",
+            "95/3",
+            "-82/15"
+          ],
+          "direction": [
+            "-11/15",
+            "-2/3",
+            "-2/15"
+          ]
+        }
+      ],
+      "diameter": "4",
+      "depth": "through",
+      "tip": "flat"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "hole",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "right"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "left"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "11/15",
+        "2/3",
+        "2/15"
+      ],
+      "neutral": {
+        "point": [
+          "7",
+          "11",
+          "-13"
+        ],
+        "normal": [
+          "11/15",
+          "2/3",
+          "2/15"
+        ]
+      },
+      "angle": "3"
+    }
+  ],
+  "result": "drafted"
+}

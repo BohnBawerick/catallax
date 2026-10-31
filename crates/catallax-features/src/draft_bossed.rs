@@ -34,8 +34,11 @@ pub struct BossedCell {
     pub boss: Boss,
     /// Support index of the cap carrying the boss.
     pub shoulder: usize,
-    /// The bores through `outer`, each strictly apart from the boss.
+    /// The bores through `outer`, each strictly apart from the boss unless `through`.
     pub bored: Option<BoredCell>,
+    /// Whether the bore runs on through the boss, strictly inside its footprint, to
+    /// open on its end instead of the shoulder.
+    pub through: bool,
 }
 
 fn unsupported(detail: &str) -> Refusal {
@@ -95,6 +98,30 @@ impl BossedCell {
         definition: &DraftDefinition,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        Self::arranged(outer, boss, bores, false, definition, dec)
+    }
+
+    /// The same certification for a bore that runs on through the boss. Its footprint
+    /// is proved strictly inside the boss's, so the bore never meets the boss's wall
+    /// and the shoulder, whose ring stays outside it, needs no second exclusion.
+    pub fn through(
+        outer: PlanarCell,
+        boss: Boss,
+        bores: Vec<Bore>,
+        definition: &DraftDefinition,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        Self::arranged(outer, boss, bores, true, definition, dec)
+    }
+
+    fn arranged(
+        outer: PlanarCell,
+        boss: Boss,
+        bores: Vec<Bore>,
+        through: bool,
+        definition: &DraftDefinition,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         bored::check_axial(&boss.cylinder, definition, dec)?;
         let shoulder = certify_footprint(outer.supports.iter().map(|s| &s.plane), &boss, dec)?;
         let bored = if bores.is_empty() {
@@ -102,7 +129,11 @@ impl BossedCell {
         } else {
             let cell = BoredCell::new(outer.clone(), bores, definition, dec)?;
             for bore in &cell.bores {
-                bored::certify_disjoint(&boss.cylinder, &bore.cylinder, dec)?;
+                if through {
+                    bored::certify_nested(&boss.cylinder, &bore.cylinder, dec)?;
+                } else {
+                    bored::certify_disjoint(&boss.cylinder, &bore.cylinder, dec)?;
+                }
             }
             Some(cell)
         };
@@ -111,11 +142,13 @@ impl BossedCell {
             boss,
             shoulder,
             bored,
+            through,
         })
     }
 
     /// Exact strict material membership. The joined disk is interior: the base
-    /// lies under it and the boss over it.
+    /// lies under it and the boss over it. A bore running through keeps cutting
+    /// the boss above that disk.
     pub fn contains_interior(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         let base = match &self.bored {
             Some(cell) => cell.contains_interior(point, dec)?,
@@ -127,12 +160,19 @@ impl BossedCell {
         let cylinder = &self.boss.cylinder;
         let radial = point.minus(&cylinder.origin).cross(&cylinder.axis);
         let excess = radial.norm_squared() - &cylinder.radius_sq * &cylinder.axis.norm_squared();
-        Ok(sign(&excess, dec)? == Sign::Negative
-            && sign(
+        if sign(&excess, dec)? != Sign::Negative
+            || sign(
                 &value(&self.outer.supports[self.shoulder].plane, point),
                 dec,
-            )? != Sign::Negative
-            && sign(&value(&self.boss.top, point), dec)? == Sign::Negative)
+            )? == Sign::Negative
+            || sign(&value(&self.boss.top, point), dec)? != Sign::Negative
+        {
+            return Ok(false);
+        }
+        match &self.bored {
+            Some(cell) if self.through => cell.clear_of_bores(point, dec),
+            _ => Ok(true),
+        }
     }
 
     /// A relatively open neutral section, through the base or across the boss.

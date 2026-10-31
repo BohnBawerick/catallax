@@ -37,6 +37,10 @@ pub(crate) struct PreservedBoss {
     pub(crate) boss: Boss,
     pub(crate) wall: Vec<usize>,
     pub(crate) top: Vec<usize>,
+    /// The target's patch carrying the boss.
+    pub(crate) shoulder: usize,
+    /// Whether the preserved bore, newer than the boss, cuts through it.
+    pub(crate) through: bool,
 }
 
 /// Curved source material the draft leaves in place around its planar target.
@@ -1309,9 +1313,13 @@ impl Plan {
                                 .collect(),
                         })
                         .collect();
-                    let cell =
-                        BossedCell::new(cell.clone(), boss.boss.clone(), bores, definition, dec)
-                            .map_err(crate::draft_source::source_refusal)?;
+                    let arrange = if boss.through {
+                        BossedCell::through
+                    } else {
+                        BossedCell::new
+                    };
+                    let cell = arrange(cell.clone(), boss.boss.clone(), bores, definition, dec)
+                        .map_err(crate::draft_source::source_refusal)?;
                     components = vec![Candidate::Bossed(Box::new(cell))];
                 }
             }

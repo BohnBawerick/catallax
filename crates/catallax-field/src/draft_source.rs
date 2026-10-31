@@ -783,12 +783,13 @@ impl Plan {
         Ok(bores)
     }
 
-    /// Proves complete cylinders of a tool chain unchanged by a draft of `skin`.
+    /// Proves complete cylinders of a tool chain unchanged by a draft of `skin`. A
+    /// bore through `boss` runs past the shoulder to the boss's end.
     fn prove_bores(
         &self,
         chain: &[ToolChain],
         bores: Vec<ChainBore>,
-        skin: &Skin,
+        (skin, boss): (&Skin, Option<&PreservedBoss>),
         refs: &[FaceRef],
         definition: &DraftDefinition,
         dec: &mut Decider,
@@ -809,7 +810,10 @@ impl Plan {
         }
         let mut preserved = Vec::with_capacity(bores.len());
         for (tool, added, bore) in bores {
-            let ends = caps.map(|cap| &skin.patches[cap].plane);
+            let ends = caps.map(|cap| match boss {
+                Some(boss) if boss.through && cap == boss.shoulder => &boss.boss.top,
+                _ => &skin.patches[cap].plane,
+            });
             let middles = self.check_through(tool, &bore, ends, dec)?;
             // A band beyond the caps, such as a hole's entry, bounds no source material.
             let mut walls = Vec::new();
@@ -929,13 +933,16 @@ impl Plan {
             boss,
             wall: walls,
             top: caps,
+            shoulder: cap,
+            through: false,
         })
     }
 
     /// The planar target and the curved material to keep around its draft: a
     /// chain of subtractions of complete cylinders, one complete cylinder standing
-    /// on a cap, or one of each in either history order. Any other curved source
-    /// returns `None` and keeps its refusal.
+    /// on a cap, or one of each in either history order. A bore newer than the boss
+    /// may run through it. Any other curved source returns `None` and keeps its
+    /// refusal.
     pub(crate) fn preserved_source(
         &self,
         recipe: &Recipe,
@@ -955,6 +962,8 @@ impl Plan {
             return Ok(None);
         };
         let mut boss_tool = None;
+        // Only a bore made after the boss can have cut it.
+        let mut cuts_boss = false;
         let target = if planar(stop) {
             stop
         } else {
@@ -967,6 +976,7 @@ impl Plan {
             if !planar(target) || self.boss_carriers(registers[tool]).is_none() {
                 return Ok(None);
             }
+            cuts_boss = !chain.is_empty();
             chain.extend(older);
             boss_tool = Some(tool);
             target
@@ -991,23 +1001,27 @@ impl Plan {
         let boss = match boss_tool {
             Some(tool) => {
                 let source = (registers[tool], faces[tool].as_slice());
-                Some(Box::new(
-                    self.prove_boss(source, &skin, refs, definition, dec)?,
-                ))
+                let mut boss = self.prove_boss(source, &skin, refs, definition, dec)?;
+                if let (true, [(.., bore)]) = (cuts_boss, bores.as_slice()) {
+                    boss.through = bored::axis_inside(&boss.boss.cylinder, &bore.cylinder, dec)?;
+                }
+                Some(Box::new(boss))
             }
             None => None,
         };
         let bores = if chain.is_empty() {
             None
         } else {
-            Some(self.prove_bores(&chain, bores, &skin, refs, definition, dec)?)
+            let envelope = (&skin, boss.as_deref());
+            Some(self.prove_bores(&chain, bores, envelope, refs, definition, dec)?)
         };
         Ok(Some((target.clone(), skin, Preserved { bores, boss })))
     }
 
     /// Applies the recipe's own tools to a drafted target, republishing the
     /// unchanged walls. Nothing returns once the target itself is gone. Proved
-    /// apart, a boss and a bore commute, so either history restores this way.
+    /// apart, a boss and a bore commute, so either history restores this way. A bore
+    /// through the boss is newer than it, so its whole tool cuts the restored boss too.
     pub(crate) fn restore_preserved(
         &mut self,
         drafted: usize,

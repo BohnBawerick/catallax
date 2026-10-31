@@ -5,6 +5,7 @@ use crate::draft::{
     annular::{AnnularCell, AnnularWall},
     arrangement::{Patch, Polyhedron, Skin},
     bored::{self, Bore, BoredCell},
+    bossed::{self, Boss, BossedCell},
     capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
     near,
@@ -58,9 +59,20 @@ struct BoundBore {
     sense: Sense,
 }
 
+/// A planar base's source wires around one outward wall. The wall and top are
+/// unchanged, so only the base's planes enter the envelope.
+struct BossedSource {
+    skin: Skin,
+    planes: Vec<FaceId>,
+    wall: FaceId,
+    /// The wall's rings, shoulder first, then top.
+    rings: [BoreRing; 2],
+}
+
 enum Cell {
     Annular(Box<AnnularCell>),
     Bored(Box<BoredCell>, Vec<BoundBore>),
+    Bossed(Box<BossedCell>, Box<[BoreRing; 2]>),
     Planar(PlanarCell),
     Round(Box<RoundCell>),
     Polyhedral(Box<Polyhedron>),
@@ -72,6 +84,7 @@ impl Cell {
         match self {
             Self::Annular(cell) => cell.contains_interior(point, dec),
             Self::Bored(cell, ..) => cell.contains_interior(point, dec),
+            Self::Bossed(cell, ..) => cell.contains_interior(point, dec),
             Self::Planar(cell) => cell.contains_interior(point, dec),
             Self::Round(cell) => cell.contains_interior(point, dec),
             Self::Polyhedral(cell) => cell.contains_interior(point, dec),
@@ -84,6 +97,7 @@ impl Cell {
             Self::Annular(cell) => cell.anchored(&definition.neutral, dec),
             // Strict clearance leaves positive area around the removed disk.
             Self::Bored(cell, ..) => cell.outer.anchored(&definition.neutral, dec),
+            Self::Bossed(cell, ..) => cell.anchored(&definition.neutral, dec),
             Self::Planar(cell) => cell.anchored(&definition.neutral, dec),
             Self::Round(cell) => cell.anchored(&definition.neutral, dec),
             Self::Polyhedral(cell) => cell.anchored(&definition.neutral, dec),
@@ -115,6 +129,12 @@ impl Cell {
                         .iter()
                         .flat_map(|bore| bore.origins.iter().cloned()),
                 )
+                .collect(),
+            Self::Bossed(cell, ..) => Self::Planar(cell.outer.clone())
+                .origins()
+                .into_iter()
+                .chain(cell.boss.origins.iter().cloned())
+                .chain(cell.boss.top_origins.iter().cloned())
                 .collect(),
             Self::Planar(cell) => cell
                 .supports
@@ -155,6 +175,15 @@ impl Cell {
         match self {
             Self::Annular(cell) => Self::Round(Box::new(cell.outer.clone())).radius(dec),
             Self::Bored(cell, ..) => Self::Planar(cell.outer.clone()).radius(dec),
+            Self::Bossed(cell, ..) => {
+                // The shoulder ring lies in the base's hull. Only the top reaches out.
+                let boss = &cell.boss;
+                let centre = bored::axis_point(&boss.cylinder, &boss.top);
+                let radius = dec.enclose_at(&boss.cylinder.radius_sq.sqrt(), 128)?.hi();
+                Ok(Self::Planar(cell.outer.clone())
+                    .radius(dec)?
+                    .max(point_bound(&centre, dec)? + Rational::from_i64(3) * radius))
+            }
             Self::Planar(cell) => cell
                 .vertices
                 .iter()
@@ -185,6 +214,7 @@ impl Cell {
         Ok(match self {
             Self::Annular(cell) => assemble_annular(model, cell),
             Self::Bored(cell, bores) => assemble_bored(model, cell, bores),
+            Self::Bossed(cell, rings) => assemble_bossed(model, cell, rings),
             Self::Planar(cell) => assemble(model, cell, &[], Vec::new()),
             Self::Round(cell) => assemble_round(model, cell),
             Self::Polyhedral(cell) => assemble_polyhedral(model, cell),
@@ -793,6 +823,55 @@ fn planar(
     })
 }
 
+/// A wall's two complete rings, each with the one planar loop that shares it.
+/// `None` when the wall has any other boundary.
+fn wall_rings(model: &Model, wall: FaceId, planes: &[FaceId]) -> Option<[(BoreRing, LoopId); 2]> {
+    let mut rings = Vec::with_capacity(2);
+    for lp in &model.face(wall).loops {
+        let Loop::Coedges(cs) = model.loop_(*lp) else {
+            return None;
+        };
+        let [coedge] = cs.as_slice() else {
+            return None;
+        };
+        let coedge = model.coedge(*coedge);
+        let edge = model.edge(coedge.edge);
+        let curve = model.geom().curve(edge.curve);
+        if edge.start.is_some() || edge.end.is_some() || !matches!(curve, Curve::Circle(_)) {
+            return None;
+        }
+        let mut uses = planes.iter().flat_map(|face| {
+            model
+                .face(*face)
+                .loops
+                .iter()
+                .filter_map(|lp| match model.loop_(*lp) {
+                    Loop::Coedges(cs) => match cs.as_slice() {
+                        [c] if model.coedge(*c).edge == coedge.edge => {
+                            Some((*face, *lp, model.coedge(*c).sense))
+                        }
+                        _ => None,
+                    },
+                    Loop::Vertex(_) => None,
+                })
+        });
+        let (Some((cap, hole, cap_sense)), None) = (uses.next(), uses.next()) else {
+            return None;
+        };
+        rings.push((
+            BoreRing {
+                curve: curve.clone(),
+                edge_sense: edge.sense,
+                cap_sense,
+                wall_sense: coedge.sense,
+                cap,
+            },
+            hole,
+        ));
+    }
+    rings.try_into().ok()
+}
+
 /// Recognises planar faces around inward walls, each trimmed by two complete
 /// rings. Any other shape returns `None`, keeping its established route.
 fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, Refusal> {
@@ -818,53 +897,17 @@ fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, 
     let mut caps = BTreeSet::new();
     let mut bores = Vec::with_capacity(walls.len());
     for wall in walls {
-        let mut rings = Vec::with_capacity(2);
-        for lp in &model.face(wall).loops {
-            let Loop::Coedges(cs) = model.loop_(*lp) else {
-                return Err(unsupported());
-            };
-            let [coedge] = cs.as_slice() else {
-                return Err(unsupported());
-            };
-            let coedge = model.coedge(*coedge);
-            let edge = model.edge(coedge.edge);
-            let curve = model.geom().curve(edge.curve);
-            if edge.start.is_some() || edge.end.is_some() || !matches!(curve, Curve::Circle(_)) {
-                return Err(unsupported());
-            }
-            let mut uses = planes.iter().flat_map(|face| {
-                model
-                    .face(*face)
-                    .loops
-                    .iter()
-                    .filter_map(|lp| match model.loop_(*lp) {
-                        Loop::Coedges(cs) => match cs.as_slice() {
-                            [c] if model.coedge(*c).edge == coedge.edge => {
-                                Some((*face, *lp, model.coedge(*c).sense))
-                            }
-                            _ => None,
-                        },
-                        Loop::Vertex(_) => None,
-                    })
-            });
-            let (Some((cap, hole, cap_sense)), None) = (uses.next(), uses.next()) else {
-                return Err(unsupported());
-            };
-            holes.insert(hole);
-            caps.insert(cap);
-            rings.push(BoreRing {
-                curve: curve.clone(),
-                edge_sense: edge.sense,
-                cap_sense,
-                wall_sense: coedge.sense,
-                cap,
-            });
-        }
-        let rings: [BoreRing; 2] = rings.try_into().map_err(|_| unsupported())?;
-        if rings[0].cap == rings[1].cap {
+        let [(a, a_hole), (b, b_hole)] =
+            wall_rings(model, wall, &planes).ok_or_else(unsupported)?;
+        if a.cap == b.cap {
             return Err(unsupported());
         }
-        bores.push(SourceBore { wall, rings });
+        holes.extend([a_hole, b_hole]);
+        caps.extend([a.cap, b.cap]);
+        bores.push(SourceBore {
+            wall,
+            rings: [a, b],
+        });
     }
     // A blind floor or a shoulder has only rings. Every bore needs the same two
     // separate caps, each holding one outer wire and exactly these rings.
@@ -880,6 +923,43 @@ fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, 
         skin,
         planes,
         bores,
+    }))
+}
+
+/// Recognises planar faces around one outward wall that rises from a hole in one
+/// face to the sole wire of another. Any other shape returns `None`, keeping its
+/// established route and refusal.
+fn bossed_source(model: &Model, faces: &[FaceId]) -> Result<Option<BossedSource>, Refusal> {
+    let mut wall = None;
+    let mut planes = Vec::new();
+    for face in faces {
+        match model.geom().surface(model.face(*face).surface) {
+            Surface::Cylinder(_) if model.face(*face).sense == Sense::Same && wall.is_none() => {
+                wall = Some(*face);
+            }
+            Surface::Plane(_) => planes.push(*face),
+            _ => return Ok(None),
+        }
+    }
+    let Some(wall) = wall else {
+        return Ok(None);
+    };
+    let Some([a, b]) = wall_rings(model, wall, &planes) else {
+        return Ok(None);
+    };
+    let loops = |ring: &(BoreRing, LoopId)| model.face(ring.0.cap).loops.len();
+    let ((shoulder, hole), (top, _)) = match (loops(&a), loops(&b)) {
+        (2, 1) => (a, b),
+        (1, 2) => (b, a),
+        _ => return Ok(None),
+    };
+    planes.retain(|face| *face != top.cap);
+    let skin = planar_skin(model, &planes, &BTreeSet::from([hole]))?;
+    Ok(Some(BossedSource {
+        skin,
+        planes,
+        wall,
+        rings: [shoulder, top],
     }))
 }
 
@@ -954,19 +1034,111 @@ fn bored_cell(
     Ok((chosen, Cell::Bored(Box::new(cell), bound)))
 }
 
+/// The planar base under an unchanged boss, proved before any topology.
+fn bossed_cell(
+    model: &Model,
+    source: &BossedSource,
+    refs: &[FaceRef],
+    definition: &DraftDefinition,
+    dec: &mut Decider,
+) -> Result<(BTreeSet<FaceId>, Cell), Refusal> {
+    let unsupported = |detail| Refusal::new("draft.unsupported-arrangement", detail);
+    let [shoulder, end] = &source.rings;
+    let origins = model.face_origins(source.wall).to_vec();
+    let top_origins = model.face_origins(end.cap).to_vec();
+    if refs.iter().any(|r| {
+        origins
+            .iter()
+            .chain(&top_origins)
+            .any(|origin| r.face.matches(origin))
+    }) {
+        return Err(unsupported("a selected boss needs a curved arrangement"));
+    }
+    let selected = source.skin.resolve_faces(refs, dec)?;
+    let chosen = selected.iter().map(|i| source.planes[*i]).collect();
+    if !source.skin.is_convex(dec)? {
+        return Err(unsupported(
+            "a preserved boss needs a convex planar envelope",
+        ));
+    }
+    let top = model.face(end.cap);
+    let (Surface::Cylinder(cylinder), Surface::Plane(plane)) = (
+        model.geom().surface(model.face(source.wall).surface),
+        model.geom().surface(top.surface),
+    ) else {
+        unreachable!("bossed sources keep a cylindrical wall and a planar top")
+    };
+    let mut plane = plane.clone();
+    if top.sense == Sense::Reversed {
+        plane.normal = plane.normal.scaled(&Real::from_i64(-1));
+    }
+    let boss = Boss {
+        cylinder: cylinder.clone(),
+        origins,
+        top: plane,
+        top_origins,
+    };
+    let cap = bossed::certify_footprint(
+        source.skin.patches.iter().map(|patch| &patch.plane),
+        &boss,
+        dec,
+    )?;
+    if source.planes[cap] != shoulder.cap {
+        return Err(unsupported("a boss ring lost its cap support"));
+    }
+    if selected.contains(&cap) {
+        return Err(unsupported("a selected shoulder moves the boss's ring"));
+    }
+    let outer = convex_cell(&source.skin, &selected, definition, dec)?;
+    let cell = BossedCell::new(outer, boss, definition, dec)?;
+    Ok((
+        chosen,
+        Cell::Bossed(Box::new(cell), Box::new(source.rings.clone())),
+    ))
+}
+
+fn ring_edge(model: &mut Model, ring: &BoreRing) -> EdgeId {
+    let curve = model.geom_mut().add_curve(ring.curve.clone());
+    model.add_edge(Edge {
+        curve,
+        sense: ring.edge_sense,
+        start: None,
+        end: None,
+    })
+}
+
+fn assemble_bossed(model: &mut Model, cell: &BossedCell, rings: &[BoreRing; 2]) -> BodyId {
+    let [lower, upper] = rings.each_ref().map(|ring| ring_edge(model, ring));
+    let [shoulder, end] = rings;
+    let boss = &cell.boss;
+    let walls = vec![
+        (
+            Surface::Cylinder(boss.cylinder.clone()),
+            Sense::Same,
+            vec![
+                vec![(lower, shoulder.wall_sense)],
+                vec![(upper, end.wall_sense)],
+            ],
+            boss.origins.clone(),
+        ),
+        (
+            Surface::Plane(boss.top.clone()),
+            Sense::Same,
+            vec![vec![(upper, end.cap_sense)]],
+            boss.top_origins.clone(),
+        ),
+    ];
+    let hole = (cell.shoulder, vec![(lower, shoulder.cap_sense)]);
+    assemble(model, &cell.outer, &[hole], walls)
+}
+
 fn assemble_bored(model: &mut Model, cell: &BoredCell, bound: &[BoundBore]) -> BodyId {
     let mut holes = Vec::with_capacity(2 * bound.len());
     let mut walls = Vec::with_capacity(bound.len());
     for (bore, bound) in cell.bores.iter().zip(bound) {
         let mut paths = Vec::with_capacity(2);
         for (ring, support) in &bound.rings {
-            let curve = model.geom_mut().add_curve(ring.curve.clone());
-            let edge = model.add_edge(Edge {
-                curve,
-                sense: ring.edge_sense,
-                start: None,
-                end: None,
-            });
+            let edge = ring_edge(model, ring);
             holes.push((*support, vec![(edge, ring.cap_sense)]));
             paths.push(vec![(edge, ring.wall_sense)]);
         }
@@ -1134,6 +1306,9 @@ pub(crate) fn build(
         (chosen, planar(&skin, &selected, definition, dec)?)
     } else if let Some(source) = bored_source(model, &source_faces)? {
         let (chosen, cell) = bored_cell(model, &source, refs, definition, dec)?;
+        (chosen, vec![cell])
+    } else if let Some(source) = bossed_source(model, &source_faces)? {
+        let (chosen, cell) = bossed_cell(model, &source, refs, definition, dec)?;
         (chosen, vec![cell])
     } else {
         (selected(model, body, refs, dec)?, Vec::new())

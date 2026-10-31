@@ -652,6 +652,19 @@ pub fn face_heights(
     bounds::face_heights(model, face, origin, direction, dec)
 }
 
+/// Exact reals whose least and greatest enclose `direction . (p - origin)` over
+/// a finite edge, in any placement, or `None` when the edge has no closed form.
+/// Only lines between vertices and circles qualify; an arc counts as its circle.
+pub fn edge_heights(
+    model: &Model,
+    edge: catallax_topology::EdgeId,
+    origin: &Point3,
+    direction: &Vector3,
+    dec: &mut Decider,
+) -> Result<Option<Vec<Real>>, Refusal> {
+    bounds::edge_heights(model, edge, origin, direction, dec)
+}
+
 fn solid_faces(model: &Model, body: BodyId) -> Result<Vec<FaceId>, Refusal> {
     match model.body(body).kind {
         BodyKind::Solid | BodyKind::Empty => Ok(model.faces_of_body(body)),

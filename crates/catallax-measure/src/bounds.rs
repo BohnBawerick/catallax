@@ -645,4 +645,4 @@ pub(crate) fn face(
     let mut query = Query::new(model, None, accuracy, dec)?;
     Ok(query.face(face, dec)?.finish(accuracy))
 }
-pub(crate) use height::face as face_heights;
+pub(crate) use height::{edge as edge_heights, face as face_heights};

@@ -834,9 +834,21 @@ impl<'a> Exporter<'a> {
                 self.bands.rings[&band.edges[0]].origin.clone(),
             )
         };
-        let form = CurveForm::Line {
-            origin,
-            dir: band.seam_direction.clone(),
+        let form = match self.model.geom().surface(band.surface) {
+            // The tube circle's angle is the torus v parameter.
+            Surface::Torus(s) => {
+                let reference = self.bands.references[&band.surface].clone();
+                CurveForm::Circle {
+                    center: number::point_plus(&s.center, &reference, &s.major),
+                    normal: reference.cross(&band.seam_direction),
+                    radius_sq: &s.minor * &s.minor,
+                    ref_dir: reference,
+                }
+            }
+            _ => CurveForm::Line {
+                origin,
+                dir: band.seam_direction.clone(),
+            },
         };
         let curve = self.curve_geometry(&form, false)?.unwrap().curve;
         let period = self.band_period()?;
@@ -857,13 +869,16 @@ impl<'a> Exporter<'a> {
         );
         let seam = self.edge_entity(a.id, b.id, seam_curve, true);
         self.report.added_edges += 1;
-        let origin = curve.line_origin.as_ref().unwrap();
-        let extent = a.point.extent(origin).max(b.point.extent(origin));
-        let line_error = (&curve.error + &(&extent * &curve.aspect)) * Rational::from_i64(2)
-            + a.point.error().max(b.point.error());
+        let seam_error = if let Some(origin) = curve.line_origin.as_ref() {
+            let extent = a.point.extent(origin).max(b.point.extent(origin));
+            (&curve.error + &(&extent * &curve.aspect)) * Rational::from_i64(2)
+                + a.point.error().max(b.point.error())
+        } else {
+            arc_error(&curve, &a, &b)
+        };
         let parameter_error = &number::upper(&band.radius_bound, self.dec)? * &period.error
             + &v.error * &number::upper(&band.v_scale, self.dec)?;
-        self.deviation(line_error + parameter_error + self.surface_error(band.surface, &bounds));
+        self.deviation(seam_error + parameter_error + self.surface_error(band.surface, &bounds));
         let mut uses = if chain_high {
             chain_uses.clone()
         } else {

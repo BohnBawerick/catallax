@@ -54,6 +54,16 @@ topology separately from the exact finite-decimal proof. An external kernel's
 nonadaptive volume estimate is not a certified property enclosure.
 
 
+## Torus band beside a cone
+
+A body whose complete rings include a torus band and a cone band has no chart
+route, so the band plan writes it. The torus band runs between its innermost
+parallel and a parallel at a quarter turn of the tube, as a concave ring fillet
+leaves it. Its seam is the tube circle, whose angle is the torus v parameter, and
+its rings keep exact quarter-turn pcurves. Any other parallel keeps the unseamed
+encoder. Only a scene with both bands reaches this path, so every other torus
+keeps its charted bytes.
+
 ## Rolling-envelope junction export
 
 `write_rolling_junction_step(model, body, &CertifiedSplineStepOptions, dec, out)`

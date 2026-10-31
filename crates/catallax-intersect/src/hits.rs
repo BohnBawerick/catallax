@@ -830,28 +830,54 @@ fn outer_sheet(
     ))
 }
 
-// A finite support's proved crossings. Meeting points record their incidence,
-// which ties each to this support and its closed chart.
+// A hit on an unresolved branch may not be on the curve, only on its surfaces.
+fn meet_of(geom: &GeomStore, c: CurveId, s: SurfaceId, uncertain_branch: bool) -> MeetOf {
+    if uncertain_branch && let Curve::Intersection(i) = geom.curve(c) {
+        let mut surfaces = i.surfaces.to_vec();
+        if !surfaces.contains(&s) {
+            surfaces.push(s);
+        }
+        MeetOf::Surfaces(surfaces)
+    } else {
+        MeetOf::CurveSurface(c, s)
+    }
+}
+
+// A finite support's proved crossings with a curve's whole supporting line. The
+// curve may keep less of that line: a cone generator is one ray. Meeting points
+// record their incidence, which ties each to this support and its closed chart,
+// so a crossing off the curve is dropped before it gets one.
 fn finite_hits(
     geom: &mut GeomStore,
     c: CurveId,
     s: SurfaceId,
     positions: Vec<Point3>,
-) -> CurveSurface {
-    if positions.is_empty() {
-        return CurveSurface::Disjoint;
-    }
-    let hits = positions
-        .into_iter()
-        .map(|position| CurveHit {
-            point: geom.add_point(PointDef::Meet(Meet {
-                of: MeetOf::CurveSurface(c, s),
+    plan: &Option<Arc<Plan>>,
+    dec: &mut Decider,
+) -> Answered<CurveSurface> {
+    let mut marks = MarkLog::new();
+    let mut hits = vec![];
+    for position in positions {
+        if let Some(uncertain_branch) = keep_branch(geom, c, s, &position, plan, dec, &mut marks)? {
+            let of = meet_of(geom, c, s, uncertain_branch);
+            let point = geom.add_point(PointDef::Meet(Meet {
+                of,
                 position: Position::Closed(position),
-            })),
-            contact: Contact::Crossing,
-        })
-        .collect();
-    CurveSurface::Meets(hits)
+            }));
+            hits.push(CurveHit {
+                point,
+                contact: Contact::Crossing,
+            });
+        }
+    }
+    Ok(Answer::with_marks(
+        if hits.is_empty() {
+            CurveSurface::Disjoint
+        } else {
+            CurveSurface::Meets(hits)
+        },
+        marks,
+    ))
 }
 
 pub(super) fn intersect(
@@ -888,7 +914,7 @@ pub(super) fn intersect(
             return Ok(Answer::exact(CurveSurface::Disjoint));
         }
         if let Some(positions) = support.line_hits(origin, dir, dec)? {
-            return Ok(Answer::exact(finite_hits(geom, c, s, positions)));
+            return finite_hits(geom, c, s, positions, &plan, dec);
         }
     }
     let implicit = geom.implicit(s).ok_or_else(|| {
@@ -1053,19 +1079,8 @@ pub(super) fn intersect(
     let hits = sorted
         .into_iter()
         .map(|candidate| {
-            let of = if candidate.uncertain_branch
-                && let Curve::Intersection(i) = geom.curve(c)
-            {
-                let mut surfaces = i.surfaces.to_vec();
-                if !surfaces.contains(&s) {
-                    surfaces.push(s);
-                }
-                MeetOf::Surfaces(surfaces)
-            } else {
-                MeetOf::CurveSurface(c, s)
-            };
             let point = geom.add_point(PointDef::Meet(Meet {
-                of,
+                of: meet_of(geom, c, s, candidate.uncertain_branch),
                 position: Position::Closed(candidate.position),
             }));
             if candidate.proven_tangent && !candidate.uncertain_branch {

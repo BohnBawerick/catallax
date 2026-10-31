@@ -6,7 +6,7 @@
 
 use crate::{
     Instruction, Location, Plan,
-    draft::{Cell, PreservedBore},
+    draft::{Cell, PreservedBore, PreservedBores},
     geometry,
 };
 use catallax_features::draft::{
@@ -54,6 +54,11 @@ struct Workspace {
     locations: Vec<Location>,
     states: Vec<State>,
 }
+/// One bore inside a subtraction's tool, and the end planes of its bands.
+struct ToolBore {
+    cylinder: Cylinder,
+    planes: Vec<Plane>,
+}
 pub(crate) fn failure(detail: &str) -> Refusal {
     Refusal::new("draft.unsupported-source-boundary", detail)
 }
@@ -64,6 +69,17 @@ pub(crate) fn source_refusal(refusal: Refusal) -> Refusal {
     } else {
         refusal
     }
+}
+/// Whether two bands lie on one cylinder, whichever way their axes point.
+fn same_wall(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result<bool, Refusal> {
+    Ok(
+        geometry::sign(&(&a.radius_sq - &b.radius_sq), dec)? == Sign::Zero
+            && geometry::sign(&a.axis.cross(&b.axis).norm_squared(), dec)? == Sign::Zero
+            && geometry::sign(
+                &b.origin.minus(&a.origin).cross(&a.axis).norm_squared(),
+                dec,
+            )? == Sign::Zero,
+    )
 }
 fn operation(kind: BooleanKind, a: bool, b: bool) -> bool {
     match kind {
@@ -509,12 +525,12 @@ impl Plan {
         })
     }
 
-    /// The tool's stacked bands, each bounded only by end planes and one wall.
-    fn tool_bands(
+    /// Groups a tool's walls by bore. Each band is bounded only by end planes
+    /// and its cylinders, and stacked bands of one bore share a cylinder.
+    fn tool_bores(
         &self,
         register: usize,
-        cylinder: &Cylinder,
-        planes: &mut Vec<Plane>,
+        bores: &mut Vec<ToolBore>,
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
         let leaf = match self.instructions[register] {
@@ -524,37 +540,50 @@ impl Plan {
                 a,
                 b,
             } => {
-                self.tool_bands(a, cylinder, planes, dec)?;
-                return self.tool_bands(b, cylinder, planes, dec);
+                self.tool_bores(a, bores, dec)?;
+                return self.tool_bores(b, bores, dec);
             }
             _ => return Err(failure("a preserved bore needs a union of tool bands")),
         };
-        for constraint in self.leaves[leaf].constraints() {
-            let axial = match constraint.surface() {
-                Surface::Plane(plane) => {
-                    planes.push(plane.clone());
-                    plane.normal.cross(&cylinder.axis)
-                }
-                Surface::Cylinder(band) => {
-                    if geometry::sign(&(&band.radius_sq - &cylinder.radius_sq), dec)? != Sign::Zero
-                        || geometry::sign(
-                            &band
-                                .origin
-                                .minus(&cylinder.origin)
-                                .cross(&cylinder.axis)
-                                .norm_squared(),
-                            dec,
-                        )? != Sign::Zero
-                    {
-                        return Err(failure("preserved bore bands need one cylinder"));
-                    }
-                    band.axis.cross(&cylinder.axis)
-                }
-                _ => return Err(failure("a preserved bore tool has an unsupported face")),
+        let constraints = self.leaves[leaf].constraints();
+        let mut owners = Vec::new();
+        for constraint in constraints {
+            let Surface::Cylinder(band) = constraint.surface() else {
+                continue;
             };
-            // A parallel flat or an oblique end would leave a noncircular mouth.
-            if geometry::sign(&axial.norm_squared(), dec)? != Sign::Zero {
-                return Err(failure("a preserved bore tool has an unsupported face"));
+            let mut owner = None;
+            for (index, bore) in bores.iter().enumerate() {
+                if same_wall(&bore.cylinder, band, dec)? {
+                    owner = Some(index);
+                    break;
+                }
+            }
+            owners.push(owner.unwrap_or_else(|| {
+                bores.push(ToolBore {
+                    cylinder: band.clone(),
+                    planes: Vec::new(),
+                });
+                bores.len() - 1
+            }));
+        }
+        if owners.is_empty() {
+            return Err(failure("a preserved bore tool has an unsupported face"));
+        }
+        for constraint in constraints {
+            match constraint.surface() {
+                Surface::Plane(plane) => {
+                    for owner in &owners {
+                        let bore = &mut bores[*owner];
+                        // A parallel flat or an oblique end would leave a noncircular mouth.
+                        let axial = plane.normal.cross(&bore.cylinder.axis);
+                        if geometry::sign(&axial.norm_squared(), dec)? != Sign::Zero {
+                            return Err(failure("a preserved bore tool has an unsupported face"));
+                        }
+                        bore.planes.push(plane.clone());
+                    }
+                }
+                Surface::Cylinder(_) => (),
+                _ => return Err(failure("a preserved bore tool has an unsupported face")),
             }
         }
         Ok(())
@@ -562,21 +591,23 @@ impl Plan {
 
     /// Proves the tool holds the axis over every interval between its end planes
     /// inside the caps. Bands share one wall, so the whole section is removed.
+    /// Another bore's band cannot be the witness: the bores are proved apart.
     /// Returns one axis point per interval.
     fn check_through(
         &self,
         tool: usize,
-        cylinder: &Cylinder,
+        bore: &ToolBore,
         caps: [&Plane; 2],
         dec: &mut Decider,
     ) -> Result<Vec<Point3>, Refusal> {
-        let mut planes = Vec::new();
-        self.tool_bands(tool, cylinder, &mut planes, dec)?;
-        let lower = bored::axis_point(cylinder, caps[0]);
-        let upper = bored::axis_point(cylinder, caps[1]);
+        let cylinder = &bore.cylinder;
+        let [mut lower, mut upper] = caps.map(|cap| bored::axis_point(cylinder, cap));
+        if geometry::sign(&upper.minus(&lower).dot(&cylinder.axis), dec)? != Sign::Positive {
+            std::mem::swap(&mut lower, &mut upper);
+        }
         let height = |p: &Point3| p.minus(&lower).dot(&cylinder.axis);
         let mut stops = vec![lower.clone(), upper];
-        for plane in &planes {
+        for plane in &bore.planes {
             let stop = bored::axis_point(cylinder, plane);
             let mut index = 0;
             while index < stops.len()
@@ -606,10 +637,10 @@ impl Plan {
         Ok(middles)
     }
 
-    /// Recognises a recipe-defined subtraction of one complete cylinder from a
-    /// planar target. The proof reads recipe faces and exact leaves, never a
-    /// B-rep. Any other curved source returns `None` and keeps its refusal.
-    pub(crate) fn preserved_bore(
+    /// Recognises a recipe-defined chain of subtractions of complete cylinders
+    /// from a planar target. The proof reads recipe faces and exact leaves, never
+    /// a B-rep. Any other curved source returns `None` and keeps its refusal.
+    pub(crate) fn preserved_bores(
         &self,
         recipe: &Recipe,
         body: &StepId,
@@ -617,62 +648,70 @@ impl Plan {
         definition: &DraftDefinition,
         (registers, faces): (&BTreeMap<StepId, usize>, &BTreeMap<StepId, Vec<usize>>),
         dec: &mut Decider,
-    ) -> Result<Option<(StepId, Skin, PreservedBore)>, Refusal> {
-        let target = match recipe.step(body).map(|s| &s.op) {
-            Some(Operation::Boolean {
-                kind: BooleanKind::Subtract,
-                target,
-                ..
-            })
-            | Some(Operation::Hole { target, .. })
-            | Some(Operation::ExtrudeThrough { target, .. }) => target,
-            _ => return Ok(None),
-        };
+    ) -> Result<Option<(StepId, Skin, PreservedBores)>, Refusal> {
         let plane = |f: &usize| matches!(self.faces[*f].surface, Surface::Plane(_));
-        if faces[body].iter().all(plane) || !faces[target].iter().all(plane) {
-            return Ok(None);
-        }
-        let Instruction::Boolean {
-            kind: BooleanKind::Subtract,
-            a,
-            b,
-        } = self.instructions[registers[body]]
-        else {
-            return Ok(None);
-        };
-        if a != registers[target] {
-            return Ok(None);
-        }
-        let added: Vec<_> = faces[body]
-            .iter()
-            .copied()
-            .filter(|f| faces[target].binary_search(f).is_err())
-            .collect();
-        let mut walls = Vec::new();
-        let mut cylinder = None;
-        for f in &added {
-            if let Surface::Cylinder(wall) = &self.faces[*f].surface {
-                walls.push(*f);
-                cylinder.get_or_insert_with(|| wall.clone());
+        let mut chain = Vec::new();
+        let mut step = body;
+        let target = loop {
+            let target = match recipe.step(step).map(|s| &s.op) {
+                Some(Operation::Boolean {
+                    kind: BooleanKind::Subtract,
+                    target,
+                    ..
+                })
+                | Some(Operation::Hole { target, .. })
+                | Some(Operation::ExtrudeThrough { target, .. }) => target,
+                _ => return Ok(None),
+            };
+            if faces[step].iter().all(plane) {
+                return Ok(None);
             }
-        }
-        let Some(cylinder) = cylinder else {
-            return Err(failure("a preserved bore needs one cylindrical wall"));
+            let Instruction::Boolean {
+                kind: BooleanKind::Subtract,
+                a,
+                b,
+            } = self.instructions[registers[step]]
+            else {
+                return Ok(None);
+            };
+            if a != registers[target] {
+                return Ok(None);
+            }
+            let added: Vec<_> = faces[step]
+                .iter()
+                .copied()
+                .filter(|f| faces[target].binary_search(f).is_err())
+                .collect();
+            chain.push((b, added));
+            if faces[target].iter().all(plane) {
+                break target;
+            }
+            step = target;
         };
-        if refs
-            .iter()
-            .any(|r| added.iter().any(|f| r.face.matches(&self.faces[*f].origin)))
-        {
-            return Err(failure("a selected bore needs a curved arrangement"));
+        chain.reverse();
+        let mut bores = Vec::new();
+        for (tool, added) in &chain {
+            if refs
+                .iter()
+                .any(|r| added.iter().any(|f| r.face.matches(&self.faces[*f].origin)))
+            {
+                return Err(failure("a selected bore needs a curved arrangement"));
+            }
+            let mut found = Vec::new();
+            self.tool_bores(*tool, &mut found, dec)?;
+            bores.extend(found.into_iter().map(|bore| (*tool, added, bore)));
         }
         let skin = self.draft_source_skin(recipe, target, registers, faces, dec)?;
         if !skin.is_convex(dec)? {
             return Err(failure("a preserved bore needs a convex planar envelope"));
         }
-        bored::check_axial(&cylinder, definition, dec).map_err(source_refusal)?;
-        let caps = bored::certify_clear(
+        for (.., bore) in &bores {
+            bored::check_axial(&bore.cylinder, definition, dec).map_err(source_refusal)?;
+        }
+        let cylinders: Vec<_> = bores.iter().map(|(.., bore)| &bore.cylinder).collect();
+        let caps = bored::certify_bores(
             skin.patches.iter().map(|patch| &patch.plane),
-            &cylinder,
+            &cylinders,
             dec,
         )
         .map_err(source_refusal)?;
@@ -680,28 +719,39 @@ impl Plan {
         if caps.iter().any(|cap| selected.contains(cap)) {
             return Err(failure("a selected bore cap moves the cap-hole trim"));
         }
-        let middles =
-            self.check_through(b, &cylinder, caps.map(|cap| &skin.patches[cap].plane), dec)?;
-        // A band beyond the caps, such as a hole's entry, bounds no source material.
-        let mut crossing = Vec::with_capacity(walls.len());
-        for wall in walls {
-            let mut within = false;
-            for middle in &middles {
-                within |= leaf_location(&self.leaves[self.faces[wall].leaf], middle, dec)?
-                    == Location::Inside;
+        let mut preserved = Vec::with_capacity(bores.len());
+        for (tool, added, bore) in bores {
+            let ends = caps.map(|cap| &skin.patches[cap].plane);
+            let middles = self.check_through(tool, &bore, ends, dec)?;
+            // A band beyond the caps, such as a hole's entry, bounds no source material.
+            let mut walls = Vec::new();
+            for wall in added {
+                let Surface::Cylinder(carrier) = &self.faces[*wall].surface else {
+                    continue;
+                };
+                if !same_wall(carrier, &bore.cylinder, dec)? {
+                    continue;
+                }
+                let leaf = &self.leaves[self.faces[*wall].leaf];
+                let mut within = false;
+                for middle in &middles {
+                    within |= leaf_location(leaf, middle, dec)? == Location::Inside;
+                }
+                if within {
+                    walls.push(*wall);
+                }
             }
-            if within {
-                crossing.push(wall);
-            }
+            preserved.push(PreservedBore {
+                walls,
+                cylinder: bore.cylinder,
+            });
         }
-        let walls = crossing;
         Ok(Some((
             target.clone(),
             skin,
-            PreservedBore {
-                register: b,
-                walls,
-                cylinder,
+            PreservedBores {
+                tools: chain.into_iter().map(|(tool, _)| tool).collect(),
+                bores: preserved,
             },
         )))
     }

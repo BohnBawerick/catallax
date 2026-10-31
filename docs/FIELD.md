@@ -173,15 +173,19 @@ is chosen before its aliases, and equal minima are reference errors in both the
 B-rep and the field. Other curved arrangements and `touching` on curved sources
 remain unsupported.
 
-A subtraction of one complete cylinder from a convex planar target drafts the
-target and subtracts the same tool again. Its stacked tool bands must share one
-wall and hold the axis across every interval between the caps, so no floor is left
-in the part. The finite cylinder between the caps must stay strictly inside every
-other halfspace of the source and drafted envelopes: wall values are affine along
-the axis, so strict inequalities at both rings cover the whole height. The tool
-stays in the field's own tape. The proof reads recipe faces and exact leaves, and
-the unchanged wall keeps its name. A contact, a crossing, a selected bore or cap,
-an oblique neutral plane and any other curved source remain unsupported.
+A chain of subtractions of complete cylinders from a convex planar target drafts
+the target and subtracts the same tools again, in recipe order. One tool may cut
+several bores. The bands of one bore must share one wall and hold the axis across
+every interval between the caps, so no floor is left in the part. All bores must
+cross the same two caps. Each finite cylinder between those caps must stay strictly
+inside every other halfspace of the source and drafted envelopes: wall values are
+affine along the axis, so strict inequalities at both rings cover the whole height.
+Each pair of parallel axes must lie strictly further apart than the two radii,
+proved exactly on the squares. An exact contact refuses and a smaller gap of any
+positive size stands. The tools stay in the field's own tape. The proof reads recipe
+faces and exact leaves, and each unchanged wall keeps its name. A contact, a
+crossing, a selected bore or cap, an oblique neutral plane and any other curved
+source remain unsupported.
 
 Drafted planar caps can extend and trim an unchanged cylindrical side. Their
 heights are affine over the exact radial disk; nonnegative thickness clips its

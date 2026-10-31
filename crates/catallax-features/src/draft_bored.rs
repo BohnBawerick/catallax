@@ -1,4 +1,4 @@
-//! One unchanged pull-parallel bore strictly inside a convex planar draft cell.
+//! Unchanged pull-parallel bores strictly inside a convex planar draft cell.
 //!
 //! Both kernels share this definition math. Neither passes topology through it.
 
@@ -7,17 +7,24 @@ use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::Origin;
 use catallax_shapes::{Cylinder, Plane, Point3, Vector3};
 
-/// A convex planar envelope with one finite bore removed from cap to cap.
-/// The bore's support and both ring trims never change.
+/// One finite bore's unchanged wall.
 #[derive(Clone, Debug)]
-pub struct BoredCell {
-    /// Filled outer material, before the bore is removed.
-    pub outer: PlanarCell,
+pub struct Bore {
     /// Unchanged bore wall carrier.
     pub cylinder: Cylinder,
     /// Complete source names of the bore wall.
     pub origins: Vec<Origin>,
-    /// Lower and upper cap support indices along the cylinder axis.
+}
+
+/// A convex planar envelope with finite bores removed from cap to cap.
+/// Every bore's support and both ring trims never change.
+#[derive(Clone, Debug)]
+pub struct BoredCell {
+    /// Filled outer material, before any bore is removed.
+    pub outer: PlanarCell,
+    /// Mutually separated bores, all between the same two caps.
+    pub bores: Vec<Bore>,
+    /// The two cap support indices, in ascending order.
     pub caps: [usize; 2],
 }
 
@@ -111,35 +118,76 @@ pub fn certify_clear<'a>(
     Ok(caps)
 }
 
+/// Proves two bores strictly separated. Parallel walls are nearest along their
+/// common normal, so the axis distance `d` must exceed the radii's sum. Squaring
+/// `d^2-a^2-b^2 > 2ab` twice keeps the proof exact without a root. An exact
+/// contact refuses, and a gap of any positive size stands unchanged.
+pub fn certify_disjoint(a: &Cylinder, b: &Cylinder, dec: &mut Decider) -> Result<(), Refusal> {
+    if sign(&a.axis.cross(&b.axis).norm_squared(), dec)? != Sign::Zero {
+        return Err(unsupported("preserved bores need parallel axes"));
+    }
+    let offset = b.origin.minus(&a.origin).cross(&a.axis).norm_squared() / a.axis.norm_squared();
+    let spare = offset - a.radius_sq.clone() - b.radius_sq.clone();
+    let reach = Real::from_i64(4) * (&a.radius_sq * &b.radius_sq);
+    if sign(&spare, dec)? != Sign::Positive
+        || sign(&(spare.square() - reach), dec)? != Sign::Positive
+    {
+        return Err(unsupported("preserved bores touch or cross each other"));
+    }
+    Ok(())
+}
+
+/// Proves every bore clear of every other halfspace, between the same two caps
+/// and strictly apart from each other. Opposite axis charts of one direction
+/// agree, because their caps are compared as a set. Returns those caps ascending.
+pub fn certify_bores<'a>(
+    planes: impl Iterator<Item = &'a Plane> + Clone,
+    cylinders: &[&Cylinder],
+    dec: &mut Decider,
+) -> Result<[usize; 2], Refusal> {
+    let mut shared = None;
+    for (index, cylinder) in cylinders.iter().enumerate() {
+        let mut caps = certify_clear(planes.clone(), cylinder, dec)?;
+        caps.sort_unstable();
+        if shared.replace(caps).is_some_and(|other| other != caps) {
+            return Err(unsupported("preserved bores need the same two caps"));
+        }
+        for other in &cylinders[..index] {
+            certify_disjoint(other, cylinder, dec)?;
+        }
+    }
+    shared.ok_or_else(|| unsupported("a preserved bore needs a wall"))
+}
+
 impl BoredCell {
-    /// Certifies the bore against the replaced envelope before any publication.
+    /// Certifies the bores against the replaced envelope before any publication.
     pub fn new(
         outer: PlanarCell,
-        cylinder: Cylinder,
-        origins: Vec<Origin>,
+        bores: Vec<Bore>,
         definition: &DraftDefinition,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        check_axial(&cylinder, definition, dec)?;
-        let caps = certify_clear(outer.supports.iter().map(|s| &s.plane), &cylinder, dec)?;
-        Ok(Self {
-            outer,
-            cylinder,
-            origins,
-            caps,
-        })
+        for bore in &bores {
+            check_axial(&bore.cylinder, definition, dec)?;
+        }
+        let cylinders: Vec<_> = bores.iter().map(|bore| &bore.cylinder).collect();
+        let caps = certify_bores(outer.supports.iter().map(|s| &s.plane), &cylinders, dec)?;
+        Ok(Self { outer, bores, caps })
     }
 
-    /// Exact strict material membership, excluding the bore and every boundary.
+    /// Exact strict material membership, excluding every bore and boundary.
     pub fn contains_interior(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
-        Ok(self.outer.contains_interior(point, dec)?
-            && sign(
-                &(point
-                    .minus(&self.cylinder.origin)
-                    .cross(&self.cylinder.axis)
-                    .norm_squared()
-                    - &self.cylinder.radius_sq * &self.cylinder.axis.norm_squared()),
-                dec,
-            )? == Sign::Positive)
+        if !self.outer.contains_interior(point, dec)? {
+            return Ok(false);
+        }
+        for Bore { cylinder, .. } in &self.bores {
+            let radial = point.minus(&cylinder.origin).cross(&cylinder.axis);
+            let excess =
+                radial.norm_squared() - &cylinder.radius_sq * &cylinder.axis.norm_squared();
+            if sign(&excess, dec)? != Sign::Positive {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }

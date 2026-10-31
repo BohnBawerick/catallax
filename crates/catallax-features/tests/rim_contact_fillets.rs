@@ -9,17 +9,22 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_boolean::{Containment, classify_point, face_contains};
 use catallax_features::evaluate;
-use catallax_intersect::{CurveSurface, intersect_curve_surface};
+use catallax_intersect::{Contact as Touch, CurveSurface, intersect_curve_surface};
 use catallax_measure::{
     Accuracy, blend_definition_properties, face_area, mass_properties, volume_area_centroid,
 };
-use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, Real, with_operation_budget};
+use catallax_numbers::{
+    BudgetPolicy, Decider, Outcome, Rational, Real, Sign, with_operation_budget,
+};
 use catallax_recipe::{ElementId, Origin, Recipe, Role, StepId};
 use catallax_shapes::{
-    Curve, Line, Point3, ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope, SplineSupport, Surface,
-    Vector3,
+    BSplineCurve, Curve, Line, Point3, PointDef, ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope,
+    SplineSupport, Surface, Vector3,
 };
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, VertexId};
+use catallax_topology::{
+    BodyId, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell, Vertex, VertexId,
+    envelope_retains_chart, envelope_rows,
+};
 use serde_json::{Value, json};
 
 const APPLICATION_ALLOWANCE: u64 = 20_000_000;
@@ -1238,6 +1243,21 @@ fn fitted_witnesses(edit: Containment) -> [([Rational; 3], Containment); 6] {
         ([ratio(15, 2), ratio(29, 5), ratio(10, 1)], edit),
     ]
 }
+// V8 J2 strict points past the fit bound: E2, O and Q-. The mouth point
+// N = (853/65, 5, 64/65) lies strictly between that mouth's transition ends.
+fn reaching_witnesses(edit: Containment) -> [([Rational; 3], Containment); 3] {
+    [
+        ([ratio(25, 2), ratio(109, 20), ratio(0, 1)], edit),
+        (
+            [ratio(25, 2), ratio(23, 4), ratio(0, 1)],
+            Containment::Outside,
+        ),
+        (
+            [ratio(3347, 260), ratio(19, 4), ratio(64, 65)],
+            Containment::Inside,
+        ),
+    ]
+}
 fn fitted_supports(model: &Model, body: BodyId) -> Vec<(FaceId, RollingEnvelope)> {
     let support = |face: &FaceId| match model.geom().surface(model.face(*face).surface) {
         Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
@@ -1319,6 +1339,18 @@ fn fitted_housing_answers_native_containment() {
                 "row {row}: {point:?}: {answer:?}"
             );
         }
+        // Strict points whose rays really reach the +x patch. E2 is the edit.
+        for (point, expected) in reaching_witnesses(edit) {
+            let point = place.point(point);
+            let (answer, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {
+                classify_point(&mut built.model, body, &point, &mut decider())
+            });
+            assert!(!work.exhausted, "row {row}");
+            assert!(
+                matches!(answer, Outcome::Proven(found) if found == expected),
+                "row {row}: {point:?}: {answer:?}"
+            );
+        }
         // The closest point of the first countersink mouth stays exact incidence.
         let mouth = place.point([ratio(13, 1), ratio(5, 1), ratio(0, 1)]);
         let (answer, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {
@@ -1366,20 +1398,492 @@ fn finite_queries_prove_a_miss_and_keep_a_real_contact() {
             assert!(answer.marks.is_empty());
         }
     }
-    // The vertical line through the +x mouth point really meets that patch.
-    let toward_mouth = |envelope: &RollingEnvelope| {
-        let toward = envelope.definition().toward();
-        [&toward.x, &toward.y, &toward.z].map(|part| part.as_rational().unwrap())
-            == [ratio(1, 1), ratio(0, 1), ratio(0, 1)]
-    };
-    let met: Vec<_> = supports
+    // The vertical line through the +x mouth point is a tested J2 contact now.
+    let surface = supports
         .iter()
-        .filter(|(_, envelope)| toward_mouth(envelope))
-        .collect();
-    assert_eq!(met.len(), 1);
-    let surface = built.model.face(met[0].0).surface;
-    let refusal =
+        .find(|(_, envelope)| toward_x(envelope))
+        .map(|(face, _)| built.model.face(*face).surface)
+        .unwrap();
+    let answer =
         intersect_curve_surface(built.model.geom_mut(), mouth_line, surface, &mut decider())
-            .unwrap_err();
-    assert_eq!(refusal.code, "intersect.parametric-surface");
+            .unwrap();
+    assert!(answer.marks.is_empty());
+    let CurveSurface::Meets(hits) = answer.value else {
+        panic!("{:?}", answer.value);
+    };
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].contact, Touch::Crossing);
+    let gap = built.model.geom().position(hits[0].point).minus(&mouth);
+    assert!(decider().sign(&gap.norm_squared()).is_coincident());
+}
+
+fn toward_x(envelope: &RollingEnvelope) -> bool {
+    let toward = envelope.definition().toward();
+    [&toward.x, &toward.y, &toward.z].map(|part| part.as_rational().unwrap())
+        == [ratio(1, 1), ratio(0, 1), ratio(0, 1)]
+}
+
+// One V8 J2 row: a definition, and how its local points and directions land.
+struct LineRow {
+    recipe: Value,
+    scale: Rational,
+    pose: Option<(&'static Placement, [i64; 3])>,
+    // A's independent height window about the flange mouth, canonical frame.
+    window: [Rational; 2],
+}
+impl LineRow {
+    fn point(&self, local: [Rational; 3]) -> [Rational; 3] {
+        let scaled = local.map(|part| part * self.scale.clone());
+        match self.pose {
+            Some((placement, by)) => placement.point(scaled, by),
+            None => scaled,
+        }
+    }
+    fn direction(&self, local: [Rational; 3]) -> [Rational; 3] {
+        match self.pose {
+            Some((placement, _)) => placement.point(local, NO_MOVE),
+            None => local,
+        }
+    }
+    // Back to the canonical frame, for a hit's oracle window.
+    fn height(&self, world: &[catallax_numbers::Ball; 3]) -> catallax_numbers::Ball {
+        match self.pose {
+            Some((placement, by)) => {
+                let shifted: [_; 3] = std::array::from_fn(|i| {
+                    &world[i]
+                        - &catallax_numbers::Ball::from_rational(&Rational::from_i64(by[i]), 128)
+                });
+                (0..3).fold(
+                    catallax_numbers::Ball::from_rational(&Rational::zero(), 128),
+                    |sum, j| {
+                        let cell = ratio(placement.matrix[j][1], placement.over);
+                        sum + &catallax_numbers::Ball::from_rational(&cell, 128) * &shifted[j]
+                    },
+                )
+            }
+            None => {
+                world[1].clone()
+                    * catallax_numbers::Ball::from_rational(
+                        &(Rational::one() / self.scale.clone()),
+                        128,
+                    )
+            }
+        }
+    }
+}
+fn line_rows() -> [LineRow; 4] {
+    let narrow = [ratio(27, 5), ratio(271, 50)];
+    let wide = [ratio(137, 25), ratio(138, 25)];
+    [
+        LineRow {
+            recipe: canonical(),
+            scale: Rational::one(),
+            pose: None,
+            window: narrow.clone(),
+        },
+        LineRow {
+            recipe: with_radius("5/2"),
+            scale: Rational::one(),
+            pose: None,
+            window: wide.clone(),
+        },
+        LineRow {
+            recipe: RQ.recipe(T, "5/2"),
+            scale: Rational::one(),
+            pose: Some((&RQ, T)),
+            window: wide,
+        },
+        LineRow {
+            recipe: scaled(&ratio(1, 2)),
+            scale: ratio(1, 2),
+            pose: None,
+            window: narrow,
+        },
+    ]
+}
+fn rational_point(coordinates: [Rational; 3]) -> Point3 {
+    let [x, y, z] = coordinates.map(Real::from_rational);
+    Point3::new(x, y, z)
+}
+fn rational_vector(coordinates: [Rational; 3]) -> Vector3 {
+    let [x, y, z] = coordinates.map(Real::from_rational);
+    Vector3::new(x, y, z)
+}
+// The support whose retained frame points at this row's +x mouth.
+fn mouth_support(model: &Model, body: BodyId, row: &LineRow) -> (FaceId, RollingEnvelope) {
+    let expected = row.direction([ratio(1, 1), ratio(0, 1), ratio(0, 1)]);
+    let mut matching = fitted_supports(model, body)
+        .into_iter()
+        .filter(|(_, envelope)| {
+            let toward = envelope.definition().toward();
+            let found = [&toward.x, &toward.y, &toward.z].map(|part| part.as_rational().unwrap());
+            found == expected
+        });
+    let support = matching.next().unwrap();
+    assert!(matching.next().is_none());
+    support
+}
+
+// A, BM and BN meet the +x support once. A meets inside it, BM and BN on its
+// mouth at exactly M and N, and the other three supports stay clear. X misses
+// every support, and T, tangent along the rail, stays a typed refusal.
+#[test]
+fn finite_lines_cross_the_fitted_patch_exactly_once() {
+    let along_y = || [ratio(0, 1), ratio(1, 1), ratio(0, 1)];
+    let m = || [ratio(13, 1), ratio(5, 1), ratio(0, 1)];
+    let n = || [ratio(853, 65), ratio(5, 1), ratio(64, 65)];
+    for (index, row) in line_rows().iter().enumerate() {
+        let mut built = evaluate(&parsed(&row.recipe), &mut decider()).unwrap();
+        let body = built.result;
+        let (mouth_face, mouth) = mouth_support(&built.model, body, row);
+        let lines = [
+            ([ratio(25, 2), ratio(0, 1), ratio(0, 1)], along_y(), None),
+            (
+                [ratio(13, 1), ratio(0, 1), ratio(0, 1)],
+                along_y(),
+                Some(m()),
+            ),
+            (n(), [ratio(1, 1), ratio(1, 1), ratio(0, 1)], Some(n())),
+        ];
+        for (line, (through, direction, closure)) in lines.into_iter().enumerate() {
+            let label = format!("row {index} line {line}");
+            let through = rational_point(row.point(through));
+            let direction = rational_vector(row.direction(direction));
+            let carrier = Line::new(through, direction, &mut decider()).unwrap();
+            let curve = built.model.geom_mut().add_curve(Curve::Line(carrier));
+            for (face, _) in fitted_supports(&built.model, body) {
+                let surface = built.model.face(face).surface;
+                let (answer, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {
+                    intersect_curve_surface(built.model.geom_mut(), curve, surface, &mut decider())
+                });
+                assert!(!work.exhausted, "{label}");
+                let answer = answer.unwrap();
+                assert!(answer.marks.is_empty(), "{label}");
+                if face != mouth_face {
+                    assert!(matches!(answer.value, CurveSurface::Disjoint), "{label}");
+                    continue;
+                }
+                let CurveSurface::Meets(hits) = answer.value else {
+                    panic!("{label}: {:?}", answer.value);
+                };
+                assert_eq!(hits.len(), 1, "{label}");
+                assert_eq!(hits[0].contact, Touch::Crossing, "{label}");
+                let position = built.model.geom().position(hits[0].point);
+                // Every hit is on the represented carrier, not only on its target.
+                let width = ratio(1, 1_000_000);
+                let mut enclose = decider();
+                let at = built
+                    .model
+                    .geom()
+                    .enclose_point(hits[0].point, &ratio(1, 4_000_000), &mut enclose)
+                    .unwrap();
+                let support = SplineSupport::RollingEnvelope(mouth.clone());
+                let [u, v] = support.parameters_of(&at, &enclose).unwrap().unwrap();
+                let image = mouth.carrier().evaluate(&u, &v, &enclose).unwrap();
+                assert!(
+                    (0..3).all(|i| image[i].lo() <= at[i].hi() && at[i].lo() <= image[i].hi()),
+                    "{label}"
+                );
+                let on_row = mouth.on_boundary(&position, &mut decider()).unwrap();
+                assert_eq!(on_row, closure.is_some(), "{label}");
+                if let Some(expected) = &closure {
+                    let expected = rational_point(row.point(expected.clone()));
+                    let gap = position.minus(&expected).norm_squared();
+                    assert!(
+                        matches!(decider().sign(&gap), Outcome::ProvenCoincident(_)),
+                        "{label}"
+                    );
+                } else {
+                    let height = row.height(&at);
+                    assert!(
+                        row.window[0] < height.lo() && height.hi() < row.window[1],
+                        "{label}: {height:?}"
+                    );
+                    assert!(height.hi() - height.lo() <= width, "{label}");
+                }
+            }
+        }
+        let mut vertical = |model: &mut Model, x: Rational| {
+            let through = rational_point(row.point([x, ratio(0, 1), ratio(0, 1)]));
+            let direction = rational_vector(row.direction(along_y()));
+            let line = Line::new(through, direction, &mut decider()).unwrap();
+            model.geom_mut().add_curve(Curve::Line(line))
+        };
+        let beyond = vertical(&mut built.model, ratio(27, 2));
+        let tangent = vertical(&mut built.model, ratio(12, 1));
+        for (face, _) in fitted_supports(&built.model, body) {
+            let surface = built.model.face(face).surface;
+            let answer =
+                intersect_curve_surface(built.model.geom_mut(), beyond, surface, &mut decider())
+                    .unwrap();
+            assert!(
+                matches!(answer.value, CurveSurface::Disjoint),
+                "row {index}"
+            );
+            assert!(answer.marks.is_empty(), "row {index}");
+        }
+        let surface = built.model.face(mouth_face).surface;
+        let refusal =
+            intersect_curve_surface(built.model.geom_mut(), tangent, surface, &mut decider())
+                .unwrap_err();
+        assert_eq!(refusal.code, "intersect.parametric-surface", "row {index}");
+    }
+}
+
+// The mouth circle makes the section at x=13 lowest at z=0, so a line across it
+// at a height above M crosses the patch twice, once on each side of the mirror.
+#[test]
+fn a_line_across_the_patch_gets_both_crossings_in_order() {
+    let row = &line_rows()[0];
+    let mut built = evaluate(&parsed(&row.recipe), &mut decider()).unwrap();
+    let body = built.result;
+    let (face, _) = mouth_support(&built.model, body, row);
+    let surface = built.model.face(face).surface;
+    let through = rational_point([ratio(13, 1), ratio(51, 10), ratio(-2, 1)]);
+    let along = rational_vector([ratio(0, 1), ratio(0, 1), ratio(1, 1)]);
+    let line = Line::new(through, along, &mut decider()).unwrap();
+    let curve = built.model.geom_mut().add_curve(Curve::Line(line));
+    let answer =
+        intersect_curve_surface(built.model.geom_mut(), curve, surface, &mut decider()).unwrap();
+    let CurveSurface::Meets(hits) = answer.value else {
+        panic!("{:?}", answer.value);
+    };
+    assert_eq!(hits.len(), 2);
+    assert!(hits.iter().all(|hit| hit.contact == Touch::Crossing));
+    let z: Vec<_> = hits
+        .iter()
+        .map(|hit| {
+            built
+                .model
+                .geom()
+                .enclose_point(hit.point, &ratio(1, 1_000_000), &mut decider())
+                .unwrap()[2]
+                .clone()
+        })
+        .collect();
+    let zero = Rational::zero();
+    assert!(z[0].hi() < zero && zero < z[1].lo());
+    let balance = (&z[0] + &z[1]).hi().abs().max((&z[0] + &z[1]).lo().abs());
+    assert!(balance < ratio(1, 1000));
+}
+
+// A root in an end span also carries the irrational transition weight.
+#[test]
+fn a_crossing_in_an_end_span_stays_on_the_carrier() {
+    let row = &line_rows()[0];
+    let mut built = evaluate(&parsed(&row.recipe), &mut decider()).unwrap();
+    let body = built.result;
+    let (face, envelope) = mouth_support(&built.model, body, row);
+    let surface = built.model.face(face).surface;
+    let (u, v) = (ratio(509, 512), ratio(1, 2));
+    let bits = 96;
+    let (u, v) = (
+        catallax_numbers::Ball::from_rational(&u, bits),
+        catallax_numbers::Ball::from_rational(&v, bits),
+    );
+    let dec = decider();
+    let target = envelope.carrier().evaluate(&u, &v, &dec).unwrap();
+    let through = rational_point([target[0].mid(), ratio(0, 1), target[2].mid()]);
+    let up = rational_vector([ratio(0, 1), ratio(1, 1), ratio(0, 1)]);
+    let line = Line::new(through, up, &mut decider()).unwrap();
+    let curve = built.model.geom_mut().add_curve(Curve::Line(line));
+    let answer =
+        intersect_curve_surface(built.model.geom_mut(), curve, surface, &mut decider()).unwrap();
+    let CurveSurface::Meets(hits) = answer.value else {
+        panic!("{:?}", answer.value);
+    };
+    assert_eq!(hits.len(), 1);
+    let at = built
+        .model
+        .geom()
+        .enclose_point(hits[0].point, &ratio(1, 1_000_000), &mut decider())
+        .unwrap();
+    let gap = (&at[1] - &target[1]).hi().abs();
+    assert!(gap < ratio(1, 100_000), "{gap:?}");
+}
+
+// V8 J2 caller policy. The point and line lie a million millimetres above the
+// whole carrier, so each answer is a hand-proved miss. A fresh enclosure above
+// the ceiling would refuse at the budgeted boundary, and every fresh coordinate
+// must cross that boundary: `max_bits` alone also passes without it.
+#[test]
+fn fresh_query_enclosures_stay_under_the_caller_ceiling() {
+    let mut built = evaluate(&parsed(&canonical()), &mut decider()).unwrap();
+    let body = built.result;
+    let supports = fitted_supports(&built.model, body);
+    let root = || Real::from_i64(2).sqrt();
+    let far = || Point3::new(root(), Real::from_i64(1_000_000), Real::zero());
+    let limited = |bits| {
+        Decider::new(BudgetPolicy {
+            max_work: APPLICATION_ALLOWANCE,
+            max_precision_bits: bits,
+        })
+    };
+    // Three query coordinates and twelve frame coordinates.
+    const FRESH: u64 = 15;
+    let mut dec = limited(64);
+    let (answer, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {
+        face_contains(&mut built.model, supports[0].0, &far(), &mut dec)
+    });
+    assert!(!work.exhausted);
+    assert!(matches!(answer, Ok(false)), "{answer:?}");
+    assert!(dec.stats().refined >= FRESH, "{:?}", dec.stats());
+    assert!(dec.stats().max_bits <= 64, "{:?}", dec.stats());
+    let line = Line::new(
+        far(),
+        Vector3::new(Real::one(), Real::zero(), root()),
+        &mut limited(64),
+    )
+    .unwrap();
+    let line = built.model.geom_mut().add_curve(Curve::Line(line));
+    for (face, _) in &supports {
+        let surface = built.model.face(*face).surface;
+        let mut dec = limited(64);
+        let answer =
+            intersect_curve_surface(built.model.geom_mut(), line, surface, &mut dec).unwrap();
+        assert!(matches!(answer.value, CurveSurface::Disjoint));
+        assert!(answer.marks.is_empty());
+        assert!(dec.stats().refined >= FRESH + 3, "{:?}", dec.stats());
+        assert!(dec.stats().max_bits <= 64, "{:?}", dec.stats());
+    }
+    let answer = face_contains(&mut built.model, supports[0].0, &far(), &mut limited(1));
+    assert!(matches!(answer, Ok(false)), "{answer:?}");
+    let answer = face_contains(&mut built.model, supports[0].0, &far(), &mut limited(0));
+    assert_eq!(answer.unwrap_err().code, "numbers.precision-limit");
+}
+
+// A valid face keeping only the local z<=0 half of the +x patch. Support incidence
+// must not make the mouth point N, at z=64/65, a member of it.
+#[test]
+fn a_truncated_envelope_face_keeps_its_trimmed_domain() {
+    let row = &line_rows()[0];
+    let mut built = evaluate(&parsed(&row.recipe), &mut decider()).unwrap();
+    let body = built.result;
+    let (face, envelope) = mouth_support(&built.model, body, row);
+    let mut dec = decider();
+    assert!(envelope_retains_chart(&built.model, face, &mut dec).unwrap());
+    let model = &mut built.model;
+    let surface = model.face(face).surface;
+    let carrier = envelope.carrier();
+    // Column of the exact chart section at the symmetry knot s=0.
+    let [columns, rows] = carrier.control_count();
+    assert_eq!(rows, 3);
+    let column = (columns - 1) / 2;
+    let section: Vec<_> = carrier.controls()[column * 3..column * 3 + 3].to_vec();
+    let weights: Vec<_> = carrier.weights()[column * 3..column * 3 + 3].to_vec();
+    let [rail_end, _, mouth_end] = [&section[0], &section[1], &section[2]];
+    assert!(envelope.on_boundary(rail_end, &mut dec).unwrap());
+    assert!(envelope.on_boundary(mouth_end, &mut dec).unwrap());
+    let rail_end = model
+        .geom_mut()
+        .add_point(PointDef::Explicit(rail_end.clone()));
+    let mouth_end = model
+        .geom_mut()
+        .add_point(PointDef::Explicit(mouth_end.clone()));
+    let rail_end = model.add_vertex(Vertex { point: rail_end });
+    let mouth_end = model.add_vertex(Vertex { point: mouth_end });
+    let [foot, plane] = envelope.definition().corners(Sign::Negative);
+    let at_corner = |model: &Model, vertex: VertexId, corner: &Point3| {
+        let gap = model
+            .geom()
+            .position(model.vertex(vertex).point)
+            .minus(corner)
+            .norm_squared();
+        matches!(decider().sign(&gap), Outcome::ProvenCoincident(_))
+    };
+    // Each kept row: its curve and sense, with the kept end first along the edge.
+    let mut kept = BTreeMap::new();
+    let rows_of_face = envelope_rows(model, face, &mut dec).unwrap();
+    for (edge, row, _) in rows_of_face {
+        kept.insert(format!("{row:?}"), model.edge(edge).clone());
+    }
+    let mut piece = |model: &mut Model, row: &str, from: &Point3, to: Option<VertexId>| {
+        let edge = kept.remove(row).unwrap();
+        let [start, end] = [edge.start.unwrap(), edge.end.unwrap()];
+        let forward = at_corner(model, start, from);
+        assert!(forward || at_corner(model, end, from));
+        let [start, end] = match (forward, to) {
+            (_, None) => [start, end],
+            (true, Some(to)) => [start, to],
+            (false, Some(to)) => [to, end],
+        };
+        (
+            model.add_edge(Edge {
+                curve: edge.curve,
+                sense: edge.sense,
+                start: Some(start),
+                end: Some(end),
+            }),
+            if forward {
+                Sense::Same
+            } else {
+                Sense::Reversed
+            },
+        )
+    };
+    let meridian = piece(model, "Negative", &foot, None);
+    let mouth = piece(model, "Mouth", &plane, Some(mouth_end));
+    let rail = piece(model, "Rail", &foot, Some(rail_end));
+    let knots = [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec();
+    let symmetry = BSplineCurve::new(2, knots, section, weights, &mut dec).unwrap();
+    let symmetry = model.geom_mut().add_curve(Curve::BSpline(symmetry));
+    let symmetry = model.add_edge(Edge {
+        curve: symmetry,
+        sense: Sense::Same,
+        start: Some(rail_end),
+        end: Some(mouth_end),
+    });
+    // Foot to mouth along the meridian, on to the section, down it and back.
+    let flip = |sense| match sense {
+        Sense::Same => Sense::Reversed,
+        Sense::Reversed => Sense::Same,
+    };
+    let walk = [
+        meridian,
+        mouth,
+        (symmetry, Sense::Reversed),
+        (rail.0, flip(rail.1)),
+    ];
+    let ends = |model: &Model, (edge, sense): (EdgeId, Sense)| {
+        let record = model.edge(edge);
+        match sense {
+            Sense::Same => (record.start.unwrap(), record.end.unwrap()),
+            Sense::Reversed => (record.end.unwrap(), record.start.unwrap()),
+        }
+    };
+    for i in 0..4 {
+        assert_eq!(ends(model, walk[i]).1, ends(model, walk[(i + 1) % 4]).0);
+    }
+    let coedges = walk.map(|(edge, sense)| model.add_coedge(Coedge { edge, sense }));
+    let boundary = model.add_loop(Loop::Coedges(coedges.to_vec()));
+    let half = model.add_face(Face {
+        surface,
+        sense: model.face(face).sense,
+        loops: vec![boundary],
+    });
+    assert!(!envelope_retains_chart(model, half, &mut dec).unwrap());
+    let n = rational_point(row.point([ratio(853, 65), ratio(5, 1), ratio(64, 65)]));
+    assert!(face_contains(model, face, &n, &mut decider()).unwrap());
+    match face_contains(model, half, &n, &mut decider()) {
+        Ok(found) => assert!(!found),
+        Err(refusal) => assert_eq!(refusal.code, "shapes.bspline-domain"),
+    }
+    // A ray's recorded hit at z>0 is on the support, yet not on the half face.
+    let shell = model.lump(model.body(body).lumps[0]).shells[0];
+    let mut faces = model.shell(shell).faces.clone();
+    let at = faces.iter().position(|kept| *kept == face).unwrap();
+    faces[at] = half;
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let mut cut = model.body(body).clone();
+    cut.lumps = vec![lump];
+    let cut = model.add_body(cut);
+    let point = rational_point([ratio(3347, 260), ratio(19, 4), ratio(64, 65)]);
+    let answer = classify_point(model, cut, &point, &mut decider());
+    match answer {
+        Outcome::Refused(refusal) => assert_eq!(refusal.code, "shapes.bspline-domain"),
+        answer => panic!("{answer:?}"),
+    }
 }

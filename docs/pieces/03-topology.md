@@ -33,6 +33,14 @@ Coordinates are a cache (DESIGN.md, R4). A vertex holds a `PointId`, an edge a `
 
 This piece holds no `Real`, `Ball`, `Interval` or `f64` value of its own.
 
+## Whole envelope faces
+
+`envelope_retains_chart(model, face, &mut Decider)` says whether a face keeps
+its rolling envelope's complete finite chart. It requires one loop of four
+coedges that walks the carrier's rail, the mouth arc and both transition arcs,
+each an edge between its exact chart corners on the row's own curve. `false`
+claims nothing about a point: such a face owes a trimmed-domain answer.
+
 ## Checked spline-prism geometry
 
 `SplinePrism::check(model, body, &mut Decider)` returns an immutable borrowed

@@ -8,9 +8,9 @@ use crate::project::{
     Box2, Point2, Projection, align, ball, common_point, separated, shift, winding,
 };
 use catallax_intersect::{CurveTrace, TracePiece, trace};
-use catallax_numbers::{Ball, Decider, Rational, Refusal, Sign};
-use catallax_shapes::{Point3, PointId, Surface};
-use catallax_topology::{EdgeId, FaceId, Loop, LoopId, Model, Sense};
+use catallax_numbers::{Ball, Decider, FactKind, Rational, Refusal, Sign};
+use catallax_shapes::{GeomKey, Point3, PointId, SplineSupport, Surface};
+use catallax_topology::{EdgeId, FaceId, Loop, LoopId, Model, Sense, envelope_retains_chart};
 use std::collections::{HashMap, hash_map::Entry};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -573,6 +573,9 @@ impl RegionCache {
         if f.loops.is_empty() {
             return Ok(Location::Inside);
         }
+        if let Some(location) = whole_chart(model, face, point, dec)? {
+            return Ok(location);
+        }
         if let Some(location) = crate::fast_region::locate(model, face, point, dec)? {
             return Ok(location);
         }
@@ -673,6 +676,37 @@ impl RegionCache {
             "boundary winding does not certify a unit face region",
         ))
     }
+}
+
+// A point recorded on a finite envelope lies in its closed chart. Only a face
+// that keeps that whole chart turns this into membership; any other face stays
+// on its trimmed-domain path, so support incidence never decides it.
+fn whole_chart(
+    model: &Model,
+    face: FaceId,
+    point: PointId,
+    dec: &mut Decider,
+) -> Result<Option<Location>, Refusal> {
+    let surface = model.face(face).surface;
+    let Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) = model.geom().surface(surface)
+    else {
+        return Ok(None);
+    };
+    let recorded = model.geom().facts().holds(
+        FactKind::Incident,
+        GeomKey::Point(point),
+        GeomKey::Surface(surface),
+    );
+    if !recorded || !envelope_retains_chart(model, face, dec)? {
+        return Ok(None);
+    }
+    Ok(Some(
+        if envelope.on_boundary(&model.geom().position(point), dec)? {
+            Location::Boundary
+        } else {
+            Location::Inside
+        },
+    ))
 }
 
 pub(crate) fn locate(

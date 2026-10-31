@@ -125,6 +125,21 @@ impl SplineSupport {
         self.hulls_miss(origin, Some(direction), dec)
     }
 
+    /// Every point where a whole line meets the finite carrier, in line order,
+    /// or `None` when this support has no finite line solver. A meeting this
+    /// cannot prove to be one transverse crossing refuses; it is never a miss.
+    pub fn line_hits(
+        &self,
+        origin: &Point3,
+        direction: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Option<Vec<Point3>>, Refusal> {
+        match self {
+            Self::EllipticOffset(_) => Ok(None),
+            Self::RollingEnvelope(surface) => surface.line_hits(origin, direction, dec).map(Some),
+        }
+    }
+
     // Every tensor span of the represented carrier lies in the hull of its own
     // controls, so this proves a miss of the actual patch, not of a target law.
     // Controls are taken relative to the origin; a line's component along its
@@ -134,14 +149,14 @@ impl SplineSupport {
         &self,
         origin: &Point3,
         direction: Option<&Vector3>,
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<bool, Refusal> {
         dec.check_deadline()?;
-        let controls = self.enclosed_controls(dec)?;
+        let controls = self.query_controls(dec)?;
         let bits = controls[0][0].precision();
-        let origin = math::point(origin, bits, dec)?;
+        let origin = math::budgeted_point(origin, bits, dec)?;
         let direction = direction
-            .map(|direction| vector_box(direction, bits, dec))
+            .map(|direction| math::budgeted_vector(direction, bits, dec))
             .transpose()?;
         let flattened: Vec<[Ball; 3]> = controls
             .iter()
@@ -168,8 +183,9 @@ impl SplineSupport {
         Ok(true)
     }
 
-    // Enclosed world controls of the carrier, in its u-major order.
-    fn enclosed_controls(&self, dec: &Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+    // Enclosed world controls of the carrier, in its u-major order, at or
+    // below the caller's precision. A stored net is reduced, never refined.
+    fn query_controls(&self, dec: &mut Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
         let maximum = dec.policy().max_precision_bits;
         if maximum == 0 {
             return Err(precision_refusal());
@@ -182,7 +198,7 @@ impl SplineSupport {
                 .map(|control| math::point(control, maximum.min(128), dec))
                 .collect(),
             Self::RollingEnvelope(surface) => Ok(surface
-                .enclosed_controls(dec)?
+                .query_controls(dec)?
                 .into_iter()
                 .map(|(control, _)| control)
                 .collect()),
@@ -797,6 +813,14 @@ fn split_half_planes(mut row: [Ball; 6], half: &Ball) -> [[Ball; 6]; 2] {
 // proposes a direction, so rounding here cannot prove anything: the answer is
 // that every point's whole enclosure lies strictly on the positive side of it.
 fn clear_of_zero(points: &[&[Ball; 3]], bits: u32, dec: &Decider) -> Result<bool, Refusal> {
+    // A coordinate plane takes no products, so it holds at the coarsest bits.
+    let zero = Rational::zero();
+    if (0..3).any(|i| {
+        points.iter().all(|point| point[i].lo() > zero)
+            || points.iter().all(|point| point[i].hi() < zero)
+    }) {
+        return Ok(true);
+    }
     let mut nearest = points[0].clone();
     for _ in 0..HULL_SEARCH_STEPS {
         dec.check_deadline()?;

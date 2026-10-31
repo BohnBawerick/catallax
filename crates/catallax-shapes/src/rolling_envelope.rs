@@ -20,6 +20,8 @@ use std::sync::{Arc, Mutex};
 mod boundary;
 #[path = "rolling_envelope/grid.rs"]
 mod grid;
+#[path = "rolling_envelope/line.rs"]
+mod line;
 #[path = "rolling_envelope/moments.rs"]
 mod moments;
 
@@ -823,6 +825,21 @@ impl LocalFrame {
             ],
         })
     }
+    // A query's frame: charged to the caller and bound by its precision policy.
+    fn budgeted(
+        def: &RollingEnvelopeDefinition,
+        bits: u32,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        Ok(Self {
+            origin: math::budgeted_point(&def.origin, bits, dec)?,
+            axes: [
+                math::budgeted_vector(&def.toward, bits, dec)?,
+                math::budgeted_vector(&def.axis, bits, dec)?,
+                math::budgeted_vector(&def.across, bits, dec)?,
+            ],
+        })
+    }
     fn local(&self, point: &[Ball; 3]) -> [Ball; 3] {
         let d: [Ball; 3] = std::array::from_fn(|i| &point[i] - &self.origin[i]);
         self.axes.each_ref().map(|axis| dot(&d, axis))
@@ -945,11 +962,38 @@ impl RollingEnvelope {
     /// Every rigid copy derives them from one shared enclosed net.
     pub fn enclosed_controls(&self, dec: &Decider) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
         let frame = LocalFrame::new(&self.data.definition, self.data.net.bits, dec)?;
+        self.world_controls(&frame, self.data.net.bits)
+    }
+    // The stored net at a query's precision. Only the net was enclosed at its
+    // own bits: a reduction rounds outward, and the frame is fresh query work.
+    pub(crate) fn query_controls(
+        &self,
+        dec: &mut Decider,
+    ) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
+        let bits = self.query_bits(dec)?;
+        let frame = LocalFrame::budgeted(&self.data.definition, bits, dec)?;
+        self.world_controls(&frame, bits)
+    }
+    fn query_bits(&self, dec: &Decider) -> Result<u32, Refusal> {
+        match self.data.net.bits.min(dec.policy().max_precision_bits) {
+            0 => Err(Refusal::new(
+                "numbers.precision-limit",
+                "no envelope query precision available",
+            )),
+            bits => Ok(bits),
+        }
+    }
+    fn world_controls(
+        &self,
+        frame: &LocalFrame,
+        bits: u32,
+    ) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
         self.data
             .net
             .controls
             .iter()
             .map(|h| {
+                let h: [Ball; 4] = std::array::from_fn(|i| h[i].with_precision(bits));
                 let divide = |value: &Ball| {
                     value
                         .checked_div(&h[3])
@@ -1037,6 +1081,23 @@ impl RollingEnvelope {
         Ok(self.meridian(&[x, y, z], dec)?.is_some())
     }
 
+    /// Exact centre and squared radius of a boundary row built on a circle:
+    /// the mouth or a transition meridian. The rail has neither.
+    pub fn boundary_circle(&self, row: boundary::BoundaryRow) -> Option<(Point3, Real)> {
+        let def = &self.data.definition;
+        let t = def.transition();
+        let meridian = |z: &Real| Some((def.world([&t.x, &def.radius, z]), def.radius.square()));
+        match row {
+            BoundaryRow::Rail => None,
+            BoundaryRow::Mouth => Some((
+                def.world([&def.offset, &Real::zero(), &Real::zero()]),
+                def.mouth.square(),
+            )),
+            BoundaryRow::Negative => meridian(&-&t.z),
+            BoundaryRow::Positive => meridian(&t.z),
+        }
+    }
+
     // The transition meridian through a local point, as the signed z of its
     // ball centre: a quarter arc from the cylinder foot to the plane foot.
     fn meridian(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Option<Real>, Refusal> {
@@ -1119,9 +1180,13 @@ impl RollingEnvelope {
         dec: &Decider,
     ) -> Result<Option<[Ball; 2]>, Refusal> {
         dec.check_deadline()?;
-        let bits = self.data.net.bits;
-        let point = LocalFrame::new(&self.data.definition, bits, dec)?.local(point);
-        let mut patches = Patch::all(&self.data.carrier, &self.data.net);
+        let bits = self.query_bits(dec)?;
+        let ceiling = dec.policy().max_precision_bits;
+        let point = point
+            .each_ref()
+            .map(|value| value.with_precision(value.precision().min(ceiling)));
+        let point = LocalFrame::new(&self.data.definition, bits, dec)?.local(&point);
+        let mut patches = Patch::at(&self.data.carrier, &self.data.net, bits);
         for _ in 0..24 {
             dec.check_deadline()?;
             let mut next = Vec::with_capacity(patches.len() * 2);
@@ -1166,11 +1231,11 @@ impl RollingEnvelope {
         if self.on_boundary(point, dec)? {
             return Ok(Sign::Zero);
         }
-        let bits = self.data.net.bits;
-        let local = LocalFrame::new(&self.data.definition, bits, dec)?
-            .local(&math::point(point, bits, dec)?);
+        let bits = self.query_bits(dec)?;
+        let local = LocalFrame::budgeted(&self.data.definition, bits, dec)?
+            .local(&math::budgeted_point(point, bits, dec)?);
         let target = project(&local);
-        let mut patches = Patch::all(&self.data.carrier, &self.data.net);
+        let mut patches = Patch::at(&self.data.carrier, &self.data.net, bits);
         for _ in 0..64 {
             dec.check_deadline()?;
             let mut next = Vec::new();
@@ -1229,6 +1294,7 @@ fn project(p: &[Ball; 3]) -> [Ball; 3] {
 // One rational Bezier patch of the carrier, degree (6, 2), as enclosed
 // homogeneous controls in u-major order. Subdivision is exact up to rounding,
 // and positive weights give the convex-hull enclosure.
+#[derive(Clone)]
 struct Patch {
     cell: [[Rational; 2]; 2],
     net: Vec<[Ball; 4]>,
@@ -1246,6 +1312,18 @@ impl Patch {
                 net: net.controls[index * DEGREE * 3..(index * DEGREE + DEGREE + 1) * 3].to_vec(),
             })
             .collect()
+    }
+    // The same patches with their stored enclosures rounded outward to `bits`.
+    fn at(carrier: &BSplineSurface, net: &Net, bits: u32) -> Vec<Self> {
+        let mut patches = Self::all(carrier, net);
+        if bits < net.bits {
+            for patch in &mut patches {
+                for h in &mut patch.net {
+                    *h = std::array::from_fn(|i| h[i].with_precision(bits));
+                }
+            }
+        }
+        patches
     }
     fn split(self) -> [Self; 2] {
         // A span's u extent is about a tenth of v's; compare in a metric that
@@ -1302,6 +1380,16 @@ impl Patch {
 
 // De Casteljau halving of a tensor Bernstein net along one axis.
 fn split_net<T: Clone + Halve>(net: &[T], degrees: [usize; 2], axis: usize) -> [Vec<T>; 2] {
+    divide_net(net, degrees, axis, T::halve)
+}
+
+// De Casteljau division along one axis, with `mix` the step between neighbours.
+fn divide_net<T: Clone>(
+    net: &[T],
+    degrees: [usize; 2],
+    axis: usize,
+    mix: impl Fn(&T, &T) -> T,
+) -> [Vec<T>; 2] {
     let [m, n] = degrees;
     let index = |i: usize, j: usize| i * (n + 1) + j;
     let mut left = net.to_vec();
@@ -1326,7 +1414,7 @@ fn split_net<T: Clone + Halve>(net: &[T], degrees: [usize; 2], axis: usize) -> [
             low.push(row[0].clone());
             high[length - 1 - level] = row[length - 1 - level].clone();
             row = (0..row.len() - 1)
-                .map(|k| row[k].halve(&row[k + 1]))
+                .map(|k| mix(&row[k], &row[k + 1]))
                 .collect();
             if row.is_empty() {
                 break;

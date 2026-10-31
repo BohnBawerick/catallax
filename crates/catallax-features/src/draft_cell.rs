@@ -3,6 +3,7 @@
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::Origin;
 use catallax_shapes::{Plane, Point3, Vector3};
+use std::collections::BTreeSet;
 
 use crate::draft::sign as exact_sign;
 
@@ -28,6 +29,56 @@ pub struct PlanarCell {
 
 fn value(plane: &Plane, point: &Point3) -> Real {
     point.minus(&plane.origin).dot(&plane.normal)
+}
+
+/// Orders a convex face from its first vertex, counterclockwise about the
+/// outward normal. Each boundary edge lies on one other support, so the order
+/// needs no exact zero proofs. `None` when the supports do not determine it.
+fn adjacent_walk(
+    support: usize,
+    cycle: &[usize],
+    incident: &[BTreeSet<usize>],
+    vertices: &[Point3],
+    patch: &PlanePatch,
+    dec: &mut Decider,
+) -> Result<Option<Vec<usize>>, Refusal> {
+    let neighbours = |a: usize| {
+        cycle
+            .iter()
+            .copied()
+            .filter(|b| {
+                *b != a
+                    && incident[a]
+                        .iter()
+                        .any(|s| *s != support && incident[*b].contains(s))
+            })
+            .collect::<Vec<_>>()
+    };
+    if cycle.iter().any(|v| neighbours(*v).len() != 2) {
+        return Ok(None);
+    }
+    let start = cycle[0];
+    let around = neighbours(start);
+    let turn = vertices[around[0]]
+        .minus(&vertices[start])
+        .cross(&vertices[around[1]].minus(&vertices[start]))
+        .dot(&patch.plane.normal);
+    let mut next = match exact_sign(&turn, dec)? {
+        Sign::Positive => around[0],
+        Sign::Negative => around[1],
+        Sign::Zero => return Ok(None),
+    };
+    let mut walk = vec![start];
+    let mut previous = start;
+    while next != start {
+        if walk.len() == cycle.len() {
+            return Ok(None);
+        }
+        walk.push(next);
+        let [a, b] = <[usize; 2]>::try_from(neighbours(next)).expect("checked above");
+        (previous, next) = (next, if a == previous { b } else { a });
+    }
+    Ok((walk.len() == cycle.len()).then_some(walk))
 }
 
 impl PlanarCell {
@@ -68,6 +119,9 @@ impl PlanarCell {
         }
         let supports = unique;
         let mut vertices: Vec<Point3> = Vec::new();
+        // Supports known to contain each vertex. Their exact zeros need no proof,
+        // which an oblique algebraic frame could not afford for every triple.
+        let mut incident: Vec<BTreeSet<usize>> = Vec::new();
         for i in 0..supports.len() {
             for j in i + 1..supports.len() {
                 for k in j + 1..supports.len() {
@@ -87,8 +141,12 @@ impl PlanarCell {
                         .scaled(&(&Real::one() / &determinant));
                     let point = Point3::origin().plus(&vector);
                     let mut inside = true;
-                    for support in &supports {
-                        if exact_sign(&value(&support.plane, &point), dec)? == Sign::Positive {
+                    for (index, support) in supports.iter().enumerate() {
+                        if index != i
+                            && index != j
+                            && index != k
+                            && exact_sign(&value(&support.plane, &point), dec)? == Sign::Positive
+                        {
                             inside = false;
                             break;
                         }
@@ -97,14 +155,16 @@ impl PlanarCell {
                         continue;
                     }
                     let mut duplicate = false;
-                    for previous in &vertices {
+                    for (index, previous) in vertices.iter().enumerate() {
                         if exact_sign(&point.minus(previous).norm_squared(), dec)? == Sign::Zero {
+                            incident[index].extend([i, j, k]);
                             duplicate = true;
                             break;
                         }
                     }
                     if !duplicate {
                         vertices.push(point);
+                        incident.push(BTreeSet::from([i, j, k]));
                     }
                 }
             }
@@ -117,8 +177,15 @@ impl PlanarCell {
         'basis: for i in 1..vertices.len() {
             for j in i + 1..vertices.len() {
                 let cross = vertices[i].minus(first).cross(&vertices[j].minus(first));
-                for vertex in vertices.iter().skip(j + 1) {
-                    if exact_sign(&cross.dot(&vertex.minus(first)), dec)? != Sign::Zero {
+                let shared = |k: usize| {
+                    incident[0]
+                        .iter()
+                        .any(|support| [i, j, k].iter().all(|v| incident[*v].contains(support)))
+                };
+                for (k, vertex) in vertices.iter().enumerate().skip(j + 1) {
+                    if !shared(k)
+                        && exact_sign(&cross.dot(&vertex.minus(first)), dec)? != Sign::Zero
+                    {
                         volume = true;
                         break 'basis;
                     }
@@ -167,10 +234,12 @@ impl PlanarCell {
             }
         }
         let mut cycles = Vec::with_capacity(supports.len());
-        for support in &supports {
+        for (index, support) in supports.iter().enumerate() {
             let mut cycle = Vec::new();
             for (i, point) in vertices.iter().enumerate() {
-                if exact_sign(&value(&support.plane, point), dec)? == Sign::Zero {
+                if incident[i].contains(&index)
+                    || exact_sign(&value(&support.plane, point), dec)? == Sign::Zero
+                {
                     cycle.push(i);
                 }
             }
@@ -200,6 +269,10 @@ impl PlanarCell {
             }
             if !area {
                 cycles.push(Vec::new());
+                continue;
+            }
+            if let Some(walk) = adjacent_walk(index, &cycle, &incident, &vertices, support, dec)? {
+                cycles.push(walk);
                 continue;
             }
             let sum = cycle.iter().fold(Vector3::zero(), |sum, i| {
@@ -262,10 +335,26 @@ impl PlanarCell {
     /// A relatively open neutral-plane section, including a coincident facet
     /// but excluding a sole edge or vertex contact.
     pub fn anchored(&self, neutral: &Plane, dec: &mut Decider) -> Result<bool, Refusal> {
+        // A support on the neutral plane already places its vertices there.
+        let mut contained = BTreeSet::new();
+        for (support, cycle) in self.supports.iter().zip(&self.cycles) {
+            if exact_sign(
+                &support.plane.normal.cross(&neutral.normal).norm_squared(),
+                dec,
+            )? == Sign::Zero
+                && exact_sign(&value(neutral, &support.plane.origin), dec)? == Sign::Zero
+            {
+                contained.extend(cycle.iter().copied());
+            }
+        }
         let mut negative = false;
         let mut positive = false;
         let mut zero = Vec::new();
         for (i, point) in self.vertices.iter().enumerate() {
+            if contained.contains(&i) {
+                zero.push(i);
+                continue;
+            }
             match exact_sign(&value(neutral, point), dec)? {
                 Sign::Negative => negative = true,
                 Sign::Positive => positive = true,

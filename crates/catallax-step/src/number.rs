@@ -114,8 +114,16 @@ fn enclosed_by(
     loop {
         let mut number = rounded(&b.lo(), &b.hi(), digits);
         // Perfect-square expressions may still have a nonzero binary radius.
-        // Certify equality only when the written decimal is inside the ball.
-        if !b.rad().is_zero() && b.contains(&number.value) {
+        // Certify equality only when the written decimal is inside the ball. A
+        // fixed-precision enclosure usually excludes it; only a surviving
+        // candidate pays for a proof, whose zero test can be algebraically huge.
+        if !b.rad().is_zero()
+            && b.contains(&number.value)
+            && [64, 128].into_iter().all(|bits| {
+                dec.enclose_at(value, bits)
+                    .map_or(true, |tight| tight.contains(&number.value))
+            })
+        {
             match equal(&number.value, &b, dec) {
                 Outcome::ProvenCoincident(_) => number.error = Rational::zero(),
                 Outcome::Refused(refusal) => return Err(refusal),

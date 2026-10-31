@@ -458,6 +458,29 @@ impl Plan {
                             angle.value(),
                             dec,
                         )?;
+                        if let Some((target, skin, bore)) = plan.preserved_bore(
+                            recipe,
+                            body,
+                            faces,
+                            &definition,
+                            (&steps, &step_faces),
+                            dec,
+                        )? {
+                            let drafted = plan.draft(
+                                (steps[&target], &step_faces[&target], Some(&skin)),
+                                faces,
+                                &definition,
+                                (keep_regions.as_deref(), Some(&bore)),
+                                &step.id,
+                                dec,
+                            )?;
+                            if drafted != 0 {
+                                plan.preserve_faces(&bore.walls);
+                            }
+                            return plan
+                                .boolean(BooleanKind::Subtract, drafted, bore.register, dec)
+                                .map(Some);
+                        }
                         let filtered_planar = faces.iter().any(|reference| {
                             !reference.touching.is_empty() || reference.near.is_some()
                         }) && step_faces[body].iter().all(|f| {
@@ -479,7 +502,7 @@ impl Plan {
                             (steps[body], &step_faces[body], boundary.as_ref()),
                             faces,
                             &definition,
-                            keep_regions.as_deref(),
+                            (keep_regions.as_deref(), None),
                             &step.id,
                             dec,
                         )?

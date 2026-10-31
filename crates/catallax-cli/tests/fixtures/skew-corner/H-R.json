@@ -1,0 +1,65 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "H-R",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "translation": [
+          "7",
+          "11",
+          "-13"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "base",
+            "to": [
+              "8",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "slope",
+            "to": [
+              "0",
+              "6"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "upright",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "10"
+    },
+    {
+      "id": "rounded",
+      "op": "fillet",
+      "body": "base",
+      "radius": "1",
+      "edges": "all"
+    }
+  ],
+  "result": "rounded"
+}

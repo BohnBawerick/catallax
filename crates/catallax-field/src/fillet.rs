@@ -6,7 +6,7 @@ use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{
     BooleanKind, EdgeName, EdgeSelection, ElementId, Origin, Role, StepId, Turn, VertexName,
 };
-use catallax_shapes::{Curve, GeomStore, Point3, Surface, Vector3};
+use catallax_shapes::{Curve, GeomStore, Plane, Point3, Surface, Vector3};
 
 use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
 
@@ -158,12 +158,13 @@ impl Plan {
         &self,
         definition: &FilletDefinition,
         faces: [usize; 2],
-        interval: &Option<[Rational; 2]>,
+        interval: &mut Option<[Rational; 2]>,
         source_faces: &[usize],
         geom: &mut GeomStore,
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
         let mut end_planes = [false; 2];
+        let mut span = interval.clone();
         for &i in source_faces {
             let face = &self.faces[i];
             if faces
@@ -172,14 +173,29 @@ impl Plan {
             {
                 continue;
             }
-            if let (Curve::Line(edge), Surface::Plane(p), Some(interval)) =
-                (&definition.edge, &face.surface, interval)
-                && geometry::sign(&p.normal.cross(&edge.dir).norm_squared(), dec)? == Sign::Zero
+            if let (Curve::Line(edge), Surface::Plane(p), Some(ends)) =
+                (&definition.edge, &face.surface, interval.as_ref())
+                && geometry::sign(&edge.dir.dot(&p.normal), dec)? != Sign::Zero
             {
-                let t =
-                    q(&(p.origin.minus(&edge.origin).dot(&p.normal) / edge.dir.dot(&p.normal)))?;
-                if let Some(end) = interval.iter().position(|value| *value == t) {
+                let station =
+                    |o: &Point3| q(&(p.origin.minus(o).dot(&p.normal) / edge.dir.dot(&p.normal)));
+                let at = station(&edge.origin)?;
+                if let Some(end) = ends.iter().position(|value| *value == at) {
                     end_planes[end] = true;
+                    // An oblique end plane leans past the vertex at a contact
+                    // rail; the region's section spans the edge and both rails.
+                    for contact in &definition.contacts {
+                        let Curve::Line(rail) = contact else {
+                            return Err(bad("a line strip needs straight contact rails"));
+                        };
+                        let t = station(&rail.origin)?;
+                        let span = span.as_mut().expect("line strip interval");
+                        span[end] = if end == 0 {
+                            t.min(span[0].clone())
+                        } else {
+                            t.max(span[1].clone())
+                        };
+                    }
                     continue;
                 }
             }
@@ -199,10 +215,9 @@ impl Plan {
             }
         }
         if interval.is_some() && end_planes != [true, true] {
-            return Err(bad(
-                "finite line strips need proven perpendicular end planes",
-            ));
+            return Err(bad("finite line strips need proven transversal end planes"));
         }
+        *interval = span;
         Ok(())
     }
 
@@ -477,7 +492,7 @@ impl Plan {
             )?);
         }
         let mut result = root;
-        for (definition, interval) in definitions {
+        for (definition, mut interval) in definitions {
             let faces = [
                 self.faces
                     .iter()
@@ -491,7 +506,7 @@ impl Plan {
             self.fillet_domain(
                 &definition,
                 faces,
-                &interval,
+                &mut interval,
                 source_faces,
                 &mut GeomStore::new(),
                 dec,
@@ -518,29 +533,39 @@ impl Plan {
     }
 
     /// The material a trihedral corner removes beyond its three strips: the
-    /// cube between the ball centre and the vertex, less the ball.
+    /// normal cone at the ball centre inside all three supports, less the ball.
+    /// That cell has the centre, the three feet, the vertex and one point on each
+    /// edge as vertices, so it lies within the centre-to-vertex distance.
     fn corner(
         &mut self,
         corner: &CornerDefinition,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        let [n0, n1, n2] = &corner.normals;
-        let (x, y) = if geometry::sign(&n0.cross(n1).dot(n2), dec)? == Sign::Positive {
-            (n0, n1)
-        } else {
-            (n1, n0)
-        };
         let radius = number(q(&corner.radius)?);
         let centre = corner.centre();
-        let (cube, _) = geometry::compile(
-            &catallax_recipe::Operation::Block {
-                size: [radius.clone(), radius.clone(), radius.clone()],
-                pose: pose(centre, x, y, n2, dec)?,
-            },
-            step,
-            dec,
-        )?;
+        let mut planes = Vec::with_capacity(6);
+        for (i, (normal, dual)) in corner.normals.iter().zip(corner.dual_basis()).enumerate() {
+            let next = &corner.normals[(i + 1) % 3];
+            planes.push(Surface::Plane(Plane {
+                origin: centre.plus(&normal.scaled(&corner.radius)),
+                normal: normal.clone(),
+                ref_dir: normal.cross(next),
+            }));
+            planes.push(Surface::Plane(Plane {
+                origin: centre.clone(),
+                normal: dual.scaled(&Real::from_i64(-1)),
+                ref_dir: next.clone(),
+            }));
+        }
+        let reach = coordinates(&corner.vertex)?
+            .iter()
+            .zip(coordinates(centre)?)
+            .fold(Rational::zero(), |sum, (v, c)| sum + (v - &c).abs());
+        let bound = coordinates(centre)?
+            .into_iter()
+            .fold(reach, |bound, c| bound + c.abs());
+        let cell = geometry::Leaf::Cell(geometry::Cell::new(planes, Some(bound))?);
         let (ball, mut faces) = geometry::compile(
             &catallax_recipe::Operation::Sphere {
                 radius,
@@ -555,9 +580,9 @@ impl Plan {
         for face in &mut faces {
             face.origin = corner.origin.clone();
         }
-        let cube = self.leaf(cube, Vec::new(), dec)?;
+        let cell = self.leaf(cell, Vec::new(), dec)?;
         let ball = self.leaf(ball, faces, dec)?;
-        self.boolean(BooleanKind::Subtract, cube, ball, dec)
+        self.boolean(BooleanKind::Subtract, cell, ball, dec)
     }
 }
 

@@ -197,6 +197,14 @@ cap stops at it and the wall and end keep their names. A contact, a crossing, a
 selected wall, end or cap and an oblique neutral plane remain unsupported, and so
 does a tool sunk into the target, although the B-rep sees only its ring and answers.
 
+One such boss and one such bore may share a target, in either history order: the
+walk reads back through the subtraction and the union to the same planar target.
+Each passes its own proof, and their footprints must also lie strictly apart, proved
+exactly as for two bores. Clearing every wall says nothing about that gap. Parallel
+walls so separated never meet, so the tools commute: the boss is always united first
+and the bore subtracted after, whichever came first in the recipe. Several bores
+beside a boss and a bore through a boss remain unsupported.
+
 Drafted planar caps can extend and trim an unchanged cylindrical side. Their
 heights are affine over the exact radial disk; nonnegative thickness clips its
 footprint. Cap intersections are native circles or ellipses, with an exact chord

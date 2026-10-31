@@ -2,7 +2,12 @@
 //!
 //! Both kernels share this definition math. Neither passes topology through it.
 
-use crate::draft::{DraftDefinition, bored, cell::PlanarCell, sign};
+use crate::draft::{
+    DraftDefinition,
+    bored::{self, Bore, BoredCell},
+    cell::PlanarCell,
+    sign,
+};
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::Origin;
 use catallax_shapes::{Cylinder, Plane, Point3};
@@ -29,6 +34,8 @@ pub struct BossedCell {
     pub boss: Boss,
     /// Support index of the cap carrying the boss.
     pub shoulder: usize,
+    /// The bores through `outer`, each strictly apart from the boss.
+    pub bored: Option<BoredCell>,
 }
 
 fn unsupported(detail: &str) -> Refusal {
@@ -78,26 +85,43 @@ pub fn certify_footprint<'a>(
 }
 
 impl BossedCell {
-    /// Certifies the boss against the replaced envelope before any publication.
+    /// Certifies the boss and any bores against the replaced envelope before any
+    /// publication. Each may clear every wall and still meet the other, so the two
+    /// footprints are proved apart here.
     pub fn new(
         outer: PlanarCell,
         boss: Boss,
+        bores: Vec<Bore>,
         definition: &DraftDefinition,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         bored::check_axial(&boss.cylinder, definition, dec)?;
         let shoulder = certify_footprint(outer.supports.iter().map(|s| &s.plane), &boss, dec)?;
+        let bored = if bores.is_empty() {
+            None
+        } else {
+            let cell = BoredCell::new(outer.clone(), bores, definition, dec)?;
+            for bore in &cell.bores {
+                bored::certify_disjoint(&boss.cylinder, &bore.cylinder, dec)?;
+            }
+            Some(cell)
+        };
         Ok(Self {
             outer,
             boss,
             shoulder,
+            bored,
         })
     }
 
     /// Exact strict material membership. The joined disk is interior: the base
     /// lies under it and the boss over it.
     pub fn contains_interior(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
-        if self.outer.contains_interior(point, dec)? {
+        let base = match &self.bored {
+            Some(cell) => cell.contains_interior(point, dec)?,
+            None => self.outer.contains_interior(point, dec)?,
+        };
+        if base {
             return Ok(true);
         }
         let cylinder = &self.boss.cylinder;

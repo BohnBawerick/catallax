@@ -133,6 +133,7 @@ version = "0.1.0"
 dependencies = [
  "catallax-boolean",
  "catallax-features",
+ "catallax-import",
  "catallax-intersect",
  "catallax-measure",
  "catallax-mesh",

@@ -601,6 +601,69 @@ fn s1_profile_extrusion_rebuild_and_density_edit_certify_at_point_one() {
     }
 }
 
+/// S1 export contract, fixed by the independent designer: each profile state keeps its
+/// baseline mesh and labelled bytes within the app's 20M work allowance and default caps.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "V7 S1 profile exports run in release mode")]
+fn s1_profile_exports_keep_their_bytes_within_the_app_work_allowance() {
+    for (depth, radius, top, euler, vertices, triangles, length, sha256) in [
+        (
+            "10",
+            "1",
+            "7.5",
+            -58,
+            149_522,
+            299_160,
+            14_958_084,
+            "79790ed211669b811cd3b0086f24dab3a333ea779bdecf9000441ca138de3fd0",
+        ),
+        (
+            "15",
+            "1",
+            "12.5",
+            -102,
+            217_518,
+            435_240,
+            21_762_084,
+            "a6cc0e31ed490b193a0cb45ea3e5f6e149003c8ba71fd5e49fdf1d09d742a386",
+        ),
+        (
+            "15",
+            "1.5",
+            "12.5",
+            -102,
+            263_346,
+            526_896,
+            26_344_884,
+            "dedc73ca8eb8d1288b2658f1406296badbe06d202526b9b61985c968170cfe30",
+        ),
+    ] {
+        let (_, mut spec, settings) =
+            acceptance_stage(["25", "15", "10"], ["-12.5", "-7.5", "-2.5"]).return_before_lattice();
+        spec.radius = serde_json::from_str(&format!(r#"{{"constant":"{radius}"}}"#)).unwrap();
+        let mut dec = Decider::default();
+        let stage = Stage::new(&profile_body(depth), spec, settings, &mut dec).unwrap();
+        let (exported, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+            stage.export(&mut dec)?.labelled_stl()
+        });
+        assert!(!work.exhausted, "{depth} {radius}: {work:?}");
+        let (bytes, output) = exported.unwrap();
+        check_acceptance_verdict(&output);
+        assert_eq!(labelled_header(&bytes), (1, 10, 2_000_000, 1_000_000));
+        check_acceptance_mesh(
+            &output.mesh().positions,
+            &output.mesh().triangles,
+            [["-12.5", "12.5"], ["-7.5", "7.5"], ["-2.5", top]],
+            &output.verdict().max_deviation,
+            euler,
+        );
+        assert_eq!(output.mesh().positions.len(), vertices);
+        assert_eq!(output.mesh().triangles.len(), triangles);
+        assert_eq!(bytes.len(), length);
+        assert_eq!(catallax_import::sha256_hex(&bytes), sha256);
+    }
+}
+
 /// Every acceptable S1 depth-15 mesh is one closed surface with Euler characteristic
 /// -102, so E = 3(V + 102) <= V(V - 1)/2 and it needs at least 29 vertices. A 28-vertex
 /// cap leaves no acceptable output: the stage must refuse, whatever its proof method.

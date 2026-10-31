@@ -3,6 +3,7 @@
 //! face per hole, for the authored radius 2, its edit to 5/2, and the translated,
 //! scaled and rotated definitions, all inside one application allowance. Below
 //! radius 1 the plane rail clears every mouth and one torus joins the housing.
+//! At radius 1 the rail touches every mouth at one shared vertex.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,7 +15,7 @@ use catallax_measure::{
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, Real, with_operation_budget};
 use catallax_recipe::{ElementId, Origin, Recipe, Role, StepId};
 use catallax_shapes::{Curve, Point3, ROLLING_ENVELOPE_TARGET_NM, SplineSupport, Surface};
-use catallax_topology::{FaceId, Loop, Model};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, VertexId};
 use serde_json::{Value, json};
 
 const APPLICATION_ALLOWANCE: u64 = 20_000_000;
@@ -339,10 +340,9 @@ fn a_ball_that_would_roll_onto_the_countersink_cone_refuses() {
 
 #[test]
 fn uncovered_contact_strata_keep_their_typed_refusal() {
-    // Each case is a separate coverage gap, not impossible geometry: a rail
-    // exactly tangent to the mouth, the moved tangent and contact-change radii,
-    // and tubes too short to carry the cylinder rail, with and without a touched
-    // mouth.
+    // Each case is a separate coverage gap, not impossible geometry: the moved
+    // contact-change radius, and tubes too short to carry the cylinder rail, with
+    // a touched mouth, a mouth on the rail, and none.
     let shortened = |mut recipe: Value, top: &str| {
         for segment in step(&mut recipe, "section")["loops"][0]
             .as_array_mut()
@@ -355,12 +355,14 @@ fn uncovered_contact_strata_keep_their_typed_refusal() {
         recipe
     };
     for (recipe, code) in [
-        (with_radius("1"), "fillet.unsupported-overflow"),
         (with_radius("7/2"), "shapes.rolling-envelope"),
-        (RZ.recipe(T, "1"), "fillet.unsupported-overflow"),
         (RZ.recipe(T, "7/2"), "shapes.rolling-envelope"),
         (
             shortened(RZ.recipe(T, "2"), "6"),
+            "fillet.unsupported-overflow",
+        ),
+        (
+            shortened(with_radius("1"), "11/2"),
             "fillet.unsupported-overflow",
         ),
         (
@@ -404,10 +406,7 @@ impl Clear {
     }
     // The enclosure of A*pi - B*pi^2 from the stated pi bounds, in the row's scale.
     fn volume(&self) -> [Rational; 2] {
-        let digits = "314159265358979323846264338327950288419716939937510";
-        let denominator = format!("1{}", "0".repeat(50));
-        let low = Rational::parse(&format!("{digits}/{denominator}")).unwrap();
-        let high = low.clone() + Rational::parse(&format!("1/{denominator}")).unwrap();
+        let [low, high] = pi();
         let r = self.radius.clone();
         let cube = r.clone() * r.clone() * r.clone();
         let a =
@@ -419,6 +418,42 @@ impl Clear {
             (a * high - b * low.clone() * low) * scaled,
         ]
     }
+    // The enclosure of (A + 48 sqrt(2)) pi + B pi^2, all coefficients positive.
+    fn area(&self) -> [Rational; 2] {
+        let [low, high] = pi();
+        let root = sqrt_two();
+        let r = self.radius.clone();
+        let a = Rational::from_i64(2108)
+            - Rational::from_i64(48) * r.clone()
+            - Rational::from_i64(3) * r.clone() * r.clone();
+        let b = self.rail() * r;
+        let square = self.scale.clone() * self.scale.clone();
+        let forty_eight = Rational::from_i64(48);
+        [
+            (low.clone() * (a.clone() + forty_eight.clone() * root[0].clone())
+                + b.clone() * low.clone() * low)
+                * square.clone(),
+            (high.clone() * (a + forty_eight * root[1].clone()) + b * high.clone() * high) * square,
+        ]
+    }
+}
+
+fn pi() -> [Rational; 2] {
+    let digits = "314159265358979323846264338327950288419716939937510";
+    let denominator = format!("1{}", "0".repeat(50));
+    let low = Rational::parse(&format!("{digits}/{denominator}")).unwrap();
+    let high = low.clone() + Rational::parse(&format!("1/{denominator}")).unwrap();
+    [low, high]
+}
+
+fn sqrt_two() -> [Rational; 2] {
+    let digits = "141421356237309504880168872420969807856967187537694";
+    let denominator = format!("1{}", "0".repeat(50));
+    let low = Rational::parse(&format!("{digits}/{denominator}")).unwrap();
+    let high = low.clone() + Rational::parse(&format!("1/{denominator}")).unwrap();
+    assert!(low.clone() * low.clone() < Rational::from_i64(2));
+    assert!(Rational::from_i64(2) < high.clone() * high.clone());
+    [low, high]
 }
 
 fn clear_rows() -> [Clear; 4] {
@@ -453,6 +488,69 @@ fn clear_rows() -> [Clear; 4] {
     ]
 }
 
+impl Clear {
+    // Both native enclosures overlap the independent references.
+    fn assert_properties(&self, model: &Model, body: BodyId) {
+        let accuracy = Accuracy {
+            relative: Rational::parse("1e-9").unwrap(),
+            absolute: Rational::parse("1e-9").unwrap(),
+        };
+        let measured = volume_area_centroid(model, body, &accuracy, &mut decider())
+            .unwrap()
+            .value;
+        let [low, high] = self.volume();
+        let volume = measured.volume;
+        assert!(volume.lo <= high, "{volume:?}");
+        assert!(low <= volume.hi, "{volume:?}");
+        assert!(volume.width() <= Rational::parse("1e-4").unwrap());
+        let [low, high] = self.area();
+        let area = measured.area;
+        assert!(area.lo <= high, "{area:?}");
+        assert!(low <= area.hi, "{area:?}");
+        assert!(area.width() <= Rational::parse("1e-5").unwrap());
+    }
+    fn assert_sides(
+        &self,
+        model: &mut Model,
+        body: BodyId,
+        probes: Vec<([Rational; 3], Containment)>,
+    ) {
+        for (point, expected) in probes {
+            match classify_point(model, body, &self.point(point.clone()), &mut decider()) {
+                Outcome::Proven(found) => assert_eq!(found, expected, "{point:?}"),
+                other => panic!("{point:?}: {other:?}"),
+            }
+        }
+    }
+}
+
+// Strict hand-reasoned points of the definition, with the strip point's side.
+fn strict_points(strip: Containment) -> [([Rational; 3], Containment); 6] {
+    [
+        (
+            [ratio(10, 1), ratio(15, 1), ratio(0, 1)],
+            Containment::Inside,
+        ),
+        (
+            [ratio(0, 1), ratio(15, 1), ratio(0, 1)],
+            Containment::Outside,
+        ),
+        (
+            [ratio(17, 1), ratio(2, 1), ratio(0, 1)],
+            Containment::Outside,
+        ),
+        (
+            [ratio(0, 1), ratio(2, 1), ratio(20, 1)],
+            Containment::Inside,
+        ),
+        ([ratio(15, 2), ratio(51, 10), ratio(10, 1)], strip),
+        (
+            [ratio(15, 2), ratio(26, 5), ratio(10, 1)],
+            Containment::Outside,
+        ),
+    ]
+}
+
 fn kind(surface: &Surface) -> &'static str {
     match surface {
         Surface::Plane(_) => "plane",
@@ -470,7 +568,7 @@ fn blended(model: &Model, face: FaceId) -> bool {
         .any(|o| matches!(o.role, Role::Blend { .. }))
 }
 
-fn edges_of(model: &Model, face: FaceId) -> Vec<catallax_topology::EdgeId> {
+fn edges_of(model: &Model, face: FaceId) -> Vec<EdgeId> {
     let mut edges = Vec::new();
     for lp in &model.face(face).loops {
         if let Loop::Coedges(cs) = model.loop_(*lp) {
@@ -608,19 +706,7 @@ fn a_rail_clear_of_every_mouth_keeps_one_analytic_torus() {
         assert_eq!(source.len(), 14);
         assert_eq!(kept, source, "row {row}");
 
-        // The measured volume overlaps the independent enclosure.
-        let accuracy = Accuracy {
-            relative: Rational::parse("1e-9").unwrap(),
-            absolute: Rational::parse("1e-9").unwrap(),
-        };
-        let [low, high] = clear.volume();
-        let volume = volume_area_centroid(model, built.result, &accuracy, &mut decider())
-            .unwrap()
-            .value
-            .volume;
-        assert!(volume.lo <= high, "row {row}: {volume:?}");
-        assert!(low <= volume.hi, "row {row}: {volume:?}");
-        assert!(volume.width() <= Rational::parse("1e-4").unwrap());
+        clear.assert_properties(model, built.result);
 
         // Strict points of the definition, then one point on the plane rail.
         let near = clear.radius == ratio(999, 1000);
@@ -629,28 +715,8 @@ fn a_rail_clear_of_every_mouth_keeps_one_analytic_torus() {
         } else {
             Containment::Outside
         };
-        let probes = [
-            (
-                [ratio(10, 1), ratio(15, 1), ratio(0, 1)],
-                Containment::Inside,
-            ),
-            (
-                [ratio(0, 1), ratio(15, 1), ratio(0, 1)],
-                Containment::Outside,
-            ),
-            (
-                [ratio(17, 1), ratio(2, 1), ratio(0, 1)],
-                Containment::Outside,
-            ),
-            (
-                [ratio(0, 1), ratio(2, 1), ratio(20, 1)],
-                Containment::Inside,
-            ),
-            ([ratio(15, 2), ratio(51, 10), ratio(10, 1)], inside_strip),
-            (
-                [ratio(15, 2), ratio(26, 5), ratio(10, 1)],
-                Containment::Outside,
-            ),
+        let mut probes = strict_points(inside_strip).to_vec();
+        probes.extend([
             (
                 [ratio(25999, 2000), ratio(50001, 10000), ratio(0, 1)],
                 Containment::Outside,
@@ -659,19 +725,9 @@ fn a_rail_clear_of_every_mouth_keeps_one_analytic_torus() {
                 [ratio(25999, 2000), ratio(49999, 10000), ratio(0, 1)],
                 Containment::Inside,
             ),
-        ];
+        ]);
         let result = built.result;
-        for (point, expected) in probes {
-            match classify_point(
-                &mut built.model,
-                result,
-                &clear.point(point.clone()),
-                &mut decider(),
-            ) {
-                Outcome::Proven(found) => assert_eq!(found, expected, "row {row}: {point:?}"),
-                other => panic!("row {row}: {point:?}: {other:?}"),
-            }
-        }
+        clear.assert_sides(&mut built.model, result, probes);
         let rail = clear.rail();
         let on_rail = [
             rail.clone() * ratio(3, 5),
@@ -738,5 +794,414 @@ fn volume_encloses_the_definition_and_the_fitted_carrier() {
             .filter(|face| face_area(&built.model, *face, &accuracy, &mut dec).is_err())
             .count();
         assert_eq!(refused, 5);
+    }
+}
+
+fn tangent_rows() -> [Clear; 4] {
+    let whole = Rational::one();
+    let mut half = scaled(&ratio(1, 2));
+    step(&mut half, "filleted")["radius"] = json!("1/2");
+    [
+        Clear {
+            recipe: with_radius("1"),
+            radius: whole.clone(),
+            scale: whole.clone(),
+            pose: None,
+        },
+        Clear {
+            recipe: RQ.recipe(T, "1"),
+            radius: whole.clone(),
+            scale: whole.clone(),
+            pose: Some((&RQ, T)),
+        },
+        Clear {
+            recipe: RZ.recipe(T, "1"),
+            radius: whole.clone(),
+            scale: whole.clone(),
+            pose: Some((&RZ, T)),
+        },
+        Clear {
+            recipe: half,
+            radius: whole,
+            scale: ratio(1, 2),
+            pose: None,
+        },
+    ]
+}
+
+// The faces around a vertex, one sector each: joined through the edges at the
+// vertex they must form a single cycle, or the surface pinches there.
+fn assert_one_cycle(model: &Model, faces: &[FaceId], vertex: VertexId) -> BTreeSet<FaceId> {
+    let mut sectors = BTreeMap::<FaceId, Vec<FaceId>>::new();
+    let mut joins = 0;
+    let edges: BTreeSet<_> = faces
+        .iter()
+        .flat_map(|face| edges_of(model, *face))
+        .collect();
+    for edge in edges {
+        let e = model.edge(edge);
+        if e.start != Some(vertex) && e.end != Some(vertex) {
+            continue;
+        }
+        let [a, b] = faces
+            .iter()
+            .copied()
+            .filter(|face| edges_of(model, *face).contains(&edge))
+            .collect::<Vec<_>>()[..]
+        else {
+            panic!("an edge at a contact joins two faces");
+        };
+        sectors.entry(a).or_default().push(b);
+        sectors.entry(b).or_default().push(a);
+        joins += 1;
+    }
+    assert_eq!(joins, sectors.len());
+    let first = *sectors.keys().next().unwrap();
+    let (mut previous, mut at, mut seen) = (first, sectors[&first][0], 1);
+    while at != first {
+        let around = &sectors[&at];
+        assert_eq!(around.len(), 2);
+        let next = if around[0] == previous {
+            around[1]
+        } else {
+            around[0]
+        };
+        (previous, at, seen) = (at, next, seen + 1);
+    }
+    assert_eq!(seen, sectors.len(), "one vertex link");
+    sectors.into_keys().collect()
+}
+
+fn circle_of(model: &Model, edge: EdgeId) -> ([Rational; 3], Rational) {
+    let Curve::Circle(circle) = model.geom().curve(model.edge(edge).curve) else {
+        panic!("a tangent arc is a circle");
+    };
+    (
+        exact_point(&circle.center),
+        circle.radius_sq.as_rational().unwrap(),
+    )
+}
+
+#[test]
+fn a_rail_touching_every_mouth_keeps_one_exact_torus() {
+    let mut fitted = decider();
+    let fitted = evaluate(&parsed(&canonical()), &mut fitted).unwrap();
+    let fitted_blends: BTreeSet<_> = fitted
+        .model
+        .faces_of_body(fitted.result)
+        .into_iter()
+        .filter(|face| blended(&fitted.model, *face))
+        .flat_map(|face| fitted.model.face_origins(face).to_vec())
+        .collect();
+    let accuracy = Accuracy {
+        relative: Rational::parse("1e-9").unwrap(),
+        absolute: Rational::parse("1e-9").unwrap(),
+    };
+    for (row, tangent) in tangent_rows().iter().enumerate() {
+        let recipe = parsed(&tangent.recipe);
+        let (mut built, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {
+            evaluate(&recipe, &mut decider()).unwrap()
+        });
+        assert!(!work.exhausted);
+        let result = built.result;
+        let model = &built.model;
+        assert_eq!(model.check(result), vec![], "row {row}");
+        let body = model.body(result);
+        assert!(body.marks.is_empty(), "row {row}: {:?}", body.marks);
+        assert_eq!(body.lumps.len(), 1);
+        assert_eq!(model.lump(body.lumps[0]).shells.len(), 1);
+        let faces = model.faces_of_body(result);
+        let scale = |value: i64| Rational::from_i64(value) * tangent.scale.clone();
+        let square = |value: Rational| value.clone() * value;
+        let y = |height: i64| {
+            [
+                Rational::zero(),
+                Rational::from_i64(height),
+                Rational::zero(),
+            ]
+        };
+
+        // Fifteen support groups, with the plane's seams explained: the flange
+        // top alone is cut, into one main patch and a cap per contact. Each
+        // patch keeps the group's source names, and the rest is unchanged.
+        let support = |model: &Model, face: FaceId| {
+            (
+                model.face_origins(face).to_vec(),
+                format!("{:?}", model.geom().surface(model.face(face).surface)),
+            )
+        };
+        let drilled = built.bodies[&StepId::new("drilled").unwrap()];
+        let source: BTreeSet<_> = model
+            .faces_of_body(drilled)
+            .into_iter()
+            .map(|face| support(model, face))
+            .collect();
+        assert_eq!(source.len(), 14);
+        let mut groups = BTreeMap::<_, Vec<FaceId>>::new();
+        for face in &faces {
+            groups.entry(support(model, *face)).or_default().push(*face);
+        }
+        assert_eq!(groups.len(), 15, "row {row}");
+        let side = |segment: &str| Origin {
+            step: StepId::new("housing").unwrap(),
+            role: Role::Side {
+                segment: ElementId::new(segment).unwrap(),
+                path: None,
+            },
+        };
+        let mut flange = Vec::new();
+        let mut torus = None;
+        for (key, patches) in &groups {
+            if key.0 == vec![side("flange-top")] {
+                flange = patches.clone();
+            } else {
+                assert_eq!(patches.len(), 1, "row {row}");
+            }
+            if blended(model, patches[0]) {
+                assert_eq!(
+                    key.0.iter().cloned().collect::<BTreeSet<_>>(),
+                    fitted_blends,
+                    "row {row}"
+                );
+                assert!(torus.replace(patches[0]).is_none());
+            } else {
+                assert!(source.contains(key), "row {row}");
+            }
+        }
+        assert_eq!(flange.len(), 5, "row {row}");
+        let torus = torus.unwrap();
+
+        // Positive patches that cover the flange top with nothing missing or
+        // doubled: the annulus 13 to 22 without four radius-4 discs is 251 pi.
+        let [low, high] = pi();
+        let area = |face: FaceId| {
+            face_area(model, face, &accuracy, &mut decider())
+                .unwrap()
+                .value
+        };
+        let mut covered = [Rational::zero(), Rational::zero()];
+        for patch in &flange {
+            let area = area(*patch);
+            assert!(area.lo > Rational::zero(), "row {row}");
+            covered = [covered[0].clone() + area.lo, covered[1].clone() + area.hi];
+        }
+        let target = square(tangent.scale.clone()) * Rational::from_i64(251);
+        assert!(covered[0] <= target.clone() * high, "row {row}");
+        assert!(target * low <= covered[1], "row {row}");
+
+        // The exact torus and both exact rails.
+        let Surface::Torus(carrier) = model.geom().surface(model.face(torus).surface) else {
+            panic!("the blend is a torus");
+        };
+        assert_eq!(
+            exact_point(&carrier.center),
+            tangent.place(y(6)),
+            "row {row}"
+        );
+        assert_eq!(carrier.major.as_rational().unwrap(), scale(13));
+        assert_eq!(carrier.minor.as_rational().unwrap(), scale(1));
+        assert_eq!(model.face(torus).loops.len(), 2);
+        let on_both = |edge: EdgeId| {
+            faces
+                .iter()
+                .copied()
+                .filter(|face| edges_of(model, *face).contains(&edge))
+                .collect::<Vec<_>>()
+        };
+        let rails = edges_of(model, torus);
+        let mut arcs = 0;
+        for rail in &rails {
+            let neighbour = on_both(*rail)
+                .into_iter()
+                .find(|face| *face != torus)
+                .unwrap();
+            let (center, radius_sq) = circle_of(model, *rail);
+            if model.edge(*rail).start.is_none() {
+                assert_eq!(center, tangent.place(y(6)), "row {row}");
+                assert_eq!(radius_sq, square(scale(12)));
+                assert_eq!(model.face_origins(neighbour), [side("body-wall")]);
+            } else {
+                assert_eq!(center, tangent.place(y(5)), "row {row}");
+                assert_eq!(radius_sq, square(scale(13)));
+                assert_eq!(model.face_origins(neighbour), [side("flange-top")]);
+                arcs += 1;
+            }
+        }
+        assert_eq!(arcs, rails.len() - 1);
+
+        // Every vertex lies exactly on every face it bounds. Genus five comes
+        // from the real face domains, with annuli and ring edges counted.
+        let mut dec = decider();
+        let mut vertices = BTreeSet::new();
+        let mut edges = BTreeSet::new();
+        let mut rings = BTreeSet::new();
+        let mut loops = 0i64;
+        let geom = model.geom();
+        for face in &faces {
+            let surface = model.face(*face).surface;
+            loops += model.face(*face).loops.len() as i64;
+            for edge in edges_of(model, *face) {
+                edges.insert(edge);
+                let e = model.edge(edge);
+                if e.start.is_none() {
+                    rings.insert(edge);
+                }
+                for v in [e.start, e.end].into_iter().flatten() {
+                    vertices.insert(v);
+                    let point = geom.position(model.vertex(v).point);
+                    assert!(matches!(
+                        geom.side_of(surface, &point, &mut dec),
+                        Outcome::ProvenCoincident(_)
+                    ));
+                }
+            }
+        }
+        let euler = vertices.len() as i64 + rings.len() as i64 - edges.len() as i64
+            + 2 * faces.len() as i64
+            - loops;
+        assert_eq!(euler, 2 * (1 - 5), "row {row}");
+
+        // Each contact is one shared vertex of the rail and its mouth, and the
+        // surface around it is one cycle: torus, flange top, cone, flange top.
+        let contacts = [[13, 0], [0, 13], [-13, 0], [0, -13]];
+        for [x, z] in contacts {
+            let local = [x, 5, z].map(Rational::from_i64);
+            let exact = tangent.place(local);
+            let matching: Vec<_> = vertices
+                .iter()
+                .copied()
+                .filter(|v| exact_point(&model.geom().position(model.vertex(*v).point)) == exact)
+                .collect();
+            let [contact] = matching[..] else {
+                panic!("row {row}: one vertex at {exact:?}");
+            };
+            let around = assert_one_cycle(model, &faces, contact);
+            assert_eq!(around.len(), 4, "row {row}");
+            assert!(around.contains(&torus));
+            let planes = around.iter().filter(|face| flange.contains(face)).count();
+            assert_eq!(planes, 2, "row {row}");
+            assert_eq!(
+                around
+                    .iter()
+                    .filter(|face| kind(model.geom().surface(model.face(**face).surface)) == "cone")
+                    .count(),
+                1,
+                "row {row}"
+            );
+            let [mx, mz] = [x, z].map(|value| value * 17 / 13);
+            let mouth = tangent.place([mx, 5, mz].map(Rational::from_i64));
+            let mut carried = BTreeSet::new();
+            for edge in edges.iter().copied() {
+                let e = model.edge(edge);
+                if e.start == Some(contact) || e.end == Some(contact) {
+                    carried.insert(circle_of(model, edge));
+                }
+            }
+            assert_eq!(
+                carried,
+                BTreeSet::from([
+                    (tangent.place(y(5)), square(scale(13))),
+                    (mouth, square(scale(4))),
+                ]),
+                "row {row}"
+            );
+        }
+
+        tangent.assert_properties(model, result);
+
+        // Strict points, then the four around the first contact: a margin of
+        // over 50 nm on each side of the plane, the rail and the mouth.
+        let mut probes = strict_points(Containment::Inside).to_vec();
+        probes.extend([
+            (
+                [ratio(1299, 100), ratio(5, 1), ratio(0, 1)],
+                Containment::Inside,
+            ),
+            (
+                [ratio(1301, 100), ratio(5, 1), ratio(0, 1)],
+                Containment::Outside,
+            ),
+            (
+                [ratio(13, 1), ratio(499, 100), ratio(0, 1)],
+                Containment::Inside,
+            ),
+            (
+                [ratio(13, 1), ratio(501, 100), ratio(0, 1)],
+                Containment::Outside,
+            ),
+        ]);
+        tangent.assert_sides(&mut built.model, result, probes);
+
+        // Exact boundary: all four contacts, and a cusp point the plane keeps
+        // beyond the rail and the mouth, so neither was widened.
+        let mut boundary: Vec<_> = contacts
+            .iter()
+            .map(|[x, z]| [x, &5, z].map(|value| Rational::from_i64(*value)))
+            .collect();
+        boundary.push([ratio(13, 1), ratio(5, 1), ratio(1, 100)]);
+        for point in boundary {
+            assert!(
+                matches!(
+                    classify_point(
+                        &mut built.model,
+                        result,
+                        &tangent.point(point.clone()),
+                        &mut decider()
+                    ),
+                    Outcome::ProvenCoincident(_)
+                ),
+                "row {row}: {point:?}"
+            );
+        }
+    }
+}
+
+// The tangent housing with a far sphere and a far separated housing beside it.
+fn with_separate_bodies() -> Value {
+    let mut recipe = with_radius("1");
+    let mut far = translated([100, 0, 0]);
+    step(&mut far, "filleted")["radius"] = json!("1/2");
+    let mut steps = far["steps"].to_string();
+    for id in [
+        "section",
+        "housing",
+        "drill",
+        "sink",
+        "countersink",
+        "hole-pattern",
+        "drilled",
+        "filleted",
+    ] {
+        steps = steps.replace(&format!("\"{id}\""), &format!("\"far-{id}\""));
+    }
+    let list = recipe["steps"].as_array_mut().unwrap();
+    list.extend(serde_json::from_str::<Vec<Value>>(&steps).unwrap());
+    list.push(json!({
+        "id": "ball",
+        "op": "sphere",
+        "radius": "3",
+        "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "100"]},
+    }));
+    recipe
+}
+
+#[test]
+fn every_body_written_beside_a_tangent_ring_keeps_its_seams() {
+    let built = evaluate(&parsed(&with_separate_bodies()), &mut decider()).unwrap();
+    // Seven cylinders, four cones and the torus of each housing carry one seam.
+    for (other, seams) in [("ball", 12), ("far-filleted", 24)] {
+        let body = built.bodies[&StepId::new(other).unwrap()];
+        let mut file = Vec::new();
+        catallax_step::write_step(
+            &built.model,
+            &[built.result, body],
+            &Default::default(),
+            &mut decider(),
+            &mut file,
+        )
+        .unwrap();
+        let file = String::from_utf8(file).unwrap();
+        assert_eq!(file.matches("SEAM_CURVE").count(), seams, "{other}");
+        assert_eq!(file.matches("MANIFOLD_SOLID_BREP").count(), 2, "{other}");
     }
 }

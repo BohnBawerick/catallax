@@ -54,6 +54,17 @@ CLEAR_MATERIAL = (((10, 15, 0), True), ((0, 15, 0), False), ((17, 2, 0), False),
                   ((Fraction(15, 2), Fraction(26, 5), 10), False),
                   ((Fraction(25999, 2000), Fraction(50001, 10000), 0), False),
                   ((Fraction(25999, 2000), Fraction(49999, 10000), 0), True))
+# The rail on every mouth: the torus, the fourteen drilled supports, and a cap of
+# the flange top cut off beside each of the four contacts.
+TANGENT_RADIUS = '1'
+TANGENT_VOLUME = 12511.642963712861502544
+TANGENT_FACES = {GeomAbs_Plane: 7, GeomAbs_Cylinder: 7, GeomAbs_Cone: 4, GeomAbs_Torus: 1}
+TANGENT_SUMMARY = {'plane': 7, 'cylinder': 7, 'cone': 4, 'torus': 1}
+TANGENT_MATERIAL = (((10, 15, 0), True), ((0, 15, 0), False), ((17, 2, 0), False),
+                    ((0, 2, 20), True), ((Fraction(15, 2), Fraction(51, 10), 10), True),
+                    ((Fraction(15, 2), Fraction(26, 5), 10), False),
+                    ((Fraction(1299, 100), 5, 0), True), ((Fraction(1301, 100), 5, 0), False),
+                    ((13, Fraction(499, 100), 0), True), ((13, Fraction(501, 100), 0), False))
 
 
 def canonical():
@@ -97,6 +108,14 @@ def scaled(factor):
                           ('filleted', ('radius',))):
         for length in lengths:
             step(recipe, name)[length] = times(step(recipe, name)[length])
+    return recipe
+
+
+def short_tube(recipe, top):
+    """A tube ending at this height, too short to carry the cylinder rail."""
+    for segment in step(recipe, 'section')['loops'][0]:
+        if segment['id'] in ('body-wall', 'body-top'):
+            segment['to'][1] = top
     return recipe
 
 
@@ -313,10 +332,58 @@ class FlangedHousing(unittest.TestCase):
             self.assertEqual(faces(shape), CLEAR_FACES)
         self.assert_replays(recipe, directory, manifest)
 
+    def test_a_tangent_rail_exports_one_exact_torus(self):
+        recipe = rigid(RQ, (1, 2, 3, 4), T, TANGENT_RADIUS)
+        directory, manifest = self.run_case(recipe, APPLICATION)
+        self.assertEqual(manifest['format'], 'catallax-manifest/3')
+        self.assertEqual(manifest['status'], 'answered')
+        self.assertTrue(manifest['exact'])
+        self.assertEqual(manifest['marks'], [])
+        self.assertEqual(manifest['result']['faces_by_kind'], TANGENT_SUMMARY)
+        self.assertLessEqual(Fraction(manifest['step']['max_deviation']), FILE_TO_MODEL)
+        path = directory / 'answer.step'
+        self.assert_solids(path, TANGENT_VOLUME, 0, RQ, T, TANGENT_MATERIAL)
+        for shape in (raw_shapes(path)[0], ordinary_shape(path)):
+            self.assertEqual(faces(shape), TANGENT_FACES)
+        self.assert_replays(recipe, directory, manifest)
+
+    def test_a_tangent_pattern_writes_every_seam(self):
+        recipe = radius(TANGENT_RADIUS)
+        recipe['steps'].append({'id': 'row', 'op': 'pattern', 'body': 'filleted', 'layout': {
+            'linear': {'vector': ['100', '0', '0'], 'count': 2}}})
+        recipe['result'] = 'row'
+        directory, manifest = self.run_case(recipe, APPLICATION)
+        self.assertEqual(manifest['status'], 'answered')
+        self.assertEqual(manifest['result']['lumps'], 2)
+        path = directory / 'answer.step'
+        self.assertEqual(len(raw_shapes(path)), 2)
+        for shape in raw_shapes(path):
+            self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
+            self.assertEqual(faces(shape), TANGENT_FACES)
+            self.assertAlmostEqual(integrated(shape)[2], TANGENT_VOLUME, delta=1e-6)
+        found = solids(ordinary_shape(path))
+        self.assertEqual(len(found), 2)
+        for solid in found:
+            self.assertTrue(BRepCheck_Analyzer(solid).IsValid())
+
+    def test_a_later_boolean_refuses_the_pinched_plane(self):
+        """Sewing merges the contact caps back, and no raw-valid file holds that plane."""
+        recipe = radius(TANGENT_RADIUS)
+        recipe['steps'] += [
+            {'id': 'ball', 'op': 'sphere', 'radius': '3',
+             'pose': {'rotation': ['1', '0', '0', '0'], 'translation': ['100', '0', '0']}},
+            {'id': 'joined', 'op': 'boolean', 'kind': 'union', 'target': 'filleted',
+             'tool': 'ball'}]
+        recipe['result'] = 'joined'
+        directory, manifest = self.run_case(recipe, APPLICATION)
+        self.assertEqual(manifest['status'], 'refused')
+        self.assertEqual(manifest['refusal']['code'], 'step.unsupported-geometry')
+        self.assertFalse((directory / 'answer.step').exists())
+
     def test_uncovered_strata_keep_their_refusals(self):
         rows = (
-            ('tangent', radius('1'), 'fillet.unsupported-overflow'),
             ('too-large', radius('7/2'), 'shapes.rolling-envelope'),
+            ('short-tube', short_tube(radius('1'), '11/2'), 'fillet.unsupported-overflow'),
         )
         for name, recipe, code in rows:
             with self.subTest(name):

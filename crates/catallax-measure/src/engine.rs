@@ -3,7 +3,7 @@
 use catallax_intersect::{CurveTrace, trace};
 use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal};
 use catallax_shapes::{Circle, Curve, Ellipse, Line, Point3, RPoint3, RVector3, Surface, Vector3};
-use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
+use catallax_topology::{CoedgeId, EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 
 use crate::integrate::{Stop, Work};
@@ -331,6 +331,8 @@ pub(crate) fn measure(
                         .enclose_point(model.vertex(*v).point, &width, dec)?;
                 }
                 Loop::Coedges(coedges) => {
+                    let whole = whole_parallel(model, surface, coedges);
+                    let coedges = if whole { &coedges[..1] } else { &coedges[..] };
                     for c in coedges {
                         let c = model.coedge(*c);
                         let edge = model.edge(c.edge);
@@ -353,7 +355,9 @@ pub(crate) fn measure(
                             exact
                         };
                         let circle = match model.geom().curve(edge.curve) {
-                            catallax_shapes::Curve::Circle(circle) if edge.start == edge.end => {
+                            catallax_shapes::Curve::Circle(circle)
+                                if whole || edge.start == edge.end =>
+                            {
                                 Some(circle)
                             }
                             _ => None,
@@ -377,12 +381,14 @@ pub(crate) fn measure(
                         } else {
                             None
                         };
-                        let parallel =
-                            if torus.is_some() && coedges.len() == 1 && edge.start == edge.end {
-                                torus_parallel(surface, model, edge.curve, dec)?
-                            } else {
-                                None
-                            };
+                        let parallel = if torus.is_some()
+                            && coedges.len() == 1
+                            && (whole || edge.start == edge.end)
+                        {
+                            torus_parallel(surface, model, edge.curve, dec)?
+                        } else {
+                            None
+                        };
                         let mut integral =
                             if torus.is_none() && exact.is_none() && analytic.is_none() {
                                 from.zip(to).and_then(|(from, to)| {
@@ -1150,6 +1156,29 @@ fn correct_whole_surface(
         *sum = work.add(sum, &correction)?;
     }
     Ok(())
+}
+
+// Arcs walking one circle one way close only by covering it once, so a cone or
+// torus boundary of them integrates as that whole circle. Cylinder and sphere
+// trims keep their accepted traced enclosures.
+fn whole_parallel(model: &Model, surface: &Surface, coedges: &[CoedgeId]) -> bool {
+    let [first, rest @ ..] = coedges else {
+        return false;
+    };
+    if rest.is_empty() || !matches!(surface, Surface::Cone(_) | Surface::Torus(_)) {
+        return false;
+    }
+    let travel = |id: &CoedgeId| {
+        let c = model.coedge(*id);
+        let e = model.edge(c.edge);
+        (
+            e.curve,
+            (e.sense == Sense::Same) == (c.sense == Sense::Same),
+        )
+    };
+    let walk = travel(first);
+    matches!(model.geom().curve(walk.0), Curve::Circle(_))
+        && rest.iter().all(|id| travel(id) == walk)
 }
 
 fn torus_meridian<'a>(

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use catallax_numbers::{Answer, Answered, Decider, Interval, Rational, Refusal};
-use catallax_shapes::Surface;
+use catallax_numbers::{Answer, Answered, Decider, Interval, Outcome, Rational, Real, Refusal};
+use catallax_shapes::{Curve, Sphere, Surface};
 use catallax_topology::{BodyId, FaceId, Loop, Model, Sense};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
@@ -219,6 +219,50 @@ impl FaceBuilder<'_> {
         Ok(true)
     }
 
+    /// Grid points strictly inside a boundary segment's diametral disk. A seed
+    /// there leaves a thin facet on a fixed chord, and centroid refinement only
+    /// flattens that facet further from the surface normal. The floating test
+    /// selects seeds and proves nothing: `finish` still certifies every facet.
+    fn encroaching_seeds(
+        &self,
+        ranges: [(i64, i64); 2],
+        counts: [usize; 2],
+        parameter: impl Fn(usize, i64) -> f64,
+    ) -> Result<BTreeSet<[u64; 2]>, Refusal> {
+        let mut protected = BTreeSet::new();
+        for edge in self.cdt.undirected_edges() {
+            self.dec.check_deadline()?;
+            if !edge.is_constraint_edge() {
+                continue;
+            }
+            let [a, b] = edge.positions();
+            let radius = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt() * 0.5;
+            let centers = [(a.x + b.x) * 0.5, (a.y + b.y) * 0.5];
+            // One index of padding absorbs the rounding of this mapping.
+            let spans: [(i64, i64); 2] = std::array::from_fn(|i| {
+                let [start, end] = self.bounds[i];
+                let scale = counts[i] as f64 / (end - start);
+                let first = libm::floor((centers[i] - radius - start) * scale) as i64;
+                let last = libm::ceil((centers[i] + radius - start) * scale) as i64;
+                (
+                    first.saturating_sub(1).max(ranges[i].0),
+                    last.saturating_add(1).min(ranges[i].1),
+                )
+            });
+            for i in spans[0].0..=spans[0].1 {
+                let u = parameter(0, i);
+                for j in spans[1].0..=spans[1].1 {
+                    self.dec.check_deadline()?;
+                    let v = parameter(1, j);
+                    if (u - a.x) * (u - b.x) + (v - a.y) * (v - b.y) < 0.0 {
+                        protected.insert(key([u, v]));
+                    }
+                }
+            }
+        }
+        Ok(protected)
+    }
+
     fn grid(&mut self) -> Result<(), Refusal> {
         let widths = self.bounds.map(|b| b[1] - b[0]);
         let bounded_torus =
@@ -342,10 +386,18 @@ impl FaceBuilder<'_> {
                 (0, counts[i] as i64)
             }
         });
-        let u_start = self.bounds[0][0];
+        let bounds = self.bounds;
+        let parameter = move |dimension: usize, index: i64| {
+            bounds[dimension][0] + widths[dimension] * index as f64 / counts[dimension] as f64
+        };
+        let protected = if self.chart.great_circle_sector {
+            self.encroaching_seeds(ranges, counts, parameter)?
+        } else {
+            BTreeSet::new()
+        };
         let parameters_u = (ranges[0].0..=ranges[0].1)
             .take(if align_rails { 0 } else { usize::MAX })
-            .map(|i| u_start + widths[0] * i as f64 / counts[0] as f64)
+            .map(|i| parameter(0, i))
             .chain(rail_u);
         let mut queued = None;
         for u in parameters_u {
@@ -361,10 +413,10 @@ impl FaceBuilder<'_> {
                 if align_rails && endpoint && !apex {
                     continue;
                 }
-                let uv = [
-                    u,
-                    self.bounds[1][0] + widths[1] * j as f64 / counts[1] as f64,
-                ];
+                let uv = [u, parameter(1, j)];
+                if protected.contains(&key(uv)) {
+                    continue;
+                }
                 // Query the fixed boundary triangulation before bulk loading.
                 // A new point on a rail would split only this face's constraint
                 // and destroy the shared polyline on its adjacent face.
@@ -953,11 +1005,40 @@ pub(crate) fn check_closed(mesh: &Mesh) -> Result<(), Refusal> {
     Ok(())
 }
 
+/// Whether one loop of three finite arcs bounds this face, each on a great circle
+/// of its sphere. This only chooses a meshing algorithm, so another trim stays
+/// valid and an inconclusive comparison keeps the general route.
+fn great_circle_sector(model: &Model, face: FaceId, sphere: &Sphere, dec: &mut Decider) -> bool {
+    let [boundary] = model.face(face).loops.as_slice() else {
+        return false;
+    };
+    let Loop::Coedges(coedges) = model.loop_(*boundary) else {
+        return false;
+    };
+    if coedges.len() != 3 {
+        return false;
+    }
+    let radius_sq = sphere.radius.square();
+    let mut equal = |a: &Real, b: &Real| matches!(dec.sign(&(a - b)), Outcome::ProvenCoincident(_));
+    coedges.iter().all(|&coedge| {
+        let edge = model.edge(model.coedge(coedge).edge);
+        let Curve::Circle(circle) = model.geom().curve(edge.curve) else {
+            return false;
+        };
+        edge.start.is_some()
+            && edge.end.is_some()
+            && equal(&circle.center.x, &sphere.center.x)
+            && equal(&circle.center.y, &sphere.center.y)
+            && equal(&circle.center.z, &sphere.center.z)
+            && equal(&circle.radius_sq, &radius_sq)
+    })
+}
+
 fn regular_chart(
     model: &Model,
     face: FaceId,
     options: &MeshOptions,
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<Chart, Refusal> {
     let surface = model.geom().surface(model.face(face).surface);
     let Surface::Sphere(sphere) = surface else {
@@ -1002,7 +1083,7 @@ fn regular_chart(
         let mut candidate = sphere.clone();
         candidate.axis = rotation.apply(&sphere.axis);
         candidate.ref_dir = rotation.apply(&sphere.ref_dir);
-        let chart = Chart::new(&Surface::Sphere(candidate), dec)?;
+        let mut chart = Chart::new(&Surface::Sphere(candidate), dec)?;
         let poles = [
             chart.evaluate([0.0, -0.25], dec)?,
             chart.evaluate([0.0, 0.25], dec)?,
@@ -1024,6 +1105,8 @@ fn regular_chart(
             }
         }
         if clear {
+            chart.great_circle_sector = options.angular_deviation.is_some()
+                && great_circle_sector(model, face, sphere, dec);
             return Ok(chart);
         }
     }

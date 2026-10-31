@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 
 use catallax_intersect::{TracePiece, trace};
-use catallax_numbers::{Ball, Decider, Interval, Refusal};
+use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, Sense, VertexId};
 
 use crate::{
@@ -124,6 +124,20 @@ impl Sampler<'_> {
             let uv_a = chart.project(a);
             let uv_b = align(chart.project(b), uv_a, chart.periodic);
             let uv_m = align(chart.project(points[1]), uv_a, chart.periodic);
+            // A corner sector needs the certified sampler's resolution in both
+            // chart directions; a single direction leaves slivers along its arcs.
+            if chart.great_circle_sector
+                && let Some(angle) = &self.options.angular_deviation
+            {
+                small &= chart.edge_chord_within(
+                    &[uv_a, uv_b, uv_m],
+                    &self.options.chord_tolerance.mul_pow2(-3),
+                    self.dec,
+                )?;
+                let span = (chart::q(uv_b[0]) - chart::q(uv_a[0])).abs()
+                    + (chart::q(uv_b[1]) - chart::q(uv_a[1])).abs();
+                small &= span * Rational::from_i64(16) <= *angle;
+            }
             let limit = self
                 .options
                 .angular_deviation

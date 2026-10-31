@@ -7,14 +7,18 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_boolean::{Containment, classify_point};
+use catallax_boolean::{Containment, classify_point, face_contains};
 use catallax_features::evaluate;
+use catallax_intersect::{CurveSurface, intersect_curve_surface};
 use catallax_measure::{
     Accuracy, blend_definition_properties, face_area, mass_properties, volume_area_centroid,
 };
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, Real, with_operation_budget};
 use catallax_recipe::{ElementId, Origin, Recipe, Role, StepId};
-use catallax_shapes::{Curve, Point3, ROLLING_ENVELOPE_TARGET_NM, SplineSupport, Surface};
+use catallax_shapes::{
+    Curve, Line, Point3, ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope, SplineSupport, Surface,
+    Vector3,
+};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, VertexId};
 use serde_json::{Value, json};
 
@@ -212,6 +216,7 @@ fn p5_junction_continues_over_countersink_mouths() {
         (RZ.recipe(NO_MOVE, "2"), moved(&RZ, NO_MOVE, ratio(2, 1))),
         (RZ.recipe(T, "5/2"), moved(&RZ, T, ratio(5, 2))),
         (RQ.recipe(NO_MOVE, "2"), moved(&RQ, NO_MOVE, ratio(2, 1))),
+        (RQ.recipe(T, "5/2"), moved(&RQ, T, ratio(5, 2))),
     ];
     let mut names: Option<BTreeSet<Origin>> = None;
     for (row, (recipe, contact)) in rows.iter().enumerate() {
@@ -1204,4 +1209,177 @@ fn every_body_written_beside_a_tangent_ring_keeps_its_seams() {
         assert_eq!(file.matches("SEAM_CURVE").count(), seams, "{other}");
         assert_eq!(file.matches("MANIFOLD_SOLID_BREP").count(), 2, "{other}");
     }
+}
+
+// Hand-derived points of the fitted body. Only the last depends on the radius:
+// b(2) < 4/5 < b(5/2) for the torus height b(r) above the flange at radius 25/2.
+fn fitted_witnesses(edit: Containment) -> [([Rational; 3], Containment); 6] {
+    [
+        (
+            [ratio(10, 1), ratio(15, 1), ratio(0, 1)],
+            Containment::Inside,
+        ),
+        (
+            [ratio(0, 1), ratio(15, 1), ratio(0, 1)],
+            Containment::Outside,
+        ),
+        (
+            [ratio(17, 1), ratio(2, 1), ratio(0, 1)],
+            Containment::Outside,
+        ),
+        (
+            [ratio(0, 1), ratio(2, 1), ratio(20, 1)],
+            Containment::Inside,
+        ),
+        (
+            [ratio(15, 2), ratio(11, 2), ratio(10, 1)],
+            Containment::Inside,
+        ),
+        ([ratio(15, 2), ratio(29, 5), ratio(10, 1)], edit),
+    ]
+}
+fn fitted_supports(model: &Model, body: BodyId) -> Vec<(FaceId, RollingEnvelope)> {
+    let support = |face: &FaceId| match model.geom().surface(model.face(*face).surface) {
+        Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+            Some((*face, envelope.clone()))
+        }
+        _ => None,
+    };
+    model
+        .faces_of_body(body)
+        .iter()
+        .filter_map(support)
+        .collect()
+}
+// What a query must leave alone. Auxiliary points and lines may join the store.
+fn query_snapshot(model: &Model, body: BodyId) -> String {
+    let mut text = format!("{:?}\n", model.body(body));
+    for face in model.faces_of_body(body) {
+        let record = model.face(face);
+        text += &format!("{face:?} {record:?} {:?}\n", model.face_origins(face));
+        for lp in &record.loops {
+            text += &format!("{lp:?} {:?}\n", model.loop_(*lp));
+        }
+    }
+    for edge in model.edges_of_body(body) {
+        let record = model.edge(edge);
+        text += &format!("{edge:?} {record:?} {:?}", model.edge_constructions(edge));
+        for coedge in model.coedges_of_edge(edge) {
+            text += &format!(" {coedge:?} {:?}", model.coedge(coedge));
+        }
+        for vertex in [record.start, record.end].into_iter().flatten() {
+            text += &format!(" {vertex:?} {:?}", model.vertex(vertex));
+        }
+        text += "\n";
+    }
+    text
+}
+
+#[test]
+fn fitted_housing_answers_native_containment() {
+    let halved = ratio(1, 2);
+    let rows = [
+        (canonical(), ratio(2, 1), None, Containment::Outside),
+        (with_radius("5/2"), ratio(5, 2), None, Containment::Inside),
+        (
+            RQ.recipe(T, "5/2"),
+            ratio(5, 2),
+            Some((&RQ, T)),
+            Containment::Inside,
+        ),
+        (scaled(&halved), ratio(2, 1), None, Containment::Outside),
+    ];
+    for (row, (recipe, radius, pose, edit)) in rows.into_iter().enumerate() {
+        let scale = if row == 3 {
+            halved.clone()
+        } else {
+            Rational::one()
+        };
+        let parsed_recipe = parsed(&recipe);
+        let place = Clear {
+            recipe,
+            radius,
+            scale,
+            pose,
+        };
+        let mut built = evaluate(&parsed_recipe, &mut decider()).unwrap();
+        let body = built.result;
+        assert_eq!(built.model.check(body), vec![], "row {row}");
+        assert_eq!(built.model.faces_of_body(body).len(), 22, "row {row}");
+        assert_eq!(fitted_supports(&built.model, body).len(), 4, "row {row}");
+        let before = query_snapshot(&built.model, body);
+        for (point, expected) in fitted_witnesses(edit) {
+            let point = place.point(point);
+            let (answer, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {
+                classify_point(&mut built.model, body, &point, &mut decider())
+            });
+            assert!(!work.exhausted, "row {row}");
+            assert!(
+                matches!(answer, Outcome::Proven(found) if found == expected),
+                "row {row}: {point:?}: {answer:?}"
+            );
+        }
+        // The closest point of the first countersink mouth stays exact incidence.
+        let mouth = place.point([ratio(13, 1), ratio(5, 1), ratio(0, 1)]);
+        let (answer, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {
+            classify_point(&mut built.model, body, &mouth, &mut decider())
+        });
+        assert!(!work.exhausted, "row {row}");
+        assert!(
+            matches!(answer, Outcome::ProvenCoincident(_)),
+            "row {row}: {answer:?}"
+        );
+        assert_eq!(before, query_snapshot(&built.model, body), "row {row}");
+    }
+}
+
+#[test]
+fn finite_queries_prove_a_miss_and_keep_a_real_contact() {
+    let mut built = evaluate(&parsed(&canonical()), &mut decider()).unwrap();
+    let body = built.result;
+    let supports = fitted_supports(&built.model, body);
+    assert_eq!(supports.len(), 4);
+    let point = |coordinates: [Rational; 3]| {
+        let [x, y, z] = coordinates.map(Real::from_rational);
+        Point3::new(x, y, z)
+    };
+    let tube = point([ratio(10, 1), ratio(15, 1), ratio(0, 1)]);
+    let torus = point([ratio(15, 2), ratio(11, 2), ratio(10, 1)]);
+    let mouth = point([ratio(13, 1), ratio(5, 1), ratio(0, 1)]);
+    let up = || Vector3::new(Real::from_i64(0), Real::from_i64(1), Real::from_i64(0));
+    let mut dec = decider();
+    let mut line_through = |model: &mut Model, through: &Point3| {
+        let line = Line::new(through.clone(), up(), &mut dec).unwrap();
+        model.geom_mut().add_curve(Curve::Line(line))
+    };
+    let tube_line = line_through(&mut built.model, &tube);
+    let torus_line = line_through(&mut built.model, &torus);
+    let mouth_line = line_through(&mut built.model, &mouth);
+    for (face, _) in &supports {
+        assert!(!face_contains(&mut built.model, *face, &tube, &mut decider()).unwrap());
+        let surface = built.model.face(*face).surface;
+        for line in [tube_line, torus_line] {
+            let answer =
+                intersect_curve_surface(built.model.geom_mut(), line, surface, &mut decider())
+                    .unwrap();
+            assert!(matches!(answer.value, CurveSurface::Disjoint));
+            assert!(answer.marks.is_empty());
+        }
+    }
+    // The vertical line through the +x mouth point really meets that patch.
+    let toward_mouth = |envelope: &RollingEnvelope| {
+        let toward = envelope.definition().toward();
+        [&toward.x, &toward.y, &toward.z].map(|part| part.as_rational().unwrap())
+            == [ratio(1, 1), ratio(0, 1), ratio(0, 1)]
+    };
+    let met: Vec<_> = supports
+        .iter()
+        .filter(|(_, envelope)| toward_mouth(envelope))
+        .collect();
+    assert_eq!(met.len(), 1);
+    let surface = built.model.face(met[0].0).surface;
+    let refusal =
+        intersect_curve_surface(built.model.geom_mut(), mouth_line, surface, &mut decider())
+            .unwrap_err();
+    assert_eq!(refusal.code, "intersect.parametric-surface");
 }

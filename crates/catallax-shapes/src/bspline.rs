@@ -455,6 +455,21 @@ impl BSplineSurface {
             .map(move |i| [&self.data.knots[axis][i], &self.data.knots[axis][i + 1]])
     }
 
+    /// Control indices of each nonzero tensor span, each in u-major order.
+    /// Positive weights keep a span inside the convex hull of its own controls.
+    pub(crate) fn span_controls(&self) -> impl Iterator<Item = Vec<usize>> + '_ {
+        let net = self.data.jets[0].as_ref().unwrap();
+        let [p, q] = self.data.degrees;
+        let columns = self.data.count[1];
+        net.spans(0).flat_map(move |u| {
+            net.spans(1).map(move |v| {
+                (u - p..=u)
+                    .flat_map(|i| (v - q..=v).map(move |j| i * columns + j))
+                    .collect()
+            })
+        })
+    }
+
     /// Applies an exact rigid motion, sharing unchanged knots and scalar weights.
     pub fn transformed(&self, pose: &Pose) -> Self {
         self.mapped(&Isometry::from(pose))

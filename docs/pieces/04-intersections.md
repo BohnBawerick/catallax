@@ -54,6 +54,13 @@ by retaining the exact target and rebuilding the finite product solid. This
 does not implement general spline/spline or spline/analytic intersection
 isolation: unsupported pairs retain an explicit coverage refusal.
 
+`intersect_curve_surface` answers an exact, unmarked `Disjoint` for a line that
+`SplineSupport::misses_line` proves clear of the complete finite carrier, after
+curve validation and recorded facts. Any other line against a spline support
+keeps `intersect.parametric-surface`, including a line that really meets the
+patch. There is no finite spline solver yet, so an empty hit list always means
+a proved miss.
+
 `trace_elliptic_offset_quarter` traces the retained exact normal-offset law on
 the principal quarter `0 <= theta <= pi/2` for nominal property integration.
 It is not a trace of the fitted boundary. The fitter's centred quarter charts

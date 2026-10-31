@@ -35,7 +35,14 @@ fn classify(
         .geom_mut()
         .add_point(PointDef::Explicit(point.clone()));
     for &face in faces {
-        match model.geom().side(model.face(face).surface, query, dec) {
+        let surface = model.face(face).surface;
+        // A proved miss of a finite support owes no global side of it.
+        if let Surface::BSpline(support) = model.geom().surface(surface)
+            && support.misses_point(point, dec)?
+        {
+            continue;
+        }
+        match model.geom().side(surface, query, dec) {
             Outcome::Proven(_) => {}
             Outcome::ProvenCoincident(_) => {
                 if locate(model, face, query, dec)? != Location::Outside {

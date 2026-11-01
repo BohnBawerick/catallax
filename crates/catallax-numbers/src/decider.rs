@@ -384,6 +384,21 @@ impl Decider {
             }
         }
     }
+    pub(crate) fn tower_root_system(
+        &mut self,
+        polynomials: &[crate::RealPoly],
+        precision: u32,
+    ) -> Result<Option<crate::tower::RootSystem>, Refusal> {
+        self.stats.decisions += 1;
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = crate::tower::root_system(polynomials, precision, &mut work);
+        self.account(&work);
+        self.check_deadline()?;
+        result.map_err(|code| {
+            self.stats.refused += 1;
+            Refusal::new(code, "quadratic tower lowering stopped")
+        })
+    }
     pub(crate) fn real_poly_resultant(
         &mut self,
         left: &crate::RealPoly,

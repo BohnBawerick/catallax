@@ -664,3 +664,55 @@ blind_test!(three_sphere_roots_and_closed_boundary_boxes, {
     assert!(RootBox::new(vec![r("1")], vec![r("0")]).is_none());
     assert!(RootBox::new(vec![r("0")], vec![r("1"), r("2")]).is_none());
 });
+
+fn enclosed(value: &Real) -> Ball {
+    Decider::default().enclose_at(value, 256).unwrap()
+}
+
+#[test]
+fn a_simple_root_stays_exact_in_a_quadratic_tower_without_an_eliminant() {
+    let q = |text: &str| Rational::parse(text).unwrap();
+    let root = Real::from_i64(2).sqrt();
+    let nested = (&root + &Real::from_i64(3)).sqrt();
+    // t^3 + sqrt(2) t - sqrt(3 + sqrt(2)), and s = t sqrt(2).
+    let t = RealPoly::var(2, 0);
+    let s = RealPoly::var(2, 1);
+    let cubic = &(&t * &t) * &t + t.scale(&root) - RealPoly::constant(2, nested.clone());
+    let line = s - t.scale(&root);
+    let (solved, work) = with_operation_budget(1_000_000, || {
+        RealPoly::simple_root_in(
+            &[cubic, line],
+            &[[q("9/10"), q("19/20")], [q("6/5"), q("7/5")]],
+            128,
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    let solved = solved.unwrap().unwrap();
+    let residual = enclosed(
+        &(&(&(&solved[0] * &solved[0]) * &solved[0]) + &(&root * &solved[0]) - nested.clone()),
+    );
+    assert!(residual.lo().abs().max(residual.hi().abs()) < Rational::one().mul_pow2(-40));
+    // No root in the box, and a coefficient off every quadratic tower.
+    let lone = |value: &Real| {
+        RealPoly::var(1, 0) * RealPoly::var(1, 0) - RealPoly::constant(1, value.clone())
+    };
+    let empty = RealPoly::simple_root_in(
+        &[lone(&root)],
+        &[[q("3"), q("4")]],
+        128,
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(empty.code, "numbers.root-not-certified");
+    let x = RealPoly::var(1, 0);
+    let irreducible = &(&x * &x) * &x - x.clone() - RealPoly::constant(1, Real::from_i64(2));
+    let cubic_root = irreducible.real_roots(&mut Decider::default()).unwrap()[0].clone();
+    let leaves = RealPoly::simple_root_in(
+        &[lone(&cubic_root)],
+        &[[q("0"), q("2")]],
+        128,
+        &mut Decider::default(),
+    );
+    assert!(matches!(leaves, Ok(None)), "{leaves:?}");
+}

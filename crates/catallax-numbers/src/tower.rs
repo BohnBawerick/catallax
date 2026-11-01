@@ -1,7 +1,7 @@
 //! Exact signs in real quadratic towers. Every generator is positive and its
 //! radicand is positive and nonsquare in the preceding field. Consequently
 //! a + b*sqrt(r) is zero exactly when both coefficients are zero.
-use crate::{Rational, Real, Sign, decider::Work, real::Expr};
+use crate::{Ball, MPoly, Rational, Real, RealPoly, Sign, decider::Work, real::Expr};
 use std::{collections::HashMap, sync::Arc};
 
 const MAX_LEVELS: usize = 8;
@@ -46,6 +46,41 @@ impl Element {
                 coefficients,
             } if *k == level => (&coefficients.0, &coefficients.1),
             _ => (self, zero),
+        }
+    }
+    // The generator at level k is variable `base + k`, after the caller's variables.
+    fn polynomial(
+        &self,
+        base: usize,
+        nvars: usize,
+        w: &mut Cost<'_>,
+    ) -> Result<MPoly, &'static str> {
+        w.step()?;
+        Ok(match self {
+            Self::Rational(r) => MPoly::constant(nvars, r.clone()),
+            Self::Pair {
+                level,
+                coefficients,
+            } => {
+                let a = coefficients.0.polynomial(base, nvars, w)?;
+                let b = coefficients.1.polynomial(base, nvars, w)?;
+                let generator = MPoly::var(nvars, base + level);
+                w.work.mpoly(&b, &generator)?;
+                &a + &(&b * &generator)
+            }
+        })
+    }
+    fn enclosure(&self, generators: &[Ball], precision: u32) -> Ball {
+        match self {
+            Self::Rational(r) => Ball::from_rational(r, precision),
+            Self::Pair {
+                level,
+                coefficients,
+            } => {
+                let a = coefficients.0.enclosure(generators, precision);
+                let b = coefficients.1.enclosure(generators, precision);
+                a + &b * &generators[level - 1]
+            }
         }
     }
 }
@@ -604,6 +639,73 @@ pub(crate) fn rational(x: &Real, work: &mut Work) -> Result<Option<Rational>, &'
             Some(Element::Rational(value)) => Some(value),
             _ => None,
         })
+    })();
+    work.policy.max_work = decision_limit;
+    match attempt {
+        Err(LIMIT | "numbers.budget-exhausted") => Ok(None),
+        other => other,
+    }
+}
+
+/// One square rational system, with an enclosure of each tower generator.
+pub(crate) type RootSystem = (Vec<MPoly>, Vec<Ball>);
+
+/// Polynomials as one square rational system: their own variables first, then
+/// each tower generator fixed by its square, with the enclosures that pick the
+/// positive values. `None` means a coefficient leaves one quadratic tower.
+pub(crate) fn root_system(
+    polynomials: &[RealPoly],
+    precision: u32,
+    work: &mut Work,
+) -> Result<Option<RootSystem>, &'static str> {
+    let decision_limit = work.policy.max_work;
+    let allowance = MAX_WORK.min(decision_limit.saturating_sub(work.used) / 8);
+    work.policy.max_work = work.used + allowance;
+    let mut cost = Cost { work, steps: 0 };
+    let mut tower = Tower {
+        radicands: Vec::new(),
+        zero: Element::Rational(Rational::zero()),
+    };
+    let attempt = (|| {
+        let mut cache = HashMap::new();
+        let mut lowered = Vec::with_capacity(polynomials.len());
+        for polynomial in polynomials {
+            let mut terms = Vec::new();
+            for (monomial, coefficient) in polynomial.terms() {
+                let Some(value) = tower.visit(&coefficient, &mut cost, &mut cache)? else {
+                    return Ok(None);
+                };
+                terms.push((monomial, value));
+            }
+            lowered.push(terms);
+        }
+        // Level one is the first generator, so the base is one short of it.
+        let base = polynomials.len() - 1;
+        let nvars = polynomials.len() + tower.radicands.len();
+        let mut equations = Vec::with_capacity(nvars);
+        for terms in lowered {
+            let mut equation = MPoly::zero(nvars);
+            for (monomial, value) in terms {
+                let mut exponents = monomial.exponents().to_vec();
+                exponents.resize(nvars, 0);
+                let power = MPoly::from_terms(nvars, vec![(exponents, Rational::one())]);
+                let value = value.polynomial(base, nvars, &mut cost)?;
+                cost.work.mpoly(&value, &power)?;
+                equation = &equation + &(&value * &power);
+            }
+            equations.push(equation);
+        }
+        let mut generators: Vec<Ball> = Vec::with_capacity(tower.radicands.len());
+        for (index, radicand) in tower.radicands.iter().enumerate() {
+            let generator = MPoly::var(nvars, base + index + 1);
+            let radicand_polynomial = radicand.polynomial(base, nvars, &mut cost)?;
+            equations.push(&(&generator * &generator) - &radicand_polynomial);
+            let Some(value) = radicand.enclosure(&generators, precision).sqrt() else {
+                return Ok(None);
+            };
+            generators.push(value);
+        }
+        Ok(Some((equations, generators)))
     })();
     work.policy.max_work = decision_limit;
     match attempt {

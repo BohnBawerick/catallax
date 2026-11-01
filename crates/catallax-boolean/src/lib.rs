@@ -310,6 +310,9 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     if let Some(inside) = comparison_cone_band(model, face, &point, dec)? {
         return Ok(inside);
     }
+    if let Some(inside) = region::prism_face(model, face, p, dec)? {
+        return Ok(inside);
+    }
     Ok(!matches!(
         locate(model, face, p, dec)?,
         region::Location::Outside

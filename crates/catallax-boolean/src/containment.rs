@@ -6,7 +6,7 @@ use crate::region::{Location, locate};
 use catallax_intersect::{Contact, CurveSurface, intersect_curve_surface};
 use catallax_numbers::{Coincidence, Decider, Outcome, Refusal, Sign, ZeroProof};
 use catallax_shapes::{Curve, Line, Point3, PointDef, RVector3, Surface, Vector3};
-use catallax_topology::{BodyId, BodyKind, FaceId, Model};
+use catallax_topology::{BodyId, BodyKind, FaceId, Model, SplinePrism};
 
 pub(crate) fn faces(
     model: &mut Model,
@@ -167,6 +167,24 @@ fn ray_parity_owned(
     }
     Ok(Some(crossings % 2 == 1))
 }
+// A complete checked prism has an exact closed form, with no ray to choose.
+fn prism(
+    model: &Model,
+    body: BodyId,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<Option<Outcome<Containment>>, Refusal> {
+    let Some(prism) = SplinePrism::of_body(model, body, dec)? else {
+        return Ok(None);
+    };
+    Ok(Some(match prism.locate(point, dec)? {
+        Sign::Negative => Outcome::Proven(Containment::Inside),
+        Sign::Positive => Outcome::Proven(Containment::Outside),
+        Sign::Zero => Outcome::ProvenCoincident(Coincidence {
+            proof: ZeroProof::ExactArithmetic,
+        }),
+    }))
+}
 pub(crate) fn classify_point(
     model: &mut Model,
     body: BodyId,
@@ -175,7 +193,11 @@ pub(crate) fn classify_point(
 ) -> Outcome<Containment> {
     match model.body(body).kind {
         BodyKind::Empty => Outcome::Proven(Containment::Outside),
-        BodyKind::Solid => faces(model, &model.faces_of_body(body), point, dec),
+        BodyKind::Solid => match prism(model, body, point, dec) {
+            Ok(Some(answer)) => answer,
+            Ok(None) => faces(model, &model.faces_of_body(body), point, dec),
+            Err(error) => Outcome::Refused(error),
+        },
         _ => Outcome::Refused(refusal(
             "boolean.not-solid",
             "point containment requires a solid or empty body",

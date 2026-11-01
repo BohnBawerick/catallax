@@ -1,9 +1,10 @@
 //! Polynomials over exact algebraic expressions, with a rational arithmetic path.
 
 use crate::{
-    Ball, Decider, Integer, MPoly, Monomial, Outcome, Rational, Real, Refusal, Sign, StrictSign,
+    Ball, BoxRoots, Decider, Integer, MPoly, Monomial, Outcome, PolySystem, Rational, Real,
+    Refusal, RootBox, Sign, StrictSign,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 /// A fixed-variable polynomial whose coefficient definitions retain shared roots.
 ///
@@ -335,6 +336,53 @@ impl RealPoly {
             }
         }
         Ok(roots)
+    }
+
+    /// The one simple common root of `n` polynomials in `n` variables inside a
+    /// closed rational box, exactly, where every coefficient lies in one quadratic
+    /// tower. The tower's generators join the variables, so the coordinates are
+    /// leaves of a small rational system and no eliminant of the tower is built.
+    /// The caller establishes the root; a box that certifies none refuses, and
+    /// `None` only means a coefficient leaves a quadratic tower.
+    pub fn simple_root_in(
+        equations: &[Self],
+        bounds: &[[Rational; 2]],
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<Option<Vec<Real>>, Refusal> {
+        assert_eq!(equations.len(), bounds.len());
+        assert!(equations.iter().all(|e| e.nvars() == bounds.len()));
+        let Some((lowered, generators)) = dec.tower_root_system(equations, precision)? else {
+            return Ok(None);
+        };
+        // Room above the arithmetic's rounding, or the box cannot map into itself.
+        let slack = Rational::one().mul_pow2(-i64::from(precision / 2));
+        let (mut lo, mut hi): (Vec<_>, Vec<_>) = bounds
+            .iter()
+            .map(|[lo, hi]| (lo.clone(), hi.clone()))
+            .unzip();
+        for generator in &generators {
+            lo.push(generator.lo() - slack.clone());
+            hi.push(generator.hi() + slack.clone());
+        }
+        let not_certified = || {
+            Refusal::new(
+                "numbers.root-not-certified",
+                "the box does not hold one simple root in the coefficient tower",
+            )
+        };
+        let system = PolySystem::new(lowered).ok_or_else(not_certified)?;
+        let candidate = RootBox::new(lo, hi).ok_or_else(not_certified)?;
+        match dec.certify_root_at(&Arc::new(system), &candidate, precision) {
+            Outcome::Proven(BoxRoots::One(root)) => Ok(Some(
+                (0..bounds.len())
+                    .map(|axis| root.coordinate(axis))
+                    .collect(),
+            )),
+            Outcome::Proven(BoxRoots::None) | Outcome::ProvenCoincident(_) => Err(not_certified()),
+            Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+            Outcome::Refused(refusal) => Err(refusal),
+        }
     }
 
     /// Monic greatest common divisor of two univariate polynomials over the

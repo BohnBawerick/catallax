@@ -1,12 +1,17 @@
 //! Complete recipe-target/B-rep correspondence, independent of diagnostic marks.
+use catallax_boolean::{Containment, classify_point, face_contains};
 use catallax_features::{BodyCertificate, BuildError, CertifiedBuilt, evaluate_certified};
+use catallax_intersect::{Contact, CurveSurface, intersect_curve_surface};
 use catallax_numbers::{
-    Decider, EvidenceBook, EvidenceBound, EvidenceUnit, GeometricProof, Rational, Real, Sign,
-    with_operation_budget,
+    BudgetPolicy, Decider, EvidenceBook, EvidenceBound, EvidenceUnit, FactKind, GeometricProof,
+    Outcome, Rational, Real, Refusal, Sign, with_operation_budget,
 };
-use catallax_recipe::{Recipe, StepId};
-use catallax_shapes::{CurveKind, Point3, SurfaceKind};
-use catallax_topology::BodyKind;
+use catallax_recipe::{Recipe, Role, StepId};
+use catallax_shapes::{
+    Curve, CurveId, CurveKind, GeomKey, Isometry, Line, Point3, Pose, RVector3, Rotation,
+    SplineSupport, SplineSurface, Surface, SurfaceKind, Vector3,
+};
+use catallax_topology::{BodyId, BodyKind, FaceId, Model, SplinePrism, transformed_body};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
@@ -576,4 +581,743 @@ fn certified_nominal_field_proves_true_distances_caps_corners_and_selected_faces
     eprintln!("certified nominal field request: {work:?}");
     result.unwrap();
     assert!(!work.exhausted);
+}
+
+// Native queries. Every expectation below is the hand derivation in the batch Q
+// design, fixed before any query answered: a=(3/5,0,4/5), e=(0,1,0) and
+// f=(-4/5,0,3/5) frame the sweep, P=4a is its centre, the caps sit at 2+d and
+// 6-d along a, and the cardinal radius along e is b=2-d.
+const QUERY_WORK: u64 = 20_000_000;
+
+type Local = [Rational; 3];
+
+#[derive(Clone, Copy, PartialEq)]
+enum Placement {
+    Original,
+    Moved,
+    Half,
+}
+
+struct Part {
+    label: &'static str,
+    placement: Placement,
+    distance: &'static str,
+    recipe: Recipe,
+}
+
+fn parts() -> [Part; 4] {
+    let edited = recipe("-1/2", "4");
+    let moved = Recipe::parse(&json!({
+        "format":"catallax-recipe/3", "name":"Q-R",
+        "steps":[
+            {"id":"profile","op":"sketch","plane":{"rotation":["1","2","3","4"],"translation":["7","11","-13"]},"loops":[[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"2"}]]},
+            {"id":"sweep","op":"extrude","profile":"profile","distance":"10","direction":["14/15","14/3","23/15"]},
+            {"id":"window","op":"block","size":["8","8","4"],"pose":{"rotation":["0","2","10","14"],"translation":["161/15","41/3","-253/15"]}},
+            {"id":"source","op":"boolean","kind":"intersect","target":"sweep","tool":"window"},
+            {"id":"offset","op":"offset","body":"source","distance":"-1/4"}
+        ], "result":"offset"
+    }).to_string()).unwrap();
+    let half = Recipe::parse(&json!({
+        "format":"catallax-recipe/3", "name":"Q-S",
+        "steps":[
+            {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[{"kind":"circle","id":"wall","centre":["0","0"],"radius":"1"}]]},
+            {"id":"sweep","op":"extrude","profile":"profile","distance":"5","direction":["3","0","4"]},
+            {"id":"window","op":"block","size":["4","4","2"],"pose":{"rotation":["3","0","1","0"],"translation":["-1","-2","2"]}},
+            {"id":"source","op":"boolean","kind":"intersect","target":"sweep","tool":"window"},
+            {"id":"offset","op":"offset","body":"source","distance":"-1/8"}
+        ], "result":"offset"
+    }).to_string()).unwrap();
+    [
+        Part {
+            label: "Q-N",
+            placement: Placement::Original,
+            distance: "1/4",
+            recipe: recipe("-1/4", "4"),
+        },
+        Part {
+            label: "Q-E",
+            placement: Placement::Original,
+            distance: "1/2",
+            recipe: edited,
+        },
+        Part {
+            label: "Q-R",
+            placement: Placement::Moved,
+            distance: "1/4",
+            recipe: moved,
+        },
+        Part {
+            label: "Q-S",
+            placement: Placement::Half,
+            distance: "1/4",
+            recipe: half,
+        },
+    ]
+}
+
+impl Part {
+    fn turned(&self, local: &Local) -> Local {
+        const ROTATION: [[&str; 3]; 3] = [
+            ["-2/3", "2/15", "11/15"],
+            ["2/3", "-1/3", "2/3"],
+            ["1/3", "14/15", "2/15"],
+        ];
+        match self.placement {
+            Placement::Original => local.clone(),
+            Placement::Half => local.clone().map(|value| value.mul_pow2(-1)),
+            Placement::Moved => ROTATION.map(|row| {
+                (0..3).fold(Rational::zero(), |sum, i| {
+                    sum + r(row[i]) * local[i].clone()
+                })
+            }),
+        }
+    }
+    fn point(&self, local: &Local) -> Point3 {
+        let shift = match self.placement {
+            Placement::Moved => [r("7"), r("11"), r("-13")],
+            _ => [r("0"), r("0"), r("0")],
+        };
+        let [x, y, z]: [Real; 3] = std::array::from_fn(|i| {
+            Real::from_rational(self.turned(local)[i].clone() + shift[i].clone())
+        });
+        Point3::new(x, y, z)
+    }
+    fn vector(&self, local: &Local) -> Vector3 {
+        let [x, y, z] = self.turned(local).map(Real::from_rational);
+        Vector3::new(x, y, z)
+    }
+}
+
+fn along_a(height: &str) -> Local {
+    let height = r(height);
+    [
+        r("3/5") * height.clone(),
+        Rational::zero(),
+        r("4/5") * height,
+    ]
+}
+fn centre() -> Local {
+    along_a("4")
+}
+fn axis_a() -> Local {
+    along_a("1")
+}
+fn unit_e() -> Local {
+    [r("0"), r("1"), r("0")]
+}
+fn unit_f() -> Local {
+    [r("-4/5"), r("0"), r("3/5")]
+}
+fn shifted(from: &Local, by: &Local, amount: &Rational) -> Local {
+    std::array::from_fn(|i| from[i].clone() + by[i].clone() * amount.clone())
+}
+fn built_part(part: &Part) -> (CertifiedBuilt, Model) {
+    let (built, work) = with_operation_budget(QUERY_WORK, || {
+        evaluate_certified(&part.recipe, &mut Decider::default())
+    });
+    assert!(!work.exhausted, "{}", part.label);
+    let built = built.unwrap();
+    let model = built.built().model.clone();
+    (built, model)
+}
+fn support(model: &Model, body: BodyId) -> (FaceId, SplineSurface) {
+    let side = SplinePrism::check(model, body, &mut Decider::default())
+        .unwrap()
+        .faces()[2];
+    match model.geom().surface(model.face(side).surface) {
+        Surface::BSpline(SplineSupport::EllipticOffset(spline)) => (side, spline.clone()),
+        other => panic!("checked side has another support: {other:?}"),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Place {
+    In,
+    Out,
+    On,
+}
+
+fn native_points(part: &Part) -> [(&'static str, Local, Place); 7] {
+    let d = r(part.distance);
+    let b = r("2") - d.clone();
+    let edited = part.label == "Q-E";
+    [
+        ("centre", centre(), Place::In),
+        (
+            "edit margin",
+            shifted(&centre(), &unit_e(), &r("13/8")),
+            if edited { Place::Out } else { Place::In },
+        ),
+        (
+            "beyond the profile",
+            shifted(&centre(), &unit_e(), &r("3")),
+            Place::Out,
+        ),
+        ("below the lower cap", along_a("2"), Place::Out),
+        ("above the upper cap", along_a("6"), Place::Out),
+        (
+            "cardinal side point",
+            shifted(&centre(), &unit_e(), &b),
+            Place::On,
+        ),
+        (
+            "lower cap interior",
+            shifted(&[r("0"), r("0"), r("0")], &axis_a(), &(r("2") + d)),
+            Place::On,
+        ),
+    ]
+}
+
+fn assert_binding_survives(part: &Part, built: &CertifiedBuilt, queried: &Model) {
+    let original = &built.built().model;
+    let body = built.built().result;
+    let label = part.label;
+    assert_eq!(
+        format!("{:?}", original.counts(body)),
+        format!("{:?}", queried.counts(body)),
+        "{label}"
+    );
+    assert!(queried.check(body).is_empty(), "{label}");
+    let before = SplinePrism::check(original, body, &mut Decider::default()).unwrap();
+    let after = SplinePrism::check(queried, body, &mut Decider::default()).unwrap();
+    assert_eq!(before.faces(), after.faces(), "{label}");
+    assert_eq!(before.rings(), after.rings(), "{label}");
+    for face in before.faces() {
+        assert_eq!(
+            original.face_origins(face),
+            queried.face_origins(face),
+            "{label}"
+        );
+    }
+    for edge in before.rings() {
+        assert_eq!(
+            original.edge_constructions(edge),
+            queried.edge_constructions(edge),
+            "{label}"
+        );
+    }
+    assert!(
+        after
+            .spline()
+            .carrier()
+            .same_definition(before.spline().carrier()),
+        "{label}"
+    );
+    built
+        .result_certificate()
+        .verify_record(
+            queried,
+            built.result_certificate().record(),
+            built.evidence(),
+            built.decisions(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+}
+
+#[test]
+fn every_native_point_answers_on_the_built_edited_moved_and_scaled_prism() {
+    let mut names = Vec::new();
+    for part in &parts() {
+        let (built, mut model) = built_part(part);
+        let body = built.built().result;
+        let label = part.label;
+        let counts = model.counts(body);
+        assert_eq!(
+            (
+                counts.lumps,
+                counts.shells,
+                counts.faces,
+                counts.edges,
+                counts.vertices
+            ),
+            (1, 1, 3, 2, 0),
+            "{label}"
+        );
+        assert_eq!(counts.faces_by_kind.get(&SurfaceKind::Plane), Some(&2));
+        assert_eq!(counts.faces_by_kind.get(&SurfaceKind::BSpline), Some(&1));
+        assert_eq!(counts.edges_by_kind.get(&CurveKind::BSpline), Some(&2));
+        let (_, spline) = support(&model, body);
+        let scale = if part.placement == Placement::Half {
+            r("1/2")
+        } else {
+            Rational::one()
+        };
+        assert!(
+            Decider::default()
+                .compare(
+                    spline.definition().distance(),
+                    &Real::from_rational(r(part.distance) * scale)
+                )
+                .is_coincident(),
+            "{label}: a copied label on another support"
+        );
+        let prism = SplinePrism::check(&model, body, &mut Decider::default()).unwrap();
+        let origins = prism.faces().map(|face| model.face_origins(face).to_vec());
+        let is = |origins: &[catallax_recipe::Origin], step: &str, role: &Role| {
+            origins
+                .iter()
+                .any(|origin| origin.step.as_str() == step && origin.role == *role)
+        };
+        assert!(is(&origins[0], "window", &Role::Start), "{label}");
+        assert!(is(&origins[1], "window", &Role::End), "{label}");
+        assert!(
+            origins[2]
+                .iter()
+                .any(|origin| origin.step.as_str() == "sweep"
+                    && matches!(&origin.role, Role::Side { .. })),
+            "{label}"
+        );
+        let rings = prism
+            .rings()
+            .map(|edge| model.edge_constructions(edge).to_vec());
+        names.push((origins, rings));
+        for (name, local, expected) in native_points(part) {
+            let point = part.point(&local);
+            let (answer, work) = with_operation_budget(QUERY_WORK, || {
+                classify_point(&mut model, body, &point, &mut Decider::default())
+            });
+            assert!(!work.exhausted, "{label} {name}");
+            eprintln!("{label} {name}: {work:?}");
+            match (expected, &answer) {
+                (Place::In, Outcome::Proven(Containment::Inside))
+                | (Place::Out, Outcome::Proven(Containment::Outside))
+                | (Place::On, Outcome::ProvenCoincident(_)) => {}
+                _ => panic!("{label} {name}: {answer:?}, expected {expected:?}"),
+            }
+        }
+        assert_binding_survives(part, &built, &model);
+    }
+    // The offset edit changes the distance and the material, never the names.
+    assert_eq!(names[0], names[1]);
+    assert_eq!(names[0], names[3]);
+}
+
+#[test]
+fn finite_faces_keep_their_retained_domains() {
+    let [canonical, ..] = parts();
+    let (built, mut model) = built_part(&canonical);
+    let body = built.built().result;
+    let [lower, _, side] = SplinePrism::check(&model, body, &mut Decider::default())
+        .unwrap()
+        .faces();
+    assert!(
+        model
+            .face_origins(lower)
+            .iter()
+            .any(|origin| origin.step.as_str() == "window" && origin.role == Role::Start)
+    );
+    for (face, xyz, expected, reason) in [
+        (lower, ["27/20", "0", "9/5"], true, "centre of the cap"),
+        (lower, ["27/20", "3", "9/5"], false, "plane beyond the disk"),
+        (side, ["12/5", "7/4", "16/5"], true, "cardinal side point"),
+        (side, ["6/5", "7/4", "8/5"], false, "below the finite side"),
+    ] {
+        let [x, y, z] = xyz.map(|value| Real::from_rational(r(value)));
+        let point = Point3::new(x, y, z);
+        let (answer, work) = with_operation_budget(QUERY_WORK, || {
+            face_contains(&mut model, face, &point, &mut Decider::default())
+        });
+        assert!(!work.exhausted, "{reason}");
+        eprintln!("face {reason}: {work:?}");
+        assert_eq!(answer.unwrap(), expected, "{reason}");
+    }
+    assert_binding_survives(&canonical, &built, &model);
+}
+
+// The carrier's section continues past the sweep, so a point can sit exactly on
+// it beyond a cap. At heights 1 and 7 this one is on no face and in no material.
+#[test]
+fn a_point_on_the_side_section_beyond_a_cap_is_outside() {
+    let [canonical, ..] = parts();
+    let (built, mut model) = built_part(&canonical);
+    let body = built.built().result;
+    let (side, _) = support(&model, body);
+    for height in ["1", "7"] {
+        let point = canonical.point(&shifted(&along_a(height), &unit_e(), &r("7/4")));
+        let answer = classify_point(&mut model, body, &point, &mut Decider::default());
+        assert!(
+            matches!(answer, Outcome::Proven(Containment::Outside)),
+            "{answer:?}"
+        );
+        assert!(!face_contains(&mut model, side, &point, &mut Decider::default()).unwrap());
+    }
+}
+
+fn meet(
+    part: &Part,
+    model: &mut Model,
+    surface: catallax_shapes::SurfaceId,
+    through: &Local,
+    direction: &Local,
+    dec: &mut Decider,
+) -> Result<(CurveId, CurveSurface), Refusal> {
+    let line = Line::new(part.point(through), part.vector(direction), dec)?;
+    let curve = model.geom_mut().add_curve(Curve::Line(line));
+    let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
+    assert!(answer.marks.is_empty(), "{}", part.label);
+    Ok((curve, answer.value))
+}
+
+fn line_answer(
+    part: &Part,
+    model: &mut Model,
+    surface: catallax_shapes::SurfaceId,
+    through: &Local,
+    direction: &Local,
+) -> Result<(CurveId, CurveSurface), Refusal> {
+    let (answer, work) = with_operation_budget(QUERY_WORK, || {
+        meet(
+            part,
+            model,
+            surface,
+            through,
+            direction,
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted, "{}", part.label);
+    eprintln!("{} line: {work:?}", part.label);
+    answer
+}
+
+fn zero(value: &Real) -> bool {
+    matches!(Decider::default().sign(value), Outcome::ProvenCoincident(_))
+}
+
+// Complete, ordered crossings of the line through `through`, as line parameters
+// along `direction`. Each records its incidence on both the line and the support.
+// A root leaf has no cheap zero test, so its residual is bounded here, while the
+// rows with a known answer compare it exactly.
+fn crossings(
+    part: &Part,
+    model: &mut Model,
+    surface: catallax_shapes::SurfaceId,
+    through: &Local,
+    direction: &Local,
+    label: &str,
+) -> Vec<Real> {
+    let (curve, answer) = line_answer(part, model, surface, through, direction)
+        .unwrap_or_else(|refusal| panic!("{label}: {refusal:?}"));
+    let CurveSurface::Meets(hits) = answer else {
+        panic!("{label}: {answer:?}");
+    };
+    let origin = part.point(through);
+    let along = part.vector(direction);
+    let parameters: Vec<Real> = hits
+        .iter()
+        .map(|hit| {
+            assert_eq!(hit.contact, Contact::Crossing, "{label}");
+            let facts = model.geom().facts();
+            let point = GeomKey::Point(hit.point);
+            assert!(
+                facts.holds(FactKind::Incident, point, GeomKey::Surface(surface)),
+                "{label}"
+            );
+            assert!(
+                facts.holds(FactKind::Incident, point, GeomKey::Curve(curve)),
+                "{label}"
+            );
+            let relative = model.geom().position(hit.point).minus(&origin);
+            let off_line = Decider::default()
+                .enclose_at(&relative.cross(&along).norm_squared(), 128)
+                .unwrap();
+            assert!(off_line.hi() < Rational::one().mul_pow2(-80), "{label}");
+            &relative.dot(&along) / &along.norm_squared()
+        })
+        .collect();
+    for pair in parameters.windows(2) {
+        assert!(
+            matches!(
+                Decider::default().sign(&(&pair[1] - &pair[0])),
+                Outcome::Proven(catallax_numbers::StrictSign::Positive)
+            ),
+            "{label}: line order"
+        );
+    }
+    parameters
+}
+
+fn is_exactly(value: &Real, expected: &Rational) -> bool {
+    zero(&(value - &Real::from_rational(expected.clone())))
+}
+
+fn within(value: &Real, lower: &str, upper: &str) -> bool {
+    let above = Decider::default().sign(&(value - &Real::from_rational(r(lower))));
+    let below = Decider::default().sign(&(&Real::from_rational(r(upper)) - value));
+    matches!(
+        (above, below),
+        (
+            Outcome::Proven(catallax_numbers::StrictSign::Positive),
+            Outcome::Proven(catallax_numbers::StrictSign::Positive)
+        )
+    )
+}
+
+// The hit's enclosure maps onto the actual carrier, not onto the offset target.
+fn on_represented_carrier(spline: &SplineSurface, point: &Point3, label: &str) {
+    let mut dec = Decider::default();
+    let width = r("1/1000000000000");
+    let at = [
+        dec.enclose(&point.x, &width).unwrap(),
+        dec.enclose(&point.y, &width).unwrap(),
+        dec.enclose(&point.z, &width).unwrap(),
+    ];
+    let support = SplineSupport::EllipticOffset(spline.clone());
+    let [u, v] = support.parameters_of(&at, &dec).unwrap().unwrap();
+    let image = spline.carrier().evaluate(&u, &v, &dec).unwrap();
+    assert!(
+        (0..3).all(|i| image[i].lo() <= at[i].hi() && at[i].lo() <= image[i].hi()),
+        "{label}"
+    );
+}
+
+#[test]
+fn central_lines_get_both_exact_cardinal_crossings_on_every_part() {
+    for part in &parts() {
+        let (built, mut model) = built_part(part);
+        let body = built.built().result;
+        let (side, spline) = support(&model, body);
+        let surface = model.face(side).surface;
+        let label = part.label;
+        let b = r("2") - r(part.distance);
+        let parameters = crossings(part, &mut model, surface, &centre(), &unit_e(), label);
+        // A placed direction keeps its local length factor, so every part reads b.
+        assert_eq!(parameters.len(), 2, "{label}");
+        assert!(is_exactly(&parameters[0], &(-b.clone())), "{label}");
+        assert!(is_exactly(&parameters[1], &b), "{label}");
+        for (parameter, sign) in [(&parameters[0], r("-1")), (&parameters[1], r("1"))] {
+            let expected = part.point(&shifted(&centre(), &unit_e(), &(b.clone() * sign)));
+            let hit = part
+                .point(&centre())
+                .plus(&part.vector(&unit_e()).scaled(parameter));
+            assert!(zero(&hit.minus(&expected).norm_squared()), "{label}");
+            on_represented_carrier(&spline, &hit, label);
+        }
+        assert_binding_survives(part, &built, &model);
+    }
+}
+
+#[test]
+fn every_transverse_line_row_answers_completely_on_the_represented_carrier() {
+    let [canonical, ..] = parts();
+    let (built, mut model) = built_part(&canonical);
+    let body = built.built().result;
+    let (side, spline) = support(&model, body);
+    let surface = model.face(side).surface;
+    let b = r("7/4");
+    // Off-axis secant: the exact target has no rational root, only brackets.
+    let through = shifted(&centre(), &unit_e(), &r("1/2"));
+    let secant = crossings(
+        &canonical,
+        &mut model,
+        surface,
+        &through,
+        &unit_f(),
+        "secant",
+    );
+    assert_eq!(secant.len(), 2);
+    assert!(within(&secant[0], "-3/2", "-1"), "first secant bracket");
+    assert!(within(&secant[1], "1", "3/2"), "second secant bracket");
+    let line = |parameter: &Real| {
+        canonical
+            .point(&through)
+            .plus(&canonical.vector(&unit_f()).scaled(parameter))
+    };
+    for (parameter, outward) in secant.iter().zip([r("-1"), r("1")]) {
+        // A rounded rational would pass every enclosure below, but is not the root.
+        assert!(parameter.rational_ref().is_none(), "secant");
+        on_represented_carrier(&spline, &line(parameter), "secant");
+        // Rational points a nanometre either way bracket the represented crossing.
+        let at = Decider::default().enclose_at(parameter, 128).unwrap().mid();
+        let step = outward * r("1/1000000");
+        for (point, side) in [(&at - &step, Sign::Negative), (&at + &step, Sign::Positive)] {
+            let point = line(&Real::from_rational(point));
+            let answer = spline.side_at(&point, &mut Decider::default()).unwrap();
+            assert_eq!(answer, side, "secant");
+        }
+    }
+    // Oblique: lambda is exactly plus or minus b, inside the finite axial interval.
+    let oblique = shifted(&unit_e(), &axis_a(), &r("1/4"));
+    let parameters = crossings(
+        &canonical,
+        &mut model,
+        surface,
+        &centre(),
+        &oblique,
+        "oblique",
+    );
+    assert_eq!(parameters.len(), 2);
+    assert!(is_exactly(&parameters[0], &(-b.clone())), "oblique low");
+    assert!(is_exactly(&parameters[1], &b), "oblique high");
+    // Below the lower cap the whole line misses the finite side.
+    let (_, below) =
+        line_answer(&canonical, &mut model, surface, &along_a("2"), &unit_e()).unwrap();
+    assert!(matches!(below, CurveSurface::Disjoint), "{below:?}");
+    // Reversed direction: the same positions in the opposite order.
+    let reverse = [r("0"), r("-1"), r("0")];
+    let parameters = crossings(
+        &canonical,
+        &mut model,
+        surface,
+        &centre(),
+        &reverse,
+        "reverse",
+    );
+    assert_eq!(parameters.len(), 2);
+    assert!(is_exactly(&parameters[0], &(-b.clone())), "reverse first");
+    assert!(is_exactly(&parameters[1], &b), "reverse second");
+    // A shifted origin keeps every whole-line root, both behind it.
+    let origin = shifted(&centre(), &unit_e(), &r("4"));
+    let parameters = crossings(
+        &canonical,
+        &mut model,
+        surface,
+        &origin,
+        &unit_e(),
+        "shifted",
+    );
+    assert_eq!(parameters.len(), 2);
+    assert!(
+        is_exactly(&parameters[0], &(-r("4") - b.clone())),
+        "shifted"
+    );
+    assert!(
+        is_exactly(&parameters[1], &(-r("4") + b.clone())),
+        "shifted"
+    );
+    assert_binding_survives(&canonical, &built, &model);
+}
+
+// A chord between two interpolation nodes of a convex section meets it just
+// there. The first node is the periodic seam, at both ends of the parameter.
+#[test]
+fn a_crossing_on_the_periodic_seam_counts_once() {
+    let [canonical, ..] = parts();
+    let (built, model) = built_part(&canonical);
+    let (_, spline) = support(&model, built.built().result);
+    let curve = spline.lower_edge();
+    let seam = curve.control(0).clone();
+    let far = curve.control(curve.control_count() / 2).clone();
+    let raised = spline.axis().scaled(&Real::from_rational(r("3/2")));
+    let (origin, end) = (seam.plus(&raised), far.plus(&raised));
+    let (hits, work) = with_operation_budget(QUERY_WORK, || {
+        spline.line_hits(&origin, &end.minus(&origin), &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    let hits = hits.unwrap();
+    assert_eq!(hits.len(), 2);
+    assert!(zero(&hits[0].minus(&origin).norm_squared()));
+    assert!(zero(&hits[1].minus(&end).norm_squared()));
+}
+
+// With a=1 and e along the line, the central row's heights 5-7/4 and 5+7/4 land
+// on either side of the upper cap at 23/4, so only the first is on the carrier.
+#[test]
+fn a_crossing_beyond_the_sweep_is_not_a_hit() {
+    let [canonical, ..] = parts();
+    let (built, mut model) = built_part(&canonical);
+    let surface = model.face(support(&model, built.built().result).0).surface;
+    let through = along_a("5");
+    let direction = shifted(&unit_e(), &axis_a(), &r("1"));
+    let parameters = crossings(
+        &canonical, &mut model, surface, &through, &direction, "one end",
+    );
+    assert_eq!(parameters.len(), 1);
+    assert!(is_exactly(&parameters[0], &r("-7/4")));
+}
+
+// A finished body carried rigidly keeps its source controls, so the query runs
+// in the source frame and its answers come back through the same motion.
+#[test]
+fn a_transported_body_answers_in_its_new_place() {
+    let [canonical, ..] = parts();
+    let (built, mut model) = built_part(&canonical);
+    let turn = Rotation::from_quaternion(r("1"), r("2"), r("3"), r("4")).unwrap();
+    let shift = RVector3::new(r("7"), r("11"), r("-13"));
+    let pose = Pose::new(turn, shift.into(), &mut Decider::default()).unwrap();
+    let motion = Isometry::from(&pose);
+    let body = transformed_body(&mut model, built.built().result, &motion, Clone::clone);
+    let middle = pose.apply_point(&canonical.point(&centre()));
+    let (answer, work) = with_operation_budget(QUERY_WORK, || {
+        classify_point(&mut model, body, &middle, &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    assert!(
+        matches!(answer, Outcome::Proven(Containment::Inside)),
+        "{answer:?}"
+    );
+    let (_, spline) = support(&model, body);
+    let along = pose.apply_vector(&canonical.vector(&unit_e()));
+    let hits = spline
+        .line_hits(&middle, &along, &mut Decider::default())
+        .unwrap();
+    let expected = pose.apply_point(&canonical.point(&shifted(&centre(), &unit_e(), &r("7/4"))));
+    assert_eq!(hits.len(), 2);
+    assert!(zero(&hits[1].minus(&expected).norm_squared()));
+}
+
+#[test]
+fn a_tangent_or_an_overlapping_line_stays_a_typed_refusal() {
+    let [canonical, ..] = parts();
+    let (built, mut model) = built_part(&canonical);
+    let body = built.built().result;
+    let surface = model.face(support(&model, body).0).surface;
+    let through = shifted(&centre(), &unit_e(), &r("7/4"));
+    for (name, direction) in [("tangent", unit_f()), ("generator", axis_a())] {
+        let answer = line_answer(&canonical, &mut model, surface, &through, &direction);
+        match answer {
+            Err(refusal) => assert_eq!(refusal.code, "intersect.parametric-surface", "{name}"),
+            Ok((_, value)) => panic!("{name}: {value:?}"),
+        }
+    }
+    assert_binding_survives(&canonical, &built, &model);
+}
+
+#[test]
+fn the_central_solver_stays_under_the_caller_precision_and_work() {
+    let [canonical, ..] = parts();
+    let (built, mut model) = built_part(&canonical);
+    let body = built.built().result;
+    let surface = model.face(support(&model, body).0).surface;
+    let mut dec = Decider::new(BudgetPolicy {
+        max_work: QUERY_WORK,
+        max_precision_bits: 64,
+    });
+    let (answer, work) = with_operation_budget(QUERY_WORK, || {
+        meet(
+            &canonical,
+            &mut model,
+            surface,
+            &centre(),
+            &unit_e(),
+            &mut dec,
+        )
+    });
+    assert!(!work.exhausted);
+    assert!(dec.stats().max_bits <= 64, "{:?}", dec.stats());
+    assert!(dec.stats().refined > 0, "{:?}", dec.stats());
+    match answer {
+        Ok((_, CurveSurface::Meets(hits))) => assert_eq!(hits.len(), 2),
+        Ok((_, other)) => panic!("a guessed answer: {other:?}"),
+        Err(refusal) => assert!(
+            refusal.code == "numbers.precision-limit" || refusal.code == "numbers.operation-budget",
+            "{refusal:?}"
+        ),
+    }
+    let (answer, work) = with_operation_budget(0, || {
+        meet(
+            &canonical,
+            &mut model,
+            surface,
+            &centre(),
+            &unit_e(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(work.exhausted);
+    assert!(
+        matches!(&answer, Err(refusal) if refusal.code == "numbers.operation-budget"),
+        "{answer:?}"
+    );
 }

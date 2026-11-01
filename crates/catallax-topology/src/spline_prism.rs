@@ -3,7 +3,7 @@
 use crate::{BodyId, BodyKind, EdgeId, FaceId, Loop, Model, Sense};
 use catallax_numbers::{Decider, GEOMETRIC_GAP_UNPROVEN, Outcome, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::{
-    BSplineCurve, Curve, Plane, SplineBoundary, SplineSupport, SplineSurface, Surface,
+    BSplineCurve, Curve, Plane, Point3, SplineBoundary, SplineSupport, SplineSurface, Surface,
 };
 
 fn bad(detail: impl Into<String>) -> Refusal {
@@ -42,6 +42,28 @@ fn ring(model: &Model, face: FaceId, index: usize) -> Result<(EdgeId, Sense), Re
         return Err(bad("closed prism ring has artificial seam vertices"));
     }
     Ok((coedge.edge, coedge.sense))
+}
+
+// A prism side has a checked support; a cap is one loop of one fitted edge.
+fn may_bound_prism(model: &Model, face: FaceId) -> bool {
+    let entity = model.face(face);
+    match model.geom().surface(entity.surface) {
+        Surface::BSpline(SplineSupport::EllipticOffset(_)) => true,
+        Surface::Plane(_) => {
+            let [boundary] = entity.loops.as_slice() else {
+                return false;
+            };
+            let Loop::Coedges(coedges) = model.loop_(*boundary) else {
+                return false;
+            };
+            let [coedge] = coedges.as_slice() else {
+                return false;
+            };
+            let edge = model.edge(model.coedge(*coedge).edge);
+            matches!(model.geom().curve(edge.curve), Curve::BSpline(_))
+        }
+        _ => false,
+    }
 }
 
 /// Borrowed valid represented solid: one checked convex periodic spline sweep,
@@ -200,6 +222,84 @@ impl<'a> SplinePrism<'a> {
             faces: ordered,
             rings: [lower, upper],
         })
+    }
+    /// The checked prism of a body, when it has a checked side and is one.
+    /// `None` claims nothing about the body; the caller keeps its other paths.
+    /// Any refusal other than a failed geometry check is returned.
+    pub fn of_body(
+        model: &'a Model,
+        body: BodyId,
+        dec: &mut Decider,
+    ) -> Result<Option<Self>, Refusal> {
+        let has_side = model.faces_of_body(body).into_iter().any(|face| {
+            matches!(
+                model.geom().surface(model.face(face).surface),
+                Surface::BSpline(SplineSupport::EllipticOffset(_))
+            )
+        });
+        if !has_side {
+            return Ok(None);
+        }
+        match Self::check(model, body, dec) {
+            Ok(prism) => Ok(Some(prism)),
+            Err(refusal) if refusal.code == GEOMETRIC_GAP_UNPROVEN => Ok(None),
+            Err(refusal) => Err(refusal),
+        }
+    }
+    /// The checked prism a face belongs to. A face with another trim, or one
+    /// only sharing a ring with a prism, gets `None` and keeps its own domain.
+    pub fn of_face(
+        model: &'a Model,
+        face: FaceId,
+        dec: &mut Decider,
+    ) -> Result<Option<Self>, Refusal> {
+        if !may_bound_prism(model, face) {
+            return Ok(None);
+        }
+        for body in model.bodies_with_face(face) {
+            if let Some(prism) = Self::of_body(model, body, dec)? {
+                return Ok(Some(prism));
+            }
+        }
+        Ok(None)
+    }
+    /// Exact place of a point: negative inside the solid, zero on its boundary,
+    /// positive outside. The side reads the represented section, not its target.
+    pub fn locate(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
+        let band = self.band(point, dec)?;
+        if band == Sign::Positive {
+            return Ok(Sign::Positive);
+        }
+        Ok(match self.spline.cross_section_side(point, dec)? {
+            Sign::Negative => band,
+            side => side,
+        })
+    }
+    /// Exact place of a point on a boundary face's support within that closed
+    /// face: negative in its interior, zero on its ring, positive off the face.
+    pub fn locate_on_face(
+        &self,
+        face: FaceId,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Sign, Refusal> {
+        if face == self.faces[2] {
+            self.band(point, dec)
+        } else {
+            self.spline.cross_section_side(point, dec)
+        }
+    }
+    // Negative strictly between the caps, zero on a cap plane, positive beyond.
+    fn band(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
+        let axial = self.spline.axial_coordinate(point);
+        let [lower, upper] = self.spline.axial();
+        Ok(
+            match (sign(&(&axial - lower), dec)?, sign(&(&axial - upper), dec)?) {
+                (Sign::Negative, _) | (_, Sign::Positive) => Sign::Positive,
+                (Sign::Zero, _) | (_, Sign::Zero) => Sign::Zero,
+                _ => Sign::Negative,
+            },
+        )
     }
     /// Immutable model whose entities were checked.
     pub fn model(&self) -> &'a Model {

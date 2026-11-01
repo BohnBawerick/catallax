@@ -1,9 +1,10 @@
 //! Public application fixture regressions for represented finite spline bounds.
 
+use catallax_boolean::{Containment, classify_point, face_contains};
 use catallax_measure::{Accuracy, BoundingBox, bounding_box, face_bounding_box};
-use catallax_numbers::{Decider, MarkLog, Rational, with_operation_budget};
+use catallax_numbers::{Decider, MarkLog, Outcome, Rational, Real, with_operation_budget};
 use catallax_recipe::Recipe;
-use catallax_shapes::{Curve, Isometry, Pose, RPoint3, RVector3, Rotation};
+use catallax_shapes::{Curve, Isometry, Point3, Pose, RPoint3, RVector3, Rotation};
 use catallax_topology::{
     Body, BodyId, BodyKind, Face, FaceId, Loop, Lump, Model, Shell, SplinePrism, transformed_body,
 };
@@ -180,16 +181,76 @@ fn body_scope_reads_shared_loop_uses_in_every_face_order() {
 }
 
 #[test]
+fn a_face_outside_the_complete_prism_cannot_inherit_its_membership() {
+    let (mut model, [a, _], [lower, upper, side, _]) = shared_cap_fixture();
+    let point = |x: &str, y: &str, z: &str| {
+        let [x, y, z] = [q(x), q(y), q(z)].map(Real::from_rational);
+        Point3::new(x, y, z)
+    };
+    // The same support with another trim: the complete side's answer is out of reach.
+    let mut trimmed = model.face(side).clone();
+    let Loop::Coedges(uses) = model.loop_(trimmed.loops[0]).clone() else {
+        unreachable!()
+    };
+    let uses = uses
+        .into_iter()
+        .map(|id| {
+            let coedge = model.coedge(id).clone();
+            model.add_coedge(coedge)
+        })
+        .collect();
+    trimmed.loops.push(model.add_loop(Loop::Coedges(uses)));
+    let origins = model.face_origins(side).to_vec();
+    let trimmed = model.add_named_face(trimmed, origins);
+    let _ = body_with_faces(&mut model, [lower, upper, trimmed]);
+    let on_side = point("12/5", "7/4", "16/5");
+    assert!(face_contains(&mut model, side, &on_side, &mut Decider::default()).unwrap());
+    assert!(face_contains(&mut model, trimmed, &on_side, &mut Decider::default()).is_err());
+    // The lower plane bounded by the upper ring is not a cap of this prism.
+    let mut detached = model.face(lower).clone();
+    let Loop::Coedges(uses) = model.loop_(model.face(upper).loops[0]).clone() else {
+        unreachable!()
+    };
+    let uses = uses
+        .into_iter()
+        .map(|id| {
+            let coedge = model.coedge(id).clone();
+            model.add_coedge(coedge)
+        })
+        .collect();
+    detached.loops = vec![model.add_loop(Loop::Coedges(uses))];
+    let origins = model.face_origins(lower).to_vec();
+    let detached = model.add_named_face(detached, origins);
+    let _ = body_with_faces(&mut model, [detached, upper, side]);
+    let on_cap = point("27/20", "0", "9/5");
+    assert!(face_contains(&mut model, lower, &on_cap, &mut Decider::default()).unwrap());
+    assert!(face_contains(&mut model, detached, &on_cap, &mut Decider::default()).is_err());
+    assert!(SplinePrism::check(&model, a, &mut Decider::default()).is_ok());
+}
+
+#[test]
 fn body_scope_cannot_borrow_a_missing_cap_from_another_prism() {
     let (mut model, [a, _], [lower, upper, side, _]) = shared_cap_fixture();
     let expected = bounding_box(&model, a, &accuracy(), &mut Decider::default())
         .unwrap()
         .value;
-    for faces in [[upper, side], [lower, side], [lower, upper]] {
+    let [x, y, z] = [q("12/5"), q("0"), q("16/5")].map(Real::from_rational);
+    let centre = Point3::new(x, y, z);
+    for faces in [[upper, side], [lower, side]] {
         let incomplete = body_with_faces(&mut model, faces);
         assert!(SplinePrism::check(&model, incomplete, &mut Decider::default()).is_err());
         assert!(bounding_box(&model, incomplete, &accuracy(), &mut Decider::default()).is_err());
+        // The complete neighbour's material must not reach a body short of a face.
+        let answer = classify_point(&mut model, incomplete, &centre, &mut Decider::default());
+        assert!(
+            !matches!(answer, Outcome::Proven(Containment::Inside)),
+            "{answer:?}"
+        );
     }
+    assert!(matches!(
+        classify_point(&mut model, a, &centre, &mut Decider::default()),
+        Outcome::Proven(Containment::Inside)
+    ));
     assert_eq!(
         bounding_box(&model, a, &accuracy(), &mut Decider::default())
             .unwrap()

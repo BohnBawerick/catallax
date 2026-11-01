@@ -381,6 +381,15 @@ impl Model {
         self.body_faces(b).filter(move |f| seen.insert(*f))
     }
 
+    /// Every body with this face, in creation order. No face records its body.
+    pub fn bodies_with_face(&self, f: FaceId) -> Vec<BodyId> {
+        self.bodies
+            .handles()
+            .into_iter()
+            .filter(|&b| self.body_faces(b).any(|face| face == f))
+            .collect()
+    }
+
     /// Faces of a body in the fixed order of the piece description.
     pub fn faces_of_body(&self, b: BodyId) -> Vec<FaceId> {
         self.unique_faces(b).collect()

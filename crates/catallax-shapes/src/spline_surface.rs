@@ -10,6 +10,8 @@ use std::{
     sync::Arc,
 };
 
+mod line;
+
 // A proposal bound, not a tolerance: an unfinished search only leaves a miss unproved.
 const HULL_SEARCH_STEPS: usize = 64;
 
@@ -135,7 +137,7 @@ impl SplineSupport {
         dec: &mut Decider,
     ) -> Result<Option<Vec<Point3>>, Refusal> {
         match self {
-            Self::EllipticOffset(_) => Ok(None),
+            Self::EllipticOffset(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingEnvelope(surface) => surface.line_hits(origin, direction, dec).map(Some),
         }
     }
@@ -783,7 +785,7 @@ fn filter_convex_side(
             if depth >= depth_limit {
                 return Ok(None);
             }
-            let [left, right] = split_half_planes(coefficients, &half);
+            let [left, right] = split_bernstein(coefficients, &half);
             pending.push((right, depth + 1));
             pending.push((left, depth + 1));
         }
@@ -791,17 +793,17 @@ fn filter_convex_side(
     Ok(Some(Sign::Negative))
 }
 
-fn split_half_planes(mut row: [Ball; 6], half: &Ball) -> [[Ball; 6]; 2] {
-    let mut left: [Option<Ball>; 6] = [const { None }; 6];
-    let mut right: [Option<Ball>; 6] = [const { None }; 6];
+fn split_bernstein<const N: usize>(mut row: [Ball; N], half: &Ball) -> [[Ball; N]; 2] {
+    let mut left: [Option<Ball>; N] = [const { None }; N];
+    let mut right: [Option<Ball>; N] = [const { None }; N];
     left[0] = Some(row[0].clone());
-    right[5] = Some(row[5].clone());
-    for level in 1..6 {
-        for i in 0..6 - level {
+    right[N - 1] = Some(row[N - 1].clone());
+    for level in 1..N {
+        for i in 0..N - level {
             row[i] = &(&row[i] + &row[i + 1]) * half;
         }
         left[level] = Some(row[0].clone());
-        right[5 - level] = Some(row[5 - level].clone());
+        right[N - 1 - level] = Some(row[N - 1 - level].clone());
     }
     [
         left.map(|value| value.expect("all left Bernstein coefficients assigned")),

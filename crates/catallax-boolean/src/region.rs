@@ -10,7 +10,9 @@ use crate::project::{
 use catallax_intersect::{CurveTrace, TracePiece, trace};
 use catallax_numbers::{Ball, Decider, FactKind, Rational, Refusal, Sign};
 use catallax_shapes::{GeomKey, Point3, PointId, SplineSupport, Surface};
-use catallax_topology::{EdgeId, FaceId, Loop, LoopId, Model, Sense, envelope_retains_chart};
+use catallax_topology::{
+    EdgeId, FaceId, Loop, LoopId, Model, Sense, SplinePrism, envelope_retains_chart,
+};
 use std::collections::{HashMap, hash_map::Entry};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -706,6 +708,26 @@ fn whole_chart(
         } else {
             Location::Inside
         },
+    ))
+}
+
+// A complete checked prism bounds each face by its shared rings alone, so the
+// section and the axial interval decide closed membership with no boundary
+// tracing. This answers for the one face asked about. It stays out of `locate`,
+// which also serves whole-body parity: a body short of a cap must not borrow a
+// face from a complete prism and count a crossing through it.
+pub(crate) fn prism_face(
+    model: &Model,
+    face: FaceId,
+    point: PointId,
+    dec: &mut Decider,
+) -> Result<Option<bool>, Refusal> {
+    let Some(prism) = SplinePrism::of_face(model, face, dec)? else {
+        return Ok(None);
+    };
+    let position = model.geom().position(point);
+    Ok(Some(
+        prism.locate_on_face(face, &position, dec)? != Sign::Positive,
     ))
 }
 

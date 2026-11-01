@@ -1259,6 +1259,15 @@ evaluation. The first family is the regular inward normal offset of the
 approved right elliptic-cylinder prism, including certified axial planar
 trims and a second offset from the retained original definition. The represented
 side and shared cap boundaries are real B-splines, not renamed ellipses.
+Native containment, closed face membership and transverse whole-line
+intersections answer for this prism on the represented geometry, including a
+rigidly moved body. `classify_point` and `face_contains` read the represented
+section and axial interval only after `SplinePrism::check` proves the complete
+body. A line crossing is an exact root of the span's own cubic with its finite
+axial height proved, counted once at a join or the seam. A tangent line and a
+line overlapping a generator keep `intersect.parametric-surface`. A face with
+another trim, a body short of a cap and any proof that does not complete keep
+their refusals.
 Outward offsets and general spline booleans remain explicit coverage gaps.
 
 `CertifiedApplicationBody` privately binds its verified `CertifiedBuilt`,

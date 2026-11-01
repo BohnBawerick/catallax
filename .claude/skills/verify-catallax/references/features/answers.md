@@ -14,7 +14,7 @@ Build exact geometry or compare the two recipe evaluators without a wall-clock c
 - `answer.parts`: P0–P5 builds, independent field compilation, sampled comparison and STEP import report.
 - `answer.face-definitions`: opt-in recipe face checks report whole-face two-sided deviation, local tolerances, first-mesh timing and origins after a scalar edit.
 - `answer.pattern-mirror`: body patterns and mirrors preserve exact supports and wrapped names; saved feature instances replay as ordinary recipe steps with independent creating-step origins.
-- `answer.certified-recipe`: opt-in certified offset bodies expose real spline topology, complete local/whole evidence, represented-model display/STEP, original-definition properties/field and an independently rebuilt scalar edit.
+- `answer.certified-recipe`: opt-in certified offset bodies expose real spline topology, complete local/whole evidence, represented-model display/STEP, original-definition properties/field and an independently rebuilt scalar edit. Native `classify_point`, `face_contains` and transverse `intersect_curve_surface` answer on the same represented body, with no change to the certified output format.
 
 ## How to get to it (user POV)
 

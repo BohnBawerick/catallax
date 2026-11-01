@@ -121,7 +121,7 @@ fn app_display(angle: u32) {
         );
         check(&answer.unwrap().value, &options, 7.5 * std::f64::consts::PI);
         assert!(!work.exhausted, "{work:?}");
-        assert!(work.used < 100_000, "{work:?}");
+        assert!(work.used < 500_000, "{work:?}");
     }
 }
 

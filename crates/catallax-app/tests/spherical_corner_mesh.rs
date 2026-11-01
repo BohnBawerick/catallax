@@ -599,8 +599,7 @@ fn other_requested_controls_still_apply_on_corner_sectors() {
 }
 
 /// The positive octant of a ball is one admitted corner with no cylinder strip, so
-/// these controls reach the drawing selector. A long strip under an edge limit at
-/// this target is a separate cylinder refinement fault, not part of this family.
+/// these controls reach the drawing selector.
 #[test]
 fn other_requested_controls_still_apply_at_the_drawing_target() {
     let identity = json!({"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]});
@@ -1047,9 +1046,11 @@ const UNAFFECTED_BASELINE: &[(&str, &str)] = &[
         "mesh 3120c5757e396dd2 obj 8475465eb6a0078d",
     ),
     ("cylinder angular preview", "preview dfd37d84ce6c1c28"),
+    // Re-pinned when an edge limit shorter than a cylinder began seeding rows. See
+    // docs/interface-changes/2026-11-01-cylinder-edge-limit-rows.md.
     (
         "cylinder controlled certified",
-        "mesh 477c65b7b30ca553 obj 1ce4ec4b84dbde74",
+        "mesh 8fbc27efe9cbee6c obj b7b82215a54e120b",
     ),
     ("cylinder controlled preview", "preview e5a5ab841c71b3d9"),
     (

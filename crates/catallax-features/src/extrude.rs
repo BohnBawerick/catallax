@@ -1,7 +1,7 @@
 //! Closed profile prisms with shared boundary edges and sweep origins.
 
 use catallax_numbers::{Fact, FactKind, FactOrigin, Integer, MarkLog, Rational, Refusal, Sign};
-use catallax_recipe::{Origin, Role, StepId, Turn};
+use catallax_recipe::{ElementId, Origin, Role, StepId, Turn};
 use catallax_shapes::{
     Circle, Curve, Cylinder, EllipticCylinder, GeomKey, Line, Plane, PointDef, RPoint3, RVector3,
     Surface,
@@ -147,6 +147,7 @@ pub fn extrude(
         step,
         &vector,
         [Some(Role::Start), Some(Role::End)],
+        None,
     )
 }
 
@@ -156,6 +157,7 @@ pub(crate) fn extrude_vector(
     step: &StepId,
     vector: &RVector3,
     caps: [Option<Role>; 2],
+    path_segment: Option<&ElementId>,
 ) -> Result<BodyId, Refusal> {
     let normal = crate::profile::rational_vector(
         &profile.pose,
@@ -360,7 +362,7 @@ pub(crate) fn extrude_vector(
                         step: step.clone(),
                         role: Role::Side {
                             segment: segment.clone(),
-                            path: None,
+                            path: path_segment.cloned(),
                         },
                     })
                     .collect();

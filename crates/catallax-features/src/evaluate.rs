@@ -85,6 +85,7 @@ impl std::error::Error for BuildError {}
 pub struct EvaluationCheckpoint {
     built: Arc<Built>,
     profiles: OrdMap<StepId, Profile>,
+    paths: OrdMap<StepId, crate::sweep::Path>,
     bodies: OrdMap<StepId, BodyValue>,
     policy: BudgetPolicy,
 }
@@ -105,6 +106,7 @@ impl EvaluationCheckpoint {
         EvaluationState {
             model: built.model,
             profiles: self.profiles,
+            paths: self.paths,
             bodies: self.bodies,
             fillets: built.fillets,
             consumed: built.consumed,
@@ -118,6 +120,7 @@ impl EvaluationCheckpoint {
 struct EvaluationState {
     model: Model,
     profiles: OrdMap<StepId, Profile>,
+    paths: OrdMap<StepId, crate::sweep::Path>,
     bodies: OrdMap<StepId, BodyValue>,
     fillets: Vec<crate::fillet::FilletDefinition>,
     consumed: Vec<crate::ConsumedFace>,
@@ -320,14 +323,15 @@ fn through(
         step,
         &direction.scaled(&(high - low)),
         caps,
+        None,
     )?;
     Ok(boolean(model, target.body, tool, BoolOp::Subtract, dec)
         .map_err(|e| e.refusal)?
         .body)
 }
 
-/// Builds stock solids, sketches, extrusions, revolutions, elementary fillets,
-/// cuts, booleans, patterns and mirrors.
+/// Builds stock solids, sketches, extrusions, straight-path sweeps, revolutions,
+/// elementary fillets, cuts, booleans, patterns and mirrors.
 /// Other recipe operations retain their unfinished-operation refusal, not a partial body.
 pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError> {
     evaluate_impl(
@@ -388,10 +392,12 @@ pub fn evaluate_incremental_with_files(
     };
     let mut state = evaluate_impl(recipe, files, None, state, start, dec)?;
     let profiles = std::mem::take(&mut state.profiles);
+    let paths = std::mem::take(&mut state.paths);
     let bodies = state.bodies.clone();
     Ok(EvaluationCheckpoint {
         built: Arc::new(state.finish(Arc::new(recipe.clone()))),
         profiles,
+        paths,
         bodies,
         policy: *dec.policy(),
     })
@@ -458,6 +464,7 @@ fn evaluate_impl(
     let EvaluationState {
         mut model,
         mut profiles,
+        mut paths,
         mut bodies,
         mut fillets,
         mut consumed,
@@ -573,6 +580,15 @@ fn evaluate_impl(
                     BodyValue {
                         body,
                         radius: profile_radius(profile) + distance.value().abs(),
+                    }
+                }
+                Operation::Sweep { profile, path, .. } => {
+                    let profile = &profiles[profile];
+                    let path = &paths[path];
+                    let body = path.build(model, profile, &step.id)?;
+                    BodyValue {
+                        body,
+                        radius: profile_radius(profile) + path.extent(),
                     }
                 }
                 Operation::Revolve {
@@ -1200,6 +1216,11 @@ fn evaluate_impl(
                 profiles.insert(step.id.clone(), profile);
                 None
             })
+        } else if let Operation::Path { start, segments } = &step.op {
+            crate::sweep::Path::new(start, segments).map(|path| {
+                paths.insert(step.id.clone(), path);
+                None
+            })
         } else {
             build(&mut model, dec).map(|body| {
                 let body = body.expect("body-producing operation");
@@ -1224,6 +1245,7 @@ fn evaluate_impl(
     Ok(EvaluationState {
         model,
         profiles,
+        paths,
         bodies,
         fillets,
         consumed,

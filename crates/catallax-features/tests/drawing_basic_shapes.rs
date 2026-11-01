@@ -62,6 +62,109 @@ fn tilted_rod(angle: u32) -> Recipe {
     )
 }
 
+fn app_tilted_rod(angle: u32) -> Recipe {
+    let mut value = serde_json::to_value(tilted_rod(angle)).unwrap();
+    let steps = value["steps"].as_array_mut().unwrap();
+    steps.pop();
+    if angle != 28 {
+        // Keep the other planes exactly through z=5 too. Adding the two
+        // rounded endpoint doubles independently can move that plane.
+        let rise: Rational = (4.0 * f64::from(angle).to_radians().tan())
+            .to_string()
+            .parse()
+            .unwrap();
+        let five = Rational::from_i64(5);
+        steps[2]["loops"][0][0]["to"][1] = json!((&five - &rise).to_string());
+        steps[2]["loops"][0][3]["to"][1] = json!((&five + &rise).to_string());
+    }
+    // SolidDraft's ThroughAll sweeps from the front plane in the flipped
+    // direction, rather than cutting in both directions like extrude_through.
+    steps.push(json!({"id":"tool", "op":"extrude", "profile":"plane",
+        "distance":"2.1039230484541326", "direction":["0","1","0"]}));
+    steps.push(json!({"id":"cut", "op":"boolean", "kind":"subtract",
+        "target":"stock", "tool":"tool"}));
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+fn app_display(angle: u32) {
+    let mut dec = Decider::default();
+    let built = evaluate(&app_tilted_rod(angle), &mut dec).unwrap();
+    let native = MeshOptions::default();
+    check(
+        &mesh_body(&built.model, built.result, &native, &mut dec)
+            .unwrap()
+            .value,
+        &native,
+        7.5 * std::f64::consts::PI,
+    );
+    // Levels::new(Auto, bbox.diagonal()) requests factors 4, 1 and 1/4
+    // of 0.002 * diagonal, all at 15 degrees. The adapter halves the
+    // shortest-decimal chord for f32 rounding and uses its lower bound of pi.
+    let diagonal = 108.0_f64.sqrt();
+    for factor in [4.0, 1.0, 0.25] {
+        let chord: Rational = (0.002 * diagonal * factor).to_string().parse().unwrap();
+        let options = MeshOptions {
+            chord_tolerance: chord / Rational::from_i64(2),
+            angular_deviation: Some("314159265/1200000000".parse().unwrap()),
+            ..MeshOptions::default()
+        };
+        let start = Instant::now();
+        let (answer, work) = with_operation_budget(20_000_000, || {
+            mesh_body(&built.model, built.result, &options, &mut dec)
+        });
+        eprintln!(
+            "app rod {angle} level {factor}: {:?}, {:?}",
+            start.elapsed(),
+            answer
+                .as_ref()
+                .map(|m| (m.value.positions.len(), m.value.triangles.len()))
+        );
+        check(&answer.unwrap().value, &options, 7.5 * std::f64::consts::PI);
+        assert!(!work.exhausted, "{work:?}");
+        assert!(work.used < 500_000, "{work:?}");
+    }
+}
+
+#[test]
+fn app_rod_cut_at_15_degrees() {
+    app_display(15);
+}
+
+#[test]
+fn app_rod_cut_at_28_degrees() {
+    app_display(28);
+}
+
+#[test]
+fn app_rod_cut_at_45_degrees() {
+    app_display(45);
+}
+
+#[test]
+fn app_rod_cut_at_53_degrees() {
+    app_display(53);
+}
+
+#[test]
+fn app_rod_vertex_cap_refuses_without_surface_refinement() {
+    let built = evaluate(&app_tilted_rod(28), &mut Decider::default()).unwrap();
+    let options = MeshOptions {
+        angular_deviation: Some("314159265/1200000000".parse().unwrap()),
+        max_vertices: 10,
+        ..MeshOptions::default()
+    };
+    let (answer, work) = with_operation_budget(50_000, || {
+        mesh_body(
+            &built.model,
+            built.result,
+            &options,
+            &mut Decider::default(),
+        )
+    });
+    assert_eq!(answer.unwrap_err().code, "mesh.precision-or-budget");
+    assert!(!work.exhausted, "{work:?}");
+}
+
 fn check(mesh: &Mesh, options: &MeshOptions, volume: f64) {
     let mut uses = BTreeMap::<_, (usize, i32)>::new();
     let mut enclosed = 0.0;

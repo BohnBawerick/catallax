@@ -65,6 +65,9 @@ pub(crate) struct Chart {
     /// A sphere sector of three great-circle arcs under an angular target. This
     /// selects boundary sampling and seeding only; every proof still applies.
     pub(crate) great_circle_sector: bool,
+    /// Enclosed inward normals of the hemispheres that meet in a proved convex
+    /// corner. These select grid seeds only; every proof still applies.
+    pub(crate) corner_planes: Option<[[Interval; 3]; 3]>,
     origin: [f64; 3],
     frame: [[f64; 3]; 3],
     turn: Option<Ball>,
@@ -141,6 +144,7 @@ impl Chart {
             guards: RefCell::new(BTreeMap::new()),
             normal_scale,
             great_circle_sector: false,
+            corner_planes: None,
             origin,
             turn,
             evaluator: crate::evaluate::Evaluator::new(surface, dec)?,
@@ -219,6 +223,23 @@ impl Chart {
 
     pub(crate) fn filtered_normal(&self, uv: Uv) -> Option<([Interval; 3], Interval)> {
         self.evaluator.normal(&self.surface, uv)
+    }
+
+    /// Whether the outward interval filter puts this point outside a proved
+    /// convex corner. An undecided point stays a candidate, so rounding can only
+    /// keep a needless seed. `finish` still labels and certifies whatever remains.
+    pub(crate) fn outside_corner(&self, uv: Uv, dec: &Decider) -> Result<bool, Refusal> {
+        let Some(planes) = &self.corner_planes else {
+            return Ok(false);
+        };
+        dec.check_deadline()?;
+        let Some((normal, _)) = self.filtered_normal(self.canonical(uv)) else {
+            return Ok(false);
+        };
+        Ok(planes.iter().any(|plane| {
+            let product = plane[0] * normal[0] + plane[1] * normal[1] + plane[2] * normal[2];
+            product.hi() < 0.0
+        }))
     }
 
     /// Rounded definition samples for an explicitly unproved preview.

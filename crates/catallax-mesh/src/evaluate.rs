@@ -9,7 +9,7 @@ fn point(x: f64) -> Interval {
     Interval::point(x).expect("finite chart coefficient")
 }
 
-fn unit(v: &Vector3, dec: &Decider) -> Result<[Interval; 3], Refusal> {
+pub(crate) fn unit(v: &Vector3, dec: &Decider) -> Result<[Interval; 3], Refusal> {
     let length = v.norm_squared().sqrt();
     let values = [&v.x, &v.y, &v.z].map(|x| {
         dec.enclose_at(&(x / &length), BITS)

@@ -1240,6 +1240,7 @@ impl Capped {
             step,
             &offset.scaled(&Rational::from_i64(3)),
             [None, None],
+            None,
         )?;
         Ok(catallax_boolean::boolean(
             model,

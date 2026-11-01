@@ -193,8 +193,8 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::ExtrudeTo{..}|Operation::ExtrudeNext{..}|
             Operation::Revolve{..}|Operation::Hole{..}|Operation::Pattern{..}|Operation::Mirror{..}|
             Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}|Operation::Shell{..}|Operation::Offset{..}|Operation::Thicken{..}=>return None,
-            Operation::Path{..}=>"neither kernel evaluates recipe paths",
-            Operation::Sweep{..}=>"neither kernel evaluates recipe sweeps",
+            Operation::Path{..}=>"field recipe paths are not implemented; B-rep accepts empty or one-line paths",
+            Operation::Sweep{..}=>"field recipe sweeps are not implemented; B-rep accepts straight-path sweeps",
             Operation::Loft{..}=>"neither kernel evaluates recipe lofts",
             Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",
             Operation::Gyroid{..}=>"field gyroid evaluation is not implemented; B-rep gyroid evaluation is not planned",

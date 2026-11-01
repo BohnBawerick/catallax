@@ -1,0 +1,20 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Open tray with a through bore",
+  "steps": [
+    {
+      "id": "stock", "op": "block", "size": ["40", "30", "12"],
+      "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}
+    },
+    {
+      "id": "bored", "op": "hole", "target": "stock",
+      "at": [{"id": "bore", "point": ["20", "15", "12"], "direction": ["0", "0", "-1"]}],
+      "diameter": "6", "depth": "through", "tip": "flat"
+    },
+    {
+      "id": "shell", "op": "shell", "body": "bored",
+      "open": [{"face": {"step": "stock", "role": "end"}}], "thickness": "2"
+    }
+  ],
+  "result": "shell"
+}

@@ -226,7 +226,7 @@ class SelectorTests(unittest.TestCase):
         self.assertEqual(set(selected['jobs']), {'fmt', 'clippy', 'build', 'step-regressions'})
         source = self.route(paths + ['crates/catallax-cli/src/verification.rs'], changed_jobs=changed)
         self.assertEqual(source['selected_cases'], 477)
-        self.assertEqual(source['jobs']['tests'], self.rules['jobs']['tests'])
+        self.assertEqual(source['jobs']['tests'], 4)
         for path in ('tools/checks/earlier-answers.json', 'tools/checks/replay-corrections.json',
                      'tools/checks/raw_step.py'):
             self.assertEqual(self.route([path])['selected_cases'], 477)
@@ -238,7 +238,7 @@ class SelectorTests(unittest.TestCase):
         after = self.route(['tools/checks/rules.json'])
         migration = checks.union_selection(before, after)
         self.assertEqual(migration['selected_cases'], 477)
-        self.assertEqual(migration['jobs']['tests'], self.rules['jobs']['tests'])
+        self.assertEqual(migration['jobs']['tests'], 4)
         future = checks.union_selection(after, after)
         self.assertEqual(future['jobs'], {'fmt': 1})
         self.assertEqual(future['selected_cases'], 0)

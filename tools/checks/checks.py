@@ -372,9 +372,6 @@ def prepare(args):
     before = select(paths, base_rules, base_graph, base_build, args.event, args.ref, changed_jobs)
     after = select(paths, candidate_rules, graph, build, args.event, args.ref, changed_jobs)
     selection = union_selection(before, after)
-    # Partition count changes scheduling, not the unioned test/package coverage.
-    if 'tests' in selection['jobs']:
-        selection['jobs']['tests'] = candidate_rules['jobs']['tests']
     # A removed crate contributes its old consumers, not an impossible -p flag.
     selection['packages'] = sorted(set(selection['packages']) & set(graph))
     if args.release_evidence:

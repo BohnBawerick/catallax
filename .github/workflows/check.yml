@@ -174,7 +174,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -197,7 +197,7 @@ jobs:
         run: |
           cargo nextest run --archive-file "$RUNNER_TEMP/tests.tar.zst" --workspace-remap "$GITHUB_WORKSPACE" \
             --extract-to "$GITHUB_WORKSPACE" --extract-overwrite \
-            --profile ci --partition "slice:$SHARD/3" --no-fail-fast --test-threads 4
+            --profile ci --partition "slice:$SHARD/4" --no-fail-fast --test-threads 4
       - uses: ./.github/actions/check-evidence
         with:
           job: tests

@@ -4,7 +4,7 @@
 //! output topology. Subdivision, winding and component extraction replace it.
 
 use super::{DraftDefinition, reduced_point, sign};
-use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_recipe::Origin;
 use catallax_shapes::{Plane, Point3, Surface, Vector3};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -56,6 +56,17 @@ pub struct ConvexTerm {
     pub sides: Vec<(usize, bool)>,
     /// A positive average of all its vertices, retained by definition.
     pub witness: Point3,
+}
+
+/// A point on a face's carrier, read against that face's convex tiles.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Foot {
+    /// Strictly inside a tile, so on the face.
+    Inside,
+    /// Strictly outside every tile, so off the closed face.
+    Outside,
+    /// Unresolved against these tile edges, each a segment of the face.
+    Near(Vec<(usize, usize)>),
 }
 
 /// One connected regular material component of a plane arrangement.
@@ -220,27 +231,48 @@ fn loops_from_tiles(tiles: &[Vec<usize>]) -> Result<Vec<Vec<usize>>, Refusal> {
 
 struct Clipper<'a> {
     support: usize,
+    planes: &'a [Plane],
     vertices: &'a mut Vec<Point3>,
-    values: Vec<Real>,
     signs: Vec<Sign>,
     edges: BTreeMap<(usize, usize), usize>,
     dec: &'a mut Decider,
 }
 impl Clipper<'_> {
-    fn intersection(&mut self, a: usize, b: usize) -> Result<usize, Refusal> {
+    fn intersection(&mut self, cell: &Cell, a: usize, b: usize) -> Result<usize, Refusal> {
         let key = (a.min(b), a.max(b));
         if let Some(i) = self.edges.get(&key) {
             return Ok(*i);
         }
-        let t = &self.values[a] / &(&self.values[a] - &self.values[b]);
-        let point = reduced_point(
-            self.vertices[a].plus(&self.vertices[b].minus(&self.vertices[a]).scaled(&t)),
+        // A crossed edge joins two facets of its convex cell. Their line meets this
+        // plane once, and meeting it directly keeps every vertex three planes deep.
+        // A chain of interpolations hides the exact zeros of later predicates.
+        let mut line = cell
+            .faces
+            .iter()
+            .filter(|face| face.cycle.contains(&a) && face.cycle.contains(&b))
+            .map(|face| face.support);
+        let (Some(first), Some(second)) = (line.next(), line.next()) else {
+            return Err(failure(
+                "draft.nonclosing-boundary",
+                "a convex cell edge lost its carriers",
+            ));
+        };
+        let support = self.support;
+        let Some(point) = triple(
+            &self.planes[first],
+            &self.planes[second],
+            &self.planes[support],
             self.dec,
-        )?;
+        )?
+        else {
+            return Err(failure(
+                "draft.nonclosing-boundary",
+                "a crossed cell edge is parallel to its clipping plane",
+            ));
+        };
         let id = self.vertices.len();
         self.vertices.push(point);
         // This is zero by the line/plane construction, not an enclosure guess.
-        self.values.push(Real::zero());
         self.signs.push(Sign::Zero);
         self.edges.insert(key, id);
         Ok(id)
@@ -267,7 +299,7 @@ impl Clipper<'_> {
                     cycle.push(a);
                 }
                 if sa != Sign::Zero && sb != Sign::Zero && a_kept != b_kept {
-                    cycle.push(self.intersection(a, b)?);
+                    cycle.push(self.intersection(cell, a, b)?);
                 }
             }
             for i in 0..cycle.len() {
@@ -655,20 +687,24 @@ impl Skin {
                             &patches[faces[c]].plane,
                             dec,
                         )? {
-                            replacement = Some(point);
+                            replacement = Some((point, [a, b, c]));
                             break 'triple;
                         }
                     }
                 }
             }
-            let Some(point) = replacement else {
+            let Some((point, defining)) = replacement else {
                 return Err(failure(
                     "draft.unsupported-vertex-arrangement",
                     "incident moved carriers need an unbounded or resolved vertex fan",
                 ));
             };
-            for f in faces {
-                if sign(&value(&patches[f].plane, &point), dec)? != Sign::Zero {
+            // Its three defining carriers contain it by construction. Only a
+            // further incident carrier can disagree, as in a non-simple vertex.
+            for (index, f) in faces.into_iter().enumerate() {
+                if !defining.contains(&index)
+                    && sign(&value(&patches[f].plane, &point), dec)? != Sign::Zero
+                {
                     return Err(failure(
                         "draft.unsupported-nonsimple-vertex",
                         "a non-simple moved vertex needs a resolved carrier fan",
@@ -760,15 +796,14 @@ impl Skin {
             let support = planes.len();
             planes.push(patch.plane.clone());
             carriers.entry(support).or_default().push(patch_id);
-            let values: Vec<_> = vertices.iter().map(|p| value(&patch.plane, p)).collect();
-            let signs = values
+            let signs = vertices
                 .iter()
-                .map(|v| sign(v, dec))
+                .map(|p| sign(&value(&patch.plane, p), dec))
                 .collect::<Result<Vec<_>, _>>()?;
             let mut clipper = Clipper {
                 support,
+                planes: &planes,
                 vertices: &mut vertices,
-                values,
                 signs,
                 edges: BTreeMap::new(),
                 dec,
@@ -1173,6 +1208,46 @@ impl Polyhedron {
         }
         Ok(false)
     }
+    /// Reads a point on a face's carrier against its trim from enclosures alone.
+    /// A point on a tile edge costs no exact zero, because the caller only needs
+    /// that edge, which lies in the face, and not the answer.
+    pub fn foot(
+        &self,
+        face: &PolyFace,
+        p: &Point3,
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<Foot, Refusal> {
+        let plane = &self.planes[face.support];
+        let normal = if face.same_sense {
+            plane.normal.clone()
+        } else {
+            plane.normal.scaled(&Real::from_i64(-1))
+        };
+        let mut near = Vec::new();
+        'tiles: for tile in &face.tiles {
+            let mut open = Vec::new();
+            for i in 0..tile.len() {
+                let (a, b) = (tile[i], tile[(i + 1) % tile.len()]);
+                let edge = self.vertices[b].minus(&self.vertices[a]);
+                let side = edge.cross(&p.minus(&self.vertices[a])).dot(&normal);
+                match dec.enclose_budgeted_at(&side, precision)?.sign() {
+                    Some(StrictSign::Negative) => continue 'tiles,
+                    Some(StrictSign::Positive) => (),
+                    None => open.push((a, b)),
+                }
+            }
+            if open.is_empty() {
+                return Ok(Foot::Inside);
+            }
+            near.append(&mut open);
+        }
+        Ok(if near.is_empty() {
+            Foot::Outside
+        } else {
+            Foot::Near(near)
+        })
+    }
     /// Boundary membership excludes internal convex-decomposition seams.
     pub fn on_boundary(
         &self,
@@ -1193,10 +1268,27 @@ impl Polyhedron {
     }
     /// Positive-area neutral contact, not the convex hull of isolated contacts.
     pub fn anchored(&self, neutral: &Plane, dec: &mut Decider) -> Result<bool, Refusal> {
+        // A face on the neutral plane already places its vertices there.
+        let mut contained = BTreeSet::new();
+        for face in &self.faces {
+            let plane = &self.planes[face.support];
+            if sign(&plane.normal.cross(&neutral.normal).norm_squared(), dec)? == Sign::Zero
+                && sign(&value(neutral, &plane.origin), dec)? == Sign::Zero
+            {
+                contained.extend(face.tiles.iter().flatten().copied());
+            }
+        }
         let signs = self
             .vertices
             .iter()
-            .map(|p| sign(&value(neutral, p), dec))
+            .enumerate()
+            .map(|(i, p)| {
+                if contained.contains(&i) {
+                    Ok(Sign::Zero)
+                } else {
+                    sign(&value(neutral, p), dec)
+                }
+            })
             .collect::<Result<Vec<_>, _>>()?;
         if signs.contains(&Sign::Positive) && signs.contains(&Sign::Negative) {
             return Ok(true);

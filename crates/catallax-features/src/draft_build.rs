@@ -11,9 +11,9 @@ use crate::draft::{
     near,
     round::RoundCell,
 };
-use catallax_numbers::{Decider, Rational, Real, Refusal};
+use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Rational, Real, Refusal};
 use catallax_recipe::{FaceRef, Origin, StepId};
-use catallax_shapes::{Circle, Curve, Line, Point3, PointDef, Surface};
+use catallax_shapes::{Circle, Curve, GeomKey, Line, Point3, PointDef, Surface, Vector3};
 use catallax_topology::{
     Body, BodyId, BodyKind, Edge, EdgeId, FaceId, Loop, LoopId, Lump, Model, Sense, Shell, Vertex,
 };
@@ -250,7 +250,7 @@ impl Cell {
             Self::Bossed(cell, rings, bores) => assemble_bossed(model, cell, rings, bores),
             Self::Planar(cell) => assemble(model, cell, &[], Vec::new()),
             Self::Round(cell) => assemble_round(model, cell),
-            Self::Polyhedral(cell) => assemble_polyhedral(model, cell),
+            Self::Polyhedral(cell) => assemble_polyhedral(model, cell, dec)?,
             Self::Capped(cell) => assemble_capped(model, cell, dec)?,
         })
     }
@@ -1425,7 +1425,11 @@ fn assemble_bored(model: &mut Model, cell: &BoredCell, bound: &[BoundBore]) -> B
     assemble(model, &cell.outer, &holes, walls)
 }
 
-fn assemble_polyhedral(model: &mut Model, cell: &Polyhedron) -> BodyId {
+fn assemble_polyhedral(
+    model: &mut Model,
+    cell: &Polyhedron,
+    dec: &mut Decider,
+) -> Result<BodyId, Refusal> {
     let vertices: Vec<_> = cell
         .vertices
         .iter()
@@ -1436,7 +1440,20 @@ fn assemble_polyhedral(model: &mut Model, cell: &Polyhedron) -> BodyId {
             model.add_vertex(Vertex { point })
         })
         .collect();
+    let mut carriers = BTreeMap::<_, BTreeSet<_>>::new();
+    for face in &cell.faces {
+        for cycle in &face.loops {
+            for i in 0..cycle.len() {
+                let (a, b) = (cycle[i], cycle[(i + 1) % cycle.len()]);
+                carriers
+                    .entry((a.min(b), a.max(b)))
+                    .or_default()
+                    .insert(face.support);
+            }
+        }
+    }
     let mut edges = BTreeMap::new();
+    let mut lines = BTreeMap::new();
     let mut faces = Vec::new();
     for face in &cell.faces {
         let mut paths = Vec::new();
@@ -1445,18 +1462,35 @@ fn assemble_polyhedral(model: &mut Model, cell: &Polyhedron) -> BodyId {
             for i in 0..cycle.len() {
                 let (a, b) = (cycle[i], cycle[(i + 1) % cycle.len()]);
                 let pair = (a.min(b), a.max(b));
-                let edge = *edges.entry(pair).or_insert_with(|| {
+                let edge = if let Some(edge) = edges.get(&pair) {
+                    *edge
+                } else {
+                    let line = Vec::from_iter(carriers[&pair].iter().copied());
                     let curve = model.geom_mut().add_curve(Curve::Line(Line {
                         origin: cell.vertices[pair.0].clone(),
-                        dir: cell.vertices[pair.1].minus(&cell.vertices[pair.0]),
+                        dir: edge_direction(cell, pair, &line, dec)?,
                     }));
-                    model.add_edge(Edge {
+                    // Distinct carriers that share a segment share only its line.
+                    if let [first, second] = line.as_slice()
+                        && let Some(known) = lines.insert((*first, *second), curve)
+                    {
+                        model.geom_mut().record_fact(Fact {
+                            kind: FactKind::Coincident,
+                            a: GeomKey::Curve(known),
+                            b: GeomKey::Curve(curve),
+                            at: None,
+                            origin: FactOrigin::Construction("draft.polyhedron-edge"),
+                        });
+                    }
+                    let edge = model.add_edge(Edge {
                         curve,
                         sense: Sense::Same,
                         start: Some(vertices[pair.0]),
                         end: Some(vertices[pair.1]),
-                    })
-                });
+                    });
+                    edges.insert(pair, edge);
+                    edge
+                };
                 path.push((edge, if a < b { Sense::Same } else { Sense::Reversed }));
             }
             paths.push(path);
@@ -1474,10 +1508,31 @@ fn assemble_polyhedral(model: &mut Model, cell: &Polyhedron) -> BodyId {
     let lump = model.add_lump(Lump {
         shells: vec![shell],
     });
-    model.add_body(Body {
+    Ok(model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
         marks: Default::default(),
+    }))
+}
+
+/// The cross product of an edge's two carriers keeps their exact zero components,
+/// which a difference of its constructed end points would have to prove.
+fn edge_direction(
+    cell: &Polyhedron,
+    (start, end): (usize, usize),
+    carriers: &[usize],
+    dec: &mut Decider,
+) -> Result<Vector3, Refusal> {
+    let chord = cell.vertices[end].minus(&cell.vertices[start]);
+    let [first, second] = carriers else {
+        return Ok(chord);
+    };
+    let line = cell.planes[*first]
+        .normal
+        .cross(&cell.planes[*second].normal);
+    Ok(match crate::draft::sign(&line.dot(&chord), dec)? {
+        catallax_numbers::Sign::Negative => line.scaled(&Real::from_i64(-1)),
+        _ => line,
     })
 }
 

@@ -1,0 +1,137 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "R-P",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "20",
+              "-15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "20",
+              "-5"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "notch",
+            "to": [
+              "0",
+              "-5"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "inner",
+            "to": [
+              "0",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "-20",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-20",
+              "-15"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "20"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "base",
+      "faces": [
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "right"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "inner"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "base",
+            "role": {
+              "side": {
+                "segment": "left"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "0",
+        "0",
+        "1"
+      ],
+      "neutral": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "normal": [
+          "0",
+          "0",
+          "1"
+        ]
+      },
+      "angle": "3"
+    }
+  ],
+  "result": "drafted"
+}

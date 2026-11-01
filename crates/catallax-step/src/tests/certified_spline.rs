@@ -52,6 +52,42 @@ fn dot(a: &[Rational; 3], b: &[Rational; 3]) -> Rational {
         .fold(Rational::zero(), |a, b| a + b)
 }
 
+type Entities<'a> = [(&'a str, Vec<&'a str>)];
+type Chart = (Vec<Vec<usize>>, BSplineSurface);
+
+fn written_chart(
+    es: &Entities<'_>,
+    surface: &[&str],
+    dec: &mut Decider,
+) -> Result<Chart, Box<dyn std::error::Error>> {
+    let rows: Vec<_> = fields(
+        surface[3]
+            .strip_prefix('(')
+            .unwrap()
+            .strip_suffix(')')
+            .unwrap(),
+    )
+    .into_iter()
+    .map(references)
+    .collect();
+    let points: Vec<_> = rows
+        .iter()
+        .flat_map(|row| row.iter().map(|id| real_point(cartesian(&es[*id - 1].1))))
+        .collect();
+    let chart = BSplineSurface::new(
+        [surface[1].parse()?, surface[2].parse()?],
+        [
+            expanded(surface[8], surface[10]),
+            expanded(surface[9], surface[11]),
+        ],
+        [rows.len(), rows[0].len()],
+        points,
+        vec![Real::one(); rows.len() * rows[0].len()],
+        dec,
+    )?;
+    Ok((rows, chart))
+}
+
 #[test]
 fn actual_step_geometry_retains_shared_caps_periodic_c1_and_oriented_solid_incidence() {
     let (result, work) = with_operation_budget(100_000_000, || {
@@ -70,85 +106,82 @@ fn actual_step_geometry_retains_shared_caps_periodic_c1_and_oriented_solid_incid
         assert!(report.max_deviation <= options.file_tolerance);
         let file = String::from_utf8(bytes)?;
         let es = entities(&file);
-        let (_, surface) = es
+        let mut charts = es
             .iter()
-            .find(|(name, _)| *name == "B_SPLINE_SURFACE_WITH_KNOTS")
-            .unwrap();
-        let rows: Vec<_> = fields(
-            surface[3]
-                .strip_prefix('(')
-                .unwrap()
-                .strip_suffix(')')
-                .unwrap(),
-        )
-        .into_iter()
-        .map(references)
-        .collect();
-        let points: Vec<_> = rows
-            .iter()
-            .flat_map(|row| row.iter().map(|id| real_point(cartesian(&es[*id - 1].1))))
-            .collect();
-        let written = BSplineSurface::new(
-            [surface[1].parse()?, surface[2].parse()?],
-            [
-                expanded(surface[8], surface[10]),
-                expanded(surface[9], surface[11]),
-            ],
-            [rows.len(), rows[0].len()],
-            points,
-            vec![Real::one(); rows.len() * rows[0].len()],
-            &mut dec,
-        )?;
+            .filter(|(name, _)| *name == "B_SPLINE_SURFACE_WITH_KNOTS")
+            .map(|(_, surface)| written_chart(&es, surface, &mut dec))
+            .collect::<Result<Vec<_>, _>>()?;
+        charts.sort_by(|a, b| a.1.knots()[0][0].cmp(&b.1.knots()[0][0]));
+        let [(lower, first), (upper, second)] = charts.as_slice() else {
+            panic!("expected two open side charts");
+        };
+        for (chart, u) in [(first, ["0", "2"]), (second, ["2", "4"])] {
+            assert_eq!(chart.domain()[0], [&q(u[0]), &q(u[1])]);
+            assert_eq!(chart.domain()[1], [&q("0"), &q("1")]);
+        }
         let source = built.result_certificate().spline().unwrap().carrier();
-        for parameter in ["1/3", "7/6", "19/7", "11/3"] {
-            let u = Ball::from_rational(&q(parameter), 128);
-            let v = Ball::from_rational(&q("2/3"), 128);
-            assert!(
-                error(
-                    &written.evaluate(&u, &v, &dec)?,
-                    &source.evaluate(&u, &v, &dec)?
-                ) <= report.max_deviation
-            );
+        for (chart, parameters) in [(first, ["1/3", "7/6"]), (second, ["19/7", "11/3"])] {
+            for parameter in parameters {
+                let u = Ball::from_rational(&q(parameter), 128);
+                let v = Ball::from_rational(&q("2/3"), 128);
+                assert!(
+                    error(
+                        &chart.evaluate(&u, &v, &dec)?,
+                        &source.evaluate(&u, &v, &dec)?
+                    ) <= report.max_deviation
+                );
+            }
         }
         // Read the actual serialized knot cover, not the producer's table.
         let v = Ball::from_rational(&q("1/3"), 128);
-        for knot in written.knots()[0].iter().collect::<BTreeSet<_>>() {
-            let derivatives = written.derivatives(&Ball::from_rational(knot, 128), &v, &dec)?;
+        for chart in [first, second] {
+            for knot in chart.knots()[0].iter().collect::<BTreeSet<_>>() {
+                let derivatives = chart.derivatives(&Ball::from_rational(knot, 128), &v, &dec)?;
+                assert!(
+                    derivatives[0]
+                        .iter()
+                        .all(|value| value.hi() - value.lo() < q("1e-30"))
+                );
+            }
+        }
+        // Both joins keep the position and C1 tangent of the closed profile.
+        for (end, start, a, b) in [(first, second, "2", "2"), (second, first, "4", "0")] {
+            let a = Ball::from_rational(&q(a), 128);
+            let b = Ball::from_rational(&q(b), 128);
             assert!(
-                derivatives[0]
-                    .iter()
-                    .all(|value| value.hi() - value.lo() < q("1e-30"))
+                error(&end.evaluate(&a, &v, &dec)?, &start.evaluate(&b, &v, &dec)?) < q("1e-30")
+            );
+            assert!(
+                error(
+                    &end.derivatives(&a, &v, &dec)?[0],
+                    &start.derivatives(&b, &v, &dec)?[0]
+                ) < q("1e-30")
             );
         }
-        let first = Ball::from_rational(&q("0"), 128);
-        let last = Ball::from_rational(&q("4"), 128);
-        assert!(
-            error(
-                &written.evaluate(&first, &v, &dec)?,
-                &written.evaluate(&last, &v, &dec)?
-            ) < q("1e-30")
-        );
-        assert!(
-            error(
-                &written.derivatives(&first, &v, &dec)?[0],
-                &written.derivatives(&last, &v, &dec)?[0]
-            ) < q("1e-30")
-        );
-        for (_, curve) in es
+        let curves: Vec<_> = es
             .iter()
             .filter(|(name, _)| *name == "B_SPLINE_CURVE_WITH_KNOTS")
-        {
-            let controls: Vec<_> = references(curve[2])
-                .into_iter()
-                .map(|id| real_point(cartesian(&es[id - 1].1)))
-                .collect();
-            let row = if controls[0].rational_components()
-                == written.controls()[0].rational_components()
-            {
-                0
+            .map(|(_, curve)| curve)
+            .collect();
+        assert_eq!(curves.len(), 6);
+        assert_eq!(curves.iter().filter(|curve| curve[1] == "3").count(), 4);
+        for curve in curves.iter().filter(|curve| curve[1] == "3") {
+            let ids = references(curve[2]);
+            let (rows, chart, parameters) = if lower.iter().any(|row| row.contains(&ids[1])) {
+                (lower, first, ["0", "5/7", "13/9", "2"])
             } else {
-                1
+                (upper, second, ["2", "13/6", "23/7", "4"])
             };
+            let row = rows[0].iter().position(|id| *id == ids[0]).unwrap();
+            assert!(
+                ids.iter()
+                    .zip(rows.iter())
+                    .all(|(id, pair)| *id == pair[row])
+            );
+            let controls: Vec<_> = ids
+                .iter()
+                .map(|id| real_point(cartesian(&es[*id - 1].1)))
+                .collect();
             let count = controls.len();
             let curve = BSplineCurve::new(
                 curve[1].parse()?,
@@ -157,18 +190,61 @@ fn actual_step_geometry_retains_shared_caps_periodic_c1_and_oriented_solid_incid
                 vec![Real::one(); count],
                 &mut dec,
             )?;
-            for parameter in ["0", "5/7", "13/6", "4"] {
+            for parameter in parameters {
                 let u = Ball::from_rational(&q(parameter), 128);
-                let v = Ball::from_rational(&Rational::from_i64(row), 128);
+                let v = Ball::from_rational(&Rational::from_i64(row as i64), 128);
                 assert!(
-                    error(&curve.evaluate(&u, &dec)?, &written.evaluate(&u, &v, &dec)?)
-                        < q("1e-30")
+                    error(&curve.evaluate(&u, &dec)?, &chart.evaluate(&u, &v, &dec)?) < q("1e-30")
                 );
             }
         }
+        // The two axial edges are both charts' shared end rows.
+        let joins: BTreeSet<_> = curves
+            .iter()
+            .filter(|curve| curve[1] == "1")
+            .map(|curve| references(curve[2]))
+            .collect();
+        assert_eq!(
+            joins,
+            BTreeSet::from([lower[0].to_vec(), upper[0].to_vec()])
+        );
+        assert_eq!(lower.last(), upper.first());
+        assert_eq!(upper.last(), lower.first());
+        let rows: Vec<_> = lower.iter().chain(&upper[1..]).collect();
+        let faces: Vec<_> = es
+            .iter()
+            .filter(|(name, _)| *name == "ADVANCED_FACE")
+            .map(|(_, face)| face)
+            .collect();
+        assert_eq!(faces.len(), 4);
+        assert_eq!(
+            es.iter()
+                .filter(|(name, _)| *name == "VERTEX_POINT")
+                .count(),
+            4
+        );
+        assert_eq!(
+            (report.faces, report.edges, report.vertices),
+            (4, 6, 4),
+            "exported topology, not the native model's"
+        );
+        assert_eq!((report.added_vertices, report.added_edges), (4, 4));
+        let side = built.built().model.faces_of_body(built.built().result);
+        assert_eq!(side.len(), 3);
+        assert_eq!(report.face_map.len(), 4);
+        for (written, face) in report.face_map.iter().zip(&faces) {
+            assert_eq!(face[0], format!("'{}'", written.file_region));
+            assert!(side.contains(&written.face));
+        }
+        let [_, _, a, b] = report.face_map.as_slice() else {
+            panic!("expected two caps and two side patches");
+        };
+        assert_eq!(a.face, b.face);
+        assert_eq!(a.file_domain, Some([[q("0"), q("2")], [q("0"), q("1")]]));
+        assert_eq!(b.file_domain, Some([[q("2"), q("4")], [q("0"), q("1")]]));
         let mut cap_rows = BTreeSet::new();
         let mut incidences = BTreeMap::<usize, (usize, i32)>::new();
-        for (_, face) in es.iter().filter(|(name, _)| *name == "ADVANCED_FACE") {
+        for face in faces {
             let surface = references(face[2])[0];
             if es[surface - 1].0 == "PLANE" {
                 let placement = references(es[surface - 1].1[1])[0];
@@ -213,15 +289,16 @@ fn actual_step_geometry_retains_shared_caps_periodic_c1_and_oriented_solid_incid
                         -1
                     };
                     let edge = &es[edge - 1].1;
-                    assert_eq!(
+                    assert_ne!(
                         references(edge[1]),
                         references(edge[2]),
-                        "complete ring must be a closed topological edge"
+                        "every chart edge is open between distinct vertices"
                     );
                 }
             }
         }
         assert_eq!(cap_rows, BTreeSet::from([0, 1]));
+        assert_eq!(incidences.len(), 6);
         assert!(incidences.values().all(|uses| *uses == (2, 0)));
         Ok::<_, Box<dyn std::error::Error>>(())
     });

@@ -24,11 +24,21 @@ Open curves must have finite edge endpoints. Existing ring handling applies only
 
 `write_spline_prism_step(model, body, &CertifiedSplineStepOptions, dec, out)`
 is the separate exporter for the checked first spline-prism family. It uses
-`SplinePrism::check` before constructing the file and writes a genuine
-degree-(3,1) `B_SPLINE_SURFACE_WITH_KNOTS`, two shared degree-3 boundary curves
-and planar cap faces. Surface rows and edge curves share the same rounded
-controls. Model face names are `face_<handle>`; export-only ring vertices are
-reported separately from the model's vertex-free topology.
+`SplinePrism::check` before constructing the file. It writes planar caps and
+two open degree-(3,1) `B_SPLINE_SURFACE_WITH_KNOTS` side charts on `[0,2]x[0,1]`
+and `[2,4]x[0,1]`, cut at the carrier's retained u=2 knot. The cut slices the
+Bezier rows: nothing is refitted, and the charts reassemble the same spline.
+Each ring is two open degree-3 arcs shared by a cap and a chart. Two degree-1
+axial edges at u=0/4 and u=2 are shared by both charts, with exact line pcurves
+on each. Surface rows and edge curves share the same rounded controls.
+
+The file has 4 faces, 6 edges and 4 vertices; a closed U chart with two rings
+and no seam gave an invalid raw solid, and the model stays 3 faces, 2 vertex-free
+rings and 0 vertices. Cap names are `face_<handle>`. The two side faces are
+`face_<handle>_patch_0` and `_patch_1`. `StepReport.face_map` lists every written
+face with its model face and any exact spline chart, so a consumer never derives
+a file name from a model face. Other writers leave it empty. Export-only vertices
+and edges are reported separately from the model's topology.
 
 The finite decimal construction uses an exact rational integer-direction frame,
 common rounded Hermite endpoints and tangents, and an exact sweep vector.

@@ -288,9 +288,17 @@ and I/O failures retain the existing infrastructure/error rules.
 Display face groups and STEP `file_region` names are `face_<snapshot handle>`.
 Their region records distinguish represented-model chord/file errors from
 composed output-to-original-definition bounds. File accuracy never enlarges a
-kernel tolerance. STEP uses an actual degree-(3,1) B-spline surface and its
+kernel tolerance. STEP uses actual degree-(3,1) B-spline surfaces and their
 shared rounded boundary curves; export-only vertices/edges are reported
 separately from model topology. Unsupported certified export coverage refuses.
+
+The spline prism's one model side is two file faces. `step.regions` has four
+rows: the two caps, then two rows with the same `face` and `model_region`, named
+`face_<handle>_patch_0` and `_patch_1`. Those two carry an exact `file_domain`,
+`[["0","2"],["0","1"]]` and `[["2","4"],["0","1"]]`, whose union covers the
+side. `step.added_vertices` and `step.added_edges` are both 4. The patches are
+export topology only: `result` stays 3 faces, 2 rings and 0 vertices, and a patch
+has no native name or geometric authority.
 
 Properties and field queries concern the retained **original definition**, not
 the fitted carrier. Properties retain outward decimal enclosures and must meet

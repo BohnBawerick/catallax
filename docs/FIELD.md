@@ -164,6 +164,23 @@ one split piece never moves another piece merely because it shares an alias.
 Convex extracted skins retain the direct halfspace path, including non-simple
 vertices that need no moved-fan construction.
 
+A nonconvex planar skin goes through the arrangement in both evaluators. Each
+vertex there is the direct intersection of three plane carriers, so a later
+predicate sees its exact zeros at any angle. A vertex is not proved again on the
+carriers that define it. A further carrier through a vertex is still proved.
+
+Distance to such a cell settles no tie. Each face and edge gives bounds on its
+squared distance, and the true minimum lies between the minimum lower and upper
+bounds. A foot strictly inside a tile gives its carrier's distance, and a foot
+strictly outside every tile leaves the face to its physical edges. A foot that an
+enclosure cannot place has its carrier's distance below and the distance to an
+unresolved tile edge above, because that edge lies in the face and these two meet
+where the foot lies on it. A point at equal distance from two walls, or with a foot
+on a trim, therefore proves no exact zero. The location stays exact and the value
+stays a rigorous enclosure. These facts keep a concave L bracket within the 20M
+application allowance at ordinary draft angles. They change no allowance or work
+charge.
+
 A `near` filter also resolves on a plane-capped axial cylinder whose caps are
 perpendicular to its axis. A cap is the closed disc and the wall is the closed
 cylinder between the two cap planes, so a point past the rim is nearest the rim,

@@ -3,7 +3,7 @@
 use crate::{Face, Instruction, Location, Plan, geometry, metric::PRECISION};
 use catallax_features::draft::{
     DraftDefinition,
-    arrangement::Polyhedron,
+    arrangement::{Foot, Polyhedron},
     bored::{self, Bore},
     bossed::{Boss, BossedCell},
     capped::CappedCylinder,
@@ -134,6 +134,60 @@ fn minimum(best: &mut Option<Real>, candidate: Real, dec: &mut Decider) -> Resul
         *best = Some(candidate);
     }
     Ok(())
+}
+/// Bounds on a nearest squared distance. Each candidate's own bounds hold whichever
+/// candidate is nearest, so the minimum settles no tie and proves no exact zero.
+#[derive(Default)]
+struct Nearest {
+    low: Option<Rational>,
+    high: Option<Rational>,
+}
+impl Nearest {
+    fn add(&mut self, low: &Real, high: Option<&Real>, dec: &mut Decider) -> Result<(), Refusal> {
+        let ball = geometry::enclose(low, PRECISION, dec)?;
+        let high = match high {
+            Some(high) => geometry::enclose(high, PRECISION, dec)?.hi(),
+            None => ball.hi(),
+        };
+        let low = ball.lo();
+        self.low = Some(self.low.take().map_or(low.clone(), |best| best.min(low)));
+        self.high = Some(self.high.take().map_or(high.clone(), |best| best.min(high)));
+        Ok(())
+    }
+    fn distance(self) -> Ball {
+        let [low, high] = [self.low, self.high]
+            .map(|bound| Ball::from_rational(&bound.expect("nonempty boundary"), PRECISION));
+        low.hull(&high)
+            .sqrt()
+            .expect("a squared distance is not negative")
+    }
+}
+/// The squared distance to a segment, with a separate upper bound if unresolved.
+/// A foot at an end has its line's distance below and that end's distance above,
+/// and these two meet at the end.
+fn segment_bounds(
+    p: &Point3,
+    a: &Point3,
+    b: &Point3,
+    dec: &mut Decider,
+) -> Result<(Real, Option<Real>), Refusal> {
+    let direction = b.minus(a);
+    let t = p.minus(a).dot(&direction) / direction.norm_squared();
+    let along = geometry::enclose(&t, PRECISION, dec)?;
+    let (low, high) = (along.lo(), along.hi());
+    let (start, end) = (p.minus(a).norm_squared(), p.minus(b).norm_squared());
+    let line = p.minus(&a.plus(&direction.scaled(&t))).norm_squared();
+    Ok(if high < Rational::zero() {
+        (start, None)
+    } else if low > Rational::one() {
+        (end, None)
+    } else if low <= Rational::zero() {
+        (line, Some(start))
+    } else if high >= Rational::one() {
+        (line, Some(end))
+    } else {
+        (line, None)
+    })
 }
 fn clamp(value: Real, dec: &mut Decider) -> Result<Real, Refusal> {
     Ok(if geometry::sign(&value, dec)? == Sign::Negative {
@@ -618,6 +672,10 @@ impl Region {
                 }
             }
             Cell::Polyhedral(c) => {
+                // The nearest point of a face is the carrier's foot, or on one of
+                // its physical edges. Every candidate below keeps that minimum
+                // between its bounds, however a point ties or meets a trim.
+                let mut nearest = Nearest::default();
                 for face in &c.faces {
                     let plane = &c.planes[face.support];
                     let signed = p.minus(&plane.origin).dot(&plane.normal);
@@ -626,24 +684,35 @@ impl Region {
                             .normal
                             .scaled(&(-&signed / plane.normal.norm_squared())),
                     );
-                    if c.on_face(face, &projected, None, dec)? {
-                        minimum(
-                            &mut best,
-                            signed.square() / plane.normal.norm_squared(),
-                            dec,
-                        )?;
+                    let carrier = signed.square() / plane.normal.norm_squared();
+                    match c.foot(face, &projected, PRECISION, dec)? {
+                        Foot::Inside => nearest.add(&carrier, None, dec)?,
+                        Foot::Outside => (),
+                        // The carrier is no farther than the face, and any point
+                        // of a tile edge is no nearer than the face.
+                        Foot::Near(edges) => {
+                            for (a, b) in edges {
+                                let (exact, high) =
+                                    segment_bounds(&p, &c.vertices[a], &c.vertices[b], dec)?;
+                                nearest.add(
+                                    &carrier,
+                                    Some(high.as_ref().unwrap_or(&exact)),
+                                    dec,
+                                )?;
+                            }
+                        }
                     }
                 }
                 for (a, b) in &self.edges {
-                    let a = &c.vertices[*a];
-                    let direction = c.vertices[*b].minus(a);
-                    let t = clamp(p.minus(a).dot(&direction) / direction.norm_squared(), dec)?;
-                    minimum(
-                        &mut best,
-                        p.minus(&a.plus(&direction.scaled(&t))).norm_squared(),
-                        dec,
-                    )?;
+                    let (low, high) = segment_bounds(&p, &c.vertices[*a], &c.vertices[*b], dec)?;
+                    nearest.add(&low, high.as_ref(), dec)?;
                 }
+                let distance = nearest.distance();
+                return Ok(if location == Location::Inside {
+                    -distance
+                } else {
+                    distance
+                });
             }
             Cell::Round(cell) => {
                 let d = p.minus(&cell.origin);

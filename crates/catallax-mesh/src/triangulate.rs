@@ -265,6 +265,83 @@ impl FaceBuilder<'_> {
         Ok(protected)
     }
 
+    /// Whether a `du` by `dv` chart cell of a cylinder already meets the edge limit,
+    /// or leaves any excess to a single split of its diagonal.
+    ///
+    /// A cylinder chart needs fine columns for its chord but no rows, and its turns
+    /// and millimetres are not one metric. A long edge left to `finish` therefore
+    /// splits off the columns, and Delaunay refinement then spreads toward square
+    /// chart cells: near a million vertices on a strip 10 mm long. Seeding rows keeps
+    /// the lattice instead. This estimate only sizes that seed grid; `finish` still
+    /// measures every returned edge.
+    fn cylinder_cell_fits(&self, du: f64, dv: f64) -> bool {
+        let Some(limit) = self.edge_limit() else {
+            return true;
+        };
+        let around = self.hessian[0].to_f64_nearest() * du / std::f64::consts::TAU;
+        dv <= limit * 0.5 || libm::sqrt(around * around + dv * dv) <= limit
+    }
+
+    fn edge_limit(&self) -> Option<f64> {
+        let limit = self.options.max_edge_length.as_ref()?;
+        matches!(
+            self.chart.surface,
+            Surface::Cylinder(_) | Surface::EllipticCylinder(_)
+        )
+        .then(|| limit.to_f64_nearest())
+    }
+
+    /// The shared columns a cylinder's interior rows need, and their widest gap
+    /// inside the trim. A rail sampled for a tighter neighbouring surface must not
+    /// repeat its samples on every row, so one period keeps only the columns its
+    /// own chord, angle and length ask for. Each kept column is a rail sample, and
+    /// the periodic copies stay bit-identical shifts.
+    fn row_columns(
+        &self,
+        columns: &[f64],
+        widest_gap: f64,
+        angular_step: Option<&Rational>,
+    ) -> (Vec<f64>, f64) {
+        let tolerance = self.options.chord_tolerance.to_f64_nearest();
+        let curvature = self.hessian[0].to_f64_nearest();
+        let chord = libm::sqrt(4.0 * tolerance / curvature);
+        let angle = angular_step.map_or(f64::INFINITY, |step| {
+            step.to_f64_nearest() * 0.5 / self.chart.normal_scale.to_f64_nearest()
+        });
+        let length = self.edge_limit().map_or(f64::INFINITY, |limit| {
+            limit * 0.75 * std::f64::consts::TAU / curvature
+        });
+        let target = chord.min(angle).min(length);
+        let period: Vec<_> = columns
+            .iter()
+            .copied()
+            .filter(|u| (0.0..1.0).contains(u))
+            .collect();
+        let mut kept = Vec::<f64>::new();
+        let mut du = 0.0_f64;
+        for (i, &u) in period.iter().enumerate() {
+            let next = period.get(i + 1).copied();
+            // A gap wider than any boundary segment lies outside the trim.
+            let after_empty = i > 0 && u - period[i - 1] > widest_gap;
+            let before_empty = next.is_some_and(|next| next - u > widest_gap);
+            let needed = next
+                .zip(kept.last())
+                .is_some_and(|(next, last)| next - last > target);
+            if i == 0 || next.is_none() || after_empty || before_empty || needed {
+                if let Some(last) = kept.last().filter(|_| !after_empty) {
+                    du = du.max((u - last).next_up());
+                }
+                kept.push(u);
+            }
+        }
+        let mut lifted: Vec<_> = self
+            .shifts()
+            .flat_map(|shift| kept.iter().map(move |u| u + shift[0]).collect::<Vec<_>>())
+            .collect();
+        lifted.sort_unstable_by(f64::total_cmp);
+        (lifted, du)
+    }
+
     fn grid(&mut self) -> Result<(), Refusal> {
         let widths = self.bounds.map(|b| b[1] - b[0]);
         let bounded_torus =
@@ -278,8 +355,21 @@ impl FaceBuilder<'_> {
                     .map(|pi| limit / &pi.hi().mul_pow2(1))
             })
             .transpose()?;
+        // No column gap inside a trim is wider than its widest boundary segment.
+        let widest_segment = self.edge_limit().map(|_| {
+            self.cdt
+                .undirected_edges()
+                .filter(|edge| edge.is_constraint_edge())
+                .map(|edge| {
+                    let [a, b] = edge.positions();
+                    (a.x - b.x).abs()
+                })
+                .fold(0.0_f64, f64::max)
+        });
+        let edge_rows = widest_segment.is_some_and(|du| !self.cylinder_cell_fits(du, widths[1]));
         let rail_grid = matches!(self.chart.surface, Surface::Cone(_))
-            || (bounded_torus && angular_step.is_some());
+            || (bounded_torus && angular_step.is_some())
+            || edge_rows;
         let mut rail_u: Vec<_> = if rail_grid {
             self.cdt
                 .vertices()
@@ -292,9 +382,15 @@ impl FaceBuilder<'_> {
         // Keep distinct shared samples, but not nearly coincident interior
         // columns caused by rounding one longitude to adjacent chart quanta.
         rail_u.dedup_by(|a, b| (*a - *b).abs() <= 16.0 / 281_474_976_710_656.0);
-        let rail_du = rail_u
+        // A partial face's rows must not count the empty arc beyond its trim.
+        let widest_gap = widest_segment
+            .filter(|_| edge_rows)
+            .unwrap_or(f64::INFINITY);
+        let mut rail_du = rail_u
             .windows(2)
-            .map(|pair| (pair[1] - pair[0]).next_up())
+            .map(|pair| pair[1] - pair[0])
+            .filter(|gap| *gap <= widest_gap)
+            .map(f64::next_up)
             .fold(0.0_f64, f64::max);
         // Shared rails already resolve longitude more finely than a free grid.
         // Use their actual maximum gap, then refine only the other parameter.
@@ -308,6 +404,10 @@ impl FaceBuilder<'_> {
                 .is_none_or(|step| chart::q(rail_du) <= step.mul_pow2(-1));
         if !align_rails {
             rail_u.clear();
+        }
+        let edge_rows = edge_rows && align_rails;
+        if edge_rows {
+            (rail_u, rail_du) = self.row_columns(&rail_u, widest_gap, angular_step.as_ref());
         }
         let mut counts = [1usize; 2];
         for (i, count) in counts.iter_mut().enumerate() {
@@ -349,7 +449,8 @@ impl FaceBuilder<'_> {
             } else {
                 (true, 0)
             };
-            if chord_reached && angular_reached {
+            let edge_reached = !edge_rows || self.cylinder_cell_fits(du, dv);
+            if chord_reached && angular_reached && edge_reached {
                 break;
             }
             let dimension = if chord_reached {

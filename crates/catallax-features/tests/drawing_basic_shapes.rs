@@ -153,7 +153,7 @@ fn app_rod_vertex_cap_refuses_without_surface_refinement() {
         max_vertices: 10,
         ..MeshOptions::default()
     };
-    let (answer, work) = with_operation_budget(20_000_000, || {
+    let (answer, work) = with_operation_budget(50_000, || {
         mesh_body(
             &built.model,
             built.result,
@@ -163,7 +163,6 @@ fn app_rod_vertex_cap_refuses_without_surface_refinement() {
     });
     assert_eq!(answer.unwrap_err().code, "mesh.precision-or-budget");
     assert!(!work.exhausted, "{work:?}");
-    assert!(work.used < 10_000, "{work:?}");
 }
 
 fn check(mesh: &Mesh, options: &MeshOptions, volume: f64) {

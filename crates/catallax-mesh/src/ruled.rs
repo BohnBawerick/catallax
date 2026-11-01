@@ -209,7 +209,10 @@ pub(crate) fn build(
             let b = align(ring[(i + 1) % ring.len()].uv, a, chart.periodic);
             let delta = b[0] - a[0];
             if delta == 0.0 {
-                if !ellipse || !matches!(chart.surface, Surface::Cylinder(_)) || a[1] == b[1] {
+                if !ellipse
+                    || !matches!(chart.surface, Surface::Cylinder(_))
+                    || a[1].to_bits() == b[1].to_bits()
+                {
                     return Ok(false);
                 }
                 continue;
@@ -244,22 +247,29 @@ pub(crate) fn build(
         rings.swap(0, 1);
     }
     let [mut lower, mut upper] = rings;
-    if (0..lower.len()).any(|i| lower[i].uv[0] == lower[(i + 1) % lower.len()].uv[0]) {
+    if (0..lower.len())
+        .any(|i| lower[i].uv[0].to_bits() == lower[(i + 1) % lower.len()].uv[0].to_bits())
+    {
         return Ok(false);
     }
     let jumps: Vec<_> = (0..upper.len())
-        .filter(|&i| upper[i].uv[0] == upper[(i + 1) % upper.len()].uv[0])
-        .map(|i| upper[i].uv[0])
+        .filter(|&i| upper[i].uv[0].to_bits() == upper[(i + 1) % upper.len()].uv[0].to_bits())
+        .map(|i| upper[i].uv[0].to_bits())
         .collect();
     let stepped = !jumps.is_empty();
     if stepped {
         // Put the artificial seam away from a vertical trim. The lower circle
         // is disjoint from the stepped end rail, so this is one simple polygon.
         let v = lower[0].uv[1];
-        if lower.iter().any(|p| p.uv[1] != v) || upper.iter().any(|p| p.uv[1] <= v) {
+        if lower.iter().any(|p| p.uv[1].to_bits() != v.to_bits())
+            || upper.iter().any(|p| p.uv[1] <= v)
+        {
             return Ok(false);
         }
-        let Some(first) = lower.iter().position(|p| !jumps.contains(&p.uv[0])) else {
+        let Some(first) = lower
+            .iter()
+            .position(|p| !jumps.contains(&p.uv[0].to_bits()))
+        else {
             return Ok(false);
         };
         lower.rotate_left(first);
@@ -398,7 +408,7 @@ fn sampled_stitch(
     let stepped = lower
         .windows(2)
         .chain(upper.windows(2))
-        .any(|p| p[0].uv[0] == p[1].uv[0]);
+        .any(|p| p[0].uv[0].to_bits() == p[1].uv[0].to_bits());
     while a + 1 < lower.len() || b + 1 < upper.len() {
         dec.check_deadline()?;
         let mut take_lower = b + 1 == upper.len()

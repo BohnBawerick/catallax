@@ -47,7 +47,7 @@ The argument for free software is the page's own: code is not scarce, so a publi
 
 Open decisions:
 
-- The page says SolidDraft runs natively on Catallax, while `evidence.json` records the bracket drawing as coming from the SMLib backend and "not evidence of Catallax integration". The owner chose to keep the claim. Whether the provenance file should stay linked beside it is undecided. [inferred]
+- `evidence.json` records the bracket drawing as coming from the SMLib backend and "not evidence of Catallax integration". The bare-bones page labels it as SolidDraft CLI output and does not claim that this drawing proves Catallax integration. The provenance file remains in the published directory but is not linked beside the drawing.
 - No desktop release date for SolidDraft is on record.
 
 ## Brand Commitments

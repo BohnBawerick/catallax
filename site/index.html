@@ -19,465 +19,291 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/">
 <link rel="icon" href="brand/mark.svg" type="image/svg+xml">
-<link rel="preload" href="brand/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="brand/fonts/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="brand/fonts/instrument-serif-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>
 <script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="brand/fonts.css">
 <link rel="stylesheet" href="brand/tokens.css">
-<link rel="stylesheet" href="css/site.css">
+<link rel="stylesheet" href="bare.css">
 </head>
 <body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="s-profile" viewBox="0 0 24 24"><path d="M3.5 17.5a8.5 8.5 0 0 1 17 0Z"/></symbol>
+  <symbol id="s-perp" viewBox="0 0 24 24"><path d="M12 4v15M4 19h16"/></symbol>
+  <symbol id="s-cyl" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5.5"/><path d="M3 20 8.5 4M15.5 20 21 4"/></symbol>
+  <symbol id="s-diameter" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M4 20 20 4"/></symbol>
+  <symbol id="s-cli" viewBox="0 0 24 24"><path d="M4 6l7 6-7 6M13 19h8"/></symbol>
+  <symbol id="s-tooth" viewBox="0 0 24 24"><path d="M2 19h6l3-13h3l3 13h6"/></symbol>
+  <symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+  <symbol id="s-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/><path d="M12 2.5v3.5M12 18v3.5M2.5 12H6M18 12h3.5M5.3 5.3l2.5 2.5M16.2 16.2l2.5 2.5M18.7 5.3l-2.5 2.5M7.8 16.2l-2.5 2.5"/></symbol>
+  <symbol id="s-torus" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="10" ry="6.5"/><path d="M7.5 11.5c2.5-2.5 6.5-2.5 9 0M8.8 10.4c2 2 4.4 2 6.4 0"/></symbol>
+  <symbol id="s-cube" viewBox="0 0 24 24"><path d="M12 2.5 20.5 7.3v9.4L12 21.5l-8.5-4.800V7.300Z"/><path d="M3.500 7.300 12 12l8.500-4.700M12 12v9.500"/></symbol>
+  <symbol id="s-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+  <symbol id="s-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7Z"/></symbol>
+  <symbol id="s-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></symbol>
+  <symbol id="s-check" viewBox="0 0 24 24"><path d="M4 13l5 6L20 5"/></symbol>
+
+  <symbol id="v-copy" viewBox="0 0 96 96">
+    <path d="M38 16 57 27v22L38 60 19 49V27Z M19 27l19 11 19-11M38 38v22"/>
+    <path class="hot dash" d="M58 36 77 47v22L58 80 39 69V47Z M39 47l19 11 19-11M58 58v22"/>
+  </symbol>
+  <symbol id="v-change" viewBox="0 0 96 96">
+    <path d="M44 28 59.800 37.100 66.500 47.500V67L44 80 21.500 67V41Z M21.500 41 44 54l15.800-9M44 54v26"/>
+    <path class="hot" d="M59.800 37.100 66.500 47.500 59.800 45Z M72 36 86 20M79 19.500 86.500 19.800 86 27.500"/>
+  </symbol>
+  <symbol id="v-sell" viewBox="0 0 96 96">
+    <path d="M40 32 60.800 44v24L40 80 19.200 68V44Z M19.200 44 40 56l20.800-12M40 56v24"/>
+    <path class="hot" d="M54 42 66 31"/><circle class="hot" cx="74" cy="23" r="13"/>
+    <path class="hot" d="M78 18.500c-1.200-1.600-6.600-2-7.500.5-1 3 7.800 3.200 7.400 6.400-.4 2.700-6.800 2.600-8.200.2M74 14.800V31"/>
+  </symbol>
+
+  <symbol id="o-proven" viewBox="0 0 96 96"><rect x="17" y="17" width="62" height="62"/><path class="good" d="M31 50l13 13 22-29"/></symbol>
+  <symbol id="o-coincident" viewBox="0 0 96 96"><path class="thin" d="M48 8v80M8 48h80"/><circle cx="48" cy="48" r="29"/><circle class="cool dash" cx="48" cy="48" r="29"/></symbol>
+  <symbol id="o-bounded" viewBox="0 0 96 96"><path class="thin dash" d="M8 32h80M8 64h80"/><path d="M8 48c10-14 18-14 28 0s18 14 28 0 16-12 24-5"/></symbol>
+  <symbol id="o-refused" viewBox="0 0 96 96"><circle cx="48" cy="48" r="31"/><path class="hot" d="M26 26l44 44"/></symbol>
+</svg>
+
 <a class="skip" href="#main">Skip to content</a>
 <div class="progress" aria-hidden="true"></div>
-<div class="cursor" aria-hidden="true"><span class="cursor__x"></span><span class="cursor__y"></span><span class="cursor__label">0000 · 0000</span></div>
+<div class="frame" aria-hidden="true"></div>
 
-<header class="nav">
-  <a class="nav__brand" href="#top" aria-label="Catallax, home">
-    <img src="brand/mark.svg" alt="" width="28" height="28">
-    <span>catallax</span>
-  </a>
-  <button class="nav__toggle js-only" type="button" aria-expanded="false" aria-controls="nav-links">Menu</button>
-  <nav class="nav__links" id="nav-links" aria-label="Sections">
-    <a href="#why">Why free</a>
-    <a href="#kernel">Kernel</a>
-    <a href="#work">Recipe</a>
-    <a href="#soliddraft">SolidDraft</a>
-    <a href="#bench">Benchmarks</a>
-    <a href="#support">Support</a>
-    <a href="#contact">Contact</a>
-  </nav>
-  <p class="nav__status"><a href="https://ko-fi.com/pedropaiva56920">donate on ko-fi</a></p>
+<header class="bar">
+  <a class="bar__brand" href="#top" aria-label="Catallax, home"><img src="brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="why.html">Why</a>
+  <a class="bar__link" href="thanks.html">Thanks</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+  <a class="bar__link bar__link--hot" href="#support">Support</a>
 </header>
+
+<nav class="rail" aria-label="Sections">
+  <a href="#top"><span>Exact</span></a>
+  <a href="#why"><span>Free</span></a>
+  <a href="#recipe"><span>Recipe</span></a>
+  <a href="#kernel"><span>Kernel</span></a>
+  <a href="#assembly"><span>Solid</span></a>
+  <a href="#outcomes"><span>Proof</span></a>
+  <a href="#bench"><span>Benchmarks</span></a>
+  <a href="#soliddraft"><span>SolidDraft</span></a>
+  <a href="#support"><span>Support</span></a>
+  <a href="#contact"><span>Contact</span></a>
+</nav>
+
+<button class="motion js-only" type="button" aria-label="Pause motion"><svg class="sym"><use href="#s-pause"/></svg></button>
 
 <main id="main">
 
-<!-- HERO ---------------------------------------------------------------->
-<section class="hero" id="top">
-  <canvas class="hero__canvas" aria-label="Rotating wireframe of a spur gear. Drag to orbit." role="img"></canvas>
-  <div class="hero__frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+<section class="sheet hero" id="top">
+  <canvas class="hero__canvas" role="img" aria-label="Rotating wireframe of a spur gear. Illustration, drag to orbit."></canvas>
+  <svg class="leaders js-only" aria-hidden="true"><line/><line/><line/><circle r="2.4"/><circle r="2.4"/><circle r="2.4"/></svg>
+  <div class="balloons js-only" aria-hidden="true">
+    <span class="balloon"><small>18×</small><svg class="sym"><use href="#s-tooth"/></svg></span>
+    <span class="balloon"><svg class="sym"><use href="#s-diameter"/></svg><b>0.40</b></span>
+    <span class="balloon"><small>6×</small><svg class="sym"><use href="#s-diameter"/></svg><b>0.22</b></span>
+  </div>
 
   <div class="hero__copy">
-    <h1 class="hero__title">
-      <span class="line"><span>Exact by definition.</span></span>
-      <span class="line"><span>Approximate</span></span>
-      <span class="line"><span>on <em>purpose</em>.</span></span>
+    <h1>
+      <span class="ln"><span>Exact by definition.</span></span>
+      <span class="ln"><span>Approximate</span></span>
+      <span class="ln"><span>on <em>purpose</em>.</span></span>
     </h1>
-    <p class="hero__lede"><strong>Geometry should not require a vendor’s permission.</strong> Catallax is a memory-safe Rust geometry kernel that bridges exact B-rep solids and implicit signed distance fields. Free and open-source forever. SolidDraft turns that foundation into a complete mechanical CAD system.</p>
-    <div class="hero__ctas">
-      <a class="btn btn--solid magnetic" href="#support"><span>Support the project</span></a>
-      <a class="btn magnetic" href="#why"><span>Why it is free</span></a>
+    <div class="hero__foot">
+      <div class="fcf" role="img" aria-label="Feature control frame: profile tolerance zero to datum definition">
+        <span><svg class="sym"><use href="#s-profile"/></svg></span><span>0</span><span>DEF</span>
+      </div>
+      <p class="hero__sub">A memory-safe geometry kernel.<br>Free forever.</p>
     </div>
-    <p class="label hero__byline"><span>Catallax + SolidDraft · by Pedro De Paiva</span><span>Perth, AU</span></p>
+    <div class="ctas">
+      <a class="btn btn--hot" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener"><span>Read the code</span><svg class="sym"><use href="#s-arrow"/></svg></a>
+      <a class="btn" href="#support"><span>Support</span></a>
+    </div>
   </div>
 
-  <div class="hud hud--tr label js-only" aria-hidden="true">
-    <span>View / perspective 41°</span>
-    <span>yaw <b data-hud="yaw">000.0</b>° · pitch <b data-hud="pitch">00.0</b>°</span>
-    <span><b data-hud="v">0</b> verts · <b data-hud="e">0</b> edges · <b data-hud="fps">60</b> fps</span>
+  <div class="picker js-only" role="group" aria-label="Choose a solid">
+    <button class="shape is-on" type="button" data-shape="gear" aria-pressed="true" aria-label="Gear"><svg class="sym"><use href="#s-gear"/></svg></button>
+    <button class="shape" type="button" data-shape="torus" aria-pressed="false" aria-label="Donut"><svg class="sym"><use href="#s-torus"/></svg></button>
+    <button class="shape" type="button" data-shape="lattice" aria-pressed="false" aria-label="Cube"><svg class="sym"><use href="#s-cube"/></svg></button>
   </div>
-  <pre class="hud hud--br label js-only" aria-hidden="true" data-hud="matrix"></pre>
-  <div class="hud hud--picker js-only">
-    <div class="shapes" role="group" aria-label="Choose a solid">
-      <button class="shape is-active" type="button" data-shape="gear" aria-pressed="true">Gear</button>
-      <button class="shape" type="button" data-shape="torus" aria-pressed="false">Donut</button>
-      <button class="shape" type="button" data-shape="lattice" aria-pressed="false">Cube</button>
-    </div>
-    <p class="label hint">Drag to orbit · hand-built wireframe illustration</p>
-    <button class="motion" type="button"><span data-motion-verb>Pause</span><span class="motion__more"> motion</span></button>
+  <p class="illus">Illustration</p>
+</section>
+
+<section class="sheet why" id="why">
+  <h2>
+    <span class="ln"><span>Geometry should not</span></span>
+    <span class="ln"><span>require a vendor's</span></span>
+    <span class="ln"><span><em class="redline">permission</em>.</span></span>
+  </h2>
+  <ul class="verbs">
+    <li><svg class="art"><use href="#v-copy"/></svg><span>Copy it.</span></li>
+    <li><svg class="art"><use href="#v-change"/></svg><span>Change it.</span></li>
+    <li><svg class="art"><use href="#v-sell"/></svg><span>Sell it.</span></li>
+  </ul>
+  <div class="why__refs">
+    <a class="plate" href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener"><small>Licence</small><b>MIT</b></a>
   </div>
 </section>
 
-<!-- WHY THIS IS FREE ---------------------------------------------------->
-<section class="why section" id="why">
-  <p class="label section__label">Why this is free</p>
-  <h2 class="display" data-lines>Geometry should not require a vendor's <em>permission</em>.</h2>
-  <div class="why__grid">
-    <div class="why__copy">
-      <p class="why__lede">Nearly every commercial CAD program runs on one of a handful of closed geometry kernels. Their owners licence them, meter them and can withdraw them. The maths inside is a century old and the algorithms are published. What is closed is the code, and the code is kept closed by law.</p>
-      <p>Property exists because things are scarce. If you take my lathe, I no longer have a lathe. If you copy this kernel, we still have it, and now you have one too. Nobody is made poorer for it, quite the opposite. Programs are not scarce, so the "intellectual property" over them has to be manufactured by the state: a legal privilege that forbids you from arranging your own bits in a pattern someone else arranged first. Patents are nothing more than grants of exclusive monopoly privilege by the State, as Murray Rothbard wrote in <a href="https://mises.org/online-book/man-economy-and-state-power-and-market/10-monopoly-and-competition/7-patents-and-copyrights">Man, Economy, and State (Ch. 10, Sec. 7)</a>.</p>
-      <p>A public kernel lets a solo engineer or a new CAD product enter the market without buying permission from an incumbent cartel. Copy this code. Change it. Sell a product built on it.</p>
-      <p>Catallax bridges the divide between explicit boundary representations (B-rep) and implicit signed distance fields (SDF). Legacy kernels treat these as separate worlds; we are engineering them into a single, unified foundation. Proving that this hybrid architecture can scale to the demands of industrial CAD is the exact problem Catallax exists to solve.</p>
-      <p class="why__plain">Catallax is released under the permissive MIT License, explicitly granting you the irrevocable right to use, copy, modify, publish, and sell it without restriction.</p>
-      <a class="btn magnetic" href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE"><span>Read the MIT licence</span></a>
-    </div>
-    <div class="why__terms">
-      <p class="label">A closed kernel · a free kernel</p>
-      <p class="direction__note">An exact B-rep and a signed distance field evaluate a single, unified feature tree. <em>One definition is the truth.</em></p>
-      <p class="direction__note"><span class="status-chip">Vision · in design</span> Parametric parts, drawings, and assemblies meet implicit lattices, field-driven wall thickness, and simulation-led geometry. SolidDraft unites both worlds in a single interface, powered exclusively by Catallax.</p>
-      <p class="direction__note">In design: one modelling tolerance, separate from display and export accuracy. Every topological decision is recorded once: local tolerances remain explicit, and full topology is validated before publishing. Because downstream operations always evaluate against the primary definition, tolerance errors never accumulate.</p>
-      <ul class="why__list">
-        <li><b>Proprietary kernels rent you temporary access and lock your files behind vendor walls. Catallax is permanently open under the MIT License. Zero royalties, zero lock-in.</b></li>
-        <li><b>Surface intersections, NURBS, and distance fields are foundational mathematics. The theory is public record; the execution belongs in the open.</b></li>
-        <li><b>Written from scratch in memory-safe Rust. Fork it, audit every invariant, embed it in your own stack, or ship it commercially.</b></li>
-        <li><b>You shouldn't need a six-figure kernel seat to build a new CAD tool. Take this foundation, build your own product, and compete with us.</b></li>
-      </ul>
-    </div>
+<section class="sheet recipe" id="recipe">
+  <div class="twin">
+    <canvas class="twin__field" role="img" aria-label="The same gear as a signed distance field, with distance contours spreading across a plane. Illustration."></canvas>
+    <canvas class="twin__wire" role="img" aria-label="The same gear as exact boundary edges. Illustration."></canvas>
+    <div class="twin__line" aria-hidden="true"></div>
+    <div class="twin__handle js-only" role="slider" tabindex="0" aria-label="Wipe between B-rep and field" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><svg class="sym"><use href="#s-arrow"/></svg><svg class="sym"><use href="#s-arrow"/></svg></div>
   </div>
+  <h2>
+    <span class="ln"><span>One recipe.</span></span>
+    <span class="ln"><span>Two <em>representations</em>.</span></span>
+  </h2>
+  <p class="twin__tag twin__tag--l">B-rep</p>
+  <p class="twin__tag twin__tag--r">Field</p>
+  <p class="illus">Illustration</p>
 </section>
 
-<!-- WHAT CATALLAX IS ------------------------------------------------------>
-<section class="manifesto section" id="about">
-  <h2 class="label section__label">What Catallax is</h2>
-  <p class="manifesto__text">A geometry kernel in safe Rust, built for SolidDraft CAD. Two representations, one recipe: the signed distance field verifies approximated B-rep geometry directly against its true definition. If a step is B-rep only, the field adopts that state, checks all subsequent steps independently, and reports coverage. Field-only features stay pure field. <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">Read the build order</a>.</p>
-  <div class="manifesto__sig">
-    <img src="brand/mark.svg" alt="" width="40" height="40">
-    <p><strong>Pedro De Paiva · Perth</strong><br>Mechanical engineer, 8+ years. Founder of <a href="https://zigrawbohnbawerick.org/">Zigrawbohnbawerick Pty Ltd</a>.<br><a href="https://pedro.zigrawbohnbawerick.org/">The engineer behind the kernel</a></p>
-  </div>
-</section>
-
-<!-- KERNEL ANATOMY (pinned) ---------------------------------------------->
 <section class="anatomy" id="kernel">
-  <div class="anatomy__inner">
-    <div class="anatomy__head">
-      <h2 class="label section__label">Kernel anatomy</h2>
-      <div class="anatomy__meta">
-        <button class="motion js-only" type="button"><span data-motion-verb>Pause</span><span class="motion__more"> motion</span></button>
-        <p class="anatomy__count label"><b data-step-num>01</b> / 04</p>
-      </div>
-    </div>
-    <div class="anatomy__body">
-      <div class="anatomy__steps">
-        <article class="step is-active" data-step="0">
-          <p class="label step__tag">Layer 01 · Topology</p>
-          <h3 class="step__title">B-rep</h3>
-          <p class="step__text"><strong>From an idea to the machine shop.</strong></p>
-          <ul class="step__specs label"><li>public · MIT</li><li>STEP export</li></ul>
-        </article>
-        <article class="step" data-step="1">
-          <p class="label step__tag">Layer 02 · Geometry</p>
-          <h3 class="step__title">Exact definitions</h3>
-          <p class="step__text"><strong>Geometry stored by definition.</strong></p>
-          <ul class="step__specs label"><li>proof-carrying geometry</li></ul>
-        </article>
-        <article class="step" data-step="2">
-          <p class="label step__tag">Layer 03 · Operations</p>
-          <h3 class="step__title">Booleans</h3>
-          <p class="step__text"><strong>Cut. Unite. Intersect. Never quietly guess.</strong></p>
-          <ul class="step__specs label"><li>Exact intersections</li><li>Explicit tolerance</li></ul>
-        </article>
-        <article class="step" data-step="3">
-          <p class="label step__tag">Layer 04 · Field</p>
-          <h3 class="step__title">Same recipe</h3>
-          <p class="step__text"><strong>Exact solids. Continuous fields. One unified feature tree.</strong></p>
-          <ul class="step__specs label"><li>bounded queries</li><li>sampled comparison</li></ul>
-        </article>
-      </div>
-      <div class="anatomy__stage">
-        <canvas class="anatomy__canvas" role="img" aria-label="Illustrative wireframe for the current kernel layer, not kernel output"></canvas>
-        <div class="anatomy__rail" aria-hidden="true"><i></i></div>
-        <ol class="anatomy__index label" aria-hidden="true"><li>B-rep</li><li>Definitions</li><li>Booleans</li><li>Field</li></ol>
-      </div>
-    </div>
-  </div>
+  <div class="anatomy__stage"><canvas class="anatomy__canvas" role="img" aria-label="Illustrative wireframe for the current kernel layer, not kernel output"></canvas></div>
+  <ol class="steps">
+    <li class="step is-on"><h2>B-rep</h2><p>From an idea to the machine shop.</p></li>
+    <li class="step"><h2>Definitions</h2><p>Geometry stored by definition.</p></li>
+    <li class="step"><h2>Booleans</h2><p>Cut. Unite. Intersect.</p></li>
+    <li class="step"><h2>Field</h2><p>One unified feature tree.</p></li>
+  </ol>
+  <p class="anatomy__count mono" aria-hidden="true"><b data-step>1</b>/4</p>
+  <p class="illus">Illustration</p>
 </section>
 
-<!-- VIDEO A -------------------------------------------------------------->
-<section class="assembly" id="assembly">
-  <div class="assembly__media">
-    <video controls muted loop playsinline preload="none" poster="media/kernel-assembly-poster.jpg" aria-label="Wireframe gearbox assembly illustration.">
-      <source src="media/kernel-assembly.mp4" type="video/mp4">
-    </video>
-  </div>
-  <button class="motion js-only" type="button"><span data-motion-verb>Pause</span><span class="motion__more"> motion</span></button>
-  <div class="assembly__copy">
-    <p class="label section__label">Kinematics &amp; topology</p>
-    <h2 class="display" data-lines>A solid is a <em>promise</em> about its boundary.</h2>
-    <p class="assembly__note">From single primitives to meshing assemblies. One unified geometry engine.</p>
-  </div>
+<section class="sheet film" id="assembly">
+  <p class="illus">Illustration</p>
+  <video muted loop playsinline preload="none" poster="media/kernel-assembly-poster.jpg" aria-label="Wireframe gearbox assembly illustration."><source src="media/kernel-assembly.mp4" type="video/mp4"></video>
+  <h2>
+    <span class="ln"><span>Inspect <em>every edge</em>.</span></span>
+  </h2>
 </section>
 
-<!-- NUMBERS -------------------------------------------------------------->
-<section class="numbers section" aria-label="Historical Catallax repository snapshot">
-  <div class="numbers__grid">
-    <div class="stat"><p class="stat__n"><span data-count="54668" data-metric="rust_lines">54,668</span></p><p class="label">physical lines of Rust</p></div>
-    <div class="stat"><p class="stat__n"><span data-count="0" data-metric="cpp_lines">0</span></p><p class="label">lines of C or C++</p></div>
-    <div class="stat"><p class="stat__n"><span data-count="409" data-metric="tests">409</span></p><p class="label">enabled Rust tests</p></div>
-    <div class="stat"><p class="stat__n"><span data-count="0" data-metric="unsafe_blocks">0</span></p><p class="label">unsafe blocks</p></div>
-  </div>
-  <p class="numbers__note">Snapshot of revision <span data-snapshot>190eb12, 22 October 2026</span>. The repository has grown since. 100% memory-safe, zero C/C++ dependencies, deterministic topology. <a href="evidence.json">View source metrics</a>.</p>
+<section class="sheet outcomes" id="outcomes">
+  <h2>
+    <span class="ln"><span>Never quietly <em>guess</em>.</span></span>
+  </h2>
+  <ul class="grid4">
+    <li><svg class="art"><use href="#o-proven"/></svg><code>Proven</code></li>
+    <li><svg class="art"><use href="#o-coincident"/></svg><code>ProvenCoincident</code></li>
+    <li><svg class="art"><use href="#o-bounded"/></svg><code>NotExact</code></li>
+    <li><svg class="art"><use href="#o-refused"/></svg><code>Refused</code></li>
+  </ul>
 </section>
 
-<!-- CODE ----------------------------------------------------------------->
-<section class="code section" id="code">
-  <div class="code__aside">
-    <p class="label section__label">Code is the geometry</p>
-    <h2 class="display" data-lines>Geometry that <em>shows</em> its working.</h2>
-    <p class="code__lede">No black box. The geometry, the decisions and the doubts are right here in Rust.</p>
-    <ol class="code__notes label">
-      <li>Read it</li>
-      <li>Question it</li>
-      <li>Build on it</li>
-    </ol>
-  </div>
-  <div class="code__stack">
-    <figure class="window">
-      <figcaption class="window__bar"><span>catallax-topology / entity.rs</span></figcaption>
-<pre class="window__code"><code data-rust>/// A vertex: a point stored by definition.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Vertex {
-    /// The point.
-    pub point: PointId,
-}
-
-/// An edge on a curve. Both ends `None` is a ring edge over a whole closed curve.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Edge {
-    /// The curve.
-    pub curve: CurveId,
-    /// Edge direction relative to the curve's natural direction.
-    pub sense: Sense,
-    /// Start vertex along the edge direction.
-    pub start: Option&lt;VertexId&gt;,
-    /// End vertex along the edge direction.
-    pub end: Option&lt;VertexId&gt;,
-}</code></pre>
-    </figure>
-    <figure class="window">
-      <figcaption class="window__bar"><span>catallax-numbers / outcome.rs</span></figcaption>
-<pre class="window__code"><code data-rust>/// The result of one decision. See `docs/ARCHITECTURE.md`.
-#[must_use]
-#[derive(Clone, Debug, PartialEq)]
-pub enum Outcome&lt;T&gt; {
-    /// The strict answer is certified; the quantity is proven non-zero.
-    Proven(T),
-    /// The quantity is proven exactly zero.
-    ProvenCoincident(Coincidence),
-    /// The budget ran out; the quantity is proven to lie within the bound.
-    NotExact(NotExact),
-    /// The decision cannot be answered.
-    Refused(Refusal),
-}</code></pre>
-    </figure>
-    <figure class="window">
-      <figcaption class="window__bar"><span>catallax-boolean / lib.rs · excerpt</span></figcaption>
-<pre class="window__code"><code data-rust>let graph = run!(Stage::Intersect, intersect(model, a, b, dec));
-let imprinted = run!(Stage::Imprint, imprint(model, &amp;graph, dec));
-let classes = run!(Stage::Classify, classify(model, &amp;imprinted, dec));
-let before = dec.stats().clone();
-let selection = keep(&amp;classes, &amp;imprinted, op);
-report.stages.push(StageRecord {
-    stage: Stage::Keep,
-    stats: statistics_delta(&amp;before, dec.stats()),
-    marks: 0,
-});
-let body = run!(Stage::Sew, sew(model, &amp;imprinted, &amp;selection, dec));</code></pre>
-    </figure>
-  </div>
+<section class="numbers" aria-label="Repository numbers">
+  <div class="stat"><b data-metric="unsafe_blocks">0</b><span>unsafe blocks</span></div>
+  <div class="stat"><b data-metric="cpp_lines">0</b><span>lines of C or C++</span></div>
+  <div class="stat stat--wide"><b data-metric="rust_lines">212,779</b><span>lines of Rust</span></div>
+  <p class="numbers__snapshot">Counts at <span data-snapshot>e79835b, 30 October 2026</span>. The repository has grown since. <a href="evidence.json">Method and earlier build evidence</a>.</p>
 </section>
 
-<!-- WORK ----------------------------------------------------------------->
-<section class="work section" id="work">
-  <div class="work__head">
-    <p class="label section__label">One kernel, two representations</p>
-    <h2 class="display" data-lines>Write the part. Keep its <em>definition</em>.</h2>
-  </div>
-  <div class="work__grid">
-    <a class="card" href="https://github.com/BohnBawerick/catallax" data-tilt>
-      <div class="card__glare" aria-hidden="true"></div>
-      <div class="card__top label"><span>Explicit · B-rep</span></div>
-      <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
-        <path d="M60 30 100 10l40 20v50l-40 20-40-20Z" class="a"/><path d="M60 30l40 20 40-20M100 50v50" class="a"/>
-        <path d="M60 80 100 60l40 20" class="d"/><path d="M100 10v50" class="d"/>
-        <circle cx="100" cy="50" r="3.5" class="o"/>
-      </svg>
-      <h3 class="card__title">Boundary Representation</h3>
-      <p class="card__text">Exact topology, out in the open. Memory-safe Rust, precise analytical and NURBS surfaces, and watertight STEP output ready for the machine shop. Inspect every edge, face, and shell.</p>
-      <p class="card__meta label"><span>Exact topology · STEP export</span></p>
-    </a>
-    <article class="card" data-tilt>
-      <div class="card__glare" aria-hidden="true"></div>
-      <div class="card__top label"><span>Implicit · SDF</span></div>
-      <svg class="card__art" viewBox="0 0 200 120" aria-hidden="true">
-        <g class="a"><rect x="40" y="30" width="20" height="20"/><rect x="60" y="30" width="20" height="20"/><rect x="80" y="30" width="20" height="20"/><rect x="60" y="50" width="20" height="20"/><rect x="80" y="50" width="20" height="20"/><rect x="100" y="50" width="20" height="20"/><rect x="80" y="70" width="20" height="20"/><rect x="100" y="70" width="20" height="20"/><rect x="120" y="70" width="20" height="20"/></g>
-        <path d="M30 95C70 95 70 20 110 25s40 70 70 60" class="o-line"/>
-      </svg>
-      <h3 class="card__title">Field Evaluation</h3>
-      <p class="card__text">Continuous spatial math driven by the exact same recipe. Evaluates primitives, exact sketch profiles, extrusions, revolutions, and booleans with proven interval distance bounds and two-way B-rep cross-verification.</p>
-      <p class="card__meta label"><span>Continuous distance bounds · field-driven topology</span></p>
-    </article>
-  </div>
-  <p class="direction__note">One schema drives both perspectives. The public <code>catallax-recipe</code> format defines, validates, and records the feature tree once. Both the B-rep builder and the implicit field evaluator execute directly from this shared definition, scaling from core primitives and booleans across the full mechanical feature vocabulary: chamfers, shells, fillets, sweeps, and lofts.</p>
-</section>
-
-<section class="application section" id="soliddraft">
-  <div class="application__head">
-    <h2 class="display" data-lines>SolidDraft. Speed &amp; <em>Modern Craft</em></h2>
-    <p class="application__lede">Legacy CAD is bloated, sluggish, and stuck in the past. Built from the ground up in Rust, SolidDraft offers the parametric workflows you already know: feature trees, precision sketching, and a responsive 3D viewport.</p>
-    <p><a href="https://github.com/BohnBawerick/soliddraft">Inspect the core codebase</a> or <a href="https://github.com/BohnBawerick/soliddraft/releases">follow its releases</a> for the upcoming desktop version.</p>
-  </div>
-  <figure class="application__drawing">
-    <a href="media/soliddraft-bracket-a3.svg" aria-label="Open SolidDraft's full-size bracket drawing">
-      <img src="media/soliddraft-bracket-a3.svg" alt="SolidDraft's exported A3 bracket drawing, with front, top, right and isometric views, hidden lines and dimensions." width="1260" height="891" loading="lazy">
-    </a>
-    <figcaption>Production output from the SolidDraft headless CLI, generated directly from parametric part geometry. <a href="media/soliddraft-bracket-a3.svg">Open the SVG</a> · <a href="evidence.json">Verify provenance</a></figcaption>
-  </figure>
-  <div class="application__status">
-    <div>
-      <h3>SolidDraft application layer</h3>
-      <p>SolidDraft runs natively on the Catallax kernel, uniting parametric part modelling, production drafting, and headless automation in a single, zero-dependency stack.</p>
-      <ul class="application__list">
-        <li>Constrained sketching &amp; solid modelling: Plane and face sketching with geometric relations and driving dimensions, feeding a non-destructive feature tree with full undo/redo and topological reference repair.</li>
-        <li>Shop-ready 2D documentation: ISO and ANSI engineering drawings with automated section views, detail callouts, precise dimensioning, and GD&amp;T, exporting cleanly to SVG, PDF, and DXF.</li>
-        <li>End-to-end geometry pipeline: Exact B-rep topology, polygon-mode hidden-line removal, and open CAD exchange formats built for real manufacturing workflows.</li>
-        <li>Built for modern workflows: A deterministic headless CLI for recipe replay and automated builds, native MCP server, and a client-side WebAssembly browser build.</li>
-      </ul>
-    </div>
-    <div>
-      <h3>Where we're going <span class="status-chip">In design</span></h3>
-      <p>Because SolidDraft and Catallax share a single unified architecture, every advancement in the kernel immediately expands what the CAD environment can express.</p>
-      <ul class="application__list">
-        <li>Full-spectrum mechanical CAD: Continuous expansion across complex surfacing, variable-radius fillets, sweeps, lofts, sheet metal, and large-scale multi-part assembly constraints.</li>
-        <li>Implicit design primitives: Unlocking geometry that classical B-rep cannot carry alone: gyroids, conformal lattices, variable wall thickness, and simulation-driven shapes evaluated directly from signed distance fields.</li>
-        <li>Self-auditing topology: Pushing two-way B-rep and SDF cross-checking across every operation in the feature tree, guaranteeing watertight boundaries without silent tolerance drift.</li>
-        <li>Total format freedom: Deepening native STEP, IGES, and mesh interoperability alongside the open catallax-recipe specification.</li>
-      </ul>
-    </div>
-  </div>
-  <p class="application__support"><a href="#support">Support the project</a></p>
-</section>
-
-<!-- BENCHMARKS ----------------------------------------------------------->
-<section class="bench section" id="bench">
-  <div class="bench__head">
-    <p class="label section__label">Benchmarks</p>
-    <h2 class="display" data-lines>Measured, not <em>marketed</em>.</h2>
-    <p class="bench__lede">Construction and parameter edits across fixed CAD targets, measured with five tools.</p>
-  </div>
-  <div class="bench__table">
+<section class="sheet bench" id="bench">
+  <h2>
+    <span class="ln"><span>Measured, not <em>marketed</em>.</span></span>
+  </h2>
+  <figure class="chart" id="comparison-summary">
     <table role="table">
-      <caption class="sr-only">Five-tool completed builds</caption>
-      <thead role="rowgroup">
-        <tr class="bench__row bench__row--head label" role="row">
-          <th scope="col" role="columnheader">Tool</th><th scope="col" role="columnheader">Construction</th><th scope="col" role="columnheader">Parameter edit</th><th scope="col" role="columnheader">Samples per phase</th>
-        </tr>
-      </thead>
+      <caption class="sr">Completed builds out of 39, by tool</caption>
+      <thead class="sr" role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Tool</th><th scope="col" role="columnheader">Construction</th><th scope="col" role="columnheader">Parameter edit</th></tr></thead>
       <tbody role="rowgroup">
-        <tr class="bench__row" role="row">
-          <th scope="row" role="rowheader">Catallax</th>
-          <td role="cell" class="is-us" data-v="24"><b>24</b></td><td role="cell" class="is-us" data-v="21"><b>21</b></td><td role="cell" data-v="39"><b>39</b></td>
-        </tr>
-        <tr class="bench__row" role="row">
-          <th scope="row" role="rowheader">SolidCraft</th>
-          <td role="cell" data-v="33"><b>33</b></td><td role="cell" data-v="30"><b>30</b></td><td role="cell" data-v="39"><b>39</b></td>
-        </tr>
-        <tr class="bench__row" role="row">
-          <th scope="row" role="rowheader">CadQuery</th>
-          <td role="cell" data-v="36"><b>36</b></td><td role="cell" data-v="36"><b>36</b></td><td role="cell" data-v="39"><b>39</b></td>
-        </tr>
-        <tr class="bench__row" role="row">
-          <th scope="row" role="rowheader">smlibpy</th>
-          <td role="cell" data-v="30"><b>30</b></td><td role="cell" data-v="27"><b>27</b></td><td role="cell" data-v="39"><b>39</b></td>
-        </tr>
-        <tr class="bench__row" role="row">
-          <th scope="row" role="rowheader">Pali Ijo</th>
-          <td role="cell" data-v="30"><b>30</b></td><td role="cell" data-v="30"><b>30</b></td><td role="cell" data-v="39"><b>39</b></td>
-        </tr>
+        <tr class="is-us" role="row"><th scope="row" role="rowheader">Catallax</th><td role="cell" style="--v:0.615"><i></i><b>24</b></td><td role="cell" style="--v:0.538"><i></i><b>21</b></td></tr>
+        <tr role="row"><th scope="row" role="rowheader">SolidCraft</th><td role="cell" style="--v:0.846"><i></i><b>33</b></td><td role="cell" style="--v:0.769"><i></i><b>30</b></td></tr>
+        <tr role="row"><th scope="row" role="rowheader">CadQuery</th><td role="cell" style="--v:0.923"><i></i><b>36</b></td><td role="cell" style="--v:0.923"><i></i><b>36</b></td></tr>
+        <tr role="row"><th scope="row" role="rowheader">smlibpy</th><td role="cell" style="--v:0.769"><i></i><b>30</b></td><td role="cell" style="--v:0.692"><i></i><b>27</b></td></tr>
+        <tr role="row"><th scope="row" role="rowheader">Pali Ijo</th><td role="cell" style="--v:0.769"><i></i><b>30</b></td><td role="cell" style="--v:0.769"><i></i><b>30</b></td></tr>
       </tbody>
     </table>
-  </div>
-  <p class="bench__foot" id="comparison-summary">Completed builds across 13 targets and 3 measured samples per tool and target. An edit skipped after a failed construction remains incomplete. Completion is not correctness. <a href="comparison.html">The five-tool comparison</a> reports timings, correctness checks, versions and method.</p>
-</section>
-
-<!-- VIDEO B -------------------------------------------------------------->
-<section class="ci section" id="ci">
-  <div class="ci__copy">
-    <p class="label section__label">Release discipline</p>
-    <h2 class="display" data-lines>Proof before <em>promise</em>.</h2>
-    <p>Every pull request faces format, clippy and the full enabled release test suite. Exact maths keeps us honest. OpenCASCADE checks our STEP.</p>
-    <p>Our rule: the same question gives the same answer on every machine and at every thread count. The deterministic <code>catallax-verify</code> exchange uses work budgets to choose outcomes and reports wall time separately.</p>
-    <ul class="ci__list label">
-      <li><span>Format</span><b>cargo fmt --all --check</b></li>
-      <li><span>Lint</span><b>clippy · deny warnings</b></li>
-      <li><span>Tests</span><b>release · all enabled + docs</b></li>
-    </ul>
-  </div>
-  <figure class="ci__term">
-    <video controls muted loop playsinline preload="none" poster="media/release-build-poster.jpg" aria-label="Real Catallax workspace release build and numbers library test output, edited for time">
-      <source src="media/release-build.mp4" type="video/mp4">
-    </video>
-    <figcaption class="label"><span><a href="render/terminal-output.json">Actual command transcript</a> · not a full-suite recording</span><button class="motion js-only" type="button"><span data-motion-verb>Pause</span><span class="motion__more"> motion</span></button></figcaption>
+    <figcaption class="mono"><span class="key key--a">Build</span><span class="key key--b">Edit</span><span>Completed, of 39</span><span class="truth">Completion is not correctness.</span><a href="comparison.html" target="_blank" rel="noopener">Full comparison</a></figcaption>
   </figure>
 </section>
 
-<section class="support section" id="support">
-  <div class="support__grid">
-    <div class="support__copy">
-      <p class="label section__label">Support Catallax + SolidDraft</p>
-      <h2 class="display" data-lines>Geometry belongs to <em>everyone</em>.</h2>
-      <p class="contact__lede">One unified stack: a foundational geometry kernel in safe Rust and the native CAD environment built to wield it. Both Catallax and SolidDraft are permanently free and open-source under the MIT License, built in public with zero proprietary dependencies and zero venture lock-in.</p>
-      <p>Independent sponsorship funds the hard mathematics directly: expanding complex surface intersections, accelerating real-time rebuilds, and pushing implicit field-driven geometry into open-source CAD. Back the engineering and help keep foundational geometry open for good.</p>
-      <div class="contact__ctas">
-        <a class="btn btn--solid magnetic" href="https://github.com/sponsors/BohnBawerick"><span>GitHub Sponsors</span></a>
-        <a class="btn magnetic" href="https://ko-fi.com/pedropaiva56920"><span>Support on Ko-fi</span></a>
-      </div>
-    </div>
-    <div class="support__works">
-      <p class="label">Catallax architecture · core capabilities</p>
-      <ul class="works__list label">
-        <li><span>Solids</span><b>Exact analytical primitives (blocks, cylinders, spheres, cones, and tori) stored and evaluated by mathematical definition.</b></li>
-        <li><span>Booleans</span><b>Exact unite, subtract, and intersect solvers across planar, cylindrical, spherical, conical, and toroidal topologies.</b></li>
-        <li><span>Sketches</span><b>Exact line, arc, and circle profiles with internal loops, driving signed extrusions, rational-frame revolutions, and cuts. Operation-derived topological naming for faces and edges.</b></li>
-        <li><span>Chamfers</span><b>Exact planar strips and conical rings with symmetric or asymmetric setbacks, backed by independent implicit field construction.</b></li>
-        <li><span>Measure</span><b>Exact volume, surface area, and centroid calculation with mathematically certified interval bounds.</b></li>
-        <li><span>Output</span><b>Production STEP AP242 export paired with a proven geometric deviation report, plus display meshes with guaranteed chord-error bounds.</b></li>
-        <li><b>Unified evaluation of recipe solids, sketches, extrusions, revolutions, and booleans, delivering certified distance bounds and two-way B-rep cross-verification.</b></li>
-      </ul>
-      <p class="works__not">Kernel invariants: zero unsafe Rust. Derived geometry is stored strictly by mathematical definition. A proven answer is never silently approximated, and only mathematically impossible geometry is an acceptable final refusal. Inspect the <a href="comparison.html">benchmark suite</a> and <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/PLAN.md">architecture roadmap</a>.</p>
-    </div>
+<section class="sheet ci">
+  <div class="ci__head">
+    <h2>
+      <span class="ln"><span>Proof before</span></span>
+      <span class="ln"><span><em>promise</em>.</span></span>
+    </h2>
+    <ul class="checks mono">
+      <li><svg class="sym"><use href="#s-check"/></svg>fmt</li>
+      <li><svg class="sym"><use href="#s-check"/></svg>clippy</li>
+      <li><svg class="sym"><use href="#s-check"/></svg>tests</li>
+    </ul>
+  </div>
+  <figure class="term">
+    <video muted loop playsinline preload="none" poster="media/release-build-poster.jpg" aria-label="Real Catallax workspace release build and numbers library test output, edited for time"><source src="media/release-build.mp4" type="video/mp4"></video>
+    <figcaption class="mono">Actual transcript · not the full suite</figcaption>
+  </figure>
+</section>
+
+<section class="sheet draft" id="soliddraft">
+  <div class="draft__head">
+    <h2>
+      <span class="ln"><span>SolidDraft.</span></span>
+      <span class="ln"><span><em>Modern craft</em>.</span></span>
+    </h2>
+    <ul class="chips mono">
+      <li><svg class="sym"><use href="#s-perp"/></svg>Sketch</li>
+      <li><svg class="sym"><use href="#s-cyl"/></svg>Solids</li>
+      <li><svg class="sym sym--wide"><use href="#s-projection"/></svg>Drawings</li>
+      <li><svg class="sym"><use href="#s-cli"/></svg>CLI</li>
+    </ul>
+    <div class="links mono"><a href="https://github.com/BohnBawerick/soliddraft" target="_blank" rel="noopener">Code</a><a href="https://github.com/BohnBawerick/soliddraft/releases" target="_blank" rel="noopener">Releases</a></div>
+  </div>
+  <figure class="sheetpaper">
+    <a href="media/soliddraft-bracket-a3.svg" aria-label="Open SolidDraft's full-size bracket drawing"><img src="media/soliddraft-bracket-a3.svg" alt="SolidDraft's exported A3 bracket drawing, with front, top, right and isometric views, hidden lines and dimensions." width="1260" height="891" loading="lazy"></a>
+    <figcaption class="mono">Output of the SolidDraft CLI</figcaption>
+  </figure>
+</section>
+
+<section class="sheet support" id="support">
+  <canvas class="support__canvas" aria-hidden="true"></canvas>
+  <h2>
+    <span class="ln"><span>Geometry belongs</span></span>
+    <span class="ln"><span>to <em>everyone</em>.</span></span>
+  </h2>
+  <div class="ctas">
+    <a class="btn btn--ink" href="https://github.com/sponsors/BohnBawerick" target="_blank" rel="noopener"><span>GitHub Sponsors</span></a>
+    <a class="btn btn--line" href="https://ko-fi.com/pedropaiva56920" target="_blank" rel="noopener"><span>Ko-fi</span></a>
   </div>
 </section>
 
-<!-- SPECIAL THANKS -------------------------------------------------------->
-<section class="thanks section" id="thanks">
-  <p class="label section__label">Special thanks</p>
-  <h2 class="display" data-lines>Knowledge, published <em>free</em>.</h2>
-  <div class="thanks__grid">
-    <div class="thanks__copy">
-      <p class="thanks__lede">Catallax stands on decades of work published openly for anyone to study: foundational papers, candid engineering retrospectives, open standards, and public source code. That is how mathematics and engineering are meant to move.</p>
-      <p>None of this work entered Catallax as copied source code. What we drew from are the published ideas: a mathematical definition, a formal proof, an architectural lesson, or a hard-won mistake named plainly.</p>
-      <p class="thanks__plain">Clean-room implementation: Catallax is written from scratch and shares no source code or affiliation with the projects and authors below. We cite them in gratitude for their published research and open technical writing.</p>
-    </div>
-    <div class="thanks__sources">
-      <p class="label">Published work &amp; architectural lineage</p>
-      <ul class="thanks__list">
-        <li><b>Six years of open development on <a href="https://github.com/hannobraun/fornjot">Fornjot</a>, a B-rep kernel in Rust, and the candid retrospective <a href="https://archive.hannobraun.com/fornjot/blog/shutting-down-fornjot/">"Shutting Down Fornjot"</a>. Its six documented architectural lessons directly informed our build sequence and strict kernel invariants.</b></li>
-        <li><b><a href="https://github.com/mkeeter/fidget">Fidget</a> and <a href="https://libfive.com/">libfive</a>. Catallax’s implicit field evaluator draws directly from their architectural design: fixed-order evaluation tapes, independent point queries, and reusable evaluator storage.</b></li>
-        <li><b><a href="https://dev.opencascade.org/">The open-source B-rep standard</a> used as one of our external verification oracles to open and validate every STEP file Catallax exports.</b></li>
-        <li><b><a href="https://github.com/virtualritz/monstertruck">monstertruck</a>, <a href="https://github.com/elgar328/nacre">Nacre</a>, and <a href="https://github.com/gilbertorconde/ogeom-rs">ogeom-rs</a>, open-source Rust B-rep kernels whose public architectures served as valuable reference points when benchmarking our B-rep topology against existing implementations.</b></li>
-        <li><b><a href="https://doi.org/10.1016/S0010-4485(00)00036-1">"Consistent updates in dual representation systems"</a> (2000). The mathematical foundation behind verifying that two distinct geometric representations model the exact same solid.</b></li>
-        <li><b>"Constant-radius blending in solid modeling" (1984) and <a href="https://faculty.cc.gatech.edu/~jarek/papers/Offsets.pdf">"Offsetting operations in solid modeling"</a> (1986), establishing the mathematical formulation of the rolling-ball fillet as an offset construction.</b></li>
-        <li><span>Farouki and Sverrisson</span><b><a href="https://doi.org/10.1016/0010-4485(96)00008-5">"Approximation of rolling-ball blends for free-form parametric surfaces"</a> (1996). How a blend is approximated to a prescribed precision.</b></li>
-        <li><span>Jackson · Parasolid</span><b><a href="https://doi.org/10.1145/218013.218067">Parasolid's tolerant-modelling paper</a> (1995). The reasons behind our local tolerance caps and the rule that tolerance growth must be contained.</b></li>
-        <li><span>Hedberg et al.</span><b><a href="https://doi.org/10.1115/1.4032697">"Testing the digital thread"</a> (2016). The gap limits exchanged models carry in automotive and defence work.</b></li>
-        <li><span>STEP Tools</span><b><a href="https://www.steptools.com/docs/stp_aim/html/">Public documentation</a> of the STEP AP242 entities our exporter writes.</b></li>
-      </ul>
-    </div>
+<section class="sheet contact" id="thanks">
+  <h2>
+    <span class="ln"><span>Knowledge,</span></span>
+    <span class="ln"><span>published <em>free</em>.</span></span>
+  </h2>
+  <div class="ctas">
+    <a class="btn" href="thanks.html"><span>Special thanks</span></a>
   </div>
 </section>
 
-<!-- CONTACT -------------------------------------------------------------->
-<section class="contact section" id="contact">
-  <p class="label section__label">Contact</p>
-  <h2 class="contact__title" data-lines>Build on <em>open ground</em>.</h2>
-  <p class="contact__lede">Fork the kernel, test it against your hardest geometry, or build your own CAD tools on top of it. For technical inquiries, architectural discussions, or ecosystem partnerships, reach out directly.</p>
-  <div class="contact__ctas">
-    <a class="btn btn--solid btn--big magnetic" href="mailto:phd@zigrawbohnbawerick.org"><span>phd@zigrawbohnbawerick.org</span></a>
-    <a class="btn magnetic" href="https://github.com/BohnBawerick/catallax"><span>Catallax on GitHub</span></a>
-    <a class="btn magnetic" href="https://zigrawbohnbawerick.org/"><span>Zigrawbohnbawerick</span></a>
+<section class="sheet contact" id="contact">
+  <h2>
+    <span class="ln"><span>Build on</span></span>
+    <span class="ln"><span><em>open ground</em>.</span></span>
+  </h2>
+  <p>Open to kernel work.</p>
+  <div class="ctas">
+    <a class="btn btn--hot" href="mailto:phd@zigrawbohnbawerick.org"><span>phd@zigrawbohnbawerick.org</span></a>
+    <a class="btn" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener"><span>GitHub</span></a>
   </div>
 </section>
 </main>
 
-<footer class="footer label">
-  <span>© 2026 Zigrawbohnbawerick · Catallax + SolidDraft</span>
-  <span><a href="THIRD-PARTY.txt">Third-party licences</a></span>
-  <span>Perth 31.95°S 115.86°E<span class="js-only"> · <time data-clock>--:--</time> AWST</span></span>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://pedro.zigrawbohnbawerick.org/" target="_blank" rel="noopener">Pedro De Paiva</a></div>
+  <div class="block__cell"><small>Location</small><span>Perth 31.95°S 115.86°E</span></div>
+  <div class="block__cell"><small>Time</small><span><time data-clock>--:--</time> AWST</span></div>
+  <div class="block__cell"><small>Licence</small><a href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="why.html">Why</a><a href="thanks.html">Thanks</a><a href="THIRD-PARTY.txt">Third-party licences</a></span></div>
 </footer>
 
 <script src="vendor/gsap.min.js"></script>
 <script src="vendor/ScrollTrigger.min.js"></script>
-<script src="vendor/SplitText.min.js"></script>
 <script src="js/wire.js"></script>
-<script src="js/main.js"></script>
+<script src="field.js"></script>
+<script src="bare.js"></script>
 </body>
 </html>

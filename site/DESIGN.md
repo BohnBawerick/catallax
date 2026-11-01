@@ -107,7 +107,7 @@ components:
 
 # Design System: Catallax + SolidDraft
 
-Recorded from the shipped site in October 2026, after the audit fixes. The tokens live in `brand/tokens.css`, which the CSS and the canvas renderer both read. If this file and the tokens disagree, the tokens win.
+Recorded from the previous site in October 2026, after its audit fixes. This is a reference for that design, including the retained comparison page and video renderers, not the published homepage layout. The bare-bones homepage and long-form pages are defined by `bare.css` and `read.css`. Both designs share `brand/tokens.css`, which the CSS and canvas renderer read. If this file and the tokens disagree, the tokens win.
 
 ## Overview
 

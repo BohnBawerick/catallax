@@ -1,4 +1,4 @@
-/* Prototype motion. Same world as the live site: rigid metal, expo.out, no overshoot.
+/* Site motion: rigid metal, expo.out, no overshoot.
    The page reads complete without this file. */
 (() => {
   'use strict';

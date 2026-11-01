@@ -44,7 +44,7 @@ def render_index(source, index, check=False):
         '      <tbody role="rowgroup">\n' + '\n'.join(summary_rows) + '\n      </tbody>\n'
         '    </table>\n'
         '    <figcaption class="mono"><span class="key key--a">Build</span><span class="key key--b">Edit</span>'
-        f'<span>Completed, of {total}</span><span class="truth">Completion is not correctness.</span>'
+        f'<span>Completed, of {total}</span><span class="truth">Finishing a part does not prove it is correct.</span>'
         '<a href="comparison.html" target="_blank" rel="noopener">Full comparison</a></figcaption>\n'
         '  </figure>')
     original = index.read_text()

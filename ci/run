@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
+unit=${1:-}
+if [[ $# -gt 0 ]]; then shift; fi
+
+(
+  cd -- "$root" &&
+  case "$unit" in
+    fmt)
+      cargo fmt --all --check
+      python3 -B -m unittest discover -s tools/checks -v
+      python3 -B -m unittest discover -s tools/edge-hunt -v
+      python3 -B -m unittest discover -s tools/release -p 'test_*.py' -v
+      ;;
+    clippy)
+      if [[ $# -eq 0 ]]; then set -- --workspace; fi
+      cargo clippy "$@" --all-targets -- -D warnings
+      ;;
+    lint)
+      "$root/ci/run" fmt
+      "$root/ci/run" clippy "$@"
+      ;;
+    *)
+      printf 'Usage: ci/run {lint|fmt|clippy} [cargo package options]\n' >&2
+      exit 2
+      ;;
+  esac
+)

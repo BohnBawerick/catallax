@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
+git -C "$root" config --local core.hooksPath ci/hooks
+printf 'Installed repository-local pre-push lint hook. Run ci/run lint to check without pushing.\n'

@@ -25,7 +25,7 @@ concurrency:
 
 env:
   CARGO_INCREMENTAL: "0"
-  CARGO_BUILD_JOBS: "2"
+  CARGO_BUILD_JOBS: "4"
 
 jobs:
   select:
@@ -35,6 +35,8 @@ jobs:
       fmt: ${{ steps.select.outputs.fmt }}
       clippy: ${{ steps.select.outputs.clippy }}
       tests: ${{ steps.select.outputs.tests }}
+      test-build: ${{ steps.select.outputs.test-build }}
+      step-regressions: ${{ steps.select.outputs.step-regressions }}
       build: ${{ steps.select.outputs.build }}
       replay: ${{ steps.select.outputs.replay }}
       scoreboard: ${{ steps.select.outputs.scoreboard }}
@@ -47,6 +49,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - name: Workflow parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/check-tools"
+          "$RUNNER_TEMP/check-tools/bin/pip" install PyYAML==6.0.3
       - name: Select base and candidate rules
         id: select
         env:
@@ -61,7 +67,7 @@ jobs:
           flags=()
           if [[ "$RELEASE_EVIDENCE" == true ]]; then flags+=(--release-evidence); fi
           if [[ "$RELEASE_DRY_RUN" == true ]]; then flags+=(--release-dry-run); fi
-          python3 -B tools/checks/checks.py select --base "$BASE" --head "$HEAD" \
+          "$RUNNER_TEMP/check-tools/bin/python" -B tools/checks/checks.py select --base "$BASE" --head "$HEAD" \
             --event "$EVENT" --ref "$REF" --out "$RUNNER_TEMP/selection.json" \
             --github-output "$GITHUB_OUTPUT" "${flags[@]}"
       - uses: actions/upload-artifact@v4
@@ -86,13 +92,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all --check
-      - name: Check policy and routing
-        run: python3 -B -m unittest discover -s tools/checks -v
-      - name: Edge hunt
-        run: python3 -B -m unittest discover -s tools/edge-hunt -v
-      - name: Release evidence policy
-        run: python3 -B -m unittest discover -s tools/release -p 'test_*.py' -v
+      - run: ci/run fmt
       - uses: ./.github/actions/check-evidence
         with:
           job: fmt
@@ -119,13 +119,54 @@ jobs:
           PACKAGES: ${{ needs.select.outputs.packages }}
         run: |
           read -r -a packages <<< "$PACKAGES"
-          cargo clippy "${packages[@]}" --all-targets -- -D warnings
+          ci/run clippy "${packages[@]}"
       - uses: ./.github/actions/check-evidence
         with:
           job: clippy
 
-  tests:
+  test-build:
     needs: select
+    if: needs.select.outputs.test-build == 'true'
+    runs-on: ${{ fromJSON(vars.USE_LOCAL_RUNNERS == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64","ci-linux-local"]' || '["ubuntu-latest"]') }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: check-selection
+          path: ${{ runner.temp }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.148
+      - name: Archive selected release tests
+        env:
+          PACKAGES: ${{ needs.select.outputs.packages }}
+        run: |
+          read -r -a packages <<< "$PACKAGES"
+          cargo nextest archive "${packages[@]}" --release --archive-file "$RUNNER_TEMP/tests.tar.zst"
+      - name: Selected documentation tests
+        env:
+          PACKAGES: ${{ needs.select.outputs.packages }}
+        run: |
+          read -r -a packages <<< "$PACKAGES"
+          cargo test "${packages[@]}" --release --doc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: check-test-archive
+          path: ${{ runner.temp }}/tests.tar.zst
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+      - uses: ./.github/actions/check-evidence
+        with:
+          job: test-build
+
+  tests:
+    needs: [select, test-build]
     if: needs.select.outputs.tests == 'true'
     runs-on: ${{ fromJSON(vars.USE_LOCAL_RUNNERS == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64","ci-linux-local"]' || '["ubuntu-latest"]') }}
     timeout-minutes: 120
@@ -142,22 +183,20 @@ jobs:
           name: check-selection
           path: ${{ runner.temp }}
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@nextest
+      - uses: actions/download-artifact@v4
+        with:
+          name: check-test-archive
+          path: ${{ runner.temp }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.148
       - name: Release test partition
         env:
           SHARD: ${{ matrix.shard }}
-          PACKAGES: ${{ needs.select.outputs.packages }}
         run: |
-          read -r -a packages <<< "$PACKAGES"
-          cargo nextest run "${packages[@]}" --release --profile ci --partition "count:$SHARD/4" --no-fail-fast --test-threads 2
-      - name: Selected documentation tests
-        if: matrix.shard == 1
-        env:
-          PACKAGES: ${{ needs.select.outputs.packages }}
-        run: |
-          read -r -a packages <<< "$PACKAGES"
-          cargo test "${packages[@]}" --release --doc
+          cargo nextest run --archive-file "$RUNNER_TEMP/tests.tar.zst" --workspace-remap "$GITHUB_WORKSPACE" \
+            --extract-to "$GITHUB_WORKSPACE" --extract-overwrite \
+            --profile ci --partition "slice:$SHARD/4" --no-fail-fast --test-threads 4
       - uses: ./.github/actions/check-evidence
         with:
           job: tests
@@ -184,11 +223,6 @@ jobs:
       - run: target/release/catallax-verify about
       - name: Verification driver
         run: python3 -B -m unittest discover -s .claude/skills/verify-catallax/scripts -p 'test_*.py' -v
-      - name: OpenCASCADE STEP regressions
-        run: |
-          python3 -m venv "$RUNNER_TEMP/occt"
-          "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
-          "$RUNNER_TEMP/occt/bin/python" -B -m unittest discover -s tools/step-regressions -v
       - name: Generated comparison page
         run: python3 -B site/render/comparison.py --check
       - name: Check out accepted base for STEP corrections
@@ -218,6 +252,34 @@ jobs:
       - uses: ./.github/actions/check-evidence
         with:
           job: build
+          binary: target/release/catallax-verify
+
+  step-regressions:
+    needs: [select, build]
+    if: needs.select.outputs.step-regressions == 'true'
+    runs-on: ${{ fromJSON(vars.USE_LOCAL_RUNNERS == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64","ci-linux-local"]' || '["ubuntu-latest"]') }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: check-selection
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: check-binary
+          path: target/release
+      - name: OpenCASCADE STEP regressions
+        run: |
+          chmod +x target/release/catallax-verify
+          python3 -m venv "$RUNNER_TEMP/occt"
+          "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
+          "$RUNNER_TEMP/occt/bin/python" -B -m unittest discover -s tools/step-regressions -v
+      - uses: ./.github/actions/check-evidence
+        with:
+          job: step-regressions
           binary: target/release/catallax-verify
 
   replay:
@@ -353,7 +415,7 @@ jobs:
 
   check:
     if: always()
-    needs: [select, fmt, clippy, build, tests, replay, scoreboard, release-evidence, release-dry-run]
+    needs: [select, fmt, clippy, build, test-build, tests, step-regressions, replay, scoreboard, release-evidence, release-dry-run]
     runs-on: ${{ fromJSON(vars.USE_LOCAL_RUNNERS == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64","ci-linux-local"]' || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     steps:

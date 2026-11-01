@@ -28,6 +28,7 @@ mod controls;
 mod edges;
 mod evaluate;
 mod junction;
+mod periodic;
 mod planar;
 /// Unproved preview sampling, separate from certified display and export meshes.
 pub mod preview;

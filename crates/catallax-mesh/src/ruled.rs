@@ -147,11 +147,16 @@ pub(crate) fn build(
     if face.loops.len() == 1 {
         return open_strip(model, face_id, chart, boundaries, options, dec);
     }
-    // A cylinder trimmed by a rolling-envelope rail has no horizontal row for the
-    // general grid to align with, while its rulings stitch directly. Rounded
-    // rail parameters also stop its winding from summing to exactly one turn.
+    // Fitted rails and analytic tilted end rings admit the same certified
+    // angular merge. Circular rings retain their existing CDT route.
     let railed = fitted_rail(model, face);
-    if matches!(chart.surface, Surface::Cylinder(_)) && !railed {
+    let ellipse = face.loops.iter().any(|boundary| {
+        matches!(model.loop_(*boundary), Loop::Coedges(coedges) if coedges.iter().any(|coedge| {
+            let edge = model.edge(model.coedge(*coedge).edge);
+            matches!(model.geom().curve(edge.curve), Curve::Ellipse(_))
+        }))
+    });
+    if matches!(chart.surface, Surface::Cylinder(_)) && !railed && !ellipse {
         return Ok(false);
     }
     if face.loops.len() != 2 {

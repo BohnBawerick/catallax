@@ -489,6 +489,20 @@ impl FaceBuilder<'_> {
                 (0, counts[i] as i64)
             }
         });
+        // An untrimmed periodic grid has no constraints or excluded seeds.
+        // Count its temporary copies before allocating them, not while queuing.
+        if self.cdt.num_vertices() == 0
+            && self.chart.corner_planes.is_none()
+            && !self.chart.great_circle_sector
+            && matches!(self.chart.surface, Surface::Sphere(_) | Surface::Torus(_))
+            && ranges
+                .iter()
+                .map(|(lo, hi)| (hi - lo + 1) as usize)
+                .fold(1usize, usize::saturating_mul)
+                > self.options.max_vertices
+        {
+            return Err(failure("face triangulation reached max_vertices"));
+        }
         let bounds = self.bounds;
         let parameter = move |dimension: usize, index: i64| {
             bounds[dimension][0] + widths[dimension] * index as f64 / counts[dimension] as f64
@@ -1397,7 +1411,8 @@ pub(crate) fn build(
                 dec,
             )?;
             if !strip {
-                face_mesh(
+                let positions = boundaries.mesh.positions.len();
+                let result = face_mesh(
                     model,
                     face,
                     charts.get_mut(&face).unwrap(),
@@ -1405,7 +1420,24 @@ pub(crate) fn build(
                     options,
                     &prior_chords,
                     dec,
-                )?;
+                );
+                match result {
+                    Err(error)
+                        if error.code == "mesh.precision-or-budget"
+                            && crate::periodic::eligible(model, face, &charts[&face], options) =>
+                    {
+                        boundaries.mesh.positions.truncate(positions);
+                        crate::periodic::build(
+                            model,
+                            face,
+                            &charts[&face],
+                            &mut boundaries,
+                            options,
+                            dec,
+                        )?;
+                    }
+                    other => other?,
+                }
             }
         }
         let mut once = BTreeSet::new();

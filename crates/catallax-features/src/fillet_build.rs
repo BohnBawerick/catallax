@@ -54,18 +54,54 @@ fn uses(model: &Model, body: BodyId) -> Uses {
 fn matching(model: &Model, face: FaceId, pattern: &catallax_recipe::OriginPattern) -> bool {
     model.face_origins(face).iter().any(|o| pattern.matches(o))
 }
-fn resolve(model: &Model, selection: &EdgeSelection, uses: &Uses) -> Result<Vec<EdgeId>, Refusal> {
+/// Chooses the edge at strictly the smallest distance from a stored `near`
+/// point, measured to its closed trimmed set. Only a straight segment has that
+/// exact distance here, so curved candidates keep the refusal.
+fn nearest(
+    model: &Model,
+    edges: &[EdgeId],
+    near: &catallax_recipe::Point3,
+    dec: &mut Decider,
+) -> Result<EdgeId, Refusal> {
+    let [x, y, z] = near.0.each_ref().map(|n| n.value().clone().into());
+    let point = Point3::new(x, y, z);
+    let mut distances = Vec::with_capacity(edges.len());
+    for edge in edges {
+        let e = model.edge(*edge);
+        let (Curve::Line(_), Some(start), Some(end)) =
+            (model.geom().curve(e.curve), e.start, e.end)
+        else {
+            return Err(bad(
+                "nearest-edge selection among curved edges needs an exact trimmed-edge distance query",
+            ));
+        };
+        let [a, b] = [start, end].map(|v| model.geom().position(model.vertex(v).point));
+        let along = b.minus(&a);
+        let offset = point.minus(&a);
+        let foot = offset.dot(&along);
+        let length_sq = along.norm_squared();
+        distances.push(if sign(&foot, dec)? != Sign::Positive {
+            offset.norm_squared()
+        } else if sign(&(&foot - &length_sq), dec)? != Sign::Negative {
+            point.minus(&b).norm_squared()
+        } else {
+            offset.norm_squared() - foot.square() / length_sq
+        });
+    }
+    Ok(edges[crate::draft::near::unique_nearest(&distances, dec)?])
+}
+fn resolve(
+    model: &Model,
+    selection: &EdgeSelection,
+    uses: &Uses,
+    dec: &mut Decider,
+) -> Result<Vec<EdgeId>, Refusal> {
     match selection {
         EdgeSelection::All => Ok(uses.keys().copied().collect()),
         EdgeSelection::Refs(refs) => {
             let mut selected = BTreeSet::new();
             for reference in refs {
-                if reference.near.is_some() {
-                    return Err(bad(
-                        "nearest-edge disambiguation needs an exact trimmed-edge distance query",
-                    ));
-                }
-                let mut found = false;
+                let mut found = Vec::new();
                 for (edge, incident) in uses {
                     let [(a, _), (b, _)] = incident.as_slice() else {
                         continue;
@@ -89,16 +125,21 @@ fn resolve(model: &Model, selection: &EdgeSelection, uses: &Uses) -> Result<Vec<
                         })
                     });
                     if touches {
-                        selected.insert(*edge);
-                        found = true;
+                        found.push(*edge);
                     }
                 }
-                if !found {
+                if found.is_empty() {
                     return Err(Refusal::new(
                         "fillet.lost-edge",
                         format!("no input edge resolves {reference:?}"),
                     ));
                 }
+                if let Some(near) = &reference.near
+                    && found.len() > 1
+                {
+                    found = vec![nearest(model, &found, near, dec)?];
+                }
+                selected.extend(found);
             }
             Ok(selected.into_iter().collect())
         }
@@ -655,7 +696,7 @@ pub(crate) fn build(
         ));
     }
     let uses = uses(model, body);
-    let selected = resolve(model, selection, &uses)?;
+    let selected = resolve(model, selection, &uses, dec)?;
     if selected.is_empty() {
         return Ok((body, Vec::new()));
     }
@@ -695,6 +736,15 @@ pub(crate) fn build(
             caps: BTreeMap::new(),
         });
     }
+    let trimming = runs
+        .iter()
+        .any(|run| {
+            matches!(
+                run.definition.supports,
+                [Surface::Cylinder(_), Surface::Cylinder(_)]
+            )
+        })
+        .then(|| catallax_numbers::OperationSpan::begin("brep", step, "fillet.trimming", dec));
     for run in &runs {
         if let Err(refusal) = guard(model, body, run, &uses, dec) {
             // A lone closed ring may clear every countersink mouth, touch them
@@ -754,6 +804,17 @@ pub(crate) fn build(
                 .any(|v| b_edge.start == Some(v) || b_edge.end == Some(v))
             {
                 continue;
+            }
+            for (index, face) in a.faces.iter().enumerate() {
+                if let Some(other) = b.faces.iter().position(|f| f == face)
+                    && a.definition
+                        .wall_arc_meets(index, &b.definition, other, dec)?
+                {
+                    return Err(Refusal::new(
+                        "fillet.unsupported-overflow",
+                        "two strips consume one arc of their shared cylinder wall and require simultaneous contact-region trimming",
+                    ));
+                }
             }
             if separated(&a.definition.surface, &b.definition.surface, dec)?
                 || a.definition.sectors_apart(&b.definition, dec)?
@@ -1085,5 +1146,8 @@ pub(crate) fn build(
         edit.faces.push((runs[indices[0]].faces[0], face));
     }
     let result = edge_blend::apply(model, body, &edit)?;
+    if let Some(trimming) = trimming {
+        trimming.finish(dec, None, None);
+    }
     Ok((result, runs.into_iter().map(|run| run.definition).collect()))
 }

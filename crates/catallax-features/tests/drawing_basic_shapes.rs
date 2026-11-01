@@ -35,14 +35,14 @@ fn revolved(sphere: bool) -> Recipe {
     )
 }
 
-fn tilted_rod(angle: f64) -> Recipe {
-    let [left, right] = if angle == 28.0 {
+fn tilted_rod(angle: u32) -> Recipe {
+    let [left, right] = if angle == 28 {
         [
             "7.126837726645915".to_owned(),
             "2.873162273354085".to_owned(),
         ]
     } else {
-        let rise = 4.0 * angle.to_radians().tan();
+        let rise = 4.0 * f64::from(angle).to_radians().tan();
         [(5.0 + rise).to_string(), (5.0 - rise).to_string()]
     };
     recipe(
@@ -116,6 +116,19 @@ fn drawing(recipe: Recipe, volume: f64) {
             .sum::<f64>()
             .sqrt()
             .max(1.0);
+        let viewport_chord: Rational = (0.002 * diagonal).to_string().parse().unwrap();
+        let viewport = MeshOptions {
+            chord_tolerance: viewport_chord / Rational::from_i64(2),
+            angular_deviation: Some("314159265/1200000000".parse().unwrap()),
+            ..MeshOptions::default()
+        };
+        check(
+            &mesh_body(&built.model, built.result, &viewport, &mut dec)
+                .unwrap()
+                .value,
+            &viewport,
+            volume,
+        );
         // mesh_hlr requests 2e-5 times the proven body diagonal; the adapter halves it.
         let chord: Rational = (2e-5 * diagonal).to_string().parse().unwrap();
         let options = MeshOptions {
@@ -149,10 +162,10 @@ fn full_revolve_torus_at_drawing_precision() {
 
 #[test]
 fn rod_cut_at_28_degrees_at_drawing_precision() {
-    drawing(tilted_rod(28.0), 5.0 * std::f64::consts::PI);
+    drawing(tilted_rod(28), 5.0 * std::f64::consts::PI);
 }
 
 #[test]
 fn rod_cut_at_53_degrees_at_drawing_precision() {
-    drawing(tilted_rod(53.0), 5.0 * std::f64::consts::PI);
+    drawing(tilted_rod(53), 5.0 * std::f64::consts::PI);
 }

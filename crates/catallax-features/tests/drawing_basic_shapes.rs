@@ -70,7 +70,9 @@ fn app_tilted_rod(angle: u32) -> Recipe {
         // Keep the other planes exactly through z=5 too. Adding the two
         // rounded endpoint doubles independently can move that plane.
         let rise: Rational = (4.0 * f64::from(angle).to_radians().tan())
-            .to_string().parse().unwrap();
+            .to_string()
+            .parse()
+            .unwrap();
         let five = Rational::from_i64(5);
         steps[2]["loops"][0][0]["to"][1] = json!((&five - &rise).to_string());
         steps[2]["loops"][0][3]["to"][1] = json!((&five + &rise).to_string());
@@ -87,6 +89,14 @@ fn app_tilted_rod(angle: u32) -> Recipe {
 fn app_display(angle: u32) {
     let mut dec = Decider::default();
     let built = evaluate(&app_tilted_rod(angle), &mut dec).unwrap();
+    let native = MeshOptions::default();
+    check(
+        &mesh_body(&built.model, built.result, &native, &mut dec)
+            .unwrap()
+            .value,
+        &native,
+        7.5 * std::f64::consts::PI,
+    );
     // Levels::new(Auto, bbox.diagonal()) requests factors 4, 1 and 1/4
     // of 0.002 * diagonal, all at 15 degrees. The adapter halves the
     // shortest-decimal chord for f32 rounding and uses its lower bound of pi.
@@ -99,13 +109,19 @@ fn app_display(angle: u32) {
             ..MeshOptions::default()
         };
         let start = Instant::now();
-        let answer = mesh_body(&built.model, built.result, &options, &mut dec);
+        let (answer, work) = with_operation_budget(20_000_000, || {
+            mesh_body(&built.model, built.result, &options, &mut dec)
+        });
         eprintln!(
             "app rod {angle} level {factor}: {:?}, {:?}",
             start.elapsed(),
-            answer.as_ref().map(|m| (m.value.positions.len(), m.value.triangles.len()))
+            answer
+                .as_ref()
+                .map(|m| (m.value.positions.len(), m.value.triangles.len()))
         );
         check(&answer.unwrap().value, &options, 7.5 * std::f64::consts::PI);
+        assert!(!work.exhausted, "{work:?}");
+        assert!(work.used < 100_000, "{work:?}");
     }
 }
 
@@ -127,6 +143,27 @@ fn app_rod_cut_at_45_degrees() {
 #[test]
 fn app_rod_cut_at_53_degrees() {
     app_display(53);
+}
+
+#[test]
+fn app_rod_vertex_cap_refuses_without_surface_refinement() {
+    let built = evaluate(&app_tilted_rod(28), &mut Decider::default()).unwrap();
+    let options = MeshOptions {
+        angular_deviation: Some("314159265/1200000000".parse().unwrap()),
+        max_vertices: 10,
+        ..MeshOptions::default()
+    };
+    let (answer, work) = with_operation_budget(20_000_000, || {
+        mesh_body(
+            &built.model,
+            built.result,
+            &options,
+            &mut Decider::default(),
+        )
+    });
+    assert_eq!(answer.unwrap_err().code, "mesh.precision-or-budget");
+    assert!(!work.exhausted, "{work:?}");
+    assert!(work.used < 10_000, "{work:?}");
 }
 
 fn check(mesh: &Mesh, options: &MeshOptions, volume: f64) {

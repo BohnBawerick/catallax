@@ -208,7 +208,13 @@ pub(crate) fn build(
             let a = ring[i].uv;
             let b = align(ring[(i + 1) % ring.len()].uv, a, chart.periodic);
             let delta = b[0] - a[0];
-            if delta == 0.0 || direction.is_some_and(|forward| forward != (delta > 0.0)) {
+            if delta == 0.0 {
+                if !ellipse || !matches!(chart.surface, Surface::Cylinder(_)) || a[1] == b[1] {
+                    return Ok(false);
+                }
+                continue;
+            }
+            if direction.is_some_and(|forward| forward != (delta > 0.0)) {
                 return Ok(false);
             }
             direction = Some(delta > 0.0);
@@ -219,7 +225,7 @@ pub(crate) fn build(
         } else {
             winding.abs().to_bits() == 1.0f64.to_bits()
         };
-        if !whole {
+        if !whole || direction.is_none() {
             return Ok(false);
         }
         if !direction.unwrap() {
@@ -238,16 +244,48 @@ pub(crate) fn build(
         rings.swap(0, 1);
     }
     let [mut lower, mut upper] = rings;
-    let first = upper
-        .iter()
-        .rposition(|p| p.uv[0] <= lower[0].uv[0])
-        .unwrap_or(upper.len() - 1);
+    if (0..lower.len()).any(|i| lower[i].uv[0] == lower[(i + 1) % lower.len()].uv[0]) {
+        return Ok(false);
+    }
+    let jumps: Vec<_> = (0..upper.len())
+        .filter(|&i| upper[i].uv[0] == upper[(i + 1) % upper.len()].uv[0])
+        .map(|i| upper[i].uv[0])
+        .collect();
+    let stepped = !jumps.is_empty();
+    if stepped {
+        // Put the artificial seam away from a vertical trim. The lower circle
+        // is disjoint from the stepped end rail, so this is one simple polygon.
+        let v = lower[0].uv[1];
+        if lower.iter().any(|p| p.uv[1] != v) || upper.iter().any(|p| p.uv[1] <= v) {
+            return Ok(false);
+        }
+        let Some(first) = lower.iter().position(|p| !jumps.contains(&p.uv[0])) else {
+            return Ok(false);
+        };
+        lower.rotate_left(first);
+        for i in 1..lower.len() {
+            if lower[i].uv[0] < lower[i - 1].uv[0] {
+                lower[i].uv[0] += 1.0;
+            }
+        }
+    }
+    let first = if stepped {
+        (0..upper.len())
+            .filter(|&i| upper[i].uv[0] <= lower[0].uv[0])
+            .max_by(|&a, &b| upper[a].uv[0].total_cmp(&upper[b].uv[0]))
+            .unwrap_or(upper.len() - 1)
+    } else {
+        upper
+            .iter()
+            .rposition(|p| p.uv[0] <= lower[0].uv[0])
+            .unwrap_or(upper.len() - 1)
+    };
     upper.rotate_left(first);
     if upper[0].uv[0] > lower[0].uv[0] {
         upper[0].uv[0] -= 1.0;
     }
     for i in 1..upper.len() {
-        if upper[i].uv[0] <= upper[i - 1].uv[0] {
+        if upper[i].uv[0] < upper[i - 1].uv[0] {
             upper[i].uv[0] += 1.0;
         }
     }
@@ -357,21 +395,43 @@ fn sampled_stitch(
         dec,
     )?;
     let (mut a, mut b) = (0, 0);
+    let stepped = lower
+        .windows(2)
+        .chain(upper.windows(2))
+        .any(|p| p[0].uv[0] == p[1].uv[0]);
     while a + 1 < lower.len() || b + 1 < upper.len() {
         dec.check_deadline()?;
-        let samples = if b + 1 == upper.len()
-            || (a + 1 < lower.len() && lower[a + 1].uv[0] <= upper[b + 1].uv[0])
-        {
-            let samples = [&lower[a], &lower[a + 1], &upper[b]];
-            a += 1;
-            samples
-        } else {
-            let samples = [&lower[a], &upper[b + 1], &upper[b]];
-            b += 1;
-            samples
+        let mut take_lower = b + 1 == upper.len()
+            || (a + 1 < lower.len()
+                && if stepped {
+                    lower[a + 1].uv[0] < upper[b + 1].uv[0]
+                } else {
+                    lower[a + 1].uv[0] <= upper[b + 1].uv[0]
+                });
+        let candidate = |take_lower| {
+            if take_lower {
+                lower.get(a + 1).map(|next| [&lower[a], next, &upper[b]])
+            } else {
+                upper.get(b + 1).map(|next| [&lower[a], next, &upper[b]])
+            }
         };
+        let mut samples = candidate(take_lower).expect("one rail can advance");
+        // A vertical trim can require the other rail to advance first. Keep
+        // every original sample and emit only positive, certified triangles.
+        if stepped && !chart::positive_turn(samples[0].uv, samples[1].uv, samples[2].uv) {
+            take_lower = !take_lower;
+            let Some(other) = candidate(take_lower) else {
+                return Ok(false);
+            };
+            samples = other;
+        }
         if !strip.triangle(samples, &boundaries.mesh.positions, dec)? {
             return Ok(false);
+        }
+        if take_lower {
+            a += 1;
+        } else {
+            b += 1;
         }
     }
     strip.finish(boundaries);

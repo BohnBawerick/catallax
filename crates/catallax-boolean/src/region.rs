@@ -465,7 +465,15 @@ impl RegionCache {
             let coordinates = match self.coordinates.entry((point, bits)) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
-                    entry.insert(model.geom().enclose_point(point, &width, dec)?)
+                    // Exact coordinates may already meet the width at 64 bits.
+                    // Promote their working precision too, or chart arithmetic
+                    // keeps rounding at 64 bits through every precision retry.
+                    entry.insert(
+                        model
+                            .geom()
+                            .enclose_point(point, &width, dec)?
+                            .map(|value| value.with_precision(bits)),
+                    )
                 }
             };
             let choices = if matches!(surface, Surface::Sphere(_)) {

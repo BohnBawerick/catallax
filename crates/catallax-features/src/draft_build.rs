@@ -1006,6 +1006,44 @@ fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, 
     }))
 }
 
+/// Reuses the physical through-bore inventory for distance construction. The
+/// filled planar skin is convex; every bore is finite, internal and separated.
+pub(crate) fn bored_distance_skin(
+    model: &Model,
+    faces: &[FaceId],
+    dec: &mut Decider,
+) -> Result<Option<(Skin, Vec<Bore>)>, Refusal> {
+    if !faces.iter().any(|face| {
+        model.face(*face).sense == Sense::Reversed
+            && matches!(
+                model.geom().surface(model.face(*face).surface),
+                Surface::Cylinder(_)
+            )
+    }) {
+        return Ok(None);
+    }
+    let Some(source) = bored_source(model, faces)? else {
+        return Ok(None);
+    };
+    if source.bores.iter().any(|bore| bore.head.is_some()) {
+        return Ok(None);
+    }
+    if !source.skin.is_convex(dec)? {
+        return Err(Refusal::new(
+            "distance.unsupported-envelope",
+            "a bored shell needs a convex planar outer envelope",
+        ));
+    }
+    let bores = preserved_bores(model, &source.bores, &[])?;
+    let cylinders: Vec<_> = bores.iter().map(|bore| &bore.cylinder).collect();
+    bored::certify_bores(
+        source.skin.patches.iter().map(|patch| &patch.plane),
+        &cylinders,
+        dec,
+    )?;
+    Ok(Some((source.skin, bores)))
+}
+
 /// Recognises planar faces around one outward wall that rises from a hole in one
 /// face to the end wire of another, and at most one inward wall between a third
 /// face and either the first, beside the boss, or the second, through it. Any other

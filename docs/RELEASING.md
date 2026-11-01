@@ -83,11 +83,31 @@ runs the full suite once under the old base rule.
 
 `test-build` compiles the selected release tests once with cargo-nextest 0.9.148,
 runs the selected documentation tests, and uploads a one-day nextest archive.
-The four `tests` shards consume that archive with `slice:k/4` partitions and
+The three `tests` shards consume that archive with `slice:k/3` partitions and
 four test threads each. Build jobs also use four Cargo workers. Shards extract
 into the checkout so compile-time `CARGO_BIN_EXE_*` paths still resolve to the
 archived CLI binaries. The existing ten-minute nextest hang guard remains in
 `.config/nextest.toml`.
+
+Heavy Linux jobs use Boat when the repository variable `USE_BOAT` is `true`,
+the repository is `BohnBawerick/catallax`, and both the original run actor and
+the user starting this attempt are `BohnBawerick`. Pull requests also require
+that author and a head branch in this repository. Other actors, Dependabot,
+forks and a false or unset variable use `ubuntu-latest`. Set `USE_BOAT=false`
+to return every moved job to GitHub without a workflow change.
+
+Boat's [public-repository policy](https://docs.boat.dev/ci.md#public-repositories)
+requires both the author and starter to be allowlisted. The workflow checks
+`github.actor`, `github.triggering_actor` and the PR author separately, so an
+owner rerunning another user's PR cannot send it to Boat. No Boat key is used.
+
+A full run starts eight Boat machines: Clippy, test-build, three test shards,
+build, STEP regressions and replay. The small jobs, scoreboard, merge gate and
+all platform, release and packaging workflows retain their GitHub routing.
+Each moved job declares its size once in `runs-on`. The selector unions package
+and job coverage from both policy revisions, then uses the candidate's shard
+count for the complete nextest archive. This permits a four-to-three shard
+transition without dropping tests or requiring an obsolete fourth partition.
 
 `build` publishes the verifier without waiting for OpenCASCADE regressions.
 `step-regressions`, `replay` and `scoreboard` then consume that same verifier

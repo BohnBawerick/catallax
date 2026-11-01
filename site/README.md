@@ -35,13 +35,13 @@ Design tokens and rules are in [DESIGN.md](DESIGN.md), and product facts are in 
 
 ## Evidence and video capture
 
-`evidence.json` records a pinned kernel revision, counting methods, the scope of historical robustness figures and the SolidDraft drawing's provenance. Counters and robustness figures are explicitly historical snapshots, not live measurements of `main`. Rebuild the kernel evidence when updating its figures:
+The homepage counts are the snapshot measured at `e79835b4149a7ead9f6e416a7b2c070a67fe46e0` on 30 October 2026, using the counting method in `evidence.json`. That JSON still pins the older build evidence at `190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df`, including its older counts, historical robustness figures and the SolidDraft drawing's provenance. The repository has grown since the homepage snapshot; neither set of figures is a live measurement of `main`. Rebuild the kernel evidence only when deliberately updating its figures:
 
 ```sh
 CARGO_TARGET_DIR=/tmp/catallax-site-target nice -n 10 node site/render/collect-evidence.mjs
 ```
 
-This runs a real workspace release build, numbers library tests and a compiled workspace test inventory. It writes the evidence and transcript and updates the three repository counts in the homepage's `data-metric` elements. Rust lines include tests, comments and blank lines. The test count excludes ignored tests and doctests; it counts each compiled binary target. The transcript makes paths repository-relative. No source or test result is invented for the video. Do not run this collector merely to publish a design change.
+This runs a real workspace release build, numbers library tests and a compiled workspace test inventory. It writes the evidence and transcript, updates the three repository counts in the homepage's `data-metric` elements, and rewrites the revision and date in `data-snapshot`. Rust lines include tests, comments and blank lines. The test count excludes ignored tests and doctests; it counts each compiled binary target. The transcript makes paths repository-relative. No source or test result is invented for the video. Do not run this collector merely to publish a design change.
 
 Serve the site, then capture both films through a dedicated `chrome-devtools-axi` session and ffmpeg:
 

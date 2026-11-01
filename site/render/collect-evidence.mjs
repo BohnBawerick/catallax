@@ -67,5 +67,8 @@ let html = readFileSync('site/index.html', 'utf8');
 for (const [key, value] of Object.entries(counts)) {
   html = html.replace(new RegExp(`(data-metric="${key}">)[^<]*`), (_, prefix) => `${prefix}${value.toLocaleString('en-US')}`);
 }
+const committed = new Date(run('git', ['show', '-s', '--format=%cI', revision]).stdout.trim().slice(0, 10));
+const day = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeZone: 'UTC' }).format(committed);
+html = html.replace(/(<span data-snapshot>)[^<]*/, `$1${revision.slice(0, 7)}, ${day}`);
 writeFileSync('site/index.html', html);
 console.log(JSON.stringify(evidence, null, 2));

@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use catallax_numbers::{Answer, Answered, Decider, Interval, Outcome, Rational, Real, Refusal};
-use catallax_shapes::{Curve, Sphere, Surface};
+use catallax_numbers::{
+    Answer, Answered, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal, StrictSign,
+};
+use catallax_shapes::{Curve, Sphere, Surface, Vector3};
 use catallax_topology::{BodyId, FaceId, Loop, Model, Sense};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
@@ -414,7 +416,7 @@ impl FaceBuilder<'_> {
                     continue;
                 }
                 let uv = [u, parameter(1, j)];
-                if protected.contains(&key(uv)) {
+                if protected.contains(&key(uv)) || self.chart.outside_corner(uv, self.dec)? {
                     continue;
                 }
                 // Query the fixed boundary triangulation before bulk loading.
@@ -1034,6 +1036,130 @@ fn great_circle_sector(model: &Model, face: FaceId, sphere: &Sphere, dec: &mut D
     })
 }
 
+/// The local frame and bounding hemispheres of one convex corner of a sphere.
+struct ConvexCorner {
+    axis: Vector3,
+    ref_dir: Vector3,
+    planes: [Vector3; 3],
+}
+
+/// Proves that a face passing [`great_circle_sector`] is the positive cone of
+/// its three corner rays. This only chooses a meshing algorithm, so a negative or
+/// inconclusive sign keeps the general route, as the same arcs around any other
+/// region must.
+///
+/// Travel along an arc turns about `m`, the carrier normal when travel follows
+/// the curve. Seen from outside the sphere, `m` points to the left of travel. For
+/// an arc from ray `s` to ray `e`, both on the carrier, `m . (s x e) > 0` makes it
+/// the minor arc and `m` a positive multiple of `s x e`. With each opposite ray on
+/// the left, the three left hemispheres meet exactly in the rays' positive cone,
+/// which the three minor arcs bound. Material lies left of the loop on a face with
+/// the surface's sense, so the face is that cone and not its complement.
+fn convex_corner(
+    model: &Model,
+    face: FaceId,
+    sphere: &Sphere,
+    dec: &mut Decider,
+) -> Option<ConvexCorner> {
+    let definition = model.face(face);
+    let [boundary] = definition.loops.as_slice() else {
+        return None;
+    };
+    let Loop::Coedges(coedges) = model.loop_(*boundary) else {
+        return None;
+    };
+    let [first, second, third] = coedges.as_slice() else {
+        return None;
+    };
+    if definition.sense != Sense::Same {
+        return None;
+    }
+    let arc = |coedge| {
+        let coedge = model.coedge(coedge);
+        let edge = model.edge(coedge.edge);
+        let Curve::Circle(circle) = model.geom().curve(edge.curve) else {
+            return None;
+        };
+        let (from, to) = if coedge.sense == Sense::Same {
+            (edge.start?, edge.end?)
+        } else {
+            (edge.end?, edge.start?)
+        };
+        let normal = if coedge.sense == edge.sense {
+            circle.normal.clone()
+        } else {
+            circle.normal.scaled(&Real::from(-1))
+        };
+        Some((from, to, normal))
+    };
+    let arcs = [arc(*first)?, arc(*second)?, arc(*third)?];
+    let starts = arcs.each_ref().map(|arc| arc.0);
+    if starts[0] == starts[1]
+        || starts[1] == starts[2]
+        || starts[2] == starts[0]
+        || (0..3).any(|i| arcs[i].1 != starts[(i + 1) % 3])
+    {
+        return None;
+    }
+    let rays = starts.map(|vertex| {
+        model
+            .geom()
+            .position(model.vertex(vertex).point)
+            .minus(&sphere.center)
+    });
+    let mut zero = |x: Real| matches!(dec.sign(&x), Outcome::ProvenCoincident(_));
+    for i in 0..3 {
+        let normal = &arcs[i].2;
+        if !zero(normal.dot(&rays[i])) || !zero(normal.dot(&rays[(i + 1) % 3])) {
+            return None;
+        }
+    }
+    let mut positive = |x: Real| matches!(dec.sign(&x), Outcome::Proven(StrictSign::Positive));
+    if !positive(rays[0].dot(&rays[1].cross(&rays[2]))) {
+        return None;
+    }
+    for i in 0..3 {
+        let [start, end, opposite] = std::array::from_fn(|k| &rays[(i + k) % 3]);
+        let normal = &arcs[i].2;
+        if !positive(normal.dot(&start.cross(end))) || !positive(normal.dot(opposite)) {
+            return None;
+        }
+    }
+    // Vertex handles fix one order. In any order, the mixed-sign coordinates of
+    // `a - b + c` in the independent ray basis keep both poles out of the cone,
+    // and none of them is zero, so neither pole lies on a boundary plane.
+    let mut ordered: [_; 3] = std::array::from_fn(|i| (starts[i], &rays[i]));
+    ordered.sort_unstable_by_key(|(vertex, _)| *vertex);
+    let [(_, a), (_, b), (_, c)] = ordered;
+    let axis = a.minus(b).plus(c);
+    let ref_dir = axis.cross(a);
+    let [(_, _, x), (_, _, y), (_, _, z)] = arcs;
+    Some(ConvexCorner {
+        axis,
+        ref_dir,
+        planes: [x, y, z],
+    })
+}
+
+fn poles_clear(chart: &Chart, equations: &[Vec<RealPoly>], dec: &Decider) -> Result<bool, Refusal> {
+    for pole in [[0.0, -0.25], [0.0, 0.25]] {
+        let pole = chart.evaluate(pole, dec)?;
+        for equations in equations {
+            let mut apart = false;
+            for equation in equations {
+                if !equation.eval_ball(&pole, dec)?.contains_zero() {
+                    apart = true;
+                    break;
+                }
+            }
+            if !apart {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 fn regular_chart(
     model: &Model,
     face: FaceId,
@@ -1068,6 +1194,23 @@ fn regular_chart(
     if equations.is_empty() {
         return Chart::new(surface, dec);
     }
+    let sector =
+        options.angular_deviation.is_some() && great_circle_sector(model, face, sphere, dec);
+    if sector && let Some(corner) = convex_corner(model, face, sphere, dec) {
+        let mut local = sphere.clone();
+        local.axis = corner.axis;
+        local.ref_dir = corner.ref_dir;
+        let mut chart = Chart::new(&Surface::Sphere(local), dec)?;
+        if poles_clear(&chart, &equations, dec)? {
+            let [x, y, z] = corner
+                .planes
+                .each_ref()
+                .map(|normal| crate::evaluate::unit(normal, dec));
+            chart.great_circle_sector = true;
+            chart.corner_planes = Some([x?, y?, z?]);
+            return Ok(chart);
+        }
+    }
     for choice in 0..options
         .max_vertices
         .min(equations.len().saturating_mul(64).saturating_add(1))
@@ -1084,29 +1227,8 @@ fn regular_chart(
         candidate.axis = rotation.apply(&sphere.axis);
         candidate.ref_dir = rotation.apply(&sphere.ref_dir);
         let mut chart = Chart::new(&Surface::Sphere(candidate), dec)?;
-        let poles = [
-            chart.evaluate([0.0, -0.25], dec)?,
-            chart.evaluate([0.0, 0.25], dec)?,
-        ];
-        let mut clear = true;
-        'poles: for pole in &poles {
-            for equations in &equations {
-                let mut apart = false;
-                for equation in equations {
-                    if !equation.eval_ball(pole, dec)?.contains_zero() {
-                        apart = true;
-                        break;
-                    }
-                }
-                if !apart {
-                    clear = false;
-                    break 'poles;
-                }
-            }
-        }
-        if clear {
-            chart.great_circle_sector = options.angular_deviation.is_some()
-                && great_circle_sector(model, face, sphere, dec);
+        if poles_clear(&chart, &equations, dec)? {
+            chart.great_circle_sector = sector;
             return Ok(chart);
         }
     }

@@ -40,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-app"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-features",
  "catallax-field",
@@ -59,7 +59,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-boolean"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-intersect",
  "catallax-numbers",
@@ -70,7 +70,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-cli"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-app",
  "catallax-boolean",
@@ -93,7 +93,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-compare"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-boolean",
  "catallax-features",
@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-features"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-boolean",
  "catallax-field",
@@ -129,7 +129,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-field"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-boolean",
  "catallax-features",
@@ -146,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-iges"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-features",
  "catallax-numbers",
@@ -158,7 +158,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-import"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-boolean",
  "catallax-intersect",
@@ -175,7 +175,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-intersect"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-numbers",
  "catallax-shapes",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-measure"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-app",
  "catallax-boolean",
@@ -199,7 +199,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-mesh"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-boolean",
  "catallax-intersect",
@@ -212,7 +212,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-numbers"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "im",
  "num-bigint",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-recipe"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-numbers",
  "serde",
@@ -232,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-shapes"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-numbers",
  "im",
@@ -241,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-step"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-boolean",
  "catallax-features",
@@ -256,7 +256,7 @@ dependencies = [
 
 [[package]]
 name = "catallax-topology"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "catallax-numbers",
  "catallax-recipe",

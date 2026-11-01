@@ -22,7 +22,7 @@ Copyright attaches to code by default. We use the legal instrument available to 
 
 Licensed under MIT. See [LICENSE](LICENSE).
 
-Catallax was started by Pedro De Paiva.
+Catallax was started by Zigrawbohnbawerick Pty Ltd.
 
 ## Two kernels, one recipe
 
@@ -262,7 +262,7 @@ The research notes in [docs/research](docs/research/) record the wider reading b
 
 ## Other products
 
-[check out my other products](https://zigrawbohnbawerick.org/)
+[Other products from Zigrawbohnbawerick Pty Ltd](https://zigrawbohnbawerick.org/)
 
 ## Sponsorship
 

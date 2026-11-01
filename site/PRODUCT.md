@@ -52,7 +52,7 @@ Open decisions:
 
 ## Brand Commitments
 
-- Names: Catallax and SolidDraft, by Pedro De Paiva of Zigrawbohnbawerick Pty Ltd, Perth.
+- Names: Catallax and SolidDraft, by Zigrawbohnbawerick Pty Ltd, Perth.
 - Voice: plain, direct and willing to argue. The page states a position on intellectual property and does not soften it. [inferred]
 - The Catallax mark opens an isometric boundary like a C, with an orange defining point. The wordmark is lowercase.
 - Both projects use the same GitHub Sponsors and Ko-fi links.

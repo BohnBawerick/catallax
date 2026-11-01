@@ -17,8 +17,7 @@
   "sources": {
     "current_implementation": "https://github.com/BohnBawerick/catallax/blob/190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df/README.md",
     "direction": "https://github.com/BohnBawerick/catallax/blob/190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df/docs/PRD.md",
-    "ci": "https://github.com/BohnBawerick/catallax/blob/190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df/.github/workflows/check.yml",
-    "bio": "https://pedro.zigrawbohnbawerick.org/"
+    "ci": "https://github.com/BohnBawerick/catallax/blob/190eb121f2e9c1b11993bb0ddd1e0a44d4bcd3df/.github/workflows/check.yml"
   },
   "historical_robustness": {
     "source": "Project-owner supplied report of the latest kernel, matched against our own hard-test corpus.",
@@ -46,6 +45,6 @@
     "command": "SOURCE_DATE_EPOCH=1791936000 soliddraft draw bracket.json --template iso-a3",
     "verification_source": "crates/soliddraft-cli/tests/draw_exit_test.rs::bracket_drawing_exports_and_follows_the_part",
     "scope": "Unmodified committed CLI drawing fixture, not regenerated for this site. Its source test compares the CLI SVG byte for byte. This is real application output, not a mockup, and is not evidence of Catallax integration.",
-    "licence": "MIT, SolidDraft started by Pedro De Paiva"
+    "licence": "MIT, SolidDraft started by Zigrawbohnbawerick Pty Ltd"
   }
 }

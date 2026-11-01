@@ -62,6 +62,9 @@ pub(crate) struct Chart {
     pub(crate) surface: Surface,
     pub(crate) periodic: [bool; 2],
     pub(crate) normal_scale: Rational,
+    /// A sphere sector of three great-circle arcs under an angular target. This
+    /// selects boundary sampling and seeding only; every proof still applies.
+    pub(crate) great_circle_sector: bool,
     origin: [f64; 3],
     frame: [[f64; 3]; 3],
     turn: Option<Ball>,
@@ -137,6 +140,7 @@ impl Chart {
             filtered_hessian: OnceCell::new(),
             guards: RefCell::new(BTreeMap::new()),
             normal_scale,
+            great_circle_sector: false,
             origin,
             turn,
             evaluator: crate::evaluate::Evaluator::new(surface, dec)?,

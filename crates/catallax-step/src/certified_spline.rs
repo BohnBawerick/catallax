@@ -2,7 +2,7 @@
 //!
 //! Independent coordinate rounding would break planar incidence and periodic
 //! C1 seams. Round one planar Hermite node/derivative table and one sweep instead.
-//! All STEP curves, surfaces, caps and added ring vertices share those values.
+//! All STEP curves, surfaces, caps and added chart vertices share those values.
 
 use std::io::Write;
 
@@ -10,10 +10,10 @@ use catallax_numbers::{
     Answer, Answered, Decider, Integer, Outcome, Rational, Real, Refusal, Sign, StrictSign,
 };
 use catallax_shapes::{Point3, Surface, Vector3, certify_convex_cubic_span};
-use catallax_topology::{BodyId, Loop, Model, Sense, SplinePrism};
+use catallax_topology::{BodyId, Model, Sense, SplinePrism};
 
-use crate::StepReport;
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
+use crate::{StepFaceRegion, StepReport};
 
 /// Output accuracy, independent of modelling sameness and the body's fitting
 /// bound. This exporter preserves exact rational directions and terminating
@@ -422,17 +422,134 @@ fn knot_fields(knots: &[Rational]) -> Result<(Field, Field), Refusal> {
             end += 1;
         }
         multiplicities.push(text((end - start).to_string()));
-        let decimal = knots[start].to_decimal_exact().ok_or_else(|| {
-            bad("parameter knots must have an exact terminating decimal representation")
-        })?;
-        values.push(text(crate::number::decimal(&decimal)));
+        values.push(text(parameter(&knots[start])?));
         start = end;
     }
     Ok((Field::List(multiplicities), Field::List(values)))
 }
 
+/// The closed side is written as two open charts, split at its retained u=2
+/// knot. A checked carrier ends a span at every quarter, so this slices existing
+/// Bezier rows: nothing is refitted and the two halves reassemble exactly.
+struct Charts {
+    /// Index of the control row at the cut.
+    cut: usize,
+    /// Expanded U knots of each chart, clamped at the cut.
+    knots: [Vec<Rational>; 2],
+    /// Exact U domain of each chart.
+    domains: [[Rational; 2]; 2],
+}
+fn open_charts(knots: &[Rational]) -> Result<Charts, Refusal> {
+    let cut = Rational::from_i64(2);
+    let first = knots
+        .iter()
+        .position(|knot| *knot == cut)
+        .ok_or_else(|| bad("spline side lacks its retained u=2 knot"))?;
+    let end = first + knots[first..].iter().take_while(|k| **k == cut).count();
+    if first == 0 || end - first != 3 || end == knots.len() {
+        return Err(bad("u=2 is not an interior Bezier span boundary"));
+    }
+    let lower = knots.first().unwrap().clone();
+    let upper = knots.last().unwrap().clone();
+    Ok(Charts {
+        cut: first - 1,
+        knots: [
+            [&knots[..end], &knots[first..=first]].concat(),
+            [&knots[first..=first], &knots[first..]].concat(),
+        ],
+        domains: [[lower, cut.clone()], [cut, upper]],
+    })
+}
+fn parameter(value: &Rational) -> Result<String, Refusal> {
+    let decimal = value.to_decimal_exact().ok_or_else(|| {
+        bad("parameter knots must have an exact terminating decimal representation")
+    })?;
+    Ok(crate::number::decimal(&decimal))
+}
+fn pcurve_line(
+    graph: &mut Graph,
+    surface: Id,
+    context: Id,
+    origin: [String; 2],
+    direction: &'static str,
+) -> Id {
+    let point = graph.add(
+        "CARTESIAN_POINT",
+        vec![text("''"), text(format!("({},{})", origin[0], origin[1]))],
+    );
+    let direction = graph.add("DIRECTION", vec![text("''"), text(direction)]);
+    let vector = graph.add("VECTOR", vec![text("''"), direction.into(), text("1.")]);
+    let line = graph.add("LINE", vec![text("''"), point.into(), vector.into()]);
+    let representation = graph.add(
+        "DEFINITIONAL_REPRESENTATION",
+        vec![text("''"), refs([line]), context.into()],
+    );
+    graph.add(
+        "PCURVE",
+        vec![text("''"), surface.into(), representation.into()],
+    )
+}
+fn edge_curve(graph: &mut Graph, ends: [Id; 2], curve: Id, pcurves: Vec<Id>) -> Id {
+    let wrapper = graph.add(
+        "SURFACE_CURVE",
+        vec![text("''"), curve.into(), refs(pcurves), text(".CURVE_3D.")],
+    );
+    graph.add(
+        "EDGE_CURVE",
+        vec![
+            text("''"),
+            ends[0].into(),
+            ends[1].into(),
+            wrapper.into(),
+            boolean(true),
+        ],
+    )
+}
+fn advanced_face(
+    graph: &mut Graph,
+    name: &str,
+    uses: &[(Id, bool)],
+    surface: Id,
+    same: bool,
+) -> Field {
+    let oriented: Vec<_> = uses
+        .iter()
+        .map(|(edge, forward)| {
+            graph.add(
+                "ORIENTED_EDGE",
+                vec![
+                    text("''"),
+                    text("*"),
+                    text("*"),
+                    (*edge).into(),
+                    boolean(*forward),
+                ],
+            )
+        })
+        .collect();
+    let loop_ = graph.add("EDGE_LOOP", vec![text("''"), refs(oriented)]);
+    let bound = graph.add(
+        "FACE_OUTER_BOUND",
+        vec![text("''"), loop_.into(), boolean(true)],
+    );
+    graph
+        .add(
+            "ADVANCED_FACE",
+            vec![
+                text(string(name)),
+                refs([bound]),
+                surface.into(),
+                boolean(same),
+            ],
+        )
+        .into()
+}
+
 /// Writes the first checked finite polynomial spline-prism family as genuine
 /// `B_SPLINE_SURFACE_WITH_KNOTS` and shared `B_SPLINE_CURVE_WITH_KNOTS` entities.
+/// The one model side becomes two file faces with shared boundaries, recorded
+/// in `StepReport::face_map`. This is export topology; the point sets and the
+/// model stay as they are.
 /// The returned `max_deviation` bounds both directions over the complete solid,
 /// relative to the represented model. Compose it separately with that model's
 /// definition certificate. It is not the modelling tolerance or a refit bound.
@@ -449,6 +566,7 @@ pub fn write_spline_prism_step<W: Write>(
     }
     let view = SplinePrism::check(model, body, dec)?;
     let rounded = round_geometry(&view, options, dec)?;
+    let charts = open_charts(view.spline().carrier().knots()[0])?;
     let mut graph = Graph::default();
     let mut controls: Vec<[Id; 2]> = Vec::with_capacity(rounded.controls.len());
     for (index, pair) in rounded.controls.iter().enumerate() {
@@ -458,42 +576,46 @@ pub fn write_spline_prism_step<W: Write>(
             controls.push([point(&mut graph, &pair[0])?, point(&mut graph, &pair[1])?]);
         }
     }
-    let (u_multiplicities, u_knots) = knot_fields(view.spline().carrier().knots()[0])?;
-    let mut curve = |row| {
-        graph.add(
-            "B_SPLINE_CURVE_WITH_KNOTS",
+    let rows = [&controls[..=charts.cut], &controls[charts.cut..]];
+    let mut sides = Vec::with_capacity(2);
+    let mut arcs = Vec::with_capacity(2);
+    for (rows, knots) in rows.into_iter().zip(&charts.knots) {
+        let (multiplicities, knots) = knot_fields(knots)?;
+        sides.push(graph.add(
+            "B_SPLINE_SURFACE_WITH_KNOTS",
             vec![
                 text("''"),
                 text("3"),
-                refs(controls.iter().map(|pair| pair[row])),
+                text("1"),
+                Field::List(rows.iter().map(|pair| refs(*pair)).collect()),
                 text(".UNSPECIFIED."),
-                boolean(true),
                 boolean(false),
-                u_multiplicities.clone(),
-                u_knots.clone(),
+                boolean(false),
+                boolean(false),
+                multiplicities.clone(),
+                text("(2,2)"),
+                knots.clone(),
+                text("(0.,1.)"),
                 text(".UNSPECIFIED."),
             ],
-        )
-    };
-    let curves = [curve(0), curve(1)];
-    let side = graph.add(
-        "B_SPLINE_SURFACE_WITH_KNOTS",
-        vec![
-            text("''"),
-            text("3"),
-            text("1"),
-            Field::List(controls.iter().map(|pair| refs(*pair)).collect()),
-            text(".UNSPECIFIED."),
-            boolean(true),
-            boolean(false),
-            boolean(false),
-            u_multiplicities,
-            text("(2,2)"),
-            u_knots,
-            text("(0.,1.)"),
-            text(".UNSPECIFIED."),
-        ],
-    );
+        ));
+        arcs.push([0, 1].map(|row| {
+            graph.add(
+                "B_SPLINE_CURVE_WITH_KNOTS",
+                vec![
+                    text("''"),
+                    text("3"),
+                    refs(rows.iter().map(|pair| pair[row])),
+                    text(".UNSPECIFIED."),
+                    boolean(false),
+                    boolean(false),
+                    multiplicities.clone(),
+                    knots.clone(),
+                    text(".UNSPECIFIED."),
+                ],
+            )
+        }));
+    }
     let reference = direction(&mut graph, &rounded.reference)?;
     let axis = direction(&mut graph, &rounded.axis)?;
     let faces = view.faces();
@@ -513,63 +635,106 @@ pub fn write_spline_prism_step<W: Write>(
         );
         Ok(graph.add("PLANE", vec![text("''"), placement.into()]))
     };
-    let surfaces = [plane(0)?, plane(1)?, side];
-    let edges = std::array::from_fn::<_, 2, _>(|index| {
-        let vertex = graph.add("VERTEX_POINT", vec![text("''"), controls[0][index].into()]);
-        graph.add(
-            "EDGE_CURVE",
+    let caps = [plane(0)?, plane(1)?];
+    // Both charts of one U parameter value carry its corner rows: index 0 at
+    // the periodic u=0/4 join and index 1 at the cut.
+    let corners = [controls[0], controls[charts.cut]];
+    let vertices =
+        corners.map(|pair| pair.map(|row| graph.add("VERTEX_POINT", vec![text("''"), row.into()])));
+    let context = graph.add(
+        "GEOMETRIC_REPRESENTATION_CONTEXT",
+        vec![text("''"), text("''"), text("2")],
+    );
+    let mut rings = Vec::with_capacity(2);
+    for (index, surface) in sides.iter().enumerate() {
+        let mut edges = [None, None];
+        for row in 0..2 {
+            let line = pcurve_line(
+                &mut graph,
+                *surface,
+                context,
+                ["0.".to_owned(), format!("{row}.")],
+                "(1.,0.)",
+            );
+            edges[row] = Some(edge_curve(
+                &mut graph,
+                [vertices[index][row], vertices[1 - index][row]],
+                arcs[index][row],
+                vec![line],
+            ));
+        }
+        rings.push(edges.map(Option::unwrap));
+    }
+    let join = |index: usize, graph: &mut Graph| -> Result<Id, Refusal> {
+        let curve = graph.add(
+            "B_SPLINE_CURVE_WITH_KNOTS",
             vec![
                 text("''"),
-                vertex.into(),
-                vertex.into(),
-                curves[index].into(),
-                boolean(model.edge(view.rings()[index]).sense == Sense::Same),
+                text("1"),
+                refs(corners[index]),
+                text(".UNSPECIFIED."),
+                boolean(false),
+                boolean(false),
+                text("(2,2)"),
+                text("(0.,1.)"),
+                text(".UNSPECIFIED."),
             ],
-        )
-    });
-    let mut face_entities: Vec<Field> = Vec::with_capacity(3);
-    for (index, face) in faces.into_iter().enumerate() {
-        let mut bounds = Vec::with_capacity(model.face(face).loops.len());
-        for loop_id in &model.face(face).loops {
-            let Loop::Coedges(coedges) = model.loop_(*loop_id) else {
-                unreachable!("checked complete spline-prism trims");
-            };
-            let coedge = model.coedge(coedges[0]);
-            let edge = view
-                .rings()
-                .iter()
-                .position(|ring| *ring == coedge.edge)
-                .unwrap();
-            let oriented = graph.add(
-                "ORIENTED_EDGE",
-                vec![
-                    text("''"),
-                    text("*"),
-                    text("*"),
-                    edges[edge].into(),
-                    boolean(coedge.sense == Sense::Same),
-                ],
-            );
-            let loop_ = graph.add("EDGE_LOOP", vec![text("''"), refs([oriented])]);
-            bounds.push(
-                graph
-                    .add("FACE_BOUND", vec![text("''"), loop_.into(), boolean(true)])
-                    .into(),
-            );
-        }
-        face_entities.push(
-            graph
-                .add(
-                    "ADVANCED_FACE",
-                    vec![
-                        text(string(&format!("face_{}", face.index()))),
-                        Field::List(bounds),
-                        surfaces[index].into(),
-                        boolean(model.face(face).sense == Sense::Same),
-                    ],
-                )
-                .into(),
         );
+        let parameters = if index == 0 {
+            [&charts.domains[0][0], &charts.domains[1][1]]
+        } else {
+            [&charts.domains[0][1], &charts.domains[1][0]]
+        };
+        let mut lines = Vec::with_capacity(2);
+        for (surface, value) in sides.iter().zip(parameters) {
+            lines.push(pcurve_line(
+                graph,
+                *surface,
+                context,
+                [parameter(value)?, "0.".to_owned()],
+                "(0.,1.)",
+            ));
+        }
+        Ok(edge_curve(graph, vertices[index], curve, lines))
+    };
+    let joins = [join(0, &mut graph)?, join(1, &mut graph)?];
+    // `SplinePrism::check` proves the side has the surface's sense, travelling
+    // the lower ring with increasing u and the upper ring against it. Each cap
+    // uses its ring the opposite way, so one shell has one material side.
+    let mut face_entities: Vec<Field> = Vec::with_capacity(4);
+    let mut face_map = Vec::with_capacity(4);
+    for (index, surface) in caps.into_iter().enumerate() {
+        let face = faces[index];
+        let uses = if index == 0 {
+            [(rings[1][0], false), (rings[0][0], false)]
+        } else {
+            [(rings[0][1], true), (rings[1][1], true)]
+        };
+        let name = format!("face_{}", face.index());
+        let same = model.face(face).sense == Sense::Same;
+        face_entities.push(advanced_face(&mut graph, &name, &uses, surface, same));
+        face_map.push(StepFaceRegion {
+            face,
+            file_region: name,
+            file_domain: None,
+        });
+    }
+    let side = faces[2];
+    let same = model.face(side).sense == Sense::Same;
+    for (index, domain) in charts.domains.into_iter().enumerate() {
+        let uses = [
+            (rings[index][0], true),
+            (joins[1 - index], true),
+            (rings[index][1], false),
+            (joins[index], false),
+        ];
+        let name = format!("face_{}_patch_{index}", side.index());
+        face_entities.push(advanced_face(&mut graph, &name, &uses, sides[index], same));
+        face_map.push(StepFaceRegion {
+            face: side,
+            file_region: name,
+            file_domain: Some([domain, [Rational::zero(), Rational::one()]]),
+        });
     }
     let shell = graph.add("CLOSED_SHELL", vec![text("''"), Field::List(face_entities)]);
     let solid = graph.add("MANIFOLD_SOLID_BREP", vec![text("''"), shell.into()]);
@@ -583,11 +748,13 @@ pub fn write_spline_prism_step<W: Write>(
         .map_err(|error| Refusal::new("step.io-error", error.to_string()))?;
     Ok(Answer::exact(StepReport {
         max_deviation: rounded.bound,
-        added_vertices: 2,
+        added_vertices: 4,
+        added_edges: 4,
         solids: 1,
-        faces: 3,
-        edges: 2,
-        vertices: 2,
+        faces: 4,
+        edges: 6,
+        vertices: 4,
+        face_map,
         ..StepReport::default()
     }))
 }

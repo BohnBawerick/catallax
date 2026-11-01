@@ -78,6 +78,20 @@ pub struct StepRegularization {
     pub removed_edges: usize,
 }
 
+/// One written face and the model face it covers.
+///
+/// A file may split one model face into several charts. Each record names a
+/// reachable `ADVANCED_FACE`; together they cover the model's faces once.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct StepFaceRegion {
+    /// Model face this file face belongs to.
+    pub face: catallax_topology::FaceId,
+    /// The `ADVANCED_FACE` name in the file.
+    pub file_region: String,
+    /// Exact `[[u_lo, u_hi], [v_lo, v_hi]]` chart of a spline patch.
+    pub file_domain: Option<[[Rational; 2]; 2]>,
+}
+
 /// What an export wrote and how far it is from the exact model.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct StepReport {
@@ -99,6 +113,9 @@ pub struct StepReport {
     pub vertices: usize,
     /// Export-only topology changes, each with its own certified displacement.
     pub regularizations: Vec<StepRegularization>,
+    /// Every written face, for writers that map file faces to model regions.
+    /// Other writers leave it empty.
+    pub face_map: Vec<StepFaceRegion>,
 }
 
 /// Writes `bodies` as one STEP AP242 file to `out`.

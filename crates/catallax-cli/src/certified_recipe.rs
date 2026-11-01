@@ -293,10 +293,14 @@ fn step(
         Err(error) => return Ok(consumer_refusal(&error)),
     };
     fs::write(out.join("answer.step"), bytes)?;
-    let regions: Vec<_> = certificate.faces().into_iter().flatten().map(|face| {
-        let region = certificate.region_for_face(face).expect("complete geometry-bound region");
-        json!({"model_region":certificate::key(&region.identity.representation),"face":face.index(),"file_region":format!("face_{}",face.index()),
-            "file_to_model_bound_mm":report.max_deviation.to_string(),"file_to_definition_bound_mm":composed(app,&report.max_deviation)})
+    let regions: Vec<_> = report.face_map.iter().map(|written| {
+        let region = certificate.region_for_face(written.face).expect("complete geometry-bound region");
+        let mut row = json!({"model_region":certificate::key(&region.identity.representation),"face":written.face.index(),"file_region":written.file_region,
+            "file_to_model_bound_mm":report.max_deviation.to_string(),"file_to_definition_bound_mm":composed(app,&report.max_deviation)});
+        if let Some(domain) = &written.file_domain {
+            row["file_domain"] = json!(domain.each_ref().map(|axis| axis.each_ref().map(Rational::to_string)));
+        }
+        row
     }).collect();
     Ok(
         json!({"status":"answered","file":"answer.step","scope":"represented-model","requested_file_to_model_mm":options.file_tolerance,

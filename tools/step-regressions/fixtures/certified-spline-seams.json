@@ -1,0 +1,17 @@
+{
+  "format": "sdc-certified-spline-step-seam/1",
+  "base": "485f17235fa81d24e91a66804da868ad0e852dbd",
+  "positive": [
+    {"id":"offset","distance":"1/4","axial":["9/4","23/4"],"centroid":["12/5","0","16/5"]},
+    {"id":"second","distance":"1/2","axial":["5/2","11/2"],"centroid":["12/5","0","16/5"]},
+    {"id":"after_trim","distance":"1/2","axial":["13/4","15/4"],"centroid":["21/10","0","14/5"]}
+  ],
+  "native": {"solids":1,"faces":3,"physical_rings":2,"vertices":0},
+  "file": {"solids":1,"shells":1,"planes":2,"splines":2,"edges":6,"vertices":4,"added_edges":4,"added_vertices":4},
+  "file_side_domains": [[["0","2"],["0","1"]],[["2","4"],["0","1"]]],
+  "raw": {"reader":"cadquery-ocp==8.0.1.1.0","same_parameter":0,"max_precision_mode":0,"precision":"1e-7","max_tolerance":"1e-7","healing":false},
+  "work_caps": {"writer_only_application":20000000,"replay":100000000,"scoreboard":1000000},
+  "property_oracle": {"target":"parallel ellipse with bounded perimeter series","file_volume":"exact rational Bezier integral","file_length_width_mm":"1e-9","last_two_volume_agreement_mm3":"1e-9","volume_numeric_allowance_mm3":"1e-8","last_two_area_agreement_mm2":"1e-9","area_numeric_allowance_mm2":"1e-8"},
+  "hang_guard_seconds":600,
+  "timings":"record only"
+}

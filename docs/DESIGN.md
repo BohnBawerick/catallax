@@ -85,7 +85,7 @@ A future recipe reference names, for example, the edge between the side of extru
 
 ## Conversion at the border
 
-Conversion is built only when an operation or output needs it, not after every edit. Imported bodies become fixed recipe inputs. STEP import still needs gap measurement, analytic recognition, periodic-face handling, exact sharp-edge reconstruction and vertex solving. Any movement must be measured against the import's tolerance and reported. The importer is not built yet.
+Conversion is built only when an operation or output needs it, not after every edit. Imported bodies become fixed recipe inputs. The [STEP importer](pieces/08-step-import-repair.md) reads a supported analytic subset and measures and records straight planar seam repairs. Self-exported blocks and cylinders pass through the application recipe entry with unchanged carriers and boundaries. General periodic faces, curved repairs and spline import remain unfinished. Any movement must be measured against the import's tolerance and reported.
 
 For export, keep analytic forms exact. A surface with no exact STEP form stays exact by definition in both kernels; only its exported representation is approximated. Prove and report fitting and rounding deviation, subject to the PRD's 1 nm necessity limit. Existing configurable export tolerances and marks are an inherited contract, not proof that every exported result already meets this new rule. Accuracy levels and large-part stand-ins remain planned.
 

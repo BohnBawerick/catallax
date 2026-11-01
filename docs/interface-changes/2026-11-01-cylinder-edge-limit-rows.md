@@ -25,4 +25,6 @@ P3 at a 1.5 mm limit grew from 76,809 to 95,130 vertices, because four cylinder 
 finely sampled rails now take rows. Calls with no edge limit, and bodies whose faces already
 meet the limit in one cell or have no cylinder face, keep their exact output. In a changed
 body the cone, sphere, torus and plane faces keep their triangles, though compacted indices
-can differ. Exact properties and STEP bytes are unchanged.
+can differ. Exact properties and STEP bytes are unchanged. A cylinder or elliptic cylinder
+whose rails swing across the rows, such as one with a tilted end, keeps refusing at the
+drawing chord. A tilted end refuses there with no edge limit too, so that fault is separate.

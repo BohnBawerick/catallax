@@ -51,7 +51,6 @@ const evidence = {
     current_implementation: 'https://github.com/BohnBawerick/catallax/blob/' + revision + '/README.md',
     direction: 'https://github.com/BohnBawerick/catallax/blob/' + revision + '/docs/PRD.md',
     ci: 'https://github.com/BohnBawerick/catallax/blob/' + revision + '/.github/workflows/check.yml',
-    bio: 'https://pedro.zigrawbohnbawerick.org/',
   },
   historical_robustness: {
     source: 'Project-owner supplied report of the latest kernel, matched against our own hard-test corpus.',

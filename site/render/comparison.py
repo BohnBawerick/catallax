@@ -22,7 +22,6 @@ ENGINES = ('catallax', 'solidcraft', 'cadquery', 'smlibpy', 'pali_ijo')
 def render_index(source, index, check=False):
     data = json.loads(source.read_text())
     rows = summarize({'engines': ENGINES, 'pairs': data['observations']})
-    parts = {row['part'] for row in rows}
     summary_rows = []
     for engine in ENGINES:
         subset = [row for row in rows if row['engine'] == engine]
@@ -33,37 +32,27 @@ def render_index(source, index, check=False):
         total = sum(row['samples'] for row in subset if row['phase'] == 'construction')
         highlight = ' class="is-us"' if engine == 'catallax' else ''
         summary_rows.append(
-            '        <tr class="bench__row" role="row">\n'
-            f'          <th scope="row" role="rowheader">{escape(data["tools"][engine]["name"])}</th>\n'
-            f'          <td role="cell"{highlight} data-v="{construction}"><b>{construction}</b></td>'
-            f'<td role="cell"{highlight} data-v="{edit}"><b>{edit}</b></td>'
-            f'<td role="cell" data-v="{total}"><b>{total}</b></td>\n'
-            '        </tr>')
-    # The rows lay out as a grid, so explicit roles keep the table semantics.
+            f'        <tr{highlight} role="row"><th scope="row" role="rowheader">{escape(data["tools"][engine]["name"])}</th>'
+            f'<td role="cell" style="--v:{construction / total:.3f}"><i></i><b>{construction}</b></td>'
+            f'<td role="cell" style="--v:{edit / total:.3f}"><i></i><b>{edit}</b></td></tr>')
     table = (
-        '  <div class="bench__table">\n'
+        '  <figure class="chart" id="comparison-summary">\n'
         '    <table role="table">\n'
-        '      <caption class="sr-only">Five-tool completed builds</caption>\n'
-        '      <thead role="rowgroup">\n'
-        '        <tr class="bench__row bench__row--head label" role="row">\n'
-        '          <th scope="col" role="columnheader">Tool</th><th scope="col" role="columnheader">Construction</th>'
-        '<th scope="col" role="columnheader">Parameter edit</th><th scope="col" role="columnheader">Samples per phase</th>\n'
-        '        </tr>\n'
-        '      </thead>\n'
+        f'      <caption class="sr">Completed builds out of {total}, by tool</caption>\n'
+        '      <thead class="sr" role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Tool</th>'
+        '<th scope="col" role="columnheader">Construction</th><th scope="col" role="columnheader">Parameter edit</th></tr></thead>\n'
         '      <tbody role="rowgroup">\n' + '\n'.join(summary_rows) + '\n      </tbody>\n'
         '    </table>\n'
-        '  </div>')
-    paragraph = (
-        '<p class="bench__foot" id="comparison-summary">'
-        f'Completed builds across {len(parts)} targets and {data["timing"]["measured_pairs"]} measured samples per tool and target. '
-        'An edit skipped after a failed construction remains incomplete. Completion is not correctness. '
-        '<a href="comparison.html">The five-tool comparison</a> reports timings, correctness checks, versions and method.</p>')
+        '    <figcaption class="mono"><span class="key key--a">Build</span><span class="key key--b">Edit</span>'
+        f'<span>Completed, of {total}</span><span class="truth">Completion is not correctness.</span>'
+        '<a href="comparison.html" target="_blank" rel="noopener">Full comparison</a></figcaption>\n'
+        '  </figure>')
     original = index.read_text()
     generated, count = re.subn(
-        r'  <div class="bench__table"[^>]*>.*?</div>\n  <p class="bench__foot" id="comparison-summary">[^\n]*</p>',
-        lambda _: table + '\n  ' + paragraph, original, flags=re.DOTALL)
+        r'  <figure class="chart" id="comparison-summary">.*?</figure>',
+        lambda _: table, original, flags=re.DOTALL)
     if count != 1:
-        raise ValueError('index.html must have exactly one benchmark table and comparison-summary paragraph')
+        raise ValueError('index.html must have exactly one comparison-summary figure')
     if check:
         if generated != original:
             raise SystemExit('index.html comparison summary is stale; run site/render/comparison.py')
@@ -208,7 +197,7 @@ def render(source, output):
 <title>Target-part comparison | Catallax</title><meta name="description" content="Measured construction, parameter rebuilds and correctness on thirteen fixed CAD targets across five tools.">
 <meta name="color-scheme" content="dark"><meta name="theme-color" content="#0b0c0d">
 <meta property="og:type" content="article"><meta property="og:site_name" content="Catallax + SolidDraft"><meta property="og:title" content="Target-part comparison | Catallax"><meta property="og:description" content="Measured construction, parameter rebuilds and correctness on thirteen fixed CAD targets across five tools."><meta property="og:url" content="https://kernel.zigrawbohnbawerick.org/comparison.html"><meta property="og:image" content="https://kernel.zigrawbohnbawerick.org/media/og-card.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="brand/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="brand/tokens.css"><link rel="stylesheet" href="css/site.css"><link rel="stylesheet" href="css/comparison.css"></head>
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="brand/fonts.css"><link rel="stylesheet" href="brand/tokens.css"><link rel="stylesheet" href="css/site.css"><link rel="stylesheet" href="css/comparison.css"></head>
 <body><a class="skip" href="#main">Skip to content</a><header class="comparison-nav"><a href="/">Catallax</a><nav aria-label="Comparison sections"><a href="#speed">Timings</a><a href="#correctness">Correctness</a><a href="#range">Target range</a><a href="#method">Method</a></nav></header>
 <main id="main" class="comparison"><h1>Same targets.<br>Five tools.</h1><p class="intro">Construction and one parameter edit on thirteen fixed P0–P5 parts. Timings and correctness are reported separately. A quick refusal is not a completed part.</p>
 <p>Measured on {text(host['machine_class'])}, {text(host.get('cpu_model',host['cpu']))}. {text(host['system'])}. One core, {timing['warmups']} warmup and {timing['measured_pairs']} measured samples per tool and part. Catallax work allowance: {timing['max_work_per_catallax_phase']:,} per phase. <a href="comparison-results.json">Committed measurements and checksums</a>.</p>

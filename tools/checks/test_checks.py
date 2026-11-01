@@ -51,16 +51,18 @@ class GateTests(unittest.TestCase):
                                  'driver_sha256': 'driver', 'raw_policy_sha256': 'raw-policy',
                                  'corrections_sha256': 'corrections'},
                      'correction_base_answers': [{'index': 262}],
-                     'selection': {'jobs': {'fmt': 1, 'clippy': 1, 'tests': 4, 'build': 1, 'replay': 1},
+                     'selection': {'jobs': {'fmt': 1, 'clippy': 1, 'test-build': 1, 'tests': 4,
+                                            'build': 1, 'step-regressions': 1, 'replay': 1},
                                    'selected_cases': 477},
-                     'declared': ['fmt', 'clippy', 'tests', 'build', 'replay', 'scoreboard']}
+                     'declared': ['fmt', 'clippy', 'test-build', 'tests', 'build',
+                                  'step-regressions', 'replay', 'scoreboard']}
         self.reported = {name: {'result': 'success'} for name in self.plan['selection']['jobs']}
         self.reported['scoreboard'] = {'result': 'skipped'}
         self.records = []
         for name, partitions in self.plan['selection']['jobs'].items():
             for part in range(1, partitions + 1):
                 record = dict(self.plan['identity'], job=name, partition=part,
-                              binary_sha256='binary' if name in {'build', 'replay'} else None,
+                              binary_sha256='binary' if name in {'build', 'step-regressions', 'replay'} else None,
                               result='success')
                 if name == 'replay':
                     record.update(workers=4, fresh=True, cache_hits=0, selected_cases=477,
@@ -103,6 +105,20 @@ class GateTests(unittest.TestCase):
         del reported['clippy']
         self.assertIn('clippy: missing', self.errors(reported=reported))
 
+    def test_archive_and_step_jobs_cannot_be_skipped_or_lose_evidence(self):
+        for name in ('test-build', 'step-regressions'):
+            with self.subTest(job=name):
+                for result in ('failure', 'cancelled', 'skipped'):
+                    reported = copy.deepcopy(self.reported)
+                    reported[name]['result'] = result
+                    self.assertIn(f'{name}: {result}', self.errors(reported=reported))
+                records = [record for record in self.records if record['job'] != name]
+                self.assertIn(f'{name}: partition 1/1 missing', self.errors(records=records))
+        records = copy.deepcopy(self.records)
+        next(record for record in records if record['job'] == 'step-regressions')['binary_sha256'] = 'stale'
+        self.assertTrue(any('step-regressions: stale binary_sha256:' in error
+                            for error in self.errors(records=records)))
+
     def test_c3_metadata_cannot_hide_changed_answer(self):
         base = [{'index': 7, 'accepted_answer_sha256':
                  '0203b8b177ca59e519192e31b591c51d3668e031ed6a83e0cae0539f84a8bdcd'}]
@@ -119,8 +135,8 @@ class SelectorTests(unittest.TestCase):
         cls.rules = checks.read(checks.ROOT / checks.RULES)
         cls.graph, cls.build = checks.cargo_graph(checks.ROOT)
 
-    def route(self, paths, rules=None, event='pull_request', ref=''):
-        return checks.select(paths, rules or self.rules, self.graph, self.build, event, ref)
+    def route(self, paths, rules=None, event='pull_request', ref='', changed_jobs=()):
+        return checks.select(paths, rules or self.rules, self.graph, self.build, event, ref, changed_jobs)
 
     def test_s1_routing(self):
         def packages(*names):
@@ -140,8 +156,8 @@ class SelectorTests(unittest.TestCase):
             (['docs/PLAN.md'], set(), False),
             (['newdir/unmapped.txt'], set(self.graph), True),
             (['crates/catallax-iges/src/format.rs', 'crates/catallax-step/src/format.rs'], step, True),
-            (['.github/workflows/check.yml'], set(self.graph), True),
-            (['tools/checks/rules.json'], set(self.graph), True),
+            (['.github/workflows/check.yml'], set(), False),
+            (['tools/checks/rules.json'], set(), False),
             (['tools/checks/earlier-answers.json'], set(self.graph), True),
         ]
         for paths, minimum, replay in rows:
@@ -156,6 +172,8 @@ class SelectorTests(unittest.TestCase):
                     self.assertIn('scoreboard', selected['jobs'])
                 if paths == ['.claude/skills/verify-catallax/scripts/control-catallax.py']:
                     self.assertIn('build', selected['jobs'])
+                self.assertEqual('test-build' in selected['jobs'], 'tests' in selected['jobs'])
+                self.assertEqual('step-regressions' in selected['jobs'], 'build' in selected['jobs'])
 
     def test_s2_base_and_candidate_union(self):
         changed = copy.deepcopy(self.rules)
@@ -170,6 +188,70 @@ class SelectorTests(unittest.TestCase):
         plan = {'identity': {}, 'declared': list(changed['jobs']), 'selection': union}
         errors = checks.decide(plan, {}, [])
         self.assertIn('extra: missing', errors)
+
+    def test_base_only_selection_still_requires_split_checks(self):
+        old_rules = copy.deepcopy(self.rules)
+        del old_rules['jobs']['test-build']
+        del old_rules['jobs']['step-regressions']
+        base = self.route(['crates/catallax-cli/src/verification.rs'], old_rules)
+        candidate = self.route(['docs/PLAN.md'])
+        jobs = checks.union_selection(base, candidate)['jobs']
+        self.assertEqual(jobs['test-build'], 1)
+        self.assertEqual(jobs['step-regressions'], 1)
+
+    def test_ci_only_changes_run_tooling_and_changed_jobs_without_shards_or_replay(self):
+        before = {'jobs': {
+            'fmt': {'steps': [{'run': 'ci/run fmt'}]},
+            'clippy': {'steps': [{'run': 'ci/run clippy --workspace'}]},
+            'build': {'steps': [{'run': 'cargo build --release'}]},
+            'tests': {'needs': 'test-build', 'steps': [{'run': 'old tests'}]},
+            'test-build': {'steps': [{'run': 'archive tests'}]},
+            'step-regressions': {'needs': ['select', 'build'], 'steps': [{'run': 'old STEP check'}]},
+            'replay': {'needs': 'build', 'steps': [{'run': 'old replay'}]}}}
+        after = copy.deepcopy(before)
+        after['jobs']['clippy']['steps'] = [{'run': 'ci/run clippy'}]
+        after['jobs']['tests']['steps'] = [{'run': 'changed tests'}]
+        after['jobs']['replay']['steps'] = [{'run': 'changed replay'}]
+        changed = checks.changed_check_jobs(before, after)
+        paths = ['.github/workflows/check.yml', 'ci/run', 'tools/checks/rules.json', 'docs/RELEASING.md']
+        selected = self.route(paths, changed_jobs=changed)
+        self.assertEqual(selected['jobs'], {'fmt': 1, 'clippy': 1})
+        self.assertEqual(selected['selected_cases'], 0)
+        self.assertEqual(set(selected['packages']), set(self.graph))
+        unchanged = self.route(paths, changed_jobs=checks.changed_check_jobs(after, after))
+        self.assertEqual(unchanged['jobs'], {'fmt': 1})
+        self.assertEqual(unchanged['packages'], [])
+        after['jobs']['step-regressions']['steps'] = [{'run': 'changed STEP check'}]
+        selected = self.route(paths, changed_jobs=checks.changed_check_jobs(before, after))
+        self.assertEqual(set(selected['jobs']), {'fmt', 'clippy', 'build', 'step-regressions'})
+        source = self.route(paths + ['crates/catallax-cli/src/verification.rs'], changed_jobs=changed)
+        self.assertEqual(source['selected_cases'], 477)
+        self.assertEqual(source['jobs']['tests'], 4)
+        for path in ('tools/checks/earlier-answers.json', 'tools/checks/replay-corrections.json',
+                     'tools/checks/raw_step.py'):
+            self.assertEqual(self.route([path])['selected_cases'], 477)
+
+    def test_ci_rule_migration_runs_full_once_then_obeys_changed_job_selection(self):
+        old_rules = copy.deepcopy(self.rules)
+        del old_rules['ci_paths']
+        before = self.route(['tools/checks/rules.json'], old_rules)
+        after = self.route(['tools/checks/rules.json'])
+        migration = checks.union_selection(before, after)
+        self.assertEqual(migration['selected_cases'], 477)
+        self.assertEqual(migration['jobs']['tests'], 4)
+        future = checks.union_selection(after, after)
+        self.assertEqual(future['jobs'], {'fmt': 1})
+        self.assertEqual(future['selected_cases'], 0)
+        build_only = self.route(['.github/workflows/check.yml'], changed_jobs={'build'})
+        future = checks.union_selection(build_only, build_only)
+        self.assertEqual(future['jobs'], {'fmt': 1, 'build': 1})
+
+    def test_workflow_environment_changes_effective_jobs_and_their_dependencies(self):
+        before = {'env': {'CARGO_BUILD_JOBS': '2'}, 'jobs': {
+            'build': {}, 'tests': {}, 'replay': {}, 'step-regressions': {'needs': 'build'}}}
+        after = copy.deepcopy(before)
+        after['env']['CARGO_BUILD_JOBS'] = '4'
+        self.assertEqual(checks.changed_check_jobs(before, after), {'build', 'step-regressions'})
 
     def test_s3_full_events(self):
         for event, ref in [('push', 'refs/heads/release/0.2.0'), ('workflow_dispatch', 'refs/heads/main')]:

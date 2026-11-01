@@ -67,9 +67,41 @@ The [review inventory](../tools/release/review-candidates.json) records the 118 
 `tools/checks/rules.json` declares the required jobs independently of workflow
 `needs`. `tools/checks/checks.py select` unions the base and candidate rules and
 workspace Cargo dependency graphs, including dev, build, optional and
-target-specific dependencies. Renames use both paths. Shared build inputs,
-check-policy changes and unknown paths select every crate. Documentation-only
-changes still run formatting and policy checks without a kernel replay.
+target-specific dependencies. Renames use both paths. Shared build inputs and
+unknown paths select every crate. Documentation-only changes still run
+formatting and policy checks without a kernel replay.
+
+When all non-documentation changes match the reviewed `ci_paths`, selection runs
+the CI tooling checks and only changed job definitions with their required
+prerequisites. Job definitions are compared as YAML, including inherited
+environment, defaults and permissions. This path never selects test shards or
+the 477-case replay. Source changes retain normal selection. Replay inventories,
+correction approvals and the raw STEP validator are not CI-only paths.
+The selector uses PyYAML 6.0.3, installed in a temporary virtual environment by CI.
+Base and candidate rules are still unioned, so the PR introducing this policy
+runs the full suite once under the old base rule.
+
+`test-build` compiles the selected release tests once with cargo-nextest 0.9.148,
+runs the selected documentation tests, and uploads a one-day nextest archive.
+The four `tests` shards consume that archive with `slice:k/4` partitions and
+four test threads each. Build jobs also use four Cargo workers. Shards extract
+into the checkout so compile-time `CARGO_BIN_EXE_*` paths still resolve to the
+archived CLI binaries. The existing ten-minute nextest hang guard remains in
+`.config/nextest.toml`.
+
+`build` publishes the verifier without waiting for OpenCASCADE regressions.
+`step-regressions`, `replay` and `scoreboard` then consume that same verifier
+independently. Under normal source selection, the final gate requires both new
+jobs whenever their original tests or build checks were selected. STEP evidence
+must match the build's binary digest. Replay execution and comparison rules are
+unchanged.
+
+Run `ci/bootstrap` once to install the pre-push lint hook through this
+repository's local `core.hooksPath=ci/hooks` setting. It needs no sudo and changes
+no global Git configuration or shell dotfiles. `ci/run lint` runs the same
+formatting, check-policy, edge-hunt, release-policy and workspace Clippy commands
+used by CI. The workflow uses `ci/run fmt` and `ci/run clippy` separately to
+retain selected-package routing.
 
 The earlier-answer inventory is `tools/checks/earlier-answers.json`. It retains
 all 477 request and accepted-answer digests. Operation families are derived from

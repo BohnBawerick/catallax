@@ -86,7 +86,21 @@ def closure(seeds, edges):
     return result
 
 
-def select(paths, rules, graph, build_graph, event='pull_request', ref=''):
+def changed_check_jobs(before, after):
+    """Compare effective job definitions and retain their runnable prerequisites."""
+    old_jobs, new_jobs = before.get('jobs', {}), after.get('jobs', {})
+    inherited = any(before.get(key) != after.get(key) for key in ('env', 'defaults', 'permissions'))
+    changed = {name for name, job in new_jobs.items()
+               if inherited or old_jobs.get(name) != job}
+    runnable = set(new_jobs) - {'tests', 'replay', 'select', 'check', 'timings'}
+    dependencies = {}
+    for name, job in new_jobs.items():
+        needs = job.get('needs', [])
+        dependencies[name] = set([needs] if isinstance(needs, str) else needs) & runnable
+    return closure(changed & runnable, dependencies)
+
+
+def select(paths, rules, graph, build_graph, event='pull_request', ref='', changed_jobs=()):
     names = set(graph)
     reverse = {name: {consumer for consumer, deps in graph.items() if name in deps}
                for name in names}
@@ -94,6 +108,17 @@ def select(paths, rules, graph, build_graph, event='pull_request', ref=''):
     packages, reasons = set(), []
     replay = scoreboard = build = False
     full_event = event == 'workflow_dispatch' or ref.startswith('refs/heads/release/')
+    substantive = [path for path in paths if not matches(path, rules['documentation_paths'])]
+    ci_only = (not full_event and bool(substantive)
+               and all(matches(path, rules.get('ci_paths', [])) for path in substantive))
+    if ci_only:
+        selected = set(changed_jobs) & rules['jobs'].keys() - {'tests', 'replay'}
+        selected.add('fmt')
+        packages = names if selected & {'clippy', 'test-build'} else set()
+        return {'packages': sorted(packages),
+                'jobs': {name: rules['jobs'][name] for name in sorted(selected)},
+                'selected_cases': 0, 'ci_only': True,
+                'reasons': ['CI-only change: tooling checks and changed job definitions, without replay or test shards']}
     for path in paths:
         if full_event or matches(path, rules['full_paths']):
             packages |= names
@@ -130,24 +155,38 @@ def select(paths, rules, graph, build_graph, event='pull_request', ref=''):
     jobs = {'fmt': 1}
     if packages:
         jobs.update(clippy=1, tests=rules['jobs']['tests'])
+        if 'test-build' in rules['jobs']:
+            jobs['test-build'] = 1
     if build:
         jobs['build'] = 1
+        if 'step-regressions' in rules['jobs']:
+            jobs['step-regressions'] = 1
     if replay:
         jobs['replay'] = 1
     if scoreboard:
         jobs['scoreboard'] = 1
     # A newly declared job is mandatory until its own reviewed routing exists.
     for name, partitions in rules['jobs'].items():
-        if name not in {'fmt', 'clippy', 'tests', 'build', 'replay', 'scoreboard'}:
+        if name not in {'fmt', 'clippy', 'tests', 'test-build', 'build', 'step-regressions',
+                        'replay', 'scoreboard'}:
             jobs[name] = partitions
     return {'packages': sorted(packages), 'jobs': jobs, 'selected_cases': 477 if replay else 0,
-            'reasons': reasons}
+            'ci_only': False, 'reasons': reasons}
 
 
 def union_selection(base, candidate):
+    jobs = {name: max(base['jobs'].get(name, 0), candidate['jobs'].get(name, 0))
+            for name in base['jobs'].keys() | candidate['jobs'].keys()}
+    ci_only = base.get('ci_only', False) and candidate.get('ci_only', False)
+    # Base rules can predate the split. Preserve their checks after unioning.
+    if not ci_only:
+        if 'tests' in jobs:
+            jobs['test-build'] = 1
+        if 'build' in jobs:
+            jobs['step-regressions'] = 1
     return {'packages': sorted(set(base['packages']) | set(candidate['packages'])),
-            'jobs': {name: max(base['jobs'].get(name, 0), candidate['jobs'].get(name, 0))
-                     for name in base['jobs'].keys() | candidate['jobs'].keys()},
+            'jobs': jobs,
+            'ci_only': ci_only,
             'selected_cases': max(base['selected_cases'], candidate['selected_cases']),
             'base_selected': base['selected_cases'], 'candidate_selected': candidate['selected_cases'],
             'reasons': sorted(set(base['reasons'] + candidate['reasons']))}
@@ -284,7 +323,7 @@ def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
         seen.add(key)
         expected = dict(plan['identity'])
         expected['result'] = 'success'
-        if name in {'build', 'replay', 'scoreboard'}:
+        if name in {'build', 'step-regressions', 'replay', 'scoreboard'}:
             expected['binary_sha256'] = binary_sha256
         else:
             expected['binary_sha256'] = None
@@ -295,7 +334,7 @@ def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
         for field, value in expected.items():
             if type(record.get(field)) is not type(value) or record.get(field) != value:
                 errors.append(f'{name}: stale {field}: evidence={record.get(field)!r}, candidate={value!r}')
-        if name in {'build', 'replay', 'scoreboard'} and not binary_sha256:
+        if name in {'build', 'step-regressions', 'replay', 'scoreboard'} and not binary_sha256:
             errors.append(f'{name}: missing binary_sha256 from current build')
     for name, count in required.items():
         if name in {'release-evidence', 'release-dry-run'}:
@@ -325,8 +364,13 @@ def prepare(args):
             archive.extractall(temporary, filter='data')
         base_graph, base_build = cargo_graph(temporary)
     graph, build = cargo_graph(ROOT)
-    before = select(paths, base_rules, base_graph, base_build, args.event, args.ref)
-    after = select(paths, candidate_rules, graph, build, args.event, args.ref)
+    import yaml
+    workflow = '.github/workflows/check.yml'
+    old_workflow = yaml.safe_load(git('show', f'{args.base}:{workflow}')) or {}
+    new_workflow = yaml.safe_load((ROOT / workflow).read_text()) or {}
+    changed_jobs = changed_check_jobs(old_workflow, new_workflow)
+    before = select(paths, base_rules, base_graph, base_build, args.event, args.ref, changed_jobs)
+    after = select(paths, candidate_rules, graph, build, args.event, args.ref, changed_jobs)
     selection = union_selection(before, after)
     # A removed crate contributes its old consumers, not an impossible -p flag.
     selection['packages'] = sorted(set(selection['packages']) & set(graph))

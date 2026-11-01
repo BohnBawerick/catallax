@@ -107,6 +107,20 @@ all platform, release and packaging workflows retain their GitHub routing.
 Each moved job declares its size once in `runs-on`. The test partition policy
 and the union of base/candidate checks remain unchanged.
 
+The test shards use `boat-large`; the other moved jobs use `boat`. The matched
+four-shard runs on 1 November 2026 measured lower wall time on `boat` for every
+other moved job, but large test shards completed much faster. Default-size test
+shards spent most of their time downloading the nextest archive. The measured
+per-job times, cache state and run links are in the
+[runner migration review](https://github.com/BohnBawerick/catallax/pull/251).
+Four shards retain the existing partition policy without adding runner setup.
+
+Use `gh-axi variable set USE_BOAT --body false` for GitHub overflow, and set the
+body to `true` to restore Boat. There is no automatic queue or health fallback.
+Read results with `boat ci --repo BohnBawerick/catallax`, `boat ci job <id>` and
+`boat ci logs <id>`. Cache and artifact steps use the existing GitHub Actions
+services; no saved snapshots or Boat credentials are needed in CI.
+
 `build` publishes the verifier without waiting for OpenCASCADE regressions.
 `step-regressions`, `replay` and `scoreboard` then consume that same verifier
 independently. Under normal source selection, the final gate requires both new

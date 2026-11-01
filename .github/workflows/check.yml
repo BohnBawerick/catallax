@@ -169,7 +169,7 @@ jobs:
   tests:
     needs: [select, test-build]
     if: needs.select.outputs.tests == 'true'
-    runs-on: ${{ needs.select.outputs.boat == 'true' && 'boat' || 'ubuntu-latest' }}
+    runs-on: ${{ needs.select.outputs.boat == 'true' && 'boat-large' || 'ubuntu-latest' }}
     timeout-minutes: 120
     strategy:
       fail-fast: false

@@ -1,7 +1,8 @@
 //! Recipe-based B-rep features with retained exact definitions.
 //!
-//! [`evaluate`] builds stock solids, sketches, extrusions, revolutions, elementary
-//! fillets and chamfers, booleans, exact body patterns, mirrors and analytic distance features.
+//! [`evaluate`] builds stock solids, sketches, extrusions, straight-path sweeps,
+//! revolutions, elementary fillets and chamfers, booleans, exact body patterns,
+//! mirrors and analytic distance features.
 //! Every returned face has canonical recipe origins, including faces split or merged
 //! by a boolean. The model remains compatible with `catallax-measure` and
 //! `catallax-step`; the legacy CLI protocol is not extended.
@@ -88,6 +89,7 @@ pub mod sharp_thicken;
 /// Envelope stand-in bodies for field-only features (PRD section 7).
 pub mod stand_in;
 mod stock;
+mod sweep;
 
 pub use certified::{
     BodyCertificate, CertificateKey, CertifiedBuilt, EnvelopeRegion, JunctionCertificate,

@@ -742,6 +742,8 @@ The stationary round turn gives one answer without a mitre plane that might fail
 
 Lines, circular arcs and their round turns can reduce to exact algebraic extrude/revolve supports where the profile permits; general oblique placements may still require derived carriers. Fixed sweeps of rational spline paths have algebraic rational charts. Helices need transcendental curve definitions. Rotation-minimising spline or helix sweeps need the specified frame ODE and certified transport, not sampled frames stored as geometry. A point evaluator or a polyline approximation is not that proof path. The algebraic foundation alone does not implement these general sweeps.
 
+The B-rep evaluator currently supports an empty path or a single nonzero line segment in both orientation modes. On a line the rotation is the identity, so it builds exactly `R + t (end-start)` for `t` in `[0,1]`, without moving the profile to the path start or normalising its displacement. In-plane motion and empty profiles or paths regularise to the empty body. A zero-length line reports `path.zero-length`; curved and multi-segment paths report the coverage refusal `features.unsupported-path`. Side origins retain both the sketch segment and the path segment. The [straight-sweep fixture](../crates/catallax-features/tests/fixtures/straight-sweep.json) builds through the ordinary application and STEP entries. [Its interface contract](interface-changes/2026-11-02-straight-path-sweeps.md) states the exact reduction and remaining gaps. This does not add field path/sweep compilation, general derived carriers or loft evaluation.
+
 ### 4.12 Loft
 
 | Parameter | Value |

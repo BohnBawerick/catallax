@@ -1,0 +1,25 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Oblique straight-path sweep",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["7", "-3", "11"]},
+      "loops": [[
+        {"kind": "line", "id": "a", "to": ["4", "0"]},
+        {"kind": "line", "id": "b", "to": ["4", "2"]},
+        {"kind": "line", "id": "c", "to": ["0", "2"]},
+        {"kind": "line", "id": "d", "to": ["0", "0"]}
+      ]]
+    },
+    {
+      "id": "rail",
+      "op": "path",
+      "start": ["100", "200", "300"],
+      "segments": [{"kind": "line", "id": "travel", "to": ["102", "201", "303"]}]
+    },
+    {"id": "body", "op": "sweep", "profile": "profile", "path": "rail", "orientation": "fixed"}
+  ],
+  "result": "body"
+}

@@ -69,6 +69,35 @@ Tests prescribe a zero-proof kind only where the contract does: construction fac
 
 Point equality and curve membership schedule cheap nonzero rational values and cached conservative interval signs first. When these do not separate, they request metered enclosures at the existing interval widths before exact-zero comparisons. The chosen value is still certified by the decider; an interval containing zero proves nothing. Original equation indices are retained for curve-distance conversions, whose equations can have different units. Existing late-coordinate separation, near-coincidence, zero-work distance-bound, undefined-coordinate and deadline cases remain. Tests do not prescribe the number of queries before a separation witness.
 
+### Spline constructor consumers
+
+`bspline.rs::mixed_degree_rational_constructor_returns_queryable_boundaries_in_both_axes`
+constructs rational tensor patches of degrees `[2, 3]` and `[3, 2]`.
+For all four boundaries, it checks positions and first/second derivatives against
+the independent formula `S(u,v) = (2u/(1+u), 3v/(1+2v), 6uv/((1+u)(1+2v)))`.
+The same checks consume standalone curves reconstructed from the returned boundary
+data, then recover exact parameters and points at both endpoints and an interior
+parameter. Tight enclosure checks prevent unbounded intervals from passing.
+
+The feature test
+`certified_prism.rs::offset_constructor_returns_queryable_shared_rings_with_complete_certificate_scope`
+consumes a checked mixed-degree offset body. Both returned rings share the actual
+surface boundary, recover exact cardinal points, and belong to the side and their
+own cap but not the opposite cap. The complete returned certificate must verify;
+removing either cap or the side must fail verification.
+
+These tests do not prove general spline regularity, degree elevation or loft
+compatibility. Raw control validation still supplies no body certificate. Point
+and derivative checks supplement the checked producer's whole-domain proof.
+
+Focused commands:
+
+```sh
+cargo test -p catallax-shapes --test bspline mixed_degree_rational_constructor_returns_queryable_boundaries_in_both_axes -- --exact
+cargo test -p catallax-features --test certified_prism offset_constructor_returns_queryable_shared_rings_with_complete_certificate_scope -- --exact
+```
+
+
 ## Speed measurements
 
 The blind benchmark is the `blind_speed` target. The creator's separate `speed` target is preserved unchanged. `blind_speed` exits before calling any implementation unless explicitly enabled:

@@ -13,8 +13,8 @@ use catallax_numbers::{
     Decider, Fact, FactKind, FactOrigin, Outcome, Refusal, Sign, StrictOrder, ZeroProof,
 };
 use catallax_shapes::{
-    Curve, CurveId, GeomKey, MeetOf, Plane, Point3, PointDef, PointId, RVector3, Surface,
-    SurfaceId, Vector3,
+    Curve, CurveId, GeomKey, MeetOf, Plane, Point3, PointDef, PointId, RVector3, SplineSupport,
+    Surface, SurfaceId, Vector3,
 };
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
@@ -96,6 +96,16 @@ fn boundary(model: &Model, face: FaceId) -> Vec<(EdgeId, Sense)> {
         })
         .collect()
 }
+fn saddle_rail(model: &Model, edge: EdgeId) -> bool {
+    model.coedges_of_edge(edge).into_iter().any(|coedge| {
+        model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
+            matches!(
+                model.geom().surface(model.face(face).surface),
+                Surface::BSpline(SplineSupport::RollingSaddle(_))
+            )
+        })
+    })
+}
 fn first_hit(
     model: &mut Model,
     face: FaceId,
@@ -115,9 +125,10 @@ fn first_hit(
     for &(edge_id, use_sense) in edges {
         let edge = model.edge(edge_id).clone();
         let (from, to) = natural_ends(model, edge_id);
-        // A spline carrier has no equations to solve against the probe, so its
-        // face goes to the winding of the traced boundary.
-        if matches!(model.geom().curve(edge.curve), Curve::BSpline(_)) {
+        // A saddle's rail has no equations to solve against the probe, so the
+        // face it trims goes to the winding of the traced boundary. Other spline
+        // carriers keep their refusals.
+        if saddle_rail(model, edge_id) {
             return Ok(None);
         }
         let hits = if line {

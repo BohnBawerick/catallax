@@ -237,8 +237,7 @@ fn planar_holes_and_a_reversed_cylinder_share_every_boundary_segment() {
                 / 3.0
         });
         assert!(
-            // The wall's chord tolerance of 0.15 is the only slack inside radius 1.
-            (p[0] - 3.0).powi(2) + (p[1] - 3.0).powi(2) > 0.85 * 0.85,
+            (p[0] - 3.0).powi(2) + (p[1] - 3.0).powi(2) > 0.9,
             "triangle fills drilled hole"
         );
     }

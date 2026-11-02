@@ -36,6 +36,8 @@ type Cdt = ConstrainedDelaunayTriangulation<Node, (), (), (), HierarchyHintGener
 struct FaceBuilder<'a> {
     chart: &'a Chart,
     options: &'a MeshOptions,
+    // A cylinder trimmed obliquely, which gets ruled columns and rows.
+    ruled: bool,
     // Scales `v` for the triangulation's own distances. A cylinder's `u` counts
     // turns and its `v` millimetres, so without this Delaunay sees a large
     // cylinder as squashed round its waist and joins points across it. Those
@@ -425,11 +427,7 @@ impl FaceBuilder<'_> {
         // them lies flat however long it is. A free grid staggers its points
         // against a trim that runs along the rows, and its slivers stand up off
         // the surface, where centroid refinement only makes them thinner.
-        let ruled = matches!(
-            self.chart.surface,
-            Surface::Cylinder(_) | Surface::EllipticCylinder(_)
-        ) && self.edge_limit().is_none()
-            && self.cdt.num_vertices() > 0;
+        let ruled = self.ruled && self.cdt.num_vertices() > 0;
         // No column gap inside a trim is wider than its widest boundary segment.
         let widest_segment = (ruled || self.edge_limit().is_some()).then(|| {
             self.cdt
@@ -1043,13 +1041,28 @@ impl FaceBuilder<'_> {
     }
 }
 
-// One turn of a cylinder measures `hessian[0] / TAU`, so `v` divided by that is
-// in turns as well.
-fn stretch(chart: &Chart, hessian: &[Rational; 3]) -> f64 {
-    if matches!(
+// A cylinder with no edge limit whose trim is an intersection or spline curve. A
+// circle or straight trim runs along the chart, and its grid stays as it is.
+fn ruled(model: &Model, face: FaceId, chart: &Chart, options: &MeshOptions) -> bool {
+    matches!(
         chart.surface,
         Surface::Cylinder(_) | Surface::EllipticCylinder(_)
-    ) {
+    ) && options.max_edge_length.is_none()
+        && model.face(face).loops.iter().any(|boundary| {
+            matches!(model.loop_(*boundary), Loop::Coedges(coedges) if coedges.iter().any(|coedge| {
+                let edge = model.edge(model.coedge(*coedge).edge);
+                matches!(
+                    model.geom().curve(edge.curve),
+                    Curve::Intersection(_) | Curve::BSpline(_)
+                )
+            }))
+        })
+}
+
+// One turn of a cylinder measures `hessian[0] / TAU`, so `v` divided by that is
+// in turns as well.
+fn stretch(ruled: bool, hessian: &[Rational; 3]) -> f64 {
+    if ruled {
         std::f64::consts::TAU / hessian[0].to_f64_nearest()
     } else {
         1.0
@@ -1120,10 +1133,12 @@ fn face_mesh(
         ));
     }
     let hessian = chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?;
+    let is_ruled = ruled(model, face_id, chart, options);
     let mut builder = FaceBuilder {
         chart,
         options,
-        stretch: stretch(chart, &hessian),
+        ruled: is_ruled,
+        stretch: stretch(is_ruled, &hessian),
         unproved: false,
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,
@@ -1676,10 +1691,12 @@ pub(crate) fn build_preview(
         let hessian = chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?;
         let prior_chords = BTreeSet::new();
         let rails = edges::Rails::default();
+        let is_ruled = ruled(model, face, chart, &options);
         let mut builder = FaceBuilder {
             chart,
             options: &options,
-            stretch: stretch(chart, &hessian),
+            ruled: is_ruled,
+            stretch: stretch(is_ruled, &hessian),
             unproved: true,
             positions: &mut boundaries.mesh.positions,
             rails: &rails,

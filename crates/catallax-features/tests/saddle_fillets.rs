@@ -6,7 +6,7 @@ use std::f64::consts::PI;
 use catallax_boolean::Containment;
 use catallax_features::{BuildError, Built, evaluate, evaluate_incremental};
 use catallax_field::Plan;
-use catallax_measure::{Accuracy, volume};
+use catallax_measure::{Accuracy, face_area, mass_properties, volume};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, with_operation_log};
 use catallax_recipe::{Recipe, Role};
@@ -406,7 +406,7 @@ fn a_larger_ball_and_either_face_order_round_the_same_ring() {
 }
 
 #[test]
-fn a_leaning_boss_has_no_plane_of_symmetry_to_lean_on() {
+fn a_leaning_boss_matches_its_sections() {
     let lean = cylinder("wall", "4", "30", LEAN, ["1", "0", "0"]);
     let built = build(&recipe(
         [wide(), lean],
@@ -591,6 +591,19 @@ fn a_band_past_the_end_of_the_wide_cylinder_refuses() {
     assert_eq!(code, "fillet.unsupported-overflow");
 }
 
+// Equal radii cross in two ellipses, whose ball folds at their meeting points.
+#[test]
+fn equal_radii_refuse() {
+    let same = cylinder("wall", "10", "30", LEVEL, ["0", "0", "0"]);
+    let (code, _) = refusal(&recipe(
+        [wide(), same],
+        "union",
+        ["wide", "wall"],
+        Some("1"),
+    ));
+    assert_eq!(code, "fillet.unsupported-contact");
+}
+
 // A partial overlap has one ring, and no section turns all the way round.
 #[test]
 fn a_partial_overlap_refuses() {
@@ -651,6 +664,17 @@ fn volume_step_and_the_field_stay_refused() {
     )
     .unwrap_err();
     assert_eq!(refused.code, "measure.unsupported-surface");
+    let accuracy = Accuracy {
+        relative: q("1/1000"),
+        absolute: q("1"),
+    };
+    let mass = mass_properties(&built.model, built.result, &accuracy, &mut decider());
+    assert_eq!(mass.unwrap_err().code, "measure.unsupported-surface");
+    let [band] = bands(&built)[..] else {
+        panic!("one band");
+    };
+    let area = face_area(&built.model, band, &accuracy, &mut decider());
+    assert_eq!(area.unwrap_err().code, "measure.unsupported-surface");
     let step = write_step(
         &built.model,
         &[built.result],

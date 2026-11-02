@@ -205,6 +205,7 @@ fn a_branch_on_a_pipe_meshes_with_flat_facets() {
         let body = catallax_app::build(&tee, &options, &mut Decider::default()).unwrap();
         let mesh = &body.display.value;
         assert_closed(chord, mesh, &options);
+        eprintln!("tee {chord}: triangles={}", mesh.triangles.len());
         assert!(mesh.triangles.len() < 100_000, "{}", mesh.triangles.len());
         // Slivers stand up off the surface, and their area gives them away.
         let area: f64 = mesh

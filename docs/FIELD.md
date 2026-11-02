@@ -442,32 +442,43 @@ such registry-only handles report `field.face-id` from the distance API.
 Canonical public names retain the plan's generated-domain role for trim
 predicates; renaming a revolved cone cap does not turn it into an angular cap.
 
-For a kept perpendicular cap of a separated through-bore shell, the field also
-certifies the planar hull, complete tool coverage, nested cavity and separated
-circular holes from its own tape. If the plane projection lies inside a hole,
-`sqrt(h^2 + (r - rho)^2)` bounds distance below, where `h` is the plane gap,
-`r` the hole radius and `rho` the projected distance from its centre. An exact
-point just outside that circle must pass the named field-face predicate before
-it supplies an upper bound. The requested width is unchanged. This avoids using
-an infinite-plane clearance or waiting for expanded polynomial interval boxes
-to resolve the circular exclusion. Open-cap rims, other openings and general
-trimmed planar regions keep their existing query path and coverage limits.
+Planar faces trimmed by lines and circular arcs use a complete finite-region
+minimum for point queries. The plane projection is a witness only when it lies
+in the closed region; otherwise the minimum ranges over finite segments,
+authored circular sweeps and their endpoints. Even-odd membership includes
+nonconvex boundaries, holes, disconnected regions and Boolean-cut rims.
+Exact witnesses and outward-rounded distance bounds retain the requested width,
+with no parameter cells visited.
 
-Complete circular cylinder bands and perpendicular circular caps skip that search
-for point queries. `PreparedFace` recognizes, exactly, a cylinder face whose two
-loops are single closed rim circles that are coaxial, perpendicular to the axis
-and of the cylinder radius at distinct heights, and a plane face with one closed
-rim circle perpendicular to the plane and centred on it. The distance is then
-`sqrt((rho - r)^2 + dh^2)` for a band, with `dh` measured to the nearer rim
-height, and `sqrt(h^2 + max(rho - R, 0)^2)` for a cap. It measures the finite
-closed face, not its infinite support, and ties on a rim or the axis take the
-same value. The lower bound encloses the exact distance, the upper bound is the
-distance to an exact witness on the closed face, and no cells are visited
-(`Bounds::cells` is 0). `shapes::distance::Finite::point_distance` also returns
-the nearest `Branch` (interior, rim or axis). Any other trim, a hole, a seam
-edge or an arc keeps the complete search, as does a request whose width the
-direct enclosure cannot meet. `cargo bench -p catallax-measure --bench distance`
-prints cells and latency against the general search.
+The B-rep adapter reads physical trim chains. The independent field intersects
+its own active supports with each named plane, splits line and circle sections
+at ownership transitions, and labels their two sides with exact material germs
+and historical source-domain predicates. Coplanar names keep their distinct
+finite regions. No B-rep topology or display triangles enter this proof.
+This replaces the previous separated-through-bore cap specialization.
+
+Straight-edge planar face pairs test finite vertex-to-face minima, segment-plane
+crossings and interior segment-to-segment minima. Disjoint coplanar patches
+therefore have their finite gap, not zero. Circular-arc face pairs retain the
+certified general search. General conic and spline planar trims keep the existing
+query path and coverage limits. These query improvements do not enable nonconvex
+shell construction; unproved meeting envelopes retain
+`distance.unsupported-envelope`.
+
+Complete circular cylinder bands also skip the general search for point queries.
+`PreparedFace` recognizes a cylinder face whose two loops are single closed rim
+circles that are coaxial, perpendicular to the axis and of the cylinder radius
+at distinct heights. Its distance is `sqrt((rho - r)^2 + dh^2)`, with `dh`
+measured to the nearer rim height. The corresponding complete circular-cap
+formula is `sqrt(h^2 + max(rho - R, 0)^2)`.
+These formulas measure finite closed faces, not infinite supports, including
+rim and axis ties. The lower bound encloses the exact distance and the upper
+bound comes from an exact witness; `Bounds::cells` is 0.
+`shapes::distance::Finite::point_distance` also returns the nearest `Branch`
+(interior, rim or axis). The planar metric above handles line and circular-arc
+holes and seams; other curved trims retain the general search.
+`cargo bench -p catallax-measure --bench distance` prints cells and latency
+against that search.
 
 `PreparedFace::parallel_face_to_face` answers two planar faces whose supporting
 planes have exact rational frames and parallel normals. The plane gap is a
@@ -476,10 +487,11 @@ coarsest first and at most 85, are probed; a point admitted by this face's exact
 trim whose perpendicular translate the other trim admits attains the gap, and
 each probe counts as a visited cell. Holed or filleted caps therefore answer
 their gap without a parameter search. Without such a witness, including faces
-whose projections do not overlap, the general `face_to_face` search answers, so
-disjoint patches never return the plane gap. Curved faces refuse
-`measure.nonplanar-face`, other planes `measure.nonparallel-faces`, and inexact
-frames `measure.irrational-plane`. `face_to_face` itself is unchanged.
+whose projections do not overlap, the finite `face_to_face` dispatcher answers.
+Straight-edge planar regions use the direct finite minimum; other pairs retain
+the general search. Disjoint patches never return an unattained plane gap.
+Curved faces refuse `measure.nonplanar-face`, other planes
+`measure.nonparallel-faces`, and inexact frames `measure.irrational-plane`.
 
 `Options::width` requests an enclosure width, not geometric acceptance.
 `max_cells` limits refinement. Exhaustion returns the attained bounds with

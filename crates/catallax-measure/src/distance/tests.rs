@@ -810,7 +810,7 @@ fn coplanar_named_face_pairs_keep_the_finite_gap_between_disjoint_solids() {
     use catallax_recipe::Recipe;
     use serde_json::json;
     let source=Recipe::parse(&json!({"format":"catallax-recipe/4","name":"finite face pair","steps":[
-        {"id":"a","op":"block","size":["1","1","1"]},
+        {"id":"a","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
         {"id":"b","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["3","3","0"]}},
         {"id":"union","op":"boolean","kind":"union","target":"a","tool":"b"}
     ],"result":"union"}).to_string()).unwrap();

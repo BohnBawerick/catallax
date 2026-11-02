@@ -123,13 +123,32 @@ fn carrier_hits(
     curve: CurveId,
     surfaces: &[SurfaceId],
     points: &mut Vec<PointId>,
+    exclusions: bool,
     dec: &mut Decider,
 ) -> Result<(Vec<PointId>, MarkLog, Complete), Refusal> {
     let mut found = Vec::new();
     let mut marks = MarkLog::new();
     let mut complete = Complete::new();
+    let enclosure = exclusions
+        .then(|| crate::carrier_bounds::enclosure(model.geom(), curve))
+        .flatten();
+    let mut validated = false;
     for &surface in surfaces {
+        if validated
+            && let Some(bounds) = &enclosure
+            && crate::carrier_bounds::excludes(bounds, model.geom().surface(surface))
+        {
+            // A strict exclusion proves the complete meeting empty, including
+            // all tangencies and isolated points. Retain its coverage proof.
+            complete.insert(surface, Vec::new());
+            continue;
+        }
         let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
+        // Keep the first ordinary query's validation/refusal path unchanged.
+        validated |= !matches!(
+            model.geom().surface(surface),
+            catallax_shapes::Surface::TorusSheet(_)
+        );
         if !matches!(answer.value, CurveSurface::Contained) {
             complete.insert(surface, Vec::new());
         }
@@ -263,6 +282,8 @@ struct Order {
     index: BTreeMap<PointId, usize>,
     /// Hits of each queried skipped carrier, in query order.
     hits: BTreeMap<usize, Vec<PointId>>,
+    /// Whether complete-carrier bounds may prove support queries empty.
+    carrier_exclusions: bool,
 }
 
 impl Order {
@@ -277,8 +298,14 @@ impl Order {
     ) -> Result<(usize, usize), Refusal> {
         for skipped in self.crossers.get(&point).cloned().unwrap_or_default() {
             if let std::collections::btree_map::Entry::Vacant(entry) = self.hits.entry(skipped) {
-                let (found, ..) =
-                    carrier_hits(model, pool[skipped], surfaces, &mut Vec::new(), dec)?;
+                let (found, ..) = carrier_hits(
+                    model,
+                    pool[skipped],
+                    surfaces,
+                    &mut Vec::new(),
+                    self.carrier_exclusions,
+                    dec,
+                )?;
                 entry.insert(found);
             }
             for (rank, &hit) in self.hits[&skipped].iter().enumerate() {
@@ -429,7 +456,7 @@ pub(crate) fn intersect(
     b: BodyId,
     dec: &mut Decider,
 ) -> Answered<IntersectionGraph> {
-    section(model, a, b, true, dec)
+    section(model, a, b, true, true, dec)
 }
 
 /// The section graph. `prune` lets finite-face exclusions skip curve/surface
@@ -439,6 +466,7 @@ pub(crate) fn section(
     a: BodyId,
     b: BodyId,
     prune: bool,
+    carrier_exclusions: bool,
     dec: &mut Decider,
 ) -> Answered<IntersectionGraph> {
     assert_ne!(a, b, "boolean operands must be distinct bodies");
@@ -613,6 +641,7 @@ pub(crate) fn section(
     let mut complete: Vec<Complete> = vec![Complete::new(); pool.len()];
     let mut order = Order {
         finder: points.iter().map(|&p| (p, 0)).collect(),
+        carrier_exclusions,
         ..Order::default()
     };
     for (index, &curve) in pool.iter().enumerate() {
@@ -622,8 +651,14 @@ pub(crate) fn section(
             continue;
         }
         let known = points.len();
-        let (_, found_marks, found_complete) =
-            carrier_hits(model, curve, &surfaces, &mut points, dec)?;
+        let (_, found_marks, found_complete) = carrier_hits(
+            model,
+            curve,
+            &surfaces,
+            &mut points,
+            carrier_exclusions,
+            dec,
+        )?;
         marks.extend(&found_marks);
         complete[index] = found_complete;
         for &point in &points[known..] {

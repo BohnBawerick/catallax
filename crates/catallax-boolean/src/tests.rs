@@ -570,37 +570,50 @@ fn skipped_carriers_keep_the_complete_section_order() {
     type Scene<'a> = &'a dyn Fn(&mut Model, &mut Decider) -> (BodyId, BodyId);
     let scenes: [Scene; 2] = [&crossing, &overlap];
     for scene in scenes {
-        let section = |prune: bool| {
-            let mut model = Model::new();
-            let mut dec = Decider::default();
-            let (a, b) = scene(&mut model, &mut dec);
-            let graph = crate::graph::section(&mut model, a, b, prune, &mut dec)
-                .unwrap()
-                .value;
-            let at = |point: Option<catallax_shapes::PointId>| {
-                point.map(|point| {
-                    let p = model.geom().position(point);
-                    [&p.x, &p.y, &p.z].map(|c| format!("{:.6}", c.to_f64()))
-                })
-            };
-            let edges: Vec<_> = graph
-                .edges()
-                .iter()
-                .map(|edge| {
-                    (
-                        edge.curve,
-                        at(edge.start),
-                        at(edge.end),
-                        edge.faces_of_first.clone(),
-                        edge.faces_of_second.clone(),
-                    )
-                })
-                .collect();
-            let points: Vec<_> = graph.points().iter().map(|&p| at(Some(p))).collect();
-            (edges, points, graph.marks.len())
+        let section = |prune: bool, carrier_exclusions: bool| {
+            let (answer, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+                let mut model = Model::new();
+                let mut dec = Decider::default();
+                let (a, b) = scene(&mut model, &mut dec);
+                let graph =
+                    crate::graph::section(&mut model, a, b, prune, carrier_exclusions, &mut dec)
+                        .unwrap()
+                        .value;
+                let at = |point: Option<catallax_shapes::PointId>| {
+                    point.map(|point| {
+                        let p = model.geom().position(point);
+                        [&p.x, &p.y, &p.z].map(|c| format!("{:.6}", c.to_f64()))
+                    })
+                };
+                let edges: Vec<_> = graph
+                    .edges()
+                    .iter()
+                    .map(|edge| {
+                        (
+                            edge.curve,
+                            at(edge.start),
+                            at(edge.end),
+                            edge.faces_of_first.clone(),
+                            edge.faces_of_second.clone(),
+                        )
+                    })
+                    .collect();
+                let points: Vec<_> = graph.points().iter().map(|&p| at(Some(p))).collect();
+                (edges, points, graph.marks.len())
+            });
+            assert!(!work.exhausted, "{work:?}");
+            (answer, work.used)
         };
-        let complete = section(false);
-        assert!(complete.0.len() > 2);
-        assert_eq!(section(true), complete);
+        let complete = section(false, false);
+        let baseline = section(true, false);
+        let bounded = section(true, true);
+        assert_eq!(baseline.0, complete.0);
+        assert_eq!(bounded.0, baseline.0);
+        assert!(
+            bounded.1 <= baseline.1,
+            "bounded {}, baseline {}",
+            bounded.1,
+            baseline.1
+        );
     }
 }

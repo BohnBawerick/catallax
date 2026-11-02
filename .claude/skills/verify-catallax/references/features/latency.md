@@ -80,6 +80,8 @@ The application comparison excludes only the asynchronous delivery counter `comm
 
 After normal paired measurements, the hosted job runs the baseline native probe under Callgrind for the five captured recipes. `edit_speed.py profile` retains its raw instruction profile, inclusive caller/callee report, tool version and input/executable hashes under `profiles`. Both measured revisions retain identical release debug settings so the reports can name inlined source locations. Instruction costs locate work; the instrumented probe's wall times are not latency evidence. Use only the uninstrumented paired samples for performance claims.
 
+Small-rational arithmetic cancels trailing zero bits directly when its positive denominator is a power of two. Other denominators retain the GCD path. `dyadic_normalization_and_cancellation_match_gmp` covers signed numerators around the `2^62` fast-path boundary, denominator one, large dyadics and exact cancellation. Preserve these arithmetic results and the hosted edit proof records when changing normalization; fewer machine instructions must not mean fewer certified decisions.
+
 
 
 ## Gotchas

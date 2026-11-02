@@ -432,3 +432,190 @@ fn only_strictly_oblique_regular_contacts_are_accepted() {
 fn cylinder_of_radius(radius: &str) -> Cylinder {
     cylinder(["0", "0", "0"], ["0", "0", "1"], radius)
 }
+
+fn triangle_hit(o: [f64; 3], d: [f64; 3], t: [[f64; 3]; 3]) -> bool {
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let (e1, e2) = (sub(t[1], t[0]), sub(t[2], t[0]));
+    let p = cross(d, e2);
+    let det = dot(e1, p);
+    if det.abs() < 1e-14 {
+        return false;
+    }
+    let s = sub(o, t[0]);
+    let u = dot(s, p) / det;
+    let q = cross(s, e1);
+    let v = dot(d, q) / det;
+    u >= 0.0 && v >= 0.0 && u + v <= 1.0
+}
+
+// Crossings of a whole line with a dense tessellation of the band, from the law.
+fn brute_hits(pipe: &RollingPipe, o: [f64; 3], d: [f64; 3]) -> usize {
+    const COLUMNS: i64 = 360;
+    const LINES: i64 = 24;
+    let at = |i: i64, j: i64| {
+        let p = pipe.point(
+            &Rational::from_ratio(i, COLUMNS / 4).unwrap(),
+            &Rational::from_ratio(j, LINES).unwrap(),
+        );
+        [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()]
+    };
+    let mut grid = Vec::new();
+    for i in 0..=COLUMNS {
+        for j in 0..=LINES {
+            grid.push(at(i, j));
+        }
+    }
+    let node = |i: i64, j: i64| grid[(i * (LINES + 1) + j) as usize];
+    let mut hits = 0;
+    for i in 0..COLUMNS {
+        for j in 0..LINES {
+            let (a, b, c, e) = (
+                node(i, j),
+                node(i + 1, j),
+                node(i, j + 1),
+                node(i + 1, j + 1),
+            );
+            hits += usize::from(triangle_hit(o, d, [a, b, e]));
+            hits += usize::from(triangle_hit(o, d, [a, e, c]));
+        }
+    }
+    hits
+}
+
+#[test]
+fn line_hits_find_every_crossing_of_the_band() {
+    let lines: [([&str; 3], [&str; 3]); 8] = [
+        (["1/3", "1/7", "4"], ["1", "1/9", "1/7"]),
+        (["1/3", "1/7", "4"], ["1/11", "1", "1/7"]),
+        (["1/3", "1/7", "4"], ["1/13", "1/9", "1"]),
+        (["27/5", "1/17", "-71/20"], ["84", "1/9", "131"]),
+        (["-23/5", "2/3", "9"], ["1", "1/3", "1/2"]),
+        (["13/3", "1/5", "5"], ["-1", "1/2", "1/4"]),
+        (["21/4", "1/19", "-7/2"], ["1", "1/5", "1"]),
+        (["-11/2", "3/7", "3"], ["2/3", "1", "-1/3"]),
+    ];
+    for case in rational_cases() {
+        let pipe = build(&case);
+        for (origin, direction) in lines {
+            let (o, d) = (point(origin), vector(direction));
+            let found = pipe.line_hits(&o, &d, &mut decider()).unwrap().unwrap();
+            let f = |p: &Point3| [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()];
+            let v = [d.x.to_f64(), d.y.to_f64(), d.z.to_f64()];
+            assert_eq!(
+                found.len(),
+                brute_hits(&pipe, f(&o), v),
+                "{} line {origin:?} {direction:?}",
+                case.name
+            );
+        }
+    }
+}
+
+// Each line sits on a special place of the equations, where a grid line of the
+// tessellation can sit too, so the count comes from a small shift of the line.
+// Transverse crossings keep their count under it.
+#[test]
+fn line_hits_hold_on_the_special_lines_of_the_law() {
+    let lines: [([&str; 3], [&str; 3]); 8] = [
+        // Along the axis, in the section plane of t = 0 and of t = pi.
+        (["26/5", "0", "0"], ["0", "0", "1"]),
+        (["24/5", "0", "0"], ["0", "0", "1"]),
+        (["-27/5", "0", "0"], ["0", "0", "1"]),
+        (["-9/2", "0", "0"], ["0", "0", "1"]),
+        // Along the plane normal, where the foot equation loses the parameter.
+        (["23/5", "1/2", "0"], ["3/5", "0", "4/5"]),
+        (["1/2", "24/5", "0"], ["3/5", "0", "4/5"]),
+        (["-1/2", "-21/4", "0"], ["3/5", "0", "4/5"]),
+        // Across the section plane of t = 0.
+        (["24/5", "-9", "5/2"], ["0", "1", "1/4"]),
+    ];
+    let mut reached = [0; 8];
+    for case in rational_cases() {
+        let pipe = build(&case);
+        for (index, (origin, direction)) in lines.into_iter().enumerate() {
+            let (o, d) = (point(origin), vector(direction));
+            let found = pipe.line_hits(&o, &d, &mut decider()).unwrap().unwrap();
+            let f = |p: &Point3| [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()];
+            let (a, v) = (f(&o), [d.x.to_f64(), d.y.to_f64(), d.z.to_f64()]);
+            let shifted = brute_hits(&pipe, [a[0] + 1e-4, a[1] + 2e-4, a[2]], v);
+            assert_eq!(found.len(), shifted, "{} {origin:?}", case.name);
+            reached[index] += found.len();
+            let radius = pipe.radius().to_f64();
+            for hit in &found {
+                let dec = decider();
+                let near = |value: &Real| dec.enclose_at(value, 64).unwrap().lo().to_f64_nearest();
+                let at = [near(&hit.x), near(&hit.y), near(&hit.z)];
+                let gap = distance_to_ellipse(at, &pipe) - radius;
+                assert!(gap.abs() < 1e-5, "{} {origin:?}: {gap}", case.name);
+            }
+        }
+    }
+    assert!(reached.iter().all(|&count| count > 0), "{reached:?}");
+}
+
+// A line inside a section plane has no parameter from the foot equation. Lines
+// through a known band point fix its crossing exactly.
+#[test]
+fn a_line_inside_a_section_plane_finds_its_band_point() {
+    for case in rational_cases() {
+        let pipe = build(&case);
+        for u in ["0", "2"] {
+            for v in ["1/3", "1/2", "4/5"] {
+                let (u, v) = (q(u), q(v));
+                let p = pipe.point(&u, &v);
+                let ray = p.minus(&pipe.centre(&u));
+                let turned = Vector3::new(
+                    &ray.x + &(&ray.z * &real("1/5")),
+                    Real::zero(),
+                    &ray.z - &(&ray.x * &real("1/5")),
+                );
+                for direction in [ray, turned] {
+                    let found = pipe.line_hits(&p, &direction, &mut decider());
+                    let found = found.unwrap().unwrap();
+                    let mut dec = decider();
+                    assert!(
+                        found.iter().any(|hit| same_point(hit, &p, &mut dec)),
+                        "{} {u:?} {v:?}",
+                        case.name
+                    );
+                    let a = [p.x.to_f64() + 1e-4, p.y.to_f64() + 2e-4, p.z.to_f64()];
+                    let d = [
+                        direction.x.to_f64(),
+                        direction.y.to_f64(),
+                        direction.z.to_f64(),
+                    ];
+                    assert_eq!(found.len(), brute_hits(&pipe, a, d), "{}", case.name);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_line_tangent_to_the_band_refuses() {
+    for case in rational_cases() {
+        let pipe = build(&case);
+        let half = q("1/2");
+        let p = pipe.point(&Rational::zero(), &half);
+        let ray = p.minus(&pipe.centre(&Rational::zero()));
+        let across = vector(["0", "1", "0"]);
+        let around = Vector3::new(ray.z.clone(), Real::zero(), -ray.x.clone());
+        for direction in [across, around] {
+            let answer = pipe.line_hits(&p, &direction, &mut decider());
+            let refused = answer.expect_err(case.name);
+            assert_eq!(
+                refused.code, "intersect.parametric-surface",
+                "{}",
+                case.name
+            );
+        }
+    }
+}

@@ -23,7 +23,13 @@ use std::sync::Arc;
 
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 
-use crate::{BSplineSurface, Cylinder, Ellipse, Isometry, Plane, Point3, Pose, Vector3, math};
+use crate::{
+    BSplineSurface, Cylinder, Ellipse, EnvelopeGrid, Isometry, Plane, Point3, Pose, Vector3, math,
+};
+
+mod grid;
+mod line;
+mod query;
 
 fn invalid(detail: impl Into<String>) -> Refusal {
     Refusal::new("shapes.rolling-pipe", detail)
@@ -117,6 +123,9 @@ struct Law {
     // Unit contact rays are `reach n` on the plane and `wall m(t)` on the wall.
     reach: Real,
     wall: Real,
+    // `n = along a + tilt w`, with the plane's height above `base` along `n`.
+    along: Real,
+    tilt: Real,
 }
 
 #[derive(Debug)]
@@ -209,13 +218,19 @@ impl RollingPipe {
             lift,
             reach,
             wall,
+            along,
+            tilt,
         };
-        let carrier = law.carrier(&tilt, dec)?;
+        let carrier = law.carrier(dec)?;
         Ok(Self {
             data: Arc::new(Data { law, carrier }),
         })
     }
 
+    /// Positive expression-node identity for deterministic cache reuse.
+    pub fn shares_definition_nodes(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.data, &other.data)
+    }
     /// The exact rational carrier over `[0, 4] x [0, 1]`.
     pub fn carrier(&self) -> &BSplineSurface {
         &self.data.carrier
@@ -270,6 +285,54 @@ impl RollingPipe {
             .minus(&first);
         self.centre(u).plus(&unit.scaled(&d.radius))
     }
+    /// Whether `edge` is the exact input edge of this contact, the plane section
+    /// of the cylinder on the sheet this pipe rolls along.
+    pub fn is_edge(&self, edge: &Ellipse, dec: &mut Decider) -> Result<bool, Refusal> {
+        let d = &self.data.law;
+        // The edge sits one rolling height from the plane rail along the axis.
+        let shift = &(&d.reach * &d.radius) / &d.along;
+        let center = d.base.plus(&d.axis.scaled(&shift));
+        let semi = d
+            .across
+            .scaled(&d.body)
+            .plus(&d.axis.scaled(&-(&(&d.tilt * &d.body) / &d.along)));
+        let zero = |value: Real, dec: &mut Decider| -> Result<bool, Refusal> {
+            Ok(math::sign(&value, dec)? == Sign::Zero)
+        };
+        Ok(zero(edge.center.minus(&center).norm_squared(), dec)?
+            && zero(edge.normal.cross(&d.normal).norm_squared(), dec)?
+            && zero(&edge.minor_sq - &d.body.square(), dec)?
+            && zero(&edge.major_sq - &semi.norm_squared(), dec)?
+            && zero(edge.major_dir.cross(&semi).norm_squared(), dec)?)
+    }
+    /// Whether every control of the carrier lies strictly on one side of a
+    /// plane, which keeps the whole band off that plane.
+    pub fn clear_of(&self, plane: &Plane, dec: &mut Decider) -> Result<bool, Refusal> {
+        let mut side = None;
+        for control in self.carrier().controls() {
+            let value = math::sign(&control.minus(&plane.origin).dot(&plane.normal), dec)?;
+            if value == Sign::Zero || side.replace(value).is_some_and(|last| last != value) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+    /// A uniform grid with `chord` at most `tolerance`. Column zero and the
+    /// last column are the seam, line zero is the plane rail and the last line
+    /// is the wall rail. `u` increases counter-clockwise about `chart_normal`.
+    pub fn display_grid(
+        &self,
+        tolerance: &Rational,
+        max_points: usize,
+        dec: &Decider,
+    ) -> Result<EnvelopeGrid, Refusal> {
+        grid::fit(self, tolerance, max_points, dec)
+    }
+    /// The direction `u` turns about, which is the sense of the chart's rails.
+    pub fn chart_normal(&self) -> Vector3 {
+        let d = &self.data.law;
+        d.major(&d.body).cross(&d.side)
+    }
     /// Exact rigid transport of the law and carrier.
     pub fn transformed(&self, pose: &Pose) -> Self {
         self.mapped(&Isometry::from(pose))
@@ -290,6 +353,8 @@ impl RollingPipe {
                     lift: d.lift.clone(),
                     reach: d.reach.clone(),
                     wall: d.wall.clone(),
+                    along: d.along.clone(),
+                    tilt: d.tilt.clone(),
                 },
                 carrier: self.data.carrier.mapped(pose),
             }),
@@ -348,7 +413,7 @@ impl Law {
     // Q = ((2 - v)^2 + v^2) W + 2 v (2 - v) (first.M).
     // |first.M| <= tilt W keeps Q's Bernstein coefficients positive, and the
     // tilt is under one because the plane is strictly oblique.
-    fn carrier(&self, tilt: &Real, dec: &mut Decider) -> Result<BSplineSurface, Refusal> {
+    fn carrier(&self, dec: &mut Decider) -> Result<BSplineSurface, Refusal> {
         let at = |values: [i64; 3]| values.map(Real::from_i64);
         let wide = Bernstein::in_u(at([1, 1, 2]));
         let flat = [1, 1, 0];
@@ -367,7 +432,7 @@ impl Law {
             }));
             // `first` is `reach n` and the wall ray `wall m`, so `first.M` is
             // `reach wall tilt cos`.
-            let meet = cos.scaled(&(&(&self.reach * &self.wall) * tilt));
+            let meet = cos.scaled(&(&(&self.reach * &self.wall) * &self.tilt));
             let ends = Bernstein::in_v(&[4, 2, 2]).times(&wide);
             let cross = Bernstein::in_v(&[0, 2, 2]).times(&meet);
             let q = ends.plus(&cross);

@@ -1,9 +1,10 @@
 //! Elementary rolling-ball strips, retained with their source supports and edge.
 
-use catallax_numbers::{Decider, Real, Refusal, Sign};
-use catallax_recipe::Origin;
+use catallax_numbers::{Decider, OperationSpan, Real, Refusal, Sign};
+use catallax_recipe::{Origin, StepId};
 use catallax_shapes::{
-    Circle, Curve, Cylinder, Isometry, Line, Point3, Surface, Torus, TorusSheet, Vector3,
+    Circle, Curve, Cylinder, Ellipse, Isometry, Line, Plane, Point3, RollingPipe, SplineSupport,
+    Surface, Torus, TorusSheet, Vector3,
 };
 
 use crate::profile::sign;
@@ -50,8 +51,9 @@ fn normal(v: &Vector3, same: bool) -> Vector3 {
 
 impl FilletDefinition {
     /// Reduces plane-plane, parallel-cylinder and cylinder-plane generator
-    /// contacts to an exact cylinder, and perpendicular plane-cylinder rings to
-    /// an exact torus. This does not publish a solid.
+    /// contacts to an exact cylinder, perpendicular plane-cylinder rings to an
+    /// exact torus, and oblique plane-cylinder ellipses to an exact rational
+    /// band. This does not publish a solid.
     pub fn new(
         origin: Origin,
         supports: [Surface; 2],
@@ -121,6 +123,22 @@ impl FilletDefinition {
                     plane_cylinder(p, c, e, [same_sense[1], same_sense[0]], &radius, &k, dec)?;
                 (surface, [b, a])
             }
+            (Surface::Plane(p), Surface::Cylinder(c), Curve::Ellipse(e)) => {
+                oblique(p, c, e, same_sense, &radius, convex, &origin.step, dec)?
+            }
+            (Surface::Cylinder(c), Surface::Plane(p), Curve::Ellipse(e)) => {
+                let (surface, [a, b]) = oblique(
+                    p,
+                    c,
+                    e,
+                    [same_sense[1], same_sense[0]],
+                    &radius,
+                    convex,
+                    &origin.step,
+                    dec,
+                )?;
+                (surface, [b, a])
+            }
             (Surface::Plane(p), Surface::Cylinder(c), Curve::Line(e)) => {
                 parallel::plane_cylinder(p, c, e, same_sense, &radius, &k, &origin.step, dec)?
             }
@@ -142,7 +160,7 @@ impl FilletDefinition {
             }
             _ => {
                 return Err(bad(
-                    "fillets need a line between planes, parallel cylinders or a cylinder and a parallel plane, or a circle between a plane and perpendicular cylinder",
+                    "fillets need a line between planes, parallel cylinders or a cylinder and a parallel plane, or a plane section of a cylinder",
                 ));
             }
         };
@@ -295,6 +313,52 @@ impl FilletDefinition {
         }
         Ok(false)
     }
+}
+
+/// The exact band of a closed contact between a plane and an oblique cylinder.
+/// Rails keep the input edge's direction, so they replace it in each face loop.
+#[allow(clippy::too_many_arguments)]
+fn oblique(
+    plane: &Plane,
+    cylinder: &Cylinder,
+    edge: &Ellipse,
+    same: [bool; 2],
+    radius: &Real,
+    convex: bool,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<(Surface, [Curve; 2]), Refusal> {
+    // The law builds its carrier's sections along with its contacts.
+    let contact_span = OperationSpan::begin("brep", step, "fillet.contact", dec);
+    let pipe = RollingPipe::new(plane, cylinder, same, radius.clone(), convex, dec).map_err(
+        |refusal| {
+            if refusal.code == "shapes.rolling-pipe" {
+                bad(&refusal.detail)
+            } else {
+                refusal
+            }
+        },
+    )?;
+    if !pipe.is_edge(edge, dec)? {
+        return Err(Refusal::new(
+            "fillet.invalid-edge",
+            "ellipse is not the section of this plane and cylinder",
+        ));
+    }
+    contact_span.finish(dec, None, None);
+    let section_span = OperationSpan::begin("brep", step, "fillet.sections", dec);
+    let along_edge = |mut rail: Ellipse, dec: &mut Decider| -> Result<Curve, Refusal> {
+        if sign(&rail.normal.dot(&edge.normal), dec)? == Sign::Negative {
+            rail.normal = rail.normal.scaled(&Real::from_i64(-1));
+        }
+        Ok(Curve::Ellipse(rail))
+    };
+    let rails = [
+        along_edge(pipe.plane_rail(dec)?, dec)?,
+        along_edge(pipe.wall_rail(dec)?, dec)?,
+    ];
+    section_span.finish(dec, None, None);
+    Ok((Surface::BSpline(SplineSupport::RollingPipe(pipe)), rails))
 }
 
 fn plane_cylinder(

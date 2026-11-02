@@ -65,6 +65,58 @@ fn flat(kind: &str, radius: &str) -> Recipe {
     )
 }
 
+/// A cylinder against a slab whose top is tilted, on an ellipse.
+fn oblique(kind: &str, radius: &str) -> Recipe {
+    let tilted = |at: &str, distance: &str| {
+        [
+            json!({"id":"section","op":"sketch",
+                "plane":{"rotation":["24/25","0","7/25","0"],"translation":["0","0",at]},
+                "loops":[[{"kind":"line","id":"s","to":["30","-30"]},
+                    {"kind":"line","id":"e","to":["30","30"]},
+                    {"kind":"line","id":"n","to":["-30","30"]},
+                    {"kind":"line","id":"w","to":["-30","-30"]}]]}),
+            json!({"id":"cut","op":"extrude","profile":"section","distance":distance}),
+        ]
+    };
+    let (cylinder, slab, role, target, tool, operation) = match kind {
+        "subtract" => (
+            ("16", "0"),
+            tilted("8", "30"),
+            "start",
+            "a",
+            "cut",
+            "subtract",
+        ),
+        "union" => (
+            ("22", "-10"),
+            tilted("-20", "20"),
+            "end",
+            "a",
+            "cut",
+            "union",
+        ),
+        _ => (
+            ("100", "-60"),
+            tilted("-20", "20"),
+            "end",
+            "cut",
+            "a",
+            "subtract",
+        ),
+    };
+    let mut steps = vec![
+        json!({"id":"a","op":"cylinder","radius":"5","height":cylinder.0,
+        "pose":{"rotation":["1","0","0","0"],"translation":["0","0",cylinder.1]}}),
+    ];
+    steps.extend(slab);
+    steps.push(json!({"id":"joined","op":"boolean","kind":operation,"target":target,"tool":tool}));
+    finish(
+        steps,
+        radius,
+        json!([wall("a"), {"step":"cut","role":role}]),
+    )
+}
+
 fn assert_closed(case: &str, mesh: &Mesh, options: &MeshOptions) {
     let mut incidence = BTreeMap::<_, (usize, i32)>::new();
     for triangle in &mesh.triangles {
@@ -97,10 +149,11 @@ fn assert_closed(case: &str, mesh: &Mesh, options: &MeshOptions) {
     );
     if let Some(limit) = &options.angular_deviation {
         assert!(
-            mesh.faces.iter().all(|f| f
-                .max_angular_deviation
-                .as_ref()
-                .is_some_and(|actual| actual <= limit)),
+            mesh.faces.iter().all(|f| match &f.max_angular_deviation {
+                Some(actual) => actual <= limit,
+                // A band's grid certifies position, and it says so.
+                None => mesh.unavailable_controls.iter().any(|u| u.face == f.face),
+            }),
             "{case}: angular bound"
         );
     }
@@ -124,6 +177,9 @@ fn generator_fillets_stay_closed_at_every_viewport_level() {
         ("irrational flat", flat("intersect", "3/4")),
         ("boss", flat("union", "9/4")),
         ("channel", flat("subtract", "9/16")),
+        ("oblique rim", oblique("subtract", "1")),
+        ("oblique boss", oblique("union", "1")),
+        ("oblique bore", oblique("bore", "1")),
     ] {
         let default = MeshOptions::default();
         let body = catallax_app::build(&recipe, &default, &mut Decider::default()).unwrap();

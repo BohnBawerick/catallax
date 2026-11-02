@@ -7,9 +7,9 @@
 
 use std::collections::BTreeMap;
 
-use catallax_numbers::{Ball, Decider, Rational, Refusal};
-use catallax_shapes::{BoundaryRow, EnvelopeGrid, SplineSupport, Surface};
-use catallax_topology::{BodyId, EdgeId, FaceId, Model, Sense, envelope_rows};
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
+use catallax_shapes::{BoundaryRow, Curve, EnvelopeGrid, RollingPipe, SplineSupport, Surface};
+use catallax_topology::{BodyId, EdgeId, FaceId, Model, Sense, envelope_rows, pipe_rows};
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
@@ -25,6 +25,8 @@ pub(crate) struct Seed {
     pub(crate) error: Rational,
     /// Whether the points run from the edge's start vertex.
     pub(crate) forward: bool,
+    /// A closed rail's exact points. A planar face needs them to triangulate.
+    pub(crate) exact: Vec<[Real; 3]>,
 }
 
 struct Envelope {
@@ -32,6 +34,9 @@ struct Envelope {
     rows: Vec<(EdgeId, BoundaryRow, bool)>,
     // Whether the face boundary walks the rail along increasing chart u.
     along_u: bool,
+    // A closed band: the last column is the seam again, and there are no
+    // meridian rows to supply its interior points.
+    closed: bool,
 }
 
 pub(crate) struct Junction {
@@ -54,7 +59,9 @@ pub(crate) fn present(model: &Model, body: BodyId) -> bool {
     let mut found = false;
     for face in model.faces_of_body(body) {
         match model.geom().surface(model.face(face).surface) {
-            Surface::BSpline(SplineSupport::RollingEnvelope(_)) => found = true,
+            Surface::BSpline(SplineSupport::RollingEnvelope(_) | SplineSupport::RollingPipe(_)) => {
+                found = true
+            }
             Surface::BSpline(_) => return false,
             _ => {}
         }
@@ -113,21 +120,29 @@ pub(crate) fn prepare(
     dec: &mut Decider,
 ) -> Result<Option<Junction>, Refusal> {
     let mut found = Vec::new();
+    let mut bands = Vec::new();
     for &face in faces {
         match model.geom().surface(model.face(face).surface) {
             Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
                 found.push((face, envelope))
             }
+            Surface::BSpline(SplineSupport::RollingPipe(pipe)) => bands.push((face, pipe)),
             Surface::BSpline(_) => return Ok(None),
             _ => {}
         }
     }
-    if found.is_empty() {
+    if found.is_empty() && bands.is_empty() {
         return Ok(None);
     }
     let tolerance = options.chord_tolerance.mul_pow2(-1);
     let mut envelopes = BTreeMap::new();
     let mut seeds = BTreeMap::new();
+    for (face, pipe) in bands {
+        envelopes.insert(
+            face,
+            band(model, face, pipe, &tolerance, options, &mut seeds, dec)?,
+        );
+    }
     for (face, envelope) in found {
         let grid = envelope.display_grid(&tolerance, options.max_vertices, dec)?;
         let mut rows = Vec::with_capacity(4);
@@ -158,6 +173,7 @@ pub(crate) fn prepare(
                     points,
                     error: grid.chord.clone(),
                     forward,
+                    exact: Vec::new(),
                 },
             );
         }
@@ -168,10 +184,77 @@ pub(crate) fn prepare(
                 grid,
                 rows,
                 along_u,
+                closed: false,
             },
         );
     }
     Ok(Some(Junction { envelopes, seeds }))
+}
+
+// A closed band's grid and its two rings. A ring has no end vertices, so its
+// direction comes from the sense of its ellipse against the chart's turn.
+fn band(
+    model: &Model,
+    face: FaceId,
+    pipe: &RollingPipe,
+    tolerance: &Rational,
+    options: &MeshOptions,
+    seeds: &mut BTreeMap<EdgeId, Seed>,
+    dec: &mut Decider,
+) -> Result<Envelope, Refusal> {
+    let grid = pipe.display_grid(tolerance, options.max_vertices, dec)?;
+    let rings = pipe_rows(model, face, dec)?
+        .ok_or_else(|| failure("a pipe face has no complete band of two rails"))?;
+    let turn = pipe.chart_normal();
+    let mut rows = Vec::with_capacity(2);
+    let mut along_u = false;
+    for (index, (edge, sense)) in rings.into_iter().enumerate() {
+        let definition = model.edge(edge);
+        let Curve::Ellipse(rail) = model.geom().curve(definition.curve) else {
+            return Err(failure("a pipe rail is not its ellipse"));
+        };
+        let turns = dec.enclose_at(&rail.normal.dot(&turn), BITS)?;
+        let same = turns
+            .sign()
+            .ok_or_else(|| failure("a pipe rail's turn is not separated from zero"))?
+            == catallax_numbers::StrictSign::Positive;
+        let forward = same == (definition.sense == Sense::Same);
+        let row = if index == 0 {
+            BoundaryRow::Rail
+        } else {
+            BoundaryRow::Mouth
+        };
+        if index == 0 {
+            along_u = (sense == Sense::Same) == forward;
+        }
+        rows.push((edge, row, forward));
+        // Each span's parameter is cut in equal halves, so a column is an exact
+        // fraction of the chart.
+        let line = Rational::from_i64(index as i64);
+        let last = Rational::from_i64(grid.columns as i64 - 1);
+        let exact = (0..grid.columns)
+            .map(|column| {
+                let u = Rational::from_i64(4 * column as i64) / last.clone();
+                let p = pipe.point(&u, &line);
+                [p.x, p.y, p.z]
+            })
+            .collect();
+        seeds.insert(
+            edge,
+            Seed {
+                points: row_points(&grid, row),
+                error: grid.chord.clone(),
+                forward,
+                exact,
+            },
+        );
+    }
+    Ok(Envelope {
+        grid,
+        rows,
+        along_u,
+        closed: true,
+    })
 }
 
 impl Junction {
@@ -212,7 +295,8 @@ impl Junction {
                 index[slot] = vertex;
             }
         }
-        for column in 1..columns - 1 {
+        let first_column = usize::from(!envelope.closed);
+        for column in first_column..columns - 1 {
             for line in 1..rows - 1 {
                 if boundaries.mesh.positions.len() >= options.max_vertices {
                     return Err(Refusal::new(
@@ -225,6 +309,11 @@ impl Junction {
                 error = error.max(&grid.chord + &chart::residual(&position, point));
                 index[at(column, line)] = boundaries.mesh.positions.len();
                 boundaries.mesh.positions.push(position);
+            }
+        }
+        if envelope.closed {
+            for line in 0..rows {
+                index[at(columns - 1, line)] = index[at(0, line)];
             }
         }
         if error > options.chord_tolerance {

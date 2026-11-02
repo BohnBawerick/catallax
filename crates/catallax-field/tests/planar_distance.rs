@@ -111,7 +111,7 @@ fn named_coplanar_face_pairs_measure_the_finite_gap_between_disjoint_bodies() {
     let plan = build(vec![
         json!({"id":"a","op":"block","size":["1","1","1"],"pose":pose()}),
         json!({"id":"b","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["3","3","0"]}}),
-        json!({"id":"union","op":"boolean","kind":"unite","target":"a","tool":"b"}),
+        json!({"id":"union","op":"boolean","kind":"union","target":"a","tool":"b"}),
     ]);
     let top = |name: &str| {
         let face = plan

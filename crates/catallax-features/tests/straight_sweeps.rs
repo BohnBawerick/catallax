@@ -170,22 +170,3 @@ fn reused_prefix_retains_path_and_edit_rebuilds_its_displacement() {
         assert_eq!(mass.value.volume.hi, r(expected));
     }
 }
-
-#[test]
-fn curved_and_multi_segment_paths_keep_explicit_coverage_refusals() {
-    for segments in [
-        serde_json::json!([{"kind":"arc","id":"turn","centre":["100","200","303"],"to":["103","200","303"],"axis":["0","1","0"]}]),
-        serde_json::json!([{"kind":"line","id":"one","to":["100","200","301"]},{"kind":"line","id":"two","to":["100","200","302"]}]),
-    ] {
-        let mut value = serde_json::to_value(recipe()).unwrap();
-        value["steps"][1]["segments"] = segments;
-        let recipe = Recipe::parse(&value.to_string()).unwrap();
-        let BuildError::Geometry { step, refusal } =
-            evaluate(&recipe, &mut Decider::default()).unwrap_err()
-        else {
-            panic!("expected coverage refusal")
-        };
-        assert_eq!(step.as_str(), "rail");
-        assert_eq!(refusal.code, "features.unsupported-path");
-    }
-}

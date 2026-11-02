@@ -516,6 +516,9 @@ pub enum PathSegment {
         id: ElementId,
         /// End point.
         to: Point3,
+        /// Positive half-turn axis at a tangent reversal, in version 4.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corner_axis: Option<Vector3>,
     },
     /// A circular arc about `centre` to `to`, counterclockwise about `axis`.
     Arc {
@@ -527,6 +530,9 @@ pub enum PathSegment {
         to: Point3,
         /// Normal of the arc's plane; the arc turns counterclockwise about it.
         axis: Vector3,
+        /// Positive half-turn axis at a tangent reversal, in version 4.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corner_axis: Option<Vector3>,
     },
 }
 
@@ -535,6 +541,15 @@ impl PathSegment {
     pub fn id(&self) -> &ElementId {
         match self {
             PathSegment::Line { id, .. } | PathSegment::Arc { id, .. } => id,
+        }
+    }
+}
+
+impl PathSegment {
+    /// Optional saved axis for a stationary turn at the preceding join.
+    pub fn corner_axis(&self) -> Option<&Vector3> {
+        match self {
+            Self::Line { corner_axis, .. } | Self::Arc { corner_axis, .. } => corner_axis.as_ref(),
         }
     }
 }

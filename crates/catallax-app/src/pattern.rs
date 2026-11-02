@@ -192,13 +192,27 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
             p(start)?;
             for segment in segments {
                 match segment {
-                    catallax_recipe::PathSegment::Line { to, .. } => p(to)?,
+                    catallax_recipe::PathSegment::Line {
+                        to, corner_axis, ..
+                    } => {
+                        p(to)?;
+                        if let Some(axis) = corner_axis {
+                            axial(axis)?;
+                        }
+                    }
                     catallax_recipe::PathSegment::Arc {
-                        centre, to, axis, ..
+                        centre,
+                        to,
+                        axis,
+                        corner_axis,
+                        ..
                     } => {
                         p(centre)?;
                         p(to)?;
                         axial(axis)?;
+                        if let Some(axis) = corner_axis {
+                            axial(axis)?;
+                        }
                     }
                 }
             }

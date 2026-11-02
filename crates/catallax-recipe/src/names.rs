@@ -63,6 +63,11 @@ pub enum Role {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<ElementId>,
     },
+    /// An exposed interior-profile patch of a sweep span or stationary turn.
+    Envelope {
+        /// The generating path segment, or outgoing segment at a corner.
+        path: ElementId,
+    },
     /// A face of a hole.
     Hole {
         /// The hole placement.
@@ -139,6 +144,7 @@ impl Role {
             Role::Start => "start",
             Role::End => "end",
             Role::Side { .. } => "side",
+            Role::Envelope { .. } => "envelope",
             Role::Hole { .. } => "hole",
             Role::Blend { .. } => "blend",
             Role::Bevel { .. } => "bevel",

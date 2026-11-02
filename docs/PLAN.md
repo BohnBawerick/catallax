@@ -212,6 +212,14 @@ Build order step 5, with imported geometry carrying local tolerances up to 10 µ
 - Each new operation reaches SolidDraft as soon as it lands.
 - The works-today list changes in the same pull request as the capability it describes.
 
+### Optional USD BRep and Omniverse exchange
+
+Planned work, outside 0.1.2. Target NVIDIA's [USD BRep interface at `c9c5979`](https://github.com/NVIDIA-Omniverse/usd-brep/tree/c9c5979f04cea8c38213004d4f04df0dcfb40d05), not a universal kernel-replacement API. Independently design Catallax's mapping from the interface; copy no SMLib code. Its custom [`BrepArray` schema](https://github.com/NVIDIA-Omniverse/usd-brep/blob/c9c5979f04cea8c38213004d4f04df0dcfb40d05/source/schema/omniSolid/resources/schema.usda) and source-neutral `BREP_STAGING` permit other kernels. `SM_API_USD` takes SMLib types, and consumer and rendering integration remain separate. The existing [Hydra plugin](https://github.com/NVIDIA-Omniverse/usd-brep/blob/c9c5979f04cea8c38213004d4f04df0dcfb40d05/source/HYDRA_USD_BREP/README.md) imports into SMLib to tessellate; schema conformance alone gives no viewport support. Catallax's export needs a companion display mesh.
+
+First specify the interface mapping and a golden fixture for one analytic solid, then build a one-way `BrepArray` exporter with that mesh and check it against an independent consumer. Check schema and geometry before any healing, and display separately. The schema's `brep:intersectTol3d` stores one tolerance per BRep, losing Catallax's local tolerance detail; retain that detail and certificates separately rather than claiming lossless exchange.
+
+Place optional scene and display export beside Stage 1, metadata and certificates at Stage 2, and supported analytic BRep export at Stage 3. Extend to blends and derived carriers as Stages 4 and 5 mature, only where the representation supports them. Two-way USD BRep import and editing are a separate extension to Stage 6. The dot can supply field-derived display meshes for field-only features without claiming BRep conversion.
+
 ## 7. Verification loops
 
 Agents write most of the code, so the loops that check it must be fast and run without a person.

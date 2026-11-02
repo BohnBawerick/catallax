@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Pair the five released SolidDraft edits and compare their exact native answers."""
 import argparse
+from collections import Counter
 import hashlib
 import importlib.util
 import json
@@ -66,8 +67,30 @@ def compare_work(left, right):
         a, b = left / name, right / name
         assert a.exists() == b.exists(), f"missing operation evidence: {a}, {b}"
         if a.exists():
-            assert without_clock(json.loads(a.read_text())) == without_clock(json.loads(b.read_text())), \
-                f"operation answers, marks, certificates or work changed: {a}, {b}"
+            observed = [json.loads(path.read_text()) for path in (a, b)]
+            for value in observed:
+                value["calls"] = [call for call in value["calls"] if call["on_capture_thread"]]
+            assert without_clock(observed[0]) == without_clock(observed[1]), \
+                f"foreground answers, marks, certificates or work changed: {a}, {b}"
+
+
+def compare_application(comparator, left, right, pins):
+    for difference in comparator.problems(left, right, pins):
+        if re.fullmatch(r"\d{4}/command.json", difference):
+            values = [json.loads(comparator.text(root / "commands" / difference, root, pins))
+                      for root in (left, right)]
+            # Completion delivery may cross a capture boundary. Keep the raw
+            # counter, and compare actual background work over the whole run.
+            for value in values:
+                value["rebuild"].pop("background_meshes_rebuilt")
+            if values[0] == values[1]:
+                continue
+        raise AssertionError(f"application answer differences in {right}: {difference}")
+    def calls(root):
+        return Counter(json.dumps(without_clock(call), sort_keys=True)
+                       for path in root.glob("commands/*/*kernel.json")
+                       for call in json.loads(path.read_text())["calls"])
+    assert calls(left) == calls(right), f"complete operation answers, certificates or work changed: {right}"
 
 
 def run(args):
@@ -110,8 +133,7 @@ def run(args):
                 report = json.loads((dest / "result.json").read_text())
                 assert report["pass"], f"incomplete or failed scenario: {dest}"
                 if name in references:
-                    problems = comparator.problems(references[name], dest, pins)
-                    assert not problems, f"application answer differences in {dest}: {problems}"
+                    compare_application(comparator, references[name], dest, pins)
                 else:
                     references[name] = dest
                 for number in targets:

@@ -254,13 +254,11 @@ impl PlanarBoundary {
             let direction = u.plus(&v.scaled(&Real::from_i64(slope)));
             let mut separated = true;
             for vertex in &self.vertices {
-                if math::sign(
-                    &vertex
-                        .minus(point)
-                        .cross(&direction)
-                        .dot(&self.plane.normal),
-                    dec,
-                )? == Sign::Zero
+                // Coplanar named regions may share unused vertices. The ray
+                // origin and vertices behind it cannot be forward crossings.
+                let delta = vertex.minus(point);
+                if math::sign(&delta.cross(&direction).dot(&self.plane.normal), dec)? == Sign::Zero
+                    && math::sign(&delta.dot(&direction), dec)? == Sign::Positive
                 {
                     separated = false;
                     break;

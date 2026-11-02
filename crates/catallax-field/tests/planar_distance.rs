@@ -133,11 +133,13 @@ fn named_coplanar_face_pairs_measure_the_finite_gap_between_disjoint_bodies() {
         width: Rational::parse("1e-8").unwrap(),
         max_cells: 1,
     };
-    let answer = plan
-        .prepare_distances(&mut dec)
-        .unwrap()
-        .face_to_face(ids[0], ids[1], &controls, &mut dec)
-        .unwrap();
+    let (answer, work) = with_operation_budget(100_000_000, || {
+        plan.prepare_distances(&mut dec)
+            .unwrap()
+            .face_to_face(ids[0], ids[1], &controls, &mut dec)
+            .unwrap()
+    });
+    assert!(!work.exhausted, "{work:?}");
     let oracle = dec.enclose_at(&Real::from_i64(8).sqrt(), 256).unwrap();
     let upper = answer.upper.as_ref().unwrap();
     assert!(

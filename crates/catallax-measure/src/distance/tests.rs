@@ -847,3 +847,61 @@ fn coplanar_named_face_pairs_keep_the_finite_gap_between_disjoint_solids() {
         assert!(catallax_boolean::face_contains(&mut model, id, &witness, &mut dec).unwrap());
     }
 }
+
+#[test]
+fn circular_arc_planar_trims_keep_the_closed_authored_sweep() {
+    use catallax_recipe::{Recipe, Role};
+    use serde_json::json;
+    for (end, at, squared) in [
+        (["-2", "0"], p(0, -1, 5), 10),
+        (["0", "-2"], p(3, -3, 3), 9),
+    ] {
+        let source=Recipe::parse(&json!({"format":"catallax-recipe/4","name":"finite arc face","steps":[
+            {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+                {"kind":"arc","id":"arc","to":end,"centre":["0","0"],"turn":"ccw"},
+                {"kind":"line","id":"chord","to":["2","0"]}
+            ]]},
+            {"id":"stock","op":"extrude","profile":"profile","distance":"2"}
+        ],"result":"stock"}).to_string()).unwrap();
+        let built =
+            catallax_app::build_incremental_without_display(&source, None, &mut Decider::default())
+                .unwrap();
+        let built = built.checkpoint.built();
+        let mut model = built.model.clone();
+        let cap = model
+            .faces_of_body(built.result)
+            .into_iter()
+            .find(|face| {
+                model
+                    .face_origins(*face)
+                    .iter()
+                    .any(|origin| origin.role == Role::End)
+            })
+            .unwrap();
+        let mut dec = Decider::default();
+        let options = Options {
+            max_cells: 1,
+            ..controls()
+        };
+        let answer = PreparedFace::new(&model, cap, &mut dec)
+            .unwrap()
+            .point_to_face(&mut model, &at, &options, &mut dec)
+            .unwrap();
+        let oracle = Ball::from_rational(&q(squared), 256).sqrt().unwrap();
+        let upper = answer.upper.as_ref().unwrap();
+        assert!(
+            answer.lower <= oracle.lo() && upper >= &oracle.hi() && answer.converged,
+            "{answer:?}"
+        );
+        assert!(upper - &answer.lower <= options.width, "{answer:?}");
+        assert!(
+            catallax_boolean::face_contains(
+                &mut model,
+                cap,
+                &answer.witnesses.unwrap()[1],
+                &mut dec
+            )
+            .unwrap()
+        );
+    }
+}

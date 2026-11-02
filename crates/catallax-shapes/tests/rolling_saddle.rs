@@ -704,6 +704,314 @@ fn a_range_holds_the_carrier_and_reaches_it() {
     }
 }
 
+// The cubic through two table entries, a share of the way along their span.
+fn cubic(data: [&[Rational; 2]; 2], width: f64, share: f64) -> f64 {
+    let t = share;
+    let (a, b) = (rational(&data[0][0]), rational(&data[1][0]));
+    let (c, d) = (rational(&data[0][1]), rational(&data[1][1]));
+    a * (1.0 + t * t * (2.0 * t - 3.0))
+        + b * t * t * (3.0 - 2.0 * t)
+        + c * width * t * (1.0 - t) * (1.0 - t)
+        + d * width * t * t * (t - 1.0)
+}
+fn rational(value: &Rational) -> f64 {
+    n(&Real::from(value.clone()))
+}
+
+// The tables' angle and height, turned back into a point on each cylinder from
+// the law's frame alone, land on the carrier's own rail.
+#[test]
+fn a_rail_table_reads_the_rail_on_its_cylinder() {
+    let tolerance = q("1/1000000000");
+    let dec = decider();
+    for index in 0..cases().len() {
+        let saddle = fitted(index);
+        let law = saddle.definition().law();
+        let origin = g(saddle.definition().origin());
+        let foot = g(&law.foot);
+        let [across, along, axis] = [f(&law.across), f(&law.along), f(&law.axis)];
+        let (cos, sin) = (n(&law.cosine), n(&law.sine));
+        let side = add(add([0.0; 3], along, cos), axis, -sin);
+        let narrow = add(add([0.0; 3], axis, cos), along, sin);
+        let branch = law.branch as f64;
+        for rail in 0..2 {
+            let table = saddle.parameter_table(rail, &tolerance, &dec).unwrap();
+            assert!(table.bound <= tolerance);
+            assert_eq!(table.knots[0], q("-1"));
+            assert_eq!(table.knots[table.knots.len() - 1], q("3"));
+            for span in (0..table.knots.len() - 1).step_by(7) {
+                let [lo, hi] = [
+                    rational(&table.knots[span]),
+                    rational(&table.knots[span + 1]),
+                ];
+                let share = 0.3;
+                let width = hi - lo;
+                let angle = cubic([&table.angle[span], &table.angle[span + 1]], width, share);
+                let height = cubic([&table.height[span], &table.height[span + 1]], width, share);
+                let found = if rail == 0 {
+                    let radius = n(&law.wide);
+                    let at = add(origin, axis, height);
+                    add(
+                        add(at, across, radius * angle.sin()),
+                        along,
+                        branch * radius * angle.cos(),
+                    )
+                } else {
+                    let radius = n(&law.narrow);
+                    let at = add(foot, narrow, height);
+                    add(
+                        add(at, across, radius * angle.cos()),
+                        side,
+                        radius * angle.sin(),
+                    )
+                };
+                let seen = sample(saddle.carrier(), lo + share * width, rail as f64, &dec);
+                assert!(
+                    norm(sub(found, seen)) < 2e-8,
+                    "case {index} rail {rail} span {span}: {found:?} {seen:?}"
+                );
+            }
+        }
+    }
+}
+
+// Two cylinders whose shadows along the narrow axis cross, so they meet in one
+// closed loop that turns round in both cylinders' angles.
+fn overlap_cases() -> Vec<Case> {
+    use BallSide::{Inside, Outside};
+    let wide = || cylinder(["0", "0", "0"], ["0", "0", "1"], "10");
+    let case = |name, narrow, radius, sides| Case {
+        name,
+        wide: wide(),
+        narrow,
+        radius,
+        sides,
+        leaving: true,
+    };
+    let square = |x| cylinder([x, "0", "0"], ["0", "1", "0"], "4");
+    vec![
+        case("square boss", square("8"), "1", [Outside, Outside]),
+        case("other side", square("-8"), "1", [Outside, Outside]),
+        case(
+            "leaning boss",
+            cylinder(["8", "2", "3"], ["0", "3", "4"], "4"),
+            "1",
+            [Outside, Outside],
+        ),
+        case("inside the wide", square("8"), "1", [Inside, Outside]),
+        case("inside the narrow", square("17/2"), "1", [Outside, Inside]),
+        case("inside both", square("8"), "1", [Inside, Inside]),
+    ]
+}
+
+fn overlap(index: usize) -> RollingSaddle {
+    static FITS: OnceLock<Vec<OnceLock<RollingSaddle>>> = OnceLock::new();
+    let all = FITS.get_or_init(|| overlap_cases().iter().map(|_| OnceLock::new()).collect());
+    all[index]
+        .get_or_init(|| {
+            let case = &overlap_cases()[index];
+            let mut dec = decider();
+            let radius = real(case.radius);
+            let definition = RollingSaddleDefinition::overlapping(
+                &case.wide,
+                &case.narrow,
+                &radius,
+                case.sides,
+                &mut dec,
+            )
+            .unwrap();
+            RollingSaddle::fit(definition, &mut dec).unwrap()
+        })
+        .clone()
+}
+
+// The ball's centre nearest `start` in the plane through it square to the path,
+// by Newton on the two distance conditions alone.
+fn centre_near(wide: &Tube, narrow: &Tube, offsets: [f64; 2], start: V) -> V {
+    let radial = |tube: &Tube, c: V| {
+        let d = sub(c, tube.at);
+        unit(add(d, tube.axis, -dot(d, tube.axis)))
+    };
+    let path = cross(radial(wide, start), radial(narrow, start));
+    let mut c = start;
+    for _ in 0..12 {
+        let (a, e) = (radial(wide, c), radial(narrow, c));
+        let values = [
+            wide.distance(c) - offsets[0],
+            narrow.distance(c) - offsets[1],
+            dot(sub(c, start), path),
+        ];
+        let under = dot(a, cross(e, path));
+        c = add(c, cross(e, path), -values[0] / under);
+        c = add(c, cross(path, a), -values[1] / under);
+        c = add(c, cross(a, e), -values[2] / under);
+    }
+    c
+}
+
+#[test]
+fn an_overlap_law_rests_the_ball_on_both_cylinders_round_one_loop() {
+    for case in overlap_cases() {
+        let mut dec = decider();
+        let radius = real(case.radius);
+        let definition = RollingSaddleDefinition::overlapping(
+            &case.wide,
+            &case.narrow,
+            &radius,
+            case.sides,
+            &mut dec,
+        )
+        .unwrap();
+        let (wide, narrow) = (Tube::of(&case.wide), Tube::of(&case.narrow));
+        let offsets = [0, 1].map(|which| n(&offset_sq(&case, which)).sqrt());
+        let frame = definition.law();
+        let mut quarters = [false; 4];
+        for u in chart_samples() {
+            let [centre, first, second] = definition.section(&u).unwrap().map(|p| g(&p));
+            assert!(
+                (wide.distance(centre) - offsets[0]).abs() < 1e-11,
+                "{}",
+                case.name
+            );
+            assert!(
+                (narrow.distance(centre) - offsets[1]).abs() < 1e-11,
+                "{}",
+                case.name
+            );
+            assert!(
+                (wide.distance(first) - n(&frame.wide)).abs() < 1e-11,
+                "{}",
+                case.name
+            );
+            assert!(
+                (narrow.distance(second) - n(&frame.narrow)).abs() < 1e-11,
+                "{}",
+                case.name
+            );
+            let r = n(&radius);
+            assert!(
+                (norm(sub(first, centre)) - r).abs() < 1e-11,
+                "{}",
+                case.name
+            );
+            assert!(
+                (norm(sub(second, centre)) - r).abs() < 1e-11,
+                "{}",
+                case.name
+            );
+            // The two axial signs of the loop's four arcs.
+            let d = sub(centre, g(definition.origin()));
+            let e = add(
+                add([0.0; 3], f(&frame.along), n(&frame.cosine)),
+                f(&frame.axis),
+                -n(&frame.sine),
+            );
+            let y = dot(d, f(&frame.along)) >= 0.0;
+            let w = dot(sub(centre, g(&frame.foot)), e) >= 0.0;
+            quarters[usize::from(y) + 2 * usize::from(w)] = true;
+        }
+        assert_eq!(quarters, [true; 4], "{}", case.name);
+        let [start, end] = [q("-1"), q("3")].map(|u| definition.section(&u).unwrap());
+        assert!(norm(sub(g(&start[0]), g(&end[0]))) < 1e-12, "{}", case.name);
+    }
+}
+
+#[test]
+fn an_overlap_carrier_has_exact_rails_and_closes() {
+    for (index, case) in overlap_cases().iter().enumerate() {
+        let fitted = overlap(index);
+        let mut dec = decider();
+        assert_eq!(fitted.carrier().degrees(), [12, 2]);
+        let [wide, narrow] = fitted.rails();
+        for (rail, cylinder) in [(&wide, &case.wide), (&narrow, &case.narrow)] {
+            assert_eq!(rail.is_closed(), Some(true), "{}", case.name);
+            for u in chart_samples().iter().step_by(3) {
+                let at = rail.point_at(&Real::from(u.clone()), &mut dec).unwrap();
+                assert!(
+                    on_cylinder(&at, cylinder, &cylinder.radius_sq, &mut dec),
+                    "{} at {u:?}",
+                    case.name
+                );
+            }
+        }
+        let surface = fitted.carrier();
+        let [columns, rows] = surface.control_count();
+        for row in 0..rows {
+            let last = (columns - 1) * rows + row;
+            assert!(zero(
+                &(&surface.weights()[row] - &surface.weights()[last]),
+                &mut dec
+            ));
+            let gap = surface.controls()[row].minus(&surface.controls()[last]);
+            assert!(zero(&gap.norm_squared(), &mut dec), "{}", case.name);
+        }
+    }
+}
+
+// The section through a point of the wide rail, found with no help from the law.
+// That section can sit a fit's width along the path from the carrier's own, so
+// the check allows twice the bound.
+#[test]
+fn an_overlap_carrier_stays_within_its_bound_of_the_rolling_ball() {
+    for (index, case) in overlap_cases().iter().enumerate() {
+        let fitted = overlap(index);
+        let dec = decider();
+        let bound = fitted.bound().upper.to_f64_nearest();
+        assert!(bound <= 1e-4, "{}: {bound}", case.name);
+        let radius = n(&real(case.radius));
+        let (wide, narrow) = (Tube::of(&case.wide), Tube::of(&case.narrow));
+        let offsets = [0, 1].map(|which| n(&offset_sq(case, which)).sqrt());
+        let path = Path::new(wide, narrow, offsets, true, radius);
+        let mut worst: f64 = 0.0;
+        for i in 0..240 {
+            let u = -1.0 + 4.0 * (f64::from(i) + 0.37) / 240.0;
+            let rail = sample(fitted.carrier(), u, 0.0, &dec);
+            let d = sub(rail, wide.at);
+            let out = unit(add(d, wide.axis, -dot(d, wide.axis)));
+            let start = add(rail, out, offsets[0] - wide.radius);
+            let centre = centre_near(&wide, &narrow, offsets, start);
+            let [first, second] = path.foot(centre);
+            let (a, c) = (unit(sub(first, centre)), unit(sub(second, centre)));
+            let normal = unit(cross(a, c));
+            for j in 0..=8 {
+                let v = f64::from(j) / 8.0;
+                let p = sample(fitted.carrier(), u, v, &dec);
+                let d = sub(p, centre);
+                worst = worst.max((norm(d) - radius).abs());
+                worst = worst.max(dot(d, normal).abs());
+                assert!(dot(cross(a, d), normal) > -3.0 * bound, "{}", case.name);
+                assert!(dot(cross(d, c), normal) > -3.0 * bound, "{}", case.name);
+            }
+        }
+        assert!(worst <= 2.0 * bound, "{}: {worst} over {bound}", case.name);
+        eprintln!(
+            "{}: {} spans, bound {bound:.3e}, worst seen {worst:.3e}",
+            case.name,
+            fitted.span_count()
+        );
+    }
+}
+
+#[test]
+fn an_overlap_refuses_a_ring_that_passes_through() {
+    use BallSide::Outside;
+    let wide = cylinder(["0", "0", "0"], ["0", "0", "1"], "10");
+    let mut dec = decider();
+    let through = cylinder(["1", "0", "0"], ["0", "1", "0"], "4");
+    let clear = cylinder(["20", "0", "0"], ["0", "1", "0"], "4");
+    for narrow in [through, clear] {
+        let error = RollingSaddleDefinition::overlapping(
+            &wide,
+            &narrow,
+            &real("1"),
+            [Outside, Outside],
+            &mut dec,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "shapes.rolling-saddle");
+    }
+}
+
 fn refused(wide: Cylinder, narrow: Cylinder, radius: &str, sides: [BallSide; 2]) -> Refusal {
     let mut dec = decider();
     RollingSaddleDefinition::new(&wide, &narrow, &real(radius), sides, true, &mut dec).unwrap_err()

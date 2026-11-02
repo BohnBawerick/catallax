@@ -29,6 +29,24 @@
 //! `u` runs over `[-1, 3]`. On `[-1, 1]` the half-angle tangent of `t` is `u`, and
 //! on `[1, 3]` the same half turn repeats from the opposite side, so the rail's
 //! denominator is two at every chart end and the closed carrier's weights close.
+//!
+//! When the two offsets' shadows cross instead, so `|P - p| < |gap| < P + p`, one
+//! closed loop runs out to where `y = 0` and back round to where `sin t = 0`, and
+//! both `t` and the wide angle turn round on it. With `e` the sign of the gap, take
+//! `X = e x`, which runs between `P` and `|gap| - p`, and write
+//!
+//! ```text
+//! X = c + d cos 2 w    c = (P + |gap| - p) / 2    d = (P - |gap| + p) / 2
+//! y = sin w sqrt(2 d (P + X))
+//! p sin t = cos w sqrt(2 d (|gap| + p - X))
+//! ```
+//!
+//! Both roots stay positive, so `w` charts the loop with no turning point, as `t`
+//! charts a through ring. The rails take fitted half-angle tangents measured from
+//! the far side of each cylinder, `2 d sin w / sqrt(2 d (P + X))` on the wide one
+//! and `-2 d cos w / sqrt(2 d (|gap| + p - X))` on the narrow one, which stay
+//! finite because the loop never reaches those far sides. Each rail's denominator
+//! is then of degree six, so the middle row reaches degree twelve.
 
 use crate::rational_sheet::{LocalFrame, Patch, along, cover, split_net};
 use crate::rolling_envelope::{Jet, combine, cubic, elevate, hermite, product};
@@ -43,6 +61,8 @@ use std::sync::{Arc, Mutex};
 mod grid;
 #[path = "rolling_saddle/line.rs"]
 mod line;
+#[path = "rolling_saddle/table.rs"]
+mod table;
 
 /// Kernel-made approximation target, as for a rolling envelope.
 pub const ROLLING_SADDLE_TARGET_NM: i64 = 100;
@@ -50,20 +70,26 @@ const HARD_CAP_NM: i64 = 1_000;
 // Spans per half turn: the fit doubles from the first to the last.
 const FIRST_SPANS: usize = 8;
 const LAST_SPANS: usize = 128;
+// A loop's section angle can come far nearer a half turn, where the rows bend
+// hardest, so it may take one more doubling.
+const OVERLAP_LAST_SPANS: usize = 256;
 const DEGREE: usize = 9;
+const OVERLAP_DEGREE: usize = 12;
 const BITS: u32 = 128;
 // Node data keep this many fractional bits, far below the target.
 const NODE_BITS: i64 = 32;
 // Cells of one span in the regularity proof, by doubling.
 const MAX_CELLS: usize = 64;
 
-const ROWS: usize = 6;
+const ROWS: usize = 7;
 const HEIGHT: usize = 0;
 const LIFT: usize = 1;
 const HALF: usize = 2;
 const TANGENT: usize = 3;
 const AXIAL: usize = 4;
 const WEIGHT: usize = 5;
+// The narrow rail's half-angle tangent, on an overlap's loop only.
+const TURNED: usize = 6;
 
 // Halvings of the open patches before a range gives up.
 const MAX_RANGE_SPLITS: usize = 40;
@@ -91,6 +117,16 @@ fn unit(v: &Vector3) -> Vector3 {
 }
 fn real(value: &Rational) -> Real {
     Real::from(value.clone())
+}
+
+/// Which ring of the two cylinders a law follows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaddleRing {
+    /// The narrow offset passes through the wide one: `t` charts one of two rings.
+    Through,
+    /// The offsets' shadows cross, so one loop turns round in `t` and in the wide
+    /// angle.
+    Overlap,
 }
 
 /// The side of a cylinder the ball sits on.
@@ -137,8 +173,10 @@ pub struct SaddleLaw {
     pub sine: Real,
     /// The ball's side of the wide and narrow cylinders: 1 outside, -1 inside.
     pub sides: [i64; 2],
-    /// The sign of the ring's `along` coordinate.
+    /// The sign of the ring's `along` coordinate. An overlap's loop has no side.
     pub branch: i64,
+    /// Which ring this is.
+    pub ring: SaddleRing,
 }
 
 /// The exact law of a ball of radius `radius` resting on two nonparallel
@@ -160,6 +198,9 @@ pub struct RollingSaddleDefinition {
     sine: Real,
     sides: [i64; 2],
     branch: i64,
+    ring: SaddleRing,
+    // The sign of `gap`, which a loop's chart reads.
+    gap_positive: bool,
 }
 
 impl RollingSaddleDefinition {
@@ -179,6 +220,73 @@ impl RollingSaddleDefinition {
         if math::sign(radius, dec)? != Sign::Positive {
             return Err(invalid("ball radius must be positive"));
         }
+        let frame = Self::frame_of(wide, narrow, radius, sides, dec)?;
+        let reach = math::exact_sqrt(&frame.gap.square());
+        for (big, small) in [
+            (frame.offset(0), frame.offset(1)),
+            (frame.wide.clone(), frame.narrow.clone()),
+        ] {
+            if math::sign(&(&(&big - &small) - &reach), dec)? != Sign::Positive {
+                return Err(invalid(
+                    "the narrow cylinder does not pass through the wide one",
+                ));
+            }
+        }
+        Ok(Self {
+            branch: if leaving { 1 } else { -1 },
+            ..frame
+        })
+    }
+
+    /// The one loop of two cylinders whose shadows cross along the narrow axis.
+    /// Checks that the offsets' shadows and the cylinders' own both cross, so
+    /// both circles reach past each other and neither holds the other.
+    pub fn overlapping(
+        wide: &Cylinder,
+        narrow: &Cylinder,
+        radius: &Real,
+        sides: [BallSide; 2],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        dec.check_deadline()?;
+        if math::sign(radius, dec)? != Sign::Positive {
+            return Err(invalid("ball radius must be positive"));
+        }
+        let frame = Self::frame_of(wide, narrow, radius, sides, dec)?;
+        let reach = math::exact_sqrt(&frame.gap.square());
+        for (big, small) in [
+            (frame.offset(0), frame.offset(1)),
+            (frame.wide.clone(), frame.narrow.clone()),
+        ] {
+            let apart = math::exact_sqrt(&(&big - &small).square());
+            if math::sign(&(&reach - &apart), dec)? != Sign::Positive
+                || math::sign(&(&(&big + &small) - &reach), dec)? != Sign::Positive
+            {
+                return Err(invalid("the cylinders do not cross in one loop"));
+            }
+        }
+        Ok(Self {
+            ring: SaddleRing::Overlap,
+            ..frame
+        })
+    }
+
+    // The degree of a span of this ring along `u`.
+    fn degree(&self) -> usize {
+        match self.ring {
+            SaddleRing::Through => DEGREE,
+            SaddleRing::Overlap => OVERLAP_DEGREE,
+        }
+    }
+
+    // The frame of the common perpendicular, with both offsets checked positive.
+    fn frame_of(
+        wide: &Cylinder,
+        narrow: &Cylinder,
+        radius: &Real,
+        sides: [BallSide; 2],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         let a = unit(&wide.axis);
         let n = unit(&narrow.axis);
         let cosine = a.dot(&n);
@@ -200,6 +308,7 @@ impl RollingSaddleDefinition {
         let origin = wide.origin.plus(&long.scaled(&on_wide));
         let foot = narrow.origin.plus(&short.scaled(&on_narrow));
         let gap = foot.minus(&origin).dot(&across);
+        let gap_positive = math::sign(&gap, dec)? != Sign::Negative;
         let radii = [&wide.radius_sq, &narrow.radius_sq].map(math::exact_sqrt);
         let [wide_radius, narrow_radius] = radii;
         let offset =
@@ -211,14 +320,6 @@ impl RollingSaddleDefinition {
         for value in &offsets {
             if math::sign(value, dec)? != Sign::Positive {
                 return Err(invalid("the ball does not fit inside a cylinder"));
-            }
-        }
-        let reach = math::exact_sqrt(&gap.square());
-        for (big, small) in [(&offsets[0], &offsets[1]), (&wide_radius, &narrow_radius)] {
-            if math::sign(&(&(big - small) - &reach), dec)? != Sign::Positive {
-                return Err(invalid(
-                    "the narrow cylinder does not pass through the wide one",
-                ));
             }
         }
         Ok(Self {
@@ -235,7 +336,9 @@ impl RollingSaddleDefinition {
             cosine,
             sine,
             sides: sides.map(BallSide::sign),
-            branch: if leaving { 1 } else { -1 },
+            branch: 1,
+            ring: SaddleRing::Through,
+            gap_positive,
         })
     }
 
@@ -300,6 +403,11 @@ impl RollingSaddleDefinition {
         &self.radius
     }
 
+    /// The law's origin, on the wide axis.
+    pub fn origin(&self) -> &Point3 {
+        &self.origin
+    }
+
     /// The law's numbers.
     pub fn law(&self) -> SaddleLaw {
         SaddleLaw {
@@ -315,6 +423,7 @@ impl RollingSaddleDefinition {
             sine: self.sine.clone(),
             sides: self.sides,
             branch: self.branch,
+            ring: self.ring,
         }
     }
 
@@ -382,9 +491,25 @@ impl RollingSaddleDefinition {
         let cos = real(&((Rational::one() - &s * &s) * turn.clone() / wide.clone()));
         let sin = real(&(&s * &q(2) * turn / wide));
         let [big, small] = [0, 1].map(|which| self.offset(which));
-        let x = &self.gap + &(&small * &cos);
-        let root = math::exact_sqrt(&(&big.square() - &x.square()));
-        let y = &root * &Real::from_i64(self.branch);
+        let (x, y, cos, sin) = match self.ring {
+            SaddleRing::Through => {
+                let x = &self.gap + &(&small * &cos);
+                let root = math::exact_sqrt(&(&big.square() - &x.square()));
+                (x, &root * &Real::from_i64(self.branch), cos, sin)
+            }
+            SaddleRing::Overlap => {
+                let reach = math::exact_sqrt(&self.gap.square());
+                let middle = &(&(&big + &reach) - &small) / &Real::from_i64(2);
+                let half = &(&(&big - &reach) + &small) / &Real::from_i64(2);
+                let far = &middle + &(&half * &(&cos.square() - &sin.square()));
+                let twice = &half * &Real::from_i64(2);
+                let up = math::exact_sqrt(&(&twice * &(&big + &far)));
+                let round = math::exact_sqrt(&(&twice * &(&(&reach + &small) - &far)));
+                let x = &(&far * &self.gap) / &reach;
+                let across = &(&x - &self.gap) / &small;
+                (x, &sin * &up, across, &(&cos * &round) / &small)
+            }
+        };
         let z = &(&(&self.cosine * &y) - &(&small * &sin)) / &self.sine;
         let scale = &self.wide / &big;
         let step = &self.narrow - &small;
@@ -420,8 +545,18 @@ struct Constants {
     radius: Ball,
     sides: [Ball; 2],
     branch: Ball,
+    overlap: Option<Overlap>,
     one: Ball,
     two: Ball,
+}
+
+// An overlap's loop: `X = middle + half cos 2 w`, `facing` the gap's sign and `end`
+// the value `|gap| + p` that `X` stays below.
+struct Overlap {
+    facing: Ball,
+    middle: Ball,
+    half: Ball,
+    end: Ball,
 }
 
 impl Constants {
@@ -432,15 +567,28 @@ impl Constants {
         let over_sine = one
             .checked_div(&sine)
             .ok_or_else(|| unresolved("saddle axes are not separated from parallel"))?;
+        let (big, small, gap) = (e(&def.offset(0))?, e(&def.offset(1))?, e(&def.gap)?);
+        let overlap = (def.ring == SaddleRing::Overlap).then(|| {
+            let facing = b(&q(if def.gap_positive { 1 } else { -1 }), bits);
+            let reach = &gap * &facing;
+            let half = b(&Rational::from_ratio(1, 2).expect("nonzero"), bits);
+            Overlap {
+                middle: &(&(&big + &reach) - &small) * &half,
+                half: &(&(&big - &reach) + &small) * &half,
+                end: &reach + &small,
+                facing,
+            }
+        });
         Ok(Self {
-            gap: e(&def.gap)?,
+            gap,
             cosine: e(&def.cosine)?,
             sine,
             over_sine,
             wide: e(&def.wide)?,
             narrow: e(&def.narrow)?,
-            big: e(&def.offset(0))?,
-            small: e(&def.offset(1))?,
+            big,
+            small,
+            overlap,
             radius: e(&def.radius)?,
             sides: def.sides.map(|side| b(&q(side), bits)),
             branch: b(&q(def.branch), bits),
@@ -458,6 +606,7 @@ struct Rows {
     height: Jet,
     lift: Jet,
     half: Jet,
+    turned: Option<Jet>,
     tangent: Jet,
     axial: Jet,
     weight: Option<Jet>,
@@ -467,17 +616,74 @@ struct Rows {
     narrow: [Jet; 3],
 }
 
-fn rows(k: &Constants, chart: i64, s: &Jet, fitted: Option<&Jet>) -> Result<Rows, Refusal> {
+// The ring's plan coordinates at a chart station, with `cos t`, `sin t` and the
+// half-angle tangents of the rails.
+struct Plan {
+    x: Jet,
+    y: Jet,
+    cos: Jet,
+    sin: Jet,
+    half: Jet,
+    turned: Option<Jet>,
+}
+
+fn plan(k: &Constants, turn_cos: Jet, turn_sin: Jet) -> Result<Plan, Refusal> {
+    let Some(overlap) = &k.overlap else {
+        let (cos, sin) = (turn_cos, turn_sin);
+        let x = k.c(&k.gap).add(&cos.scale(&k.small));
+        let root = k.c(&k.big.square()).sub(&x.square()).sqrt()?;
+        let half = x.div(&k.c(&k.big).add(&root))?;
+        return Ok(Plan {
+            y: root.scale(&k.branch),
+            x,
+            cos,
+            sin,
+            half,
+            turned: None,
+        });
+    };
+    let wave = turn_cos.square().sub(&turn_sin.square());
+    let far = k.c(&overlap.middle).add(&wave.scale(&overlap.half));
+    let twice = &overlap.half * &k.two;
+    let up = far.add(&k.c(&k.big)).scale(&twice).sqrt()?;
+    let round = k.c(&overlap.end).sub(&far).scale(&twice).sqrt()?;
+    let over_small = k
+        .one
+        .checked_div(&k.small)
+        .ok_or_else(|| unresolved("narrow offset is not separated from zero"))?;
+    let x = far.scale(&overlap.facing);
+    Ok(Plan {
+        y: turn_sin.mul(&up),
+        cos: x.sub(&k.c(&k.gap)).scale(&over_small),
+        sin: turn_cos.mul(&round).scale(&over_small),
+        half: turn_sin.scale(&twice).div(&up)?,
+        turned: Some(turn_cos.scale(&twice).div(&round)?.neg()),
+        x,
+    })
+}
+
+// `fitted` holds the rails' fitted half-angle tangents, the narrow one on a loop.
+fn rows(
+    k: &Constants,
+    chart: i64,
+    s: &Jet,
+    fitted: Option<(&Jet, Option<&Jet>)>,
+) -> Result<Rows, Refusal> {
     let bits = k.one.precision();
     let one = k.c(&k.one);
     let turn = b(&q(1 - 2 * chart), bits);
     let square = s.square();
     let den = one.add(&square);
-    let cos = one.sub(&square).scale(&turn).div(&den)?;
-    let sin = s.scale(&k.two).scale(&turn).div(&den)?;
-    let x = k.c(&k.gap).add(&cos.scale(&k.small));
-    let root = k.c(&k.big.square()).sub(&x.square()).sqrt()?;
-    let y = root.scale(&k.branch);
+    let turn_cos = one.sub(&square).scale(&turn).div(&den)?;
+    let turn_sin = s.scale(&k.two).scale(&turn).div(&den)?;
+    let Plan {
+        x,
+        y,
+        cos,
+        sin,
+        half,
+        turned,
+    } = plan(k, turn_cos, turn_sin)?;
     let height = y
         .sub(&sin.scale(&(&k.small * &k.cosine)))
         .scale(&k.over_sine);
@@ -485,7 +691,6 @@ fn rows(k: &Constants, chart: i64, s: &Jet, fitted: Option<&Jet>) -> Result<Rows
         .scale(&k.cosine)
         .sub(&sin.scale(&k.small))
         .scale(&k.over_sine);
-    let half = x.div(&k.c(&k.big).add(&root))?;
     let over_big = k
         .one
         .checked_div(&k.big)
@@ -516,12 +721,15 @@ fn rows(k: &Constants, chart: i64, s: &Jet, fitted: Option<&Jet>) -> Result<Rows
     // The middle weight cos(half) sqrt(w0 w2) over the narrow rail's denominator.
     let weight = match fitted {
         None => None,
-        Some(w) => Some(
-            one_d
-                .mul(&one.add(&w.square()))
-                .div(&den.scale(&k.two))?
-                .sqrt()?,
-        ),
+        Some((w, narrow)) => {
+            let rail = narrow.map_or_else(|| Jet(den.0.clone()), |n| one.add(&n.square()));
+            Some(
+                one_d
+                    .mul(&one.add(&w.square()))
+                    .div(&rail.scale(&k.two))?
+                    .sqrt()?,
+            )
+        }
     };
     let step = &k.narrow - &k.small;
     let scale = k
@@ -539,6 +747,7 @@ fn rows(k: &Constants, chart: i64, s: &Jet, fitted: Option<&Jet>) -> Result<Rows
         height,
         lift,
         half,
+        turned,
         tangent,
         axial,
         weight,
@@ -586,14 +795,22 @@ fn produce(
                 values[j] = snap(&value.mid());
                 slopes[j] = snap(&slope.mid());
             }
+            if let Some(jet) = &exact.turned {
+                let [value, slope] = jet.data();
+                values[TURNED] = snap(&value.mid());
+                slopes[TURNED] = snap(&slope.mid());
+            }
             let fitted = Jet::linear(b(&values[HALF], bits), b(&slopes[HALF], bits));
-            let weight = rows(&k, chart, &point, Some(&fitted))?.weight;
+            let turned = Jet::linear(b(&values[TURNED], bits), b(&slopes[TURNED], bits));
+            let narrow = k.overlap.is_some().then_some(&turned);
+            let weight = rows(&k, chart, &point, Some((&fitted, narrow)))?.weight;
             let [value, slope] = weight.expect("weight requested").data();
             values[WEIGHT] = snap(&value.mid());
             slopes[WEIGHT] = snap(&slope.mid());
-            let arriving = if i == 0 && chart == 1 {
+            // A loop's denominators are smooth, so its weight has no corner.
+            let arriving = if i == 0 && chart == 1 && k.overlap.is_none() {
                 let end = Jet::linear(k.one.clone(), k.one.clone());
-                let weight = rows(&k, 0, &end, Some(&fitted))?.weight;
+                let weight = rows(&k, 0, &end, Some((&fitted, None)))?.weight;
                 snap(&weight.expect("weight requested").data()[1].mid())
             } else {
                 slopes[WEIGHT].clone()
@@ -607,10 +824,14 @@ fn produce(
         }
     }
     let first = nodes[0].clone();
-    let fitted = Jet::linear(b(&first.values[HALF], bits), b(&first.slopes[HALF], bits));
-    let end = Jet::linear(k.one.clone(), k.one.clone());
-    let weight = rows(&k, 1, &end, Some(&fitted))?.weight;
-    let arriving = snap(&weight.expect("weight requested").data()[1].mid());
+    let arriving = if k.overlap.is_some() {
+        first.slopes[WEIGHT].clone()
+    } else {
+        let fitted = Jet::linear(b(&first.values[HALF], bits), b(&first.slopes[HALF], bits));
+        let end = Jet::linear(k.one.clone(), k.one.clone());
+        let weight = rows(&k, 1, &end, Some((&fitted, None)))?.weight;
+        snap(&weight.expect("weight requested").data()[1].mid())
+    };
     nodes.push(Node {
         u: q(3),
         arriving,
@@ -652,7 +873,10 @@ fn recompute_bound(
     let exact_at = |chart: i64, s: &Rational, data: &RowData| -> Result<RowData, Refusal> {
         let point = Jet::linear(b(s, bits), k.one.clone());
         let fitted = Jet::linear(data[HALF][0].clone(), data[HALF][1].clone());
-        let exact = rows(&k, chart, &point, Some(&fitted))?;
+        let turned = Jet::linear(data[TURNED][0].clone(), data[TURNED][1].clone());
+        let narrow = k.overlap.is_some().then_some(&turned);
+        let exact = rows(&k, chart, &point, Some((&fitted, narrow)))?;
+        let zero = [b(&Rational::zero(), bits), b(&Rational::zero(), bits)];
         Ok([
             exact.height.data(),
             exact.lift.data(),
@@ -660,6 +884,7 @@ fn recompute_bound(
             exact.tangent.data(),
             exact.axial.data(),
             exact.weight.expect("weight requested").data(),
+            exact.turned.as_ref().map_or(zero, Jet::data),
         ])
     };
     let mut worst = Rational::zero();
@@ -682,8 +907,19 @@ fn recompute_bound(
             ],
             bits,
         )?;
-        let whole = rows(&k, chart, &s, Some(&fitted))?;
+        let turned = hermite(
+            &s,
+            span,
+            [
+                [&left[TURNED][0], &left[TURNED][1]],
+                [&right[TURNED][0], &right[TURNED][1]],
+            ],
+            bits,
+        )?;
+        let narrow_half = k.overlap.is_some().then_some(&turned);
+        let whole = rows(&k, chart, &s, Some((&fitted, narrow_half)))?;
         let weight_jet = whole.weight.as_ref().expect("weight requested");
+        let nothing = b(&Rational::zero(), bits);
         let fourth = [
             &whole.height.0[4],
             &whole.lift.0[4],
@@ -691,6 +927,7 @@ fn recompute_bound(
             &whole.tangent.0[4],
             &whole.axial.0[4],
             &weight_jet.0[4],
+            whole.turned.as_ref().map_or(&nothing, |jet| &jet.0[4]),
         ];
         let h4 = h.pow(4).expect("nonzero span");
         let error = |j: usize| -> Rational {
@@ -703,8 +940,18 @@ fn recompute_bound(
         };
         // An angle moves at most 2 per unit of its half-angle tangent.
         let wide = q(2) * k.wide.hi() * error(HALF) + error(LIFT);
-        let narrow = error(HEIGHT);
-        let apex = error(TANGENT) + error(AXIAL) + error(HEIGHT);
+        // On a loop the narrow rail's own angle is fitted too, and it swings the
+        // apex about the axis by its distance from there.
+        let swing = if k.overlap.is_some() {
+            q(2) * error(TURNED)
+        } else {
+            Rational::zero()
+        };
+        let narrow = error(HEIGHT) + k.narrow.hi() * swing.clone();
+        let apex = error(TANGENT)
+            + error(AXIAL)
+            + error(HEIGHT)
+            + (k.narrow.hi() + magnitude(&whole.tangent.0[0])) * swing;
         let weight = weight_jet.0[0].lo();
         if weight <= Rational::zero() {
             return Err(unresolved("exact middle weight is not separated from zero"));
@@ -809,13 +1056,27 @@ fn span_rows(def: &RollingSaddleDefinition, pair: &[Node]) -> [[Vec<Real>; 4]; 3
             [&pair[0].slopes[j], ending],
         )
     };
-    let s = vec![real(&ends[0]), real(&ends[1])];
-    let square = product(&s, &s);
-    let turn = Real::from_i64(1 - 2 * chart);
-    let ones = vec![one.clone(); 3];
-    let den = combine(&ones, &square, &one, &one);
-    let cos = combine(&ones, &square, &turn, &-&turn);
-    let sin = scaled(&elevate(&s, 2), &(&turn * &Real::from_i64(2)));
+    let (cos, sin, den) = if def.ring == SaddleRing::Overlap {
+        let turned = f(TURNED);
+        let square = product(&turned, &turned);
+        let ones = vec![one.clone(); 7];
+        let facing = Real::from_i64(if def.gap_positive { 1 } else { -1 });
+        (
+            combine(&ones, &square, &-&facing, &facing),
+            scaled(&elevate(&turned, 6), &Real::from_i64(-2)),
+            combine(&ones, &square, &one, &one),
+        )
+    } else {
+        let s = vec![real(&ends[0]), real(&ends[1])];
+        let square = product(&s, &s);
+        let turn = Real::from_i64(1 - 2 * chart);
+        let ones = vec![one.clone(); 3];
+        (
+            combine(&ones, &square, &turn, &-&turn),
+            scaled(&elevate(&s, 2), &(&turn * &Real::from_i64(2))),
+            combine(&ones, &square, &one, &one),
+        )
+    };
     let rail_x = scaled(&cos, &def.narrow);
     let rail_e = scaled(&sin, &def.narrow);
     let narrow = [
@@ -838,18 +1099,30 @@ fn span_rows(def: &RollingSaddleDefinition, pair: &[Node]) -> [[Vec<Real>; 4]; 3
     let half = f(HALF);
     let half_square = product(&half, &half);
     let ones = vec![one.clone(); 7];
-    let branch = Real::from_i64(def.branch);
     let wide_den = combine(&ones, &half_square, &one, &one);
-    let wide = [
-        scaled(&elevate(&half, 6), &(&def.wide * &Real::from_i64(2))),
-        scaled(
-            &combine(&ones, &half_square, &one, &minus),
-            &(&def.wide * &branch),
-        ),
-        product(&f(LIFT), &wide_den),
-        wide_den,
-    ];
-    [wide, middle, narrow].map(|row| row.map(|c| elevate(&c, DEGREE)))
+    let twice = scaled(&elevate(&half, 6), &(&def.wide * &Real::from_i64(2)));
+    let flat = combine(&ones, &half_square, &one, &minus);
+    let lifted = product(&f(LIFT), &wide_den);
+    // A through ring's angle runs from `along`, and a loop's from the gap's side.
+    let wide = if def.ring == SaddleRing::Overlap {
+        let facing = Real::from_i64(if def.gap_positive { 1 } else { -1 });
+        [
+            scaled(&flat, &(&def.wide * &facing)),
+            twice,
+            lifted,
+            wide_den,
+        ]
+    } else {
+        let branch = Real::from_i64(def.branch);
+        [
+            twice,
+            scaled(&flat, &(&def.wide * &branch)),
+            lifted,
+            wide_den,
+        ]
+    };
+    let degree = def.degree();
+    [wide, middle, narrow].map(|row| row.map(|c| elevate(&c, degree)))
 }
 
 fn build(
@@ -870,15 +1143,16 @@ fn build(
         }
     };
     let spans = nodes.len() - 1;
-    let count = spans * DEGREE + 1;
+    let degree = def.degree();
+    let count = spans * degree + 1;
     let mut controls = Vec::with_capacity(count * 3);
     let mut weights = Vec::with_capacity(count * 3);
-    let mut knots = vec![q(-1); DEGREE + 1];
+    let mut knots = vec![q(-1); degree + 1];
     for (index, pair) in nodes.windows(2).enumerate() {
         dec.check_deadline()?;
         let rows = span_rows(def, pair);
         let last = index + 1 == spans;
-        for i in 0..DEGREE + usize::from(last) {
+        for i in 0..degree + usize::from(last) {
             for (row, data) in rows.iter().enumerate() {
                 controls.push(place(
                     row,
@@ -887,11 +1161,11 @@ fn build(
                 weights.push(data[3][i].clone());
             }
         }
-        let repeat = DEGREE + usize::from(last);
+        let repeat = degree + usize::from(last);
         knots.extend(std::iter::repeat_n(pair[1].u.clone(), repeat));
     }
     let v = [0, 0, 0, 1, 1, 1].map(q).to_vec();
-    BSplineSurface::new([DEGREE, 2], [knots, v], [count, 3], controls, weights, dec)
+    BSplineSurface::new([degree, 2], [knots, v], [count, 3], controls, weights, dec)
 }
 
 // Enclosed homogeneous controls in the wide frame, u-major. Rigid copies share
@@ -937,13 +1211,14 @@ impl Net {
 // for a fixed `n` keeps them independent.
 fn check_carrier(net: &Net, carrier: &BSplineSurface, dec: &Decider) -> Result<(), Refusal> {
     let bits = net.bits;
+    let degree = carrier.degrees()[0];
     let zero = b(&Rational::zero(), bits);
     let hull = |values: &mut dyn Iterator<Item = Ball>| {
         values.fold(None::<Ball>, |all, value| {
             Some(all.map_or(value.clone(), |all| all.hull(&value)))
         })
     };
-    let mut stack: Vec<(Patch, u32)> = Patch::all(carrier, &net.controls, DEGREE)
+    let mut stack: Vec<(Patch, u32)> = Patch::all(carrier, &net.controls, degree)
         .into_iter()
         .map(|patch| (patch, 0))
         .collect();
@@ -973,7 +1248,7 @@ fn check_carrier(net: &Net, carrier: &BSplineSurface, dec: &Decider) -> Result<(
             .collect();
         let cells = |step: [usize; 2], scale: &Rational, k: usize| {
             let mut all = Vec::new();
-            for i in 0..=DEGREE - step[0] {
+            for i in 0..=degree - step[0] {
                 for j in 0..=2 - step[1] {
                     let near = &shifted[i * 3 + j];
                     let far = &shifted[(i + step[0]) * 3 + j + step[1]];
@@ -985,7 +1260,7 @@ fn check_carrier(net: &Net, carrier: &BSplineSurface, dec: &Decider) -> Result<(
         let value = |k: usize| {
             hull(&mut shifted.iter().map(|h| h[k].clone())).expect("a patch has controls")
         };
-        let scales = [q(DEGREE as i64) / du.clone(), q(2) / dv.clone()];
+        let scales = [q(degree as i64) / du.clone(), q(2) / dv.clone()];
         let [weight, along, across] = [
             value(3),
             cells([1, 0], &scales[0], 3),
@@ -1012,19 +1287,12 @@ fn check_carrier(net: &Net, carrier: &BSplineSurface, dec: &Decider) -> Result<(
         // Compare in the same metric as a patch split, across the longer side.
         let axis = usize::from(dv / q(8) > du);
         let half = (&patch.cell[axis][0] + &patch.cell[axis][1]) / q(2);
-        let [left, right] = split_net(&patch.net, [DEGREE, 2], axis);
+        let [left, right] = split_net(&patch.net, [degree, 2], axis);
         let (mut low, mut high) = (patch.cell.clone(), patch.cell.clone());
         low[axis][1] = half.clone();
         high[axis][0] = half;
         for (cell, net) in [(low, left), (high, right)] {
-            stack.push((
-                Patch {
-                    degree: DEGREE,
-                    cell,
-                    net,
-                },
-                depth + 1,
-            ));
+            stack.push((Patch { degree, cell, net }, depth + 1));
         }
     }
     Ok(())
@@ -1056,12 +1324,16 @@ impl RollingSaddle {
         let bits = BITS.min(dec.policy().max_precision_bits);
         let target = Rational::from_ratio(ROLLING_SADDLE_TARGET_NM, 1_000_000).expect("nonzero");
         let cap = Rational::from_ratio(HARD_CAP_NM, 1_000_000).expect("nonzero");
+        let last = match definition.ring {
+            SaddleRing::Through => LAST_SPANS,
+            SaddleRing::Overlap => OVERLAP_LAST_SPANS,
+        };
         let mut spans = FIRST_SPANS;
         let (nodes, upper) = loop {
             let nodes = produce(&definition, spans, bits, dec)?;
             match recompute_bound(&definition, &nodes, bits, dec) {
-                Ok(upper) if upper <= target || spans >= LAST_SPANS => break (nodes, upper),
-                Err(error) if spans >= LAST_SPANS => return Err(error),
+                Ok(upper) if upper <= target || spans >= last => break (nodes, upper),
+                Err(error) if spans >= last => return Err(error),
                 _ => spans *= 2,
             }
         };
@@ -1134,7 +1406,7 @@ impl RollingSaddle {
             &self.data.carrier,
             &self.data.net.controls,
             self.data.net.bits,
-            DEGREE,
+            self.data.carrier.degrees()[0],
             bits,
         )
     }
@@ -1160,6 +1432,11 @@ impl RollingSaddle {
                 Ok((frame.world(&[x?, y?, z?]), h[3].clone()))
             })
             .collect()
+    }
+
+    /// Enclosed world controls and weights, for a writer that rounds them.
+    pub fn enclosed_controls(&self, dec: &mut Decider) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
+        self.query_controls(dec)
     }
 
     /// Encloses every chart preimage of a spatial box.

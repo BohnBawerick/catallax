@@ -1,7 +1,8 @@
-//! Complete certificate of a plane/cylinder blend continued over countersunk
-//! mouths. Each model face has one region. Analytic faces keep their exact
-//! definition, and their boundaries with a carrier follow that carrier's rows,
-//! so the only fitted surfaces are the four named envelope exceptions.
+//! Complete certificate of a body with fitted rolling-ball bands: a
+//! plane/cylinder blend continued over countersunk mouths, or rings between
+//! nonparallel cylinders. Each model face has one region. Analytic faces keep
+//! their exact definition, and their boundaries with a carrier follow that
+//! carrier's rows, so the only fitted surfaces are the named bands.
 
 use super::{CertificateKey, Refusal, key, positive_lower, unproven};
 use catallax_numbers::{
@@ -12,10 +13,11 @@ use catallax_numbers::{
 };
 use catallax_recipe::StepId;
 use catallax_shapes::{
-    BSplineCurve, BoundaryRow, Curve, RollingEnvelope, RollingEnvelopeDefinition, SplineBoundary,
-    SplineSupport, Surface,
+    BSplineCurve, BoundaryRow, Curve, Point3, RollingEnvelope, RollingEnvelopeDefinition,
+    RollingSaddle, RollingSaddleDefinition, SaddleLaw, SplineBoundary, SplineSupport, Surface,
+    Vector3,
 };
-use catallax_topology::{BodyId, EdgeId, FaceId, Model, envelope_rows};
+use catallax_topology::{BodyId, EdgeId, FaceId, Model, envelope_rows, saddle_rows};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The code of the body mark every fitted junction carries.
@@ -48,6 +50,33 @@ impl EnvelopeRegion {
     }
 }
 
+/// One fitted ring between two cylinders with its exact retained definition.
+#[derive(Clone, Debug)]
+pub struct SaddleRegion {
+    face: FaceId,
+    definition: RollingSaddleDefinition,
+    bound: EvidenceBound,
+    rails: [EdgeId; 2],
+}
+impl SaddleRegion {
+    /// Actual fitted face.
+    pub fn face(&self) -> FaceId {
+        self.face
+    }
+    /// Exact rolling-ball definition the carrier follows.
+    pub fn definition(&self) -> &RollingSaddleDefinition {
+        &self.definition
+    }
+    /// Checked two-way carrier bound.
+    pub fn bound(&self) -> &EvidenceBound {
+        &self.bound
+    }
+    /// The wide and narrow rails.
+    pub fn rails(&self) -> [EdgeId; 2] {
+        self.rails
+    }
+}
+
 /// A complete mixed-body record with its retained definitions. Public numeric
 /// records can be inspected, but only a checked model can mint this type.
 #[derive(Clone, Debug)]
@@ -57,6 +86,7 @@ pub struct JunctionCertificate {
     step: StepId,
     faces: Vec<FaceId>,
     envelopes: Vec<EnvelopeRegion>,
+    saddles: Vec<SaddleRegion>,
     sizes: (Rational, Rational),
     trims: BTreeMap<FaceId, Rational>,
     record: GeometricCertificate<CertificateKey>,
@@ -99,6 +129,235 @@ fn neighbouring_sizes(
     Ok((edge.expect("three rows"), face))
 }
 
+fn saddle_of(model: &Model, face: FaceId) -> Option<&RollingSaddle> {
+    match model.geom().surface(model.face(face).surface) {
+        Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => Some(saddle),
+        _ => None,
+    }
+}
+
+// The rail's other edges on its wall, and the rail's nearest approach to each.
+fn wall_necks(
+    model: &Model,
+    face: FaceId,
+    rail: EdgeId,
+    law: &SaddleLaw,
+    origin: &Point3,
+    dec: &mut Decider,
+) -> Result<Vec<Real>, Refusal> {
+    const BITS: u32 = 96;
+    let Curve::BSpline(curve) = model.geom().curve(model.edge(rail).curve) else {
+        return Err(unproven("a saddle rail is not a spline"));
+    };
+    let controls: Vec<_> = curve.controls().cloned().collect();
+    // The hull's nearest approach to a plane, signed by the side it lies on.
+    let side_of = |at: &Point3, normal: &Vector3, dec: &mut Decider| -> Result<Rational, Refusal> {
+        let unit = normal.scaled(&(&Real::one() / &normal.norm_squared().sqrt()));
+        let mut nearest = None::<Rational>;
+        for control in &controls {
+            dec.check_deadline()?;
+            let height = dec.enclose_budgeted_at(&control.minus(at).dot(&unit), BITS)?;
+            let value = if height.lo() > Rational::zero() {
+                height.lo()
+            } else if height.hi() < Rational::zero() {
+                height.hi()
+            } else {
+                return Err(unproven("a saddle rail is not clear of its wall's edge"));
+            };
+            if nearest.as_ref().is_some_and(|old| {
+                (old.sign() == Sign::Positive) != (value.sign() == Sign::Positive)
+            }) {
+                return Err(unproven("a saddle rail is not clear of its wall's edge"));
+            }
+            nearest = Some(match nearest {
+                Some(old) if old.abs() <= value.abs() => old,
+                _ => value,
+            });
+        }
+        nearest.ok_or_else(|| unproven("a saddle rail has no controls"))
+    };
+    let mut necks = Vec::new();
+    for coedge in model.coedges_of_edge(rail) {
+        let Some((_, wall)) = model.owner_of_coedge(coedge) else {
+            continue;
+        };
+        if wall == face {
+            continue;
+        }
+        for lp in &model.face(wall).loops {
+            let catallax_topology::Loop::Coedges(coedges) = model.loop_(*lp) else {
+                continue;
+            };
+            for other in coedges {
+                let other = model.coedge(*other).edge;
+                if other == rail {
+                    continue;
+                }
+                let neck = match model.geom().curve(model.edge(other).curve) {
+                    Curve::Circle(circle) => side_of(&circle.center, &circle.normal, dec)?.abs(),
+                    Curve::Ellipse(ellipse) => {
+                        side_of(&ellipse.center, &ellipse.normal, dec)?.abs()
+                    }
+                    // The far ring of a through bore lies across the plane that
+                    // holds the wide axis and `across`.
+                    Curve::BSpline(far) => {
+                        let near = side_of(origin, &law.along, dec)?;
+                        let start = far.control(0).minus(origin).dot(&law.along);
+                        let mut clear = None::<Rational>;
+                        for control in far.controls() {
+                            let height = dec.enclose_budgeted_at(
+                                &control.minus(origin).dot(&law.along),
+                                BITS,
+                            )?;
+                            let value = height.lo().abs().min(height.hi().abs());
+                            clear = Some(clear.map_or(value.clone(), |old| old.min(value)));
+                        }
+                        if super::sign(&start, dec)? == near.sign() {
+                            return Err(unproven("two saddle rails share a side of their wall"));
+                        }
+                        near.abs() + clear.expect("a rail has controls")
+                    }
+                    _ => return Err(unproven("a saddle's wall has an edge of no known width")),
+                };
+                necks.push(Real::from_rational(neck));
+            }
+        }
+    }
+    Ok(necks)
+}
+
+// Lower bounds on the shortest edge and narrowest face beside a ring.
+//
+// The narrow rail winds once round its cylinder, so it is at least that
+// circumference. The wide rail's shadow on `across` is `2 p R / P` wide and it
+// goes there and back. The band is at least as wide as the narrow rail's
+// distance from the wide cylinder. With unit contact rays A and B from the ball
+// centre, `D = A.B` is at most `sqrt(1 - S^2 rho)` for `rho = 1 - x^2 / P^2` at
+// the largest `x`, by Cauchy. Writing a narrow contact's distance from the
+// wide axis as `w`, `|w^2 - R^2| >= r min(R, P) l` for `l = 2 (1 - D)`, and
+// `w + R <= 2 (R + r)`. A carrier's rails sit within its bound of the law's.
+fn saddle_sizes(
+    model: &Model,
+    face: FaceId,
+    saddle: &RollingSaddle,
+    dec: &mut Decider,
+) -> Result<(Rational, Rational), Refusal> {
+    let definition = saddle.definition();
+    let law = definition.law();
+    let rails = saddle_rows(model, face).ok_or_else(|| unproven("a ring lost a rail"))?;
+    let big = &law.wide + &(&law.radius * &Real::from_i64(law.sides[0]));
+    let small = &law.narrow + &(&law.radius * &Real::from_i64(law.sides[1]));
+    let reach = &(law.gap.square().sqrt() + small.clone()) / &big;
+    let open = &(&Real::one() - &law.sine.square()) + &(&law.sine.square() * &reach.square());
+    let spread = (&Real::one() - &open.sqrt()) * Real::from_i64(2);
+    let near = if law.sides[0] > 0 { &law.wide } else { &big };
+    let lift = &(&law.radius * near) * &spread;
+    let width = &lift / &((&law.wide + &law.radius) * Real::from_i64(2));
+    let slack = Real::from_rational(saddle.bound().upper.clone()) * Real::from_i64(2);
+    let turn = &law.narrow * &Real::from_i64(6);
+    let shadow = &(&small * &law.wide) * &(&Real::from_i64(4) / &big);
+    let edge = positive_lower(&turn, dec)?.min(positive_lower(&shadow, dec)?);
+    let mut narrowest = positive_lower(&(&width - &slack), dec)?;
+    for (rail, _) in rails {
+        for neck in wall_necks(model, face, rail, &law, definition.origin(), dec)? {
+            narrowest = narrowest.min(positive_lower(&neck, dec)?);
+        }
+    }
+    Ok((edge, narrowest))
+}
+
+fn same_real(a: &Real, c: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    Ok(super::sign(&(a - c), dec)? == Sign::Zero)
+}
+
+fn same_vector(a: &Vector3, c: &Vector3, dec: &mut Decider) -> Result<bool, Refusal> {
+    Ok(same_real(&a.x, &c.x, dec)? && same_real(&a.y, &c.y, dec)? && same_real(&a.z, &c.z, dec)?)
+}
+
+fn same_law(
+    a: &RollingSaddleDefinition,
+    c: &RollingSaddleDefinition,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let (first, second) = (a.law(), c.law());
+    if first.sides != second.sides || first.branch != second.branch {
+        return Ok(false);
+    }
+    for (x, y) in [
+        (&first.wide, &second.wide),
+        (&first.narrow, &second.narrow),
+        (&first.radius, &second.radius),
+        (&first.gap, &second.gap),
+        (&first.cosine, &second.cosine),
+        (&first.sine, &second.sine),
+    ] {
+        if !same_real(x, y, dec)? {
+            return Ok(false);
+        }
+    }
+    for (x, y) in [
+        (a.origin().minus(c.origin()), Vector3::zero()),
+        (first.foot.minus(&second.foot), Vector3::zero()),
+        (first.across, second.across),
+        (first.along, second.along),
+        (first.axis, second.axis),
+    ] {
+        if !same_vector(&x, &y, dec)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+// Each rail is the carrier's own row and stays on its exact cylinder, so a
+// boundary cannot move without both its faces moving with it.
+fn check_rails(
+    model: &Model,
+    region: &SaddleRegion,
+    saddle: &RollingSaddle,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let rows =
+        saddle_rows(model, region.face).ok_or_else(|| unproven("a ring lost a retained rail"))?;
+    let law = saddle.definition().law();
+    let narrow_axis = law
+        .axis
+        .scaled(&law.cosine)
+        .plus(&law.along.scaled(&law.sine));
+    let axes = [
+        (
+            &law.wide,
+            saddle.definition().origin().clone(),
+            law.axis.clone(),
+        ),
+        (&law.narrow, law.foot.clone(), narrow_axis),
+    ];
+    for (index, ((rail, _), (radius, at, axis))) in rows.iter().zip(axes).enumerate() {
+        if *rail != region.rails[index] {
+            return Err(unproven("a ring lost a retained rail"));
+        }
+        let mut neighbours = model
+            .coedges_of_edge(*rail)
+            .into_iter()
+            .filter_map(|coedge| model.owner_of_coedge(coedge).map(|(_, face)| face))
+            .filter(|face| *face != region.face);
+        let wall = neighbours
+            .next()
+            .ok_or_else(|| unproven("a rail has no neighbouring face"))?;
+        let Surface::Cylinder(cylinder) = model.geom().surface(model.face(wall).surface) else {
+            return Err(unproven("a rail left its exact neighbouring surface"));
+        };
+        let offset = at.minus(&cylinder.origin).cross(&cylinder.axis);
+        if !same_real(&cylinder.radius_sq, &radius.square(), dec)?
+            || !same_vector(&axis.cross(&cylinder.axis), &Vector3::zero(), dec)?
+            || !same_vector(&offset, &Vector3::zero(), dec)?
+        {
+            return Err(unproven("a rail left its exact neighbouring surface"));
+        }
+    }
+    Ok(())
+}
+
 impl JunctionCertificate {
     /// Actual immutable represented body.
     pub fn body(&self) -> BodyId {
@@ -123,6 +382,10 @@ impl JunctionCertificate {
     /// The named fitted faces.
     pub fn envelopes(&self) -> &[EnvelopeRegion] {
         &self.envelopes
+    }
+    /// The named fitted rings.
+    pub fn saddles(&self) -> &[SaddleRegion] {
+        &self.saddles
     }
     /// Numeric region bound to this actual face.
     pub fn region_for_face(&self, face: FaceId) -> Option<&RegionCertificate<CertificateKey>> {
@@ -198,6 +461,19 @@ impl JunctionCertificate {
             }
             check_rows(model, region, envelope, dec)?;
         }
+        for region in &self.saddles {
+            let saddle = saddle_of(model, region.face)
+                .ok_or_else(|| unproven("a named ring lost its carrier"))?;
+            if !same_law(saddle.definition(), &region.definition, dec)? {
+                return Err(unproven(
+                    "a carrier follows a different retained definition",
+                ));
+            }
+            if saddle.bound().upper > region.bound.upper {
+                return Err(unproven("a carrier's checked bound grew past its record"));
+            }
+            check_rails(model, region, saddle, dec)?;
+        }
         Ok(())
     }
 
@@ -224,13 +500,22 @@ impl JunctionCertificate {
         evidence.check_structure(candidate, &expected, dec)?;
         self.check_body(model, self.body, dec)?;
         let mut worst = Rational::zero();
-        for region in &self.envelopes {
-            worst = worst.max(region.bound.upper.clone());
+        let fitted = self
+            .envelopes
+            .iter()
+            .map(|region| (region.face, &region.bound))
+            .chain(
+                self.saddles
+                    .iter()
+                    .map(|region| (region.face, &region.bound)),
+            );
+        for (face, upper) in fitted {
+            worst = worst.max(upper.upper.clone());
             let id = key(
                 &self.record.identity.revision,
                 &self.step,
                 "face",
-                region.face.index(),
+                face.index(),
             );
             let exception = candidate
                 .regions
@@ -238,7 +523,7 @@ impl JunctionCertificate {
                 .and_then(|actual| actual.exception.as_ref())
                 .ok_or_else(|| unproven("a fitted face is omitted from the exception cover"))?;
             let (edge, face) = &self.sizes;
-            if exception.bound.upper < region.bound.upper
+            if exception.bound.upper < upper.upper
                 || !matches!(exception.source, ExceptionSource::KernelApproximation)
                 || !matches!(&exception.shortest_edge, FeatureSizeLowerBound::Millimetres(value) if value <= edge)
                 || !matches!(&exception.narrowest_face, FeatureSizeLowerBound::Millimetres(value) if value <= face)
@@ -344,7 +629,10 @@ pub(super) fn certify(
     dec: &mut Decider,
 ) -> Result<Option<JunctionCertificate>, Refusal> {
     let faces = model.faces_of_body(body);
-    if !faces.iter().any(|face| envelope_of(model, *face).is_some()) {
+    if !faces
+        .iter()
+        .any(|face| envelope_of(model, *face).is_some() || saddle_of(model, *face).is_some())
+    {
         return Ok(None);
     }
     let base = model
@@ -407,6 +695,7 @@ pub(super) fn certify(
         dec,
     )?;
     let mut envelopes = Vec::new();
+    let mut saddles = Vec::new();
     let mut trims = BTreeMap::<FaceId, Rational>::new();
     let mut worst = Rational::zero();
     let mut sizes: Option<(Rational, Rational)> = None;
@@ -438,9 +727,33 @@ pub(super) fn certify(
                 bound,
                 edges,
             });
+        } else if let Some(saddle) = saddle_of(model, face) {
+            let bound = saddle.bound().clone();
+            let (edge, width) = saddle_sizes(model, face, saddle, dec)?;
+            sizes = Some(match sizes {
+                Some((a, c)) => (a.min(edge), c.min(width)),
+                None => (edge, width),
+            });
+            worst = worst.max(bound.upper.clone());
+            let rails = saddle_rows(model, face).ok_or_else(|| unproven("a ring lost a rail"))?;
+            for coedge in rails
+                .iter()
+                .flat_map(|(edge, _)| model.coedges_of_edge(*edge))
+            {
+                if let Some((_, owner)) = model.owner_of_coedge(coedge) {
+                    let trim = trims.entry(owner).or_insert_with(Rational::zero);
+                    *trim = trim.clone().max(bound.upper.clone());
+                }
+            }
+            saddles.push(SaddleRegion {
+                face,
+                definition: saddle.definition().clone(),
+                bound,
+                rails: rails.map(|(edge, _)| edge),
+            });
         }
     }
-    let sizes = sizes.expect("at least one envelope");
+    let sizes = sizes.expect("at least one fitted band");
     let settings = evidence.local_settings();
     let fit_target = settings
         .kernel_target_mm()
@@ -465,14 +778,18 @@ pub(super) fn certify(
             target: key(&revision, step, "target-face", index as u32),
             scope: CertificateScope::Entities(BTreeSet::from([region])),
         };
-        let fitted = envelopes.iter().find(|region| region.face == face);
-        let bound = fitted.map_or(
-            EvidenceBound {
-                upper: Rational::zero(),
-                unit: EvidenceUnit::Millimetres,
-            },
-            |region| region.bound.clone(),
-        );
+        let fitted = envelopes
+            .iter()
+            .find(|region| region.face == face)
+            .map(|region| &region.bound)
+            .or(saddles
+                .iter()
+                .find(|region| region.face == face)
+                .map(|region| &region.bound));
+        let bound = fitted.cloned().unwrap_or(EvidenceBound {
+            upper: Rational::zero(),
+            unit: EvidenceUnit::Millimetres,
+        });
         evidence.record(
             record,
             GeometricEvidence {
@@ -550,6 +867,7 @@ pub(super) fn certify(
         step: step.clone(),
         faces,
         envelopes,
+        saddles,
         sizes,
         trims,
         record: GeometricCertificate {
@@ -663,6 +981,73 @@ mod tests {
             }
         }
         (model, forged)
+    }
+
+    fn ring(radius: &str) -> CertifiedBuilt {
+        let cylinder = |id: &str, radius: &str, height: &str, rotation, at| {
+            json!({"id":id,"op":"cylinder","radius":radius,"height":height,
+                "pose":{"rotation":rotation,"translation":at}})
+        };
+        let side = json!({"side":{"segment":"wall"}});
+        let recipe = json!({"format":"catallax-recipe/3","name":"ring","result":"round","steps":[
+            cylinder("wide", "10", "60", ["1", "1", "0", "0"], ["0", "30", "0"]),
+            cylinder("wall", "4", "30", ["1", "0", "0", "0"], ["1", "0", "0"]),
+            {"id":"joined","op":"boolean","kind":"union","target":"wide","tool":"wall"},
+            {"id":"round","op":"fillet","body":"joined","radius":radius,"edges":[
+                {"between":[{"step":"wide","role":side},{"step":"wall","role":side}]}]}]});
+        let recipe = Recipe::parse(&recipe.to_string()).unwrap();
+        let built = crate::evaluate(&recipe, &mut decider()).unwrap();
+        crate::certify_junction(built, &mut decider()).unwrap()
+    }
+
+    #[test]
+    fn forged_ring_records_are_rejected() {
+        let certified = ring("1");
+        let certificate = certified.junction().unwrap();
+        let model = &certified.built().model;
+        let check = |certificate: &JunctionCertificate,
+                     candidate: &GeometricCertificate<CertificateKey>,
+                     model: &Model| {
+            certificate.verify_record(
+                model,
+                candidate,
+                certified.evidence(),
+                certified.decisions(),
+                &mut decider(),
+            )
+        };
+        check(certificate, certificate.record(), model).unwrap();
+
+        // The fitted face left out of the exception cover.
+        let mut missing = certificate.record().clone();
+        let band = certificate.saddles()[0].face();
+        let id = certificate
+            .region_for_face(band)
+            .unwrap()
+            .identity
+            .representation;
+        missing.regions.get_mut(&id).unwrap().exception = None;
+        rejected(check(certificate, &missing, model));
+
+        // A model of the same shape with another radius keeps every handle.
+        let other = ring("5/4");
+        assert_eq!(other.built().result, certified.built().result);
+        rejected(check(
+            certificate,
+            certificate.record(),
+            &other.built().model,
+        ));
+
+        // Another law, swapped rails, and a bound below the carrier's own.
+        let mut forged = certificate.clone();
+        forged.saddles[0].definition = other.junction().unwrap().saddles[0].definition.clone();
+        rejected(check(&forged, certificate.record(), model));
+        let mut forged = certificate.clone();
+        forged.saddles[0].rails.swap(0, 1);
+        rejected(check(&forged, certificate.record(), model));
+        let mut forged = certificate.clone();
+        forged.saddles[0].bound.upper = Rational::zero();
+        rejected(check(&forged, certificate.record(), model));
     }
 
     #[test]

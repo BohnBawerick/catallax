@@ -17,6 +17,8 @@ mod charts;
 mod envelope;
 #[path = "export/pipe.rs"]
 mod pipe;
+#[path = "export/saddle.rs"]
+mod saddle;
 
 type Bounds = [[Rational; 2]; 3];
 
@@ -82,6 +84,7 @@ pub(crate) struct Exporter<'a> {
     chart_state: Option<charts::State>,
     envelopes: BTreeMap<SurfaceId, Rc<envelope::Written>>,
     pipe_rails: BTreeMap<EdgeId, (FaceId, usize)>,
+    saddle_rails: BTreeMap<EdgeId, (FaceId, usize)>,
 }
 
 impl<'a> Exporter<'a> {
@@ -101,6 +104,7 @@ impl<'a> Exporter<'a> {
             chart_state: None,
             envelopes: BTreeMap::new(),
             pipe_rails: BTreeMap::new(),
+            saddle_rails: BTreeMap::new(),
         }
     }
 
@@ -481,6 +485,9 @@ impl<'a> Exporter<'a> {
         }
         if let Some(plan) = self.bands.envelope_edges.get(&id).cloned() {
             return self.envelope_edge(id, &plan, topology);
+        }
+        if self.saddle_rails.contains_key(&id) {
+            return self.saddle_edge(id, topology);
         }
         let source = self.model.edge(id).clone();
         let (start, end) = match (source.start, source.end) {
@@ -1247,6 +1254,15 @@ impl<'a> Exporter<'a> {
                 "FACE_BOUND",
                 vec![text("''"), loop_entity.into(), boolean(same)],
             ));
+        } else if let Some(saddle) = self.rolling_saddle(id) {
+            let (loop_entity, extent, same) = self.saddle_loop(id, &saddle, topology)?;
+            boundary_extent = Some(extent);
+            let same = same != reverse;
+            pipe_same = Some(same);
+            bounds.push(self.graph.add(
+                "FACE_BOUND",
+                vec![text("''"), loop_entity.into(), boolean(same)],
+            ));
         } else if let Some(band) = self.bands.faces.get(&id).cloned() {
             let (loop_entity, extent) = self.band_loop(&band, topology)?;
             boundary_extent = Some(extent);
@@ -1361,6 +1377,7 @@ impl<'a> Exporter<'a> {
         envelope: Option<BodyId>,
     ) -> Answered<(String, StepReport)> {
         self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;
+        self.plan_saddle_rails(bodies.iter().copied().chain(envelope))?;
         if self.chart_state.is_none() {
             self.bands = crate::band::Plan::prepare(
                 self.model,

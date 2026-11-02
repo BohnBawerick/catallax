@@ -55,7 +55,8 @@ fn turns_of(patch: &Patch) -> Result<[Rational; 3], Refusal> {
         })
         .collect();
     let [du, dv] = [0, 1].map(|axis| &patch.cell[axis][1] - &patch.cell[axis][0]);
-    let degree = q(DEGREE as i64);
+    let order = patch.degree;
+    let degree = q(order as i64);
     let scale = |[a, c]: [u32; 2]| -> Ball {
         let falling = |n: &Rational, order: u32| {
             (0..order).fold(Rational::one(), |p, i| p * (n - &q(i64::from(i))))
@@ -67,7 +68,7 @@ fn turns_of(patch: &Patch) -> Result<[Rational; 3], Refusal> {
     // Bernstein differences of order `(a, c)`, each from the order before it.
     let step = |table: &[[Ball; 4]], (a, c): (usize, usize), axis: usize| -> Vec<[Ball; 4]> {
         let columns = 3 - c;
-        let rows = DEGREE + 1 - a;
+        let rows = order + 1 - a;
         let (rows_out, columns_out) = if axis == 0 {
             (rows - 1, columns)
         } else {
@@ -250,7 +251,9 @@ impl RollingSaddle {
 fn casteljau(patch: &Patch, t: &Rational, bits: u32) -> [[Ball; 4]; 3] {
     let (right, left) = (b(t, bits), b(&(Rational::one() - t.clone()), bits));
     [0, 1, 2].map(|j| {
-        let mut row: Vec<[Ball; 4]> = (0..=DEGREE).map(|i| patch.net[i * 3 + j].clone()).collect();
+        let mut row: Vec<[Ball; 4]> = (0..=patch.degree)
+            .map(|i| patch.net[i * 3 + j].clone())
+            .collect();
         while row.len() > 1 {
             row = row
                 .windows(2)

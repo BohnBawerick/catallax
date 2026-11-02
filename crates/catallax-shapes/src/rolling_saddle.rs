@@ -43,6 +43,8 @@ use std::sync::{Arc, Mutex};
 mod grid;
 #[path = "rolling_saddle/line.rs"]
 mod line;
+#[path = "rolling_saddle/table.rs"]
+mod table;
 
 /// Kernel-made approximation target, as for a rolling envelope.
 pub const ROLLING_SADDLE_TARGET_NM: i64 = 100;
@@ -298,6 +300,11 @@ impl RollingSaddleDefinition {
     /// The ball radius.
     pub fn radius(&self) -> &Real {
         &self.radius
+    }
+
+    /// The law's origin, on the wide axis.
+    pub fn origin(&self) -> &Point3 {
+        &self.origin
     }
 
     /// The law's numbers.
@@ -1160,6 +1167,11 @@ impl RollingSaddle {
                 Ok((frame.world(&[x?, y?, z?]), h[3].clone()))
             })
             .collect()
+    }
+
+    /// Enclosed world controls and weights, for a writer that rounds them.
+    pub fn enclosed_controls(&self, dec: &mut Decider) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
+        self.query_controls(dec)
     }
 
     /// Encloses every chart preimage of a spatial box.

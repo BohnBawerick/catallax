@@ -31,8 +31,8 @@ pub(crate) fn prepare(
 ) -> Result<Option<Prepared>, Refusal> {
     let bodies: Vec<_> = bodies.collect();
     if !reframe {
-        // A pipe band has its seam at `t = 0`, so its wall's chart must cut there.
-        let Some(framed) = frames::pipe_walls(model, &bodies, dec)? else {
+        // A band has a seam, and a wall it winds round must cut there.
+        let Some(framed) = frames::band_walls(model, &bodies, dec)? else {
             return prepare_charts(
                 model,
                 bodies.iter().copied(),
@@ -120,7 +120,7 @@ fn prepare_charts(
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
             Surface::Torus(_) | Surface::TorusSheet(_) if circular_boundary(model, face) => {}
             // A band gains at most a vertex on its rails, written as they are.
-            Surface::BSpline(SplineSupport::RollingPipe(_)) => {}
+            Surface::BSpline(SplineSupport::RollingPipe(_) | SplineSupport::RollingSaddle(_)) => {}
             Surface::Cylinder(_) | Surface::Sphere(_)
                 if definition
                     .loops

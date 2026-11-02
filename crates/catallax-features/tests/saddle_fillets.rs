@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::f64::consts::PI;
 
 use catallax_boolean::Containment;
-use catallax_features::{BuildError, Built, evaluate, evaluate_incremental};
+use catallax_features::{BuildError, Built, certify_junction, evaluate, evaluate_incremental};
 use catallax_field::Plan;
 use catallax_measure::{
     Accuracy, Enclosure, bounding_box, edge_length, face_area, face_bounding_box, mass_properties,
@@ -920,7 +920,7 @@ fn a_pattern_of_rounded_bodies_builds_with_a_box() {
 }
 
 #[test]
-fn step_and_the_field_stay_refused() {
+fn face_measures_and_the_field_stay_refused() {
     let built = build(&boss("1"));
     let accuracy = Accuracy {
         relative: q("1/1000"),
@@ -948,15 +948,98 @@ fn step_and_the_field_stay_refused() {
     let rail = catallax_topology::saddle_rows(&built.model, band).unwrap()[0].0;
     let length = edge_length(&built.model, rail, &accuracy, &mut decider());
     assert_eq!(length.unwrap_err().code, "measure.unsupported-surface");
-    let step = write_step(
+    let field = Plan::compile_checked(&boss("1"), &mut decider()).unwrap_err();
+    assert_eq!(field.code, "field.fillet-contact");
+}
+
+// A file's whole face, edge and vertex count, and its bound against the body.
+fn written(built: &Built) -> catallax_step::StepReport {
+    let mut bytes = Vec::new();
+    let answer = write_step(
         &built.model,
         &[built.result],
         &Default::default(),
         &mut decider(),
-        &mut Vec::new(),
+        &mut bytes,
     )
-    .unwrap_err();
-    assert_eq!(step.code, "step.unsupported-geometry");
-    let field = Plan::compile_checked(&boss("1"), &mut decider()).unwrap_err();
-    assert_eq!(field.code, "field.fillet-contact");
+    .unwrap();
+    let file = String::from_utf8(bytes).unwrap();
+    assert!(file.contains("SEAM_CURVE"));
+    assert!(answer.value.max_deviation <= q("1/10000000"));
+    answer.value
+}
+
+#[test]
+fn a_ring_certifies_and_writes_each_cylinder_chart() {
+    let built = build(&boss("1"));
+    let report = written(&built);
+    // The band and each wall add a seam, and each closed edge gains a vertex.
+    assert_eq!(
+        (report.faces, report.edges, report.vertices),
+        (6, 8, 5),
+        "{report:?}"
+    );
+    assert_eq!((report.added_edges, report.added_vertices), (3, 5));
+    let certified = certify_junction(built, &mut decider()).unwrap();
+    let junction = certified.junction().unwrap();
+    let [saddle] = junction.saddles() else {
+        panic!("one fitted ring");
+    };
+    assert_eq!(junction.faces().len(), 6);
+    assert!(junction.envelopes().is_empty());
+    let fitted = junction
+        .record()
+        .regions
+        .values()
+        .filter(|region| region.exception.is_some())
+        .count();
+    assert_eq!(fitted, 1);
+    // The band and both walls it trims carry the fit, and the end caps do not.
+    let trimmed = junction
+        .faces()
+        .iter()
+        .filter(|face| !junction.face_bound(**face).is_zero())
+        .count();
+    assert_eq!(trimmed, 3);
+    assert_eq!(junction.face_bound(saddle.face()), saddle.bound().upper);
+    assert!(saddle.bound().upper <= *junction.fit_target_mm());
+}
+
+#[test]
+fn a_through_bore_a_mirrored_copy_and_a_lean_certify() {
+    let hole = cylinder("wall", "4", "60", LEVEL, ["1", "0", "-30"]);
+    let through = build(&recipe(
+        [wide(), hole],
+        "subtract",
+        ["wide", "wall"],
+        Some("1"),
+    ));
+    assert_eq!(written(&through).faces, 6);
+    let certified = certify_junction(through, &mut decider()).unwrap();
+    assert_eq!(certified.junction().unwrap().saddles().len(), 2);
+
+    let flipped = build(&parse(
+        vec![
+            wide(),
+            wall(),
+            json!({"id":"joined","op":"boolean","kind":"union","target":"wide","tool":"wall"}),
+            json!({"id":"round","op":"fillet","body":"joined","radius":"1","edges":ring()}),
+            json!({"id":"flipped","op":"mirror","body":"round",
+                "plane":{"point":["20","0","0"],"normal":["3","4","0"]},"keep_original":false}),
+        ],
+        "flipped",
+    ));
+    assert_eq!(written(&flipped).edges, 8);
+    let certified = certify_junction(flipped, &mut decider()).unwrap();
+    assert_eq!(certified.junction().unwrap().saddles().len(), 1);
+
+    let lean = cylinder("wall", "4", "30", LEAN, ["1", "0", "0"]);
+    let leaning = build(&recipe(
+        [wide(), lean],
+        "union",
+        ["wide", "wall"],
+        Some("1"),
+    ));
+    assert_eq!(written(&leaning).edges, 8);
+    certify_junction(leaning, &mut decider()).unwrap();
 }

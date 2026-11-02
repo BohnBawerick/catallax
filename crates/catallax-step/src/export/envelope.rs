@@ -20,8 +20,8 @@ pub(super) struct Written {
     points: Vec<Id>,
     pub(super) xyz: Vec<Point>,
     weights: Vec<String>,
-    columns: usize,
-    knots: (Field, Field),
+    pub(super) columns: usize,
+    pub(super) knots: (Field, Field),
     pub(super) error: Rational,
 }
 
@@ -79,6 +79,10 @@ impl Exporter<'_> {
             Surface::BSpline(SplineSupport::RollingPipe(pipe)) => (
                 pipe.carrier().clone(),
                 evened_weights(pipe.enclosed_controls(self.dec)?, pipe.carrier())?,
+            ),
+            Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => (
+                saddle.carrier().clone(),
+                saddle.enclosed_controls(self.dec)?,
             ),
             _ => return Err(unsupported()),
         };

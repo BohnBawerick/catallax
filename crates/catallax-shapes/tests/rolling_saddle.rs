@@ -704,6 +704,77 @@ fn a_range_holds_the_carrier_and_reaches_it() {
     }
 }
 
+// The cubic through two table entries, a share of the way along their span.
+fn cubic(data: [&[Rational; 2]; 2], width: f64, share: f64) -> f64 {
+    let t = share;
+    let (a, b) = (rational(&data[0][0]), rational(&data[1][0]));
+    let (c, d) = (rational(&data[0][1]), rational(&data[1][1]));
+    a * (1.0 + t * t * (2.0 * t - 3.0))
+        + b * t * t * (3.0 - 2.0 * t)
+        + c * width * t * (1.0 - t) * (1.0 - t)
+        + d * width * t * t * (t - 1.0)
+}
+fn rational(value: &Rational) -> f64 {
+    n(&Real::from(value.clone()))
+}
+
+// The tables' angle and height, turned back into a point on each cylinder from
+// the law's frame alone, land on the carrier's own rail.
+#[test]
+fn a_rail_table_reads_the_rail_on_its_cylinder() {
+    let tolerance = q("1/1000000000");
+    let dec = decider();
+    for index in 0..cases().len() {
+        let saddle = fitted(index);
+        let law = saddle.definition().law();
+        let origin = g(saddle.definition().origin());
+        let foot = g(&law.foot);
+        let [across, along, axis] = [f(&law.across), f(&law.along), f(&law.axis)];
+        let (cos, sin) = (n(&law.cosine), n(&law.sine));
+        let side = add(add([0.0; 3], along, cos), axis, -sin);
+        let narrow = add(add([0.0; 3], axis, cos), along, sin);
+        let branch = law.branch as f64;
+        for rail in 0..2 {
+            let table = saddle.parameter_table(rail, &tolerance, &dec).unwrap();
+            assert!(table.bound <= tolerance);
+            assert_eq!(table.knots[0], q("-1"));
+            assert_eq!(table.knots[table.knots.len() - 1], q("3"));
+            for span in (0..table.knots.len() - 1).step_by(7) {
+                let [lo, hi] = [
+                    rational(&table.knots[span]),
+                    rational(&table.knots[span + 1]),
+                ];
+                let share = 0.3;
+                let width = hi - lo;
+                let angle = cubic([&table.angle[span], &table.angle[span + 1]], width, share);
+                let height = cubic([&table.height[span], &table.height[span + 1]], width, share);
+                let found = if rail == 0 {
+                    let radius = n(&law.wide);
+                    let at = add(origin, axis, height);
+                    add(
+                        add(at, across, radius * angle.sin()),
+                        along,
+                        branch * radius * angle.cos(),
+                    )
+                } else {
+                    let radius = n(&law.narrow);
+                    let at = add(foot, narrow, height);
+                    add(
+                        add(at, across, radius * angle.cos()),
+                        side,
+                        radius * angle.sin(),
+                    )
+                };
+                let seen = sample(saddle.carrier(), lo + share * width, rail as f64, &dec);
+                assert!(
+                    norm(sub(found, seen)) < 2e-8,
+                    "case {index} rail {rail} span {span}: {found:?} {seen:?}"
+                );
+            }
+        }
+    }
+}
+
 fn refused(wide: Cylinder, narrow: Cylinder, radius: &str, sides: [BallSide; 2]) -> Refusal {
     let mut dec = decider();
     RollingSaddleDefinition::new(&wide, &narrow, &real(radius), sides, true, &mut dec).unwrap_err()

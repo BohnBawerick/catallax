@@ -21,7 +21,7 @@ use catallax_shapes::{
 use catallax_topology::{Body, BodyId, BodyKind, Model};
 use geometry::{PrismTopology, ProfileSupport};
 pub(crate) use junction::FIT_MARK;
-pub use junction::{EnvelopeRegion, JunctionCertificate};
+pub use junction::{EnvelopeRegion, JunctionCertificate, SaddleRegion};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},

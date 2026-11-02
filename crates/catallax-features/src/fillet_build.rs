@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_intersect::{Component, CurveSurface, Cyclic, SurfacePair};
-use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign};
+use catallax_numbers::{BoundKind, Decider, Mark, Outcome, Rational, Real, Refusal, Sign};
 use catallax_recipe::{EdgeSelection, Origin, Role, StepId};
 use catallax_shapes::{
     Circle, Curve, Line, Point3, PointDef, PointId, SplineSupport, Surface, Torus, TorusSheet,
@@ -1319,7 +1319,23 @@ pub(crate) fn build(
             Surface::BSpline(SplineSupport::RollingSaddle(_))
         )
     }) {
-        model.record_blend_base(result, body);
+        let fit = runs.iter().try_fold(Rational::zero(), |worst, run| {
+            let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) = &run.definition.surface
+            else {
+                return Err(bad("a ring run has no saddle carrier"));
+            };
+            Ok(worst.max(saddle.bound().upper.clone()))
+        })?;
+        let mut marked = model.body(result).clone();
+        marked.marks.push(Mark::new(
+            crate::certified::FIT_MARK,
+            BoundKind::Distance,
+            fit,
+            "fitted rolling-saddle faces; the mark alone is not authority",
+        ));
+        let marked = model.add_body(marked);
+        model.record_blend_base(marked, body);
+        return Ok((marked, runs.into_iter().map(|run| run.definition).collect()));
     }
     Ok((result, runs.into_iter().map(|run| run.definition).collect()))
 }

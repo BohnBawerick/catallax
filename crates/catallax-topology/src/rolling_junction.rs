@@ -281,7 +281,7 @@ pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> 
         };
         let use_ = model.coedge(*coedge);
         let edge = model.edge(use_.edge);
-        if edge.start.is_some() || edge.end.is_some() {
+        if edge.start != edge.end {
             return None;
         }
         let Curve::BSpline(actual) = model.geom().curve(edge.curve) else {

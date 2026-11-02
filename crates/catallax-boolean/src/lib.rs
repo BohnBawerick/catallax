@@ -17,6 +17,7 @@
 //! decision shares, containment timings and reachable stored-number growth.
 //! Add `-- --case 10` to run one numbered fixture, or `-- --case 44` for a chain.
 
+mod arrangement;
 mod bounds;
 mod carrier_bounds;
 mod containment;
@@ -26,6 +27,7 @@ mod fast_region;
 mod geometry;
 mod germ;
 mod graph;
+mod graph_trace;
 mod imprinting;
 mod point_identity;
 mod points;
@@ -40,6 +42,7 @@ mod torus_region;
 #[cfg(test)]
 mod tests;
 
+pub use arrangement::{PatchSelection, arrange};
 pub use stages::{
     Classification, FaceClass, Imprinted, IntersectionGraph, SectionEdge, Selection, classify,
     imprint, intersect, keep, make_maximal, sew,

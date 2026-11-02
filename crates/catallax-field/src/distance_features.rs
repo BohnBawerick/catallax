@@ -325,11 +325,7 @@ impl Plan {
         }
         Ok(result)
     }
-    pub(super) fn planar_skin(
-        &self,
-        node: usize,
-        dec: &mut Decider,
-    ) -> Result<ConvexCell, Refusal> {
+    fn planar_skin(&self, node: usize, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
         let mut stack = vec![node];
         let mut faces = Vec::new();
         while let Some(node) = stack.pop() {
@@ -637,6 +633,44 @@ impl Plan {
             hollow = self.boolean(BooleanKind::Subtract, hollow, tool, dec)?;
         }
         self.boolean(BooleanKind::Subtract, node, hollow, dec)
+    }
+
+    pub(crate) fn polygonal_shell(
+        &mut self,
+        node: usize,
+        skin: catallax_features::draft::arrangement::Skin,
+        open: &[FaceRef],
+        thickness: &Rational,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        positive(&Real::from(thickness.clone()), dec)?;
+        let selected = skin
+            .resolve_faces(open, dec)
+            .map_err(|error| match error.code {
+                "recipe.missing-reference" => Refusal::new("reference.lost-face", error.detail),
+                "recipe.ambiguous-reference" => {
+                    Refusal::new("reference.ambiguous-face", error.detail)
+                }
+                _ => error,
+            })?;
+        let kept: Vec<_> = (0..skin.patches.len())
+            .map(|i| !selected.contains(&i))
+            .collect();
+        let bound = &self.node_radius(node, dec)? + thickness;
+        let pieces = skin.shell_pieces(&kept, &Real::from(thickness.clone()), step, dec)?;
+        let first_face = self.faces.len();
+        let walls = self.unite_distance_pieces(0, pieces, &bound, dec)?;
+        let cavity = self.boolean(BooleanKind::Subtract, node, walls, dec)?;
+        for face in first_face..self.faces.len() {
+            let domain = self.domains.len();
+            self.domains.push(crate::ownership::Domain::Boundary {
+                node: cavity,
+                parent: self.faces[face].domain,
+            });
+            self.faces[face].domain = domain;
+        }
+        self.boolean(BooleanKind::Subtract, node, cavity, dec)
     }
 
     pub(crate) fn distance_shell(

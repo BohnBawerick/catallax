@@ -266,6 +266,64 @@ pub(crate) fn offset(
     Ok(cell.eroded(&(-distance), dec)?.build(model))
 }
 
+fn planar_shell(
+    model: &mut Model,
+    body: BodyId,
+    open: &[FaceRef],
+    thickness: &Real,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<BodyId, Refusal> {
+    use crate::polyhedral_offset::DistancePiece;
+    let faces = model.faces_of_body(body);
+    let skin =
+        crate::draft_build::planar_skin(model, &faces, &Default::default()).map_err(|error| {
+            if error.code.starts_with("draft.") {
+                bad(&error.detail)
+            } else {
+                error
+            }
+        })?;
+    let selected = skin
+        .resolve_faces(open, dec)
+        .map_err(|error| match error.code {
+            "recipe.missing-reference" => Refusal::new("reference.lost-face", error.detail),
+            "recipe.ambiguous-reference" => Refusal::new("reference.ambiguous-face", error.detail),
+            _ => error,
+        })?;
+    let kept: Vec<_> = (0..skin.patches.len())
+        .map(|i| !selected.contains(&i))
+        .collect();
+    // Remove tubes only from the surviving cavity. Building their exterior
+    // union first creates intersections that can never bound the result.
+    let mut cavity = body;
+    for piece in skin.shell_pieces(&kept, thickness, step, dec)? {
+        let tool = match piece {
+            DistancePiece::Prism(cell) => cell.build(model),
+            DistancePiece::Cylinder(skin) => cylinder(model, &skin),
+            DistancePiece::Ball(surface, origins) => closed(
+                model,
+                RadialBand {
+                    outer: (surface, origins),
+                    inner: None,
+                },
+            ),
+        };
+        cavity =
+            catallax_boolean::boolean(model, cavity, tool, catallax_boolean::BoolOp::Subtract, dec)
+                .map_err(|error| error.refusal)?
+                .body;
+        if model.body(cavity).kind == BodyKind::Empty {
+            return Ok(body);
+        }
+    }
+    Ok(
+        catallax_boolean::boolean(model, body, cavity, catallax_boolean::BoolOp::Subtract, dec)
+            .map_err(|error| error.refusal)?
+            .body,
+    )
+}
+
 pub(crate) fn shell(
     model: &mut Model,
     body: BodyId,
@@ -355,7 +413,13 @@ pub(crate) fn shell(
         .map_err(|e| e.refusal)?
         .body);
     }
-    let cell = convex(model, body, dec)?;
+    let cell = match convex(model, body, dec) {
+        Ok(cell) => cell,
+        Err(error) if error.code == "distance.unsupported-envelope" => {
+            return planar_shell(model, body, open, thickness, step, dec);
+        }
+        Err(error) => return Err(error),
+    };
     let selected = cell.select(open, dec)?;
     if selected.iter().all(|v| *v) {
         return Ok(catallax_topology::empty(model));

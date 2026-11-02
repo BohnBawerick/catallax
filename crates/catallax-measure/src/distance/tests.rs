@@ -719,3 +719,88 @@ fn parallel_planar_gap_keeps_an_irrational_root_bounded() {
     assert!(catallax_boolean::face_contains(&mut model, *a, &s, &mut dec).unwrap());
     assert!(catallax_boolean::face_contains(&mut model, *b, &t, &mut dec).unwrap());
 }
+
+#[test]
+fn closed_planar_trims_have_complete_distances_for_reentrant_faces_and_holes() {
+    use catallax_recipe::{Recipe, Role};
+    use serde_json::json;
+    let loop_from = |points: &[[i64; 2]]| {
+        points
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let to = points[(i + 1) % points.len()];
+                json!({"kind":"line","id":format!("edge-{i}"),"to":to.map(|x| x.to_string())})
+            })
+            .collect::<Vec<_>>()
+    };
+    let cases = [
+        (
+            vec![loop_from(&[[0, 0], [4, 0], [4, 1], [1, 1], [1, 4], [0, 4]])],
+            p(3, 3, 3),
+            8,
+        ),
+        (
+            vec![
+                loop_from(&[[0, 0], [6, 0], [6, 6], [0, 6]]),
+                loop_from(&[[1, 1], [1, 3], [3, 3], [3, 1]])
+                    .into_iter()
+                    .map(|mut edge| {
+                        edge["id"] = json!(format!("hole-{}", edge["id"].as_str().unwrap()));
+                        edge
+                    })
+                    .collect(),
+            ],
+            p(2, 2, 2),
+            2,
+        ),
+    ];
+    for (loops, at, squared) in cases {
+        let source = Recipe::parse(&json!({"format":"catallax-recipe/4","name":"finite planar distances",
+            "steps":[{"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":loops},
+                {"id":"stock","op":"extrude","profile":"profile","distance":"1"}],"result":"stock"}).to_string()).unwrap();
+        let body =
+            catallax_app::build_incremental_without_display(&source, None, &mut Decider::default())
+                .unwrap();
+        let built = body.checkpoint.built();
+        let mut model = built.model.clone();
+        let cap = model
+            .faces_of_body(built.result)
+            .into_iter()
+            .find(|face| {
+                model
+                    .face_origins(*face)
+                    .iter()
+                    .any(|origin| origin.role == Role::End)
+            })
+            .unwrap();
+        let mut dec = Decider::default();
+        let options = Options {
+            max_cells: 1,
+            ..controls()
+        };
+        let answer = PreparedFace::new(&model, cap, &mut dec)
+            .unwrap()
+            .point_to_face(&mut model, &at, &options, &mut dec)
+            .unwrap();
+        let oracle = Ball::from_rational(&q(squared), 256).sqrt().unwrap();
+        let upper = answer.upper.as_ref().expect("finite physical witness");
+        assert!(
+            answer.lower <= oracle.lo() && upper >= &oracle.hi(),
+            "{answer:?}"
+        );
+        assert!(
+            answer.converged && upper - &answer.lower <= options.width,
+            "{answer:?}"
+        );
+        assert!(
+            catallax_boolean::face_contains(
+                &mut model,
+                cap,
+                &answer.witnesses.unwrap()[1],
+                &mut dec
+            )
+            .unwrap()
+        );
+    }
+}

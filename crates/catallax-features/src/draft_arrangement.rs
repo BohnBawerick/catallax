@@ -514,56 +514,13 @@ impl Skin {
         point: &Point3,
         dec: &mut Decider,
     ) -> Result<Real, Refusal> {
-        let norm = patch.plane.normal.norm_squared();
-        if sign(&norm, dec)? != Sign::Positive {
-            return Err(failure(
-                "draft.zero-face-normal",
-                "face carrier has a zero normal",
-            ));
-        }
-        let offset = value(&patch.plane, point);
-        let plane_distance = &offset.square() / &norm;
-        let projected = point.plus(&patch.plane.normal.scaled(&(-offset / norm)));
-        let mut edge_distance: Option<Real> = None;
-        for cycle in &patch.loops {
-            for i in 0..cycle.len() {
-                let a = &self.vertices[cycle[i]];
-                let edge = self.vertices[cycle[(i + 1) % cycle.len()]].minus(a);
-                let delta = point.minus(a);
-                let norm = edge.norm_squared();
-                let mut parameter = if sign(&norm, dec)? == Sign::Zero {
-                    Real::zero()
-                } else {
-                    delta.dot(&edge) / norm
-                };
-                if sign(&parameter, dec)? == Sign::Negative {
-                    parameter = Real::zero();
-                } else if sign(&(&parameter - &Real::one()), dec)? == Sign::Positive {
-                    parameter = Real::one();
-                }
-                let distance = delta.minus(&edge.scaled(&parameter)).norm_squared();
-                let replace = match &edge_distance {
-                    None => true,
-                    Some(previous) => sign(&(&distance - previous), dec)? == Sign::Negative,
-                };
-                if replace {
-                    edge_distance = Some(distance);
-                }
-            }
-        }
-        let edge_distance = edge_distance.ok_or_else(|| {
-            failure(
-                "draft.unsupported-arrangement",
-                "face has no finite trimmed boundary",
-            )
-        })?;
-        if sign(&(&edge_distance - &plane_distance), dec)? == Sign::Zero
-            || self.contains_patch(patch, &projected, dec)?
-        {
-            Ok(plane_distance)
-        } else {
-            Ok(edge_distance)
-        }
+        catallax_shapes::distance::PlanarBoundary::polygon(
+            patch.plane.clone(),
+            &self.vertices,
+            &patch.loops,
+        )
+        .closest(point, dec)
+        .map(|(squared, _)| squared)
     }
 
     /// Rebuilds all candidate cells, discards swallowed patches and separates

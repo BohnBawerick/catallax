@@ -10,6 +10,8 @@ use std::{cmp::Ordering, collections::BinaryHeap};
 
 mod analytic;
 pub use analytic::{Branch, Finite};
+mod planar;
+pub use planar::{PlanarBoundary, PlanarEdge};
 
 const BITS: u32 = 128;
 fn q(n: i64) -> Rational {

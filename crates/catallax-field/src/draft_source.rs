@@ -1077,29 +1077,6 @@ impl Plan {
         })
     }
 
-    /// Complete cylindrical tool exclusions for a bounded planar distance skin.
-    pub(crate) fn distance_tool_bores(
-        &self,
-        tool: usize,
-        cell: &catallax_features::polyhedron::ConvexCell,
-        dec: &mut Decider,
-    ) -> Result<Vec<Cylinder>, Refusal> {
-        let bores = self.tool_walls(tool, false, dec)?;
-        if bores.is_empty() || bores.iter().any(|bore| bore.head.is_some()) {
-            return Err(failure(
-                "cap-hole distance needs complete cylindrical tools",
-            ));
-        }
-        let cylinders: Vec<_> = bores.iter().map(|bore| &bore.cylinder).collect();
-        let caps =
-            bored::certify_bores(cell.faces.iter().map(|face| &face.plane), &cylinders, dec)?;
-        let ends = caps.map(|cap| &cell.faces[cap].plane);
-        for bore in &bores {
-            self.check_through(tool, bore, ends, dec)?;
-        }
-        Ok(bores.into_iter().map(|bore| bore.cylinder).collect())
-    }
-
     /// Proves one complete cylinder tool stands on a cap of `skin` and stays
     /// unchanged by its draft. The tool starts on a cap and rises beyond it. The
     /// B-rep sees only that cap's ring, so a tool sunk into the target stays outside

@@ -300,13 +300,38 @@ impl Plan {
                                 dec,
                             )?
                         } else {
-                            plan.distance_shell(
+                            match plan.distance_shell(
                                 steps[body],
                                 open,
                                 thickness.value(),
                                 &step.id,
                                 dec,
-                            )?
+                            ) {
+                                Ok(node) => node,
+                                Err(error) if error.code == "distance.unsupported-envelope" => {
+                                    let skin = plan
+                                        .draft_source_skin(recipe, body, &steps, &step_faces, dec)
+                                        .map_err(|error| {
+                                            if error.code.starts_with("draft.") {
+                                                Refusal::new(
+                                                    "distance.unsupported-envelope",
+                                                    error.detail,
+                                                )
+                                            } else {
+                                                error
+                                            }
+                                        })?;
+                                    plan.polygonal_shell(
+                                        steps[body],
+                                        skin,
+                                        open,
+                                        thickness.value(),
+                                        &step.id,
+                                        dec,
+                                    )?
+                                }
+                                Err(error) => return Err(error),
+                            }
                         }
                     }
                     Operation::Thicken {

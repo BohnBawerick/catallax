@@ -153,6 +153,28 @@ impl<'a> Query<'a> {
         if let Some(extrema) = self.spline_faces.get(&id) {
             return Ok(extrema.clone());
         }
+        if let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
+            self.model.geom().surface(self.model.face(id).surface)
+        {
+            let tolerance = if self.accuracy.absolute.is_zero() {
+                self.accuracy.relative.clone()
+            } else {
+                self.accuracy.absolute.clone()
+            };
+            let width = tolerance
+                .mul_pow2(-2)
+                .max(Rational::from_ratio(1, 1 << 40).expect("nonzero"));
+            let mut min = std::array::from_fn(|_| Enclosure::exact(Rational::zero()));
+            let mut max = min.clone();
+            for axis in 0..3 {
+                let [low, high] = saddle.range(axis, &width, dec)?;
+                let [lo, hi] = low;
+                min[axis] = Enclosure { lo, hi };
+                let [lo, hi] = high;
+                max[axis] = Enclosure { lo, hi };
+            }
+            return Ok(Extrema { min, max });
+        }
         if spline::has_spline_boundary(self.model, id) {
             for (face, extrema) in
                 spline::prism_faces(self.model, self.body, id, accuracy, &mut self.budget, dec)?
@@ -210,7 +232,19 @@ impl<'a> Query<'a> {
                 ),
                 Loop::Coedges(cs) => {
                     for c in cs {
-                        edges.insert(self.model.coedge(*c).edge);
+                        let edge = self.model.coedge(*c).edge;
+                        // A saddle's rail lies in its band, which the body's box
+                        // measures. Alone this face has no extrema for it.
+                        if spline::saddle_rail(self.model, edge) {
+                            if self.body.is_none() {
+                                return Err(Refusal::new(
+                                    "measure.unsupported-surface",
+                                    "a fitted rail has no certified extrema on its own",
+                                ));
+                            }
+                            continue;
+                        }
+                        edges.insert(edge);
                     }
                 }
             }

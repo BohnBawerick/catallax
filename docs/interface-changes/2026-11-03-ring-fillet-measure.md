@@ -1,0 +1,6 @@
+## 2026-11-03: volume, area, centroid and box of a body with a ring fillet
+
+Pieces: measure, features, topology, shapes
+Change: a fillet step whose runs are all rings between nonparallel cylinders now records its input as the result's blend base, and `volume`, `area`, `centroid` and `volume_area_centroid` answer for that result as the base plus an exact change. A mirrored copy carries a copy of its base. `bounding_box` answers for a body with such a band, so `pattern` and a mirror that keeps its original build. `RollingSaddleDefinition` gains `law`, which returns the new `SaddleLaw`. `RollingSaddle` gains `range`. `catallax-topology` gains `saddle_added`. `Model::blend_base` is now `Some` for these results, so `catallax-verify` takes the fitted route and refuses at its certificate until STEP lands.
+Why: this is the fourth piece of the nonparallel cylinder slice. Moved copies need a box, and a part with this fillet needs a volume.
+Migration: none for a caller of the measurement API. Mass properties and inertia, `face_area`, `face_centroid` and `face_bounding_box` of the band and the walls it trims, and `edge_length` of a rail refuse with `measure.unsupported-surface`. A pattern result has no recorded base, so its volume refuses. STEP refuses with `step.unsupported-geometry`.

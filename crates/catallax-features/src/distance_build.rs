@@ -11,6 +11,9 @@ use crate::{
     radial::RadialBand,
 };
 
+#[path = "bored_shell.rs"]
+mod bored;
+
 fn bad(detail: &str) -> Refusal {
     Refusal::new("distance.unsupported-envelope", detail)
 }
@@ -289,6 +292,9 @@ pub(crate) fn shell(
             model,
             RadialBand::shell(&surface, &origins, thickness, step, dec)?,
         ));
+    }
+    if let Some(result) = bored::shell(model, body, open, thickness, step, dec)? {
+        return Ok(result);
     }
     if let Some(skin) = cylindrical(model, body, dec)? {
         let selected = skin.select(open)?;

@@ -2,9 +2,17 @@
 
 Status: `catallax-import` implements the reader, body construction, repair policy and change records described below. The file-carrying feature and application build entries evaluate `Operation::ImportStep` for one solid, with saved declines and immutable source verification. SolidDraft preview, persistence and checked-export integration remain the separate V9-S companion. See `docs/interface-changes/2026-10-30-step-import-recipe-evaluation.md` for the build contract.
 
-## Why this is not a slice yet
+## Application roundtrip slice
 
-A real click path needs, in order: a Part 21 reader, analytic surface and curve recognition, exact unit conversion, topology construction with periodic faces and sharp edges, gap measurement, a fixed imported body in the recipe consumer, field construction from the faces, the persisted change record, and the SolidDraft dialog. The topology, recipe consumer and app adapter files belong to other lanes (L01, L03, L04, L07). A reader plus a dialog without the body path would be a stub, so none is shipped.
+`crates/catallax-app/tests/import_roundtrip.rs` exports a 2 × 3 × 5 mm block and a radius-3, height-7 mm cylinder with `catallax-step::write_step`, then calls `catallax-import::propose`, `apply` and `rebuild` and `catallax_app::build_incremental_with_files`. These entries already existed; this slice adds application-level acceptance evidence, not another importer or a new wire format.
+
+Both sources need no repairs and produce no derivative. Exact carrier, edge-curve and vertex coincidence queries compare the application body with the source primitives. The checks also require sound topology, the file's face origins, matching exact bounding boxes, overlapping volume enclosures narrower than 0.000001 mm³, and a valid checked STEP re-export. Import movement is zero for these fixtures. The source export's reported bound remains a separate quantity and is not inferred from volume agreement.
+
+Display is checked through the application entry at kernel defaults and at SolidDraft's automatic coarse, standard and fine controls, with chord height `0.002 × body diagonal × {4, 1, 0.25}` mm and a 15-degree surface-normal bound. Every face must meet both requested bounds within the existing application work guard. This tests Catallax's controls, not SolidDraft's f32 conversion, rendered viewport or complete application workflow. No outside STEP fixtures are used.
+
+Still refused or unproven by this slice: general cones, pole-bounded spheres and tori, splines, curved gap repair, explicit over-cap acceptance in recipe evaluation, and multiple solids in one recipe import step. The lower-level importer can return separate bodies; the recipe application does not merge them. Seam exchange contracts and field construction from imported faces are unchanged.
+
+SolidDraft uses `propose` for the preview and `apply` for the repair record, saves unchanged source bytes and their SHA-256 plus the recipe decisions, and supplies those bytes through `ImportFiles` to `build_incremental_with_files`. It must use each proposal's exact `question` string for saved decisions, not construct its own gap-index spelling. `rebuild` checks the persisted repair record on reopen.
 
 ## Supported first path
 
@@ -34,7 +42,7 @@ An approved out-of-policy proposal is still validated deterministically after th
 
 ## Change record (`catallax-import-repair/1`)
 
-Stored in the recipe `decisions` under the question id `repair:<sha256-prefix>:<gap-index>`, with the JSON record kept beside the recipe so reopening restores it.
+The recipe `decisions` saves answers under the proposal's exact `question`, `repair:<sha256-prefix>:g<gap-index>`. The JSON change record is kept beside the recipe so reopening restores it.
 
 ```
 {

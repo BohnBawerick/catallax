@@ -44,6 +44,7 @@ version = "0.1.2"
 dependencies = [
  "catallax-features",
  "catallax-field",
+ "catallax-import",
  "catallax-intersect",
  "catallax-measure",
  "catallax-mesh",

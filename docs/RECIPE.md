@@ -1368,6 +1368,23 @@ The ordinary B-rep evaluator and independent field compiler implement these exac
 
 A planar shell's fast path proves that its minimum kept-plane clearance has a witness in a kept trim. Otherwise the B-rep constructs the closed kept-polygon distance tubes, with semicircular edge rolls and spherical vertex lunes, before intersecting their union with the input. The field evaluates the corresponding face, edge and vertex definitions independently. An untrimmed support-plane clearance alone is never sufficient.
 
+The B-rep shell also accepts a convex planar outer envelope pierced by separated
+parallel cylindrical through bores. Each complete bore must join the same two
+perpendicular end caps. Openings may select either cap, both caps, or neither;
+the other outer faces and every bore wall stay kept. The cavity intersects the
+inset outer halfspaces with the exteriors of cylinders whose radii increase by
+the wall thickness. Every expanded bore must remain strictly inside the inset
+outer envelope and strictly apart from the other expanded bores. A consumed
+planar cavity preserves the input solid. Inner planes and cylinders use
+`inner.of` with their complete source origin sets.
+
+This bored-shell reduction is B-rep only. The independent field compiler retains
+its unsupported-envelope refusal. Opening a bore wall or an outer side face,
+touching or crossing offset envelopes, blind or countersunk holes, filleted
+skins and nonconvex outer envelopes are not enabled by this reduction. References
+with adjacency filters or a `near` selector over several candidates also refuse;
+the filled cap polygons cannot stand in for those finite-face queries.
+
 Conical inward offsets intersect exact parallel supports, retaining only the original positive nappe. Their shared trims are native circles or ellipses. Coaxial cylinder transitions move to the exact new meeting circle; swallowed caps, bands and tips are not replaced by invented faces. Conical band thickening sweeps the finite source domain along its unit normal, including sloping conical rims rather than unchanged planar caps. The field constructs these constraints independently of B-rep topology. Opening a conical shell requires a kept-face projection witness; unsupported openings do not use a sharp support-plane shortcut.
 
 Outward perpendicular-capped cones and frusta directly assemble parallel conical and planar patches, circular torus edge sectors and spherical tip sectors. The field independently unions the source body with finite face normal images, full circular-edge distance tubes and tip spheres. A full edge tube must remain a ring torus; horn and spindle carriers still refuse. A coaxial cylindrical neighbour does not enable its outward joins.

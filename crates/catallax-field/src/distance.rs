@@ -7,6 +7,7 @@ use catallax_shapes::{
     distance::{self, Bounds, Domain, Membership, Options},
 };
 
+mod bored;
 mod contact;
 
 fn coordinates(p: &Point3) -> [Real; 3] {
@@ -200,6 +201,7 @@ pub struct Prepared<'a> {
     domains: Vec<Option<Domain>>,
     coincident: Vec<Vec<Vec<bool>>>,
     planar_trims: Vec<Vec<PlanarTrim>>,
+    bored_caps: std::collections::BTreeMap<usize, std::sync::Arc<[catallax_shapes::Cylinder]>>,
 }
 impl Plan {
     /// Prepares compact chart covers from recipe bounds, never from a B-rep mesh.
@@ -297,6 +299,7 @@ impl Plan {
             domains,
             coincident,
             planar_trims,
+            bored_caps: self.prepare_bored_caps(dec)?,
         })
     }
 }
@@ -528,6 +531,9 @@ impl Prepared<'_> {
                 "shapes.distance-domain",
                 "positive width and cell count required",
             ));
+        }
+        if let Some(bounds) = self.bored_cap_distance(id.0, point, options, dec)? {
+            return Ok(bounds);
         }
         let mut candidate = Bounds {
             lower: Rational::zero(),

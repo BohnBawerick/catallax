@@ -325,7 +325,11 @@ impl Plan {
         }
         Ok(result)
     }
-    fn planar_skin(&self, node: usize, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
+    pub(super) fn planar_skin(
+        &self,
+        node: usize,
+        dec: &mut Decider,
+    ) -> Result<ConvexCell, Refusal> {
         let mut stack = vec![node];
         let mut faces = Vec::new();
         while let Some(node) = stack.pop() {
@@ -518,6 +522,123 @@ impl Plan {
         }
         self.distance_cell(cell.eroded(&Real::from(-d), dec)?, bound, dec)
     }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn bored_distance_shell(
+        &mut self,
+        node: usize,
+        (cell, mut bores): (ConvexCell, Vec<catallax_features::draft::bored::Bore>),
+        open: &[FaceRef],
+        t: &Rational,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        use catallax_features::{
+            cylinder_skin::CylinderSkin,
+            draft::bored::{axis_point, certify_bores},
+        };
+        use catallax_recipe::Role;
+
+        positive(&t.clone().into(), dec)?;
+        for reference in open {
+            let candidates = cell
+                .faces
+                .iter()
+                .filter(|face| {
+                    face.origins
+                        .iter()
+                        .any(|origin| reference.face.matches(origin))
+                })
+                .count();
+            if !reference.touching.is_empty() || (reference.near.is_some() && candidates > 1) {
+                return Err(bad(
+                    "bored shells need unambiguous cap references without adjacency filters",
+                ));
+            }
+            if bores.iter().any(|bore| {
+                bore.origins
+                    .iter()
+                    .any(|origin| reference.face.matches(origin))
+            }) {
+                return Err(bad(
+                    "opening a bore wall needs its finite edge-distance envelopes",
+                ));
+            }
+        }
+        let selected = cell.select(open, dec)?;
+        for (face, selected) in cell.faces.iter().zip(&selected) {
+            if *selected
+                && geometry::sign(
+                    &face
+                        .plane
+                        .normal
+                        .cross(&bores[0].cylinder.axis)
+                        .norm_squared(),
+                    dec,
+                )? != Sign::Zero
+            {
+                return Err(bad("bored shells open only their perpendicular end caps"));
+            }
+        }
+        let cavity = cell.cavity(&selected, &t.clone().into(), step, dec)?;
+        if cavity.is_empty() {
+            return Ok(node);
+        }
+        // Cap projection preserves radial distance to every bore axis. The
+        // minimum kept-plane witness and each finite radial wall witness remain
+        // on physical input faces throughout this separated family.
+        for bore in &mut bores {
+            let radius = bore.cylinder.radius_sq.sqrt() + Real::from(t.clone());
+            let radius = dec
+                .rational_value(&radius)?
+                .map(Real::from)
+                .unwrap_or(radius);
+            bore.cylinder.radius_sq = radius.square();
+            bore.origins = bore
+                .origins
+                .iter()
+                .map(|of| Origin {
+                    step: step.clone(),
+                    role: Role::Inner {
+                        of: Box::new(of.clone()),
+                    },
+                })
+                .collect();
+        }
+        let cylinders: Vec<_> = bores.iter().map(|bore| &bore.cylinder).collect();
+        let caps = certify_bores(cavity.faces.iter().map(|face| &face.plane), &cylinders, dec)
+            .map_err(|error| {
+                if error.code.starts_with("draft.") {
+                    bad(&error.detail)
+                } else {
+                    error
+                }
+            })?;
+        let bound = self.node_radius(node, dec)?;
+        let planes = caps.map(|cap| cavity.faces[cap].plane.clone());
+        let mut hollow = self.distance_cell(cavity, bound.clone(), dec)?;
+        for bore in bores {
+            let mut ends = planes
+                .each_ref()
+                .map(|plane| axis_point(&bore.cylinder, plane));
+            if geometry::sign(&ends[1].minus(&ends[0]).dot(&bore.cylinder.axis), dec)?
+                == Sign::Negative
+            {
+                ends.swap(0, 1);
+            }
+            let tool = self.cylinder_leaf(
+                CylinderSkin {
+                    cylinder: bore.cylinder,
+                    ends,
+                    origins: [Vec::new(), Vec::new(), bore.origins],
+                },
+                &bound,
+                dec,
+            )?;
+            hollow = self.boolean(BooleanKind::Subtract, hollow, tool, dec)?;
+        }
+        self.boolean(BooleanKind::Subtract, node, hollow, dec)
+    }
+
     pub(crate) fn distance_shell(
         &mut self,
         node: usize,

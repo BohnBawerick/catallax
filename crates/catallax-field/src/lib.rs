@@ -288,7 +288,26 @@ impl Plan {
                         open,
                         thickness,
                     } => {
-                        plan.distance_shell(steps[body], open, thickness.value(), &step.id, dec)?
+                        if let Some(source) =
+                            plan.bored_shell_source(recipe, body, (&steps, &step_faces), dec)?
+                        {
+                            plan.bored_distance_shell(
+                                steps[body],
+                                source,
+                                open,
+                                thickness.value(),
+                                &step.id,
+                                dec,
+                            )?
+                        } else {
+                            plan.distance_shell(
+                                steps[body],
+                                open,
+                                thickness.value(),
+                                &step.id,
+                                dec,
+                            )?
+                        }
                     }
                     Operation::Thicken {
                         body,

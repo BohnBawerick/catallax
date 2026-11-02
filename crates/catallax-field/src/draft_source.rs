@@ -955,12 +955,24 @@ impl Plan {
         if caps.iter().any(|cap| selected.contains(cap)) {
             return Err(failure("a selected bore cap moves the cap-hole trim"));
         }
+        let ends = caps.map(|cap| match boss {
+            Some(boss) if boss.through && cap == boss.shoulder => &boss.boss.top,
+            _ => &skin.patches[cap].plane,
+        });
+        Ok(PreservedBores {
+            tools: chain.iter().map(|(tool, ..)| *tool).collect(),
+            bores: self.complete_bores(bores, ends, dec)?,
+        })
+    }
+
+    fn complete_bores(
+        &self,
+        bores: Vec<ChainBore>,
+        ends: [&Plane; 2],
+        dec: &mut Decider,
+    ) -> Result<Vec<PreservedBore>, Refusal> {
         let mut preserved = Vec::with_capacity(bores.len());
         for (tool, added, bore) in bores {
-            let ends = caps.map(|cap| match boss {
-                Some(boss) if boss.through && cap == boss.shoulder => &boss.boss.top,
-                _ => &skin.patches[cap].plane,
-            });
             let middles = self.check_through(tool, &bore, ends, dec)?;
             // A band beyond the caps, such as a hole's entry, bounds no source material.
             let mut walls = Vec::new();
@@ -994,9 +1006,74 @@ impl Plan {
                 head,
             });
         }
-        Ok(PreservedBores {
-            tools: chain.iter().map(|(tool, ..)| *tool).collect(),
-            bores: preserved,
+        Ok(preserved)
+    }
+
+    /// Recovers complete through bores from recipe tools, never B-rep topology.
+    pub(crate) fn bored_shell_source(
+        &self,
+        recipe: &Recipe,
+        body: &StepId,
+        steps: Steps,
+        dec: &mut Decider,
+    ) -> Result<Option<(catallax_features::polyhedron::ConvexCell, Vec<bored::Bore>)>, Refusal>
+    {
+        let mut recover = || {
+            let Some((target, chain)) = self.bore_chain(recipe, body, steps) else {
+                return Ok(None);
+            };
+            if chain.is_empty() {
+                return Ok(None);
+            }
+            let bores = self.tool_chain_bores(&chain, &[], dec)?;
+            if bores.is_empty() || bores.iter().any(|(.., bore)| bore.head.is_some()) {
+                return Err(failure(
+                    "a bored shell needs complete cylindrical through bores",
+                ));
+            }
+            let skin = self.draft_source_skin(recipe, target, steps.0, steps.1, dec)?;
+            if !skin.is_convex(dec)? {
+                return Err(failure(
+                    "a bored shell needs a convex planar outer envelope",
+                ));
+            }
+            let cylinders: Vec<_> = bores.iter().map(|(.., bore)| &bore.cylinder).collect();
+            let caps = bored::certify_bores(
+                skin.patches.iter().map(|patch| &patch.plane),
+                &cylinders,
+                dec,
+            )?;
+            let ends = caps.map(|cap| &skin.patches[cap].plane);
+            let preserved = self.complete_bores(bores, ends, dec)?;
+            let bores = preserved
+                .into_iter()
+                .map(|bore| bored::Bore {
+                    cylinder: bore.cylinder,
+                    origins: bore
+                        .walls
+                        .into_iter()
+                        .map(|wall| self.faces[wall].origin.clone())
+                        .collect(),
+                })
+                .collect();
+            let cell = catallax_features::polyhedron::ConvexCell::new(
+                skin.patches
+                    .into_iter()
+                    .map(|patch| catallax_features::polyhedron::PlaneFace {
+                        plane: patch.plane,
+                        origins: patch.origins,
+                    })
+                    .collect(),
+                dec,
+            )?;
+            Ok(Some((cell, bores)))
+        };
+        recover().map_err(|error: Refusal| {
+            if error.code.starts_with("draft.") {
+                Refusal::new("distance.unsupported-envelope", error.detail)
+            } else {
+                error
+            }
         })
     }
 

@@ -1328,7 +1328,7 @@ impl Plan {
                 let matches: Vec<_> = source_faces
                     .iter()
                     .copied()
-                    .filter(|f| reference.face.matches(&self.faces[*f].origin))
+                    .filter(|f| reference.matches(&self.faces[*f].origin))
                     .collect();
                 if matches.is_empty() {
                     return Err(Refusal::new(

@@ -1,0 +1,22 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Rectangular sweep with a round turn",
+  "steps": [
+    {
+      "id": "profile", "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]},
+      "loops": [[
+        {"kind": "line", "id": "a", "to": ["2", "-2"]},
+        {"kind": "line", "id": "b", "to": ["2", "-1"]},
+        {"kind": "line", "id": "c", "to": ["0", "-1"]},
+        {"kind": "line", "id": "d", "to": ["0", "-2"]}
+      ]]
+    },
+    {"id": "rail", "op": "path", "start": ["0", "0", "0"], "segments": [
+      {"kind": "line", "id": "rise", "to": ["0", "0", "4"]},
+      {"kind": "line", "id": "run", "to": ["0", "4", "4"]}
+    ]},
+    {"id": "body", "op": "sweep", "profile": "profile", "path": "rail", "orientation": "rotation_minimising"}
+  ],
+  "result": "body"
+}

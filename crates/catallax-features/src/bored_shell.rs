@@ -42,11 +42,7 @@ pub(super) fn shell(
         let mut candidates = 0;
         let mut curved = false;
         for face in &faces {
-            if model
-                .face_origins(*face)
-                .iter()
-                .any(|o| reference.face.matches(o))
-            {
+            if reference.matches_origins(model.face_origins(*face)) {
                 candidates += 1;
                 curved |= !matches!(
                     model.geom().surface(model.face(*face).surface),

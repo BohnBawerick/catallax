@@ -194,6 +194,33 @@ fn double_conversion_roundtrips_and_ties() {
 }
 
 #[test]
+fn binary64_decoding_preserves_exact_fraction_at_exponent_boundaries() {
+    for exponent in 0..2047_u64 {
+        for fraction in [0, 1, 2, (1 << 51) - 1, 1 << 51, (1 << 52) - 1] {
+            for negative in [false, true] {
+                let bits = (u64::from(negative) << 63) | (exponent << 52) | fraction;
+                let significand = fraction | if exponent == 0 { 0 } else { 1 << 52 };
+                let power = if exponent == 0 {
+                    -1074
+                } else {
+                    exponent as i64 - 1075
+                };
+                let numerator = Integer::from_u64(significand);
+                let expected =
+                    Rational::from_integer(if negative { -numerator } else { numerator })
+                        .mul_pow2(power);
+                let actual = Rational::from_f64_exact(f64::from_bits(bits)).unwrap();
+                assert_eq!(actual, expected, "binary64 bits {bits:016x}");
+                assert_eq!(hash(&actual), hash(&expected));
+            }
+        }
+    }
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(Rational::from_f64_exact(value).is_none());
+    }
+}
+
+#[test]
 fn directed_decimal_rounding_and_terminating_decimals() {
     for (value, digits, lo, hi) in [
         ("1/3", 5, "0.33333", "0.33334"),

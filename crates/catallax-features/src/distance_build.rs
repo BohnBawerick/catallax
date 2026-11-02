@@ -205,7 +205,7 @@ fn convex(model: &Model, body: BodyId, dec: &mut Decider) -> Result<ConvexCell, 
 }
 fn closed_selection(origins: &[Origin], refs: &[FaceRef]) -> Result<bool, Refusal> {
     for reference in refs {
-        if !reference.touching.is_empty() || !origins.iter().any(|o| reference.face.matches(o)) {
+        if !reference.touching.is_empty() || !reference.matches_origins(origins) {
             return Err(Refusal::new(
                 "reference.lost-face",
                 format!("no closed input face resolves {reference:?}"),
@@ -283,6 +283,14 @@ pub(crate) fn shell(
             "reference.lost-face",
             "an empty body has no open face",
         ));
+    }
+    // With no kept face the defining distance is infinite, for any input geometry.
+    if !open.is_empty()
+        && open
+            .iter()
+            .all(|r| r.face.is_none() && r.touching.is_empty() && r.near.is_none())
+    {
+        return Ok(catallax_topology::empty(model));
     }
     if let Some((surface, origins)) = radial(model, body) {
         if closed_selection(&origins, open)? {

@@ -63,6 +63,11 @@ pub enum Role {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<ElementId>,
     },
+    /// An exposed interior-profile patch of a sweep span or stationary turn.
+    Envelope {
+        /// The generating path segment, or outgoing segment at a corner.
+        path: ElementId,
+    },
     /// A face of a hole.
     Hole {
         /// The hole placement.
@@ -139,6 +144,7 @@ impl Role {
             Role::Start => "start",
             Role::End => "end",
             Role::Side { .. } => "side",
+            Role::Envelope { .. } => "envelope",
             Role::Hole { .. } => "hole",
             Role::Blend { .. } => "blend",
             Role::Bevel { .. } => "bevel",
@@ -320,8 +326,9 @@ impl From<Origin> for OriginPattern {
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FaceRef {
-    /// Faces with an origin this matches.
-    pub face: OriginPattern,
+    /// Faces with a matching origin; absent selects every input face.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<OriginPattern>,
     /// Keeps only faces that share an edge with a face matching each of these.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub touching: Vec<OriginPattern>,
@@ -329,6 +336,32 @@ pub struct FaceRef {
     /// nearer than every other.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub near: Option<Point3>,
+}
+
+impl FaceRef {
+    /// Every face of the input body, without adjacency or proximity filters.
+    pub fn all() -> Self {
+        Self {
+            face: None,
+            touching: Vec::new(),
+            near: None,
+        }
+    }
+
+    /// Whether the origin passes the optional origin filter.
+    pub fn matches(&self, origin: &Origin) -> bool {
+        self.face
+            .as_ref()
+            .is_none_or(|pattern| pattern.matches(origin))
+    }
+
+    /// Whether the face's complete origin set passes the optional filter.
+    /// An unfiltered reference also includes a face without an origin.
+    pub fn matches_origins(&self, origins: &[Origin]) -> bool {
+        self.face
+            .as_ref()
+            .is_none_or(|pattern| origins.iter().any(|o| pattern.matches(o)))
+    }
 }
 
 /// Chooses edges of a step's input body by the origins of the faces they separate.

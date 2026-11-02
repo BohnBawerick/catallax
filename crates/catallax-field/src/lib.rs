@@ -320,7 +320,7 @@ impl Plan {
                         thickness.value(),
                         *side,
                         &step.id,
-                        recipe.format == catallax_recipe::FORMAT_V4,
+                        recipe.format != catallax_recipe::FORMAT,
                         dec,
                     )?,
                     Operation::Extrude {

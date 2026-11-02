@@ -98,3 +98,58 @@ pub fn arrange(
     marks.extend(&model.body(source).marks);
     Ok(BooleanAnswer { body, marks, report })
 }
+
+/// Splits a curved patch against a bounded clipping solid without sewing an
+/// intermediate body. The caller certifies each retained cell with `keep`;
+/// `None` requests another strict interior witness. All marks are returned.
+pub fn trim_patch(
+    model: &mut Model,
+    source: BodyId,
+    patch: FaceId,
+    mut keep: impl FnMut(&Point3, &mut Decider) -> Result<Option<bool>, Refusal>,
+    dec: &mut Decider,
+) -> Result<Answer<Vec<FaceId>>, BooleanRefusal> {
+    if !matches!(model.body(source).kind, BodyKind::Solid | BodyKind::Empty) {
+        return Err(BooleanRefusal {
+            stage: Stage::Intersect,
+            refusal: crate::geometry::refusal("boolean.not-solid", "patch clipping source is not solid or empty"),
+        });
+    }
+    let mut marks = model.body(source).marks.clone();
+    if model.body(source).kind == BodyKind::Empty {
+        return Ok(Answer::with_marks(Vec::new(), marks));
+    }
+    let mut faces = model.faces_of_body(source);
+    faces.push(patch);
+    macro_rules! run {
+        ($stage:expr, $operation:expr) => {{
+            let before = current_operation_work().used;
+            let result = $operation;
+            eprintln!("NEAREST_TRIM phase={:?} work={} cumulative={} outcome={:?}", $stage, current_operation_work().used-before, current_operation_work().used, result.as_ref().map(|_|"ok").map_err(|e|e.code));
+            let answer = result.map_err(|refusal| BooleanRefusal { stage: $stage, refusal })?;
+            marks.extend(&answer.marks);
+            answer.value
+        }};
+    }
+    let graph = run!(Stage::Intersect, crate::graph::arrangement(model, source, &faces, dec));
+    let (imprinted, owners) = run!(Stage::Imprint, crate::imprinting::arrangement(model, &graph, &faces, dec));
+    let mut retained = Vec::new();
+    let before = current_operation_work().used;
+    let classified: Result<(), Refusal> = (|| {
+        for &piece in &imprinted.first {
+            if owners[&piece] != patch {
+                continue;
+            }
+            let selected = crate::points::find(model, piece, dec, |model, point, _, dec| {
+                keep(&model.geom().position(point), dec)
+            })?;
+            if selected {
+                retained.push(piece);
+            }
+        }
+        Ok(())
+    })();
+    eprintln!("NEAREST_TRIM phase=Classify work={} cumulative={} outcome={:?}", current_operation_work().used-before, current_operation_work().used, classified.as_ref().map(|_|"ok").map_err(|e|e.code));
+    classified.map_err(|refusal| BooleanRefusal { stage: Stage::Classify, refusal })?;
+    Ok(Answer::with_marks(retained, marks))
+}

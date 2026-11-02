@@ -532,6 +532,12 @@ impl Skin {
         self.arrange::<Classifier, OriginResolver>(Some((selected, definition)), None, dec)
     }
 
+    /// Partitions the unchanged closed input chain by exact winding. Internal
+    /// carrier cuts remain convex terms, never physical face names.
+    pub fn components(&self, dec: &mut Decider) -> Result<Vec<Polyhedron>, Refusal> {
+        self.arrange::<Classifier, OriginResolver>(None, None, dec)
+    }
+
     /// Extracts the physical boundary of a bounded regular solid whose carriers
     /// occur in this skin. The classifier labels full-dimensional cells; the
     /// resolver supplies surviving input origins on each outward boundary tile.

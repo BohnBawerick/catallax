@@ -42,7 +42,7 @@ mod torus_region;
 #[cfg(test)]
 mod tests;
 
-pub use arrangement::{PatchSelection, arrange};
+pub use arrangement::{PatchSelection, arrange, trim_patch};
 pub use stages::{
     Classification, FaceClass, Imprinted, IntersectionGraph, SectionEdge, Selection, classify,
     imprint, intersect, keep, make_maximal, sew,

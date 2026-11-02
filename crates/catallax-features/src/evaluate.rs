@@ -582,10 +582,14 @@ fn evaluate_impl(
                         radius: profile_radius(profile) + distance.value().abs(),
                     }
                 }
-                Operation::Sweep { profile, path, .. } => {
+                Operation::Sweep {
+                    profile,
+                    path,
+                    orientation,
+                } => {
                     let profile = &profiles[profile];
                     let path = &paths[path];
-                    let body = path.build(model, profile, &step.id)?;
+                    let body = path.build(model, profile, &step.id, *orientation, dec)?;
                     BodyValue {
                         body,
                         radius: profile_radius(profile) + path.extent(),

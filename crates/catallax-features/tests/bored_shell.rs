@@ -96,8 +96,10 @@ fn top_open_bore_shell_preserves_the_hole_and_constant_thickness_after_edit() {
                         };
                         let radius = q("3") + q(thickness);
                         assert_eq!(
-                            cylinder.radius_sq.rational_ref(),
-                            Some(&(&radius * &radius))
+                            Decider::default()
+                                .rational_value(&cylinder.radius_sq)
+                                .unwrap(),
+                            Some(&radius * &radius)
                         );
                         inner_bore = true;
                     }

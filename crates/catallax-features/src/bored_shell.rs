@@ -98,7 +98,14 @@ pub(super) fn shell(
     // enter a bore. Kept outer-face witnesses therefore remain on physical faces;
     // each bore contributes the radial distance to its complete finite wall.
     for bore in &mut bores {
-        bore.cylinder.radius_sq = (&bore.cylinder.radius_sq.sqrt() + thickness).square();
+        let radius = &bore.cylinder.radius_sq.sqrt() + thickness;
+        // Keep exact rational carriers on the analytic integration path instead
+        // of making consumers repeatedly prove a rational square-root identity.
+        let radius = dec
+            .rational_value(&radius)?
+            .map(Real::from)
+            .unwrap_or(radius);
+        bore.cylinder.radius_sq = radius.square();
         bore.origins = bore
             .origins
             .iter()

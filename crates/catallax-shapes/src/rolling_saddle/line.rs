@@ -193,7 +193,13 @@ impl LineSheet for RollingSaddle {
         let scaled = |factor: &MPoly, values: [Rational; 3]| -> [MPoly; 3] {
             values.map(|value| factor.scale(&value))
         };
-        let across = scaled(&gm, meet.clone().map(|v| v / square_meet.clone()));
+        // A reflection moves the frame, but the moved axes' cross product turns
+        // the other way.
+        let turn = Rational::from_i64(if self.data.reversing { -1 } else { 1 });
+        let across = scaled(
+            &gm,
+            meet.clone().map(|v| v * turn.clone() / square_meet.clone()),
+        );
         let along = scaled(
             &ga_gm,
             std::array::from_fn(|k| {

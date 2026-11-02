@@ -12,6 +12,7 @@ use catallax_numbers::{Ball, Decider, FactKind, Rational, Refusal, Sign};
 use catallax_shapes::{GeomKey, Point3, PointId, SplineSupport, Surface};
 use catallax_topology::{
     EdgeId, FaceId, Loop, LoopId, Model, Sense, SplinePrism, envelope_retains_chart, pipe_rows,
+    saddle_rows,
 };
 use std::collections::{HashMap, hash_map::Entry};
 
@@ -719,6 +720,12 @@ fn whole_chart(
                 return Ok(None);
             }
             pipe.on_boundary(&position, dec)?
+        }
+        Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
+            if saddle_rows(model, face).is_none() {
+                return Ok(None);
+            }
+            saddle.on_boundary(&position, dec)?
         }
         _ => return Ok(None),
     };

@@ -6,8 +6,8 @@ use std::sync::OnceLock;
 
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Outcome, Rational, Real, Refusal, Sign};
 use catallax_shapes::{
-    BSplineSurface, BallSide, Cylinder, Point3, Pose, RollingSaddle, RollingSaddleDefinition,
-    Rotation, SplineBoundary, SplineSupport, Surface, Vector3,
+    BSplineSurface, BallSide, Cylinder, Isometry, Point3, Pose, RPoint3, RVector3, RollingSaddle,
+    RollingSaddleDefinition, Rotation, SplineBoundary, SplineSupport, Surface, Vector3,
 };
 
 fn decider() -> Decider {
@@ -561,6 +561,19 @@ fn a_line_meets_the_carrier_where_a_triangulation_says() {
     for index in 0..3 {
         check_lines(&fitted(index));
     }
+}
+
+// A reflection turns the frame round, and the solver builds its frame again from
+// the moved axes.
+#[test]
+fn a_line_meets_a_mirrored_carrier_where_a_triangulation_says() {
+    let plane = RPoint3::new(q("20"), q("0"), q("0"));
+    let map = Isometry::reflection(&plane, &RVector3::new(q("3"), q("4"), q("0"))).unwrap();
+    let surface = Surface::BSpline(SplineSupport::RollingSaddle(fitted(0)));
+    let Surface::BSpline(SplineSupport::RollingSaddle(mirrored)) = map.surface(&surface) else {
+        panic!("a reflection keeps a saddle");
+    };
+    check_lines(&mirrored);
 }
 
 // Unit axes here have square roots, which the span equations carry as variables.

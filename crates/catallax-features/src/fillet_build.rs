@@ -222,6 +222,19 @@ fn convex(
                 Sign::Zero => Err(bad("tangent faces do not define a regular sharp edge")),
             }
         }
+        Curve::Intersection(ring) => {
+            let point = ring.witness;
+            let at = model.geom().position(point);
+            let [_, along] = catallax_intersect::tangent_at(model.geom(), e.curve, point, dec)?;
+            let na = outward(model, *a, &at, dec)?;
+            let nb = outward(model, *b, &at, dec)?;
+            let value = nb.dot(&na.cross(&along)) * Real::from_i64(orientation);
+            match sign(&value, dec)? {
+                Sign::Negative => Ok(true),
+                Sign::Positive => Ok(false),
+                Sign::Zero => Err(bad("tangent faces do not define a regular sharp edge")),
+            }
+        }
         _ => Err(bad("elementary fillets need a line or a conic")),
     }
 }
@@ -660,7 +673,10 @@ fn guard(
             .iter()
             .any(|support| matches!(support, Surface::Cylinder(_)));
         if curved
-            && matches!(run.definition.edge, Curve::Line(_) | Curve::Ellipse(_))
+            && matches!(
+                run.definition.edge,
+                Curve::Line(_) | Curve::Ellipse(_) | Curve::Intersection(_)
+            )
             && run
                 .definition
                 .supports
@@ -671,14 +687,27 @@ fn guard(
         }
         // A band has no surface pair solver. Its hull proves it off a plane,
         // and nothing yet proves it off any other surface.
-        if let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = &run.definition.surface {
-            if matches!(&other, Surface::Plane(plane) if pipe.clear_of(plane, dec)?) {
-                continue;
+        if let Surface::BSpline(band) = &run.definition.surface {
+            let clear = match (band, &other) {
+                (SplineSupport::RollingPipe(pipe), Surface::Plane(plane)) => {
+                    Some(pipe.clear_of(plane, dec)?)
+                }
+                (SplineSupport::RollingSaddle(saddle), Surface::Plane(plane)) => {
+                    Some(saddle.clear_of(plane, dec)?)
+                }
+                (SplineSupport::RollingPipe(_) | SplineSupport::RollingSaddle(_), _) => Some(false),
+                _ => None,
+            };
+            match clear {
+                Some(true) => continue,
+                Some(false) => {
+                    return Err(Refusal::new(
+                        "fillet.unsupported-overflow",
+                        "a face reaches the hull of the blend band and needs trimmed continuation",
+                    ));
+                }
+                None => {}
             }
-            return Err(Refusal::new(
-                "fillet.unsupported-overflow",
-                "a face reaches the hull of the blend band and needs trimmed continuation",
-            ));
         }
         let a = model.geom_mut().add_surface(run.definition.surface.clone());
         let b = model.geom_mut().add_surface(other);
@@ -760,18 +789,41 @@ pub(crate) fn build(
             .edge_name(body, source)
             .ok_or_else(|| bad("a selected edge needs an unambiguous origin-pair name"))?;
         let faces = [*a, *b];
-        let definition = FilletDefinition::new(
-            Origin {
-                step: step.clone(),
-                role: Role::Blend { edge: name },
-            },
-            faces.map(|f| model.geom().surface(model.face(f).surface).clone()),
-            faces.map(|f| model.face(f).sense == Sense::Same),
-            model.geom().curve(model.edge(edge).curve).clone(),
-            radius.clone(),
-            convex(model, edge, incident, dec)?,
-            dec,
-        )?;
+        let origin = Origin {
+            step: step.clone(),
+            role: Role::Blend { edge: name },
+        };
+        let supports = faces.map(|f| model.geom().surface(model.face(f).surface).clone());
+        let same_sense = faces.map(|f| model.face(f).sense == Sense::Same);
+        let curve = model.geom().curve(model.edge(edge).curve).clone();
+        let convex = convex(model, edge, incident, dec)?;
+        let definition = if let Curve::Intersection(ring) = &curve {
+            let input = model.edge(edge);
+            if input.start.is_some() || input.end.is_some() {
+                return Err(bad("a curved intersection fillet needs one closed ring"));
+            }
+            let witness = model.geom().position(ring.witness);
+            FilletDefinition::ring(
+                origin,
+                supports,
+                same_sense,
+                curve,
+                &witness,
+                radius.clone(),
+                convex,
+                dec,
+            )?
+        } else {
+            FilletDefinition::new(
+                origin,
+                supports,
+                same_sense,
+                curve,
+                radius.clone(),
+                convex,
+                dec,
+            )?
+        };
         runs.push(Run {
             edge,
             faces,
@@ -784,12 +836,14 @@ pub(crate) fn build(
     let trimming = runs
         .iter()
         .any(|run| {
-            matches!(run.definition.edge, Curve::Line(_) | Curve::Ellipse(_))
-                && run
-                    .definition
-                    .supports
-                    .iter()
-                    .any(|support| matches!(support, Surface::Cylinder(_)))
+            matches!(
+                run.definition.edge,
+                Curve::Line(_) | Curve::Ellipse(_) | Curve::Intersection(_)
+            ) && run
+                .definition
+                .supports
+                .iter()
+                .any(|support| matches!(support, Surface::Cylinder(_)))
         })
         .then(|| catallax_numbers::OperationSpan::begin("brep", step, "fillet.trimming", dec));
     for run in &runs {
@@ -799,7 +853,8 @@ pub(crate) fn build(
             // and any ring outside that stratum, still refuses.
             let continuable = refusal.code == "fillet.unsupported-overflow"
                 || refusal.code.starts_with("intersect.");
-            if !continuable || runs.len() != 1 {
+            let closed_ring = matches!(run.definition.edge, Curve::Intersection(_));
+            if !continuable || runs.len() != 1 || closed_ring {
                 return Err(refusal);
             }
             match fillet_envelope::strip_clear(
@@ -866,6 +921,18 @@ pub(crate) fn build(
                 || a.definition.sectors_apart(&b.definition, dec)?
             {
                 continue;
+            }
+            // Nothing solves a fitted band against another surface.
+            if [a, b].iter().any(|run| {
+                matches!(
+                    run.definition.surface,
+                    Surface::BSpline(SplineSupport::RollingSaddle(_))
+                )
+            }) {
+                return Err(Refusal::new(
+                    "fillet.unsupported-overflow",
+                    "two blend bands are not proved apart and need trimmed continuation",
+                ));
             }
             let a = model.geom_mut().add_surface(a.definition.surface.clone());
             let b = model.geom_mut().add_surface(b.definition.surface.clone());
@@ -1119,12 +1186,38 @@ pub(crate) fn build(
                     ));
                 }
             }
+            // A rail runs up the carrier's chart, which need not be the input
+            // edge's way round the ring.
+            let mut sense = input.sense;
+            if let (
+                Surface::BSpline(SplineSupport::RollingSaddle(saddle)),
+                Curve::Intersection(ring),
+            ) = (&run.definition.surface, &run.definition.edge)
+            {
+                let contact = &run.definition.contacts[i];
+                let Curve::BSpline(rail) = contact else {
+                    return Err(bad("a saddle contact is not its rail"));
+                };
+                let p = rail.control(0).clone();
+                if !catallax_boolean::face_contains(model, *face, &p, dec)? {
+                    return Err(Refusal::new(
+                        "fillet.unsupported-overflow",
+                        "a contact rail leaves the input face and needs neighbour continuation",
+                    ));
+                }
+                let at = model.geom().position(ring.witness);
+                let [_, along] =
+                    catallax_intersect::tangent_at(model.geom(), input.curve, ring.witness, dec)?;
+                if !saddle.definition().runs_with_chart(&at, &along, dec)? {
+                    sense = reverse(sense);
+                }
+            }
             let curve = model
                 .geom_mut()
                 .add_curve(run.definition.contacts[i].clone());
             let edge = model.add_edge(Edge {
                 curve,
-                sense: input.sense,
+                sense,
                 start: input.start.map(|v| run.ends[&(v, *face)]),
                 end: input.end.map(|v| run.ends[&(v, *face)]),
             });
@@ -1166,10 +1259,15 @@ pub(crate) fn build(
             path.push((cap, sense));
             vec![path]
         };
+        // A saddle's normal points to the ball, where the other bands' points away.
+        let toward_ball = matches!(
+            run.definition.surface,
+            Surface::BSpline(SplineSupport::RollingSaddle(_))
+        );
         let face = crate::extrude::face(
             model,
             run.definition.surface.clone(),
-            if run.definition.convex {
+            if run.definition.convex != toward_ball {
                 Sense::Same
             } else {
                 Sense::Reversed

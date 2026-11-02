@@ -315,3 +315,125 @@ fn exact_curve_preimages_separate_incidence_from_nearby_points() {
             .is_none()
     );
 }
+
+#[test]
+fn mixed_degree_rational_constructor_returns_queryable_boundaries_in_both_axes() {
+    // Bernstein products give S(u,v) = (x,y,xy), with
+    // x = 2u/(1+u), y = 3v/(1+2v). Both axes have nonconstant weights.
+    for degrees in [[2, 3], [3, 2]] {
+        let mut controls = Vec::new();
+        let mut weights = Vec::new();
+        for i in 0..=degrees[0] {
+            let u = Rational::from_i64(i as i64) / Rational::from_i64(degrees[0] as i64);
+            let wu = &r("1") + &u;
+            for j in 0..=degrees[1] {
+                let v = Rational::from_i64(j as i64) / Rational::from_i64(degrees[1] as i64);
+                let wv = r("1") + &r("2") * &v;
+                let x = &(&r("2") * &u) / &wu;
+                let y = &(&r("3") * &v) / &wv;
+                controls.push(Point3::new(
+                    x.clone().into(),
+                    y.clone().into(),
+                    (&x * &y).into(),
+                ));
+                weights.push(Real::from_rational(&wu * &wv));
+            }
+        }
+        let knots =
+            degrees.map(|degree| [vec![r("0"); degree + 1], vec![r("1"); degree + 1]].concat());
+        let mut dec = Decider::default();
+        let surface = BSplineSurface::new(
+            degrees,
+            knots,
+            degrees.map(|degree| degree + 1),
+            controls,
+            weights,
+            &mut dec,
+        )
+        .expect("valid mixed-degree rational surface must construct");
+        for (side, axis, fixed) in [
+            (SplineBoundary::VMin, 0, r("0")),
+            (SplineBoundary::VMax, 0, r("1")),
+            (SplineBoundary::UMin, 1, r("0")),
+            (SplineBoundary::UMax, 1, r("1")),
+        ] {
+            let boundary = BSplineCurve::boundary(&surface, side);
+            let owned = BSplineCurve::new(
+                boundary.degree(),
+                boundary.knots().to_vec(),
+                (0..boundary.control_count())
+                    .map(|i| boundary.control(i).clone())
+                    .collect(),
+                (0..boundary.control_count())
+                    .map(|i| boundary.weight(i).clone())
+                    .collect(),
+                &mut dec,
+            )
+            .expect("returned boundary must also construct as a standalone curve");
+            for t in [r("0"), r("1/3"), r("1")] {
+                let (u, v) = if axis == 0 {
+                    (&t, &fixed)
+                } else {
+                    (&fixed, &t)
+                };
+                let a = &r("1") + u;
+                let c = r("1") + &r("2") * v;
+                let x = &(&r("2") * u) / &a;
+                let y = &(&r("3") * v) / &c;
+                let value = [x.clone(), y.clone(), &x * &y];
+                let (first, second) = if axis == 0 {
+                    let dx = r("2") / (&a * &a);
+                    let ddx = r("-4") / (&a * &a * a);
+                    (
+                        [dx.clone(), r("0"), &dx * &y],
+                        [ddx.clone(), r("0"), &ddx * &y],
+                    )
+                } else {
+                    let dy = r("3") / (&c * &c);
+                    let ddy = r("-12") / (&c * &c * c);
+                    (
+                        [r("0"), dy.clone(), &x * &dy],
+                        [r("0"), ddy.clone(), &x * &ddy],
+                    )
+                };
+                let surface_jet = surface.jet_box([u, u], [v, v], 128, &dec).unwrap();
+                for curve in [&boundary, &owned] {
+                    let jet = curve.jet_box([&t, &t], 128, &dec).unwrap();
+                    for (actual, expected) in [
+                        (&jet.value, &value),
+                        (&jet.first, &first),
+                        (&jet.second, &second),
+                        (&surface_jet.value, &value),
+                        (&surface_jet.first[axis], &first),
+                        (&surface_jet.second[axis * 2], &second),
+                    ] {
+                        for (actual, expected) in actual.iter().zip(expected) {
+                            assert!(actual.contains(expected), "{degrees:?} {side:?} t={t}");
+                            assert!(actual.hi() - actual.lo() < r("1e-20"));
+                        }
+                    }
+                    let point = Point3::new(
+                        value[0].clone().into(),
+                        value[1].clone().into(),
+                        value[2].clone().into(),
+                    );
+                    let parameter = curve.parameter_of(&point, &mut dec).unwrap().unwrap();
+                    assert!(
+                        dec.compare(parameter.value(), &t.clone().into())
+                            .is_coincident()
+                    );
+                    let returned = parameter.point(&dec).unwrap();
+                    for (actual, expected) in [&returned.x, &returned.y, &returned.z]
+                        .into_iter()
+                        .zip(&value)
+                    {
+                        assert!(
+                            dec.compare(actual, &expected.clone().into())
+                                .is_coincident()
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

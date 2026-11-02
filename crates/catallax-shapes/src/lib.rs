@@ -20,6 +20,7 @@ mod parallel;
 mod point;
 mod pose;
 mod rolling_envelope;
+mod rolling_pipe;
 mod spline_surface;
 mod store;
 mod surface;
@@ -44,6 +45,7 @@ pub use rolling_envelope::{
     BoundaryRow, ContactMoments, EnvelopeGrid, JunctionSection, ParameterTable,
     ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope, RollingEnvelopeDefinition,
 };
+pub use rolling_pipe::RollingPipe;
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
 pub use surface::{

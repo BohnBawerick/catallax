@@ -26,7 +26,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fs::write(out.join("display.obj"), obj)?;
             fs::write(out.join("mesh.txt"), format!("{mesh:#?}\n"))?;
             fs::write(out.join("names.txt"), format!("{:#?}\n", body.names))?;
-            fs::write(out.join("model.txt"), format!("{:#?}\n", built.model))?;
             let mut bytes = Vec::new();
             let step = write_step(
                 &built.model,

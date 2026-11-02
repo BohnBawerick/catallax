@@ -11,8 +11,10 @@ import statistics
 import subprocess
 import sys
 
-TARGETS = {"bracket": [27, 43], "drawing": [25], "references": [17, 18]}
-FILES = ("answer.step", "answer.txt", "display.obj", "mesh.txt", "model.txt",
+TARGETS = {"bracket": {27: "edit_dimension", 43: "set_value"},
+           "drawing": {24: "edit_extrude"},
+           "references": {17: "edit_extrude", 18: "edit_dimension"}}
+FILES = ("answer.step", "answer.txt", "display.obj", "mesh.txt",
          "names.txt", "stats.txt", "work.txt", "operations.txt")
 
 
@@ -79,6 +81,8 @@ def run(args):
     scenarios.mkdir()
     for name, targets in TARGETS.items():
         source = json.loads((args.app / f"ci/scenarios/{name}.json").read_text())
+        for number, tool in targets.items():
+            assert source["steps"][number - 1]["tool"] == tool, f"wrong edit target: {name} {number}"
         source["steps"] = source["steps"][:max(targets)]
         # File-export acceptance is outside the timed clicks and belongs to the
         # existing application suite. Keep every command, view and measurement.

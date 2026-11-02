@@ -297,23 +297,26 @@ def capture_cpu_profile(binary, source, dest):
         metric="Sampled user CPU-clock periods; not instrumented elapsed time",
         core=min(os.sched_getaffinity(0)), load_average=os.getloadavg())
     metadata["inline_expansion"] = False
+    # Raw stacks contain process memory: never inherit runner credentials.
+    profile_env = dict(PATH=os.defpath, LANG="C.UTF-8", HOME=str(dest),
+                       DEBUGINFOD_URLS="")
     for repetition in range(5):
         capture = dest / str(repetition)
         capture.mkdir()
         print(f"CPU capture {repetition}: recording native probe", flush=True)
         with (capture / "probe.stdout").open("w") as stdout, \
                 (capture / "record.log").open("w") as stderr:
-            subprocess.run(["sudo", "-n", str(perf), "record", "-e", "cpu-clock:u",
+            subprocess.run([str(perf), "record", "--no-buildid-cache", "-e", "cpu-clock:u",
                             "-F", "997", "--call-graph", "dwarf,16384",
                             "-o", str(capture / "perf.data"), "--",
                             str(binary), str(source), str(capture / "answer")],
-                           stdout=stdout, stderr=stderr, check=True)
+                           stdout=stdout, stderr=stderr, check=True, env=profile_env)
         print(f"CPU capture {repetition}: resolving DWARF call chains", flush=True)
         with (capture / "stacks.txt").open("w") as stdout, \
                 (capture / "decode.log").open("w") as stderr:
-            subprocess.run(["sudo", "-n", str(perf), "script", "--demangle", "--no-inline",
+            subprocess.run([str(perf), "script", "--demangle", "--no-inline",
                             "--ns", "-F", "+period", "-i", str(capture / "perf.data")],
-                           stdout=stdout, stderr=stderr, check=True)
+                           stdout=stdout, stderr=stderr, check=True, env=profile_env)
         assert "catallax_boolean" in (capture / "stacks.txt").read_text(), \
             "CPU samples did not resolve Boolean call stacks"
         check_profile_answer(source, capture)

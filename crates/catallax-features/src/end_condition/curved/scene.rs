@@ -41,8 +41,8 @@ impl Scene {
             }
             _ => (),
         }
-        if !reference.face.matches(&wall) {
-            return Err(if caps.iter().any(|o| reference.face.matches(o)) {
+        if !reference.matches(&wall) {
+            return Err(if reference.matches_origins(&caps) {
                 coverage("selected planar stock caps need a separate first-hit reduction")
             } else {
                 Refusal::new("recipe.missing-reference", "limit matches no target face")
@@ -58,7 +58,7 @@ impl Scene {
                 "selected wall has no shared edge with a touching pattern",
             ));
         }
-        if reference.near.is_some() && caps.iter().any(|o| reference.face.matches(o)) {
+        if reference.near.is_some() && reference.matches_origins(&caps) {
             return Err(coverage(
                 "near resolution between curved and planar faces needs a trimmed-distance proof",
             ));

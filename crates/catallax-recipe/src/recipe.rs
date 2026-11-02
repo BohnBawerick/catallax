@@ -8,17 +8,20 @@ use crate::ids::{ElementId, StepId};
 use crate::operation::{Operation, ValueKind};
 use crate::text::Canonical;
 
-/// The format identifier every recipe carries.
+/// The version 3 format identifier and default for [`Recipe::new`].
 pub const FORMAT: &str = "catallax-recipe/3";
 
 /// Version 4 adds one-sided and first-hit extrusion end conditions.
 pub const FORMAT_V4: &str = "catallax-recipe/4";
 
+/// Version 5 adds face references without an origin filter.
+pub const FORMAT_V5: &str = "catallax-recipe/5";
+
 /// A part: ordered steps and the step whose body is the part.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
-    /// Always [`FORMAT`].
+    /// One of [`FORMAT`], [`FORMAT_V4`] or [`FORMAT_V5`].
     pub format: String,
     /// The part's name, for people.
     pub name: String,
@@ -47,7 +50,7 @@ struct FormatOnly {
 }
 
 impl Recipe {
-    /// A recipe of the current format.
+    /// A version 3 recipe. Set `format` explicitly when using newer syntax.
     pub fn new(name: impl Into<String>, steps: Vec<Step>, result: StepId) -> Self {
         Recipe {
             format: FORMAT.into(),
@@ -68,7 +71,7 @@ impl Recipe {
         let found = serde_json::from_str::<FormatOnly>(text)
             .map_err(parse)?
             .format;
-        if !matches!(found.as_deref(), Some(FORMAT | FORMAT_V4)) {
+        if !matches!(found.as_deref(), Some(FORMAT | FORMAT_V4 | FORMAT_V5)) {
             return Err(RecipeError::Format {
                 found: found.unwrap_or_default(),
             });
@@ -137,7 +140,7 @@ pub enum RecipeError {
         /// What the reader found, with its line and column.
         message: String,
     },
-    /// The format is not [`FORMAT`].
+    /// The format is not one of the supported recipe versions.
     Format {
         /// The format the text names, empty when it names none.
         found: String,
@@ -281,7 +284,7 @@ impl fmt::Display for RecipeError {
             RecipeError::Parse { message } => write!(f, "{message}"),
             RecipeError::Format { found } => write!(
                 f,
-                "format is {found:?}, expected {FORMAT:?} or {FORMAT_V4:?}"
+                "format is {found:?}, expected {FORMAT:?}, {FORMAT_V4:?} or {FORMAT_V5:?}"
             ),
             RecipeError::DuplicateStep { step } => write!(f, "two steps have the id {step}"),
             RecipeError::UnknownInput { step, input } => {

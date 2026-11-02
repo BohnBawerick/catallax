@@ -57,12 +57,7 @@ fn select(
         let mut found: Vec<_> = model
             .faces_of_body(body)
             .into_iter()
-            .filter(|f| {
-                model
-                    .face_origins(*f)
-                    .iter()
-                    .any(|o| reference.face.matches(o))
-            })
+            .filter(|f| reference.matches_origins(model.face_origins(*f)))
             .filter(|f| {
                 reference.touching.iter().all(|pattern| {
                     neighbours(model, *f)

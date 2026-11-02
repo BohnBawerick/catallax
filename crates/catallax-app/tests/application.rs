@@ -249,8 +249,9 @@ fn structural_selectors_convert_to_named_operations_with_exact_parameters() {
     };
     assert_eq!(thickness.value(), &Rational::parse("1/5").unwrap());
     assert_eq!(open.len(), 1);
-    assert_eq!(open[0].face.step, converted.steps["Body"]);
-    assert!(open[0].face.role.is_none() && open[0].touching.is_empty() && open[0].near.is_none());
+    let pattern = open[0].face.as_ref().unwrap();
+    assert_eq!(pattern.step, converted.steps["Body"]);
+    assert!(pattern.role.is_none() && open[0].touching.is_empty() && open[0].near.is_none());
 }
 
 #[test]
@@ -390,10 +391,7 @@ fn shell_all_faces_converts_for_each_allowed_family_and_keeps_source_errors_firs
         };
         assert_eq!(thickness.value(), &Rational::parse("1/5").unwrap());
         assert_eq!(open.len(), 1);
-        assert_eq!(open[0].face.step, converted.steps["Body"]);
-        assert!(
-            open[0].face.role.is_none() && open[0].touching.is_empty() && open[0].near.is_none()
-        );
+        assert_eq!(open[0], catallax_recipe::FaceRef::all());
     }
     for step in [
         json!({"id":"s","op":"shell","body":"Body","open_faces":"all","thickness":-1}),
@@ -460,20 +458,18 @@ fn disjoint_subtract_steps(open_faces: Value) -> Vec<Value> {
 }
 
 #[test]
-fn shell_all_faces_after_a_boolean_is_not_converted_instead_of_losing_a_face() {
-    // The subtraction is disjoint and keeps only Body, so a mandatory reference to
-    // Tool's faces would be lost. Without evaluating, no exact list exists.
+fn shell_all_faces_after_a_boolean_builds_empty_without_lost_ancestor_names() {
     for kind in ["subtract", "union"] {
         let mut steps = disjoint_subtract_steps(json!("all"));
         steps[4]["kind"] = kind.into();
-        assert!(
-            matches!(
-                convert(&recipe(steps, "Hollow")),
-                Err(ConversionError::NotYet { step, code: "features.unsupported-operation", .. })
-                    if step == "Hollow"
-            ),
-            "{kind}"
-        );
+        let result = build_soliddraft(
+            &recipe(steps, "Hollow"),
+            &MeshOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert!(result.body.display.value.triangles.is_empty(), "{kind}");
+        assert!(result.body.names.faces.is_empty(), "{kind}");
     }
 }
 
@@ -492,9 +488,8 @@ fn shell_created_by_a_vanished_producer_still_reports_the_lost_face() {
 }
 
 #[test]
-fn shell_all_faces_after_a_finishing_feature_is_not_converted_even_when_it_is_a_no_op() {
-    // An edgeless torus has nothing to round, so the fillet or chamfer returns it
-    // unchanged and makes no face of its own.
+fn shell_all_faces_after_an_edgeless_finishing_feature_builds_empty() {
+    // No finishing origin survives on an edgeless torus.
     for (op, key) in [("fillet", "radius"), ("chamfer", "distance")] {
         let steps = vec![
             json!({"id":"P","op":"profile","plane":"XY","circle":{"center":[3,0],"radius":1}}),
@@ -502,18 +497,14 @@ fn shell_all_faces_after_a_finishing_feature_is_not_converted_even_when_it_is_a_
             json!({"id":"Finish","op":op,"body":"Torus","edges":"all",key:0.1}),
             json!({"id":"Hollow","op":"shell","body":"Finish","open_faces":"all","thickness":0.2}),
         ];
-        assert!(
-            matches!(
-                build_soliddraft(
-                    &recipe(steps, "Hollow"),
-                    &MeshOptions::default(),
-                    &mut Decider::default()
-                ),
-                Err(Error::Conversion(ConversionError::NotYet { step, code: "features.unsupported-operation", .. }))
-                    if step == "Hollow"
-            ),
-            "{op}"
-        );
+        let result = build_soliddraft(
+            &recipe(steps, "Hollow"),
+            &MeshOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert!(result.body.display.value.triangles.is_empty(), "{op}");
+        assert!(result.body.names.faces.is_empty(), "{op}");
     }
 }
 

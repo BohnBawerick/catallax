@@ -126,7 +126,7 @@ impl CylinderSkin {
         for reference in refs {
             let candidates: Vec<_> = (0..3)
                 .filter(|i| {
-                    self.origins[*i].iter().any(|o| reference.face.matches(o))
+                    reference.matches_origins(&self.origins[*i])
                         && reference.touching.iter().all(|p| {
                             (0..3).any(|j| {
                                 j != *i

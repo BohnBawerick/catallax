@@ -1087,7 +1087,10 @@ impl Boundary {
         };
         let mut chosen: Vec<_> = (0..self.groups.len())
             .filter(|g| {
-                matches(*g, &reference.face)
+                reference
+                    .face
+                    .as_ref()
+                    .is_none_or(|pattern| matches(*g, pattern))
                     && reference.touching.iter().all(|pattern| {
                         self.touching[*g]
                             .iter()

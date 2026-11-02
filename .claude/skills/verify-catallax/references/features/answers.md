@@ -5,9 +5,9 @@ Build exact geometry or compare the two recipe evaluators without a wall-clock c
 ## Sub-features
 
 - `answer.question`: question/2 produces manifest/3 and requested STEP.
-- `answer.recipe`: recipe/3 and recipe/4 produce topology and STEP for implemented operations.
-- `answer.compare`: either recipe version produces a sampled comparison report.
-- `answer.field-display`: either recipe version produces the field's own `display.obj`, a proven two-sided boundary distance bound and `face_measurements.display.first_mesh_ms`. Unsupported features and charts refuse without B-rep fallback.
+- `answer.recipe`: recipe/3, recipe/4 and recipe/5 produce topology and STEP for implemented operations.
+- `answer.compare`: each accepted recipe version produces a sampled comparison report.
+- `answer.field-display`: each accepted recipe version produces the field's own `display.obj`, a proven two-sided boundary distance bound and `face_measurements.display.first_mesh_ms`. Unsupported features and charts refuse without B-rep fallback.
 - `answer.budget`: zero work refuses and leaves no STEP.
 - `answer.log`: each completed response records executed operations with decision settlement counts, marks, work, refusal codes and diagnostic timings.
 - `answer.export`: portable question/1 replays the original source and work allowance.

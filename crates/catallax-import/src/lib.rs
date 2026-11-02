@@ -11,6 +11,7 @@ pub use wire::*;
 mod build;
 mod consume;
 mod curved;
+mod deviation;
 mod exact;
 mod gap;
 mod intersect;

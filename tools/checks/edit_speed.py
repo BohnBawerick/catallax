@@ -17,7 +17,6 @@ TARGETS = {"bracket": {27: "edit_dimension", 43: "set_value"},
            "references": {17: "edit_extrude", 18: "edit_dimension"}}
 FILES = ("answer.step", "answer.txt", "display.obj", "mesh.txt",
          "names.txt", "stats.txt", "work.txt", "operations.txt")
-MEASURED_PAIRS = 9
 
 
 def load(path, name):
@@ -114,7 +113,7 @@ def run(args):
             step.pop("checked_step_export", None)
             step.pop("drawing", None)
         (scenarios / f"{name}.json").write_text(json.dumps(source, indent=2) + "\n")
-    for pair in range(MEASURED_PAIRS + 1):
+    for pair in range(4):
         order = ["baseline", "candidate"] if pair % 2 == 0 else ["candidate", "baseline"]
         for revision in order:
             sha = pins[revision == "candidate"]
@@ -180,13 +179,10 @@ def run(args):
                                     click_ms=statistics.median(s["click_ms"] for s in rows),
                                     kernel_ms=statistics.median(s["kernel_ms"] for s in rows),
                                     application_ms=statistics.median(s["click_ms"] - s["kernel_ms"] for s in rows),
-                                    split_ms={phase: statistics.median(s["split_ms"][phase] for s in rows)
-                                              for phase in ("edit", "display", "measurement")},
                                     certified_build_ms=statistics.median(s["certified"]["timing"]["build_ms"] for s in rows),
                                     certified_display_ms=statistics.median(s["certified"]["timing"]["display_ms"] for s in rows)))
     report = dict(base=pins[0], head=pins[1], soliddraft="04f45bf40c119d5387836173727a3905db094e4a",
-                  core=core, measured_pairs=MEASURED_PAIRS,
-                  binary_sha256={r: hashlib.sha256((args.binaries / r).read_bytes()).hexdigest()
+                  core=core, binary_sha256={r: hashlib.sha256((args.binaries / r).read_bytes()).hexdigest()
                                             for r in ("baseline", "candidate")},
                   comparison="identical application answers and native STEP, mesh, certificates, names, stats and work",
                   medians=medians, samples=samples)

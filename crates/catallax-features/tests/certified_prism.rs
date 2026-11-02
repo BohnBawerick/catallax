@@ -102,6 +102,84 @@ fn inward_offset_builds_one_valid_solid_with_complete_cap_exceptions_and_shared_
 }
 
 #[test]
+fn offset_constructor_returns_queryable_shared_rings_with_complete_certificate_scope() {
+    let certified = build(&recipe("-1/4", "4"));
+    let certificate = certified.result_certificate();
+    let spline = certificate.spline().unwrap();
+    let degrees = spline.carrier().degrees();
+    assert_ne!(
+        degrees[0], degrees[1],
+        "exercise a mixed-degree checked carrier"
+    );
+    let mut model = certified.built().model.clone();
+    let mut dec = Decider::default();
+    certificate
+        .verify_record(
+            &model,
+            certificate.record(),
+            certified.evidence(),
+            certified.decisions(),
+            &mut dec,
+        )
+        .expect("the complete returned body certificate must verify");
+    let faces = certificate.faces().unwrap();
+    for (i, coordinates) in [["27/20", "7/4", "9/5"], ["69/20", "7/4", "23/5"]]
+        .into_iter()
+        .enumerate()
+    {
+        let ring = certificate.rings().unwrap()[i];
+        let Curve::BSpline(curve) = model.geom().curve(model.edge(ring).curve) else {
+            panic!("constructor returned a non-spline ring");
+        };
+        let side = [
+            catallax_shapes::SplineBoundary::VMin,
+            catallax_shapes::SplineBoundary::VMax,
+        ][i];
+        assert!(curve.is_boundary_of(spline.carrier(), side));
+        let [x, y, z] = coordinates.map(|value| Real::from_rational(r(value)));
+        let expected = Point3::new(x, y, z);
+        let parameter = curve
+            .parameter_of(&expected, &mut dec)
+            .unwrap()
+            .expect("the returned ring must contain its exact cardinal point");
+        let returned = parameter.point(&dec).unwrap();
+        for (actual, expected) in [&returned.x, &returned.y, &returned.z].into_iter().zip([
+            &expected.x,
+            &expected.y,
+            &expected.z,
+        ]) {
+            assert!(dec.compare(actual, expected).is_coincident());
+        }
+        assert!(face_contains(&mut model, faces[i], &returned, &mut dec).unwrap());
+        assert!(face_contains(&mut model, faces[2], &returned, &mut dec).unwrap());
+        assert!(!face_contains(&mut model, faces[1 - i], &returned, &mut dec).unwrap());
+    }
+    // A support's fit bound cannot stand in for either cap's correspondence.
+    for face in faces {
+        let region = certificate.region_for_face(face).unwrap();
+        let mut incomplete = certificate.record().clone();
+        assert!(
+            incomplete
+                .regions
+                .remove(&region.identity.representation)
+                .is_some()
+        );
+        assert!(
+            certificate
+                .verify_record(
+                    &model,
+                    &incomplete,
+                    certified.evidence(),
+                    certified.decisions(),
+                    &mut dec,
+                )
+                .is_err(),
+            "removing any cap or side must invalidate the whole-body certificate"
+        );
+    }
+}
+
+#[test]
 fn a_structurally_valid_zero_error_forgery_cannot_authorize_the_fitted_body() {
     let certified = build(&recipe("-1/4", "4"));
     let certificate = certified.result_certificate();

@@ -224,3 +224,28 @@ cargo bench -p catallax-step --bench speed
 These direct measurements are supplemental. They do not turn an unconstructible
 blind intersection body into a pass. The comparison records all observed
 figures and the reference writer's missing certified fitting capability.
+
+### Rounded SolidDraft handoff
+
+The `rounded_step` development example builds the public P3 recipe with junction
+radius 2.5 and four radius-1 top rounds. It calls `write_step` with product
+`Part1`, a `1e-7` mm tolerance and otherwise default options. Build and export
+share a 20,000,000-work allowance. The timer covers only the writer, not recipe
+evaluation or artifact I/O.
+
+```sh
+cargo run --locked --release -p catallax-cli --example rounded_step -- /tmp/rounded-step-proof
+```
+
+The output directory retains STEP bytes, the complete answer including its
+certificate and marks, and request work. The hosted `rounded STEP speed` workflow
+compares these artifacts byte-for-byte between base and candidate. It pins both
+executables to one CPU, warms each once, then alternates their order over three
+measured pairs. Its artifact records every sample, load averages, exact commits
+and median writer times. Timing never decides geometric success.
+
+Stack sampling located repeated rational work in `fit::taylor_controls`. Its
+degree-seven conversion now reuses exact degree-only weights and computes each
+width power once per span. Interval accumulation, rounding and error checks are
+unchanged. This fixture uses exact public primitives, not a captured SolidDraft
+document, and does not establish a bracket-edit speedup.

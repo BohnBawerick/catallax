@@ -293,21 +293,31 @@ pub(crate) fn taylor_controls<const N: usize>(
     digits: u32,
     mut push: impl FnMut([number::Number; N], [[Rational; 2]; N]),
 ) {
-    let degree = coefficients.len() - 1;
-    for j in 0..=degree {
-        let mut control: [[Rational; 2]; N] =
-            std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
-        for (k, coefficient) in coefficients.iter().enumerate() {
-            let factor = (0..=k.min(j)).fold(Rational::zero(), |s, l| {
-                let term =
-                    Rational::from_ratio(binomial(k, l) * binomial(j, l), binomial(degree, l))
+    use std::sync::LazyLock;
+
+    // The centered Taylor-to-Bernstein weights depend only on the degree.
+    // Keep them exact; reusing them must not alter a control's enclosure.
+    static WEIGHTS: LazyLock<[[Rational; DEGREE + 1]; DEGREE + 1]> = LazyLock::new(|| {
+        std::array::from_fn(|j| {
+            std::array::from_fn(|k| {
+                (0..=k.min(j)).fold(Rational::zero(), |sum, l| {
+                    sum + Rational::from_ratio(binomial(k, l) * binomial(j, l), binomial(DEGREE, l))
                         .unwrap()
                         * Rational::from_ratio(-1, 2)
                             .unwrap()
                             .pow((k - l) as i32)
-                            .unwrap();
-                s + term
-            }) * width.pow(k as i32).unwrap();
+                            .unwrap()
+                })
+            })
+        })
+    });
+    assert_eq!(coefficients.len(), DEGREE + 1);
+    let powers: [Rational; DEGREE + 1] = std::array::from_fn(|k| width.pow(k as i32).unwrap());
+    for weights in WEIGHTS.iter() {
+        let mut control: [[Rational; 2]; N] =
+            std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
+        for (k, coefficient) in coefficients.iter().enumerate() {
+            let factor = &weights[k] * &powers[k];
             for i in 0..N {
                 let a = &coefficient[i].lo() * &factor;
                 let b = &coefficient[i].hi() * &factor;

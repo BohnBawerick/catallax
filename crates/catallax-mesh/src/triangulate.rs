@@ -20,13 +20,15 @@ use crate::{
 #[derive(Clone, Copy)]
 struct Node {
     uv: Point2<f64>,
+    // Where the triangulation sees this node. See `FaceBuilder::stretch`.
+    at: Point2<f64>,
     mesh: usize,
     error: usize,
 }
 impl HasPosition for Node {
     type Scalar = f64;
     fn position(&self) -> Point2<f64> {
-        self.uv
+        self.at
     }
 }
 type Cdt = ConstrainedDelaunayTriangulation<Node, (), (), (), HierarchyHintGenerator<f64>>;
@@ -34,6 +36,11 @@ type Cdt = ConstrainedDelaunayTriangulation<Node, (), (), (), HierarchyHintGener
 struct FaceBuilder<'a> {
     chart: &'a Chart,
     options: &'a MeshOptions,
+    // Scales `v` for the triangulation's own distances. A cylinder's `u` counts
+    // turns and its `v` millimetres, so without this Delaunay sees a large
+    // cylinder as squashed round its waist and joins points across it. Those
+    // long slivers stand up off the surface, and proofs still use `uv`.
+    stretch: f64,
     unproved: bool,
     positions: &'a mut Vec<[f64; 3]>,
     rails: &'a edges::Rails,
@@ -96,6 +103,7 @@ impl FaceBuilder<'_> {
         };
         Ok(Node {
             uv: Point2::new(uv[0], uv[1]),
+            at: self.place(uv),
             mesh,
             error,
         })
@@ -206,9 +214,12 @@ impl FaceBuilder<'_> {
         self.bulk_load(nodes)
     }
 
+    fn place(&self, uv: Uv) -> Point2<f64> {
+        Point2::new(uv[0], uv[1] * self.stretch)
+    }
+
     fn free_point(&mut self, uv: Uv) -> Result<bool, Refusal> {
-        let p = Point2::new(uv[0], uv[1]);
-        match self.cdt.locate(p) {
+        match self.cdt.locate(self.place(uv)) {
             PositionInTriangulation::OnVertex(_) => return Ok(false),
             PositionInTriangulation::OnEdge(e)
                 if self.cdt.is_constraint_edge(e.as_undirected()) =>
@@ -219,6 +230,39 @@ impl FaceBuilder<'_> {
         }
         self.insert(uv, None)?;
         Ok(true)
+    }
+
+    /// The same rule for a lattice of columns and rows, sorted, which the
+    /// triangulation sees through `stretch`.
+    fn encroached_lattice(
+        &self,
+        columns: &[f64],
+        rows: &[f64],
+    ) -> Result<BTreeSet<[u64; 2]>, Refusal> {
+        let mut protected = BTreeSet::new();
+        for edge in self.cdt.undirected_edges() {
+            self.dec.check_deadline()?;
+            if !edge.is_constraint_edge() {
+                continue;
+            }
+            let [a, b] = edge.positions();
+            let radius = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt() * 0.5;
+            let [x, y] = [(a.x + b.x) * 0.5, (a.y + b.y) * 0.5];
+            let first = columns.partition_point(|u| *u < x - radius);
+            for &u in columns[first..].iter().take_while(|u| **u <= x + radius) {
+                let low = rows.partition_point(|v| *v * self.stretch < y - radius);
+                for &v in rows[low..]
+                    .iter()
+                    .take_while(|v| **v * self.stretch <= y + radius)
+                {
+                    let at = v * self.stretch;
+                    if (u - a.x) * (u - b.x) + (at - a.y) * (at - b.y) < 0.0 {
+                        protected.insert(key([u, v]));
+                    }
+                }
+            }
+        }
+        Ok(protected)
     }
 
     /// Grid points strictly inside a boundary segment's diametral disk. A seed
@@ -318,6 +362,7 @@ impl FaceBuilder<'_> {
             .filter(|u| (0.0..1.0).contains(u))
             .collect();
         let mut kept = Vec::<f64>::new();
+        let mut empty_after = Vec::<bool>::new();
         let mut du = 0.0_f64;
         for (i, &u) in period.iter().enumerate() {
             let next = period.get(i + 1).copied();
@@ -332,7 +377,28 @@ impl FaceBuilder<'_> {
                     du = du.max((u - last).next_up());
                 }
                 kept.push(u);
+                empty_after.push(before_empty);
             }
+        }
+        // With no edge limit a gap between kept columns can be wider than the
+        // target, so free columns fill it evenly. The last gap wraps the period.
+        if self.edge_limit().is_none() {
+            let mut filled = Vec::with_capacity(kept.len());
+            du = 0.0;
+            for (i, &u) in kept.iter().enumerate() {
+                let next = kept.get(i + 1).copied().unwrap_or(kept[0] + 1.0);
+                let gap = next - u;
+                filled.push(u);
+                if empty_after[i] || (i + 1 == kept.len() && gap > widest_gap) {
+                    continue;
+                }
+                let parts = libm::ceil(gap / target).max(1.0);
+                for part in 1..parts as usize {
+                    filled.push(u + gap * part as f64 / parts);
+                }
+                du = du.max((gap / parts).next_up());
+            }
+            kept = filled;
         }
         let mut lifted: Vec<_> = self
             .shifts()
@@ -355,8 +421,17 @@ impl FaceBuilder<'_> {
                     .map(|pi| limit / &pi.hi().mul_pow2(1))
             })
             .transpose()?;
+        // Columns follow a cylinder's straight rulings, so a facet between two of
+        // them lies flat however long it is. A free grid staggers its points
+        // against a trim that runs along the rows, and its slivers stand up off
+        // the surface, where centroid refinement only makes them thinner.
+        let ruled = matches!(
+            self.chart.surface,
+            Surface::Cylinder(_) | Surface::EllipticCylinder(_)
+        ) && self.edge_limit().is_none()
+            && self.cdt.num_vertices() > 0;
         // No column gap inside a trim is wider than its widest boundary segment.
-        let widest_segment = self.edge_limit().map(|_| {
+        let widest_segment = (ruled || self.edge_limit().is_some()).then(|| {
             self.cdt
                 .undirected_edges()
                 .filter(|edge| edge.is_constraint_edge())
@@ -366,7 +441,8 @@ impl FaceBuilder<'_> {
                 })
                 .fold(0.0_f64, f64::max)
         });
-        let edge_rows = widest_segment.is_some_and(|du| !self.cylinder_cell_fits(du, widths[1]));
+        let edge_rows =
+            ruled || widest_segment.is_some_and(|du| !self.cylinder_cell_fits(du, widths[1]));
         let rail_grid = matches!(self.chart.surface, Surface::Cone(_))
             || (bounded_torus && angular_step.is_some())
             || edge_rows;
@@ -397,11 +473,12 @@ impl FaceBuilder<'_> {
         // The strict margin guarantees that the fixed longitude can meet both
         // controls. Sparse/partial trims retain the general two-dimensional grid.
         let align_rails = rail_du > 0.0
-            && chord_bound(&[[0.0, 0.0], [rail_du, 0.0]], &self.hessian)
-                <= self.options.chord_tolerance.mul_pow2(-2)
-            && angular_step
-                .as_ref()
-                .is_none_or(|step| chart::q(rail_du) <= step.mul_pow2(-1));
+            && (ruled
+                || chord_bound(&[[0.0, 0.0], [rail_du, 0.0]], &self.hessian)
+                    <= self.options.chord_tolerance.mul_pow2(-2)
+                    && angular_step
+                        .as_ref()
+                        .is_none_or(|step| chart::q(rail_du) <= step.mul_pow2(-1)));
         if !align_rails {
             rail_u.clear();
         }
@@ -449,7 +526,14 @@ impl FaceBuilder<'_> {
             } else {
                 (true, 0)
             };
-            let edge_reached = !edge_rows || self.cylinder_cell_fits(du, dv);
+            // Rows as far apart as columns keep a lattice, whose every triangle
+            // spans one column, and leave Delaunay nothing to stagger.
+            let around = self.hessian[0].to_f64_nearest() * du / std::f64::consts::TAU;
+            let edge_reached = if ruled {
+                dv <= around || around <= 0.0
+            } else {
+                !edge_rows || self.cylinder_cell_fits(du, dv)
+            };
             if chord_reached && angular_reached && edge_reached {
                 break;
             }
@@ -509,6 +593,11 @@ impl FaceBuilder<'_> {
         };
         let protected = if self.chart.great_circle_sector {
             self.encroaching_seeds(ranges, counts, parameter)?
+        } else if ruled && align_rails {
+            let rows: Vec<_> = (ranges[1].0..=ranges[1].1)
+                .map(|j| parameter(1, j))
+                .collect();
+            self.encroached_lattice(&rail_u, &rows)?
         } else {
             BTreeSet::new()
         };
@@ -537,7 +626,7 @@ impl FaceBuilder<'_> {
                 // Query the fixed boundary triangulation before bulk loading.
                 // A new point on a rail would split only this face's constraint
                 // and destroy the shared polyline on its adjacent face.
-                match self.cdt.locate(Point2::new(uv[0], uv[1])) {
+                match self.cdt.locate(self.place(uv)) {
                     PositionInTriangulation::OnVertex(_) => continue,
                     PositionInTriangulation::OnEdge(edge)
                         if self.cdt.is_constraint_edge(edge.as_undirected()) =>
@@ -685,7 +774,7 @@ impl FaceBuilder<'_> {
                 if !labels[triangle.index()] {
                     continue;
                 }
-                let uv = triangle.positions().map(|p| [p.x, p.y]);
+                let uv = triangle.vertices().map(|v| [v.data().uv.x, v.data().uv.y]);
                 let center = std::array::from_fn(|i| (uv[0][i] + uv[1][i] + uv[2][i]) / 3.0);
                 if !self.central(center) {
                     continue;
@@ -744,8 +833,8 @@ impl FaceBuilder<'_> {
                         .into_iter()
                         .filter(|edge| !edge.is_constraint_edge())
                         .map(|edge| {
-                            let a = edge.from().position();
-                            let b = edge.to().position();
+                            let a = edge.from().data().uv;
+                            let b = edge.to().data().uv;
                             let span = (a.x - b.x).abs()
                                 + if self.chart.periodic[1] {
                                     (a.y - b.y).abs()
@@ -954,6 +1043,19 @@ impl FaceBuilder<'_> {
     }
 }
 
+// One turn of a cylinder measures `hessian[0] / TAU`, so `v` divided by that is
+// in turns as well.
+fn stretch(chart: &Chart, hessian: &[Rational; 3]) -> f64 {
+    if matches!(
+        chart.surface,
+        Surface::Cylinder(_) | Surface::EllipticCylinder(_)
+    ) {
+        std::f64::consts::TAU / hessian[0].to_f64_nearest()
+    } else {
+        1.0
+    }
+}
+
 fn face_mesh(
     model: &Model,
     face_id: FaceId,
@@ -1021,6 +1123,7 @@ fn face_mesh(
     let mut builder = FaceBuilder {
         chart,
         options,
+        stretch: stretch(chart, &hessian),
         unproved: false,
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,
@@ -1576,6 +1679,7 @@ pub(crate) fn build_preview(
         let mut builder = FaceBuilder {
             chart,
             options: &options,
+            stretch: stretch(chart, &hessian),
             unproved: true,
             positions: &mut boundaries.mesh.positions,
             rails: &rails,

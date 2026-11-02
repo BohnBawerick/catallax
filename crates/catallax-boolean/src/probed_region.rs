@@ -115,6 +115,11 @@ fn first_hit(
     for &(edge_id, use_sense) in edges {
         let edge = model.edge(edge_id).clone();
         let (from, to) = natural_ends(model, edge_id);
+        // A spline carrier has no equations to solve against the probe, so its
+        // face goes to the winding of the traced boundary.
+        if matches!(model.geom().curve(edge.curve), Curve::BSpline(_)) {
+            return Ok(None);
+        }
         let hits = if line {
             // A generator already lies on the face. Intersect that line with
             // the boundary carrier instead of solving the branch against the

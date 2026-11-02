@@ -117,6 +117,20 @@ fn oblique(kind: &str, radius: &str) -> Recipe {
     )
 }
 
+/// A tee of two cylinders with nonparallel axes, off centre.
+fn ring(kind: &str, radius: &str) -> Recipe {
+    finish(
+        vec![
+            json!({"id":"wide","op":"cylinder","radius":"10","height":"24",
+                "pose":{"rotation":["1","1","0","0"],"translation":["0","20","0"]}}),
+            json!({"id":"wall","op":"cylinder","radius":"4","height":"20",
+                "pose":{"rotation":["3","-1","0","0"],"translation":["1","0","0"]}}),
+            json!({"id":"joined","op":"boolean","kind":kind,"target":"wide","tool":"wall"}),
+        ],
+        radius,
+        json!([wall("wide"), wall("wall")]),
+    )
+}
 fn assert_closed(case: &str, mesh: &Mesh, options: &MeshOptions) {
     let mut incidence = BTreeMap::<_, (usize, i32)>::new();
     for triangle in &mesh.triangles {
@@ -167,6 +181,55 @@ fn diagonal(mesh: &Mesh) -> f64 {
     (0..3).map(|axis| extent(axis).powi(2)).sum::<f64>().sqrt()
 }
 
+// The trim on a large cylinder used to send its refinement round the waist until
+// the face ran out of vertices, with or without a fillet.
+#[test]
+fn a_branch_on_a_pipe_meshes_with_flat_facets() {
+    let tee = Recipe::parse(
+        &json!({"format":"catallax-recipe/3","name":"tee","steps":[
+            {"id":"wide","op":"cylinder","radius":"10","height":"24",
+                "pose":{"rotation":["1","1","0","0"],"translation":["0","20","0"]}},
+            {"id":"wall","op":"cylinder","radius":"4","height":"20",
+                "pose":{"rotation":["3","-1","0","0"],"translation":["1","0","0"]}},
+            {"id":"joined","op":"boolean","kind":"union","target":"wide","tool":"wall"}
+        ],"result":"joined"})
+        .to_string(),
+    )
+    .unwrap();
+    for chord in ["1/8", "1/32", "1/100"] {
+        let options = MeshOptions {
+            chord_tolerance: Rational::parse(chord).unwrap(),
+            angular_deviation: Some(Rational::parse("0.2617993877991494").unwrap()),
+            ..MeshOptions::default()
+        };
+        let body = catallax_app::build(&tee, &options, &mut Decider::default()).unwrap();
+        let mesh = &body.display.value;
+        assert_closed(chord, mesh, &options);
+        assert!(mesh.triangles.len() < 100_000, "{}", mesh.triangles.len());
+        // Slivers stand up off the surface, and their area gives them away.
+        let area: f64 = mesh
+            .triangles
+            .iter()
+            .map(|triangle| {
+                let [a, b, c] = triangle.vertices.map(|v| mesh.positions[v]);
+                let [u, v]: [[f64; 3]; 2] = [
+                    std::array::from_fn(|i| b[i] - a[i]),
+                    std::array::from_fn(|i| c[i] - a[i]),
+                ];
+                let n = [
+                    u[1] * v[2] - u[2] * v[1],
+                    u[2] * v[0] - u[0] * v[2],
+                    u[0] * v[1] - u[1] * v[0],
+                ];
+                n.iter().map(|x| x * x).sum::<f64>().sqrt() / 2.0
+            })
+            .sum();
+        // The two cylinders' whole walls and three end discs bound the surface.
+        let bound = std::f64::consts::TAU * (10.0 * 24.0 + 4.0 * 20.0 + 100.0 + 8.0);
+        assert!(area < bound, "{area}");
+    }
+}
+
 #[test]
 fn generator_fillets_stay_closed_at_every_viewport_level() {
     for (kind, recipe) in [
@@ -180,6 +243,8 @@ fn generator_fillets_stay_closed_at_every_viewport_level() {
         ("oblique rim", oblique("subtract", "1")),
         ("oblique boss", oblique("union", "1")),
         ("oblique bore", oblique("bore", "1")),
+        ("ring boss", ring("union", "1")),
+        ("ring bore", ring("subtract", "1")),
     ] {
         let default = MeshOptions::default();
         let body = catallax_app::build(&recipe, &default, &mut Decider::default()).unwrap();

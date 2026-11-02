@@ -278,6 +278,43 @@ def phases(args):
     print(json.dumps(report, indent=2))
 
 
+def check_profile_answer(source, dest):
+    for name in FILES:
+        assert (dest / "answer" / name).read_bytes() == (source.parent / name).read_bytes(), \
+            f"profiling changed an exact answer, certificate, statistic or work: {dest} {name}"
+
+
+def capture_cpu_profile(binary, source, dest):
+    # Use the installed tool directly: Ubuntu's /usr/bin/perf wrapper requires
+    # a package matching the hosted VM's exact kernel, unlike the perf ABI.
+    perf = next(path for path in sorted(Path("/usr/lib/linux-tools").glob("*/perf"))
+                if path.is_file())
+    dest.mkdir(parents=True)
+    metadata = dict(tool=str(perf), version=subprocess.check_output(
+        [str(perf), "--version"], text=True).strip(), frequency=997, stack_bytes=16384,
+        metric="Sampled user CPU-clock periods; not instrumented elapsed time",
+        core=min(os.sched_getaffinity(0)), load_average=os.getloadavg())
+    for repetition in range(5):
+        capture = dest / str(repetition)
+        capture.mkdir()
+        with (capture / "probe.stdout").open("w") as stdout, \
+                (capture / "record.log").open("w") as stderr:
+            subprocess.run(["sudo", "-n", str(perf), "record", "-e", "cpu-clock:u",
+                            "-F", "997", "--call-graph", "dwarf,16384",
+                            "-o", str(capture / "perf.data"), "--",
+                            str(binary), str(source), str(capture / "answer")],
+                           stdout=stdout, stderr=stderr, check=True)
+        with (capture / "stacks.txt").open("w") as stdout, \
+                (capture / "decode.log").open("w") as stderr:
+            subprocess.run(["sudo", "-n", str(perf), "script", "--demangle", "--inline",
+                            "--ns", "-F", "+period", "-i", str(capture / "perf.data")],
+                           stdout=stdout, stderr=stderr, check=True)
+        assert "catallax_boolean" in (capture / "stacks.txt").read_text(), \
+            "CPU samples did not resolve Boolean call stacks"
+        check_profile_answer(source, capture)
+    (dest / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+
+
 def capture_profile(binary, source, dest, options=()):
     dest.mkdir(parents=True)
     with (dest / "instrumented.stdout").open("w") as stdout, \
@@ -290,9 +327,7 @@ def capture_profile(binary, source, dest, options=()):
         subprocess.run(["callgrind_annotate", "--inclusive=yes", "--tree=both",
                         "--auto=no", "--threshold=99", str(dest / "callgrind.out")],
                        stdout=stdout, check=True)
-    for name in FILES:
-        assert (dest / "answer" / name).read_bytes() == (source.parent / name).read_bytes(), \
-            f"profiling changed an exact answer, certificate, statistic or work: {dest} {name}"
+    check_profile_answer(source, dest)
 
 
 def profile(args):
@@ -316,6 +351,7 @@ def profile(args):
                 metadata["non_carrier"] = dict(
                     included=[functions[0], functions[2]], excluded=[functions[1]],
                     scope="Rest of intersect plus imprint; carrier collection toggles off/on")
+                capture_cpu_profile(binary, source, args.out / "profiles/cpu/bracket/0027")
             metadata.setdefault("inputs", []).append(dict(
                 scenario=name, step=number, sha256=hashlib.sha256(source.read_bytes()).hexdigest()))
     (args.out / "profiles/metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")

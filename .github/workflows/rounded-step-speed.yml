@@ -112,7 +112,7 @@ jobs:
       - name: Prepare the released application's software viewport
         run: |
           sudo apt-get -o Acquire::Retries=2 update
-          sudo apt-get -o Acquire::Retries=2 install -y --no-install-recommends mesa-vulkan-drivers valgrind
+          sudo apt-get -o Acquire::Retries=2 install -y --no-install-recommends mesa-vulkan-drivers valgrind linux-tools-generic
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
       - name: Build identical native probes and the two application executables
@@ -128,7 +128,7 @@ jobs:
       - name: Measure captured native Boolean phases independently
         run: |
           python3 candidate/tools/checks/edit_speed.py phases --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
-      - name: Attribute native Boolean and certified display instruction costs
+      - name: Attribute native CPU ownership and instruction costs
         run: |
           python3 candidate/tools/checks/edit_speed.py profile --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
       - uses: actions/upload-artifact@v4

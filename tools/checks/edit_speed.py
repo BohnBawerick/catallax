@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -290,13 +291,16 @@ def capture_cpu_profile(binary, source, dest):
     perf = next(path for path in sorted(Path("/usr/lib/linux-tools").glob("*/perf"))
                 if path.is_file())
     dest.mkdir(parents=True)
+    shutil.copyfile(binary, dest / "edit_answer")
     metadata = dict(tool=str(perf), version=subprocess.check_output(
         [str(perf), "--version"], text=True).strip(), frequency=997, stack_bytes=16384,
         metric="Sampled user CPU-clock periods; not instrumented elapsed time",
         core=min(os.sched_getaffinity(0)), load_average=os.getloadavg())
+    metadata["inline_expansion"] = False
     for repetition in range(5):
         capture = dest / str(repetition)
         capture.mkdir()
+        print(f"CPU capture {repetition}: recording native probe", flush=True)
         with (capture / "probe.stdout").open("w") as stdout, \
                 (capture / "record.log").open("w") as stderr:
             subprocess.run(["sudo", "-n", str(perf), "record", "-e", "cpu-clock:u",
@@ -304,9 +308,10 @@ def capture_cpu_profile(binary, source, dest):
                             "-o", str(capture / "perf.data"), "--",
                             str(binary), str(source), str(capture / "answer")],
                            stdout=stdout, stderr=stderr, check=True)
+        print(f"CPU capture {repetition}: resolving DWARF call chains", flush=True)
         with (capture / "stacks.txt").open("w") as stdout, \
                 (capture / "decode.log").open("w") as stderr:
-            subprocess.run(["sudo", "-n", str(perf), "script", "--demangle", "--inline",
+            subprocess.run(["sudo", "-n", str(perf), "script", "--demangle", "--no-inline",
                             "--ns", "-F", "+period", "-i", str(capture / "perf.data")],
                            stdout=stdout, stderr=stderr, check=True)
         assert "catallax_boolean" in (capture / "stacks.txt").read_text(), \

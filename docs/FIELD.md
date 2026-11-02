@@ -457,6 +457,14 @@ and historical source-domain predicates. Coplanar names keep their distinct
 finite regions. No B-rep topology or display triangles enter this proof.
 This replaces the previous separated-through-bore cap specialization.
 
+The field reconstructs complete finite regions only on demand. Before that
+work, an existing admitted witness at distance at most the requested width
+already supplies a complete enclosure from zero to that distance. Otherwise
+the finite-region minimum or general search proceeds. Successful finite-region
+proofs are cached for the prepared plan; numeric failures remain retryable.
+Reconstruction uses the caller's decider and operation allowance. It does not
+spend work on unused planar faces during ordinary domain preparation.
+
 Straight-edge planar face pairs test finite vertex-to-face minima, segment-plane
 crossings and interior segment-to-segment minima. Disjoint coplanar patches
 therefore have their finite gap, not zero. Circular-arc face pairs retain the

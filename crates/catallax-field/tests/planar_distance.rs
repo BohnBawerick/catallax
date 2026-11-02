@@ -161,3 +161,49 @@ fn named_coplanar_face_pairs_measure_the_finite_gap_between_disjoint_bodies() {
         );
     }
 }
+
+#[test]
+fn an_exhausted_finite_region_query_does_not_poison_prepared_faces() {
+    let plan = build(vec![
+        json!({"id":"stock","op":"block","size":["1","1","1"],"pose":pose()}),
+    ]);
+    let ids = [Role::Start, Role::End].map(|role| {
+        let face = plan
+            .faces()
+            .iter()
+            .find(|face| face.origin.role == role)
+            .unwrap();
+        plan.select(&face.origin).unwrap()
+    });
+    let prepared = plan.prepare_distances(&mut Decider::default()).unwrap();
+    let controls = Options {
+        width: Rational::parse("1e-8").unwrap(),
+        max_cells: 1,
+    };
+    let (failed, work) = with_operation_budget(0, || {
+        prepared.face_to_face(ids[0], ids[1], &controls, &mut Decider::default())
+    });
+    assert!(work.exhausted);
+    assert_eq!(failed.unwrap_err().code, "numbers.operation-budget");
+    let (answer, work) = with_operation_budget(100_000_000, || {
+        prepared
+            .face_to_face(ids[0], ids[1], &controls, &mut Decider::default())
+            .unwrap()
+    });
+    assert!(!work.exhausted, "{work:?}");
+    assert_eq!(answer.lower, Rational::one());
+    assert_eq!(answer.upper, Some(Rational::one()));
+    for (id, witness) in ids.into_iter().zip(answer.witnesses.unwrap()) {
+        assert_eq!(
+            plan.closed_face_query_checked(
+                id,
+                &witness.as_rational().unwrap(),
+                &mut Workspace::default(),
+                &mut Decider::default()
+            )
+            .unwrap()
+            .state,
+            FaceState::OnFace
+        );
+    }
+}

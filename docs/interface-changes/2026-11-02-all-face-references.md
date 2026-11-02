@@ -8,6 +8,8 @@ Migration: version 4 files migrate by explicitly changing `format` to `catallax-
 
 The legacy SolidDraft converter emits version 5 only when shell `open_faces: "all"` needs the new form. It writes `open: [{}]`, not references to every ancestor. This removes the structural-conversion refusal after booleans or finishing operations. Geometry coverage does not expand. A named `created_by` reference to a consumed producer still fails.
 
+The independent through-bore field-shell construction also uses the optional origin filter. Unfiltered all-faces openings return the empty field, matching the B-rep result; selecting a bore wall for a nonempty shell retains its existing refusal.
+
 ### What SolidDraft must do
 
 - Pin the merged Catallax change and accept/save version 5 in native recipe storage and requests. Keep older saved versions until an explicit migration.
@@ -19,5 +21,5 @@ The legacy SolidDraft converter emits version 5 only when shell `open_faces: "al
 ### Next slices, in order
 
 1. SolidDraft native version-5 storage migration and all-faces picker acceptance.
-2. Independent through-bore field shells and complete trimmed planar meeting arrangements.
+2. Complete trimmed planar meeting arrangements and other shell openings.
 3. Trimmed analytic and spline offset envelopes with matching shell and thicken domains.

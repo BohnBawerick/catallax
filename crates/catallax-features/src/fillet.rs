@@ -3,8 +3,8 @@
 use catallax_numbers::{Decider, OperationSpan, Real, Refusal, Sign};
 use catallax_recipe::{Origin, StepId};
 use catallax_shapes::{
-    Circle, Curve, Cylinder, Ellipse, Isometry, Line, Plane, Point3, RollingPipe, SplineSupport,
-    Surface, Torus, TorusSheet, Vector3,
+    BallSide, Circle, Curve, Cylinder, Ellipse, Isometry, Line, Plane, Point3, RollingPipe,
+    RollingSaddle, RollingSaddleDefinition, SplineSupport, Surface, Torus, TorusSheet, Vector3,
 };
 
 use crate::profile::sign;
@@ -21,7 +21,10 @@ pub struct FilletDefinition {
     pub supports: [Surface; 2],
     /// Whether each input face follows its support's natural normal.
     pub same_sense: [bool; 2],
-    /// The selected input edge carrier, not the ball-centre path.
+    /// The selected input edge carrier, not the ball-centre path. A ring between
+    /// two curved supports keeps its intersection curve, whose ids name the ring
+    /// in the store it came from: moved copies carry their geometry in `supports`
+    /// and `surface`.
     pub edge: Curve,
     /// Positive rolling radius in millimetres.
     pub radius: Real,
@@ -175,11 +178,61 @@ impl FilletDefinition {
             contacts,
         })
     }
+    /// The strip on the ring where two nonparallel cylinders cross, the ring
+    /// through `witness`. The narrow cylinder must pass cleanly through the wide
+    /// one. Contacts are spline rails in the carrier's chart direction.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ring(
+        origin: Origin,
+        supports: [Surface; 2],
+        same_sense: [bool; 2],
+        edge: Curve,
+        witness: &Point3,
+        radius: Real,
+        convex: bool,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if sign(&radius, dec)? != Sign::Positive {
+            return Err(Refusal::new(
+                "fillet.non-positive-radius",
+                "fillet radius must be positive",
+            ));
+        }
+        let (Surface::Cylinder(first), Surface::Cylinder(second), Curve::Intersection(_)) =
+            (&supports[0], &supports[1], &edge)
+        else {
+            return Err(bad("a ring strip needs an intersection of two cylinders"));
+        };
+        let (surface, contacts) = saddle(
+            first,
+            second,
+            same_sense,
+            witness,
+            &radius,
+            convex,
+            &origin.step,
+            dec,
+        )?;
+        Ok(Self {
+            origin,
+            supports,
+            same_sense,
+            edge,
+            radius,
+            convex,
+            surface,
+            contacts,
+        })
+    }
+
     /// Moves the retained definition and its exact reduction through an isometry.
     pub fn transform(&mut self, map: &Isometry) -> Result<(), Refusal> {
-        let edge = map
-            .curve(&self.edge)
-            .ok_or_else(|| bad("edge has no exact isometry"))?;
+        let edge = match &self.edge {
+            Curve::Intersection(_) => self.edge.clone(),
+            edge => map
+                .curve(edge)
+                .ok_or_else(|| bad("edge has no exact isometry"))?,
+        };
         let a = map
             .curve(&self.contacts[0])
             .ok_or_else(|| bad("contact has no exact isometry"))?;
@@ -361,6 +414,67 @@ fn oblique(
     Ok((Surface::BSpline(SplineSupport::RollingPipe(pipe)), rails))
 }
 
+// The ball's side of a cylinder: a convex edge puts it in the material, and a
+// face in the sense of the cylinder's normal has its material inside.
+fn ball_side(same_sense: bool, convex: bool) -> BallSide {
+    if same_sense == convex {
+        BallSide::Inside
+    } else {
+        BallSide::Outside
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn saddle(
+    first: &Cylinder,
+    second: &Cylinder,
+    same: [bool; 2],
+    witness: &Point3,
+    radius: &Real,
+    convex: bool,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<(Surface, [Curve; 2]), Refusal> {
+    let unsupported = |refusal: Refusal| {
+        if refusal.code == "shapes.rolling-saddle" {
+            bad(&refusal.detail)
+        } else {
+            refusal
+        }
+    };
+    let first_wide = sign(&(&first.radius_sq - &second.radius_sq), dec)? != Sign::Negative;
+    let ([wide, narrow], sides) = if first_wide {
+        ([first, second], [same[0], same[1]])
+    } else {
+        ([second, first], [same[1], same[0]])
+    };
+    // The law builds its carrier's sections along with its contacts.
+    let contact_span = OperationSpan::begin("brep", step, "fillet.contact", dec);
+    let definition = RollingSaddleDefinition::through(
+        wide,
+        narrow,
+        radius,
+        sides.map(|same| ball_side(same, convex)),
+        witness,
+        dec,
+    )
+    .map_err(unsupported)?;
+    contact_span.finish(dec, None, None);
+    let fitting_span = OperationSpan::begin("brep", step, "fillet.fitting", dec);
+    let saddle = RollingSaddle::fit(definition, dec).map_err(unsupported)?;
+    fitting_span.finish(dec, None, None);
+    let [rail_wide, rail_narrow] = saddle.rails().map(Curve::BSpline);
+    let rails = if first_wide {
+        [rail_wide, rail_narrow]
+    } else {
+        [rail_narrow, rail_wide]
+    };
+    Ok((
+        Surface::BSpline(SplineSupport::RollingSaddle(saddle)),
+        rails,
+    ))
+}
+
 fn plane_cylinder(
     plane: &catallax_shapes::Plane,
     cylinder: &Cylinder,
@@ -485,6 +599,10 @@ fn bounds(
             let axial = component(axis);
             let radial = (Real::one() - axial.square() / axis.norm_squared()).sqrt();
             (coordinate(center), &(major * &radial) + minor)
+        }
+        Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
+            let [low, high] = saddle.extent(axis, dec)?;
+            return Ok(Some((Real::from(low), Real::from(high))));
         }
         _ => return Ok(None),
     };

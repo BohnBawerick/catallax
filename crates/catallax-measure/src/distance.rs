@@ -9,6 +9,8 @@ use catallax_shapes::{
 use catallax_topology::{FaceId, Loop, Model, Sense};
 use std::cell::RefCell;
 
+mod planar;
+
 /// Dyadic probe levels of the parallel planar witness search: at most 85 points.
 const PLANAR_LEVELS: u32 = 3;
 
@@ -20,6 +22,7 @@ pub struct PreparedFace {
     domain: Domain,
     boundary: Vec<[Ball; 3]>,
     finite: Option<Finite>,
+    planar: Option<distance::PlanarBoundary>,
 }
 fn marked() -> Refusal {
     Refusal::new(
@@ -96,6 +99,7 @@ impl PreparedFace {
             domain,
             boundary,
             finite,
+            planar: planar::boundary(model, face, dec)?,
         })
     }
     /// Recognizes complete circular cylinder/disc, oriented spherical or conical
@@ -174,6 +178,9 @@ impl PreparedFace {
         options: &Options,
         dec: &mut Decider,
     ) -> Result<Bounds, Refusal> {
+        if let Some(planar) = &self.planar {
+            return planar.point_distance(p, options, dec);
+        }
         if let Some(finite) = &self.finite
             && let Some((bounds, _)) = finite.point_distance(p, options, dec)?
         {
@@ -195,6 +202,11 @@ impl PreparedFace {
         options: &Options,
         dec: &mut Decider,
     ) -> Result<Bounds, Refusal> {
+        if let (Some(a), Some(b)) = (&self.planar, &other.planar)
+            && let Some(answer) = a.face_distance(b, options, dec)?
+        {
+            return Ok(answer);
+        }
         let model = RefCell::new(model);
         distance::face_distance(
             &self.domain,

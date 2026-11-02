@@ -33,8 +33,8 @@
 use crate::rational_sheet::{LocalFrame, Patch, cover, split_net};
 use crate::rolling_envelope::{Jet, combine, cubic, elevate, hermite, product};
 use crate::{
-    BSplineCurve, BSplineSurface, Cylinder, EnvelopeGrid, Isometry, Point3, Pose, SplineBoundary,
-    Vector3, math,
+    BSplineCurve, BSplineSurface, Cylinder, EnvelopeGrid, Isometry, Plane, Point3, Pose,
+    SplineBoundary, Vector3, math,
 };
 use catallax_numbers::{Ball, Decider, EvidenceBound, EvidenceUnit, Rational, Real, Refusal, Sign};
 use std::sync::{Arc, Mutex};
@@ -203,6 +203,47 @@ impl RollingSaddleDefinition {
             sides: sides.map(BallSide::sign),
             branch: if leaving { 1 } else { -1 },
         })
+    }
+
+    /// The ring through a point of both cylinders, under the checks of
+    /// [`Self::new`]. A regular ring never reaches the plane through the wide
+    /// axis and the common perpendicular, so the point's side of it names the ring.
+    pub fn through(
+        wide: &Cylinder,
+        narrow: &Cylinder,
+        radius: &Real,
+        sides: [BallSide; 2],
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let definition = Self::new(wide, narrow, radius, sides, true, dec)?;
+        let [_, y, _] = definition.local(point);
+        match math::sign(&y, dec)? {
+            Sign::Positive => Ok(definition),
+            Sign::Negative => Ok(Self {
+                branch: -1,
+                ..definition
+            }),
+            Sign::Zero => Err(invalid("the point is not on a regular ring")),
+        }
+    }
+
+    /// Whether a tangent at a point near the ring turns the way the chart runs:
+    /// counter-clockwise about the narrow axis, which is the sense of a growing
+    /// `u`. A regular ring turns one way round that axis throughout, so one
+    /// tangent decides the direction of a whole ring.
+    pub fn runs_with_chart(
+        &self,
+        point: &Point3,
+        tangent: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let turn = self.narrow_axis().cross(&self.radial(1, point));
+        match math::sign(&turn.dot(tangent), dec)? {
+            Sign::Positive => Ok(true),
+            Sign::Negative => Ok(false),
+            Sign::Zero => Err(invalid("the tangent does not turn round the narrow axis")),
+        }
     }
 
     fn mapped(&self, pose: &Isometry) -> Self {
@@ -1141,6 +1182,32 @@ impl RollingSaddle {
         Err(unresolved(
             "a point is within the carrier's enclosure width",
         ))
+    }
+
+    /// Whether every control of the carrier lies strictly on one side of a
+    /// plane, which keeps the whole band off that plane.
+    pub fn clear_of(&self, plane: &Plane, dec: &mut Decider) -> Result<bool, Refusal> {
+        let mut side = None;
+        for control in self.data.carrier.controls() {
+            let value = math::sign(&control.minus(&plane.origin).dot(&plane.normal), dec)?;
+            if value == Sign::Zero || side.replace(value).is_some_and(|last| last != value) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Bounds of the carrier along a world coordinate, from its control hull.
+    pub fn extent(&self, axis: usize, dec: &mut Decider) -> Result<[Rational; 2], Refusal> {
+        let mut range: Option<[Rational; 2]> = None;
+        for (control, _) in self.query_controls(dec)? {
+            let [lo, hi] = [control[axis].lo(), control[axis].hi()];
+            range = Some(match range {
+                None => [lo, hi],
+                Some([low, high]) => [low.min(lo), high.max(hi)],
+            });
+        }
+        range.ok_or_else(|| unresolved("a saddle has controls"))
     }
 
     /// Grid with `chord` at most `tolerance`, cached per tolerance on the net.

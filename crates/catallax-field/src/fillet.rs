@@ -596,7 +596,13 @@ fn region(
         match (&definition.edge, &definition.surface, &definition.contacts) {
             (Curve::Line(edge), Surface::Cylinder(c), [Curve::Line(a), Curve::Line(b)]) => {
                 let z = unit(&edge.dir);
-                let x = unit(&a.origin.minus(&edge.origin));
+                // A planar rail keeps the section frame rational. A rail on a
+                // cylinder can sit an irrational distance from the edge.
+                let flat = match &definition.supports[0] {
+                    Surface::Cylinder(_) => b,
+                    _ => a,
+                };
+                let x = unit(&flat.origin.minus(&edge.origin));
                 let y = z.cross(&x);
                 let [start, _] = interval
                     .as_ref()
@@ -640,6 +646,20 @@ fn region(
         let d = p.minus(&origin);
         Ok([q(&d.dot(&x))?, q(&d.dot(&y))?])
     };
+    // The support curves between the edge and each contact. An arc centre is
+    // the support axis in this section.
+    let walls = match definition.supports.each_ref().map(|support| match support {
+        Surface::Cylinder(c) if sweep.is_none() => {
+            let foot = c.origin.plus(
+                &c.axis
+                    .scaled(&(origin.minus(&c.origin).dot(&c.axis) / c.axis.norm_squared())),
+            );
+            local(&foot).map(Some)
+        }
+        _ => Ok(None),
+    }) {
+        [a, b] => [a?, b?],
+    };
     let e = local(&e)?;
     let a = local(&a)?;
     let b = local(&b)?;
@@ -651,23 +671,42 @@ fn region(
     } else {
         Turn::Cw
     };
-    let id = |s| ElementId::new(s).expect("fixed section id");
+    let id = |s: &str| ElementId::new(s).expect("fixed section id");
     let p2 = |p: [Rational; 2]| catallax_recipe::Point2(p.map(number));
+    let wall = |name: &'static str,
+                centre: &Option<[Rational; 2]>,
+                from: &[Rational; 2],
+                to: [Rational; 2]| {
+        match centre {
+            None => catallax_recipe::Segment::Line {
+                id: id(name),
+                to: p2(to),
+            },
+            Some(centre) => {
+                let start = [&from[0] - &centre[0], &from[1] - &centre[1]];
+                let end = [&to[0] - &centre[0], &to[1] - &centre[1]];
+                catallax_recipe::Segment::Arc {
+                    id: id(name),
+                    centre: p2(centre.clone()),
+                    to: p2(to),
+                    turn: if (&start[0] * &end[1] - &start[1] * &end[0]).sign() == Sign::Positive {
+                        Turn::Ccw
+                    } else {
+                        Turn::Cw
+                    },
+                }
+            }
+        }
+    };
     let loops = vec![catallax_recipe::Loop(vec![
-        catallax_recipe::Segment::Line {
-            id: id("a"),
-            to: p2(a),
-        },
+        wall("a", &walls[0], &e, a.clone()),
         catallax_recipe::Segment::Arc {
             id: id("blend"),
             centre: p2(centre),
-            to: p2(b),
+            to: p2(b.clone()),
             turn,
         },
-        catallax_recipe::Segment::Line {
-            id: id("b"),
-            to: p2(e),
-        },
+        wall("b", &walls[1], &b, e),
     ])];
     let pose = pose(&origin, &x, &y, &z, dec)?;
     let profile = profile::Profile::new(&pose, &loops, dec)?;

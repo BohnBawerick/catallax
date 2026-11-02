@@ -231,8 +231,8 @@ fn the_reader_rejects_what_is_not_this_format() {
         // Ids outside the grammar.
         (r#""id": "plate""#, r#""id": "Plate""#, "recipe.parse"),
         (r#""id": "top""#, r#""id": "top edge""#, "recipe.parse"),
-        // Another format.
-        ("catallax-recipe/3", "catallax-recipe/5", "recipe.format"),
+        // Unknown future versions and unsupported older versions.
+        ("catallax-recipe/3", "catallax-recipe/6", "recipe.format"),
         ("catallax-recipe/3", "catallax-recipe/2", "recipe.format"),
         ("catallax-recipe/3", "catallax-recipe/1", "recipe.format"),
         (r#""format": "catallax-recipe/3","#, "", "recipe.format"),

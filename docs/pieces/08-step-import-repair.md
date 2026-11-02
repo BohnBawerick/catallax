@@ -1,6 +1,6 @@
 # Piece 8: STEP import and bounded gap repair (contract)
 
-Status: `catallax-import` implements the reader, body construction, repair policy and change records described below. The file-carrying feature and application build entries evaluate `Operation::ImportStep` for one solid, with saved declines and immutable source verification. SolidDraft preview, persistence and checked-export integration remain the separate V9-S companion. See `docs/interface-changes/2026-10-30-step-import-recipe-evaluation.md` for the build contract.
+Status: `catallax-import` implements the reader, body construction, repair policy and change records described below. The file-carrying feature and application build entries evaluate `Operation::ImportStep` for one solid, with saved approvals and declines, retained source-relative face tolerances and immutable source verification. SolidDraft preview, persistence and checked-export integration remain separate companion work. See `docs/interface-changes/2026-11-02-planar-import-local-tolerances.md` for the current build and record contract.
 
 ## Application roundtrip slice
 
@@ -10,9 +10,20 @@ Both sources need no repairs and produce no derivative. Exact carrier, edge-curv
 
 Display is checked through the application entry at kernel defaults and at SolidDraft's automatic coarse, standard and fine controls, with chord height `0.002 × body diagonal × {4, 1, 0.25}` mm and a 15-degree surface-normal bound. Every face must meet both requested bounds within the existing application work guard. This tests Catallax's controls, not SolidDraft's f32 conversion, rendered viewport or complete application workflow. No outside STEP fixtures are used.
 
-Still refused or unproven by this slice: general cones, pole-bounded spheres and tori, splines, curved gap repair, explicit over-cap acceptance in recipe evaluation, and multiple solids in one recipe import step. The lower-level importer can return separate bodies; the recipe application does not merge them. Seam exchange contracts and field construction from imported faces are unchanged.
+Still refused or unproven by the clean roundtrip slice: general cones, pole-bounded spheres and tori, splines, curved gap repair and multiple solids in one recipe import step. The lower-level importer can return separate bodies; the recipe application does not merge them. Seam exchange contracts and field construction from imported faces are unchanged.
 
-SolidDraft uses `propose` for the preview and `apply` for the repair record, saves unchanged source bytes and their SHA-256 plus the recipe decisions, and supplies those bytes through `ImportFiles` to `build_incremental_with_files`. It must use each proposal's exact `question` string for saved decisions, not construct its own gap-index spelling. `rebuild` checks the persisted repair record on reopen.
+SolidDraft uses `propose` for the preview and `apply` for the repair record, saves unchanged source bytes and their SHA-256 plus the recipe decisions, and supplies those bytes through `ImportFiles` to `build_incremental_with_files`. It must use each proposal's exact `question` string for saved decisions, not construct its own gap-index spelling. `rebuild` checks the persisted repair record on reopen. Recipe values are `decline` or `accept:<tolerance-mm>:<approver>`. Automatic repairs save no acceptance; user acceptance applies only to asked seam proposals.
+
+## Nonzero planar repair qualification
+
+`crates/catallax-app/tests/import_step.rs` exercises nonzero repairs through proposal, application, serialized recipe and repair record, rebuild, cold application rebuild, retained-checkpoint display and checked STEP output. Cases include a 0.004 mm automatic repair, the inclusive 0.01 mm cap, a just-over-cap saved approval, a 0.02 mm saved approval, saved declines, and the inclusive tenth-of-feature limit with a just-over-limit approval refused.
+
+Repair records now use `catallax-import-repair/2`. Each changed convex planar face has an enclosure of its two-sided Hausdorff distance to the complete source trimmed face. The proof checks straight-edge incidence, planarity, ordered strict convexity and complete polygon coverage. Exact vertex-to-trim distances provide lower witnesses. Distance to a convex polygon is convex, so the same witnesses bound every triangle in a complete fan in both directions. This is not a relabelled vertex displacement or carrier-plane residual. Faces with holes, nonconvex covers or unproved adjacent feature bounds refuse rather than acquire a certificate.
+
+The attained upper bound is the local tolerance. It must fit the approved file limit and a tenth of a conservative nearest-feature bound, including narrow skew faces and source/repaired neighbours. A user can approve a larger file limit, not override the feature limit. Bounds are remeasured against the original source after all repairs, never summed or clamped.
+
+`Built::import_record(step)` retains the source-bound record with its immutable import body and recipe, including checkpoint reuse. Rigid placement preserves distances. These records do not certify later modified faces, a whole solid against an intended design, display rounding or exported output. STEP's existing error report remains relative to the repaired model. To bound output against a source face, a consumer needs the applicable source-face record, output correspondence and the separate output bound.
+
 
 ## Supported first path
 
@@ -40,13 +51,13 @@ Measurement comes first. A gap is a pair of boundary features (edge/edge or vert
 
 An approved out-of-policy proposal is still validated deterministically after the move: closed, non-self-intersecting, oriented, connected, and the measured maximum movement must not exceed the approved tolerance. Failed validation rejects the repair and leaves the original.
 
-## Change record (`catallax-import-repair/1`)
+## Change record (`catallax-import-repair/2`)
 
 The recipe `decisions` saves answers under the proposal's exact `question`, `repair:<sha256-prefix>:g<gap-index>`. The JSON change record is kept beside the recipe so reopening restores it.
 
 ```
 {
-  "format": "catallax-import-repair/1",
+  "format": "catallax-import-repair/2",
   "source": {"name": "...", "sha256": "..."},
   "derivative": {"sha256": "..."},
   "changes": [{
@@ -59,11 +70,19 @@ The recipe `decisions` saves answers under the proposal's exact `question`, `rep
     "tolerance_mm": "0.01",
     "reason": "boundary gap below automatic cap",
     "approval": "automatic" | "user" | "declined"
+  }],
+  "face_tolerances": [{
+    "solid": "#178",
+    "face": "#40",
+    "deviation_lower_mm": "0.004",
+    "deviation_upper_mm": "0.004",
+    "approved_tolerance_mm": "0.01",
+    "feature_size_squared_mm2": "100"
   }]
 }
 ```
 
-Numbers are decimal strings. `max_movement_mm` is measured on the repaired result, not copied from the proposal. A `user` approval records the approver identity the app supplies and the exact proposed tolerance.
+Distance numbers are decimal strings; `feature_size_squared_mm2` is an exact rational string in square millimetres. `max_movement_mm` measures repaired vertex displacement, not whole-face deviation. A `user` approval records the approver identity the app supplies and the approved tolerance. `face_tolerances` lists only nonzero changed-face deviations; it is empty for clean imports or declined solids. Rebuild verifies every bound and the derivative hash. Old `/1` records are not accepted as `/2` evidence: reapply the saved source and decisions, then persist the newly verified record.
 
 ## Acceptance tests (public synthetic fixtures)
 
@@ -87,10 +106,10 @@ Tier when built: FULL SIX for interpretation and numerics; dialog-only changes S
 
 - A gap is a set of straight boundary edges used once with no opposite use, paired within a search radius (default 1 mm) by opposite travel and endpoint distance. Pairs sharing a point form one gap. Distances are exact squared rational distances; the shown bounds enclose their square roots at 1e-12 mm.
 - A gap is an opening, always asked and never closed, when any of its boundary edges has no partner within the radius, or when a pair's faces are exactly anti-parallel (closing would fold them onto each other). A thin plate with one edge face missing is such an opening. Accepting an opening proposal is refused; only a decline is accepted.
-- Automatic closure needs a seam, a distance of at most 0.01 mm (inclusive) and a squared distance times 100 not above the squared length of the shortest straight edge of the faces involved. Otherwise the proposal asks, with the reason.
+- Automatic closure needs a seam, a distance of at most 0.01 mm inclusive and a squared distance times 100 not above the conservative squared feature size of the faces involved. Feature size includes straight-edge lengths and nonincident vertex distances to supporting edge lines of proven convex polygons. Missing feature evidence asks. Final whole-face bounds must also meet the feature limit, even with user approval.
 - The repair moves whole vertices of one side onto their partners and refits each planar face through its moved vertices, which must stay exactly coplanar. Both sides are tried. The side that changes fewer surfaces wins, then the smaller movement. So a seam closes by extending faces along their own surfaces where possible. If neither side works, `validation_failed` and nothing is built.
 - The repaired solid is rebuilt in a scratch model, checked for closed, sound topology and positive volume before it is built for the caller. Self-intersection is tested exactly (see below) on the source solids and again on every repaired solid.
-- Recorded bounds are the bounds of the solid's vertices; they ignore curved bulge. Movement is the largest vertex displacement, rounded up at 1e-12 mm.
+- Recorded body bounds cover the solid's vertices; they ignore curved bulge. Movement is the largest vertex displacement, rounded up at 1e-12 mm. Separate source-relative whole-face distance records use the convex-cover proof above and the same outward rounding.
 - Curved gaps are out of scope for the first path. A gap that involves a curved edge or face is refused with `not_solid` or `validation_failed`, never guessed at. The message names the faces and edges involved, and the gap id once one is assigned. This is a documented limit.
 - A decline leaves that solid open and unbuilt: it is reported in `left_open` and not built, the source bytes are never modified, and the application must say plainly that the solid was left open. This is a documented limit.
 - A solid with no gap is built as written. Separate solids are never joined, so bodies 0.005 mm apart produce no proposal.

@@ -33,6 +33,7 @@ pub struct Built {
     /// The field kernel supplies the matching mass bodies; see [`crate::stand_in`].
     pub stand_ins: Vec<StandIn>,
     pub(crate) definition: Arc<Recipe>,
+    import_records: BTreeMap<StepId, catallax_import::RepairRecord>,
 }
 
 /// A field-only step whose B-rep body is the envelope of its region.
@@ -45,6 +46,13 @@ pub struct StandIn {
 }
 
 impl Built {
+    /// Source-bound repair evidence for an immutable import step. Distances are
+    /// in source coordinates; rigid placement preserves them. This is not a
+    /// certificate for subsequent booleans, display meshes or exported files.
+    pub fn import_record(&self, step: &StepId) -> Option<&catallax_import::RepairRecord> {
+        self.import_records.get(step)
+    }
+
     /// The immutable recipe definition behind the analytic reductions and trims.
     /// Origins refer to this snapshot, not a subsequently edited input recipe.
     pub fn recipe(&self) -> &Recipe {
@@ -112,6 +120,7 @@ impl EvaluationCheckpoint {
             consumed: built.consumed,
             chamfers: built.chamfers,
             stand_ins: built.stand_ins,
+            import_records: built.import_records,
         }
     }
 }
@@ -126,6 +135,7 @@ struct EvaluationState {
     consumed: Vec<crate::ConsumedFace>,
     chamfers: Vec<crate::chamfer::ChamferDefinition>,
     stand_ins: Vec<StandIn>,
+    import_records: BTreeMap<StepId, catallax_import::RepairRecord>,
 }
 
 impl EvaluationState {
@@ -142,6 +152,7 @@ impl EvaluationState {
             consumed: self.consumed,
             chamfers: self.chamfers,
             stand_ins: self.stand_ins,
+            import_records: self.import_records,
             definition,
         }
     }
@@ -470,6 +481,7 @@ fn evaluate_impl(
         mut consumed,
         mut chamfers,
         mut stand_ins,
+        mut import_records,
     } = state;
     for step in &recipe.steps[start..] {
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
@@ -499,9 +511,21 @@ fn evaluate_impl(
                                 (Some(id), "decline") => Ok(catallax_import::Decision::Decline {
                                     id: id.to_string(),
                                 }),
+                                (Some(id), value) if value.starts_with("accept:") => {
+                                    let (tolerance, approver) = value["accept:".len()..]
+                                        .split_once(':').ok_or_else(|| Refusal::new(
+                                            "import.invalid-decision",
+                                            format!("question {question}: acceptance needs a tolerance and approver"),
+                                        ))?;
+                                    Ok(catallax_import::Decision::Accept {
+                                        id: id.to_string(),
+                                        tolerance_mm: tolerance.to_string(),
+                                        approver: approver.to_string(),
+                                    })
+                                }
                                 _ => Err(Refusal::new(
                                     "import.invalid-decision",
-                                    format!("question {question}: only decline of a question about these bytes is supported"),
+                                    format!("question {question}: expected decline or accept:<tolerance-mm>:<approver> for these bytes"),
                                 )),
                             }
                         })
@@ -561,6 +585,7 @@ fn evaluate_impl(
                     let radius = (0..3).fold(Rational::zero(), |sum, i| {
                         sum + bounds.min[i].abs().max(bounds.max[i].abs())
                     });
+                    import_records.insert(step.id.clone(), imported.record);
                     BodyValue { body, radius }
                 }
                 Operation::Extrude {
@@ -1255,6 +1280,7 @@ fn evaluate_impl(
         consumed,
         chamfers,
         stand_ins,
+        import_records,
     })
 }
 

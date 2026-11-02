@@ -276,21 +276,20 @@ fn measure_solid(si: usize, solid: &Solid, radius: &Rational) -> Result<Vec<Gap>
             .max()
             .unwrap_or_else(Rational::zero);
         let mut feature2: Option<Rational> = None;
+        let mut feature_known = true;
         let mut entities = BTreeSet::new();
         for &f in &faces {
             let face = &solid.faces[f];
             entities.insert(face.name.clone());
-            for bound in &face.loops {
-                for e in &bound.edges {
-                    if matches!(e.curve, Curve::Line(..)) {
-                        let l2 = dist2(&e.start.point, &e.end.point);
-                        feature2 = Some(match feature2 {
-                            Some(m) if m <= l2 => m,
-                            _ => l2,
-                        });
-                    }
-                }
+            if let Some(l2) = crate::deviation::feature_size2(face) {
+                feature2 = Some(feature2.map_or(l2.clone(), |m| m.min(l2)));
+            } else {
+                // No automatic policy decision without a complete feature bound.
+                feature_known = false;
             }
+        }
+        if !feature_known {
+            feature2 = None;
         }
         for p in &pairs {
             entities.insert(p.a.edge.clone());

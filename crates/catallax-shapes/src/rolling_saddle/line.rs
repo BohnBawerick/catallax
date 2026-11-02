@@ -114,7 +114,7 @@ impl LineSheet for RollingSaddle {
         let (pair, column) = if index + 1 < data.nodes.len() {
             (&data.nodes[index..index + 2], 0)
         } else {
-            (&data.nodes[index - 1..index + 1], DEGREE)
+            (&data.nodes[index - 1..index + 1], def.degree())
         };
         let [wide, middle, narrow] = span_rows(def, pair);
         // The narrow frame's axes in the wide one, about its foot.
@@ -230,7 +230,8 @@ impl LineSheet for RollingSaddle {
             }
             value
         };
-        let along_u: Vec<MPoly> = (0..=DEGREE).map(|i| bernstein(&t, DEGREE, i)).collect();
+        let degree = self.data.definition.degree();
+        let along_u: Vec<MPoly> = (0..=degree).map(|i| bernstein(&t, degree, i)).collect();
         let mut homogeneous: [MPoly; 4] = std::array::from_fn(|_| MPoly::zero(nvars));
         for (j, row) in rows.iter().enumerate() {
             let mut lines: [MPoly; 4] = std::array::from_fn(|_| MPoly::zero(nvars));

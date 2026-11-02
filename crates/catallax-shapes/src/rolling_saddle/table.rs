@@ -56,6 +56,9 @@ impl RollingSaddle {
         tolerance: &Rational,
         dec: &Decider,
     ) -> Result<ParameterTable, Refusal> {
+        if self.data.definition.ring != SaddleRing::Through {
+            return Err(invalid("a loop's rails have no parameter table yet"));
+        }
         let bits = self.data.net.bits;
         let k = Constants::new(&self.data.definition, bits, dec)?;
         let nodes = &self.data.nodes;

@@ -318,7 +318,7 @@ Feature-pattern editing saves ordinary operations through `catallax_app::pattern
 
 ### Elementary fillet regions
 
-Plane-plane line contacts reduce to exact cylinder strips. A plane meeting a perpendicular cylinder at a ring reduces to a torus strip. The field resolves the source supports from recipe origins and classifies their material sector with exact positive-infinitesimal rays. It constructs no B-rep. Each rolling-ball section retains its circular arc, then extrudes or revolves the enclosed edge region. Convex regions subtract material; concave regions add it.
+Plane-plane line contacts reduce to exact cylinder strips, and so does a straight generator between a cylinder and a plane parallel to its axis. There the section follows the cylinder's arc from the edge to its contact, not a straight line. A plane meeting a perpendicular cylinder at a ring reduces to a torus strip. The field resolves the source supports from recipe origins and classifies their material sector with exact positive-infinitesimal rays. It constructs no B-rep. Each rolling-ball section retains its circular arc, then extrudes or revolves the enclosed edge region. Convex regions subtract material; concave regions add it.
 
 Finite straight runs use independently resolved source-edge intervals and transversal planar ends. An oblique end plane leans past the vertex at a contact rail, so the region's span widens to the furthest rail station. Every requested reference must resolve a sharp input component. The blend origin uses the input edge name, not the radius or a generated handle. The retained definition includes both supports, their orientations, the selected carrier, radius, material side and contact rails; rigid transforms move that definition with the field.
 

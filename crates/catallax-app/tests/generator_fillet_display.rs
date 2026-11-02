@@ -1,5 +1,5 @@
-//! Parallel-cylinder strips through the application entry at SolidDraft's
-//! automatic viewport levels: 15 degrees and `0.002 * diagonal * factor`,
+//! Generator strips through the application entry at SolidDraft's automatic
+//! viewport levels: 15 degrees and `0.002 * diagonal * factor`,
 //! halved by the adapter for binary32 rounding, under the default work budget.
 
 use std::{collections::BTreeMap, time::Instant};
@@ -9,23 +9,60 @@ use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_recipe::Recipe;
 use serde_json::json;
 
-fn recipe(kind: &str, radius: &str) -> Recipe {
-    let cylinder = |id: &str, x: &str| {
-        json!({"id":id,"op":"cylinder","radius":"5","height":"12",
-            "pose":{"rotation":["1","0","0","0"],"translation":[x,"0","0"]}})
-    };
+fn cylinder(id: &str, x: &str) -> serde_json::Value {
+    json!({"id":id,"op":"cylinder","radius":"5","height":"12",
+        "pose":{"rotation":["1","0","0","0"],"translation":[x,"0","0"]}})
+}
+fn wall(step: &str) -> serde_json::Value {
+    json!({"step":step,"role":{"side":{"segment":"wall"}}})
+}
+fn finish(mut steps: Vec<serde_json::Value>, radius: &str, edge: serde_json::Value) -> Recipe {
+    steps.push(
+        json!({"id":"round","op":"fillet","body":"joined","radius":radius,
+        "edges":[{"between":edge}]}),
+    );
     Recipe::parse(
-        &json!({"format":"catallax-recipe/3","name":"parallel cylinder round","steps":[
-            cylinder("a", "-3"),
-            cylinder("b", "3"),
-            {"id":"joined","op":"boolean","kind":kind,"target":"a","tool":"b"},
-            {"id":"round","op":"fillet","body":"joined","radius":radius,"edges":[
-                {"between":[{"step":"a","role":{"side":{"segment":"wall"}}},
-                    {"step":"b","role":{"side":{"segment":"wall"}}}]}]}
-        ],"result":"round"})
+        &json!({"format":"catallax-recipe/3","name":"generator round",
+            "steps":steps,"result":"round"})
         .to_string(),
     )
     .unwrap()
+}
+fn pair(kind: &str, radius: &str) -> Recipe {
+    finish(
+        vec![
+            cylinder("a", "-3"),
+            cylinder("b", "3"),
+            json!({"id":"joined","op":"boolean","kind":kind,"target":"a","tool":"b"}),
+        ],
+        radius,
+        json!([wall("a"), wall("b")]),
+    )
+}
+/// A cylinder about the z axis against a block whose north side is y = 3.
+fn flat(kind: &str, radius: &str) -> Recipe {
+    let block = [
+        json!({"id":"section","op":"sketch",
+            "plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},
+            "loops":[[{"kind":"line","id":"s","to":["12","-10"]},
+                {"kind":"line","id":"e","to":["12","3"]},
+                {"kind":"line","id":"n","to":["-12","3"]},
+                {"kind":"line","id":"w","to":["-12","-10"]}]]}),
+        json!({"id":"block","op":"extrude","profile":"section","distance":"12"}),
+    ];
+    let (target, tool) = if kind == "subtract" {
+        ("block", "a")
+    } else {
+        ("a", "block")
+    };
+    let mut steps = vec![cylinder("a", "0")];
+    steps.extend(block);
+    steps.push(json!({"id":"joined","op":"boolean","kind":kind,"target":target,"tool":tool}));
+    finish(
+        steps,
+        radius,
+        json!([wall("a"), {"step":"block","role":{"side":{"segment":"n"}}}]),
+    )
 }
 
 fn assert_closed(case: &str, mesh: &Mesh, options: &MeshOptions) {
@@ -78,9 +115,16 @@ fn diagonal(mesh: &Mesh) -> f64 {
 }
 
 #[test]
-fn parallel_cylinder_fillets_stay_closed_at_every_viewport_level() {
-    for (kind, radius) in [("intersect", "5/4"), ("union", "11/8"), ("subtract", "1")] {
-        let recipe = recipe(kind, radius);
+fn generator_fillets_stay_closed_at_every_viewport_level() {
+    for (kind, recipe) in [
+        ("lens", pair("intersect", "5/4")),
+        ("notch", pair("union", "11/8")),
+        ("crescent", pair("subtract", "1")),
+        ("flat", flat("intersect", "7/4")),
+        ("irrational flat", flat("intersect", "3/4")),
+        ("boss", flat("union", "9/4")),
+        ("channel", flat("subtract", "9/16")),
+    ] {
         let default = MeshOptions::default();
         let body = catallax_app::build(&recipe, &default, &mut Decider::default()).unwrap();
         assert_closed(kind, &body.display.value, &default);

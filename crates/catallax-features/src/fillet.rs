@@ -8,6 +8,9 @@ use catallax_shapes::{
 
 use crate::profile::sign;
 
+#[path = "fillet_parallel.rs"]
+mod parallel;
+
 /// The exact generating definition of one elementary fillet strip.
 #[derive(Clone, Debug)]
 pub struct FilletDefinition {
@@ -46,8 +49,8 @@ fn normal(v: &Vector3, same: bool) -> Vector3 {
 }
 
 impl FilletDefinition {
-    /// Reduces a regular plane-plane or perpendicular plane-cylinder contact to
-    /// its exact cylinder or torus. This does not trim or publish a solid.
+    /// Reduces plane-plane, perpendicular plane-cylinder and parallel-cylinder
+    /// contacts to an exact cylinder or torus. This does not publish a solid.
     pub fn new(
         origin: Origin,
         supports: [Surface; 2],
@@ -117,9 +120,12 @@ impl FilletDefinition {
                     plane_cylinder(p, c, e, [same_sense[1], same_sense[0]], &radius, &k, dec)?;
                 (surface, [b, a])
             }
+            (Surface::Cylinder(a), Surface::Cylinder(b), Curve::Line(e)) => {
+                parallel::cylinders(a, b, e, same_sense, &radius, &k, &origin.step, dec)?
+            }
             _ => {
                 return Err(bad(
-                    "elementary fillets need a line between planes or a circle between a plane and perpendicular cylinder",
+                    "fillets need a line between planes or parallel cylinders, or a circle between a plane and perpendicular cylinder",
                 ));
             }
         };
@@ -161,17 +167,34 @@ impl FilletDefinition {
     /// Whether a cylinder point lies in the shorter arc's normal sector.
     /// End trimming is a separate topological constraint.
     pub fn in_sector(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
-        let (Surface::Cylinder(c), [Surface::Plane(a), Surface::Plane(b)]) =
-            (&self.surface, &self.supports)
+        let (Surface::Cylinder(c), [Curve::Line(a), Curve::Line(b)]) =
+            (&self.surface, &self.contacts)
         else {
-            return Err(bad("line-strip sector query requires two planes"));
+            return Err(bad(
+                "line-strip sector query requires straight contact rails",
+            ));
         };
-        let na = normal(&a.normal, self.same_sense[0]);
-        let nb = normal(&b.normal, self.same_sense[1]);
+        let (na, nb, sector_sign) = match &self.supports {
+            [Surface::Plane(a), Surface::Plane(b)] => (
+                normal(&a.normal, self.same_sense[0]),
+                normal(&b.normal, self.same_sense[1]),
+                Real::from_i64(if self.convex { 1 } else { -1 }),
+            ),
+            [Surface::Cylinder(_), Surface::Cylinder(_)] => (
+                a.origin
+                    .minus(&c.origin)
+                    .scaled(&(&Real::one() / &self.radius)),
+                b.origin
+                    .minus(&c.origin)
+                    .scaled(&(&Real::one() / &self.radius)),
+                Real::one(),
+            ),
+            _ => return Err(bad("line-strip sector has no supported contact pair")),
+        };
         let d = p.minus(&c.origin);
         let radial = d
             .minus(&c.axis.scaled(&(d.dot(&c.axis) / c.axis.norm_squared())))
-            .scaled(&Real::from_i64(if self.convex { 1 } else { -1 }));
+            .scaled(&sector_sign);
         let dot = na.dot(&nb);
         let x = radial.dot(&na);
         let y = radial.dot(&nb);
@@ -179,14 +202,37 @@ impl FilletDefinition {
             && sign(&(&y - &(&dot * &x)), dec)? != Sign::Negative)
     }
 
-    /// Proves two parallel line strips' blend regions disjoint, although their
-    /// complete carriers may meet. Each region lies in the prism over its
+    /// Whether this strip and another consume overlapping arcs of one shared
+    /// cylinder wall, given each strip's support index for that wall. Rails
+    /// that pass each other can leave both feet in the open face.
+    pub(crate) fn wall_arc_meets(
+        &self,
+        support: usize,
+        other: &Self,
+        other_support: usize,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        parallel::wall_arc_meets([(self, support), (other, other_support)], dec)
+    }
+
+    /// Proves two parallel plane-plane strips' blend regions disjoint, although
+    /// their complete carriers may meet. Each region lies in the prism over its
     /// cross-section kite: ball centre, both contacts and the edge. Kites are
-    /// convex, so one of their side normals separates disjoint pairs.
+    /// convex, so one of their side normals separates disjoint pairs. A curved
+    /// support can bulge out of the kite, so those strips get no such proof.
     pub(crate) fn sectors_apart(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
         let kite = |strip: &Self| {
-            let (Surface::Cylinder(c), [Curve::Line(a), Curve::Line(b)], Curve::Line(e)) =
-                (&strip.surface, &strip.contacts, &strip.edge)
+            let (
+                Surface::Cylinder(c),
+                [Curve::Line(a), Curve::Line(b)],
+                Curve::Line(e),
+                [Surface::Plane(_), Surface::Plane(_)],
+            ) = (
+                &strip.surface,
+                &strip.contacts,
+                &strip.edge,
+                &strip.supports,
+            )
             else {
                 return None;
             };

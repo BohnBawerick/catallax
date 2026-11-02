@@ -278,6 +278,23 @@ def phases(args):
     print(json.dumps(report, indent=2))
 
 
+def capture_profile(binary, source, dest, options=()):
+    dest.mkdir(parents=True)
+    with (dest / "instrumented.stdout").open("w") as stdout, \
+            (dest / "callgrind.log").open("w") as stderr:
+        subprocess.run(["valgrind", "--tool=callgrind", "--error-exitcode=1", *options,
+                        f"--callgrind-out-file={dest / 'callgrind.out'}",
+                        str(binary), str(source), str(dest / "answer")],
+                       stdout=stdout, stderr=stderr, check=True)
+    with (dest / "inclusive.txt").open("w") as stdout:
+        subprocess.run(["callgrind_annotate", "--inclusive=yes", "--tree=both",
+                        "--auto=no", "--threshold=99", str(dest / "callgrind.out")],
+                       stdout=stdout, check=True)
+    for name in FILES:
+        assert (dest / "answer" / name).read_bytes() == (source.parent / name).read_bytes(), \
+            f"profiling changed an exact answer, certificate, statistic or work: {dest} {name}"
+
+
 def profile(args):
     os.sched_setaffinity(0, {min(os.sched_getaffinity(0))})
     binary = args.baseline / "target/release/examples/edit_answer"
@@ -287,18 +304,18 @@ def profile(args):
     for name, targets in TARGETS.items():
         for number in targets:
             source = args.out / "0-baseline/native" / name / f"{number:04}/native.json"
-            dest = args.out / "profiles" / name / f"{number:04}"
-            dest.mkdir(parents=True)
-            with (dest / "instrumented.stdout").open("w") as stdout, \
-                    (dest / "callgrind.log").open("w") as stderr:
-                subprocess.run(["valgrind", "--tool=callgrind", "--error-exitcode=1",
-                                f"--callgrind-out-file={dest / 'callgrind.out'}",
-                                str(binary), str(source), str(dest / "answer")],
-                               stdout=stdout, stderr=stderr, check=True)
-            with (dest / "inclusive.txt").open("w") as stdout:
-                subprocess.run(["callgrind_annotate", "--inclusive=yes", "--tree=both",
-                                "--auto=no", "--threshold=99", str(dest / "callgrind.out")],
-                               stdout=stdout, check=True)
+            capture_profile(binary, source, args.out / "profiles" / name / f"{number:04}")
+            if name == "bracket" and number == 27:
+                functions = ("catallax_boolean::graph::section",
+                             "catallax_boolean::graph::carrier_hits",
+                             "catallax_boolean::imprinting::imprint")
+                capture_profile(
+                    binary, source, args.out / "profiles/non-carrier/bracket/0027",
+                    ["--collect-atstart=no",
+                     *(f"--toggle-collect={function}" for function in functions)])
+                metadata["non_carrier"] = dict(
+                    included=[functions[0], functions[2]], excluded=[functions[1]],
+                    scope="Rest of intersect plus imprint; carrier collection toggles off/on")
             metadata.setdefault("inputs", []).append(dict(
                 scenario=name, step=number, sha256=hashlib.sha256(source.read_bytes()).hexdigest()))
     (args.out / "profiles/metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")

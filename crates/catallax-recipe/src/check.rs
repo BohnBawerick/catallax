@@ -34,6 +34,14 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "face references without `face` require catallax-recipe/5".into(),
             });
         }
+        if recipe.format == FORMAT
+            && matches!(&step.op, Operation::Path { segments, .. }
+                if segments.iter().any(|s| s.corner_axis().is_some()))
+        {
+            return Err(RecipeError::Parse {
+                message: "path corner axes require catallax-recipe/4".into(),
+            });
+        }
         if index.contains_key(&step.id) {
             return Err(RecipeError::DuplicateStep {
                 step: step.id.clone(),
@@ -358,6 +366,7 @@ impl Ctx<'_> {
                 self.element(profile, segment)?;
                 self.element(path, along)
             }
+            (O::Sweep { path, .. }, Role::Envelope { path: along }) => self.element(path, along),
             (
                 O::Loft { sections, .. },
                 Role::Side {

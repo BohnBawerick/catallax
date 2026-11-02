@@ -341,7 +341,7 @@ fn through(
         .body)
 }
 
-/// Builds stock solids, sketches, extrusions, straight-path sweeps, revolutions,
+/// Builds stock solids, sketches, extrusions, analytic line/arc sweeps, revolutions,
 /// elementary fillets, cuts, booleans, patterns and mirrors.
 /// Other recipe operations retain their unfinished-operation refusal, not a partial body.
 pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError> {
@@ -607,10 +607,14 @@ fn evaluate_impl(
                         radius: profile_radius(profile) + distance.value().abs(),
                     }
                 }
-                Operation::Sweep { profile, path, .. } => {
+                Operation::Sweep {
+                    profile,
+                    path,
+                    orientation,
+                } => {
                     let profile = &profiles[profile];
                     let path = &paths[path];
-                    let body = path.build(model, profile, &step.id)?;
+                    let body = path.build(model, profile, &step.id, *orientation, dec)?;
                     BodyValue {
                         body,
                         radius: profile_radius(profile) + path.extent(),

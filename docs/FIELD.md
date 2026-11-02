@@ -494,7 +494,9 @@ Curved faces refuse `measure.nonplanar-face`, other planes
 `measure.nonparallel-faces`, and inexact frames `measure.irrational-plane`.
 
 `Options::width` requests an enclosure width, not geometric acceptance.
-`max_cells` limits refinement. Exhaustion returns the attained bounds with
+`max_cells` limits refinement, not direct finite-face certificates. A direct
+proof can converge without parameter refinement, but still respects the
+operation work allowance. An unfinished search returns the attained bounds with
 `converged=false`; `upper=None` means no admitted witness was established.
 `face_to_face` measures the minimum distance, not Hausdorff distance. These queries
 do not replace `measurement::measure_face` or its whole-face definition metric.

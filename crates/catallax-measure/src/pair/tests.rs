@@ -518,7 +518,13 @@ fn parallel_face_distance_respects_trims_and_completion() {
     };
     let (low, high) = (patch(0, -1), patch(2, 3));
     let faces = [cap(&model, low, 0), cap(&model, high, 3)];
-    let (bounds, work) = distance(&mut model, faces[0], faces[1], &options, WORK);
+    // A cell cap limits refinement, not a direct finite-face proof. Here dx>=1
+    // and dz=3 prove d²>=10, attained by (1,y,0) and (2,y,3), 0<=y<=1.
+    let controls = Options {
+        width: options.width.clone(),
+        max_cells: 1,
+    };
+    let (bounds, work) = distance(&mut model, faces[0], faces[1], &controls, WORK);
     assert!(!work.exhausted, "{work:?}");
     let bounds = bounds.unwrap();
     eprintln!(
@@ -529,16 +535,15 @@ fn parallel_face_distance_respects_trims_and_completion() {
     assert!(bounds.converged, "{bounds:?}");
     assert!(&bounds.lower * &bounds.lower <= r(10) && r(10) <= &upper * &upper);
     assert!(bounds.lower > r(3), "{bounds:?}");
-    assert!(&upper - &bounds.lower <= options.width, "{bounds:?}");
-
-    // A stopped search keeps its incompleteness flag; no allowance, no answer.
-    let starved = Options {
-        width: options.width.clone(),
-        max_cells: 1,
-    };
-    let (bounds, work) = distance(&mut model, faces[0], faces[1], &starved, WORK);
-    assert!(!work.exhausted, "{work:?}");
-    assert!(!bounds.unwrap().converged);
+    assert!(&upper - &bounds.lower <= controls.width, "{bounds:?}");
+    let [s, t] = bounds.witnesses.unwrap();
+    let mut dec = Decider::default();
+    assert!(catallax_boolean::face_contains(&mut model, faces[0], &s, &mut dec).unwrap());
+    assert!(catallax_boolean::face_contains(&mut model, faces[1], &t, &mut dec).unwrap());
+    assert_eq!(
+        dec.rational_value(&s.minus(&t).norm_squared()).unwrap(),
+        Some(r(10))
+    );
     let (bounds, work) = distance(&mut model, faces[0], faces[1], &options, 0);
     assert!(work.exhausted);
     assert_eq!(bounds.unwrap_err().code, "numbers.operation-budget");

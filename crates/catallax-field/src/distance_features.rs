@@ -325,11 +325,7 @@ impl Plan {
         }
         Ok(result)
     }
-    pub(super) fn planar_skin(
-        &self,
-        node: usize,
-        dec: &mut Decider,
-    ) -> Result<ConvexCell, Refusal> {
+    fn planar_skin(&self, node: usize, dec: &mut Decider) -> Result<ConvexCell, Refusal> {
         let mut stack = vec![node];
         let mut faces = Vec::new();
         while let Some(node) = stack.pop() {

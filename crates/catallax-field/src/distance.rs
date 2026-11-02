@@ -6,9 +6,10 @@ use catallax_shapes::{
     Point3, Vector3,
     distance::{self, Bounds, Domain, Membership, Options},
 };
+use std::sync::{Arc, Mutex, OnceLock};
 
-mod bored;
 mod contact;
+mod planar;
 
 fn coordinates(p: &Point3) -> [Real; 3] {
     [p.x.clone(), p.y.clone(), p.z.clone()]
@@ -130,6 +131,12 @@ fn ray(
     if let Some(p) = p.as_rational() {
         return leaf.ray(&[p.x, p.y, p.z], d, dec);
     }
+    if let geometry::Leaf::Feature(feature) = leaf {
+        return feature.classify(
+            &planar::ray_sample(leaf.constraints().iter(), p, d, dec)?,
+            dec,
+        );
+    }
     if matches!(leaf, geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_)) {
         return Ok(Location::Indeterminate);
     }
@@ -193,6 +200,7 @@ fn ray(
 
 // A physical patch is the union of its convex tiles; each tile is a conjunction.
 type PlanarTrim = Vec<Vec<geometry::Constraint>>;
+type PlanarBoundaries = Vec<Option<Arc<distance::PlanarBoundary>>>;
 
 /// Prepared field-native distance domains. Reuse across point queries on a plan.
 /// Face handles are valid only for the plan used to construct this object.
@@ -201,7 +209,8 @@ pub struct Prepared<'a> {
     domains: Vec<Option<Domain>>,
     coincident: Vec<Vec<Vec<bool>>>,
     planar_trims: Vec<Vec<PlanarTrim>>,
-    bored_caps: std::collections::BTreeMap<usize, std::sync::Arc<[catallax_shapes::Cylinder]>>,
+    planar: OnceLock<PlanarBoundaries>,
+    planar_init: Mutex<()>,
 }
 impl Plan {
     /// Prepares compact chart covers from recipe bounds, never from a B-rep mesh.
@@ -299,12 +308,35 @@ impl Plan {
             domains,
             coincident,
             planar_trims,
-            bored_caps: self.prepare_bored_caps(dec)?,
+            planar: OnceLock::new(),
+            planar_init: Mutex::new(()),
         })
     }
 }
 impl Prepared<'_> {
+    fn planar_boundaries(&self, dec: &mut Decider) -> Result<&PlanarBoundaries, Refusal> {
+        if let Some(faces) = self.planar.get() {
+            return Ok(faces);
+        }
+        let _initializing = self
+            .planar_init
+            .lock()
+            .expect("planar distance initialization panicked");
+        if self.planar.get().is_none() {
+            let faces = self.plan.prepare_planar_boundaries(dec)?;
+            self.planar
+                .set(faces)
+                .expect("planar distances initialize under one lock");
+        }
+        Ok(self
+            .planar
+            .get()
+            .expect("planar distances were initialized"))
+    }
     fn member(&self, id: usize, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        if let Some(planar) = self.planar.get().and_then(|faces| faces[id].as_ref()) {
+            return planar.contains(p, dec);
+        }
         let face = &self.plan.faces[id];
         let leaf = &self.plan.leaves[face.leaf];
         if location(leaf, p, dec)? != Location::Boundary {
@@ -532,8 +564,8 @@ impl Prepared<'_> {
                 "positive width and cell count required",
             ));
         }
-        if let Some(bounds) = self.bored_cap_distance(id.0, point, options, dec)? {
-            return Ok(bounds);
+        if let Some(planar) = self.planar.get().and_then(|faces| faces[id.0].as_ref()) {
+            return planar.point_distance(point, options, dec);
         }
         let mut candidate = Bounds {
             lower: Rational::zero(),
@@ -598,6 +630,13 @@ impl Prepared<'_> {
                 break;
             }
         }
+        // An admitted near witness already encloses the minimum to the requested
+        // width. Reconstruct complete finite regions only when that proof fails.
+        if matches!(domain.surface(), catallax_shapes::Surface::Plane(_))
+            && let Some(planar) = &self.planar_boundaries(dec)?[id.0]
+        {
+            return planar.point_distance(point, options, dec);
+        }
         if options.max_cells == 1 {
             return Ok(candidate);
         }
@@ -628,9 +667,21 @@ impl Prepared<'_> {
         options: &Options,
         dec: &mut Decider,
     ) -> Result<Bounds, Refusal> {
+        let a_domain = self.domain(a)?;
+        let b_domain = self.domain(b)?;
+        if matches!(a_domain.surface(), catallax_shapes::Surface::Plane(_))
+            && matches!(b_domain.surface(), catallax_shapes::Surface::Plane(_))
+        {
+            let faces = self.planar_boundaries(dec)?;
+            if let (Some(first), Some(second)) = (&faces[a.0], &faces[b.0])
+                && let Some(answer) = first.face_distance(second, options, dec)?
+            {
+                return Ok(answer);
+            }
+        }
         distance::face_distance(
-            self.domain(a)?,
-            self.domain(b)?,
+            a_domain,
+            b_domain,
             options,
             &mut |p: &Point3, c: &[Ball; 3], d: &mut Decider| self.classify(a.0, p, c, d),
             &mut |p: &Point3, c: &[Ball; 3], d: &mut Decider| self.classify(b.0, p, c, d),

@@ -245,7 +245,7 @@ measured pairs. Its artifact records every sample, load averages, exact commits
 and median writer times. Timing never decides geometric success.
 
 Stack sampling located repeated rational work in `fit::taylor_controls`. Its
-degree-seven conversion now reuses exact degree-only weights and computes each
-width power once per span. Interval accumulation, rounding and error checks are
+degree-seven conversion now reuses exact degree-only weights and scales each
+coefficient enclosure once per span. Interval accumulation, rounding and error checks are
 unchanged. This fixture uses exact public primitives, not a captured SolidDraft
 document, and does not establish a bracket-edit speedup.

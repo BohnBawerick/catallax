@@ -312,17 +312,24 @@ pub(crate) fn taylor_controls<const N: usize>(
         })
     });
     assert_eq!(coefficients.len(), DEGREE + 1);
-    let powers: [Rational; DEGREE + 1] = std::array::from_fn(|k| width.pow(k as i32).unwrap());
+    // Scale each coefficient enclosure once, before applying the control weights.
+    // All operations are rational, so reassociation introduces no rounding.
+    let scaled: [[[Rational; 2]; N]; DEGREE + 1] = std::array::from_fn(|k| {
+        let power = width.pow(k as i32).unwrap();
+        coefficients[k]
+            .each_ref()
+            .map(|coefficient| [&coefficient.lo() * &power, &coefficient.hi() * &power])
+    });
     for weights in WEIGHTS.iter() {
         let mut control: [[Rational; 2]; N] =
             std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
-        for (k, coefficient) in coefficients.iter().enumerate() {
-            let factor = &weights[k] * &powers[k];
+        for (coefficient, weight) in scaled.iter().zip(weights) {
             for i in 0..N {
-                let a = &coefficient[i].lo() * &factor;
-                let b = &coefficient[i].hi() * &factor;
-                control[i][0] = &control[i][0] + &a.clone().min(b.clone());
-                control[i][1] = &control[i][1] + &a.max(b);
+                let a = &coefficient[i][0] * weight;
+                let b = &coefficient[i][1] * weight;
+                let (lower, upper) = if a <= b { (a, b) } else { (b, a) };
+                control[i][0] = &control[i][0] + &lower;
+                control[i][1] = &control[i][1] + &upper;
             }
         }
         push(

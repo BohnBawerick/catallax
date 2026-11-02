@@ -1,7 +1,7 @@
 //! Exact rationals in normal form.
 
 use crate::{Integer, ParseErrorKind, ParseNumberError, Sign};
-use num_bigint::BigInt;
+use num_bigint::{BigInt, BigUint};
 use num_integer::Integer as _;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::{cmp::Ordering, fmt, str::FromStr};
@@ -261,8 +261,12 @@ impl Rational {
         if self.is_zero() {
             return 0.0;
         }
-        let r = self.abs();
-        let e = r.binary_exponent();
+        if self.is_integer()
+            && let Some(value) = self.n.to_i64()
+        {
+            return value as f64;
+        }
+        let e = self.binary_exponent();
         let sign = if self.sign() == Sign::Negative {
             1u64 << 63
         } else {
@@ -275,13 +279,24 @@ impl Rational {
             return f64::from_bits(sign);
         }
         let shift = if e < -1022 { 1074 } else { 52 - e };
-        let scaled = r.mul_pow2(shift);
-        let (mut q, rem) = scaled.n.0.div_rem(&scaled.d.0);
-        let twice = rem << 1u32;
-        if twice > scaled.d.0 || (twice == scaled.d.0 && q.is_odd()) {
-            q += 1;
-        }
-        let m = q.to_u64().expect("53-bit rounded mantissa");
+        // Rounding only needs the quotient and remainder of the scaled
+        // magnitude. Normalizing a temporary rational cannot change either
+        // the quotient or the comparison of twice the remainder with its divisor.
+        let round = |numerator: &BigUint, denominator: &BigUint| {
+            let (mut quotient, remainder) = numerator.div_rem(denominator);
+            let twice = remainder << 1u32;
+            if twice > *denominator || (twice == *denominator && quotient.is_odd()) {
+                quotient += 1u32;
+            }
+            quotient.to_u64().expect("53-bit rounded mantissa")
+        };
+        let numerator = self.n.0.magnitude();
+        let denominator = self.d.0.magnitude();
+        let m = if shift >= 0 {
+            round(&(numerator << shift as u64), denominator)
+        } else {
+            round(numerator, &(denominator << shift.unsigned_abs()))
+        };
         if e < -1022 {
             return f64::from_bits(sign | m);
         }
@@ -349,11 +364,16 @@ impl Rational {
     }
     pub(crate) fn binary_exponent(&self) -> i64 {
         assert!(!self.is_zero());
-        let mut e = self.n.bit_length() as i64 - self.d.bit_length() as i64;
+        let numerator = self.n.0.magnitude();
+        let denominator = self.d.0.magnitude();
+        if denominator.is_one() {
+            return numerator.bits() as i64 - 1;
+        }
+        let mut e = numerator.bits() as i64 - denominator.bits() as i64;
         let less = if e >= 0 {
-            self.n.0.abs() < (&self.d.0 << e as u64)
+            numerator < &(denominator << e as u64)
         } else {
-            (self.n.0.abs() << e.unsigned_abs()) < self.d.0
+            (numerator << e.unsigned_abs()) < *denominator
         };
         if less {
             e -= 1;

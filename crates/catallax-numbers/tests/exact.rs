@@ -3,7 +3,7 @@ mod common;
 use catallax_numbers::*;
 use common::*;
 use rug::ops::Pow;
-use rug::{Integer as Z, Rational as Q};
+use rug::{Float, Integer as Z, Rational as Q};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -290,6 +290,54 @@ blind_test!(binary_conversion_roundtrips_and_ties, {
     assert_eq!(r("1e400").to_f64_nearest(), f64::INFINITY);
     assert_eq!(r("-1e400").to_f64_nearest(), f64::NEG_INFINITY);
 });
+
+#[test]
+fn rational_rounding_matches_mpfr_at_binary64_boundaries() {
+    for bits in [
+        0,
+        1,
+        2,
+        0x000f_ffff_ffff_ffff,
+        0x0010_0000_0000_0000,
+        0x3ff0_0000_0000_0000,
+        0x3ff0_0000_0000_0001,
+        0x4340_0000_0000_0000,
+        0x43df_ffff_ffff_ffff,
+        0x43e0_0000_0000_0000,
+        f64::MAX.to_bits(),
+    ] {
+        let exponent = ((bits >> 52) & 2047) as i32;
+        let power = if exponent <= 1 {
+            -1075
+        } else {
+            exponent - 1076
+        };
+        let half_gap = if power >= 0 {
+            Q::from(Z::from(1) << power.unsigned_abs())
+        } else {
+            Q::from((Z::from(1), Z::from(1) << power.unsigned_abs()))
+        };
+        let midpoint = Q::from_f64(f64::from_bits(bits)).unwrap() + &half_gap;
+        for displacement in [-1, 0, 1] {
+            for sign in [-1, 1] {
+                let mut offset = half_gap.clone();
+                offset /= 3;
+                offset *= displacement;
+                let mut value = midpoint.clone() + offset;
+                value *= sign;
+                // Midpoints are exact dyadics. The off-midpoint probes are a
+                // third of a half-gap away, far beyond 128-bit rounding error.
+                let expected =
+                    Float::with_val(128, &value).to_f64_round(rug::float::Round::Nearest);
+                assert_eq!(
+                    eq(&value).to_f64_nearest().to_bits(),
+                    expected.to_bits(),
+                    "rounding {value}"
+                );
+            }
+        }
+    }
+}
 
 blind_test!(decimal_exact_and_tight_bounds, {
     for (x, p, lo, hi) in [

@@ -394,6 +394,13 @@ A `FaceId` is local to the plan that returned it. Persist the `Origin`, not this
 
 Offset, shell and thicken compile their analytic reductions from the field's own constraints and face registry. No B-rep builder is called. The exact family and refusal boundaries are listed in [RECIPE.md section 7.15](RECIPE.md#715-distance-feature-coverage). Boolean and cell values remain labelled residuals; a successful compilation does not turn them into true-distance formulas.
 
+For separated parallel through-bore shells, the compiler reads the planar source
+boundary and proves each recipe tool covers both perpendicular caps. It constructs
+the inset planar cavity minus expanded cylinders, then subtracts that cavity from
+the original field. Inner planes and bore walls retain `inner.of` source names
+through thickness edits. Cap openings and strict bore/wall clearance follow the
+same finite-distance domain in section 7.15; no B-rep fallback is used.
+
 `Plan::select` prefers a live result support carrying an origin before falling back to an older registry candidate. An offset can therefore keep an origin while replacing its support, without resolving a later face query to the discarded input surface.
 
 `Plan::visit_distance_candidates` is a query-only sampling API for comparison tooling. Its callback receives `(RPoint3, FaceId)` and the caller checks that exact current candidate, rather than resolving a possibly shared origin again. It splits rational planar grids at field-native leaf bounds and cylindrical rational charts at result-box crossings. This supplies candidates for narrow shell rims, inner walls and short clipped cylinder patches that a fixed primitive grid can miss. Every candidate still needs the ordinary exact trim, origin and normal checks. A root enclosure chooses a rational sample; it never becomes a geometric acceptance tolerance or a boundary approximation. Compilation and point evaluation do not run this sampler.
@@ -434,6 +441,17 @@ Reusing a coincident evaluation leaf does not reactivate discarded copy names;
 such registry-only handles report `field.face-id` from the distance API.
 Canonical public names retain the plan's generated-domain role for trim
 predicates; renaming a revolved cone cap does not turn it into an angular cap.
+
+For a kept perpendicular cap of a separated through-bore shell, the field also
+certifies the planar hull, complete tool coverage, nested cavity and separated
+circular holes from its own tape. If the plane projection lies inside a hole,
+`sqrt(h^2 + (r - rho)^2)` bounds distance below, where `h` is the plane gap,
+`r` the hole radius and `rho` the projected distance from its centre. An exact
+point just outside that circle must pass the named field-face predicate before
+it supplies an upper bound. The requested width is unchanged. This avoids using
+an infinite-plane clearance or waiting for expanded polynomial interval boxes
+to resolve the circular exclusion. Open-cap rims, other openings and general
+trimmed planar regions keep their existing query path and coverage limits.
 
 Complete circular cylinder bands and perpendicular circular caps skip that search
 for point queries. `PreparedFace` recognizes, exactly, a cylinder face whose two

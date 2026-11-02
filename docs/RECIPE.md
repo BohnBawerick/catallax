@@ -1376,7 +1376,7 @@ The ordinary B-rep evaluator and independent field compiler implement these exac
 
 A planar shell's fast path proves that its minimum kept-plane clearance has a witness in a kept trim. Otherwise the B-rep constructs the closed kept-polygon distance tubes, with semicircular edge rolls and spherical vertex lunes, before intersecting their union with the input. The field evaluates the corresponding face, edge and vertex definitions independently. An untrimmed support-plane clearance alone is never sufficient.
 
-The B-rep shell also accepts a convex planar outer envelope pierced by separated
+Both evaluators also accept a convex planar outer envelope pierced by separated
 parallel cylindrical through bores. Each complete bore must join the same two
 perpendicular end caps. Openings may select either cap, both caps, or neither;
 the other outer faces and every bore wall stay kept. The cavity intersects the
@@ -1386,10 +1386,11 @@ outer envelope and strictly apart from the other expanded bores. A consumed
 planar cavity preserves the input solid. Inner planes and cylinders use
 `inner.of` with their complete source origin sets.
 
-This bored-shell reduction is B-rep only. The independent field compiler retains
-its unsupported-envelope refusal. Opening a bore wall or an outer side face,
-touching or crossing offset envelopes, blind or countersunk holes, filleted
-skins and nonconvex outer envelopes are not enabled by this reduction. References
+The independent field compiler recovers the planar envelope and complete finite
+bore tools from its own recipe history, then constructs its own cavity constraints.
+It does not call the B-rep builder or read its topology. Opening a bore wall or an
+outer side face, touching or crossing offset envelopes, blind or countersunk holes,
+filleted skins and nonconvex outer envelopes are not enabled by this reduction. References
 with adjacency filters or a `near` selector over several candidates also refuse;
 the filled cap polygons cannot stand in for those finite-face queries.
 

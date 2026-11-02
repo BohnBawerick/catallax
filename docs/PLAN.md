@@ -216,7 +216,29 @@ Build order step 5, with imported geometry carrying local tolerances up to 10 µ
 
 Planned work, outside 0.1.2. Target NVIDIA's [USD BRep interface at `c9c5979`](https://github.com/NVIDIA-Omniverse/usd-brep/tree/c9c5979f04cea8c38213004d4f04df0dcfb40d05), not a universal kernel-replacement API. Independently design Catallax's mapping from the interface; copy no SMLib code. Its custom [`BrepArray` schema](https://github.com/NVIDIA-Omniverse/usd-brep/blob/c9c5979f04cea8c38213004d4f04df0dcfb40d05/source/schema/omniSolid/resources/schema.usda) and source-neutral `BREP_STAGING` permit other kernels. `SM_API_USD` takes SMLib types, and consumer and rendering integration remain separate. The existing [Hydra plugin](https://github.com/NVIDIA-Omniverse/usd-brep/blob/c9c5979f04cea8c38213004d4f04df0dcfb40d05/source/HYDRA_USD_BREP/README.md) imports into SMLib to tessellate; schema conformance alone gives no viewport support. Catallax's export needs a companion display mesh.
 
-First specify the interface mapping and a golden fixture for one analytic solid, then build a one-way `BrepArray` exporter with that mesh and check it against an independent consumer. Check schema and geometry before any healing, and display separately. The schema's `brep:intersectTol3d` stores one tolerance per BRep, losing Catallax's local tolerance detail; retain that detail and certificates separately rather than claiming lossless exchange.
+The opt-in `catallax-features` example `usd_brep` exports `analytic-square-through-hole/1` only. It evaluates a named sketch extrusion, verifies the source against the fixture, and writes one `BrepArray` with a companion `Mesh`, `recipe.json` and `metadata.json`. The outer rectangle is 10 by 8 mm, the through-hole is 2 by 2 mm and the height is 2 mm. The 3 mm height edit retains the source identities. The companion placement rotates 90 degrees about Z and translates by 20, 30, 40 mm. No general solid-export API or application command is added.
+
+The mapping packs 16 vertices, 24 shared line edges, 10 planar faces, 12 loops and 48 edgeuses. Both region shells reference the same face geometry. Explicit degree-one UV curves follow each traversal. Verified outward charts determine outer/inner ordering and faceuse sides. The right-hand radial-entry convention is checked geometrically, but agreement with NVIDIA's consumer remains unproved. No healing or tolerance increase occurs.
+
+Run the example with a new output directory, height, placement and the full source commit:
+
+```sh
+cargo run -p catallax-features --example usd_brep -- /tmp/usd-solid 2 identity "$(git rev-parse HEAD)"
+cargo run -p catallax-features --example usd_brep -- /tmp/usd-placed 2 placed "$(git rev-parse HEAD)"
+cargo run -p catallax-features --example usd_brep -- /tmp/usd-edited 3 identity "$(git rev-parse HEAD)"
+python tools/checks/usd_brep.py /tmp/usd-solid --edit /tmp/usd-edited --negative-controls
+python tools/checks/usd_brep.py /tmp/usd-placed --negative-controls
+```
+
+The independent checker uses OpenUSD Python bindings, installed in CI as `usd-core==25.11`. It checks authored types, APIs, indices, incidence, circular vertex links, oriented trims, exact linear UV lifting, signed volume, area, centroid, local/world bounds, display topology, persistent identity mappings and edit survival. It rejects eight corruptions without relying on file digests. Exact comparison with the known fixture boundary proves nonoverlap for this solid only. The `USD BRep analytic export` workflow retains the actual files and checker reports on GitHub runners. Its results are not consumer interoperability or interactive rendering evidence.
+
+Keep all three files together. The schema's `brep:intersectTol3d` stores one interchange tolerance per BRep, not measured error or permission to heal. Accompanying metadata records per-entity derived zero approximation/encoding bounds for this integer, axis-aligned fixture, recipe revision/hash, source identities, chart changes, caller-supplied source commit, schema commit, proof status and file digest. Nominal rational units and tolerance are separate from their binary64 rounding. Bare `BrepArray` loses recipe, names and local proof detail. General certificate transport and lossless round trip are not implemented.
+
+Next slices, in order:
+
+1. Run the emitted package through an independent NVIDIA USD BRep consumer, verify its radial convention and retain diagnostics before any healing. Check the display mesh separately in a scene viewer.
+2. Qualify curved analytic geometry and periodic seams with a separate fixture. Do not infer cylinder, circle or same-face seam support from the square hole.
+3. Define general certificate transport and supported-family export policy before adding an application-facing export command. SolidDraft must retain the companion metadata and recipe, keep display separate from analytic acceptance and show only `Coming soon` until its integration is available.
 
 Place optional scene and display export beside Stage 1, metadata and certificates at Stage 2, and supported analytic BRep export at Stage 3. Extend to blends and derived carriers as Stages 4 and 5 mature, only where the representation supports them. Two-way USD BRep import and editing are a separate extension to Stage 6.
 

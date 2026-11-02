@@ -140,7 +140,7 @@ fn k3_multiple_solids_and_unavailable_or_changed_source_refuse() {
 
 fn seam_source(height: &str, gap: &str) -> Vec<u8> {
     let height = Rational::parse(height).unwrap();
-    let top = &height + Rational::parse(gap).unwrap();
+    let top = &height + &Rational::parse(gap).unwrap();
     std::str::from_utf8(BLOCK)
         .unwrap()
         .replace("10.004", &top.to_decimal_exact().unwrap())

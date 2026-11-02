@@ -33,7 +33,7 @@ struct Segment {
 
 #[derive(Debug)]
 enum Motion {
-    Line(RVector3),
+    Line,
     Arc(Box<Turn>),
 }
 
@@ -110,6 +110,15 @@ impl Turn {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<BodyId, Refusal> {
+        let normal = profile.pose.apply_vector(
+            &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()).to_real(),
+        );
+        if crate::profile::sign(&normal.cross(&self.axis.to_real()).norm_squared(), dec)?
+            == Sign::Zero
+        {
+            // Rotation about the profile normal stays in one plane.
+            return Ok(catallax_topology::empty(model));
+        }
         let axis = Axis {
             point: Point3([
                 self.centre.x.clone().into(),
@@ -158,7 +167,7 @@ impl Path {
                         ));
                     }
                     extent = extent + length_bound(&delta);
-                    (end, delta.clone(), delta.clone(), Motion::Line(delta))
+                    (end, delta.clone(), delta, Motion::Line)
                 }
                 PathSegment::Arc {
                     centre, to, axis, ..
@@ -261,65 +270,62 @@ impl Path {
         if profile.is_empty() || self.0.segments.is_empty() {
             return Ok(catallax_topology::empty(model));
         }
+        if let [
+            Segment {
+                id,
+                incoming: delta,
+                motion: Motion::Line,
+                ..
+            },
+        ] = self.0.segments.as_slice()
+        {
+            return line(model, profile, step, id, delta);
+        }
         let mut carried = profile.clone();
         let mut previous = self.0.start.clone();
         let mut tangent: Option<&RVector3> = None;
         let mut result = catallax_topology::empty(model);
         for (i, segment) in self.0.segments.iter().enumerate() {
-            if orientation == SweepOrientation::RotationMinimising {
-                if let Some(incoming) = tangent {
-                    let cross = incoming.cross(&segment.incoming);
-                    let dot = incoming.dot(&segment.incoming);
-                    let turn = if cross.is_zero() {
-                        if dot.sign() == Sign::Negative {
-                            let axis = segment.corner_axis.as_ref().ok_or_else(|| Refusal::new(
+            if orientation == SweepOrientation::RotationMinimising
+                && let Some(incoming) = tangent
+            {
+                let cross = incoming.cross(&segment.incoming);
+                let dot = incoming.dot(&segment.incoming);
+                let turn = if cross.is_zero() {
+                    if dot.sign() == Sign::Negative {
+                        let axis = segment.corner_axis.as_ref().ok_or_else(|| Refusal::new(
                                 "sweep.missing-corner-axis", "a reversing rotation-minimising path needs the outgoing corner_axis",
                             ))?;
-                            Some(Turn {
-                                centre: previous.clone(),
-                                axis: axis.clone(),
-                                angle: 180,
-                            })
-                        } else {
-                            None
-                        }
-                    } else if dot.is_zero() {
                         Some(Turn {
                             centre: previous.clone(),
-                            axis: cross,
-                            angle: 90,
+                            axis: axis.clone(),
+                            angle: 180,
                         })
                     } else {
-                        return Err(unsupported(
-                            "stationary turns currently need agreeing, perpendicular or reversing tangents",
-                        ));
-                    };
-                    if let Some(turn) = turn {
-                        let body = turn.build(model, &carried, step, dec)?;
-                        remap(model, body, step, &segment.id, false, false, &segment.id);
-                        result = unite(model, result, body, dec)?;
-                        carried.pose = carried.pose.then(&turn.pose()?);
+                        None
                     }
+                } else if dot.is_zero() {
+                    Some(Turn {
+                        centre: previous.clone(),
+                        axis: cross,
+                        angle: 90,
+                    })
+                } else {
+                    return Err(unsupported(
+                        "stationary turns currently need agreeing, perpendicular or reversing tangents",
+                    ));
+                };
+                if let Some(turn) = turn {
+                    let body = turn.build(model, &carried, step, dec)?;
+                    remap(model, body, step, &segment.id, false, false, &segment.id);
+                    result = unite(model, result, body, dec)?;
+                    carried.pose = carried.pose.then(&turn.pose()?);
                 }
             }
             let body = match &segment.motion {
-                Motion::Line(delta) => {
-                    let normal = crate::profile::rational_vector(
-                        &carried.pose,
-                        &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
-                    );
-                    let body = if delta.dot(&normal).is_zero() {
-                        catallax_topology::empty(model)
-                    } else {
-                        crate::extrude::extrude_vector(
-                            model,
-                            &carried,
-                            step,
-                            delta,
-                            [Some(Role::Start), Some(Role::End)],
-                            Some(&segment.id),
-                        )?
-                    };
+                Motion::Line => {
+                    let delta = &segment.incoming;
+                    let body = line(model, &carried, step, &segment.id, delta)?;
                     carried.pose = carried
                         .pose
                         .then(&Pose::from_rational(Rotation::identity(), delta.clone()));
@@ -388,5 +394,29 @@ fn unite(model: &mut Model, a: BodyId, b: BodyId, dec: &mut Decider) -> Result<B
         catallax_boolean::boolean(model, a, b, catallax_boolean::BoolOp::Unite, dec)
             .map_err(|e| e.refusal)?
             .body,
+    )
+}
+
+fn line(
+    model: &mut Model,
+    profile: &Profile,
+    step: &StepId,
+    id: &ElementId,
+    delta: &RVector3,
+) -> Result<BodyId, Refusal> {
+    let normal = crate::profile::rational_vector(
+        &profile.pose,
+        &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+    );
+    if delta.dot(&normal).is_zero() {
+        return Ok(catallax_topology::empty(model));
+    }
+    crate::extrude::extrude_vector(
+        model,
+        profile,
+        step,
+        delta,
+        [Some(Role::Start), Some(Role::End)],
+        Some(id),
     )
 }

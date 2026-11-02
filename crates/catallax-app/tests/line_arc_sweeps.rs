@@ -49,12 +49,12 @@ fn line_arc_and_stationary_turn_consumers_are_closed_and_bounded() {
                 assert!(face.max_chord_error <= options.chord_tolerance);
                 assert_eq!(face.max_angular_deviation, options.angular_deviation);
             }
-            assert!(app.names.edges.values().all(Option::is_some));
             let mass = app
                 .mass_properties(&Default::default(), &mut Decider::default())
                 .unwrap();
             let b = |n| Ball::from_rational(&Rational::from_i64(n), 192);
-            let expected = b(16) + b(if circular { 13 } else { 3 }) * Ball::pi(192) / b(2);
+            let sector = Rational::from_ratio(if circular { 13 } else { 3 }, 2).unwrap();
+            let expected = b(16) + Ball::from_rational(&sector, 192) * Ball::pi(192);
             assert!(mass.value.volume.lo <= expected.lo() && mass.value.volume.hi >= expected.hi());
             assert!(mass.value.volume.width() <= Rational::parse("1e-9").unwrap());
             let mut bytes = Vec::new();

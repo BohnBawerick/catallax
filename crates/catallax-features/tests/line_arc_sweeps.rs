@@ -22,6 +22,9 @@ fn build(source: Value) -> Built {
 fn b(n: i64) -> Ball {
     Ball::from_rational(&Rational::from_i64(n), 192)
 }
+fn half_pi(n: i64) -> Ball {
+    Ball::from_rational(&Rational::from_ratio(n, 2).unwrap(), 192) * Ball::pi(192)
+}
 fn volume(built: &Built, expected: Ball) {
     let mass = catallax_measure::mass_properties(
         &built.model,
@@ -43,7 +46,7 @@ fn volume(built: &Built, expected: Ball) {
 fn stationary_quarter_turn_adds_the_annular_sector_and_merges_planar_sides() {
     let built = build(source());
     // Two 2x1x4 prisms and a quarter annulus of radii 1 and 2, width 2.
-    volume(&built, b(16) + b(3) * Ball::pi(192) / b(2));
+    volume(&built, b(16) + half_pi(3));
     let faces = built.model.faces_of_body(built.result);
     let merged = faces
         .iter()
@@ -83,7 +86,7 @@ fn tangent_line_arc_line_chain_preserves_authored_motion() {
     ]);
     // The profile lies at radii 6..7 about the arc centre, not about the path.
     let built = build(source);
-    volume(&built, b(16) + b(13) * Ball::pi(192) / b(2));
+    volume(&built, b(16) + half_pi(13));
 }
 
 #[test]
@@ -124,21 +127,26 @@ fn reversing_turn_uses_saved_axis_and_missing_axis_is_a_recipe_refusal() {
     assert_eq!(step.as_str(), "body");
     assert_eq!(refusal.code, "sweep.missing-corner-axis");
     source["steps"][1]["segments"][1]["corner_axis"] = json!(["-1", "0", "0"]);
+    let mut old_version = source.clone();
+    old_version["format"] = json!("catallax-recipe/3");
+    assert!(Recipe::parse(&old_version.to_string()).is_err());
     let built = build(source);
     // The half turn joins two disjoint prisms with a half annulus.
     volume(&built, b(16) + b(3) * Ball::pi(192));
 }
 
 #[test]
-fn coplanar_translation_chain_has_no_three_dimensional_remnant() {
-    let mut source = source();
-    source["steps"][2]["orientation"] = json!("fixed");
-    source["steps"][1]["segments"] = json!([
-        {"kind":"line","id":"rise","to":["4","0","0"]},
-        {"kind":"line","id":"run","to":["4","4","0"]}
-    ]);
-    let built = build(source);
-    assert_eq!(built.model.body(built.result).kind, BodyKind::Empty);
+fn coplanar_motion_and_stationary_turns_have_no_three_dimensional_remnant() {
+    for orientation in ["fixed", "rotation_minimising"] {
+        let mut source = source();
+        source["steps"][2]["orientation"] = json!(orientation);
+        source["steps"][1]["segments"] = json!([
+            {"kind":"line","id":"rise","to":["4","0","0"]},
+            {"kind":"line","id":"run","to":["4","4","0"]}
+        ]);
+        let built = build(source);
+        assert_eq!(built.model.body(built.result).kind, BodyKind::Empty);
+    }
 }
 
 #[test]
@@ -154,7 +162,7 @@ fn cardinal_arc_spans_follow_the_axis_and_sweep_angle() {
             "to":end,"axis":["-2","0","0"]
         }]);
         let built = build(source);
-        volume(&built, b(13 * quarters) * Ball::pi(192) / b(2));
+        volume(&built, half_pi(13 * quarters));
     }
 }
 

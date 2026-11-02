@@ -330,7 +330,7 @@ fn through(
         .body)
 }
 
-/// Builds stock solids, sketches, extrusions, straight-path sweeps, revolutions,
+/// Builds stock solids, sketches, extrusions, analytic line/arc sweeps, revolutions,
 /// elementary fillets, cuts, booleans, patterns and mirrors.
 /// Other recipe operations retain their unfinished-operation refusal, not a partial body.
 pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError> {

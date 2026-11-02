@@ -1,5 +1,7 @@
 //! Analytic one-line sweeps with the authored displacement and path provenance.
 
+use std::sync::Arc;
+
 use catallax_numbers::{Rational, Refusal};
 use catallax_recipe::{ElementId, PathSegment, Point3, Role, StepId};
 use catallax_shapes::RVector3;
@@ -10,7 +12,11 @@ use crate::Profile;
 #[derive(Clone, Debug)]
 pub(crate) enum Path {
     Empty,
-    Line { id: ElementId, vector: RVector3 },
+    // Persistent checkpoint-map edits share the checked rational displacement.
+    Line {
+        id: ElementId,
+        vector: Arc<RVector3>,
+    },
 }
 
 impl Path {
@@ -31,7 +37,7 @@ impl Path {
                 }
                 Ok(Self::Line {
                     id: id.clone(),
-                    vector,
+                    vector: Arc::new(vector),
                 })
             }
             _ => Err(Refusal::new(

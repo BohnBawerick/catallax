@@ -390,8 +390,7 @@ impl<'a, S: Scalar> JetValues<'a, S> {
                                 self.products[index] = (!self.coefficients[a + i].is_zero()
                                     && !self.coefficients[a + k - i].is_zero())
                                 .then(|| {
-                                    self.coefficients[a + i]
-                                        .times(&self.coefficients[a + k - i])
+                                    self.coefficients[a + i].times(&self.coefficients[a + k - i])
                                 });
                             }
                             if let Some(product) = &self.products[i.min(k - i)] {
@@ -427,19 +426,16 @@ impl<'a, S: Scalar> JetValues<'a, S> {
                             && !self.coefficients[start + k - i].is_zero()
                         {
                             v = v.minus(
-                                &self.coefficients[b + i]
-                                    .times(&self.coefficients[start + k - i]),
+                                &self.coefficients[b + i].times(&self.coefficients[start + k - i]),
                             );
                         }
                     }
-                    self.coefficients[start + k] =
-                        if v.is_zero() { v } else { v.times(&inverse) };
+                    self.coefficients[start + k] = if v.is_zero() { v } else { v.times(&inverse) };
                 }
             }
             Node::Sqrt(_) => {
                 let a = self.jets(left, t, n, p, dec)?;
-                self.coefficients[start] =
-                    self.coefficients[a].root().ok_or(JetError::Split)?;
+                self.coefficients[start] = self.coefficients[a].root().ok_or(JetError::Split)?;
                 let inverse = if n == 0 {
                     None
                 } else {
@@ -1388,9 +1384,7 @@ mod tests {
                             let sign = r(if k % 2 == 1 { 1 } else { -1 });
                             [
                                 &sign * &power,
-                                &sign
-                                    * &(&r(2) * &power
-                                        - &r(k as i64 + 1) * &(&power * &inverse)),
+                                &sign * &(&r(2) * &power - &r(k as i64 + 1) * &(&power * &inverse)),
                                 r(i64::from(k == 1)),
                             ]
                         };
@@ -1475,14 +1469,10 @@ mod tests {
                             None,
                         )
                         .unwrap();
-                    for k in 0..=2 {
+                    for (k, bounds) in filtered.iter().enumerate() {
                         let value = cache.coefficients[exact + k].rational_ref().unwrap();
-                        assert!(
-                            Rational::from_f64_exact(filtered[k][axis].lo()).unwrap() <= *value
-                        );
-                        assert!(
-                            Rational::from_f64_exact(filtered[k][axis].hi()).unwrap() >= *value
-                        );
+                        assert!(Rational::from_f64_exact(bounds[axis].lo()).unwrap() <= *value);
+                        assert!(Rational::from_f64_exact(bounds[axis].hi()).unwrap() >= *value);
                     }
                 }
             }
@@ -1499,8 +1489,8 @@ mod tests {
                 2,
                 &dec,
             )
-                .unwrap()
-                .is_none()
+            .unwrap()
+            .is_none()
         );
         let root = Real::from_i64(2).sqrt();
         let tiny = Real::from(Rational::parse("1e-50").unwrap());
@@ -1516,8 +1506,8 @@ mod tests {
                 0,
                 &dec,
             )
-                .unwrap()
-                .is_none()
+            .unwrap()
+            .is_none()
         );
         let mut expired = Decider::default();
         expired.set_deadline(Some(std::time::Instant::now()));

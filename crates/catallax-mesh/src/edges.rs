@@ -323,7 +323,7 @@ fn seeded(
 ) -> Result<(), Refusal> {
     let edge = model.edge(id);
     let (Some(start), Some(end)) = (edge.start, edge.end) else {
-        return Err(failure("a rolling-envelope row has two ends"));
+        return seeded_ring(id, seed, options, result);
     };
     let first = result.vertex(model, start, options, dec)?;
     let last = result.vertex(model, end, options, dec)?;
@@ -344,6 +344,43 @@ fn seeded(
         result.mesh.positions.push(position);
     }
     vertices.push(last);
+    result.edges.insert(id, result.mesh.edges.len());
+    result.mesh.edges.push(EdgeMesh {
+        edge: id,
+        vertices,
+        max_chord_error: error,
+    });
+    Ok(())
+}
+
+// One closed band rail. The polyline starts at the chart's seam and returns to
+// it, walking the columns in the edge's direction.
+fn seeded_ring(
+    id: EdgeId,
+    seed: &crate::junction::Seed,
+    options: &MeshOptions,
+    result: &mut Boundaries,
+) -> Result<(), Refusal> {
+    let count = seed.points.len() - 1;
+    let mut error = seed.error.clone();
+    let start = result.mesh.positions.len();
+    for i in 0..count {
+        reserve_position(result.mesh.positions.len(), options)?;
+        let point = &seed.points[i];
+        let position = chart::position(point)?;
+        error = error.max(&seed.error + &chart::residual(&position, point));
+        result.exact_positions.insert(
+            result.mesh.positions.len(),
+            Position::Exact(seed.exact[i].clone()),
+        );
+        result.mesh.positions.push(position);
+    }
+    let mut vertices = Vec::with_capacity(count + 1);
+    vertices.push(start);
+    for i in 1..count {
+        vertices.push(start + if seed.forward { i } else { count - i });
+    }
+    vertices.push(start);
     result.edges.insert(id, result.mesh.edges.len());
     result.mesh.edges.push(EdgeMesh {
         edge: id,

@@ -2,7 +2,7 @@
 
 use crate::{
     BSplineCurve, BSplineSurface, EllipticOffsetDefinition, Isometry, OffsetSweepProof, Point3,
-    Pose, RollingEnvelope, SplineBoundary, SplineCurveParameter, Vector3, math,
+    Pose, RollingEnvelope, RollingPipe, SplineBoundary, SplineCurveParameter, Vector3, math,
 };
 use catallax_numbers::{Ball, Decider, EvidenceBound, Rational, Real, Refusal, Sign};
 use std::{
@@ -52,6 +52,9 @@ pub enum SplineSupport {
     EllipticOffset(SplineSurface),
     /// Rolling-ball envelope while the ball rests on a cylinder and a mouth edge.
     RollingEnvelope(RollingEnvelope),
+    /// Rolling-ball band of a closed contact between a plane and an oblique
+    /// cylinder. Its carrier is exact, so it needs no fitted-error bound.
+    RollingPipe(RollingPipe),
 }
 
 impl From<SplineSurface> for SplineSupport {
@@ -64,12 +67,18 @@ impl From<RollingEnvelope> for SplineSupport {
         Self::RollingEnvelope(surface)
     }
 }
+impl From<RollingPipe> for SplineSupport {
+    fn from(surface: RollingPipe) -> Self {
+        Self::RollingPipe(surface)
+    }
+}
 impl SplineSupport {
     /// The genuine finite B-spline carrier, independent of its exact target.
     pub fn carrier(&self) -> &BSplineSurface {
         match self {
             Self::EllipticOffset(surface) => surface.carrier(),
             Self::RollingEnvelope(surface) => surface.carrier(),
+            Self::RollingPipe(surface) => surface.carrier(),
         }
     }
     /// Exact rigid transport of the carrier, retained law and local proofs.
@@ -77,12 +86,14 @@ impl SplineSupport {
         match self {
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.transformed(pose)),
             Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.transformed(pose)),
+            Self::RollingPipe(surface) => Self::RollingPipe(surface.transformed(pose)),
         }
     }
     pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
         match self {
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.mapped(pose)),
             Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.mapped(pose)),
+            Self::RollingPipe(surface) => Self::RollingPipe(surface.mapped(pose)),
         }
     }
     /// Positive expression-node identity for deterministic cache reuse.
@@ -90,6 +101,7 @@ impl SplineSupport {
         match (self, other) {
             (Self::EllipticOffset(a), Self::EllipticOffset(b)) => a.shares_definition_nodes(b),
             (Self::RollingEnvelope(a), Self::RollingEnvelope(b)) => a.shares_definition_nodes(b),
+            (Self::RollingPipe(a), Self::RollingPipe(b)) => a.shares_definition_nodes(b),
             _ => false,
         }
     }
@@ -104,6 +116,10 @@ impl SplineSupport {
         match self {
             Self::EllipticOffset(surface) => surface.parameters_of_box(point, dec),
             Self::RollingEnvelope(surface) => surface.parameters_of_box(point, dec),
+            Self::RollingPipe(_) => Err(Refusal::new(
+                "shapes.parametric-query",
+                "a pipe answers point queries by its law, not by a chart inverse",
+            )),
         }
     }
 
@@ -139,6 +155,7 @@ impl SplineSupport {
         match self {
             Self::EllipticOffset(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingEnvelope(surface) => surface.line_hits(origin, direction, dec).map(Some),
+            Self::RollingPipe(surface) => surface.line_hits(origin, direction, dec),
         }
     }
 
@@ -199,6 +216,12 @@ impl SplineSupport {
                 .iter()
                 .map(|control| math::point(control, maximum.min(128), dec))
                 .collect(),
+            Self::RollingPipe(surface) => surface
+                .carrier()
+                .controls()
+                .iter()
+                .map(|control| math::point(control, maximum.min(128), dec))
+                .collect(),
             Self::RollingEnvelope(surface) => Ok(surface
                 .query_controls(dec)?
                 .into_iter()
@@ -212,6 +235,7 @@ impl SplineSupport {
         match self {
             Self::EllipticOffset(surface) => surface.side_at(point, dec),
             Self::RollingEnvelope(surface) => surface.side_at(point, dec),
+            Self::RollingPipe(surface) => surface.side_at(point, dec),
         }
     }
     /// Outward normal at an actual finite carrier point; no global implicit
@@ -228,6 +252,7 @@ impl SplineSupport {
                 })?
                 .normal(dec),
             Self::RollingEnvelope(surface) => surface.normal_at(point, dec),
+            Self::RollingPipe(surface) => surface.normal_at(point, dec),
         }
     }
     /// Parameter kinds: the elliptic sweep closes around its section; the
@@ -236,6 +261,7 @@ impl SplineSupport {
         match self {
             Self::EllipticOffset(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
             Self::RollingEnvelope(_) => [crate::ParamKind::Finite, crate::ParamKind::Finite],
+            Self::RollingPipe(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
         }
     }
 }

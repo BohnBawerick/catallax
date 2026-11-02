@@ -2,8 +2,8 @@
 
 use catallax_numbers::{Decider, Outcome, Refusal, Sign};
 use catallax_shapes::{
-    BSplineCurve, BoundaryRow, Curve, Point3, RollingEnvelope, SplineBoundary, SplineSupport,
-    Surface,
+    BSplineCurve, BoundaryRow, Curve, Ellipse, Point3, RollingEnvelope, RollingPipe,
+    SplineBoundary, SplineSupport, Surface,
 };
 
 use crate::{EdgeId, FaceId, Loop, Model, Sense};
@@ -193,4 +193,71 @@ pub fn envelope_rows(
         rows.push((use_.edge, row, use_.sense));
     }
     Ok(rows)
+}
+
+// A closed ring of one edge on the given rail, on its exact ellipse.
+fn pipe_ring(
+    model: &Model,
+    rails: &[(Ellipse, bool); 2],
+    coedge: crate::CoedgeId,
+    dec: &mut Decider,
+) -> Result<Option<(EdgeId, bool, Sense)>, Refusal> {
+    let use_ = model.coedge(coedge);
+    let edge = model.edge(use_.edge);
+    if edge.start.is_some() || edge.end.is_some() {
+        return Ok(None);
+    }
+    let Curve::Ellipse(actual) = model.geom().curve(edge.curve) else {
+        return Ok(None);
+    };
+    for (rail, is_plane) in rails {
+        if same_point(&actual.center, &rail.center, dec)?
+            && zero(&(&actual.major_sq - &rail.major_sq), dec)?
+            && zero(&(&actual.minor_sq - &rail.minor_sq), dec)?
+            && zero(&actual.normal.cross(&rail.normal).norm_squared(), dec)?
+        {
+            return Ok(Some((use_.edge, *is_plane, use_.sense)));
+        }
+    }
+    Ok(None)
+}
+
+/// A pipe face's two rings, plane rail first, when the face keeps the whole
+/// band: two closed loops of one edge each, on the pipe's two exact rails. Each
+/// sense is the loop's use of its edge.
+pub fn pipe_rows(
+    model: &Model,
+    face: FaceId,
+    dec: &mut Decider,
+) -> Result<Option<[(EdgeId, Sense); 2]>, Refusal> {
+    let Surface::BSpline(SplineSupport::RollingPipe(pipe)) =
+        model.geom().surface(model.face(face).surface)
+    else {
+        return Ok(None);
+    };
+    let rails = rails(pipe, dec)?;
+    let [first, second] = model.face(face).loops.as_slice() else {
+        return Ok(None);
+    };
+    let mut found = [None; 2];
+    for lp in [first, second] {
+        let Loop::Coedges(coedges) = model.loop_(*lp) else {
+            return Ok(None);
+        };
+        let [coedge] = coedges.as_slice() else {
+            return Ok(None);
+        };
+        let Some((edge, is_plane, sense)) = pipe_ring(model, &rails, *coedge, dec)? else {
+            return Ok(None);
+        };
+        found[usize::from(!is_plane)] = Some((edge, sense));
+    }
+    Ok(match found {
+        [Some(plane), Some(wall)] => Some([plane, wall]),
+        _ => None,
+    })
+}
+
+fn rails(pipe: &RollingPipe, dec: &mut Decider) -> Result<[(Ellipse, bool); 2], Refusal> {
+    Ok([(pipe.plane_rail(dec)?, true), (pipe.wall_rail(dec)?, false)])
 }

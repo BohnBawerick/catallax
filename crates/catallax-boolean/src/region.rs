@@ -11,7 +11,7 @@ use catallax_intersect::{CurveTrace, TracePiece, trace};
 use catallax_numbers::{Ball, Decider, FactKind, Rational, Refusal, Sign};
 use catallax_shapes::{GeomKey, Point3, PointId, SplineSupport, Surface};
 use catallax_topology::{
-    EdgeId, FaceId, Loop, LoopId, Model, Sense, SplinePrism, envelope_retains_chart,
+    EdgeId, FaceId, Loop, LoopId, Model, Sense, SplinePrism, envelope_retains_chart, pipe_rows,
 };
 use std::collections::{HashMap, hash_map::Entry};
 
@@ -698,25 +698,35 @@ fn whole_chart(
     dec: &mut Decider,
 ) -> Result<Option<Location>, Refusal> {
     let surface = model.face(face).surface;
-    let Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) = model.geom().surface(surface)
-    else {
-        return Ok(None);
-    };
     let recorded = model.geom().facts().holds(
         FactKind::Incident,
         GeomKey::Point(point),
         GeomKey::Surface(surface),
     );
-    if !recorded || !envelope_retains_chart(model, face, dec)? {
+    if !recorded {
         return Ok(None);
     }
-    Ok(Some(
-        if envelope.on_boundary(&model.geom().position(point), dec)? {
-            Location::Boundary
-        } else {
-            Location::Inside
-        },
-    ))
+    let position = model.geom().position(point);
+    let on_boundary = match model.geom().surface(surface) {
+        Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+            if !envelope_retains_chart(model, face, dec)? {
+                return Ok(None);
+            }
+            envelope.on_boundary(&position, dec)?
+        }
+        Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
+            if pipe_rows(model, face, dec)?.is_none() {
+                return Ok(None);
+            }
+            pipe.on_boundary(&position, dec)?
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(if on_boundary {
+        Location::Boundary
+    } else {
+        Location::Inside
+    }))
 }
 
 // A complete checked prism bounds each face by its shared rings alone, so the

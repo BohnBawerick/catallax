@@ -546,7 +546,7 @@ The rolling ball `B(c, r)` touches `A` and `B` and rolls along `σ`. Where the e
 
 The result is `(S −* ∪ W_e over convex edges) ∪* (∪ W_e over concave edges)`. Every chosen edge uses the same `r`, and all edges are blended at once, so their order does not matter.
 
-Exactness: two planes give a cylinder. Two parallel cylinders meeting at a straight generator give a cylinder, and so does a cylinder meeting a plane parallel to its axis. A plane and a perpendicular cylinder give a torus. Any other blend between two curved faces has no closed STEP form. Both kernels hold it exactly by this definition, and only the STEP file approximates it (PRD section 3.1).
+Exactness: two planes give a cylinder. Two parallel cylinders meeting at a straight generator give a cylinder, and so does a cylinder meeting a plane parallel to its axis. A plane and a perpendicular cylinder give a torus. A plane and an oblique cylinder meeting at a closed ellipse give an exact rational surface of degree (4, 2). Any other blend between two curved faces has no closed STEP form. Both kernels hold it exactly by this definition, and only the STEP file approximates it (PRD section 3.1).
 
 **Names.**
 

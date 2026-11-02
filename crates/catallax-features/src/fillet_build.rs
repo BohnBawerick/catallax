@@ -3,10 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_intersect::{Component, CurveSurface, Cyclic, SurfacePair};
-use catallax_numbers::{Decider, Outcome, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign};
 use catallax_recipe::{EdgeSelection, Origin, Role, StepId};
 use catallax_shapes::{
-    Circle, Curve, Line, Point3, PointDef, PointId, Surface, Torus, TorusSheet, Vector3,
+    Circle, Curve, Line, Point3, PointDef, PointId, SplineSupport, Surface, Torus, TorusSheet,
+    Vector3,
 };
 use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex, VertexId};
 
@@ -205,7 +206,23 @@ fn convex(
                 Sign::Zero => Err(bad("tangent faces do not define a regular sharp edge")),
             }
         }
-        _ => Err(bad("elementary fillets need a line or circle")),
+        Curve::Ellipse(c) => {
+            // The end of the first axis, where the curve runs along the second.
+            let at = c.center.plus(
+                &c.major_dir
+                    .scaled(&(&c.major_sq / &c.major_dir.norm_squared()).sqrt()),
+            );
+            let along = c.normal.cross(&c.major_dir);
+            let na = outward(model, *a, &at, dec)?;
+            let nb = outward(model, *b, &at, dec)?;
+            let value = nb.dot(&na.cross(&along)) * Real::from_i64(orientation);
+            match sign(&value, dec)? {
+                Sign::Negative => Ok(true),
+                Sign::Positive => Ok(false),
+                Sign::Zero => Err(bad("tangent faces do not define a regular sharp edge")),
+            }
+        }
+        _ => Err(bad("elementary fillets need a line or a conic")),
     }
 }
 fn line_plane(
@@ -643,7 +660,7 @@ fn guard(
             .iter()
             .any(|support| matches!(support, Surface::Cylinder(_)));
         if curved
-            && matches!(run.definition.edge, Curve::Line(_))
+            && matches!(run.definition.edge, Curve::Line(_) | Curve::Ellipse(_))
             && run
                 .definition
                 .supports
@@ -651,6 +668,17 @@ fn guard(
                 .any(|support| support.same_definition(&other))
         {
             continue;
+        }
+        // A band has no surface pair solver. Its hull proves it off a plane,
+        // and nothing yet proves it off any other surface.
+        if let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = &run.definition.surface {
+            if matches!(&other, Surface::Plane(plane) if pipe.clear_of(plane, dec)?) {
+                continue;
+            }
+            return Err(Refusal::new(
+                "fillet.unsupported-overflow",
+                "a face reaches the hull of the blend band and needs trimmed continuation",
+            ));
         }
         let a = model.geom_mut().add_surface(run.definition.surface.clone());
         let b = model.geom_mut().add_surface(other);
@@ -756,7 +784,7 @@ pub(crate) fn build(
     let trimming = runs
         .iter()
         .any(|run| {
-            matches!(run.definition.edge, Curve::Line(_))
+            matches!(run.definition.edge, Curve::Line(_) | Curve::Ellipse(_))
                 && run
                     .definition
                     .supports
@@ -1063,6 +1091,24 @@ pub(crate) fn build(
         let input = model.edge(run.edge).clone();
         let mut rails = Vec::with_capacity(2);
         for (i, face) in run.faces.iter().enumerate() {
+            // Every other face is clear of the band, so a closed rail stays in
+            // its face if one of its points does.
+            if let (Surface::BSpline(SplineSupport::RollingPipe(pipe)), Curve::Ellipse(_)) =
+                (&run.definition.surface, &run.definition.contacts[i])
+            {
+                let row = if matches!(run.definition.supports[i], Surface::Plane(_)) {
+                    Rational::zero()
+                } else {
+                    Rational::one()
+                };
+                let p = pipe.point(&Rational::zero(), &row);
+                if !catallax_boolean::face_contains(model, *face, &p, dec)? {
+                    return Err(Refusal::new(
+                        "fillet.unsupported-overflow",
+                        "a contact rail leaves the input face and needs neighbour continuation",
+                    ));
+                }
+            }
             for old in [input.start, input.end].into_iter().flatten() {
                 let v = run.ends[&(old, *face)];
                 let p = model.geom().position(model.vertex(v).point);

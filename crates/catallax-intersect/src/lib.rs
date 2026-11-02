@@ -173,6 +173,7 @@ type JetCache = VecDeque<(JetKey, Vec<[Ball; 3]>)>;
 pub struct TracePiece {
     coords: [chart::E; 3],
     jets: Arc<Mutex<JetCache>>,
+    program: Arc<std::sync::OnceLock<chart::JetProgram>>,
 }
 
 impl TracePiece {
@@ -180,6 +181,7 @@ impl TracePiece {
         Self {
             coords,
             jets: Arc::new(Mutex::new(VecDeque::new())),
+            program: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -198,7 +200,10 @@ impl TracePiece {
             dec.check_deadline()?;
             return Ok(result);
         }
-        let jets = chart::ball_jets(&self.coords, t, order, dec)?;
+        let program = self
+            .program
+            .get_or_init(|| chart::JetProgram::new(&self.coords));
+        let jets = chart::ball_jets(program, t, order, dec)?;
         // Retain a bounded recent working set without flushing all the panels
         // when the cache fills. Eviction changes cost, never an enclosure.
         if cache.len() == 128 {
@@ -246,7 +251,10 @@ impl TracePiece {
         dec: &Decider,
     ) -> Result<Option<Vec<[Interval; 3]>>, Refusal> {
         dec.check_deadline()?;
-        chart::interval_jets(&self.coords, t, order, dec)
+        let program = self
+            .program
+            .get_or_init(|| chart::JetProgram::new(&self.coords));
+        chart::interval_jets(program, t, order, dec)
     }
 }
 

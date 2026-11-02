@@ -82,6 +82,8 @@ After normal paired measurements, the hosted job runs the baseline native probe 
 
 Small-rational arithmetic cancels trailing zero bits directly when its positive denominator is a power of two. Other denominators retain the GCD path. `dyadic_normalization_and_cancellation_match_gmp` covers signed numerators around the `2^62` fast-path boundary, denominator one, large dyadics and exact cancellation. Preserve these arithmetic results and the hosted edit proof records when changing normalization; fewer machine instructions must not mean fewer certified decisions.
 
+Repeated curve-jet queries compile each retained trace expression DAG into child indices once, then use a contiguous coefficient arena instead of per-node HashMap/Rc buffers. Only the structural program is shared; each query retains its own coefficient cache and the original recurrence, arithmetic order and failure handling. `shared_nested_jets_enclose_analytic_rational_derivatives` checks shared square/root/division expressions against analytic derivatives through order six. Keep the existing singular-panel, deadline and cache-warmth checks alongside the hosted full-answer/work comparisons.
+
 
 
 ## Gotchas

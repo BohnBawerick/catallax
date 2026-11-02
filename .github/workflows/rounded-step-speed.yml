@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'crates/catallax-numbers/**'
+      - 'crates/catallax-intersect/**'
       - 'crates/catallax-step/**'
       - 'crates/catallax-cli/examples/rounded_step.rs'
       - 'crates/catallax-cli/examples/edit_answer.rs'

@@ -8,7 +8,6 @@ use catallax_shapes::{Curve, CurveId, GeomStore, Point3, Vector3};
 use std::{
     collections::{BTreeMap, HashMap},
     ops::{Add, Div, Mul, Neg, Sub},
-    rc::Rc,
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -264,129 +263,219 @@ fn check_deadline(dec: Option<&Decider>) -> Result<(), JetError> {
     }
     Ok(())
 }
-fn jets<S: Scalar>(
-    e: &E,
-    t: &S,
-    n: usize,
-    p: u32,
-    dec: Option<&Decider>,
-    cache: &mut HashMap<usize, Rc<[S]>>,
-) -> Result<Rc<[S]>, JetError> {
-    check_deadline(dec)?;
-    let key = Arc::as_ptr(&e.0) as usize;
-    if let Some(j) = cache.get(&key) {
-        return Ok(j.clone());
+#[derive(Debug)]
+struct JetNode {
+    expression: E,
+    children: [usize; 2],
+}
+
+/// The pointer-identical expression DAG, indexed once for repeated jet queries.
+#[derive(Debug)]
+pub(super) struct JetProgram {
+    nodes: Vec<JetNode>,
+    roots: [usize; 3],
+}
+
+impl JetProgram {
+    pub fn new(coords: &[E; 3]) -> Self {
+        fn insert(e: &E, nodes: &mut Vec<JetNode>, seen: &mut HashMap<usize, usize>) -> usize {
+            let key = Arc::as_ptr(&e.0) as usize;
+            if let Some(index) = seen.get(&key) {
+                return *index;
+            }
+            let children = match e.0.as_ref() {
+                Node::Add(a, b) | Node::Mul(a, b) | Node::Div(a, b) => {
+                    [insert(a, nodes, seen), insert(b, nodes, seen)]
+                }
+                Node::Neg(a) | Node::Sqrt(a) => [insert(a, nodes, seen), 0],
+                Node::T | Node::Constant(..) => [0, 0],
+            };
+            let index = nodes.len();
+            nodes.push(JetNode {
+                expression: e.clone(),
+                children,
+            });
+            seen.insert(key, index);
+            index
+        }
+        let mut nodes = Vec::new();
+        let mut seen = HashMap::new();
+        let roots = coords.each_ref().map(|e| insert(e, &mut nodes, &mut seen));
+        Self { nodes, roots }
     }
-    let mut out = vec![S::integer(0, p); n + 1];
-    match e.0.as_ref() {
-        Node::T => {
-            out[0] = t.clone();
-            if n > 0 {
-                out[1] = S::integer(1, p);
-            }
+}
+
+struct JetValues<'a, S> {
+    program: &'a JetProgram,
+    starts: Vec<Option<usize>>,
+    coefficients: Vec<S>,
+    products: Vec<Option<S>>,
+}
+
+impl<'a, S: Scalar> JetValues<'a, S> {
+    fn new(program: &'a JetProgram, n: usize) -> Self {
+        Self {
+            program,
+            starts: vec![None; program.nodes.len()],
+            coefficients: Vec::with_capacity(program.nodes.len() * (n + 1)),
+            products: Vec::new(),
         }
-        Node::Constant(x, b) => out[0] = S::constant(x, b, p, dec)?,
-        Node::Add(a, b) => {
-            let a = jets(a, t, n, p, dec, cache)?;
-            let b = jets(b, t, n, p, dec, cache)?;
-            for k in 0..=n {
-                check_deadline(dec)?;
-                out[k] = a[k].plus(&b[k]);
-            }
+    }
+
+    fn jets(
+        &mut self,
+        index: usize,
+        t: &S,
+        n: usize,
+        p: u32,
+        dec: Option<&Decider>,
+    ) -> Result<usize, JetError> {
+        check_deadline(dec)?;
+        if let Some(start) = self.starts[index] {
+            return Ok(start);
         }
-        Node::Neg(a) => {
-            let a = jets(a, t, n, p, dec, cache)?;
-            for k in 0..=n {
-                check_deadline(dec)?;
-                out[k] = S::integer(0, p).minus(&a[k]);
+        let start = self.coefficients.len();
+        self.coefficients
+            .extend(std::iter::repeat_n(S::integer(0, p), n + 1));
+        let program = self.program;
+        let node = &program.nodes[index];
+        let [left, right] = node.children;
+        match node.expression.0.as_ref() {
+            Node::T => {
+                self.coefficients[start] = t.clone();
+                if n > 0 {
+                    self.coefficients[start + 1] = S::integer(1, p);
+                }
             }
-        }
-        Node::Mul(a, b) => {
-            let square = Arc::ptr_eq(&a.0, &b.0);
-            let a = jets(a, t, n, p, dec, cache)?;
-            let b = jets(b, t, n, p, dec, cache)?;
-            let a_order = a.iter().rposition(|v| !v.is_zero()).unwrap_or(0);
-            let b_order = b.iter().rposition(|v| !v.is_zero()).unwrap_or(0);
-            let mut products = if square {
-                vec![None; a_order + 1]
-            } else {
-                Vec::new()
-            };
-            for k in 0..=a_order.saturating_add(b_order).min(n) {
-                for i in k.saturating_sub(b_order)..=k.min(a_order) {
+            Node::Constant(x, b) => self.coefficients[start] = S::constant(x, b, p, dec)?,
+            Node::Add(..) => {
+                let a = self.jets(left, t, n, p, dec)?;
+                let b = self.jets(right, t, n, p, dec)?;
+                for k in 0..=n {
                     check_deadline(dec)?;
-                    if square {
-                        let index = i.min(k - i);
-                        if i == index {
-                            products[index] = (!a[i].is_zero() && !a[k - i].is_zero())
-                                .then(|| a[i].times(&a[k - i]));
+                    self.coefficients[start + k] =
+                        self.coefficients[a + k].plus(&self.coefficients[b + k]);
+                }
+            }
+            Node::Neg(_) => {
+                let a = self.jets(left, t, n, p, dec)?;
+                for k in 0..=n {
+                    check_deadline(dec)?;
+                    self.coefficients[start + k] =
+                        S::integer(0, p).minus(&self.coefficients[a + k]);
+                }
+            }
+            Node::Mul(a, b) => {
+                let square = Arc::ptr_eq(&a.0, &b.0);
+                let a = self.jets(left, t, n, p, dec)?;
+                let b = self.jets(right, t, n, p, dec)?;
+                let a_order = self.coefficients[a..=a + n]
+                    .iter()
+                    .rposition(|v| !v.is_zero())
+                    .unwrap_or(0);
+                let b_order = self.coefficients[b..=b + n]
+                    .iter()
+                    .rposition(|v| !v.is_zero())
+                    .unwrap_or(0);
+                self.products.clear();
+                if square {
+                    self.products.resize_with(a_order + 1, || None);
+                }
+                for k in 0..=a_order.saturating_add(b_order).min(n) {
+                    for i in k.saturating_sub(b_order)..=k.min(a_order) {
+                        check_deadline(dec)?;
+                        if square {
+                            let index = i.min(k - i);
+                            if i == index {
+                                self.products[index] = (!self.coefficients[a + i].is_zero()
+                                    && !self.coefficients[a + k - i].is_zero())
+                                .then(|| {
+                                    self.coefficients[a + i].times(&self.coefficients[a + k - i])
+                                });
+                            }
+                            if let Some(product) = &self.products[i.min(k - i)] {
+                                self.coefficients[start + k] =
+                                    self.coefficients[start + k].plus(product);
+                            }
+                        } else if !self.coefficients[a + i].is_zero()
+                            && !self.coefficients[b + k - i].is_zero()
+                        {
+                            let product =
+                                self.coefficients[a + i].times(&self.coefficients[b + k - i]);
+                            self.coefficients[start + k] =
+                                self.coefficients[start + k].plus(&product);
                         }
-                        if let Some(product) = &products[i.min(k - i)] {
-                            out[k] = out[k].plus(product);
+                    }
+                }
+            }
+            Node::Div(..) => {
+                let a = self.jets(left, t, n, p, dec)?;
+                let b = self.jets(right, t, n, p, dec)?;
+                let inverse = S::integer(1, p)
+                    .divide(&self.coefficients[b])
+                    .ok_or(JetError::Split)?;
+                let order = self.coefficients[b..=b + n]
+                    .iter()
+                    .rposition(|v| !v.is_zero())
+                    .unwrap_or(0);
+                for k in 0..=n {
+                    let mut v = self.coefficients[a + k].clone();
+                    for i in 1..=k.min(order) {
+                        check_deadline(dec)?;
+                        if !self.coefficients[b + i].is_zero()
+                            && !self.coefficients[start + k - i].is_zero()
+                        {
+                            v = v.minus(
+                                &self.coefficients[b + i].times(&self.coefficients[start + k - i]),
+                            );
                         }
-                    } else if !a[i].is_zero() && !b[k - i].is_zero() {
-                        out[k] = out[k].plus(&a[i].times(&b[k - i]));
                     }
+                    self.coefficients[start + k] = if v.is_zero() { v } else { v.times(&inverse) };
                 }
             }
-        }
-        Node::Div(a, b) => {
-            let a = jets(a, t, n, p, dec, cache)?;
-            let b = jets(b, t, n, p, dec, cache)?;
-            let inverse = S::integer(1, p).divide(&b[0]).ok_or(JetError::Split)?;
-            let order = b.iter().rposition(|v| !v.is_zero()).unwrap_or(0);
-            for k in 0..=n {
-                let mut v = a[k].clone();
-                for i in 1..=k.min(order) {
-                    check_deadline(dec)?;
-                    if !b[i].is_zero() && !out[k - i].is_zero() {
-                        v = v.minus(&b[i].times(&out[k - i]));
-                    }
-                }
-                out[k] = if v.is_zero() { v } else { v.times(&inverse) };
-            }
-        }
-        Node::Sqrt(a) => {
-            let a = jets(a, t, n, p, dec, cache)?;
-            out[0] = a[0].root().ok_or(JetError::Split)?;
-            let inverse = if n == 0 {
-                None
-            } else {
-                Some(
-                    S::integer(1, p)
-                        .divide(&S::integer(2, p).times(&out[0]))
-                        .ok_or(JetError::Split)?,
-                )
-            };
-            let mut products = Vec::with_capacity(n / 2);
-            for k in 1..=n {
-                let mut v = a[k].clone();
-                products.clear();
-                for i in 1..k {
-                    check_deadline(dec)?;
-                    if i <= k / 2 {
-                        products.push(
-                            (!out[i].is_zero() && !out[k - i].is_zero())
-                                .then(|| out[i].times(&out[k - i])),
-                        );
-                    }
-                    // Reuse each symmetric product, but retain every
-                    // subtraction in its original order and precision.
-                    if let Some(product) = &products[i.min(k - i) - 1] {
-                        v = v.minus(product);
-                    }
-                }
-                out[k] = if v.is_zero() {
-                    v
+            Node::Sqrt(_) => {
+                let a = self.jets(left, t, n, p, dec)?;
+                self.coefficients[start] = self.coefficients[a].root().ok_or(JetError::Split)?;
+                let inverse = if n == 0 {
+                    None
                 } else {
-                    v.times(inverse.as_ref().unwrap())
+                    Some(
+                        S::integer(1, p)
+                            .divide(&S::integer(2, p).times(&self.coefficients[start]))
+                            .ok_or(JetError::Split)?,
+                    )
                 };
+                for k in 1..=n {
+                    let mut v = self.coefficients[a + k].clone();
+                    self.products.clear();
+                    for i in 1..k {
+                        check_deadline(dec)?;
+                        if i <= k / 2 {
+                            self.products.push(
+                                (!self.coefficients[start + i].is_zero()
+                                    && !self.coefficients[start + k - i].is_zero())
+                                .then(|| {
+                                    self.coefficients[start + i]
+                                        .times(&self.coefficients[start + k - i])
+                                }),
+                            );
+                        }
+                        // Retain each symmetric subtraction's original order and precision.
+                        if let Some(product) = &self.products[i.min(k - i) - 1] {
+                            v = v.minus(product);
+                        }
+                    }
+                    self.coefficients[start + k] = if v.is_zero() {
+                        v
+                    } else {
+                        v.times(inverse.as_ref().unwrap())
+                    };
+                }
             }
         }
+        self.starts[index] = Some(start);
+        Ok(start)
     }
-    let out: Rc<[S]> = out.into();
-    cache.insert(key, out.clone());
-    Ok(out)
 }
 #[derive(Clone, Debug)]
 pub(super) struct Linear {
@@ -435,13 +524,13 @@ impl Chart {
         Point3::new(j[0][0].clone(), j[0][1].clone(), j[0][2].clone())
     }
     pub fn exact_jets(&self, t: &Real, n: usize) -> Vec<[Real; 3]> {
-        let mut cache = HashMap::new();
-        let j = self
-            .coords
-            .each_ref()
-            .map(|e| jets(e, t, n, 0, None, &mut cache).unwrap());
+        let program = JetProgram::new(&self.coords);
+        let mut values = JetValues::new(&program, n);
+        let j = program
+            .roots
+            .map(|root| values.jets(root, t, n, 0, None).unwrap());
         (0..=n)
-            .map(|k| [j[0][k].clone(), j[1][k].clone(), j[2][k].clone()])
+            .map(|k| std::array::from_fn(|axis| values.coefficients[j[axis] + k].clone()))
             .collect()
     }
     pub fn endpoint_tangent(&self, end: bool) -> Vector3 {
@@ -565,29 +654,30 @@ pub(super) fn spline_span(
     Ok([x / w.clone(), y / w.clone(), z / w])
 }
 fn enclose_jets(
-    coords: &[E; 3],
+    program: &JetProgram,
     t: &Ball,
     n: usize,
     dec: &Decider,
 ) -> Result<Vec<[Ball; 3]>, JetError> {
-    let mut cache = HashMap::new();
-    let a = jets(&coords[0], t, n, t.precision(), Some(dec), &mut cache)?;
-    let b = jets(&coords[1], t, n, t.precision(), Some(dec), &mut cache)?;
-    let c = jets(&coords[2], t, n, t.precision(), Some(dec), &mut cache)?;
+    let mut values = JetValues::new(program, n);
+    let [a, b, c] = program.roots;
+    let a = values.jets(a, t, n, t.precision(), Some(dec))?;
+    let b = values.jets(b, t, n, t.precision(), Some(dec))?;
+    let c = values.jets(c, t, n, t.precision(), Some(dec))?;
     Ok((0..=n)
-        .map(|k| [a[k].clone(), b[k].clone(), c[k].clone()])
+        .map(|k| [a, b, c].map(|start| values.coefficients[start + k].clone()))
         .collect())
 }
 pub(super) fn interval_jets(
-    coords: &[E; 3],
+    program: &JetProgram,
     t: Interval,
     n: usize,
     dec: &Decider,
 ) -> Result<Option<Vec<[Interval; 3]>>, Refusal> {
-    let mut cache = HashMap::new();
-    let result = coords
-        .each_ref()
-        .map(|e| jets(e, &t, n, INTERVAL_PRECISION, Some(dec), &mut cache));
+    let mut cache = JetValues::new(program, n);
+    let result = program
+        .roots
+        .map(|root| cache.jets(root, &t, n, INTERVAL_PRECISION, Some(dec)));
     let mut values = Vec::with_capacity(3);
     for value in result {
         match value {
@@ -600,7 +690,7 @@ pub(super) fn interval_jets(
         }
     }
     let result: Vec<_> = (0..=n)
-        .map(|k| [values[0][k], values[1][k], values[2][k]])
+        .map(|k| std::array::from_fn(|axis| cache.coefficients[values[axis] + k]))
         .collect();
     Ok(result
         .iter()
@@ -656,7 +746,7 @@ pub(super) fn exact_position(
 }
 
 pub(super) fn ball_jets(
-    coords: &[E; 3],
+    program: &JetProgram,
     t: &Ball,
     n: usize,
     dec: &Decider,
@@ -664,7 +754,7 @@ pub(super) fn ball_jets(
     dec.check_deadline()?;
     let p = t.precision();
     let wide = t.with_precision(p.saturating_add(64));
-    match enclose_jets(coords, &wide, n, dec) {
+    match enclose_jets(program, &wide, n, dec) {
         Ok(j) => {
             return Ok(j
                 .into_iter()
@@ -679,8 +769,8 @@ pub(super) fn ball_jets(
         .hull(&Ball::from_rational(&mid, p.saturating_add(64)));
     let right = Ball::from_rational(&mid, p.saturating_add(64))
         .hull(&Ball::from_rational(&t.hi(), p.saturating_add(64)));
-    let a = ball_jets(coords, &left, n, dec)?;
-    let b = ball_jets(coords, &right, n, dec)?;
+    let a = ball_jets(program, &left, n, dec)?;
+    let b = ball_jets(program, &right, n, dec)?;
     Ok(a.into_iter()
         .zip(b)
         .map(|(a, b)| std::array::from_fn(|i| a[i].hull(&b[i]).with_precision(p)))
@@ -1272,6 +1362,48 @@ mod tests {
     }
 
     #[test]
+    fn shared_nested_jets_enclose_analytic_rational_derivatives() {
+        let t = E::t();
+        let root = (t.clone() + E::integer(1)).square().sqrt();
+        let x = root.clone() / (t + E::integer(2));
+        let piece = TracePiece::new([x.clone(), x.square(), root]);
+        let dec = Decider::default();
+        for parameter in [r(0), Rational::from_ratio(1, 2).unwrap(), r(1)] {
+            let inverse = (&parameter + &r(2)).recip().unwrap();
+            for order in [0, 1, 2, 6] {
+                for precision in [64, 192] {
+                    let jets = piece
+                        .taylor(&Ball::from_rational(&parameter, precision), order, &dec)
+                        .unwrap();
+                    let x = &r(1) - &inverse;
+                    let mut power = &inverse * &inverse;
+                    for (k, values) in jets.iter().enumerate() {
+                        let expected = if k == 0 {
+                            [x.clone(), &x * &x, &parameter + &r(1)]
+                        } else {
+                            let sign = r(if k % 2 == 1 { 1 } else { -1 });
+                            [
+                                &sign * &power,
+                                &sign * &(&r(2) * &power - &r(k as i64 + 1) * &(&power * &inverse)),
+                                r(i64::from(k == 1)),
+                            ]
+                        };
+                        for axis in 0..3 {
+                            assert!(
+                                values[axis].contains(&expected[axis]),
+                                "t={parameter}, order={order}, precision={precision}, k={k}, axis={axis}"
+                            );
+                        }
+                        if k > 0 {
+                            power = &power * &inverse;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn trace_enclosures_and_failures_are_independent_of_cache_warmth() {
         fn piece() -> TracePiece {
             let root = Real::from_i64(2).sqrt();
@@ -1320,30 +1452,27 @@ mod tests {
         let dec = Decider::default();
         let (cosine, sine) = trig();
         let coords = [cosine, sine, E::t()];
+        let program = JetProgram::new(&coords);
         for (lo, hi) in [(0.0, 0.25), (0.25, 0.5), (0.5, 1.0)] {
-            let filtered = interval_jets(&coords, Interval::new(lo, hi).unwrap(), 2, &dec)
+            let filtered = interval_jets(&program, Interval::new(lo, hi).unwrap(), 2, &dec)
                 .unwrap()
                 .unwrap();
             for t in [lo, (lo + hi) * 0.5, hi] {
-                let mut cache = HashMap::new();
-                for (axis, expression) in coords.iter().enumerate() {
-                    let exact = jets(
-                        expression,
-                        &Real::from(Rational::from_f64_exact(t).unwrap()),
-                        2,
-                        0,
-                        None,
-                        &mut cache,
-                    )
-                    .unwrap();
-                    for k in 0..=2 {
-                        let value = exact[k].rational_ref().unwrap();
-                        assert!(
-                            Rational::from_f64_exact(filtered[k][axis].lo()).unwrap() <= *value
-                        );
-                        assert!(
-                            Rational::from_f64_exact(filtered[k][axis].hi()).unwrap() >= *value
-                        );
+                let mut cache = JetValues::new(&program, 2);
+                for (axis, root) in program.roots.iter().enumerate() {
+                    let exact = cache
+                        .jets(
+                            *root,
+                            &Real::from(Rational::from_f64_exact(t).unwrap()),
+                            2,
+                            0,
+                            None,
+                        )
+                        .unwrap();
+                    for (k, bounds) in filtered.iter().enumerate() {
+                        let value = cache.coefficients[exact + k].rational_ref().unwrap();
+                        assert!(Rational::from_f64_exact(bounds[axis].lo()).unwrap() <= *value);
+                        assert!(Rational::from_f64_exact(bounds[axis].hi()).unwrap() >= *value);
                     }
                 }
             }
@@ -1354,9 +1483,14 @@ mod tests {
             E::integer(0),
         ];
         assert!(
-            interval_jets(&singular, Interval::new(0.25, 0.75).unwrap(), 2, &dec)
-                .unwrap()
-                .is_none()
+            interval_jets(
+                &JetProgram::new(&singular),
+                Interval::new(0.25, 0.75).unwrap(),
+                2,
+                &dec,
+            )
+            .unwrap()
+            .is_none()
         );
         let root = Real::from_i64(2).sqrt();
         let tiny = Real::from(Rational::parse("1e-50").unwrap());
@@ -1366,14 +1500,19 @@ mod tests {
             E::integer(0),
         ];
         assert!(
-            interval_jets(&ill_conditioned, Interval::point(0.0).unwrap(), 0, &dec)
-                .unwrap()
-                .is_none()
+            interval_jets(
+                &JetProgram::new(&ill_conditioned),
+                Interval::point(0.0).unwrap(),
+                0,
+                &dec,
+            )
+            .unwrap()
+            .is_none()
         );
         let mut expired = Decider::default();
         expired.set_deadline(Some(std::time::Instant::now()));
         assert_eq!(
-            interval_jets(&coords, Interval::point(0.0).unwrap(), 0, &expired)
+            interval_jets(&program, Interval::point(0.0).unwrap(), 0, &expired)
                 .unwrap_err()
                 .code,
             "numbers.deadline"

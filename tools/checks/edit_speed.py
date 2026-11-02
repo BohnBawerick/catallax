@@ -17,6 +17,7 @@ TARGETS = {"bracket": {27: "edit_dimension", 43: "set_value"},
            "references": {17: "edit_extrude", 18: "edit_dimension"}}
 FILES = ("answer.step", "answer.txt", "display.obj", "mesh.txt",
          "names.txt", "stats.txt", "work.txt", "operations.txt")
+MEASURED_PAIRS = 9
 
 
 def load(path, name):
@@ -37,6 +38,12 @@ def pin(app, sha):
 def build(args):
     manifest = args.app / "crates/soliddraft-kernel-catallax/Cargo.toml"
     original = manifest.read_text()
+    native = args.app / "crates/soliddraft-kernel-catallax/src/native.rs"
+    source = native.read_text()
+    old = "Ok(FaceRef { face: face_pattern, touching: vec![], near })"
+    assert source.count(old) == 1, "unexpected released face-selector constructor"
+    native.write_text(source.replace(
+        old, "Ok(FaceRef { face: Some(face_pattern), touching: vec![], near })"))
     args.binaries.mkdir(parents=True)
     env = {**os.environ, "CARGO_TARGET_DIR": str(args.binaries.parent / "edit-build")}
     for revision, root, sha in [("baseline", args.baseline, os.environ["BASE_SHA"]),
@@ -113,7 +120,7 @@ def run(args):
             step.pop("checked_step_export", None)
             step.pop("drawing", None)
         (scenarios / f"{name}.json").write_text(json.dumps(source, indent=2) + "\n")
-    for pair in range(4):
+    for pair in range(MEASURED_PAIRS + 1):
         order = ["baseline", "candidate"] if pair % 2 == 0 else ["candidate", "baseline"]
         for revision in order:
             sha = pins[revision == "candidate"]
@@ -179,10 +186,13 @@ def run(args):
                                     click_ms=statistics.median(s["click_ms"] for s in rows),
                                     kernel_ms=statistics.median(s["kernel_ms"] for s in rows),
                                     application_ms=statistics.median(s["click_ms"] - s["kernel_ms"] for s in rows),
+                                    split_ms={phase: statistics.median(s["split_ms"][phase] for s in rows)
+                                              for phase in ("edit", "display", "measurement")},
                                     certified_build_ms=statistics.median(s["certified"]["timing"]["build_ms"] for s in rows),
                                     certified_display_ms=statistics.median(s["certified"]["timing"]["display_ms"] for s in rows)))
     report = dict(base=pins[0], head=pins[1], soliddraft="04f45bf40c119d5387836173727a3905db094e4a",
-                  core=core, binary_sha256={r: hashlib.sha256((args.binaries / r).read_bytes()).hexdigest()
+                  core=core, measured_pairs=MEASURED_PAIRS,
+                  binary_sha256={r: hashlib.sha256((args.binaries / r).read_bytes()).hexdigest()
                                             for r in ("baseline", "candidate")},
                   comparison="identical application answers and native STEP, mesh, certificates, names, stats and work",
                   medians=medians, samples=samples)
@@ -190,10 +200,36 @@ def run(args):
     print(json.dumps(report, indent=2))
 
 
+def profile(args):
+    os.sched_setaffinity(0, {min(os.sched_getaffinity(0))})
+    binary = args.baseline / "target/release/examples/edit_answer"
+    metadata = dict(binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+                    valgrind=subprocess.check_output(["valgrind", "--version"], text=True).strip(),
+                    metric="Callgrind instruction costs, not wall-time measurements")
+    for name, targets in TARGETS.items():
+        for number in targets:
+            source = args.out / "0-baseline/native" / name / f"{number:04}/native.json"
+            dest = args.out / "profiles" / name / f"{number:04}"
+            dest.mkdir(parents=True)
+            with (dest / "instrumented.stdout").open("w") as stdout, \
+                    (dest / "callgrind.log").open("w") as stderr:
+                subprocess.run(["valgrind", "--tool=callgrind", "--error-exitcode=1",
+                                f"--callgrind-out-file={dest / 'callgrind.out'}",
+                                str(binary), str(source), str(dest / "answer")],
+                               stdout=stdout, stderr=stderr, check=True)
+            with (dest / "inclusive.txt").open("w") as stdout:
+                subprocess.run(["callgrind_annotate", "--inclusive=yes", "--tree=both",
+                                "--auto=no", "--threshold=99", str(dest / "callgrind.out")],
+                               stdout=stdout, check=True)
+            metadata.setdefault("inputs", []).append(dict(
+                scenario=name, step=number, sha256=hashlib.sha256(source.read_bytes()).hexdigest()))
+    (args.out / "profiles/metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("build", "run"))
+    parser.add_argument("mode", choices=("build", "run", "profile"))
     for name in ("app", "baseline", "candidate", "binaries", "out"):
         parser.add_argument("--" + name, type=lambda value: Path(value).resolve(), required=True)
     arguments = parser.parse_args()
-    (build if arguments.mode == "build" else run)(arguments)
+    {"build": build, "run": run, "profile": profile}[arguments.mode](arguments)

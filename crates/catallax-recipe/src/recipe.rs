@@ -8,7 +8,7 @@ use crate::ids::{ElementId, StepId};
 use crate::operation::{Operation, ValueKind};
 use crate::text::Canonical;
 
-/// The format identifier every recipe carries.
+/// The version 3 format identifier and default for [`Recipe::new`].
 pub const FORMAT: &str = "catallax-recipe/3";
 
 /// Version 4 adds one-sided and first-hit extrusion end conditions.
@@ -50,7 +50,7 @@ struct FormatOnly {
 }
 
 impl Recipe {
-    /// A recipe of the current format.
+    /// A version 3 recipe. Set `format` explicitly when using newer syntax.
     pub fn new(name: impl Into<String>, steps: Vec<Step>, result: StepId) -> Self {
         Recipe {
             format: FORMAT.into(),
@@ -140,7 +140,7 @@ pub enum RecipeError {
         /// What the reader found, with its line and column.
         message: String,
     },
-    /// The format is not [`FORMAT`].
+    /// The format is not one of the supported recipe versions.
     Format {
         /// The format the text names, empty when it names none.
         found: String,

@@ -158,6 +158,29 @@ fn v5_all_faces_filters_resolve_against_the_input_in_both_evaluators() {
 }
 
 #[test]
+fn v5_all_faces_near_keeps_exact_ties_ambiguous() {
+    let recipe = Recipe::parse(
+        &json!({
+            "format":"catallax-recipe/5","name":"all faces tied",
+            "steps":[block(), {
+                "id":"result","op":"shell","body":"stock",
+                "open":[{"near":["5","4","3"]}],"thickness":"1"
+            }],"result":"result"
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let error = evaluate(&recipe, &mut Decider::default()).unwrap_err();
+    assert!(matches!(
+        error,
+        catallax_features::BuildError::Geometry { refusal, .. }
+            if refusal.code == "reference.ambiguous-face"
+    ));
+    let error = Plan::compile(&recipe).unwrap_err();
+    assert_eq!(error.code, "reference.ambiguous-face");
+}
+
+#[test]
 fn inward_plane_offsets_regularise_collapsed_cells() {
     let shrunk = recipe(
         block(),

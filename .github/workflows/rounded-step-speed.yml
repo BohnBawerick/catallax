@@ -5,6 +5,7 @@ on:
     paths:
       - 'crates/catallax-numbers/**'
       - 'crates/catallax-intersect/**'
+      - 'crates/catallax-boolean/**'
       - 'crates/catallax-step/**'
       - 'crates/catallax-cli/examples/rounded_step.rs'
       - 'crates/catallax-cli/examples/edit_answer.rs'
@@ -124,6 +125,9 @@ jobs:
       - name: Pair the five released edits and compare every answer
         run: |
           python3 candidate/tools/checks/edit_speed.py run --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
+      - name: Measure captured native Boolean phases independently
+        run: |
+          python3 candidate/tools/checks/edit_speed.py phases --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
       - name: Attribute native Boolean and certified display instruction costs
         run: |
           python3 candidate/tools/checks/edit_speed.py profile --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"

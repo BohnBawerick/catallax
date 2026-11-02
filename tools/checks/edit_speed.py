@@ -200,6 +200,84 @@ def run(args):
     print(json.dumps(report, indent=2))
 
 
+def phases(args):
+    root = args.out / "boolean-phases"
+    root.mkdir()
+    compiled = subprocess.run(
+        ["cargo", "build", "--locked", "--release", "-p", "catallax-features",
+         "--bench", "rebuild", "--message-format=json", "-j", "2"],
+        cwd=args.baseline, stdout=subprocess.PIPE, text=True, check=True)
+    (root / "build.jsonl").write_text(compiled.stdout)
+    artifacts = [json.loads(line) for line in compiled.stdout.splitlines()]
+    executables = [item["executable"] for item in artifacts
+                   if item.get("reason") == "compiler-artifact"
+                   and item["target"]["name"] == "rebuild" and item.get("executable")]
+    assert len(executables) == 1, "expected one rebuild benchmark executable"
+    binary = Path(executables[0])
+    core = min(os.sched_getaffinity(0))
+    os.sched_setaffinity(0, {core})
+    stages = ("intersect", "imprint", "classify", "keep", "sew")
+    samples, medians = [], []
+    for name, targets in TARGETS.items():
+        for number in targets:
+            source = args.out / "0-baseline/native" / name / f"{number:04}/native.json"
+            expected = {step["id"] for step in json.loads(source.read_text())["steps"]
+                        if step["op"] == "boolean"}
+            reference = None
+            case = []
+            for repetition in range(4):
+                dest = root / name / f"{number:04}" / str(repetition)
+                dest.mkdir(parents=True)
+                load_before = os.getloadavg()
+                process = subprocess.run(
+                    [str(binary), "--input", str(source), "--repeat", "1", "--stages",
+                     "--step-output", str(dest / "answer.step")],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                load_after = os.getloadavg()
+                (dest / "stdout.jsonl").write_text(process.stdout)
+                (dest / "stderr.txt").write_text(process.stderr)
+                process.check_returncode()
+                records = [json.loads(line) for line in process.stdout.splitlines()]
+                rows = [row for row in records if "stage" in row]
+                assert Counter((row["step"], row["stage"]) for row in rows) == Counter(
+                    (step, stage) for step in expected for stage in stages), \
+                    f"missing Boolean phase evidence: {dest}"
+                normalized = without_clock(rows)
+                if reference is None:
+                    reference = normalized
+                assert normalized == reference, f"phase decisions or work varied: {dest}"
+                assert (dest / "answer.step").read_bytes() == \
+                    (source.parent / "answer.step").read_bytes(), \
+                    f"phase benchmark's complete build changed STEP bytes: {dest}"
+                row = dict(scenario=name, step=number, repetition=repetition,
+                           warmup=repetition == 0, load_before=load_before, load_after=load_after,
+                           stages_ms={stage: sum(value["wall_ms"] for value in rows
+                                                 if value["stage"] == stage) for stage in stages},
+                           operations=rows)
+                samples.append(row)
+                if repetition:
+                    case.append(row)
+            medians.append(dict(
+                scenario=name, step=number,
+                stages_ms={stage: statistics.median(row["stages_ms"][stage] for row in case)
+                           for stage in stages},
+                operations=[dict(
+                    step=step,
+                    stages_ms={stage: statistics.median(
+                        value["wall_ms"] for row in case for value in row["operations"]
+                        if value["step"] == step and value["stage"] == stage) for stage in stages})
+                    for step in sorted(expected)]))
+    report = dict(
+        base=os.environ["BASE_SHA"], core=core,
+        binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+        measured_repetitions=3,
+        scope="Independent native prefix phase replay with the existing benchmark's raw scope; "
+              "not an application click or its aggregate work scope",
+        medians=medians, samples=samples)
+    (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report, indent=2))
+
+
 def profile(args):
     os.sched_setaffinity(0, {min(os.sched_getaffinity(0))})
     binary = args.baseline / "target/release/examples/edit_answer"
@@ -228,8 +306,8 @@ def profile(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("build", "run", "profile"))
+    parser.add_argument("mode", choices=("build", "run", "phases", "profile"))
     for name in ("app", "baseline", "candidate", "binaries", "out"):
         parser.add_argument("--" + name, type=lambda value: Path(value).resolve(), required=True)
     arguments = parser.parse_args()
-    {"build": build, "run": run, "profile": profile}[arguments.mode](arguments)
+    {"build": build, "run": run, "phases": phases, "profile": profile}[arguments.mode](arguments)

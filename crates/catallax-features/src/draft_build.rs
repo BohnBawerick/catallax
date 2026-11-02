@@ -724,11 +724,7 @@ fn nearest_axial(
     Ok(matches[near::unique_nearest(&distances, dec)?])
 }
 
-pub(crate) fn planar_skin(
-    model: &Model,
-    faces: &[FaceId],
-    holes: &BTreeSet<LoopId>,
-) -> Result<Skin, Refusal> {
+fn planar_skin(model: &Model, faces: &[FaceId], holes: &BTreeSet<LoopId>) -> Result<Skin, Refusal> {
     let mut vertices = BTreeSet::new();
     for face in faces {
         for lp in &model.face(*face).loops {

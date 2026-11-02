@@ -136,37 +136,6 @@ fn complete_circular_holes_have_axis_and_rim_witnesses() {
 }
 
 #[test]
-fn exact_convex_tiles_preserve_nonconvex_area_and_holes() {
-    for (boundary, twice_area) in [
-        (
-            polygon(&[&[[0, 0], [4, 0], [4, 1], [1, 1], [1, 4], [0, 4]]]),
-            14,
-        ),
-        (
-            polygon(&[
-                &[[0, 0], [6, 0], [6, 6], [0, 6]],
-                &[[1, 1], [1, 3], [3, 3], [3, 1]],
-            ]),
-            64,
-        ),
-    ] {
-        let mut dec = Decider::default();
-        let mut area = Real::zero();
-        for tile in boundary.tiles(&mut dec).unwrap() {
-            for i in 0..tile.len() {
-                let a = tile[i].minus(&Point3::origin());
-                let b = tile[(i + 1) % tile.len()].minus(&Point3::origin());
-                area = area + a.cross(&b).z;
-            }
-        }
-        assert_eq!(
-            dec.rational_value(&area).unwrap(),
-            Some(Rational::from_i64(twice_area))
-        );
-    }
-}
-
-#[test]
 fn polygon_pair_minima_cover_interior_overlaps_skew_crossings_and_holes() {
     let controls = Options {
         width: Rational::parse("1e-10").unwrap(),

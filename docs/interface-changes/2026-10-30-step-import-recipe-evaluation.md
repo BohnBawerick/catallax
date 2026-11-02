@@ -1,5 +1,7 @@
 # STEP import recipe evaluation
 
+Superseded for saved approvals and repair-record retention by [planar import local tolerances](2026-11-02-planar-import-local-tolerances.md). The original batch contract below remains historical context.
+
 V9-K connects `Operation::ImportStep` to the existing reader and repair implementation. It does not change STEP parsing, repair policy, or STEP writing.
 
 ## Sources and builds

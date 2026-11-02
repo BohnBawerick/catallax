@@ -116,6 +116,12 @@ pub fn apply(
                 let tol = Rational::parse(tolerance_mm)
                     .map_err(|_| invalid(&p.id, "tolerance is not a decimal"))?;
                 let (_, hi) = sqrt_enclosure(&gap.d2);
+                if tol.to_decimal_exact().is_none() {
+                    return Err(invalid(
+                        &p.id,
+                        "tolerance must have an exact decimal representation",
+                    ));
+                }
                 if tol < hi {
                     return Err(invalid(&p.id, "tolerance is below the measured distance"));
                 }
@@ -196,11 +202,25 @@ pub fn apply(
 
     // Refit and validate every repaired solid, then build the closed ones.
     let mut bodies = Vec::new();
+    let mut face_tolerances = Vec::new();
     let mut left_open = Vec::new();
     for (si, solid) in work.solids.iter().enumerate() {
         if open.contains(&si) {
             left_open.push(solid.name.clone());
             continue;
+        }
+        if repaired.contains(&si) {
+            let cap = gaps
+                .iter()
+                .zip(&plans)
+                .filter(|(gap, _)| gap.solid == si)
+                .filter_map(|(_, plan)| plan.repair.as_ref().map(|(tol, _)| tol.clone()))
+                .max()
+                .expect("repaired solid has an approval");
+            face_tolerances.extend(
+                crate::deviation::certify(&file.solids[si], solid, &cap)
+                    .map_err(|detail| failed(&solid.name, detail))?,
+            );
         }
         let first = props
             .iter()
@@ -238,6 +258,7 @@ pub fn apply(
             sha256: sha256_hex(b),
         }),
         changes,
+        face_tolerances,
     };
     Ok(Imported {
         bodies,
@@ -581,6 +602,9 @@ pub fn rebuild(
     }
     if record.changes.len() != imported.record.changes.len() {
         return Err(failed("", "the record lists a different set of gaps"));
+    }
+    if record.face_tolerances != imported.record.face_tolerances {
+        return Err(failed("", "the local tolerances do not match the repair"));
     }
     Ok(imported)
 }

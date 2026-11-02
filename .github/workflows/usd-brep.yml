@@ -1,0 +1,54 @@
+name: USD BRep analytic export
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'tools/checks/usd_brep.py'
+      - '.github/workflows/usd-brep.yml'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analytic-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: Swatinem/rust-cache@v2
+      - name: Install independent USD decoder
+        run: python -m pip install usd-core==25.11
+      - name: Check identity survival and stale-output refusal
+        run: cargo test -p catallax-features --example usd_brep golden_export_edit_preserves_persistent_identities
+      - name: Export the solid, placement and height edit
+        run: |
+          cargo build -p catallax-features --example usd_brep
+          commit=$(git rev-parse HEAD)
+          proof="$RUNNER_TEMP/usd-brep"
+          mkdir -p "$proof"
+          target/debug/examples/usd_brep "$proof/baseline" 2 identity "$commit"
+          target/debug/examples/usd_brep "$proof/placed" 2 placed "$commit"
+          target/debug/examples/usd_brep "$proof/edited" 3 identity "$commit"
+      - name: Decode and check geometry, identities and negative controls
+        run: |
+          proof="$RUNNER_TEMP/usd-brep"
+          python tools/checks/usd_brep.py "$proof/baseline" --edit "$proof/edited" --negative-controls > "$proof/baseline-check.json"
+          python tools/checks/usd_brep.py "$proof/placed" --negative-controls > "$proof/placed-check.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: usd-brep-analytic-export
+          path: ${{ runner.temp }}/usd-brep
+          if-no-files-found: error

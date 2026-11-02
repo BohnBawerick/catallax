@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// Format tag of [`ProposalSet`].
 pub const PROPOSALS_FORMAT: &str = "catallax-import-proposals/1";
 /// Format tag of [`RepairRecord`].
-pub const REPAIR_FORMAT: &str = "catallax-import-repair/1";
+pub const REPAIR_FORMAT: &str = "catallax-import-repair/2";
 /// Largest gap repaired without asking, in millimetres.
 pub const AUTO_CAP_MM: &str = "0.01";
 
@@ -141,6 +141,24 @@ pub struct DerivativeRef {
     pub sha256: String,
 }
 
+/// A whole trimmed-face, two-sided distance enclosure against the immutable
+/// source face. Complete convex polygon covers prove both directed distances.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct FaceTolerance {
+    /// Source solid entity.
+    pub solid: String,
+    /// Source face entity, also the imported origin key.
+    pub face: String,
+    /// Certified lower bound on the whole-face Hausdorff deviation, in mm.
+    pub deviation_lower_mm: String,
+    /// Proven Hausdorff upper bound in millimetres, retained as local tolerance.
+    pub deviation_upper_mm: String,
+    /// File approval limit, separate from the attained deviation.
+    pub approved_tolerance_mm: String,
+    /// Conservative nearest-feature size squared, an exact rational in mm².
+    pub feature_size_squared_mm2: String,
+}
+
 /// The persisted change record. Stored beside the recipe and rebuilt into the
 /// derivative from the source and this record alone.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -154,6 +172,9 @@ pub struct RepairRecord {
     pub derivative: Option<DerivativeRef>,
     /// Changes and declines, ordered by id.
     pub changes: Vec<Change>,
+    /// Nonzero whole-face exceptions against source geometry, not output error.
+    /// Empty for clean sources and declined repairs.
+    pub face_tolerances: Vec<FaceTolerance>,
 }
 
 /// Typed refusals of an import. None of these is an impossible-geometry claim

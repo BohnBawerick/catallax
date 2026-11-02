@@ -126,13 +126,19 @@ fn an_over_cap_gap_asks_and_an_approval_is_recorded() {
         run(&text, &[accept("g0", "0.01")]).unwrap_err(),
         ImportRefusal::InvalidDecision { detail, .. } if detail.contains("below")
     ));
-    let (model, done) = run(&text, &[accept("g0", "0.02")]).unwrap();
+    let (model, done) = run(&text, &[accept("g0", "0.03")]).unwrap();
     assert_eq!(vol(&model, done.bodies[0].1), r("1002"));
     let change = &done.record.changes[0];
     assert_eq!(change.approval, Approval::User);
     assert_eq!(change.approver.as_deref(), Some("jev"));
-    assert_eq!(change.tolerance_mm, "0.02");
+    assert_eq!(change.tolerance_mm, "0.03");
     assert_eq!(change.max_movement_mm, "0.02");
+    assert_eq!(done.record.face_tolerances.len(), 4);
+    for face in &done.record.face_tolerances {
+        assert_eq!(face.deviation_lower_mm, "0.02");
+        assert_eq!(face.deviation_upper_mm, "0.02");
+        assert_eq!(face.approved_tolerance_mm, "0.03");
+    }
 }
 
 #[test]

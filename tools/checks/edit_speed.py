@@ -38,6 +38,12 @@ def pin(app, sha):
 def build(args):
     manifest = args.app / "crates/soliddraft-kernel-catallax/Cargo.toml"
     original = manifest.read_text()
+    native = args.app / "crates/soliddraft-kernel-catallax/src/native.rs"
+    source = native.read_text()
+    old = "Ok(FaceRef { face: face_pattern, touching: vec![], near })"
+    assert source.count(old) == 1, "unexpected released face-selector constructor"
+    native.write_text(source.replace(
+        old, "Ok(FaceRef { face: Some(face_pattern), touching: vec![], near })"))
     args.binaries.mkdir(parents=True)
     env = {**os.environ, "CARGO_TARGET_DIR": str(args.binaries.parent / "edit-build")}
     for revision, root, sha in [("baseline", args.baseline, os.environ["BASE_SHA"]),

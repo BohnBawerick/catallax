@@ -48,9 +48,9 @@ fn magnitude(value: &Ball) -> Rational {
 // Coefficients are Taylor derivatives divided by factorial, over the entire
 // supplied parameter ball. Order four is what the Hermite remainder needs.
 #[derive(Clone)]
-struct Jet([Ball; 5]);
+pub(crate) struct Jet(pub(crate) [Ball; 5]);
 impl Jet {
-    fn constant(value: Ball) -> Self {
+    pub(crate) fn constant(value: Ball) -> Self {
         let bits = value.precision();
         Self(std::array::from_fn(|i| {
             if i == 0 {
@@ -60,24 +60,24 @@ impl Jet {
             }
         }))
     }
-    fn linear(value: Ball, slope: Ball) -> Self {
+    pub(crate) fn linear(value: Ball, slope: Ball) -> Self {
         let mut result = Self::constant(value);
         result.0[1] = slope;
         result
     }
-    fn add(&self, other: &Self) -> Self {
+    pub(crate) fn add(&self, other: &Self) -> Self {
         Self(std::array::from_fn(|i| &self.0[i] + &other.0[i]))
     }
-    fn neg(&self) -> Self {
+    pub(crate) fn neg(&self) -> Self {
         Self(std::array::from_fn(|i| -&self.0[i]))
     }
-    fn sub(&self, other: &Self) -> Self {
+    pub(crate) fn sub(&self, other: &Self) -> Self {
         self.add(&other.neg())
     }
-    fn scale(&self, factor: &Ball) -> Self {
+    pub(crate) fn scale(&self, factor: &Ball) -> Self {
         Self(std::array::from_fn(|i| &self.0[i] * factor))
     }
-    fn mul(&self, other: &Self) -> Self {
+    pub(crate) fn mul(&self, other: &Self) -> Self {
         let bits = self.0[0].precision();
         Self(std::array::from_fn(|n| {
             (0..=n).fold(b(&Rational::zero(), bits), |sum, i| {
@@ -85,12 +85,12 @@ impl Jet {
             })
         }))
     }
-    fn square(&self) -> Self {
+    pub(crate) fn square(&self) -> Self {
         let mut result = self.mul(self);
         result.0[0] = self.0[0].square();
         result
     }
-    fn reciprocal(&self) -> Result<Self, Refusal> {
+    pub(crate) fn reciprocal(&self) -> Result<Self, Refusal> {
         let bits = self.0[0].precision();
         let zero = b(&Rational::zero(), bits);
         let mut result: [Ball; 5] = std::array::from_fn(|_| zero.clone());
@@ -105,10 +105,10 @@ impl Jet {
         }
         Ok(Self(result))
     }
-    fn div(&self, other: &Self) -> Result<Self, Refusal> {
+    pub(crate) fn div(&self, other: &Self) -> Result<Self, Refusal> {
         Ok(self.mul(&other.reciprocal()?))
     }
-    fn sqrt(&self) -> Result<Self, Refusal> {
+    pub(crate) fn sqrt(&self) -> Result<Self, Refusal> {
         let bits = self.0[0].precision();
         if self.0[0].lo() <= Rational::zero() {
             return Err(unresolved(
@@ -130,7 +130,7 @@ impl Jet {
         Ok(Self(result))
     }
     /// Value and first derivative, the Hermite data at a point ball.
-    fn data(&self) -> [Ball; 2] {
+    pub(crate) fn data(&self) -> [Ball; 2] {
         [self.0[0].clone(), self.0[1].clone()]
     }
 }
@@ -561,7 +561,7 @@ const WEIGHT: usize = 4;
 // The Hermite cubic on one span, in exact Taylor form about its midpoint. The
 // cardinal-basis form would lose cancellation over an interval and inflate
 // every higher Taylor coefficient by inverse powers of the span width.
-fn hermite(
+pub(crate) fn hermite(
     s: &Jet,
     span: [&Rational; 2],
     data: [[&Ball; 2]; 2],
@@ -618,7 +618,7 @@ fn times(a: &Real, c: &Real) -> Real {
 fn join(even: &Real, odd: &Real, t: &Real) -> Real {
     plus(even, &times(t, odd))
 }
-fn product(a: &[Real], c: &[Real]) -> Vec<Real> {
+pub(crate) fn product(a: &[Real], c: &[Real]) -> Vec<Real> {
     let (m, n) = (a.len() - 1, c.len() - 1);
     (0..=m + n)
         .map(|k| {
@@ -634,7 +634,7 @@ fn product(a: &[Real], c: &[Real]) -> Vec<Real> {
         })
         .collect()
 }
-fn elevate(a: &[Real], degree: usize) -> Vec<Real> {
+pub(crate) fn elevate(a: &[Real], degree: usize) -> Vec<Real> {
     let mut a = a.to_vec();
     while a.len() - 1 < degree {
         let n = a.len();
@@ -650,7 +650,7 @@ fn elevate(a: &[Real], degree: usize) -> Vec<Real> {
     }
     a
 }
-fn combine(a: &[Real], c: &[Real], sa: &Real, sc: &Real) -> Vec<Real> {
+pub(crate) fn combine(a: &[Real], c: &[Real], sa: &Real, sc: &Real) -> Vec<Real> {
     let degree = (a.len().max(c.len())) - 1;
     let (a, c) = (elevate(a, degree), elevate(c, degree));
     a.iter()
@@ -734,7 +734,7 @@ fn station(t: &Transition, span: [&Rational; 2]) -> [Split; 3] {
         u.elevated(2).scaled(&Real::from_i64(2)),
     ]
 }
-fn cubic(span: [&Rational; 2], values: [&Real; 2], slopes: [&Rational; 2]) -> Vec<Real> {
+pub(crate) fn cubic(span: [&Rational; 2], values: [&Real; 2], slopes: [&Rational; 2]) -> Vec<Real> {
     let third = Real::from_rational((span[1] - span[0]) / q(3));
     vec![
         values[0].clone(),

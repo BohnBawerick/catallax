@@ -261,3 +261,27 @@ fn outward_polyhedral_offset_rounds_edges_and_vertices_at_true_distance() {
     assert!(measured.value.volume.lo <= expected.lo());
     assert!(measured.value.volume.hi >= expected.hi());
 }
+
+#[test]
+fn nonconvex_shells_keep_the_typed_envelope_refusal() {
+    let points = [[0, 0], [8, 0], [8, 3], [3, 3], [3, 8], [0, 8]];
+    let edges:Vec<_>=points.iter().enumerate().map(|(i,_)|json!({
+        "kind":"line","id":format!("edge-{i}"),"to":points[(i+1)%points.len()].map(|value|value.to_string())
+    })).collect();
+    let source = Recipe::parse(
+        &json!({"format":"catallax-recipe/4","name":"nonconvex shell coverage","steps":[
+        {"id":"profile","op":"sketch","plane":pose(),"loops":[edges]},
+        {"id":"stock","op":"extrude","profile":"profile","distance":"4"},
+        {"id":"shell","op":"shell","body":"stock","open":[face(json!("end"))],"thickness":"1"}
+    ],"result":"shell"})
+        .to_string(),
+    )
+    .unwrap();
+    assert!(
+        matches!(evaluate(&source,&mut Decider::default()),Err(catallax_features::BuildError::Geometry {refusal,..}) if refusal.code=="distance.unsupported-envelope")
+    );
+    assert_eq!(
+        Plan::compile(&source).unwrap_err().code,
+        "distance.unsupported-envelope"
+    );
+}

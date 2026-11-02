@@ -804,3 +804,46 @@ fn closed_planar_trims_have_complete_distances_for_reentrant_faces_and_holes() {
         );
     }
 }
+
+#[test]
+fn coplanar_named_face_pairs_keep_the_finite_gap_between_disjoint_solids() {
+    use catallax_recipe::Recipe;
+    use serde_json::json;
+    let source=Recipe::parse(&json!({"format":"catallax-recipe/4","name":"finite face pair","steps":[
+        {"id":"a","op":"block","size":["1","1","1"]},
+        {"id":"b","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["3","3","0"]}},
+        {"id":"union","op":"boolean","kind":"unite","target":"a","tool":"b"}
+    ],"result":"union"}).to_string()).unwrap();
+    let built =
+        catallax_app::build_incremental_without_display(&source, None, &mut Decider::default())
+            .unwrap();
+    let built = built.checkpoint.built();
+    let mut model = built.model.clone();
+    let top = |name: &str| {
+        model.faces_of_body(built.result).into_iter().find(|face|
+        model.face_origins(*face).iter().any(|origin|origin.step.as_str()==name)
+        && matches!(model.geom().surface(model.face(*face).surface),Surface::Plane(plane)
+            if plane.origin.z.rational_ref()==Some(&Rational::one())
+            && plane.normal.x.rational_ref()==Some(&Rational::zero())
+            && plane.normal.y.rational_ref()==Some(&Rational::zero()))).unwrap()
+    };
+    let ids = [top("a"), top("b")];
+    let mut dec = Decider::default();
+    let a = PreparedFace::new(&model, ids[0], &mut dec).unwrap();
+    let b = PreparedFace::new(&model, ids[1], &mut dec).unwrap();
+    let options = Options {
+        max_cells: 1,
+        ..controls()
+    };
+    let answer = a.face_to_face(&b, &mut model, &options, &mut dec).unwrap();
+    let oracle = Ball::from_rational(&q(8), 256).sqrt().unwrap();
+    let upper = answer.upper.as_ref().unwrap();
+    assert!(
+        answer.lower <= oracle.lo() && upper >= &oracle.hi() && answer.converged,
+        "{answer:?}"
+    );
+    assert!(upper - &answer.lower <= options.width, "{answer:?}");
+    for (id, witness) in ids.into_iter().zip(answer.witnesses.unwrap()) {
+        assert!(catallax_boolean::face_contains(&mut model, id, &witness, &mut dec).unwrap());
+    }
+}

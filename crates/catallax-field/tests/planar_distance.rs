@@ -104,3 +104,58 @@ fn circular_arcs_and_boolean_cut_rims_bound_the_actual_named_cap() {
     check(&cut, p(-1, 1, 3), 2);
     check(&cut, p(-3, 0, 2), 9);
 }
+
+#[test]
+fn named_coplanar_face_pairs_measure_the_finite_gap_between_disjoint_bodies() {
+    use catallax_shapes::Surface;
+    let plan = build(vec![
+        json!({"id":"a","op":"block","size":["1","1","1"],"pose":pose()}),
+        json!({"id":"b","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["3","3","0"]}}),
+        json!({"id":"union","op":"boolean","kind":"unite","target":"a","tool":"b"}),
+    ]);
+    let top = |name: &str| {
+        let face = plan
+            .faces()
+            .iter()
+            .find(|face| {
+                face.origin.step.as_str() == name
+                    && matches!(&face.surface,Surface::Plane(plane)
+            if plane.origin.z.rational_ref()==Some(&Rational::one())
+            && plane.normal.x.rational_ref()==Some(&Rational::zero())
+            && plane.normal.y.rational_ref()==Some(&Rational::zero()))
+            })
+            .unwrap();
+        plan.select(&face.origin).unwrap()
+    };
+    let ids = [top("a"), top("b")];
+    let mut dec = Decider::default();
+    let controls = Options {
+        width: Rational::parse("1e-8").unwrap(),
+        max_cells: 1,
+    };
+    let answer = plan
+        .prepare_distances(&mut dec)
+        .unwrap()
+        .face_to_face(ids[0], ids[1], &controls, &mut dec)
+        .unwrap();
+    let oracle = dec.enclose_at(&Real::from_i64(8).sqrt(), 256).unwrap();
+    let upper = answer.upper.as_ref().unwrap();
+    assert!(
+        answer.lower <= oracle.lo() && upper >= &oracle.hi() && answer.converged,
+        "{answer:?}"
+    );
+    assert!(upper - &answer.lower <= controls.width, "{answer:?}");
+    for (id, witness) in ids.into_iter().zip(answer.witnesses.unwrap()) {
+        assert_eq!(
+            plan.closed_face_query_checked(
+                id,
+                &witness.as_rational().unwrap(),
+                &mut Workspace::default(),
+                &mut dec
+            )
+            .unwrap()
+            .state,
+            FaceState::OnFace
+        );
+    }
+}

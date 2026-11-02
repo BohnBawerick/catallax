@@ -464,12 +464,12 @@ impl Scene<'_> {
                 if let CurveSurface::Meets(hits) = answer.value {
                     for hit in hits {
                         let point = geom.position(hit.point);
-                        if let (Some([a, b]), CurveForm::Line { dir, .. }) = (&bound, &form) {
-                            if geometry::sign(&point.minus(a).dot(dir), dec)? == Sign::Negative
-                                || geometry::sign(&b.minus(&point).dot(dir), dec)? == Sign::Negative
-                            {
-                                continue;
-                            }
+                        if let (Some([a, b]), CurveForm::Line { dir, .. }) = (&bound, &form)
+                            && (geometry::sign(&point.minus(a).dot(dir), dec)? == Sign::Negative
+                                || geometry::sign(&b.minus(&point).dot(dir), dec)?
+                                    == Sign::Negative)
+                        {
+                            continue;
                         }
                         intern(&mut geom, &mut points, point, dec)?;
                     }

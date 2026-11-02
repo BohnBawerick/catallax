@@ -1,6 +1,6 @@
 //! Boundary rows of a rolling-envelope face.
 
-use catallax_numbers::{Decider, Outcome, Refusal, Sign};
+use catallax_numbers::{Decider, Outcome, Refusal, Sign, StrictSign};
 use catallax_shapes::{
     BSplineCurve, BoundaryRow, Curve, Ellipse, Point3, RollingEnvelope, RollingPipe,
     SplineBoundary, SplineSupport, Surface,
@@ -204,7 +204,7 @@ fn pipe_ring(
 ) -> Result<Option<(EdgeId, bool, Sense)>, Refusal> {
     let use_ = model.coedge(coedge);
     let edge = model.edge(use_.edge);
-    if edge.start.is_some() || edge.end.is_some() {
+    if edge.start != edge.end {
         return Ok(None);
     }
     let Curve::Ellipse(actual) = model.geom().curve(edge.curve) else {
@@ -256,6 +256,49 @@ pub fn pipe_rows(
         [Some(plane), Some(wall)] => Some([plane, wall]),
         _ => None,
     })
+}
+
+/// Whether a band's outward side is along its contact rays, away from the ball
+/// centre. The plane that shares its plane rail fixes this.
+pub fn pipe_outward(
+    model: &Model,
+    face: FaceId,
+    rail: EdgeId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let Surface::BSpline(SplineSupport::RollingPipe(pipe)) =
+        model.geom().surface(model.face(face).surface)
+    else {
+        return Err(no_plane());
+    };
+    let law = pipe.law();
+    for coedge in model.coedges_of_edge(rail) {
+        let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
+            continue;
+        };
+        let boundary = model.face(neighbour);
+        if neighbour == face {
+            continue;
+        }
+        if let Surface::Plane(plane) = model.geom().surface(boundary.surface) {
+            let ray = &law.normal.dot(&plane.normal) * &law.reach;
+            let along = match dec.sign(&ray) {
+                Outcome::Proven(StrictSign::Positive) => true,
+                Outcome::Proven(StrictSign::Negative) => false,
+                Outcome::Refused(refusal) => return Err(refusal),
+                _ => return Err(no_plane()),
+            };
+            return Ok(along == (boundary.sense == Sense::Same));
+        }
+    }
+    Err(no_plane())
+}
+
+fn no_plane() -> Refusal {
+    Refusal::new(
+        "topology.pipe-band",
+        "a pipe band's plane rail has no plane neighbour",
+    )
 }
 
 fn rails(pipe: &RollingPipe, dec: &mut Decider) -> Result<[(Ellipse, bool); 2], Refusal> {

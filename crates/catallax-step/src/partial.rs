@@ -4,7 +4,7 @@
 
 use crate::{chart, cut, frames, number, poles, trim, wire};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
-use catallax_shapes::{Curve, Surface};
+use catallax_shapes::{Curve, SplineSupport, Surface};
 use catallax_topology::{BodyId, Coedge, EdgeId, FaceId, Loop, Model, Sense, Shell};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,10 +29,38 @@ pub(crate) fn prepare(
     retry_frame: &mut bool,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
-    if !reframe {
-        return prepare_charts(model, bodies, options, true, true, retry_frame, dec);
-    }
     let bodies: Vec<_> = bodies.collect();
+    if !reframe {
+        // A pipe band has its seam at `t = 0`, so its wall's chart must cut there.
+        let Some(framed) = frames::pipe_walls(model, &bodies, dec)? else {
+            return prepare_charts(
+                model,
+                bodies.iter().copied(),
+                options,
+                true,
+                true,
+                retry_frame,
+                dec,
+            );
+        };
+        let Some(mut prepared) = prepare_charts(
+            &framed.model,
+            framed.bodies.iter().copied(),
+            options,
+            true,
+            true,
+            retry_frame,
+            dec,
+        )?
+        else {
+            return Ok(None);
+        };
+        for (source, moved) in framed.faces {
+            let charted = prepared.face_map.get(&moved).copied().unwrap_or(moved);
+            prepared.face_map.insert(source, charted);
+        }
+        return Ok(Some(prepared));
+    }
     let reframed = frames::perpendicular(model, &bodies);
     let Some(mut prepared) = prepare_charts(
         &reframed.model,
@@ -91,6 +119,8 @@ fn prepare_charts(
             Surface::Plane(_) if unchanged_planar_boundary(model, face) => {}
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
             Surface::Torus(_) | Surface::TorusSheet(_) if circular_boundary(model, face) => {}
+            // A band gains at most a vertex on its rails, written as they are.
+            Surface::BSpline(SplineSupport::RollingPipe(_)) => {}
             Surface::Cylinder(_) | Surface::Sphere(_)
                 if definition
                     .loops

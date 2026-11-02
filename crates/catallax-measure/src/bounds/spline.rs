@@ -3,7 +3,7 @@
 use super::{Accuracy, Budget, Extrema};
 use crate::Enclosure;
 use catallax_numbers::{Ball, Decider, MarkLog, Rational, Refusal};
-use catallax_shapes::{BSplineCurve, Curve, Surface};
+use catallax_shapes::{BSplineCurve, Curve, SplineSupport, Surface};
 use catallax_topology::{
     Body, BodyId, BodyKind, EdgeId, FaceId, Loop, Lump, Model, Shell, SplinePrism,
 };
@@ -13,22 +13,25 @@ use std::collections::{BTreeMap, BTreeSet};
 mod tests;
 
 pub(super) fn has_spline_boundary(model: &Model, face: FaceId) -> bool {
-    matches!(
-        model.geom().surface(model.face(face).surface),
-        Surface::BSpline(_)
-    ) || model
-        .face(face)
-        .loops
-        .iter()
-        .any(|lp| match model.loop_(*lp) {
-            Loop::Vertex(_) => false,
-            Loop::Coedges(cs) => cs.iter().any(|c| {
-                matches!(
-                    model.geom().curve(model.edge(model.coedge(*c).edge).curve),
-                    Curve::BSpline(_)
-                )
-            }),
-        })
+    // A rolling pipe's rails are exact ellipses, and its extrema come from its law.
+    let surface = model.geom().surface(model.face(face).surface);
+    if matches!(surface, Surface::BSpline(SplineSupport::RollingPipe(_))) {
+        return false;
+    }
+    matches!(surface, Surface::BSpline(_))
+        || model
+            .face(face)
+            .loops
+            .iter()
+            .any(|lp| match model.loop_(*lp) {
+                Loop::Vertex(_) => false,
+                Loop::Coedges(cs) => cs.iter().any(|c| {
+                    matches!(
+                        model.geom().curve(model.edge(model.coedge(*c).edge).curve),
+                        Curve::BSpline(_)
+                    )
+                }),
+            })
 }
 
 fn unsupported() -> Refusal {

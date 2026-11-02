@@ -596,6 +596,17 @@ pub(crate) fn result_summary(
     let extended = exchange != SummaryExchange::Legacy;
     let certified = exchange == SummaryExchange::Certified;
     let counts = model.counts(body);
+    // An exact band carries no gap to certify, so it keeps its own analytic tag.
+    let exact_bands = model
+        .faces_of_body(body)
+        .into_iter()
+        .filter(|face| {
+            matches!(
+                model.geom().surface(model.face(*face).surface),
+                catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RollingPipe(_))
+            )
+        })
+        .count();
     let mut faces_by_kind = BTreeMap::new();
     for (kind, count) in counts.faces_by_kind {
         let name = match kind {
@@ -607,6 +618,9 @@ pub(crate) fn result_summary(
                 "torus"
             }
             catallax_shapes::SurfaceKind::BSpline if certified => "bspline",
+            catallax_shapes::SurfaceKind::BSpline if extended && count == exact_bands => {
+                "rolling-pipe"
+            }
             catallax_shapes::SurfaceKind::BSpline => {
                 return Err(Refusal::new(
                     catallax_numbers::GEOMETRIC_GAP_UNPROVEN,

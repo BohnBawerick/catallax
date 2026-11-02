@@ -4,10 +4,16 @@ use catallax_boolean::Containment;
 use catallax_features::{BuildError, Built, evaluate, evaluate_incremental};
 use catallax_field::Plan;
 use catallax_field::measurement::{CentrePath, FaceDefinition, MeasurementOptions, measure_face};
+use catallax_measure::{
+    Accuracy, Enclosure, bounding_box, face_area, face_bounding_box, face_centroid,
+    mass_properties, volume,
+};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
-use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, with_operation_log};
+use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, Real, with_operation_log};
 use catallax_recipe::{Recipe, Role};
 use catallax_shapes::{Curve, RPoint3, SplineSupport, Surface};
+use catallax_step::write_step;
+use catallax_topology::FaceId;
 use serde_json::{Value, json};
 
 /// A half turn about y of `2 atan(7/24)`: its z axis is `(336, 0, 527) / 625`.
@@ -74,7 +80,7 @@ fn bore() -> Vec<Value> {
 }
 fn decider() -> Decider {
     Decider::new(BudgetPolicy {
-        max_work: 20_000_000,
+        max_work: 1_000_000_000,
         ..Default::default()
     })
 }
@@ -98,7 +104,7 @@ fn classify(built: &mut Built, points: &[[&str; 3]], want: Containment) {
 }
 
 // The divergence theorem over the closed triangle mesh.
-fn volume(mesh: &Mesh) -> f64 {
+fn mesh_volume(mesh: &Mesh) -> f64 {
     mesh.triangles
         .iter()
         .map(|triangle| {
@@ -108,6 +114,38 @@ fn volume(mesh: &Mesh) -> f64 {
                 / 6.0
         })
         .sum()
+}
+// Centroid x and z, then inertia xx, zz and xz about it, by tetrahedra.
+fn mesh_moments(mesh: &Mesh) -> [f64; 5] {
+    let mut size = 0.0;
+    let mut first = [0.0; 3];
+    let mut second = [[0.0; 3]; 3];
+    for triangle in &mesh.triangles {
+        let [a, b, c] = triangle.vertices.map(|v| mesh.positions[v]);
+        let d = (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0]))
+            / 6.0;
+        size += d;
+        for i in 0..3 {
+            first[i] += d * (a[i] + b[i] + c[i]) / 4.0;
+            for j in 0..3 {
+                let sum = (a[i] + b[i] + c[i]) * (a[j] + b[j] + c[j])
+                    + a[i] * a[j]
+                    + b[i] * b[j]
+                    + c[i] * c[j];
+                second[i][j] += d * sum / 20.0;
+            }
+        }
+    }
+    let centre = first.map(|m| m / size);
+    let central = |i: usize, j: usize| second[i][j] - size * centre[i] * centre[j];
+    [
+        centre[0],
+        centre[2],
+        central(1, 1) + central(2, 2),
+        central(0, 0) + central(1, 1),
+        -central(0, 2),
+    ]
 }
 fn fine(built: &Built) -> Mesh {
     let options = MeshOptions {
@@ -147,7 +185,7 @@ fn built(steps: Vec<Value>, radius: &str, role: &str) -> Built {
 // solid, so this bound is wide. The exact witnesses decide which side is which.
 fn assert_change(steps: Vec<Value>, rounded: &Built, want: f64) {
     let input = evaluate(&recipe(steps, None), &mut decider()).unwrap();
-    let change = volume(&fine(rounded)) - volume(&fine(&input));
+    let change = mesh_volume(&fine(rounded)) - mesh_volume(&fine(&input));
     assert!((change - want).abs() < 0.03, "{change} against {want}");
 }
 
@@ -283,9 +321,9 @@ fn a_mirrored_copy_keeps_its_band() {
     let mesh = fine(&built);
     let want = 25.0 * std::f64::consts::PI * 8.0 - 9.8242;
     assert!(
-        (volume(&mesh).abs() - want).abs() < 0.05,
+        (mesh_volume(&mesh).abs() - want).abs() < 0.05,
         "{}",
-        volume(&mesh)
+        mesh_volume(&mesh)
     );
 }
 
@@ -337,62 +375,213 @@ fn unsupported_oblique_contacts_stay_typed_refusals() {
     );
 }
 
-#[test]
-fn consumers_without_a_band_path_refuse_with_a_code() {
-    let rounded = built(rim(), "1", "start");
-    let volume = catallax_measure::volume(
-        &rounded.model,
-        rounded.result,
-        &Default::default(),
-        &mut decider(),
-    );
-    assert_eq!(volume.unwrap_err().code, "measure.unsupported-surface");
-    let mut bytes = Vec::new();
-    assert!(
-        catallax_step::write_step(
-            &rounded.model,
-            &[rounded.result],
-            &Default::default(),
-            &mut Decider::default(),
-            &mut bytes,
-        )
-        .is_err()
-    );
-    assert!(bytes.is_empty());
-    let mut rounded = rounded;
-    let (band, pipe) = rounded
+// A chart quadrature of the rolling-ball law, sharing no formula with the
+// kernel: band area, then its centroid.
+const BANDS: [(&str, &str, [f64; 4]); 4] = [
+    ("1", "rim", [49.51037253, -28.788419, 0.0, 389.102937]),
+    ("2", "rim", [89.97352207, -31.109023, 0.0, 642.068250]),
+    ("1", "boss", [58.55759553, -67.329841, 0.0, 70.154621]),
+    ("1", "bore", [58.55759553, 67.329841, 0.0, -70.154621]),
+];
+
+fn fine_accuracy() -> Accuracy {
+    Accuracy {
+        relative: q("1/100000000"),
+        absolute: q("1/100000000"),
+    }
+}
+fn mid(value: &Enclosure) -> f64 {
+    ((&value.lo + &value.hi) * q("1/2")).to_f64_nearest()
+}
+fn band_of(built: &Built) -> FaceId {
+    built
         .model
-        .faces_of_body(rounded.result)
+        .faces_of_body(built.result)
         .into_iter()
-        .find_map(|f| {
-            let surface = rounded.model.geom().surface(rounded.model.face(f).surface);
-            match surface {
-                Surface::BSpline(SplineSupport::RollingPipe(pipe)) => Some((f, pipe.clone())),
-                _ => None,
-            }
+        .find(|f| {
+            matches!(
+                built.model.geom().surface(built.model.face(*f).surface),
+                Surface::BSpline(SplineSupport::RollingPipe(_))
+            )
         })
-        .unwrap();
+        .unwrap()
+}
+fn recipe_of(kind: &str) -> (Vec<Value>, &'static str) {
+    match kind {
+        "rim" => (rim(), "start"),
+        "boss" => (boss(), "end"),
+        _ => (bore(), "end"),
+    }
+}
+
+#[test]
+fn a_band_measures_as_the_independent_quadrature() {
+    for (radius, kind, [area, x, y, z]) in BANDS {
+        let (steps, role) = recipe_of(kind);
+        let built = built(steps, radius, role);
+        let band = band_of(&built);
+        let found = face_area(&built.model, band, &fine_accuracy(), &mut decider()).unwrap();
+        assert!(found.marks.is_empty(), "{kind}");
+        assert!(found.value.width() <= q("1/10000000"), "{kind}");
+        assert!((mid(&found.value) - area).abs() < 1e-7, "{kind}");
+        let centre = face_centroid(&built.model, band, &fine_accuracy(), &mut decider()).unwrap();
+        for (axis, want) in centre.value.iter().zip([x, y, z]) {
+            assert!((mid(axis) - want / area).abs() < 1e-5, "{kind}");
+        }
+    }
+}
+
+// The volume change against the section integral, and the mass properties
+// against the divergence theorem on a fine closed mesh. A mesh is only near the
+// solid, so its bounds are wide.
+#[test]
+fn a_rounded_solid_has_exact_mass_properties() {
+    for (radius, kind, change) in [
+        ("1", "rim", -9.8242),
+        ("2", "rim", -37.6296),
+        ("1", "boss", 10.6578),
+        ("1", "bore", -10.6578),
+    ] {
+        let (steps, role) = recipe_of(kind);
+        let input = evaluate(&recipe(steps.clone(), None), &mut decider()).unwrap();
+        let built = built(steps, radius, role);
+        let whole = volume(&built.model, built.result, &fine_accuracy(), &mut decider());
+        let before = volume(&input.model, input.result, &fine_accuracy(), &mut decider());
+        let (whole, before) = (whole.unwrap(), before.unwrap());
+        assert!(whole.marks.is_empty(), "{kind}");
+        let found = mid(&whole.value) - mid(&before.value);
+        assert!((found - change).abs() < 1e-3, "{kind}: {found} {change}");
+        let mesh = fine(&built);
+        let properties =
+            mass_properties(&built.model, built.result, &fine_accuracy(), &mut decider()).unwrap();
+        let properties = properties.value;
+        assert!(
+            (mid(&properties.volume) - mesh_volume(&mesh)).abs() < 0.05,
+            "{kind}"
+        );
+        let centre = properties.centroid.unwrap();
+        let tensor = properties.inertia.unwrap();
+        let [cx, cz, xx, zz, xz] = mesh_moments(&mesh);
+        assert!((mid(&centre[0]) - cx).abs() < 1e-2, "{kind}");
+        assert!((mid(&centre[2]) - cz).abs() < 1e-2, "{kind}");
+        for (found, want) in [
+            (&tensor[0][0], xx),
+            (&tensor[2][2], zz),
+            (&tensor[0][2], xz),
+        ] {
+            let found = mid(found);
+            assert!(
+                (found - want).abs() < 2e-3 * xx.abs(),
+                "{kind}: {found} {want}"
+            );
+        }
+    }
+}
+
+// The box's enclosures have no slack to speak of, so a fine mesh sits inside it
+// and reaches within the mesh's own chord of each side.
+#[test]
+fn a_rounded_solid_has_an_exact_box() {
+    for (radius, kind, _) in BANDS {
+        let (steps, role) = recipe_of(kind);
+        let built = built(steps, radius, role);
+        let found = bounding_box(&built.model, built.result, &fine_accuracy(), &mut decider());
+        let found = found.unwrap();
+        assert!(found.marks.is_empty(), "{kind}");
+        let band = band_of(&built);
+        let face = face_bounding_box(&built.model, band, &fine_accuracy(), &mut decider());
+        let face = face.unwrap().value;
+        let whole = found.value.unwrap();
+        let mesh = fine(&built);
+        for axis in 0..3 {
+            let (low, high) = mesh
+                .positions
+                .iter()
+                .map(|p| p[axis])
+                .fold((f64::MAX, f64::MIN), |(a, b), v| (a.min(v), b.max(v)));
+            let (box_low, box_high) = (
+                whole.min[axis].to_f64_nearest(),
+                whole.max[axis].to_f64_nearest(),
+            );
+            assert!(
+                (low - box_low).abs() < 0.01,
+                "{kind} {axis}: {low} {box_low}"
+            );
+            assert!(
+                (high - box_high).abs() < 0.01,
+                "{kind} {axis}: {high} {box_high}"
+            );
+            assert!(face.min[axis] >= whole.min[axis], "{kind}");
+            assert!(face.max[axis] <= whole.max[axis], "{kind}");
+        }
+    }
+}
+
+#[test]
+fn measuring_a_band_against_its_definition_is_exact() {
+    let mut rounded = built(rim(), "1", "start");
+    let band = band_of(&rounded);
+    let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = rounded
+        .model
+        .geom()
+        .surface(rounded.model.face(band).surface)
+        .clone()
+    else {
+        unreachable!()
+    };
     let spine = pipe.spine(&mut decider()).unwrap();
     let curve = rounded.model.geom_mut().add_curve(Curve::Ellipse(spine));
-    let definition = FaceDefinition::Fillet {
-        path: CentrePath::Arc {
-            curve,
-            from: None,
-            to: None,
-        },
-        radius: pipe.radius().clone(),
+    let mut measured = |radius: Real| {
+        let definition = FaceDefinition::Fillet {
+            path: CentrePath::Arc {
+                curve,
+                from: None,
+                to: None,
+            },
+            radius,
+        };
+        measure_face(
+            &mut rounded.model,
+            band,
+            Some(&definition),
+            &MeasurementOptions::default(),
+            &mut decider(),
+        )
     };
-    let measured = measure_face(
-        &mut rounded.model,
-        band,
-        Some(&definition),
-        &MeasurementOptions::default(),
-        &mut decider(),
-    );
-    assert_eq!(measured.unwrap_err().code, "field.face-measurement");
+    let exact = measured(pipe.radius().clone()).unwrap();
+    assert_eq!(exact.upper, Rational::zero());
+    assert!(exact.converged);
+    let wrong = measured(Real::from(q("5/4"))).unwrap();
+    assert_eq!(wrong.lower, q("1/4"));
+    assert_eq!(wrong.upper, q("1/4"));
+}
+
+#[test]
+fn the_field_still_refuses_an_oblique_band() {
     let rounded = recipe(rim(), Some(("1", edge("start"))));
     let field = Plan::compile_checked(&rounded, &mut decider()).unwrap_err();
     assert_eq!(field.code, "fillet.lost-edge");
+}
+
+#[test]
+fn a_rounded_solid_writes_step() {
+    for (radius, kind, _) in BANDS {
+        let (steps, role) = recipe_of(kind);
+        let rounded = built(steps, radius, role);
+        let mut bytes = Vec::new();
+        let answer = write_step(
+            &rounded.model,
+            &[rounded.result],
+            &Default::default(),
+            &mut decider(),
+            &mut bytes,
+        )
+        .unwrap();
+        assert!(answer.marks.is_empty(), "{kind}");
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(text.contains("RATIONAL_B_SPLINE_SURFACE"), "{kind}");
+        assert!(text.contains("SEAM_CURVE"), "{kind}");
+    }
 }
 
 // A through cut splits the ellipse, so the edge has vertices and two open ends.

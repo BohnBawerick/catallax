@@ -6,7 +6,8 @@ use std::collections::BinaryHeap;
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_shapes::{
-    Circle, CurveId, EllipticOffsetDefinition, Line, Point3, PointId, Surface, Vector3,
+    Circle, Curve, CurveId, EllipticOffsetDefinition, Line, Point3, PointId, SplineSupport,
+    Surface, Vector3,
 };
 use catallax_topology::{FaceId, Loop, Model};
 
@@ -420,11 +421,31 @@ fn same_axis(
         && exact_zero(&a.minus(b).cross(u).norm_squared(), dec)?)
 }
 fn constant(
+    model: &Model,
     surface: &Surface,
     definition: &FaceDefinition,
     dec: &mut Decider,
 ) -> Result<Option<Ball>, Refusal> {
     let deviation = match (surface, definition) {
+        // The carrier is the tube about its centre ellipse by construction, so
+        // only the two definitions' data need comparing.
+        (
+            Surface::BSpline(SplineSupport::RollingPipe(pipe)),
+            FaceDefinition::Fillet {
+                path:
+                    CentrePath::Arc {
+                        curve,
+                        from: None,
+                        to: None,
+                    },
+                radius,
+            },
+        ) => match model.geom().curve(*curve) {
+            Curve::Ellipse(path) if pipe.centres_on(path, dec)? => {
+                Some(dec.enclose_at(&(pipe.radius() - radius), BITS)?)
+            }
+            _ => None,
+        },
         (
             Surface::Torus(s),
             FaceDefinition::Fillet {
@@ -722,7 +743,7 @@ pub fn measure_face(
     };
     let surface = model.geom().surface(model.face(face).surface).clone();
     let (metric, distance) = prepare(definition, model, options, dec)?;
-    if let Some(value) = constant(&surface, definition, dec)? {
+    if let Some(value) = constant(model, &surface, definition, dec)? {
         let lower = value.lo().max(q(0));
         let upper = value.hi();
         return Ok(FaceMeasurement {

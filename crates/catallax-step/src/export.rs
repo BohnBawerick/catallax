@@ -15,6 +15,8 @@ use crate::{StepOptions, StepReport};
 mod charts;
 #[path = "export/envelope.rs"]
 mod envelope;
+#[path = "export/pipe.rs"]
+mod pipe;
 
 type Bounds = [[Rational; 2]; 3];
 
@@ -79,6 +81,7 @@ pub(crate) struct Exporter<'a> {
     band_period: Option<Rc<Number>>,
     chart_state: Option<charts::State>,
     envelopes: BTreeMap<SurfaceId, Rc<envelope::Written>>,
+    pipe_rails: BTreeMap<EdgeId, (FaceId, usize)>,
 }
 
 impl<'a> Exporter<'a> {
@@ -97,6 +100,7 @@ impl<'a> Exporter<'a> {
             band_period: None,
             chart_state: None,
             envelopes: BTreeMap::new(),
+            pipe_rails: BTreeMap::new(),
         }
     }
 
@@ -496,9 +500,7 @@ impl<'a> Exporter<'a> {
                     |ring| ring.origin.clone(),
                 );
                 let v = self.added_vertex(&origin)?;
-                if self.bands.rings.contains_key(&id) {
-                    topology.ring_vertices.insert(id, v.clone());
-                }
+                topology.ring_vertices.insert(id, v.clone());
                 (v.clone(), v)
             }
             _ => panic!("edge has only one endpoint"),
@@ -606,6 +608,7 @@ impl<'a> Exporter<'a> {
             self.report.approximated_curves += 1;
             (curve, fit.bounds, true, fit.error)
         };
+        let rail = self.rail_pcurve(id)?;
         let curve = if let Some(ring) = self
             .bands
             .rings
@@ -623,12 +626,19 @@ impl<'a> Exporter<'a> {
                     bounds: &bounds,
                     error: &error,
                     same,
+                    extra: rail,
                 },
                 topology,
             )?
         } else {
             self.deviation(error);
-            curve
+            match rail {
+                Some(rail) => self.graph.add(
+                    "SURFACE_CURVE",
+                    vec![text("''"), curve.into(), refs([rail]), text(".CURVE_3D.")],
+                ),
+                None => curve,
+            }
         };
         let edge = Rc::new(Edge {
             id: self.edge_entity(start.id, end.id, curve, same),
@@ -1227,7 +1237,17 @@ impl<'a> Exporter<'a> {
         let face = self.model.face(id).clone();
         let mut bounds = Vec::new();
         let mut boundary_extent: Option<Bounds> = None;
-        if let Some(band) = self.bands.faces.get(&id).cloned() {
+        let mut pipe_same = None;
+        if let Some(pipe) = self.rolling_pipe(id) {
+            let (loop_entity, extent, same) = self.pipe_loop(id, &pipe, topology)?;
+            boundary_extent = Some(extent);
+            let same = same != reverse;
+            pipe_same = Some(same);
+            bounds.push(self.graph.add(
+                "FACE_BOUND",
+                vec![text("''"), loop_entity.into(), boolean(same)],
+            ));
+        } else if let Some(band) = self.bands.faces.get(&id).cloned() {
             let (loop_entity, extent) = self.band_loop(&band, topology)?;
             boundary_extent = Some(extent);
             bounds.push(self.graph.add(
@@ -1295,7 +1315,7 @@ impl<'a> Exporter<'a> {
                 text("''"),
                 refs(bounds),
                 surface_id.into(),
-                boolean((face.sense == Sense::Same) != reverse),
+                boolean(pipe_same.unwrap_or((face.sense == Sense::Same) != reverse)),
             ],
         ))
     }
@@ -1340,6 +1360,7 @@ impl<'a> Exporter<'a> {
         bodies: &[BodyId],
         envelope: Option<BodyId>,
     ) -> Answered<(String, StepReport)> {
+        self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;
         if self.chart_state.is_none() {
             self.bands = crate::band::Plan::prepare(
                 self.model,

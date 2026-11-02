@@ -7,20 +7,22 @@ use super::*;
 use crate::graph::Field;
 use crate::junction::EnvelopeEdge;
 use catallax_numbers::Ball;
-use catallax_shapes::{BoundaryRow, ParameterTable, RollingEnvelope, SplineSupport};
+use catallax_shapes::{
+    BSplineSurface, BoundaryRow, ParameterTable, RollingEnvelope, SplineSupport,
+};
 
 // Inverse of a parameter table's angular tolerance. At 10^-11 rad, the table
 // stays far below a reader's edge tolerance on any chart radius in the file.
 const TABLE_RADIANS: i64 = 100_000_000_000;
 
 pub(super) struct Written {
-    id: Id,
+    pub(super) id: Id,
     points: Vec<Id>,
-    xyz: Vec<Point>,
+    pub(super) xyz: Vec<Point>,
     weights: Vec<String>,
     columns: usize,
     knots: (Field, Field),
-    error: Rational,
+    pub(super) error: Rational,
 }
 
 fn knot_fields(knots: &[Rational], digits: u32) -> (Field, Field) {
@@ -39,6 +41,24 @@ fn knot_fields(knots: &[Rational], digits: u32) -> (Field, Field) {
     (Field::List(multiplicities), Field::List(values))
 }
 
+// Column `j` of a pipe scaled by `2^(-j/2)`. See `pipe.rs` for why.
+fn evened_weights(
+    controls: Vec<([Ball; 3], Ball)>,
+    carrier: &BSplineSurface,
+) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
+    let rows = carrier.control_count()[1];
+    let half = Ball::from_rational(&Rational::from_ratio(1, 2).expect("nonzero"), 256);
+    let root = half.sqrt().ok_or_else(unsupported)?;
+    controls
+        .into_iter()
+        .enumerate()
+        .map(|(index, (point, weight))| {
+            let column = (index / rows) as u32;
+            Ok((point, &weight * &root.pow_u32(column)))
+        })
+        .collect()
+}
+
 impl Exporter<'_> {
     fn rolling_envelope(&self, id: SurfaceId) -> Result<&RollingEnvelope, Refusal> {
         match self.model.geom().surface(id) {
@@ -51,8 +71,17 @@ impl Exporter<'_> {
         if let Some(written) = self.envelopes.get(&id) {
             return Ok(written.clone());
         }
-        let envelope = self.rolling_envelope(id)?.clone();
-        let carrier = envelope.carrier();
+        let (carrier, controls) = match self.model.geom().surface(id) {
+            Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => (
+                envelope.carrier().clone(),
+                envelope.enclosed_controls(self.dec)?,
+            ),
+            Surface::BSpline(SplineSupport::RollingPipe(pipe)) => (
+                pipe.carrier().clone(),
+                evened_weights(pipe.enclosed_controls(self.dec)?, pipe.carrier())?,
+            ),
+            _ => return Err(unsupported()),
+        };
         let digits = self.digits();
         let mut points = Vec::with_capacity(carrier.controls().len());
         let mut xyz = Vec::with_capacity(carrier.controls().len());
@@ -60,7 +89,7 @@ impl Exporter<'_> {
         let mut position = Rational::zero();
         let mut relative = Rational::zero();
         let mut bounds = None;
-        for (control, weight) in envelope.enclosed_controls(self.dec)? {
+        for (control, weight) in controls {
             self.dec.check_deadline()?;
             let point = Point {
                 xyz: control
@@ -146,6 +175,43 @@ impl Exporter<'_> {
         });
         self.envelopes.insert(id, written.clone());
         Ok(written)
+    }
+
+    // A row or column of the written controls, as a curve on the surface's own
+    // parameter, so it cannot drift from the surface it bounds.
+    pub(super) fn spline_row(
+        &mut self,
+        written: &Written,
+        indices: &[usize],
+        degree: usize,
+        multiplicities: Field,
+        knots: Field,
+    ) -> Id {
+        let weights: Vec<Field> = indices
+            .iter()
+            .map(|i| text(written.weights[*i].clone()))
+            .collect();
+        self.graph.add_complex(vec![
+            ("BOUNDED_CURVE", vec![]),
+            (
+                "B_SPLINE_CURVE",
+                vec![
+                    text(degree.to_string()),
+                    refs(indices.iter().map(|i| written.points[*i])),
+                    text(".UNSPECIFIED."),
+                    boolean(false),
+                    boolean(false),
+                ],
+            ),
+            (
+                "B_SPLINE_CURVE_WITH_KNOTS",
+                vec![multiplicities, knots, text(".UNSPECIFIED.")],
+            ),
+            ("CURVE", vec![]),
+            ("GEOMETRIC_REPRESENTATION_ITEM", vec![]),
+            ("RATIONAL_B_SPLINE_CURVE", vec![Field::List(weights)]),
+            ("REPRESENTATION_ITEM", vec![text("''")]),
+        ])
     }
 
     // The row on its analytic neighbour, as a cubic B-spline in that chart over
@@ -288,31 +354,7 @@ impl Exporter<'_> {
                 Field::List(vec![text("0."), text("1.")]),
             )
         };
-        let weights: Vec<Field> = indices
-            .iter()
-            .map(|i| text(written.weights[*i].clone()))
-            .collect();
-        let curve = self.graph.add_complex(vec![
-            ("BOUNDED_CURVE", vec![]),
-            (
-                "B_SPLINE_CURVE",
-                vec![
-                    text(degree.to_string()),
-                    refs(indices.iter().map(|i| written.points[*i])),
-                    text(".UNSPECIFIED."),
-                    boolean(false),
-                    boolean(false),
-                ],
-            ),
-            (
-                "B_SPLINE_CURVE_WITH_KNOTS",
-                vec![multiplicities, knots, text(".UNSPECIFIED.")],
-            ),
-            ("CURVE", vec![]),
-            ("GEOMETRIC_REPRESENTATION_ITEM", vec![]),
-            ("RATIONAL_B_SPLINE_CURVE", vec![Field::List(weights)]),
-            ("REPRESENTATION_ITEM", vec![text("''")]),
-        ]);
+        let curve = self.spline_row(&written, &indices, degree, multiplicities, knots);
         let context = self.parameter_context();
         let line = match plan.row {
             BoundaryRow::Rail => self.pcurve_line(written.id, context, ["0.", "0."], "(1.,0.)"),

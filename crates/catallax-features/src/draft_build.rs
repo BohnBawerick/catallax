@@ -640,11 +640,7 @@ fn selected(
     for reference in refs {
         let mut matches = Vec::new();
         for face in &faces {
-            if !model
-                .face_origins(*face)
-                .iter()
-                .any(|o| reference.face.matches(o))
-            {
+            if !reference.matches_origins(model.face_origins(*face)) {
                 continue;
             }
             if reference.touching.iter().all(|pattern| {
@@ -1126,10 +1122,7 @@ fn bossed_source(model: &Model, faces: &[FaceId]) -> Result<Option<BossedSource>
 /// The unchanged definition of an unselected source cone.
 fn preserved_head(model: &Model, source: &SourceHead, refs: &[FaceRef]) -> Result<Head, Refusal> {
     let origins = model.face_origins(source.face).to_vec();
-    if refs
-        .iter()
-        .any(|r| origins.iter().any(|origin| r.face.matches(origin)))
-    {
+    if refs.iter().any(|r| r.matches_origins(&origins)) {
         return Err(Refusal::new(
             "draft.unsupported-arrangement",
             "a selected countersink needs a curved arrangement",
@@ -1153,10 +1146,7 @@ fn preserved_bores(
     let mut bores = Vec::with_capacity(source.len());
     for bore in source {
         let origins = model.face_origins(bore.wall).to_vec();
-        if refs
-            .iter()
-            .any(|r| origins.iter().any(|origin| r.face.matches(origin)))
-        {
+        if refs.iter().any(|r| r.matches_origins(&origins)) {
             return Err(Refusal::new(
                 "draft.unsupported-arrangement",
                 "a selected bore needs a curved arrangement",
@@ -1291,7 +1281,7 @@ fn bossed_cell(
         origins
             .iter()
             .chain(&top_origins)
-            .any(|origin| r.face.matches(origin))
+            .any(|origin| r.matches(origin))
     }) {
         return Err(unsupported("a selected boss needs a curved arrangement"));
     }

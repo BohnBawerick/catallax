@@ -536,12 +536,17 @@ impl Plan {
                 "an empty body has no open face",
             ));
         }
+        if !open.is_empty()
+            && open
+                .iter()
+                .all(|r| r.face.is_none() && r.touching.is_empty() && r.near.is_none())
+        {
+            return Ok(0);
+        }
         let bound = self.node_radius(node, dec)?;
         if let Some((surface, origins)) = self.radial_skin(node) {
             for reference in open {
-                if !reference.touching.is_empty()
-                    || !origins.iter().any(|o| reference.face.matches(o))
-                {
+                if !reference.touching.is_empty() || !reference.matches_origins(&origins) {
                     return Err(Refusal::new(
                         "reference.lost-face",
                         format!("no closed input face resolves {reference:?}"),
@@ -638,9 +643,7 @@ impl Plan {
         let bound = &self.node_radius(node, dec)? + t;
         if let Some((surface, origins)) = self.radial_skin(node) {
             for reference in refs {
-                if !reference.touching.is_empty()
-                    || !origins.iter().any(|o| reference.face.matches(o))
-                {
+                if !reference.touching.is_empty() || !reference.matches_origins(&origins) {
                     return Err(Refusal::new(
                         "reference.lost-face",
                         format!("no closed input face resolves {reference:?}"),

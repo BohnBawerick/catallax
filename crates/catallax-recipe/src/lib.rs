@@ -59,5 +59,5 @@ pub use operation::{
     LatticeCell, LoftSection, LoftShape, Loop, Operation, PathSegment, PatternLayout, Segment,
     SweepOrientation, ThickenSide, ThroughSide, Turn, ValueKind,
 };
-pub use recipe::{FORMAT, FORMAT_V4, Recipe, RecipeError, Step};
+pub use recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError, Step};
 pub use stock::CanonicalStock;

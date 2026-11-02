@@ -7,10 +7,10 @@ use crate::names::{
     EdgeName, EdgeRef, EdgeSelection, FaceRef, HolePart, Origin, OriginPattern, Role, VertexName,
 };
 use crate::operation::{Grade, HoleDepth, HoleHead, HoleTip, Operation, ValueKind};
-use crate::recipe::{FORMAT, FORMAT_V4, Recipe, RecipeError};
+use crate::recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError};
 
 pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
-    if recipe.format != FORMAT && recipe.format != FORMAT_V4 {
+    if !matches!(recipe.format.as_str(), FORMAT | FORMAT_V4 | FORMAT_V5) {
         return Err(RecipeError::Format {
             found: recipe.format.clone(),
         });
@@ -27,6 +27,11 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
         {
             return Err(RecipeError::Parse {
                 message: "extrusion end conditions require catallax-recipe/4".into(),
+            });
+        }
+        if recipe.format != FORMAT_V5 && face_refs(&step.op).iter().any(|r| r.face.is_none()) {
+            return Err(RecipeError::Parse {
+                message: "face references without `face` require catallax-recipe/5".into(),
             });
         }
         if index.contains_key(&step.id) {
@@ -55,10 +60,25 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
     }
 }
 
+/// Every face reference, including references nested in field grading.
+fn face_refs(op: &Operation) -> &[FaceRef] {
+    match op {
+        Operation::ExtrudeTo { limit, .. } => std::slice::from_ref(limit),
+        Operation::Shell { open, .. } => open,
+        Operation::Thicken { faces, .. } | Operation::Draft { faces, .. } => faces,
+        Operation::Lattice { radius, .. } | Operation::Gyroid { level: radius, .. } => match radius
+        {
+            Grade::Distance { faces, .. } => faces,
+            _ => &[],
+        },
+        _ => &[],
+    }
+}
+
 /// Every origin pattern a step's references use.
 fn patterns(op: &Operation) -> Vec<&OriginPattern> {
     fn face(r: &FaceRef) -> impl Iterator<Item = &OriginPattern> {
-        std::iter::once(&r.face).chain(&r.touching)
+        r.face.iter().chain(&r.touching)
     }
     fn edge(r: &EdgeRef) -> impl Iterator<Item = &OriginPattern> {
         r.between.iter().chain(&r.touching)
@@ -382,16 +402,14 @@ impl Ctx<'_> {
             | (O::Chamfer { .. }, Role::Bevel { edge })
             | (O::Shell { .. } | O::Offset { .. }, Role::Round { edge })
             | (O::Thicken { .. }, Role::Rim { edge }) => self.edge(edge, i),
-            (O::Thicken { .. }, Role::Round { edge }) if self.recipe.format == FORMAT_V4 => {
+            (O::Thicken { .. }, Role::Round { edge }) if self.recipe.format != FORMAT => {
                 self.edge(edge, i)
             }
             (O::Fillet { .. } | O::Chamfer { .. }, Role::Corner { vertex })
             | (O::Shell { .. } | O::Offset { .. }, Role::RoundCorner { vertex }) => {
                 self.vertex(vertex, i)
             }
-            (O::Thicken { .. }, Role::RoundCorner { vertex })
-                if self.recipe.format == FORMAT_V4 =>
-            {
+            (O::Thicken { .. }, Role::RoundCorner { vertex }) if self.recipe.format != FORMAT => {
                 self.vertex(vertex, i)
             }
             (O::Shell { .. }, Role::Inner { of }) | (O::Thicken { .. }, Role::Offset { of }) => {

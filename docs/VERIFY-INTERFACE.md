@@ -17,10 +17,10 @@ Sources:
 | Source | Problem format | Result |
 | --- | --- | --- |
 | `question` | `exact-brep-question/2` | Full geometric manifest and optional STEP. Parse all legacy fields, but ignore `limits.deadline_ms` during evaluation. |
-| `recipe` | `catallax-recipe/3`, `catallax-recipe/4` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. A result with fitted rolling-envelope faces instead answers with the certified manifest/4 record described under [Certified recipe bodies](#certified-recipe-bodies-opt-in), because manifest/3 promises exact geometry. |
+| `recipe` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. A result with fitted rolling-envelope faces instead answers with the certified manifest/4 record described under [Certified recipe bodies](#certified-recipe-bodies-opt-in), because manifest/3 promises exact geometry. |
 | `recipe` | `catallax-stand-in/1` | Explicit field-moment measurement and an opt-in massless surface envelope plus unit-density STEP solids. This does not convert the field boundary to B-rep. |
-| `compare` | `catallax-recipe/3`, `catallax-recipe/4` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
-| `field` | `catallax-recipe/3`, `catallax-recipe/4` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
+| `compare` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
+| `field` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
 | `print` | `catallax-print/1`, or an unwrapped recipe using default print options | Qualify a B-rep tessellation for ordinary parts or a field mesh for native-field definitions. Write binary `print.stl` and matching `display.obj`, with a two-sided file-to-definition bound and file-bound metadata. No STEP output or silent route fallback. |
 | `iges` | `catallax-iges/1` | Build the recipe through `catallax-features` only, then write `answer.igs` with the existing IGES writer. Report the writer's actual bounds, units, topology counts and artifact identity as `iges`. No STEP, display, mass or property request. |
 | `name-edit` | `catallax-name-edit/1` | Rebuild `recipe` and `edited_recipe`, resolve every original result-face origin and physical-edge name, and check the independently compiled field registries. Report `name_edit`; no STEP or display. |
@@ -233,7 +233,7 @@ A budget refusal discards published geometry and marks as before. The log keeps 
 
 An existing `catallax-request/1` with `source:"recipe"` can carry a
 `catallax-certified-recipe/1` problem. The nested `recipe` is unchanged
-`catallax-recipe/3` or `catallax-recipe/4`, read under its own version's rules.
+`catallax-recipe/3`, `catallax-recipe/4` or `catallax-recipe/5`, read under its own version's rules.
 Ordinary recipe, question, comparison and face-check inputs retain manifest/3 and
 their existing semantics, except that an ordinary recipe whose result has fitted
 rolling-envelope faces answers with manifest/4. `about` advertises the additive
@@ -246,7 +246,7 @@ the adapter selects `recipe`. The wrapper contains:
 
 | Field | Contract |
 | --- | --- |
-| `recipe` | Required recipe/3 or recipe/4 object. |
+| `recipe` | Required recipe/3, recipe/4 or recipe/5 object. |
 | `outputs.mesh` | Optional `{chord_tolerance,max_vertices}`; writes `display.obj`. Chord tolerance is in mm and concerns the represented model, not its exact target. |
 | `outputs.step` | Optional `{file_tolerance,decimal_places}`; writes `answer.step` only after certification. The nonnegative tolerance bounds file-to-model distance in mm. |
 | `properties` | Optional `{relative,absolute,inertia}`; nonnegative requested enclosure widths. `inertia` defaults false. |

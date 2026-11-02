@@ -63,7 +63,7 @@ impl AnnularCap {
                     path: None,
                 },
             };
-            if !reference.face.matches(&wall) || !reference.touching.is_empty() {
+            if !reference.matches(&wall) || !reference.touching.is_empty() {
                 return Err(Refusal::new(
                     "recipe.missing-reference",
                     "torus limit has no matching shared-edge face",

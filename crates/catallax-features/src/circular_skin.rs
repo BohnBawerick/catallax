@@ -523,7 +523,7 @@ impl CircularSkin {
         for reference in references {
             let mut candidates = Vec::new();
             for (i, face) in self.faces.iter().enumerate() {
-                if face.origins.iter().any(|o| reference.face.matches(o))
+                if reference.matches_origins(&face.origins)
                     && reference.touching.iter().all(|pattern| {
                         self.boundaries
                             .iter()

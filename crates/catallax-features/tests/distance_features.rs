@@ -116,6 +116,48 @@ fn consuming_a_cavity_preserves_the_solid_and_opening_every_face_removes_it() {
 }
 
 #[test]
+fn v5_all_faces_filters_resolve_against_the_input_in_both_evaluators() {
+    for (reference, expected, points) in [
+        (json!({}), 0, vec![(["1", "1", "1"], Location::Outside)]),
+        (
+            json!({"near":["5","4","7"]}),
+            240,
+            vec![
+                (["5", "4", "1/2"], Location::Inside),
+                (["5", "4", "5"], Location::Outside),
+            ],
+        ),
+        (
+            json!({"touching":[{"step":"stock","role":"end"}],"near":["11","4","3"]}),
+            264,
+            vec![
+                (["1/2", "4", "3"], Location::Inside),
+                (["9", "4", "3"], Location::Outside),
+            ],
+        ),
+    ] {
+        let recipe = Recipe::parse(
+            &json!({
+                "format":"catallax-recipe/5","name":"all faces with filters",
+                "steps":[block(), {
+                    "id":"result","op":"shell","body":"stock",
+                    "open":[reference],"thickness":"1"
+                }],"result":"result"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let built = build(&recipe);
+        if expected == 0 {
+            assert_eq!(built.model.body(built.result).kind, BodyKind::Empty);
+        } else {
+            volume(&built, expected);
+        }
+        locations(&recipe, &points);
+    }
+}
+
+#[test]
 fn inward_plane_offsets_regularise_collapsed_cells() {
     let shrunk = recipe(
         block(),

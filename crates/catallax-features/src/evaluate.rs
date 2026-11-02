@@ -910,7 +910,7 @@ fn evaluate_impl(
                         target.body,
                         edges,
                         &radius.value().clone().into(),
-                        recipe.format == catallax_recipe::FORMAT_V4,
+                        recipe.format != catallax_recipe::FORMAT,
                         &step.id,
                         dec,
                     )?;
@@ -1192,7 +1192,7 @@ fn evaluate_impl(
                         &thickness.value().clone().into(),
                         *side,
                         &step.id,
-                        recipe.format == catallax_recipe::FORMAT_V4,
+                        recipe.format != catallax_recipe::FORMAT,
                         dec,
                     )?;
                     BodyValue {

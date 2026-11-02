@@ -98,10 +98,10 @@ fn primitive_faces_edges_and_singular_apex_have_recipe_names() {
 fn nonexistent_primitive_roles_are_rejected_before_geometry() {
     let mut recipe = Recipe::parse(SOLIDS).unwrap();
     let reference = |step: &str, role| catallax_recipe::FaceRef {
-        face: catallax_recipe::OriginPattern {
+        face: Some(catallax_recipe::OriginPattern {
             step: StepId::new(step).unwrap(),
             role: Some(role),
-        },
+        }),
         touching: vec![],
         near: None,
     };

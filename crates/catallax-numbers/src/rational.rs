@@ -237,12 +237,24 @@ impl Rational {
         let bits = v.to_bits();
         let e = ((bits >> 52) & 2047) as i64;
         let m = (bits & ((1u64 << 52) - 1)) | if e == 0 { 0 } else { 1u64 << 52 };
-        let r = Self::from_integer(Integer::from_u64(m)).mul_pow2(if e == 0 {
-            -1074
+        if m == 0 {
+            return Some(Self::zero());
+        }
+        // Normalize the 53-bit significand before allocating big integers.
+        // Every finite binary64 denominator is a power of two.
+        let shift = if e == 0 { -1074 } else { e - 1075 };
+        let cancel = i64::from(m.trailing_zeros()).min((-shift).max(0));
+        let mantissa = (m >> cancel) as i64;
+        let numerator = BigInt::from(if bits >> 63 == 0 { mantissa } else { -mantissa });
+        let shift = shift + cancel;
+        Some(if shift >= 0 {
+            Self::from_integer(Integer(numerator << shift as u64))
         } else {
-            e - 1075
-        });
-        Some(if bits >> 63 == 0 { r } else { -r })
+            Self {
+                n: Integer(numerator),
+                d: Integer(BigInt::one() << shift.unsigned_abs()),
+            }
+        })
     }
     /// Nearest double, ties to even, with overflow to infinity.
     pub fn to_f64_nearest(&self) -> f64 {

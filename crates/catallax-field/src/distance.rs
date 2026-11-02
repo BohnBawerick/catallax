@@ -7,6 +7,7 @@ use catallax_shapes::{
     distance::{self, Bounds, Domain, Membership, Options},
 };
 
+mod bored;
 mod contact;
 
 fn coordinates(p: &Point3) -> [Real; 3] {
@@ -200,6 +201,7 @@ pub struct Prepared<'a> {
     domains: Vec<Option<Domain>>,
     coincident: Vec<Vec<Vec<bool>>>,
     planar_trims: Vec<Vec<PlanarTrim>>,
+    bored_caps: std::collections::BTreeMap<usize, std::sync::Arc<[catallax_shapes::Cylinder]>>,
 }
 impl Plan {
     /// Prepares compact chart covers from recipe bounds, never from a B-rep mesh.
@@ -297,6 +299,7 @@ impl Plan {
             domains,
             coincident,
             planar_trims,
+            bored_caps: self.prepare_bored_caps(dec)?,
         })
     }
 }
@@ -429,57 +432,6 @@ impl Prepared<'_> {
         }
         Ok(false)
     }
-    // A chart cell can cross an irrelevant support while remaining wholly
-    // inside a bore or buried in material. Evaluate interval-certified leaf
-    // signs through the actual Boolean tape before requiring every sign stable.
-    fn cover_excluded(
-        &self,
-        id: usize,
-        cover: &[Ball; 3],
-        dec: &mut Decider,
-    ) -> Result<bool, Refusal> {
-        let mut tape = Vec::with_capacity(self.plan.instructions.len());
-        for instruction in &self.plan.instructions {
-            let state = match *instruction {
-                Instruction::Empty => Location::Outside,
-                Instruction::Leaf(i) => {
-                    let leaf = &self.plan.leaves[i];
-                    if !matches!(leaf, geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_)) {
-                        Location::Indeterminate
-                    } else {
-                        let mut state = Location::Inside;
-                        for (j, constraint) in leaf.constraints().iter().enumerate() {
-                            if self.coincident[id][i][j] {
-                                if state == Location::Inside {
-                                    state = Location::Boundary;
-                                }
-                                continue;
-                            }
-                            let value = constraint.polynomial.eval_ball(cover, dec)?;
-                            if value.lo() > Rational::zero() {
-                                state = Location::Outside;
-                                break;
-                            }
-                            if value.hi() >= Rational::zero() {
-                                state = Location::Indeterminate;
-                            }
-                        }
-                        if i == self.plan.faces[id].leaf && state == Location::Outside {
-                            return Ok(true);
-                        }
-                        state
-                    }
-                }
-                Instruction::Boolean { kind, a, b } => crate::combine(kind, tape[a], tape[b]),
-            };
-            tape.push(state);
-        }
-        Ok(matches!(
-            tape[self.plan.root],
-            Location::Inside | Location::Outside
-        ))
-    }
-
     fn classify(
         &self,
         id: usize,
@@ -487,12 +439,6 @@ impl Prepared<'_> {
         cover: &[Ball; 3],
         dec: &mut Decider,
     ) -> Result<Membership, Refusal> {
-        if self.cover_excluded(id, cover, dec)? {
-            return Ok(Membership {
-                witness: false,
-                excluded: true,
-            });
-        }
         let witness = self.member(id, p, dec)?;
         if witness {
             return Ok(Membership {
@@ -585,6 +531,9 @@ impl Prepared<'_> {
                 "shapes.distance-domain",
                 "positive width and cell count required",
             ));
+        }
+        if let Some(bounds) = self.bored_cap_distance(id.0, point, options, dec)? {
+            return Ok(bounds);
         }
         let mut candidate = Bounds {
             lower: Rational::zero(),

@@ -141,21 +141,27 @@ fn distances_use_finite_bore_walls_and_caps_with_holes_not_supports() {
     };
     let mut dec = Decider::default();
     let prepared = plan.prepare_distances(&mut dec).unwrap();
-    for (name, xyz, expected) in [
+    for (name, xyz, expected, max_cells) in [
         (
             inner_bore(&plan).origin.clone(),
             ["26", "15", "6"],
             Real::one(),
+            16384,
         ),
         (
             inner_bore(&plan).origin.clone(),
             ["25", "15", "13"],
             Real::one(),
+            16384,
         ),
-        (outer, ["24", "15", "6"], Real::one()),
-        (floor, ["20", "15", "3"], Real::from_i64(26).sqrt()),
-        (bottom, ["20", "15", "-1"], Real::from_i64(10).sqrt()),
+        (outer, ["24", "15", "6"], Real::one(), 16384),
+        (floor, ["20", "15", "3"], Real::from_i64(26).sqrt(), 1),
+        (bottom, ["20", "15", "-1"], Real::from_i64(10).sqrt(), 1),
     ] {
+        let controls = Options {
+            max_cells,
+            width: controls.width.clone(),
+        };
         let (answer, work) = with_operation_budget(WORK, || {
             prepared
                 .point_to_face(
@@ -378,5 +384,80 @@ fn boolean_cylinder_tools_and_circular_through_cuts_keep_their_own_inner_names()
             .state,
             FaceState::OnFace
         );
+        cap_distance(&plan, ["20", "15", "3"], Real::from_i64(26).sqrt(), 1);
     }
+}
+
+fn cap_distance(plan: &Plan, xyz: [&str; 3], expected: Real, max_cells: usize) {
+    let floor =
+        origin(json!({"step":"shell","role":{"inner":{"of":{"step":"stock","role":"start"}}}}));
+    let controls = Options {
+        width: Rational::parse("1/100").unwrap(),
+        max_cells,
+    };
+    let mut dec = Decider::default();
+    let prepared = plan.prepare_distances(&mut dec).unwrap();
+    let (answer, work) = with_operation_budget(WORK, || {
+        prepared
+            .point_to_face(
+                plan.select(&floor).unwrap(),
+                &point(xyz).to_real(),
+                &controls,
+                &mut dec,
+            )
+            .unwrap()
+    });
+    assert!(!work.exhausted, "{work:?}");
+    let expected = dec.enclose_at(&expected, 128).unwrap();
+    let upper = answer.upper.as_ref().expect("admitted finite-cap witness");
+    assert!(
+        answer.lower <= expected.lo() && upper >= &expected.hi(),
+        "{answer:?}"
+    );
+    assert!(
+        answer.converged && upper - &answer.lower <= controls.width,
+        "{answer:?}"
+    );
+}
+
+#[test]
+fn circular_cap_bounds_cover_edits_multiple_holes_rotations_and_small_clearances() {
+    let mut source = document();
+    source["steps"][2]["thickness"] = json!("3/2");
+    cap_distance(
+        &compile(&source),
+        ["21", "15", "5/2"],
+        Real::from(Rational::parse("53/4").unwrap()).sqrt(),
+        1,
+    );
+
+    source = document();
+    source["steps"][1]["at"] = json!([
+        {"id":"left","point":["12","15","12"],"direction":["0","0","-1"]},
+        {"id":"right","point":["28","15","12"],"direction":["0","0","-1"]}
+    ]);
+    let plan = compile(&source);
+    cap_distance(&plan, ["12", "15", "3"], Real::from_i64(26).sqrt(), 1);
+    cap_distance(&plan, ["29", "15", "3"], Real::from_i64(17).sqrt(), 1);
+
+    source = document();
+    source["steps"][0]["pose"] =
+        json!({"rotation":["3/5","4/5","0","0"],"translation":["7","-5","11"]});
+    source["steps"][1]["at"][0]["point"] = json!(["27", "-518/25", "551/25"]);
+    source["steps"][1]["at"][0]["direction"] = json!(["0", "24/25", "7/25"]);
+    cap_distance(
+        &compile(&source),
+        ["27", "-302/25", "614/25"],
+        Real::from_i64(26).sqrt(),
+        1,
+    );
+
+    source = document();
+    source["steps"][1]["at"][0]["point"] = json!(["700001/100000", "15", "12"]);
+    cap_distance(
+        &compile(&source),
+        ["600001/100000", "15", "3"],
+        Real::from_i64(17).sqrt(),
+        32,
+    );
 }

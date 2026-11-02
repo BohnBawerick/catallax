@@ -442,6 +442,17 @@ such registry-only handles report `field.face-id` from the distance API.
 Canonical public names retain the plan's generated-domain role for trim
 predicates; renaming a revolved cone cap does not turn it into an angular cap.
 
+For a kept perpendicular cap of a separated through-bore shell, the field also
+certifies the planar hull, complete tool coverage, nested cavity and separated
+circular holes from its own tape. If the plane projection lies inside a hole,
+`sqrt(h^2 + (r - rho)^2)` bounds distance below, where `h` is the plane gap,
+`r` the hole radius and `rho` the projected distance from its centre. An exact
+point just outside that circle must pass the named field-face predicate before
+it supplies an upper bound. The requested width is unchanged. This avoids using
+an infinite-plane clearance or waiting for expanded polynomial interval boxes
+to resolve the circular exclusion. Open-cap rims, other openings and general
+trimmed planar regions keep their existing query path and coverage limits.
+
 Complete circular cylinder bands and perpendicular circular caps skip that search
 for point queries. `PreparedFace` recognizes, exactly, a cylinder face whose two
 loops are single closed rim circles that are coaxial, perpendicular to the axis

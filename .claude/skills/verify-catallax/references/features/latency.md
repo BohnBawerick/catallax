@@ -68,6 +68,15 @@ sewing. Do not add these alternate passes together. This raw profile has no
 application aggregate work scope; use the bounded application modes above for
 that path.
 
+### Hosted SolidDraft edit pairs
+
+The `edits` job in `.github/workflows/rounded-step-speed.yml` extends the rounded-export comparison with the five named edits from SolidDraft 0.2.0. It builds the same released application source twice against the pull request's base and head. The application's scenario runner captures bracket dimension/value edits, drawing extrusion edit and reference extrusion/dimension edits, including their visible selectable viewport results. Explicit file-export checks after a click are omitted from this timing run; no click or work allowance changes.
+
+`tools/checks/edit_speed.py` alternates AB/BA order on one allowed CPU, discards one warmup pair and retains three measured pairs. It preserves executable hashes, load averages, application answers and operation work. A separate `catallax-cli --example edit_answer` pass replays each edit's captured final native recipe and compares complete certified meshes, bounds, marks, names, STEP bytes, decision statistics and operation work. That pass times a fresh final build and certified display separately; it is not the application's suffix edit or a full click. Read the application call logs before attributing an application wait to construction, display or application overhead.
+
+The application comparison excludes only the asynchronous delivery counter `command.json` field `/rebuild/background_meshes_rebuilt` in addition to the released comparison tool's existing normalization. Raw counters remain in the artifacts. Complete foreground call records must match for each target edit; complete foreground and background call records must also match as a multiset over the entire scenario. Only wall times are removed from those records. Moving completion delivery between captures cannot hide changed answers, certificates or numeric work.
+
+
 
 ## Gotchas
 

@@ -24,6 +24,7 @@ The attained upper bound is the local tolerance. It must fit the approved file l
 
 `Built::import_record(step)` retains the source-bound record with its immutable import body and recipe, including checkpoint reuse. Rigid placement preserves distances. These records do not certify later modified faces, a whole solid against an intended design, display rounding or exported output. STEP's existing error report remains relative to the repaired model. To bound output against a source face, a consumer needs the applicable source-face record, output correspondence and the separate output bound.
 
+The standalone persisted-artifact smoke approved a 0.02 mm seam and reread the saved recipe, unchanged source, `/2` repair record and derivative. It produced four exact `[0.02, 0.02]` mm face enclosures, a six-face, twelve-triangle OBJ and a checked STEP re-export with zero output error against the repaired model. The separate approval regression grants 0.03 mm while requiring the attained face bounds to remain 0.02 mm. These are API and artifact checks, not SolidDraft viewport or independent OpenCASCADE validation.
 
 ## Supported first path
 

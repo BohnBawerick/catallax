@@ -49,8 +49,9 @@ fn normal(v: &Vector3, same: bool) -> Vector3 {
 }
 
 impl FilletDefinition {
-    /// Reduces plane-plane, perpendicular plane-cylinder and parallel-cylinder
-    /// contacts to an exact cylinder or torus. This does not publish a solid.
+    /// Reduces plane-plane, parallel-cylinder and cylinder-plane generator
+    /// contacts to an exact cylinder, and perpendicular plane-cylinder rings to
+    /// an exact torus. This does not publish a solid.
     pub fn new(
         origin: Origin,
         supports: [Surface; 2],
@@ -120,12 +121,28 @@ impl FilletDefinition {
                     plane_cylinder(p, c, e, [same_sense[1], same_sense[0]], &radius, &k, dec)?;
                 (surface, [b, a])
             }
+            (Surface::Plane(p), Surface::Cylinder(c), Curve::Line(e)) => {
+                parallel::plane_cylinder(p, c, e, same_sense, &radius, &k, &origin.step, dec)?
+            }
+            (Surface::Cylinder(c), Surface::Plane(p), Curve::Line(e)) => {
+                let (surface, [a, b]) = parallel::plane_cylinder(
+                    p,
+                    c,
+                    e,
+                    [same_sense[1], same_sense[0]],
+                    &radius,
+                    &k,
+                    &origin.step,
+                    dec,
+                )?;
+                (surface, [b, a])
+            }
             (Surface::Cylinder(a), Surface::Cylinder(b), Curve::Line(e)) => {
                 parallel::cylinders(a, b, e, same_sense, &radius, &k, &origin.step, dec)?
             }
             _ => {
                 return Err(bad(
-                    "fillets need a line between planes or parallel cylinders, or a circle between a plane and perpendicular cylinder",
+                    "fillets need a line between planes, parallel cylinders or a cylinder and a parallel plane, or a circle between a plane and perpendicular cylinder",
                 ));
             }
         };
@@ -180,7 +197,7 @@ impl FilletDefinition {
                 normal(&b.normal, self.same_sense[1]),
                 Real::from_i64(if self.convex { 1 } else { -1 }),
             ),
-            [Surface::Cylinder(_), Surface::Cylinder(_)] => (
+            _ => (
                 a.origin
                     .minus(&c.origin)
                     .scaled(&(&Real::one() / &self.radius)),
@@ -189,7 +206,6 @@ impl FilletDefinition {
                     .scaled(&(&Real::one() / &self.radius)),
                 Real::one(),
             ),
-            _ => return Err(bad("line-strip sector has no supported contact pair")),
         };
         let d = p.minus(&c.origin);
         let radial = d
@@ -202,17 +218,18 @@ impl FilletDefinition {
             && sign(&(&y - &(&dot * &x)), dec)? != Sign::Negative)
     }
 
-    /// Whether this strip and another consume overlapping arcs of one shared
-    /// cylinder wall, given each strip's support index for that wall. Rails
-    /// that pass each other can leave both feet in the open face.
-    pub(crate) fn wall_arc_meets(
+    /// Whether this strip and another consume overlapping bands of one shared
+    /// support, given each strip's support index for it. Rails that pass each
+    /// other can leave both feet in the open face. Plane-plane pairs are left
+    /// to their carrier and kite proofs.
+    pub(crate) fn bands_meet(
         &self,
         support: usize,
         other: &Self,
         other_support: usize,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
-        parallel::wall_arc_meets([(self, support), (other, other_support)], dec)
+        parallel::bands_meet([(self, support), (other, other_support)], dec)
     }
 
     /// Proves two parallel plane-plane strips' blend regions disjoint, although

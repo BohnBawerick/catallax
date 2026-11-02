@@ -635,6 +635,23 @@ fn guard(
         if separated(&run.definition.surface, &other, dec)? {
             continue;
         }
+        // Another piece of a curved strip's support touches the carrier only
+        // along the contact rail, and that rail's feet lie in the run's face.
+        let curved = run
+            .definition
+            .supports
+            .iter()
+            .any(|support| matches!(support, Surface::Cylinder(_)));
+        if curved
+            && matches!(run.definition.edge, Curve::Line(_))
+            && run
+                .definition
+                .supports
+                .iter()
+                .any(|support| support.same_definition(&other))
+        {
+            continue;
+        }
         let a = model.geom_mut().add_surface(run.definition.surface.clone());
         let b = model.geom_mut().add_surface(other);
         if !matches!(
@@ -739,10 +756,12 @@ pub(crate) fn build(
     let trimming = runs
         .iter()
         .any(|run| {
-            matches!(
-                run.definition.supports,
-                [Surface::Cylinder(_), Surface::Cylinder(_)]
-            )
+            matches!(run.definition.edge, Curve::Line(_))
+                && run
+                    .definition
+                    .supports
+                    .iter()
+                    .any(|support| matches!(support, Surface::Cylinder(_)))
         })
         .then(|| catallax_numbers::OperationSpan::begin("brep", step, "fillet.trimming", dec));
     for run in &runs {
@@ -807,12 +826,11 @@ pub(crate) fn build(
             }
             for (index, face) in a.faces.iter().enumerate() {
                 if let Some(other) = b.faces.iter().position(|f| f == face)
-                    && a.definition
-                        .wall_arc_meets(index, &b.definition, other, dec)?
+                    && a.definition.bands_meet(index, &b.definition, other, dec)?
                 {
                     return Err(Refusal::new(
                         "fillet.unsupported-overflow",
-                        "two strips consume one arc of their shared cylinder wall and require simultaneous contact-region trimming",
+                        "two strips consume one band of their shared support and require simultaneous contact-region trimming",
                     ));
                 }
             }

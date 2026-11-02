@@ -1,0 +1,78 @@
+name: rounded STEP speed
+
+on:
+  pull_request:
+    paths:
+      - 'crates/catallax-numbers/**'
+      - 'crates/catallax-step/**'
+      - 'crates/catallax-cli/examples/rounded_step.rs'
+      - '.github/workflows/rounded-step-speed.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  paired:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build both revisions with the same probe
+        run: |
+          cp candidate/crates/catallax-cli/examples/rounded_step.rs baseline/crates/catallax-cli/examples/rounded_step.rs
+          cargo build --manifest-path baseline/Cargo.toml --locked --release -p catallax-cli --example rounded_step -j 2
+          cargo build --manifest-path candidate/Cargo.toml --locked --release -p catallax-cli --example rounded_step -j 2
+      - name: Alternate on one core and compare every answer
+        env:
+          PROOF: ${{ runner.temp }}/rounded-step-speed
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, statistics, subprocess
+          out = pathlib.Path(os.environ['PROOF'])
+          out.mkdir()
+          core = min(os.sched_getaffinity(0))
+          os.sched_setaffinity(0, {core})
+          samples = []
+          reference = None
+          for pair in range(4):
+              order = ['baseline', 'candidate'] if pair % 2 == 0 else ['candidate', 'baseline']
+              for revision in order:
+                  dest = out / f'{pair}-{revision}'
+                  load = os.getloadavg()
+                  run = subprocess.run([f'{revision}/target/release/examples/rounded_step', str(dest)],
+                                       text=True, capture_output=True, check=True)
+                  (dest / 'stderr.txt').write_text(run.stderr)
+                  answer = tuple((dest / name).read_bytes() for name in ['answer.step', 'answer.txt', 'work.txt'])
+                  if reference is None:
+                      reference = answer
+                  assert answer == reference, f'answer, certificate, STEP bytes or work changed: {dest}'
+                  row = dict(pair=pair, warmup=pair == 0, revision=revision,
+                             load_before=load, load_after=os.getloadavg(), **json.loads(run.stdout))
+                  samples.append(row)
+                  print(json.dumps(row), flush=True)
+          report = dict(base=os.environ['BASE_SHA'], head=os.environ['HEAD_SHA'], core=core,
+                        samples=samples, comparison='identical STEP bytes, report, marks and work in every run',
+                        median_writer_ms={revision: statistics.median(
+                            row['writer_ms'] for row in samples if row['revision'] == revision and not row['warmup'])
+                            for revision in ['baseline', 'candidate']})
+          (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+          print(json.dumps(report, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rounded-step-speed
+          path: ${{ runner.temp }}/rounded-step-speed
+          if-no-files-found: error

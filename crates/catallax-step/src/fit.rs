@@ -293,26 +293,43 @@ pub(crate) fn taylor_controls<const N: usize>(
     digits: u32,
     mut push: impl FnMut([number::Number; N], [[Rational; 2]; N]),
 ) {
-    let degree = coefficients.len() - 1;
-    for j in 0..=degree {
-        let mut control: [[Rational; 2]; N] =
-            std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
-        for (k, coefficient) in coefficients.iter().enumerate() {
-            let factor = (0..=k.min(j)).fold(Rational::zero(), |s, l| {
-                let term =
-                    Rational::from_ratio(binomial(k, l) * binomial(j, l), binomial(degree, l))
+    use std::sync::LazyLock;
+
+    // The centered Taylor-to-Bernstein weights depend only on the degree.
+    // Keep them exact; reusing them must not alter a control's enclosure.
+    static WEIGHTS: LazyLock<[[Rational; DEGREE + 1]; DEGREE + 1]> = LazyLock::new(|| {
+        std::array::from_fn(|j| {
+            std::array::from_fn(|k| {
+                (0..=k.min(j)).fold(Rational::zero(), |sum, l| {
+                    sum + Rational::from_ratio(binomial(k, l) * binomial(j, l), binomial(DEGREE, l))
                         .unwrap()
                         * Rational::from_ratio(-1, 2)
                             .unwrap()
                             .pow((k - l) as i32)
-                            .unwrap();
-                s + term
-            }) * width.pow(k as i32).unwrap();
+                            .unwrap()
+                })
+            })
+        })
+    });
+    assert_eq!(coefficients.len(), DEGREE + 1);
+    // Scale each coefficient enclosure once, before applying the control weights.
+    // All operations are rational, so reassociation introduces no rounding.
+    let scaled: [[[Rational; 2]; N]; DEGREE + 1] = std::array::from_fn(|k| {
+        let power = width.pow(k as i32).unwrap();
+        coefficients[k]
+            .each_ref()
+            .map(|coefficient| [&coefficient.lo() * &power, &coefficient.hi() * &power])
+    });
+    for weights in WEIGHTS.iter() {
+        let mut control: [[Rational; 2]; N] =
+            std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
+        for (coefficient, weight) in scaled.iter().zip(weights) {
             for i in 0..N {
-                let a = &coefficient[i].lo() * &factor;
-                let b = &coefficient[i].hi() * &factor;
-                control[i][0] = &control[i][0] + &a.clone().min(b.clone());
-                control[i][1] = &control[i][1] + &a.max(b);
+                let a = &coefficient[i][0] * weight;
+                let b = &coefficient[i][1] * weight;
+                let (lower, upper) = if a <= b { (a, b) } else { (b, a) };
+                control[i][0] = &control[i][0] + &lower;
+                control[i][1] = &control[i][1] + &upper;
             }
         }
         push(

@@ -237,12 +237,24 @@ impl Rational {
         let bits = v.to_bits();
         let e = ((bits >> 52) & 2047) as i64;
         let m = (bits & ((1u64 << 52) - 1)) | if e == 0 { 0 } else { 1u64 << 52 };
-        let r = Self::from_integer(Integer::from_u64(m)).mul_pow2(if e == 0 {
-            -1074
+        if m == 0 {
+            return Some(Self::zero());
+        }
+        // Normalize the 53-bit significand before allocating big integers.
+        // Every finite binary64 denominator is a power of two.
+        let shift = if e == 0 { -1074 } else { e - 1075 };
+        let cancel = i64::from(m.trailing_zeros()).min((-shift).max(0));
+        let mantissa = (m >> cancel) as i64;
+        let numerator = BigInt::from(if bits >> 63 == 0 { mantissa } else { -mantissa });
+        let shift = shift + cancel;
+        Some(if shift >= 0 {
+            Self::from_integer(Integer(numerator << shift as u64))
         } else {
-            e - 1075
-        });
-        Some(if bits >> 63 == 0 { r } else { -r })
+            Self {
+                n: Integer(numerator),
+                d: Integer(BigInt::one() << shift.unsigned_abs()),
+            }
+        })
     }
     /// Nearest double, ties to even, with overflow to infinity.
     pub fn to_f64_nearest(&self) -> f64 {
@@ -434,15 +446,22 @@ impl Rational {
     // The normal form of `n / d` for a positive `d`, which is unique.
     fn reduced(n: i128, d: i128) -> Self {
         debug_assert!(d > 0);
-        let g = gcd(n.unsigned_abs(), d.unsigned_abs());
-        // 128-bit division is a library call; skip it or divide in 64 bits.
-        let (n, d) = if g == 1 {
-            (n, d)
-        } else if let (Ok(n), Ok(d), Ok(g)) = (i64::try_from(n), i64::try_from(d), i64::try_from(g))
-        {
-            (i128::from(n / g), i128::from(d / g))
+        let (n, d) = if (d as u128).is_power_of_two() {
+            // A dyadic denominator can only share trailing zero bits.
+            let cancel = n.trailing_zeros().min(d.trailing_zeros());
+            (n >> cancel, d >> cancel)
         } else {
-            (n / g as i128, d / g as i128)
+            let g = gcd(n.unsigned_abs(), d.unsigned_abs());
+            // 128-bit division is a library call; skip it or divide in 64 bits.
+            if g == 1 {
+                (n, d)
+            } else if let (Ok(n), Ok(d), Ok(g)) =
+                (i64::try_from(n), i64::try_from(d), i64::try_from(g))
+            {
+                (i128::from(n / g), i128::from(d / g))
+            } else {
+                (n / g as i128, d / g as i128)
+            }
         };
         Self {
             n: Integer(BigInt::from(n)),

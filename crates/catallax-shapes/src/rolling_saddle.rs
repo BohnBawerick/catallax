@@ -30,11 +30,19 @@
 //! on `[1, 3]` the same half turn repeats from the opposite side, so the rail's
 //! denominator is two at every chart end and the closed carrier's weights close.
 
+use crate::rational_sheet::{LocalFrame, Patch, cover, split_net};
 use crate::rolling_envelope::{Jet, combine, cubic, elevate, hermite, product};
-use crate::{BSplineCurve, BSplineSurface, Cylinder, Isometry, Point3, Pose, SplineBoundary};
-use crate::{Vector3, math};
+use crate::{
+    BSplineCurve, BSplineSurface, Cylinder, EnvelopeGrid, Isometry, Plane, Point3, Pose,
+    SplineBoundary, Vector3, math,
+};
 use catallax_numbers::{Ball, Decider, EvidenceBound, EvidenceUnit, Rational, Real, Refusal, Sign};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+#[path = "rolling_saddle/grid.rs"]
+mod grid;
+#[path = "rolling_saddle/line.rs"]
+mod line;
 
 /// Kernel-made approximation target, as for a rolling envelope.
 pub const ROLLING_SADDLE_TARGET_NM: i64 = 100;
@@ -45,7 +53,7 @@ const LAST_SPANS: usize = 128;
 const DEGREE: usize = 9;
 const BITS: u32 = 128;
 // Node data keep this many fractional bits, far below the target.
-const NODE_BITS: i64 = 48;
+const NODE_BITS: i64 = 32;
 // Cells of one span in the regularity proof, by doubling.
 const MAX_CELLS: usize = 64;
 
@@ -104,6 +112,9 @@ impl BallSide {
 #[derive(Clone, Debug)]
 pub struct RollingSaddleDefinition {
     origin: Point3,
+    foot: Point3,
+    // The cylinders' own axes, which keep a rational line solver in reach.
+    axes: [Vector3; 2],
     across: Vector3,
     along: Vector3,
     axis: Vector3,
@@ -144,12 +155,17 @@ impl RollingSaddleDefinition {
         let sine = math::exact_sqrt(&square);
         let along = n.minus(&a.scaled(&cosine)).scaled(&(&Real::one() / &sine));
         let across = along.cross(&a);
+        // The closest points of the two axes, as rationals when the input is.
         let between = narrow.origin.minus(&wide.origin);
-        let gap = between.dot(&across);
-        let station = -&(&between.dot(&along) / &sine);
-        let origin = wide
-            .origin
-            .plus(&a.scaled(&(&between.dot(&a) + &(&station * &cosine))));
+        let (long, short) = (&wide.axis, &narrow.axis);
+        let (aa, cc, ac) = (long.dot(long), short.dot(short), long.dot(short));
+        let (ad, cd) = (long.dot(&between), short.dot(&between));
+        let det = &(&aa * &cc) - &ac.square();
+        let on_wide = &(&(&cc * &ad) - &(&ac * &cd)) / &det;
+        let on_narrow = &(&(&ac * &ad) - &(&aa * &cd)) / &det;
+        let origin = wide.origin.plus(&long.scaled(&on_wide));
+        let foot = narrow.origin.plus(&short.scaled(&on_narrow));
+        let gap = foot.minus(&origin).dot(&across);
         let radii = [&wide.radius_sq, &narrow.radius_sq].map(math::exact_sqrt);
         let [wide_radius, narrow_radius] = radii;
         let offset =
@@ -173,6 +189,8 @@ impl RollingSaddleDefinition {
         }
         Ok(Self {
             origin,
+            foot,
+            axes: [wide.axis.clone(), narrow.axis.clone()],
             across,
             along,
             axis: a,
@@ -187,9 +205,55 @@ impl RollingSaddleDefinition {
         })
     }
 
+    /// The ring through a point of both cylinders, under the checks of
+    /// [`Self::new`]. A regular ring never reaches the plane through the wide
+    /// axis and the common perpendicular, so the point's side of it names the ring.
+    pub fn through(
+        wide: &Cylinder,
+        narrow: &Cylinder,
+        radius: &Real,
+        sides: [BallSide; 2],
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let definition = Self::new(wide, narrow, radius, sides, true, dec)?;
+        let [_, y, _] = definition.local(point);
+        match math::sign(&y, dec)? {
+            Sign::Positive => Ok(definition),
+            Sign::Negative => Ok(Self {
+                branch: -1,
+                ..definition
+            }),
+            Sign::Zero => Err(invalid("the point is not on a regular ring")),
+        }
+    }
+
+    /// Whether a tangent at a point near the ring turns the way the chart runs:
+    /// counter-clockwise about the narrow axis, which is the sense of a growing
+    /// `u`. A regular ring turns one way round that axis throughout, so one
+    /// tangent decides the direction of a whole ring.
+    pub fn runs_with_chart(
+        &self,
+        point: &Point3,
+        tangent: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let turn = self.narrow_axis().cross(&self.radial(1, point));
+        match math::sign(&turn.dot(tangent), dec)? {
+            Sign::Positive => Ok(true),
+            Sign::Negative => Ok(false),
+            Sign::Zero => Err(invalid("the tangent does not turn round the narrow axis")),
+        }
+    }
+
     fn mapped(&self, pose: &Isometry) -> Self {
         Self {
             origin: pose.apply_point(&self.origin),
+            foot: pose.apply_point(&self.foot),
+            axes: [
+                pose.apply_vector(&self.axes[0]),
+                pose.apply_vector(&self.axes[1]),
+            ],
             across: pose.apply_vector(&self.across),
             along: pose.apply_vector(&self.along),
             axis: pose.apply_vector(&self.axis),
@@ -206,6 +270,39 @@ impl RollingSaddleDefinition {
         let radius = if which == 0 { &self.wide } else { &self.narrow };
         radius + &(&self.radius * &Real::from_i64(self.sides[which]))
     }
+    fn frame(&self, bits: u32, dec: &Decider) -> Result<LocalFrame, Refusal> {
+        LocalFrame::new(
+            &self.origin,
+            [&self.across, &self.along, &self.axis],
+            bits,
+            dec,
+        )
+    }
+    fn budgeted_frame(&self, bits: u32, dec: &mut Decider) -> Result<LocalFrame, Refusal> {
+        LocalFrame::budgeted(
+            &self.origin,
+            [&self.across, &self.along, &self.axis],
+            bits,
+            dec,
+        )
+    }
+    fn local(&self, point: &Point3) -> [Real; 3] {
+        let d = point.minus(&self.origin);
+        [d.dot(&self.across), d.dot(&self.along), d.dot(&self.axis)]
+    }
+    // A point's offset from a cylinder's axis, as a vector.
+    fn radial(&self, which: usize, point: &Point3) -> Vector3 {
+        let (at, axis) = if which == 0 {
+            (&self.origin, self.axis.clone())
+        } else {
+            (&self.foot, self.narrow_axis())
+        };
+        let d = point.minus(at);
+        d.minus(&axis.scaled(&d.dot(&axis)))
+    }
+    fn axis_gap(&self, which: usize, point: &Point3) -> Real {
+        self.radial(which, point).norm_squared()
+    }
     fn side_axis(&self) -> Vector3 {
         self.along
             .scaled(&self.cosine)
@@ -215,9 +312,6 @@ impl RollingSaddleDefinition {
         self.axis
             .scaled(&self.cosine)
             .plus(&self.along.scaled(&self.sine))
-    }
-    fn foot(&self) -> Point3 {
-        self.origin.plus(&self.across.scaled(&self.gap))
     }
     fn place(&self, x: &Real, y: &Real, z: &Real) -> Point3 {
         self.origin
@@ -711,7 +805,7 @@ fn build(
     nodes: &[Node],
     dec: &mut Decider,
 ) -> Result<BSplineSurface, Refusal> {
-    let foot = def.foot();
+    let foot = &def.foot;
     let frame = [def.across.clone(), def.side_axis(), def.narrow_axis()];
     let place = |row: usize, c: [&Real; 4]| -> Point3 {
         let [x, y, z] = [c[0] / c[3], c[1] / c[3], c[2] / c[3]];
@@ -748,6 +842,142 @@ fn build(
     BSplineSurface::new([DEGREE, 2], [knots, v], [count, 3], controls, weights, dec)
 }
 
+// Enclosed homogeneous controls in the wide frame, u-major. Rigid copies share
+// one net, so no consumer pays to enclose a moved carrier again.
+#[derive(Debug)]
+struct Net {
+    bits: u32,
+    controls: Vec<[Ball; 4]>,
+    grid: Mutex<Option<(Rational, Arc<EnvelopeGrid>)>>,
+    turns: Mutex<Option<[Rational; 3]>>,
+}
+
+impl Net {
+    fn new(
+        def: &RollingSaddleDefinition,
+        carrier: &BSplineSurface,
+        dec: &Decider,
+    ) -> Result<Self, Refusal> {
+        let bits = BITS.min(dec.policy().max_precision_bits);
+        let frame = def.frame(bits, dec)?;
+        let controls = carrier
+            .controls()
+            .iter()
+            .zip(carrier.weights())
+            .map(|(point, weight)| {
+                let w = dec.enclose_at(weight, bits)?;
+                let [x, y, z] = frame.local(&math::point(point, bits, dec)?);
+                Ok([&x * &w, &y * &w, &z * &w, w])
+            })
+            .collect::<Result<Vec<_>, Refusal>>()?;
+        Ok(Self {
+            bits,
+            controls,
+            grid: Mutex::new(None),
+            turns: Mutex::new(None),
+        })
+    }
+}
+
+// Proves the carrier itself regular, patch by patch. With P the homogeneous
+// point less `m W` for a near constant `m`, the derivatives over a patch are
+// `D = P_x W - P W_x` up to the positive `W^2`, and a positive `(D_u x D_v) . n`
+// for a fixed `n` keeps them independent.
+fn check_carrier(net: &Net, carrier: &BSplineSurface, dec: &Decider) -> Result<(), Refusal> {
+    let bits = net.bits;
+    let zero = b(&Rational::zero(), bits);
+    let hull = |values: &mut dyn Iterator<Item = Ball>| {
+        values.fold(None::<Ball>, |all, value| {
+            Some(all.map_or(value.clone(), |all| all.hull(&value)))
+        })
+    };
+    let mut stack: Vec<(Patch, u32)> = Patch::all(carrier, &net.controls, DEGREE)
+        .into_iter()
+        .map(|patch| (patch, 0))
+        .collect();
+    while let Some((patch, depth)) = stack.pop() {
+        dec.check_deadline()?;
+        let [du, dv] = [0, 1].map(|axis| &patch.cell[axis][1] - &patch.cell[axis][0]);
+        let first = &patch.net[0];
+        let middle = [0, 1, 2].map(|k| {
+            let at = first[k].checked_div(&first[3]);
+            at.map(|value| b(&value.mid(), bits))
+        });
+        let [Some(mx), Some(my), Some(mz)] = middle else {
+            return Err(unresolved("subdivided saddle weight is not positive"));
+        };
+        let middle = [mx, my, mz];
+        let shifted: Vec<[Ball; 4]> = patch
+            .net
+            .iter()
+            .map(|h| {
+                [
+                    &h[0] - &(&h[3] * &middle[0]),
+                    &h[1] - &(&h[3] * &middle[1]),
+                    &h[2] - &(&h[3] * &middle[2]),
+                    h[3].clone(),
+                ]
+            })
+            .collect();
+        let cells = |step: [usize; 2], scale: &Rational, k: usize| {
+            let mut all = Vec::new();
+            for i in 0..=DEGREE - step[0] {
+                for j in 0..=2 - step[1] {
+                    let near = &shifted[i * 3 + j];
+                    let far = &shifted[(i + step[0]) * 3 + j + step[1]];
+                    all.push(&(&far[k] - &near[k]) * &b(scale, bits));
+                }
+            }
+            hull(&mut all.into_iter()).expect("a patch has controls")
+        };
+        let value = |k: usize| {
+            hull(&mut shifted.iter().map(|h| h[k].clone())).expect("a patch has controls")
+        };
+        let scales = [q(DEGREE as i64) / du.clone(), q(2) / dv.clone()];
+        let [weight, along, across] = [
+            value(3),
+            cells([1, 0], &scales[0], 3),
+            cells([0, 1], &scales[1], 3),
+        ];
+        let derivative = |step: [usize; 2], scale: &Rational, change: &Ball| -> [Ball; 3] {
+            [0, 1, 2].map(|k| &(&cells(step, scale, k) * &weight) - &(&value(k) * change))
+        };
+        let u = derivative([1, 0], &scales[0], &along);
+        let v = derivative([0, 1], &scales[1], &across);
+        let cross = |i: usize, j: usize| &(&u[i] * &v[j]) - &(&u[j] * &v[i]);
+        let normal = [cross(1, 2), cross(2, 0), cross(0, 1)];
+        let direction = normal.each_ref().map(|value| b(&value.mid(), bits));
+        let along_normal = normal
+            .iter()
+            .zip(&direction)
+            .fold(zero.clone(), |sum, (value, unit)| sum + value * unit);
+        if along_normal.lo() > Rational::zero() {
+            continue;
+        }
+        if depth >= 12 {
+            return Err(unresolved("the fitted carrier is not proved regular"));
+        }
+        // Compare in the same metric as a patch split, across the longer side.
+        let axis = usize::from(dv / q(8) > du);
+        let half = (&patch.cell[axis][0] + &patch.cell[axis][1]) / q(2);
+        let [left, right] = split_net(&patch.net, [DEGREE, 2], axis);
+        let (mut low, mut high) = (patch.cell.clone(), patch.cell.clone());
+        low[axis][1] = half.clone();
+        high[axis][0] = half;
+        for (cell, net) in [(low, left), (high, right)] {
+            stack.push((
+                Patch {
+                    degree: DEGREE,
+                    cell,
+                    net,
+                },
+                depth + 1,
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// A closed ring of the ball's surface. The carrier is the represented geometry
 /// over `[-1, 3] x [0, 1]`: `u` runs once round the ring and `v` from the wide
 /// rail to the narrow one.
@@ -761,7 +991,9 @@ struct Data {
     definition: RollingSaddleDefinition,
     nodes: Vec<Node>,
     carrier: BSplineSurface,
+    net: Arc<Net>,
     bound: EvidenceBound,
+    reversing: bool,
 }
 
 impl RollingSaddle {
@@ -786,15 +1018,19 @@ impl RollingSaddle {
         }
         check_regular(&definition, &nodes, bits, dec)?;
         let carrier = build(&definition, &nodes, dec)?;
+        let net = Arc::new(Net::new(&definition, &carrier, dec)?);
+        check_carrier(&net, &carrier, dec)?;
         Ok(Self {
             data: Arc::new(Data {
                 definition,
                 nodes,
                 carrier,
+                net,
                 bound: EvidenceBound {
                     upper,
                     unit: EvidenceUnit::Millimetres,
                 },
+                reversing: false,
             }),
         })
     }
@@ -826,6 +1062,181 @@ impl RollingSaddle {
             .map(|side| BSplineCurve::boundary(&self.data.carrier, side))
     }
 
+    /// Positive identity of the shared law and carrier, for cache reuse.
+    pub fn shares_definition_nodes(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.data.net, &other.data.net)
+    }
+
+    fn query_bits(&self, dec: &Decider) -> Result<u32, Refusal> {
+        match self.data.net.bits.min(dec.policy().max_precision_bits) {
+            0 => Err(Refusal::new(
+                "numbers.precision-limit",
+                "no saddle query precision available",
+            )),
+            bits => Ok(bits),
+        }
+    }
+
+    fn patches(&self, bits: u32) -> Vec<Patch> {
+        Patch::at(
+            &self.data.carrier,
+            &self.data.net.controls,
+            self.data.net.bits,
+            DEGREE,
+            bits,
+        )
+    }
+
+    /// Enclosed world controls and weights, from the shared net.
+    pub(crate) fn query_controls(
+        &self,
+        dec: &mut Decider,
+    ) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
+        let bits = self.query_bits(dec)?;
+        let frame = self.data.definition.budgeted_frame(bits, dec)?;
+        self.data
+            .net
+            .controls
+            .iter()
+            .map(|h| {
+                let local = [0, 1, 2].map(|k| {
+                    h[k].with_precision(bits)
+                        .checked_div(&h[3].with_precision(bits))
+                        .ok_or_else(|| unresolved("saddle weight is not positive"))
+                });
+                let [x, y, z] = local;
+                Ok((frame.world(&[x?, y?, z?]), h[3].clone()))
+            })
+            .collect()
+    }
+
+    /// Encloses every chart preimage of a spatial box.
+    pub fn parameters_of_box(
+        &self,
+        point: &[Ball; 3],
+        dec: &Decider,
+    ) -> Result<Option<[Ball; 2]>, Refusal> {
+        dec.check_deadline()?;
+        let bits = self.query_bits(dec)?;
+        let ceiling = dec.policy().max_precision_bits;
+        let point = point
+            .each_ref()
+            .map(|value| value.with_precision(value.precision().min(ceiling)));
+        let point = self.data.definition.frame(bits, dec)?.local(&point);
+        let found = cover(self.patches(bits), &point, dec)?;
+        Ok(found.map(|h| h.map(|[lo, hi]| b(&lo, bits).hull(&b(&hi, bits)))))
+    }
+
+    /// Whether a point is exactly on a rail. `Ok(false)` says only that.
+    pub fn on_boundary(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        math::validate_point(point, dec)?;
+        Ok(self.rail_of(point, dec)?.is_some())
+    }
+
+    fn rail_of(&self, point: &Point3, dec: &mut Decider) -> Result<Option<usize>, Refusal> {
+        let def = &self.data.definition;
+        let rails = self.rails();
+        for (which, rail) in rails.iter().enumerate() {
+            let gap = def.axis_gap(which, point);
+            let radius = if which == 0 { &def.wide } else { &def.narrow };
+            if math::sign(&(&gap - &radius.square()), dec)? == Sign::Zero
+                && rail.parameter_of(point, dec)?.is_some()
+            {
+                return Ok(Some(which));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Exact normal at a rail point, pointing to the ball's centre. Interior
+    /// points have no exact chart parameters and refuse.
+    pub fn normal_at(&self, point: &Point3, dec: &mut Decider) -> Result<Vector3, Refusal> {
+        let def = &self.data.definition;
+        let Some(which) = self.rail_of(point, dec)? else {
+            return Err(Refusal::new(
+                "shapes.bspline-domain",
+                "a saddle normal needs exact chart parameters, and only its rails have them",
+            ));
+        };
+        let radial = def.radial(which, point);
+        let normal = radial.scaled(&Real::from_i64(def.sides[which]));
+        Ok(if self.data.reversing {
+            normal.scaled(&Real::from_i64(-1))
+        } else {
+            normal
+        })
+    }
+
+    /// Whether a point is on the carrier. A nonzero sign proves it off, and
+    /// names no global side of the finite support. Exact zero is decided on the
+    /// rails only, so an interior point within the enclosure's width refuses.
+    pub fn side_at(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
+        if self.on_boundary(point, dec)? {
+            return Ok(Sign::Zero);
+        }
+        let bits = self.query_bits(dec)?;
+        let at = math::budgeted_point(point, bits, dec)?;
+        if self.parameters_of_box(&at, dec)?.is_none() {
+            return Ok(Sign::Positive);
+        }
+        Err(unresolved(
+            "a point is within the carrier's enclosure width",
+        ))
+    }
+
+    /// Whether every control of the carrier lies strictly on one side of a
+    /// plane, which keeps the whole band off that plane.
+    pub fn clear_of(&self, plane: &Plane, dec: &mut Decider) -> Result<bool, Refusal> {
+        let mut side = None;
+        for control in self.data.carrier.controls() {
+            let value = math::sign(&control.minus(&plane.origin).dot(&plane.normal), dec)?;
+            if value == Sign::Zero || side.replace(value).is_some_and(|last| last != value) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Bounds of the carrier along a world coordinate, from its control hull.
+    pub fn extent(&self, axis: usize, dec: &mut Decider) -> Result<[Rational; 2], Refusal> {
+        let mut range: Option<[Rational; 2]> = None;
+        for (control, _) in self.query_controls(dec)? {
+            let [lo, hi] = [control[axis].lo(), control[axis].hi()];
+            range = Some(match range {
+                None => [lo, hi],
+                Some([low, high]) => [low.min(lo), high.max(hi)],
+            });
+        }
+        range.ok_or_else(|| unresolved("a saddle has controls"))
+    }
+
+    /// Grid with `chord` at most `tolerance`, cached per tolerance on the net.
+    pub fn display_grid(
+        &self,
+        tolerance: &Rational,
+        max_points: usize,
+        dec: &Decider,
+    ) -> Result<EnvelopeGrid, Refusal> {
+        let local = {
+            let mut cache = self.data.net.grid.lock().expect("no panic holds this lock");
+            match cache.as_ref() {
+                Some((key, grid)) if key == tolerance => grid.clone(),
+                _ => {
+                    let grid = Arc::new(self.local_grid(tolerance, max_points, dec)?);
+                    *cache = Some((tolerance.clone(), grid.clone()));
+                    grid
+                }
+            }
+        };
+        let frame = self.data.definition.frame(self.data.net.bits, dec)?;
+        Ok(EnvelopeGrid {
+            columns: local.columns,
+            rows: local.rows,
+            points: local.points.iter().map(|p| frame.world(p)).collect(),
+            chord: local.chord.clone(),
+        })
+    }
+
     /// Exact rigid transport of the law and carrier.
     pub fn transformed(&self, pose: &Pose) -> Self {
         self.mapped(&Isometry::from(pose))
@@ -836,7 +1247,9 @@ impl RollingSaddle {
                 definition: self.data.definition.mapped(pose),
                 nodes: self.data.nodes.clone(),
                 carrier: self.data.carrier.mapped(pose),
+                net: self.data.net.clone(),
                 bound: self.data.bound.clone(),
+                reversing: self.data.reversing != pose.reversing(),
             }),
         }
     }

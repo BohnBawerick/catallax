@@ -19,6 +19,7 @@ mod offset_sweep;
 mod parallel;
 mod point;
 mod pose;
+mod rational_sheet;
 mod rolling_envelope;
 mod rolling_pipe;
 mod rolling_saddle;

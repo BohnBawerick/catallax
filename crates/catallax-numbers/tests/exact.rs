@@ -157,9 +157,22 @@ blind_test!(generated_256_bit_field_laws, {
 
 #[test]
 fn dyadic_normalization_and_cancellation_match_gmp() {
-    for bits in [1, 53, 2048, 10000] {
+    let limit = 1_i64 << 62;
+    for bits in [0, 1, 53, 61, 62, 2048, 10000] {
         let denominator = Integer::one().mul_pow2(bits);
-        for n in [-24, -3, 0, 3, 24] {
+        for n in [
+            -limit - 1,
+            -limit,
+            -limit + 1,
+            -24,
+            -3,
+            0,
+            3,
+            24,
+            limit - 1,
+            limit,
+            limit + 1,
+        ] {
             for sign in [-1, 1] {
                 let a =
                     Rational::new(Integer::from(n), &denominator * &Integer::from(sign)).unwrap();

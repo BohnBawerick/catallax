@@ -36,7 +36,7 @@ impl Plan {
             let found: Vec<_> = members
                 .iter()
                 .copied()
-                .filter(|i| reference.face.matches(&self.faces[*i].origin))
+                .filter(|i| reference.matches(&self.faces[*i].origin))
                 .filter(|i| {
                     reference.touching.iter().all(|pattern| {
                         members.iter().any(|j| {

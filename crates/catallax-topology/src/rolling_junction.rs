@@ -258,6 +258,41 @@ pub fn pipe_rows(
     })
 }
 
+/// A saddle face's two rings, wide rail first, when the face keeps the whole
+/// band: two closed loops of one edge each, on the carrier's own boundary rows.
+/// Each sense is the loop's use of its edge.
+pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> {
+    let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
+        model.geom().surface(model.face(face).surface)
+    else {
+        return None;
+    };
+    let rails = saddle.rails();
+    let [first, second] = model.face(face).loops.as_slice() else {
+        return None;
+    };
+    let mut found = [None; 2];
+    for lp in [first, second] {
+        let Loop::Coedges(coedges) = model.loop_(*lp) else {
+            return None;
+        };
+        let [coedge] = coedges.as_slice() else {
+            return None;
+        };
+        let use_ = model.coedge(*coedge);
+        let edge = model.edge(use_.edge);
+        if edge.start.is_some() || edge.end.is_some() {
+            return None;
+        }
+        let Curve::BSpline(actual) = model.geom().curve(edge.curve) else {
+            return None;
+        };
+        let row = rails.iter().position(|rail| actual.same_definition(rail))?;
+        found[row] = Some((use_.edge, use_.sense));
+    }
+    Some([found[0]?, found[1]?])
+}
+
 /// Whether a band's outward side is along its contact rays, away from the ball
 /// centre. The plane that shares its plane rail fixes this.
 pub fn pipe_outward(

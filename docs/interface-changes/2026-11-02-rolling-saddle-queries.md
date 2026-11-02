@@ -1,0 +1,6 @@
+## 2026-11-02: queries and a support variant for the ball carrier between cylinders
+
+Pieces: shapes
+Change: `SplineSupport` gains the variant `RollingSaddle`. `RollingSaddle` gains `line_hits`, `on_boundary`, `normal_at`, `side_at`, `parameters_of_box`, `display_grid` and `shares_definition_nodes`, and `RollingSaddle::fit` now also proves the fitted carrier regular. `line_hits` works for axes with no rational unit direction, by carrying the lengths of the two axes and of their cross product as variables fixed by their squares. It refuses with `intersect.parametric-surface` when a line, a radius or a cylinder position is not rational. `normal_at` answers on the rails only, and a nonzero `side_at` proves a point off the carrier and names no global side. Bezier subdivision and the line solver move from `rolling_envelope` to a private shared module, with no change to the envelope's answers.
+Why: this is the second piece of the nonparallel cylinder slice. Solids need these queries before a band can join a body, and sharing the solver keeps one implementation of the rules for crossings, knots and boundary rows.
+Migration: code that matches `SplineSupport` exhaustively needs a `RollingSaddle` arm. No recipe builds this support yet.

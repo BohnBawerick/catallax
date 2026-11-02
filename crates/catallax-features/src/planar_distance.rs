@@ -237,9 +237,7 @@ impl ConvexCell {
         for reference in references {
             let mut candidates = Vec::new();
             for (i, face) in self.faces.iter().enumerate() {
-                if self.polygons[i].is_empty()
-                    || !face.origins.iter().any(|o| reference.face.matches(o))
-                {
+                if self.polygons[i].is_empty() || !reference.matches_origins(&face.origins) {
                     continue;
                 }
                 let adjacent = reference.touching.iter().all(|pattern| {

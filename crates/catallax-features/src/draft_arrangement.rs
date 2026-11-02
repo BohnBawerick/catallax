@@ -449,10 +449,7 @@ impl Skin {
                 .iter()
                 .enumerate()
                 .filter_map(|(i, patch)| {
-                    (patch
-                        .origins
-                        .iter()
-                        .any(|origin| reference.face.matches(origin))
+                    (reference.matches_origins(&patch.origins)
                         && reference.touching.iter().all(|pattern| {
                             neighbours[i].iter().any(|j| {
                                 self.patches[*j]

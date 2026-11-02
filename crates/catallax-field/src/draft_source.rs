@@ -912,7 +912,7 @@ impl Plan {
         for (tool, added, hole) in chain {
             if refs
                 .iter()
-                .any(|r| added.iter().any(|f| r.face.matches(&self.faces[*f].origin)))
+                .any(|r| added.iter().any(|f| r.matches(&self.faces[*f].origin)))
             {
                 return Err(failure("a selected bore needs a curved arrangement"));
             }
@@ -1139,7 +1139,7 @@ impl Plan {
             origins
                 .iter()
                 .chain(&top_origins)
-                .any(|origin| r.face.matches(origin))
+                .any(|origin| r.matches(origin))
         }) {
             return Err(failure("a selected boss needs a curved arrangement"));
         }

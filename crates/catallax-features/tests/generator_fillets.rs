@@ -437,7 +437,9 @@ fn radius_edits_keep_blend_names_and_step_output_stays_exact() {
 }
 
 fn refusal(recipe: &Recipe) -> String {
-    let BuildError::Geometry { refusal, .. } = evaluate(recipe, &mut decider()).unwrap_err() else {
+    // A built model is far too large for a panic message.
+    let error = evaluate(recipe, &mut decider()).err();
+    let Some(BuildError::Geometry { refusal, .. }) = error else {
         panic!("expected a geometric refusal");
     };
     refusal.code.to_string()
@@ -468,7 +470,13 @@ fn unsupported_cases_stay_typed_refusals() {
         refusal(&rounded(shorter, "11/8", json!([walls()]))),
         "fillet.unsupported-overflow"
     );
-    // Crossed cylinders meet in curves that are not generators.
+    // Every edge of the lens includes the plane rims, whose corners need a patch.
+    assert!(refusal(&rounded(pair("intersect"), "1", json!("all"))).starts_with("fillet."));
+}
+
+// Crossed cylinders meet in rings that are not generators, and each gets a band.
+#[test]
+fn crossed_cylinders_round_both_rings() {
     let crossed = joined(
         "union",
         cylinder("a", "5", "12", IDENTITY, ["0", "0", "0"]),
@@ -480,9 +488,9 @@ fn unsupported_cases_stay_typed_refusals() {
             ["-10", "0", "6"],
         ),
     );
-    assert!(refusal(&rounded(crossed, "1", json!([walls()]))).starts_with("fillet."));
-    // Every edge of the lens includes the plane rims, whose corners need a patch.
-    assert!(refusal(&rounded(pair("intersect"), "1", json!("all"))).starts_with("fillet."));
+    let built = evaluate(&rounded(crossed, "1", json!([walls()])), &mut decider()).unwrap();
+    assert_eq!(built.model.check(built.result), vec![]);
+    assert_eq!(built.fillets.len(), 2);
 }
 
 #[test]

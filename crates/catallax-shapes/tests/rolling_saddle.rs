@@ -2,10 +2,12 @@
 //! through at an angle. The checks below rebuild the ball's path with plain
 //! bisection on the two distance conditions, so they share nothing with the law.
 
-use catallax_numbers::{Ball, BudgetPolicy, Decider, Outcome, Rational, Real, Refusal};
+use std::sync::OnceLock;
+
+use catallax_numbers::{Ball, BudgetPolicy, Decider, Outcome, Rational, Real, Refusal, Sign};
 use catallax_shapes::{
-    BSplineSurface, BallSide, Cylinder, Point3, Pose, RollingSaddle, RollingSaddleDefinition,
-    Rotation, SplineBoundary, Surface, Vector3,
+    BSplineSurface, BallSide, Cylinder, Isometry, Point3, Pose, RPoint3, RVector3, RollingSaddle,
+    RollingSaddleDefinition, Rotation, SplineBoundary, SplineSupport, Surface, Vector3,
 };
 
 fn decider() -> Decider {
@@ -255,7 +257,7 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-fn saddle(case: &Case) -> RollingSaddle {
+fn fit(case: &Case) -> RollingSaddle {
     let mut dec = decider();
     let definition = RollingSaddleDefinition::new(
         &case.wide,
@@ -267,6 +269,13 @@ fn saddle(case: &Case) -> RollingSaddle {
     )
     .unwrap();
     RollingSaddle::fit(definition, &mut dec).unwrap()
+}
+
+// Each listed case's fit, shared so a run pays for it once.
+fn fitted(index: usize) -> RollingSaddle {
+    static FITS: OnceLock<Vec<OnceLock<RollingSaddle>>> = OnceLock::new();
+    let all = FITS.get_or_init(|| cases().iter().map(|_| OnceLock::new()).collect());
+    all[index].get_or_init(|| fit(&cases()[index])).clone()
 }
 
 fn zero(value: &Real, dec: &mut Decider) -> bool {
@@ -349,8 +358,8 @@ fn the_law_rests_the_ball_on_both_cylinders_exactly() {
 
 #[test]
 fn the_rails_lie_exactly_on_their_cylinders_and_close() {
-    for case in cases() {
-        let fitted = saddle(&case);
+    for (index, case) in cases().iter().enumerate() {
+        let fitted = fitted(index);
         let mut dec = decider();
         let [wide, narrow] = fitted.rails();
         assert!(
@@ -402,14 +411,14 @@ fn sample(surface: &BSplineSurface, u: f64, v: f64, dec: &Decider) -> V {
 // same angle, on the short arc between the contacts, within the claimed bound.
 #[test]
 fn the_carrier_stays_within_its_bound_of_the_rolling_ball() {
-    for case in cases() {
-        let fitted = saddle(&case);
+    for (index, case) in cases().iter().enumerate() {
+        let fitted = fitted(index);
         let dec = decider();
         let bound = fitted.bound().upper.to_f64_nearest();
         assert!(bound <= 1e-4, "{}: {bound}", case.name);
         let radius = n(&real(case.radius));
         let (wide, narrow) = (Tube::of(&case.wide), Tube::of(&case.narrow));
-        let offsets = [0, 1].map(|which| n(&offset_sq(&case, which)).sqrt());
+        let offsets = [0, 1].map(|which| n(&offset_sq(case, which)).sqrt());
         let path = Path::new(wide, narrow, offsets, case.leaving, radius);
         let mut worst: f64 = 0.0;
         for i in 0..240 {
@@ -443,7 +452,7 @@ fn the_carrier_stays_within_its_bound_of_the_rolling_ball() {
 #[test]
 fn a_moved_copy_keeps_its_rails_on_the_moved_cylinders() {
     let case = &cases()[0];
-    let fitted = saddle(case);
+    let fitted = fitted(0);
     let mut dec = decider();
     let rotation = Rotation::from_quaternion(q("1"), q("2"), q("3"), q("4")).unwrap();
     let pose = Pose::new(rotation, vector(["7/3", "-11/7", "13/5"]), &mut dec).unwrap();
@@ -459,6 +468,213 @@ fn a_moved_copy_keeps_its_rails_on_the_moved_cylinders() {
         assert!(on_cylinder(&point, &wide, &wide.radius_sq, &mut dec), "{u}");
         let [centre, ..] = moved.definition().section(&q(u)).unwrap();
         assert!(on_cylinder(&centre, &wide, &big, &mut dec), "{u}");
+    }
+}
+
+// A triangulated grid, for counting crossings with nothing from the line solver.
+struct Soup {
+    triangles: Vec<[V; 3]>,
+}
+impl Soup {
+    fn of(fitted: &RollingSaddle) -> Self {
+        let dec = decider();
+        let grid = fitted.display_grid(&q("1/200"), 2_000_000, &dec).unwrap();
+        assert!(grid.chord <= q("1/200"));
+        let point = |column: usize, row: usize| -> V {
+            let at = &grid.points[column * grid.rows + row];
+            std::array::from_fn(|i| at[i].mid().to_f64_nearest())
+        };
+        let mut triangles = Vec::new();
+        for column in 0..grid.columns - 1 {
+            for row in 0..grid.rows - 1 {
+                let [a, c, d, e] = [
+                    point(column, row),
+                    point(column + 1, row),
+                    point(column, row + 1),
+                    point(column + 1, row + 1),
+                ];
+                triangles.push([a, c, e]);
+                triangles.push([a, e, d]);
+            }
+        }
+        Self { triangles }
+    }
+    // Moller and Trumbore's test, in line parameter order.
+    fn crossings(&self, origin: V, direction: V) -> Vec<f64> {
+        let mut found = Vec::new();
+        for [a, c, d] in &self.triangles {
+            let (e1, e2) = (sub(*c, *a), sub(*d, *a));
+            let p = cross(direction, e2);
+            let det = dot(e1, p);
+            if det.abs() < 1e-14 {
+                continue;
+            }
+            let t = sub(origin, *a);
+            let u = dot(t, p) / det;
+            let q = cross(t, e1);
+            let v = dot(direction, q) / det;
+            if u >= 0.0 && v >= 0.0 && u + v <= 1.0 {
+                found.push(dot(e2, q) / det);
+            }
+        }
+        found.sort_by(f64::total_cmp);
+        found
+    }
+}
+
+fn rational_of(point: V) -> Point3 {
+    let [x, y, z] = point.map(|value| {
+        let snapped = (value * 1024.0).round() / 1024.0;
+        Real::from(Rational::from_f64_exact(snapped).unwrap())
+    });
+    Point3::new(x, y, z)
+}
+
+fn check_lines(fitted: &RollingSaddle) {
+    let soup = Soup::of(fitted);
+    let dec = decider();
+    let directions = [["3", "7", "-5"], ["-2", "1", "9"], ["11", "-4", "2"]];
+    let mut seen = 0;
+    for i in 0..9 {
+        let u = -0.93 + 0.44 * f64::from(i);
+        let v = 0.1 + 0.09 * f64::from(i);
+        let near = sample(fitted.carrier(), u, v, &dec);
+        let direction = vector(directions[i as usize % 3]);
+        let origin = rational_of(near);
+        let mut dec = decider();
+        let hits = fitted.line_hits(&origin, &direction, &mut dec).unwrap();
+        let start = g(&origin);
+        let along = f(&direction);
+        let found = soup.crossings(start, along);
+        assert_eq!(hits.len(), found.len(), "at {u} {v}: {found:?}");
+        seen += hits.len();
+        for (hit, want) in hits.iter().zip(&found) {
+            let parameter = dot(sub(g(hit), start), along) / dot(along, along);
+            assert!((parameter - want).abs() < 0.01, "{parameter} {want}");
+        }
+    }
+    assert!(seen >= 9, "the lines went through the carrier: {seen}");
+}
+
+#[test]
+fn a_line_meets_the_carrier_where_a_triangulation_says() {
+    for index in 0..3 {
+        check_lines(&fitted(index));
+    }
+}
+
+// A reflection turns the frame round, and the solver builds its frame again from
+// the moved axes.
+#[test]
+fn a_line_meets_a_mirrored_carrier_where_a_triangulation_says() {
+    let plane = RPoint3::new(q("20"), q("0"), q("0"));
+    let map = Isometry::reflection(&plane, &RVector3::new(q("3"), q("4"), q("0"))).unwrap();
+    let surface = Surface::BSpline(SplineSupport::RollingSaddle(fitted(0)));
+    let Surface::BSpline(SplineSupport::RollingSaddle(mirrored)) = map.surface(&surface) else {
+        panic!("a reflection keeps a saddle");
+    };
+    check_lines(&mirrored);
+}
+
+// Unit axes here have square roots, which the span equations carry as variables.
+#[test]
+fn a_line_meets_a_carrier_at_an_angle_with_no_rational_unit_axis() {
+    use BallSide::Outside;
+    let wide = cylinder(["0", "0", "0"], ["0", "0", "2"], "10");
+    for axis in [["0", "1", "1"], ["1", "1", "1"]] {
+        let case = Case {
+            name: "leaning",
+            wide: wide.clone(),
+            narrow: cylinder(["1", "0", "0"], axis, "3"),
+            radius: "1",
+            sides: [Outside, Outside],
+            leaving: true,
+        };
+        check_lines(&fit(&case));
+    }
+}
+
+#[test]
+fn a_line_through_a_rail_point_hits_it_exactly() {
+    let fitted = fitted(0);
+    let mut dec = decider();
+    let [wide, narrow] = fitted.rails();
+    for (rail, u) in [(&wide, "1/3"), (&narrow, "7/5")] {
+        let at = rail.point_at(&real(u), &mut dec).unwrap();
+        let direction = vector(["1", "2", "-2"]);
+        let hits = fitted.line_hits(&at, &direction, &mut dec).unwrap();
+        let on = hits
+            .iter()
+            .filter(|hit| zero(&hit.minus(&at).norm_squared(), &mut dec))
+            .count();
+        assert_eq!(on, 1, "{u}");
+    }
+}
+
+#[test]
+fn rails_answer_incidence_normals_and_sides() {
+    let case = &cases()[0];
+    let fitted = fitted(0);
+    let mut dec = decider();
+    let support = SplineSupport::from(fitted.clone());
+    let [wide, narrow] = fitted.rails();
+    let at = narrow.point_at(&real("1/2"), &mut dec).unwrap();
+    assert!(fitted.on_boundary(&at, &mut dec).unwrap());
+    let normal = fitted.normal_at(&at, &mut dec).unwrap();
+    assert!(zero(&normal.dot(&case.narrow.axis), &mut dec));
+    let [centre, ..] = fitted.definition().section(&q("1/2")).unwrap();
+    assert!(!fitted.on_boundary(&centre, &mut dec).unwrap());
+    let wide_at = wide.point_at(&real("2"), &mut dec).unwrap();
+    assert_eq!(fitted.side_at(&wide_at, &mut dec).unwrap(), Sign::Zero);
+    assert_eq!(fitted.side_at(&centre, &mut dec).unwrap(), Sign::Positive);
+    assert!(
+        support
+            .misses_point(&point(["100", "0", "0"]), &mut dec)
+            .unwrap()
+    );
+}
+
+#[test]
+fn the_display_grid_closes_round_the_ring() {
+    let fitted = fitted(0);
+    let dec = decider();
+    let grid = fitted.display_grid(&q("1/100"), 2_000_000, &dec).unwrap();
+    assert!(grid.chord <= q("1/100"));
+    // Between grid lines the carrier stays within the chord of its bilinear cell.
+    let chord = grid.chord.to_f64_nearest();
+    let at = |column: usize, row: usize| -> V {
+        let p = &grid.points[column * grid.rows + row];
+        std::array::from_fn(|i| p[i].mid().to_f64_nearest())
+    };
+    for i in 0..200 {
+        let (x, y) = (0.137 + 0.618 * f64::from(i), 0.291 + 0.414 * f64::from(i));
+        let (column, row) = (
+            (x % (grid.columns - 1) as f64),
+            (y % (grid.rows - 1) as f64),
+        );
+        let (c, r) = (column.floor() as usize, row.floor() as usize);
+        let (s, t) = (column - c as f64, row - r as f64);
+        let u = -1.0 + 4.0 * column / (grid.columns - 1) as f64;
+        let v = row / (grid.rows - 1) as f64;
+        let on = sample(fitted.carrier(), u, v, &dec);
+        let near = add(
+            add([0.0; 3], at(c, r), (1.0 - s) * (1.0 - t)),
+            at(c + 1, r),
+            s * (1.0 - t),
+        );
+        let near = add(
+            add(near, at(c, r + 1), (1.0 - s) * t),
+            at(c + 1, r + 1),
+            s * t,
+        );
+        assert!(norm(sub(on, near)) <= chord, "{u} {v}");
+    }
+    for row in 0..grid.rows {
+        let first = &grid.points[row];
+        let last = &grid.points[(grid.columns - 1) * grid.rows + row];
+        for k in 0..3 {
+            assert!((&first[k].mid() - &last[k].mid()).abs() < q("1/1000000000"));
+        }
     }
 }
 

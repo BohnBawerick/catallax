@@ -129,6 +129,22 @@ fn shell_compiles_independently_and_keeps_inner_bore_names_after_thickness_edits
 }
 
 #[test]
+fn v5_all_face_openings_remove_the_entire_bored_shell() {
+    let mut source = document();
+    source["format"] = json!("catallax-recipe/5");
+    source["steps"][2]["open"] = json!([{}]);
+    material(
+        &compile(&source),
+        &[
+            (["1", "10", "6"], Location::Outside),
+            (["10", "10", "1"], Location::Outside),
+            (["20", "15", "6"], Location::Outside),
+            (["10", "10", "12"], Location::Outside),
+        ],
+    );
+}
+
+#[test]
 fn distances_use_finite_bore_walls_and_caps_with_holes_not_supports() {
     let plan = compile(&document());
     let outer = origin(json!({"step":"bored","role":{"hole":{"at":"bore","part":"wall"}}}));

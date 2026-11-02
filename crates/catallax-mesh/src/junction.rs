@@ -8,8 +8,12 @@
 use std::collections::BTreeMap;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
-use catallax_shapes::{BoundaryRow, Curve, EnvelopeGrid, RollingPipe, SplineSupport, Surface};
-use catallax_topology::{BodyId, EdgeId, FaceId, Model, Sense, envelope_rows, pipe_rows};
+use catallax_shapes::{
+    BoundaryRow, Curve, EnvelopeGrid, RollingPipe, RollingSaddle, SplineSupport, Surface,
+};
+use catallax_topology::{
+    BodyId, EdgeId, FaceId, Model, Sense, envelope_rows, pipe_rows, saddle_rows,
+};
 
 use crate::{
     FaceMesh, MeshControl, MeshOptions, Triangle, UnavailableControl,
@@ -59,9 +63,11 @@ pub(crate) fn present(model: &Model, body: BodyId) -> bool {
     let mut found = false;
     for face in model.faces_of_body(body) {
         match model.geom().surface(model.face(face).surface) {
-            Surface::BSpline(SplineSupport::RollingEnvelope(_) | SplineSupport::RollingPipe(_)) => {
-                found = true
-            }
+            Surface::BSpline(
+                SplineSupport::RollingEnvelope(_)
+                | SplineSupport::RollingPipe(_)
+                | SplineSupport::RollingSaddle(_),
+            ) => found = true,
             Surface::BSpline(_) => return false,
             _ => {}
         }
@@ -121,17 +127,19 @@ pub(crate) fn prepare(
 ) -> Result<Option<Junction>, Refusal> {
     let mut found = Vec::new();
     let mut bands = Vec::new();
+    let mut saddles = Vec::new();
     for &face in faces {
         match model.geom().surface(model.face(face).surface) {
             Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
                 found.push((face, envelope))
             }
             Surface::BSpline(SplineSupport::RollingPipe(pipe)) => bands.push((face, pipe)),
+            Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => saddles.push((face, saddle)),
             Surface::BSpline(_) => return Ok(None),
             _ => {}
         }
     }
-    if found.is_empty() && bands.is_empty() {
+    if found.is_empty() && bands.is_empty() && saddles.is_empty() {
         return Ok(None);
     }
     let tolerance = options.chord_tolerance.mul_pow2(-1);
@@ -141,6 +149,12 @@ pub(crate) fn prepare(
         envelopes.insert(
             face,
             band(model, face, pipe, &tolerance, options, &mut seeds, dec)?,
+        );
+    }
+    for (face, saddle) in saddles {
+        envelopes.insert(
+            face,
+            saddle_band(model, face, saddle, &tolerance, options, &mut seeds, dec)?,
         );
     }
     for (face, envelope) in found {
@@ -203,12 +217,12 @@ fn band(
     dec: &mut Decider,
 ) -> Result<Envelope, Refusal> {
     let grid = pipe.display_grid(tolerance, options.max_vertices, dec)?;
-    let rings = pipe_rows(model, face, dec)?
+    let rows = pipe_rows(model, face, dec)?
         .ok_or_else(|| failure("a pipe face has no complete band of two rails"))?;
     let turn = pipe.chart_normal();
-    let mut rows = Vec::with_capacity(2);
-    let mut along_u = false;
-    for (index, (edge, sense)) in rings.into_iter().enumerate() {
+    let last = Rational::from_i64(grid.columns as i64 - 1);
+    let mut rings = Vec::with_capacity(2);
+    for (index, (edge, sense)) in rows.into_iter().enumerate() {
         let definition = model.edge(edge);
         let Curve::Ellipse(rail) = model.geom().curve(definition.curve) else {
             return Err(failure("a pipe rail is not its ellipse"));
@@ -219,19 +233,9 @@ fn band(
             .ok_or_else(|| failure("a pipe rail's turn is not separated from zero"))?
             == catallax_numbers::StrictSign::Positive;
         let forward = same == (definition.sense == Sense::Same);
-        let row = if index == 0 {
-            BoundaryRow::Rail
-        } else {
-            BoundaryRow::Mouth
-        };
-        if index == 0 {
-            along_u = (sense == Sense::Same) == forward;
-        }
-        rows.push((edge, row, forward));
         // Each span's parameter is cut in equal halves, so a column is an exact
         // fraction of the chart.
         let line = Rational::from_i64(index as i64);
-        let last = Rational::from_i64(grid.columns as i64 - 1);
         let exact = (0..grid.columns)
             .map(|column| {
                 let u = Rational::from_i64(4 * column as i64) / last.clone();
@@ -239,22 +243,91 @@ fn band(
                 [p.x, p.y, p.z]
             })
             .collect();
-        seeds.insert(
+        rings.push(Ring {
             edge,
+            sense,
+            forward,
+            exact,
+        });
+    }
+    Ok(closed(grid, rings, seeds))
+}
+
+// A closed saddle's rings are the carrier's boundary rows, so each runs up the
+// chart in its edge's sense. Columns are equal cuts of `[-1, 3]`.
+fn saddle_band(
+    model: &Model,
+    face: FaceId,
+    saddle: &RollingSaddle,
+    tolerance: &Rational,
+    options: &MeshOptions,
+    seeds: &mut BTreeMap<EdgeId, Seed>,
+    dec: &mut Decider,
+) -> Result<Envelope, Refusal> {
+    let grid = saddle.display_grid(tolerance, options.max_vertices, dec)?;
+    let rows = saddle_rows(model, face)
+        .ok_or_else(|| failure("a saddle face has no complete band of two rails"))?;
+    let last = Rational::from_i64(grid.columns as i64 - 1);
+    let mut rings = Vec::with_capacity(2);
+    for (edge, sense) in rows {
+        let definition = model.edge(edge);
+        let Curve::BSpline(rail) = model.geom().curve(definition.curve) else {
+            return Err(failure("a saddle rail is not its row"));
+        };
+        let mut exact = Vec::with_capacity(grid.columns);
+        for column in 0..grid.columns {
+            let u = Rational::from_i64(4 * column as i64) / last.clone() - Rational::one();
+            let p = rail.point_at(&Real::from(u), dec)?;
+            exact.push([p.x, p.y, p.z]);
+        }
+        rings.push(Ring {
+            edge,
+            sense,
+            forward: definition.sense == Sense::Same,
+            exact,
+        });
+    }
+    Ok(closed(grid, rings, seeds))
+}
+
+// One closed rail of a band, in its grid row's column order.
+struct Ring {
+    edge: EdgeId,
+    sense: Sense,
+    forward: bool,
+    exact: Vec<[Real; 3]>,
+}
+
+// Seeds both rails, first on line zero and second on the last line.
+fn closed(grid: EnvelopeGrid, rings: Vec<Ring>, seeds: &mut BTreeMap<EdgeId, Seed>) -> Envelope {
+    let mut rows = Vec::with_capacity(2);
+    let mut along_u = false;
+    for (index, ring) in rings.into_iter().enumerate() {
+        let row = if index == 0 {
+            BoundaryRow::Rail
+        } else {
+            BoundaryRow::Mouth
+        };
+        if index == 0 {
+            along_u = (ring.sense == Sense::Same) == ring.forward;
+        }
+        rows.push((ring.edge, row, ring.forward));
+        seeds.insert(
+            ring.edge,
             Seed {
                 points: row_points(&grid, row),
                 error: grid.chord.clone(),
-                forward,
-                exact,
+                forward: ring.forward,
+                exact: ring.exact,
             },
         );
     }
-    Ok(Envelope {
+    Envelope {
         grid,
         rows,
         along_u,
         closed: true,
-    })
+    }
 }
 
 impl Junction {

@@ -430,7 +430,7 @@ impl ConeSkin {
                 .iter()
                 .enumerate()
                 .filter(|(i, f)| {
-                    f.origins.iter().any(|o| reference.face.matches(o))
+                    reference.matches_origins(&f.origins)
                         && reference.touching.iter().all(|p| {
                             self.boundaries
                                 .iter()

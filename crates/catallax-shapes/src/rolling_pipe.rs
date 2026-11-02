@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 
 use crate::{
     BSplineSurface, Cylinder, Ellipse, EnvelopeGrid, Isometry, Plane, Point3, Pose, Vector3, math,
@@ -30,6 +30,8 @@ use crate::{
 mod grid;
 mod line;
 mod query;
+
+const ENCLOSURE_BITS: u32 = 256;
 
 fn invalid(detail: impl Into<String>) -> Refusal {
     Refusal::new("shapes.rolling-pipe", detail)
@@ -109,28 +111,42 @@ impl Bernstein {
     }
 }
 
+/// The exact frame and numbers of a pipe, for consumers that integrate over it.
+/// `m(t) = cos t across + sin t side`, and ball centres are
+/// `base + cos t (offset across + lift axis) + sin t offset side`.
 #[derive(Debug)]
-struct Law {
-    base: Point3,
-    axis: Vector3,
-    across: Vector3,
-    side: Vector3,
-    normal: Vector3,
-    body: Real,
-    offset: Real,
-    radius: Real,
-    lift: Real,
-    // Unit contact rays are `reach n` on the plane and `wall m(t)` on the wall.
-    reach: Real,
-    wall: Real,
-    // `n = along a + tilt w`, with the plane's height above `base` along `n`.
-    along: Real,
-    tilt: Real,
+pub struct PipeLaw {
+    /// Point on the cylinder axis in the plane's offset.
+    pub base: Point3,
+    /// Unit cylinder axis.
+    pub axis: Vector3,
+    /// Unit vector square to the axis, in the plane of the axis and normal.
+    pub across: Vector3,
+    /// `axis x across`.
+    pub side: Vector3,
+    /// Unit plane normal, `along axis + tilt across`.
+    pub normal: Vector3,
+    /// Cylinder radius.
+    pub body: Real,
+    /// Radius of the centre path's cylinder.
+    pub offset: Real,
+    /// Ball radius.
+    pub radius: Real,
+    /// Axial height of the centre path at `t = 0`.
+    pub lift: Real,
+    /// Sign of the plane contact ray: the ray is `reach normal`.
+    pub reach: Real,
+    /// Sign of the wall contact ray: the ray is `wall m(t)`.
+    pub wall: Real,
+    /// Component of the plane normal along the axis.
+    pub along: Real,
+    /// Component of the plane normal across the axis.
+    pub tilt: Real,
 }
 
 #[derive(Debug)]
 struct Data {
-    law: Law,
+    law: PipeLaw,
     carrier: BSplineSurface,
 }
 
@@ -206,7 +222,7 @@ impl RollingPipe {
             .origin
             .plus(&axis.scaled(&(&-(&(&reach * &radius) + &height) / &along)));
         let lift = -(&(&tilt * &offset) / &along);
-        let law = Law {
+        let law = PipeLaw {
             base,
             axis,
             across,
@@ -230,6 +246,10 @@ impl RollingPipe {
     /// Positive expression-node identity for deterministic cache reuse.
     pub fn shares_definition_nodes(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.data, &other.data)
+    }
+    /// The exact law the carrier was built from.
+    pub fn law(&self) -> &PipeLaw {
+        &self.data.law
     }
     /// The exact rational carrier over `[0, 4] x [0, 1]`.
     pub fn carrier(&self) -> &BSplineSurface {
@@ -305,6 +325,18 @@ impl RollingPipe {
             && zero(&edge.major_sq - &semi.norm_squared(), dec)?
             && zero(edge.major_dir.cross(&semi).norm_squared(), dec)?)
     }
+    /// Whether `path` is exactly the ball-centre ellipse, as a point set.
+    pub fn centres_on(&self, path: &Ellipse, dec: &mut Decider) -> Result<bool, Refusal> {
+        let spine = self.spine(dec)?;
+        let zero = |value: Real, dec: &mut Decider| -> Result<bool, Refusal> {
+            Ok(math::sign(&value, dec)? == Sign::Zero)
+        };
+        Ok(zero(path.center.minus(&spine.center).norm_squared(), dec)?
+            && zero(path.normal.cross(&spine.normal).norm_squared(), dec)?
+            && zero(&path.major_sq - &spine.major_sq, dec)?
+            && zero(&path.minor_sq - &spine.minor_sq, dec)?
+            && zero(path.major_dir.cross(&spine.major_dir).norm_squared(), dec)?)
+    }
     /// Whether every control of the carrier lies strictly on one side of a
     /// plane, which keeps the whole band off that plane.
     pub fn clear_of(&self, plane: &Plane, dec: &mut Decider) -> Result<bool, Refusal> {
@@ -328,6 +360,25 @@ impl RollingPipe {
     ) -> Result<EnvelopeGrid, Refusal> {
         grid::fit(self, tolerance, max_points, dec)
     }
+    /// Every control and weight in world coordinates, enclosed in `u`-major order.
+    pub fn enclosed_controls(&self, dec: &Decider) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
+        let carrier = &self.data.carrier;
+        carrier
+            .controls()
+            .iter()
+            .zip(carrier.weights())
+            .map(|(control, weight)| {
+                Ok((
+                    [
+                        dec.enclose_at(&control.x, ENCLOSURE_BITS)?,
+                        dec.enclose_at(&control.y, ENCLOSURE_BITS)?,
+                        dec.enclose_at(&control.z, ENCLOSURE_BITS)?,
+                    ],
+                    dec.enclose_at(weight, ENCLOSURE_BITS)?,
+                ))
+            })
+            .collect()
+    }
     /// The direction `u` turns about, which is the sense of the chart's rails.
     pub fn chart_normal(&self) -> Vector3 {
         let d = &self.data.law;
@@ -341,7 +392,7 @@ impl RollingPipe {
         let d = &self.data.law;
         Self {
             data: Arc::new(Data {
-                law: Law {
+                law: PipeLaw {
                     base: pose.apply_point(&d.base),
                     axis: pose.apply_vector(&d.axis),
                     across: pose.apply_vector(&d.across),
@@ -380,7 +431,7 @@ fn turn(u: &Rational) -> [Real; 2] {
     }
 }
 
-impl Law {
+impl PipeLaw {
     // The semi-axis over `w`, for an ellipse at radial scale `scale`. The lift
     // stays that of the ball centre, because every contact keeps its height.
     fn major(&self, scale: &Real) -> Vector3 {

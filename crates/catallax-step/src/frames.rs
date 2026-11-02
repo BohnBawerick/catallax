@@ -5,8 +5,8 @@
 
 use crate::{number, trim};
 use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Real, Refusal};
-use catallax_shapes::{GeomKey, Sphere, Surface, SurfaceId, Vector3};
-use catallax_topology::{BodyId, Face, FaceId, Loop, Model, Shell};
+use catallax_shapes::{Cylinder, GeomKey, Sphere, SplineSupport, Surface, SurfaceId, Vector3};
+use catallax_topology::{BodyId, Face, FaceId, Loop, Model, Shell, pipe_rows};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct Reframed {
@@ -21,20 +21,67 @@ pub(crate) struct Reframed {
 /// frame's equator, away from trims that pass close to them.
 pub(crate) fn perpendicular(model: &Model, bodies: &[BodyId]) -> Reframed {
     let mut frames = BTreeMap::new();
-    for (surface, _) in trimmed(model, bodies, |_| true) {
+    let spherical = |surface| matches!(model.geom().surface(surface), Surface::Sphere(_));
+    for (surface, _) in trimmed(model, bodies, spherical) {
         let Surface::Sphere(sphere) = model.geom().surface(surface) else {
             unreachable!("trimmed faces are spherical")
         };
         frames.insert(
             surface,
-            Sphere {
+            Surface::Sphere(Sphere {
                 axis: sphere.ref_dir.clone(),
                 ref_dir: sphere.axis.clone(),
                 ..sphere.clone()
-            },
+            }),
         );
     }
     rewrite(model, bodies, frames)
+}
+
+/// Every wall under a rolling-pipe band, moved onto the frame whose reference
+/// is the band's `t = 0` direction, so the wall's first chart cut meets the
+/// wall rail at the band's seam. `None` when the bodies have no band.
+pub(crate) fn pipe_walls(
+    model: &Model,
+    bodies: &[BodyId],
+    dec: &mut Decider,
+) -> Result<Option<Reframed>, Refusal> {
+    let mut frames = BTreeMap::new();
+    for &body in bodies {
+        for face in model.faces_of_body(body) {
+            let Surface::BSpline(SplineSupport::RollingPipe(pipe)) =
+                model.geom().surface(model.face(face).surface)
+            else {
+                continue;
+            };
+            let rows = pipe_rows(model, face, dec)?;
+            let [_, (rail, _)] = rows.ok_or_else(|| {
+                Refusal::new(
+                    "step.unsupported-geometry",
+                    "a trimmed pipe band has no STEP form",
+                )
+            })?;
+            for coedge in model.coedges_of_edge(rail) {
+                let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
+                    continue;
+                };
+                let surface = model.face(neighbour).surface;
+                if let Surface::Cylinder(wall) = model.geom().surface(surface) {
+                    frames.insert(
+                        surface,
+                        Surface::Cylinder(Cylinder {
+                            ref_dir: pipe.law().across.clone(),
+                            ..wall.clone()
+                        }),
+                    );
+                }
+            }
+        }
+    }
+    if frames.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(rewrite(model, bodies, frames)))
 }
 
 /// A stored frame whose pole lies on a trim has no admissible chart: the pole
@@ -73,11 +120,11 @@ pub(crate) fn reframe(
             }
             frames.insert(
                 surface,
-                Sphere {
+                Surface::Sphere(Sphere {
                     axis,
                     ref_dir,
                     ..sphere
-                },
+                }),
             );
             continue 'spheres;
         }
@@ -104,7 +151,7 @@ fn candidates(sphere: &Sphere) -> Vec<(Vector3, Vector3)> {
     ]
 }
 
-/// Trimmed spherical faces of `bodies` on the selected surfaces, by surface.
+/// Trimmed faces of `bodies` on the selected surfaces, by surface.
 fn trimmed(
     model: &Model,
     bodies: &[BodyId],
@@ -114,10 +161,7 @@ fn trimmed(
     for &body in bodies {
         for face in model.faces_of_body(body) {
             let definition = model.face(face);
-            if !definition.loops.is_empty()
-                && matches!(model.geom().surface(definition.surface), Surface::Sphere(_))
-                && select(definition.surface)
-            {
+            if !definition.loops.is_empty() && select(definition.surface) {
                 let faces = faces.entry(definition.surface).or_default();
                 if !faces.contains(&face) {
                     faces.push(face);
@@ -129,15 +173,15 @@ fn trimmed(
 }
 
 /// Every trimmed face on a key of `frames` moved onto that frame.
-fn rewrite(model: &Model, bodies: &[BodyId], frames: BTreeMap<SurfaceId, Sphere>) -> Reframed {
+fn rewrite(model: &Model, bodies: &[BodyId], frames: BTreeMap<SurfaceId, Surface>) -> Reframed {
     let mut moved = model.clone();
     let mut faces = BTreeMap::new();
     let mut trims = trimmed(model, bodies, |surface| frames.contains_key(&surface));
-    for (surface, sphere) in frames {
-        let frame = moved.geom_mut().add_surface(Surface::Sphere(sphere));
+    for (surface, framed) in frames {
+        let frame = moved.geom_mut().add_surface(framed);
         for face in trims.remove(&surface).into_iter().flatten() {
             let source = model.face(face).clone();
-            // The implicit sphere is unchanged, so every source incidence holds.
+            // The implicit surface is unchanged, so every source incidence holds.
             for &id in &source.loops {
                 let Loop::Coedges(coedges) = model.loop_(id) else {
                     continue;
@@ -154,7 +198,7 @@ fn rewrite(model: &Model, bodies: &[BodyId], frames: BTreeMap<SurfaceId, Sphere>
                             a: curve,
                             b: GeomKey::Surface(frame),
                             at: None,
-                            origin: FactOrigin::Construction("step.sphere-frame"),
+                            origin: FactOrigin::Construction("step.surface-frame"),
                         });
                     }
                 }

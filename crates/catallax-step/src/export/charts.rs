@@ -47,6 +47,8 @@ pub(super) struct EdgeInput<'a> {
     pub bounds: &'a Bounds,
     pub error: &'a Rational,
     pub same: bool,
+    /// A further pcurve this edge owes a face outside the chart plan.
+    pub extra: Option<Id>,
 }
 
 pub(super) struct State {
@@ -87,6 +89,7 @@ struct Wrapper {
     id: Id,
     curve: Id,
     coedges: [Option<CoedgeId>; 2],
+    extra: Option<Id>,
 }
 struct UvVertex {
     point: [Rational; 2],
@@ -479,7 +482,7 @@ impl Exporter<'_> {
             vec![
                 text("''"),
                 input.curve.into(),
-                refs(pcurves.into_iter().flatten()),
+                refs(pcurves.into_iter().flatten().chain(input.extra)),
                 text(".CURVE_3D."),
             ],
         );
@@ -487,6 +490,7 @@ impl Exporter<'_> {
             id: wrapper,
             curve: input.curve,
             coedges,
+            extra: input.extra,
         });
         Ok(wrapper)
     }
@@ -619,7 +623,7 @@ impl Exporter<'_> {
                 vec![
                     text("''"),
                     wrapper.curve.into(),
-                    refs(ids.into_iter().flatten()),
+                    refs(ids.into_iter().flatten().chain(wrapper.extra)),
                     text(".CURVE_3D."),
                 ],
             );

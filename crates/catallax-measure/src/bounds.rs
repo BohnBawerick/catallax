@@ -11,7 +11,7 @@ use catallax_intersect::{
 use catallax_numbers::{
     Answer, Answered, BudgetPolicy, Decider, MarkLog, Outcome, Rational, Real, Refusal,
 };
-use catallax_shapes::{Point3, PointDef, Surface, Torus, TorusSheet, Vector3};
+use catallax_shapes::{Point3, PointDef, SplineSupport, Surface, Torus, TorusSheet, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -225,6 +225,13 @@ impl<'a> Query<'a> {
             } else {
                 total = Some(self.edges[&edge].clone());
             }
+        }
+        if let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = surface {
+            for point in pipe.axis_extrema(dec)? {
+                merge(&mut total, self.budget.point(&point, dec)?);
+            }
+            return total
+                .ok_or_else(|| Refusal::new("measure.unbounded-face", "a pipe band has no rails"));
         }
         for candidate in interior_candidates(surface, dec)? {
             let scratch = self.scratch.get_or_insert_with(|| self.model.clone());

@@ -42,7 +42,7 @@ enum Foot {
 }
 
 impl Local {
-    fn new(law: &Law, point: &Point3, dec: &Decider) -> Result<Self, Refusal> {
+    fn new(law: &PipeLaw, point: &Point3, dec: &Decider) -> Result<Self, Refusal> {
         let enclose = |value: &Real| dec.enclose_at(value, BITS);
         let d = point.minus(&law.base);
         Ok(Self {
@@ -135,6 +135,54 @@ impl RollingPipe {
             return Ok(true);
         }
         Ok(zero(&radial - &d.body.square(), dec)? && zero(&(&h * &d.body) - &(&d.lift * &x), dec)?)
+    }
+
+    /// The band's points whose normal runs along a coordinate axis. A band
+    /// normal is a section ray, square to the path, so each axis has two feet
+    /// where the path turns in that coordinate, or none needed when the path
+    /// never moves in it. With the rails these bound every coordinate exactly.
+    pub fn axis_extrema(&self, dec: &mut Decider) -> Result<Vec<Point3>, Refusal> {
+        dec.check_deadline()?;
+        let d = &self.data.law;
+        let major = d.major(&d.offset);
+        let first = d.normal.scaled(&d.reach);
+        let mut points = Vec::new();
+        for axis in 0..3 {
+            let unit = |i: usize| Real::from_i64(i64::from(i == axis));
+            let along = Vector3::new(unit(0), unit(1), unit(2));
+            let (cos, sin) = (major.dot(&along), &d.side.dot(&along) * &d.offset);
+            let length = math::exact_sqrt(&(&cos.square() + &sin.square()));
+            if math::sign(&length, dec)? == Sign::Zero {
+                continue;
+            }
+            let (cos, sin) = (&cos / &length, &sin / &length);
+            for turn in [Real::from_i64(1), Real::from_i64(-1)] {
+                let (cos, sin) = (&cos * &turn, &sin * &turn);
+                let last = d
+                    .across
+                    .scaled(&cos)
+                    .plus(&d.side.scaled(&sin))
+                    .scaled(&d.wall);
+                let centre = d
+                    .base
+                    .plus(&major.scaled(&cos))
+                    .plus(&d.side.scaled(&(&d.offset * &sin)));
+                let meet = first.dot(&last);
+                for ray in [along.clone(), along.scaled(&Real::from_i64(-1))] {
+                    let (toward_first, toward_last) = (ray.dot(&first), ray.dot(&last));
+                    let weights = [
+                        &toward_first - &(&meet * &toward_last),
+                        &toward_last - &(&meet * &toward_first),
+                    ];
+                    if math::sign(&weights[0], dec)? != Sign::Negative
+                        && math::sign(&weights[1], dec)? != Sign::Negative
+                    {
+                        points.push(centre.plus(&ray.scaled(&d.radius)));
+                    }
+                }
+            }
+        }
+        Ok(points)
     }
 
     /// Exact normal at a rail point, pointing to the ball's centre. Interior

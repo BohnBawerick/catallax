@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::{Add, Div, Mul, Neg, Sub};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use catallax_intersect::TracePiece;
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
@@ -168,6 +168,8 @@ enum Node {
     GaugeDiv(usize, usize),
     Neg(usize),
     Sqrt(usize),
+    /// The angle in `(0, pi)` with this cosine and sine.
+    Angle(usize, usize),
 }
 
 #[derive(Default)]
@@ -304,6 +306,7 @@ impl Builder {
                 constant(*a).is_some_and(|x| *x >= Rational::zero()),
                 constant(*a).is_some_and(|x| *x > Rational::zero()),
             ),
+            Node::Angle(a, b) => (nodes.defined[*a] && nodes.defined[*b], false),
         };
         let index = nodes.entries.len();
         nodes.lookup.insert(node.clone(), index);
@@ -358,7 +361,11 @@ impl Builder {
             if needed[i] {
                 retained += 1;
                 match source[i] {
-                    Node::Add(a, b) | Node::Mul(a, b) | Node::Div(a, b) | Node::GaugeDiv(a, b) => {
+                    Node::Add(a, b)
+                    | Node::Mul(a, b)
+                    | Node::Div(a, b)
+                    | Node::GaugeDiv(a, b)
+                    | Node::Angle(a, b) => {
                         needed[a] = true;
                         needed[b] = true;
                     }
@@ -379,6 +386,7 @@ impl Builder {
                     Node::GaugeDiv(a, b) => Node::GaugeDiv(indices[*a], indices[*b]),
                     Node::Neg(a) => Node::Neg(indices[*a]),
                     Node::Sqrt(a) => Node::Sqrt(indices[*a]),
+                    Node::Angle(a, b) => Node::Angle(indices[*a], indices[*b]),
                     other => other.clone(),
                 });
             }
@@ -390,6 +398,7 @@ impl Builder {
             exact: self.0.borrow().exact.clone().into_boxed_slice(),
             center: OnceLock::new(),
             remainder: OnceLock::new(),
+            enclosures: Mutex::new(BTreeMap::new()),
         }
     }
 }
@@ -401,6 +410,11 @@ impl Expr<'_> {
 
     pub(crate) fn sqrt(self) -> Self {
         self.builder.node(Node::Sqrt(self.index))
+    }
+
+    /// The angle in `(0, pi)` with cosine `self` and sine `sine`.
+    pub(crate) fn angle_to(self, sine: Self) -> Self {
+        self.builder.node(Node::Angle(self.index, sine.index))
     }
 
     pub(crate) fn square(self) -> Self {
@@ -452,6 +466,9 @@ pub(crate) struct Program {
     exact: Box<[Real]>,
     center: OnceLock<Box<[u32]>>,
     remainder: OnceLock<Box<[u32]>>,
+    // A panel evaluates every exact constant, and each enclosure walks its whole
+    // definition, so keep them by working precision.
+    enclosures: Mutex<BTreeMap<(u32, usize), Ball>>,
 }
 
 impl Program {
@@ -494,11 +511,27 @@ impl Program {
                     needed[i] = prefix;
                     needed[a] |= prefix;
                 }
+                Node::Angle(a, b) => {
+                    needed[i] = prefix;
+                    needed[a] |= prefix;
+                    needed[b] |= prefix;
+                }
                 Node::Neg(a) => needed[a] |= mask,
                 Node::Constant(_) | Node::Exact(_) | Node::Input(_) => {}
             }
         }
         needed.into_boxed_slice()
+    }
+
+    fn enclosure(&self, index: usize, work: &mut Work) -> Checked<Ball> {
+        let key = (work.precision, index);
+        if let Some(known) = self.enclosures.lock().unwrap().get(&key) {
+            work.charge()?;
+            return Ok(known.clone());
+        }
+        let found = work.real(&self.exact[index])?;
+        self.enclosures.lock().unwrap().insert(key, found.clone());
+        Ok(found)
     }
 
     fn evaluate<const N: usize>(
@@ -538,7 +571,7 @@ impl Program {
                         value[0] = work.rational(r)?;
                     }
                 }
-                Node::Exact(index) => value[0] = work.real(&self.exact[*index])?,
+                Node::Exact(index) => value[0] = self.enclosure(*index, work)?,
                 Node::Input(_) => unreachable!(),
                 Node::Add(a, b) => {
                     for (k, coefficient) in value.iter_mut().enumerate() {
@@ -678,6 +711,29 @@ impl Program {
                         }
                     }
                 }
+                Node::Angle(a, b) => {
+                    value[0] = angle(&values[*a][0], &values[*b][0], work)?;
+                    if values[*b][0].contains_zero() {
+                        return Err(Stop::Split);
+                    }
+                    // `sin g g' = -(cos g)'` gives each coefficient from its
+                    // lower ones, with no composed arctangent to widen them.
+                    for k in 1..N {
+                        if !needed(k) {
+                            continue;
+                        }
+                        let order = work.rational(&Rational::from_i64(k as i64))?;
+                        let mut numerator = -&work.mul(&order, &values[*a][k])?;
+                        for j in 1..k {
+                            let weight = work.rational(&Rational::from_i64((k - j) as i64))?;
+                            let term = work.mul(&values[*b][j], &value[k - j])?;
+                            let term = work.mul(&weight, &term)?;
+                            numerator = work.sub(&numerator, &term)?;
+                        }
+                        let denominator = work.mul(&order, &values[*b][0])?;
+                        value[k] = work.div(&numerator, &denominator)?;
+                    }
+                }
             }
             values.push(value);
         }
@@ -720,6 +776,44 @@ impl Program {
             .iter()
             .zip(&range)
             .map(|(c, r)| integrate(c, r, a, b, &midpoint, work))
+            .collect()
+    }
+
+    /// One panel of `x` from `a` to `b` of a program whose inputs are `cos t`
+    /// and `sin t` for `t = pi x`.
+    pub(crate) fn turning_panel(
+        &self,
+        a: &Rational,
+        b: &Rational,
+        work: &mut Work,
+    ) -> Checked<Vec<Ball>> {
+        let midpoint = (a + b).mul_pow2(-1);
+        let center = work.rational(&midpoint)?;
+        let range = work.interval(a, b)?;
+        let at_center = turning::<{ ORDER - 1 }>(&center, work)?;
+        let on_range = turning::<SIZE>(&range, work)?;
+        let center = self.evaluate(&at_center, Coefficients::Center, work)?;
+        let range = self.evaluate(&on_range, Coefficients::Remainder, work)?;
+        center
+            .iter()
+            .zip(&range)
+            .map(|(c, r)| integrate(c, r, a, b, &midpoint, work))
+            .collect()
+    }
+
+    /// The same panel as a value range times its width.
+    pub(crate) fn turning_rectangle(
+        &self,
+        a: &Rational,
+        b: &Rational,
+        work: &mut Work,
+    ) -> Checked<Vec<Ball>> {
+        let range = work.interval(a, b)?;
+        let input = turning::<1>(&range, work)?;
+        let width = work.rational(&(b - a))?;
+        self.evaluate(&input, Coefficients::All, work)?
+            .iter()
+            .map(|j| work.mul(&j[0], &width))
             .collect()
     }
 
@@ -854,6 +948,31 @@ fn input<const N: usize>(piece: &TracePiece, t: &Ball, work: &mut Work) -> Check
     Ok(inputs)
 }
 
+// Taylor coefficients of `cos(pi x)` and `sin(pi x)` about `x`, in `x`.
+fn turning<const N: usize>(x: &Ball, work: &mut Work) -> Checked<Vec<[Ball; N]>> {
+    let pi = work.pi()?;
+    let t = work.mul(&pi, x)?;
+    let mut cos = work.zeros::<N>();
+    let mut sin = work.zeros::<N>();
+    // A wide ball far from zero loses everything in a series about zero, so
+    // the range goes through the addition formula about its own midpoint.
+    let middle = work.rational(&t.mid())?;
+    let reach = work.interval(&-t.rad(), &t.rad())?;
+    let (near, across) = (reach.cos(), reach.sin());
+    let (cosine, sine) = (middle.cos(), middle.sin());
+    let [a, b] = [work.mul(&cosine, &near)?, work.mul(&sine, &across)?];
+    cos[0] = work.sub(&a, &b)?;
+    let [a, b] = [work.mul(&sine, &near)?, work.mul(&cosine, &across)?];
+    sin[0] = work.add(&a, &b)?;
+    for k in 1..N {
+        let step = work.rational(&Rational::from_i64(k as i64))?;
+        let step = work.div(&pi, &step)?;
+        cos[k] = -&work.mul(&sin[k - 1], &step)?;
+        sin[k] = work.mul(&cos[k - 1], &step)?;
+    }
+    Ok(vec![cos, sin])
+}
+
 fn integrate(
     center: &[Ball],
     range: &Jet,
@@ -941,6 +1060,34 @@ mod tests {
             for (k, coefficient) in expected.iter().enumerate() {
                 assert!(actual[row][k].contains(&Rational::from_i64(*coefficient)));
             }
+        }
+    }
+
+    #[test]
+    fn an_angle_from_its_cosine_and_sine_is_the_angle() {
+        let policy = BudgetPolicy::default();
+        let dec = Decider::new(policy);
+        let mut work = Work::new(&policy, 128, policy.max_work, &dec).unwrap();
+        let builder = Builder::default();
+        let program = builder.finish(&[builder.input(0).angle_to(builder.input(1))]);
+        // With cos and sin of `t + h` as inputs, the output is `t + h` exactly.
+        let t = Rational::from_ratio(3, 4).unwrap();
+        let base = Ball::from_rational(&t, 128);
+        let mut cos: [Ball; 9] = std::array::from_fn(|_| base.cos());
+        let mut sin: [Ball; 9] = std::array::from_fn(|_| base.sin());
+        for k in 1..9 {
+            let step = Ball::from_rational(&Rational::from_i64(k as i64), 128);
+            cos[k] = -&sin[k - 1].checked_div(&step).unwrap();
+            sin[k] = cos[k - 1].checked_div(&step).unwrap();
+        }
+        let actual = program
+            .evaluate(&[cos, sin], Coefficients::All, &mut work)
+            .unwrap();
+        assert!(actual[0][0].contains(&t));
+        assert!(actual[0][1].contains(&Rational::one()));
+        for coefficient in &actual[0][2..] {
+            assert!(coefficient.contains(&Rational::zero()));
+            assert!(coefficient.rad() < Rational::from_ratio(1, 1_000_000).unwrap());
         }
     }
 

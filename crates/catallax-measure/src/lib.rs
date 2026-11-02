@@ -51,6 +51,7 @@ mod integrate;
 mod junction;
 mod offset_prism;
 mod pair;
+mod pipe;
 mod planar;
 mod ring;
 mod surface;

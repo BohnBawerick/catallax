@@ -377,6 +377,7 @@ impl Program {
                     }
                 }
                 Node::Sqrt(a) => Polynomial::constant(sqrt(&values[*a].as_constant()?)?),
+                Node::Angle(..) => return None,
             };
             values.push(value);
         }

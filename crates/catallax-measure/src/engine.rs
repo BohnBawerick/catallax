@@ -2,7 +2,9 @@
 
 use catallax_intersect::{CurveTrace, trace};
 use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal};
-use catallax_shapes::{Circle, Curve, Ellipse, Line, Point3, RPoint3, RVector3, Surface, Vector3};
+use catallax_shapes::{
+    Circle, Curve, Ellipse, Line, Point3, RPoint3, RVector3, SplineSupport, Surface, Vector3,
+};
 use catallax_topology::{CoedgeId, EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 
@@ -72,6 +74,7 @@ struct Curved<'a> {
 
 enum Prepared<'a> {
     Curved(Curved<'a>),
+    Band(crate::pipe::Band),
     PlanarArea {
         area_numerator: Rational,
         normal_squared: Rational,
@@ -272,6 +275,12 @@ pub(crate) fn measure(
         }
         let face = model.face(id);
         let surface = model.geom().surface(face.surface);
+        if let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = surface {
+            prepared.push(Prepared::Band(crate::pipe::Band::new(
+                model, id, pipe, anchor, property, dec,
+            )?));
+            continue;
+        }
         let closed = face.loops.is_empty();
         let surface = sheets.get(&id).unwrap_or(surface);
         let analytic_only = finite_distance_face(model, id);
@@ -488,6 +497,8 @@ pub(crate) fn measure(
             analytic_only,
         }));
     }
+    // A band sets its effort by what the other faces leave, so it comes last.
+    prepared.sort_by_key(|face| matches!(face, Prepared::Band(_)));
     let mut best = None;
     // Six independent scalar refinements share the tensor's arithmetic allowance.
     let mut remaining = if matches!(property, Property::SecondMoment(_, _)) {
@@ -664,6 +675,7 @@ fn evaluate(
                 let norm = work.sqrt(&square)?;
                 vec![work.div(&numerator, &norm)?]
             }
+            Prepared::Band(band) => band.integrate(&sums, depth, rectangle, work)?,
             Prepared::Curved(face) => {
                 let mut answer = None;
                 let candidates = if matches!(face.surface, Surface::Sphere(_))

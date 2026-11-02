@@ -137,6 +137,11 @@ fn junction_record(built: &CertifiedBuilt, certificate: &JunctionCertificate) ->
             ("rolling-envelope", json!({"kind":"complete-finite-spline-patch",
                 "bounds":support.carrier().domain().map(|bounds| bounds.map(|bound| bound.to_string())),
                 "physical_boundaries":envelope.edges().iter().map(|(edge, row)| json!({"edge":edge.index(),"row":row_name(*row)})).collect::<Vec<_>>()}))
+        } else if let Some(saddle) = certificate.saddles().iter().find(|saddle| saddle.face() == face) {
+            let Surface::BSpline(support) = surface else { unreachable!("checked fitted face") };
+            ("rolling-saddle", json!({"kind":"complete-closed-spline-ring",
+                "bounds":support.carrier().domain().map(|bounds| bounds.map(|bound| bound.to_string())),
+                "physical_boundaries":[json!({"edge":saddle.rails()[0].index(),"row":"wide-rail"}),json!({"edge":saddle.rails()[1].index(),"row":"narrow-rail"})]}))
         } else {
             let role = match surface {
                 Surface::Plane(_) => "plane",
@@ -155,16 +160,33 @@ fn junction_record(built: &CertifiedBuilt, certificate: &JunctionCertificate) ->
         json!({"id":key(&region.identity.representation),"face":face.index(),"role":role,"origins":model.face_origins(face),
             "identity":identity(&region.identity),"evidence":key(&region.evidence),"domain":domain,"exception":region.exception.as_ref().map(exception)})
     }).collect();
-    let spline: Vec<_> = certificate.envelopes().iter().map(|envelope| {
-        let Surface::BSpline(support) = model.geom().surface(model.face(envelope.face()).surface) else {
+    let fitted_faces = certificate
+        .envelopes()
+        .iter()
+        .map(|envelope| (envelope.face(), envelope.bound()))
+        .chain(
+            certificate
+                .saddles()
+                .iter()
+                .map(|saddle| (saddle.face(), saddle.bound())),
+        );
+    let spline: Vec<_> = fitted_faces.map(|(face, fit)| {
+        let Surface::BSpline(support) = model.geom().surface(model.face(face).surface) else {
             unreachable!("checked fitted face")
         };
         let carrier = support.carrier();
-        json!({"face":envelope.face().index(),"kind":"rational-bspline","degrees":carrier.degrees(),"control_count":carrier.control_count(),
+        json!({"face":face.index(),"kind":"rational-bspline","degrees":carrier.degrees(),"control_count":carrier.control_count(),
             "knots":carrier.knots().map(|knots| knots.iter().map(ToString::to_string).collect::<Vec<_>>()),
             "domain":carrier.domain().map(|bounds| bounds.map(ToString::to_string)),
-            "fit_bound":bound(envelope.bound())})
+            "fit_bound":bound(fit)})
     }).collect();
+    let target = if certificate.saddles().is_empty() {
+        json!({"kind":"rolling-envelope-junction","blend_base_body":certificate.base().index(),
+            "envelope_faces":certificate.envelopes().iter().map(|envelope| envelope.face().index()).collect::<Vec<_>>(),"empty":false})
+    } else {
+        json!({"kind":"rolling-saddle-junction","blend_base_body":certificate.base().index(),
+            "saddle_faces":certificate.saddles().iter().map(|saddle| saddle.face().index()).collect::<Vec<_>>(),"empty":false})
+    };
     let record = certificate.record();
     json!({"identity":identity(&record.identity),"evidence":key(&record.evidence),"regions":regions,
         "uniform_signed_distance_bound":record.uniform_bound.as_ref().map(bound),
@@ -173,9 +195,7 @@ fn junction_record(built: &CertifiedBuilt, certificate: &JunctionCertificate) ->
             "kernel_fit_target_mm":book.local_settings().kernel_target_mm().to_string(),
             "producer_fit_target_mm":certificate.fit_target_mm().to_string(),
             "kernel_hard_cap_mm":book.local_settings().kernel_cap_mm().to_string(),"import_hard_cap_mm":book.local_settings().import_cap_mm().to_string()},
-        "retained_target":{"kind":"rolling-envelope-junction","blend_base_body":certificate.base().index(),
-            "envelope_faces":certificate.envelopes().iter().map(|envelope| envelope.face().index()).collect::<Vec<_>>(),"empty":false},
-        "spline":spline})
+        "retained_target":target,"spline":spline})
 }
 
 pub(super) fn record(built: &CertifiedBuilt) -> Value {

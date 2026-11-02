@@ -93,7 +93,7 @@ mod sweep;
 
 pub use certified::{
     BodyCertificate, CertificateKey, CertifiedBuilt, EnvelopeRegion, JunctionCertificate,
-    PrismTarget, certify_junction,
+    PrismTarget, SaddleRegion, certify_junction,
 };
 pub use draft_build::ConsumedFace;
 pub use evaluate::{

@@ -16,6 +16,8 @@ pub(super) enum Geometry {
         trace: CurveTrace,
         spans: Vec<fit::TraceSpan>,
     },
+    /// A band's rail, whose chart curve comes from its table.
+    Rail(Box<saddle::RailChart>),
 }
 
 impl Geometry {
@@ -333,8 +335,13 @@ impl Exporter<'_> {
         let curves = match input.geometry {
             Geometry::Analytic(curve) => std::slice::from_ref(&curve.written),
             Geometry::Spline { curves, .. } => curves.as_slice(),
+            Geometry::Rail(_) => &[],
         };
-        let mut reservation = Some(uv::Budget::new(curves.len(), self.digits(), self.dec)?);
+        let mut reservation = Some(uv::Budget::new(
+            curves.len().max(1),
+            self.digits(),
+            self.dec,
+        )?);
         let precision = reservation.as_ref().unwrap().precision;
         let first = uses[0].unwrap().0;
         let first_projection = self.projection(self.model.face(first).surface, precision)?;
@@ -346,7 +353,7 @@ impl Exporter<'_> {
                 &first_projection.pi,
                 self.dec,
             )?),
-            Geometry::Spline { .. } => None,
+            _ => None,
         };
         let bounds: Bounds = std::array::from_fn(|i| {
             [
@@ -409,6 +416,7 @@ impl Exporter<'_> {
                         )?,
                         Geometry::Spline { trace, spans, .. } => projection
                             .trace_guide(&trace.pieces()[spans[piece].piece], &spans[piece]),
+                        Geometry::Rail(_) => unreachable!("a rail has no pieces"),
                     }
                 };
                 pieces.push(pcurve::Piece {
@@ -434,7 +442,10 @@ impl Exporter<'_> {
                 budget.precision, precision,
                 "changed chart working precision"
             );
-            let fit = uv::fit(&pieces, self.digits(), &tolerance, budget, self.dec)?;
+            let fit = match input.geometry {
+                Geometry::Rail(rail) => rail.fit([&start.point, &end.point], self.digits()),
+                _ => uv::fit(&pieces, self.digits(), &tolerance, budget, self.dec)?,
+            };
             let geometry = &self.surfaces[&surface_id];
             let extent = (0..3).fold(Rational::zero(), |sum, i| {
                 sum + (&bounds[i][0] - &geometry.origin[i][1])

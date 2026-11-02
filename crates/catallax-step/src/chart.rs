@@ -1,8 +1,8 @@
 //! Exact, export-only cuts of periodic carrier charts.
 
 use catallax_intersect::{Contact, CurveSurface};
-use catallax_numbers::{Decider, Real, Refusal, Sign};
-use catallax_shapes::{PointId, Surface, Vector3};
+use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
+use catallax_shapes::{BSplineCurve, Curve, Point3, PointId, Surface, Vector3};
 use catallax_topology::{EdgeId, FaceId, Model};
 use std::collections::BTreeSet;
 
@@ -26,6 +26,82 @@ pub(crate) struct Crossing {
 pub(crate) struct Meridian {
     pub reference: Vector3,
     pub crossings: Vec<Crossing>,
+}
+
+enum Rail {
+    Clear,
+    Crosses { increasing: bool },
+    Unresolved,
+}
+
+/// A band's closed rail against the half-plane from `origin` along `reference`,
+/// by the convex hull of each rational Bezier span. A rail either misses the
+/// half-plane or crosses it once, at its start, which a framed wall puts there.
+fn rail_event(
+    rail: &BSplineCurve,
+    origin: &Point3,
+    axis: &Vector3,
+    reference: &Vector3,
+    dec: &mut Decider,
+) -> Result<Rail, Refusal> {
+    const BITS: u32 = 96;
+    let degree = rail.degree();
+    let count = rail.control_count();
+    if !(count - 1).is_multiple_of(degree) {
+        return Ok(Rail::Unresolved);
+    }
+    let normal = axis.cross(reference);
+    let strict = |value: &Real, dec: &mut Decider| -> Result<Sign, Refusal> {
+        let ball = dec.enclose_at(value, BITS)?;
+        Ok(if ball.lo() > Rational::zero() {
+            Sign::Positive
+        } else if ball.hi() < Rational::zero() {
+            Sign::Negative
+        } else {
+            Sign::Zero
+        })
+    };
+    let mut sides = Vec::with_capacity(count);
+    let mut ahead = Vec::with_capacity(count);
+    for control in rail.controls() {
+        dec.check_deadline()?;
+        let radial = control.minus(origin);
+        sides.push(strict(&radial.dot(&normal), dec)?);
+        ahead.push(strict(&radial.dot(reference), dec)?);
+    }
+    let one_side = |side: Sign, range: std::ops::Range<usize>| {
+        side != Sign::Zero && range.into_iter().all(|i| sides[i] == side)
+    };
+    if one_side(sides[0], 0..count) {
+        return Ok(Rail::Clear);
+    }
+    // The start lies on the plane exactly, ahead of the axis.
+    let start = rail.control(0).minus(origin);
+    if trim::sign(&start.dot(&normal), dec)? != Sign::Zero
+        || trim::sign(&start.dot(reference), dec)? != Sign::Positive
+    {
+        return Ok(Rail::Unresolved);
+    }
+    let leaving = sides[1];
+    let arriving = if leaving == Sign::Positive {
+        Sign::Negative
+    } else {
+        Sign::Positive
+    };
+    if !one_side(leaving, 1..degree + 1) || !one_side(arriving, count - 1 - degree..count - 1) {
+        return Ok(Rail::Unresolved);
+    }
+    for first in (degree..count - 1 - degree).step_by(degree) {
+        let span = first..first + degree + 1;
+        if !one_side(sides[first], span.clone())
+            && !span.into_iter().all(|i| ahead[i] == Sign::Negative)
+        {
+            return Ok(Rail::Unresolved);
+        }
+    }
+    Ok(Rail::Crosses {
+        increasing: leaving == Sign::Positive,
+    })
 }
 
 /// A generic meridian avoids source vertices, contained boundary curves, and
@@ -66,6 +142,7 @@ fn meridian_with(
         }
         _ => unreachable!("meridian on a non-periodic carrier"),
     };
+    let (stored, plain) = (axis.clone(), reference.clone());
     let axis = number::unit(&axis);
     let reference = number::unit(&reference);
     let across = axis.cross(&reference);
@@ -106,6 +183,41 @@ fn meridian_with(
         let mut seen = BTreeSet::new();
         let mut regular = true;
         for boundary in boundaries.iter() {
+            if let Curve::BSpline(rail) = geometry.store.curve(boundary.curve).clone() {
+                let exact = match attempt {
+                    0 => plain.clone(),
+                    1 => plain.scaled(&(-Real::one())),
+                    _ => reference.clone(),
+                };
+                match rail_event(&rail, &origin, &stored, &exact, dec)? {
+                    Rail::Clear => {}
+                    // Only a frame from `frames::band_walls` or a quarter turn
+                    // of it can clear a rail, so a further search cannot help.
+                    Rail::Unresolved if attempt > 3 => {
+                        return Err(Refusal::new(
+                            "step.unsupported-geometry",
+                            "a band's rail has no clear chart cut on its wall",
+                        ));
+                    }
+                    Rail::Unresolved => regular = false,
+                    Rail::Crosses { increasing } => {
+                        let start = rail.control(0).clone();
+                        let radial = start.minus(&origin);
+                        crossings.push(Crossing {
+                            edge: boundary.edge,
+                            point: geometry.point(start),
+                            height: radial.dot(&axis),
+                            offset: Real::zero(),
+                            enters: increasing == boundary.forward,
+                            increasing,
+                        });
+                    }
+                }
+                if !regular {
+                    break;
+                }
+                continue;
+            }
             let intersections = geometry.intersections(boundary.curve, plane, dec)?;
             match intersections.as_ref() {
                 CurveSurface::Disjoint => {}

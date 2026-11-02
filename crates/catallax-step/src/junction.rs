@@ -12,7 +12,7 @@ use std::rc::Rc;
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::{
-    BoundaryRow, Point3, RollingEnvelope, SplineSupport, Surface, SurfaceId, Vector3,
+    BoundaryRow, Point3, RollingEnvelope, RollingSaddle, SplineSupport, Surface, SurfaceId, Vector3,
 };
 use catallax_topology::{
     BodyId, CoedgeId, EdgeId, FaceId, Loop, Model, Sense, VertexId, envelope_rows,
@@ -186,6 +186,52 @@ fn neighbour(
         }
         _ => Err(unsupported("an envelope row has the wrong neighbour")),
     }
+}
+
+/// A saddle rail's cylinder chart. `wall` is the surface as written, whose frame
+/// a wall keeps from `frames::band_walls`, and `rail` is 0 for the wide rail.
+pub(crate) fn saddle_neighbour(
+    model: &Model,
+    wall: SurfaceId,
+    saddle: &RollingSaddle,
+    rail: usize,
+    dec: &mut Decider,
+) -> Result<Neighbour, Refusal> {
+    let Surface::Cylinder(cylinder) = model.geom().surface(wall) else {
+        return Err(unsupported("a saddle rail's neighbour is not a cylinder"));
+    };
+    let axis = crate::number::unit(&cylinder.axis);
+    let x = crate::number::unit(&cylinder.ref_dir);
+    let y = axis.cross(&x);
+    let law = saddle.definition().law();
+    let side = law
+        .along
+        .scaled(&law.cosine)
+        .minus(&law.axis.scaled(&law.sine));
+    let narrow = law
+        .axis
+        .scaled(&law.cosine)
+        .plus(&law.along.scaled(&law.sine));
+    // The direction at angle zero, the way the angle turns, and the station's
+    // zero and axis.
+    let (zero, turning, station, stations) = if rail == 0 {
+        (
+            law.along.scaled(&Real::from_i64(law.branch)),
+            law.across.clone(),
+            saddle.definition().origin().clone(),
+            law.axis.clone(),
+        )
+    } else {
+        (law.across.clone(), side, law.foot.clone(), narrow)
+    };
+    Ok(Neighbour {
+        surface: wall,
+        u: chart_angle(&zero, &x, &y, dec)?,
+        u_sign: sign(&axis.cross(&zero).dot(&turning), dec)?,
+        v: dec.enclose_at(&station.minus(&cylinder.origin).dot(&axis), BITS)?,
+        v_sign: sign(&stations.dot(&axis), dec)?,
+        radius: cylinder.radius(),
+    })
 }
 
 // A face's complete ring and its closed multi-edge boundary.

@@ -6,7 +6,7 @@
 use crate::{number, trim};
 use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Real, Refusal};
 use catallax_shapes::{Cylinder, GeomKey, Sphere, SplineSupport, Surface, SurfaceId, Vector3};
-use catallax_topology::{BodyId, Face, FaceId, Loop, Model, Shell, pipe_rows};
+use catallax_topology::{BodyId, EdgeId, Face, FaceId, Loop, Model, Shell, pipe_rows, saddle_rows};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct Reframed {
@@ -38,43 +38,60 @@ pub(crate) fn perpendicular(model: &Model, bodies: &[BodyId]) -> Reframed {
     rewrite(model, bodies, frames)
 }
 
-/// Every wall under a rolling-pipe band, moved onto the frame whose reference
-/// is the band's `t = 0` direction, so the wall's first chart cut meets the
-/// wall rail at the band's seam. `None` when the bodies have no band.
-pub(crate) fn pipe_walls(
+/// Every wall under a band, moved onto the frame its chart needs. A rolling
+/// pipe's wall takes the band's `t = 0` direction, so its first chart cut meets
+/// the wall rail at the band's seam. A saddle's narrow rail winds round its
+/// cylinder and takes the band's seam at `t = -pi/2`. A saddle's wide rail
+/// stays strictly on one side of the plane through the wide axis along
+/// `across`, so a cut along `across` misses every ring on that cylinder.
+/// `None` when the bodies have no band.
+pub(crate) fn band_walls(
     model: &Model,
     bodies: &[BodyId],
     dec: &mut Decider,
 ) -> Result<Option<Reframed>, Refusal> {
+    let refused = || {
+        Refusal::new(
+            "step.unsupported-geometry",
+            "a trimmed band has no STEP form",
+        )
+    };
     let mut frames = BTreeMap::new();
-    for &body in bodies {
-        for face in model.faces_of_body(body) {
-            let Surface::BSpline(SplineSupport::RollingPipe(pipe)) =
-                model.geom().surface(model.face(face).surface)
-            else {
+    let frame = |rail: EdgeId, direction: Vector3, frames: &mut BTreeMap<_, _>| {
+        for coedge in model.coedges_of_edge(rail) {
+            let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
                 continue;
             };
-            let rows = pipe_rows(model, face, dec)?;
-            let [_, (rail, _)] = rows.ok_or_else(|| {
-                Refusal::new(
-                    "step.unsupported-geometry",
-                    "a trimmed pipe band has no STEP form",
-                )
-            })?;
-            for coedge in model.coedges_of_edge(rail) {
-                let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
-                    continue;
-                };
-                let surface = model.face(neighbour).surface;
-                if let Surface::Cylinder(wall) = model.geom().surface(surface) {
-                    frames.insert(
-                        surface,
-                        Surface::Cylinder(Cylinder {
-                            ref_dir: pipe.law().across.clone(),
-                            ..wall.clone()
-                        }),
-                    );
+            let surface = model.face(neighbour).surface;
+            if let Surface::Cylinder(wall) = model.geom().surface(surface) {
+                frames.insert(
+                    surface,
+                    Surface::Cylinder(Cylinder {
+                        ref_dir: direction.clone(),
+                        ..wall.clone()
+                    }),
+                );
+            }
+        }
+    };
+    for &body in bodies {
+        for face in model.faces_of_body(body) {
+            match model.geom().surface(model.face(face).surface) {
+                Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
+                    let [_, (rail, _)] = pipe_rows(model, face, dec)?.ok_or_else(refused)?;
+                    frame(rail, pipe.law().across.clone(), &mut frames);
                 }
+                Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
+                    let [(wide, _), (narrow, _)] = saddle_rows(model, face).ok_or_else(refused)?;
+                    let law = saddle.definition().law();
+                    frame(wide, law.across.clone(), &mut frames);
+                    let side = law
+                        .along
+                        .scaled(&law.cosine)
+                        .minus(&law.axis.scaled(&law.sine));
+                    frame(narrow, side.scaled(&-Real::one()), &mut frames);
+                }
+                _ => {}
             }
         }
     }

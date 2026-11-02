@@ -218,7 +218,7 @@ Planned work, outside 0.1.2. Target NVIDIA's [USD BRep interface at `c9c5979`](h
 
 First specify the interface mapping and a golden fixture for one analytic solid, then build a one-way `BrepArray` exporter with that mesh and check it against an independent consumer. Check schema and geometry before any healing, and display separately. The schema's `brep:intersectTol3d` stores one tolerance per BRep, losing Catallax's local tolerance detail; retain that detail and certificates separately rather than claiming lossless exchange.
 
-Place optional scene and display export beside Stage 1, metadata and certificates at Stage 2, and supported analytic BRep export at Stage 3. Extend to blends and derived carriers as Stages 4 and 5 mature, only where the representation supports them. Two-way USD BRep import and editing are a separate extension to Stage 6. The dot can supply field-derived display meshes for field-only features without claiming BRep conversion.
+Place optional scene and display export beside Stage 1, metadata and certificates at Stage 2, and supported analytic BRep export at Stage 3. Extend to blends and derived carriers as Stages 4 and 5 mature, only where the representation supports them. Two-way USD BRep import and editing are a separate extension to Stage 6.
 
 ## 7. Verification loops
 

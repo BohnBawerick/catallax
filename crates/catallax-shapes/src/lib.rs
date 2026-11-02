@@ -49,7 +49,7 @@ pub use rolling_envelope::{
 };
 pub use rolling_pipe::{PipeLaw, RollingPipe};
 pub use rolling_saddle::{
-    BallSide, ROLLING_SADDLE_TARGET_NM, RollingSaddle, RollingSaddleDefinition,
+    BallSide, ROLLING_SADDLE_TARGET_NM, RollingSaddle, RollingSaddleDefinition, SaddleLaw,
 };
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};

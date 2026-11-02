@@ -21,7 +21,7 @@ pub use entity::{
 };
 pub use model::{EntityCounts, Model, TopologyFault};
 pub use rolling_junction::{
-    envelope_retains_chart, envelope_rows, pipe_outward, pipe_rows, saddle_rows,
+    envelope_retains_chart, envelope_rows, pipe_outward, pipe_rows, saddle_added, saddle_rows,
 };
 pub use spline_prism::SplinePrism;
 pub use transform::transformed_body;

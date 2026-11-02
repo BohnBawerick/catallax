@@ -4,7 +4,8 @@ use crate::*;
 use catallax_numbers::{Fact, FactKind, FactOrigin};
 use catallax_recipe::{EdgeName, Origin};
 use catallax_shapes::{
-    Curve, CurveId, GeomKey, Isometry, Meet, MeetOf, PointDef, PointId, Position, SurfaceId,
+    Curve, CurveId, GeomKey, Isometry, Meet, MeetOf, PointDef, PointId, Position, SplineSupport,
+    Surface, SurfaceId,
 };
 use std::collections::BTreeMap;
 
@@ -214,7 +215,31 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
 /// Copies a body by an exact isometry and maps every face origin.
 /// Source entities remain immutable; shared edges and defining objects stay shared
 /// within the copy. Reflection reverses loop traversal but preserves outward normals.
+///
+/// A saddle blend takes its base along, because measurement reads it as that body
+/// plus the band's exact change, and both move together.
 pub fn transformed_body(
+    model: &mut Model,
+    body: BodyId,
+    map: &Isometry,
+    mut origin: impl FnMut(&Origin) -> Origin,
+) -> BodyId {
+    let saddle = model.faces_of_body(body).into_iter().any(|face| {
+        matches!(
+            model.geom().surface(model.face(face).surface),
+            Surface::BSpline(SplineSupport::RollingSaddle(_))
+        )
+    });
+    let base = model.blend_base(body).filter(|_| saddle);
+    let copy = copied(model, body, map, &mut origin);
+    if let Some(base) = base {
+        let base = copied(model, base, map, &mut origin);
+        model.record_blend_base(copy, base);
+    }
+    copy
+}
+
+fn copied(
     model: &mut Model,
     body: BodyId,
     map: &Isometry,

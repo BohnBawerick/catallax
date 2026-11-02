@@ -293,6 +293,39 @@ pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> 
     Some([found[0]?, found[1]?])
 }
 
+/// Whether a saddle band's pocket adds material. A cylinder face keeps its side of
+/// the material through any isometry, and the ball sits in the material exactly
+/// at a convex edge, so a rail's neighbour settles it.
+pub fn saddle_added(model: &Model, face: FaceId) -> Result<bool, Refusal> {
+    let refused = || {
+        Refusal::new(
+            "topology.saddle-band",
+            "a saddle band's rail has no cylinder neighbour",
+        )
+    };
+    let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
+        model.geom().surface(model.face(face).surface)
+    else {
+        return Err(refused());
+    };
+    let [(rail, _), _] = saddle_rows(model, face).ok_or_else(refused)?;
+    let sides = saddle.definition().law().sides;
+    for coedge in model.coedges_of_edge(rail) {
+        let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
+            continue;
+        };
+        let boundary = model.face(neighbour);
+        if neighbour != face
+            && matches!(model.geom().surface(boundary.surface), Surface::Cylinder(_))
+        {
+            let material_inside = boundary.sense == Sense::Same;
+            let ball_inside = sides[0] < 0;
+            return Ok(material_inside != ball_inside);
+        }
+    }
+    Err(refused())
+}
+
 /// Whether a band's outward side is along its contact rays, away from the ball
 /// centre. The plane that shares its plane rail fixes this.
 pub fn pipe_outward(

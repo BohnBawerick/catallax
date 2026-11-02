@@ -678,6 +678,32 @@ fn the_display_grid_closes_round_the_ring() {
     }
 }
 
+#[test]
+fn a_range_holds_the_carrier_and_reaches_it() {
+    let saddle = fitted(0);
+    let chord = q("1/100");
+    let grid = saddle.display_grid(&chord, 1_000_000, &decider()).unwrap();
+    let width = q("1/1000000");
+    for axis in 0..3 {
+        let [[low, low_top], [high_low, high]] = saddle.range(axis, &width, &decider()).unwrap();
+        assert!(&low_top - &low <= width && &high - &high_low <= width);
+        let values = grid.points.iter().map(|p| p[axis].mid());
+        let (mut small, mut large) = (None::<Rational>, None::<Rational>);
+        for value in values {
+            small = Some(small.map_or(value.clone(), |v| v.min(value.clone())));
+            large = Some(large.map_or(value.clone(), |v| v.max(value)));
+        }
+        let [small, large] = [small.unwrap(), large.unwrap()];
+        // Grid points sit on the carrier, to the enclosure's width, and the two
+        // extremes lie within a chord of a grid point.
+        assert!(low <= small && large <= high, "axis {axis}");
+        assert!(
+            &small - &low_top <= chord && &high_low - &large <= chord,
+            "axis {axis}"
+        );
+    }
+}
+
 fn refused(wide: Cylinder, narrow: Cylinder, radius: &str, sides: [BallSide; 2]) -> Refusal {
     let mut dec = decider();
     RollingSaddleDefinition::new(&wide, &narrow, &real(radius), sides, true, &mut dec).unwrap_err()

@@ -36,17 +36,17 @@ fn unsupported(detail: &'static str) -> Refusal {
 
 // A polynomial in `cos h` and `sin h` with coefficients along the rail.
 #[derive(Clone)]
-struct Section<'a> {
+pub(crate) struct Section<'a> {
     terms: BTreeMap<(u8, u8), Expr<'a>>,
 }
 
 impl<'a> Section<'a> {
-    fn linear(constant: Expr<'a>, cosine: Expr<'a>, sine: Expr<'a>) -> Self {
+    pub(crate) fn linear(constant: Expr<'a>, cosine: Expr<'a>, sine: Expr<'a>) -> Self {
         Self {
             terms: BTreeMap::from([((0, 0), constant), ((1, 0), cosine), ((0, 1), sine)]),
         }
     }
-    fn times(&self, other: &Self) -> Self {
+    pub(crate) fn times(&self, other: &Self) -> Self {
         let mut product = BTreeMap::new();
         for ((a, b), left) in &self.terms {
             for ((c, d), right) in &other.terms {
@@ -62,12 +62,12 @@ impl<'a> Section<'a> {
 }
 
 // Integrals of `cos^a h sin^b h` over the section, by the usual reductions.
-struct Primitives<'a> {
-    builder: &'a Builder,
-    angle: Expr<'a>,
-    cosine: Expr<'a>,
-    sine: Expr<'a>,
-    known: BTreeMap<(u8, u8), Expr<'a>>,
+pub(crate) struct Primitives<'a> {
+    pub(crate) builder: &'a Builder,
+    pub(crate) angle: Expr<'a>,
+    pub(crate) cosine: Expr<'a>,
+    pub(crate) sine: Expr<'a>,
+    pub(crate) known: BTreeMap<(u8, u8), Expr<'a>>,
 }
 
 impl<'a> Primitives<'a> {
@@ -99,7 +99,7 @@ impl<'a> Primitives<'a> {
         self.known.insert((a, b), value);
         value
     }
-    fn integral(&mut self, section: &Section<'a>) -> Expr<'a> {
+    pub(crate) fn integral(&mut self, section: &Section<'a>) -> Expr<'a> {
         let mut sum = self.builder.k(0);
         for ((a, b), value) in &section.terms {
             sum = sum + *value * self.of(*a, *b);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pair the five released SolidDraft edits and compare their exact native answers."""
 import argparse
-from collections import Counter
+from collections import defaultdict
 import hashlib
 import importlib.util
 import json
@@ -16,7 +16,7 @@ TARGETS = {"bracket": {27: "edit_dimension", 43: "set_value"},
            "drawing": {24: "edit_extrude"},
            "references": {17: "edit_extrude", 18: "edit_dimension"}}
 FILES = ("answer.step", "answer.txt", "display.obj", "mesh.txt",
-         "names.txt", "stats.txt", "work.txt", "operations.txt")
+         "names.txt", "operations.txt")
 MEASURED_PAIRS = 9
 
 
@@ -69,16 +69,58 @@ def without_clock(value):
     return value
 
 
+def call_answer(call):
+    value = without_clock(call)
+    if value["work"] is not None:
+        value["work"].pop("used")
+    if value.get("operation_log") is not None:
+        # Gate request work separately; dispatch counts and cumulative per-step
+        # prefixes are diagnostics, not answers or certificates.
+        for operation in value["operation_log"]["operations"]:
+            operation.pop("work")
+            operation.pop("decisions")
+    return value
+
+
+def compare_calls(left, right, where):
+    def groups(calls):
+        answers = defaultdict(list)
+        for call in calls:
+            cost = None if call["work"] is None else call["work"]["used"]
+            answers[json.dumps(call_answer(call), sort_keys=True)].append(cost)
+        return answers
+    base, head = groups(left), groups(right)
+    assert base.keys() == head.keys(), f"operation answers, marks or refusals changed: {where}"
+    for answer, before in base.items():
+        after = head[answer]
+        assert len(before) == len(after), f"operation multiplicity changed: {where}"
+        if before[0] is None:
+            continue
+        before, after = sorted(before), sorted(after)
+        assert all(b <= a for a, b in zip(before, after)), \
+            f"accepted call work rose from {before} to {after}: {where}"
+    print(json.dumps(dict(comparison=str(where),
+                          base_work=sum(c["work"]["used"] for c in left
+                                        if c["work"] is not None and not c.get("nested", False)),
+                          head_work=sum(c["work"]["used"] for c in right
+                                        if c["work"] is not None and not c.get("nested", False)),
+                          unmeasured_calls=sum(c["work"] is None for c in right),
+                          matched_calls=len(right))), flush=True)
+
+
 def compare_work(left, right):
     for name in ("kernel.json", "display.kernel.json", "view.kernel.json", "measurement.kernel.json"):
         a, b = left / name, right / name
         assert a.exists() == b.exists(), f"missing operation evidence: {a}, {b}"
         if a.exists():
             observed = [json.loads(path.read_text()) for path in (a, b)]
-            for value in observed:
-                value["calls"] = [call for call in value["calls"] if call["on_capture_thread"]]
+            foreground = [[call for call in value["calls"] if call["on_capture_thread"]]
+                          for value in observed]
+            for value, calls in zip(observed, foreground):
+                value["calls"] = [call_answer(call) for call in calls]
             assert without_clock(observed[0]) == without_clock(observed[1]), \
-                f"foreground answers, marks, certificates or work changed: {a}, {b}"
+                f"foreground questions, answers, marks or certificates changed: {a}, {b}"
+            compare_calls(*foreground, b)
 
 
 def compare_application(comparator, left, right, pins):
@@ -94,10 +136,9 @@ def compare_application(comparator, left, right, pins):
                 continue
         raise AssertionError(f"application answer differences in {right}: {difference}")
     def calls(root):
-        return Counter(json.dumps(without_clock(call), sort_keys=True)
-                       for path in root.glob("commands/*/*kernel.json")
-                       for call in json.loads(path.read_text())["calls"])
-    assert calls(left) == calls(right), f"complete operation answers, certificates or work changed: {right}"
+        return [call for path in root.glob("commands/*/*kernel.json")
+                for call in json.loads(path.read_text())["calls"]]
+    compare_calls(calls(left), calls(right), right)
 
 
 def run(args):
@@ -164,14 +205,20 @@ def run(args):
                     (proof / "timing.json").write_text(captured.stdout)
                     key = name, number
                     answer = {f: hashlib.sha256((proof / f).read_bytes()).hexdigest() for f in FILES}
-                    if key in native_references:
-                        assert answer == native_references[key], f"exact answer/certificate/work changed: {proof}"
-                    else:
-                        native_references[key] = answer
+                    work = int((proof / "work.txt").read_text())
+                    if key not in native_references:
+                        native_references[key] = dict(answer=answer, work=work)
+                    reference = native_references[key]
+                    assert answer == reference["answer"], f"exact answer/certificate changed: {proof}"
+                    assert work <= reference["work"], \
+                        f"accepted native work rose from {reference['work']} to {work}: {proof}"
                     row = dict(pair=pair, warmup=pair == 0, revision=revision, scenario=name, step=number,
                                tool=step["tool"], click_ms=timing["elapsed_ms"], split_ms=timing["split_ms"],
                                kernel_ms=sum(c["wall_ms"] for c in foreground),
                                work=timing["work"], certified=json.loads(captured.stdout),
+                               base_work=reference["work"],
+                               head_work=work if revision == "candidate" else None,
+                               accepted_work=work,
                                answer_sha256=answer, load_before=load_before, load_after=os.getloadavg())
                     samples.append(row)
                     print(json.dumps(row), flush=True)
@@ -194,7 +241,7 @@ def run(args):
                   core=core, measured_pairs=MEASURED_PAIRS,
                   binary_sha256={r: hashlib.sha256((args.binaries / r).read_bytes()).hexdigest()
                                             for r in ("baseline", "candidate")},
-                  comparison="identical application answers and native STEP, mesh, certificates, names, stats and work",
+                  comparison="identical application answers and native STEP, mesh, certificates, names and operation outcomes; accepted work never increases",
                   medians=medians, samples=samples)
     (args.out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

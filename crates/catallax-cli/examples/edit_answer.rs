@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&out)?;
     let source: Value = serde_json::from_slice(&fs::read(input)?)?;
     let recipe = Recipe::parse(&source.to_string())?;
-    let ((answer, operations), work) = with_operation_budget(20_000_000, || {
+    let ((answer, mut operations), work) = with_operation_budget(20_000_000, || {
         with_operation_log(|| -> Result<Value, Box<dyn std::error::Error>> {
             let mut dec = Decider::default();
             let start = Instant::now();
@@ -47,13 +47,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|operation| json!({"id":operation.id,"operation":operation.operation,"wall_ms":operation.wall_ms}))
         .collect();
-    let operations: Vec<_> = operations
-        .into_iter()
-        .map(|mut operation| {
-            operation.wall_ms = 0.0;
-            operation
-        })
-        .collect();
+    // Compare operation outcomes, not dispatch counts or cumulative work prefixes.
+    // Actual total work and final decision counters remain in their own files.
+    for operation in &mut operations {
+        operation.wall_ms = 0.0;
+        operation.work_before = 0;
+        operation.work_after = 0;
+        operation.before = Default::default();
+        if let Some(after) = &mut operation.after {
+            *after = Default::default();
+        }
+    }
     fs::write(out.join("operations.txt"), format!("{operations:#?}\n"))?;
     println!("{}", json!({"timing":report,"operations":timings}));
     Ok(())

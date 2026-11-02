@@ -1,9 +1,11 @@
-//! Volume, area and centroid of a blend with rolling-envelope faces.
+//! Volume, area and centroid of a blend with rolling-envelope or rolling-saddle
+//! faces.
 //!
 //! The engine has no chart for a fitted carrier or for a cylinder trimmed by its
 //! rail. The blend changes its unfilleted base only inside one ring about the
 //! cylinder axis, so each property is the base's plus what the ring adds: the
 //! exact section over the ring's untouched angle and one exact sector per mouth.
+//! A saddle's change is one set of integrals round its ring, in `crate::saddle`.
 //!
 //! Volume and centroid enclose both the exact definition and the fitted carrier.
 //! A homotopy from envelope to carrier moves each point at most U and keeps the
@@ -17,8 +19,10 @@
 //! because a position bound says nothing about the carrier's area.
 
 use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal};
-use catallax_shapes::{ContactMoments, Curve, RollingEnvelope, SplineSupport, Surface, Vector3};
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model};
+use catallax_shapes::{
+    ContactMoments, Curve, RollingEnvelope, RollingSaddle, SplineSupport, Surface, Vector3,
+};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, saddle_added};
 
 use crate::{Accuracy, Enclosure, VolumeAreaCentroid, engine, product, surface};
 
@@ -36,6 +40,8 @@ pub(crate) enum Scope {
 pub(crate) struct Junction<'a> {
     base: BodyId,
     envelopes: Vec<&'a RollingEnvelope>,
+    // Each with whether its pocket adds material.
+    saddles: Vec<(&'a RollingSaddle, bool)>,
 }
 
 // What the ring adds, in world coordinates.
@@ -89,7 +95,9 @@ fn fitted_rail(model: &Model, edge: EdgeId) -> bool {
         model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
             matches!(
                 model.geom().surface(model.face(face).surface),
-                Surface::BSpline(SplineSupport::RollingEnvelope(_))
+                Surface::BSpline(
+                    SplineSupport::RollingEnvelope(_) | SplineSupport::RollingSaddle(_)
+                )
             )
         })
     })
@@ -132,7 +140,15 @@ pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Re
             },
         )
         .collect();
-    if envelopes.is_empty() {
+    let mut saddles = Vec::new();
+    for face in model.faces_of_body(body) {
+        if let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
+            model.geom().surface(model.face(face).surface)
+        {
+            saddles.push((saddle, saddle_added(model, face)?));
+        }
+    }
+    if envelopes.is_empty() && saddles.is_empty() {
         return Ok(None);
     }
     let base = model
@@ -141,11 +157,47 @@ pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Re
     if model.blend_base(base).is_some() {
         return Err(refused("a fitted blend's base is itself a fitted blend"));
     }
-    Ok(Some(Junction { base, envelopes }))
+    Ok(Some(Junction {
+        base,
+        envelopes,
+        saddles,
+    }))
 }
 
 impl Junction<'_> {
-    fn ring(&self, width: &Rational, dec: &mut Decider) -> Result<Ring, Refusal> {
+    fn ring(&self, width: &Rational, moments: bool, dec: &mut Decider) -> Result<Ring, Refusal> {
+        let mut ring = if self.envelopes.is_empty() {
+            Ring {
+                volume: zero_ball(),
+                area: zero_ball(),
+                moment: std::array::from_fn(|_| zero_ball()),
+                tube: Rational::zero(),
+                moment_slack: std::array::from_fn(|_| Rational::zero()),
+            }
+        } else {
+            self.envelope_ring(width, dec)?
+        };
+        for (saddle, added) in &self.saddles {
+            let change = crate::saddle::change(saddle, width, moments, dec)?;
+            let sign = exact(&Rational::from_i64(if *added { 1 } else { -1 }));
+            ring.volume = &ring.volume + &(&change.pocket * &sign);
+            ring.area = &ring.area + &change.area;
+            let tube = saddle_tube(saddle, &change, dec)?;
+            let bound = saddle.bound().upper.clone();
+            if let Some(moment) = &change.moment {
+                for (i, part) in moment.iter().enumerate() {
+                    ring.moment[i] = &ring.moment[i] + &(part * &sign);
+                    let [[low, _], [_, high]] = saddle.range(i, &bound, dec)?;
+                    let far = low.abs().max(high.abs()) + bound.clone();
+                    ring.moment_slack[i] = &ring.moment_slack[i] + &(far * tube.clone());
+                }
+            }
+            ring.tube = ring.tube + tube;
+        }
+        Ok(ring)
+    }
+
+    fn envelope_ring(&self, width: &Rational, dec: &mut Decider) -> Result<Ring, Refusal> {
         let first = self.envelopes[0].definition();
         let section = first.section(dec)?;
         let pi = Ball::pi_checked(BITS, dec)?;
@@ -225,8 +277,8 @@ impl Junction<'_> {
         dec: &mut Decider,
     ) -> Answered<Enclosure> {
         let base = crate::scalar(model, self.base, accuracy, property, traces, dec)?;
-        let width = sector_width(&self.envelopes, &base.value, accuracy, Scope::Represented);
-        let ring = self.ring(&width, dec)?;
+        let width = self.sector_width(&base.value, accuracy, Scope::Represented);
+        let ring = self.ring(&width, false, dec)?;
         let value = if property == surface::Property::Area {
             add(&base.value, &ring.area, &Rational::zero())
         } else {
@@ -254,8 +306,8 @@ impl Junction<'_> {
         dec: &mut Decider,
     ) -> Answered<VolumeAreaCentroid> {
         let base = crate::base_properties(model, self.base, accuracy, traces, dec)?;
-        let width = sector_width(&self.envelopes, &base.value.volume, accuracy, scope);
-        let mut ring = self.ring(&width, dec)?;
+        let width = self.sector_width(&base.value.volume, accuracy, scope);
+        let mut ring = self.ring(&width, true, dec)?;
         if scope == Scope::Definition {
             ring.tube = Rational::zero();
             ring.moment_slack = std::array::from_fn(|_| Rational::zero());
@@ -305,26 +357,26 @@ fn add(base: &Enclosure, ring: &Ball, slack: &Rational) -> Enclosure {
     }
 }
 
-// A sector shares the requested width with its neighbours. A represented answer
-// needs no more than the carrier's own displacement allows.
-fn sector_width(
-    envelopes: &[&RollingEnvelope],
-    magnitude: &Enclosure,
-    accuracy: &Accuracy,
-    scope: Scope,
-) -> Rational {
-    let least = Rational::from_ratio(1, 1 << 40).expect("nonzero");
-    let requested = (&accuracy.relative * &magnitude.lo.abs())
-        .max(accuracy.absolute.clone())
-        .mul_pow2(-6);
-    let width = if scope == Scope::Definition {
-        requested
-    } else {
-        envelopes.iter().fold(requested, |worst, envelope| {
-            worst.max(envelope.bound().upper.clone())
-        })
-    };
-    width.max(least)
+impl Junction<'_> {
+    // A sector shares the requested width with its neighbours. A represented
+    // answer needs no more than the carrier's own displacement allows.
+    fn sector_width(&self, magnitude: &Enclosure, accuracy: &Accuracy, scope: Scope) -> Rational {
+        let least = Rational::from_ratio(1, 1 << 40).expect("nonzero");
+        let requested = (&accuracy.relative * &magnitude.lo.abs())
+            .max(accuracy.absolute.clone())
+            .mul_pow2(-6);
+        let width = if scope == Scope::Definition {
+            requested
+        } else {
+            let bounds = self
+                .envelopes
+                .iter()
+                .map(|envelope| envelope.bound())
+                .chain(self.saddles.iter().map(|(saddle, _)| saddle.bound()));
+            bounds.fold(requested, |worst, bound| worst.max(bound.upper.clone()))
+        };
+        width.max(least)
+    }
 }
 
 // The tube bound of the module note. The boundary length P is at most
@@ -352,4 +404,23 @@ fn transfer(
         .mul_pow2(1)
         * (Rational::one() + &upper / &radius.lo());
     Ok(normal + pi * (&upper * &upper) * length)
+}
+
+// The same bound for a saddle, whose rails are all its boundary.
+fn saddle_tube(
+    saddle: &RollingSaddle,
+    change: &crate::saddle::Change,
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
+    let upper = saddle.bound().upper.clone();
+    let radius = dec.enclose_at(saddle.definition().radius(), BITS)?;
+    if upper.mul_pow2(8) > radius.lo() {
+        return Err(refused(
+            "a carrier's bound is too wide for the tube transfer",
+        ));
+    }
+    let pi = Ball::pi_checked(BITS, dec)?.hi();
+    let normal = (&upper * &(&change.band.hi() + &(&upper * &change.turning.hi()))).mul_pow2(1)
+        * (Rational::one() + &upper / &radius.lo());
+    Ok(normal + pi * (&upper * &upper) * change.length.hi())
 }

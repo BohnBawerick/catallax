@@ -54,6 +54,7 @@ mod pair;
 mod pipe;
 mod planar;
 mod ring;
+mod saddle;
 mod surface;
 mod torus;
 

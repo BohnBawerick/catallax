@@ -16,7 +16,6 @@
 //! cells, and it is built once per tolerance with no subdivision.
 
 use super::*;
-use crate::rational_sheet::along;
 
 // Cuts of each span across the ring before differencing, so that one patch does
 // not hold the whole turn of a section.

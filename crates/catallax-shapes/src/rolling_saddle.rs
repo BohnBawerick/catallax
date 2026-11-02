@@ -30,7 +30,7 @@
 //! on `[1, 3]` the same half turn repeats from the opposite side, so the rail's
 //! denominator is two at every chart end and the closed carrier's weights close.
 
-use crate::rational_sheet::{LocalFrame, Patch, cover, split_net};
+use crate::rational_sheet::{LocalFrame, Patch, along, cover, split_net};
 use crate::rolling_envelope::{Jet, combine, cubic, elevate, hermite, product};
 use crate::{
     BSplineCurve, BSplineSurface, Cylinder, EnvelopeGrid, Isometry, Plane, Point3, Pose,
@@ -64,6 +64,9 @@ const HALF: usize = 2;
 const TANGENT: usize = 3;
 const AXIAL: usize = 4;
 const WEIGHT: usize = 5;
+
+// Halvings of the open patches before a range gives up.
+const MAX_RANGE_SPLITS: usize = 40;
 
 fn invalid(detail: impl Into<String>) -> Refusal {
     Refusal::new("shapes.rolling-saddle", detail)
@@ -105,6 +108,37 @@ impl BallSide {
             Self::Inside => -1,
         }
     }
+}
+
+/// The numbers of a [`RollingSaddleDefinition`], for code that integrates over the
+/// law. `across`, `along` and `axis` are the frame of the module note, and may be
+/// left-handed on a mirrored copy.
+#[derive(Clone, Debug)]
+pub struct SaddleLaw {
+    /// The narrow axis's closest point to the wide axis.
+    pub foot: Point3,
+    /// Unit, from the wide axis to the narrow axis.
+    pub across: Vector3,
+    /// Unit, the narrow axis's part square to the wide axis.
+    pub along: Vector3,
+    /// The unit wide axis.
+    pub axis: Vector3,
+    /// The wide cylinder's radius.
+    pub wide: Real,
+    /// The narrow cylinder's radius.
+    pub narrow: Real,
+    /// The ball's radius.
+    pub radius: Real,
+    /// The signed distance between the axes, along `across`.
+    pub gap: Real,
+    /// Cosine of the angle between the axes.
+    pub cosine: Real,
+    /// Sine of the angle between the axes, positive.
+    pub sine: Real,
+    /// The ball's side of the wide and narrow cylinders: 1 outside, -1 inside.
+    pub sides: [i64; 2],
+    /// The sign of the ring's `along` coordinate.
+    pub branch: i64,
 }
 
 /// The exact law of a ball of radius `radius` resting on two nonparallel
@@ -264,6 +298,24 @@ impl RollingSaddleDefinition {
     /// The ball radius.
     pub fn radius(&self) -> &Real {
         &self.radius
+    }
+
+    /// The law's numbers.
+    pub fn law(&self) -> SaddleLaw {
+        SaddleLaw {
+            foot: self.foot.clone(),
+            across: self.across.clone(),
+            along: self.along.clone(),
+            axis: self.axis.clone(),
+            wide: self.wide.clone(),
+            narrow: self.narrow.clone(),
+            radius: self.radius.clone(),
+            gap: self.gap.clone(),
+            cosine: self.cosine.clone(),
+            sine: self.sine.clone(),
+            sides: self.sides,
+            branch: self.branch,
+        }
     }
 
     fn offset(&self, which: usize) -> Real {
@@ -1208,6 +1260,87 @@ impl RollingSaddle {
             });
         }
         range.ok_or_else(|| unresolved("a saddle has controls"))
+    }
+
+    /// The smallest and largest of a world coordinate on the carrier, each as a
+    /// pair of bounds no more than `width` apart. Positive weights keep each
+    /// patch in its control hull, and its corners are points of the carrier.
+    pub fn range(
+        &self,
+        axis: usize,
+        width: &Rational,
+        dec: &Decider,
+    ) -> Result<[[Rational; 2]; 2], Refusal> {
+        let bits = self.query_bits(dec)?;
+        let frame = self.data.definition.frame(bits, dec)?;
+        let mut answer = Vec::with_capacity(2);
+        for lowest in [true, false] {
+            // Search for the largest of `s * coordinate`, with `s` set by the end.
+            // Each patch gives its hull's top, and the best proved of its corners.
+            let measure = |patch: &Patch| -> Result<(Rational, Rational), Refusal> {
+                let (mut top, mut best) = (None::<Rational>, None::<Rational>);
+                let last = patch.net.len() - 1;
+                for (index, h) in patch.net.iter().enumerate() {
+                    let local = [0, 1, 2].map(|k| h[k].checked_div(&h[3]));
+                    let [Some(x), Some(y), Some(z)] = local else {
+                        return Err(unresolved("subdivided saddle weight is not positive"));
+                    };
+                    let world = frame.world(&[x, y, z]);
+                    let (lo, hi) = if lowest {
+                        (-world[axis].hi(), -world[axis].lo())
+                    } else {
+                        (world[axis].lo(), world[axis].hi())
+                    };
+                    top = Some(top.map_or(hi.clone(), |value| value.max(hi)));
+                    if index == 0 || index == 2 || index == last - 2 || index == last {
+                        best = Some(best.map_or(lo.clone(), |value| value.max(lo)));
+                    }
+                }
+                top.zip(best)
+                    .ok_or_else(|| unresolved("a patch has controls"))
+            };
+            let mut open = Vec::new();
+            let mut floor = None::<Rational>;
+            for patch in self.patches(bits) {
+                let (top, best) = measure(&patch)?;
+                floor = Some(floor.map_or(best.clone(), |value| value.max(best)));
+                open.push((top, patch));
+            }
+            let mut floor = floor.ok_or_else(|| unresolved("a saddle has patches"))?;
+            for _ in 0..MAX_RANGE_SPLITS {
+                dec.check_deadline()?;
+                open.retain(|(top, _)| *top > floor);
+                if open.iter().all(|(top, _)| top - &floor <= *width) {
+                    break;
+                }
+                let mut next = Vec::with_capacity(open.len() * 2);
+                for (top, patch) in std::mem::take(&mut open) {
+                    if &top - &floor <= *width {
+                        next.push((top, patch));
+                        continue;
+                    }
+                    for piece in along(along(vec![patch], 0), 1) {
+                        let (top, best) = measure(&piece)?;
+                        floor = floor.max(best);
+                        next.push((top, piece));
+                    }
+                }
+                open = next;
+            }
+            let top = open
+                .iter()
+                .map(|(top, _)| top)
+                .max()
+                .cloned()
+                .unwrap_or_else(|| floor.clone())
+                .max(floor.clone());
+            if &top - &floor > *width {
+                return Err(unresolved("a saddle's range did not reach its width"));
+            }
+            answer.push(if lowest { [-top, -floor] } else { [floor, top] });
+        }
+        let [low, high]: [[Rational; 2]; 2] = answer.try_into().expect("one answer for each end");
+        Ok([low, high])
     }
 
     /// Grid with `chord` at most `tolerance`, cached per tolerance on the net.

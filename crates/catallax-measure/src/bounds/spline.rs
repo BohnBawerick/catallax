@@ -12,6 +12,21 @@ use std::collections::{BTreeMap, BTreeSet};
 #[cfg(test)]
 mod tests;
 
+/// Whether an edge is a rail of a rolling saddle.
+pub(super) fn saddle_rail(model: &Model, edge: EdgeId) -> bool {
+    matches!(
+        model.geom().curve(model.edge(edge).curve),
+        Curve::BSpline(_)
+    ) && model.coedges_of_edge(edge).into_iter().any(|coedge| {
+        model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
+            matches!(
+                model.geom().surface(model.face(face).surface),
+                Surface::BSpline(SplineSupport::RollingSaddle(_))
+            )
+        })
+    })
+}
+
 pub(super) fn has_spline_boundary(model: &Model, face: FaceId) -> bool {
     // A rolling pipe's rails are exact ellipses, and its extrema come from its law.
     let surface = model.geom().surface(model.face(face).surface);
@@ -26,10 +41,11 @@ pub(super) fn has_spline_boundary(model: &Model, face: FaceId) -> bool {
             .any(|lp| match model.loop_(*lp) {
                 Loop::Vertex(_) => false,
                 Loop::Coedges(cs) => cs.iter().any(|c| {
+                    let edge = model.coedge(*c).edge;
                     matches!(
-                        model.geom().curve(model.edge(model.coedge(*c).edge).curve),
+                        model.geom().curve(model.edge(edge).curve),
                         Curve::BSpline(_)
-                    )
+                    ) && !saddle_rail(model, edge)
                 }),
             })
 }

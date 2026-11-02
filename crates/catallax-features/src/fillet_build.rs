@@ -1311,5 +1311,15 @@ pub(crate) fn build(
     if let Some(trimming) = trimming {
         trimming.finish(dec, None, None);
     }
+    // Measurement reads rings as the body they rounded plus their exact change,
+    // which holds only when nothing else changed it in this step.
+    if runs.iter().all(|run| {
+        matches!(
+            run.definition.surface,
+            Surface::BSpline(SplineSupport::RollingSaddle(_))
+        )
+    }) {
+        model.record_blend_base(result, body);
+    }
     Ok((result, runs.into_iter().map(|run| run.definition).collect()))
 }

@@ -1,0 +1,17 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Open L-shaped tray",
+  "steps": [
+    {"id":"profile","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
+      {"kind":"line","id":"bottom","to":["8","0"]},
+      {"kind":"line","id":"right","to":["8","3"]},
+      {"kind":"line","id":"notch-bottom","to":["3","3"]},
+      {"kind":"line","id":"notch-left","to":["3","8"]},
+      {"kind":"line","id":"top","to":["0","8"]},
+      {"kind":"line","id":"left","to":["0","0"]}
+    ]]},
+    {"id":"stock","op":"extrude","profile":"profile","distance":"4"},
+    {"id":"shell","op":"shell","body":"stock","open":[{"face":{"step":"stock","role":"end"}}],"thickness":"1"}
+  ],
+  "result":"shell"
+}

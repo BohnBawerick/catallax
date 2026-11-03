@@ -363,6 +363,27 @@ fn cone_band_misses_surface(
     Ok(false)
 }
 
+pub(crate) fn body_box(
+    model: &mut Model,
+    body: catallax_topology::BodyId,
+    dec: &mut Decider,
+) -> Result<Option<[Ball; 3]>, Refusal> {
+    let mut result: Option<[Ball; 3]> = None;
+    for face in model.faces_of_body(body) {
+        let Some(bounds) = face_box(model, face, true, dec)? else {
+            return Ok(None);
+        };
+        if let Some(result) = &mut result {
+            for axis in 0..3 {
+                result[axis] = result[axis].hull(&bounds[axis]);
+            }
+        } else {
+            result = Some(bounds);
+        }
+    }
+    Ok(result)
+}
+
 pub(crate) struct FaceBounds {
     algebraic: bool,
     boxes: BTreeMap<FaceId, Option<[Ball; 3]>>,
@@ -394,6 +415,29 @@ impl FaceBounds {
             return false;
         };
         (0..3).any(|i| a[i].hi() < b[i].lo() || b[i].hi() < a[i].lo())
+    }
+    pub(crate) fn excludes_clipped(
+        &mut self,
+        model: &mut Model,
+        a: FaceId,
+        b: FaceId,
+        clip: &[Ball; 3],
+        dec: &mut Decider,
+    ) -> bool {
+        if self.excludes(model, a, b, dec) {
+            return true;
+        }
+        (0..3).any(|axis| {
+            let mut lo = clip[axis].lo();
+            let mut hi = clip[axis].hi();
+            for face in [a, b] {
+                if let Some(bounds) = &self.boxes[&face] {
+                    lo = lo.max(bounds[axis].lo());
+                    hi = hi.min(bounds[axis].hi());
+                }
+            }
+            lo > hi
+        })
     }
 
     pub(crate) fn excludes(

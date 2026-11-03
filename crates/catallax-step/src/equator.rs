@@ -10,7 +10,7 @@ use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Real, Refusal, Sign}
 use catallax_shapes::{Circle, Curve, GeomKey, Surface, Torus};
 use catallax_topology::{BodyId, Coedge, Edge, Face, FaceId, Loop, Model, Sense, Shell};
 
-use crate::{band, number, trim};
+use crate::{band, trim};
 
 pub(crate) struct Split {
     pub model: Model,
@@ -25,35 +25,10 @@ pub(crate) struct Split {
 // it across the outer equator to its other ring, or `None`. A band ending on
 // the equator, or meeting it nowhere, keeps its face.
 fn across(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Option<usize>, Refusal> {
-    let definition = model.face(face);
-    let Surface::Torus(torus) = model.geom().surface(definition.surface) else {
+    let Some((_, rings, low)) = band::tube_rings(model, face, dec)? else {
         return Ok(None);
     };
-    let Some((edges, None)) = band::band_loops(model, face) else {
-        return Ok(None);
-    };
-    let axis = number::unit(&torus.axis);
-    let mut rings = Vec::with_capacity(2);
-    for edge in edges {
-        let Some(ring) = band::tube_ring(model, torus, &axis, edge, dec)? else {
-            return Ok(None);
-        };
-        rings.push(ring);
-    }
-    let mut low = None;
-    for (index, ring) in rings.iter().enumerate() {
-        let along = model.edge(ring.edge).sense == Sense::Same;
-        let uses = band::ring_use(model, face, ring.edge)?;
-        if (ring.increasing == (along == uses)) == (definition.sense == Sense::Same)
-            && low.replace(index).is_some()
-        {
-            return Ok(None);
-        }
-    }
-    let Some(low) = low else {
-        return Ok(None);
-    };
-    let [first, second] = [&rings[low], &rings[1 - low]].map(|ring| ring.tube.as_ref().unwrap());
+    let [first, second] = [&rings[0], &rings[1]].map(|ring| ring.tube.as_ref().unwrap());
     // The high ring on the equator itself ends the band there.
     if trim::sign(&second.height, dec)? == Sign::Zero
         && trim::sign(&second.across, dec)? == Sign::Positive

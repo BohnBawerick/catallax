@@ -18,8 +18,8 @@
 //! keeps its side of the line through the circles' centres, or its side along
 //! the offset line. The crossing that starts at `e` is therefore the one on
 //! `e`'s side at radius `r`: the radius homotopy never changes branch. Where a
-//! condition fails the offsets stop crossing, and no ball of that radius rests
-//! on both supports.
+//! condition fails the offsets stop crossing, and that branch has no ball of
+//! the radius.
 //!
 //! A torus's tube angle starts on its outer equator and turns toward its axis.
 //! The axis is chosen so that a band ending on that equator lies on the axis
@@ -304,8 +304,10 @@ fn conditions(profiles: &[Profile; 2], signs: &[Real; 2]) -> Vec<Affine> {
     }
 }
 
-// Where two offsets cross on the side of `e`, the crossing of the unmoved
-// profiles. The quarter turn `across` is the same for both.
+// Where two offsets cross on the branch through `e`. Offsetting keeps each
+// line's normal and each circle's centre, so the side of the line through the
+// centres, or along the offset line, on which the unmoved profiles cross at
+// `e` picks the same crossing at every radius.
 fn crossing(offsets: &[Profile; 2], e: &Pair, dec: &mut Decider) -> Result<Pair, Refusal> {
     let tangent = || unsupported("the supports are tangent along the edge");
     let pick = |base: &Pair, across: &Pair, dec: &mut Decider| -> Result<Real, Refusal> {
@@ -454,7 +456,9 @@ impl RollingTorus {
         }
         let [p, q] = feet.each_ref().map(|foot| minus(foot, &centre));
         if zero(&cross(&p, &q), dec)? {
-            return Err(unsupported("the contacts are opposite on the ball"));
+            return Err(unsupported(
+                "the ball has no shorter arc between its contacts",
+            ));
         }
         let inward = [Real::from_i64(-1), Real::zero()];
         let ring = positive(&(&centre[0] - radius), dec)?;

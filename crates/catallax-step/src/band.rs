@@ -312,7 +312,7 @@ pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
 }
 
 // Two complete rings, or for a cone one complete ring and a vertex loop.
-pub(crate) fn band_loops(model: &Model, face: FaceId) -> Option<(Vec<EdgeId>, Option<VertexId>)> {
+fn band_loops(model: &Model, face: FaceId) -> Option<(Vec<EdgeId>, Option<VertexId>)> {
     let definition = model.face(face);
     let [a, b] = definition.loops.as_slice() else {
         return None;
@@ -535,16 +535,14 @@ pub(crate) fn torus_band(
     }))
 }
 
-// The band of a torus between two parallels at any tube angles, beside a
-// cone. The band runs up the tube from its low ring, so the low ring runs with
-// the chart's u read on the face's side; the other ring is a turn higher
-// when its angle is below the low ring's, as on a band across the outer
-// equator.
-fn tube_band(
+/// The two coaxial parallels bounding a torus band face, low ring first, and
+/// the low ring's loop index. The band runs up the tube from its low ring, so
+/// that ring runs with the chart's u read on the face's side.
+pub(crate) fn tube_rings(
     model: &Model,
     face: FaceId,
     dec: &mut Decider,
-) -> Result<Option<SourceBand>, Refusal> {
+) -> Result<Option<(Vector3, Vec<SourceRing>, usize)>, Refusal> {
     let definition = model.face(face);
     let Surface::Torus(torus) = model.geom().surface(definition.surface) else {
         return Ok(None);
@@ -564,10 +562,10 @@ fn tube_band(
     for (index, ring) in rings.iter().enumerate() {
         let along = model.edge(ring.edge).sense == Sense::Same;
         let uses = ring_use(model, face, ring.edge)?;
-        if (ring.increasing == (along == uses)) == (definition.sense == Sense::Same) {
-            if low.replace(index).is_some() {
-                return Ok(None);
-            }
+        if (ring.increasing == (along == uses)) == (definition.sense == Sense::Same)
+            && low.replace(index).is_some()
+        {
+            return Ok(None);
         }
     }
     let Some(low) = low else {
@@ -576,11 +574,29 @@ fn tube_band(
     if low == 1 {
         rings.swap(0, 1);
     }
+    Ok(Some((axis, rings, low)))
+}
+
+// The band of a torus between two parallels at any tube angles, beside a
+// cone. Its high ring is a turn higher when its angle is below the low
+// ring's, as on a band across the outer equator.
+fn tube_band(
+    model: &Model,
+    face: FaceId,
+    dec: &mut Decider,
+) -> Result<Option<SourceBand>, Refusal> {
+    let Some((axis, mut rings, _)) = tube_rings(model, face, dec)? else {
+        return Ok(None);
+    };
     let [first, second] = [&rings[0], &rings[1]].map(|ring| ring.tube.as_ref().unwrap());
     let Some(below) = tube_below(second, first, dec)? else {
         return Ok(None);
     };
     rings[1].tube.as_mut().unwrap().wraps = below;
+    let definition = model.face(face);
+    let Surface::Torus(torus) = model.geom().surface(definition.surface) else {
+        unreachable!("tube rings bound a torus face")
+    };
     Ok(Some(SourceBand {
         face,
         surface: definition.surface,
@@ -657,7 +673,7 @@ pub(crate) fn torus_ring(
 
 // A coaxial torus parallel at any tube angle, or `None`. Only bands beside a
 // cone come here: other torus bands keep their charted bytes.
-pub(crate) fn tube_ring(
+fn tube_ring(
     model: &Model,
     torus: &Torus,
     axis: &Vector3,

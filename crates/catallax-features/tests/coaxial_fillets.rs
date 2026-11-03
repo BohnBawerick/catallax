@@ -14,7 +14,7 @@ use catallax_features::{
     fillet::{RADIUS_TOO_LARGE, radius_limit},
 };
 use catallax_field::Plan;
-use catallax_measure::{Accuracy, volume};
+use catallax_measure::{Accuracy, face_area, mass_properties, volume};
 use catallax_mesh::{Mesh, MeshOptions, mesh_body};
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, Refusal, with_operation_log};
 use catallax_recipe::{Recipe, Role};
@@ -221,6 +221,19 @@ impl Ball {
             + moment(arc, a, b)
             + moment(self.profiles[1], b, self.edge);
         2.0 * PI * total.abs()
+    }
+    /// The area the shorter arc between the feet sweeps about the axis.
+    fn band_area(&self) -> f64 {
+        let [a, b] = [self.foot(0), self.foot(1)];
+        let c = self.centre;
+        let start = (a[1] - c[1]).atan2(a[0] - c[0]);
+        let turn = ((b[1] - c[1]).atan2(b[0] - c[0]) - start + PI).rem_euclid(2.0 * PI) - PI;
+        let (low, high) = if turn > 0.0 {
+            (start, start + turn)
+        } else {
+            (start + turn, start)
+        };
+        2.0 * PI * self.radius * (c[0] * (high - low) + self.radius * (high.sin() - low.sin()))
     }
     /// A point inside the ball, and one in the corner between it and the edge.
     fn witnesses(&self) -> [Pair; 2] {
@@ -665,6 +678,33 @@ fn each_round_changes_the_volume_by_its_turned_section() {
             "{}: [{lo}, {hi}] does not hold {want}",
             case.name
         );
+        // Each band's area, and the body's centroid on its axis.
+        for (strip, definition) in case.strips.iter().zip(&built.fillets) {
+            let face = built
+                .model
+                .faces_of_body(built.result)
+                .into_iter()
+                .find(|f| built.model.face_origins(*f).contains(&definition.origin))
+                .unwrap();
+            let area = face_area(&built.model, face, &fine(), &mut decider()).unwrap();
+            assert!(area.marks.is_empty(), "{}", case.name);
+            let mid = ((&area.value.lo + &area.value.hi) * q("1/2")).to_f64_nearest();
+            let want = strip.ball.band_area();
+            assert!(
+                (mid - want).abs() < 1e-6,
+                "{}: area {mid} against {want}",
+                case.name
+            );
+        }
+        let properties = mass_properties(&built.model, built.result, &fine(), &mut decider())
+            .unwrap()
+            .value;
+        let centre = properties.centroid.unwrap();
+        let off_axis = if case.about_y { [0, 2] } else { [0, 1] };
+        for axis in off_axis {
+            let mid = ((&centre[axis].lo + &centre[axis].hi) * q("1/2")).to_f64_nearest();
+            assert!(mid.abs() < 1e-9, "{}: centroid {axis} at {mid}", case.name);
+        }
     }
 }
 

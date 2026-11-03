@@ -447,18 +447,18 @@ fn refusal(recipe: &Recipe) -> String {
 
 #[test]
 fn unsupported_cases_stay_typed_refusals() {
-    // The offset circles of radius 3 touch at the origin; beyond that they miss.
-    for radius in ["2", "3"] {
-        assert_eq!(
-            refusal(&rounded(pair("intersect"), radius, json!([walls()]))),
-            "fillet.unsupported-contact"
-        );
-    }
-    // A radius that passes a wall's axis has no regular contact.
+    // The offset circles of radius 3 touch at the origin; beyond that they
+    // miss, and a radius that passes a wall's axis has no contact either.
     assert_eq!(
-        refusal(&rounded(pair("intersect"), "6", json!([walls()]))),
+        refusal(&rounded(pair("intersect"), "2", json!([walls()]))),
         "fillet.unsupported-contact"
     );
+    for radius in ["3", "6"] {
+        assert_eq!(
+            refusal(&rounded(pair("intersect"), radius, json!([walls()]))),
+            "fillet.radius-too-large"
+        );
+    }
     // A shorter cylinder ends the strip, but the longer one's caps meet the
     // carrier beyond it. Bounded strip clearance is not proved yet.
     let shorter = joined(
@@ -680,12 +680,15 @@ fn a_flat_stays_exact_in_step() {
 
 #[test]
 fn flat_refusals_stay_typed() {
-    // The offset line and circle touch at r = 4, and the offset reaches the axis
-    // at r = 5.
-    for radius in ["4", "5", "6"] {
+    // The offset line and circle touch at r = 4, and miss beyond it.
+    assert_eq!(
+        refusal(&rounded(d_shaft(), "4", json!([flat()]))),
+        "fillet.unsupported-contact"
+    );
+    for radius in ["5", "6"] {
         assert_eq!(
             refusal(&rounded(d_shaft(), radius, json!([flat()]))),
-            "fillet.unsupported-contact"
+            "fillet.radius-too-large"
         );
     }
     // A plane that is not parallel to the axis meets the wall in an ellipse.

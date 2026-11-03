@@ -1,6 +1,6 @@
 //! Elementary rolling-ball strips, retained with their source supports and edge.
 
-use catallax_numbers::{Decider, OperationSpan, Real, Refusal, Sign};
+use catallax_numbers::{Decider, OperationSpan, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Origin, StepId};
 use catallax_shapes::{
     BallSide, Circle, Curve, Cylinder, Ellipse, Isometry, Line, Plane, Point3, RollingPipe,
@@ -34,6 +34,54 @@ pub struct FilletDefinition {
     pub surface: Surface,
     /// Contact curves, each paired with the corresponding input support.
     pub contacts: [Curve; 2],
+}
+
+/// The refusal code for a radius proved too large for its edge: no ball of
+/// that radius rolls along the edge against both faces, or the ball's contact
+/// with one face lies wholly outside it. Other refusals make no such claim.
+pub const RADIUS_TOO_LARGE: &str = "fillet.radius-too-large";
+
+// Marks the bound in a radius refusal's detail.
+const LIMIT_PREFIX: &str = "; radius limit ";
+const LIMIT_SUFFIX: &str = " mm";
+
+/// The bound a [`RADIUS_TOO_LARGE`] refusal carries, in millimetres, when it
+/// has one. The refusal proves every radius above an exact bound too large for
+/// the same edge; this is that bound rounded down to three decimal places. A
+/// radius below it is not proved to fit. `None` for other refusals and when
+/// the refusal has no bound.
+pub fn radius_limit(refusal: &Refusal) -> Option<Rational> {
+    if refusal.code != RADIUS_TOO_LARGE {
+        return None;
+    }
+    let (_, tail) = refusal.detail.rsplit_once(LIMIT_PREFIX)?;
+    Rational::parse(tail.strip_suffix(LIMIT_SUFFIX)?).ok()
+}
+
+/// A [`RADIUS_TOO_LARGE`] refusal. A limit is shown rounded down to three
+/// decimal places, and dropped when that leaves nothing positive.
+pub(crate) fn too_large(reason: &str, limit: Option<&Real>, dec: &mut Decider) -> Refusal {
+    let shown = limit.and_then(|limit| {
+        let low = match limit.as_rational() {
+            Some(exact) => exact,
+            None => dec
+                .enclose(limit, &Rational::from_ratio(1, 1_000_000)?)
+                .ok()?
+                .lo(),
+        };
+        let thousandths = Rational::from_integer((&low * &Rational::from_i64(1000)).floor());
+        let shown = &thousandths / &Rational::from_i64(1000);
+        (shown.sign() == Sign::Positive)
+            .then(|| shown.to_decimal_exact())
+            .flatten()
+    });
+    Refusal::new(
+        RADIUS_TOO_LARGE,
+        match shown {
+            Some(shown) => format!("{reason}{LIMIT_PREFIX}{shown}{LIMIT_SUFFIX}"),
+            None => reason.to_string(),
+        },
+    )
 }
 
 fn bad(detail: &str) -> Refusal {

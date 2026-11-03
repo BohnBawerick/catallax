@@ -216,6 +216,18 @@ impl Error {
             Self::Allocation(refusal) => refusal.code,
         }
     }
+
+    /// For a `fillet.radius-too-large` refusal, the radius in millimetres
+    /// below which the edge may take a fillet, when the build proved one. See
+    /// [`catallax_features::fillet::radius_limit`]. `None` otherwise.
+    pub fn fillet_radius_limit(&self) -> Option<catallax_numbers::Rational> {
+        match self {
+            Self::Build(BuildError::Geometry { refusal, .. }) => {
+                catallax_features::fillet::radius_limit(refusal)
+            }
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for Error {

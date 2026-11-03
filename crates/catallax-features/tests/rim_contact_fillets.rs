@@ -351,9 +351,10 @@ fn a_ball_that_would_roll_onto_the_countersink_cone_refuses() {
 
 #[test]
 fn uncovered_contact_strata_keep_their_typed_refusal() {
-    // Each case is a separate coverage gap, not impossible geometry: the moved
-    // contact-change radius, and tubes too short to carry the cylinder rail, with
-    // a touched mouth, a mouth on the rail, and none.
+    // The moved contact-change radius is a coverage gap. Tubes too short to
+    // carry the cylinder rail, with a touched mouth, a mouth on the rail, and
+    // none, are proved too large: the wall above the flange is lower than the
+    // radius.
     let shortened = |mut recipe: Value, top: &str| {
         for segment in step(&mut recipe, "section")["loops"][0]
             .as_array_mut()
@@ -370,15 +371,15 @@ fn uncovered_contact_strata_keep_their_typed_refusal() {
         (RZ.recipe(T, "7/2"), "shapes.rolling-envelope"),
         (
             shortened(RZ.recipe(T, "2"), "6"),
-            "fillet.unsupported-overflow",
+            "\"fillet.radius-too-large\", detail: \"the ball of this radius cannot touch one face of the edge; radius limit 1 mm\"",
         ),
         (
             shortened(with_radius("1"), "11/2"),
-            "fillet.unsupported-overflow",
+            "\"fillet.radius-too-large\", detail: \"the ball of this radius cannot touch one face of the edge; radius limit 0.5 mm\"",
         ),
         (
             shortened(with_radius("999/1000"), "11/2"),
-            "fillet.unsupported-overflow",
+            "\"fillet.radius-too-large\", detail: \"the ball of this radius cannot touch one face of the edge; radius limit 0.5 mm\"",
         ),
     ] {
         let (refusal, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {

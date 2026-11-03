@@ -99,6 +99,31 @@ fn inward_offset_builds_one_valid_solid_with_complete_cap_exceptions_and_shared_
     assert_eq!(counts.faces_by_kind.get(&SurfaceKind::BSpline), Some(&1));
     brackets_target_boundary(certificate, ["27/20", "7/4", "9/5"]);
     brackets_target_boundary(certificate, ["69/20", "7/4", "23/5"]);
+
+    let measured = catallax_field::measurement::measure_elliptic_offset_sweep(
+        certificate.spline().unwrap().carrier(),
+        target.definition(),
+        target.axial(),
+        &catallax_field::measurement::MeasurementOptions {
+            width: r("0.0001"),
+            max_cells: 1,
+            path_segments: 1,
+        },
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(measured.converged);
+    assert!(measured.upper <= r("0.0001"));
+    for region in certificate.record().regions.values() {
+        let exception = region.exception.as_ref().unwrap();
+        assert!(exception.bound.upper >= measured.upper);
+        assert!(exception.bound.upper <= r("0.0001"));
+        assert!(exception.bound.upper <= r("0.001"));
+    }
+    assert!(
+        certificate.record().uniform_bound.as_ref().unwrap().upper >= measured.upper,
+        "whole-body evidence must cover the field's complete side bound"
+    );
 }
 
 #[test]

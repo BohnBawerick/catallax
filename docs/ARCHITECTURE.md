@@ -457,6 +457,25 @@ The [feature regressions](../crates/catallax-features/tests/certified_prism.rs)
 cover the second offset from the original definition, axial planar trim,
 edited origins, empty erosion, nonregular rejection and forged/stale records.
 
+The first-piece policy already lives in
+[`numbers::certificate`](../crates/catallax-numbers/src/certificate.rs).
+`ModellingTolerance` fixes the recorded sameness limit at `1/1_000_000 mm`;
+`EvidenceBook` keeps it beside the local settings and ordered evidence.
+`DecisionBook` reuses a settled branch and rejects conflicting branch or
+evidence imports. Missing geometric authority refuses with
+`numbers.geometric-gap-unproven`; a proved bound outside its applicable limit
+refuses with `numbers.geometric-gap-exceeded`. Neither diagnostic marks nor
+an output accuracy setting changes these limits.
+
+The inward-offset body regression also sends the returned spline and retained
+definition through `field::measurement::measure_elliptic_offset_sweep`.
+It requires the whole-side bound to fit within 100 nm and the published local
+and whole-body records to cover that bound. Each local record must meet the
+100 nm target and 1 µm cap. This complements the numeric boundary tests in
+[`certificates.rs`](../crates/catallax-numbers/tests/certificates.rs) and
+[`local_certificates.rs`](../crates/catallax-numbers/tests/local_certificates.rs);
+it does not extend tolerance-policy enforcement to other feature families.
+
 Shapes and intersection consumers no longer assume every surface or curve has
 a global polynomial: analytic equations remain available, while splines use
 checked finite preimages, tangents, normals, ordering and traces. General

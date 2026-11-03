@@ -1154,3 +1154,67 @@ fn fillets_over_fillets_build_in_any_rational_placement() {
         assert_eq!(names(&turned, "top"), names(&level, "top"));
     }
 }
+
+#[test]
+fn every_edge_leaves_out_an_oblique_bands_rails_by_its_definition() {
+    // A cylinder of radius 5 cut off by a tilted plane, its oblique rim
+    // rounded by an exact rational band, then every edge: the band's rails
+    // are smooth by its retained definition, so only the bottom rim rounds.
+    let tilt = json!(["24/25", "0", "7/25", "0"]);
+    let steps = |every: bool| {
+        let mut steps = vec![
+            json!({"id":"wall","op":"cylinder","radius":"5","height":"16","pose":pose(["0","0","0"])}),
+            json!({"id":"cut-section","op":"sketch",
+                "plane":{"rotation":tilt,"translation":["0","0","8"]},
+                "loops":[[{"kind":"line","id":"s","to":["30","-30"]},
+                    {"kind":"line","id":"e","to":["30","30"]},
+                    {"kind":"line","id":"n","to":["-30","30"]},
+                    {"kind":"line","id":"w","to":["-30","-30"]}]]}),
+            json!({"id":"cut","op":"extrude","profile":"cut-section","distance":"30"}),
+            json!({"id":"joined","op":"boolean","kind":"subtract","target":"wall","tool":"cut"}),
+            fillet(
+                "round",
+                "joined",
+                "1",
+                vec![edge(side("wall", "wall"), cap("cut", "start"))],
+            ),
+        ];
+        if every {
+            steps.push(
+                json!({"id":"rest","op":"fillet","body":"round","radius":"1/2","edges":"all"}),
+            );
+        }
+        recipe(4, steps)
+    };
+    let (band, rounded) = (build(&steps(false)), build(&steps(true)));
+    let kinds_of = |built: &Built| kinds(built);
+    let mut want = kinds_of(&band);
+    *want.entry("Torus".to_string()).or_default() += 1;
+    assert_eq!(kinds_of(&rounded), want);
+    assert_eq!(faces_of(&rounded, "rest").len(), 1);
+    // The bottom ring removes a full turn of its section inside radius 5.
+    let volume = |built: &Built| {
+        catallax_measure::volume(
+            &built.model,
+            built.result,
+            &Default::default(),
+            &mut measuring(),
+        )
+        .unwrap()
+        .value
+    };
+    let (before, after) = (volume(&band), volume(&rounded));
+    let [t1, t2] = quarter_turn(&r("1/2"), &r("5"), -1);
+    let (lo, hi) = pi();
+    let ring = |p: &Rational| &r("4") * &(&(&t1 * p) + &(&(&t2 * p) * p));
+    let [a, b] = [ring(&lo), ring(&hi)];
+    let removed_lo = &before.lo - &after.hi;
+    let removed_hi = &before.hi - &after.lo;
+    assert!(
+        removed_lo <= a.clone().max(b.clone()) && removed_hi >= a.min(b),
+        "removed [{}, {}]",
+        removed_lo.to_f64_nearest(),
+        removed_hi.to_f64_nearest()
+    );
+    closed_display(&rounded);
+}

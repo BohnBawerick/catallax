@@ -14,6 +14,11 @@
 //! `du^2 M_uu / 8 + dv^2 M_vv / 8 + du dv M_uv / 4` of the surface, at matching
 //! parameters. That bound is looser than measuring each cell, so a grid has more
 //! cells, and it is built once per tolerance with no subdivision.
+//!
+//! No cell crosses a span, so each span takes its own bounds and its own column
+//! width. Every span shares the rows, which keeps the grid structured. A loop's
+//! spans turn at very different rates, so one width for all of them would cut
+//! the gentle spans as finely as the sharpest.
 
 use super::*;
 
@@ -21,6 +26,14 @@ use super::*;
 // not hold the whole turn of a section.
 const CUTS: usize = 2;
 const MAX_CUTS: u32 = 12;
+
+// A grid in the law's frame, with the chart parameter of each column. Columns are
+// even only on a uniform carrier.
+#[derive(Debug)]
+pub(super) struct LocalGrid {
+    pub(super) grid: EnvelopeGrid,
+    pub(super) parameters: Vec<Rational>,
+}
 
 fn hull(values: impl Iterator<Item = Ball>) -> Ball {
     values
@@ -135,8 +148,8 @@ fn turns_of(patch: &Patch) -> Result<[Rational; 3], Refusal> {
 }
 
 impl RollingSaddle {
-    // The largest second derivatives of the carrier, kept on the shared net.
-    fn turns(&self) -> Result<[Rational; 3], Refusal> {
+    // Each span's largest second derivatives, kept on the shared net.
+    fn turns(&self) -> Result<Vec<[Rational; 3]>, Refusal> {
         let mut cache = self
             .data
             .net
@@ -150,14 +163,19 @@ impl RollingSaddle {
         for _ in 0..CUTS {
             patches = along(patches, 1);
         }
-        let mut worst = [Rational::zero(), Rational::zero(), Rational::zero()];
-        for patch in &patches {
-            for (top, value) in worst.iter_mut().zip(turns_of(patch)?) {
-                *top = top.clone().max(value);
+        // Each cut keeps a span's pieces together and in order.
+        let mut spans = Vec::with_capacity(self.span_count());
+        for pieces in patches.chunks(1 << CUTS) {
+            let mut worst = [Rational::zero(), Rational::zero(), Rational::zero()];
+            for patch in pieces {
+                for (top, value) in worst.iter_mut().zip(turns_of(patch)?) {
+                    *top = top.clone().max(value);
+                }
             }
+            spans.push(worst);
         }
-        *cache = Some(worst.clone());
-        Ok(worst)
+        *cache = Some(spans.clone());
+        Ok(spans)
     }
 
     pub(super) fn local_grid(
@@ -165,42 +183,64 @@ impl RollingSaddle {
         tolerance: &Rational,
         max_points: usize,
         dec: &Decider,
-    ) -> Result<EnvelopeGrid, Refusal> {
-        let [uu, vv, uv] = self.turns()?;
+    ) -> Result<LocalGrid, Refusal> {
+        let turns = self.turns()?;
         let spans = self.span_count();
-        let span = q(4) / q(spans as i64);
-        let chord = |cuts: [u32; 2]| {
-            let du = span.mul_pow2(-i64::from(cuts[0]));
-            let dv = Rational::one().mul_pow2(-i64::from(cuts[1]));
-            (&du * &du * uu.clone() + &dv * &dv * vv.clone()).mul_pow2(-3)
-                + (&du * &dv * uv.clone()).mul_pow2(-2)
+        let widths: Vec<Rational> = self
+            .data
+            .nodes
+            .windows(2)
+            .map(|pair| &pair[1].u - &pair[0].u)
+            .collect();
+        let chord = |[uu, vv, uv]: &[Rational; 3], du: &Rational, dv: &Rational| {
+            (du * du * uu.clone() + dv * dv * vv.clone()).mul_pow2(-3)
+                + (du * dv * uv.clone()).mul_pow2(-2)
         };
-        let (mut cuts_u, mut cuts_v) = (0u32, 2u32);
-        loop {
+        // For the rows `cuts_v` gives, each span's fewest halvings, or `None` when
+        // no width within the limit reaches the tolerance.
+        let halvings = |cuts_v: u32| -> Option<Vec<u32>> {
+            let dv = Rational::one().mul_pow2(-i64::from(cuts_v));
+            turns
+                .iter()
+                .zip(&widths)
+                .map(|(turn, width)| {
+                    (0..=MAX_CUTS).find(|own| {
+                        chord(turn, &width.mul_pow2(-i64::from(*own)), &dv) <= *tolerance
+                    })
+                })
+                .collect()
+        };
+        // The rows that need the fewest points, from as few rows as before.
+        let mut best: Option<(usize, u32, Vec<u32>)> = None;
+        for cuts_v in 2..=MAX_CUTS {
             dec.check_deadline()?;
-            if chord([cuts_u, cuts_v]) <= *tolerance {
-                break;
-            }
-            let columns = spans << cuts_u;
-            if cuts_u >= MAX_CUTS
-                || cuts_v >= MAX_CUTS
-                || (columns + 1).saturating_mul((1 << cuts_v) + 1) > max_points
-            {
-                return Err(Refusal::new(
-                    "mesh.resource-limit",
-                    "saddle grid cannot reach the chord tolerance within its limits",
-                ));
-            }
-            if chord([cuts_u + 1, cuts_v]) <= chord([cuts_u, cuts_v + 1]) {
-                cuts_u += 1;
-            } else {
-                cuts_v += 1;
+            let Some(cuts) = halvings(cuts_v) else {
+                continue;
+            };
+            let columns: usize = cuts.iter().map(|own| 1usize << own).sum::<usize>() + 1;
+            let points = columns.saturating_mul((1 << cuts_v) + 1);
+            if best.as_ref().is_none_or(|(fewest, _, _)| points < *fewest) {
+                best = Some((points, cuts_v, cuts));
             }
         }
-        let per_span = 1usize << cuts_u;
+        let Some((points, cuts_v, cuts)) = best.filter(|(points, _, _)| *points <= max_points)
+        else {
+            return Err(Refusal::new(
+                "mesh.resource-limit",
+                "saddle grid cannot reach the chord tolerance within its limits",
+            ));
+        };
+        let dv = Rational::one().mul_pow2(-i64::from(cuts_v));
+        let worst = turns
+            .iter()
+            .zip(&widths)
+            .zip(&cuts)
+            .map(|((turn, width), own)| chord(turn, &width.mul_pow2(-i64::from(*own)), &dv))
+            .max()
+            .expect("a ring has spans");
         let rows = (1usize << cuts_v) + 1;
-        let columns = spans * per_span + 1;
-        let mut points = Vec::with_capacity(columns * rows);
+        let columns = cuts.iter().map(|own| 1usize << own).sum::<usize>() + 1;
+        let mut grid = Vec::with_capacity(points);
         let bits = self.data.net.bits;
         let patches = self.patches(bits);
         let v_step = Rational::one().mul_pow2(-i64::from(cuts_v));
@@ -215,14 +255,17 @@ impl RollingSaddle {
                 ]
             })
             .collect();
-        for column in 0..columns {
+        let mut stations = Vec::with_capacity(columns);
+        for (index, own) in cuts.iter().enumerate() {
+            let per_span = 1usize << own;
+            stations.extend((0..per_span).map(|step| (index, step, per_span)));
+        }
+        stations.push((spans - 1, 1, 1));
+        let mut parameters = Vec::with_capacity(columns);
+        for (index, step, per_span) in stations {
             dec.check_deadline()?;
-            let (index, step) = if column + 1 == columns {
-                (spans - 1, per_span)
-            } else {
-                (column / per_span, column % per_span)
-            };
             let t = Rational::from_ratio(step as i64, per_span as i64).expect("nonzero");
+            parameters.push(&self.data.nodes[index].u + &(&widths[index] * &t));
             let section = casteljau(&patches[index], &t, bits);
             for weights in &basis {
                 let sum = |k: usize| {
@@ -235,14 +278,17 @@ impl RollingSaddle {
                 let [Some(x), Some(y), Some(z)] = at else {
                     return Err(unresolved("saddle grid weight is not positive"));
                 };
-                points.push([x, y, z]);
+                grid.push([x, y, z]);
             }
         }
-        Ok(EnvelopeGrid {
-            columns,
-            rows,
-            points,
-            chord: chord([cuts_u, cuts_v]),
+        Ok(LocalGrid {
+            grid: EnvelopeGrid {
+                columns,
+                rows,
+                points: grid,
+                chord: worst,
+            },
+            parameters,
         })
     }
 }

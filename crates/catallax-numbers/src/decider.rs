@@ -433,7 +433,7 @@ impl Decider {
             return Err(deadline());
         }
         let mut work = Work::new(self.policy, self.deadline);
-        let mut best = x.node.coarse.clone();
+        let mut best = x.node.coarse_ref().cloned();
         let mut defined = x.node.fast_defined;
         let mut p = 64u32.min(self.policy.max_precision_bits);
         let mut error = None;
@@ -767,7 +767,7 @@ impl Decider {
             }
         }
         if stopped.is_none()
-            && let Some(r) = &x.node.rational
+            && let Some(r) = x.rational_ref()
         {
             if let Some(refusal) = unresolved(x, self.deadline)
                 && (refusal.code == "numbers.division-by-zero"
@@ -795,11 +795,11 @@ impl Decider {
         // is known valid; an undefined factor must never disappear into zero.
         if stopped.is_none()
             && x.node.fast_defined
-            && x.node.coarse.as_ref().is_some_and(Ball::is_exact_zero)
+            && x.node.coarse_ref().is_some_and(Ball::is_exact_zero)
         {
             return coincident(ZeroProof::Algebraic);
         }
-        let mut best = x.node.coarse.clone();
+        let mut best = x.node.coarse_ref().cloned();
         let mut defined = x.node.fast_defined;
         let mut pending = None;
         // Bounds and exact identities are independent of interval precision.
@@ -1125,7 +1125,7 @@ fn evaluate_uncached(
     known_defined: bool,
 ) -> Result<Ball, EvalError> {
     if x.node.fast_defined
-        && let Some(r) = &x.node.rational
+        && let Some(r) = x.rational_ref()
     {
         // The exact construction cache includes every domain dependency.
         // Do not reevaluate an entire defined rational subtree.
@@ -1344,7 +1344,7 @@ fn unresolved(x: &Real, limit: Option<Instant>) -> Option<Refusal> {
         Expr::Rational(_) | Expr::Algebraic(_) | Expr::Coordinate(..) => None,
         Expr::Neg(a) | Expr::Square(a) | Expr::Pow(a, _) => unresolved(a, limit),
         Expr::Sqrt(a) => unresolved(a, limit).or_else(|| {
-            if let Some(r) = &a.node.rational {
+            if let Some(r) = a.rational_ref() {
                 return if r.sign() == Sign::Negative {
                     Some(Refusal::new(
                         "numbers.sqrt-of-negative",
@@ -1369,7 +1369,7 @@ fn unresolved(x: &Real, limit: Option<Instant>) -> Option<Refusal> {
         Expr::Div(a, b) => unresolved(a, limit)
             .or_else(|| unresolved(b, limit))
             .or_else(|| {
-                if b.node.rational.as_ref().is_some_and(Rational::is_zero) {
+                if b.rational_ref().is_some_and(Rational::is_zero) {
                     Some(Refusal::new(
                         "numbers.division-by-zero",
                         "exactly zero divisor",
@@ -1386,7 +1386,7 @@ fn unresolved(x: &Real, limit: Option<Instant>) -> Option<Refusal> {
     }
 }
 fn zero_proof(x: &Real, b: &Ball, w: &mut Work) -> Result<bool, &'static str> {
-    if let Some(r) = &x.node.rational {
+    if let Some(r) = x.rational_ref() {
         w.exact(r, r, false)?;
         return Ok(r.is_zero());
     }
@@ -1452,7 +1452,7 @@ fn annihilator_uncached(
     w: &mut Work,
     cache: &mut HashMap<*const crate::real::Node, Option<UPoly>>,
 ) -> Result<Option<UPoly>, &'static str> {
-    if let Some(r) = &x.node.rational {
+    if let Some(r) = x.rational_ref() {
         w.exact(r, r, false)?;
         return Ok(Some(UPoly::new(vec![-r, Rational::one()])));
     }

@@ -952,3 +952,61 @@ fn cyclic_system_keeps_both_roots_under_every_generator_order() {
         assert_eq!(counts, [1, 1]);
     }
 }
+
+// On a small cell a spline piece's box reaches past the curve by about its bend,
+// far less than its polynomial's interval evaluation does.
+#[test]
+fn a_spline_pieces_box_follows_the_curve() {
+    let mut d = dec();
+    let degree = 9;
+    let mut knots = vec![r(0); degree + 1];
+    knots.extend(vec![Rational::from_ratio(1, 2).unwrap(); degree]);
+    knots.extend(vec![r(1); degree + 1]);
+    let count = 2 * degree + 1;
+    let controls: Vec<Point3> = (0..count as i64)
+        .map(|i| p(30 + i * (i % 3), 20 - 3 * i, 40 + 2 * (i % 4)).into())
+        .collect();
+    let weights = (0..count as i64)
+        .map(|i| Real::from_rational(Rational::from_ratio(2 + i % 3, 2).unwrap()))
+        .collect();
+    let spline =
+        catallax_shapes::BSplineCurve::new(degree, knots, controls.clone(), weights, &mut d)
+            .unwrap();
+    let mut g = GeomStore::new();
+    let c = g.add_curve(Curve::BSpline(spline));
+    let [a, b] = [&controls[0], &controls[count - 1]]
+        .map(|end| g.add_point(PointDef::Explicit(end.clone())));
+    let traced = trace(&g, c, Some(a), Some(b), &mut d).unwrap().value;
+    assert_eq!(traced.pieces().len(), 2);
+    let quiet = Decider::default();
+    let at = |t: &Rational| Ball::from_rational(t, 128);
+    let mut loose = 0.0f64;
+    for piece in traced.pieces() {
+        for cell in 0..32 {
+            let [from, to] = [cell, cell + 1].map(|k| Rational::from_ratio(k, 32).unwrap());
+            let t = at(&from).hull(&at(&to));
+            let found = piece.enclose(&t, &quiet).unwrap();
+            let old = piece.evaluate(&t, &quiet).unwrap();
+            let samples: Vec<[f64; 3]> = (0..=8)
+                .map(|s| {
+                    let share = &from + &(&(&to - &from) * &Rational::from_ratio(s, 8).unwrap());
+                    let point = piece.evaluate(&at(&share), &quiet).unwrap();
+                    for k in 0..3 {
+                        // Both are enclosures, so they share the true point.
+                        assert!(found[k].lo() <= point[k].hi() && point[k].lo() <= found[k].hi());
+                    }
+                    point.map(|value| value.mid().to_f64_nearest())
+                })
+                .collect();
+            for k in 0..3 {
+                let values = samples.iter().map(|point| point[k]);
+                let reach =
+                    values.clone().fold(f64::MIN, f64::max) - values.fold(f64::MAX, f64::min);
+                let width = (found[k].hi() - found[k].lo()).to_f64_nearest();
+                assert!(width <= reach + 1e-2, "{width} {reach}");
+                loose = loose.max((old[k].hi() - old[k].lo()).to_f64_nearest() / width.max(1e-9));
+            }
+        }
+    }
+    assert!(loose > 10.0, "{loose}");
+}

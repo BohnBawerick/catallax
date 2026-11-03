@@ -1030,6 +1030,41 @@ fn resultant_abandons_in_progress_exact_elimination() {
 }
 
 #[test]
+fn construction_metadata_deep_shared_rational_value() {
+    let mut definitions = vec![Real::one()];
+    for _ in 0..16_384 {
+        let previous = definitions.last().unwrap();
+        definitions.push(previous + previous);
+    }
+    let actual = definitions.last().unwrap().rational_ref().cloned();
+    for definition in definitions.into_iter().rev() {
+        drop(definition);
+    }
+    assert_eq!(actual, Some(Rational::one().mul_pow2(16_384)));
+}
+
+#[test]
+fn construction_metadata_deep_nonrational_enclosure_with_no_work() {
+    let mut definitions = vec![real("2").sqrt()];
+    for _ in 0..8_192 {
+        definitions.push(-definitions.last().unwrap());
+    }
+    let mut dec = Decider::new(BudgetPolicy {
+        max_precision_bits: 0,
+        max_work: 0,
+    });
+    let enclosure = dec.enclose(definitions.last().unwrap(), &q("4"));
+    for definition in definitions.into_iter().rev() {
+        drop(definition);
+    }
+    let enclosure = enclosure.unwrap();
+    assert!(enclosure.lo() >= Rational::zero());
+    assert!(enclosure.lo().pow(2).unwrap() <= q("2"));
+    assert!(enclosure.hi().pow(2).unwrap() >= q("2"));
+    assert_eq!(dec.stats().work, 0);
+}
+
+#[test]
 fn precision_enclosures_refine_rational_radical_and_algebraic_values() {
     let algebraic = Real::from_algebraic(Algebraic::isolated(
         UPoly::new(vec![q("-2"), q("0"), q("0"), q("1")]),

@@ -561,6 +561,8 @@ Straight-edge planar regions use the direct finite minimum; other pairs retain
 the general search. Disjoint patches never return an unattained plane gap.
 Curved faces refuse `measure.nonplanar-face`, other planes
 `measure.nonparallel-faces`, and inexact frames `measure.irrational-plane`.
+`catallax_measure::entity_pair` measures curved faces and edges from exact
+stationary pairs instead, and delegates parallel planar faces to this method.
 
 `Options::width` requests an enclosure width, not geometric acceptance.
 `max_cells` limits refinement, not direct finite-face certificates. A direct

@@ -196,9 +196,11 @@ The exact real number type that the rest of the kernel computes with. It is an i
 Building a `Real` never decides anything and never fails. Questions about its sign are asked through the `Decider`.
 `Real` has no `PartialEq` or `PartialOrd`.
 
-- `as_rational()` returns `Some` when the expression contains only rational leaves and the operations `+ - *`, `square`, `pow_u32` and `/` with divisors that are non-zero rationals; in that case it returns the exact value. It does no refinement.
+- `as_rational()` returns `Some` when the expression contains only rational leaves and the operations `+ - *`, `square`, `pow_u32` and `/` with divisors that are non-zero rationals; in that case it returns the exact value. Derived exact values are materialized on first read, without refinement.
 - `approx()` returns an `Interval` that contains the value, computed once and cached. When the value is undefined (division by an interval containing zero, square root of an interval below zero) it may be the whole line.
 - `to_f64()` returns a double near the value, for display only.
+
+Arithmetic definitions keep their hardware enclosure, definedness and identity-routing flags eager. Exact rational values and precision-one construction balls are memoized on demand; rational leaves borrow their immutable definition value rather than storing a duplicate. Algebraic and system-coordinate leaves retain their original construction metadata independently of refinement memos. Cache dependencies are resolved iteratively before taking an initialization lock. Materializing these pure caches changes neither expression definitions nor decision methods, certificates or deterministic work charges.
 
 There are no transcendental operations on `Real`. `pi` exists only as a `Ball`. This keeps every zero question decidable in principle: every `Real` is algebraic.
 

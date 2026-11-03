@@ -99,7 +99,7 @@ impl Bound<'_> {
         if let Some(h) = self.cache.get(&key) {
             return Ok(h.clone());
         }
-        let value = if let Some(r) = &x.node.rational {
+        let value = if let Some(r) = x.rational_ref() {
             self.work.exact(r, r, false)?;
             Some(Height {
                 bits: 0,

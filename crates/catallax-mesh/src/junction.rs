@@ -29,7 +29,8 @@ pub(crate) struct Seed {
     pub(crate) error: Rational,
     /// Whether the points run from the edge's start vertex.
     pub(crate) forward: bool,
-    /// A closed rail's exact points. A planar face needs them to triangulate.
+    /// A closed rail's exact points. A planar face needs them to triangulate, so
+    /// a rail with no planar neighbour may leave this empty.
     pub(crate) exact: Vec<[Real; 3]>,
 }
 
@@ -254,7 +255,7 @@ fn band(
 }
 
 // A closed saddle's rings are the carrier's boundary rows, so each runs up the
-// chart in its edge's sense. Columns are equal cuts of `[-1, 3]`.
+// chart in its edge's sense.
 fn saddle_band(
     model: &Model,
     face: FaceId,
@@ -265,20 +266,24 @@ fn saddle_band(
     dec: &mut Decider,
 ) -> Result<Envelope, Refusal> {
     let grid = saddle.display_grid(tolerance, options.max_vertices, dec)?;
+    let columns = saddle.display_columns(tolerance, options.max_vertices, dec)?;
     let rows = saddle_rows(model, face)
         .ok_or_else(|| failure("a saddle face has no complete band of two rails"))?;
-    let last = Rational::from_i64(grid.columns as i64 - 1);
     let mut rings = Vec::with_capacity(2);
     for (edge, sense) in rows {
         let definition = model.edge(edge);
         let Curve::BSpline(rail) = model.geom().curve(definition.curve) else {
             return Err(failure("a saddle rail is not its row"));
         };
-        let mut exact = Vec::with_capacity(grid.columns);
-        for column in 0..grid.columns {
-            let u = Rational::from_i64(4 * column as i64) / last.clone() - Rational::one();
-            let p = rail.point_at(&Real::from(u), dec)?;
-            exact.push([p.x, p.y, p.z]);
+        // Each exact point costs a rational evaluation of the rail, and only a
+        // planar neighbour reads them.
+        let mut exact = Vec::new();
+        if meets_plane(model, edge) {
+            exact.reserve(grid.columns);
+            for u in &columns {
+                let p = rail.point_at(&Real::from(u.clone()), dec)?;
+                exact.push([p.x, p.y, p.z]);
+            }
         }
         rings.push(Ring {
             edge,
@@ -288,6 +293,18 @@ fn saddle_band(
         });
     }
     Ok(closed(grid, rings, seeds))
+}
+
+// Whether a planar face uses the edge.
+fn meets_plane(model: &Model, edge: EdgeId) -> bool {
+    model.coedges_of_edge(edge).into_iter().any(|coedge| {
+        model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
+            matches!(
+                model.geom().surface(model.face(face).surface),
+                Surface::Plane(_)
+            )
+        })
+    })
 }
 
 // One closed rail of a band, in its grid row's column order.

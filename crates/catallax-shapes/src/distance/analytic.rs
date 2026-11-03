@@ -464,6 +464,53 @@ impl Finite {
         }
     }
 
+    /// Whether `p`, a point of the recognized face's carrier, lies in the closed
+    /// finite face. Only the trim is decided: the axial height of a band, cone
+    /// or spherical region, or the in-plane radius of a disc. The caller must
+    /// construct `p` on the carrier; a point off it is not detected.
+    pub fn contains_carrier_point(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        let within = |h: &Real, [lo, hi]: &[Real; 2], dec: &mut Decider| {
+            Ok::<_, Refusal>(
+                math::sign(&(h - lo), dec)? != Sign::Negative
+                    && math::sign(&(h - hi), dec)? != Sign::Positive,
+            )
+        };
+        match &self.0 {
+            Shape::Conical {
+                apex,
+                axis,
+                heights,
+                ..
+            } => within(&p.minus(apex).dot(axis), heights, dec),
+            Shape::Band {
+                origin,
+                axis,
+                heights,
+                ..
+            } => within(&p.minus(origin).dot(axis), heights, dec),
+            Shape::Sphere {
+                center,
+                axis,
+                heights,
+                ..
+            } => within(&p.minus(center).dot(axis), heights, dec),
+            Shape::Cap {
+                center,
+                normal,
+                radius_sq,
+                ..
+            } => {
+                let d = p.minus(center);
+                let h = d.dot(normal);
+                let planar = d.minus(&normal.scaled(&h));
+                Ok(
+                    math::sign(&(planar.norm_squared() - radius_sq.clone()), dec)?
+                        != Sign::Positive,
+                )
+            }
+        }
+    }
+
     /// Bounds the distance from `p` to the finite face directly. Returns `None`
     /// when the requested width is not reached, so the caller can fall back to the
     /// general search. The lower bound encloses the exact distance and the upper

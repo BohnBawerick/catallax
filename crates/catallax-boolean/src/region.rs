@@ -87,7 +87,7 @@ impl<const CACHE: bool> Sampling<'_, CACHE> {
         if !CACHE {
             return self
                 .projection
-                .project_certified(&self.piece.evaluate(&parameter, self.dec)?, self.dec);
+                .project_certified(&self.piece.enclose(&parameter, self.dec)?, self.dec);
         }
         self.dec.check_deadline()?;
         let room = self.enclosures.len() < MAX_TRACE_BOXES;
@@ -108,7 +108,7 @@ impl<const CACHE: bool> Sampling<'_, CACHE> {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let value = self
                     .projection
-                    .project_certified(&self.piece.evaluate(&parameter, self.dec)?, self.dec)?;
+                    .project_certified(&self.piece.enclose(&parameter, self.dec)?, self.dec)?;
                 if room {
                     Ok(entry.insert(value).clone())
                 } else {

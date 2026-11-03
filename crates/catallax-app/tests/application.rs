@@ -271,6 +271,28 @@ fn source_side_invalid_parameters_fail_before_selector_conversion() {
     }
 }
 
+// A ball inside a cylinder of radius 2 must be narrower than it. The refusal
+// names the case and the bound, and a smaller radius builds.
+#[test]
+fn a_fillet_radius_too_large_for_its_edge_reports_the_bound() {
+    let rounded = |radius: f64| {
+        let steps = vec![
+            json!({"id":"Sketch","op":"profile","plane":"XY","circle":{"center":[0,0],"radius":2}}),
+            json!({"id":"Body","op":"extrude","profile":"Sketch","distance":5}),
+            json!({"id":"Round","op":"fillet","body":"Body","edges":"all","radius":radius}),
+        ];
+        build_soliddraft(
+            &recipe(steps, "Round"),
+            &MeshOptions::default(),
+            &mut Decider::default(),
+        )
+    };
+    let error = rounded(2.5).unwrap_err();
+    assert_eq!(error.code(), "fillet.radius-too-large");
+    assert_eq!(error.fillet_radius_limit(), Some(Rational::from_i64(2)));
+    assert!(rounded(1.0).is_ok());
+}
+
 #[test]
 fn all_edge_fillet_and_chamfer_build_and_display() {
     // A box's three-strip corners need a corner patch the chamfer does not build, so

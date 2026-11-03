@@ -356,6 +356,26 @@ fn the_preview_is_coarse_unproved_and_independent_of_the_export_settings() {
     let output = stage.export(&mut Decider::default()).unwrap();
     assert!(preview.mesh.max_deviation >= output.verdict().max_deviation);
     assert!(preview.mesh.triangles.len() <= output.mesh().triangles.len());
+    let mut preview_obj = Vec::new();
+    preview.write_obj(&mut preview_obj).unwrap();
+    let preview_obj = String::from_utf8(preview_obj).unwrap();
+    assert!(
+        preview_obj.starts_with(&format!(
+            "# Unproved preview: not a certified model\n# catallax {} catallax-manifest/3; proof=unproved; exact=false; millimetres\n",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{preview_obj}"
+    );
+    assert!(!preview_obj.contains("proven_two_sided_deviation"));
+    let mut certified_obj = Vec::new();
+    output.mesh().write_obj(&mut certified_obj).unwrap();
+    let certified_obj = String::from_utf8(certified_obj).unwrap();
+    assert!(
+        certified_obj
+            .starts_with("# catallax field print mesh; millimetres\n# proven_two_sided_deviation "),
+        "{certified_obj}"
+    );
+    assert!(!certified_obj.contains("Unproved preview"));
 }
 
 #[test]

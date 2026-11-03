@@ -383,7 +383,7 @@ class FlangedHousing(unittest.TestCase):
     def test_uncovered_strata_keep_their_refusals(self):
         rows = (
             ('too-large', radius('7/2'), 'shapes.rolling-envelope'),
-            ('short-tube', short_tube(radius('1'), '11/2'), 'fillet.unsupported-overflow'),
+            ('short-tube', short_tube(radius('1'), '11/2'), 'fillet.radius-too-large'),
         )
         for name, recipe, code in rows:
             with self.subTest(name):

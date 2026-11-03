@@ -204,9 +204,7 @@ pub(super) fn trace(
         let ranges = spline_ranges(geom, c, curve, from, to, dec)?;
         let mut pieces = Vec::with_capacity(ranges.len());
         for (span, from, to) in ranges {
-            pieces.push(TracePiece::new(chart::spline_span(
-                curve, span, from, to, dec,
-            )?));
+            pieces.push(TracePiece::spline(curve, span, from, to, dec)?);
         }
         return Ok(Answer::exact(CurveTrace { pieces }));
     }

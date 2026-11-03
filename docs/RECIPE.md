@@ -558,6 +558,8 @@ Exactness: two planes give a cylinder. Two parallel cylinders meeting at a strai
 
 **Impossible.** `r <= 0`, section 1.5, or incompatible explicit keep-neighbours constraints under section 4.5.1. Foot points leaving the trimmed faces are valid roll-over geometry, not proof of impossibility.
 
+The B-rep refuses `fillet.radius-too-large` when it proves that the radius cannot fit the edge's own faces: no ball of radius `r` rolls along `e` against both supports, or one contact curve lies wholly outside its face past a sharp boundary. The refusal carries the bound past which this holds, when the proof gives one. It is not on the impossible list above, because roll-over still defines a result.
+
 - **The rolling-ball definition, as the PRD states it.** It is a pure function of the two surfaces and `r`, and the field kernel can evaluate it exactly because the recipe names both faces. The alternative is the morphological opening `(S ⊖ B_r) ⊕ B_r`. It is fully defined at every corner, but it rounds unselected convex edges too and can remove thin material.
 
 #### 4.5.1 Ends, corners and overflow

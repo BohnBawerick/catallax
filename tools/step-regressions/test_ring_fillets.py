@@ -40,6 +40,9 @@ def ring(kind, narrow, rounded):
 WALL = cylinder('wall', '4', '30', LEVEL, ['1', '0', '0'])
 LEANING = cylinder('wall', '4', '30', LEAN, ['1', '0', '0'])
 THROUGH = cylinder('wall', '4', '60', LEVEL, ['1', '0', '-30'])
+# Past the wide cylinder's side, so the two cross in one loop that winds round
+# neither cylinder.
+PAST = cylinder('wall', '4', '60', LEVEL, ['8', '0', '-30'])
 # The change in volume is the kernel's, which matches an independent section
 # integral. The counts are faces, edges and vertices. The band and each wall add
 # one seam, and each closed edge gains one vertex.
@@ -47,6 +50,12 @@ FIXTURES = [
     ('boss', 'union', WALL, 3.53786, (6, 8, 5)),
     ('bore', 'subtract', WALL, -11.64886, (6, 8, 5)),
     ('leaning-boss', 'union', LEANING, 6.46506, (6, 8, 5)),
+]
+# The same for a loop, whose change the kernel reads by the divergence theorem.
+LOOPS = [
+    ('loop-boss', 'union', 13.96329, (7, 9, 6)),
+    ('loop-notch', 'subtract', -10.96688, (5, 6, 4)),
+    ('loop-lens', 'intersect', -17.45123, (3, 3, 2)),
 ]
 
 
@@ -92,6 +101,19 @@ class RingFilletImports(unittest.TestCase):
                     manifest, shape = self.rounded(root, name, ring(kind, narrow, True))
                     self.assertEqual(self.counts(shape), counts)
                     _, plain = self.read(root, f'plain-{name}', ring(kind, narrow, False))
+                    self.assertAlmostEqual(self.volume(shape) - self.volume(plain), change,
+                                           delta=2e-3)
+                    roles = [region['role'] for region in manifest['certificate']['regions']]
+                    self.assertEqual(roles.count('rolling-saddle'), 1)
+
+    def test_loops(self):
+        with tempfile.TemporaryDirectory(prefix='catallax-ring-fillet-') as temporary:
+            root = Path(temporary)
+            for name, kind, change, counts in LOOPS:
+                with self.subTest(name):
+                    manifest, shape = self.rounded(root, name, ring(kind, PAST, True))
+                    self.assertEqual(self.counts(shape), counts)
+                    _, plain = self.read(root, f'plain-{name}', ring(kind, PAST, False))
                     self.assertAlmostEqual(self.volume(shape) - self.volume(plain), change,
                                            delta=2e-3)
                     roles = [region['role'] for region in manifest['certificate']['regions']]

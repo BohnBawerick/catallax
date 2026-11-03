@@ -140,6 +140,11 @@ pub(super) fn ring(
     let body_radius = real_sqrt(&cylinder.radius_sq);
     let radius = torus.minor.clone();
     let centre = &body_radius + &radius;
+    // The stratum is a boss's foot, the ball outside the wall. A concave
+    // hole floor puts it inside, which this proof does not cover.
+    if !zero(&(&torus.major - &centre), dec)? {
+        return Ok(None);
+    }
     Ok(Some(Ring {
         plane_index,
         plane_face,

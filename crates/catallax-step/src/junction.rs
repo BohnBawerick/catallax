@@ -204,25 +204,12 @@ pub(crate) fn saddle_neighbour(
     let x = crate::number::unit(&cylinder.ref_dir);
     let y = axis.cross(&x);
     let law = saddle.definition().law();
-    let side = law
-        .along
-        .scaled(&law.cosine)
-        .minus(&law.axis.scaled(&law.sine));
-    let narrow = law
-        .axis
-        .scaled(&law.cosine)
-        .plus(&law.along.scaled(&law.sine));
-    // The direction at angle zero, the way the angle turns, and the station's
-    // zero and axis.
-    let (zero, turning, station, stations) = if rail == 0 {
-        (
-            law.along.scaled(&Real::from_i64(law.branch)),
-            law.across.clone(),
-            saddle.definition().origin().clone(),
-            law.axis.clone(),
-        )
+    let [zero, turning] = law.rail_zero(rail);
+    // The station's zero and axis.
+    let (station, stations) = if rail == 0 {
+        (saddle.definition().origin().clone(), law.axis.clone())
     } else {
-        (law.across.clone(), side, law.foot.clone(), narrow)
+        (law.foot.clone(), law.narrow_axis())
     };
     Ok(Neighbour {
         surface: wall,

@@ -116,7 +116,7 @@ fn visit<'a>(
     if let Some(v) = cache.get(&key) {
         return Ok(v.clone());
     }
-    let result = if let Some(r) = &x.node.rational {
+    let result = if let Some(r) = x.rational_ref() {
         work.exact(r, r, false)?;
         Some(Value::constant(r.clone()))
     } else {

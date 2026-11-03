@@ -207,6 +207,14 @@ pub struct Preview {
     pub proof: Proof,
 }
 
+impl Preview {
+    /// Writes this unproved preview as an OBJ mesh with its proof status, producing
+    /// version and manifest identifier in the header comments.
+    pub fn write_obj(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
+        self.mesh.write_unproved_obj(out)
+    }
+}
+
 /// A body with its terminal field stage compiled.
 #[derive(Clone, Debug)]
 pub struct Stage<S = LatticeSpec> {

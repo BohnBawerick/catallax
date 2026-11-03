@@ -31,19 +31,25 @@
 //! and its rail, and on a cylinder's flat chart that strip's area is a closed
 //! integral of height against angle.
 //!
+//! A loop does not wind round the narrow cylinder, so these columns graze the
+//! wide one there. Its change takes the divergence theorem instead, in `loops`.
+//!
 //! These enclose the exact definition. `Scope::Represented` in `junction` adds the
 //! tube bound its module note derives, so its volume also holds for the carrier.
 
 use catallax_numbers::{Ball, Decider, Integer, Rational, Refusal};
-use catallax_shapes::{RollingSaddle, SaddleLaw};
+use catallax_shapes::{RollingSaddle, SaddleLaw, SaddleRing};
 use std::collections::BTreeMap;
 
 use crate::integrate::{Builder, Program, Stop, Work};
 use crate::pipe::{Primitives, Section};
 
+#[path = "saddle/loops.rs"]
+mod loops;
+
 // A fitted band's own bound is far wider than these integrals, so 96 bits leave
 // room. Eight panels split the section angle's enclosure, and sixteen do not, as
-// on a rolling pipe. Each further depth doubles them.
+// on a rolling pipe. Each further depth halves a panel that needs it.
 const BITS: u32 = 96;
 const PANELS: u64 = 16;
 const MAX_DEPTH: u32 = 6;
@@ -217,19 +223,45 @@ fn magnitude(value: &Ball) -> Ball {
     }
 }
 
-fn panels(program: &Program, depth: u32, work: &mut Work) -> Result<Vec<Ball>, Stop> {
-    let count = PANELS.checked_shl(depth).ok_or(Stop::Budget)?;
-    let step = Rational::from_i64(2) / Rational::from_integer(Integer::from_u64(count));
+// One panel of the turn, from `a` to `b` in units of `pi`, at its depth below the
+// first panels.
+struct Panel {
+    a: Rational,
+    b: Rational,
+    depth: u32,
+    values: Option<Vec<Ball>>,
+}
+
+impl Panel {
+    fn halves(self) -> [Self; 2] {
+        let middle = (&self.a + &self.b).mul_pow2(-1);
+        [
+            Self {
+                a: self.a,
+                b: middle.clone(),
+                depth: self.depth + 1,
+                values: None,
+            },
+            Self {
+                a: middle,
+                b: self.b,
+                depth: self.depth + 1,
+                values: None,
+            },
+        ]
+    }
+}
+
+// Each integral over the whole turn, from the panels in order.
+fn sums(panels: &[Panel], work: &mut Work) -> Result<Vec<Ball>, Stop> {
     let mut sums: Option<Vec<Ball>> = None;
-    for i in 0..count {
-        let a = &step * &Rational::from_integer(Integer::from_u64(i));
-        let b = &a + &step;
-        let values = program.turning_panel(&a, &b, work)?;
+    for panel in panels {
+        let values = panel.values.as_ref().ok_or(Stop::Split)?;
         sums = Some(match sums {
-            None => values,
+            None => values.clone(),
             Some(sums) => sums
                 .iter()
-                .zip(&values)
+                .zip(values)
                 .map(|(sum, value)| work.add(sum, value))
                 .collect::<Result<_, _>>()?,
         });
@@ -241,6 +273,75 @@ fn panels(program: &Program, depth: u32, work: &mut Work) -> Result<Vec<Ball>, S
         .collect()
 }
 
+// The integrals over the whole turn. It starts from `PANELS` equal panels and
+// halves only a panel that has no enclosure, or one wider than its share of
+// `target`, until the sums are no wider than `target` or the panels reach
+// `MAX_DEPTH`. A loop's integrand is far harder on a few panels than on the
+// rest, so halving them all would pay for the worst one everywhere.
+fn integrals(program: &Program, target: &Rational, work: &mut Work) -> Result<Vec<Ball>, Stop> {
+    let step = Rational::from_i64(2) / Rational::from_integer(Integer::from_u64(PANELS));
+    let mut panels: Vec<Panel> = (0..PANELS)
+        .map(|i| {
+            let a = &step * &Rational::from_integer(Integer::from_u64(i));
+            Panel {
+                b: &a + &step,
+                a,
+                depth: 0,
+                values: None,
+            }
+        })
+        .collect();
+    // A panel's share, per unit of turn, with `pi < 4` for the closing product.
+    let share = target.mul_pow2(-3);
+    loop {
+        let mut next = Vec::with_capacity(panels.len());
+        let mut halved = false;
+        for mut panel in panels {
+            if panel.values.is_none() {
+                match program.turning_panel(&panel.a, &panel.b, work) {
+                    Ok(values) => panel.values = Some(values),
+                    Err(Stop::Split | Stop::GaugeSplit) if panel.depth < MAX_DEPTH => {
+                        next.extend(panel.halves());
+                        halved = true;
+                        continue;
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            next.push(panel);
+        }
+        panels = next;
+        if halved {
+            continue;
+        }
+        let found = sums(&panels, work)?;
+        if found.iter().all(|value| width(value) <= *target) {
+            return Ok(found);
+        }
+        let wide = |panel: &Panel| {
+            let allowed = &share * &(&panel.b - &panel.a);
+            panel.depth < MAX_DEPTH
+                && panel
+                    .values
+                    .as_ref()
+                    .is_some_and(|values| values.iter().any(|value| width(value) > allowed))
+        };
+        if !panels.iter().any(wide) {
+            return Ok(found);
+        }
+        panels = panels
+            .into_iter()
+            .flat_map(|panel| {
+                if wide(&panel) {
+                    panel.halves().into_iter().collect::<Vec<_>>()
+                } else {
+                    vec![panel]
+                }
+            })
+            .collect();
+    }
+}
+
 /// The band's change, each integral no wider than `target` where the budget
 /// reaches it.
 pub(crate) fn change(
@@ -250,28 +351,19 @@ pub(crate) fn change(
     dec: &mut Decider,
 ) -> Result<Change, Refusal> {
     let law = saddle.definition().law();
-    let program = forms(&law, moments);
+    let program = match law.ring {
+        SaddleRing::Through => forms(&law, moments),
+        SaddleRing::Overlap => loops::forms(&law, moments),
+    };
     let policy = *dec.policy();
     let bits = BITS.min(policy.max_precision_bits);
-    let mut remaining = policy.max_work;
-    let mut values = None;
-    for depth in 0..=MAX_DEPTH {
-        let mut work = Work::new(&policy, bits, remaining, dec).map_err(stop)?;
-        let attempt = panels(&program, depth, &mut work);
-        remaining = work.remaining();
-        match attempt {
-            Ok(found) => {
-                let done = found.iter().all(|value| width(value) <= *target);
-                values = Some(found);
-                if done {
-                    break;
-                }
-            }
-            Err(Stop::Split | Stop::GaugeSplit) if depth < MAX_DEPTH => {}
-            Err(other) => return Err(stop(other)),
-        }
+    let values = {
+        let mut work = Work::new(&policy, bits, policy.max_work, dec).map_err(stop)?;
+        integrals(&program, target, &mut work).map_err(stop)?
+    };
+    if law.ring == SaddleRing::Overlap {
+        return loop_change(saddle, &law, &values, dec);
     }
-    let values = values.ok_or_else(|| refused("a saddle's integrand has no enclosure"))?;
     let [
         volume,
         band,
@@ -318,6 +410,95 @@ pub(crate) fn change(
         pocket,
         moment,
         area,
+        band: band.clone(),
+        turning: turning.clone(),
+        length: length.clone(),
+    })
+}
+
+// A strict sign, or a refusal when the enclosure holds zero.
+fn sign_of(value: &Ball) -> Result<Ball, Refusal> {
+    let unit = if value.lo() > Rational::zero() {
+        1
+    } else if value.hi() < Rational::zero() {
+        -1
+    } else {
+        return Err(refused("a loop's strip has no certified orientation"));
+    };
+    Ok(Ball::from_rational(&Rational::from_i64(unit), BITS))
+}
+
+// The loop's integrals, signed and put together as `crate::saddle::loops` says.
+fn loop_change(
+    saddle: &RollingSaddle,
+    law: &SaddleLaw,
+    values: &[Ball],
+    dec: &mut Decider,
+) -> Result<Change, Refusal> {
+    let Some((
+        [
+            flux,
+            band,
+            wide_area,
+            narrow_area,
+            narrow_flux,
+            turning,
+            length,
+        ],
+        moment,
+    )) = values.split_first_chunk::<{ loops::OUTPUTS }>()
+    else {
+        return Err(refused("a saddle's program has a fixed output count"));
+    };
+    let exact = |value: i64| Ball::from_rational(&Rational::from_i64(value), BITS);
+    let [wide, narrow] = [&law.wide, &law.narrow].map(|value| dec.enclose_at(value, BITS));
+    let (wide, narrow) = (wide?, narrow?);
+    let [sw, sn] = law.sides.map(exact);
+    let (kw, kn) = (sign_of(wide_area)?, sign_of(narrow_area)?);
+    let wide_strip = &(&wide * wide_area) * &kw;
+    let narrow_strip = &(&narrow * narrow_area) * &kn;
+    let walls = &(&(&sw * &wide) * &wide_strip) + &(&(&sn * &kn) * narrow_flux);
+    let pocket = (&Ball::from_rational(&Rational::zero(), BITS) - &(flux + &walls))
+        .checked_div(&exact(3))
+        .ok_or_else(|| refused("a loop's pocket has no certified volume"))?;
+    if pocket.lo() <= Rational::zero() {
+        return Err(refused("a loop's pocket has no certified volume"));
+    }
+    let point = |v: &catallax_shapes::Vector3| -> Result<[Ball; 3], Refusal> {
+        Ok([
+            dec.enclose_at(&v.x, BITS)?,
+            dec.enclose_at(&v.y, BITS)?,
+            dec.enclose_at(&v.z, BITS)?,
+        ])
+    };
+    let origin = saddle
+        .definition()
+        .origin()
+        .minus(&catallax_shapes::Point3::origin());
+    let [origin, across, along, axis] = [&origin, &law.across, &law.along, &law.axis].map(point);
+    let (origin, across, along, axis) = (origin?, across?, along?, axis?);
+    let moment = match moment {
+        [bx, by, bz, wx, wy, nx, ny, nz] => {
+            let wide_part = &(&sw * &kw) * &wide;
+            let narrow_part = &sn * &kn;
+            let local = [
+                &(bx - &(&wide_part * wx)) - &(&narrow_part * nx),
+                &(by - &(&wide_part * wy)) - &(&narrow_part * ny),
+                bz - &(&narrow_part * nz),
+            ];
+            Some(std::array::from_fn(|i| {
+                let frame = &(&(&across[i] * &local[0]) + &(&along[i] * &local[1]))
+                    + &(&axis[i] * &local[2]);
+                &(&origin[i] * &pocket) + &frame
+            }))
+        }
+        [] => None,
+        _ => return Err(refused("a saddle's program has a fixed output count")),
+    };
+    Ok(Change {
+        pocket,
+        moment,
+        area: &(band - &wide_strip) - &narrow_strip,
         band: band.clone(),
         turning: turning.clone(),
         length: length.clone(),

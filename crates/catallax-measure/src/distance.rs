@@ -105,7 +105,7 @@ impl PreparedFace {
     /// Recognizes complete circular cylinder/disc, oriented spherical or conical
     /// regions. A cone tip may have one collapsed vertex loop. Every other loop
     /// must be one closed circle edge. Other trims keep the complete search.
-    fn recognize(
+    pub(crate) fn recognize(
         model: &Model,
         face: FaceId,
         dec: &mut Decider,

@@ -1,7 +1,7 @@
-//! Immutable shared real expressions with conservative construction-time caches.
+//! Immutable definitions with eager hardware bounds and demand-evaluated construction metadata.
 
 use crate::{Algebraic, Ball, Interval, IsolatedRoot, Rational};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 /// Exact real expression. Cloning shares its immutable definition and caches.
 #[derive(Clone, Debug)]
@@ -22,19 +22,291 @@ pub(crate) enum Expr {
     Square(Real),
     Pow(Real, u32),
 }
-#[derive(Debug)]
 pub(crate) struct Node {
     pub expr: Expr,
     pub approx: Interval,
-    pub coarse: Option<Ball>,
-    pub rational: Option<Rational>,
+    coarse: OnceLock<Option<Ball>>,
+    rational: OnceLock<Option<Rational>>,
     pub fast_defined: bool,
     // Construction metadata for routing an optional proof method: bit 0 means
     // an algebraic leaf outside the native quadratic/quartic routes; bit 1
     // means a pinned system coordinate. This
     // records definition kinds only and never proves a value or a domain.
     pub identity_atoms: u8,
+    rational_possible: bool,
 }
+
+impl Node {
+    fn new(
+        expr: Expr,
+        approx: Interval,
+        fast_defined: bool,
+        frozen: Option<(Option<Rational>, Option<Ball>)>,
+    ) -> Self {
+        let (identity_atoms, rational_possible) = match &expr {
+            Expr::Algebraic(a) => (
+                u8::from(matches!(&a.repr,
+                    crate::algebraic::AlgebraicRepr::Root(root)
+                        if root.polynomial.degree().is_some_and(|degree| degree == 3 || degree > 4))),
+                frozen
+                    .as_ref()
+                    .is_some_and(|(rational, _)| rational.is_some()),
+            ),
+            Expr::Coordinate(..) => (2, false),
+            Expr::Sqrt(a) => (a.node.identity_atoms, false),
+            Expr::Neg(a) | Expr::Square(a) | Expr::Pow(a, _) => {
+                (a.node.identity_atoms, a.node.rational_possible)
+            }
+            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => (
+                a.node.identity_atoms | b.node.identity_atoms,
+                a.node.rational_possible && b.node.rational_possible,
+            ),
+            Expr::Rational(_) => (0, true),
+        };
+        let (rational, coarse) = match frozen {
+            Some((rational, coarse)) => (OnceLock::from(rational), OnceLock::from(coarse)),
+            None => (OnceLock::new(), OnceLock::new()),
+        };
+        Self {
+            expr,
+            approx,
+            coarse,
+            rational,
+            fast_defined,
+            identity_atoms,
+            rational_possible,
+        }
+    }
+
+    fn rational_ready(&self) -> bool {
+        !self.rational_possible
+            || matches!(&self.expr, Expr::Rational(_))
+            || self.rational.get().is_some()
+    }
+
+    fn rational_value(&self) -> Option<&Rational> {
+        if !self.rational_possible {
+            return None;
+        }
+        if let Expr::Rational(rational) = &self.expr {
+            return Some(rational);
+        }
+        self.rational
+            .get()
+            .expect("rational metadata dependencies must be initialized")
+            .as_ref()
+    }
+
+    fn coarse_value(&self) -> Option<&Ball> {
+        self.coarse
+            .get()
+            .expect("coarse metadata dependencies must be initialized")
+            .as_ref()
+    }
+
+    fn rational_ref(&self) -> Option<&Rational> {
+        CacheTask::Rational(self).ensure();
+        self.rational_value()
+    }
+
+    pub(crate) fn coarse_ref(&self) -> Option<&Ball> {
+        CacheTask::Coarse(self).ensure();
+        self.coarse_value()
+    }
+
+    fn calculate_rational(&self) -> Option<Rational> {
+        match &self.expr {
+            Expr::Add(a, b) => a
+                .node
+                .rational_value()
+                .and_then(|a| b.node.rational_value().map(|b| a + b)),
+            Expr::Sub(a, b) => a
+                .node
+                .rational_value()
+                .and_then(|a| b.node.rational_value().map(|b| a - b)),
+            Expr::Mul(a, b) => a
+                .node
+                .rational_value()
+                .and_then(|a| b.node.rational_value().map(|b| a * b)),
+            Expr::Div(a, b) => a
+                .node
+                .rational_value()
+                .and_then(|a| b.node.rational_value().and_then(|b| a.checked_div(b))),
+            Expr::Neg(a) => a.node.rational_value().map(|a| -a),
+            Expr::Square(a) => a.node.rational_value().map(|a| a * a),
+            Expr::Pow(a, exp) => a.node.rational_value().map(|a| {
+                let mut value = Rational::one();
+                let mut n = *exp;
+                if n != 0 {
+                    let mut a = a.clone();
+                    while n != 0 {
+                        if n & 1 != 0 {
+                            value = &value * &a;
+                        }
+                        n >>= 1;
+                        if n != 0 {
+                            a = &a * &a;
+                        }
+                    }
+                }
+                value
+            }),
+            Expr::Rational(_) | Expr::Algebraic(_) | Expr::Coordinate(..) | Expr::Sqrt(_) => {
+                unreachable!("leaf and nonrational metadata is already available")
+            }
+        }
+    }
+
+    fn calculate_coarse(&self) -> Option<Ball> {
+        if let Some(rational) = self.rational_value() {
+            return Some(Ball::from_rational(rational, 1));
+        }
+        let coarse = match &self.expr {
+            Expr::Add(a, b) => a
+                .node
+                .coarse_value()
+                .and_then(|a| b.node.coarse_value().map(|b| a + b)),
+            Expr::Sub(a, b) => a
+                .node
+                .coarse_value()
+                .and_then(|a| b.node.coarse_value().map(|b| a - b)),
+            Expr::Mul(a, b) => a
+                .node
+                .coarse_value()
+                .and_then(|a| b.node.coarse_value().map(|b| a * b)),
+            Expr::Div(a, b) => a
+                .node
+                .coarse_value()
+                .and_then(|a| b.node.coarse_value().and_then(|b| a.checked_div(b))),
+            Expr::Neg(a) => a.node.coarse_value().map(|a| -a),
+            Expr::Sqrt(a) => a.node.coarse_value().and_then(Ball::sqrt),
+            Expr::Square(a) => a.node.coarse_value().map(Ball::square),
+            Expr::Pow(a, exp) => a.node.coarse_value().map(|a| a.pow_u32(*exp)),
+            Expr::Rational(_) | Expr::Algebraic(_) | Expr::Coordinate(..) => {
+                unreachable!("leaf construction bounds are frozen")
+            }
+        };
+        coarse.or_else(|| {
+            if self.fast_defined && self.approx.is_finite() {
+                Some(Ball::bounds(
+                    Rational::from_f64_exact(self.approx.lo()).unwrap(),
+                    Rational::from_f64_exact(self.approx.hi()).unwrap(),
+                    1,
+                ))
+            } else {
+                None
+            }
+        })
+    }
+}
+
+impl std::fmt::Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("expr", &self.expr)
+            .field("approx", &self.approx)
+            .field("coarse", &self.coarse_ref())
+            .field("rational", &self.rational_ref())
+            .field("fast_defined", &self.fast_defined)
+            .field("identity_atoms", &self.identity_atoms)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CacheTask<'a> {
+    Rational(&'a Node),
+    Coarse(&'a Node),
+}
+
+impl<'a> CacheTask<'a> {
+    fn node(self) -> &'a Node {
+        match self {
+            Self::Rational(node) | Self::Coarse(node) => node,
+        }
+    }
+
+    fn child(self, value: &'a Real) -> Self {
+        match self {
+            Self::Rational(_) => Self::Rational(&value.node),
+            Self::Coarse(_) => Self::Coarse(&value.node),
+        }
+    }
+
+    fn ready(self) -> bool {
+        match self {
+            Self::Rational(node) => node.rational_ready(),
+            Self::Coarse(node) => node.coarse.get().is_some(),
+        }
+    }
+
+    fn present(self) -> bool {
+        match self {
+            Self::Rational(node) => node.rational_value().is_some(),
+            Self::Coarse(node) => node.coarse_value().is_some(),
+        }
+    }
+
+    fn dependency(self) -> Option<Self> {
+        let node = self.node();
+        if let Self::Coarse(_) = self {
+            if !node.rational_ready() {
+                return Some(Self::Rational(node));
+            }
+            if node.rational_value().is_some() {
+                return None;
+            }
+        }
+        let (first, second) = match &node.expr {
+            Expr::Neg(a) | Expr::Sqrt(a) | Expr::Square(a) | Expr::Pow(a, _) => (a, None),
+            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => (a, Some(b)),
+            Expr::Rational(_) | Expr::Algebraic(_) | Expr::Coordinate(..) => return None,
+        };
+        let first = self.child(first);
+        if !first.ready() {
+            return Some(first);
+        }
+        if !first.present() {
+            return None;
+        }
+        let second = self.child(second?);
+        (!second.ready()).then_some(second)
+    }
+
+    fn materialize(self) {
+        match self {
+            Self::Rational(node) => {
+                node.rational.get_or_init(|| node.calculate_rational());
+            }
+            Self::Coarse(node) => {
+                node.coarse.get_or_init(|| node.calculate_coarse());
+            }
+        }
+    }
+
+    fn ensure(self) {
+        if self.ready() {
+            return;
+        }
+        let Some(dependency) = self.dependency() else {
+            self.materialize();
+            return;
+        };
+        // Resolve dependencies before locking: no recursion or nested cache locks.
+        let mut pending = vec![self, dependency];
+        while let Some(&task) = pending.last() {
+            if task.ready() {
+                pending.pop();
+            } else if let Some(dependency) = task.dependency() {
+                pending.push(dependency);
+            } else {
+                task.materialize();
+                pending.pop();
+            }
+        }
+    }
+}
+
 impl Real {
     /// Zero.
     pub fn zero() -> Self {
@@ -69,7 +341,7 @@ impl Real {
     }
     fn rational_leaf(r: Rational) -> Self {
         let approx = Interval::from_rational(&r);
-        Self::make(Expr::Rational(r.clone()), approx, || None, Some(r), true)
+        Self::make(Expr::Rational(r), approx, true)
     }
     /// Exact integer leaf.
     pub fn from_i64(v: i64) -> Self {
@@ -79,9 +351,9 @@ impl Real {
     pub fn from_algebraic(a: Algebraic) -> Self {
         let (lo, hi) = a.isolating_interval();
         let approx = Interval::from_rational(&lo).hull(&Interval::from_rational(&hi));
-        let coarse = || Some(Ball::bounds(lo, hi, 1));
+        let coarse = || Ball::bounds(lo, hi, 1);
         let rational = a.as_rational().cloned();
-        Self::make(Expr::Algebraic(a), approx, coarse, rational, true)
+        Self::frozen_leaf(Expr::Algebraic(a), approx, rational, coarse)
     }
     /// Coordinate of a certified system root; panics for an invalid axis.
     pub fn from_root_coordinate(root: &IsolatedRoot, axis: usize) -> Self {
@@ -89,12 +361,11 @@ impl Real {
         let lo = root.root_box().lo()[axis].clone();
         let hi = root.root_box().hi()[axis].clone();
         let approx = Interval::from_rational(&lo).hull(&Interval::from_rational(&hi));
-        Self::make(
+        Self::frozen_leaf(
             Expr::Coordinate(Arc::new(root.clone()), axis),
             approx,
-            || Some(Ball::bounds(lo, hi, 1)),
             None,
-            true,
+            || Ball::bounds(lo, hi, 1),
         )
     }
     /// Lazy square root. Domain validation belongs to the decider.
@@ -103,8 +374,6 @@ impl Real {
         Self::make(
             Expr::Sqrt(self.clone()),
             approx,
-            || self.node.coarse.as_ref().and_then(Ball::sqrt),
-            None,
             self.node.fast_defined && self.node.approx.lo() >= 0.0,
         )
     }
@@ -113,8 +382,6 @@ impl Real {
         Self::make(
             Expr::Square(self.clone()),
             self.node.approx.square(),
-            || self.node.coarse.as_ref().map(Ball::square),
-            self.node.rational.as_ref().map(|r| r * r),
             self.node.fast_defined,
         )
     }
@@ -132,42 +399,23 @@ impl Real {
                 a = a.square();
             }
         }
-        let rational = self.node.rational.as_ref().map(|r| {
-            let mut a = r.clone();
-            let mut v = Rational::one();
-            let mut n = exp;
-            while n != 0 {
-                if n & 1 != 0 {
-                    v = &v * &a;
-                }
-                n >>= 1;
-                if n != 0 {
-                    a = &a * &a;
-                }
-            }
-            v
-        });
-        Self::make(
-            Expr::Pow(self.clone(), exp),
-            r,
-            || self.node.coarse.as_ref().map(|b| b.pow_u32(exp)),
-            rational,
-            self.node.fast_defined,
-        )
+        Self::make(Expr::Pow(self.clone(), exp), r, self.node.fast_defined)
     }
     /// Exact value of a structurally rational expression; does not refine.
     pub fn as_rational(&self) -> Option<Rational> {
-        self.node.rational.clone()
+        self.rational_ref().cloned()
     }
-    /// Borrows a syntactically rational value without cloning or refinement.
+    /// Borrows a syntactically rational value, computing exact metadata without refinement.
     pub fn rational_ref(&self) -> Option<&Rational> {
-        self.node.rational.as_ref()
+        self.node.rational_ref()
     }
 
     /// Whether immutable construction definitions agree. Different definitions
     /// do not prove different values. This does not preserve expression-node sharing.
     pub fn same_definition(&self, other: &Self) -> bool {
-        if let (Some(a), Some(b)) = (self.rational_ref(), other.rational_ref()) {
+        if let Some(a) = self.rational_ref()
+            && let Some(b) = other.rational_ref()
+        {
             return a == b;
         }
         self.construction_cmp(other).is_eq()
@@ -175,7 +423,9 @@ impl Real {
     /// Whether this definition is the negation of `other`, without constructing
     /// an expression or refining either value. A false result is inconclusive.
     pub fn same_negated_definition(&self, other: &Self) -> bool {
-        if let (Some(a), Some(b)) = (self.rational_ref(), other.rational_ref()) {
+        if let Some(a) = self.rational_ref()
+            && let Some(b) = other.rational_ref()
+        {
             return a.d == b.d
                 && a.n.0.magnitude() == b.n.0.magnitude()
                 && (a.is_zero() || a.sign() != b.sign());
@@ -198,9 +448,7 @@ impl Real {
     }
     /// Double approximation for display only.
     pub fn to_f64(&self) -> f64 {
-        self.node
-            .rational
-            .as_ref()
+        self.rational_ref()
             .map_or_else(|| self.approx().mid(), Rational::to_f64_nearest)
     }
 
@@ -268,137 +516,57 @@ impl Real {
                 _ => unreachable!("matching construction tags"),
             })
     }
-    fn make(
+    fn make(expr: Expr, approx: Interval, fast_defined: bool) -> Self {
+        Self {
+            node: Arc::new(Node::new(expr, approx, fast_defined, None)),
+        }
+    }
+
+    fn frozen_leaf(
         expr: Expr,
         approx: Interval,
-        coarse: impl FnOnce() -> Option<Ball>,
         rational: Option<Rational>,
-        fast_defined: bool,
+        coarse: impl FnOnce() -> Ball,
     ) -> Self {
-        let identity_atoms = match &expr {
-            Expr::Algebraic(a) => u8::from(matches!(&a.repr,
-                crate::algebraic::AlgebraicRepr::Root(root)
-                    if root.polynomial.degree().is_some_and(|degree| degree == 3 || degree > 4))),
-            Expr::Coordinate(..) => 2,
-            Expr::Neg(a) | Expr::Sqrt(a) | Expr::Square(a) | Expr::Pow(a, _) => {
-                a.node.identity_atoms
-            }
-            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => {
-                a.node.identity_atoms | b.node.identity_atoms
-            }
-            Expr::Rational(_) => 0,
-        };
+        // Preserve construction bounds independently of later refinement caches.
         let coarse = rational
             .as_ref()
             .map(|r| Ball::from_rational(r, 1))
-            .or_else(coarse)
-            .or_else(|| {
-                if fast_defined && approx.is_finite() {
-                    Some(Ball::bounds(
-                        Rational::from_f64_exact(approx.lo()).unwrap(),
-                        Rational::from_f64_exact(approx.hi()).unwrap(),
-                        1,
-                    ))
-                } else {
-                    None
-                }
-            });
+            .unwrap_or_else(coarse);
         Self {
-            node: Arc::new(Node {
+            node: Arc::new(Node::new(
                 expr,
                 approx,
-                coarse,
-                rational,
-                fast_defined,
-                identity_atoms,
-            }),
+                true,
+                Some((rational, Some(coarse))),
+            )),
         }
     }
     fn add(&self, rhs: &Self) -> Self {
-        let coarse = || {
-            self.node
-                .coarse
-                .as_ref()
-                .zip(rhs.node.coarse.as_ref())
-                .map(|(a, b)| a + b)
-        };
-        let rational = self
-            .node
-            .rational
-            .as_ref()
-            .zip(rhs.node.rational.as_ref())
-            .map(|(a, b)| a + b);
         Self::make(
             Expr::Add(self.clone(), rhs.clone()),
             self.approx() + rhs.approx(),
-            coarse,
-            rational,
             self.node.fast_defined && rhs.node.fast_defined,
         )
     }
     fn sub(&self, rhs: &Self) -> Self {
-        let coarse = || {
-            self.node
-                .coarse
-                .as_ref()
-                .zip(rhs.node.coarse.as_ref())
-                .map(|(a, b)| a - b)
-        };
-        let rational = self
-            .node
-            .rational
-            .as_ref()
-            .zip(rhs.node.rational.as_ref())
-            .map(|(a, b)| a - b);
         Self::make(
             Expr::Sub(self.clone(), rhs.clone()),
             self.approx() - rhs.approx(),
-            coarse,
-            rational,
             self.node.fast_defined && rhs.node.fast_defined,
         )
     }
     fn mul(&self, rhs: &Self) -> Self {
-        let coarse = || {
-            self.node
-                .coarse
-                .as_ref()
-                .zip(rhs.node.coarse.as_ref())
-                .map(|(a, b)| a * b)
-        };
-        let rational = self
-            .node
-            .rational
-            .as_ref()
-            .zip(rhs.node.rational.as_ref())
-            .map(|(a, b)| a * b);
         Self::make(
             Expr::Mul(self.clone(), rhs.clone()),
             self.approx() * rhs.approx(),
-            coarse,
-            rational,
             self.node.fast_defined && rhs.node.fast_defined,
         )
     }
     fn div(&self, rhs: &Self) -> Self {
-        let coarse = || {
-            self.node
-                .coarse
-                .as_ref()
-                .zip(rhs.node.coarse.as_ref())
-                .and_then(|(a, b)| a.checked_div(b))
-        };
-        let rational = self
-            .node
-            .rational
-            .as_ref()
-            .zip(rhs.node.rational.as_ref())
-            .and_then(|(a, b)| a.checked_div(b));
         Self::make(
             Expr::Div(self.clone(), rhs.clone()),
             self.approx() / rhs.approx(),
-            coarse,
-            rational,
             self.node.fast_defined && rhs.node.fast_defined && rhs.approx().sign().is_some(),
         )
     }
@@ -406,8 +574,6 @@ impl Real {
         Self::make(
             Expr::Neg(self.clone()),
             -self.approx(),
-            || self.node.coarse.as_ref().map(|b| -b),
-            self.node.rational.as_ref().map(|r| -r),
             self.node.fast_defined,
         )
     }

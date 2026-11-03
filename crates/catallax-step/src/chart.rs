@@ -37,6 +37,8 @@ enum Rail {
 /// A band's closed rail against the half-plane from `origin` along `reference`,
 /// by the convex hull of each rational Bezier span. A rail either misses the
 /// half-plane or crosses it once, at its start, which a framed wall puts there.
+/// A rail misses it when each span stays on one side of the plane or wholly
+/// behind the axis, as a loop that winds round neither cylinder can.
 fn rail_event(
     rail: &BSplineCurve,
     origin: &Point3,
@@ -73,6 +75,14 @@ fn rail_event(
         side != Sign::Zero && range.into_iter().all(|i| sides[i] == side)
     };
     if one_side(sides[0], 0..count) {
+        return Ok(Rail::Clear);
+    }
+    let behind =
+        |range: std::ops::Range<usize>| range.into_iter().all(|i| ahead[i] == Sign::Negative);
+    if (0..count - 1).step_by(degree).all(|first| {
+        let span = first..first + degree + 1;
+        one_side(sides[first], span.clone()) || behind(span)
+    }) {
         return Ok(Rail::Clear);
     }
     // The start lies on the plane exactly, ahead of the axis.

@@ -409,10 +409,11 @@ fn oversized_slot_rounds_refuse_without_touching_the_retained_input() {
     let base = evaluate_incremental(&recipe(&[], "0", 3), None, &mut decider()).unwrap();
     let bytes = export(base.built());
     let names = origins(base.built());
+    // A ball of radius 6 cannot sit inside the radius 5 end walls.
     for (segments, code) in [
         (
             &["bottom", "right", "top", "left"][..],
-            "fillet.unsupported-contact",
+            "fillet.radius-too-large",
         ),
         (&["top"][..], "fillet.unsupported-overflow"),
     ] {

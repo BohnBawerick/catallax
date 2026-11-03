@@ -131,6 +131,20 @@ fn ring(kind: &str, radius: &str) -> Recipe {
         json!([wall("wide"), wall("wall")]),
     )
 }
+/// Two square cylinders whose axes are 8 apart, so they cross in one loop.
+fn looped(kind: &str, radius: &str) -> Recipe {
+    finish(
+        vec![
+            json!({"id":"wide","op":"cylinder","radius":"10","height":"24",
+                "pose":{"rotation":["1","1","0","0"],"translation":["0","20","0"]}}),
+            json!({"id":"wall","op":"cylinder","radius":"4","height":"40",
+                "pose":{"rotation":["1","0","0","0"],"translation":["8","8","-20"]}}),
+            json!({"id":"joined","op":"boolean","kind":kind,"target":"wide","tool":"wall"}),
+        ],
+        radius,
+        json!([wall("wide"), wall("wall")]),
+    )
+}
 fn assert_closed(case: &str, mesh: &Mesh, options: &MeshOptions) {
     let mut incidence = BTreeMap::<_, (usize, i32)>::new();
     for triangle in &mesh.triangles {
@@ -247,37 +261,57 @@ fn generator_fillets_stay_closed_at_every_viewport_level() {
         ("ring boss", ring("union", "1")),
         ("ring bore", ring("subtract", "1")),
     ] {
-        let default = MeshOptions::default();
-        let body = catallax_app::build(&recipe, &default, &mut Decider::default()).unwrap();
-        assert_closed(kind, &body.display.value, &default);
-        let diagonal = diagonal(&body.display.value);
-        for factor in [4.0, 1.0, 0.25] {
-            let chord = Rational::parse(&format!("{:.12}", 0.002 * diagonal * factor)).unwrap();
-            let options = MeshOptions {
-                chord_tolerance: chord / Rational::from_i64(2),
-                angular_deviation: Some(Rational::parse("0.2617993877991494").unwrap()),
-                ..MeshOptions::default()
-            };
-            let case = format!("{kind} factor {factor}");
-            let started = Instant::now();
-            let body = catallax_app::build(&recipe, &options, &mut Decider::default()).unwrap();
-            let display_ms = started.elapsed().as_secs_f64() * 1000.0;
-            assert_closed(&case, &body.display.value, &options);
-            let (preview, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
-                preview_mesh_body(
-                    &body.built.model,
-                    body.built.result,
-                    &PreviewOptions::from(&options),
-                    &mut Decider::default(),
-                )
-            });
-            assert!(!work.exhausted, "{case} preview: {work:?}");
-            let preview = preview.unwrap();
-            assert!(preview.faces.iter().all(|f| !f.triangles.is_empty()));
-            eprintln!(
-                "{case}: build_and_display_ms={display_ms:.3} triangles={}",
-                body.display.value.triangles.len()
-            );
-        }
+        assert_viewport_levels(kind, &recipe);
+    }
+}
+
+// A loop rebuilds its fit at each level, so each case is its own test.
+#[test]
+fn a_loop_boss_stays_closed_at_every_viewport_level() {
+    assert_viewport_levels("loop boss", &looped("union", "1"));
+}
+
+#[test]
+fn a_loop_notch_stays_closed_at_every_viewport_level() {
+    assert_viewport_levels("loop notch", &looped("subtract", "1"));
+}
+
+#[test]
+fn a_loop_lens_stays_closed_at_every_viewport_level() {
+    assert_viewport_levels("loop lens", &looped("intersect", "1"));
+}
+
+fn assert_viewport_levels(kind: &str, recipe: &Recipe) {
+    let default = MeshOptions::default();
+    let body = catallax_app::build(recipe, &default, &mut Decider::default()).unwrap();
+    assert_closed(kind, &body.display.value, &default);
+    let diagonal = diagonal(&body.display.value);
+    for factor in [4.0, 1.0, 0.25] {
+        let chord = Rational::parse(&format!("{:.12}", 0.002 * diagonal * factor)).unwrap();
+        let options = MeshOptions {
+            chord_tolerance: chord / Rational::from_i64(2),
+            angular_deviation: Some(Rational::parse("0.2617993877991494").unwrap()),
+            ..MeshOptions::default()
+        };
+        let case = format!("{kind} factor {factor}");
+        let started = Instant::now();
+        let body = catallax_app::build(recipe, &options, &mut Decider::default()).unwrap();
+        let display_ms = started.elapsed().as_secs_f64() * 1000.0;
+        assert_closed(&case, &body.display.value, &options);
+        let (preview, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
+            preview_mesh_body(
+                &body.built.model,
+                body.built.result,
+                &PreviewOptions::from(&options),
+                &mut Decider::default(),
+            )
+        });
+        assert!(!work.exhausted, "{case} preview: {work:?}");
+        let preview = preview.unwrap();
+        assert!(preview.faces.iter().all(|f| !f.triangles.is_empty()));
+        eprintln!(
+            "{case}: build_and_display_ms={display_ms:.3} triangles={}",
+            body.display.value.triangles.len()
+        );
     }
 }

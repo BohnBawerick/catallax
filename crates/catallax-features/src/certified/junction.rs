@@ -6,7 +6,7 @@
 
 use super::{CertificateKey, Refusal, key, positive_lower, unproven};
 use catallax_numbers::{
-    BoundKind, CertificateIdentity, CertificateScope, Decider, DecisionBook, EvidenceBook,
+    Ball, BoundKind, CertificateIdentity, CertificateScope, Decider, DecisionBook, EvidenceBook,
     EvidenceBound, EvidenceUnit, ExceptionSource, FeatureSizeLowerBound, GEOMETRIC_GAP_EXCEEDED,
     GeometricCertificate, GeometricEvidence, GeometricProof, LocalException, ModellingTolerance,
     ProofContext, Rational, Real, RecordedChoice, RegionCertificate, Sign,
@@ -14,8 +14,8 @@ use catallax_numbers::{
 use catallax_recipe::StepId;
 use catallax_shapes::{
     BSplineCurve, BoundaryRow, Curve, Point3, RollingEnvelope, RollingEnvelopeDefinition,
-    RollingSaddle, RollingSaddleDefinition, SaddleLaw, SplineBoundary, SplineSupport, Surface,
-    Vector3,
+    RollingSaddle, RollingSaddleDefinition, SaddleLaw, SaddleRing, SplineBoundary, SplineSupport,
+    Surface, Vector3,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, envelope_rows, saddle_rows};
 use std::collections::{BTreeMap, BTreeSet};
@@ -245,6 +245,16 @@ fn saddle_sizes(
     let definition = saddle.definition();
     let law = definition.law();
     let rails = saddle_rows(model, face).ok_or_else(|| unproven("a ring lost a rail"))?;
+    if law.ring == SaddleRing::Overlap {
+        let slack = Real::from_rational(saddle.bound().upper.clone()) * Real::from_i64(2);
+        let (edge, mut narrowest) = loop_sizes(&law, &slack, dec)?;
+        for (rail, _) in rails {
+            for neck in wall_necks(model, face, rail, &law, definition.origin(), dec)? {
+                narrowest = narrowest.min(positive_lower(&neck, dec)?);
+            }
+        }
+        return Ok((edge, narrowest));
+    }
     let big = &law.wide + &(&law.radius * &Real::from_i64(law.sides[0]));
     let small = &law.narrow + &(&law.radius * &Real::from_i64(law.sides[1]));
     let reach = &(law.gap.square().sqrt() + small.clone()) / &big;
@@ -266,6 +276,105 @@ fn saddle_sizes(
     Ok((edge, narrowest))
 }
 
+// The same bounds on a loop. Each rail is closed, so it is at least twice as long
+// as its extent in any direction. With `c = (P + g - p) / 2` and
+// `d = (P - g + p) / 2`, the wide rail at `w = +-pi/2` stands at
+// `y = +-2 sqrt(d (P - d)) R / P` along `along`, and the narrow rail at `w = 0, pi`
+// at `+-2 sqrt(d (p - d)) r / p` on the side axis. The band is at least as wide
+// as the narrow rail's distance from the wide cylinder, which panels in `w`
+// enclose: with `w` the narrow contact's distance from the wide axis,
+// `|w - R| = |w^2 - R^2| / (w + R)` and `w + R <= 2 (R + r)`. A carrier's rails
+// sit within `slack / 2` of the law's.
+fn loop_sizes(
+    law: &SaddleLaw,
+    slack: &Real,
+    dec: &mut Decider,
+) -> Result<(Rational, Rational), Refusal> {
+    const BITS: u32 = 96;
+    const PANELS: i64 = 512;
+    let two = Real::from_i64(2);
+    let big = &law.wide + &(&law.radius * &Real::from_i64(law.sides[0]));
+    let small = &law.narrow + &(&law.radius * &Real::from_i64(law.sides[1]));
+    let reach = &law.gap * &Real::from_i64(law.gap_sign);
+    let middle = &(&(&big + &reach) - &small) / &two;
+    let half = &(&(&big - &reach) + &small) / &two;
+    let wide_reach = &(&(&half * &(&big - &half)).sqrt() * &(&two * &law.wide)) / &big;
+    let narrow_reach = &(&(&half * &(&small - &half)).sqrt() * &(&two * &law.narrow)) / &small;
+    let length = |extent: &Real| &(extent * &Real::from_i64(4)) - slack;
+    let edge = positive_lower(&length(&wide_reach), dec)?
+        .min(positive_lower(&length(&narrow_reach), dec)?);
+    let ball = |value: &Real, dec: &mut Decider| dec.enclose_at(value, BITS);
+    let [
+        big_b,
+        small_b,
+        reach_b,
+        middle_b,
+        half_b,
+        ball_b,
+        wide_b,
+        cosine_b,
+    ] = [
+        &big,
+        &small,
+        &reach,
+        &middle,
+        &half,
+        &law.radius,
+        &law.wide,
+        &law.cosine,
+    ]
+    .map(|value| ball(value, dec));
+    let (big_b, small_b, reach_b, middle_b, half_b) =
+        (big_b?, small_b?, reach_b?, middle_b?, half_b?);
+    let (ball_b, wide_b, cosine_b) = (ball_b?, wide_b?, cosine_b?);
+    let exact = |value: i64| Ball::from_rational(&Rational::from_i64(value), BITS);
+    let [facing, sn] = [law.gap_sign, law.sides[1]].map(exact);
+    let pi = Ball::pi_checked(BITS, dec)?;
+    let root = |value: Ball| {
+        value
+            .sqrt()
+            .ok_or_else(|| unproven("a loop's law has no root here"))
+    };
+    let mut least: Option<Rational> = None;
+    for panel in 0..PANELS {
+        dec.check_deadline()?;
+        let [from, to] = [panel, panel + 1].map(|end| {
+            &pi * &Ball::from_rational(
+                &Rational::from_ratio(2 * end, PANELS).expect("nonzero"),
+                BITS,
+            )
+        });
+        // `PANELS` is a multiple of four, so no turning point of either lies inside
+        // a panel, and each is the hull of its values at the ends.
+        let cos = from.cos().hull(&to.cos());
+        let sin = from.sin().hull(&to.sin());
+        let far = &middle_b + &(&half_b * &(&cos.square() - &sin.square()));
+        let a = &exact(2) * &root(&half_b * &(&big_b - &(&half_b * &sin.square())))?;
+        let b = &exact(2) * &root(&half_b * &(&small_b - &(&half_b * &cos.square())))?;
+        let (x, y, s) = (&facing * &far, &sin * &a, &cos * &b);
+        let u = &x - &(&facing * &reach_b);
+        let pull = (&sn * &ball_b)
+            .checked_div(&small_b)
+            .ok_or_else(|| unproven("a loop's narrow offset is not positive"))?;
+        let qx = &x - &(&pull * &u);
+        let qy = &y - &(&(&pull * &s) * &cosine_b);
+        let gap = &(&qx.square() + &qy.square()) - &wide_b.square();
+        let clear = if gap.lo() > Rational::zero() {
+            gap.lo()
+        } else if gap.hi() < Rational::zero() {
+            -gap.hi()
+        } else {
+            return Err(unproven(
+                "a loop's narrow rail is not clear of the wide cylinder",
+            ));
+        };
+        least = Some(least.map_or(clear.clone(), |old| old.min(clear)));
+    }
+    let clear = Real::from_rational(least.expect("a loop has panels"));
+    let width = &(&clear / &(&(&law.wide + &law.radius) * &two)) - slack;
+    Ok((edge, positive_lower(&width, dec)?))
+}
+
 fn same_real(a: &Real, c: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(super::sign(&(a - c), dec)? == Sign::Zero)
 }
@@ -280,7 +389,11 @@ fn same_law(
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let (first, second) = (a.law(), c.law());
-    if first.sides != second.sides || first.branch != second.branch {
+    if first.sides != second.sides
+        || first.branch != second.branch
+        || first.ring != second.ring
+        || first.gap_sign != second.gap_sign
+    {
         return Ok(false);
     }
     for (x, y) in [
@@ -320,10 +433,7 @@ fn check_rails(
     let rows =
         saddle_rows(model, region.face).ok_or_else(|| unproven("a ring lost a retained rail"))?;
     let law = saddle.definition().law();
-    let narrow_axis = law
-        .axis
-        .scaled(&law.cosine)
-        .plus(&law.along.scaled(&law.sine));
+    let narrow_axis = law.narrow_axis();
     let axes = [
         (
             &law.wide,

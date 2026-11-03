@@ -6,8 +6,9 @@ use std::sync::OnceLock;
 
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Outcome, Rational, Real, Refusal, Sign};
 use catallax_shapes::{
-    BSplineSurface, BallSide, Cylinder, Isometry, Point3, Pose, RPoint3, RVector3, RollingSaddle,
-    RollingSaddleDefinition, Rotation, SplineBoundary, SplineSupport, Surface, Vector3,
+    BSplineSurface, BallSide, Cylinder, EnvelopeGrid, Isometry, Point3, Pose, RPoint3, RVector3,
+    RollingSaddle, RollingSaddleDefinition, Rotation, SplineBoundary, SplineSupport, Surface,
+    Vector3,
 };
 
 fn decider() -> Decider {
@@ -634,39 +635,50 @@ fn rails_answer_incidence_normals_and_sides() {
     );
 }
 
+// The grid's bilinear cell at chart `(u, v)`, at matching parameters. Columns
+// need not be even in `u`, so `columns` names each one.
+fn cell_at(grid: &EnvelopeGrid, columns: &[Rational], u: f64, v: f64) -> V {
+    let at = |column: usize, row: usize| -> V {
+        let p = &grid.points[column * grid.rows + row];
+        std::array::from_fn(|i| p[i].mid().to_f64_nearest())
+    };
+    let columns: Vec<f64> = columns.iter().map(Rational::to_f64_nearest).collect();
+    let c = columns
+        .partition_point(|&start| start <= u)
+        .clamp(1, grid.columns - 1)
+        - 1;
+    let s = (u - columns[c]) / (columns[c + 1] - columns[c]);
+    let row = v * (grid.rows - 1) as f64;
+    let r = (row.floor() as usize).min(grid.rows - 2);
+    let t = row - r as f64;
+    let near = add(
+        add([0.0; 3], at(c, r), (1.0 - s) * (1.0 - t)),
+        at(c + 1, r),
+        s * (1.0 - t),
+    );
+    add(
+        add(near, at(c, r + 1), (1.0 - s) * t),
+        at(c + 1, r + 1),
+        s * t,
+    )
+}
+
 #[test]
 fn the_display_grid_closes_round_the_ring() {
     let fitted = fitted(0);
     let dec = decider();
     let grid = fitted.display_grid(&q("1/100"), 2_000_000, &dec).unwrap();
+    let columns = fitted
+        .display_columns(&q("1/100"), 2_000_000, &dec)
+        .unwrap();
     assert!(grid.chord <= q("1/100"));
     // Between grid lines the carrier stays within the chord of its bilinear cell.
     let chord = grid.chord.to_f64_nearest();
-    let at = |column: usize, row: usize| -> V {
-        let p = &grid.points[column * grid.rows + row];
-        std::array::from_fn(|i| p[i].mid().to_f64_nearest())
-    };
     for i in 0..200 {
-        let (x, y) = (0.137 + 0.618 * f64::from(i), 0.291 + 0.414 * f64::from(i));
-        let (column, row) = (
-            (x % (grid.columns - 1) as f64),
-            (y % (grid.rows - 1) as f64),
-        );
-        let (c, r) = (column.floor() as usize, row.floor() as usize);
-        let (s, t) = (column - c as f64, row - r as f64);
-        let u = -1.0 + 4.0 * column / (grid.columns - 1) as f64;
-        let v = row / (grid.rows - 1) as f64;
+        let u = -1.0 + 4.0 * (0.137 + 0.618 * f64::from(i)).fract();
+        let v = (0.291 + 0.414 * f64::from(i)).fract();
         let on = sample(fitted.carrier(), u, v, &dec);
-        let near = add(
-            add([0.0; 3], at(c, r), (1.0 - s) * (1.0 - t)),
-            at(c + 1, r),
-            s * (1.0 - t),
-        );
-        let near = add(
-            add(near, at(c, r + 1), (1.0 - s) * t),
-            at(c + 1, r + 1),
-            s * t,
-        );
+        let near = cell_at(&grid, &columns, u, v);
         assert!(norm(sub(on, near)) <= chord, "{u} {v}");
     }
     for row in 0..grid.rows {
@@ -730,9 +742,8 @@ fn a_rail_table_reads_the_rail_on_its_cylinder() {
         let origin = g(saddle.definition().origin());
         let foot = g(&law.foot);
         let [across, along, axis] = [f(&law.across), f(&law.along), f(&law.axis)];
-        let (cos, sin) = (n(&law.cosine), n(&law.sine));
-        let side = add(add([0.0; 3], along, cos), axis, -sin);
-        let narrow = add(add([0.0; 3], axis, cos), along, sin);
+        let side = f(&law.side_axis());
+        let narrow = f(&law.narrow_axis());
         let branch = law.branch as f64;
         for rail in 0..2 {
             let table = saddle.parameter_table(rail, &tolerance, &dec).unwrap();
@@ -992,6 +1003,40 @@ fn an_overlap_carrier_stays_within_its_bound_of_the_rolling_ball() {
     }
 }
 
+// A loop's spans follow its bound, so the hard stretch is far finer than the rest
+// and the spans come to fewer than a uniform fit needs.
+#[test]
+fn a_loops_spans_gather_where_the_ball_bends_hardest() {
+    let fitted = overlap(2);
+    assert!(fitted.span_count() < 300, "{}", fitted.span_count());
+    let [widest, narrowest] = fitted.span_widths();
+    assert!(narrowest.mul_pow2(2) <= widest, "{widest:?} {narrowest:?}");
+    assert!(fitted.bound().upper <= q("1/10000"));
+}
+
+#[test]
+fn a_loop_near_tangent_shadows_fits_or_refuses() {
+    use BallSide::Outside;
+    let wide = cylinder(["0", "0", "0"], ["0", "0", "1"], "10");
+    let fit = |x: &str| {
+        let narrow = cylinder([x, "0", "0"], ["0", "1", "0"], "4");
+        let mut dec = decider();
+        let definition = RollingSaddleDefinition::overlapping(
+            &wide,
+            &narrow,
+            &real("1"),
+            [Outside, Outside],
+            &mut dec,
+        )
+        .unwrap();
+        RollingSaddle::fit(definition, &mut dec)
+    };
+    // The cylinders' own shadows nearly part, and the offsets' do not.
+    assert!(fit("139/10").unwrap().bound().upper <= q("1/10000"));
+    // Both pairs of shadows nearly hold one another.
+    assert_eq!(fit("601/100").unwrap_err().code, "shapes.rolling-saddle");
+}
+
 #[test]
 fn an_overlap_refuses_a_ring_that_passes_through() {
     use BallSide::Outside;
@@ -1009,6 +1054,268 @@ fn an_overlap_refuses_a_ring_that_passes_through() {
         )
         .unwrap_err();
         assert_eq!(error.code, "shapes.rolling-saddle");
+    }
+}
+
+#[test]
+fn a_line_meets_a_loop_where_a_triangulation_says() {
+    for index in 0..overlap_cases().len() {
+        check_lines(&overlap(index));
+    }
+}
+
+#[test]
+fn a_loops_rails_answer_incidence_normals_and_sides() {
+    let case = &overlap_cases()[0];
+    let fitted = overlap(0);
+    let mut dec = decider();
+    let support = SplineSupport::from(fitted.clone());
+    let [wide, narrow] = fitted.rails();
+    let at = narrow.point_at(&real("1/2"), &mut dec).unwrap();
+    assert!(fitted.on_boundary(&at, &mut dec).unwrap());
+    let normal = fitted.normal_at(&at, &mut dec).unwrap();
+    assert!(zero(&normal.dot(&case.narrow.axis), &mut dec));
+    let [centre, ..] = fitted.definition().section(&q("1/2")).unwrap();
+    assert!(!fitted.on_boundary(&centre, &mut dec).unwrap());
+    let wide_at = wide.point_at(&real("2"), &mut dec).unwrap();
+    assert_eq!(fitted.side_at(&wide_at, &mut dec).unwrap(), Sign::Zero);
+    assert_eq!(fitted.side_at(&centre, &mut dec).unwrap(), Sign::Positive);
+    assert!(
+        support
+            .misses_point(&point(["100", "0", "0"]), &mut dec)
+            .unwrap()
+    );
+}
+
+#[test]
+fn a_loops_display_grid_and_range_hold_the_carrier() {
+    for index in [0, 2] {
+        let fitted = overlap(index);
+        let dec = decider();
+        let chord = q("1/100");
+        let grid = fitted.display_grid(&chord, 4_000_000, &dec).unwrap();
+        let columns = fitted.display_columns(&chord, 4_000_000, &dec).unwrap();
+        assert!(grid.chord <= chord);
+        let reach = grid.chord.to_f64_nearest();
+        for i in 0..200 {
+            let u = -1.0 + 4.0 * (0.137 + 0.618 * f64::from(i)).fract();
+            let v = (0.291 + 0.414 * f64::from(i)).fract();
+            let on = sample(fitted.carrier(), u, v, &dec);
+            let off = norm(sub(on, cell_at(&grid, &columns, u, v)));
+            assert!(off <= reach, "{u} {v}: {off} over {reach}");
+        }
+        for row in 0..grid.rows {
+            let first = &grid.points[row];
+            let last = &grid.points[(grid.columns - 1) * grid.rows + row];
+            for k in 0..3 {
+                assert!((&first[k].mid() - &last[k].mid()).abs() < q("1/1000000000"));
+            }
+        }
+        let width = q("1/1000000");
+        for axis in 0..3 {
+            let [[low, low_top], [high_low, high]] = fitted.range(axis, &width, &dec).unwrap();
+            assert!(&low_top - &low <= width && &high - &high_low <= width);
+            let values = grid.points.iter().map(|p| p[axis].mid());
+            let (mut small, mut large) = (None::<Rational>, None::<Rational>);
+            for value in values {
+                small = Some(small.map_or(value.clone(), |v| v.min(value.clone())));
+                large = Some(large.map_or(value.clone(), |v| v.max(value)));
+            }
+            let [small, large] = [small.unwrap(), large.unwrap()];
+            assert!(low <= small && large <= high, "axis {axis}");
+            assert!(
+                &small - &low_top <= chord && &high_low - &large <= chord,
+                "axis {axis}"
+            );
+        }
+    }
+}
+
+// A table's angle and height, turned back into a point from the law alone.
+#[test]
+fn a_loops_rail_tables_read_the_rails_on_their_cylinders() {
+    let tolerance = q("1/1000000000");
+    let dec = decider();
+    for index in 0..overlap_cases().len() {
+        let saddle = overlap(index);
+        let definition = saddle.definition();
+        let law = definition.law();
+        let foot = [g(definition.origin()), g(&law.foot)];
+        let axes = [f(&law.axis), f(&law.narrow_axis())];
+        let radii = [n(&law.wide), n(&law.narrow)];
+        for rail in 0..2 {
+            let [zero, turning] = law.rail_zero(rail).map(|v| f(&v));
+            let table = saddle.parameter_table(rail, &tolerance, &dec).unwrap();
+            assert!(table.bound <= tolerance);
+            for span in (0..table.knots.len() - 1).step_by(11) {
+                let [lo, hi] = [
+                    rational(&table.knots[span]),
+                    rational(&table.knots[span + 1]),
+                ];
+                let (share, width) = (0.3, hi - lo);
+                let angle = cubic([&table.angle[span], &table.angle[span + 1]], width, share);
+                let height = cubic([&table.height[span], &table.height[span + 1]], width, share);
+                assert!(angle.abs() < std::f64::consts::PI);
+                let at = add(foot[rail], axes[rail], height);
+                let found = add(
+                    add(at, zero, radii[rail] * angle.cos()),
+                    turning,
+                    radii[rail] * angle.sin(),
+                );
+                let seen = sample(saddle.carrier(), lo + share * width, rail as f64, &dec);
+                assert!(norm(sub(found, seen)) < 2e-8, "{index} {rail} {span}");
+            }
+        }
+    }
+}
+
+// The sharp edge from the law's frame alone, at `w`, checked on both cylinders.
+fn sharp_edge(saddle: &RollingSaddle, w: f64) -> V {
+    let definition = saddle.definition();
+    let law = definition.law();
+    let (big, small, gap) = (n(&law.wide), n(&law.narrow), n(&law.gap));
+    let (sine, cosine) = (n(&law.sine), n(&law.cosine));
+    let reach = gap.abs();
+    let middle = (big + reach - small) / 2.0;
+    let half = (big - reach + small) / 2.0;
+    let far = middle + half * (2.0 * w).cos();
+    let y = w.sin() * (2.0 * half * (big + far)).sqrt();
+    let side = w.cos() * (2.0 * half * (reach + small - far)).sqrt();
+    let x = far * gap.signum();
+    let z = (cosine * y - side) / sine;
+    let [across, along, axis] = [f(&law.across), f(&law.along), f(&law.axis)];
+    let point = add(
+        add(add(g(definition.origin()), across, x), along, y),
+        axis,
+        z,
+    );
+    let off = |at: V, axis: V| {
+        let d = sub(at, [0.0; 3]);
+        let share = d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2];
+        norm(add(d, axis, -share))
+    };
+    assert!((off(sub(point, g(definition.origin())), axis) - big).abs() < 1e-9);
+    assert!((off(sub(point, g(&law.foot)), f(&law.narrow_axis())) - small).abs() < 1e-9);
+    point
+}
+
+#[test]
+fn a_loops_chart_runs_the_way_its_rails_follow_the_edge() {
+    let exact = |v: V| {
+        let [x, y, z] = v.map(|value| Real::from(q(&format!("{value:.12}"))));
+        (x, y, z)
+    };
+    const STEPS: usize = 1440;
+    for index in 0..overlap_cases().len() {
+        let saddle = overlap(index);
+        let definition = saddle.definition();
+        let mut dec = decider();
+        let edge: Vec<V> = (0..STEPS)
+            .map(|step| sharp_edge(&saddle, std::f64::consts::TAU * step as f64 / STEPS as f64))
+            .collect();
+        // One tangent anywhere says the edge's way round the chart.
+        for step in (0..STEPS).step_by(37) {
+            let tangent = sub(edge[(step + 1) % STEPS], edge[step]);
+            let (x, y, z) = exact(edge[step]);
+            let at = Point3::new(x, y, z);
+            let (x, y, z) = exact(tangent);
+            let forward = Vector3::new(x, y, z);
+            assert!(definition.runs_with_chart(&at, &forward, &mut dec).unwrap());
+            let (x, y, z) = exact([-tangent[0], -tangent[1], -tangent[2]]);
+            let backward = Vector3::new(x, y, z);
+            assert!(
+                !definition
+                    .runs_with_chart(&at, &backward, &mut dec)
+                    .unwrap()
+            );
+        }
+        // The rail's nearest point on the edge goes once round the same way.
+        let nearest = |at: V| {
+            (0..STEPS)
+                .min_by(|a, c| norm(sub(at, edge[*a])).total_cmp(&norm(sub(at, edge[*c]))))
+                .unwrap()
+        };
+        let stops: Vec<usize> = (0..=48)
+            .map(|i| {
+                let u = -1.0 + 4.0 * f64::from(i) / 48.0;
+                nearest(sample(saddle.carrier(), u, 0.0, &dec))
+            })
+            .collect();
+        let turned: i64 = stops
+            .windows(2)
+            .map(|pair| {
+                let step = (pair[1] + STEPS - pair[0]) % STEPS;
+                step.min(STEPS - step) as i64 * if step <= STEPS / 2 { 1 } else { -1 }
+            })
+            .sum();
+        assert_eq!(turned, STEPS as i64, "{index}");
+    }
+}
+
+#[test]
+fn a_grids_columns_name_their_chart_parameters() {
+    let dec = decider();
+    for saddle in [overlap(2), fitted(0)] {
+        let chord = q("1/20");
+        let grid = saddle.display_grid(&chord, 4_000_000, &dec).unwrap();
+        let columns = saddle.display_columns(&chord, 4_000_000, &dec).unwrap();
+        assert_eq!(columns.len(), grid.columns);
+        assert_eq!(columns[0], q("-1"));
+        assert_eq!(columns[grid.columns - 1], q("3"));
+        for column in (0..grid.columns).step_by(5) {
+            let p = &grid.points[column * grid.rows];
+            let seen: V = std::array::from_fn(|i| p[i].mid().to_f64_nearest());
+            let on = sample(
+                saddle.carrier(),
+                columns[column].to_f64_nearest(),
+                0.0,
+                &dec,
+            );
+            assert!(norm(sub(seen, on)) < 1e-9, "{column}");
+        }
+    }
+}
+
+// Each span takes its own column width, so check every cell against the carrier.
+// The triangles `a c e` and `a e d` are linear in the chart, so at a cell's
+// centre and at the middle of its first side and its first column they read the
+// midpoint of a diagonal or a side.
+#[test]
+fn every_grid_cell_stays_within_its_chord_of_the_carrier() {
+    let dec = decider();
+    for saddle in [overlap(0), overlap(2), fitted(0)] {
+        for chord in [q("1/20"), q("1/100")] {
+            let grid = saddle.display_grid(&chord, 4_000_000, &dec).unwrap();
+            let columns = saddle.display_columns(&chord, 4_000_000, &dec).unwrap();
+            assert!(grid.chord <= chord);
+            let bound = grid.chord.to_f64_nearest() + 1e-9;
+            let point = |column: usize, row: usize| -> V {
+                let at = &grid.points[column * grid.rows + row];
+                std::array::from_fn(|i| at[i].mid().to_f64_nearest())
+            };
+            let middle = |a: V, c: V| add(a, sub(c, a), 0.5);
+            let row = |line: usize| line as f64 / (grid.rows - 1) as f64;
+            for column in 0..grid.columns - 1 {
+                let [u0, u1] = [column, column + 1].map(|c| columns[c].to_f64_nearest());
+                for line in 0..grid.rows - 1 {
+                    let [v0, v1] = [row(line), row(line + 1)];
+                    let a = point(column, line);
+                    let [c, d, e] = [
+                        point(column + 1, line),
+                        point(column, line + 1),
+                        point(column + 1, line + 1),
+                    ];
+                    for ([u, v], on) in [
+                        ([(u0 + u1) / 2.0, (v0 + v1) / 2.0], middle(a, e)),
+                        ([(u0 + u1) / 2.0, v0], middle(a, c)),
+                        ([u0, (v0 + v1) / 2.0], middle(a, d)),
+                    ] {
+                        let off = norm(sub(sample(saddle.carrier(), u, v, &dec), on));
+                        assert!(off <= bound, "{column} {line}: {off} > {bound}");
+                    }
+                }
+            }
+        }
     }
 }
 

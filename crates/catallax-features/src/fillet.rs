@@ -49,8 +49,8 @@ pub const UNSUPPORTED_END: &str = "fillet.unsupported-end";
 
 /// The refusal code for a junction of selected strips the builder does not
 /// close yet: convex and concave strips at one vertex, curved strips meeting
-/// at a sharp vertex, three strips without an exact spherical corner, and
-/// the like.
+/// at a sharp vertex, three strips without an exact spherical corner, or the
+/// collapsed poles of equal-radius cylinders on crossing axes.
 pub const UNSUPPORTED_CORNER: &str = "fillet.unsupported-corner";
 
 // Marks the bound in a radius refusal's detail.

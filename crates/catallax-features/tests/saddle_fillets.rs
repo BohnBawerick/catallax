@@ -737,7 +737,7 @@ fn a_band_past_the_end_of_the_wide_cylinder_refuses() {
     assert_eq!(code, "fillet.unsupported-overflow");
 }
 
-// Equal radii cross in two ellipses, whose ball folds at their meeting points.
+// Equal radii meet at collapsed poles, which need shared corner topology.
 #[test]
 fn equal_radii_refuse() {
     let same = cylinder("wall", "10", "30", LEVEL, ["0", "0", "0"]);
@@ -747,7 +747,7 @@ fn equal_radii_refuse() {
         ["wide", "wall"],
         Some("1"),
     ));
-    assert_eq!(code, "fillet.unsupported-contact");
+    assert_eq!(code, "fillet.unsupported-corner");
 }
 
 // A narrow cylinder that stops inside the wide one leaves open edges, not a ring.

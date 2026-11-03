@@ -171,6 +171,41 @@ fn outward(
     }
     Ok(n.scaled(&Real::from_i64(if f.sense == Sense::Same { 1 } else { -1 })))
 }
+/// The point of a circle at its reference direction.
+fn circle_point(c: &Circle) -> Point3 {
+    c.center.plus(
+        &c.ref_dir
+            .scaled(&(&c.radius_sq / &c.ref_dir.norm_squared()).sqrt()),
+    )
+}
+/// Proves each contact of a ring strip leaves the edge into its own face, the
+/// side where the face continues away from the edge. A wrong material side
+/// puts a rail beyond the face it replaces: the loops still close and the
+/// shell stays oriented, so no structural check sees it.
+fn rails_on_faces(model: &Model, run: &Run, dec: &mut Decider) -> Result<(), Refusal> {
+    let e = model.edge(run.edge);
+    let Curve::Circle(edge) = model.geom().curve(e.curve) else {
+        return Ok(());
+    };
+    let at = circle_point(edge);
+    let along = edge.normal.cross(&at.minus(&edge.center));
+    for (index, face) in run.faces.into_iter().enumerate() {
+        let Curve::Circle(contact) = &run.definition.contacts[index] else {
+            return Err(bad("a ring strip needs circular contacts"));
+        };
+        let foot = circle_point(contact);
+        // A face lies to the left of its coedges about its outward normal.
+        let forward = if run.senses[index] == e.sense { 1 } else { -1 };
+        let into = outward(model, face, &at, dec)?.cross(&along.scaled(&Real::from_i64(forward)));
+        if sign(&foot.minus(&at).dot(&into), dec)? != Sign::Positive {
+            return Err(Refusal::new(
+                "fillet.contact-off-face",
+                "a contact rail leaves the edge away from its face, so the ball is on the wrong material side",
+            ));
+        }
+    }
+    Ok(())
+}
 fn convex(
     model: &Model,
     edge: EdgeId,
@@ -184,19 +219,19 @@ fn convex(
     let orientation = if *sense == e.sense { 1 } else { -1 };
     match model.geom().curve(e.curve) {
         Curve::Circle(c) => {
-            let plane = [*a, *b]
-                .into_iter()
-                .find(|f| {
-                    matches!(
-                        model.geom().surface(model.face(*f).surface),
-                        Surface::Plane(_)
-                    )
-                })
-                .ok_or_else(|| bad("circular elementary fillets need one plane"))?;
-            let coedge = incident.iter().find(|(f, _)| *f == plane).unwrap().1;
-            let orientation = if coedge == e.sense { 1 } else { -1 };
-            let n = outward(model, plane, &c.center, dec)?;
-            Ok(sign(&(c.normal.dot(&n) * Real::from_i64(orientation)), dec)? == Sign::Positive)
+            // The dihedral sign at one point of the ring. Both faces count: a
+            // plane inside its rim is a convex boss top over an outward wall
+            // and a concave hole floor over an inward one.
+            let at = circle_point(c);
+            let along = c.normal.cross(&at.minus(&c.center));
+            let na = outward(model, *a, &at, dec)?;
+            let nb = outward(model, *b, &at, dec)?;
+            let value = nb.dot(&na.cross(&along)) * Real::from_i64(orientation);
+            match sign(&value, dec)? {
+                Sign::Negative => Ok(true),
+                Sign::Positive => Ok(false),
+                Sign::Zero => Err(bad("tangent faces do not define a regular sharp edge")),
+            }
         }
         Curve::Line(l) => {
             let na = outward(model, *a, &l.origin, dec)?;
@@ -894,6 +929,9 @@ fn build_strips(
         })
         .then(|| catallax_numbers::OperationSpan::begin("brep", step, "fillet.trimming", dec));
     for run in &runs {
+        rails_on_faces(model, run, dec)?;
+    }
+    for run in &runs {
         if let Err(refusal) = guard(model, body, run, &uses, dec) {
             // A lone closed ring may clear every countersink mouth, touch them
             // at single points, or continue over them; every other overflow,
@@ -1385,4 +1423,96 @@ fn build_strips(
         return Ok((marked, runs.into_iter().map(|run| run.definition).collect()));
     }
     Ok((result, runs.into_iter().map(|run| run.definition).collect()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::BudgetPolicy;
+    use catallax_recipe::Recipe;
+
+    // The ring at height `z` between a plane and a perpendicular cylinder, its
+    // strip built with the given material side, and the rail check's verdict.
+    fn rails(steps: &str, body: &str, z: i64, convex: bool) -> Result<(), Refusal> {
+        let recipe = Recipe::parse(&format!(
+            r#"{{"format":"catallax-recipe/3","name":"ring","steps":[{steps}],"result":"{body}"}}"#
+        ))
+        .unwrap();
+        let mut dec = Decider::new(BudgetPolicy {
+            max_work: 20_000_000,
+            ..Default::default()
+        });
+        let mut built = crate::evaluate(&recipe, &mut dec).unwrap();
+        let model = &mut built.model;
+        let uses = uses(model, built.result);
+        let (edge, incident) = uses
+            .iter()
+            .find(|(edge, incident)| {
+                matches!(model.geom().curve(model.edge(**edge).curve),
+                    Curve::Circle(c) if c.center.z.as_rational() == Some(Rational::from_i64(z)))
+                    && incident.iter().any(|(face, _)| {
+                        matches!(
+                            model.geom().surface(model.face(*face).surface),
+                            Surface::Cylinder(_)
+                        )
+                    })
+            })
+            .unwrap();
+        let [(a, sa), (b, sb)] = incident.as_slice() else {
+            panic!("two faces");
+        };
+        let faces = [*a, *b];
+        let definition = FilletDefinition::new(
+            Origin {
+                step: StepId::new("round").unwrap(),
+                role: Role::Blend {
+                    edge: model.edge_name(built.result, *edge).unwrap(),
+                },
+            },
+            faces.map(|f| model.geom().surface(model.face(f).surface).clone()),
+            faces.map(|f| model.face(f).sense == Sense::Same),
+            model.geom().curve(model.edge(*edge).curve).clone(),
+            Real::one(),
+            convex,
+            &mut dec,
+        )?;
+        let run = Run {
+            edge: *edge,
+            faces,
+            senses: [*sa, *sb],
+            definition,
+            ends: BTreeMap::new(),
+            caps: BTreeMap::new(),
+        };
+        rails_on_faces(model, &run, &mut dec)
+    }
+
+    const BLOCK: &str = r#"{"id":"block-section","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[{"kind":"line","id":"s","to":["20","-20"]},{"kind":"line","id":"e","to":["20","20"]},{"kind":"line","id":"n","to":["-20","20"]},{"kind":"line","id":"w","to":["-20","-20"]}]]},{"id":"block","op":"extrude","profile":"block-section","distance":"20"}"#;
+
+    // A strip on the wrong material side puts a rail beyond its face. The
+    // check refuses it whatever the convexity test said, on every kind of
+    // ring, and passes the strip on the right side.
+    #[test]
+    fn a_rail_off_its_face_is_refused() {
+        let boss = r#"{"id":"boss","op":"cylinder","radius":"3","height":"10","pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}"#;
+        let mouth = format!(
+            r#"{BLOCK},{{"id":"hole","op":"cylinder","radius":"3","height":"30","pose":{{"rotation":["1","0","0","0"],"translation":["0","0","-5"]}}}},{{"id":"cut","op":"boolean","kind":"subtract","target":"block","tool":"hole"}}"#
+        );
+        let blind = format!(
+            r#"{BLOCK},{{"id":"hole","op":"cylinder","radius":"3","height":"20","pose":{{"rotation":["1","0","0","0"],"translation":["0","0","10"]}}}},{{"id":"cut","op":"boolean","kind":"subtract","target":"block","tool":"hole"}}"#
+        );
+        let base = format!(
+            r#"{BLOCK},{{"id":"boss","op":"cylinder","radius":"3","height":"20","pose":{{"rotation":["1","0","0","0"],"translation":["0","0","10"]}}}},{{"id":"joined","op":"boolean","kind":"union","target":"block","tool":"boss"}}"#
+        );
+        for (steps, body, z, convex) in [
+            (boss.to_string(), "boss", 10, true),
+            (mouth, "cut", 20, true),
+            (blind, "cut", 10, false),
+            (base, "joined", 20, false),
+        ] {
+            assert_eq!(rails(&steps, body, z, convex), Ok(()), "{body} right side");
+            let refusal = rails(&steps, body, z, !convex).unwrap_err();
+            assert_eq!(refusal.code, "fillet.contact-off-face", "{body} wrong side");
+        }
+    }
 }

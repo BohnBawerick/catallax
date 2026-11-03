@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Pair the five released SolidDraft edits and compare their exact native answers."""
 import argparse
-from collections import defaultdict
+from collections import Counter, defaultdict
 import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -261,6 +262,143 @@ def run(args):
     print(json.dumps(report, indent=2))
 
 
+def phases(args):
+    root = args.out / "boolean-phases"
+    root.mkdir()
+    compiled = subprocess.run(
+        ["cargo", "build", "--locked", "--release", "-p", "catallax-features",
+         "--bench", "rebuild", "--message-format=json", "-j", "2"],
+        cwd=args.baseline, stdout=subprocess.PIPE, text=True, check=True)
+    (root / "build.jsonl").write_text(compiled.stdout)
+    artifacts = [json.loads(line) for line in compiled.stdout.splitlines()]
+    executables = [item["executable"] for item in artifacts
+                   if item.get("reason") == "compiler-artifact"
+                   and item["target"]["name"] == "rebuild" and item.get("executable")]
+    assert len(executables) == 1, "expected one rebuild benchmark executable"
+    binary = Path(executables[0])
+    core = min(os.sched_getaffinity(0))
+    os.sched_setaffinity(0, {core})
+    stages = ("intersect", "imprint", "classify", "keep", "sew")
+    samples, medians = [], []
+    for name, targets in TARGETS.items():
+        for number in targets:
+            source = args.out / "0-baseline/native" / name / f"{number:04}/native.json"
+            expected = {step["id"] for step in json.loads(source.read_text())["steps"]
+                        if step["op"] == "boolean"}
+            reference = None
+            case = []
+            for repetition in range(4):
+                dest = root / name / f"{number:04}" / str(repetition)
+                dest.mkdir(parents=True)
+                load_before = os.getloadavg()
+                process = subprocess.run(
+                    [str(binary), "--input", str(source), "--repeat", "1", "--stages",
+                     "--step-output", str(dest / "answer.step")],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                load_after = os.getloadavg()
+                (dest / "stdout.jsonl").write_text(process.stdout)
+                (dest / "stderr.txt").write_text(process.stderr)
+                process.check_returncode()
+                records = [json.loads(line) for line in process.stdout.splitlines()]
+                rows = [row for row in records if "stage" in row]
+                assert Counter((row["step"], row["stage"]) for row in rows) == Counter(
+                    (step, stage) for step in expected for stage in stages), \
+                    f"missing Boolean phase evidence: {dest}"
+                normalized = without_clock(rows)
+                if reference is None:
+                    reference = normalized
+                assert normalized == reference, f"phase decisions or work varied: {dest}"
+                assert (dest / "answer.step").read_bytes() == \
+                    (source.parent / "answer.step").read_bytes(), \
+                    f"phase benchmark's complete build changed STEP bytes: {dest}"
+                row = dict(scenario=name, step=number, repetition=repetition,
+                           warmup=repetition == 0, load_before=load_before, load_after=load_after,
+                           stages_ms={stage: sum(value["wall_ms"] for value in rows
+                                                 if value["stage"] == stage) for stage in stages},
+                           operations=rows)
+                samples.append(row)
+                if repetition:
+                    case.append(row)
+            medians.append(dict(
+                scenario=name, step=number,
+                stages_ms={stage: statistics.median(row["stages_ms"][stage] for row in case)
+                           for stage in stages},
+                operations=[dict(
+                    step=step,
+                    stages_ms={stage: statistics.median(
+                        value["wall_ms"] for row in case for value in row["operations"]
+                        if value["step"] == step and value["stage"] == stage) for stage in stages})
+                    for step in sorted(expected)]))
+    report = dict(
+        base=os.environ["BASE_SHA"], core=core,
+        binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+        measured_repetitions=3,
+        scope="Independent native prefix phase replay with the existing benchmark's raw scope; "
+              "not an application click or its aggregate work scope",
+        medians=medians, samples=samples)
+    (root / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report, indent=2))
+
+
+def check_profile_answer(source, dest):
+    for name in (*FILES, "stats.txt", "work.txt"):
+        assert (dest / "answer" / name).read_bytes() == (source.parent / name).read_bytes(), \
+            f"profiling changed an exact answer, certificate, statistic or work: {dest} {name}"
+
+
+def capture_cpu_profile(binary, source, dest):
+    # Use the installed tool directly: Ubuntu's /usr/bin/perf wrapper requires
+    # a package matching the hosted VM's exact kernel, unlike the perf ABI.
+    perf = next(path for path in sorted(Path("/usr/lib/linux-tools").glob("*/perf"))
+                if path.is_file())
+    dest.mkdir(parents=True)
+    shutil.copyfile(binary, dest / "edit_answer")
+    metadata = dict(tool=str(perf), version=subprocess.check_output(
+        [str(perf), "--version"], text=True).strip(), frequency=997, stack_bytes=16384,
+        metric="Sampled user CPU-clock periods; not instrumented elapsed time",
+        core=min(os.sched_getaffinity(0)), load_average=os.getloadavg())
+    metadata["inline_expansion"] = False
+    # Raw stacks contain process memory: never inherit runner credentials.
+    profile_env = dict(PATH=os.defpath, LANG="C.UTF-8", HOME=str(dest),
+                       DEBUGINFOD_URLS="")
+    for repetition in range(5):
+        capture = dest / str(repetition)
+        capture.mkdir()
+        print(f"CPU capture {repetition}: recording native probe", flush=True)
+        with (capture / "probe.stdout").open("w") as stdout, \
+                (capture / "record.log").open("w") as stderr:
+            subprocess.run([str(perf), "record", "--no-buildid-cache", "-e", "cpu-clock:u",
+                            "-F", "997", "--call-graph", "dwarf,16384",
+                            "-o", str(capture / "perf.data"), "--",
+                            str(binary), str(source), str(capture / "answer")],
+                           stdout=stdout, stderr=stderr, check=True, env=profile_env)
+        print(f"CPU capture {repetition}: resolving DWARF call chains", flush=True)
+        with (capture / "stacks.txt").open("w") as stdout, \
+                (capture / "decode.log").open("w") as stderr:
+            subprocess.run([str(perf), "script", "--demangle", "--no-inline",
+                            "--ns", "-F", "+period", "-i", str(capture / "perf.data")],
+                           stdout=stdout, stderr=stderr, check=True, env=profile_env)
+        assert "catallax_boolean" in (capture / "stacks.txt").read_text(), \
+            "CPU samples did not resolve Boolean call stacks"
+        check_profile_answer(source, capture)
+    (dest / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+
+
+def capture_profile(binary, source, dest, options=()):
+    dest.mkdir(parents=True)
+    with (dest / "instrumented.stdout").open("w") as stdout, \
+            (dest / "callgrind.log").open("w") as stderr:
+        subprocess.run(["valgrind", "--tool=callgrind", "--error-exitcode=1", *options,
+                        f"--callgrind-out-file={dest / 'callgrind.out'}",
+                        str(binary), str(source), str(dest / "answer")],
+                       stdout=stdout, stderr=stderr, check=True)
+    with (dest / "inclusive.txt").open("w") as stdout:
+        subprocess.run(["callgrind_annotate", "--inclusive=yes", "--tree=both",
+                        "--auto=no", "--threshold=99", str(dest / "callgrind.out")],
+                       stdout=stdout, check=True)
+    check_profile_answer(source, dest)
+
+
 def profile(args):
     os.sched_setaffinity(0, {min(os.sched_getaffinity(0))})
     binary = args.baseline / "target/release/examples/edit_answer"
@@ -270,18 +408,19 @@ def profile(args):
     for name, targets in TARGETS.items():
         for number in targets:
             source = args.out / "0-baseline/native" / name / f"{number:04}/native.json"
-            dest = args.out / "profiles" / name / f"{number:04}"
-            dest.mkdir(parents=True)
-            with (dest / "instrumented.stdout").open("w") as stdout, \
-                    (dest / "callgrind.log").open("w") as stderr:
-                subprocess.run(["valgrind", "--tool=callgrind", "--error-exitcode=1",
-                                f"--callgrind-out-file={dest / 'callgrind.out'}",
-                                str(binary), str(source), str(dest / "answer")],
-                               stdout=stdout, stderr=stderr, check=True)
-            with (dest / "inclusive.txt").open("w") as stdout:
-                subprocess.run(["callgrind_annotate", "--inclusive=yes", "--tree=both",
-                                "--auto=no", "--threshold=99", str(dest / "callgrind.out")],
-                               stdout=stdout, check=True)
+            capture_profile(binary, source, args.out / "profiles" / name / f"{number:04}")
+            if name == "bracket" and number == 27:
+                functions = ("catallax_boolean::graph::section",
+                             "catallax_boolean::graph::carrier_hits",
+                             "catallax_boolean::imprinting::imprint")
+                capture_profile(
+                    binary, source, args.out / "profiles/non-carrier/bracket/0027",
+                    ["--collect-atstart=no",
+                     *(f"--toggle-collect={function}" for function in functions)])
+                metadata["non_carrier"] = dict(
+                    included=[functions[0], functions[2]], excluded=[functions[1]],
+                    scope="Rest of intersect plus imprint; carrier collection toggles off/on")
+                capture_cpu_profile(binary, source, args.out / "profiles/cpu/bracket/0027")
             metadata.setdefault("inputs", []).append(dict(
                 scenario=name, step=number, sha256=hashlib.sha256(source.read_bytes()).hexdigest()))
     (args.out / "profiles/metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
@@ -289,8 +428,8 @@ def profile(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("build", "run", "profile"))
+    parser.add_argument("mode", choices=("build", "run", "phases", "profile"))
     for name in ("app", "baseline", "candidate", "binaries", "out"):
         parser.add_argument("--" + name, type=lambda value: Path(value).resolve(), required=True)
     arguments = parser.parse_args()
-    {"build": build, "run": run, "profile": profile}[arguments.mode](arguments)
+    {"build": build, "run": run, "phases": phases, "profile": profile}[arguments.mode](arguments)

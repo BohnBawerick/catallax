@@ -474,7 +474,7 @@ impl Tower {
         }
         // Only a defined rational cache may hide an expression subtree.
         let result = if x.node.fast_defined
-            && let Some(r) = &x.node.rational
+            && let Some(r) = x.rational_ref()
         {
             w.exact(r, r, false)?;
             Some(Element::Rational(r.clone()))
@@ -570,7 +570,7 @@ fn has_quartic(x: &Real, w: &mut Cost<'_>) -> Result<bool, &'static str> {
     let mut seen = std::collections::HashSet::new();
     while let Some(x) = pending.pop() {
         w.step()?;
-        if !seen.insert(Arc::as_ptr(&x.node)) || (x.node.fast_defined && x.node.rational.is_some())
+        if !seen.insert(Arc::as_ptr(&x.node)) || (x.node.fast_defined && x.rational_ref().is_some())
         {
             continue;
         }

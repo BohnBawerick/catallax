@@ -685,6 +685,21 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
         "{}",
         refusal.detail
     );
+    // The field compiler has no roll-over over earlier strips.
+    for recipe in [
+        boss(4, "3", "1", false),
+        pocket("3", "3"),
+        mitred(4, "3", "3", false),
+    ] {
+        let Err(refusal) = catallax_field::Plan::compile_checked(&recipe, &mut decider()) else {
+            panic!("the field compiled a fillet over a fillet");
+        };
+        assert_eq!(
+            refusal.code, "fillet.unsupported-overflow",
+            "{}",
+            refusal.detail
+        );
+    }
     // A ball as wide as a cylinder consumes the face inside its rim.
     let dome = recipe(
         4,
@@ -942,4 +957,116 @@ fn pocket_uprights_swallow_the_floor_loop_mitres() {
         "{}",
         refusal.detail
     );
+}
+
+// A 10 x 10 x 10 boss on a 30 x 30 x 5 plate, its uprights rounded by
+// `upright`, then its base by `base`: a concave loop over convex rounds.
+fn based(upright: &str, base: &str) -> Recipe {
+    recipe(
+        4,
+        vec![
+            block("plate", ["30", "30", "5"], ["0", "0", "0"]),
+            block("boss", ["10", "10", "10"], ["10", "10", "5"]),
+            json!({"id":"joined","op":"boolean","kind":"union","target":"plate","tool":"boss"}),
+            fillet("upright", "joined", upright, uprights("boss")),
+            fillet(
+                "base",
+                "upright",
+                base,
+                vec![edge(cap("plate", "end"), side("boss", "x_max"))],
+            ),
+        ],
+    )
+}
+
+#[test]
+fn a_boss_base_rolls_over_its_rounded_uprights() {
+    let big = r("2");
+    for base in ["1", "3"] {
+        let rho = r(base);
+        let built = build(&based("2", base));
+        expect_kinds(&built, &[("Plane", 11), ("Cylinder", 8), ("Torus", 4)]);
+        // 5500 less the four upright sections over the boss's height 10, plus
+        // the base section along runs 10 - 2R and four quarter turns outside R.
+        let runs = &r("40") - &(&r("8") * &big);
+        let [s0, s1] = section(&rho);
+        let [u0, u1] = section(&big);
+        let [t1, t2] = quarter_turn(&rho, &big, 1);
+        let four = r("4");
+        exact_volume(
+            &built,
+            [
+                &(&r("5500") - &(&(&four * &u0) * &r("10"))) + &(&s0 * &runs),
+                &(&(-&(&(&four * &u1) * &r("10"))) + &(&s1 * &runs)) + &(&four * &t1),
+                &four * &t2,
+            ],
+            "1e-6",
+        );
+        closed_display(&built);
+        step(&built, "TOROIDAL_SURFACE(");
+        assert_eq!(faces_of(&built, "base").len(), 8);
+    }
+    assert_eq!(
+        names(&build(&based("2", "1")), "base"),
+        names(&build(&based("3", "1")), "base")
+    );
+    use Containment::{Inside, Outside};
+    let mut built = build(&based("2", "1"));
+    classify(
+        &mut built,
+        &[
+            // Added along the boss's right wall, and outside the ball there.
+            (["201/10", "15", "51/10"], Inside),
+            (["41/2", "15", "11/2"], Outside),
+            // Added round the corner about (18, 18), 41/20 from its axis and
+            // 1/20 above the plate, outside the tube about the circle of
+            // radius 3; then inside the tube.
+            (["1923/100", "1964/100", "101/20"], Inside),
+            (["39/2", "20", "11/2"], Outside),
+            (["15", "15", "10"], Inside),
+        ],
+    );
+}
+
+/// The block in a rational pose that turns it a third of a turn about the
+/// diagonal (1, 1, 1) and moves it off the origin.
+fn placed(recipe: &Recipe) -> Recipe {
+    let mut value = serde_json::to_value(recipe).unwrap();
+    for step in value["steps"].as_array_mut().unwrap() {
+        if step["op"] == "block" {
+            step["pose"] = json!({"rotation":["3","1","1","1"],"translation":["7","-2","5"]});
+        }
+    }
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+#[test]
+fn fillets_over_fillets_build_in_any_rational_placement() {
+    for (recipe, kind) in [
+        (boss(4, "3", "1", false), "Torus"),
+        (boss(4, "3", "3", false), "Sphere"),
+        (corner("3", "1", false), "Torus"),
+        (mitred(4, "3", "3", false), "Sphere"),
+    ] {
+        let level = build(&recipe);
+        let turned = build(&placed(&recipe));
+        assert_eq!(kinds(&turned), kinds(&level), "{kind}");
+        let volume = |built: &Built| {
+            catallax_measure::volume(
+                &built.model,
+                built.result,
+                &Default::default(),
+                &mut measuring(),
+            )
+            .unwrap()
+            .value
+        };
+        let (a, b) = (volume(&level), volume(&turned));
+        assert!(
+            a.lo <= b.hi && b.lo <= a.hi && &b.hi - &b.lo <= r("1e-6"),
+            "{kind}: {a:?} {b:?}"
+        );
+        closed_display(&turned);
+        assert_eq!(names(&turned, "top"), names(&level, "top"));
+    }
 }

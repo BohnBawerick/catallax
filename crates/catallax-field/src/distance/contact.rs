@@ -347,6 +347,11 @@ impl Plan {
             {
                 query = self.contact_face_query(FaceId(index), point, dec)?;
             }
+            if query.state == FaceState::Indeterminate
+                && let Some(named) = self.named_planar_query(FaceId(index), point, dec)?
+            {
+                query = named;
+            }
             match query.state {
                 FaceState::OnFace => {
                     if let Some((old, previous)) = &mut chosen {

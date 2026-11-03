@@ -233,6 +233,7 @@ pub struct Plan {
     // hidden shared facet. Their signed minimum is a true Euclidean distance.
     separated_unions: BTreeSet<usize>,
     domains: Vec<ownership::Domain>,
+    planar_memberships: distance::PlanarMembershipCache,
 }
 
 impl Plan {
@@ -266,6 +267,7 @@ impl Plan {
             consumed: Vec::new(),
             separated_unions: BTreeSet::new(),
             domains: vec![ownership::Domain::Source, ownership::Domain::Absent],
+            planar_memberships: Default::default(),
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
@@ -1025,6 +1027,7 @@ impl Plan {
         let pose = Pose::new(pose.rotation.clone(), pose.translation.clone(), dec)?;
         let map = Isometry::from(&pose);
         let mut result = self.clone();
+        result.planar_memberships = Default::default();
         for leaf in &mut result.leaves {
             leaf.transform(&map)?;
         }
@@ -1130,6 +1133,7 @@ impl Plan {
     }
 
     fn compact(&mut self) {
+        self.planar_memberships = Default::default();
         let mut live = vec![false; self.instructions.len()];
         live[0] = true;
         live[self.root] = true;

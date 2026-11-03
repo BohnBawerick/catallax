@@ -6,10 +6,21 @@ use catallax_shapes::{
     Point3, Vector3,
     distance::{self, Bounds, Domain, Membership, Options},
 };
-use std::sync::{Mutex, OnceLock};
+use std::{collections::BTreeMap, sync::{Arc, Mutex, OnceLock}};
 
 mod contact;
 mod planar;
+
+#[derive(Clone, Debug)]
+struct NamedPlanarRegion {
+    boundary: Arc<distance::PlanarBoundary>,
+    source_orientation: u8,
+}
+
+type NamedPlanarRegions = BTreeMap<usize, Option<NamedPlanarRegion>>;
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct PlanarMembershipCache(OnceLock<Arc<Mutex<NamedPlanarRegions>>>);
 
 fn coordinates(p: &Point3) -> [Real; 3] {
     [p.x.clone(), p.y.clone(), p.z.clone()]

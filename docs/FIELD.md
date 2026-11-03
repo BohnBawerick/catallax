@@ -402,6 +402,24 @@ Mixed source polarity retains an ambiguous normal. Draft tile domains retain
 their ordinary named-face proof: carrier sectors alone do not identify the
 selected coplanar tile. This does not enable unproved shell constructions.
 
+When ordinary and contact proofs remain unresolved, bounded planar extrusion
+faces and native polyhedral tiles can supply an independent finite-domain
+certificate. Their authored loop/tile edges add proof-only cuts to the planar
+section arrangement; these cuts also enter the exact Cauchy step bound.
+Root and historical normal germs, together with the explicit source name,
+label every open cell. Only membership-changing edges form the closed named
+region. Construction seams and isolated carrier strata do not create patches.
+The proof requires complete primitive, uncapped-cell, planar-extrusion or
+physical-polyhedron carriers for every participating source. Unsupported
+sources or intersections retain the unresolved result.
+
+Exact containment in a complete closed region proves presence, not absence
+when a region could not be constructed. Source physical normals and a single
+Boolean occurrence polarity certify direction separately. Immutable regions
+are cached per face; numeric refusals remain retryable, and rigid transforms
+replace world-coordinate caches. Neither the generic Draft fallback exclusion
+nor the shared-carrier role guard is relaxed.
+
 Definition-native planar shell compilation can separately prove an entire Round
 or RoundCorner name absent. It intersects the generator's nearest-feature
 halfspaces with every bounded convex source cell and checks exact affine rank.

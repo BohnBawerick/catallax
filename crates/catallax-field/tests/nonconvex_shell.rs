@@ -158,6 +158,13 @@ fn reentrant_tray_compiles_independently_with_finite_corner_material() {
     let Direction::Unique(normal) = direction else { panic!("{direction:?}") };
     assert!(normal[0].contains(0.0) && normal[1].contains(0.0));
     assert!(normal[2].lo() > -1.001 && normal[2].hi() < -0.999);
+    let inner = origin(json!({"step":"shell","role":{"inner":{"of":{
+        "step":"stock","role":"start"
+    }}}}));
+    let direction = closed_on(&plan, &inner, ["1", "5/3", "1"]);
+    let Direction::Unique(normal) = direction else { panic!("{direction:?}") };
+    assert!(normal[0].contains(0.0) && normal[1].contains(0.0));
+    assert!(normal[2].lo() > 0.999 && normal[2].hi() < 1.001);
 }
 
 #[test]
@@ -214,6 +221,20 @@ fn material_across_a_gap_keeps_the_positive_parallel_face_and_finite_trim() {
         FaceState::OnFace,
         "coincident source material keeps its original name",
     );
+    let top = origin(json!({"step":"stock","role":{"side":{"segment":"u-2"}}}));
+    let direction = closed_on(&plan, &top, ["5", "8", "1/2"]);
+    let Direction::Unique(normal) = direction else { panic!("{direction:?}") };
+    assert!(normal[0].contains(0.0) && normal[2].contains(0.0));
+    assert!(normal[1].lo() > 0.999 && normal[1].hi() < 1.001);
+    let mut pose = catallax_shapes::Pose::identity();
+    pose.translation = catallax_shapes::RVector3::new(
+        Rational::zero(), Rational::from_i64(5), Rational::zero(),
+    ).to_real();
+    let moved = plan.transformed(&pose, &mut Decider::default()).unwrap();
+    let direction = closed_on(&moved, &top, ["5", "13", "1/2"]);
+    let Direction::Unique(normal) = direction else { panic!("{direction:?}") };
+    assert!(normal[0].contains(0.0) && normal[2].contains(0.0));
+    assert!(normal[1].lo() > 0.999 && normal[1].hi() < 1.001);
     let options = Options { width: Rational::parse("1/100").unwrap(), max_cells: 16_384 };
     let (answer, work) = with_operation_budget(WORK, || {
         let mut dec = Decider::default();

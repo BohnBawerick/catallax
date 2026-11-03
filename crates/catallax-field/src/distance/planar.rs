@@ -1,17 +1,19 @@
 //! Field-native planar section arrangements. Source and historical Boolean
 //! germs decide the closed trim, never a B-rep, display mesh or residual sample.
 
-use crate::{Instruction, Location, Plan, geometry, ownership::Domain};
+use crate::{Direction, FaceId, FaceQuery, FaceState, Instruction, Location, Plan, geometry, ownership::Domain};
 use catallax_intersect::{
     Component, CurveForm, CurveSurface, SurfacePair, arc_point, curve_form,
     intersect_curve_surface, intersect_surfaces, same_curve, tangent_at,
 };
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign};
+use catallax_recipe::Origin;
 use catallax_shapes::{
-    Circle, CurveId, GeomStore, Point3, PointDef, PointId, Surface, Vector3,
+    Circle, CurveId, GeomStore, Plane, Point3, PointDef, PointId, RPoint3, Surface, Vector3,
     distance::{PlanarBoundary, PlanarEdge},
 };
 use std::{collections::BTreeMap, sync::{Arc, OnceLock}};
+use super::NamedPlanarRegion;
 
 fn bad(detail: &str) -> Refusal {
     Refusal::new("distance.unsupported-planar-trim", detail)
@@ -70,6 +72,33 @@ struct Scene<'a> {
     plan: &'a Plan,
     active: Vec<bool>,
     leaves: Vec<usize>,
+}
+
+impl<'a> Scene<'a> {
+    fn new(plan: &'a Plan) -> Self {
+        let mut active = vec![false; plan.instructions.len()];
+        active[plan.root] = true;
+        for domain in &plan.domains {
+            if let Domain::Boundary { node, .. } = domain {
+                active[*node] = true;
+            }
+        }
+        for i in (0..active.len()).rev() {
+            if active[i]
+                && let Instruction::Boolean { a, b, .. } = plan.instructions[i]
+            {
+                active[a] = true;
+                active[b] = true;
+            }
+        }
+        let leaves = plan.instructions.iter().enumerate().filter_map(|(i, node)| {
+            match node {
+                Instruction::Leaf(leaf) if active[i] => Some(*leaf),
+                _ => None,
+            }
+        }).collect();
+        Self { plan, active, leaves }
+    }
 }
 
 impl Scene<'_> {
@@ -152,12 +181,14 @@ impl Scene<'_> {
         &self,
         point: &Point3,
         direction: &Vector3,
+        trims: &[geometry::Constraint],
         dec: &mut Decider,
     ) -> Result<Point3, Refusal> {
         ray_sample(
             self.leaves
                 .iter()
-                .flat_map(|i| self.plan.leaves[*i].constraints()),
+                .flat_map(|i| self.plan.leaves[*i].constraints())
+                .chain(trims),
             point,
             direction,
             dec,
@@ -283,6 +314,38 @@ fn line_bounds(
     ]))
 }
 
+fn append_named_trims(
+    cuts: &mut Vec<geometry::Constraint>,
+    own: &Plane,
+    patch: &Plane,
+    vertices: &[Point3],
+    loops: &[Vec<usize>],
+    dec: &mut Decider,
+) -> Result<u8, Refusal> {
+    if geometry::sign(&own.normal.cross(&patch.normal).norm_squared(), dec)? != Sign::Zero
+        || geometry::sign(&patch.origin.minus(&own.origin).dot(&own.normal), dec)? != Sign::Zero
+    {
+        return Ok(0);
+    }
+    let orientation = match geometry::sign(&patch.normal.dot(&own.normal), dec)? {
+        Sign::Positive => 1,
+        Sign::Negative => 2,
+        Sign::Zero => return Err(bad("a named planar source has no material-side normal")),
+    };
+    for cycle in loops {
+        for i in 0..cycle.len() {
+            let a = &vertices[cycle[i]];
+            let edge = vertices[cycle[(i + 1) % cycle.len()]].minus(a);
+            cuts.push(geometry::constraint(Surface::Plane(Plane {
+                origin: a.clone(),
+                normal: edge.cross(&own.normal),
+                ref_dir: edge,
+            }))?);
+        }
+    }
+    Ok(orientation)
+}
+
 struct SectionGroup {
     faces: Vec<usize>,
     boundaries: OnceLock<Vec<Option<Arc<PlanarBoundary>>>>,
@@ -297,39 +360,143 @@ pub(super) struct Sections<'a> {
 }
 
 impl Plan {
+    fn named_planar_region(
+        &self,
+        id: FaceId,
+        dec: &mut Decider,
+    ) -> Result<Option<NamedPlanarRegion>, Refusal> {
+        let face = &self.faces[id.0];
+        let Surface::Plane(own) = &face.surface else {
+            return Ok(None);
+        };
+        let mut trims = Vec::new();
+        let mut source_orientation = 0;
+        match &self.leaves[face.leaf] {
+            geometry::Leaf::Feature(feature) => {
+                let origins: Vec<_> = self.faces.iter().enumerate()
+                    .filter(|(_, other)| other.leaf == face.leaf)
+                    .map(|(index, other)| Origin {
+                        step: other.origin.step.clone(),
+                        role: self.definition_role(index).clone(),
+                    }).collect();
+                let defining = Origin {
+                    step: face.origin.step.clone(),
+                    role: self.definition_role(id.0).clone(),
+                };
+                let names = origins.iter().collect::<Vec<_>>();
+                let skin = match feature.planar_skin(&names, None, dec) {
+                    Ok(skin) => skin,
+                    Err(error) if matches!(error.code,
+                        "draft.unsupported-arrangement" | "draft.missing-source-origin"
+                    ) => return Ok(None),
+                    Err(error) => return Err(error),
+                };
+                for patch in &skin.patches {
+                    if patch.origins.contains(&defining) {
+                        source_orientation |= append_named_trims(
+                            &mut trims, own, &patch.plane, &skin.vertices, &patch.loops, dec,
+                        )?;
+                    }
+                }
+            }
+            geometry::Leaf::Draft(region) => {
+                let crate::draft::Cell::Polyhedral(poly) = &region.cell else {
+                    return Ok(None);
+                };
+                let Some(source) = region.source_origin(&face.origin) else {
+                    return Ok(None);
+                };
+                for patch in &poly.faces {
+                    if patch.origins.contains(source) {
+                        source_orientation |= append_named_trims(
+                            &mut trims, own, &poly.plane(patch), &poly.vertices, &patch.tiles, dec,
+                        )?;
+                    }
+                }
+            }
+            _ => return Ok(None),
+        }
+        if source_orientation == 0 {
+            return Ok(None);
+        }
+        let scene = Scene::new(self);
+        if !scene.leaves.iter().all(|leaf| match &self.leaves[*leaf] {
+            geometry::Leaf::Primitive(_) => true,
+            geometry::Leaf::Cell(cell) => cell.capped_chart().is_none(),
+            geometry::Leaf::Feature(feature) => feature.complete_planar_carriers(),
+            geometry::Leaf::Draft(region) => matches!(&region.cell, crate::draft::Cell::Polyhedral(_)),
+            geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) => false,
+        }) {
+            return Ok(None);
+        }
+        let radius = match self.node_radius(self.root, dec) {
+            Ok(radius) => radius + Rational::one(),
+            Err(error) if error.code == "field.unbounded-target" => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let boundaries = match scene.boundaries(&[id.0], &radius, &trims, dec) {
+            Ok(boundaries) => boundaries,
+            Err(error) if error.code == "distance.unsupported-planar-trim" => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        Ok(boundaries.into_iter().next().flatten().map(|boundary| {
+            NamedPlanarRegion { boundary, source_orientation }
+        }))
+    }
+
+    pub(super) fn named_planar_query(
+        &self,
+        id: FaceId,
+        point: &RPoint3,
+        dec: &mut Decider,
+    ) -> Result<Option<FaceQuery>, Refusal> {
+        let face = &self.faces[id.0];
+        let Surface::Plane(plane) = &face.surface else {
+            return Ok(None);
+        };
+        match &self.leaves[face.leaf] {
+            geometry::Leaf::Feature(feature) if feature.complete_planar_carriers() => (),
+            geometry::Leaf::Draft(region)
+                if matches!(&region.cell, crate::draft::Cell::Polyhedral(_)) => (),
+            _ => return Ok(None),
+        }
+        let regions = self.planar_memberships.0.get_or_init(Default::default);
+        let region = {
+            let mut regions = regions.lock()
+                .expect("named planar membership initialization panicked");
+            if let Some(region) = regions.get(&id.0) {
+                region.clone()
+            } else {
+                // Refusals leave the cache retryable under a later proof policy.
+                let region = self.named_planar_region(id, dec)?;
+                regions.insert(id.0, region.clone());
+                region
+            }
+        };
+        let Some(region) = region else {
+            return Ok(None);
+        };
+        if !region.boundary.contains(&point.to_real(), dec)? {
+            return Ok(None);
+        }
+        let orientation = match self.leaf_polarities[face.leaf] {
+            1 => region.source_orientation,
+            2 => ((region.source_orientation & 1) << 1) | ((region.source_orientation & 2) >> 1),
+            _ => 3,
+        };
+        let direction = match orientation {
+            1 => crate::unit_direction(plane.normal.clone(), dec)?,
+            2 => crate::unit_direction(plane.normal.scaled(&Real::from_i64(-1)), dec)?,
+            _ => Direction::Ambiguous,
+        };
+        Ok(Some(FaceQuery { state: FaceState::OnFace, direction }))
+    }
+
     pub(super) fn prepare_planar_boundaries(
         &self,
         dec: &mut Decider,
     ) -> Result<Sections<'_>, Refusal> {
-        let mut active = vec![false; self.instructions.len()];
-        active[self.root] = true;
-        for domain in &self.domains {
-            if let Domain::Boundary { node, .. } = domain {
-                active[*node] = true;
-            }
-        }
-        for i in (0..active.len()).rev() {
-            if active[i]
-                && let Instruction::Boolean { a, b, .. } = self.instructions[i]
-            {
-                active[a] = true;
-                active[b] = true;
-            }
-        }
-        let leaves = self
-            .instructions
-            .iter()
-            .enumerate()
-            .filter_map(|(i, node)| match node {
-                Instruction::Leaf(leaf) if active[i] => Some(*leaf),
-                _ => None,
-            })
-            .collect();
-        let scene = Scene {
-            plan: self,
-            active,
-            leaves,
-        };
+        let scene = Scene::new(self);
         let radius = self.node_radius(self.root, dec)? + Rational::one();
         let mut groups: Vec<SectionGroup> = Vec::new();
         let mut group_of = vec![None; self.faces.len()];
@@ -377,7 +544,7 @@ impl Sections<'_> {
         let (group, _) = self.group_of[face].expect("distance face is a live plane");
         let group = &self.groups[group];
         if group.boundaries.get().is_none() {
-            let boundaries = match self.scene.boundaries(&group.faces, &self.radius, dec) {
+            let boundaries = match self.scene.boundaries(&group.faces, &self.radius, &[], dec) {
                 Ok(boundaries) => boundaries,
                 Err(error) if error.code == "distance.unsupported-planar-trim" => {
                     vec![None; group.faces.len()]
@@ -396,6 +563,7 @@ impl Scene<'_> {
         &self,
         faces: &[usize],
         radius: &Rational,
+        trims: &[geometry::Constraint],
         dec: &mut Decider,
     ) -> Result<Vec<Option<Arc<PlanarBoundary>>>, Refusal> {
         let Surface::Plane(plane) = &self.plan.faces[faces[0]].surface else {
@@ -407,6 +575,7 @@ impl Scene<'_> {
             .leaves
             .iter()
             .flat_map(|leaf| self.plan.leaves[*leaf].constraints())
+            .chain(trims)
             .map(|c| geom.add_surface(c.surface().clone()))
             .collect();
         let mut curves: Vec<(CurveId, CurveForm)> = Vec::new();
@@ -517,8 +686,8 @@ impl Scene<'_> {
                 let middle_id = geom.add_point(PointDef::Explicit(middle.clone()));
                 let tangent = tangent_at(&geom, curve, middle_id, dec)?[0].clone();
                 let across = plane.normal.cross(&tangent);
-                let left = self.sample(&middle, &across, dec)?;
-                let right = self.sample(&middle, &across.scaled(&Real::from_i64(-1)), dec)?;
+                let left = self.sample(&middle, &across, trims, dec)?;
+                let right = self.sample(&middle, &across.scaled(&Real::from_i64(-1)), trims, dec)?;
                 let left = self.memberships(faces, &left, &plane.normal, dec)?;
                 let right = self.memberships(faces, &right, &plane.normal, dec)?;
                 if !left.iter().zip(&right).any(|(a, b)| a != b) {

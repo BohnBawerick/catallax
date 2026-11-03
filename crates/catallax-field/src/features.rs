@@ -81,6 +81,14 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    pub(crate) fn complete_planar_carriers(&self) -> bool {
+        matches!(self.sweep, Sweep::Extrude { .. })
+            && self.algebraic_end.is_none()
+            && self.fillet.is_none()
+            && self.chamfer.is_none()
+            && self.loops.iter().flatten().all(|edge| edge.circle.is_none())
+    }
+
     /// Collects the finite planar sweep skin from field definitions, without
     /// constructing or consulting B-rep topology.
     pub(crate) fn planar_skin(

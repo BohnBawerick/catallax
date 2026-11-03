@@ -82,11 +82,21 @@ def call_answer(call):
     return value
 
 
+def accepted_work(value, where):
+    if type(value) is not int or value < 0:
+        raise ValueError(f"accepted work must be a nonnegative integer: {value!r}: {where}")
+    return value
+
+
+def read_native_work(path):
+    return accepted_work(int(path.read_text()), path)
+
+
 def compare_calls(left, right, where):
     def groups(calls):
         answers = defaultdict(list)
         for call in calls:
-            cost = None if call["work"] is None else call["work"]["used"]
+            cost = None if call["work"] is None else accepted_work(call["work"]["used"], where)
             answers[json.dumps(call_answer(call), sort_keys=True)].append(cost)
         return answers
     base, head = groups(left), groups(right)
@@ -205,7 +215,7 @@ def run(args):
                     (proof / "timing.json").write_text(captured.stdout)
                     key = name, number
                     answer = {f: hashlib.sha256((proof / f).read_bytes()).hexdigest() for f in FILES}
-                    work = int((proof / "work.txt").read_text())
+                    work = read_native_work(proof / "work.txt")
                     if key not in native_references:
                         native_references[key] = dict(answer=answer, work=work)
                     reference = native_references[key]

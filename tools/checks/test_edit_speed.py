@@ -1,6 +1,8 @@
 """Exact operation outcomes and non-increasing accepted work in hosted pairs."""
 import contextlib
 import io
+from pathlib import Path
+import tempfile
 import unittest
 
 import edit_speed
@@ -24,6 +26,19 @@ class WorkGateTests(unittest.TestCase):
     def compare(self, before, after):
         with contextlib.redirect_stdout(io.StringIO()):
             edit_speed.compare_calls(before, after, "paired case")
+
+    def test_malformed_json_costs_fail_on_both_sides(self):
+        for invalid in (-1, True, False, 1.5, 100.0, "100", None):
+            for side in ("baseline", "candidate"):
+                with self.subTest(value=invalid, side=side):
+                    before, after = call(100), call(0)
+                    (before if side == "baseline" else after)["work"]["used"] = invalid
+                    with self.assertRaises(ValueError):
+                        self.compare([before], [after])
+
+    def test_zero_and_large_integer_costs_remain_valid(self):
+        self.compare([call(0)], [call(0)])
+        self.compare([call((1 << 63) + 1)], [call(0)])
 
     def test_reductions_pass_but_even_one_extra_unit_fails(self):
         before, after = call(100), call(99)
@@ -67,6 +82,25 @@ class WorkGateTests(unittest.TestCase):
         after = dict(before, work={"used": 0, "exhausted": False})
         with self.assertRaisesRegex(AssertionError, "operation answers, marks or refusals changed"):
             self.compare([before], [after])
+
+
+class NativeWorkGateTests(unittest.TestCase):
+    def test_zero_and_large_integer_counts_are_parsed_exactly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "work.txt"
+            for count in (0, (1 << 63) + 1):
+                with self.subTest(count=count):
+                    path.write_text(f"{count}\n")
+                    self.assertEqual(edit_speed.read_native_work(path), count)
+
+    def test_negative_boolean_and_fractional_files_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "work.txt"
+            for text in ("-1\n", "true\n", "1.5\n"):
+                with self.subTest(text=text):
+                    path.write_text(text)
+                    with self.assertRaises(ValueError):
+                        edit_speed.read_native_work(path)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,9 @@
 
 use crate::{number, trim};
 use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Real, Refusal};
-use catallax_shapes::{Cylinder, GeomKey, Sphere, SplineSupport, Surface, SurfaceId, Vector3};
+use catallax_shapes::{
+    Cylinder, GeomKey, SaddleRing, Sphere, SplineSupport, Surface, SurfaceId, Vector3,
+};
 use catallax_topology::{BodyId, EdgeId, Face, FaceId, Loop, Model, Shell, pipe_rows, saddle_rows};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -84,6 +86,13 @@ pub(crate) fn band_walls(
                 Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
                     let [(wide, _), (narrow, _)] = saddle_rows(model, face).ok_or_else(refused)?;
                     let law = saddle.definition().law();
+                    // These cuts rely on a ring that winds round the narrow cylinder.
+                    if law.ring != SaddleRing::Through {
+                        return Err(Refusal::new(
+                            "step.unsupported-geometry",
+                            "a two-cylinder loop has no STEP chart yet",
+                        ));
+                    }
                     frame(wide, law.across.clone(), &mut frames);
                     frame(narrow, law.side_axis().scaled(&-Real::one()), &mut frames);
                 }

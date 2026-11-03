@@ -254,7 +254,7 @@ fn band(
 }
 
 // A closed saddle's rings are the carrier's boundary rows, so each runs up the
-// chart in its edge's sense. Columns are equal cuts of `[-1, 3]`.
+// chart in its edge's sense.
 fn saddle_band(
     model: &Model,
     face: FaceId,
@@ -265,9 +265,9 @@ fn saddle_band(
     dec: &mut Decider,
 ) -> Result<Envelope, Refusal> {
     let grid = saddle.display_grid(tolerance, options.max_vertices, dec)?;
+    let columns = saddle.display_columns(tolerance, options.max_vertices, dec)?;
     let rows = saddle_rows(model, face)
         .ok_or_else(|| failure("a saddle face has no complete band of two rails"))?;
-    let last = Rational::from_i64(grid.columns as i64 - 1);
     let mut rings = Vec::with_capacity(2);
     for (edge, sense) in rows {
         let definition = model.edge(edge);
@@ -275,9 +275,8 @@ fn saddle_band(
             return Err(failure("a saddle rail is not its row"));
         };
         let mut exact = Vec::with_capacity(grid.columns);
-        for column in 0..grid.columns {
-            let u = Rational::from_i64(4 * column as i64) / last.clone() - Rational::one();
-            let p = rail.point_at(&Real::from(u), dec)?;
+        for u in &columns {
+            let p = rail.point_at(&Real::from(u.clone()), dec)?;
             exact.push([p.x, p.y, p.z]);
         }
         rings.push(Ring {

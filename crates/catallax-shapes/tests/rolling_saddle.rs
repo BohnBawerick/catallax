@@ -1192,6 +1192,113 @@ fn a_loops_rail_tables_read_the_rails_on_their_cylinders() {
     }
 }
 
+// The sharp edge from the law's frame alone, at `w`, checked on both cylinders.
+fn sharp_edge(saddle: &RollingSaddle, w: f64) -> V {
+    let definition = saddle.definition();
+    let law = definition.law();
+    let (big, small, gap) = (n(&law.wide), n(&law.narrow), n(&law.gap));
+    let (sine, cosine) = (n(&law.sine), n(&law.cosine));
+    let reach = gap.abs();
+    let middle = (big + reach - small) / 2.0;
+    let half = (big - reach + small) / 2.0;
+    let far = middle + half * (2.0 * w).cos();
+    let y = w.sin() * (2.0 * half * (big + far)).sqrt();
+    let side = w.cos() * (2.0 * half * (reach + small - far)).sqrt();
+    let x = far * gap.signum();
+    let z = (cosine * y - side) / sine;
+    let [across, along, axis] = [f(&law.across), f(&law.along), f(&law.axis)];
+    let point = add(
+        add(add(g(definition.origin()), across, x), along, y),
+        axis,
+        z,
+    );
+    let off = |at: V, axis: V| {
+        let d = sub(at, [0.0; 3]);
+        let share = d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2];
+        norm(add(d, axis, -share))
+    };
+    assert!((off(sub(point, g(definition.origin())), axis) - big).abs() < 1e-9);
+    assert!((off(sub(point, g(&law.foot)), f(&law.narrow_axis())) - small).abs() < 1e-9);
+    point
+}
+
+#[test]
+fn a_loops_chart_runs_the_way_its_rails_follow_the_edge() {
+    let exact = |v: V| {
+        let [x, y, z] = v.map(|value| Real::from(q(&format!("{value:.12}"))));
+        (x, y, z)
+    };
+    const STEPS: usize = 1440;
+    for index in 0..overlap_cases().len() {
+        let saddle = overlap(index);
+        let definition = saddle.definition();
+        let mut dec = decider();
+        let edge: Vec<V> = (0..STEPS)
+            .map(|step| sharp_edge(&saddle, std::f64::consts::TAU * step as f64 / STEPS as f64))
+            .collect();
+        // One tangent anywhere says the edge's way round the chart.
+        for step in (0..STEPS).step_by(37) {
+            let tangent = sub(edge[(step + 1) % STEPS], edge[step]);
+            let (x, y, z) = exact(edge[step]);
+            let at = Point3::new(x, y, z);
+            let (x, y, z) = exact(tangent);
+            let forward = Vector3::new(x, y, z);
+            assert!(definition.runs_with_chart(&at, &forward, &mut dec).unwrap());
+            let (x, y, z) = exact([-tangent[0], -tangent[1], -tangent[2]]);
+            let backward = Vector3::new(x, y, z);
+            assert!(
+                !definition
+                    .runs_with_chart(&at, &backward, &mut dec)
+                    .unwrap()
+            );
+        }
+        // The rail's nearest point on the edge goes once round the same way.
+        let nearest = |at: V| {
+            (0..STEPS)
+                .min_by(|a, c| norm(sub(at, edge[*a])).total_cmp(&norm(sub(at, edge[*c]))))
+                .unwrap()
+        };
+        let stops: Vec<usize> = (0..=48)
+            .map(|i| {
+                let u = -1.0 + 4.0 * f64::from(i) / 48.0;
+                nearest(sample(saddle.carrier(), u, 0.0, &dec))
+            })
+            .collect();
+        let turned: i64 = stops
+            .windows(2)
+            .map(|pair| {
+                let step = (pair[1] + STEPS - pair[0]) % STEPS;
+                step.min(STEPS - step) as i64 * if step <= STEPS / 2 { 1 } else { -1 }
+            })
+            .sum();
+        assert_eq!(turned, STEPS as i64, "{index}");
+    }
+}
+
+#[test]
+fn a_grids_columns_name_their_chart_parameters() {
+    let dec = decider();
+    for saddle in [overlap(2), fitted(0)] {
+        let chord = q("1/20");
+        let grid = saddle.display_grid(&chord, 4_000_000, &dec).unwrap();
+        let columns = saddle.display_columns(&chord, 4_000_000, &dec).unwrap();
+        assert_eq!(columns.len(), grid.columns);
+        assert_eq!(columns[0], q("-1"));
+        assert_eq!(columns[grid.columns - 1], q("3"));
+        for column in (0..grid.columns).step_by(5) {
+            let p = &grid.points[column * grid.rows];
+            let seen: V = std::array::from_fn(|i| p[i].mid().to_f64_nearest());
+            let on = sample(
+                saddle.carrier(),
+                columns[column].to_f64_nearest(),
+                0.0,
+                &dec,
+            );
+            assert!(norm(sub(seen, on)) < 1e-9, "{column}");
+        }
+    }
+}
+
 fn refused(wide: Cylinder, narrow: Cylinder, radius: &str, sides: [BallSide; 2]) -> Refusal {
     let mut dec = decider();
     RollingSaddleDefinition::new(&wide, &narrow, &real(radius), sides, true, &mut dec).unwrap_err()

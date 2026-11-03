@@ -401,18 +401,65 @@ impl RollingSaddleDefinition {
         }
     }
 
-    /// Whether a tangent at a point near the ring turns the way the chart runs:
-    /// counter-clockwise about the narrow axis, which is the sense of a growing
-    /// `u`. A regular ring turns one way round that axis throughout, so one
-    /// tangent decides the direction of a whole ring.
+    /// The ring of two cylinders through a point of both: one of the two rings
+    /// of [`Self::through`] when the narrow cylinder passes through the wide one,
+    /// and otherwise the one loop of [`Self::overlapping`].
+    pub fn crossing(
+        wide: &Cylinder,
+        narrow: &Cylinder,
+        radius: &Real,
+        sides: [BallSide; 2],
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let frame = Self::frame_of(wide, narrow, radius, sides, dec)?;
+        let reach = math::exact_sqrt(&frame.gap.square());
+        let clear = &(&frame.wide - &frame.narrow) - &reach;
+        if math::sign(&clear, dec)? == Sign::Positive {
+            Self::through(wide, narrow, radius, sides, point, dec)
+        } else {
+            Self::overlapping(wide, narrow, radius, sides, dec)
+        }
+    }
+
+    /// Whether a tangent at a point of the sharp edge the chart rounds runs the
+    /// way a growing `u` does.
+    ///
+    /// A ring through the narrow cylinder turns counter-clockwise about its axis
+    /// throughout, so one tangent decides the direction of a whole ring.
+    ///
+    /// A loop has no such turn, because it does not wind round either cylinder.
+    /// With `s` a point's height on the side axis and `y` its height on `along`,
+    /// the law gives `(s, y) = (B cos w, A sin w)`, with
+    /// `A^2 = 2 d (P + X)` and `B^2 = 2 d (g + p - X)`. With `S = sin^2 w`,
+    ///
+    /// ```text
+    /// A B (s y' - y s') = 16 d^2 (P (p - d) - 2 d (p - d) S + d g S^2)
+    /// ```
+    ///
+    /// where `0 < d < min(P, p)` and `p - d < g`. Its discriminant is
+    /// `4 d (p - d) (d (p - d) - g P) < 0`, so the shadow on `(s, y)` turns one
+    /// way about the origin throughout, the way `w` grows. The sharp edge has the
+    /// same law with the cylinders' own radii, so the same test holds on it.
     pub fn runs_with_chart(
         &self,
         point: &Point3,
         tangent: &Vector3,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
-        let turn = self.narrow_axis().cross(&self.radial(1, point));
-        match math::sign(&turn.dot(tangent), dec)? {
+        let turn = match self.ring {
+            SaddleRing::Through => self
+                .narrow_axis()
+                .cross(&self.radial(1, point))
+                .dot(tangent),
+            SaddleRing::Overlap => {
+                let [_, y, _] = self.local(point);
+                let side = self.law().side_axis();
+                let s = point.minus(&self.foot).dot(&side);
+                &(&s * &tangent.dot(&self.along)) - &(&y * &tangent.dot(&side))
+            }
+        };
+        match math::sign(&turn, dec)? {
             Sign::Positive => Ok(true),
             Sign::Negative => Ok(false),
             Sign::Zero => Err(invalid("the tangent does not turn round the narrow axis")),
@@ -1276,7 +1323,7 @@ fn build(
 struct Net {
     bits: u32,
     controls: Vec<[Ball; 4]>,
-    grid: Mutex<Option<(Rational, Arc<EnvelopeGrid>)>>,
+    grid: Mutex<Option<(Rational, Arc<grid::LocalGrid>)>>,
     turns: Mutex<Option<[Rational; 3]>>,
 }
 
@@ -1736,6 +1783,24 @@ impl RollingSaddle {
         Ok([low, high])
     }
 
+    // The grid for a tolerance, cached on the net.
+    fn cached_grid(
+        &self,
+        tolerance: &Rational,
+        max_points: usize,
+        dec: &Decider,
+    ) -> Result<Arc<grid::LocalGrid>, Refusal> {
+        let mut cache = self.data.net.grid.lock().expect("no panic holds this lock");
+        match cache.as_ref() {
+            Some((key, grid)) if key == tolerance => Ok(grid.clone()),
+            _ => {
+                let grid = Arc::new(self.local_grid(tolerance, max_points, dec)?);
+                *cache = Some((tolerance.clone(), grid.clone()));
+                Ok(grid)
+            }
+        }
+    }
+
     /// Grid with `chord` at most `tolerance`, cached per tolerance on the net.
     pub fn display_grid(
         &self,
@@ -1743,24 +1808,28 @@ impl RollingSaddle {
         max_points: usize,
         dec: &Decider,
     ) -> Result<EnvelopeGrid, Refusal> {
-        let local = {
-            let mut cache = self.data.net.grid.lock().expect("no panic holds this lock");
-            match cache.as_ref() {
-                Some((key, grid)) if key == tolerance => grid.clone(),
-                _ => {
-                    let grid = Arc::new(self.local_grid(tolerance, max_points, dec)?);
-                    *cache = Some((tolerance.clone(), grid.clone()));
-                    grid
-                }
-            }
-        };
+        let local = self.cached_grid(tolerance, max_points, dec)?;
         let frame = self.data.definition.frame(self.data.net.bits, dec)?;
         Ok(EnvelopeGrid {
-            columns: local.columns,
-            rows: local.rows,
-            points: local.points.iter().map(|p| frame.world(p)).collect(),
-            chord: local.chord.clone(),
+            columns: local.grid.columns,
+            rows: local.grid.rows,
+            points: local.grid.points.iter().map(|p| frame.world(p)).collect(),
+            chord: local.grid.chord.clone(),
         })
+    }
+
+    /// The chart parameter of each column of [`Self::display_grid`], which need
+    /// not be even.
+    pub fn display_columns(
+        &self,
+        tolerance: &Rational,
+        max_points: usize,
+        dec: &Decider,
+    ) -> Result<Vec<Rational>, Refusal> {
+        Ok(self
+            .cached_grid(tolerance, max_points, dec)?
+            .parameters
+            .clone())
     }
 
     /// Exact rigid transport of the law and carrier.

@@ -25,6 +25,7 @@ mod math;
 mod pair;
 mod query;
 mod solve;
+mod span_hull;
 
 /// How two objects meet along a component or at a point.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -174,6 +175,7 @@ pub struct TracePiece {
     coords: [chart::E; 3],
     jets: Arc<Mutex<JetCache>>,
     program: Arc<std::sync::OnceLock<chart::JetProgram>>,
+    span: Option<Arc<span_hull::SpanHull>>,
 }
 
 impl TracePiece {
@@ -182,7 +184,22 @@ impl TracePiece {
             coords,
             jets: Arc::new(Mutex::new(VecDeque::new())),
             program: Arc::new(std::sync::OnceLock::new()),
+            span: None,
         }
+    }
+
+    fn spline(
+        curve: &catallax_shapes::BSplineCurve,
+        span: usize,
+        from: catallax_numbers::Real,
+        to: catallax_numbers::Real,
+        dec: &Decider,
+    ) -> Result<Self, Refusal> {
+        let coords = chart::spline_span(curve, span, from.clone(), to.clone(), dec)?;
+        Ok(Self {
+            span: Some(Arc::new(span_hull::SpanHull::new(curve, span, [from, to]))),
+            ..Self::new(coords)
+        })
     }
 
     fn enclose_jets(
@@ -222,6 +239,19 @@ impl TracePiece {
     /// Proven enclosure of the point at parameter `t`, or a deadline refusal.
     pub fn evaluate(&self, t: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
         Ok(self.enclose_jets(t, 0, dec)?.remove(0))
+    }
+
+    /// A proven box round the piece over all of `t`. Where [`Self::evaluate`]
+    /// reads a spline span's polynomial, which can overstate a wide `t` by orders
+    /// of magnitude, this cuts down its controls, so the box follows the curve.
+    pub fn enclose(&self, t: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
+        if let Some(span) = &self.span
+            && t.lo() < t.hi()
+            && let Some(found) = span.enclose(t, dec)?
+        {
+            return Ok(found);
+        }
+        self.evaluate(t, dec)
     }
 
     /// Exact algebraic point at a parameter in `[0, 1]`.

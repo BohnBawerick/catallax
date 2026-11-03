@@ -14,8 +14,8 @@ use catallax_numbers::{
 use catallax_recipe::StepId;
 use catallax_shapes::{
     BSplineCurve, BoundaryRow, Curve, Point3, RollingEnvelope, RollingEnvelopeDefinition,
-    RollingSaddle, RollingSaddleDefinition, SaddleLaw, SplineBoundary, SplineSupport, Surface,
-    Vector3,
+    RollingSaddle, RollingSaddleDefinition, SaddleLaw, SaddleRing, SplineBoundary, SplineSupport,
+    Surface, Vector3,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, envelope_rows, saddle_rows};
 use std::collections::{BTreeMap, BTreeSet};
@@ -244,6 +244,10 @@ fn saddle_sizes(
 ) -> Result<(Rational, Rational), Refusal> {
     let definition = saddle.definition();
     let law = definition.law();
+    // These bounds rely on a ring that winds round the narrow cylinder.
+    if law.ring != SaddleRing::Through {
+        return Err(unproven("a two-cylinder loop has no size bounds yet"));
+    }
     let rails = saddle_rows(model, face).ok_or_else(|| unproven("a ring lost a rail"))?;
     let big = &law.wide + &(&law.radius * &Real::from_i64(law.sides[0]));
     let small = &law.narrow + &(&law.radius * &Real::from_i64(law.sides[1]));

@@ -22,6 +22,14 @@ use super::*;
 const CUTS: usize = 2;
 const MAX_CUTS: u32 = 12;
 
+// A grid in the law's frame, with the chart parameter of each column. Columns are
+// even only on a uniform carrier.
+#[derive(Debug)]
+pub(super) struct LocalGrid {
+    pub(super) grid: EnvelopeGrid,
+    pub(super) parameters: Vec<Rational>,
+}
+
 fn hull(values: impl Iterator<Item = Ball>) -> Ball {
     values
         .reduce(|all, value| all.hull(&value))
@@ -165,7 +173,7 @@ impl RollingSaddle {
         tolerance: &Rational,
         max_points: usize,
         dec: &Decider,
-    ) -> Result<EnvelopeGrid, Refusal> {
+    ) -> Result<LocalGrid, Refusal> {
         let [uu, vv, uv] = self.turns()?;
         let spans = self.span_count();
         // Cuts count from the widest span, and a narrower one takes only the
@@ -242,9 +250,11 @@ impl RollingSaddle {
             stations.extend((0..per_span).map(|step| (index, step, per_span)));
         }
         stations.push((spans - 1, 1, 1));
+        let mut parameters = Vec::with_capacity(columns);
         for (index, step, per_span) in stations {
             dec.check_deadline()?;
             let t = Rational::from_ratio(step as i64, per_span as i64).expect("nonzero");
+            parameters.push(&self.data.nodes[index].u + &(&widths[index] * &t));
             let section = casteljau(&patches[index], &t, bits);
             for weights in &basis {
                 let sum = |k: usize| {
@@ -260,11 +270,14 @@ impl RollingSaddle {
                 points.push([x, y, z]);
             }
         }
-        Ok(EnvelopeGrid {
-            columns,
-            rows,
-            points,
-            chord: chord([cuts_u, cuts_v]),
+        Ok(LocalGrid {
+            grid: EnvelopeGrid {
+                columns,
+                rows,
+                points,
+                chord: chord([cuts_u, cuts_v]),
+            },
+            parameters,
         })
     }
 }

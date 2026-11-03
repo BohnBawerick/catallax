@@ -35,7 +35,7 @@
 //! tube bound its module note derives, so its volume also holds for the carrier.
 
 use catallax_numbers::{Ball, Decider, Integer, Rational, Refusal};
-use catallax_shapes::{RollingSaddle, SaddleLaw};
+use catallax_shapes::{RollingSaddle, SaddleLaw, SaddleRing};
 use std::collections::BTreeMap;
 
 use crate::integrate::{Builder, Program, Stop, Work};
@@ -250,6 +250,10 @@ pub(crate) fn change(
     dec: &mut Decider,
 ) -> Result<Change, Refusal> {
     let law = saddle.definition().law();
+    // The integrals run on `t` round the narrow cylinder, which a loop does not.
+    if law.ring != SaddleRing::Through {
+        return Err(refused("a loop's change has no integrals yet"));
+    }
     let program = forms(&law, moments);
     let policy = *dec.policy();
     let bits = BITS.min(policy.max_precision_bits);

@@ -450,7 +450,7 @@ fn saddle(
     };
     // The law builds its carrier's sections along with its contacts.
     let contact_span = OperationSpan::begin("brep", step, "fillet.contact", dec);
-    let definition = RollingSaddleDefinition::through(
+    let definition = RollingSaddleDefinition::crossing(
         wide,
         narrow,
         radius,

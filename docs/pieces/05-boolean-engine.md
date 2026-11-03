@@ -45,6 +45,10 @@ Cone faces use an apex-safe radial chart and exact parametric probes with certif
 
 Cylindrical winding uses a periodic diamond chart. Its dyadic rectangle corners keep phase as an integer numerator and positive denominator through quadrant selection, seam lifting and extrema comparisons. Only the two extrema become binary balls, through `Ball::from_ratio`. This avoids repeated general GCD normalization without changing the phase bounds, pole rejection, precision or winding decisions.
 
+The carrier/surface pass may skip a query only when conservative bounds on the complete carrier prove the support polynomial strictly nonzero throughout that enclosure. Cached hardware intervals perform this exclusion without numeric refinement, accepted-work charges or geometry mutation. Tangencies, uncertain bounds and unsupported supports retain the ordinary query. A skipped query records the same empty complete-meeting certificate as an exact disjoint answer, preserving later coverage and closed-section ordering. The first ordinary query and subsequent numeric work retain their validation and deadline checks.
+
+Hosted paired proofs keep application answers, operation outcomes, certificates, STEP bytes, meshes and names exact while requiring non-increasing accepted work. Decision-dispatch counters and cumulative internal work prefixes are diagnostics, not answer identity. A budget-refused accepted prefix is not the cost of a completed answer: reservations that do not fit are refused without being charged.
+
 The result is a `Solid` or `Empty` body that:
 
 1. passes `Model::check` with no fault;

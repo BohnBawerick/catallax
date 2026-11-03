@@ -101,7 +101,8 @@ fn tangent_sectors(
         let line = normal.cross(cut);
         let mut duplicate = false;
         for previous in &others[..index] {
-            if geometry::sign(&line.cross(&normal.cross(previous)).norm_squared(), dec)? == Sign::Zero
+            if geometry::sign(&line.cross(&normal.cross(previous)).norm_squared(), dec)?
+                == Sign::Zero
             {
                 duplicate = true;
                 break;
@@ -282,7 +283,9 @@ impl Plan {
             self.leaf_registers[i].is_none()
                 || matches!(
                     leaf,
-                    geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) | geometry::Leaf::Feature(_)
+                    geometry::Leaf::Primitive(_)
+                        | geometry::Leaf::Cell(_)
+                        | geometry::Leaf::Feature(_)
                 )
         })
     }
@@ -533,7 +536,10 @@ impl Plan {
             if self.leaf_registers[i].is_none() {
                 continue;
             }
-            if matches!(leaf.location(&p, dec)?, Location::Inside | Location::Outside) {
+            if matches!(
+                leaf.location(&p, dec)?,
+                Location::Inside | Location::Outside
+            ) {
                 // Strict native sector/cone membership is locally constant;
                 // zero carrier extensions cannot supply an active contact.
                 continue;

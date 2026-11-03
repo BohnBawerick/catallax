@@ -27,7 +27,6 @@ mod fast_region;
 mod geometry;
 mod germ;
 mod graph;
-mod graph_trace;
 mod imprinting;
 mod point_identity;
 mod points;

@@ -536,7 +536,10 @@ impl Skin {
         dec: &mut Decider,
     ) -> Result<Vec<Polyhedron>, Refusal> {
         self.arrange::<Classifier, OriginResolver>(
-            Some((selected, definition)), None, BoundaryNames::Required, dec,
+            Some((selected, definition)),
+            None,
+            BoundaryNames::Required,
+            dec,
         )
     }
 
@@ -551,7 +554,12 @@ impl Skin {
     /// Auxiliary facets remain unnamed constraints, not named field faces.
     /// Construction-box facets are refused just as in named extraction.
     pub fn shell_field_components(&self, dec: &mut Decider) -> Result<Vec<Polyhedron>, Refusal> {
-        self.arrange::<Classifier, OriginResolver>(None, None, BoundaryNames::ShellFieldGeometry, dec)
+        self.arrange::<Classifier, OriginResolver>(
+            None,
+            None,
+            BoundaryNames::ShellFieldGeometry,
+            dec,
+        )
     }
 
     /// Extracts the physical boundary of a bounded regular solid whose carriers
@@ -568,7 +576,12 @@ impl Skin {
         C: FnMut(&Point3, &mut Decider) -> Result<bool, Refusal>,
         R: FnMut(&Point3, &Vector3, &mut Decider) -> Result<Vec<Origin>, Refusal>,
     {
-        self.arrange(None, Some((classify, resolve)), BoundaryNames::Required, dec)
+        self.arrange(
+            None,
+            Some((classify, resolve)),
+            BoundaryNames::Required,
+            dec,
+        )
     }
 
     fn arrange<C, R>(

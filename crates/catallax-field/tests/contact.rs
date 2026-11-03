@@ -345,8 +345,7 @@ fn semidefinite_torus_cylinder_contact_retains_its_null_direction_patch() {
         .faces()
         .iter()
         .find(|face| {
-            face.origin.step.as_str() == "cylinder"
-                && matches!(face.origin.role, Role::Side { .. })
+            face.origin.step.as_str() == "cylinder" && matches!(face.origin.role, Role::Side { .. })
         })
         .unwrap()
         .origin;

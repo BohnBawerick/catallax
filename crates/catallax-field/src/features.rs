@@ -86,7 +86,11 @@ impl Feature {
             && self.algebraic_end.is_none()
             && self.fillet.is_none()
             && self.chamfer.is_none()
-            && self.loops.iter().flatten().all(|edge| edge.circle.is_none())
+            && self
+                .loops
+                .iter()
+                .flatten()
+                .all(|edge| edge.circle.is_none())
     }
 
     /// Collects the finite planar sweep skin from field definitions, without
@@ -1084,7 +1088,11 @@ impl Feature {
         while let Role::Copy { of, .. } = role {
             role = &of.role;
         }
-        let Sweep::Extrude { vector, through: false } = &self.sweep else {
+        let Sweep::Extrude {
+            vector,
+            through: false,
+        } = &self.sweep
+        else {
             return Ok(None);
         };
         if !matches!(role, Role::Start | Role::End) {
@@ -1097,7 +1105,11 @@ impl Feature {
         // Both stored cap carriers use the same plane normal. The material
         // side is instead fixed by the extrusion parameter and the cap role.
         let follows = normal_sign == vector.z.sign();
-        Ok(Some(if follows == matches!(role, Role::End) { 1 } else { 2 }))
+        Ok(Some(if follows == matches!(role, Role::End) {
+            1
+        } else {
+            2
+        }))
     }
 
     pub(crate) fn on_face_point(

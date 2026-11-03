@@ -212,8 +212,15 @@ fn carrier_pieces(
     let mut pieces: Vec<SectionEdge> = Vec::new();
     for (start, end) in arcs {
         let sample = curve_sample(model, curve, start, end, dec)?;
-        let Some((faces_of_first, faces_of_second)) =
-            shared_faces(model, context.first, context.second, context.multiway, sample, regions, dec)?
+        let Some((faces_of_first, faces_of_second)) = shared_faces(
+            model,
+            context.first,
+            context.second,
+            context.multiway,
+            sample,
+            regions,
+            dec,
+        )?
         else {
             continue;
         };
@@ -472,7 +479,6 @@ struct Inputs<'a> {
     vertices: Vec<VertexId>,
     multiway: bool,
     clip: Option<[Ball; 3]>,
-    trace: Option<crate::graph_trace::Trace>,
     carrier_exclusions: bool,
 }
 
@@ -482,7 +488,6 @@ pub(crate) fn arrangement(
     faces: &[FaceId],
     dec: &mut Decider,
 ) -> Answered<IntersectionGraph> {
-    let trace = crate::graph_trace::Trace::new();
     let mut vertices = BTreeSet::new();
     for &face in faces {
         for lp in &model.face(face).loops {
@@ -509,7 +514,6 @@ pub(crate) fn arrangement(
             vertices: vertices.into_iter().collect(),
             multiway: true,
             clip,
-            trace: Some(trace.clone()),
             carrier_exclusions: true,
         },
         true,
@@ -551,7 +555,6 @@ pub(crate) fn section(
             vertices,
             multiway: false,
             clip: None,
-            trace: None,
             carrier_exclusions,
         },
         prune,
@@ -572,7 +575,6 @@ fn section_inputs(
         vertices,
         multiway,
         clip,
-        trace,
         carrier_exclusions,
     } = inputs;
     let algebraic = first.iter().chain(second).any(|face| {
@@ -620,38 +622,30 @@ fn section_inputs(
     // region, where a carrier can keep a section piece without a potentially
     // meeting generating pair.
     let mut overlapping_coincidence = false;
-    let mut carrier_owners = Vec::new();
-    if let Some(trace) = &trace { trace.checkpoint("surface-pairs"); }
     for &fa in first {
         for &fb in second {
             if multiway && fb <= fa {
                 continue;
             }
-            let pair_charge = trace.as_ref().map(|trace| trace.pair(model, fa, fb));
             if let Some(clip) = &clip
                 && finite_bounds.excludes_clipped(model, fa, fb, clip, dec)
             {
-                if let Some(charge) = &pair_charge { charge.rejected(); }
                 continue;
             }
             let sa = model.face(fa).surface;
             let sb = model.face(fb).surface;
             if algebraic && bounds.disjoint(model, fa, fb, dec)? {
-                if let Some(charge) = &pair_charge { charge.rejected(); }
                 continue;
             }
-            if let Some(charge) = &pair_charge { charge.reached(); }
             let pair = if let Some(value) = pairs.get(&(sa, sb)) {
                 value.clone()
             } else {
-                if let Some(charge) = &pair_charge { charge.called(); }
                 let answer = match intersect_surfaces(model.geom_mut(), sa, sb, dec) {
                     Ok(answer) => answer,
                     Err(refusal) => {
                         if refusal.code == "intersect.traced-pair-required"
                             && bounds.disjoint(model, fa, fb, dec)?
                         {
-                            if let Some(charge) = &pair_charge { charge.late_rejected(); }
                             // This proves only this trimmed pair disjoint. Never
                             // cache it as a statement about the whole supports.
                             continue;
@@ -684,7 +678,6 @@ fn section_inputs(
                         for curve in face_edges(model, face) {
                             let relevant = relevant(dec);
                             let index = add_curve(model, &mut pool, curve, dec)?;
-                            if let Some(charge) = &pair_charge { carrier_owners.resize(pool.len(), charge.index); }
                             active.resize(pool.len(), false);
                             active[index] |= relevant;
                             supports.resize(pool.len(), BTreeSet::new());
@@ -711,7 +704,6 @@ fn section_inputs(
                             } => {
                                 let relevant = relevant(dec);
                                 let index = add_curve(model, &mut pool, curve, dec)?;
-                                if let Some(charge) = &pair_charge { carrier_owners.resize(pool.len(), charge.index); }
                                 active.resize(pool.len(), false);
                                 active[index] |= relevant;
                                 supports.resize(pool.len(), BTreeSet::new());
@@ -755,14 +747,12 @@ fn section_inputs(
         carrier_exclusions,
         ..Order::default()
     };
-    if let Some(trace) = &trace { trace.checkpoint("carrier-hits"); }
     for (index, &curve) in pool.iter().enumerate() {
         // An inactive carrier has no potentially meeting generating face pair.
         // The complete curve/pair pass below still includes its crossings.
         if !active[index] {
             continue;
         }
-        let _charge = trace.as_ref().map(|trace| trace.charge(carrier_owners[index], 1));
         let known = points.len();
         let (_, found_marks, found_complete) = carrier_hits(
             model,
@@ -778,10 +768,8 @@ fn section_inputs(
             order.finder.insert(point, index);
         }
     }
-    if let Some(trace) = &trace { trace.checkpoint("curve-pairs"); }
     for i in 0..pool.len() {
         for j in i + 1..pool.len() {
-            let _charge = trace.as_ref().map(|trace| trace.charge(carrier_owners[i], 2));
             // Two carriers meet only on each other's supports. When one
             // carrier's complete meeting with the other's support is already
             // canonical, the pair can add no point; equality is never inferred.
@@ -841,18 +829,16 @@ fn section_inputs(
             }
         }
     }
-    if let Some(trace) = &trace { trace.checkpoint("point-membership"); }
     order.index = points.iter().enumerate().map(|(i, &p)| (p, i)).collect();
     let mut point_faces = BTreeMap::new();
     for &point in &points {
-        if let Some(faces) = shared_faces(model, first, second, multiway, point, &mut regions, dec)? {
+        if let Some(faces) = shared_faces(model, first, second, multiway, point, &mut regions, dec)?
+        {
             point_faces.insert(point, faces);
         }
     }
     let mut edges = Vec::new();
-    if let Some(trace) = &trace { trace.checkpoint("carrier-trimming"); }
-    for (index, &curve) in pool.iter().enumerate() {
-        let _charge = trace.as_ref().map(|trace| trace.charge(carrier_owners[index], 3));
+    for &curve in &pool {
         let mut cuts = Vec::new();
         for &point in &points {
             if coincident(
@@ -883,7 +869,6 @@ fn section_inputs(
         }
         edges.extend(pieces);
     }
-    if let Some(trace) = &trace { trace.checkpoint("isolated-points"); }
     let mut isolated = Vec::new();
     for point in points {
         if !point_faces.contains_key(&point) {

@@ -593,8 +593,7 @@ pub(crate) fn parabolic_constraints(
 ) -> Result<Location, Refusal> {
     let mut boundary = false;
     for constraint in constraints {
-        let Some(coefficients) =
-            parabolic_ray_coefficients(constraint, point, tangent, quadratic)
+        let Some(coefficients) = parabolic_ray_coefficients(constraint, point, tangent, quadratic)
         else {
             return Ok(Location::Indeterminate);
         };

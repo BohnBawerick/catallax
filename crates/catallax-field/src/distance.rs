@@ -6,7 +6,10 @@ use catallax_shapes::{
     Point3, Vector3,
     distance::{self, Bounds, Domain, Membership, Options},
 };
-use std::{collections::BTreeMap, sync::{Arc, Mutex, OnceLock}};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 mod contact;
 mod planar;
@@ -338,15 +341,22 @@ impl Prepared<'_> {
             .expect("planar distance initialization panicked");
         if self.planar.get().is_none() {
             let sections = self.plan.prepare_planar_boundaries(dec)?;
-            assert!(self.planar.set(sections).is_ok(),
-                "planar distance sections initialize under one lock");
+            assert!(
+                self.planar.set(sections).is_ok(),
+                "planar distance sections initialize under one lock"
+            );
         }
         let sections = self.planar.get().expect("planar sections were initialized");
         sections.prepare(id, dec)?;
-        Ok(sections.get(id).expect("planar section was initialized").as_deref())
+        Ok(sections
+            .get(id)
+            .expect("planar section was initialized")
+            .as_deref())
     }
     fn member(&self, id: usize, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
-        if let Some(planar) = self.planar.get()
+        if let Some(planar) = self
+            .planar
+            .get()
             .and_then(|sections| sections.get(id))
             .and_then(Option::as_deref)
         {
@@ -576,7 +586,10 @@ impl Prepared<'_> {
     ) -> Result<Bounds, Refusal> {
         let domain = self.domain(id)?;
         if width <= &Rational::zero() {
-            return Err(Refusal::new("shapes.distance-domain", "positive width required"));
+            return Err(Refusal::new(
+                "shapes.distance-domain",
+                "positive width required",
+            ));
         }
         self.support_witness(id, domain, point, width, true, dec)
     }
@@ -613,7 +626,10 @@ impl Prepared<'_> {
             // Reuse the rational analytic support witness, not a B-rep face or
             // mesher. Rational frames avoid introducing needless radial radicals.
             let p = match catallax_boolean::surface_witness(
-                domain.surface(), &target, &width.mul_pow2(-20), dec,
+                domain.surface(),
+                &target,
+                &width.mul_pow2(-20),
+                dec,
             )? {
                 Some(p) => p.to_real(),
                 None => match cone_witness(domain.surface(), point, &step, offset)? {
@@ -626,7 +642,9 @@ impl Prepared<'_> {
                 Ball::from_rational(q, 128)
             } else {
                 dec.enclose_budgeted_at(&squared, 128)?
-            }.sqrt().unwrap();
+            }
+            .sqrt()
+            .unwrap();
             if perturb && offset == 0 && distance.lo() > width.mul_pow2(1) {
                 break;
             }
@@ -662,14 +680,21 @@ impl Prepared<'_> {
                 "positive width and cell count required",
             ));
         }
-        if let Some(planar) = self.planar.get()
+        if let Some(planar) = self
+            .planar
+            .get()
             .and_then(|sections| sections.get(id.0))
             .and_then(Option::as_deref)
         {
             return planar.point_distance(point, options, dec);
         }
         let candidate = self.support_witness(
-            id, domain, point, &options.width, options.max_cells == 1, dec,
+            id,
+            domain,
+            point,
+            &options.width,
+            options.max_cells == 1,
+            dec,
         )?;
         if candidate.converged {
             return Ok(candidate);
@@ -719,8 +744,7 @@ impl Prepared<'_> {
             if let (Some(first), Some(second)) = (
                 self.planar_boundary(a.0, dec)?,
                 self.planar_boundary(b.0, dec)?,
-            )
-                && let Some(answer) = first.face_distance(second, options, dec)?
+            ) && let Some(answer) = first.face_distance(second, options, dec)?
             {
                 return Ok(answer);
             }

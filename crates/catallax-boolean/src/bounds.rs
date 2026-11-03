@@ -440,7 +440,6 @@ impl FaceBounds {
         })
     }
 
-
     pub(crate) fn excludes(
         &mut self,
         model: &mut Model,

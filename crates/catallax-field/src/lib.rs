@@ -319,7 +319,10 @@ impl Plan {
                                         .draft_source_skin(recipe, body, &steps, &step_faces, dec)
                                         .map_err(|error| {
                                             if error.code.starts_with("draft.") {
-                                                Refusal::new("distance.unsupported-envelope", error.detail)
+                                                Refusal::new(
+                                                    "distance.unsupported-envelope",
+                                                    error.detail,
+                                                )
                                             } else {
                                                 error
                                             }
@@ -1328,11 +1331,16 @@ impl Plan {
         if matches!(location, Location::Boundary | Location::Indeterminate) {
             if composite {
                 storage.boundary_nodes.clear();
-                storage.boundary_nodes.resize(self.instructions.len(), false);
+                storage
+                    .boundary_nodes
+                    .resize(self.instructions.len(), false);
                 storage.boundary_nodes[self.root] = true;
                 for slot in (0..self.instructions.len()).rev() {
                     if !storage.boundary_nodes[slot]
-                        || matches!(storage.locations[slot], Location::Inside | Location::Outside)
+                        || matches!(
+                            storage.locations[slot],
+                            Location::Inside | Location::Outside
+                        )
                     {
                         continue;
                     }

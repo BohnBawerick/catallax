@@ -683,11 +683,13 @@ impl Plan {
             if !open.is_empty() {
                 return Ok(ShellResult::Complete(0));
             }
-            return self.radial_band(
-                RadialBand::shell(&surface, &origins, &t.clone().into(), step, dec)?,
-                bound,
-                dec,
-            ).map(ShellResult::Complete);
+            return self
+                .radial_band(
+                    RadialBand::shell(&surface, &origins, &t.clone().into(), step, dec)?,
+                    bound,
+                    dec,
+                )
+                .map(ShellResult::Complete);
         }
         if let Some(skin) = self.cylinder_skin(node, dec)? {
             let selected = skin.select(open)?;
@@ -698,7 +700,9 @@ impl Plan {
                 return Ok(ShellResult::Complete(node));
             };
             let cavity = self.cylinder_leaf(cavity, &bound, dec)?;
-            return self.boolean(BooleanKind::Subtract, node, cavity, dec).map(ShellResult::Complete);
+            return self
+                .boolean(BooleanKind::Subtract, node, cavity, dec)
+                .map(ShellResult::Complete);
         }
         if let Some(skin) = self.cone_skin(node, dec)? {
             let selected = skin.select(open)?;
@@ -711,7 +715,9 @@ impl Plan {
                 Err(e) => return Err(e),
             };
             let cavity = self.cone_leaf(cavity, &bound, dec)?;
-            return self.boolean(BooleanKind::Subtract, node, cavity, dec).map(ShellResult::Complete);
+            return self
+                .boolean(BooleanKind::Subtract, node, cavity, dec)
+                .map(ShellResult::Complete);
         }
         if let Some(skin) = self.circular_skin(node, dec)? {
             let selected = skin.select(open)?;
@@ -722,7 +728,9 @@ impl Plan {
                 return Ok(ShellResult::Complete(node));
             };
             let cavity = self.circular_cell(cavity, &bound, dec)?;
-            return self.boolean(BooleanKind::Subtract, node, cavity, dec).map(ShellResult::Complete);
+            return self
+                .boolean(BooleanKind::Subtract, node, cavity, dec)
+                .map(ShellResult::Complete);
         }
         let cell = match self.planar_skin(node, dec) {
             Ok(cell) => cell,
@@ -745,7 +753,9 @@ impl Plan {
                     &bound,
                     dec,
                 )?;
-                return self.boolean(BooleanKind::Intersect, node, walls, dec).map(ShellResult::Complete);
+                return self
+                    .boolean(BooleanKind::Intersect, node, walls, dec)
+                    .map(ShellResult::Complete);
             }
             Err(e) => return Err(e),
         };
@@ -753,7 +763,8 @@ impl Plan {
             return Ok(ShellResult::Complete(node));
         }
         let cavity = self.distance_cell(cavity, bound, dec)?;
-        self.boolean(BooleanKind::Subtract, node, cavity, dec).map(ShellResult::Complete)
+        self.boolean(BooleanKind::Subtract, node, cavity, dec)
+            .map(ShellResult::Complete)
     }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn distance_thicken(

@@ -530,9 +530,9 @@ Straight-edge planar face pairs test finite vertex-to-face minima, segment-plane
 crossings and interior segment-to-segment minima. Disjoint coplanar patches
 therefore have their finite gap, not zero. Circular-arc face pairs retain the
 certified general search. General conic and spline planar trims keep the existing
-query path and coverage limits. These query improvements do not enable nonconvex
-shell construction; unproved meeting envelopes retain
-`distance.unsupported-envelope`.
+query path and coverage limits. Shell construction separately requires the
+complete finite nearest-feature meeting arrangement described in section 7.15
+of RECIPE.md; unproved meeting envelopes retain `distance.unsupported-envelope`.
 
 Complete circular cylinder bands also skip the general search for point queries.
 `PreparedFace` recognizes a cylinder face whose two loops are single closed rim

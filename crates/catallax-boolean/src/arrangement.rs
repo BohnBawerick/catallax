@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use catallax_numbers::{Answer, Decider, MarkLog, Refusal, current_operation_work};
+use catallax_numbers::{Answer, Decider, MarkLog, Refusal};
 use catallax_shapes::Point3;
 use catallax_topology::{BodyId, BodyKind, FaceId, Model, Sense};
 
@@ -39,7 +39,10 @@ pub fn arrange(
     if !matches!(model.body(source).kind, BodyKind::Solid | BodyKind::Empty) {
         return Err(BooleanRefusal {
             stage: Stage::Intersect,
-            refusal: crate::geometry::refusal("boolean.not-solid", "arrangement source is not solid or empty"),
+            refusal: crate::geometry::refusal(
+                "boolean.not-solid",
+                "arrangement source is not solid or empty",
+            ),
         });
     }
     if model.body(source).kind == BodyKind::Empty {
@@ -56,10 +59,11 @@ pub fn arrange(
     macro_rules! run {
         ($stage:expr, $operation:expr) => {{
             let before = dec.stats().clone();
-            let work_before = current_operation_work().used;
             let result = $operation;
-            eprintln!("MULTIWAY phase={:?} work={} cumulative={} outcome={:?}", $stage, current_operation_work().used - work_before, current_operation_work().used, result.as_ref().map(|_| "ok").map_err(|e| e.code));
-            let answer = result.map_err(|refusal| BooleanRefusal { stage: $stage, refusal })?;
+            let answer = result.map_err(|refusal| BooleanRefusal {
+                stage: $stage,
+                refusal,
+            })?;
             report.stages.push(StageRecord {
                 stage: $stage,
                 stats: crate::statistics_delta(&before, dec.stats()),
@@ -69,8 +73,14 @@ pub fn arrange(
             answer.value
         }};
     }
-    let graph = run!(Stage::Intersect, crate::graph::arrangement(model, source, &faces, dec));
-    let (imprinted, owners) = run!(Stage::Imprint, crate::imprinting::arrangement(model, &graph, &faces, dec));
+    let graph = run!(
+        Stage::Intersect,
+        crate::graph::arrangement(model, source, &faces, dec)
+    );
+    let (imprinted, owners) = run!(
+        Stage::Imprint,
+        crate::imprinting::arrangement(model, &graph, &faces, dec)
+    );
     let selected = run!(Stage::Classify, {
         let mut selected = Vec::new();
         let result: Result<_, Refusal> = (|| {
@@ -94,9 +104,16 @@ pub fn arrange(
         intersection: false,
         marks: marks.clone(),
     };
-    let body = run!(Stage::Sew, crate::sewing::sew(model, &imprinted, &selection, dec));
+    let body = run!(
+        Stage::Sew,
+        crate::sewing::sew(model, &imprinted, &selection, dec)
+    );
     marks.extend(&model.body(source).marks);
-    Ok(BooleanAnswer { body, marks, report })
+    Ok(BooleanAnswer {
+        body,
+        marks,
+        report,
+    })
 }
 
 /// Splits a curved patch against a bounded clipping solid without sewing an
@@ -112,7 +129,10 @@ pub fn trim_patch(
     if !matches!(model.body(source).kind, BodyKind::Solid | BodyKind::Empty) {
         return Err(BooleanRefusal {
             stage: Stage::Intersect,
-            refusal: crate::geometry::refusal("boolean.not-solid", "patch clipping source is not solid or empty"),
+            refusal: crate::geometry::refusal(
+                "boolean.not-solid",
+                "patch clipping source is not solid or empty",
+            ),
         });
     }
     let mut marks = model.body(source).marks.clone();
@@ -123,18 +143,24 @@ pub fn trim_patch(
     faces.push(patch);
     macro_rules! run {
         ($stage:expr, $operation:expr) => {{
-            let before = current_operation_work().used;
             let result = $operation;
-            eprintln!("NEAREST_TRIM phase={:?} work={} cumulative={} outcome={:?}", $stage, current_operation_work().used-before, current_operation_work().used, result.as_ref().map(|_|"ok").map_err(|e|e.code));
-            let answer = result.map_err(|refusal| BooleanRefusal { stage: $stage, refusal })?;
+            let answer = result.map_err(|refusal| BooleanRefusal {
+                stage: $stage,
+                refusal,
+            })?;
             marks.extend(&answer.marks);
             answer.value
         }};
     }
-    let graph = run!(Stage::Intersect, crate::graph::arrangement(model, source, &faces, dec));
-    let (imprinted, owners) = run!(Stage::Imprint, crate::imprinting::arrangement(model, &graph, &faces, dec));
+    let graph = run!(
+        Stage::Intersect,
+        crate::graph::arrangement(model, source, &faces, dec)
+    );
+    let (imprinted, owners) = run!(
+        Stage::Imprint,
+        crate::imprinting::arrangement(model, &graph, &faces, dec)
+    );
     let mut retained = Vec::new();
-    let before = current_operation_work().used;
     let classified: Result<(), Refusal> = (|| {
         for &piece in &imprinted.first {
             if owners[&piece] != patch {
@@ -149,7 +175,9 @@ pub fn trim_patch(
         }
         Ok(())
     })();
-    eprintln!("NEAREST_TRIM phase=Classify work={} cumulative={} outcome={:?}", current_operation_work().used-before, current_operation_work().used, classified.as_ref().map(|_|"ok").map_err(|e|e.code));
-    classified.map_err(|refusal| BooleanRefusal { stage: Stage::Classify, refusal })?;
+    classified.map_err(|refusal| BooleanRefusal {
+        stage: Stage::Classify,
+        refusal,
+    })?;
     Ok(Answer::with_marks(retained, marks))
 }

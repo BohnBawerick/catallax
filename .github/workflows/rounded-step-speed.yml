@@ -6,7 +6,6 @@ on:
       - 'crates/catallax-numbers/**'
       - 'crates/catallax-boolean/**'
       - 'crates/catallax-intersect/**'
-      - 'crates/catallax-boolean/**'
       - 'crates/catallax-step/**'
       - 'crates/catallax-cli/examples/rounded_step.rs'
       - 'crates/catallax-cli/examples/edit_answer.rs'

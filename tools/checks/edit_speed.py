@@ -327,7 +327,7 @@ def phases(args):
 
 
 def check_profile_answer(source, dest):
-    for name in FILES:
+    for name in (*FILES, "stats.txt", "work.txt"):
         assert (dest / "answer" / name).read_bytes() == (source.parent / name).read_bytes(), \
             f"profiling changed an exact answer, certificate, statistic or work: {dest} {name}"
 

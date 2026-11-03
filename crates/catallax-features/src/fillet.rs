@@ -715,8 +715,13 @@ fn plane_cylinder(
     // ball as wide as the cylinder sits on its axis and does not move: its
     // plane contact collapses to the point where the axis meets the plane.
     let ring = sign(&(&major - radius), dec)? == Sign::Positive;
-    let collapsed = sign(&major, dec)? == Sign::Zero;
-    if !ring && !collapsed && sign(&major, dec)? != Sign::Positive {
+    let sheet = if ring {
+        Sign::Positive
+    } else {
+        sign(&major, dec)?
+    };
+    let collapsed = sheet == Sign::Zero;
+    if sheet == Sign::Negative {
         return Err(bad(
             "this contact requires a horn or spindle torus and its sheet continuation",
         ));
@@ -882,20 +887,28 @@ pub fn hull_clear(
     Ok(false)
 }
 
-/// Proves two hull point sets, such as [`FilletDefinition::cut_hull`] and
-/// [`FilletDefinition::arc_hull`] give, apart by a plane through three points
-/// of either set: its own points on one side, the other's strictly on the
-/// other side. Every face of a hull is such a plane.
+/// Proves two hull point sets apart by a plane through three points of
+/// either set: its own points on one side, the other's strictly on the other
+/// side. A [`FilletDefinition::cut_hull`] tries its five faces; other sets,
+/// such as [`FilletDefinition::arc_hull`] gives, try every triple, which
+/// includes every face of their hull.
 pub(crate) fn hulls_apart(
     first: &[Point3],
     second: &[Point3],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
+    // Both cuts, both supports and the chord plane through the two rails.
+    const FACES: [[usize; 3]; 5] = [[0, 1, 2], [3, 4, 5], [0, 1, 3], [0, 2, 3], [1, 2, 4]];
     for (own, other) in [(first, second), (second, first)] {
         let n = own.len();
-        let triples =
-            (0..n).flat_map(|i| (i + 1..n).flat_map(move |j| (j + 1..n).map(move |k| [i, j, k])));
-        'faces: for [i, j, k] in triples {
+        let faces: Vec<[usize; 3]> = if n == 6 {
+            FACES.to_vec()
+        } else {
+            (0..n)
+                .flat_map(|i| (i + 1..n).flat_map(move |j| (j + 1..n).map(move |k| [i, j, k])))
+                .collect()
+        };
+        'faces: for [i, j, k] in faces {
             let normal = own[j].minus(&own[i]).cross(&own[k].minus(&own[i]));
             let mut side = Sign::Zero;
             for p in own {
@@ -909,13 +922,14 @@ pub(crate) fn hulls_apart(
             if side == Sign::Zero {
                 continue;
             }
+            let mut beyond = true;
             for p in other {
                 let s = sign(&p.minus(&own[i]).dot(&normal), dec)?;
-                if s == Sign::Zero || s == side {
-                    continue 'faces;
-                }
+                beyond &= s != Sign::Zero && s != side;
             }
-            return Ok(true);
+            if beyond {
+                return Ok(true);
+            }
         }
     }
     Ok(false)

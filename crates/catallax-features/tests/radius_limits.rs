@@ -294,7 +294,7 @@ fn an_inside_corner_takes_less_than_its_wall() {
 #[test]
 fn a_rim_takes_less_than_its_cylinder_radius() {
     too_large(&rim("4", "10"), "9/2", Some("4"));
-    not_too_large(&rim("4", "10"), "4");
+    too_large(&rim("4", "10"), "4", Some("4"));
     builds(&rim("4", "10"), "7/2");
 }
 
@@ -324,7 +324,7 @@ fn a_hole_mouth_is_never_called_too_large() {
 fn a_flat_on_a_shaft_takes_less_than_its_offset_reach() {
     too_large(&d_shaft(), "41/10", Some("4"));
     too_large(&d_shaft(), "6", Some("4"));
-    not_too_large(&d_shaft(), "4");
+    too_large(&d_shaft(), "4", Some("4"));
     not_too_large(&d_shaft(), "39/10");
 }
 
@@ -332,7 +332,7 @@ fn a_flat_on_a_shaft_takes_less_than_its_offset_reach() {
 #[test]
 fn a_lens_takes_less_than_half_its_thickness() {
     too_large(&lens(), "21/10", Some("2"));
-    not_too_large(&lens(), "2");
+    too_large(&lens(), "2", Some("2"));
     not_too_large(&lens(), "19/10");
     builds(&lens(), "1");
 }
@@ -341,7 +341,7 @@ fn a_lens_takes_less_than_half_its_thickness() {
 #[test]
 fn an_oblique_rim_takes_less_than_its_cylinder_radius() {
     too_large(&oblique(), "11/2", Some("5"));
-    not_too_large(&oblique(), "5");
+    too_large(&oblique(), "5", Some("5"));
     builds(&oblique(), "9/2");
 }
 
@@ -351,7 +351,7 @@ fn an_oblique_rim_takes_less_than_its_cylinder_radius() {
 fn a_ring_takes_less_than_where_its_offsets_stop_crossing() {
     too_large(&ring(), "13/5", Some("5/2"));
     too_large(&ring(), "10", Some("5/2"));
-    not_too_large(&ring(), "5/2");
+    too_large(&ring(), "5/2", Some("5/2"));
     builds(&ring(), "2");
 }
 
@@ -360,7 +360,7 @@ fn a_ring_takes_less_than_where_its_offsets_stop_crossing() {
 #[test]
 fn a_loop_takes_less_than_where_its_offsets_stop_crossing() {
     too_large(&looped(), "11/10", Some("1"));
-    not_too_large(&looped(), "1");
+    too_large(&looped(), "1", Some("1"));
     not_too_large(&looped(), "9/10");
 }
 

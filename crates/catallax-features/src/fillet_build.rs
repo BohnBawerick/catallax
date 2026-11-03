@@ -21,6 +21,8 @@ use crate::{
 
 #[path = "fillet_envelope.rs"]
 mod fillet_envelope;
+#[path = "fillet_limit.rs"]
+mod fillet_limit;
 #[path = "fillet_tangent.rs"]
 mod fillet_tangent;
 
@@ -754,6 +756,8 @@ fn corner_guard(
     Ok(())
 }
 
+type Strip = (EdgeId, [FaceId; 2], FilletDefinition);
+
 pub(crate) fn build(
     model: &mut Model,
     body: BodyId,
@@ -761,6 +765,39 @@ pub(crate) fn build(
     radius: &Real,
     roll_over: bool,
     step: &StepId,
+    dec: &mut Decider,
+) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
+    let mut strips = Vec::new();
+    build_strips(
+        model,
+        body,
+        selection,
+        radius,
+        roll_over,
+        step,
+        &mut strips,
+        dec,
+    )
+    .map_err(|refusal| {
+        if strips.is_empty() {
+            return refusal;
+        }
+        let uses = uses(model, body);
+        fillet_limit::width(model, &uses, &strips, refusal, dec)
+    })
+}
+
+/// Builds the strips, recording each one whose definition it reached so a
+/// refusal can be explained by the radius.
+#[allow(clippy::too_many_arguments)]
+fn build_strips(
+    model: &mut Model,
+    body: BodyId,
+    selection: &EdgeSelection,
+    radius: &Real,
+    roll_over: bool,
+    step: &StepId,
+    strips: &mut Vec<Strip>,
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
     if sign(radius, dec)? != Sign::Positive {
@@ -797,6 +834,7 @@ pub(crate) fn build(
         let same_sense = faces.map(|f| model.face(f).sense == Sense::Same);
         let curve = model.geom().curve(model.edge(edge).curve).clone();
         let convex = convex(model, edge, incident, dec)?;
+        let given = (supports.clone(), curve.clone());
         let definition = if let Curve::Intersection(ring) = &curve {
             let input = model.edge(edge);
             if input.start.is_some() || input.end.is_some() {
@@ -812,7 +850,7 @@ pub(crate) fn build(
                 radius.clone(),
                 convex,
                 dec,
-            )?
+            )
         } else {
             FilletDefinition::new(
                 origin,
@@ -822,8 +860,17 @@ pub(crate) fn build(
                 radius.clone(),
                 convex,
                 dec,
-            )?
-        };
+            )
+        }
+        .map_err(|refusal| {
+            // A proof that the radius is too large rests on this convexity.
+            if !fillet_limit::convexity_agrees(model, edge, incident, convex, dec).unwrap_or(false)
+            {
+                return refusal;
+            }
+            fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec)
+        })?;
+        strips.push((edge, faces, definition.clone()));
         runs.push(Run {
             edge,
             faces,

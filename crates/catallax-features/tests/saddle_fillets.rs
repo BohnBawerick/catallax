@@ -706,10 +706,11 @@ fn refusal(recipe: &Recipe) -> (String, String) {
 
 #[test]
 fn a_ball_that_does_not_fit_refuses() {
-    // The bore's offset reaches the wide offset.
-    assert_eq!(refusal(&bore("3")).0, "fillet.unsupported-contact");
+    // The bore's offset 4 + r stops passing through the wide offset 10 - r,
+    // whose axis is 1 away, at r = 5/2.
+    assert_eq!(refusal(&bore("3")).0, "fillet.radius-too-large");
     // The wide offset closes.
-    assert_eq!(refusal(&bore("10")).0, "fillet.unsupported-contact");
+    assert_eq!(refusal(&bore("10")).0, "fillet.radius-too-large");
 }
 
 #[test]

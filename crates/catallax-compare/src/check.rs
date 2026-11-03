@@ -258,7 +258,7 @@ impl FieldWitness {
     ) -> Self {
         let point = point.to_real();
         let remaining = &options.accuracy - error;
-        let mut controls = catallax_shapes::distance::Options {
+        let controls = catallax_shapes::distance::Options {
             width: if remaining > r(0) {
                 remaining.mul_pow2(-1)
             } else {
@@ -266,11 +266,9 @@ impl FieldWitness {
             },
             ..Default::default()
         };
-        let cell_limit = controls.max_cells;
-        controls.max_cells = 1;
         let mut upper = None;
         for &id in preferred {
-            if let Ok(distance) = prepared.point_to_face(id, &point, &controls, dec)
+            if let Ok(distance) = prepared.point_to_face_witness(id, &point, &controls.width, dec)
                 && let Some(bound) = distance.upper
                 && upper.as_ref().is_none_or(|old| bound < *old)
             {
@@ -280,7 +278,6 @@ impl FieldWitness {
                 break;
             }
         }
-        controls.max_cells = cell_limit;
         Self {
             point,
             remaining,

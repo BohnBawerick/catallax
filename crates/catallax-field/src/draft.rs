@@ -352,7 +352,7 @@ impl Region {
         Ok(true)
     }
 
-    fn new(cell: Cell, dec: &mut Decider) -> Result<Self, Refusal> {
+    pub(crate) fn new(cell: Cell, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut edges = BTreeSet::new();
         let mut include = |cycles: &[Vec<usize>]| {
             for cycle in cycles {

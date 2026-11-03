@@ -13,6 +13,8 @@ use crate::{
 
 #[path = "bored_shell.rs"]
 mod bored;
+#[path = "planar_shell.rs"]
+mod planar;
 
 fn bad(detail: &str) -> Refusal {
     Refusal::new("distance.unsupported-envelope", detail)
@@ -363,7 +365,13 @@ pub(crate) fn shell(
         .map_err(|e| e.refusal)?
         .body);
     }
-    let cell = convex(model, body, dec)?;
+    let cell = match convex(model, body, dec) {
+        Ok(cell) => cell,
+        Err(error) if error.code == "distance.unsupported-envelope" => {
+            return planar::build(model, body, open, thickness, step, dec);
+        }
+        Err(error) => return Err(error),
+    };
     let selected = cell.select(open, dec)?;
     if selected.iter().all(|v| *v) {
         return Ok(catallax_topology::empty(model));

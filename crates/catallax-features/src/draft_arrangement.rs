@@ -14,6 +14,12 @@ type FacetOwners = BTreeMap<(usize, Vec<usize>), Vec<(usize, usize)>>;
 type Classifier = fn(&Point3, &mut Decider) -> Result<bool, Refusal>;
 type OriginResolver = fn(&Point3, &Vector3, &mut Decider) -> Result<Vec<Origin>, Refusal>;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundaryNames {
+    Required,
+    ShellFieldGeometry,
+}
+
 /// One oriented input patch; holes have the opposite loop winding.
 #[derive(Clone, Debug)]
 pub struct Patch {
@@ -529,7 +535,31 @@ impl Skin {
         definition: &DraftDefinition,
         dec: &mut Decider,
     ) -> Result<Vec<Polyhedron>, Refusal> {
-        self.arrange::<Classifier, OriginResolver>(Some((selected, definition)), None, dec)
+        self.arrange::<Classifier, OriginResolver>(
+            Some((selected, definition)),
+            None,
+            BoundaryNames::Required,
+            dec,
+        )
+    }
+
+    /// Partitions the unchanged closed input chain by exact winding. Internal
+    /// carrier cuts remain convex terms, never physical face names.
+    /// Physical boundary patches must retain their source origins.
+    pub fn components(&self, dec: &mut Decider) -> Result<Vec<Polyhedron>, Refusal> {
+        self.arrange::<Classifier, OriginResolver>(None, None, BoundaryNames::Required, dec)
+    }
+
+    /// Geometry-only cells for independently compiled shell-face prisms.
+    /// Auxiliary facets remain unnamed constraints, not named field faces.
+    /// Construction-box facets are refused just as in named extraction.
+    pub fn shell_field_components(&self, dec: &mut Decider) -> Result<Vec<Polyhedron>, Refusal> {
+        self.arrange::<Classifier, OriginResolver>(
+            None,
+            None,
+            BoundaryNames::ShellFieldGeometry,
+            dec,
+        )
     }
 
     /// Extracts the physical boundary of a bounded regular solid whose carriers
@@ -546,13 +576,19 @@ impl Skin {
         C: FnMut(&Point3, &mut Decider) -> Result<bool, Refusal>,
         R: FnMut(&Point3, &Vector3, &mut Decider) -> Result<Vec<Origin>, Refusal>,
     {
-        self.arrange(None, Some((classify, resolve)), dec)
+        self.arrange(
+            None,
+            Some((classify, resolve)),
+            BoundaryNames::Required,
+            dec,
+        )
     }
 
     fn arrange<C, R>(
         &self,
         replacement: Option<(&BTreeSet<usize>, &DraftDefinition)>,
         mut classified: Option<(C, R)>,
+        names: BoundaryNames,
         dec: &mut Decider,
     ) -> Result<Vec<Polyhedron>, Refusal>
     where
@@ -806,6 +842,8 @@ impl Skin {
             let q = centre(&vertices, &facet.cycle);
             let mut positive = BTreeSet::new();
             let mut negative = BTreeSet::new();
+            let mut positive_patch = false;
+            let mut negative_patch = false;
             if let Some(raw) = carriers.get(&support).filter(|_| classified.is_none()) {
                 for i in raw {
                     let patch = &patches[*i];
@@ -817,15 +855,17 @@ impl Skin {
                         == Sign::Positive;
                     let outward = (winding > 0) == (aligned == facet.same_sense);
                     if outward {
+                        positive_patch = true;
                         positive.extend(patch.origins.iter().cloned());
                     } else {
+                        negative_patch = true;
                         negative.extend(patch.origins.iter().cloned());
                     }
                 }
             }
-            let (delta, origins) = if !positive.is_empty() && negative.is_empty() {
+            let (delta, origins) = if positive_patch && !negative_patch {
                 (1, positive.into_iter().collect())
-            } else if positive.is_empty() && !negative.is_empty() {
+            } else if !positive_patch && negative_patch {
                 (-1, negative.into_iter().collect())
             } else {
                 (0, Vec::new())
@@ -938,7 +978,9 @@ impl Skin {
                     facet.same_sense = !facet.same_sense;
                     facet.cycle.reverse();
                 }
-                if facet.support < 6 || interface.origins.is_empty() {
+                if facet.support < 6
+                    || (names == BoundaryNames::Required && interface.origins.is_empty())
+                {
                     return Err(failure(
                         "draft.nonclosing-boundary",
                         "material requires an undeclared boundary patch",

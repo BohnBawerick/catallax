@@ -165,6 +165,7 @@ impl Plan {
     ) -> Result<(), Refusal> {
         let mut end_planes = [false; 2];
         let mut span = interval.clone();
+        let mut others = Vec::with_capacity(source_faces.len());
         for &i in source_faces {
             let face = &self.faces[i];
             if faces
@@ -199,7 +200,27 @@ impl Plan {
                     continue;
                 }
             }
+            others.push(i);
+        }
+        // The region spans its stations, so a support clear of that prism is
+        // clear of the region.
+        let hull = match (&definition.edge, &span) {
+            (Curve::Line(edge), Some(span)) if end_planes == [true, true] => {
+                let [first, second] = span
+                    .each_ref()
+                    .map(|t| edge.origin.plus(&edge.dir.scaled(&Real::from(t.clone()))));
+                definition.cut_hull([(&first, &edge.dir), (&second, &edge.dir)], dec)?
+            }
+            _ => None,
+        };
+        for i in others {
+            let face = &self.faces[i];
             if definition.avoids_support(&face.surface, dec)? {
+                continue;
+            }
+            if let Some(hull) = &hull
+                && catallax_features::fillet::hull_clear(hull, &face.surface, dec)?
+            {
                 continue;
             }
             let a = geom.add_surface(definition.surface.clone());
@@ -527,28 +548,44 @@ impl Plan {
         }
         for corner in corners {
             let node = self.corner(&corner, step, dec)?;
-            result = self.boolean(BooleanKind::Subtract, result, node, dec)?;
+            result = self.boolean(
+                if corner.sector.convex {
+                    BooleanKind::Subtract
+                } else {
+                    BooleanKind::Union
+                },
+                result,
+                node,
+                dec,
+            )?;
         }
         Ok(result)
     }
 
-    /// The material a trihedral corner removes beyond its three strips: the
-    /// normal cone at the ball centre inside all three supports, less the ball.
-    /// That cell has the centre, the three feet, the vertex and one point on each
-    /// edge as vertices, so it lies within the centre-to-vertex distance.
+    /// The material a trihedral corner removes or adds beyond its three strips:
+    /// the cone of contact directions at the ball centre, short of all three
+    /// supports, less the ball. That cell has the centre, the three feet, the
+    /// vertex and one point on each edge as vertices, so it lies within the
+    /// centre-to-vertex distance.
     fn corner(
         &mut self,
         corner: &CornerDefinition,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        let radius = number(q(&corner.radius)?);
+        let radius = number(q(&corner.sector.radius)?);
         let centre = corner.centre();
         let mut planes = Vec::with_capacity(6);
-        for (i, (normal, dual)) in corner.normals.iter().zip(corner.dual_basis()).enumerate() {
-            let next = &corner.normals[(i + 1) % 3];
+        for (i, (normal, dual)) in corner
+            .sector
+            .directions
+            .iter()
+            .zip(corner.sector.dual_basis())
+            .enumerate()
+        {
+            let next = &corner.sector.directions[(i + 1) % 3];
             planes.push(Surface::Plane(Plane {
-                origin: centre.plus(&normal.scaled(&corner.radius)),
+                origin: centre.plus(&normal.scaled(&corner.sector.radius)),
                 normal: normal.clone(),
                 ref_dir: normal.cross(next),
             }));

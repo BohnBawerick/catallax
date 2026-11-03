@@ -406,14 +406,74 @@ pub(crate) fn imprint(
     graph: &IntersectionGraph,
     dec: &mut Decider,
 ) -> Answered<Imprinted> {
+    let first = model.faces_of_body(graph.a);
+    let second = model.faces_of_body(graph.b);
+    imprint_groups(
+        model,
+        graph,
+        &[(graph.a, &first), (graph.b, &second)],
+        dec,
+        |_, _| {},
+    )
+}
+
+pub(crate) fn arrangement(
+    model: &mut Model,
+    graph: &IntersectionGraph,
+    faces: &[FaceId],
+    dec: &mut Decider,
+) -> Answered<(Imprinted, BTreeMap<FaceId, FaceId>)> {
+    let mut owners = BTreeMap::new();
+    let answer = imprint_groups(model, graph, &[(graph.a, faces)], dec, |face, pieces| {
+        owners.extend(pieces.iter().map(|&piece| (piece, face)));
+    })?;
+    Ok(Answer::with_marks((answer.value, owners), answer.marks))
+}
+
+fn imprint_groups(
+    model: &mut Model,
+    graph: &IntersectionGraph,
+    groups: &[(catallax_topology::BodyId, &[FaceId])],
+    dec: &mut Decider,
+    mut visit: impl FnMut(FaceId, &[FaceId]),
+) -> Answered<Imprinted> {
     let mut builder = Builder {
         points: Vec::new(),
         vertices: BTreeMap::new(),
         edges: Vec::new(),
     };
-    for body in [graph.a, graph.b] {
-        for vertex in model.vertices_of_body(body) {
+    let mut additional_edges = None;
+    if graph.a == graph.b {
+        let mut vertices = BTreeSet::new();
+        let mut edges = BTreeSet::new();
+        for &(_, faces) in groups {
+            for &face in faces {
+                for lp in &model.face(face).loops {
+                    match model.loop_(*lp) {
+                        Loop::Vertex(vertex) => {
+                            vertices.insert(*vertex);
+                        }
+                        Loop::Coedges(coedges) => {
+                            for coedge in coedges {
+                                let edge = model.coedge(*coedge).edge;
+                                edges.insert(edge);
+                                let edge = model.edge(edge);
+                                vertices.extend([edge.start, edge.end].into_iter().flatten());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for vertex in vertices {
             builder.point(model, model.vertex(vertex).point, dec)?;
+        }
+        additional_edges = Some(edges.into_iter().collect::<Vec<_>>());
+    } else {
+        for body in [graph.a, graph.b] {
+            for vertex in model.vertices_of_body(body) {
+                builder.point(model, model.vertex(vertex).point, dec)?;
+            }
         }
     }
     for &point in graph.points.iter().chain(graph.singular.iter()) {
@@ -425,8 +485,11 @@ pub(crate) fn imprint(
         }
     }
     let mut boundary = BTreeMap::new();
-    for body in [graph.a, graph.b] {
-        for edge in model.edges_of_body(body) {
+    for &(body, _) in groups {
+        for edge in additional_edges
+            .take()
+            .unwrap_or_else(|| model.edges_of_body(body))
+        {
             if let std::collections::btree_map::Entry::Vacant(entry) = boundary.entry(edge) {
                 let parts = builder.split(model, edge, dec)?;
                 let mut names = model.edge_constructions(edge).to_vec();
@@ -452,27 +515,28 @@ pub(crate) fn imprint(
             }
         }
     }
-    let mut all = Vec::new();
-    for body in [graph.a, graph.b] {
-        let mut body_pieces = Vec::new();
-        for face in model.faces_of_body(body) {
-            body_pieces.extend(pieces(
+    let mut all = Vec::with_capacity(groups.len());
+    for &(_, faces) in groups {
+        let mut group_pieces = Vec::new();
+        for &face in faces {
+            let split = pieces(
                 model,
                 face,
                 &boundary,
                 sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
                 dec,
-            )?);
+            )?;
+            visit(face, &split);
+            group_pieces.extend(split);
         }
-        all.push(body_pieces);
+        all.push(group_pieces);
     }
-    let second = all.pop().expect("two operands");
-    let first = all.pop().expect("two operands");
+    let mut all = all.into_iter();
     Ok(Answer::exact(Imprinted {
         a: graph.a,
         b: graph.b,
-        first,
-        second,
+        first: all.next().unwrap_or_default(),
+        second: all.next().unwrap_or_default(),
         common,
         singular: graph.singular.clone(),
         marks: graph.marks.clone(),

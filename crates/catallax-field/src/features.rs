@@ -81,6 +81,18 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    pub(crate) fn complete_planar_carriers(&self) -> bool {
+        matches!(self.sweep, Sweep::Extrude { .. })
+            && self.algebraic_end.is_none()
+            && self.fillet.is_none()
+            && self.chamfer.is_none()
+            && self
+                .loops
+                .iter()
+                .flatten()
+                .all(|edge| edge.circle.is_none())
+    }
+
     /// Collects the finite planar sweep skin from field definitions, without
     /// constructing or consulting B-rep topology.
     pub(crate) fn planar_skin(
@@ -1066,6 +1078,40 @@ impl Feature {
             dec,
         )
     }
+    pub(crate) fn extrusion_cap_polarity(
+        &self,
+        role: &Role,
+        normal: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Option<u8>, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
+        let Sweep::Extrude {
+            vector,
+            through: false,
+        } = &self.sweep
+        else {
+            return Ok(None);
+        };
+        if !matches!(role, Role::Start | Role::End) {
+            return Ok(None);
+        }
+        let normal_sign = geometry::sign(&self.inverse.apply_vector(normal).z, dec)?;
+        if normal_sign == Sign::Zero {
+            return Ok(None);
+        }
+        // Both stored cap carriers use the same plane normal. The material
+        // side is instead fixed by the extrusion parameter and the cap role.
+        let follows = normal_sign == vector.z.sign();
+        Ok(Some(if follows == matches!(role, Role::End) {
+            1
+        } else {
+            2
+        }))
+    }
+
     pub(crate) fn on_face_point(
         &self,
         role: &Role,
@@ -1308,6 +1354,66 @@ impl Feature {
             p[2].clone().into(),
         );
         self.classify(&p.plus(&d.scaled(&Real::from(epsilon))), dec)
+    }
+    pub(crate) fn parabolic_ray(
+        &self,
+        p: &[Rational; 3],
+        tangent: &Vector3,
+        quadratic: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        let mut epsilon = Rational::one();
+        for constraint in &self.constraints {
+            let Some(coefficients) =
+                geometry::parabolic_ray_coefficients(constraint, p, tangent, quadratic)
+            else {
+                return Ok(Location::Indeterminate);
+            };
+            for (i, c) in coefficients.iter().enumerate() {
+                let sign = geometry::sign(c, dec)?;
+                if sign == Sign::Zero {
+                    continue;
+                }
+                let magnitude = if sign == Sign::Negative {
+                    -c
+                } else {
+                    c.clone()
+                };
+                let mut denominator = &magnitude + &Real::one();
+                for tail in &coefficients[i + 1..] {
+                    denominator = denominator
+                        + if let Some(q) = tail.rational_ref() {
+                            Real::from(q.abs())
+                        } else {
+                            tail * tail + Real::one()
+                        };
+                }
+                let bound = magnitude / denominator;
+                let mut precision = crate::metric::PRECISION;
+                let lower = loop {
+                    let lower = geometry::enclose(&bound, precision, dec)?.lo();
+                    if lower.sign() == Sign::Positive {
+                        break lower;
+                    }
+                    precision = precision.checked_mul(2).ok_or_else(|| {
+                        Refusal::new(
+                            "numbers.refinement-budget",
+                            "parabolic ray-germ separation exceeds the precision index",
+                        )
+                    })?;
+                };
+                epsilon = epsilon.min(lower);
+                break;
+            }
+        }
+        let p = Point3::new(
+            p[0].clone().into(),
+            p[1].clone().into(),
+            p[2].clone().into(),
+        );
+        let e = Real::from(epsilon);
+        let step = tangent.scaled(&e).plus(&quadratic.scaled(&(&e * &e)));
+        self.classify(&p.plus(&step), dec)
     }
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
         if !self.fast.valid {

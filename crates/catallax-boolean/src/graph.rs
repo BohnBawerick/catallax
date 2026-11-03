@@ -10,11 +10,11 @@ use catallax_intersect::{
     intersect_curve_surface, intersect_surfaces, on_curve, order_on_curve, same_curve,
 };
 use catallax_numbers::{
-    Answer, Answered, Decider, Fact, FactKind, FactOrigin, MarkLog, Outcome, Refusal, StrictOrder,
-    ZeroProof,
+    Answer, Answered, Ball, Decider, Fact, FactKind, FactOrigin, MarkLog, Outcome, Refusal,
+    StrictOrder, ZeroProof,
 };
 use catallax_shapes::{CurveId, GeomKey, PointId, SurfaceId};
-use catallax_topology::{BodyId, BodyKind, FaceId, Loop, Model};
+use catallax_topology::{BodyId, BodyKind, FaceId, Loop, Model, VertexId};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn sort_points(
@@ -183,6 +183,7 @@ type Complete = BTreeMap<SurfaceId, Vec<PointId>>;
 struct Context<'a> {
     first: &'a [FaceId],
     second: &'a [FaceId],
+    multiway: bool,
     mandatory: &'a BTreeSet<PointId>,
     point_faces: &'a BTreeMap<PointId, SharedFaces>,
 }
@@ -211,8 +212,15 @@ fn carrier_pieces(
     let mut pieces: Vec<SectionEdge> = Vec::new();
     for (start, end) in arcs {
         let sample = curve_sample(model, curve, start, end, dec)?;
-        let Some((faces_of_first, faces_of_second)) =
-            shared_faces(model, context.first, context.second, sample, regions, dec)?
+        let Some((faces_of_first, faces_of_second)) = shared_faces(
+            model,
+            context.first,
+            context.second,
+            context.multiway,
+            sample,
+            regions,
+            dec,
+        )?
         else {
             continue;
         };
@@ -393,10 +401,15 @@ fn shared_faces(
     model: &mut Model,
     first: &[FaceId],
     second: &[FaceId],
+    multiway: bool,
     point: PointId,
     regions: &mut RegionCache,
     dec: &mut Decider,
 ) -> Result<Option<SharedFaces>, Refusal> {
+    if multiway {
+        let faces = containing_faces(model, first, point, regions, dec)?;
+        return Ok((faces.len() >= 2).then(|| (faces, Vec::new())));
+    }
     let reversed = first.len() > second.len();
     let (smaller, larger) = if reversed {
         (second, first)
@@ -459,6 +472,55 @@ pub(crate) fn intersect(
     section(model, a, b, true, true, dec)
 }
 
+struct Inputs<'a> {
+    bodies: [BodyId; 2],
+    first: &'a [FaceId],
+    second: &'a [FaceId],
+    vertices: Vec<VertexId>,
+    multiway: bool,
+    clip: Option<[Ball; 3]>,
+    carrier_exclusions: bool,
+}
+
+pub(crate) fn arrangement(
+    model: &mut Model,
+    source: BodyId,
+    faces: &[FaceId],
+    dec: &mut Decider,
+) -> Answered<IntersectionGraph> {
+    let mut vertices = BTreeSet::new();
+    for &face in faces {
+        for lp in &model.face(face).loops {
+            match model.loop_(*lp) {
+                Loop::Vertex(vertex) => {
+                    vertices.insert(*vertex);
+                }
+                Loop::Coedges(coedges) => {
+                    for coedge in coedges {
+                        let edge = model.edge(model.coedge(*coedge).edge);
+                        vertices.extend([edge.start, edge.end].into_iter().flatten());
+                    }
+                }
+            }
+        }
+    }
+    let clip = crate::bounds::body_box(model, source, dec)?;
+    section_inputs(
+        model,
+        Inputs {
+            bodies: [source, source],
+            first: faces,
+            second: faces,
+            vertices: vertices.into_iter().collect(),
+            multiway: true,
+            clip,
+            carrier_exclusions: true,
+        },
+        true,
+        dec,
+    )
+}
+
 /// The section graph. `prune` lets finite-face exclusions skip curve/surface
 /// queries; the graph is the same either way.
 pub(crate) fn section(
@@ -480,13 +542,48 @@ pub(crate) fn section(
     }
     let first = model.faces_of_body(a);
     let second = model.faces_of_body(b);
-    let algebraic = first.iter().chain(&second).any(|face| {
+    let vertices = [a, b]
+        .into_iter()
+        .flat_map(|body| model.vertices_of_body(body))
+        .collect();
+    section_inputs(
+        model,
+        Inputs {
+            bodies: [a, b],
+            first: &first,
+            second: &second,
+            vertices,
+            multiway: false,
+            clip: None,
+            carrier_exclusions,
+        },
+        prune,
+        dec,
+    )
+}
+
+fn section_inputs(
+    model: &mut Model,
+    inputs: Inputs<'_>,
+    prune: bool,
+    dec: &mut Decider,
+) -> Answered<IntersectionGraph> {
+    let Inputs {
+        bodies: [a, b],
+        first,
+        second,
+        vertices,
+        multiway,
+        clip,
+        carrier_exclusions,
+    } = inputs;
+    let algebraic = first.iter().chain(second).any(|face| {
         !model
             .geom()
             .surface(model.face(*face).surface)
             .has_rational_definition()
     });
-    if !algebraic && boundaries_apart(model, &first, &second, dec) {
+    if !multiway && !algebraic && boundaries_apart(model, first, second, dec) {
         return Ok(Answer::exact(IntersectionGraph {
             a,
             b,
@@ -502,17 +599,15 @@ pub(crate) fn section(
     let mut points = Vec::new();
     let mut mandatory = BTreeSet::new();
     let mut singular = BTreeSet::new();
-    for body in [a, b] {
-        for vertex in model.vertices_of_body(body) {
-            let point = canonical_point(
-                model,
-                &mut points,
-                model.vertex(vertex).point,
-                dec,
-                "boolean.imprint-ambiguous",
-            )?;
-            mandatory.insert(point);
-        }
+    for vertex in vertices {
+        let point = canonical_point(
+            model,
+            &mut points,
+            model.vertex(vertex).point,
+            dec,
+            "boolean.imprint-ambiguous",
+        )?;
+        mandatory.insert(point);
     }
     let mut pairs: BTreeMap<(SurfaceId, SurfaceId), SurfacePair> = BTreeMap::new();
     // Preserve every canonical carrier and its insertion order. Optional bound
@@ -527,8 +622,16 @@ pub(crate) fn section(
     // region, where a carrier can keep a section piece without a potentially
     // meeting generating pair.
     let mut overlapping_coincidence = false;
-    for &fa in &first {
-        for &fb in &second {
+    for &fa in first {
+        for &fb in second {
+            if multiway && fb <= fa {
+                continue;
+            }
+            if let Some(clip) = &clip
+                && finite_bounds.excludes_clipped(model, fa, fb, clip, dec)
+            {
+                continue;
+            }
             let sa = model.face(fa).surface;
             let sb = model.face(fb).surface;
             if algebraic && bounds.disjoint(model, fa, fb, dec)? {
@@ -631,7 +734,7 @@ pub(crate) fn section(
     }
     let surfaces: Vec<SurfaceId> = first
         .iter()
-        .chain(&second)
+        .chain(second)
         .map(|f| model.face(*f).surface)
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -729,7 +832,8 @@ pub(crate) fn section(
     order.index = points.iter().enumerate().map(|(i, &p)| (p, i)).collect();
     let mut point_faces = BTreeMap::new();
     for &point in &points {
-        if let Some(faces) = shared_faces(model, &first, &second, point, &mut regions, dec)? {
+        if let Some(faces) = shared_faces(model, first, second, multiway, point, &mut regions, dec)?
+        {
             point_faces.insert(point, faces);
         }
     }
@@ -747,8 +851,9 @@ pub(crate) fn section(
         sort_points(model, curve, &mut cuts, dec)?;
         let closed = curve_is_closed(model.geom(), curve, dec)?;
         let context = Context {
-            first: &first,
-            second: &second,
+            first,
+            second,
+            multiway,
             mandatory: &mandatory,
             point_faces: &point_faces,
         };

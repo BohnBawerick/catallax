@@ -14,7 +14,9 @@ use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex
 use crate::{
     edge_blend::{self, Replacement},
     extrude::reverse,
-    fillet::{FilletDefinition, separated},
+    fillet::{
+        FilletDefinition, UNSUPPORTED_CORNER, UNSUPPORTED_END, hull_clear, hulls_apart, separated,
+    },
     fillet_corner::CornerDefinition,
     profile::sign,
 };
@@ -155,7 +157,8 @@ struct Run {
     senses: [Sense; 2],
     definition: FilletDefinition,
     ends: BTreeMap<(VertexId, FaceId), VertexId>,
-    caps: BTreeMap<VertexId, EdgeId>,
+    /// The edges closing the strip face at each input end vertex.
+    caps: BTreeMap<VertexId, Vec<EdgeId>>,
 }
 fn outward(
     model: &Model,
@@ -506,6 +509,68 @@ fn tangent_join(
     };
     Ok(Some((circle, p, qa)))
 }
+/// Where a ring strip meets a planar end face through its axis: the contact
+/// on each support in that plane, in strip face order, and the meridian
+/// through them about the ball centre there. Any other end plane cuts the
+/// ring's carrier in a spiric curve, which no edge carries yet.
+fn ring_end(
+    model: &Model,
+    run: &Run,
+    third: FaceId,
+    old: VertexId,
+    dec: &mut Decider,
+) -> Result<(Point3, Point3, Circle), Refusal> {
+    let end = |detail: &str| Refusal::new(UNSUPPORTED_END, detail);
+    let edge = model.edge(run.edge);
+    if edge.start == edge.end {
+        return Err(end("an arc strip whose two ends meet at one vertex"));
+    }
+    let Surface::Plane(wall) = model.geom().surface(model.face(third).surface) else {
+        return Err(end("an arc strip end needs a planar end face"));
+    };
+    let (Surface::Torus(Torus {
+        center,
+        axis,
+        major,
+        ..
+    })
+    | Surface::TorusSheet(TorusSheet {
+        center,
+        axis,
+        major,
+        ..
+    })) = &run.definition.surface
+    else {
+        return Err(end("an arc strip end needs a toroidal strip"));
+    };
+    if sign(&wall.normal.dot(axis), dec)? != Sign::Zero
+        || sign(&center.minus(&wall.origin).dot(&wall.normal), dec)? != Sign::Zero
+    {
+        return Err(end(
+            "an arc strip ends at a meridian only on an end plane through its ring axis",
+        ));
+    }
+    let at = model.geom().position(model.vertex(old).point);
+    let d = at.minus(center);
+    let out = unit(&d.minus(&axis.scaled(&(d.dot(axis) / axis.norm_squared()))));
+    let centre = center.plus(&out.scaled(major));
+    let [a, b] = run
+        .definition
+        .contacts
+        .each_ref()
+        .map(|contact| match contact {
+            Curve::Circle(c) => Ok(c.center.plus(&out.scaled(&c.radius_sq.sqrt()))),
+            _ => Err(end("an arc strip end needs circular contacts")),
+        });
+    let (a, b) = (a?, b?);
+    let meridian = Circle {
+        center: centre.clone(),
+        normal: wall.normal.clone(),
+        radius_sq: run.definition.radius.square(),
+        ref_dir: a.minus(&centre),
+    };
+    Ok((a, b, meridian))
+}
 /// The shorter meridian arc from the shared contact to the outer contact.
 fn meridian_edge(
     model: &mut Model,
@@ -622,6 +687,11 @@ fn plane(model: &Model, face: FaceId) -> Result<&catallax_shapes::Plane, Refusal
     Ok(p)
 }
 
+/// The arc of the curve shared by two supports from one vertex to another
+/// whose sample lies in every sector. An arc that starts inside a sector can
+/// leave it and return, so one through `avoid`, where a closed curve crosses
+/// that sector's other side, is skipped.
+#[allow(clippy::too_many_arguments)]
 fn connector(
     model: &mut Model,
     a: &Surface,
@@ -629,8 +699,10 @@ fn connector(
     from: VertexId,
     to: VertexId,
     sectors: &[&FilletDefinition],
+    avoid: Option<&Point3>,
     dec: &mut Decider,
 ) -> Result<EdgeId, Refusal> {
+    let avoid = avoid.map(|p| model.geom_mut().add_point(PointDef::Explicit(p.clone())));
     let a = model.geom_mut().add_surface(a.clone());
     let b = model.geom_mut().add_surface(b.clone());
     let meeting = catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value;
@@ -655,6 +727,17 @@ fn connector(
             continue;
         }
         for (sense, start, end) in [(Sense::Same, p, q), (Sense::Reversed, q, p)] {
+            if let Some(avoid) = avoid
+                && catallax_intersect::curve_is_closed(model.geom(), curve, dec)?
+                && decided(catallax_intersect::cyclic_order(
+                    model.geom(),
+                    curve,
+                    [start, avoid, end],
+                    dec,
+                ))? == Some(Cyclic::Forward)
+            {
+                continue;
+            }
             let sample =
                 catallax_intersect::arc_point(model.geom(), curve, Some(start), Some(end), dec)?
                     .value;
@@ -675,10 +758,170 @@ fn connector(
     Err(bad("no end-curve arc lies in every active contact sector"))
 }
 
+/// The planes that cut a strip at its two end vertices, where each end has
+/// one face besides the strip's own two and that face is planar.
+fn end_planes(model: &Model, run: &Run, uses: &Uses) -> Option<[catallax_shapes::Plane; 2]> {
+    let e = model.edge(run.edge);
+    let plane_at = |v: VertexId| {
+        let others: BTreeSet<_> = uses
+            .iter()
+            .filter(|(edge, _)| {
+                let e = model.edge(**edge);
+                e.start == Some(v) || e.end == Some(v)
+            })
+            .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
+            .filter(|f| !run.faces.contains(f))
+            .collect();
+        let [face] = others.into_iter().collect::<Vec<_>>()[..] else {
+            return None;
+        };
+        match model.geom().surface(model.face(face).surface) {
+            Surface::Plane(p) => Some(p.clone()),
+            _ => None,
+        }
+    };
+    Some([plane_at(e.start?)?, plane_at(e.end?)?])
+}
+/// A convex hull of a straight strip's region between its end planes. The
+/// strip ends on its end faces, so only that part can meet another face.
+fn hull(
+    model: &Model,
+    run: &Run,
+    uses: &Uses,
+    dec: &mut Decider,
+) -> Result<Option<[Point3; 6]>, Refusal> {
+    match end_planes(model, run, uses) {
+        Some([first, second]) => run.definition.cut_hull(
+            [
+                (&first.origin, &first.normal),
+                (&second.origin, &second.normal),
+            ],
+            dec,
+        ),
+        None => Ok(None),
+    }
+}
+
+/// Orders and orients the edges closing one strip end into a path from `from`.
+fn chain(model: &Model, caps: &[EdgeId], from: VertexId) -> Result<Vec<(EdgeId, Sense)>, Refusal> {
+    let mut left = caps.to_vec();
+    let mut at = from;
+    let mut path = Vec::with_capacity(left.len());
+    while !left.is_empty() {
+        let next = left
+            .iter()
+            .position(|cap| {
+                let e = model.edge(*cap);
+                e.start == Some(at) || e.end == Some(at)
+            })
+            .ok_or_else(|| bad("the edges closing a strip end do not join"))?;
+        let cap = left.remove(next);
+        let e = model.edge(cap);
+        let (sense, to) = if e.start == Some(at) {
+            (Sense::Same, e.end)
+        } else {
+            (Sense::Reversed, e.start)
+        };
+        at = to.ok_or_else(|| bad("a strip end edge has no end"))?;
+        path.push((cap, sense));
+    }
+    Ok(path)
+}
+
+/// Two straight strips of one convexity sharing one face meet at a vertex where their outer
+/// rails cross the unselected third edge at different points `hits`. Each
+/// strip's region is cut by the other's outer face, and their union leaves
+/// the deeper strip running past the shallower one's outer rail: that rail
+/// ends where it enters the deeper carrier, from where the deeper strip is cut
+/// by the shallower one's outer face down to its own hit on the third edge.
+/// The shallower strip's cut by the deeper one's outer face lies inside the
+/// deeper strip's band there, so nothing else shows. Returns the deeper hit,
+/// the shallower strip's index in `runs`, and the point where its outer rail
+/// enters the deeper carrier.
+fn unequal_mitre(
+    model: &mut Model,
+    uses: &Uses,
+    runs: [&Run; 2],
+    outer: [FaceId; 2],
+    hits: [Point3; 2],
+    old: VertexId,
+    dec: &mut Decider,
+) -> Result<(Point3, usize, Point3), Refusal> {
+    let corner = |detail: &str| Refusal::new(UNSUPPORTED_CORNER, detail);
+    let third: Vec<_> = uses
+        .iter()
+        .filter(|(edge, _)| {
+            let e = model.edge(**edge);
+            (e.start == Some(old) || e.end == Some(old))
+                && runs.iter().all(|run| run.edge != **edge)
+        })
+        .collect();
+    let [(third, incident)] = third[..] else {
+        return Err(corner(
+            "two strips with unequal reach need one unselected edge between them",
+        ));
+    };
+    let (third, incident) = (*third, incident.clone());
+    if convex(model, third, &incident, dec)? != runs[0].definition.convex {
+        return Err(corner(
+            "strips with unequal reach across an edge of the other convexity need a general corner patch",
+        ));
+    }
+    let at = model.geom().position(model.vertex(old).point);
+    let [first, second] = hits.each_ref().map(|hit| hit.minus(&at));
+    // Both rails reach the third edge on the side where it leaves the vertex.
+    if sign(&first.dot(&second), dec)? != Sign::Positive {
+        return Err(corner(
+            "outer rails meeting the unselected edge on both sides of the vertex need a general corner patch",
+        ));
+    }
+    let deep = match sign(&(second.norm_squared() - first.norm_squared()), dec)? {
+        Sign::Positive => 1,
+        Sign::Negative => 0,
+        Sign::Zero => return Err(corner("unequal contacts at one distance from the vertex")),
+    };
+    let shallow = 1 - deep;
+    let q = model
+        .geom_mut()
+        .add_point(PointDef::Explicit(hits[deep].clone()));
+    if !on_trimmed(model, third, q, dec)? {
+        return Err(Refusal::new(
+            "fillet.unsupported-overflow",
+            "the deeper strip at a vertex runs past the unselected edge and needs neighbour continuation",
+        ));
+    }
+    let line = model
+        .geom_mut()
+        .add_curve(Curve::Line(rail(runs[shallow], outer[shallow])?.clone()));
+    let carrier = model
+        .geom_mut()
+        .add_surface(runs[deep].definition.surface.clone());
+    let CurveSurface::Meets(entries) =
+        catallax_intersect::intersect_curve_surface(model.geom_mut(), line, carrier, dec)?.value
+    else {
+        return Err(corner(
+            "the shallower outer rail does not enter the deeper strip",
+        ));
+    };
+    let mut entry = None;
+    for hit in entries {
+        let p = model.geom().position(hit.point);
+        if runs[deep].definition.in_sector(&p, dec)? && entry.replace(p).is_some() {
+            return Err(corner(
+                "the shallower outer rail enters the deeper strip twice",
+            ));
+        }
+    }
+    let entry =
+        entry.ok_or_else(|| corner("the shallower outer rail does not enter the deeper strip"))?;
+    Ok((hits[deep].clone(), shallow, entry))
+}
+
 fn guard(
     model: &mut Model,
     body: BodyId,
     run: &Run,
+    hull: Option<&[Point3; 6]>,
     uses: &Uses,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
@@ -700,6 +943,11 @@ fn guard(
         }
         let other = model.geom().surface(model.face(face).surface).clone();
         if separated(&run.definition.surface, &other, dec)? {
+            continue;
+        }
+        if let Some(hull) = hull
+            && hull_clear(hull, &other, dec)?
+        {
             continue;
         }
         // Another piece of a curved strip's support touches the carrier only
@@ -773,10 +1021,10 @@ fn corner_guard(
             continue;
         }
         let other = model.geom().surface(model.face(face).surface).clone();
-        if separated(&corner.surface, &other, dec)? {
+        if separated(&corner.sector.surface, &other, dec)? {
             continue;
         }
-        let a = model.geom_mut().add_surface(corner.surface.clone());
+        let a = model.geom_mut().add_surface(corner.sector.surface.clone());
         let b = model.geom_mut().add_surface(other);
         if !matches!(
             catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value,
@@ -803,6 +1051,7 @@ pub(crate) fn build(
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
     let mut strips = Vec::new();
+    let mut unfinished = None;
     build_strips(
         model,
         body,
@@ -811,9 +1060,16 @@ pub(crate) fn build(
         roll_over,
         step,
         &mut strips,
+        &mut unfinished,
         dec,
     )
     .map_err(|refusal| {
+        let refusal = match unfinished {
+            Some(code) if refusal.code == "fillet.unsupported-topology" => {
+                Refusal::new(code, refusal.detail)
+            }
+            _ => refusal,
+        };
         if strips.is_empty() {
             return refusal;
         }
@@ -823,7 +1079,8 @@ pub(crate) fn build(
 }
 
 /// Builds the strips, recording each one whose definition it reached so a
-/// refusal can be explained by the radius.
+/// refusal can be explained by the radius, and the refusal code that names
+/// the strip end or junction it is closing, if any.
 #[allow(clippy::too_many_arguments)]
 fn build_strips(
     model: &mut Model,
@@ -833,6 +1090,7 @@ fn build_strips(
     roll_over: bool,
     step: &StepId,
     strips: &mut Vec<Strip>,
+    unfinished: &mut Option<&'static str>,
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
     if sign(radius, dec)? != Sign::Positive {
@@ -926,8 +1184,12 @@ fn build_strips(
     for run in &runs {
         rails_on_faces(model, run, dec)?;
     }
-    for run in &runs {
-        if let Err(refusal) = guard(model, body, run, &uses, dec) {
+    let hulls = runs
+        .iter()
+        .map(|run| hull(model, run, &uses, dec))
+        .collect::<Result<Vec<_>, _>>()?;
+    for (run, hull) in runs.iter().zip(&hulls) {
+        if let Err(refusal) = guard(model, body, run, hull.as_ref(), &uses, dec) {
             // A lone closed ring may clear every countersink mouth, touch them
             // at single points, or continue over them; every other overflow,
             // and any ring outside that stratum, still refuses.
@@ -977,7 +1239,7 @@ fn build_strips(
         }
     }
     for (i, a) in runs.iter().enumerate() {
-        for b in &runs[i + 1..] {
+        for (j, b) in runs.iter().enumerate().skip(i + 1) {
             let a_edge = model.edge(a.edge);
             let b_edge = model.edge(b.edge);
             if [a_edge.start, a_edge.end]
@@ -999,6 +1261,11 @@ fn build_strips(
             }
             if separated(&a.definition.surface, &b.definition.surface, dec)?
                 || a.definition.sectors_apart(&b.definition, dec)?
+            {
+                continue;
+            }
+            if let (Some(first), Some(second)) = (&hulls[i], &hulls[j])
+                && hulls_apart(first, second, dec)?
             {
                 continue;
             }
@@ -1050,45 +1317,69 @@ fn build_strips(
             })
             .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
             .collect();
+        // Every end or junction case not built yet says which it is.
+        *unfinished = Some(if active.len() == 1 {
+            UNSUPPORTED_END
+        } else {
+            UNSUPPORTED_CORNER
+        });
         if incident.len() != 3 {
-            return Err(bad("line-strip end needs a regular three-face vertex"));
+            return Err(bad("a strip end needs a regular three-face vertex"));
         }
         match active.as_slice() {
             [i] => {
                 let faces = runs[*i].faces;
                 let third = *incident.iter().find(|f| !faces.contains(f)).unwrap();
-                // A cylindrical end wall cuts the extended strip; its end
-                // curve is the blend/wall intersection, not an invented cap.
-                let (a, b) = if matches!(
+                // A cylindrical or spherical end wall cuts the extended strip;
+                // its end curve is the blend/wall intersection, not an
+                // invented cap. A ring strip ends on a plane through its axis
+                // at a meridian.
+                let ring = matches!(
+                    &runs[*i].definition.contacts,
+                    [Curve::Circle(_), Curve::Circle(_)]
+                );
+                let curved = matches!(
                     model.geom().surface(model.face(third).surface),
-                    Surface::Cylinder(_)
-                ) {
+                    Surface::Cylinder(_) | Surface::Sphere(_)
+                );
+                let (a, b, meridian) = if ring {
+                    let (a, b, meridian) = ring_end(model, &runs[*i], third, old, dec)?;
+                    (a, b, Some(meridian))
+                } else if curved {
                     (
                         wall_foot(model, &uses, &runs[*i], faces[0], third, old, dec)?,
                         wall_foot(model, &uses, &runs[*i], faces[1], third, old, dec)?,
+                        None,
                     )
                 } else {
                     (
                         line_plane(rail(&runs[*i], faces[0])?, plane(model, third)?, dec)?,
                         line_plane(rail(&runs[*i], faces[1])?, plane(model, third)?, dec)?,
+                        None,
                     )
                 };
                 let [a, b] = [vertex(model, a), vertex(model, b)];
                 for (face, v) in faces.into_iter().zip([a, b]) {
                     runs[*i].ends.insert((old, face), v);
                 }
-                let surface = runs[*i].definition.surface.clone();
-                let third_surface = model.geom().surface(model.face(third).surface).clone();
-                let cap = connector(
-                    model,
-                    &surface,
-                    &third_surface,
-                    a,
-                    b,
-                    &[&runs[*i].definition],
-                    dec,
-                )?;
-                runs[*i].caps.insert(old, cap);
+                let cap = match meridian {
+                    Some(meridian) => meridian_edge(model, meridian, a, b, dec)?,
+                    None => {
+                        let surface = runs[*i].definition.surface.clone();
+                        let third_surface = model.geom().surface(model.face(third).surface).clone();
+                        connector(
+                            model,
+                            &surface,
+                            &third_surface,
+                            a,
+                            b,
+                            &[&runs[*i].definition],
+                            None,
+                            dec,
+                        )?
+                    }
+                };
+                runs[*i].caps.insert(old, vec![cap]);
                 edit.gaps.insert((third, old), cap);
                 for (edge, adjacent) in &uses {
                     if *edge == runs[*i].edge {
@@ -1115,43 +1406,87 @@ fn build_strips(
                 let a = *runs[*i].faces.iter().find(|f| **f != common).unwrap();
                 let b = *runs[*j].faces.iter().find(|f| **f != common).unwrap();
                 let join = tangent_join(model, &runs[*i], &runs[*j], common, [a, b], old, dec)?;
-                let (p, qa) = match &join {
-                    Some((_, p, q)) => (p.clone(), q.clone()),
+                let (p, qa, unequal) = match &join {
+                    Some((_, p, q)) => (p.clone(), q.clone(), None),
                     None => {
+                        if runs[*i].definition.convex != runs[*j].definition.convex {
+                            return Err(bad(
+                                "a convex and a concave strip meeting at a vertex need a general corner patch",
+                            ));
+                        }
                         let p = line_line(rail(&runs[*i], common)?, rail(&runs[*j], common)?, dec)?;
                         let qa = line_plane(rail(&runs[*i], a)?, plane(model, b)?, dec)?;
                         let qb = line_plane(rail(&runs[*j], b)?, plane(model, a)?, dec)?;
-                        if !same(&qa, &qb, dec)? {
-                            return Err(bad(
-                                "unequal endpoint contacts require a corner continuation patch",
-                            ));
+                        if same(&qa, &qb, dec)? {
+                            (p, qa, None)
+                        } else {
+                            let (q, shallow, m) = unequal_mitre(
+                                model,
+                                &uses,
+                                [&runs[*i], &runs[*j]],
+                                [a, b],
+                                [qa, qb],
+                                old,
+                                dec,
+                            )?;
+                            (p, q, Some((shallow, m)))
                         }
-                        (p, qa)
                     }
                 };
                 let p = vertex(model, p);
                 let q = vertex(model, qa);
-                for index in [*i, *j] {
-                    for face in runs[index].faces {
-                        runs[index]
-                            .ends
-                            .insert((old, face), if face == common { p } else { q });
+                let unequal = unequal.map(|(shallow, m)| (shallow, vertex(model, m)));
+                for (index, run) in [*i, *j].into_iter().enumerate() {
+                    for face in runs[run].faces {
+                        let v = match unequal {
+                            _ if face == common => p,
+                            Some((shallow, m)) if shallow == index => m,
+                            _ => q,
+                        };
+                        runs[run].ends.insert((old, face), v);
                     }
                 }
+                let (from, to) = match unequal {
+                    Some((_, m)) => (p, m),
+                    None => (p, q),
+                };
                 let cap = match join {
-                    Some((meridian, ..)) => meridian_edge(model, meridian, p, q, dec)?,
+                    Some((meridian, ..)) => meridian_edge(model, meridian, from, to, dec)?,
                     None => connector(
                         model,
                         &runs[*i].definition.surface,
                         &runs[*j].definition.surface,
-                        p,
-                        q,
+                        from,
+                        to,
                         &[&runs[*i].definition, &runs[*j].definition],
+                        None,
                         dec,
                     )?,
                 };
                 for index in [*i, *j] {
-                    runs[index].caps.insert(old, cap);
+                    runs[index].caps.insert(old, vec![cap]);
+                }
+                // The deeper strip runs on past the shallower one's outer rail
+                // and is cut by that rail's face down to the unselected edge.
+                if let Some((shallow, m)) = unequal {
+                    let [deep, shallow] = if shallow == 0 { [*j, *i] } else { [*i, *j] };
+                    let face = if shallow == *i { a } else { b };
+                    let surface = model.geom().surface(model.face(face).surface).clone();
+                    // The cut stays in the deeper sector: it never reaches
+                    // the deeper strip's shared rail.
+                    let side = line_plane(rail(&runs[deep], common)?, plane(model, face)?, dec)?;
+                    let cut = connector(
+                        model,
+                        &runs[deep].definition.surface,
+                        &surface,
+                        m,
+                        q,
+                        &[&runs[deep].definition],
+                        Some(&side),
+                        dec,
+                    )?;
+                    runs[deep].caps.get_mut(&old).unwrap().push(cut);
+                    edit.gaps.insert((face, old), cut);
                 }
                 for edge in uses.keys() {
                     if *edge == runs[*i].edge || *edge == runs[*j].edge {
@@ -1192,7 +1527,7 @@ fn build_strips(
                 }) {
                     return Err(bad("an unselected edge meets the three-strip corner"));
                 }
-                let feet = corner.feet.clone().map(|p| vertex(model, p));
+                let feet = corner.sector.feet.clone().map(|p| vertex(model, p));
                 for (strip, index) in indices.iter().enumerate() {
                     let [a, b] = corner.strips[strip];
                     let run = &mut runs[*index];
@@ -1205,7 +1540,7 @@ fn build_strips(
                         start: Some(feet[a]),
                         end: Some(feet[b]),
                     });
-                    runs[*index].caps.insert(old, cap);
+                    runs[*index].caps.insert(old, vec![cap]);
                 }
                 corner_guard(model, body, &corner, &incident, dec)?;
                 corners.push((old, indices, corner));
@@ -1217,6 +1552,7 @@ fn build_strips(
             }
         }
     }
+    *unfinished = None;
     for (old, incident) in &uses {
         let e = model.edge(*old).clone();
         let start = e
@@ -1307,36 +1643,20 @@ fn build_strips(
         let paths = if input.start.is_none() && input.end.is_none() {
             vec![vec![rails[0]], vec![rails[1]]]
         } else {
-            let mut path = vec![rails[0]];
-            let end = edge_blend::ends(model, rails[0].0, rails[0].1).1.unwrap();
-            let old = if rails[0].1 == Sense::Same {
-                input.end.unwrap()
-            } else {
-                input.start.unwrap()
-            };
-            let cap = run.caps[&old];
-            let sense = if model.edge(cap).start == Some(end) {
-                Sense::Same
-            } else {
-                Sense::Reversed
-            };
-            cap_uses.insert(cap, sense);
-            path.push((cap, sense));
-            path.push(rails[1]);
-            let end = edge_blend::ends(model, rails[1].0, rails[1].1).1.unwrap();
-            let old = if rails[1].1 == Sense::Same {
-                input.end.unwrap()
-            } else {
-                input.start.unwrap()
-            };
-            let cap = run.caps[&old];
-            let sense = if model.edge(cap).start == Some(end) {
-                Sense::Same
-            } else {
-                Sense::Reversed
-            };
-            cap_uses.insert(cap, sense);
-            path.push((cap, sense));
+            let mut path = Vec::with_capacity(4);
+            for rail in rails {
+                path.push(rail);
+                let end = edge_blend::ends(model, rail.0, rail.1).1.unwrap();
+                let old = if rail.1 == Sense::Same {
+                    input.end.unwrap()
+                } else {
+                    input.start.unwrap()
+                };
+                for (cap, sense) in chain(model, &run.caps[&old], end)? {
+                    cap_uses.insert(cap, sense);
+                    path.push((cap, sense));
+                }
+            }
             vec![path]
         };
         // A saddle's normal points to the ball, where the other bands' points away.
@@ -1364,7 +1684,9 @@ fn build_strips(
         let mut caps: Vec<_> = indices
             .iter()
             .map(|index| {
-                let cap = runs[*index].caps[old];
+                let [cap] = runs[*index].caps[old][..] else {
+                    unreachable!("a corner strip end has one cap");
+                };
                 (cap, reverse(cap_uses[&cap]))
             })
             .collect();
@@ -1377,10 +1699,15 @@ fn build_strips(
                 .ok_or_else(|| bad("corner boundary arcs do not close"))?;
             path.push(caps.remove(next));
         }
+        // A concave corner's material lies outside its ball.
         let face = crate::extrude::face(
             model,
-            corner.surface.clone(),
-            Sense::Same,
+            corner.sector.surface.clone(),
+            if corner.sector.convex {
+                Sense::Same
+            } else {
+                Sense::Reversed
+            },
             vec![path],
             None,
             vec![corner.origin.clone()],

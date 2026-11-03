@@ -6,7 +6,10 @@
 use std::f64::consts::PI;
 
 use catallax_boolean::{Containment, classify_point};
-use catallax_features::{BuildError, Built, evaluate};
+use catallax_features::{
+    BuildError, Built, evaluate,
+    fillet::{RADIUS_TOO_LARGE, radius_limit},
+};
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational};
 use catallax_recipe::{Recipe, Role};
 use catallax_shapes::{RPoint3, Surface, Torus};
@@ -308,7 +311,10 @@ fn a_floor_round_wider_than_the_hole_is_refused() {
     )) else {
         panic!("a radius 7/2 ball does not fit a radius 3 bore");
     };
-    assert_eq!(refusal.code, "fillet.unsupported-contact", "{refusal:?}");
+    // The ball centre circle would have radius 3 - 7/2 < 0: no ball wider
+    // than the bore rolls round its floor.
+    assert_eq!(refusal.code, RADIUS_TOO_LARGE, "{refusal:?}");
+    assert_eq!(radius_limit(&refusal), Some(q("3")));
 }
 
 #[test]

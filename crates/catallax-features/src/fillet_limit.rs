@@ -215,40 +215,6 @@ fn contact_limit(
     first_failure(&conditions, dec)
 }
 
-/// Whether a circular edge's convexity, found from both faces' normals at one
-/// point, agrees with `convex`. The construction reads a circle's convexity
-/// from the plane face alone, which a hole's mouth or floor can contradict; no
-/// proof is made then. Other edges already use both normals.
-pub(crate) fn convexity_agrees(
-    model: &Model,
-    edge: EdgeId,
-    incident: &[(FaceId, Sense)],
-    convex: bool,
-    dec: &mut Decider,
-) -> Result<bool, Refusal> {
-    let e = model.edge(edge);
-    let Curve::Circle(c) = model.geom().curve(e.curve) else {
-        return Ok(true);
-    };
-    let [(a, sense), (b, _)] = incident else {
-        return Ok(false);
-    };
-    let outward = |face: FaceId, at: &Point3, dec: &mut Decider| -> Result<Vector3, Refusal> {
-        let f = model.face(face);
-        let n = model.geom().surface(f.surface).normal_at(at, dec)?;
-        Ok(n.scaled(&toward(f.sense == Sense::Same)))
-    };
-    let at = c.center.plus(&unit(&c.ref_dir).scaled(&root(&c.radius_sq)));
-    let along = c.normal.cross(&c.ref_dir);
-    let orientation = toward(*sense == e.sense);
-    let value = outward(*b, &at, dec)?.dot(&outward(*a, &at, dec)?.cross(&along)) * orientation;
-    Ok(match sign(&value, dec)? {
-        Sign::Negative => convex,
-        Sign::Positive => !convex,
-        Sign::Zero => false,
-    })
-}
-
 /// Relabels a refusal from building a strip's definition when no ball centre
 /// of this radius exists. Edge and radius validation keep their own codes.
 pub(crate) fn contact(
@@ -555,10 +521,7 @@ pub(crate) fn width(
     let proof = (|| -> Result<Option<Option<Real>>, Refusal> {
         let mut found: Option<Option<Real>> = None;
         for (edge, faces, definition) in strips {
-            let Some(incident) = uses.get(edge) else {
-                continue;
-            };
-            if !convexity_agrees(model, *edge, incident, definition.convex, dec)? {
+            if !uses.contains_key(edge) {
                 continue;
             }
             for (index, face) in faces.iter().enumerate() {

@@ -313,8 +313,7 @@ fn a_tube_rim_takes_less_than_its_wall_thickness() {
 }
 
 // A hole's mouth is convex, so the ball sits in the material and any radius
-// can roll round it. The strip construction reads this ring as concave, so no
-// proof is made from its definition.
+// can roll round it.
 #[test]
 fn a_hole_mouth_is_never_called_too_large() {
     not_too_large(&hole_mouth(), "4");

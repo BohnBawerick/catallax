@@ -898,11 +898,6 @@ fn build_strips(
             )
         }
         .map_err(|refusal| {
-            // A proof that the radius is too large rests on this convexity.
-            if !fillet_limit::convexity_agrees(model, edge, incident, convex, dec).unwrap_or(false)
-            {
-                return refusal;
-            }
             fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec)
         })?;
         strips.push((edge, faces, definition.clone()));

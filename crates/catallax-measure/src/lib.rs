@@ -1,8 +1,9 @@
 //! Piece 6 of catallax: measurement.
 //!
 //! Body mass properties, face centroids and areas, edge arc lengths and midpoints,
-//! straight edge-pair distances and angles, and axis-aligned bounds, as proven
-//! enclosures from exact definitions.
+//! straight edge-pair distances and angles, face and edge pair distances, centre
+//! distances and angles, and axis-aligned bounds, as proven enclosures from
+//! exact definitions.
 //!
 //! The contract is `docs/pieces/06-measurement.md`.
 //!
@@ -46,6 +47,7 @@ mod bounds;
 pub mod distance;
 mod edge;
 mod engine;
+mod entity;
 pub use bounds::BoundingBox;
 mod integrate;
 mod junction;
@@ -58,6 +60,7 @@ mod saddle;
 mod surface;
 mod torus;
 
+pub use entity::{PairEntity, PairRequest};
 pub use offset_prism::{
     elliptic_offset_prism_mass_properties, elliptic_offset_prism_volume_area_centroid,
 };
@@ -618,6 +621,41 @@ pub fn edge_pair(
     dec: &mut Decider,
 ) -> Answered<Enclosure> {
     pair::measure(model, a, b, request, accuracy, dec)
+}
+
+/// Certified scalar for two faces or edges of one checked body: planes,
+/// cylinders, cones, spheres and ring tori, finite straight edges and circles.
+///
+/// Minimum distance ranges over both closed trimmed entities. Each face, edge
+/// and vertex of the two entities is a stratum; the minimum is a stationary
+/// pair of some two strata, found from exact closed forms between their axes,
+/// centres, core circles and planes and admitted by both exact trims. Entities
+/// that share an edge or vertex answer zero; parallel planar faces keep the
+/// planar witness search. A pair of strata with no closed form refuses
+/// `measure.distance-uncovered` unless their boxes are at least as far apart as
+/// the best admitted pair. Faces of one checked body never cross inside, so
+/// transversal crossings of a cone with another carrier are not enumerated.
+///
+/// Centre distance joins axes, centres, straight-edge carriers and supporting
+/// planes; a line or plane that meets a plane refuses `measure.centre-domain`.
+/// The angle is unoriented and acute between axes and normals, where circles
+/// and tori take the normal of their plane; an axis against a normal takes the
+/// complement. Squared cosines 0, 1/4, 1/2, 3/4 and 1 answer
+/// exactly; a sphere has no direction and refuses `measure.angle-domain`.
+///
+/// Distances that reduce to rationals stay exact; others are outward
+/// enclosures carrying the ordinary accuracy mark when wider than requested.
+/// Other carriers refuse `measure.unsupported-surface` and other curves
+/// `measure.unsupported-curve`.
+pub fn entity_pair(
+    model: &Model,
+    a: PairEntity,
+    b: PairEntity,
+    request: PairRequest,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<Enclosure> {
+    entity::measure(model, a, b, request, accuracy, dec)
 }
 
 /// Proven enclosing box of a body. An empty body has no box.

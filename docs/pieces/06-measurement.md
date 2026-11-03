@@ -63,6 +63,7 @@ For a body `b` and its material `M` (the closure of the open set its shells boun
 - **face area and centroid**: area and first area moments of the part of the surface inside its loops;
 - **edge length and midpoint**: trimmed arc length and its half-arc-length point;
 - **straight edge pairs**: the minimum distance between two closed finite line segments, the distance between their midpoints, and a proven parallel or perpendicular direction angle;
+- **face and edge pairs**: the minimum distance between two closed trimmed faces or edges on planes, cylinders, cones, spheres, ring tori, lines and circles, the distance between their centres, and the acute angle between their axes or normals;
 - **bounds**: inclusive axis-aligned limits for the exact body or face, without display padding.
 
 The model-based APIs below measure the body as built. When that body carries marks (it was built through not-exact decisions), the enclosures are proven for that body, which may differ from the true answer within those marks (`JUDGE-INTERFACE.md`, ND10). This piece does not add the body's marks to its answer; they stay on the body, and the front end reports both. The certified-prism APIs above instead measure the explicitly retained original target and keep its represented-model error separate.
@@ -148,15 +149,17 @@ separation and inertia parallel-axis rules above are unchanged.
 | Code | When |
 | --- | --- |
 | `measure.not-solid` | the body's kind is neither `Solid` nor `Empty` (piece 3 has no such kind yet, so no test reaches it) |
-| `measure.unsupported-surface` | a face's surface kind this piece does not measure (none today; the enum is non-exhaustive) |
+| `measure.unsupported-surface` | a face's surface kind this piece does not measure; an entity pair measures only planes, cylinders, cones, spheres and ring tori |
 | `measure.centroid-not-separated` | the normalizing volume or face area enclosure could not be separated from zero |
 | `measure.budget-exhausted` | no enclosure of a property was reached within the budget |
 | `measure.bounds-not-separated` | an exact extrema ordering or membership predicate is unresolved |
 | `measure.unbounded-face` | a face or edge has no finite trimmed extrema |
-| `measure.unsupported-curve` | a future curve kind has no extrema definition, or an edge pair names an edge that is not a finite straight line |
+| `measure.unsupported-curve` | a future curve kind has no extrema definition, an edge pair names an edge that is not a finite straight line, or an entity pair names an edge that is neither a finite straight line nor a circle |
 | `measure.irrational-endpoint` | an edge pair names a line edge whose ends are not exact rationals |
 | `measure.degenerate-edge` | an edge pair names a line edge whose ends coincide |
-| `measure.angle-domain` | an edge-pair direction angle is neither proven parallel nor proven perpendicular |
+| `measure.angle-domain` | an edge-pair direction angle is neither proven parallel nor proven perpendicular, or an entity-pair angle names a sphere |
+| `measure.distance-uncovered` | an entity-pair minimum distance meets two strata with no closed form whose boxes cannot rule them out |
+| `measure.centre-domain` | an entity-pair centre distance names a line or plane that meets a plane |
 | `measure.nonplanar-face` | a parallel planar face distance names a curved face |
 | `measure.nonparallel-faces` | a parallel planar face distance names planes that are not parallel |
 | `measure.irrational-plane` | a parallel planar face distance names a plane without an exact rational frame |
@@ -205,6 +208,11 @@ pub fn edge_midpoint(model: &Model, edge: EdgeId, accuracy: &Accuracy, dec: &mut
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum EdgePairRequest { MinimumDistance, MidpointDistance, DirectionAngleDegrees }
 pub fn edge_pair(model: &Model, a: EdgeId, b: EdgeId, request: EdgePairRequest, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum PairEntity { Face(FaceId), Edge(EdgeId) }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum PairRequest { MinimumDistance, CentreDistance, AngleDegrees }
+pub fn entity_pair(model: &Model, a: PairEntity, b: PairEntity, request: PairRequest, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Enclosure>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundingBox { pub min: [Rational; 3], pub max: [Rational; 3] }
 pub fn bounding_box(model: &Model, body: BodyId, accuracy: &Accuracy, dec: &mut Decider) -> Answered<Option<BoundingBox>>;
@@ -241,6 +249,51 @@ reversing either edge changes neither. Other angles refuse. Each request
 first checks the operation allowance and deadline. A circle or other curve, or
 a line without two vertices, refuses `measure.unsupported-curve`; inexact ends
 refuse `measure.irrational-endpoint`; equal ends refuse `measure.degenerate-edge`.
+
+`entity_pair` reads one scalar from two faces or edges of one checked body.
+Faces lie on planes, cylinders, cones, spheres or ring tori; edges are finite
+straight lines or circles, whole or as arcs. Other carriers refuse
+`measure.unsupported-surface` and other curves `measure.unsupported-curve`.
+
+Minimum distance ranges over both closed trimmed entities. A face is the union
+of its open interior, its open boundary edges and its vertices; an edge is its
+open interior and its vertices. Each of these strata lies on a carrier at a
+constant offset from a core: a cylinder from its axis, a sphere from its
+centre, a torus from its core circle, and planes, cones, edges and vertices
+from themselves. The minimum is attained on some pair of strata where the
+distance restricted to them is stationary, so it lies on a common normal
+through a stationary pair of their cores, moved by each offset. Closed forms
+give every stationary pair of point, line, plane, circle and cone cores where
+this piece has them; one-parameter sets of pairs with one distance, such as
+parallel axes, are probed at exact dyadic positions. A candidate counts only
+when both exact trims admit its points: a recognized complete band, disc,
+spherical region or conical band by its exact heights or radius, an arc or
+segment by exact orientation and parameter tests, and any other face by piece
+5's `face_contains` on a private model copy. The least admitted candidate over
+all strata is the minimum. Entities sharing an edge or vertex answer exactly
+zero. When the faces' own candidate attains the carriers' lower bound, the
+least core distance less both offsets, no other stratum is examined;
+otherwise a pair of strata is skipped when its boxes are at least as far
+apart as the best candidate. A pair of strata without a closed form, for
+example a cone against a cylinder on a skew axis or two circles on
+nonparallel planes, that cannot be skipped refuses
+`measure.distance-uncovered`. Faces of one checked body never cross inside, so
+transversal crossings of a cone with another carrier are not enumerated.
+Parallel planar faces keep `PreparedFace::parallel_face_to_face` at the
+requested absolute width; a missing witness refuses
+`measure.distance-uncovered`.
+
+Centre distance joins the entities' centres: the axis of a cylinder or cone,
+the centre of a sphere, torus or circle, a straight edge's carrier and a planar
+face's supporting plane. A line or plane that meets a plane refuses
+`measure.centre-domain`. The angle is unoriented and acute between the axes of
+cylinders, cones and straight edges and the normals of planes, circles and
+tori; an axis against a normal takes the complement. Squared cosines 0, 1/4,
+1/2, 3/4 and 1 answer 90, 60, 45, 30 and 0 exactly; other angles are outward
+enclosures of the principal arctangent. A sphere has no direction and refuses
+`measure.angle-domain`. Distances that reduce to rationals stay exact; others
+are outward enclosures at up to 256 bits with the ordinary accuracy mark when
+wider than requested.
 
 Bounds have inclusive rational limits and no display chord padding. An empty
 body has no box. Bounds select vertices, exact axis extrema of conic edges and

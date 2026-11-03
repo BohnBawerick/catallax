@@ -168,7 +168,28 @@ impl RollingSaddle {
     ) -> Result<EnvelopeGrid, Refusal> {
         let [uu, vv, uv] = self.turns()?;
         let spans = self.span_count();
-        let span = q(4) / q(spans as i64);
+        // Cuts count from the widest span, and a narrower one takes only the
+        // halvings that bring it down to the same cell width.
+        let widths: Vec<Rational> = self
+            .data
+            .nodes
+            .windows(2)
+            .map(|pair| &pair[1].u - &pair[0].u)
+            .collect();
+        let span = self.span_widths()[0].clone();
+        let halvings = |cuts: u32| -> Vec<u32> {
+            let cell = span.mul_pow2(-i64::from(cuts));
+            widths
+                .iter()
+                .map(|width| {
+                    let mut own = 0;
+                    while width.mul_pow2(-i64::from(own)) > cell {
+                        own += 1;
+                    }
+                    own
+                })
+                .collect()
+        };
         let chord = |cuts: [u32; 2]| {
             let du = span.mul_pow2(-i64::from(cuts[0]));
             let dv = Rational::one().mul_pow2(-i64::from(cuts[1]));
@@ -181,7 +202,7 @@ impl RollingSaddle {
             if chord([cuts_u, cuts_v]) <= *tolerance {
                 break;
             }
-            let columns = spans << cuts_u;
+            let columns: usize = halvings(cuts_u).iter().map(|own| 1usize << own).sum();
             if cuts_u >= MAX_CUTS
                 || cuts_v >= MAX_CUTS
                 || (columns + 1).saturating_mul((1 << cuts_v) + 1) > max_points
@@ -197,9 +218,9 @@ impl RollingSaddle {
                 cuts_v += 1;
             }
         }
-        let per_span = 1usize << cuts_u;
+        let cuts = halvings(cuts_u);
         let rows = (1usize << cuts_v) + 1;
-        let columns = spans * per_span + 1;
+        let columns = cuts.iter().map(|own| 1usize << own).sum::<usize>() + 1;
         let mut points = Vec::with_capacity(columns * rows);
         let bits = self.data.net.bits;
         let patches = self.patches(bits);
@@ -215,13 +236,14 @@ impl RollingSaddle {
                 ]
             })
             .collect();
-        for column in 0..columns {
+        let mut stations = Vec::with_capacity(columns);
+        for (index, own) in cuts.iter().enumerate() {
+            let per_span = 1usize << own;
+            stations.extend((0..per_span).map(|step| (index, step, per_span)));
+        }
+        stations.push((spans - 1, 1, 1));
+        for (index, step, per_span) in stations {
             dec.check_deadline()?;
-            let (index, step) = if column + 1 == columns {
-                (spans - 1, per_span)
-            } else {
-                (column / per_span, column % per_span)
-            };
             let t = Rational::from_ratio(step as i64, per_span as i64).expect("nonzero");
             let section = casteljau(&patches[index], &t, bits);
             for weights in &basis {

@@ -320,10 +320,7 @@ fn check_rails(
     let rows =
         saddle_rows(model, region.face).ok_or_else(|| unproven("a ring lost a retained rail"))?;
     let law = saddle.definition().law();
-    let narrow_axis = law
-        .axis
-        .scaled(&law.cosine)
-        .plus(&law.along.scaled(&law.sine));
+    let narrow_axis = law.narrow_axis();
     let axes = [
         (
             &law.wide,

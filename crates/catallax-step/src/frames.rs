@@ -85,11 +85,7 @@ pub(crate) fn band_walls(
                     let [(wide, _), (narrow, _)] = saddle_rows(model, face).ok_or_else(refused)?;
                     let law = saddle.definition().law();
                     frame(wide, law.across.clone(), &mut frames);
-                    let side = law
-                        .along
-                        .scaled(&law.cosine)
-                        .minus(&law.axis.scaled(&law.sine));
-                    frame(narrow, side.scaled(&-Real::one()), &mut frames);
+                    frame(narrow, law.side_axis().scaled(&-Real::one()), &mut frames);
                 }
                 _ => {}
             }

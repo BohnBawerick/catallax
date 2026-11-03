@@ -45,6 +45,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, pathlib, statistics, subprocess
+          from candidate.tools.checks.edit_speed import read_native_work
           out = pathlib.Path(os.environ['PROOF'])
           out.mkdir()
           core = min(os.sched_getaffinity(0))
@@ -61,11 +62,10 @@ jobs:
                                        text=True, capture_output=True, check=True)
                   (dest / 'stderr.txt').write_text(run.stderr)
                   answer = tuple((dest / name).read_bytes() for name in ['answer.step', 'answer.txt'])
-                  work = int((dest / 'work.txt').read_text())
+                  work = read_native_work(dest / 'work.txt', reference_work)
                   if reference is None:
                       reference, reference_work = answer, work
                   assert answer == reference, f'answer, certificate or STEP bytes changed: {dest}'
-                  assert work <= reference_work, f'accepted work rose from {reference_work} to {work}: {dest}'
                   row = dict(pair=pair, warmup=pair == 0, revision=revision,
                              base_work=reference_work, head_work=work if revision == 'candidate' else None,
                              accepted_work=work,

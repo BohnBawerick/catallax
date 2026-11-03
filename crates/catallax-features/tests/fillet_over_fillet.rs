@@ -633,13 +633,28 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
         assert_eq!(radius_limit(&refusal), Some(r("1")));
     }
     // Without roll-over, the strip's carrier passes the earlier round into
-    // the far faces.
-    let refusal = refused(&boss(3, "3", "1", false), "top");
-    assert_eq!(
-        refusal.code, "fillet.unsupported-overflow",
-        "{}",
-        refusal.detail
-    );
+    // the far faces, and an upright's carrier passes an earlier mitre.
+    for (recipe, step) in [
+        (boss(3, "3", "1", false), "top"),
+        (mitred(3, "3", "3", false), "upright"),
+    ] {
+        let refusal = refused(&recipe, step);
+        assert_eq!(
+            refusal.code, "fillet.unsupported-overflow",
+            "{}",
+            refusal.detail
+        );
+    }
+    // A mitre of strips of another radius needs a general corner patch.
+    for upright in ["2", "4"] {
+        let refusal = refused(&mitred(4, "3", upright, false), "upright");
+        assert_eq!(
+            refusal.code,
+            catallax_features::fillet::UNSUPPORTED_CORNER,
+            "{}",
+            refusal.detail
+        );
+    }
     // An earlier round's tangent boundary is not a sharp edge.
     let seam = recipe(
         4,
@@ -786,4 +801,145 @@ fn every_edge_rounds_over_an_earlier_round() {
         "1e-6",
     );
     closed_display(&built);
+}
+
+// The block's top edges along x_max and y_max, or its whole top loop, rounded
+// together with mitred corners, then the upright under each mitre.
+fn mitred(format: u8, top: &str, upright: &str, whole: bool) -> Recipe {
+    let (tops, ups): (Vec<_>, Vec<_>) = if whole {
+        (
+            SIDES
+                .iter()
+                .map(|s| edge(cap("block", "end"), side("block", s)))
+                .collect(),
+            uprights("block"),
+        )
+    } else {
+        (
+            vec![
+                edge(cap("block", "end"), side("block", "x_max")),
+                edge(cap("block", "end"), side("block", "y_max")),
+            ],
+            vec![edge(side("block", "x_max"), side("block", "y_max"))],
+        )
+    };
+    recipe(
+        format,
+        vec![
+            block("block", ["20", "20", "10"], ["0", "0", "0"]),
+            fillet("top", "block", top, tops),
+            fillet("upright", "top", upright, ups),
+        ],
+    )
+}
+
+#[test]
+fn an_upright_round_swallows_an_earlier_mitre() {
+    // The upright's ball reaches both top strips at once and closes the
+    // corner they would have closed together; the mitre between them goes.
+    for rho in ["3", "2"] {
+        let built = build(&mitred(4, rho, rho, false));
+        expect_kinds(&built, &[("Plane", 6), ("Cylinder", 3), ("Sphere", 1)]);
+        // 4000 less each section over its run up to the corner, 20 - r, 20 - r
+        // and 10 - r, and the corner cube less its ball octant.
+        let rho = r(rho);
+        let [s0, s1] = section(&rho);
+        let runs = &r("50") - &(&r("3") * &rho);
+        let cube = &(&rho * &rho) * &rho;
+        exact_volume(
+            &built,
+            [
+                &(&r("4000") - &(&s0 * &runs)) - &cube,
+                &(-&(&s1 * &runs)) + &(&cube / &r("6")),
+                r("0"),
+            ],
+            "1e-6",
+        );
+        closed_display(&built);
+        step(&built, "SPHERICAL_SURFACE(");
+        let corners: Vec<_> = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .filter(|f| {
+                built
+                    .model
+                    .face_origins(*f)
+                    .iter()
+                    .any(|o| matches!(o.role, Role::Corner { .. }))
+            })
+            .collect();
+        assert_eq!(corners.len(), 1);
+    }
+    let corner_names = |recipe: &Recipe| -> BTreeSet<Origin> {
+        let built = build(recipe);
+        built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .flat_map(|f| built.model.face_origins(f).to_vec())
+            .filter(|o| matches!(o.role, Role::Corner { .. }))
+            .collect()
+    };
+    assert_eq!(
+        corner_names(&mitred(4, "3", "3", false)),
+        corner_names(&mitred(4, "2", "2", false))
+    );
+    // The whole top loop, then all four uprights: four corners.
+    let built = build(&mitred(4, "3", "3", true));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 8), ("Sphere", 4)]);
+    exact_volume(&built, [r("3136"), r("207"), r("0")], "1e-6");
+    closed_display(&built);
+    use Containment::{Inside, Outside};
+    let mut built = build(&mitred(4, "3", "3", false));
+    classify(
+        &mut built,
+        &[
+            // The ball about (17, 17, 7): inside it, and outside it where the
+            // mitre stood.
+            (["37/2", "37/2", "17/2"], Inside),
+            (["199/10", "199/10", "9"], Outside),
+            (["19", "19", "99/10"], Outside),
+            (["10", "10", "5"], Inside),
+        ],
+    );
+}
+
+// A pocket's floor loop rounded with mitred corners, then its uprights.
+fn mitred_pocket(floor: &str, upright: &str) -> Recipe {
+    recipe(
+        4,
+        vec![
+            block("block", ["20", "20", "10"], ["0", "0", "0"]),
+            block("tool", ["10", "10", "10"], ["5", "5", "4"]),
+            json!({"id":"pocket","op":"boolean","kind":"subtract","target":"block","tool":"tool"}),
+            fillet(
+                "floor",
+                "pocket",
+                floor,
+                SIDES
+                    .iter()
+                    .map(|s| edge(cap("tool", "start"), side("tool", s)))
+                    .collect(),
+            ),
+            fillet("upright", "floor", upright, uprights("tool")),
+        ],
+    )
+}
+
+#[test]
+fn pocket_uprights_swallow_the_floor_loop_mitres() {
+    let built = build(&mitred_pocket("1", "1"));
+    expect_kinds(&built, &[("Plane", 11), ("Cylinder", 8), ("Sphere", 4)]);
+    // The pocket with every inner edge rounded at once.
+    exact_volume(&built, [r("3456"), -&r("41/3"), r("0")], "1e-6");
+    closed_display(&built);
+    step(&built, "SPHERICAL_SURFACE(");
+    let refusal = refused(&mitred_pocket("1", "3/2"), "upright");
+    assert_eq!(
+        refusal.code,
+        catallax_features::fillet::UNSUPPORTED_CORNER,
+        "{}",
+        refusal.detail
+    );
 }

@@ -866,7 +866,8 @@ fn connector(
 }
 
 /// The planes that cut a strip at its two end vertices, each as a point and
-/// a normal: the one face there besides the strip's own two, when that face
+/// a normal: the normal plane of its edge through a corner's ball centre in
+/// `centres`, the one face there besides the strip's own two when that face
 /// is planar, or the normal plane of its edge where another selected run
 /// continues it tangentially, the meridian of their join.
 fn end_cuts(
@@ -874,10 +875,16 @@ fn end_cuts(
     run: &Run,
     runs: &[Run],
     uses: &Uses,
+    centres: &BTreeMap<(EdgeId, VertexId), Point3>,
     dec: &mut Decider,
 ) -> Result<Option<[(Point3, Vector3); 2]>, Refusal> {
     let e = model.edge(run.edge);
     let mut cut_at = |v: VertexId| -> Result<Option<(Point3, Vector3)>, Refusal> {
+        if let (Some(centre), Curve::Line(line)) =
+            (centres.get(&(run.edge, v)), model.geom().curve(e.curve))
+        {
+            return Ok(Some((centre.clone(), line.dir.clone())));
+        }
         let others: BTreeSet<_> = uses
             .iter()
             .filter(|(edge, _)| {
@@ -922,6 +929,7 @@ fn hull(
     run: &Run,
     runs: &[Run],
     uses: &Uses,
+    centres: &BTreeMap<(EdgeId, VertexId), Point3>,
     dec: &mut Decider,
 ) -> Result<Option<Vec<Point3>>, Refusal> {
     let e = model.edge(run.edge);
@@ -936,7 +944,7 @@ fn hull(
         .map(|v| model.geom().position(model.vertex(v).point));
         return run.definition.arc_hull([&from, &to], dec);
     }
-    Ok(match end_cuts(model, run, runs, uses, dec)? {
+    Ok(match end_cuts(model, run, runs, uses, centres, dec)? {
         Some([(a, m), (b, n)]) => run
             .definition
             .cut_hull([(&a, &m), (&b, &n)], dec)?
@@ -1058,6 +1066,122 @@ fn unequal_mitre(
     let entry =
         entry.ok_or_else(|| corner("the shallower outer rail does not enter the deeper strip"))?;
     Ok((hits[deep].clone(), shallow, entry))
+}
+
+/// A strip ending where two earlier strips meet at a mitre, each strip
+/// tangent to one of its faces. When their retained definitions and the
+/// strip form the trihedral corner the three would have closed together,
+/// that corner's sphere sector closes the end and swallows the mitre: its
+/// boundary arcs trim both earlier strips, and its contact on their common
+/// support is the mitre's other end.
+struct Mitre {
+    corner: CornerDefinition,
+    /// The earlier strips' faces, in the corner's strip order after the run.
+    faces: [FaceId; 2],
+    /// The mitre between them, and its end away from the strip.
+    edge: EdgeId,
+    apex: VertexId,
+    /// The index of their common support in the corner, whose contact is
+    /// the apex.
+    shared: usize,
+}
+/// The earlier strip whose face this is, by its origin and carrier. A
+/// continued chain's strips share their origin.
+fn retained<'a>(
+    model: &Model,
+    face: FaceId,
+    earlier: &'a [FilletDefinition],
+) -> Option<&'a FilletDefinition> {
+    let origins = model.face_origins(face);
+    let surface = model.geom().surface(model.face(face).surface);
+    earlier
+        .iter()
+        .find(|strip| origins.contains(&strip.origin) && strip.surface.same_definition(surface))
+}
+#[allow(clippy::too_many_arguments)]
+fn mitre(
+    model: &Model,
+    body: BodyId,
+    uses: &Uses,
+    run: &Run,
+    old: VertexId,
+    earlier: &[FilletDefinition],
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<Option<Mitre>, Refusal> {
+    let at = |edge: &EdgeId| {
+        let e = model.edge(*edge);
+        e.start == Some(old) || e.end == Some(old)
+    };
+    let others: BTreeSet<_> = uses
+        .iter()
+        .filter(|(edge, _)| at(edge))
+        .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
+        .filter(|f| !run.faces.contains(f))
+        .collect();
+    let [c, d] = others.into_iter().collect::<Vec<_>>()[..] else {
+        return Ok(None);
+    };
+    let (Some(first), Some(second)) = (retained(model, c, earlier), retained(model, d, earlier))
+    else {
+        return Ok(None);
+    };
+    let Some(edge) = uses
+        .iter()
+        .find(|(edge, incident)| {
+            at(edge)
+                && incident.iter().any(|(f, _)| *f == c)
+                && incident.iter().any(|(f, _)| *f == d)
+        })
+        .map(|(edge, _)| *edge)
+    else {
+        return Ok(None);
+    };
+    let corner_end = |detail: &str| Refusal::new(UNSUPPORTED_CORNER, detail);
+    let e = model.edge(edge);
+    let apex = if e.start == Some(old) { e.end } else { e.start }
+        .ok_or_else(|| corner_end("a mitre between earlier strips needs two ends"))?;
+    let name = model
+        .vertex_name(body, old)
+        .ok_or_else(|| bad("a corner vertex needs an unambiguous origin name"))?;
+    let corner = CornerDefinition::new(
+        Origin {
+            step: step.clone(),
+            role: Role::Corner { vertex: name },
+        },
+        [&run.definition, first, second],
+        dec,
+    )?;
+    let shared = corner.strips[1]
+        .into_iter()
+        .find(|i| corner.strips[2].contains(i))
+        .ok_or_else(|| corner_end("the earlier strips share no support"))?;
+    let tip = model.geom().position(model.vertex(apex).point);
+    if !same(&corner.sector.feet[shared], &tip, dec)? {
+        return Err(corner_end(
+            "the earlier strips' mitre does not end at the corner's contact on their common support",
+        ));
+    }
+    Ok(Some(Mitre {
+        corner,
+        faces: [c, d],
+        edge,
+        apex,
+        shared,
+    }))
+}
+/// Chains oriented boundary arcs into one closed loop.
+fn close(model: &Model, mut arcs: Vec<(EdgeId, Sense)>) -> Result<Vec<(EdgeId, Sense)>, Refusal> {
+    let mut path = vec![arcs.remove(0)];
+    while !arcs.is_empty() {
+        let end = edge_blend::ends(model, path.last().unwrap().0, path.last().unwrap().1).1;
+        let next = arcs
+            .iter()
+            .position(|(arc, sense)| edge_blend::ends(model, *arc, *sense).0 == end)
+            .ok_or_else(|| bad("corner boundary arcs do not close"))?;
+        path.push(arcs.remove(next));
+    }
+    Ok(path)
 }
 
 fn guard(
@@ -1362,9 +1486,26 @@ fn build_strips(
     for run in &runs {
         rails_on_faces(model, run, dec)?;
     }
+    // Roll-over closes a strip ending at an earlier mitre with the corner the
+    // three strips share, a higher-contact stratum of version 4.
+    let mut mitres = BTreeMap::new();
+    if roll_over {
+        for (i, run) in runs.iter().enumerate() {
+            let e = model.edge(run.edge);
+            for old in [e.start, e.end].into_iter().flatten() {
+                if let Some(found) = mitre(model, body, &uses, run, old, earlier, step, dec)? {
+                    mitres.insert((i, old), found);
+                }
+            }
+        }
+    }
+    let centres = mitres
+        .iter()
+        .map(|((i, old), m)| ((runs[*i].edge, *old), m.corner.centre().clone()))
+        .collect();
     let hulls = runs
         .iter()
-        .map(|run| hull(model, run, &runs, &uses, dec))
+        .map(|run| hull(model, run, &runs, &uses, &centres, dec))
         .collect::<Result<Vec<_>, _>>()?;
     for (run, hull) in runs.iter().zip(&hulls) {
         if let Err(refusal) = guard(model, body, run, hull.as_deref(), &uses, dec) {
@@ -1481,6 +1622,7 @@ fn build_strips(
     let mut edit = Replacement::default();
     let mut end_changes = BTreeMap::new();
     let mut corners = Vec::new();
+    let mut swallowed = Vec::new();
     for old in model.vertices_of_body(body) {
         let active: Vec<_> = runs
             .iter()
@@ -1507,6 +1649,87 @@ fn build_strips(
         } else {
             UNSUPPORTED_CORNER
         });
+        if let [i] = active[..]
+            && let Some(m) = mitres.get(&(i, old))
+        {
+            let (corner, shared) = (&m.corner, m.shared);
+            let feet: Vec<_> = (0..3)
+                .map(|s| {
+                    if s == shared {
+                        m.apex
+                    } else {
+                        vertex(model, corner.sector.feet[s].clone())
+                    }
+                })
+                .collect();
+            let faces = runs[i].faces;
+            let [a, b] = corner.strips[0];
+            runs[i].ends.insert((old, faces[0]), feet[a]);
+            runs[i].ends.insert((old, faces[1]), feet[b]);
+            let curve = model.geom_mut().add_curve(corner.boundary(0));
+            let cap = model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: Some(feet[a]),
+                end: Some(feet[b]),
+            });
+            runs[i].caps.insert(old, vec![cap]);
+            // Each earlier strip's boundary arc replaces the mitre in its
+            // loop, from the mitre's far end to its own foot.
+            let mitre_edge = model.edge(m.edge).clone();
+            let mut arcs = Vec::with_capacity(2);
+            for (k, face) in [(1, m.faces[0]), (2, m.faces[1])] {
+                let [p, q] = corner.strips[k];
+                let own = feet[if p == shared { q } else { p }];
+                let (start, end) = if mitre_edge.start == Some(old) {
+                    (own, m.apex)
+                } else {
+                    (m.apex, own)
+                };
+                let curve = model.geom_mut().add_curve(corner.boundary(k));
+                let arc = model.add_edge(Edge {
+                    curve,
+                    sense: if start == feet[p] {
+                        Sense::Same
+                    } else {
+                        Sense::Reversed
+                    },
+                    start: Some(start),
+                    end: Some(end),
+                });
+                edit.edges.insert((face, m.edge), arc);
+                arcs.push((face, arc));
+            }
+            for (edge, adjacent) in &uses {
+                let e = model.edge(*edge);
+                if *edge == runs[i].edge
+                    || *edge == m.edge
+                    || (e.start != Some(old) && e.end != Some(old))
+                {
+                    continue;
+                }
+                let v = if adjacent.iter().any(|(f, _)| *f == faces[0]) {
+                    feet[a]
+                } else if adjacent.iter().any(|(f, _)| *f == faces[1]) {
+                    feet[b]
+                } else {
+                    return Err(bad("an edge at a mitre corner meets neither strip face"));
+                };
+                end_changes.insert((*edge, old), v);
+            }
+            let mut near = incident.clone();
+            near.extend(
+                uses.iter()
+                    .filter_map(|(edge, adjacent)| {
+                        let e = model.edge(*edge);
+                        (e.start == Some(m.apex) || e.end == Some(m.apex)).then_some(adjacent)
+                    })
+                    .flat_map(|adjacent| adjacent.iter().map(|(f, _)| *f)),
+            );
+            corner_guard(model, body, corner, &near, dec)?;
+            swallowed.push((old, i, arcs));
+            continue;
+        }
         if incident.len() != 3 {
             return Err(bad("a strip end needs a regular three-face vertex"));
         }
@@ -1900,7 +2123,7 @@ fn build_strips(
     for (old, indices, corner) in &corners {
         // Each quarter circle is used once by its strip and once, reversed,
         // by the sphere sector.
-        let mut caps: Vec<_> = indices
+        let caps: Vec<_> = indices
             .iter()
             .map(|index| {
                 let [cap] = runs[*index].caps[old][..] else {
@@ -1909,15 +2132,7 @@ fn build_strips(
                 (cap, reverse(cap_uses[&cap]))
             })
             .collect();
-        let mut path = vec![caps.remove(0)];
-        while !caps.is_empty() {
-            let end = edge_blend::ends(model, path.last().unwrap().0, path.last().unwrap().1).1;
-            let next = caps
-                .iter()
-                .position(|(cap, sense)| edge_blend::ends(model, *cap, *sense).0 == end)
-                .ok_or_else(|| bad("corner boundary arcs do not close"))?;
-            path.push(caps.remove(next));
-        }
+        let path = close(model, caps)?;
         // A concave corner's material lies outside its ball.
         let face = crate::extrude::face(
             model,
@@ -1932,6 +2147,46 @@ fn build_strips(
             vec![corner.origin.clone()],
         );
         edit.faces.push((runs[indices[0]].faces[0], face));
+    }
+    for (old, i, arcs) in &swallowed {
+        let corner = &mitres[&(*i, *old)].corner;
+        let [cap] = runs[*i].caps[old][..] else {
+            unreachable!("a mitre corner's strip end has one cap");
+        };
+        let mut sides = vec![(cap, reverse(cap_uses[&cap]))];
+        // Each arc is used once by its earlier strip, as the mitre was, and
+        // once, reversed, by the sphere sector.
+        let mitre = mitres[&(*i, *old)].edge;
+        for (face, arc) in arcs {
+            let sense = model
+                .face(*face)
+                .loops
+                .iter()
+                .find_map(|lp| match model.loop_(*lp) {
+                    Loop::Coedges(cs) => cs
+                        .iter()
+                        .map(|c| model.coedge(*c))
+                        .find(|c| c.edge == mitre)
+                        .map(|c| c.sense),
+                    Loop::Vertex(_) => None,
+                })
+                .ok_or_else(|| bad("an earlier strip does not use its mitre"))?;
+            sides.push((*arc, reverse(sense)));
+        }
+        let path = close(model, sides)?;
+        let face = crate::extrude::face(
+            model,
+            corner.sector.surface.clone(),
+            if corner.sector.convex {
+                Sense::Same
+            } else {
+                Sense::Reversed
+            },
+            vec![path],
+            None,
+            vec![corner.origin.clone()],
+        );
+        edit.faces.push((runs[*i].faces[0], face));
     }
     let result = edge_blend::apply(model, body, &edit)?;
     if let Some(trimming) = trimming {

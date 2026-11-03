@@ -294,7 +294,13 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 let mesh = match mesh {
                     Ok(mesh) => mesh,
                     Err(error) if error.code == "field.display-lattice" => {
-                        return lattice_preview(&plan, &request.out, display_started, &mut dec);
+                        return lattice_preview(
+                            &recipe.result,
+                            &plan,
+                            &request.out,
+                            display_started,
+                            &mut dec,
+                        );
                     }
                     Err(error) => {
                         let mut manifest = refused(error.code, error.detail);
@@ -488,21 +494,25 @@ fn display_diagnostics(
 /// The certified display refuses periodic beams. The lattice stage shows them from the
 /// field alone as an unproved coarse mesh, which is never reported as exact.
 fn lattice_preview(
+    result: &catallax_recipe::StepId,
     plan: &catallax_field::Plan,
     out: &std::path::Path,
     started: Instant,
     dec: &mut Decider,
 ) -> std::io::Result<Value> {
-    let options = match catallax_field::lattice_stage::default_preview_options(plan, dec) {
-        Ok(options) => options,
-        Err(error) => return Ok(refused(error.code, error.detail)),
-    };
-    let preview = match catallax_field::lattice_stage::preview_plan(plan, &options, dec) {
+    let span = catallax_numbers::OperationSpan::begin("field", result, "preview", dec);
+    let preview =
+        catallax_field::lattice_stage::default_preview_options(plan, dec).and_then(|options| {
+            catallax_field::lattice_stage::preview_plan(plan, &options, dec)
+                .map(|preview| (options, preview))
+        });
+    span.finish(dec, preview.as_ref().err(), None);
+    let (options, preview) = match preview {
         Ok(preview) => preview,
         Err(error) => return Ok(refused(error.code, error.detail)),
     };
     let mut file = fs::File::create(out.join("display.obj"))?;
-    preview.mesh.write_obj(&mut file)?;
+    preview.write_obj(&mut file)?;
     Ok(json!({
         "format":"catallax-manifest/3","status":"answered","exact":false,
         "field":{"faces":plan.faces().len(),"proven_empty":plan.is_proven_empty()},

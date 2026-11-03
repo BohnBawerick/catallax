@@ -189,6 +189,19 @@ impl Mesh {
         let mut chunk = Vec::with_capacity(CHUNK + 256);
         writeln!(chunk, "# catallax field print mesh; millimetres")?;
         writeln!(chunk, "# proven_two_sided_deviation {}", self.max_deviation)?;
+        self.write_obj_body(out, chunk)
+    }
+    pub(crate) fn write_unproved_obj(&self, out: &mut impl Write) -> std::io::Result<()> {
+        let mut chunk = Vec::with_capacity(CHUNK + 256);
+        writeln!(chunk, "# Unproved preview: not a certified model")?;
+        writeln!(
+            chunk,
+            "# catallax {} catallax-manifest/3; proof=unproved; exact=false; millimetres",
+            env!("CARGO_PKG_VERSION")
+        )?;
+        self.write_obj_body(out, chunk)
+    }
+    fn write_obj_body(&self, out: &mut impl Write, mut chunk: Vec<u8>) -> std::io::Result<()> {
         for p in &self.positions {
             writeln!(chunk, "v {} {} {}", p[0] as f64, p[1] as f64, p[2] as f64)?;
             drain(out, &mut chunk, CHUNK)?;

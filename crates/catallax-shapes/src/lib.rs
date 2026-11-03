@@ -23,6 +23,7 @@ mod rational_sheet;
 mod rolling_envelope;
 mod rolling_pipe;
 mod rolling_saddle;
+mod rolling_torus;
 mod spline_surface;
 mod store;
 mod surface;
@@ -52,6 +53,7 @@ pub use rolling_saddle::{
     BallSide, ROLLING_SADDLE_TARGET_NM, RollingSaddle, RollingSaddleDefinition, SaddleLaw,
     SaddleRing,
 };
+pub use rolling_torus::RollingTorus;
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
 pub use surface::{

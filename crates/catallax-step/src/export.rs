@@ -3,7 +3,9 @@ use std::fmt::Write as _;
 use std::rc::Rc;
 
 use catallax_intersect::{CurveForm, curve_form};
-use catallax_numbers::{Answer, Answered, BoundKind, Decider, Mark, Rational, Real, Refusal};
+use catallax_numbers::{
+    Answer, Answered, BoundKind, Decider, Mark, Outcome, Rational, Real, Refusal, StrictSign,
+};
 use catallax_shapes::{CurveId, Point3, Surface, SurfaceId, Torus, TorusSheet, Vector3};
 use catallax_topology::{BodyId, BodyKind, EdgeId, FaceId, Loop, Model, Sense, ShellId, VertexId};
 
@@ -746,6 +748,60 @@ impl<'a> Exporter<'a> {
         )
     }
 
+    fn tube_angle(&mut self, tube: &crate::band::Tube) -> Result<Number, Refusal> {
+        let precision = number::work_precision(
+            self.dec.policy(),
+            self.digits().saturating_mul(4).saturating_add(32),
+            4,
+        )
+        .ok_or_else(|| number::budget("no work available for a tube angle"))?;
+        let pi = catallax_numbers::Ball::pi_checked(precision, self.dec)?;
+        let height = self.dec.enclose_at(&tube.height, precision)?;
+        let across = self.dec.enclose_at(&tube.across, precision)?;
+        let sign = |value: &Real, dec: &mut Decider| match dec.sign(value) {
+            Outcome::Proven(sign) => Ok(Some(sign)),
+            Outcome::ProvenCoincident(_) => Ok(None),
+            Outcome::Refused(refusal) => Err(refusal),
+            Outcome::NotExact(e) => Err(Refusal::new(e.code, e.detail)),
+        };
+        let turn = i64::from(tube.wraps) * 4;
+        // An angle on an axis is a quarter turn, written exactly.
+        match (sign(&tube.height, self.dec)?, sign(&tube.across, self.dec)?) {
+            (None, Some(StrictSign::Positive)) => return self.quarter_turns(turn),
+            (Some(StrictSign::Positive), None) => return self.quarter_turns(turn + 1),
+            (None, Some(StrictSign::Negative)) => return self.quarter_turns(turn + 2),
+            (Some(StrictSign::Negative), None) => return self.quarter_turns(turn + 3),
+            (None, None) => return Err(number::budget("a tube angle needs a nonzero radius")),
+            _ => {}
+        }
+        // `atan2(height, across)` in `[0, 2 pi)`.
+        let mut angle = match sign(&tube.across, self.dec)? {
+            Some(StrictSign::Positive) => {
+                let base = height
+                    .checked_div(&across)
+                    .ok_or_else(|| number::budget("a tube angle needs a nonzero run"))?
+                    .atan_checked(self.dec)?;
+                if sign(&tube.height, self.dec)? == Some(StrictSign::Negative) {
+                    &base + &(&pi + &pi)
+                } else {
+                    base
+                }
+            }
+            Some(StrictSign::Negative) => {
+                let base = height
+                    .checked_div(&across)
+                    .ok_or_else(|| number::budget("a tube angle needs a nonzero run"))?
+                    .atan_checked(self.dec)?;
+                &base + &pi
+            }
+            None => unreachable!("quarter turns are written exactly"),
+        };
+        if tube.wraps {
+            angle = &angle + &(&pi + &pi);
+        }
+        number::certified(number::ball_number(&angle, self.digits()), self.digits())
+    }
+
     fn ring_curve(
         &mut self,
         curve: Id,
@@ -761,6 +817,7 @@ impl<'a> Exporter<'a> {
             let v = match &association.v {
                 crate::band::Parameter::Exact(v) => number::real(v, self.digits(), self.dec)?,
                 crate::band::Parameter::QuarterTurns(turns) => self.quarter_turns(*turns)?,
+                crate::band::Parameter::Tube(tube) => self.tube_angle(tube)?,
             };
             let surface = self.surfaces[&association.surface].id;
             pcurves.push(self.pcurve_line(
@@ -852,14 +909,23 @@ impl<'a> Exporter<'a> {
             )
         };
         let form = match self.model.geom().surface(band.surface) {
-            // The tube circle's angle is the torus v parameter.
+            // The tube circle's angle is the torus v parameter. A band at
+            // other tube angles starts its seam on its low ring, so the seam's
+            // own parameter starts there and never wraps across the period.
             Surface::Torus(s) => {
                 let reference = self.bands.references[&band.surface].clone();
+                let start = match &band.tube_start {
+                    Some(tube) => reference
+                        .scaled(&tube.across)
+                        .plus(&band.seam_direction.scaled(&tube.height))
+                        .scaled(&(&Real::one() / &s.minor)),
+                    None => reference.clone(),
+                };
                 CurveForm::Circle {
                     center: number::point_plus(&s.center, &reference, &s.major),
                     normal: reference.cross(&band.seam_direction),
                     radius_sq: &s.minor * &s.minor,
-                    ref_dir: reference,
+                    ref_dir: start,
                 }
             }
             _ => CurveForm::Line {
@@ -869,7 +935,10 @@ impl<'a> Exporter<'a> {
         };
         let curve = self.curve_geometry(&form, false)?.unwrap().curve;
         let period = self.band_period()?;
-        let v = number::real(&band.low_v, self.digits(), self.dec)?;
+        let v = match &band.tube_start {
+            Some(tube) => self.tube_angle(tube)?,
+            None => number::real(&band.low_v, self.digits(), self.dec)?,
+        };
         self.surface(band.surface)?;
         let surface = self.surfaces[&band.surface].id;
         let context = self.parameter_context();

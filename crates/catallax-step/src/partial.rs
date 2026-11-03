@@ -30,9 +30,48 @@ pub(crate) fn prepare(
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
     let bodies: Vec<_> = bodies.collect();
+    let first = prepare_framed(model, &bodies, options, reframe, retry_frame, dec);
+    if matches!(first, Ok(Some(_)))
+        || matches!(&first, Err(refusal)
+            if matches!(refusal.code, "numbers.operation-budget" | "numbers.deadline"))
+    {
+        return first;
+    }
+    // A torus band across its outer equator has no chart until it is cut
+    // there. Scenes that chart without the cut never look for one.
+    let Some(split) = crate::equator::split(model, &bodies, dec)? else {
+        return first;
+    };
+    let Some(mut prepared) = prepare_framed(
+        &split.model,
+        &split.bodies,
+        options,
+        reframe,
+        retry_frame,
+        dec,
+    )?
+    else {
+        return Ok(None);
+    };
+    prepared.plan.added_edges += split.rings;
+    for (source, upper) in split.faces {
+        let charted = prepared.face_map.get(&upper).copied().unwrap_or(upper);
+        prepared.face_map.insert(source, charted);
+    }
+    Ok(Some(prepared))
+}
+
+fn prepare_framed(
+    model: &Model,
+    bodies: &[BodyId],
+    options: &crate::StepOptions,
+    reframe: bool,
+    retry_frame: &mut bool,
+    dec: &mut Decider,
+) -> Result<Option<Prepared>, Refusal> {
     if !reframe {
         // A band has a seam, and a wall it winds round must cut there.
-        let Some(framed) = frames::band_walls(model, &bodies, dec)? else {
+        let Some(framed) = frames::band_walls(model, bodies, dec)? else {
             return prepare_charts(
                 model,
                 bodies.iter().copied(),
@@ -61,7 +100,7 @@ pub(crate) fn prepare(
         }
         return Ok(Some(prepared));
     }
-    let reframed = frames::perpendicular(model, &bodies);
+    let reframed = frames::perpendicular(model, bodies);
     let Some(mut prepared) = prepare_charts(
         &reframed.model,
         reframed.bodies.iter().copied(),

@@ -87,37 +87,73 @@ fn layers(
             return Ok(false);
         }
     }
-    if columns
-        .len()
-        .saturating_mul(rows - 1)
-        .saturating_add(boundaries.mesh.positions.len())
-        > options.max_vertices
+    // Rows are spaced for the merged columns, but the rows beside a rail also
+    // span that rail's own wider gaps. Finer rows meet the tolerance there
+    // when a rail gap alone does, so a failed attempt retries a few times.
+    let rail_gap = [lower, upper]
+        .iter()
+        .flat_map(|rail| rail.windows(2).map(|p| p[1].uv[0] - p[0].uv[0]))
+        .fold(0.0_f64, f64::max)
+        .next_up();
+    let mut retries = if chord_bound(&[[0.0, 0.0], [rail_gap, 0.0]], &hessian) <= chord_limit
+        && angular_step
+            .as_ref()
+            .is_none_or(|step| chart::q(rail_gap) <= *step)
     {
-        return Ok(false);
-    }
-    let mut previous: Option<Vec<Sample>> = None;
-    for row in 1..=rows {
-        dec.check_deadline()?;
-        let before = previous.as_deref().unwrap_or(lower);
-        if row == rows {
-            return sampled_stitch(before, upper, face, chart, boundaries, options, dec);
+        4
+    } else {
+        0
+    };
+    let start = (
+        boundaries.mesh.positions.len(),
+        boundaries.mesh.triangles.len(),
+        boundaries.mesh.faces.len(),
+        boundaries.mesh.unavailable_controls.len(),
+    );
+    loop {
+        if columns
+            .len()
+            .saturating_mul(rows - 1)
+            .saturating_add(boundaries.mesh.positions.len())
+            > options.max_vertices
+        {
+            return Ok(false);
         }
-        let v = lo + (hi - lo) * row as f64 / rows as f64;
-        let vmax = before.iter().map(|p| p.uv[1].abs()).fold(v.abs(), f64::max);
-        let strip = Strip::new(
-            face,
-            chart,
-            options,
-            vmax,
-            before.len() + columns.len() - 1,
-            dec,
-        )?;
-        let Some(next) = sampled_layer(before, &columns, v, strip, boundaries, dec)? else {
+        let mut previous: Option<Vec<Sample>> = None;
+        for row in 1..=rows {
+            dec.check_deadline()?;
+            let before = previous.as_deref().unwrap_or(lower);
+            if row == rows {
+                if sampled_stitch(before, upper, face, chart, boundaries, options, dec)? {
+                    return Ok(true);
+                }
+                break;
+            }
+            let v = lo + (hi - lo) * row as f64 / rows as f64;
+            let vmax = before.iter().map(|p| p.uv[1].abs()).fold(v.abs(), f64::max);
+            let strip = Strip::new(
+                face,
+                chart,
+                options,
+                vmax,
+                before.len() + columns.len() - 1,
+                dec,
+            )?;
+            let Some(next) = sampled_layer(before, &columns, v, strip, boundaries, dec)? else {
+                break;
+            };
+            previous = Some(next);
+        }
+        let Some(next) = rows.checked_mul(2).filter(|_| retries > 0) else {
             return Ok(false);
         };
-        previous = Some(next);
+        retries -= 1;
+        rows = next;
+        boundaries.mesh.positions.truncate(start.0);
+        boundaries.mesh.triangles.truncate(start.1);
+        boundaries.mesh.faces.truncate(start.2);
+        boundaries.mesh.unavailable_controls.truncate(start.3);
     }
-    unreachable!("a positive row count always includes the upper rail")
 }
 
 fn fitted_rail(model: &Model, face: &catallax_topology::Face) -> bool {

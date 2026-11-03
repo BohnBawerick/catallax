@@ -14,6 +14,18 @@ pub(crate) enum Parameter {
     Exact(Real),
     /// A multiple of a quarter turn, on a torus's tube angle.
     QuarterTurns(i64),
+    /// Any other tube angle on a torus.
+    Tube(Tube),
+}
+
+/// The tube angle `atan2(height, across)` in `[0, 2 pi)`, one turn more when
+/// `wraps`: `height` runs along the torus axis and `across` away from it,
+/// both from the tube's centre circle.
+#[derive(Clone)]
+pub(crate) struct Tube {
+    pub height: Real,
+    pub across: Real,
+    pub wraps: bool,
 }
 
 pub(crate) struct Association {
@@ -37,6 +49,9 @@ pub(crate) struct Band {
     pub forward: Vec<bool>,
     pub apex: Option<VertexId>,
     pub low_v: Real,
+    /// The low ring's tube angle on a torus band whose rings are not quarter
+    /// turns. Its seam then starts on that ring, at this angle.
+    pub tube_start: Option<Tube>,
     pub v_scale: Real,
     pub radius_bound: Real,
     pub seam_direction: Vector3,
@@ -73,6 +88,8 @@ pub(crate) struct SourceRing {
     pub(crate) v: Real,
     /// The tube angle on a torus, which replaces `v`.
     pub(crate) turns: Option<i64>,
+    /// A tube angle that is not a quarter turn, which replaces `v`.
+    pub(crate) tube: Option<Tube>,
     pub(crate) increasing: bool,
 }
 
@@ -157,7 +174,11 @@ impl Plan {
                                 sources.push(band);
                             }
                             Surface::Torus(_) => {
-                                let Some(band) = torus_band(model, face, dec)? else {
+                                let band = match torus_band(model, face, dec)? {
+                                    Some(band) => Some(band),
+                                    None => tube_band(model, face, dec)?,
+                                };
+                                let Some(band) = band else {
                                     return Ok(Self::default());
                                 };
                                 sources.push(band);
@@ -236,6 +257,7 @@ pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
                     _ if source.rings[0].turns.is_some() => Real::zero(),
                     _ => source.rings[0].v.clone(),
                 },
+                tube_start: source.rings.first().and_then(|ring| ring.tube.clone()),
                 v_scale: source.v_scale.clone(),
                 radius_bound: source.rings.iter().fold(
                     source
@@ -264,9 +286,11 @@ pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
                 .associations
                 .push(Association {
                     surface: source.surface,
-                    v: ring
-                        .turns
-                        .map_or_else(|| Parameter::Exact(ring.v.clone()), Parameter::QuarterTurns),
+                    v: match (&ring.tube, ring.turns) {
+                        (Some(tube), _) => Parameter::Tube(tube.clone()),
+                        (None, Some(turns)) => Parameter::QuarterTurns(turns),
+                        (None, None) => Parameter::Exact(ring.v.clone()),
+                    },
                     v_scale: source.v_scale.clone(),
                     increasing: ring.increasing,
                 });
@@ -458,6 +482,7 @@ pub(crate) fn source_ring(
             radius_sq,
             v: height,
             turns: None,
+            tube: None,
             increasing,
         }))
     }
@@ -498,6 +523,80 @@ pub(crate) fn torus_band(
     if (low.increasing == (along == uses)) != (definition.sense == Sense::Same) {
         return Ok(None);
     }
+    Ok(Some(SourceBand {
+        face,
+        surface: definition.surface,
+        axis,
+        reference: number::unit(&torus.ref_dir),
+        v_scale: torus.minor.clone(),
+        rings,
+        apex: None,
+        chain: None,
+    }))
+}
+
+/// The two coaxial parallels bounding a torus band face, low ring first, and
+/// the low ring's loop index. The band runs up the tube from its low ring, so
+/// that ring runs with the chart's u read on the face's side.
+pub(crate) fn tube_rings(
+    model: &Model,
+    face: FaceId,
+    dec: &mut Decider,
+) -> Result<Option<(Vector3, Vec<SourceRing>, usize)>, Refusal> {
+    let definition = model.face(face);
+    let Surface::Torus(torus) = model.geom().surface(definition.surface) else {
+        return Ok(None);
+    };
+    let Some((edges, None)) = band_loops(model, face) else {
+        return Ok(None);
+    };
+    let axis = number::unit(&torus.axis);
+    let mut rings = Vec::with_capacity(2);
+    for edge in edges {
+        let Some(ring) = tube_ring(model, torus, &axis, edge, dec)? else {
+            return Ok(None);
+        };
+        rings.push(ring);
+    }
+    let mut low = None;
+    for (index, ring) in rings.iter().enumerate() {
+        let along = model.edge(ring.edge).sense == Sense::Same;
+        let uses = ring_use(model, face, ring.edge)?;
+        if (ring.increasing == (along == uses)) == (definition.sense == Sense::Same)
+            && low.replace(index).is_some()
+        {
+            return Ok(None);
+        }
+    }
+    let Some(low) = low else {
+        return Ok(None);
+    };
+    if low == 1 {
+        rings.swap(0, 1);
+    }
+    Ok(Some((axis, rings, low)))
+}
+
+// The band of a torus between two parallels at any tube angles, beside a
+// cone. Its high ring is a turn higher when its angle is below the low
+// ring's, as on a band across the outer equator.
+fn tube_band(
+    model: &Model,
+    face: FaceId,
+    dec: &mut Decider,
+) -> Result<Option<SourceBand>, Refusal> {
+    let Some((axis, mut rings, _)) = tube_rings(model, face, dec)? else {
+        return Ok(None);
+    };
+    let [first, second] = [&rings[0], &rings[1]].map(|ring| ring.tube.as_ref().unwrap());
+    let Some(below) = tube_below(second, first, dec)? else {
+        return Ok(None);
+    };
+    rings[1].tube.as_mut().unwrap().wraps = below;
+    let definition = model.face(face);
+    let Surface::Torus(torus) = model.geom().surface(definition.surface) else {
+        unreachable!("tube rings bound a torus face")
+    };
     Ok(Some(SourceBand {
         face,
         surface: definition.surface,
@@ -567,8 +666,99 @@ pub(crate) fn torus_ring(
         radius_sq,
         v: Real::zero(),
         turns: Some(turns),
+        tube: None,
         increasing,
     }))
+}
+
+// A coaxial torus parallel at any tube angle, or `None`. Only bands beside a
+// cone come here: other torus bands keep their charted bytes.
+fn tube_ring(
+    model: &Model,
+    torus: &Torus,
+    axis: &Vector3,
+    edge: EdgeId,
+    dec: &mut Decider,
+) -> Result<Option<SourceRing>, Refusal> {
+    let source = model.edge(edge);
+    let CurveForm::Circle {
+        center,
+        normal,
+        radius_sq,
+        ..
+    } = curve_form(model.geom(), source.curve, dec)?
+    else {
+        return Ok(None);
+    };
+    let offset = center.minus(&torus.center);
+    if !zero(&normal.cross(axis).norm_squared(), dec)?
+        || !zero(&offset.cross(axis).norm_squared(), dec)?
+    {
+        return Ok(None);
+    }
+    let height = offset.dot(axis);
+    let radius = number::sqrt_real(&radius_sq);
+    let across = &radius - &torus.major;
+    if !zero(
+        &(&(&height * &height) + &(&across * &across) - &torus.minor * &torus.minor),
+        dec,
+    )? {
+        return Ok(None);
+    }
+    let increasing = match dec.sign(&normal.dot(axis)) {
+        Outcome::Proven(sign) => sign == StrictSign::Positive,
+        Outcome::Refused(refusal) => return Err(refusal),
+        _ => return Ok(None),
+    };
+    Ok(Some(SourceRing {
+        edge,
+        curve: source.curve,
+        center,
+        normal,
+        radius,
+        radius_sq,
+        v: Real::zero(),
+        turns: None,
+        tube: Some(Tube {
+            height,
+            across,
+            wraps: false,
+        }),
+        increasing,
+    }))
+}
+
+// Whether the tube angle of `first` in `[0, 2 pi)` is below that of `second`.
+pub(crate) fn tube_below(
+    first: &Tube,
+    second: &Tube,
+    dec: &mut Decider,
+) -> Result<Option<bool>, Refusal> {
+    let mut half = |tube: &Tube| -> Result<Option<bool>, Refusal> {
+        // The upper half turn holds the outer equator but not the inner one.
+        Ok(match dec.sign(&tube.height) {
+            Outcome::Proven(sign) => Some(sign == StrictSign::Negative),
+            Outcome::ProvenCoincident(_) => match dec.sign(&tube.across) {
+                Outcome::Proven(sign) => Some(sign == StrictSign::Negative),
+                Outcome::Refused(refusal) => return Err(refusal),
+                _ => None,
+            },
+            Outcome::Refused(refusal) => return Err(refusal),
+            _ => None,
+        })
+    };
+    let (Some(a), Some(b)) = (half(first)?, half(second)?) else {
+        return Ok(None);
+    };
+    if a != b {
+        return Ok(Some(b));
+    }
+    let turn = &(&first.across * &second.height) - &(&first.height * &second.across);
+    Ok(match dec.sign(&turn) {
+        Outcome::Proven(sign) => Some(sign == StrictSign::Positive),
+        Outcome::Refused(refusal) => return Err(refusal),
+        _ => None,
+    })
 }
 
 // Whether a ring's coedge in this face follows its edge.

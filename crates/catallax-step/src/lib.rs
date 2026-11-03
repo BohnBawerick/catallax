@@ -14,6 +14,7 @@ mod band;
 mod certified_spline;
 mod chart;
 mod cut;
+mod equator;
 mod export;
 mod fit;
 mod frames;

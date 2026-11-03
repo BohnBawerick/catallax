@@ -354,15 +354,17 @@ Ordinary queries, closed-contact sectors and cached display membership use the
 same ownership rules. The scalar tape still shares equal geometry, and the
 B-rep builder is unchanged.
 
-`closed_face_query_checked` refines an indeterminate named-face query when the
-active arrangement consists of two transverse smooth supports or exact planes.
-It visits every open sector in the selected carrier's tangent plane and uses
-exact normal perturbations that preserve every other support sign. A source
-boundary, surviving intermediate boundaries and a result-material transition
-in one such sector prove an open named patch approaching the contact.
-Exhausting the transverse sectors can instead prove the selected patch absent,
-including a consumed sharp circle. Distinct source roles sharing a carrier and
-singular supports remain unresolved.
+`closed_face_query_checked` checks every candidate for the selected origin and
+refines each indeterminate candidate separately. Two transverse smooth supports
+or exact planes admit a complete first-order arrangement. The proof visits every
+open sector in the selected carrier's tangent plane. Repeated projected lines
+are enumerated once, but every full normal still bounds the exact perturbations.
+A source boundary, surviving intermediate boundaries and a result-material
+transition prove an open named patch approaching the contact. Exhausting a
+complete arrangement can instead prove absence, including a consumed sharp
+circle. Any mutually tangent supports, or more than two supports with a curved
+carrier, use the curved proof even when the selected face is planar. Distinct
+source roles sharing a carrier and singular supports remain unresolved.
 
 At a tangent seam, transverse trim signs can make the other tangent supports
 irrelevant. Universal Boolean bounds leave their signs unknown and prove an open
@@ -374,12 +376,23 @@ proof requires one Boolean polarity for the source leaf, and every intermediate
 named boundary must survive.
 
 When trim dominance supplies no witness, separated second-order normal graphs
-can admit tangent patches through exact polynomial parabolic germs. These are
-presence witnesses; failure to find one does not prove absence. Mixed source
-polarity retains an ambiguous normal. Contacts lacking either proof remain
-unresolved. An isolated buried tangency cannot supply a surviving-patch witness.
-Draft tile domains retain their ordinary named-face proof: carrier sectors alone
-do not identify the selected coplanar tile.
+can admit tangent patches through exact polynomial parabolic germs. Feature
+germs use a positive rational step below every carrier's exact Cauchy bound,
+then classify the exact point on that feature. This is not a spatial tolerance.
+
+Curved absence needs a complete support-constraint definition, pairwise distinct
+projected tangent lines for transverse restrictions, and a strictly definite
+own-relative quadratic height difference for every other tangent graph in every
+sector. A nonzero sampled difference and negative discriminant supply a uniform
+angular separation, so higher-order terms cannot reverse the support order.
+Semidefinite null directions, parallel projected restrictions and unresolved
+classifications cannot prove absence. They can hide positive-area cuspidal
+patches even when every sampled ray is outside.
+
+An exact positive witness remains valid when other sectors are incomplete.
+Mixed source polarity retains an ambiguous normal. Draft tile domains retain
+their ordinary named-face proof: carrier sectors alone do not identify the
+selected coplanar tile. This does not enable unproved shell constructions.
 
 Strict `Inside` or `Outside` at a retained historical boundary node excludes
 that named patch before contact analysis. Alternative ownership paths must all

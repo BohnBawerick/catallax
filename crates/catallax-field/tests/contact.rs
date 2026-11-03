@@ -1,6 +1,6 @@
 //! Closed-patch incidence must distinguish transverse rails from tangent donors.
 use catallax_field::{Direction, FaceState, Plan, Workspace};
-use catallax_numbers::Decider;
+use catallax_numbers::{Decider, Rational};
 use catallax_recipe::{Recipe, Role};
 use catallax_shapes::RPoint3;
 use serde_json::{Value, json};
@@ -11,6 +11,11 @@ fn pose(x: &str) -> Value {
 fn recipe(steps: Vec<Value>) -> Recipe {
     let result = steps.last().unwrap()["id"].clone();
     Recipe::parse(&json!({"format":"catallax-recipe/3","name":"closed contact","steps":steps,"result":result}).to_string()).unwrap()
+}
+
+fn point(coordinates: [&str; 3]) -> RPoint3 {
+    let [x, y, z] = coordinates.map(|value| Rational::parse(value).unwrap());
+    RPoint3::new(x, y, z)
 }
 
 #[test]
@@ -249,4 +254,115 @@ fn symmetric_cylinder_does_not_restore_buried_front_round_meridians() {
             .unwrap();
         assert_eq!(query.state, expected, "at {coordinates:?}: {query:?}");
     }
+}
+
+#[test]
+fn projected_cut_deduplication_keeps_every_normal_perturbation_bound() {
+    let plan = Plan::compile(&recipe(vec![
+        json!({"id":"a","op":"block","size":["20","20","10"],
+            "pose":{"rotation":["1","0","0","0"],"translation":["-10","-10","-10"]}}),
+        json!({"id":"b","op":"block","size":["10","20","20"],
+            "pose":{"rotation":["1","0","0","0"],"translation":["-10","-10","-10"]}}),
+        json!({"id":"c","op":"block","size":["10","20","20"],
+            "pose":{"rotation":["3","0","2","0"],"translation":["-170/13","-10","70/13"]}}),
+        json!({"id":"ab","op":"boolean","kind":"intersect","target":"a","tool":"b"}),
+        json!({"id":"result","op":"boolean","kind":"intersect","target":"ab","tool":"c"}),
+    ]))
+    .unwrap();
+    let origin = &plan
+        .faces()
+        .iter()
+        .find(|face| face.origin.step.as_str() == "a" && matches!(face.origin.role, Role::End))
+        .unwrap()
+        .origin;
+    // B: x<0 and C: x-(12/5)z<0 have the same cut on A's z=0 cap.
+    // Their normal components differ, so C must still bound both probe rays.
+    let query = plan
+        .closed_face_query_checked(
+            plan.select(origin).unwrap(),
+            &RPoint3::origin(),
+            &mut Workspace::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_eq!(query.state, FaceState::OnFace, "{query:?}");
+}
+
+#[test]
+fn planar_cap_keeps_the_cusp_between_internally_tangent_cylinders() {
+    let plan = Plan::compile(&recipe(vec![
+        json!({"id":"cap","op":"block","size":["8","8","1"],
+            "pose":{"rotation":["1","0","0","0"],"translation":["-4","-4","-1"]}}),
+        json!({"id":"outer","op":"cylinder","radius":"2","height":"4",
+            "pose":{"rotation":["1","0","0","0"],"translation":["-2","0","-2"]}}),
+        json!({"id":"inner","op":"cylinder","radius":"1","height":"4",
+            "pose":{"rotation":["1","0","0","0"],"translation":["-1","0","-2"]}}),
+        json!({"id":"crescent","op":"boolean","kind":"subtract","target":"outer","tool":"inner"}),
+        json!({"id":"result","op":"boolean","kind":"intersect","target":"cap","tool":"crescent"}),
+    ]))
+    .unwrap();
+    let origin = &plan
+        .faces()
+        .iter()
+        .find(|face| face.origin.step.as_str() == "cap" && matches!(face.origin.role, Role::End))
+        .unwrap()
+        .origin;
+    let id = plan.select(origin).unwrap();
+    // q(s)=(-3s²/8,s,0) is strictly in Outer and out of Inner for 0<s<1.
+    let witness = plan
+        .closed_face_query_checked(
+            id,
+            &point(["-3/800", "1/10", "0"]),
+            &mut Workspace::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_eq!(witness.state, FaceState::OnFace, "{witness:?}");
+    let cusp = plan
+        .closed_face_query_checked(
+            id,
+            &RPoint3::origin(),
+            &mut Workspace::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert!(
+        matches!(cusp.state, FaceState::OnFace | FaceState::Indeterminate),
+        "{cusp:?}"
+    );
+}
+
+#[test]
+fn semidefinite_torus_cylinder_contact_retains_its_null_direction_patch() {
+    let plan = Plan::compile(&recipe(vec![
+        json!({"id":"torus","op":"torus","major":"2","minor":"1","pose":pose("0")}),
+        json!({"id":"cylinder","op":"cylinder","radius":"47/15","height":"20",
+            "pose":{"rotation":["13","-15","16","0"],"translation":["-142/25","-6","232/75"]}}),
+        json!({"id":"result","op":"boolean","kind":"intersect","target":"cylinder","tool":"torus"}),
+    ]))
+    .unwrap();
+    let origin = &plan
+        .faces()
+        .iter()
+        .find(|face| {
+            face.origin.step.as_str() == "cylinder"
+                && matches!(face.origin.role, Role::Side { .. })
+        })
+        .unwrap()
+        .origin;
+    // In tangent basis a=(-4/5,0,3/5), b=(0,1,0), the height difference
+    // starts as -(52a-9b)²/6110 but has +2880t³ along T=9a+52b.
+    // A semidefinite quadratic therefore cannot exclude the cylinder patch.
+    let query = plan
+        .closed_face_query_checked(
+            plan.select(origin).unwrap(),
+            &point(["13/5", "0", "4/5"]),
+            &mut Workspace::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert!(
+        matches!(query.state, FaceState::OnFace | FaceState::Indeterminate),
+        "{query:?}"
+    );
 }

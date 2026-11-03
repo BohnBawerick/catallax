@@ -97,8 +97,20 @@ fn tangent_sectors(
     let mut result = Vec::new();
     // Every open sector of the central line arrangement touches an end of one
     // of its lines. Both infinitesimal sides at both ends visit all sectors.
-    for cut in others {
+    for (index, cut) in others.iter().enumerate() {
         let line = normal.cross(cut);
+        let mut duplicate = false;
+        for previous in &others[..index] {
+            if geometry::sign(&line.cross(&normal.cross(previous)).norm_squared(), dec)? == Sign::Zero
+            {
+                duplicate = true;
+                break;
+            }
+        }
+        if duplicate {
+            continue;
+        }
+        // Deduplicate enumeration only. Every normal still bounds epsilon.
         let across = normal.cross(&line);
         for sign in [-1, 1] {
             let line = line.scaled(&Real::from_i64(sign));
@@ -269,6 +281,16 @@ fn tangent_bound(
 }
 
 impl Plan {
+    fn contact_constraints_complete(&self) -> bool {
+        self.leaves.iter().enumerate().all(|(i, leaf)| {
+            self.leaf_registers[i].is_none()
+                || matches!(
+                    leaf,
+                    geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) | geometry::Leaf::Feature(_)
+                )
+        })
+    }
+
     /// Tests named-patch closure using transverse sectors, trim dominance or
     /// separated second-order graphs. Contacts without a surviving-patch proof
     /// remain indeterminate; mixed source polarity retains an ambiguous normal.
@@ -280,19 +302,58 @@ impl Plan {
         storage: &mut Workspace,
         dec: &mut Decider,
     ) -> Result<FaceQuery, Refusal> {
-        let ordinary = self.face_query_checked(id, point, storage, dec)?;
-        // Draft origins may partition coplanar tiles. Their existing named
-        // domain proof remains authoritative: carrier sectors alone cannot
-        // establish which tile approaches a closed contact.
-        if ordinary.state != FaceState::Indeterminate
-            || matches!(
-                &self.leaves[self.faces[id.0].leaf],
-                geometry::Leaf::Draft(_)
-            )
+        let origin = &self
+            .faces
+            .get(id.0)
+            .ok_or_else(|| Refusal::new("field.face-id", "face handle is not in this plan"))?
+            .origin;
+        let mut chosen: Option<(usize, FaceQuery)> = None;
+        let mut indeterminate = false;
+        for (index, face) in self
+            .faces
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| &f.origin == origin)
         {
-            return Ok(ordinary);
+            let mut query = self.face_candidate_query(FaceId(index), point, storage, dec)?;
+            // Draft tile partitions need the existing named-domain proof.
+            if query.state == FaceState::Indeterminate
+                && !matches!(&self.leaves[face.leaf], geometry::Leaf::Draft(_))
+            {
+                query = self.contact_face_query(FaceId(index), point, dec)?;
+            }
+            match query.state {
+                FaceState::OnFace => {
+                    if let Some((old, previous)) = &mut chosen {
+                        if !crate::same_support(&self.faces[*old], face, dec)? {
+                            previous.direction = Direction::Ambiguous;
+                        }
+                    } else {
+                        chosen = Some((index, query));
+                    }
+                }
+                FaceState::Indeterminate => indeterminate = true,
+                FaceState::NotOnFace => (),
+            }
         }
-        self.contact_face_query(id, point, dec)
+        if let Some((_, mut query)) = chosen {
+            if indeterminate {
+                query.direction = Direction::Ambiguous;
+            }
+            return Ok(query);
+        }
+        Ok(FaceQuery {
+            state: if indeterminate {
+                FaceState::Indeterminate
+            } else {
+                FaceState::NotOnFace
+            },
+            direction: if indeterminate {
+                Direction::Ambiguous
+            } else {
+                Direction::Undefined
+            },
+        })
     }
 
     fn dominated_contact(
@@ -517,7 +578,7 @@ impl Plan {
             return Ok(unknown());
         }
         let mut orientation = 0;
-        let mut incomplete = false;
+        let mut incomplete = !self.contact_constraints_complete();
         let mut tape = Vec::new();
         let mut opposite = Vec::new();
         let mut domains = Vec::new();
@@ -613,8 +674,20 @@ impl Plan {
         let mut others = Vec::new();
         let mut graphs = Vec::new();
         let mut own = None;
+        let mut distinct_cuts = true;
         for (support, normal) in active {
             if geometry::sign(&normal.cross(&n).norm_squared(), dec)? != Sign::Zero {
+                let line = n.cross(normal);
+                for previous in &others {
+                    if geometry::sign(&line.cross(&n.cross(previous)).norm_squared(), dec)?
+                        == Sign::Zero
+                    {
+                        // Distinct restrictions with a common tangent can enclose
+                        // a cuspidal patch missed by all first-order sectors.
+                        distinct_cuts = false;
+                        break;
+                    }
+                }
                 others.push(normal.clone());
             } else {
                 let gradient = std::array::from_fn::<_, 3, _>(|i| support.partial(i));
@@ -632,24 +705,29 @@ impl Plan {
         let Some(own) = own else {
             return Ok(unknown());
         };
-        let mut sectors = tangent_sectors(&n, &others, dec)?;
-        if others.is_empty() {
-            sectors.clear();
+        for (gradient, _) in &graphs {
             for axis in 0..3 {
-                let [x, y, z] =
-                    std::array::from_fn(|i| Rational::from_i64(if i == axis { 1 } else { 0 }));
-                let tangent = n.cross(&RVector3::new(x, y, z).to_real());
-                if geometry::sign(&tangent.norm_squared(), dec)? != Sign::Zero {
-                    sectors.push(tangent);
+                let h = Vector3::new(
+                    gradient[0].partial(axis).eval_real(&xyz),
+                    gradient[1].partial(axis).eval_real(&xyz),
+                    gradient[2].partial(axis).eval_real(&xyz),
+                );
+                if geometry::sign(&n.cross(&h).norm_squared(), dec)? != Sign::Zero {
+                    others.push(h);
                 }
             }
         }
+        let sectors = tangent_sectors(&n, &others, dec)?;
+        let mut incomplete =
+            sectors.is_empty() || !distinct_cuts || !self.contact_constraints_complete();
         let mut orientation = 0;
         let mut tape = Vec::new();
         let mut opposite = Vec::new();
         let mut domains = Vec::new();
         let mut heights = Vec::with_capacity(graphs.len());
+        let slot = self.leaf_registers[face.leaf].expect("a live contact source");
         for tangent in sectors {
+            dec.check_deadline()?;
             let d = [&tangent.x, &tangent.y, &tangent.z];
             heights.clear();
             for (gradient, slope) in &graphs {
@@ -662,6 +740,8 @@ impl Plan {
                 }
                 heights.push(-quadratic / (slope * &Real::from_i64(2)));
             }
+            let across = n.cross(&tangent);
+            let w = [&across.x, &across.y, &across.z];
             let mut e = Real::one();
             let mut separated = true;
             for (i, height) in heights.iter().enumerate() {
@@ -673,12 +753,30 @@ impl Plan {
                     separated = false;
                     break;
                 }
+                let bilinear = |u: [&Real; 3], v: [&Real; 3], index: usize| {
+                    let (gradient, slope) = &graphs[index];
+                    let mut sum = Real::zero();
+                    for a in 0..3 {
+                        for b in 0..3 {
+                            sum = sum + u[a] * v[b] * gradient[a].partial(b).eval_real(&xyz);
+                        }
+                    }
+                    sum / (slope * &Real::from_i64(-2))
+                };
+                let b = bilinear(d, w, i) - bilinear(d, w, own);
+                let c = bilinear(w, w, i) - bilinear(w, w, own);
+                // Only definiteness gives a uniform angular separation.
+                // A semidefinite null direction may reverse at higher order.
+                if geometry::sign(&(&b.square() - &(&difference * &c)), dec)? != Sign::Negative {
+                    incomplete = true;
+                }
                 let distance = magnitude(&difference, dec)? / Real::from_i64(3);
                 if geometry::sign(&(&distance - &e), dec)? == Sign::Negative {
                     e = distance;
                 }
             }
             if !separated {
+                incomplete = true;
                 continue;
             }
             let plus = n.scaled(&(&heights[own] + &e));
@@ -687,24 +785,47 @@ impl Plan {
                 self.parabolic_ray(p, &tangent, &plus, &mut tape, dec)?,
                 self.parabolic_ray(p, &tangent, &minus, &mut opposite, dec)?,
             ];
-            let slot = self.leaf_registers[face.leaf].expect("a live contact source");
-            if !matches!(
-                [tape[slot], opposite[slot]],
-                [Location::Inside, Location::Outside] | [Location::Outside, Location::Inside]
+            let source_sides = [tape[slot], opposite[slot]];
+            if matches!(
+                source_sides,
+                [Location::Inside, Location::Inside] | [Location::Outside, Location::Outside]
             ) {
                 continue;
             }
-            if self.domain_state(face.domain, &tape, &opposite, &mut domains) != FaceState::OnFace {
+            if !matches!(
+                source_sides,
+                [Location::Inside, Location::Outside] | [Location::Outside, Location::Inside]
+            ) {
+                incomplete = true;
                 continue;
+            }
+            match self.domain_state(face.domain, &tape, &opposite, &mut domains) {
+                FaceState::NotOnFace => continue,
+                FaceState::Indeterminate => {
+                    incomplete = true;
+                    continue;
+                }
+                FaceState::OnFace => (),
             }
             match sides {
                 [Location::Outside, Location::Inside] => orientation |= 1,
                 [Location::Inside, Location::Outside] => orientation |= 2,
-                _ => (),
+                [Location::Inside, Location::Inside] | [Location::Outside, Location::Outside] => (),
+                _ => incomplete = true,
             }
         }
         if orientation == 0 {
-            return Ok(unknown());
+            // Distinct transverse cuts represent every local open sector.
+            // Strictly definite graph gaps keep every tangent support ordered
+            // uniformly, including approaches to sector walls.
+            return Ok(if incomplete {
+                unknown()
+            } else {
+                FaceQuery {
+                    state: FaceState::NotOnFace,
+                    direction: Direction::Undefined,
+                }
+            });
         }
         // A single-polarity source cannot reverse orientation on an unvisited
         // tangent sector. Mixed-polarity reuse retains an ambiguous normal.
@@ -766,6 +887,8 @@ impl Plan {
                             quadratic,
                             dec,
                         )?
+                    } else if let geometry::Leaf::Feature(feature) = leaf {
+                        feature.parabolic_ray(p, tangent, quadratic, dec)?
                     } else {
                         Location::Indeterminate
                     }

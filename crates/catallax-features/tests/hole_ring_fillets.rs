@@ -300,14 +300,14 @@ fn a_floor_round_wider_than_the_hole_is_refused() {
     let mut steps = block();
     steps.push(cylinder("hole", "3", "20", UP, "10"));
     steps.push(boolean("cut", "subtract", "block", "hole"));
-    let refusal = build(&recipe(
+    let Err(refusal) = build(&recipe(
         steps,
         "cut",
         "7/2",
         [cap("hole", "start"), wall("hole")],
-    ))
-    .err()
-    .expect("a radius 7/2 ball does not fit a radius 3 bore");
+    )) else {
+        panic!("a radius 7/2 ball does not fit a radius 3 bore");
+    };
     assert_eq!(refusal.code, "fillet.unsupported-contact", "{refusal:?}");
 }
 

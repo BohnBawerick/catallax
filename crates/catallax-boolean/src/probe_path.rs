@@ -9,7 +9,7 @@ use catallax_shapes::{
 use catallax_topology::{EdgeId, Model};
 
 fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
-    if x.as_rational().is_none() && x.approx().sign().is_none() {
+    if x.approx().sign().is_none() && x.rational_ref().is_none() {
         // Refining a formally zero shared expression cannot separate its sign.
         // Establish its domain and try that bounded identity before requesting
         // a tiny interval. Failure to reduce leaves both existing filters intact.

@@ -1137,6 +1137,11 @@ fn mitre(
     else {
         return Ok(None);
     };
+    // A smooth join of two earlier strips, such as a chain's meridian, is
+    // no mitre.
+    if smooth(model, edge, &uses[&edge], earlier, dec)? {
+        return Ok(None);
+    }
     let corner_end = |detail: &str| Refusal::new(UNSUPPORTED_CORNER, detail);
     let e = model.edge(edge);
     let apex = if e.start == Some(old) { e.end } else { e.start }

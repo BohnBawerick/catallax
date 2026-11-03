@@ -805,13 +805,10 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
             ),
         ],
     );
+    // It reaches the ring's contact limit.
     let refusal = refused(&dome, "dome");
-    assert_eq!(
-        refusal.code, "fillet.unsupported-contact",
-        "{}",
-        refusal.detail
-    );
-    assert!(refusal.detail.contains("consumes"), "{}", refusal.detail);
+    assert_eq!(refusal.code, RADIUS_TOO_LARGE, "{}", refusal.detail);
+    assert_eq!(radius_limit(&refusal), Some(r("3")));
 }
 
 /// A box `h` long with an `x` by `y` section whose four long edges are

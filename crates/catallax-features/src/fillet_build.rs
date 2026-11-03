@@ -1500,11 +1500,15 @@ fn build_strips(
             fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec)
         })?;
         // A ball as wide as a ring's cylinder consumes the whole face inside
-        // the ring, and consumed faces are not built yet.
+        // the ring, and consumed faces are not built yet: the ball reaches
+        // the ring's contact limit.
         if definition.point_contact().is_some() && model.edge(edge).start.is_none() {
-            return Err(Refusal::new(
+            let refusal = Refusal::new(
                 "fillet.unsupported-contact",
                 "a ball as wide as the ring's cylinder consumes the face inside the ring",
+            );
+            return Err(fillet_limit::contact(
+                refusal, &given.0, same_sense, &given.1, radius, convex, dec,
             ));
         }
         strips.push((edge, faces, definition.clone()));

@@ -81,19 +81,20 @@ pub(super) fn mesh(
         positions.push(position);
         rounding = rounding.max(error);
     }
-    for j in 0..rows {
-        let p = &grid.points[columns * rows + j];
+    for (position, p) in positions
+        .iter()
+        .take(rows)
+        .zip(&grid.points[columns * rows..])
+    {
         let error = (0..3).fold(Rational::zero(), |sum, i| {
-            let q = Rational::from_f64_exact(positions[j][i]).unwrap();
+            let q = Rational::from_f64_exact(position[i]).unwrap();
             sum + (&q - &p[i].lo()).abs().max((&q - &p[i].hi()).abs())
         });
         rounding = rounding.max(error);
     }
     let mut centers = [0, 0];
-    for i in 0..2 {
-        let p = support
-            .origin()
-            .plus(&support.axis().scaled(&support.heights()[i]));
+    for (center, height) in centers.iter_mut().zip(support.heights()) {
+        let p = support.origin().plus(&support.axis().scaled(height));
         let enclosed = [
             dec.enclose_at(&p.x, 128)?,
             dec.enclose_at(&p.y, 128)?,
@@ -101,7 +102,7 @@ pub(super) fn mesh(
         ];
         let (position, error) = rounded(&enclosed)?;
         rounding = rounding.max(error);
-        centers[i] = positions.len();
+        *center = positions.len();
         positions.push(position);
     }
     let max_deviation = &grid.chord + &rounding;

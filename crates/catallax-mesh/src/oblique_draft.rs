@@ -43,10 +43,8 @@ pub(crate) fn build(
         ));
     }
     let mut centers = [0, 0];
-    for i in 0..2 {
-        let p = support
-            .origin()
-            .plus(&support.axis().scaled(&support.heights()[i]));
+    for (center, height) in centers.iter_mut().zip(support.heights()) {
+        let p = support.origin().plus(&support.axis().scaled(height));
         let enclosure = [
             dec.enclose_at(&p.x, chart::BITS)?,
             dec.enclose_at(&p.y, chart::BITS)?,
@@ -54,7 +52,7 @@ pub(crate) fn build(
         ];
         let position = chart::position(&enclosure)?;
         rounding = rounding.max(chart::residual(&position, &enclosure));
-        centers[i] = mesh.positions.len();
+        *center = mesh.positions.len();
         mesh.positions.push(position);
     }
     let error = &grid.chord + &rounding;

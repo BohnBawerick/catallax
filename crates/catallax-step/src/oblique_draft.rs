@@ -62,10 +62,10 @@ pub(crate) fn write<W: Write>(
         if i == 16 {
             pair = controls[0].clone();
         }
-        for v in 0..2 {
+        for (v, point) in pair.iter().enumerate() {
             bound = bound.max(difference_bound(
                 &carrier.controls()[i * 2 + v],
-                &pair[v],
+                point,
                 bits,
                 dec,
             )?);

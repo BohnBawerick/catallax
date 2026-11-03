@@ -12,3 +12,9 @@ Constant axis-aligned cubic lattices now sample the existing tentative field on 
 
 The result remains `Proof::Unproved`. Its mesh's `max_deviation` reports a sampling scale only, not a proven distance bound. Callers must keep the unproved label and obtain proof separately through `Stage::export`.
 
+## 2026-11-03: self-labelled preview OBJ and history
+
+`Preview::write_obj` writes `# Unproved preview: not a certified model`, the producing crate version and the manifest format identifier `catallax-manifest/3` in the OBJ header. It omits the certified mesh's proven deviation claim. Use this method instead of `preview.mesh.write_obj` when saving a preview separately from its manifest.
+
+The `field` adapter uses this header for preview `display.obj` files and records preview options and meshing work in a separate `"preview"` operation span, including refusals. Certified OBJ headers, other export formats and certificates are unchanged.
+

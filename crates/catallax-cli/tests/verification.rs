@@ -751,13 +751,63 @@ fn the_field_adapter_shows_a_lattice_as_an_unproved_preview() {
     let display = &manifest["face_measurements"]["display"];
     assert_eq!(display["proof"], "unproved");
     assert!(display["triangles"].as_u64().unwrap() > 0);
-    assert!(root.join("lattice/display.obj").exists());
+    let preview_obj = fs::read_to_string(root.join("lattice/display.obj")).unwrap();
+    assert!(
+        preview_obj.starts_with(&format!(
+            "# Unproved preview: not a certified model\n# catallax {} catallax-manifest/3; proof=unproved; exact=false; millimetres\n",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{preview_obj}"
+    );
+    assert!(!preview_obj.contains("proven_two_sided_deviation"));
+    let operations = lattice["operation_log"]["operations"].as_array().unwrap();
+    let display_span = operations
+        .iter()
+        .find(|op| op["operation"] == "display")
+        .unwrap();
+    assert_eq!(display_span["status"], "refused");
+    assert_eq!(display_span["refusal"]["code"], "field.display-lattice");
+    assert_eq!(display_span["work"]["used"], 0);
+    let preview_span = operations
+        .iter()
+        .find(|op| op["operation"] == "preview")
+        .unwrap();
+    assert_eq!(preview_span["kernel"], "field");
+    assert_eq!(preview_span["id"], "beams");
+    assert_eq!(preview_span["status"], "answered");
+    assert!(preview_span["refusal"].is_null());
+    assert!(preview_span["work"]["used"].as_u64().unwrap() > 0);
+    assert_eq!(
+        preview_span["work"]["before"],
+        display_span["work"]["after"]
+    );
+    assert_eq!(preview_span["work"]["after"], lattice["work"]["used"]);
+    let spanned_work: u64 = operations
+        .iter()
+        .map(|op| op["work"]["used"].as_u64().unwrap())
+        .sum();
+    assert_eq!(spanned_work, lattice["work"]["used"].as_u64().unwrap());
     // The certified request is untouched: a plain block is still exact and carries no proof label.
     let block = json!({"format":"catallax-recipe/3","name":"block",
         "steps":[{"id":"region","op":"block","size":["4","4","4"],"pose":pose}],"result":"region"});
     let plain = answer(&request(block, "block")).unwrap();
     assert_eq!(plain["manifest"]["exact"], true);
     assert!(plain["manifest"]["face_measurements"]["display"]["proof"].is_null());
+    let certified_obj = fs::read_to_string(root.join("block/display.obj")).unwrap();
+    assert!(
+        certified_obj.starts_with(
+            "# catallax field display mesh; millimetres\n# proven_two_sided_deviation "
+        ),
+        "{certified_obj}"
+    );
+    assert!(!certified_obj.contains("Unproved preview"));
+    assert!(
+        plain["operation_log"]["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|op| op["operation"] != "preview")
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

@@ -534,6 +534,7 @@ impl Skin {
 
     /// Partitions the unchanged closed input chain by exact winding. Internal
     /// carrier cuts remain convex terms, never physical face names.
+    /// Empty provenance sets do not remove a patch from the material winding.
     pub fn components(&self, dec: &mut Decider) -> Result<Vec<Polyhedron>, Refusal> {
         self.arrange::<Classifier, OriginResolver>(None, None, dec)
     }
@@ -812,6 +813,8 @@ impl Skin {
             let q = centre(&vertices, &facet.cycle);
             let mut positive = BTreeSet::new();
             let mut negative = BTreeSet::new();
+            let mut positive_patch = false;
+            let mut negative_patch = false;
             if let Some(raw) = carriers.get(&support).filter(|_| classified.is_none()) {
                 for i in raw {
                     let patch = &patches[*i];
@@ -823,15 +826,17 @@ impl Skin {
                         == Sign::Positive;
                     let outward = (winding > 0) == (aligned == facet.same_sense);
                     if outward {
+                        positive_patch = true;
                         positive.extend(patch.origins.iter().cloned());
                     } else {
+                        negative_patch = true;
                         negative.extend(patch.origins.iter().cloned());
                     }
                 }
             }
-            let (delta, origins) = if !positive.is_empty() && negative.is_empty() {
+            let (delta, origins) = if positive_patch && !negative_patch {
                 (1, positive.into_iter().collect())
-            } else if positive.is_empty() && !negative.is_empty() {
+            } else if !positive_patch && negative_patch {
                 (-1, negative.into_iter().collect())
             } else {
                 (0, Vec::new())

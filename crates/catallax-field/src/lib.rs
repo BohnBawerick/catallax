@@ -300,13 +300,34 @@ impl Plan {
                                 dec,
                             )?
                         } else {
-                            plan.distance_shell(
+                            match plan.distance_shell(
                                 steps[body],
                                 open,
                                 thickness.value(),
                                 &step.id,
                                 dec,
-                            )?
+                            )? {
+                                distance_features::ShellResult::Complete(node) => node,
+                                distance_features::ShellResult::PlanarBoundary(bound) => {
+                                    let skin = plan
+                                        .draft_source_skin(recipe, body, &steps, &step_faces, dec)
+                                        .map_err(|error| {
+                                            if error.code.starts_with("draft.") {
+                                                Refusal::new("distance.unsupported-envelope", error.detail)
+                                            } else {
+                                                error
+                                            }
+                                        })?;
+                                    plan.planar_distance_shell(
+                                        (steps[body], bound),
+                                        skin,
+                                        open,
+                                        thickness.value(),
+                                        &step.id,
+                                        dec,
+                                    )?
+                                }
+                            }
                         }
                     }
                     Operation::Thicken {

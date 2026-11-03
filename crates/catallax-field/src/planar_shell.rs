@@ -1,0 +1,219 @@
+//! Finite-face distance tubes from independently reconstructed planar definitions.
+
+use std::collections::BTreeMap;
+
+use catallax_features::{
+    cylinder_skin::CylinderSkin,
+    draft::arrangement::{Patch, Skin},
+    polyhedron::{ConvexCell, PlaneFace},
+};
+use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
+use catallax_recipe::{BooleanKind, EdgeName, FaceRef, Origin, Role, StepId, VertexName};
+use catallax_shapes::{Cylinder, Plane, Sphere, Surface};
+
+use super::bad;
+use crate::{Plan, geometry};
+
+fn face_tube(skin: &Skin, patch: &Patch, thickness: &Real, step: &StepId) -> Skin {
+    let shift = patch
+        .plane
+        .normal
+        .scaled(&(thickness / &patch.plane.normal.norm_squared().sqrt()));
+    let backwards = shift.scaled(&Real::from_i64(-1));
+    let count: usize = patch.loops.iter().map(Vec::len).sum();
+    let mut vertices = Vec::with_capacity(2 * count);
+    let mut indices = BTreeMap::new();
+    for &vertex in patch.loops.iter().flatten() {
+        indices.entry(vertex).or_insert_with(|| {
+            let index = vertices.len();
+            vertices.push(skin.vertices[vertex].plus(&backwards));
+            vertices.push(skin.vertices[vertex].plus(&shift));
+            index
+        });
+    }
+    let mut origins: Vec<_> = patch
+        .origins
+        .iter()
+        .map(|of| Origin {
+            step: step.clone(),
+            role: Role::Inner { of: Box::new(of.clone()) },
+        })
+        .collect();
+    let mut patches = Vec::with_capacity(count + 2);
+    for side in [0, 1] {
+        let direction = Real::from_i64(if side == 0 { -1 } else { 1 });
+        let mut plane = patch.plane.clone();
+        plane.origin = plane.origin.plus(if side == 0 { &backwards } else { &shift });
+        plane.normal = plane.normal.scaled(&direction);
+        let loops = patch
+            .loops
+            .iter()
+            .map(|cycle| {
+                if side == 0 {
+                    cycle.iter().rev().map(|v| indices[v]).collect()
+                } else {
+                    cycle.iter().map(|v| indices[v] + 1).collect()
+                }
+            })
+            .collect();
+        let cap_origins = if side == 0 { origins.clone() } else { std::mem::take(&mut origins) };
+        patches.push(Patch { plane, loops, origins: cap_origins });
+    }
+    for cycle in &patch.loops {
+        for i in 0..cycle.len() {
+            let a = cycle[i];
+            let b = cycle[(i + 1) % cycle.len()];
+            patches.push(Patch {
+                plane: Plane {
+                    origin: vertices[indices[&a]].clone(),
+                    normal: skin.vertices[b].minus(&skin.vertices[a]).cross(&patch.plane.normal),
+                    ref_dir: patch.plane.normal.clone(),
+                },
+                loops: vec![vec![indices[&a], indices[&b], indices[&b] + 1, indices[&a] + 1]],
+                origins: Vec::new(),
+            });
+        }
+    }
+    Skin { vertices, patches }
+}
+
+fn tube_leaf(plan: &mut Plan, tube: Skin, bound: &Rational, dec: &mut Decider) -> Result<usize, Refusal> {
+    if tube.is_convex(dec)? {
+        let faces = tube
+            .patches
+            .into_iter()
+            .map(|patch| PlaneFace { plane: patch.plane, origins: patch.origins })
+            .collect();
+        return plan.distance_cell(ConvexCell::new(faces, dec)?, bound.clone(), dec);
+    }
+    let mut result = 0;
+    for component in tube.components(dec)? {
+        for term in component.terms {
+            let faces = term
+                .sides
+                .into_iter()
+                .map(|(support, same)| {
+                    let mut plane = component.planes[support].clone();
+                    if !same {
+                        plane.normal = plane.normal.scaled(&Real::from_i64(-1));
+                    }
+                    let origins = component
+                        .faces
+                        .iter()
+                        .filter(|face| face.support == support && face.same_sense == same)
+                        .flat_map(|face| face.origins.iter().cloned())
+                        .collect();
+                    PlaneFace { plane, origins }
+                })
+                .collect();
+            let part = plan.distance_cell(ConvexCell::new(faces, dec)?, bound.clone(), dec)?;
+            result = plan.boolean(BooleanKind::Union, result, part, dec)?;
+        }
+    }
+    Ok(result)
+}
+
+struct Vertex {
+    faces: Vec<usize>,
+    kept: bool,
+    convex: bool,
+}
+
+impl Plan {
+    pub(crate) fn planar_distance_shell(
+        &mut self,
+        (node, source_bound): (usize, Rational),
+        skin: Skin,
+        open: &[FaceRef],
+        thickness: &Rational,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let selected = skin.resolve_faces(open, dec)?;
+        if selected.len() == skin.patches.len() {
+            return Ok(0);
+        }
+        let bound = &source_bound + thickness;
+        let thickness = Real::from(thickness.clone());
+        let mut walls = 0;
+        let mut edges: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
+        let mut vertices: BTreeMap<usize, Vertex> = BTreeMap::new();
+        for (face, patch) in skin.patches.iter().enumerate() {
+            let kept = !selected.contains(&face);
+            if kept {
+                let prism = tube_leaf(self, face_tube(&skin, patch, &thickness, step), &bound, dec)?;
+                walls = self.boolean(BooleanKind::Union, walls, prism, dec)?;
+            }
+            for cycle in &patch.loops {
+                for i in 0..cycle.len() {
+                    let a = cycle[i];
+                    let b = cycle[(i + 1) % cycle.len()];
+                    edges.entry((a.min(b), a.max(b))).or_default().push(face);
+                    let vertex = vertices.entry(a).or_insert_with(|| Vertex {
+                        faces: Vec::new(), kept: false, convex: true,
+                    });
+                    vertex.faces.push(face);
+                    if kept {
+                        vertex.kept = true;
+                        if vertex.convex {
+                            let previous = cycle[(i + cycle.len() - 1) % cycle.len()];
+                            let incoming = skin.vertices[a].minus(&skin.vertices[previous]);
+                            let outgoing = skin.vertices[b].minus(&skin.vertices[a]);
+                            vertex.convex = geometry::sign(
+                                &incoming.cross(&outgoing).dot(&patch.plane.normal), dec,
+                            )? == Sign::Positive;
+                        }
+                    }
+                }
+            }
+        }
+        for ((a, b), incident) in edges {
+            let [first, second] = incident.as_slice() else {
+                return Err(bad("a physical planar edge needs two incident source faces"));
+            };
+            if selected.contains(first) && selected.contains(second) {
+                continue;
+            }
+            let mut origins = Vec::with_capacity(
+                skin.patches[*first].origins.len() * skin.patches[*second].origins.len(),
+            );
+            for a in &skin.patches[*first].origins {
+                for b in &skin.patches[*second].origins {
+                    let edge = EdgeName::new(a.clone(), b.clone()).map_err(|error| bad(&error.to_string()))?;
+                    origins.push(Origin { step: step.clone(), role: Role::Round { edge } });
+                }
+            }
+            let ends = [skin.vertices[a].clone(), skin.vertices[b].clone()];
+            let cylinder = Cylinder::new(
+                ends[0].clone(), ends[1].minus(&ends[0]), thickness.clone(),
+                skin.patches[*first].plane.normal.clone(), dec,
+            )?;
+            let part = self.cylinder_leaf(CylinderSkin {
+                cylinder, ends, origins: [Vec::new(), Vec::new(), origins],
+            }, &bound, dec)?;
+            walls = self.boolean(BooleanKind::Union, walls, part, dec)?;
+        }
+        for (index, vertex) in vertices {
+            // A flat or reflex kept-face corner has no open vertex-nearest region;
+            // its face prism and adjacent edge tubes already cover the entire ball.
+            if !vertex.kept || !vertex.convex {
+                continue;
+            }
+            let mut origins: Vec<_> = vertex.faces.iter()
+                .flat_map(|face| skin.patches[*face].origins.iter().cloned()).collect();
+            origins.sort();
+            origins.dedup();
+            let name = VertexName::new(origins).map_err(|error| bad(&error.to_string()))?;
+            let frame = &skin.patches[vertex.faces[0]].plane;
+            let sphere = Sphere::new(
+                skin.vertices[index].clone(), thickness.clone(),
+                frame.normal.clone(), frame.ref_dir.clone(), dec,
+            )?;
+            let part = self.radial_leaf(Surface::Sphere(sphere), vec![Origin {
+                step: step.clone(), role: Role::RoundCorner { vertex: name },
+            }], &bound, dec)?;
+            walls = self.boolean(BooleanKind::Union, walls, part, dec)?;
+        }
+        self.boolean(BooleanKind::Intersect, node, walls, dec)
+    }
+}

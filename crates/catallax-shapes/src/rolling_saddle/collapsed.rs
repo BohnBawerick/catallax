@@ -346,9 +346,9 @@ pub(super) fn build(
     let mut spans = [span(&definition, -1, dec)?, span(&definition, 0, dec)?];
     let sections =
         catallax_numbers::OperationSpan::begin("shapes", &"equal-crossing", "fillet.sections", dec);
-    for j in 0..3 {
-        for k in 0..4 {
-            zero_coefficients(&[&spans[0][j][k][6] - &spans[1][j][k][0]], dec)?;
+    for (left, right) in spans[0].iter().zip(&spans[1]) {
+        for (a, b) in left.iter().zip(right) {
+            zero_coefficients(&[&a[6] - &b[0]], dec)?;
         }
     }
     // Restore physical height only after the frame-root-free coefficient proof.

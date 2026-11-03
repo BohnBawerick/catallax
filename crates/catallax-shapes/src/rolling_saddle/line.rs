@@ -145,8 +145,8 @@ impl LineSheet for RollingSaddle {
         };
         [
             [0, 1, 2, 3].map(|k| wide[k][column].clone()),
-            local(&middle),
-            local(&narrow),
+            local(middle),
+            local(narrow),
         ]
     }
     fn span_system(

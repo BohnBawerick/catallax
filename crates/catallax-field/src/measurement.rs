@@ -458,7 +458,7 @@ fn constant(
                 radius,
             },
         ) => match model.geom().curve(*curve) {
-            Curve::Ellipse(path) if saddle.centres_on(&path, dec)? => {
+            Curve::Ellipse(path) if saddle.centres_on(path, dec)? => {
                 Some(dec.enclose_at(&(saddle.definition().radius() - radius), BITS)?)
             }
             _ => None,

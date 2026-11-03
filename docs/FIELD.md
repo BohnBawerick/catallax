@@ -394,6 +394,20 @@ Mixed source polarity retains an ambiguous normal. Draft tile domains retain
 their ordinary named-face proof: carrier sectors alone do not identify the
 selected coplanar tile. This does not enable unproved shell constructions.
 
+Definition-native planar shell compilation can separately prove an entire Round
+or RoundCorner name absent. It intersects the generator's nearest-feature
+halfspaces with every bounded convex source cell and checks exact affine rank.
+Only proved empty 3D interior in every intersection supplies this certificate;
+any undecided intersection preserves the generator. A lower-dimensional
+polyhedron lies in a plane, while a positive-radius cylinder or sphere contains
+no planar open patch. Their intersection therefore cannot carry a 2D face.
+The absent domain records that global name proof without changing scalar walls.
+
+Nonconvex kept-face prisms use whole polyhedral field leaves. Convex terms remain
+internal membership data, not independently named or exposed leaf boundaries.
+Only finite physical faces determine boundary membership. Auxiliary facets stay
+unnamed, and the source extraction and contact-provenance guards are unchanged.
+
 Strict `Inside` or `Outside` at a retained historical boundary node excludes
 that named patch before contact analysis. Alternative ownership paths must all
 be excluded; `Boundary` and `Indeterminate` never prove presence. Rotational

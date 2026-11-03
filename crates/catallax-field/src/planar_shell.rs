@@ -123,30 +123,64 @@ fn tube_leaf(plan: &mut Plan, mut tube: Skin, bound: &Rational, dec: &mut Decide
     }
     let mut result = 0;
     for component in tube.shell_field_components(dec)? {
-        for term in component.terms {
-            let faces = term
-                .sides
-                .into_iter()
-                .map(|(support, same)| {
-                    let mut plane = component.planes[support].clone();
-                    if !same {
-                        plane.normal = plane.normal.scaled(&Real::from_i64(-1));
-                    }
-                    cache_plane_rationals(&mut plane, dec)?;
-                    let origins = component
-                        .faces
-                        .iter()
-                        .filter(|face| face.support == support && face.same_sense == same)
-                        .flat_map(|face| face.origins.iter().cloned())
-                        .collect();
-                    Ok(PlaneFace { plane, origins })
-                })
-                .collect::<Result<Vec<_>, Refusal>>()?;
-            let part = plan.distance_cell(ConvexCell::new(faces, dec)?, bound.clone(), dec)?;
-            result = plan.boolean(BooleanKind::Union, result, part, dec)?;
+        let mut faces = Vec::new();
+        for face in &component.faces {
+            let surface = Surface::Plane(component.plane(face));
+            for origin in &face.origins {
+                faces.push(geometry::face(surface.clone(), origin.clone(), dec)?);
+            }
         }
+        let region = crate::draft::Region::new(
+            crate::draft::Cell::Polyhedral(Box::new(component)), dec,
+        )?;
+        let part = plan.leaf(geometry::Leaf::Draft(region), faces, dec)?;
+        result = plan.boolean(BooleanKind::Union, result, part, dec)?;
     }
     Ok(result)
+}
+
+fn convex_source_cells(skin: &Skin, dec: &mut Decider) -> Result<Vec<ConvexCell>, Refusal> {
+    let mut cells = Vec::new();
+    for component in skin.components(dec)? {
+        for term in component.terms {
+            let faces = term.sides.into_iter().map(|(support, same)| {
+                let mut plane = component.planes[support].clone();
+                if !same {
+                    plane.normal = plane.normal.scaled(&Real::from_i64(-1));
+                }
+                PlaneFace { plane, origins: Vec::new() }
+            }).collect();
+            let cell = ConvexCell::new(faces, dec)?;
+            if !cell.is_empty() {
+                cells.push(cell);
+            }
+        }
+    }
+    Ok(cells)
+}
+
+fn no_source_volume(
+    source: Option<&[ConvexCell]>,
+    planes: &[Plane],
+    dec: &mut Decider,
+) -> bool {
+    let Some(source) = source else { return false };
+    for cell in source {
+        let mut faces = Vec::with_capacity(cell.faces.len() + planes.len());
+        faces.extend(cell.faces.iter().map(|face| PlaneFace {
+            plane: face.plane.clone(), origins: Vec::new(),
+        }));
+        faces.extend(planes.iter().cloned().map(|plane| PlaneFace {
+            plane, origins: Vec::new(),
+        }));
+        // This optional certificate never treats an undecided intersection
+        // as empty. Bounded source cells make exact vertex-rank complete.
+        match ConvexCell::new(faces, dec) {
+            Ok(intersection) if intersection.is_empty() => (),
+            _ => return false,
+        }
+    }
+    true
 }
 
 struct EdgeIncident {
@@ -163,17 +197,27 @@ fn region_leaf(
     plan: &mut Plan,
     surface: Surface,
     origins: Vec<Origin>,
-    planes: Vec<Plane>,
+    mut planes: Vec<Plane>,
+    source_cells: Option<&[ConvexCell]>,
     bound: &Rational,
     dec: &mut Decider,
 ) -> Result<usize, Refusal> {
-    let faces = origins.into_iter()
-        .map(|origin| geometry::face(surface.clone(), origin, dec))
-        .collect::<Result<Vec<_>, _>>()?;
+    for plane in &mut planes {
+        cache_plane_rationals(plane, dec)?;
+    }
+    let absent = no_source_volume(source_cells, &planes, dec);
+    let faces = origins.into_iter().map(|origin| {
+        let mut face = geometry::face(surface.clone(), origin, dec)?;
+        // A positive-radius cylinder or sphere has no planar open patch.
+        // Its trace in a lower-dimensional polyhedron has dimension <= 1.
+        if absent {
+            face.domain = 1;
+        }
+        Ok(face)
+    }).collect::<Result<Vec<_>, Refusal>>()?;
     let mut surfaces = Vec::with_capacity(planes.len() + 1);
     surfaces.push(surface);
-    for mut plane in planes {
-        cache_plane_rationals(&mut plane, dec)?;
+    for plane in planes {
         surfaces.push(Surface::Plane(plane));
     }
     plan.leaf(
@@ -205,6 +249,8 @@ impl Plan {
         }
         let bound = &source_bound + thickness;
         let thickness = Real::from(thickness.clone());
+        // Failure of the optional source-cell proof preserves every generator.
+        let source_cells = convex_source_cells(&skin, dec).ok();
         let mut walls = 0;
         let mut edges: BTreeMap<(usize, usize), Vec<EdgeIncident>> = BTreeMap::new();
         let mut vertices: BTreeMap<usize, Vertex> = BTreeMap::new();
@@ -287,7 +333,10 @@ impl Plan {
             cache_vector_rationals(&mut cylinder.axis, dec)?;
             cache_vector_rationals(&mut cylinder.ref_dir, dec)?;
             cache_rational(&mut cylinder.radius_sq, dec)?;
-            let part = region_leaf(self, Surface::Cylinder(cylinder), origins, planes, &bound, dec)?;
+            let part = region_leaf(
+                self, Surface::Cylinder(cylinder), origins, planes,
+                source_cells.as_deref(), &bound, dec,
+            )?;
             walls = self.boolean(BooleanKind::Union, walls, part, dec)?;
         }
         for (index, vertex) in vertices {
@@ -325,7 +374,7 @@ impl Plan {
             }
             let part = region_leaf(self, Surface::Sphere(sphere), vec![Origin {
                 step: step.clone(), role: Role::RoundCorner { vertex: name },
-            }], planes, &bound, dec)?;
+            }], planes, source_cells.as_deref(), &bound, dec)?;
             walls = self.boolean(BooleanKind::Union, walls, part, dec)?;
         }
         self.boolean(BooleanKind::Intersect, node, walls, dec)

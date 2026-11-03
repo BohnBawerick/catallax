@@ -254,3 +254,27 @@ fn masked_generators_do_not_hide_source_faces_or_regain_buried_names() {
         assert_eq!(query.state, FaceState::NotOnFace, "{name:?}: {query:?}");
     }
 }
+
+#[test]
+fn positive_volume_edge_generator_keeps_its_round_name() {
+    let mut source = document();
+    source["steps"][0]["loops"] = json!([chain(
+        &[[0,0],[8,0],[8,8],[5,8],[5,2],[3,2],[3,8],[0,8]], "u"
+    )]);
+    open_except(&mut source, "u-5");
+    let plan = compile(&source);
+    // The y<2 nearest-edge region has a genuine 3D intersection with
+    // the source's bottom bar. It must not be pruned like an exterior cone.
+    material(&plan, &[
+        (["7/2", "3/2", "2"], Location::Inside),
+        (["4", "1", "2"], Location::Outside),
+    ]);
+    let (id, _) = named_on(
+        &plan, &round("u-4", "u-5"), ["18/5", "6/5", "2"],
+    );
+    let query = plan.closed_face_query_checked(
+        id, &point(["18/5", "6/5", "2"]), &mut Workspace::default(),
+        &mut Decider::default(),
+    ).unwrap();
+    assert_eq!(query.state, FaceState::OnFace, "{query:?}");
+}

@@ -740,14 +740,13 @@ impl Prepared<'_> {
         let b_domain = self.domain(b)?;
         if matches!(a_domain.surface(), catallax_shapes::Surface::Plane(_))
             && matches!(b_domain.surface(), catallax_shapes::Surface::Plane(_))
-        {
-            if let (Some(first), Some(second)) = (
+            && let (Some(first), Some(second)) = (
                 self.planar_boundary(a.0, dec)?,
                 self.planar_boundary(b.0, dec)?,
-            ) && let Some(answer) = first.face_distance(second, options, dec)?
-            {
-                return Ok(answer);
-            }
+            )
+            && let Some(answer) = first.face_distance(second, options, dec)?
+        {
+            return Ok(answer);
         }
         distance::face_distance(
             a_domain,

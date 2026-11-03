@@ -496,10 +496,7 @@ impl Plan {
         match &self.leaves[face.leaf] {
             geometry::Leaf::Feature(feature) if feature.complete_planar_carriers() => (),
             geometry::Leaf::Draft(region)
-                if matches!(&region.cell, crate::draft::Cell::Polyhedral(_)) =>
-            {
-                ()
-            }
+                if matches!(&region.cell, crate::draft::Cell::Polyhedral(_)) => {}
             _ => return Ok(None),
         }
         let regions = self.planar_memberships.0.get_or_init(Default::default);

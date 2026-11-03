@@ -778,8 +778,8 @@ impl Plan {
                     let (gradient, slope) = &graphs[index];
                     let mut sum = Real::zero();
                     for a in 0..3 {
-                        for b in 0..3 {
-                            sum = sum + u[a] * v[b] * gradient[a].partial(b).eval_real(&xyz);
+                        for (b, &vb) in v.iter().enumerate() {
+                            sum = sum + u[a] * vb * gradient[a].partial(b).eval_real(&xyz);
                         }
                     }
                     sum / (slope * &Real::from_i64(-2))

@@ -743,6 +743,40 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
         "{}",
         refusal.detail
     );
+    // An earlier round meeting a leaning end face ends on an ellipse, and a
+    // chain over that elliptic arc has no exact join yet.
+    let leaning = recipe(
+        4,
+        vec![
+            json!({"id":"profile","op":"sketch",
+                "plane":{"rotation":["1","1","0","0"],"translation":["0","0","0"]},
+                "loops":[[
+                    {"kind":"line","id":"floor","to":["20","0"]},
+                    {"kind":"line","id":"lean","to":["15","10"]},
+                    {"kind":"line","id":"roof","to":["0","10"]},
+                    {"kind":"line","id":"back","to":["0","0"]}]]}),
+            json!({"id":"body","op":"extrude","profile":"profile","distance":"20"}),
+            fillet(
+                "front",
+                "body",
+                "3",
+                vec![edge(side("body", "roof"), cap("body", "start"))],
+            ),
+            fillet(
+                "right",
+                "front",
+                "1",
+                vec![edge(side("body", "roof"), side("body", "lean"))],
+            ),
+        ],
+    );
+    let refusal = refused(&leaning, "right");
+    assert_eq!(
+        refusal.code,
+        catallax_features::fillet::UNSUPPORTED_CORNER,
+        "{}",
+        refusal.detail
+    );
     // The field compiler has no roll-over over earlier strips.
     for recipe in [
         boss(4, "3", "1", false),

@@ -30,6 +30,26 @@ pub(crate) fn prepare(
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
     let bodies: Vec<_> = bodies.collect();
+    // A torus band across its outer equator has no chart until it is cut there.
+    if let Some(split) = crate::equator::split(model, &bodies, dec)? {
+        let Some(mut prepared) = prepare(
+            &split.model,
+            split.bodies.iter().copied(),
+            options,
+            reframe,
+            retry_frame,
+            dec,
+        )?
+        else {
+            return Ok(None);
+        };
+        prepared.plan.added_edges += split.rings;
+        for (source, upper) in split.faces {
+            let charted = prepared.face_map.get(&upper).copied().unwrap_or(upper);
+            prepared.face_map.insert(source, charted);
+        }
+        return Ok(Some(prepared));
+    }
     if !reframe {
         // A band has a seam, and a wall it winds round must cut there.
         let Some(framed) = frames::band_walls(model, &bodies, dec)? else {

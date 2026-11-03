@@ -410,6 +410,40 @@ fn circular_section(
     }))
 }
 
+// A line along a torus's axis keeps one distance from that axis, so it meets
+// the tube only where the tube circle reaches that distance: at most two
+// heights, with no quartic in algebraic coefficients to eliminate.
+fn axial_torus(
+    origin: &Point3,
+    direction: &Vector3,
+    torus: &catallax_shapes::Torus,
+    dec: &mut Decider,
+) -> Result<Option<Vec<Point3>>, Refusal> {
+    if sign(&direction.cross(&torus.axis).norm_squared(), dec)? != Sign::Zero {
+        return Ok(None);
+    }
+    let length = torus.axis.norm_squared().sqrt();
+    let offset = origin.minus(&torus.center);
+    let height = &offset.dot(&torus.axis) / &length;
+    let rate = &direction.dot(&torus.axis) / &length;
+    let distance = (&offset.norm_squared() - &height.square()).sqrt();
+    let reach = &torus.minor.square() - &(&distance - &torus.major).square();
+    let heights = match sign(&reach, dec)? {
+        Sign::Negative => vec![],
+        Sign::Zero => vec![Real::zero()],
+        Sign::Positive => {
+            let half = reach.sqrt();
+            vec![-&half, half]
+        }
+    };
+    Ok(Some(
+        heights
+            .into_iter()
+            .map(|h| origin.plus(&direction.scaled(&(&(&h - &height) / &rate))))
+            .collect(),
+    ))
+}
+
 // A line already supplies a separating parameter. Eliminating x, y and z
 // independently loses that correlation and needlessly eliminates coefficients.
 fn algebraic_line(
@@ -419,6 +453,11 @@ fn algebraic_line(
     implicit: &RealPoly,
     dec: &mut Decider,
 ) -> Result<Solutions, Refusal> {
+    if let Surface::Torus(torus) = surface
+        && let Some(points) = axial_torus(origin, direction, torus, dec)?
+    {
+        return Ok(Solutions::Points(points));
+    }
     // Substitute into a rotational carrier in its defining frame. Expanding a
     // translated cone in world coordinates first obscures its shared axial
     // expressions and then requires eliminating the same identities again.

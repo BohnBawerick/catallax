@@ -553,6 +553,89 @@ impl Prepared<'_> {
                 Refusal::new("field.face-id", "distance face is absent from this result")
             })
     }
+    /// Searches for a certified boundary witness without constructing trim regions.
+    /// A missing upper means no witness was found, not that the face is empty.
+    /// The lower bound is zero; only an admitted physical point supplies an upper.
+    pub fn point_to_face_witness(
+        &self,
+        id: FaceId,
+        point: &Point3,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Bounds, Refusal> {
+        let domain = self.domain(id)?;
+        if width <= &Rational::zero() {
+            return Err(Refusal::new("shapes.distance-domain", "positive width required"));
+        }
+        self.support_witness(id, domain, point, width, true, dec)
+    }
+
+    fn support_witness(
+        &self,
+        id: FaceId,
+        domain: &Domain,
+        point: &Point3,
+        width: &Rational,
+        perturb: bool,
+        dec: &mut Decider,
+    ) -> Result<Bounds, Refusal> {
+        let mut candidate = Bounds {
+            lower: Rational::zero(),
+            upper: None,
+            witnesses: None,
+            converged: false,
+            cells: 0,
+        };
+        let step = width.mul_pow2(-3);
+        for offset in 0..if perturb { 28 } else { 1 } {
+            dec.check_deadline()?;
+            let target = if offset == 0 {
+                point.clone()
+            } else {
+                let n = offset - 1;
+                point.plus(&Vector3::new(
+                    Real::from(&Rational::from_i64(n % 3 - 1) * &step),
+                    Real::from(&Rational::from_i64(n / 3 % 3 - 1) * &step),
+                    Real::from(&Rational::from_i64(n / 9 - 1) * &step),
+                ))
+            };
+            // Reuse the rational analytic support witness, not a B-rep face or
+            // mesher. Rational frames avoid introducing needless radial radicals.
+            let p = match catallax_boolean::surface_witness(
+                domain.surface(), &target, &width.mul_pow2(-20), dec,
+            )? {
+                Some(p) => p.to_real(),
+                None => match cone_witness(domain.surface(), point, &step, offset)? {
+                    Some(p) => p,
+                    None => break,
+                },
+            };
+            let squared = point.minus(&p).norm_squared();
+            let distance = if let Some(q) = squared.rational_ref() {
+                Ball::from_rational(q, 128)
+            } else {
+                dec.enclose_budgeted_at(&squared, 128)?
+            }.sqrt().unwrap();
+            if perturb && offset == 0 && distance.lo() > width.mul_pow2(1) {
+                break;
+            }
+            if self.member(id.0, &p, dec)?
+                && candidate.upper.as_ref().is_none_or(|u| distance.hi() < *u)
+            {
+                candidate.upper = Some(distance.hi());
+                candidate.witnesses = Some([point.clone(), p]);
+            }
+            if candidate.upper.as_ref().is_some_and(|u| u <= width) {
+                candidate.converged = true;
+                return Ok(candidate);
+            }
+            if offset == 0 && distance.lo() > *width {
+                break;
+            }
+        }
+        Ok(candidate)
+    }
+
     /// Certified point-to-face distance, including the face's closed trim loops.
     pub fn point_to_face(
         &self,
@@ -574,68 +657,11 @@ impl Prepared<'_> {
         {
             return planar.point_distance(point, options, dec);
         }
-        let mut candidate = Bounds {
-            lower: Rational::zero(),
-            upper: None,
-            witnesses: None,
-            converged: false,
-            cells: 0,
-        };
-        let step = options.width.mul_pow2(-3);
-        for offset in 0..if options.max_cells == 1 { 28 } else { 1 } {
-            dec.check_deadline()?;
-            let target = if offset == 0 {
-                point.clone()
-            } else {
-                let n = offset - 1;
-                point.plus(&Vector3::new(
-                    Real::from(&Rational::from_i64(n % 3 - 1) * &step),
-                    Real::from(&Rational::from_i64(n / 3 % 3 - 1) * &step),
-                    Real::from(&Rational::from_i64(n / 9 - 1) * &step),
-                ))
-            };
-            // Reuse the rational analytic support witness, not a B-rep face or
-            // mesher. Rational frames avoid introducing needless radial radicals.
-            let p = match catallax_boolean::surface_witness(
-                domain.surface(),
-                &target,
-                &options.width.mul_pow2(-20),
-                dec,
-            )? {
-                Some(p) => p.to_real(),
-                None => match cone_witness(domain.surface(), point, &step, offset)? {
-                    Some(p) => p,
-                    None => break,
-                },
-            };
-            let squared = point.minus(&p).norm_squared();
-            let distance = if let Some(q) = squared.rational_ref() {
-                Ball::from_rational(q, 128)
-            } else {
-                dec.enclose_budgeted_at(&squared, 128)?
-            }
-            .sqrt()
-            .unwrap();
-            if options.max_cells == 1 && offset == 0 && distance.lo() > options.width.mul_pow2(1) {
-                break;
-            }
-            if self.member(id.0, &p, dec)?
-                && candidate.upper.as_ref().is_none_or(|u| distance.hi() < *u)
-            {
-                candidate.upper = Some(distance.hi());
-                candidate.witnesses = Some([point.clone(), p]);
-            }
-            if candidate
-                .upper
-                .as_ref()
-                .is_some_and(|u| u <= &options.width)
-            {
-                candidate.converged = true;
-                return Ok(candidate);
-            }
-            if offset == 0 && distance.lo() > options.width {
-                break;
-            }
+        let candidate = self.support_witness(
+            id, domain, point, &options.width, options.max_cells == 1, dec,
+        )?;
+        if candidate.converged {
+            return Ok(candidate);
         }
         // An admitted near witness already encloses the minimum to the requested
         // width. Reconstruct complete finite regions only when that proof fails.
@@ -718,10 +744,6 @@ impl Prepared<'_> {
             converged: false,
             cells: 0,
         };
-        let probe = Options {
-            width: options.width.clone(),
-            max_cells: 1,
-        };
         let mut remaining = options.max_cells;
         for pass in 0..2 {
             let mut lower = None;
@@ -733,16 +755,15 @@ impl Prepared<'_> {
                     result.lower = Rational::zero();
                     return Ok(result);
                 }
-                let refinement = Options {
-                    width: options.width.clone(),
-                    max_cells: remaining,
+                let bounds = if pass == 0 {
+                    self.point_to_face_witness(FaceId(i), point, &options.width, dec)?
+                } else {
+                    let refinement = Options {
+                        width: options.width.clone(),
+                        max_cells: remaining,
+                    };
+                    self.point_to_face(FaceId(i), point, &refinement, dec)?
                 };
-                let bounds = self.point_to_face(
-                    FaceId(i),
-                    point,
-                    if pass == 0 { &probe } else { &refinement },
-                    dec,
-                )?;
                 lower = Some(lower.map_or(bounds.lower.clone(), |x: Rational| x.min(bounds.lower)));
                 result.cells += bounds.cells;
                 remaining = remaining.saturating_sub(bounds.cells);

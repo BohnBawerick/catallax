@@ -201,6 +201,7 @@ pub struct Workspace {
     rays: Vec<Location>,
     opposite_rays: Vec<Location>,
     domains: Vec<FaceState>,
+    boundary_nodes: Vec<bool>,
     active: Vec<usize>,
     planes: Vec<Vector3>,
 }
@@ -1298,19 +1299,42 @@ impl Plan {
             || self.separated_unions.contains(&self.root);
         let mut location = storage.locations[self.root];
         storage.active.clear();
-        for (id, face) in self.faces.iter().enumerate() {
-            if face.in_result
-                && self.leaf_registers[face.leaf]
-                    .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
-                && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
-                && self.leaves[face.leaf].on_face(
-                    &face.origin,
-                    self.definition_role(id),
-                    &coordinates,
-                    dec,
-                )? != Some(false)
-            {
-                storage.active.push(id);
+        let composite = matches!(self.instructions[self.root], Instruction::Boolean { .. });
+        if matches!(location, Location::Boundary | Location::Indeterminate) {
+            if composite {
+                storage.boundary_nodes.clear();
+                storage.boundary_nodes.resize(self.instructions.len(), false);
+                storage.boundary_nodes[self.root] = true;
+                for slot in (0..self.instructions.len()).rev() {
+                    if !storage.boundary_nodes[slot]
+                        || matches!(storage.locations[slot], Location::Inside | Location::Outside)
+                    {
+                        continue;
+                    }
+                    if let Instruction::Boolean { a, b, .. } = self.instructions[slot] {
+                        // A strict child is locally constant, so its hidden boundaries
+                        // cannot contribute a surviving face through this Boolean.
+                        storage.boundary_nodes[a] = true;
+                        storage.boundary_nodes[b] = true;
+                    }
+                }
+            }
+            for (id, face) in self.faces.iter().enumerate() {
+                if face.in_result
+                    && self.leaf_registers[face.leaf].is_some_and(|slot| {
+                        (!composite || storage.boundary_nodes[slot])
+                            && storage.locations[slot] == Location::Boundary
+                    })
+                    && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
+                    && self.leaves[face.leaf].on_face(
+                        &face.origin,
+                        self.definition_role(id),
+                        &coordinates,
+                        dec,
+                    )? != Some(false)
+                {
+                    storage.active.push(id);
+                }
             }
         }
         if location == Location::Indeterminate {
@@ -1606,6 +1630,9 @@ impl Plan {
         if !matches!(self.instructions[self.root], Instruction::Leaf(_)) {
             let query = self.proven_checked(point, storage, dec)?;
             if matches!(query.location, Location::Inside | Location::Outside) {
+                return Ok(absent);
+            }
+            if !storage.active.contains(&id.0) {
                 return Ok(absent);
             }
             if self.domain_excludes_point(face.domain, &storage.locations, &mut storage.domains) {

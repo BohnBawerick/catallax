@@ -16,6 +16,7 @@ fn document() -> Value {
 fn compile(source: &Value) -> Plan {
     let recipe = Recipe::parse(&source.to_string()).unwrap();
     let (answer, work) = with_operation_budget(WORK, || Plan::compile(&recipe));
+    eprintln!("SHELL_COMPILE work={work:?}");
     assert!(!work.exhausted, "{work:?}");
     answer.unwrap()
 }
@@ -28,6 +29,7 @@ fn material(plan: &Plan, cases: &[([&str; 3], Location)]) {
         let (answer, work) = with_operation_budget(WORK, || {
             plan.proven_checked(&point(xyz), &mut Workspace::default(), &mut Decider::default())
         });
+        eprintln!("SHELL_QUERY xyz={xyz:?} work={work:?}");
         assert!(!work.exhausted, "{xyz:?}: {work:?}");
         let answer = answer.unwrap();
         assert_eq!(answer.location, expected, "{xyz:?}: {answer:?}");
@@ -127,6 +129,7 @@ fn reentrant_tray_compiles_independently_with_finite_corner_material() {
         (["4", "0.5", "2"], Location::Inside),
         (["4", "1.5", "0.5"], Location::Inside),
         (["4", "4", "2"], Location::Outside),
+        (["7", "1", "1"], Location::Boundary),
         // The x=3 subdivision plane is not an exposed face or a material halfspace.
         (["3", "1.5", "0.5"], Location::Inside),
         (["3", "1.5", "2"], Location::Outside),
@@ -226,4 +229,28 @@ fn holed_caps_and_consumed_shells_keep_the_original_void() {
     let curve = round("hole-0", "hole-3");
     assert_eq!(plan.face_query(plan.select(&curve).unwrap(), &point(["1", "3", "2"]),
         &mut Workspace::default()).unwrap().state, FaceState::NotOnFace);
+}
+
+#[test]
+fn masked_generators_do_not_hide_source_faces_or_regain_buried_names() {
+    let plan = compile(&document());
+    let bottom = origin(json!({"step":"stock","role":{"side":{"segment":"bottom"}}}));
+    let (_, direction) = named_on(&plan, &bottom, ["1", "0", "0.5"]);
+    let Direction::Unique(normal) = direction else { panic!("{direction:?}") };
+    assert!(normal[0].contains(0.0) && normal[2].contains(0.0));
+    assert!(normal[1].lo() > -1.001 && normal[1].hi() < -0.999);
+    let hidden_inner = origin(json!({"step":"shell","role":{"inner":{"of":{
+        "step":"stock","role":{"side":{"segment":"left"}}
+    }}}}));
+    for name in [hidden_inner, round("bottom", "left")] {
+        let id = plan.select(&name).unwrap();
+        let (query, work) = with_operation_budget(WORK, || {
+            plan.closed_face_query_checked(
+                id, &point(["1", "0", "0.5"]), &mut Workspace::default(),
+                &mut Decider::default(),
+            ).unwrap()
+        });
+        assert!(!work.exhausted, "{work:?}");
+        assert_eq!(query.state, FaceState::NotOnFace, "{name:?}: {query:?}");
+    }
 }

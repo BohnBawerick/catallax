@@ -9,10 +9,45 @@ use catallax_features::{
 };
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, EdgeName, FaceRef, Origin, Role, StepId, VertexName};
-use catallax_shapes::{Cylinder, Plane, Sphere, Surface};
+use catallax_shapes::{Cylinder, Plane, Point3, Sphere, Surface, Vector3};
 
 use super::bad;
 use crate::{Plan, geometry};
+
+fn cache_rational(value: &mut Real, dec: &mut Decider) -> Result<(), Refusal> {
+    if value.rational_ref().is_none()
+        && let Some(rational) = dec.rational_value(value)?
+    {
+        *value = Real::from(rational);
+    }
+    Ok(())
+}
+fn cache_point_rationals(point: &mut Point3, dec: &mut Decider) -> Result<(), Refusal> {
+    for value in [&mut point.x, &mut point.y, &mut point.z] {
+        cache_rational(value, dec)?;
+    }
+    Ok(())
+}
+fn cache_vector_rationals(vector: &mut Vector3, dec: &mut Decider) -> Result<(), Refusal> {
+    for value in [&mut vector.x, &mut vector.y, &mut vector.z] {
+        cache_rational(value, dec)?;
+    }
+    Ok(())
+}
+fn cache_plane_rationals(plane: &mut Plane, dec: &mut Decider) -> Result<(), Refusal> {
+    cache_point_rationals(&mut plane.origin, dec)?;
+    cache_vector_rationals(&mut plane.normal, dec)?;
+    cache_vector_rationals(&mut plane.ref_dir, dec)
+}
+fn cache_skin_rationals(skin: &mut Skin, dec: &mut Decider) -> Result<(), Refusal> {
+    for point in &mut skin.vertices {
+        cache_point_rationals(point, dec)?;
+    }
+    for patch in &mut skin.patches {
+        cache_plane_rationals(&mut patch.plane, dec)?;
+    }
+    Ok(())
+}
 
 fn face_tube(skin: &Skin, patch: &Patch, thickness: &Real, step: &StepId) -> Skin {
     let shift = patch
@@ -77,7 +112,8 @@ fn face_tube(skin: &Skin, patch: &Patch, thickness: &Real, step: &StepId) -> Ski
     Skin { vertices, patches }
 }
 
-fn tube_leaf(plan: &mut Plan, tube: Skin, bound: &Rational, dec: &mut Decider) -> Result<usize, Refusal> {
+fn tube_leaf(plan: &mut Plan, mut tube: Skin, bound: &Rational, dec: &mut Decider) -> Result<usize, Refusal> {
+    cache_skin_rationals(&mut tube, dec)?;
     if tube.is_convex(dec)? {
         let faces = tube
             .patches
@@ -97,15 +133,16 @@ fn tube_leaf(plan: &mut Plan, tube: Skin, bound: &Rational, dec: &mut Decider) -
                     if !same {
                         plane.normal = plane.normal.scaled(&Real::from_i64(-1));
                     }
+                    cache_plane_rationals(&mut plane, dec)?;
                     let origins = component
                         .faces
                         .iter()
                         .filter(|face| face.support == support && face.same_sense == same)
                         .flat_map(|face| face.origins.iter().cloned())
                         .collect();
-                    PlaneFace { plane, origins }
+                    Ok(PlaneFace { plane, origins })
                 })
-                .collect();
+                .collect::<Result<Vec<_>, Refusal>>()?;
             let part = plan.distance_cell(ConvexCell::new(faces, dec)?, bound.clone(), dec)?;
             result = plan.boolean(BooleanKind::Union, result, part, dec)?;
         }
@@ -123,12 +160,13 @@ impl Plan {
     pub(crate) fn planar_distance_shell(
         &mut self,
         (node, source_bound): (usize, Rational),
-        skin: Skin,
+        mut skin: Skin,
         open: &[FaceRef],
         thickness: &Rational,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
+        cache_skin_rationals(&mut skin, dec)?;
         let selected = skin.resolve_faces(open, dec)?;
         if selected.len() == skin.patches.len() {
             return Ok(0);
@@ -184,10 +222,14 @@ impl Plan {
                 }
             }
             let ends = [skin.vertices[a].clone(), skin.vertices[b].clone()];
-            let cylinder = Cylinder::new(
+            let mut cylinder = Cylinder::new(
                 ends[0].clone(), ends[1].minus(&ends[0]), thickness.clone(),
                 skin.patches[*first].plane.normal.clone(), dec,
             )?;
+            cache_point_rationals(&mut cylinder.origin, dec)?;
+            cache_vector_rationals(&mut cylinder.axis, dec)?;
+            cache_vector_rationals(&mut cylinder.ref_dir, dec)?;
+            cache_rational(&mut cylinder.radius_sq, dec)?;
             let part = self.cylinder_leaf(CylinderSkin {
                 cylinder, ends, origins: [Vec::new(), Vec::new(), origins],
             }, &bound, dec)?;
@@ -205,10 +247,14 @@ impl Plan {
             origins.dedup();
             let name = VertexName::new(origins).map_err(|error| bad(&error.to_string()))?;
             let frame = &skin.patches[vertex.faces[0]].plane;
-            let sphere = Sphere::new(
+            let mut sphere = Sphere::new(
                 skin.vertices[index].clone(), thickness.clone(),
                 frame.normal.clone(), frame.ref_dir.clone(), dec,
             )?;
+            cache_point_rationals(&mut sphere.center, dec)?;
+            cache_vector_rationals(&mut sphere.axis, dec)?;
+            cache_vector_rationals(&mut sphere.ref_dir, dec)?;
+            cache_rational(&mut sphere.radius, dec)?;
             let part = self.radial_leaf(Surface::Sphere(sphere), vec![Origin {
                 step: step.clone(), role: Role::RoundCorner { vertex: name },
             }], &bound, dec)?;

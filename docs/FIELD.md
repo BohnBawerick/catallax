@@ -408,6 +408,14 @@ internal membership data, not independently named or exposed leaf boundaries.
 Only finite physical faces determine boundary membership. Auxiliary facets stay
 unnamed, and the source extraction and contact-provenance guards are unchanged.
 
+An Inner origin identifies a new offset patch in the source interior. Existing
+source boundary patches keep their source names when an offset carrier
+coincides with them. If exact source-vertex signs prove the entire bounded
+planar source lies on one side of an Inner plane, that plane has no
+source-interior patch and its Inner domain is absent. A genuine parallel image
+crossing the source remains eligible. Mixed or undecided signs do not supply
+this certificate. This changes named ownership only, not scalar material.
+
 Strict `Inside` or `Outside` at a retained historical boundary node excludes
 that named patch before contact analysis. Alternative ownership paths must all
 be excluded; `Boundary` and `Indeterminate` never prove presence. Rotational

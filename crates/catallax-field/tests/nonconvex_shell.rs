@@ -181,6 +181,23 @@ fn material_across_a_gap_keeps_the_positive_parallel_face_and_finite_trim() {
     let Direction::Unique(normal) = direction else { panic!("{direction:?}") };
     assert!(normal[0].lo() > 0.999 && normal[0].hi() < 1.001);
     assert!(normal[1].contains(0.0) && normal[2].contains(0.0));
+    let coincident = point(["0", "7", "1/2"]);
+    assert_eq!(
+        plan.closed_face_query_checked(
+            handle, &coincident, &mut Workspace::default(), &mut Decider::default(),
+        ).unwrap().state,
+        FaceState::NotOnFace,
+        "the negative offset image cannot borrow the original outside wall",
+    );
+    let outside = origin(json!({"step":"stock","role":{"side":{"segment":"u-7"}}}));
+    assert_eq!(
+        plan.closed_face_query_checked(
+            plan.select(&outside).unwrap(), &coincident, &mut Workspace::default(),
+            &mut Decider::default(),
+        ).unwrap().state,
+        FaceState::OnFace,
+        "coincident source material keeps its original name",
+    );
     let options = Options { width: Rational::parse("1/100").unwrap(), max_cells: 16_384 };
     let (answer, work) = with_operation_budget(WORK, || {
         let mut dec = Decider::default();

@@ -111,6 +111,25 @@ fn face_tube(skin: &Skin, patch: &Patch, thickness: &Real, step: &StepId) -> Ski
     Skin { vertices, patches }
 }
 
+fn no_source_interior_on_plane(skin: &Skin, plane: &Plane, dec: &mut Decider) -> bool {
+    let mut negative = false;
+    let mut positive = false;
+    for vertex in &skin.vertices {
+        match geometry::sign(&vertex.minus(&plane.origin).dot(&plane.normal), dec) {
+            Ok(Sign::Negative) => negative = true,
+            Ok(Sign::Positive) => positive = true,
+            Ok(Sign::Zero) => (),
+            Err(_) => return false,
+        }
+        if negative && positive {
+            return false;
+        }
+    }
+    // A bounded planar source lies in the convex hull of its vertices.
+    // A supporting or disjoint carrier has no source-interior offset patch.
+    true
+}
+
 fn tube_leaf(plan: &mut Plan, mut tube: Skin, bound: &Rational, dec: &mut Decider) -> Result<usize, Refusal> {
     cache_skin_rationals(&mut tube, dec)?;
     if tube.is_convex(dec)? {
@@ -257,7 +276,18 @@ impl Plan {
         for (face, patch) in skin.patches.iter().enumerate() {
             let kept = !selected.contains(&face);
             if kept {
+                let first_face = self.faces.len();
                 let prism = tube_leaf(self, face_tube(&skin, patch, &thickness, step), &bound, dec)?;
+                for candidate in &mut self.faces[first_face..] {
+                    if matches!(candidate.origin.role, Role::Inner { .. })
+                        && let Surface::Plane(plane) = &candidate.surface
+                        && no_source_interior_on_plane(&skin, plane, dec)
+                    {
+                        // Coincident source boundaries keep their source names;
+                        // an Inner name needs a new patch inside the source.
+                        candidate.domain = 1;
+                    }
+                }
                 walls = self.boolean(BooleanKind::Union, walls, prism, dec)?;
             }
             for cycle in &patch.loops {

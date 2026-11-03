@@ -29,7 +29,8 @@ pub(crate) struct Seed {
     pub(crate) error: Rational,
     /// Whether the points run from the edge's start vertex.
     pub(crate) forward: bool,
-    /// A closed rail's exact points. A planar face needs them to triangulate.
+    /// A closed rail's exact points. A planar face needs them to triangulate, so
+    /// a rail with no planar neighbour may leave this empty.
     pub(crate) exact: Vec<[Real; 3]>,
 }
 
@@ -274,10 +275,15 @@ fn saddle_band(
         let Curve::BSpline(rail) = model.geom().curve(definition.curve) else {
             return Err(failure("a saddle rail is not its row"));
         };
-        let mut exact = Vec::with_capacity(grid.columns);
-        for u in &columns {
-            let p = rail.point_at(&Real::from(u.clone()), dec)?;
-            exact.push([p.x, p.y, p.z]);
+        // Each exact point costs a rational evaluation of the rail, and only a
+        // planar neighbour reads them.
+        let mut exact = Vec::new();
+        if meets_plane(model, edge) {
+            exact.reserve(grid.columns);
+            for u in &columns {
+                let p = rail.point_at(&Real::from(u.clone()), dec)?;
+                exact.push([p.x, p.y, p.z]);
+            }
         }
         rings.push(Ring {
             edge,
@@ -287,6 +293,18 @@ fn saddle_band(
         });
     }
     Ok(closed(grid, rings, seeds))
+}
+
+// Whether a planar face uses the edge.
+fn meets_plane(model: &Model, edge: EdgeId) -> bool {
+    model.coedges_of_edge(edge).into_iter().any(|coedge| {
+        model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
+            matches!(
+                model.geom().surface(model.face(face).surface),
+                Surface::Plane(_)
+            )
+        })
+    })
 }
 
 // One closed rail of a band, in its grid row's column order.

@@ -49,7 +49,7 @@ mod loops;
 
 // A fitted band's own bound is far wider than these integrals, so 96 bits leave
 // room. Eight panels split the section angle's enclosure, and sixteen do not, as
-// on a rolling pipe. Each further depth doubles them.
+// on a rolling pipe. Each further depth halves a panel that needs it.
 const BITS: u32 = 96;
 const PANELS: u64 = 16;
 const MAX_DEPTH: u32 = 6;
@@ -223,19 +223,45 @@ fn magnitude(value: &Ball) -> Ball {
     }
 }
 
-fn panels(program: &Program, depth: u32, work: &mut Work) -> Result<Vec<Ball>, Stop> {
-    let count = PANELS.checked_shl(depth).ok_or(Stop::Budget)?;
-    let step = Rational::from_i64(2) / Rational::from_integer(Integer::from_u64(count));
+// One panel of the turn, from `a` to `b` in units of `pi`, at its depth below the
+// first panels.
+struct Panel {
+    a: Rational,
+    b: Rational,
+    depth: u32,
+    values: Option<Vec<Ball>>,
+}
+
+impl Panel {
+    fn halves(self) -> [Self; 2] {
+        let middle = (&self.a + &self.b).mul_pow2(-1);
+        [
+            Self {
+                a: self.a,
+                b: middle.clone(),
+                depth: self.depth + 1,
+                values: None,
+            },
+            Self {
+                a: middle,
+                b: self.b,
+                depth: self.depth + 1,
+                values: None,
+            },
+        ]
+    }
+}
+
+// Each integral over the whole turn, from the panels in order.
+fn sums(panels: &[Panel], work: &mut Work) -> Result<Vec<Ball>, Stop> {
     let mut sums: Option<Vec<Ball>> = None;
-    for i in 0..count {
-        let a = &step * &Rational::from_integer(Integer::from_u64(i));
-        let b = &a + &step;
-        let values = program.turning_panel(&a, &b, work)?;
+    for panel in panels {
+        let values = panel.values.as_ref().ok_or(Stop::Split)?;
         sums = Some(match sums {
-            None => values,
+            None => values.clone(),
             Some(sums) => sums
                 .iter()
-                .zip(&values)
+                .zip(values)
                 .map(|(sum, value)| work.add(sum, value))
                 .collect::<Result<_, _>>()?,
         });
@@ -245,6 +271,75 @@ fn panels(program: &Program, depth: u32, work: &mut Work) -> Result<Vec<Ball>, S
         .iter()
         .map(|sum| work.mul(sum, &pi))
         .collect()
+}
+
+// The integrals over the whole turn. It starts from `PANELS` equal panels and
+// halves only a panel that has no enclosure, or one wider than its share of
+// `target`, until the sums are no wider than `target` or the panels reach
+// `MAX_DEPTH`. A loop's integrand is far harder on a few panels than on the
+// rest, so halving them all would pay for the worst one everywhere.
+fn integrals(program: &Program, target: &Rational, work: &mut Work) -> Result<Vec<Ball>, Stop> {
+    let step = Rational::from_i64(2) / Rational::from_integer(Integer::from_u64(PANELS));
+    let mut panels: Vec<Panel> = (0..PANELS)
+        .map(|i| {
+            let a = &step * &Rational::from_integer(Integer::from_u64(i));
+            Panel {
+                b: &a + &step,
+                a,
+                depth: 0,
+                values: None,
+            }
+        })
+        .collect();
+    // A panel's share, per unit of turn, with `pi < 4` for the closing product.
+    let share = target.mul_pow2(-3);
+    loop {
+        let mut next = Vec::with_capacity(panels.len());
+        let mut halved = false;
+        for mut panel in panels {
+            if panel.values.is_none() {
+                match program.turning_panel(&panel.a, &panel.b, work) {
+                    Ok(values) => panel.values = Some(values),
+                    Err(Stop::Split | Stop::GaugeSplit) if panel.depth < MAX_DEPTH => {
+                        next.extend(panel.halves());
+                        halved = true;
+                        continue;
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            next.push(panel);
+        }
+        panels = next;
+        if halved {
+            continue;
+        }
+        let found = sums(&panels, work)?;
+        if found.iter().all(|value| width(value) <= *target) {
+            return Ok(found);
+        }
+        let wide = |panel: &Panel| {
+            let allowed = &share * &(&panel.b - &panel.a);
+            panel.depth < MAX_DEPTH
+                && panel
+                    .values
+                    .as_ref()
+                    .is_some_and(|values| values.iter().any(|value| width(value) > allowed))
+        };
+        if !panels.iter().any(wide) {
+            return Ok(found);
+        }
+        panels = panels
+            .into_iter()
+            .flat_map(|panel| {
+                if wide(&panel) {
+                    panel.halves().into_iter().collect::<Vec<_>>()
+                } else {
+                    vec![panel]
+                }
+            })
+            .collect();
+    }
 }
 
 /// The band's change, each integral no wider than `target` where the budget
@@ -262,25 +357,10 @@ pub(crate) fn change(
     };
     let policy = *dec.policy();
     let bits = BITS.min(policy.max_precision_bits);
-    let mut remaining = policy.max_work;
-    let mut values = None;
-    for depth in 0..=MAX_DEPTH {
-        let mut work = Work::new(&policy, bits, remaining, dec).map_err(stop)?;
-        let attempt = panels(&program, depth, &mut work);
-        remaining = work.remaining();
-        match attempt {
-            Ok(found) => {
-                let done = found.iter().all(|value| width(value) <= *target);
-                values = Some(found);
-                if done {
-                    break;
-                }
-            }
-            Err(Stop::Split | Stop::GaugeSplit) if depth < MAX_DEPTH => {}
-            Err(other) => return Err(stop(other)),
-        }
-    }
-    let values = values.ok_or_else(|| refused("a saddle's integrand has no enclosure"))?;
+    let values = {
+        let mut work = Work::new(&policy, bits, policy.max_work, dec).map_err(stop)?;
+        integrals(&program, target, &mut work).map_err(stop)?
+    };
     if law.ring == SaddleRing::Overlap {
         return loop_change(saddle, &law, &values, dec);
     }

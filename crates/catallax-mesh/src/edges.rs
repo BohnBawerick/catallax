@@ -369,10 +369,11 @@ fn seeded_ring(
         let point = &seed.points[i];
         let position = chart::position(point)?;
         error = error.max(&seed.error + &chart::residual(&position, point));
-        result.exact_positions.insert(
-            result.mesh.positions.len(),
-            Position::Exact(seed.exact[i].clone()),
-        );
+        if let Some(exact) = seed.exact.get(i) {
+            result
+                .exact_positions
+                .insert(result.mesh.positions.len(), Position::Exact(exact.clone()));
+        }
         result.mesh.positions.push(position);
     }
     let mut vertices = Vec::with_capacity(count + 1);

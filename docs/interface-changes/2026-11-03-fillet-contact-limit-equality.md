@@ -1,0 +1,11 @@
+## 2026-11-03: report a failed fillet at its strict contact limit
+
+Pieces: features, application, verification
+
+Change: when a strip construction refuses and a proved strict regular-contact condition first fails at the requested radius, the B-rep now returns `fillet.radius-too-large` with that limit. Previously only radii above the limit received that code. The equality detail says that the ball reaches the edge's regular contact limit; it does not claim that all ball centres disappear. The code, limit suffix, rounding and `radius_limit` / `Error::fillet_radius_limit` interfaces are unchanged.
+
+Why: for a radius-4 cylinder with its axis 8 mm from a radius-10 cylinder, rounding their subtraction loop with radius 1 makes the signed offset radii 3 and 11. Their shadows touch exactly. The failed construction now reports limit 1 instead of a generic unfinished-contact refusal. This is a boundary-refusal correction, not support for singular fillet geometry. It corrects the strict-above behavior recorded in [the initial radius-limit change](2026-11-03-fillet-radius-too-large.md). Singular centres and roll-over can still define geometry that requires further construction work.
+
+Migration: B-rep callers that matched `fillet.unsupported-contact` at exact strict contact limits now receive `fillet.radius-too-large`. This also covers a cylinder offset collapsing at its own radius, a parallel plane/cylinder offset tangency, parallel-cylinder offset tangency and through-ring offset-shadow tangency. Failed face-width proofs retain their existing strict-outside behavior. Successful constructions are untouched because the proof runs only after a construction refusal. Cases singular at radius zero, including equal-radius cylinders on crossing axes, retain `fillet.unsupported-contact` and no radius limit. No new face, spline fit, certificate, mesh or STEP output is introduced.
+
+SolidDraft must update its Catallax dependency and retain its existing `fillet.radius-too-large` and `fillet_radius_limit` handling, advising a radius below the reported limit. No application code or feature flag is needed. Do not enable tangent-shadow or equal-radius crossing-axis geometry on the strength of this change.

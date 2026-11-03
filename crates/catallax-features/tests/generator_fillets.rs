@@ -451,7 +451,7 @@ fn unsupported_cases_stay_typed_refusals() {
     // miss, and a radius that passes a wall's axis has no contact either.
     assert_eq!(
         refusal(&rounded(pair("intersect"), "2", json!([walls()]))),
-        "fillet.unsupported-contact"
+        "fillet.radius-too-large"
     );
     for radius in ["3", "6"] {
         assert_eq!(
@@ -683,7 +683,7 @@ fn flat_refusals_stay_typed() {
     // The offset line and circle touch at r = 4, and miss beyond it.
     assert_eq!(
         refusal(&rounded(d_shaft(), "4", json!([flat()]))),
-        "fillet.unsupported-contact"
+        "fillet.radius-too-large"
     );
     for radius in ["5", "6"] {
         assert_eq!(

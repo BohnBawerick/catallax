@@ -41,6 +41,17 @@ pub struct FilletDefinition {
 /// with one face lies wholly outside it. Other refusals make no such claim.
 pub const RADIUS_TOO_LARGE: &str = "fillet.radius-too-large";
 
+/// The refusal code for a strip end the builder does not trim yet: an arc
+/// strip on an end plane off its axis or on a curved end face, an end face
+/// the rails do not cross, or a vertex of more than three faces.
+pub const UNSUPPORTED_END: &str = "fillet.unsupported-end";
+
+/// The refusal code for a junction of selected strips the builder does not
+/// close yet: convex and concave strips at one vertex, curved strips meeting
+/// at a sharp vertex, three strips without an exact spherical corner, and
+/// the like.
+pub const UNSUPPORTED_CORNER: &str = "fillet.unsupported-corner";
+
 // Marks the bound in a radius refusal's detail.
 const LIMIT_PREFIX: &str = "; radius limit ";
 const LIMIT_SUFFIX: &str = " mm";
@@ -337,6 +348,41 @@ impl FilletDefinition {
             && sign(&(&y - &(&dot * &x)), dec)? != Sign::Negative)
     }
 
+    /// The points where the edge and both contact rails of a straight strip
+    /// between planes cross two cutting planes, each given by a point and a
+    /// normal, the first three on the first. Each cross-section of the blend
+    /// region lies in the triangle of its edge point and contacts, whose
+    /// support lines are the ball's tangents there, so the region between the
+    /// cuts lies in the convex hull of these points. `None` for other strips
+    /// and for a cut parallel to the edge.
+    pub fn cut_hull(
+        &self,
+        cuts: [(&Point3, &Vector3); 2],
+        dec: &mut Decider,
+    ) -> Result<Option<[Point3; 6]>, Refusal> {
+        let (
+            [Surface::Plane(_), Surface::Plane(_)],
+            Curve::Line(edge),
+            [Curve::Line(a), Curve::Line(b)],
+        ) = (&self.supports, &self.edge, &self.contacts)
+        else {
+            return Ok(None);
+        };
+        let mut points = Vec::with_capacity(6);
+        for (origin, normal) in cuts {
+            let divisor = edge.dir.dot(normal);
+            if sign(&divisor, dec)? == Sign::Zero {
+                return Ok(None);
+            }
+            // The rails are parallel to the edge.
+            for line in [edge, a, b] {
+                let along = &origin.minus(&line.origin).dot(normal) / &divisor;
+                points.push(line.origin.plus(&edge.dir.scaled(&along)));
+            }
+        }
+        Ok(points.try_into().ok())
+    }
+
     /// Whether this strip and another consume overlapping bands of one shared
     /// support, given each strip's support index for it. Rails that pass each
     /// other can leave both feet in the open face. Plane-plane pairs are left
@@ -580,10 +626,22 @@ fn plane_cylinder(
             ref_dir: edge.ref_dir.clone(),
         })
     };
+    // Either axis direction gives the same torus. A written torus turns its
+    // tube angle from the outer equator toward its axis, and a strip whose
+    // wall contact lies on that equator, with the ball inside the wall, is
+    // charted only on the axis side of it: point the axis from the ball
+    // centre to the plane contact there.
+    let axis = if sign(&shift, dec)? == Sign::Positive
+        && sign(&cylinder.axis.dot(&n.scaled(k)), dec)? == Sign::Negative
+    {
+        cylinder.axis.scaled(&Real::from_i64(-1))
+    } else {
+        cylinder.axis.clone()
+    };
     let surface = if ring {
         Surface::Torus(Torus {
             center: centre.clone(),
-            axis: cylinder.axis.clone(),
+            axis,
             major: major.clone(),
             minor: radius.clone(),
             ref_dir: edge.ref_dir.clone(),
@@ -591,7 +649,7 @@ fn plane_cylinder(
     } else {
         Surface::TorusSheet(TorusSheet {
             center: centre.clone(),
-            axis: cylinder.axis.clone(),
+            axis,
             major: major.clone(),
             minor: radius.clone(),
             ref_dir: edge.ref_dir.clone(),
@@ -655,6 +713,88 @@ fn bounds(
         _ => return Ok(None),
     };
     Ok(Some((&centre - &extent, &centre + &extent)))
+}
+
+/// Proves a surface clear of the convex hull of points: a plane with every
+/// point strictly on one side, or a surface whose bounds miss the points' box
+/// along one axis. `false` leaves the question open.
+pub fn hull_clear(
+    points: &[Point3],
+    surface: &Surface,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    if let Surface::Plane(plane) = surface {
+        let mut sides = Vec::with_capacity(points.len());
+        for p in points {
+            sides.push(sign(&p.minus(&plane.origin).dot(&plane.normal), dec)?);
+        }
+        return Ok(sides.iter().all(|s| *s == Sign::Positive)
+            || sides.iter().all(|s| *s == Sign::Negative));
+    }
+    let Some(first) = points.first() else {
+        return Ok(true);
+    };
+    for axis in 0..3 {
+        let Some((low, high)) = bounds(surface, axis, dec)? else {
+            continue;
+        };
+        let coordinate = |p: &Point3| [&p.x, &p.y, &p.z][axis].clone();
+        let mut least = coordinate(first);
+        let mut most = least.clone();
+        for p in &points[1..] {
+            let value = coordinate(p);
+            if sign(&(&value - &least), dec)? == Sign::Negative {
+                least = value.clone();
+            }
+            if sign(&(&value - &most), dec)? == Sign::Positive {
+                most = value;
+            }
+        }
+        if sign(&(&low - &most), dec)? == Sign::Positive
+            || sign(&(&least - &high), dec)? == Sign::Positive
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Proves two [`FilletDefinition::cut_hull`] point sets apart by a plane
+/// through a face of either hull: its own points on one side, the other's
+/// strictly on the other side.
+pub(crate) fn hulls_apart(
+    first: &[Point3; 6],
+    second: &[Point3; 6],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    // Both cuts, both supports and the chord plane through the two rails.
+    const FACES: [[usize; 3]; 5] = [[0, 1, 2], [3, 4, 5], [0, 1, 3], [0, 2, 3], [1, 2, 4]];
+    for (own, other) in [(first, second), (second, first)] {
+        'faces: for [i, j, k] in FACES {
+            let normal = own[j].minus(&own[i]).cross(&own[k].minus(&own[i]));
+            let mut side = Sign::Zero;
+            for p in own {
+                match (sign(&p.minus(&own[i]).dot(&normal), dec)?, side) {
+                    (Sign::Zero, _) => {}
+                    (s, Sign::Zero) => side = s,
+                    (s, side) if s != side => continue 'faces,
+                    _ => {}
+                }
+            }
+            if side == Sign::Zero {
+                continue;
+            }
+            let mut beyond = true;
+            for p in other {
+                let s = sign(&p.minus(&own[i]).dot(&normal), dec)?;
+                beyond &= s != Sign::Zero && s != side;
+            }
+            if beyond {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 pub(crate) fn separated(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<bool, Refusal> {

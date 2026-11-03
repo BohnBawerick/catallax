@@ -606,5 +606,6 @@ fn a_partial_ellipse_stays_a_typed_refusal() {
         .to_string(),
     )
     .unwrap();
-    assert_eq!(refusal(&notched).0, "fillet.unsupported-topology");
+    // The notch cuts the band open, and its ends are not built yet.
+    assert_eq!(refusal(&notched).0, "fillet.unsupported-end");
 }

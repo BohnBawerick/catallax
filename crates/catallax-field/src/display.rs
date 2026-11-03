@@ -23,6 +23,7 @@ mod chart;
 mod diagnostics;
 mod extrude_algebraic;
 pub(crate) mod membership;
+mod oblique_draft;
 pub(crate) mod obstruction;
 mod preview;
 use boolean::{Boolean, Germ, State};
@@ -550,6 +551,9 @@ fn mesh_plan_inner(
             "field.display-options",
             "positive tolerance and cell limit, and at least four vertices required",
         ));
+    }
+    if let Some(mesh) = oblique_draft::mesh(plan, options, dec)? {
+        return Ok(mesh);
     }
     if plan.leaves.iter().any(|leaf| {
         matches!(

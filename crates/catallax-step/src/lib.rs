@@ -126,6 +126,16 @@ pub fn write_step<W: Write>(
     dec: &mut Decider,
     out: &mut W,
 ) -> Answered<StepReport> {
+    if let [body] = bodies
+        && catallax_topology::DraftedCylinder::of_body(model, *body, dec)?.is_some()
+    {
+        let spline_options = CertifiedSplineStepOptions {
+            product_name: options.product_name.clone(),
+            file_tolerance: options.curve_tolerance.clone(),
+            decimal_places: options.significant_digits,
+        };
+        return certified_spline::oblique::write(model, *body, &spline_options, dec, out);
+    }
     let prepared = regularize::prepare(model, bodies, options, dec)?;
     let answer = if let Some(prepared) = prepared {
         export::Exporter::new(&prepared.model, options, dec)

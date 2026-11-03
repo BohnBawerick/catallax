@@ -13,7 +13,7 @@ fn cross(a: &[Ball; 3], b: &[Ball; 3]) -> [Ball; 3] {
         &a[0] * &b[1] - &a[1] * &b[0],
     ]
 }
-fn oriented(
+pub(super) fn oriented(
     positions: &[[f64; 3]],
     triangle: [usize; 3],
     normal: &[Ball; 3],

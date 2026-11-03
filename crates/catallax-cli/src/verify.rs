@@ -11,6 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 json!({"name":"catallax-verify","request":"catallax-request/1",
                 "response":"catallax-response/1","manifest":"catallax-manifest/3",
                 "certified_recipe":"catallax-certified-recipe/1","certified_manifest":"catallax-manifest/4",
+                "exact_ruled_manifest":"catallax-manifest/5",
                 "operation_log":"catallax-operation-log/1","question":"catallax-question/1",
                 "field_print":"catallax-print/1","iges":"catallax-iges/1","stand_in":"catallax-stand-in/1",
                 "sources":["question","recipe","field","print","iges","compare","name-edit"],"default_work":catallax_cli::verification::DEFAULT_WORK,

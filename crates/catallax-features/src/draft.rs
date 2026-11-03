@@ -29,6 +29,9 @@ pub mod cell;
 /// Exact nearest-face distances for plane-capped axial cylinders.
 #[path = "draft_near.rs"]
 pub mod near;
+/// Exact finite cylindrical draft about an oblique neutral plane.
+#[path = "draft_oblique.rs"]
+pub mod oblique;
 /// Exact axial cells bounded by drafted cylindrical supports.
 #[path = "draft_round.rs"]
 pub mod round;

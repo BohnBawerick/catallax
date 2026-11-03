@@ -15,6 +15,9 @@ use catallax_topology::{BodyId, Model, Sense, SplinePrism};
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
 use crate::{StepFaceRegion, StepReport};
 
+#[path = "oblique_draft.rs"]
+pub(super) mod oblique;
+
 /// Output accuracy, independent of modelling sameness and the body's fitting
 /// bound. This exporter preserves exact rational directions and terminating
 /// parameter knots of the first checked polynomial spline-prism family.
@@ -439,14 +442,14 @@ struct Charts {
     /// Exact U domain of each chart.
     domains: [[Rational; 2]; 2],
 }
-fn open_charts(knots: &[Rational]) -> Result<Charts, Refusal> {
+fn open_charts(knots: &[Rational], degree: usize) -> Result<Charts, Refusal> {
     let cut = Rational::from_i64(2);
     let first = knots
         .iter()
         .position(|knot| *knot == cut)
         .ok_or_else(|| bad("spline side lacks its retained u=2 knot"))?;
     let end = first + knots[first..].iter().take_while(|k| **k == cut).count();
-    if first == 0 || end - first != 3 || end == knots.len() {
+    if first == 0 || end - first != degree || end == knots.len() {
         return Err(bad("u=2 is not an interior Bezier span boundary"));
     }
     let lower = knots.first().unwrap().clone();
@@ -566,7 +569,32 @@ pub fn write_spline_prism_step<W: Write>(
     }
     let view = SplinePrism::check(model, body, dec)?;
     let rounded = round_geometry(&view, options, dec)?;
-    let charts = open_charts(view.spline().carrier().knots()[0])?;
+    let charts = open_charts(view.spline().carrier().knots()[0], 3)?;
+    write_rounded(
+        model,
+        view.faces(),
+        rounded,
+        charts,
+        3,
+        None,
+        options,
+        dec,
+        out,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_rounded<W: Write>(
+    model: &Model,
+    faces: [catallax_topology::FaceId; 3],
+    rounded: Rounded,
+    charts: Charts,
+    degree: usize,
+    weights: Option<&[Real]>,
+    options: &CertifiedSplineStepOptions,
+    dec: &mut Decider,
+    out: &mut W,
+) -> Answered<StepReport> {
     let mut graph = Graph::default();
     let mut controls: Vec<[Id; 2]> = Vec::with_capacity(rounded.controls.len());
     for (index, pair) in rounded.controls.iter().enumerate() {
@@ -579,13 +607,49 @@ pub fn write_spline_prism_step<W: Write>(
     let rows = [&controls[..=charts.cut], &controls[charts.cut..]];
     let mut sides = Vec::with_capacity(2);
     let mut arcs = Vec::with_capacity(2);
-    for (rows, knots) in rows.into_iter().zip(&charts.knots) {
+    for (index, (rows, knots)) in rows.into_iter().zip(&charts.knots).enumerate() {
         let (multiplicities, knots) = knot_fields(knots)?;
+        if let Some(weights) = weights {
+            let weights = if index == 0 {
+                &weights[..=charts.cut]
+            } else {
+                &weights[charts.cut..]
+            };
+            sides.push(oblique::surface(
+                &mut graph,
+                rows,
+                degree,
+                weights,
+                &multiplicities,
+                &knots,
+            )?);
+            arcs.push([
+                oblique::curve(
+                    &mut graph,
+                    rows,
+                    0,
+                    degree,
+                    weights,
+                    &multiplicities,
+                    &knots,
+                )?,
+                oblique::curve(
+                    &mut graph,
+                    rows,
+                    1,
+                    degree,
+                    weights,
+                    &multiplicities,
+                    &knots,
+                )?,
+            ]);
+            continue;
+        }
         sides.push(graph.add(
             "B_SPLINE_SURFACE_WITH_KNOTS",
             vec![
                 text("''"),
-                text("3"),
+                text(degree.to_string()),
                 text("1"),
                 Field::List(rows.iter().map(|pair| refs(*pair)).collect()),
                 text(".UNSPECIFIED."),
@@ -604,7 +668,7 @@ pub fn write_spline_prism_step<W: Write>(
                 "B_SPLINE_CURVE_WITH_KNOTS",
                 vec![
                     text("''"),
-                    text("3"),
+                    text(degree.to_string()),
                     refs(rows.iter().map(|pair| pair[row])),
                     text(".UNSPECIFIED."),
                     boolean(false),
@@ -618,7 +682,6 @@ pub fn write_spline_prism_step<W: Write>(
     }
     let reference = direction(&mut graph, &rounded.reference)?;
     let axis = direction(&mut graph, &rounded.axis)?;
-    let faces = view.faces();
     let mut plane = |index| -> Result<_, Refusal> {
         let center = &rounded.centers[index];
         let origin = point(&mut graph, center)?;
@@ -721,7 +784,7 @@ pub fn write_spline_prism_step<W: Write>(
     }
     let side = faces[2];
     let same = model.face(side).sense == Sense::Same;
-    for (index, domain) in charts.domains.into_iter().enumerate() {
+    for (index, domain) in charts.domains.iter().cloned().enumerate() {
         let uses = [
             (rings[index][0], true),
             (joins[1 - index], true),

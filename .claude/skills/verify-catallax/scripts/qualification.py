@@ -278,7 +278,7 @@ def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work
         require(response == case['response'] and response['manifest'] == manifest and
                 response['operation_log'] == log, 'response/manifest/log disagreement')
         require(response['format'] == 'catallax-response/1' and
-                manifest['format'] in ('catallax-manifest/3', 'catallax-manifest/4') and
+                manifest['format'] in ('catallax-manifest/3', 'catallax-manifest/4', 'catallax-manifest/5') and
                 type(manifest['exact']) is bool and isinstance(manifest['marks'], list) and
                 manifest['status'] in ('answered', 'refused') and
                 log['format'] == 'catallax-operation-log/1' and log['status'] == manifest['status'], 'invalid outcome')

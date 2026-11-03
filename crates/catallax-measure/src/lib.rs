@@ -503,6 +503,29 @@ pub fn volume(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<Enclosure> {
+    if let Some(cell) = catallax_topology::DraftedCylinder::of_body(model, body, dec)? {
+        accuracy.validate();
+        let factor = cell.support().volume_over_pi();
+        let maximum = dec.policy().max_precision_bits;
+        if maximum == 0 {
+            return Err(Refusal::new(
+                "numbers.precision-limit",
+                "no volume enclosure precision available",
+            ));
+        }
+        let mut bits = maximum.min(64);
+        loop {
+            dec.check_deadline()?;
+            let value =
+                Enclosure::from_ball(&(Ball::pi(bits) * dec.enclose_budgeted_at(&factor, bits)?));
+            if accuracy.reached(&value) || bits == maximum {
+                let mut marks = MarkLog::default();
+                accuracy.mark(&mut marks, &[&value], "volume");
+                return Ok(Answer::with_marks(value, marks));
+            }
+            bits = bits.saturating_mul(2).min(maximum);
+        }
+    }
     scalar(
         model,
         body,

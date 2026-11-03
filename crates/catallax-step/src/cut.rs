@@ -36,6 +36,7 @@ struct Split {
 }
 pub(crate) struct SplitPlan {
     splits: Vec<Split>,
+    retained: BTreeMap<(EdgeId, PointId), VertexId>,
 }
 
 pub(crate) struct SplitEdges {
@@ -123,6 +124,7 @@ impl Cuts {
         dec: &mut Decider,
     ) -> Result<SplitPlan, Refusal> {
         let mut splits = Vec::with_capacity(self.points.len());
+        let mut retained = BTreeMap::new();
         for (&source, points) in &self.points {
             let edge = model.edge(source);
             let reversed = edge.sense == Sense::Reversed;
@@ -134,6 +136,24 @@ impl Cuts {
             let closed = geometry.closed(edge.curve, dec)?;
             let anchor = from.map(|v| model.vertex(v).point).unwrap_or(points[0]);
             let mut points = points.clone();
+            // A meridian through an existing endpoint must not split it into a
+            // new coincident vertex or a zero-length edge. Identity, not a
+            // tolerance-based weld, establishes this reuse.
+            points.retain(|point| {
+                if let Some(vertex) = [from, to]
+                    .into_iter()
+                    .flatten()
+                    .find(|vertex| model.vertex(*vertex).point == *point)
+                {
+                    retained.insert((source, *point), vertex);
+                    false
+                } else {
+                    true
+                }
+            });
+            if points.is_empty() {
+                continue;
+            }
             trim::try_sort(&mut points, |a, b| {
                 if a == b {
                     return Ok(Ordering::Equal);
@@ -209,7 +229,7 @@ impl Cuts {
                 segments,
             });
         }
-        Ok(SplitPlan { splits })
+        Ok(SplitPlan { splits, retained })
     }
 }
 
@@ -219,7 +239,7 @@ impl SplitPlan {
     pub fn apply(self, model: &mut Model) -> SplitEdges {
         let mut result = SplitEdges {
             replacements: BTreeMap::new(),
-            vertices: BTreeMap::new(),
+            vertices: self.retained,
             added_edges: 0,
             added_vertices: 0,
         };

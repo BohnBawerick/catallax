@@ -28,11 +28,13 @@ pub struct ParameterTable {
     pub knots: Vec<Rational>,
     /// Angle and its derivative at each knot, in radians.
     pub angle: Vec<[Rational; 2]>,
-    /// Rail height above the mouth plane and its derivative at each knot,
-    /// exactly the represented rail. Empty on every other row.
+    /// Rail height and its derivative at each knot. Empty on every other row.
     pub height: Vec<[Rational; 2]>,
     /// Upper bound on the angle's distance from its table, in radians.
     pub bound: Rational,
+    /// Upper bound on the height's distance from its table, in millimetres.
+    /// Zero when the represented height is the table's own cubic.
+    pub height_bound: Rational,
 }
 
 impl RollingEnvelope {
@@ -156,6 +158,7 @@ impl RollingEnvelope {
                     angle: Vec::new(),
                     height: Vec::new(),
                     bound: worst,
+                    height_bound: Rational::zero(),
                 };
                 for (index, span) in spans.iter().enumerate() {
                     let h = (&span[1] - &span[0]) / q(pieces);

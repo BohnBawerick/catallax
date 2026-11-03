@@ -99,7 +99,7 @@ impl RailChart {
                     }
                 })
                 .collect(),
-            error: &self.table.bound + &(rounding + miss),
+            error: &(&self.table.bound + &self.table.height_bound) + &(rounding + miss),
         }
     }
 }
@@ -256,6 +256,12 @@ impl Exporter<'_> {
         saddle: &RollingSaddle,
         topology: &mut Topology,
     ) -> Result<(Id, Bounds, bool), Refusal> {
+        if matches!(
+            saddle.definition().law().ring,
+            catallax_shapes::SaddleRing::Crossing { .. }
+        ) {
+            return self.crossing_loop(id, saddle, topology);
+        }
         if self.chart_state.is_none() {
             return Err(Refusal::new(
                 "step.unsupported-geometry",
@@ -320,6 +326,50 @@ impl Exporter<'_> {
             self.sign_of(&along.cross(&across).dot(&centre[0].minus(&controls[0])))?;
         // Added material lies away from the ball, so its outward side faces it.
         let added = saddle_added(self.model, id)?;
+        Ok((
+            self.graph.add("EDGE_LOOP", vec![text("''"), refs(uses)]),
+            bounds,
+            toward_ball == added,
+        ))
+    }
+
+    fn crossing_loop(
+        &mut self,
+        id: FaceId,
+        saddle: &RollingSaddle,
+        topology: &mut Topology,
+    ) -> Result<(Id, Bounds, bool), Refusal> {
+        let [(wide, _), (narrow, _)] = saddle_rows(self.model, id).ok_or_else(unsupported)?;
+        let rails = [self.edge(wide, topology)?, self.edge(narrow, topology)?];
+        let surface = self.model.face(id).surface;
+        let written = self.written_envelope(surface)?;
+        let mut bounds = None;
+        for point in &written.xyz {
+            include_bounds(&mut bounds, &point_bounds(point));
+        }
+        let bounds = bounds.ok_or_else(unsupported)?;
+        let forward = |edge| self.model.edge(edge).sense == Sense::Same;
+        let oriented = [
+            (rails[0].id, forward(wide)),
+            (rails[1].id, !forward(narrow)),
+        ];
+        let uses: Vec<_> = oriented
+            .into_iter()
+            .map(|(edge, same)| self.oriented(edge, same))
+            .collect();
+        // At a pole the transverse derivative vanishes. Read orientation at
+        // the regular middle section instead, where its circle is nonzero.
+        let u = Real::one();
+        let along = saddle.rails()[0].first_at(&u, self.dec)?;
+        let [centre, first, last] = saddle.definition().section(&Rational::one())?;
+        let a = first.minus(&centre);
+        let b = last.minus(&centre);
+        let transverse = b
+            .scaled(&saddle.definition().radius().square())
+            .minus(&a.scaled(&a.dot(&b)));
+        let toward_ball = self.sign_of(&along.cross(&transverse).dot(&centre.minus(&first)))?;
+        let added = saddle_added(self.model, id)?;
+        self.deviation(self.surface_error(surface, &bounds));
         Ok((
             self.graph.add("EDGE_LOOP", vec![text("''"), refs(uses)]),
             bounds,

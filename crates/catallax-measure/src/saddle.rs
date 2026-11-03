@@ -278,11 +278,16 @@ fn sums(panels: &[Panel], work: &mut Work) -> Result<Vec<Ball>, Stop> {
 // `target`, until the sums are no wider than `target` or the panels reach
 // `MAX_DEPTH`. A loop's integrand is far harder on a few panels than on the
 // rest, so halving them all would pay for the worst one everywhere.
-fn integrals(program: &Program, target: &Rational, work: &mut Work) -> Result<Vec<Ball>, Stop> {
-    let step = Rational::from_i64(2) / Rational::from_integer(Integer::from_u64(PANELS));
+fn integrals(
+    program: &Program,
+    target: &Rational,
+    range: [Rational; 2],
+    work: &mut Work,
+) -> Result<Vec<Ball>, Stop> {
+    let step = (&range[1] - &range[0]) / Rational::from_integer(Integer::from_u64(PANELS));
     let mut panels: Vec<Panel> = (0..PANELS)
         .map(|i| {
-            let a = &step * &Rational::from_integer(Integer::from_u64(i));
+            let a = &range[0] + &(&step * &Rational::from_integer(Integer::from_u64(i)));
             Panel {
                 b: &a + &step,
                 a,
@@ -353,15 +358,23 @@ pub(crate) fn change(
     let law = saddle.definition().law();
     let program = match law.ring {
         SaddleRing::Through => forms(&law, moments),
-        SaddleRing::Overlap => loops::forms(&law, moments),
+        SaddleRing::Overlap | SaddleRing::Crossing { .. } => loops::forms(&law, moments),
+    };
+    let range = if matches!(law.ring, SaddleRing::Crossing { .. }) {
+        [
+            Rational::from_ratio(-1, 2).expect("nonzero"),
+            Rational::from_ratio(1, 2).expect("nonzero"),
+        ]
+    } else {
+        [Rational::zero(), Rational::from_i64(2)]
     };
     let policy = *dec.policy();
     let bits = BITS.min(policy.max_precision_bits);
     let values = {
         let mut work = Work::new(&policy, bits, policy.max_work, dec).map_err(stop)?;
-        integrals(&program, target, &mut work).map_err(stop)?
+        integrals(&program, target, range, &mut work).map_err(stop)?
     };
-    if law.ring == SaddleRing::Overlap {
+    if !matches!(law.ring, SaddleRing::Through) {
         return loop_change(saddle, &law, &values, dec);
     }
     let [

@@ -1452,6 +1452,11 @@ fn build_strips(
     if selected.is_empty() {
         return Ok((body, Vec::new()));
     }
+    if let Some(result) =
+        fillet_equal_crossing::build(model, body, &selected, &uses, radius, step, dec)?
+    {
+        return Ok(result);
+    }
     let selected = if roll_over {
         continue_tangent(model, &uses, selected, dec)?
     } else {

@@ -52,8 +52,8 @@ pub const UNSUPPORTED_END: &str = "fillet.unsupported-end";
 
 /// The refusal code for a junction of selected strips the builder does not
 /// close yet: convex and concave strips at one vertex, curved strips meeting
-/// at a sharp vertex, three strips without an exact spherical corner, or the
-/// collapsed poles of equal-radius cylinders on crossing axes.
+/// at a sharp vertex, three strips without an exact spherical corner, or
+/// incomplete, clipped or otherwise unproved equal-cylinder pole fans.
 pub const UNSUPPORTED_CORNER: &str = "fillet.unsupported-corner";
 
 // Marks the bound in a radius refusal's detail.
@@ -248,9 +248,10 @@ impl FilletDefinition {
             contacts,
         })
     }
-    /// The strip on the ring where two nonparallel cylinders cross, the ring
-    /// through `witness`. The narrow cylinder must pass cleanly through the wide
-    /// one. Contacts are spline rails in the carrier's chart direction.
+    /// The strip through `witness` on a cylinder contact: a regular closed
+    /// intersection ring, or a pole-to-pole ellipse arc of equal cylinders
+    /// whose offsets remain inside the centre ellipse's regular tube.
+    /// Contacts are spline rails in the carrier's chart direction.
     #[allow(clippy::too_many_arguments)]
     pub fn ring(
         origin: Origin,
@@ -268,11 +269,15 @@ impl FilletDefinition {
                 "fillet radius must be positive",
             ));
         }
-        let (Surface::Cylinder(first), Surface::Cylinder(second), Curve::Intersection(_)) =
-            (&supports[0], &supports[1], &edge)
+        let (Surface::Cylinder(first), Surface::Cylinder(second)) = (&supports[0], &supports[1])
         else {
-            return Err(bad("a ring strip needs an intersection of two cylinders"));
+            return Err(bad("a cylinder strip needs two cylinders"));
         };
+        if !matches!(edge, Curve::Intersection(_) | Curve::Ellipse(_)) {
+            return Err(bad(
+                "a cylinder strip needs an intersection or elliptic arc",
+            ));
+        }
         let (surface, contacts) = saddle(
             first,
             second,
@@ -283,6 +288,16 @@ impl FilletDefinition {
             &origin.step,
             dec,
         )?;
+        if let Curve::Ellipse(ellipse) = &edge {
+            let Surface::BSpline(SplineSupport::RollingSaddle(band)) = &surface else {
+                return Err(bad("an elliptic cylinder strip has no rolling band"));
+            };
+            if !band.is_edge(ellipse, dec)? {
+                return Err(bad(
+                    "the input ellipse is not this crossing band's source edge",
+                ));
+            }
+        }
         Ok(Self {
             origin,
             supports,
@@ -654,9 +669,15 @@ fn saddle(
     )
     .map_err(unsupported)?;
     contact_span.finish(dec, None, None);
-    let fitting_span = OperationSpan::begin("brep", step, "fillet.fitting", dec);
+    let fitting_span = (!matches!(
+        definition.law().ring,
+        catallax_shapes::SaddleRing::Crossing { .. }
+    ))
+    .then(|| OperationSpan::begin("brep", step, "fillet.fitting", dec));
     let saddle = RollingSaddle::fit(definition, dec).map_err(unsupported)?;
-    fitting_span.finish(dec, None, None);
+    if let Some(fitting_span) = fitting_span {
+        fitting_span.finish(dec, None, None);
+    }
     let [rail_wide, rail_narrow] = saddle.rails().map(Curve::BSpline);
     let rails = if first_wide {
         [rail_wide, rail_narrow]

@@ -413,9 +413,13 @@ impl Plan {
                         convex,
                         dec,
                     )?;
-                    // The field has no outer-sheet section; keep the refusal
-                    // the elementary reduction gave before that sheet existed.
-                    if matches!(definition.surface, Surface::TorusSheet(_)) {
+                    // The field has no outer-sheet or sphere-strip section;
+                    // keep the refusal the elementary reduction gave before
+                    // those carriers existed.
+                    if matches!(
+                        definition.surface,
+                        Surface::TorusSheet(_) | Surface::Sphere(_)
+                    ) {
                         return Err(Refusal::new(
                             "fillet.unsupported-contact",
                             "this contact requires a horn or spindle torus and its sheet continuation",

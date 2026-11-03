@@ -158,8 +158,12 @@ fn meridian_with(
     let across = axis.cross(&reference);
     let boundaries = geometry.boundaries(model, face, dec)?;
     let attempts = boundaries.len().saturating_add(1).saturating_mul(128);
+    // The rotations `t` of the first rays all lean away from the reference
+    // ray. Their reciprocals `1 / t` lean toward it, and are tried only after
+    // them, so a face found by the first rays keeps its chart cut.
+    let leaning = attempts.saturating_add(4);
     let mut fallback = None;
-    for attempt in 0..attempts.saturating_add(4) {
+    for attempt in 0..leaning.saturating_add(attempts) {
         if attempt == 4
             && let Some(meridian) = fallback.take()
         {
@@ -174,6 +178,15 @@ fn meridian_with(
             1 => reference.scaled(&(-Real::one())),
             2 => across.clone(),
             3 => across.scaled(&(-Real::one())),
+            _ if attempt >= leaning => {
+                // `(1 - t^2, 2 t)` at `t = 1 / m`, scaled by `m^2`.
+                let serial = attempt - leaning;
+                let m = (serial / 2 + 2) as i64;
+                let turn = Real::from_i64(if serial % 2 == 0 { 2 * m } else { -2 * m });
+                reference
+                    .scaled(&Real::from_i64(m * m - 1))
+                    .plus(&across.scaled(&turn))
+            }
             _ => {
                 let serial = attempt - 1;
                 let magnitude = serial.div_ceil(2) as i64;

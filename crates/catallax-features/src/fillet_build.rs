@@ -23,6 +23,8 @@ use crate::{
 
 #[path = "fillet_envelope.rs"]
 mod fillet_envelope;
+#[path = "fillet_equal_crossing.rs"]
+mod fillet_equal_crossing;
 #[path = "fillet_limit.rs"]
 mod fillet_limit;
 #[path = "fillet_tangent.rs"]
@@ -1156,6 +1158,9 @@ fn build_strips(
             )
         }
         .map_err(|refusal| {
+            let refusal = fillet_equal_crossing::corner_refusal(
+                model, edge, faces, radius, convex, refusal, dec,
+            );
             fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec)
         })?;
         strips.push((edge, faces, definition.clone()));

@@ -135,10 +135,10 @@ fn no_auxiliary_face_names(plan: &Plan) {
                     .faces()
                     .iter()
                     .find_map(|source| {
-                        if &source.origin == of.as_ref() {
-                            if let Surface::Plane(plane) = &source.surface {
-                                return Some(plane);
-                            }
+                        if &source.origin == of.as_ref()
+                            && let Surface::Plane(plane) = &source.surface
+                        {
+                            return Some(plane);
                         }
                         None
                     })

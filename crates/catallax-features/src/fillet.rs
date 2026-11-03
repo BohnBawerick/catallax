@@ -103,7 +103,7 @@ fn bad(detail: &str) -> Refusal {
     Refusal::new("fillet.unsupported-contact", detail)
 }
 /// The square root, exact for a rational square.
-pub(crate) fn root(value: &Real) -> Real {
+fn root(value: &Real) -> Real {
     value
         .as_rational()
         .and_then(|r| crate::extrude::sqrt(&r))

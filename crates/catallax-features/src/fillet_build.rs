@@ -406,7 +406,7 @@ fn wall_foot(
     Ok(model.geom().position(foot))
 }
 fn unit(v: &Vector3) -> Vector3 {
-    v.scaled(&(&Real::one() / &crate::fillet::root(&v.norm_squared())))
+    v.scaled(&(&Real::one() / &v.norm_squared().sqrt()))
 }
 /// The ball centre of a strip in the normal plane of its edge through `at`.
 fn spine(definition: &FilletDefinition, at: &Point3) -> Result<Point3, Refusal> {

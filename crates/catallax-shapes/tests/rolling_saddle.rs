@@ -991,6 +991,40 @@ fn an_overlap_carrier_stays_within_its_bound_of_the_rolling_ball() {
     }
 }
 
+// A loop's spans follow its bound, so the hard stretch is far finer than the rest
+// and the spans come to fewer than a uniform fit needs.
+#[test]
+fn a_loops_spans_gather_where_the_ball_bends_hardest() {
+    let fitted = overlap(2);
+    assert!(fitted.span_count() < 300, "{}", fitted.span_count());
+    let [widest, narrowest] = fitted.span_widths();
+    assert!(narrowest.mul_pow2(2) <= widest, "{widest:?} {narrowest:?}");
+    assert!(fitted.bound().upper <= q("1/10000"));
+}
+
+#[test]
+fn a_loop_near_tangent_shadows_fits_or_refuses() {
+    use BallSide::Outside;
+    let wide = cylinder(["0", "0", "0"], ["0", "0", "1"], "10");
+    let fit = |x: &str| {
+        let narrow = cylinder([x, "0", "0"], ["0", "1", "0"], "4");
+        let mut dec = decider();
+        let definition = RollingSaddleDefinition::overlapping(
+            &wide,
+            &narrow,
+            &real("1"),
+            [Outside, Outside],
+            &mut dec,
+        )
+        .unwrap();
+        RollingSaddle::fit(definition, &mut dec)
+    };
+    // The cylinders' own shadows nearly part, and the offsets' do not.
+    assert!(fit("139/10").unwrap().bound().upper <= q("1/10000"));
+    // Both pairs of shadows nearly hold one another.
+    assert_eq!(fit("601/100").unwrap_err().code, "shapes.rolling-saddle");
+}
+
 #[test]
 fn an_overlap_refuses_a_ring_that_passes_through() {
     use BallSide::Outside;
@@ -1054,28 +1088,44 @@ fn a_loops_display_grid_and_range_hold_the_carrier() {
             let p = &grid.points[column * grid.rows + row];
             std::array::from_fn(|i| p[i].mid().to_f64_nearest())
         };
+        // Columns are not even in `u` here, so each carrier point looks for the
+        // nearest point on the four cells round its nearest grid point.
         for i in 0..200 {
-            let (x, y) = (0.137 + 0.618 * f64::from(i), 0.291 + 0.414 * f64::from(i));
-            let (column, row) = (
-                (x % (grid.columns - 1) as f64),
-                (y % (grid.rows - 1) as f64),
-            );
-            let (c, r) = (column.floor() as usize, row.floor() as usize);
-            let (s, t) = (column - c as f64, row - r as f64);
-            let u = -1.0 + 4.0 * column / (grid.columns - 1) as f64;
-            let v = row / (grid.rows - 1) as f64;
+            let u = -1.0 + 4.0 * (0.137 + 0.618 * f64::from(i)).fract();
+            let v = (0.291 + 0.414 * f64::from(i)).fract();
             let on = sample(fitted.carrier(), u, v, &dec);
-            let near = add(
-                add([0.0; 3], at(c, r), (1.0 - s) * (1.0 - t)),
-                at(c + 1, r),
-                s * (1.0 - t),
-            );
-            let near = add(
-                add(near, at(c, r + 1), (1.0 - s) * t),
-                at(c + 1, r + 1),
-                s * t,
-            );
-            assert!(norm(sub(on, near)) <= reach, "{u} {v}");
+            let mut nearest = (f64::INFINITY, 0, 0);
+            for c in 0..grid.columns {
+                for r in 0..grid.rows {
+                    let d = norm(sub(on, at(c, r)));
+                    if d < nearest.0 {
+                        nearest = (d, c, r);
+                    }
+                }
+            }
+            let (_, c, r) = nearest;
+            let mut best = f64::INFINITY;
+            for cell in [c.saturating_sub(1), c.min(grid.columns - 2)] {
+                for row in [r.saturating_sub(1), r.min(grid.rows - 2)] {
+                    for a in 0..=16 {
+                        for e in 0..=16 {
+                            let (s, t) = (f64::from(a) / 16.0, f64::from(e) / 16.0);
+                            let near = add(
+                                add([0.0; 3], at(cell, row), (1.0 - s) * (1.0 - t)),
+                                at(cell + 1, row),
+                                s * (1.0 - t),
+                            );
+                            let near = add(
+                                add(near, at(cell, row + 1), (1.0 - s) * t),
+                                at(cell + 1, row + 1),
+                                s * t,
+                            );
+                            best = best.min(norm(sub(on, near)));
+                        }
+                    }
+                }
+            }
+            assert!(best <= reach, "{u} {v}: {best} over {reach}");
         }
         for row in 0..grid.rows {
             let first = &grid.points[row];

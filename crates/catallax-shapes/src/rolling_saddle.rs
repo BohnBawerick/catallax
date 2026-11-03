@@ -70,9 +70,9 @@ const HARD_CAP_NM: i64 = 1_000;
 // Spans per half turn: the fit doubles from the first to the last.
 const FIRST_SPANS: usize = 8;
 const LAST_SPANS: usize = 128;
-// A loop's section angle can come far nearer a half turn, where the rows bend
-// hardest, so it may take one more doubling.
-const OVERLAP_LAST_SPANS: usize = 256;
+// Halvings of one of a loop's first spans. A loop's section angle can come far
+// nearer a half turn, where the rows bend hardest, so its spans follow the bound.
+const MAX_SPLITS: u32 = 7;
 const DEGREE: usize = 9;
 const OVERLAP_DEGREE: usize = 12;
 const BITS: u32 = 128;
@@ -803,6 +803,45 @@ struct Node {
     arriving: Rational,
 }
 
+// The fitted rows' data at one chart station. Its weight has no corner, which
+// holds at every node but a through ring's chart ends.
+fn node_at(k: &Constants, chart: i64, s: &Rational, bits: u32) -> Result<Node, Refusal> {
+    let point = Jet::linear(b(s, bits), k.one.clone());
+    let exact = rows(k, chart, &point, None)?;
+    let mut values: [Rational; ROWS] = std::array::from_fn(|_| Rational::zero());
+    let mut slopes = values.clone();
+    let plain = [
+        &exact.height,
+        &exact.lift,
+        &exact.half,
+        &exact.tangent,
+        &exact.axial,
+    ];
+    for (j, jet) in plain.into_iter().enumerate() {
+        let [value, slope] = jet.data();
+        values[j] = snap(&value.mid());
+        slopes[j] = snap(&slope.mid());
+    }
+    if let Some(jet) = &exact.turned {
+        let [value, slope] = jet.data();
+        values[TURNED] = snap(&value.mid());
+        slopes[TURNED] = snap(&slope.mid());
+    }
+    let fitted = Jet::linear(b(&values[HALF], bits), b(&slopes[HALF], bits));
+    let turned = Jet::linear(b(&values[TURNED], bits), b(&slopes[TURNED], bits));
+    let narrow = k.overlap.is_some().then_some(&turned);
+    let weight = rows(k, chart, &point, Some((&fitted, narrow)))?.weight;
+    let [value, slope] = weight.expect("weight requested").data();
+    values[WEIGHT] = snap(&value.mid());
+    slopes[WEIGHT] = snap(&slope.mid());
+    Ok(Node {
+        u: s + &q(2 * chart),
+        arriving: slopes[WEIGHT].clone(),
+        values,
+        slopes,
+    })
+}
+
 fn produce(
     def: &RollingSaddleDefinition,
     spans: usize,
@@ -816,48 +855,15 @@ fn produce(
             dec.check_deadline()?;
             let s =
                 Rational::from_ratio(2 * i as i64 - spans as i64, spans as i64).expect("nonzero");
-            let point = Jet::linear(b(&s, bits), k.one.clone());
-            let exact = rows(&k, chart, &point, None)?;
-            let mut values: [Rational; ROWS] = std::array::from_fn(|_| Rational::zero());
-            let mut slopes = values.clone();
-            let plain = [
-                &exact.height,
-                &exact.lift,
-                &exact.half,
-                &exact.tangent,
-                &exact.axial,
-            ];
-            for (j, jet) in plain.into_iter().enumerate() {
-                let [value, slope] = jet.data();
-                values[j] = snap(&value.mid());
-                slopes[j] = snap(&slope.mid());
-            }
-            if let Some(jet) = &exact.turned {
-                let [value, slope] = jet.data();
-                values[TURNED] = snap(&value.mid());
-                slopes[TURNED] = snap(&slope.mid());
-            }
-            let fitted = Jet::linear(b(&values[HALF], bits), b(&slopes[HALF], bits));
-            let turned = Jet::linear(b(&values[TURNED], bits), b(&slopes[TURNED], bits));
-            let narrow = k.overlap.is_some().then_some(&turned);
-            let weight = rows(&k, chart, &point, Some((&fitted, narrow)))?.weight;
-            let [value, slope] = weight.expect("weight requested").data();
-            values[WEIGHT] = snap(&value.mid());
-            slopes[WEIGHT] = snap(&slope.mid());
-            // A loop's denominators are smooth, so its weight has no corner.
-            let arriving = if i == 0 && chart == 1 && k.overlap.is_none() {
+            let mut node = node_at(&k, chart, &s, bits)?;
+            // A through ring's rail denominator turns round at a chart end.
+            if i == 0 && chart == 1 && k.overlap.is_none() {
+                let fitted = Jet::linear(b(&node.values[HALF], bits), b(&node.slopes[HALF], bits));
                 let end = Jet::linear(k.one.clone(), k.one.clone());
                 let weight = rows(&k, 0, &end, Some((&fitted, None)))?.weight;
-                snap(&weight.expect("weight requested").data()[1].mid())
-            } else {
-                slopes[WEIGHT].clone()
-            };
-            nodes.push(Node {
-                u: &s + &q(2 * chart),
-                values,
-                slopes,
-                arriving,
-            });
+                node.arriving = snap(&weight.expect("weight requested").data()[1].mid());
+            }
+            nodes.push(node);
         }
     }
     let first = nodes[0].clone();
@@ -897,6 +903,15 @@ fn recompute_bound(
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
     let k = Constants::new(def, bits, dec)?;
+    let mut worst = Rational::zero();
+    for pair in nodes.windows(2) {
+        dec.check_deadline()?;
+        worst = worst.max(span_bound(&k, pair, bits)?);
+    }
+    Ok(worst)
+}
+
+fn span_bound(k: &Constants, pair: &[Node], bits: u32) -> Result<Rational, Refusal> {
     let enclosed = |node: &Node, ending: bool| -> RowData {
         std::array::from_fn(|j| {
             let slope = if ending && j == WEIGHT {
@@ -912,7 +927,7 @@ fn recompute_bound(
         let fitted = Jet::linear(data[HALF][0].clone(), data[HALF][1].clone());
         let turned = Jet::linear(data[TURNED][0].clone(), data[TURNED][1].clone());
         let narrow = k.overlap.is_some().then_some(&turned);
-        let exact = rows(&k, chart, &point, Some((&fitted, narrow)))?;
+        let exact = rows(k, chart, &point, Some((&fitted, narrow)))?;
         let zero = [b(&Rational::zero(), bits), b(&Rational::zero(), bits)];
         Ok([
             exact.height.data(),
@@ -924,89 +939,139 @@ fn recompute_bound(
             exact.turned.as_ref().map_or(zero, Jet::data),
         ])
     };
-    let mut worst = Rational::zero();
-    for pair in nodes.windows(2) {
-        dec.check_deadline()?;
-        let (chart, ends) = span_chart(pair);
-        let span = [&ends[0], &ends[1]];
-        let left = enclosed(&pair[0], false);
-        let right = enclosed(&pair[1], true);
-        let left_exact = exact_at(chart, &ends[0], &left)?;
-        let right_exact = exact_at(chart, &ends[1], &right)?;
-        let h = &ends[1] - &ends[0];
-        let s = Jet::linear(b(&ends[0], bits).hull(&b(&ends[1], bits)), k.one.clone());
-        let fitted = hermite(
-            &s,
-            span,
-            [
-                [&left[HALF][0], &left[HALF][1]],
-                [&right[HALF][0], &right[HALF][1]],
-            ],
-            bits,
-        )?;
-        let turned = hermite(
-            &s,
-            span,
-            [
-                [&left[TURNED][0], &left[TURNED][1]],
-                [&right[TURNED][0], &right[TURNED][1]],
-            ],
-            bits,
-        )?;
-        let narrow_half = k.overlap.is_some().then_some(&turned);
-        let whole = rows(&k, chart, &s, Some((&fitted, narrow_half)))?;
-        let weight_jet = whole.weight.as_ref().expect("weight requested");
-        let nothing = b(&Rational::zero(), bits);
-        let fourth = [
-            &whole.height.0[4],
-            &whole.lift.0[4],
-            &whole.half.0[4],
-            &whole.tangent.0[4],
-            &whole.axial.0[4],
-            &weight_jet.0[4],
-            whole.turned.as_ref().map_or(&nothing, |jet| &jet.0[4]),
-        ];
-        let h4 = h.pow(4).expect("nonzero span");
-        let error = |j: usize| -> Rational {
-            let remainder = magnitude(fourth[j]) * h4.clone() / q(16);
-            let values = magnitude(&(&left[j][0] - &left_exact[j][0]))
-                .max(magnitude(&(&right[j][0] - &right_exact[j][0])));
-            let slopes = magnitude(&(&left[j][1] - &left_exact[j][1]))
-                + magnitude(&(&right[j][1] - &right_exact[j][1]));
-            remainder + values + q(4) * h.clone() * slopes / q(27)
-        };
-        // An angle moves at most 2 per unit of its half-angle tangent.
-        let wide = q(2) * k.wide.hi() * error(HALF) + error(LIFT);
-        // On a loop the narrow rail's own angle is fitted too, and it swings the
-        // apex about the axis by its distance from there.
-        let swing = if k.overlap.is_some() {
-            q(2) * error(TURNED)
-        } else {
-            Rational::zero()
-        };
-        let narrow = error(HEIGHT) + k.narrow.hi() * swing.clone();
-        let apex = error(TANGENT)
-            + error(AXIAL)
-            + error(HEIGHT)
-            + (k.narrow.hi() + magnitude(&whole.tangent.0[0])) * swing;
-        let weight = weight_jet.0[0].lo();
-        if weight <= Rational::zero() {
-            return Err(unresolved("exact middle weight is not separated from zero"));
-        }
-        let eps = error(WEIGHT) / weight;
-        if eps >= Rational::one() {
-            return Err(invalid("middle weight error is not below its exact value"));
-        }
-        let cosine = whole.cosine.0[0].lo();
-        if cosine <= Rational::zero() {
-            return Err(unresolved(
-                "contact rays are not separated from a half turn",
-            ));
-        }
-        let spread = eps.clone() / (q(2) * (Rational::one() - eps)) * k.radius.hi() / cosine;
-        worst = worst.max(wide.max(narrow).max(apex) + spread);
+    let (chart, ends) = span_chart(pair);
+    let span = [&ends[0], &ends[1]];
+    let left = enclosed(&pair[0], false);
+    let right = enclosed(&pair[1], true);
+    let left_exact = exact_at(chart, &ends[0], &left)?;
+    let right_exact = exact_at(chart, &ends[1], &right)?;
+    let h = &ends[1] - &ends[0];
+    let s = Jet::linear(b(&ends[0], bits).hull(&b(&ends[1], bits)), k.one.clone());
+    let fitted = hermite(
+        &s,
+        span,
+        [
+            [&left[HALF][0], &left[HALF][1]],
+            [&right[HALF][0], &right[HALF][1]],
+        ],
+        bits,
+    )?;
+    let turned = hermite(
+        &s,
+        span,
+        [
+            [&left[TURNED][0], &left[TURNED][1]],
+            [&right[TURNED][0], &right[TURNED][1]],
+        ],
+        bits,
+    )?;
+    let narrow_half = k.overlap.is_some().then_some(&turned);
+    let whole = rows(k, chart, &s, Some((&fitted, narrow_half)))?;
+    let weight_jet = whole.weight.as_ref().expect("weight requested");
+    let nothing = b(&Rational::zero(), bits);
+    let fourth = [
+        &whole.height.0[4],
+        &whole.lift.0[4],
+        &whole.half.0[4],
+        &whole.tangent.0[4],
+        &whole.axial.0[4],
+        &weight_jet.0[4],
+        whole.turned.as_ref().map_or(&nothing, |jet| &jet.0[4]),
+    ];
+    let h4 = h.pow(4).expect("nonzero span");
+    let error = |j: usize| -> Rational {
+        let remainder = magnitude(fourth[j]) * h4.clone() / q(16);
+        let values = magnitude(&(&left[j][0] - &left_exact[j][0]))
+            .max(magnitude(&(&right[j][0] - &right_exact[j][0])));
+        let slopes = magnitude(&(&left[j][1] - &left_exact[j][1]))
+            + magnitude(&(&right[j][1] - &right_exact[j][1]));
+        remainder + values + q(4) * h.clone() * slopes / q(27)
+    };
+    // An angle moves at most 2 per unit of its half-angle tangent.
+    let wide = q(2) * k.wide.hi() * error(HALF) + error(LIFT);
+    // On a loop the narrow rail's own angle is fitted too, and it swings the
+    // apex about the axis by its distance from there.
+    let swing = if k.overlap.is_some() {
+        q(2) * error(TURNED)
+    } else {
+        Rational::zero()
+    };
+    let narrow = error(HEIGHT) + k.narrow.hi() * swing.clone();
+    let apex = error(TANGENT)
+        + error(AXIAL)
+        + error(HEIGHT)
+        + (k.narrow.hi() + magnitude(&whole.tangent.0[0])) * swing;
+    let weight = weight_jet.0[0].lo();
+    if weight <= Rational::zero() {
+        return Err(unresolved("exact middle weight is not separated from zero"));
     }
-    Ok(worst)
+    let eps = error(WEIGHT) / weight;
+    if eps >= Rational::one() {
+        return Err(invalid("middle weight error is not below its exact value"));
+    }
+    let cosine = whole.cosine.0[0].lo();
+    if cosine <= Rational::zero() {
+        return Err(unresolved(
+            "contact rays are not separated from a half turn",
+        ));
+    }
+    let spread = eps.clone() / (q(2) * (Rational::one() - eps)) * k.radius.hi() / cosine;
+    Ok(wide.max(narrow).max(apex) + spread)
+}
+
+// Fits a loop: each span over the target halves, so a hard stretch costs only its
+// own spans. A span the bound cannot resolve halves too, until it runs out of
+// halvings. The nodes come out in chart order, after `pair`'s first.
+fn settle(
+    k: &Constants,
+    pair: [Node; 2],
+    target: &Rational,
+    depth: u32,
+    bits: u32,
+    dec: &mut Decider,
+    nodes: &mut Vec<Node>,
+) -> Result<Rational, Refusal> {
+    dec.check_deadline()?;
+    match span_bound(k, &pair, bits) {
+        Ok(upper) if upper <= *target || depth >= MAX_SPLITS => {
+            let [_, end] = pair;
+            nodes.push(end);
+            return Ok(upper);
+        }
+        Err(error) if depth >= MAX_SPLITS => return Err(error),
+        _ => {}
+    }
+    let (chart, ends) = span_chart(&pair);
+    let middle = node_at(k, chart, &((&ends[0] + &ends[1]) / q(2)), bits)?;
+    let [start, end] = pair;
+    let left = settle(
+        k,
+        [start, middle.clone()],
+        target,
+        depth + 1,
+        bits,
+        dec,
+        nodes,
+    )?;
+    let right = settle(k, [middle, end], target, depth + 1, bits, dec, nodes)?;
+    Ok(left.max(right))
+}
+
+fn refine(
+    def: &RollingSaddleDefinition,
+    target: &Rational,
+    bits: u32,
+    dec: &mut Decider,
+) -> Result<(Vec<Node>, Rational), Refusal> {
+    let k = Constants::new(def, bits, dec)?;
+    let first = produce(def, FIRST_SPANS, bits, dec)?;
+    let mut nodes = vec![first[0].clone()];
+    let mut worst = Rational::zero();
+    for pair in first.windows(2) {
+        let pair = [pair[0].clone(), pair[1].clone()];
+        worst = worst.max(settle(&k, pair, target, 0, bits, dec, &mut nodes)?);
+    }
+    Ok((nodes, worst))
 }
 
 // Proves the exact surface regular. With rail changes `Ai = r ei' . c'`, both
@@ -1354,24 +1419,25 @@ struct Data {
 }
 
 impl RollingSaddle {
-    /// Fits the fewest uniform spans, by doubling, whose recomputed bound meets
-    /// the 100 nm target. A fit that meets only the 1 um cap is accepted and
-    /// reported by its bound, and anything larger refuses.
+    /// Fits spans whose recomputed bound meets the 100 nm target: the fewest
+    /// uniform spans, by doubling, on a through ring, and spans halved where the
+    /// bound needs them on a loop. A fit that meets only the 1 um cap is accepted
+    /// and reported by its bound, and anything larger refuses.
     pub fn fit(definition: RollingSaddleDefinition, dec: &mut Decider) -> Result<Self, Refusal> {
         let bits = BITS.min(dec.policy().max_precision_bits);
         let target = Rational::from_ratio(ROLLING_SADDLE_TARGET_NM, 1_000_000).expect("nonzero");
         let cap = Rational::from_ratio(HARD_CAP_NM, 1_000_000).expect("nonzero");
-        let last = match definition.ring {
-            SaddleRing::Through => LAST_SPANS,
-            SaddleRing::Overlap => OVERLAP_LAST_SPANS,
-        };
-        let mut spans = FIRST_SPANS;
-        let (nodes, upper) = loop {
-            let nodes = produce(&definition, spans, bits, dec)?;
-            match recompute_bound(&definition, &nodes, bits, dec) {
-                Ok(upper) if upper <= target || spans >= last => break (nodes, upper),
-                Err(error) if spans >= last => return Err(error),
-                _ => spans *= 2,
+        let (nodes, upper) = if definition.ring == SaddleRing::Overlap {
+            refine(&definition, &target, bits, dec)?
+        } else {
+            let mut spans = FIRST_SPANS;
+            loop {
+                let nodes = produce(&definition, spans, bits, dec)?;
+                match recompute_bound(&definition, &nodes, bits, dec) {
+                    Ok(upper) if upper <= target || spans >= LAST_SPANS => break (nodes, upper),
+                    Err(error) if spans >= LAST_SPANS => return Err(error),
+                    _ => spans *= 2,
+                }
             }
         };
         if upper > cap {
@@ -1414,6 +1480,19 @@ impl RollingSaddle {
     /// Fitted spans round the ring.
     pub fn span_count(&self) -> usize {
         self.data.nodes.len() - 1
+    }
+
+    /// The widest and narrowest fitted spans, in the chart's `u`.
+    pub fn span_widths(&self) -> [Rational; 2] {
+        let mut widths = self
+            .data
+            .nodes
+            .windows(2)
+            .map(|pair| &pair[1].u - &pair[0].u);
+        let first = widths.next().expect("a ring has spans");
+        widths.fold([first.clone(), first], |[wide, narrow], width| {
+            [wide.max(width.clone()), narrow.min(width)]
+        })
     }
 
     /// The rails on the wide and narrow cylinders, the carrier's own boundary

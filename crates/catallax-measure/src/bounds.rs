@@ -173,7 +173,9 @@ impl<'a> Query<'a> {
                 let [lo, hi] = high;
                 max[axis] = Enclosure { lo, hi };
             }
-            return Ok(Extrema { min, max });
+            let extrema = Extrema { min, max };
+            self.spline_faces.insert(id, extrema.clone());
+            return Ok(extrema);
         }
         if spline::has_spline_boundary(self.model, id) {
             for (face, extrema) in
@@ -221,6 +223,7 @@ impl<'a> Query<'a> {
         }
         let mut total = None;
         let mut edges = BTreeSet::new();
+        let mut bands = BTreeSet::new();
         for lp in &self.model.face(id).loops {
             match self.model.loop_(*lp) {
                 Loop::Vertex(v) => merge(
@@ -235,13 +238,14 @@ impl<'a> Query<'a> {
                         let edge = self.model.coedge(*c).edge;
                         // A saddle's rail lies in its band, which the body's box
                         // measures. Alone this face has no extrema for it.
-                        if spline::saddle_rail(self.model, edge) {
+                        if let Some(band) = spline::saddle_band(self.model, edge) {
                             if self.body.is_none() {
                                 return Err(Refusal::new(
                                     "measure.unsupported-surface",
                                     "a fitted rail has no certified extrema on its own",
                                 ));
                             }
+                            bands.insert(band);
                             continue;
                         }
                         edges.insert(edge);
@@ -259,6 +263,12 @@ impl<'a> Query<'a> {
             } else {
                 total = Some(self.edges[&edge].clone());
             }
+        }
+        // A band stands in for its rail, and it belongs to the same body. A wall
+        // that a loop bounds alone has no other edge to name its extent.
+        for band in bands {
+            let extrema = self.face(band, dec)?;
+            merge(&mut total, extrema);
         }
         if let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = surface {
             for point in pipe.axis_extrema(dec)? {

@@ -12,19 +12,25 @@ use std::collections::{BTreeMap, BTreeSet};
 #[cfg(test)]
 mod tests;
 
-/// Whether an edge is a rail of a rolling saddle.
-pub(super) fn saddle_rail(model: &Model, edge: EdgeId) -> bool {
-    matches!(
+/// The rolling saddle band whose rail an edge is, if it is one.
+pub(super) fn saddle_band(model: &Model, edge: EdgeId) -> Option<FaceId> {
+    if !matches!(
         model.geom().curve(model.edge(edge).curve),
         Curve::BSpline(_)
-    ) && model.coedges_of_edge(edge).into_iter().any(|coedge| {
-        model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
+    ) {
+        return None;
+    }
+    model
+        .coedges_of_edge(edge)
+        .into_iter()
+        .filter_map(|coedge| model.owner_of_coedge(coedge))
+        .map(|(_, face)| face)
+        .find(|face| {
             matches!(
-                model.geom().surface(model.face(face).surface),
+                model.geom().surface(model.face(*face).surface),
                 Surface::BSpline(SplineSupport::RollingSaddle(_))
             )
         })
-    })
 }
 
 pub(super) fn has_spline_boundary(model: &Model, face: FaceId) -> bool {
@@ -45,7 +51,7 @@ pub(super) fn has_spline_boundary(model: &Model, face: FaceId) -> bool {
                     matches!(
                         model.geom().curve(model.edge(edge).curve),
                         Curve::BSpline(_)
-                    ) && !saddle_rail(model, edge)
+                    ) && saddle_band(model, edge).is_none()
                 }),
             })
 }

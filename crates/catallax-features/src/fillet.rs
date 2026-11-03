@@ -543,14 +543,21 @@ fn coaxial(
             return Err(Refusal::new("fillet.invalid-edge", refusal.detail));
         }
         Err(refusal) if refusal.code == "shapes.rolling-torus" => {
-            let limit = RollingTorus::radius_limit(supports, sides, edge, dec)?;
-            return Err(match limit {
-                Some(limit) if sign(&(radius - &limit), dec)? == Sign::Positive => too_large(
+            let Some(limit) = RollingTorus::radius_limit(supports, sides, edge, dec)? else {
+                return Err(bad(&refusal.detail));
+            };
+            return Err(match sign(&(radius - &limit), dec)? {
+                Sign::Positive => too_large(
                     "no ball of this radius rolls along the edge against both faces",
                     Some(&limit),
                     dec,
                 ),
-                _ => bad(&refusal.detail),
+                Sign::Zero => too_large(
+                    "the ball reaches this edge's regular contact limit",
+                    Some(&limit),
+                    dec,
+                ),
+                Sign::Negative => bad(&refusal.detail),
             });
         }
         Err(refusal) => return Err(refusal),

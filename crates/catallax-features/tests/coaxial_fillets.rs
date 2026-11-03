@@ -925,6 +925,11 @@ fn unsupported_curved_rounds_refuse_with_their_own_codes() {
     let found = refusal(&dome(), "j", "2", [face("b", "start"), wall("s")]);
     assert_eq!(found.code, RADIUS_TOO_LARGE);
     assert_eq!(radius_limit(&found), Some(q("3/2")));
+    // At the limit itself the two offsets only touch.
+    let found = refusal(&dome(), "j", "3/2", [face("b", "start"), wall("s")]);
+    assert_eq!(found.code, RADIUS_TOO_LARGE);
+    assert!(found.detail.contains("regular contact limit"), "{found:?}");
+    assert_eq!(radius_limit(&found), Some(q("3/2")));
     // A frustum too narrow for the ball: its centre would cross the axis.
     let found = refusal(
         &cone("5", "1", "6"),

@@ -1170,6 +1170,45 @@ fn mitre(
         shared,
     }))
 }
+/// Whether an edge is a mitre between two earlier strips at whose end
+/// another selected edge closes with a [`Mitre`] corner. That corner's ball
+/// is as wide as both strips and sits on both their axes, so the mitre's own
+/// ball has that one centre and rounds nothing beyond the corner; if the
+/// corner does not close, the selected edge refuses there.
+fn swallowed_mitre(
+    model: &Model,
+    edge: EdgeId,
+    selected: &[EdgeId],
+    uses: &Uses,
+    earlier: &[FilletDefinition],
+) -> bool {
+    let [(c, _), (d, _)] = uses[&edge][..] else {
+        return false;
+    };
+    if retained(model, c, earlier).is_none() || retained(model, d, earlier).is_none() {
+        return false;
+    }
+    let e = model.edge(edge);
+    [e.start, e.end].into_iter().flatten().any(|v| {
+        let at = |other: &EdgeId| {
+            let o = model.edge(*other);
+            o.start == Some(v) || o.end == Some(v)
+        };
+        let faces: BTreeSet<_> = uses
+            .iter()
+            .filter(|(other, _)| at(other))
+            .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
+            .collect();
+        faces.len() == 4
+            && selected.iter().any(|other| {
+                *other != edge
+                    && at(other)
+                    && uses[other]
+                        .iter()
+                        .all(|(f, _)| *f != c && *f != d && faces.contains(f))
+            })
+    })
+}
 /// Chains oriented boundary arcs into one closed loop.
 fn close(model: &Model, mut arcs: Vec<(EdgeId, Sense)>) -> Result<Vec<(EdgeId, Sense)>, Refusal> {
     let mut path = vec![arcs.remove(0)];
@@ -1394,6 +1433,14 @@ fn build_strips(
             }
         }
         selected = sharp;
+        if roll_over {
+            let mitres: BTreeSet<_> = selected
+                .iter()
+                .copied()
+                .filter(|edge| swallowed_mitre(model, *edge, &selected, &uses, earlier))
+                .collect();
+            selected.retain(|edge| !mitres.contains(edge));
+        }
     }
     if selected.is_empty() {
         return Ok((body, Vec::new()));

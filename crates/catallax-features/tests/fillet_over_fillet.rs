@@ -530,6 +530,64 @@ fn a_box_corner_rolls_over_an_earlier_edge_round() {
             (["19", "11/10", "46/5"], Inside),
         ],
     );
+    // A third round rolls over the second: the bottom right edge continues
+    // over the foot of the right chain's upright, a spindle sheet whose
+    // major radius equals its tube's, and along the bottom front edge.
+    let mut steps = vec![
+        block("block", ["20", "20", "10"], ["0", "0", "0"]),
+        fillet(
+            "front",
+            "block",
+            "3",
+            vec![edge(cap("block", "end"), side("block", "y_min"))],
+        ),
+        fillet(
+            "right",
+            "front",
+            "2",
+            vec![edge(cap("block", "end"), side("block", "x_max"))],
+        ),
+    ];
+    steps.push(fillet(
+        "bottom",
+        "right",
+        "1",
+        vec![edge(cap("block", "start"), side("block", "x_max"))],
+    ));
+    let built = build(&recipe(4, steps));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 5), ("TorusSheet", 2)]);
+    // 4000 less the front round over 20; the right chain at radius 2 along
+    // 17 and 7 with a quarter turn inside 3; the bottom chain at radius 1
+    // along 18 and 18 with a quarter turn inside 2.
+    let (one, two) = (r("1"), r("2"));
+    let [f0, f1] = section(&big);
+    let [m0, m1] = section(&two);
+    let [b0, b1] = section(&one);
+    let [p1, p2] = quarter_turn(&two, &big, -1);
+    let [q1, q2] = quarter_turn(&one, &two, -1);
+    let sum = |terms: &[Rational]| terms.iter().fold(Rational::zero(), |a, b| &a + b);
+    exact_volume(
+        &built,
+        [
+            sum(&[
+                r("4000"),
+                -&(&r("20") * &f0),
+                -&(&r("24") * &m0),
+                -&(&r("36") * &b0),
+            ]),
+            sum(&[
+                -&(&r("20") * &f1),
+                -&(&r("24") * &m1),
+                -&(&r("36") * &b1),
+                -&p1,
+                -&q1,
+            ]),
+            -&(&p2 + &q2),
+        ],
+        "1e-6",
+    );
+    closed_display(&built);
+    step(&built, "TOROIDAL_SURFACE(");
 }
 
 // An L: a 20 x 20 x 5 base and a 20 x 5 x 10 wall along its front, the
@@ -813,6 +871,32 @@ fn every_edge_rounds_over_an_earlier_round() {
     exact_volume(
         &built,
         rounded_box("10", ["20", "20"], ["3", "3", "3", "3"], "1"),
+        "1e-6",
+    );
+    closed_display(&built);
+    // A top loop with mitred corners, then every edge: each upright closes
+    // with its corner and the mitre above it goes without a round of its own.
+    let mitred = recipe(
+        4,
+        vec![
+            block("block", ["20", "20", "10"], ["0", "0", "0"]),
+            fillet(
+                "top",
+                "block",
+                "2",
+                SIDES
+                    .iter()
+                    .map(|s| edge(cap("block", "end"), side("block", s)))
+                    .collect(),
+            ),
+            json!({"id":"rest","op":"fillet","body":"top","radius":"2","edges":"all"}),
+        ],
+    );
+    let built = build(&mitred);
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 12), ("Sphere", 8)]);
+    exact_volume(
+        &built,
+        rounded_box("10", ["20", "20"], ["2", "2", "2", "2"], "2"),
         "1e-6",
     );
     closed_display(&built);

@@ -88,6 +88,14 @@ def corner(front, right):
                    fillet('right', 'front', right, [[cap('block', 'end'), side('block', 'x_max')]])])
 
 
+def third(front, right, bottom):
+    return recipe([BLOCK,
+                   fillet('front', 'block', front, [[cap('block', 'end'), side('block', 'y_min')]]),
+                   fillet('right', 'front', right, [[cap('block', 'end'), side('block', 'x_max')]]),
+                   fillet('bottom', 'right', bottom,
+                          [[cap('block', 'start'), side('block', 'x_max')]])])
+
+
 def bracket(inner, right):
     return recipe([block('base', ['20', '20', '5'], ['0', '0', '0']),
                    block('wall', ['20', '5', '10'], ['0', '0', '0']),
@@ -111,11 +119,11 @@ def every(front, rest):
                    fillet('rest', 'front', rest, 'all')])
 
 
-def mitred(radius):
+def mitred(radius, every=False):
     return recipe([BLOCK,
                    fillet('top', 'block', radius,
                           [[cap('block', 'end'), side('block', s)] for s in SIDES]),
-                   fillet('upright', 'top', radius, uprights('block'))])
+                   fillet('upright', 'top', radius, 'all' if every else uprights('block'))])
 
 
 def volume(shape):
@@ -174,6 +182,13 @@ def occ_corner(front, right):
     shape = box(0, 0, 0, 20, 20, 10)
     shape = rounded(shape, front, straight(shape, y=0, z=10))
     return volume(rounded(shape, right, straight(shape, x=20, z=10)))
+
+
+def occ_third(front, right, bottom):
+    shape = box(0, 0, 0, 20, 20, 10)
+    shape = rounded(shape, front, straight(shape, y=0, z=10))
+    shape = rounded(shape, right, straight(shape, x=20, z=10))
+    return volume(rounded(shape, bottom, straight(shape, x=20, z=0)))
 
 
 def occ_bracket(inner, right):
@@ -238,6 +253,7 @@ class FilletOverFilletImports(unittest.TestCase):
             ('corner-sphere', corner('2', '2'), occ_corner(2, 2)),
             ('bracket', bracket('3', '1'), occ_bracket(3, 1)),
             ('boss-base', based('2', '1'), occ_based(2, 1)),
+            ('third-round', third('3', '2', '1'), occ_third(3, 2, 1)),
         ]
         with tempfile.TemporaryDirectory(prefix='catallax-fillet-over-fillet-') as temporary:
             root = Path(temporary)
@@ -254,6 +270,7 @@ class FilletOverFilletImports(unittest.TestCase):
             # corner cubes less their ball octants.
             ('mitred', mitred('3'),
              4000 - 9 * (1 - PI / 4) * (4 * 14 + 4 * 7) - 4 * (27 - 27 * PI / 6)),
+            ('mitred-every', mitred('2', every=True), rounded_box(10, 20, 20, [2, 2, 2, 2], 2)),
         ]
         with tempfile.TemporaryDirectory(prefix='catallax-fillet-over-fillet-') as temporary:
             root = Path(temporary)

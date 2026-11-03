@@ -1097,7 +1097,8 @@ impl Ball {
     fn allowed(&self, p: [f64; 3]) -> bool {
         let [big, small] = self.offsets();
         let [to_wide, to_narrow] = Self::distances(p);
-        self.sides[0] * (to_wide - big) >= 0.0 && self.sides[1] * (to_narrow - small) >= 0.0
+        // A foot pushed onto an offset lands on it only up to rounding.
+        self.sides[0] * (to_wide - big) >= -1e-9 && self.sides[1] * (to_narrow - small) >= -1e-9
     }
     // Whether some ball that fits covers a point: one on either wall, or one on
     // the edge between them. `None` is too close to call.
@@ -1155,6 +1156,167 @@ impl Ball {
             }
         }
         found
+    }
+}
+
+impl Ball {
+    // The pocket's volume and first moments, by counting the cells of a grid in
+    // the corner that no ball which fits can cover, slice by slice along the
+    // wide axis. A wedge's tip lies up to `r / sin(half its angle)` from a
+    // centre, so each slice looks three radii out.
+    fn count(&self, step: f64) -> (f64, [f64; 3]) {
+        let reach = 3.0 * self.radius;
+        let mut centres = Vec::new();
+        for i in 0..4000 {
+            let t = 2.0 * PI * f64::from(i) / 4000.0;
+            for up in [1.0, -1.0] {
+                centres.extend(self.centre(t, up));
+            }
+        }
+        let [outside_wide, outside_narrow] = self.sides.map(|side| side > 0.0);
+        let [big, small] = self.offsets();
+        let low = centres.iter().map(|c| c[1]).fold(f64::MAX, f64::min) - reach;
+        let high = centres.iter().map(|c| c[1]).fold(f64::MIN, f64::max) + reach;
+        let (mut size, mut moment) = (0.0, [0.0; 3]);
+        let cell = step * step * step;
+        // Cells sit on multiples of the step, so the count keeps the loop's symmetries.
+        let first = |start: f64| ((start / step).floor() + 0.5) * step;
+        let mut y = first(low);
+        while y < high {
+            let span: Vec<_> = centres
+                .iter()
+                .filter(|c| (c[1] - y).abs() < reach)
+                .collect();
+            let near: Vec<_> = span
+                .iter()
+                .filter(|c| (c[1] - y).abs() < self.radius)
+                .collect();
+            if !span.is_empty() {
+                let bound = |k: usize, pick: fn(f64, f64) -> f64, start: f64| {
+                    span.iter().map(|c| c[k]).fold(start, pick)
+                };
+                let [x0, x1] = [
+                    bound(0, f64::min, f64::MAX) - reach,
+                    bound(0, f64::max, f64::MIN) + reach,
+                ];
+                let [z0, z1] = [
+                    bound(2, f64::min, f64::MAX) - reach,
+                    bound(2, f64::max, f64::MIN) + reach,
+                ];
+                let mut x = first(x0);
+                while x < x1 {
+                    let mut z = first(z0);
+                    while z < z1 {
+                        let p = [x, y, z];
+                        let [to_wide, to_narrow] = Self::distances(p);
+                        let corner =
+                            (to_wide > 10.0) == outside_wide && (to_narrow > 4.0) == outside_narrow;
+                        if corner && !self.allowed(p) {
+                            let on_wide = [x * big / to_wide, y, z * big / to_wide];
+                            let on_narrow = [
+                                8.0 + (x - 8.0) * small / to_narrow,
+                                y * small / to_narrow,
+                                z,
+                            ];
+                            let walls = (self.allowed(on_wide)
+                                && (to_wide - big).abs() < self.radius)
+                                || (self.allowed(on_narrow)
+                                    && (to_narrow - small).abs() < self.radius);
+                            let edge = near.iter().any(|c| {
+                                let d: [f64; 3] = std::array::from_fn(|k| p[k] - c[k]);
+                                dot(d, d) < self.radius * self.radius
+                            });
+                            if !walls && !edge {
+                                size += cell;
+                                for k in 0..3 {
+                                    moment[k] += p[k] * cell;
+                                }
+                            }
+                        }
+                        z += step;
+                    }
+                    x += step;
+                }
+            }
+            y += step;
+        }
+        (size, moment)
+    }
+
+    // The input loop, ordered round once: up its upper arc and back along its
+    // lower one.
+    fn sharp_loop() -> Vec<[f64; 3]> {
+        let edge = Ball {
+            radius: 0.0,
+            sides: [1.0, 1.0],
+        };
+        let angles: Vec<f64> = (0..20_000)
+            .map(|i| 2.0 * PI * f64::from(i) / 20_000.0)
+            .collect();
+        let upper = angles.iter().filter_map(|t| edge.centre(*t, 1.0));
+        let lower: Vec<_> = angles
+            .iter()
+            .filter_map(|t| edge.centre(*t, -1.0))
+            .collect();
+        upper.chain(lower.into_iter().rev()).collect()
+    }
+
+    // The area the band adds less the two strips it covers, from its grid: the
+    // band's facets, and on each cylinder's flat chart the rail against the input
+    // loop, by the shoelace formula.
+    fn area_change(grid: &EnvelopeGrid) -> f64 {
+        let at = |column: usize, line: usize| -> [f64; 3] {
+            let p = &grid.points[column * grid.rows + line];
+            std::array::from_fn(|k| p[k].mid().to_f64_nearest())
+        };
+        let mut band = 0.0;
+        for column in 0..grid.columns - 1 {
+            for line in 0..grid.rows - 1 {
+                let corners = [
+                    at(column, line),
+                    at(column + 1, line),
+                    at(column + 1, line + 1),
+                    at(column, line + 1),
+                ];
+                for [a, b, c] in [
+                    [corners[0], corners[1], corners[2]],
+                    [corners[0], corners[2], corners[3]],
+                ] {
+                    let u: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+                    let v: [f64; 3] = std::array::from_fn(|k| c[k] - a[k]);
+                    let n = [
+                        u[1] * v[2] - u[2] * v[1],
+                        u[2] * v[0] - u[0] * v[2],
+                        u[0] * v[1] - u[1] * v[0],
+                    ];
+                    band += dot(n, n).sqrt() / 2.0;
+                }
+            }
+        }
+        let shoelace = |points: &[[f64; 2]]| {
+            let count = points.len();
+            ((0..count)
+                .map(|i| {
+                    let (a, b) = (points[i], points[(i + 1) % count]);
+                    a[0] * b[1] - a[1] * b[0]
+                })
+                .sum::<f64>()
+                / 2.0)
+                .abs()
+        };
+        // The wide wall about y, and the narrow one about its axis, each from the
+        // side the loop never reaches.
+        let wide = |p: &[f64; 3]| [10.0 * p[2].atan2(p[0]), p[1]];
+        let narrow = |p: &[f64; 3]| [4.0 * (-p[1]).atan2(8.0 - p[0]), p[2]];
+        let rails: [Vec<[f64; 3]>; 2] =
+            [0, grid.rows - 1].map(|line| (0..grid.columns - 1).map(|c| at(c, line)).collect());
+        let edge = Self::sharp_loop();
+        let strip = |chart: &dyn Fn(&[f64; 3]) -> [f64; 2], rail: &[[f64; 3]]| {
+            let on_rail: Vec<_> = rail.iter().map(chart).collect();
+            let on_edge: Vec<_> = edge.iter().map(chart).collect();
+            (shoelace(&on_rail) - shoelace(&on_edge)).abs()
+        };
+        band - strip(&wide, &rails[0]) - strip(&narrow, &rails[1])
     }
 }
 
@@ -1330,16 +1492,117 @@ fn a_loops_box_comes_from_its_walls_and_band() {
     assert!(high[2] < 84f64.sqrt() && low[2] > -(84f64.sqrt()));
 }
 
+// Volume, centroid and area against the count and the grid. At this step the
+// count lands within half a percent of the exact pocket on a through ring.
+#[test]
+fn a_loop_boss_measures_as_its_base_and_its_pocket() {
+    assert_loop_measures("union", ["wide", "wall"], [1.0, 1.0]);
+}
+
+#[test]
+fn a_loop_notch_measures_as_its_base_and_its_pocket() {
+    assert_loop_measures("subtract", ["wide", "wall"], [-1.0, 1.0]);
+}
+
+#[test]
+fn a_loop_lens_measures_as_its_base_and_its_pocket() {
+    assert_loop_measures("intersect", ["wide", "wall"], [-1.0, -1.0]);
+}
+
+fn assert_loop_measures(kind: &str, order: [&str; 2], sides: [f64; 2]) {
+    let accuracy = Accuracy {
+        relative: q("1/1000000"),
+        absolute: q("1/1000"),
+    };
+    let built = build(&over(kind, order, "1"));
+    let base = built.model.blend_base(built.result).unwrap();
+    let measure = |body| {
+        volume_area_centroid(&built.model, body, &accuracy, &mut decider())
+            .unwrap()
+            .value
+    };
+    let start = std::time::Instant::now();
+    let plain = measure(base);
+    let rounded = measure(built.result);
+    eprintln!("{kind}: measurement {:?} with its base", start.elapsed());
+    let mid = |value: &Enclosure| ((&value.lo + &value.hi) / q("2")).to_f64_nearest();
+    let ball = Ball { radius: 1.0, sides };
+    let (want, moment) = ball.count(1.0 / 20.0);
+    // The ball adds material in the open and takes it from the solid.
+    let side = if sides.iter().all(|side| *side > 0.0) {
+        1.0
+    } else {
+        -1.0
+    };
+    let change = mid(&rounded.volume) - mid(&plain.volume);
+    eprintln!("{kind}: change {change:.5}, count {:.5}", side * want);
+    assert!(
+        (change - side * want).abs() < want * 1e-2,
+        "{change} {want}"
+    );
+    let of_body = |value: &catallax_measure::VolumeAreaCentroid| -> [f64; 3] {
+        let centroid = value.centroid.as_ref().unwrap();
+        std::array::from_fn(|i| mid(&centroid[i]) * mid(&value.volume))
+    };
+    let [a, b] = [of_body(&rounded), of_body(&plain)];
+    for i in 0..3 {
+        let found = a[i] - b[i];
+        let target = side * moment[i];
+        assert!(
+            (found - target).abs() < 1e-2 * (want + moment[i].abs()),
+            "{kind} {i}: {found} {target}"
+        );
+    }
+    let [band] = bands(&built)[..] else {
+        panic!("one band");
+    };
+    let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
+        built.model.geom().surface(built.model.face(band).surface)
+    else {
+        panic!("a saddle");
+    };
+    let grid = saddle
+        .display_grid(&q("1/1000"), 4_000_000, &decider())
+        .unwrap();
+    let area = mid(&rounded.area) - mid(&plain.area);
+    let target = Ball::area_change(&grid);
+    eprintln!("{kind}: area change {area:.5}, grid {target:.5}");
+    assert!((area - target).abs() < 2e-2, "{area} {target}");
+}
+
+#[test]
+fn a_mirrored_loop_measures_its_volume() {
+    let mut steps = vec![
+        wide(),
+        past("8"),
+        json!({"id":"joined","op":"boolean","kind":"union","target":"wide","tool":"wall"}),
+        json!({"id":"round","op":"fillet","body":"joined","radius":"1","edges":ring()}),
+    ];
+    let original = build(&parse(steps.clone(), "round"));
+    steps.push(json!({"id":"flipped","op":"mirror","body":"round",
+        "plane":{"point":["20","0","0"],"normal":["3","4","0"]},"keep_original":false}));
+    let flipped = build(&parse(steps, "flipped"));
+    let accuracy = Accuracy {
+        relative: q("1/1000000"),
+        absolute: q("1/1000"),
+    };
+    let measure = |built: &Built| {
+        volume(&built.model, built.result, &accuracy, &mut decider())
+            .unwrap()
+            .value
+    };
+    let [a, c] = [measure(&original), measure(&flipped)];
+    assert!(a.lo <= c.hi && c.lo <= a.hi, "{a:?} {c:?}");
+}
+
 // Each of these reads a ring that winds round the narrow cylinder.
 #[test]
-fn a_loops_measures_file_and_certificate_stay_refused() {
+fn a_loops_file_certificate_and_face_measures_stay_refused() {
     let built = build(&over("union", ["wide", "wall"], "1"));
     let accuracy = Accuracy {
         relative: q("1/1000"),
         absolute: q("1"),
     };
-    let found = volume(&built.model, built.result, &accuracy, &mut decider());
-    assert_eq!(found.unwrap_err().code, "measure.unsupported-surface");
     let found = mass_properties(&built.model, built.result, &accuracy, &mut decider());
     assert_eq!(found.unwrap_err().code, "measure.unsupported-surface");
     let [band] = bands(&built)[..] else {

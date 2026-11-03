@@ -31,6 +31,9 @@
 //! and its rail, and on a cylinder's flat chart that strip's area is a closed
 //! integral of height against angle.
 //!
+//! A loop does not wind round the narrow cylinder, so these columns graze the
+//! wide one there. Its change takes the divergence theorem instead, in `loops`.
+//!
 //! These enclose the exact definition. `Scope::Represented` in `junction` adds the
 //! tube bound its module note derives, so its volume also holds for the carrier.
 
@@ -40,6 +43,9 @@ use std::collections::BTreeMap;
 
 use crate::integrate::{Builder, Program, Stop, Work};
 use crate::pipe::{Primitives, Section};
+
+#[path = "saddle/loops.rs"]
+mod loops;
 
 // A fitted band's own bound is far wider than these integrals, so 96 bits leave
 // room. Eight panels split the section angle's enclosure, and sixteen do not, as
@@ -250,11 +256,10 @@ pub(crate) fn change(
     dec: &mut Decider,
 ) -> Result<Change, Refusal> {
     let law = saddle.definition().law();
-    // The integrals run on `t` round the narrow cylinder, which a loop does not.
-    if law.ring != SaddleRing::Through {
-        return Err(refused("a loop's change has no integrals yet"));
-    }
-    let program = forms(&law, moments);
+    let program = match law.ring {
+        SaddleRing::Through => forms(&law, moments),
+        SaddleRing::Overlap => loops::forms(&law, moments),
+    };
     let policy = *dec.policy();
     let bits = BITS.min(policy.max_precision_bits);
     let mut remaining = policy.max_work;
@@ -276,6 +281,9 @@ pub(crate) fn change(
         }
     }
     let values = values.ok_or_else(|| refused("a saddle's integrand has no enclosure"))?;
+    if law.ring == SaddleRing::Overlap {
+        return loop_change(saddle, &law, &values, dec);
+    }
     let [
         volume,
         band,
@@ -322,6 +330,95 @@ pub(crate) fn change(
         pocket,
         moment,
         area,
+        band: band.clone(),
+        turning: turning.clone(),
+        length: length.clone(),
+    })
+}
+
+// A strict sign, or a refusal when the enclosure holds zero.
+fn sign_of(value: &Ball) -> Result<Ball, Refusal> {
+    let unit = if value.lo() > Rational::zero() {
+        1
+    } else if value.hi() < Rational::zero() {
+        -1
+    } else {
+        return Err(refused("a loop's strip has no certified orientation"));
+    };
+    Ok(Ball::from_rational(&Rational::from_i64(unit), BITS))
+}
+
+// The loop's integrals, signed and put together as `crate::saddle::loops` says.
+fn loop_change(
+    saddle: &RollingSaddle,
+    law: &SaddleLaw,
+    values: &[Ball],
+    dec: &mut Decider,
+) -> Result<Change, Refusal> {
+    let Some((
+        [
+            flux,
+            band,
+            wide_area,
+            narrow_area,
+            narrow_flux,
+            turning,
+            length,
+        ],
+        moment,
+    )) = values.split_first_chunk::<{ loops::OUTPUTS }>()
+    else {
+        return Err(refused("a saddle's program has a fixed output count"));
+    };
+    let exact = |value: i64| Ball::from_rational(&Rational::from_i64(value), BITS);
+    let [wide, narrow] = [&law.wide, &law.narrow].map(|value| dec.enclose_at(value, BITS));
+    let (wide, narrow) = (wide?, narrow?);
+    let [sw, sn] = law.sides.map(exact);
+    let (kw, kn) = (sign_of(wide_area)?, sign_of(narrow_area)?);
+    let wide_strip = &(&wide * wide_area) * &kw;
+    let narrow_strip = &(&narrow * narrow_area) * &kn;
+    let walls = &(&(&sw * &wide) * &wide_strip) + &(&(&sn * &kn) * narrow_flux);
+    let pocket = (&Ball::from_rational(&Rational::zero(), BITS) - &(flux + &walls))
+        .checked_div(&exact(3))
+        .ok_or_else(|| refused("a loop's pocket has no certified volume"))?;
+    if pocket.lo() <= Rational::zero() {
+        return Err(refused("a loop's pocket has no certified volume"));
+    }
+    let point = |v: &catallax_shapes::Vector3| -> Result<[Ball; 3], Refusal> {
+        Ok([
+            dec.enclose_at(&v.x, BITS)?,
+            dec.enclose_at(&v.y, BITS)?,
+            dec.enclose_at(&v.z, BITS)?,
+        ])
+    };
+    let origin = saddle
+        .definition()
+        .origin()
+        .minus(&catallax_shapes::Point3::origin());
+    let [origin, across, along, axis] = [&origin, &law.across, &law.along, &law.axis].map(point);
+    let (origin, across, along, axis) = (origin?, across?, along?, axis?);
+    let moment = match moment {
+        [bx, by, bz, wx, wy, nx, ny, nz] => {
+            let wide_part = &(&sw * &kw) * &wide;
+            let narrow_part = &sn * &kn;
+            let local = [
+                &(bx - &(&wide_part * wx)) - &(&narrow_part * nx),
+                &(by - &(&wide_part * wy)) - &(&narrow_part * ny),
+                bz - &(&narrow_part * nz),
+            ];
+            Some(std::array::from_fn(|i| {
+                let frame = &(&(&across[i] * &local[0]) + &(&along[i] * &local[1]))
+                    + &(&axis[i] * &local[2]);
+                &(&origin[i] * &pocket) + &frame
+            }))
+        }
+        [] => None,
+        _ => return Err(refused("a saddle's program has a fixed output count")),
+    };
+    Ok(Change {
+        pocket,
+        moment,
+        area: &(band - &wide_strip) - &narrow_strip,
         band: band.clone(),
         turning: turning.clone(),
         length: length.clone(),

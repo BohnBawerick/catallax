@@ -87,7 +87,7 @@ fn tube_leaf(plan: &mut Plan, tube: Skin, bound: &Rational, dec: &mut Decider) -
         return plan.distance_cell(ConvexCell::new(faces, dec)?, bound.clone(), dec);
     }
     let mut result = 0;
-    for component in tube.components(dec)? {
+    for component in tube.shell_field_components(dec)? {
         for term in component.terms {
             let faces = term
                 .sides

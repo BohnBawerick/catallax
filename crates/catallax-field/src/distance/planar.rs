@@ -11,7 +11,7 @@ use catallax_shapes::{
     Circle, CurveId, GeomStore, Point3, PointDef, PointId, Surface, Vector3,
     distance::{PlanarBoundary, PlanarEdge},
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::{Arc, OnceLock}};
 
 fn bad(detail: &str) -> Refusal {
     Refusal::new("distance.unsupported-planar-trim", detail)
@@ -283,26 +283,24 @@ fn line_bounds(
     ]))
 }
 
+struct SectionGroup {
+    faces: Vec<usize>,
+    boundaries: OnceLock<Vec<Option<Arc<PlanarBoundary>>>>,
+}
+
+/// Reuse source germs and support groups, constructing only requested sections.
+pub(super) struct Sections<'a> {
+    scene: Scene<'a>,
+    radius: Rational,
+    groups: Vec<SectionGroup>,
+    group_of: Vec<Option<(usize, usize)>>,
+}
+
 impl Plan {
     pub(super) fn prepare_planar_boundaries(
         &self,
         dec: &mut Decider,
-    ) -> Result<Vec<Option<Arc<PlanarBoundary>>>, Refusal> {
-        let mut result = vec![None; self.faces.len()];
-        let faces: Vec<_> = self
-            .faces
-            .iter()
-            .enumerate()
-            .filter_map(|(i, f)| {
-                (f.in_result
-                    && self.leaf_registers[f.leaf].is_some()
-                    && matches!(f.surface, Surface::Plane(_)))
-                .then_some(i)
-            })
-            .collect();
-        if faces.is_empty() {
-            return Ok(result);
-        }
+    ) -> Result<Sections<'_>, Refusal> {
         let mut active = vec![false; self.instructions.len()];
         active[self.root] = true;
         for domain in &self.domains {
@@ -333,36 +331,63 @@ impl Plan {
             leaves,
         };
         let radius = self.node_radius(self.root, dec)? + Rational::one();
-        let mut groups: Vec<Vec<usize>> = Vec::new();
-        for face in faces {
+        let mut groups: Vec<SectionGroup> = Vec::new();
+        let mut group_of = vec![None; self.faces.len()];
+        for (face, definition) in self.faces.iter().enumerate() {
+            if !definition.in_result
+                || self.leaf_registers[definition.leaf].is_none()
+                || !matches!(definition.surface, Surface::Plane(_))
+            {
+                continue;
+            }
             let mut group = None;
             for (i, members) in groups.iter().enumerate() {
-                if self.faces[face]
+                if definition
                     .support
-                    .equals(&self.faces[members[0]].support, dec)?
+                    .equals(&self.faces[members.faces[0]].support, dec)?
                 {
                     group = Some(i);
                     break;
                 }
             }
-            if let Some(i) = group {
-                groups[i].push(face);
+            let i = if let Some(i) = group {
+                i
             } else {
-                groups.push(vec![face]);
-            }
+                groups.push(SectionGroup {
+                    faces: Vec::with_capacity(1),
+                    boundaries: OnceLock::new(),
+                });
+                groups.len() - 1
+            };
+            group_of[face] = Some((i, groups[i].faces.len()));
+            groups[i].faces.push(face);
         }
-        for group in groups {
-            match scene.boundaries(&group, &radius, dec) {
-                Ok(boundaries) => {
-                    for (face, boundary) in group.into_iter().zip(boundaries) {
-                        result[face] = boundary;
-                    }
+        Ok(Sections { scene, radius, groups, group_of })
+    }
+}
+
+impl Sections<'_> {
+    pub(super) fn get(&self, face: usize) -> Option<&Option<Arc<PlanarBoundary>>> {
+        let (group, member) = self.group_of[face]?;
+        Some(&self.groups[group].boundaries.get()?[member])
+    }
+
+    // Prepared's initialization mutex serializes writes to the section caches.
+    pub(super) fn prepare(&self, face: usize, dec: &mut Decider) -> Result<(), Refusal> {
+        let (group, _) = self.group_of[face].expect("distance face is a live plane");
+        let group = &self.groups[group];
+        if group.boundaries.get().is_none() {
+            let boundaries = match self.scene.boundaries(&group.faces, &self.radius, dec) {
+                Ok(boundaries) => boundaries,
+                Err(error) if error.code == "distance.unsupported-planar-trim" => {
+                    vec![None; group.faces.len()]
                 }
-                Err(error) if error.code == "distance.unsupported-planar-trim" => (),
                 Err(error) => return Err(error),
-            }
+            };
+            group.boundaries.set(boundaries)
+                .expect("a planar section initializes under one lock");
         }
-        Ok(result)
+        Ok(())
     }
 }
 

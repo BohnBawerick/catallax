@@ -6,7 +6,7 @@ use catallax_shapes::{
     Point3, Vector3,
     distance::{self, Bounds, Domain, Membership, Options},
 };
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 mod contact;
 mod planar;
@@ -200,7 +200,6 @@ fn ray(
 
 // A physical patch is the union of its convex tiles; each tile is a conjunction.
 type PlanarTrim = Vec<Vec<geometry::Constraint>>;
-type PlanarBoundaries = Vec<Option<Arc<distance::PlanarBoundary>>>;
 
 /// Prepared field-native distance domains. Reuse across point queries on a plan.
 /// Face handles are valid only for the plan used to construct this object.
@@ -209,7 +208,7 @@ pub struct Prepared<'a> {
     domains: Vec<Option<Domain>>,
     coincident: Vec<Vec<Vec<bool>>>,
     planar_trims: Vec<Vec<PlanarTrim>>,
-    planar: OnceLock<PlanarBoundaries>,
+    planar: OnceLock<planar::Sections<'a>>,
     planar_init: Mutex<()>,
 }
 impl Plan {
@@ -314,27 +313,32 @@ impl Plan {
     }
 }
 impl Prepared<'_> {
-    fn planar_boundaries(&self, dec: &mut Decider) -> Result<&PlanarBoundaries, Refusal> {
-        if let Some(faces) = self.planar.get() {
-            return Ok(faces);
+    fn planar_boundary(
+        &self,
+        id: usize,
+        dec: &mut Decider,
+    ) -> Result<Option<&distance::PlanarBoundary>, Refusal> {
+        if let Some(boundary) = self.planar.get().and_then(|sections| sections.get(id)) {
+            return Ok(boundary.as_deref());
         }
         let _initializing = self
             .planar_init
             .lock()
             .expect("planar distance initialization panicked");
         if self.planar.get().is_none() {
-            let faces = self.plan.prepare_planar_boundaries(dec)?;
-            self.planar
-                .set(faces)
-                .expect("planar distances initialize under one lock");
+            let sections = self.plan.prepare_planar_boundaries(dec)?;
+            assert!(self.planar.set(sections).is_ok(),
+                "planar distance sections initialize under one lock");
         }
-        Ok(self
-            .planar
-            .get()
-            .expect("planar distances were initialized"))
+        let sections = self.planar.get().expect("planar sections were initialized");
+        sections.prepare(id, dec)?;
+        Ok(sections.get(id).expect("planar section was initialized").as_deref())
     }
     fn member(&self, id: usize, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
-        if let Some(planar) = self.planar.get().and_then(|faces| faces[id].as_ref()) {
+        if let Some(planar) = self.planar.get()
+            .and_then(|sections| sections.get(id))
+            .and_then(Option::as_deref)
+        {
             return planar.contains(p, dec);
         }
         let face = &self.plan.faces[id];
@@ -564,7 +568,10 @@ impl Prepared<'_> {
                 "positive width and cell count required",
             ));
         }
-        if let Some(planar) = self.planar.get().and_then(|faces| faces[id.0].as_ref()) {
+        if let Some(planar) = self.planar.get()
+            .and_then(|sections| sections.get(id.0))
+            .and_then(Option::as_deref)
+        {
             return planar.point_distance(point, options, dec);
         }
         let mut candidate = Bounds {
@@ -633,7 +640,7 @@ impl Prepared<'_> {
         // An admitted near witness already encloses the minimum to the requested
         // width. Reconstruct complete finite regions only when that proof fails.
         if matches!(domain.surface(), catallax_shapes::Surface::Plane(_))
-            && let Some(planar) = &self.planar_boundaries(dec)?[id.0]
+            && let Some(planar) = self.planar_boundary(id.0, dec)?
         {
             return planar.point_distance(point, options, dec);
         }
@@ -672,8 +679,10 @@ impl Prepared<'_> {
         if matches!(a_domain.surface(), catallax_shapes::Surface::Plane(_))
             && matches!(b_domain.surface(), catallax_shapes::Surface::Plane(_))
         {
-            let faces = self.planar_boundaries(dec)?;
-            if let (Some(first), Some(second)) = (&faces[a.0], &faces[b.0])
+            if let (Some(first), Some(second)) = (
+                self.planar_boundary(a.0, dec)?,
+                self.planar_boundary(b.0, dec)?,
+            )
                 && let Some(answer) = first.face_distance(second, options, dec)?
             {
                 return Ok(answer);

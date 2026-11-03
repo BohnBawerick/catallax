@@ -201,6 +201,7 @@ pub struct Workspace {
     rays: Vec<Location>,
     opposite_rays: Vec<Location>,
     domains: Vec<FaceState>,
+    boundary_nodes: Vec<bool>,
     active: Vec<usize>,
     planes: Vec<Vector3>,
 }
@@ -222,6 +223,8 @@ pub struct Plan {
     faces: Vec<Face>,
     root: usize,
     leaf_registers: Vec<Option<usize>>,
+    // Positive/negative Boolean occurrence bits, compiled once for each leaf.
+    leaf_polarities: Vec<u8>,
     // Only explicit canonical expansions rename roles; domain predicates retain
     // the generated feature role, independently of the public stock name.
     definition_roles: BTreeMap<usize, catallax_recipe::Role>,
@@ -230,6 +233,7 @@ pub struct Plan {
     // hidden shared facet. Their signed minimum is a true Euclidean distance.
     separated_unions: BTreeSet<usize>,
     domains: Vec<ownership::Domain>,
+    planar_memberships: distance::PlanarMembershipCache,
 }
 
 impl Plan {
@@ -258,10 +262,12 @@ impl Plan {
             faces: vec![],
             root: 0,
             leaf_registers: vec![],
+            leaf_polarities: vec![],
             definition_roles: BTreeMap::new(),
             consumed: Vec::new(),
             separated_unions: BTreeSet::new(),
             domains: vec![ownership::Domain::Source, ownership::Domain::Absent],
+            planar_memberships: Default::default(),
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
@@ -300,13 +306,37 @@ impl Plan {
                                 dec,
                             )?
                         } else {
-                            plan.distance_shell(
+                            match plan.distance_shell(
                                 steps[body],
                                 open,
                                 thickness.value(),
                                 &step.id,
                                 dec,
-                            )?
+                            )? {
+                                distance_features::ShellResult::Complete(node) => node,
+                                distance_features::ShellResult::PlanarBoundary(bound) => {
+                                    let skin = plan
+                                        .draft_source_skin(recipe, body, &steps, &step_faces, dec)
+                                        .map_err(|error| {
+                                            if error.code.starts_with("draft.") {
+                                                Refusal::new(
+                                                    "distance.unsupported-envelope",
+                                                    error.detail,
+                                                )
+                                            } else {
+                                                error
+                                            }
+                                        })?;
+                                    plan.planar_distance_shell(
+                                        (steps[body], bound),
+                                        skin,
+                                        open,
+                                        thickness.value(),
+                                        &step.id,
+                                        dec,
+                                    )?
+                                }
+                            }
                         }
                     }
                     Operation::Thicken {
@@ -1000,6 +1030,7 @@ impl Plan {
         let pose = Pose::new(pose.rotation.clone(), pose.translation.clone(), dec)?;
         let map = Isometry::from(&pose);
         let mut result = self.clone();
+        result.planar_memberships = Default::default();
         for leaf in &mut result.leaves {
             leaf.transform(&map)?;
         }
@@ -1105,6 +1136,7 @@ impl Plan {
     }
 
     fn compact(&mut self) {
+        self.planar_memberships = Default::default();
         let mut live = vec![false; self.instructions.len()];
         live[0] = true;
         live[self.root] = true;
@@ -1147,6 +1179,24 @@ impl Plan {
         self.root = remap[self.root];
         self.compact_domains(&live, &remap);
         self.instructions = tape;
+        let mut polarities = vec![0u8; self.instructions.len()];
+        polarities[self.root] = 1;
+        self.leaf_polarities = vec![0; self.leaves.len()];
+        for node in (0..self.instructions.len()).rev() {
+            let sign = polarities[node];
+            match self.instructions[node] {
+                Instruction::Boolean { kind, a, b } => {
+                    polarities[a] |= sign;
+                    polarities[b] |= if kind == BooleanKind::Subtract {
+                        ((sign & 1) << 1) | ((sign & 2) >> 1)
+                    } else {
+                        sign
+                    };
+                }
+                Instruction::Leaf(leaf) => self.leaf_polarities[leaf] |= sign,
+                Instruction::Empty => (),
+            }
+        }
     }
 
     /// Whether expression identities or separating primitive halfspaces proved emptiness.
@@ -1277,19 +1327,47 @@ impl Plan {
             || self.separated_unions.contains(&self.root);
         let mut location = storage.locations[self.root];
         storage.active.clear();
-        for (id, face) in self.faces.iter().enumerate() {
-            if face.in_result
-                && self.leaf_registers[face.leaf]
-                    .is_some_and(|slot| storage.locations[slot] == Location::Boundary)
-                && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
-                && self.leaves[face.leaf].on_face(
-                    &face.origin,
-                    self.definition_role(id),
-                    &coordinates,
-                    dec,
-                )? != Some(false)
-            {
-                storage.active.push(id);
+        let composite = matches!(self.instructions[self.root], Instruction::Boolean { .. });
+        if matches!(location, Location::Boundary | Location::Indeterminate) {
+            if composite {
+                storage.boundary_nodes.clear();
+                storage
+                    .boundary_nodes
+                    .resize(self.instructions.len(), false);
+                storage.boundary_nodes[self.root] = true;
+                for slot in (0..self.instructions.len()).rev() {
+                    if !storage.boundary_nodes[slot]
+                        || matches!(
+                            storage.locations[slot],
+                            Location::Inside | Location::Outside
+                        )
+                    {
+                        continue;
+                    }
+                    if let Instruction::Boolean { a, b, .. } = self.instructions[slot] {
+                        // A strict child is locally constant, so its hidden boundaries
+                        // cannot contribute a surviving face through this Boolean.
+                        storage.boundary_nodes[a] = true;
+                        storage.boundary_nodes[b] = true;
+                    }
+                }
+            }
+            for (id, face) in self.faces.iter().enumerate() {
+                if face.in_result
+                    && self.leaf_registers[face.leaf].is_some_and(|slot| {
+                        (!composite || storage.boundary_nodes[slot])
+                            && storage.locations[slot] == Location::Boundary
+                    })
+                    && polynomial_sign(&face.polynomial, &coordinates, dec)? == Sign::Zero
+                    && self.leaves[face.leaf].on_face(
+                        &face.origin,
+                        self.definition_role(id),
+                        &coordinates,
+                        dec,
+                    )? != Some(false)
+                {
+                    storage.active.push(id);
+                }
             }
         }
         if location == Location::Indeterminate {
@@ -1585,6 +1663,9 @@ impl Plan {
         if !matches!(self.instructions[self.root], Instruction::Leaf(_)) {
             let query = self.proven_checked(point, storage, dec)?;
             if matches!(query.location, Location::Inside | Location::Outside) {
+                return Ok(absent);
+            }
+            if !storage.active.contains(&id.0) {
                 return Ok(absent);
             }
             if self.domain_excludes_point(face.domain, &storage.locations, &mut storage.domains) {

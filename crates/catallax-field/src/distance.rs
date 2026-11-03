@@ -6,10 +6,24 @@ use catallax_shapes::{
     Point3, Vector3,
     distance::{self, Bounds, Domain, Membership, Options},
 };
-use std::sync::{Arc, Mutex, OnceLock};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 mod contact;
 mod planar;
+
+#[derive(Clone, Debug)]
+struct NamedPlanarRegion {
+    boundary: Arc<distance::PlanarBoundary>,
+    source_orientation: u8,
+}
+
+type NamedPlanarRegions = BTreeMap<usize, Option<NamedPlanarRegion>>;
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct PlanarMembershipCache(OnceLock<Arc<Mutex<NamedPlanarRegions>>>);
 
 fn coordinates(p: &Point3) -> [Real; 3] {
     [p.x.clone(), p.y.clone(), p.z.clone()]
@@ -200,7 +214,6 @@ fn ray(
 
 // A physical patch is the union of its convex tiles; each tile is a conjunction.
 type PlanarTrim = Vec<Vec<geometry::Constraint>>;
-type PlanarBoundaries = Vec<Option<Arc<distance::PlanarBoundary>>>;
 
 /// Prepared field-native distance domains. Reuse across point queries on a plan.
 /// Face handles are valid only for the plan used to construct this object.
@@ -209,7 +222,7 @@ pub struct Prepared<'a> {
     domains: Vec<Option<Domain>>,
     coincident: Vec<Vec<Vec<bool>>>,
     planar_trims: Vec<Vec<PlanarTrim>>,
-    planar: OnceLock<PlanarBoundaries>,
+    planar: OnceLock<planar::Sections<'a>>,
     planar_init: Mutex<()>,
 }
 impl Plan {
@@ -314,27 +327,39 @@ impl Plan {
     }
 }
 impl Prepared<'_> {
-    fn planar_boundaries(&self, dec: &mut Decider) -> Result<&PlanarBoundaries, Refusal> {
-        if let Some(faces) = self.planar.get() {
-            return Ok(faces);
+    fn planar_boundary(
+        &self,
+        id: usize,
+        dec: &mut Decider,
+    ) -> Result<Option<&distance::PlanarBoundary>, Refusal> {
+        if let Some(boundary) = self.planar.get().and_then(|sections| sections.get(id)) {
+            return Ok(boundary.as_deref());
         }
         let _initializing = self
             .planar_init
             .lock()
             .expect("planar distance initialization panicked");
         if self.planar.get().is_none() {
-            let faces = self.plan.prepare_planar_boundaries(dec)?;
-            self.planar
-                .set(faces)
-                .expect("planar distances initialize under one lock");
+            let sections = self.plan.prepare_planar_boundaries(dec)?;
+            assert!(
+                self.planar.set(sections).is_ok(),
+                "planar distance sections initialize under one lock"
+            );
         }
-        Ok(self
-            .planar
-            .get()
-            .expect("planar distances were initialized"))
+        let sections = self.planar.get().expect("planar sections were initialized");
+        sections.prepare(id, dec)?;
+        Ok(sections
+            .get(id)
+            .expect("planar section was initialized")
+            .as_deref())
     }
     fn member(&self, id: usize, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
-        if let Some(planar) = self.planar.get().and_then(|faces| faces[id].as_ref()) {
+        if let Some(planar) = self
+            .planar
+            .get()
+            .and_then(|sections| sections.get(id))
+            .and_then(Option::as_deref)
+        {
             return planar.contains(p, dec);
         }
         let face = &self.plan.faces[id];
@@ -549,24 +574,35 @@ impl Prepared<'_> {
                 Refusal::new("field.face-id", "distance face is absent from this result")
             })
     }
-    /// Certified point-to-face distance, including the face's closed trim loops.
-    pub fn point_to_face(
+    /// Searches for a certified boundary witness without constructing trim regions.
+    /// A missing upper means no witness was found, not that the face is empty.
+    /// The lower bound is zero; only an admitted physical point supplies an upper.
+    pub fn point_to_face_witness(
         &self,
         id: FaceId,
         point: &Point3,
-        options: &Options,
+        width: &Rational,
         dec: &mut Decider,
     ) -> Result<Bounds, Refusal> {
         let domain = self.domain(id)?;
-        if options.width <= Rational::zero() || options.max_cells == 0 {
+        if width <= &Rational::zero() {
             return Err(Refusal::new(
                 "shapes.distance-domain",
-                "positive width and cell count required",
+                "positive width required",
             ));
         }
-        if let Some(planar) = self.planar.get().and_then(|faces| faces[id.0].as_ref()) {
-            return planar.point_distance(point, options, dec);
-        }
+        self.support_witness(id, domain, point, width, true, dec)
+    }
+
+    fn support_witness(
+        &self,
+        id: FaceId,
+        domain: &Domain,
+        point: &Point3,
+        width: &Rational,
+        perturb: bool,
+        dec: &mut Decider,
+    ) -> Result<Bounds, Refusal> {
         let mut candidate = Bounds {
             lower: Rational::zero(),
             upper: None,
@@ -574,8 +610,8 @@ impl Prepared<'_> {
             converged: false,
             cells: 0,
         };
-        let step = options.width.mul_pow2(-3);
-        for offset in 0..if options.max_cells == 1 { 28 } else { 1 } {
+        let step = width.mul_pow2(-3);
+        for offset in 0..if perturb { 28 } else { 1 } {
             dec.check_deadline()?;
             let target = if offset == 0 {
                 point.clone()
@@ -592,7 +628,7 @@ impl Prepared<'_> {
             let p = match catallax_boolean::surface_witness(
                 domain.surface(),
                 &target,
-                &options.width.mul_pow2(-20),
+                &width.mul_pow2(-20),
                 dec,
             )? {
                 Some(p) => p.to_real(),
@@ -609,7 +645,7 @@ impl Prepared<'_> {
             }
             .sqrt()
             .unwrap();
-            if options.max_cells == 1 && offset == 0 && distance.lo() > options.width.mul_pow2(1) {
+            if perturb && offset == 0 && distance.lo() > width.mul_pow2(1) {
                 break;
             }
             if self.member(id.0, &p, dec)?
@@ -618,22 +654,55 @@ impl Prepared<'_> {
                 candidate.upper = Some(distance.hi());
                 candidate.witnesses = Some([point.clone(), p]);
             }
-            if candidate
-                .upper
-                .as_ref()
-                .is_some_and(|u| u <= &options.width)
-            {
+            if candidate.upper.as_ref().is_some_and(|u| u <= width) {
                 candidate.converged = true;
                 return Ok(candidate);
             }
-            if offset == 0 && distance.lo() > options.width {
+            if offset == 0 && distance.lo() > *width {
                 break;
             }
+        }
+        Ok(candidate)
+    }
+
+    /// Certified point-to-face distance, including the face's closed trim loops.
+    pub fn point_to_face(
+        &self,
+        id: FaceId,
+        point: &Point3,
+        options: &Options,
+        dec: &mut Decider,
+    ) -> Result<Bounds, Refusal> {
+        let domain = self.domain(id)?;
+        if options.width <= Rational::zero() || options.max_cells == 0 {
+            return Err(Refusal::new(
+                "shapes.distance-domain",
+                "positive width and cell count required",
+            ));
+        }
+        if let Some(planar) = self
+            .planar
+            .get()
+            .and_then(|sections| sections.get(id.0))
+            .and_then(Option::as_deref)
+        {
+            return planar.point_distance(point, options, dec);
+        }
+        let candidate = self.support_witness(
+            id,
+            domain,
+            point,
+            &options.width,
+            options.max_cells == 1,
+            dec,
+        )?;
+        if candidate.converged {
+            return Ok(candidate);
         }
         // An admitted near witness already encloses the minimum to the requested
         // width. Reconstruct complete finite regions only when that proof fails.
         if matches!(domain.surface(), catallax_shapes::Surface::Plane(_))
-            && let Some(planar) = &self.planar_boundaries(dec)?[id.0]
+            && let Some(planar) = self.planar_boundary(id.0, dec)?
         {
             return planar.point_distance(point, options, dec);
         }
@@ -671,13 +740,13 @@ impl Prepared<'_> {
         let b_domain = self.domain(b)?;
         if matches!(a_domain.surface(), catallax_shapes::Surface::Plane(_))
             && matches!(b_domain.surface(), catallax_shapes::Surface::Plane(_))
+            && let (Some(first), Some(second)) = (
+                self.planar_boundary(a.0, dec)?,
+                self.planar_boundary(b.0, dec)?,
+            )
+            && let Some(answer) = first.face_distance(second, options, dec)?
         {
-            let faces = self.planar_boundaries(dec)?;
-            if let (Some(first), Some(second)) = (&faces[a.0], &faces[b.0])
-                && let Some(answer) = first.face_distance(second, options, dec)?
-            {
-                return Ok(answer);
-            }
+            return Ok(answer);
         }
         distance::face_distance(
             a_domain,
@@ -709,10 +778,6 @@ impl Prepared<'_> {
             converged: false,
             cells: 0,
         };
-        let probe = Options {
-            width: options.width.clone(),
-            max_cells: 1,
-        };
         let mut remaining = options.max_cells;
         for pass in 0..2 {
             let mut lower = None;
@@ -724,16 +789,15 @@ impl Prepared<'_> {
                     result.lower = Rational::zero();
                     return Ok(result);
                 }
-                let refinement = Options {
-                    width: options.width.clone(),
-                    max_cells: remaining,
+                let bounds = if pass == 0 {
+                    self.point_to_face_witness(FaceId(i), point, &options.width, dec)?
+                } else {
+                    let refinement = Options {
+                        width: options.width.clone(),
+                        max_cells: remaining,
+                    };
+                    self.point_to_face(FaceId(i), point, &refinement, dec)?
                 };
-                let bounds = self.point_to_face(
-                    FaceId(i),
-                    point,
-                    if pass == 0 { &probe } else { &refinement },
-                    dec,
-                )?;
                 lower = Some(lower.map_or(bounds.lower.clone(), |x: Rational| x.min(bounds.lower)));
                 result.cells += bounds.cells;
                 remaining = remaining.saturating_sub(bounds.cells);

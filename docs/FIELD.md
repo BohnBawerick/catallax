@@ -354,15 +354,17 @@ Ordinary queries, closed-contact sectors and cached display membership use the
 same ownership rules. The scalar tape still shares equal geometry, and the
 B-rep builder is unchanged.
 
-`closed_face_query_checked` refines an indeterminate named-face query when the
-active arrangement consists of two transverse smooth supports or exact planes.
-It visits every open sector in the selected carrier's tangent plane and uses
-exact normal perturbations that preserve every other support sign. A source
-boundary, surviving intermediate boundaries and a result-material transition
-in one such sector prove an open named patch approaching the contact.
-Exhausting the transverse sectors can instead prove the selected patch absent,
-including a consumed sharp circle. Distinct source roles sharing a carrier and
-singular supports remain unresolved.
+`closed_face_query_checked` checks every candidate for the selected origin and
+refines each indeterminate candidate separately. Two transverse smooth supports
+or exact planes admit a complete first-order arrangement. The proof visits every
+open sector in the selected carrier's tangent plane. Repeated projected lines
+are enumerated once, but every full normal still bounds the exact perturbations.
+A source boundary, surviving intermediate boundaries and a result-material
+transition prove an open named patch approaching the contact. Exhausting a
+complete arrangement can instead prove absence, including a consumed sharp
+circle. Any mutually tangent supports, or more than two supports with a curved
+carrier, use the curved proof even when the selected face is planar. Distinct
+source roles sharing a carrier and singular supports remain unresolved.
 
 At a tangent seam, transverse trim signs can make the other tangent supports
 irrelevant. Universal Boolean bounds leave their signs unknown and prove an open
@@ -374,12 +376,71 @@ proof requires one Boolean polarity for the source leaf, and every intermediate
 named boundary must survive.
 
 When trim dominance supplies no witness, separated second-order normal graphs
-can admit tangent patches through exact polynomial parabolic germs. These are
-presence witnesses; failure to find one does not prove absence. Mixed source
-polarity retains an ambiguous normal. Contacts lacking either proof remain
-unresolved. An isolated buried tangency cannot supply a surviving-patch witness.
-Draft tile domains retain their ordinary named-face proof: carrier sectors alone
-do not identify the selected coplanar tile.
+can admit tangent patches through exact polynomial parabolic germs. Feature
+germs use a positive rational step below every carrier's exact Cauchy bound,
+then classify the exact point on that feature. This is not a spatial tolerance.
+
+Curved absence needs a complete support-constraint definition, pairwise distinct
+projected tangent lines for transverse restrictions, and a strictly definite
+own-relative quadratic height difference for every other tangent graph in every
+sector. A nonzero sampled difference and negative discriminant supply a uniform
+angular separation, so higher-order terms cannot reverse the support order.
+Semidefinite null directions, parallel projected restrictions and unresolved
+classifications cannot prove absence. They can hide positive-area cuspidal
+patches even when every sampled ray is outside.
+
+An exact positive witness remains valid when other sectors are incomplete.
+For both linear and curved contacts, a single global Boolean source polarity,
+composed with the authored source material side, also certifies its outward
+direction: an unvisited sector cannot reverse it. Extrusion caps derive that
+side from their Start/End role and extrusion parameter, independently of the
+shared carrier normal. The Boolean polarity bits are compiled once per leaf
+and reused by contact proofs. This proves direction only after a surviving
+patch witness; it does not make the constraint family complete or permit an
+absence conclusion.
+Mixed source polarity retains an ambiguous normal. Draft tile domains retain
+their ordinary named-face proof: carrier sectors alone do not identify the
+selected coplanar tile. This does not enable unproved shell constructions.
+
+When ordinary and contact proofs remain unresolved, bounded planar extrusion
+faces and native polyhedral tiles can supply an independent finite-domain
+certificate. Their authored loop/tile edges add proof-only cuts to the planar
+section arrangement; these cuts also enter the exact Cauchy step bound.
+Root and historical normal germs, together with the explicit source name,
+label every open cell. Only membership-changing edges form the closed named
+region. Construction seams and isolated carrier strata do not create patches.
+The proof requires complete primitive, uncapped-cell, planar-extrusion or
+physical-polyhedron carriers for every participating source. Unsupported
+sources or intersections retain the unresolved result.
+
+Exact containment in a complete closed region proves presence, not absence
+when a region could not be constructed. Source physical normals and a single
+Boolean occurrence polarity certify direction separately. Immutable regions
+are cached per face; numeric refusals remain retryable, and rigid transforms
+replace world-coordinate caches. Neither the generic Draft fallback exclusion
+nor the shared-carrier role guard is relaxed.
+
+Definition-native planar shell compilation can separately prove an entire Round
+or RoundCorner name absent. It intersects the generator's nearest-feature
+halfspaces with every bounded convex source cell and checks exact affine rank.
+Only proved empty 3D interior in every intersection supplies this certificate;
+any undecided intersection preserves the generator. A lower-dimensional
+polyhedron lies in a plane, while a positive-radius cylinder or sphere contains
+no planar open patch. Their intersection therefore cannot carry a 2D face.
+The absent domain records that global name proof without changing scalar walls.
+
+Nonconvex kept-face prisms use whole polyhedral field leaves. Convex terms remain
+internal membership data, not independently named or exposed leaf boundaries.
+Only finite physical faces determine boundary membership. Auxiliary facets stay
+unnamed, and the source extraction and contact-provenance guards are unchanged.
+
+An Inner origin identifies a new offset patch in the source interior. Existing
+source boundary patches keep their source names when an offset carrier
+coincides with them. If exact source-vertex signs prove the entire bounded
+planar source lies on one side of an Inner plane, that plane has no
+source-interior patch and its Inner domain is absent. A genuine parallel image
+crossing the source remains eligible. Mixed or undecided signs do not supply
+this certificate. This changes named ownership only, not scalar material.
 
 Strict `Inside` or `Outside` at a retained historical boundary node excludes
 that named patch before contact analysis. Alternative ownership paths must all
@@ -469,9 +530,9 @@ Straight-edge planar face pairs test finite vertex-to-face minima, segment-plane
 crossings and interior segment-to-segment minima. Disjoint coplanar patches
 therefore have their finite gap, not zero. Circular-arc face pairs retain the
 certified general search. General conic and spline planar trims keep the existing
-query path and coverage limits. These query improvements do not enable nonconvex
-shell construction; unproved meeting envelopes retain
-`distance.unsupported-envelope`.
+query path and coverage limits. Shell construction separately requires the
+complete finite nearest-feature meeting arrangement described in section 7.15
+of RECIPE.md; unproved meeting envelopes retain `distance.unsupported-envelope`.
 
 Complete circular cylinder bands also skip the general search for point queries.
 `PreparedFace` recognizes a cylinder face whose two loops are single closed rim

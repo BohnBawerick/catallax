@@ -40,9 +40,9 @@ pub struct FilletDefinition {
     pub contacts: [Curve; 2],
 }
 
-/// The refusal code for a radius proved too large for its edge: no ball of
-/// that radius rolls along the edge against both faces, or the ball's contact
-/// with one face lies wholly outside it. Other refusals make no such claim.
+/// The refusal code for a failed strip at or beyond a proved regular contact
+/// limit, or whose contact with one face lies wholly outside it. Roll-over
+/// geometry can still exist; this is not proof that the recipe is impossible.
 pub const RADIUS_TOO_LARGE: &str = "fillet.radius-too-large";
 
 /// The refusal code for a strip end the builder does not trim yet: an arc

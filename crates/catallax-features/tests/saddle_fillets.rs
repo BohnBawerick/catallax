@@ -1459,7 +1459,7 @@ fn a_loop_past_the_end_of_a_cylinder_refuses() {
 #[test]
 fn a_ball_that_makes_a_loops_offsets_tangent_refuses() {
     let (code, _) = refusal(&over("subtract", ["wall", "wide"], "1"));
-    assert_eq!(code, "fillet.unsupported-contact");
+    assert_eq!(code, "fillet.radius-too-large");
 }
 
 #[test]

@@ -10,6 +10,9 @@ use catallax_shapes::Surface;
 
 use crate::{Instruction, Plan, geometry};
 
+#[path = "planar_shell.rs"]
+mod planar_shell;
+
 fn bad(detail: &str) -> Refusal {
     Refusal::new("distance.unsupported-envelope", detail)
 }
@@ -21,6 +24,11 @@ fn positive(t: &Real, dec: &mut Decider) -> Result<(), Refusal> {
         ));
     }
     Ok(())
+}
+
+pub(crate) enum ShellResult {
+    Complete(usize),
+    PlanarBoundary(Rational),
 }
 impl Plan {
     fn radial_skin(&self, node: usize) -> Option<(Surface, Vec<Origin>)> {
@@ -644,11 +652,11 @@ impl Plan {
         t: &Rational,
         step: &StepId,
         dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
+    ) -> Result<ShellResult, Refusal> {
         positive(&t.clone().into(), dec)?;
         if node == 0 {
             if open.is_empty() {
-                return Ok(0);
+                return Ok(ShellResult::Complete(0));
             }
             return Err(Refusal::new(
                 "reference.lost-face",
@@ -660,7 +668,7 @@ impl Plan {
                 .iter()
                 .all(|r| r.face.is_none() && r.touching.is_empty() && r.near.is_none())
         {
-            return Ok(0);
+            return Ok(ShellResult::Complete(0));
         }
         let bound = self.node_radius(node, dec)?;
         if let Some((surface, origins)) = self.radial_skin(node) {
@@ -673,53 +681,67 @@ impl Plan {
                 }
             }
             if !open.is_empty() {
-                return Ok(0);
+                return Ok(ShellResult::Complete(0));
             }
-            return self.radial_band(
-                RadialBand::shell(&surface, &origins, &t.clone().into(), step, dec)?,
-                bound,
-                dec,
-            );
+            return self
+                .radial_band(
+                    RadialBand::shell(&surface, &origins, &t.clone().into(), step, dec)?,
+                    bound,
+                    dec,
+                )
+                .map(ShellResult::Complete);
         }
         if let Some(skin) = self.cylinder_skin(node, dec)? {
             let selected = skin.select(open)?;
             if selected.iter().all(|v| *v) {
-                return Ok(0);
+                return Ok(ShellResult::Complete(0));
             }
             let Some(cavity) = skin.cavity(&selected, &t.clone().into(), Some(step), dec)? else {
-                return Ok(node);
+                return Ok(ShellResult::Complete(node));
             };
             let cavity = self.cylinder_leaf(cavity, &bound, dec)?;
-            return self.boolean(BooleanKind::Subtract, node, cavity, dec);
+            return self
+                .boolean(BooleanKind::Subtract, node, cavity, dec)
+                .map(ShellResult::Complete);
         }
         if let Some(skin) = self.cone_skin(node, dec)? {
             let selected = skin.select(open)?;
             if selected.iter().all(|v| *v) {
-                return Ok(0);
+                return Ok(ShellResult::Complete(0));
             }
             let cavity = match skin.cavity(&selected, &t.clone().into(), step, dec) {
                 Ok(Some(cavity)) => cavity,
-                Ok(None) => return Ok(node),
+                Ok(None) => return Ok(ShellResult::Complete(node)),
                 Err(e) => return Err(e),
             };
             let cavity = self.cone_leaf(cavity, &bound, dec)?;
-            return self.boolean(BooleanKind::Subtract, node, cavity, dec);
+            return self
+                .boolean(BooleanKind::Subtract, node, cavity, dec)
+                .map(ShellResult::Complete);
         }
         if let Some(skin) = self.circular_skin(node, dec)? {
             let selected = skin.select(open)?;
             if selected.iter().all(|v| *v) {
-                return Ok(0);
+                return Ok(ShellResult::Complete(0));
             }
             let Some(cavity) = skin.cavity(&selected, &t.clone().into(), step, dec)? else {
-                return Ok(node);
+                return Ok(ShellResult::Complete(node));
             };
             let cavity = self.circular_cell(cavity, &bound, dec)?;
-            return self.boolean(BooleanKind::Subtract, node, cavity, dec);
+            return self
+                .boolean(BooleanKind::Subtract, node, cavity, dec)
+                .map(ShellResult::Complete);
         }
-        let cell = self.planar_skin(node, dec)?;
+        let cell = match self.planar_skin(node, dec) {
+            Ok(cell) => cell,
+            Err(error) if error.code == "distance.unsupported-envelope" => {
+                return Ok(ShellResult::PlanarBoundary(bound));
+            }
+            Err(error) => return Err(error),
+        };
         let selected = cell.select(open, dec)?;
         if selected.iter().all(|v| *v) {
-            return Ok(0);
+            return Ok(ShellResult::Complete(0));
         }
         let cavity = match cell.cavity(&selected, &t.clone().into(), step, dec) {
             Ok(cavity) => cavity,
@@ -731,15 +753,18 @@ impl Plan {
                     &bound,
                     dec,
                 )?;
-                return self.boolean(BooleanKind::Intersect, node, walls, dec);
+                return self
+                    .boolean(BooleanKind::Intersect, node, walls, dec)
+                    .map(ShellResult::Complete);
             }
             Err(e) => return Err(e),
         };
         if cavity.is_empty() {
-            return Ok(node);
+            return Ok(ShellResult::Complete(node));
         }
         let cavity = self.distance_cell(cavity, bound, dec)?;
         self.boolean(BooleanKind::Subtract, node, cavity, dec)
+            .map(ShellResult::Complete)
     }
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn distance_thicken(

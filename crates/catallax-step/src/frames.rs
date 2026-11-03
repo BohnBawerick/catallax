@@ -45,8 +45,9 @@ pub(crate) fn perpendicular(model: &Model, bodies: &[BodyId]) -> Reframed {
 /// the wall rail at the band's seam. A saddle's narrow rail winds round its
 /// cylinder and takes the band's seam at `t = -pi/2`. A saddle's wide rail
 /// stays strictly on one side of the plane through the wide axis along
-/// `across`, so a cut along `across` misses every ring on that cylinder.
-/// `None` when the bodies have no band.
+/// `across`, so a cut along `across` misses every ring on that cylinder. A loop
+/// winds round neither cylinder, so each wall's cut goes where its rail never
+/// does. `None` when the bodies have no band.
 pub(crate) fn band_walls(
     model: &Model,
     bodies: &[BodyId],
@@ -86,12 +87,15 @@ pub(crate) fn band_walls(
                 Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
                     let [(wide, _), (narrow, _)] = saddle_rows(model, face).ok_or_else(refused)?;
                     let law = saddle.definition().law();
-                    // These cuts rely on a ring that winds round the narrow cylinder.
-                    if law.ring != SaddleRing::Through {
-                        return Err(Refusal::new(
-                            "step.unsupported-geometry",
-                            "a two-cylinder loop has no STEP chart yet",
-                        ));
+                    if law.ring == SaddleRing::Overlap {
+                        // A loop's wide rail never reaches `-e across`, where
+                        // `X = -P`, and its narrow rail never reaches `e across`
+                        // from the foot, where `X - g = p`. So each wall's cut
+                        // goes there and the rail misses it.
+                        let facing = Real::from_i64(law.gap_sign);
+                        frame(wide, law.across.scaled(&-&facing), &mut frames);
+                        frame(narrow, law.across.scaled(&facing), &mut frames);
+                        continue;
                     }
                     frame(wide, law.across.clone(), &mut frames);
                     frame(narrow, law.side_axis().scaled(&-Real::one()), &mut frames);

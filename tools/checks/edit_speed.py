@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pair the five released SolidDraft edits and compare their exact native answers."""
 import argparse
-from collections import defaultdict
+from collections import Counter, defaultdict
 import hashlib
 import importlib.util
 import json

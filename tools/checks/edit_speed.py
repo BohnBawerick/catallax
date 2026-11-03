@@ -88,8 +88,12 @@ def accepted_work(value, where):
     return value
 
 
-def read_native_work(path):
-    return accepted_work(int(path.read_text()), path)
+def read_native_work(path, reference_work=None):
+    work = accepted_work(int(path.read_text()), path)
+    if reference_work is not None:
+        assert work <= reference_work, \
+            f"accepted work rose from {reference_work} to {work}: {path}"
+    return work
 
 
 def compare_calls(left, right, where):

@@ -93,14 +93,28 @@ class NativeWorkGateTests(unittest.TestCase):
                     path.write_text(f"{count}\n")
                     self.assertEqual(edit_speed.read_native_work(path), count)
 
-    def test_negative_boolean_and_fractional_files_are_rejected(self):
+    def test_malformed_files_cannot_seed_or_pass_a_reference(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "work.txt"
-            for text in ("-1\n", "true\n", "1.5\n"):
-                with self.subTest(text=text):
-                    path.write_text(text)
-                    with self.assertRaises(ValueError):
-                        edit_speed.read_native_work(path)
+            for reference_work in (None, 100):
+                for text in ("-1\n", "true\n", "1.5\n"):
+                    with self.subTest(text=text, reference_work=reference_work):
+                        path.write_text(text)
+                        with self.assertRaises(ValueError):
+                            edit_speed.read_native_work(path, reference_work)
+
+    def test_native_references_require_non_increasing_work_including_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "work.txt"
+            for count, reference_work in ((0, 0), (99, 100), (100, 100)):
+                with self.subTest(count=count, reference_work=reference_work):
+                    path.write_text(f"{count}\n")
+                    self.assertEqual(edit_speed.read_native_work(path, reference_work), count)
+            for count, reference_work in ((1, 0), (101, 100)):
+                with self.subTest(count=count, reference_work=reference_work):
+                    path.write_text(f"{count}\n")
+                    with self.assertRaises(AssertionError):
+                        edit_speed.read_native_work(path, reference_work)
 
 
 if __name__ == "__main__":

@@ -1596,9 +1596,37 @@ fn a_mirrored_loop_measures_its_volume() {
     assert!(a.lo <= c.hi && c.lo <= a.hi, "{a:?} {c:?}");
 }
 
-// Each of these reads a ring that winds round the narrow cylinder.
+// A loop needs no wall seam to cross its rail. The band adds one seam, a wall
+// with other edges keeps its own, and each closed edge gains a vertex. A notch's
+// narrow wall and both of a lens's are bounded by the rail alone.
 #[test]
-fn a_loops_file_certificate_and_face_measures_stay_refused() {
+fn a_loop_certifies_and_writes_each_cylinder_chart() {
+    for (kind, counts, added) in [
+        ("union", (7, 9, 6), (3, 6)),
+        ("subtract", (5, 6, 4), (2, 4)),
+        ("intersect", (3, 3, 2), (1, 2)),
+    ] {
+        let built = build(&over(kind, ["wide", "wall"], "1"));
+        let report = written(&built);
+        assert_eq!(
+            (report.faces, report.edges, report.vertices),
+            counts,
+            "{kind}"
+        );
+        assert_eq!((report.added_edges, report.added_vertices), added, "{kind}");
+        let certified = certify_junction(built, &mut decider()).unwrap();
+        let junction = certified.junction().unwrap();
+        let [saddle] = junction.saddles() else {
+            panic!("one fitted loop");
+        };
+        assert_eq!(junction.face_bound(saddle.face()), saddle.bound().upper);
+        assert!(saddle.bound().upper <= *junction.fit_target_mm());
+    }
+}
+
+// Each of these reads more than the band's law gives.
+#[test]
+fn a_loops_mass_properties_and_face_measures_stay_refused() {
     let built = build(&over("union", ["wide", "wall"], "1"));
     let accuracy = Accuracy {
         relative: q("1/1000"),
@@ -1614,23 +1642,6 @@ fn a_loops_file_certificate_and_face_measures_stay_refused() {
     let rail = catallax_topology::saddle_rows(&built.model, band).unwrap()[0].0;
     let found = edge_length(&built.model, rail, &accuracy, &mut decider());
     assert_eq!(found.unwrap_err().code, "measure.unsupported-surface");
-    let mut bytes = Vec::new();
-    let file = write_step(
-        &built.model,
-        &[built.result],
-        &Default::default(),
-        &mut decider(),
-        &mut bytes,
-    );
-    assert_eq!(
-        file.map(|_| ()).unwrap_err().code,
-        "step.unsupported-geometry"
-    );
-    let certified = certify_junction(built, &mut decider());
-    assert_eq!(
-        certified.map(|_| ()).unwrap_err().code,
-        "numbers.geometric-gap-unproven"
-    );
     let field = Plan::compile_checked(&over("union", ["wide", "wall"], "1"), &mut decider());
     assert_eq!(field.map(|_| ()).unwrap_err().code, "field.fillet-contact");
 }

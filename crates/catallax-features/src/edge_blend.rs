@@ -1,15 +1,18 @@
 //! Shared boundary replacement for elementary edge blends and bevels.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::Refusal;
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Lump, Model, Sense, Shell, VertexId};
 
 /// Replacements refer to the immutable input skin. A boundary shared by two
-/// output faces has one edge handle; only its two coedges differ.
+/// output faces has one edge handle; only its two coedges differ. A removed
+/// edge collapses to a point of its face, where its neighbours in the loop
+/// already meet.
 #[derive(Default)]
 pub(crate) struct Replacement {
     pub edges: BTreeMap<(FaceId, EdgeId), EdgeId>,
+    pub removed: BTreeSet<(FaceId, EdgeId)>,
     pub gaps: BTreeMap<(FaceId, VertexId), EdgeId>,
     pub faces: Vec<(FaceId, FaceId)>,
 }
@@ -42,6 +45,7 @@ pub(crate) fn apply(
             let mut faces = Vec::with_capacity(input_faces.len() + edit.faces.len());
             for old in &input_faces {
                 if !edit.edges.keys().any(|(face, _)| face == old)
+                    && !edit.removed.iter().any(|(face, _)| face == old)
                     && !edit.gaps.keys().any(|(face, _)| face == old)
                 {
                     faces.push(*old);
@@ -62,23 +66,31 @@ pub(crate) fn apply(
                         }
                         continue;
                     };
+                    // Each kept coedge with the input coedge it replaces.
                     let mut path = Vec::with_capacity(cs.len() + edit.gaps.len());
                     for c in cs {
-                        let c = model.coedge(*c);
-                        let edge = edit.edges.get(&(*old, c.edge)).copied().unwrap_or(c.edge);
-                        path.push((edge, c.sense));
+                        let original = model.coedge(*c);
+                        if edit.removed.contains(&(*old, original.edge)) {
+                            continue;
+                        }
+                        let edge = edit
+                            .edges
+                            .get(&(*old, original.edge))
+                            .copied()
+                            .unwrap_or(original.edge);
+                        path.push(((edge, original.sense), *c));
                     }
                     let mut closed = Vec::with_capacity(path.len() + edit.gaps.len());
                     for i in 0..path.len() {
-                        let current = path[i];
+                        let (current, input) = path[i];
                         closed.push(current);
-                        let next = path[(i + 1) % path.len()];
+                        let (next, _) = path[(i + 1) % path.len()];
                         let end = ends(model, current.0, current.1).1;
                         let start = ends(model, next.0, next.1).0;
                         if end == start {
                             continue;
                         }
-                        let original = model.coedge(cs[i]);
+                        let original = model.coedge(input);
                         let vertex =
                             ends(model, original.edge, original.sense)
                                 .1

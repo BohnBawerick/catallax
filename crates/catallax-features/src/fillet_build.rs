@@ -15,7 +15,8 @@ use crate::{
     edge_blend::{self, Replacement},
     extrude::reverse,
     fillet::{
-        FilletDefinition, UNSUPPORTED_CORNER, UNSUPPORTED_END, hull_clear, hulls_apart, separated,
+        FilletDefinition, UNSUPPORTED_CORNER, UNSUPPORTED_END, hull_clear, hulls_apart,
+        hulls_touch, separated,
     },
     fillet_corner::CornerDefinition,
     profile::sign,
@@ -433,7 +434,11 @@ fn spine(definition: &FilletDefinition, at: &Point3) -> Result<Point3, Refusal> 
             let radial = d.minus(&axis.scaled(&(d.dot(axis) / axis.norm_squared())));
             Ok(center.plus(&unit(&radial).scaled(major)))
         }
-        _ => Err(bad("tangent strip joins need cylinder or torus strips")),
+        // The ball of a sphere strip does not move.
+        Surface::Sphere(s) => Ok(s.center.clone()),
+        _ => Err(bad(
+            "tangent strip joins need cylinder, torus or sphere strips",
+        )),
     }
 }
 /// Two strips meeting where their edges are tangent and their outer supports
@@ -485,7 +490,8 @@ fn tangent_join(
             "tangent strips need tangent outer supports at their join",
         ));
     }
-    // Each contact must lie on its own strip's contact curve.
+    // Each contact must lie on its own strip's contact curve, or be the
+    // point a sphere strip's contact collapses to.
     for (run, face, at) in [
         (first, common, &p),
         (second, common, &p),
@@ -493,6 +499,17 @@ fn tangent_join(
         (second, outer[1], &qa),
     ] {
         let index = run.faces.iter().position(|f| *f == face).unwrap();
+        if run.definition.point_contact() == Some(index) {
+            let Curve::Circle(point) = &run.definition.contacts[index] else {
+                unreachable!("a sphere strip's contacts are circles");
+            };
+            if !same(&point.center, at, dec)? {
+                return Err(bad(
+                    "a tangent join contact misses its sphere strip's point contact",
+                ));
+            }
+            continue;
+        }
         let curve = model
             .geom_mut()
             .add_curve(run.definition.contacts[index].clone());
@@ -620,6 +637,96 @@ fn tangent_faces(
     let nb = outward(model, b, at, dec)?;
     Ok(sign(&na.cross(&nb).norm_squared(), dec)? == Sign::Zero
         && sign(&na.dot(&nb), dec)? == Sign::Positive)
+}
+/// Whether a support's normal along a curve on it turns rigidly with the
+/// curve: along a line, on a plane or on a cylinder along its axis; round a
+/// circle, on a surface of revolution about the circle's axis, on any sphere,
+/// or on a torus whose tube it is. Two such faces tangent with agreeing
+/// normals at one point of the curve are tangent along all of it.
+fn steady(surface: &Surface, curve: &Curve, dec: &mut Decider) -> Result<bool, Refusal> {
+    let parallel = |a: &Vector3, b: &Vector3, dec: &mut Decider| {
+        Ok::<_, Refusal>(sign(&a.cross(b).norm_squared(), dec)? == Sign::Zero)
+    };
+    match (curve, surface) {
+        (Curve::Line(_), Surface::Plane(_)) | (Curve::Circle(_), Surface::Sphere(_)) => Ok(true),
+        (Curve::Line(line), Surface::Cylinder(c)) => parallel(&line.dir, &c.axis, dec),
+        (Curve::Circle(k), Surface::Plane(p)) => parallel(&k.normal, &p.normal, dec),
+        (Curve::Circle(k), Surface::Cylinder(c)) => Ok(parallel(&k.normal, &c.axis, dec)?
+            && parallel(&k.center.minus(&c.origin), &c.axis, dec)?),
+        (
+            Curve::Circle(k),
+            Surface::Torus(Torus {
+                center,
+                axis,
+                major,
+                minor,
+                ..
+            })
+            | Surface::TorusSheet(TorusSheet {
+                center,
+                axis,
+                major,
+                minor,
+                ..
+            }),
+        ) => {
+            let radial = k.center.minus(center);
+            if parallel(&k.normal, axis, dec)? && parallel(&radial, axis, dec)? {
+                return Ok(true);
+            }
+            // A tube circle: centred on the core circle, in the plane through
+            // the axis, with the tube's radius.
+            Ok(sign(&radial.dot(axis), dec)? == Sign::Zero
+                && sign(&(radial.norm_squared() - major.square()), dec)? == Sign::Zero
+                && sign(&k.normal.dot(axis), dec)? == Sign::Zero
+                && sign(&k.normal.dot(&radial), dec)? == Sign::Zero
+                && sign(&(&k.radius_sq - &minor.square()), dec)? == Sign::Zero)
+        }
+        _ => Ok(false),
+    }
+}
+/// Whether an input edge is smooth along all of it, so no ball rounds it. An
+/// earlier strip's contact rail, between the strip and one of its own
+/// supports, is smooth by the strip's retained definition whatever its
+/// carrier; other edges are smooth when their faces are tangent with
+/// agreeing normals at one point and both turn rigidly along the edge.
+fn smooth(
+    model: &Model,
+    edge: EdgeId,
+    incident: &[(FaceId, Sense)],
+    earlier: &[FilletDefinition],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let [(a, _), (b, _)] = incident else {
+        return Ok(false);
+    };
+    let surface = |f: &FaceId| model.geom().surface(model.face(*f).surface);
+    let e = model.edge(edge);
+    let curve = model.geom().curve(e.curve);
+    for (blend, other) in [(a, b), (b, a)] {
+        let origins = model.face_origins(*blend);
+        if earlier.iter().any(|strip| {
+            origins.contains(&strip.origin)
+                && strip
+                    .supports
+                    .iter()
+                    .zip(&strip.contacts)
+                    .any(|(support, rail)| {
+                        support.same_definition(surface(other)) && rail.same_definition(curve)
+                    })
+        }) {
+            return Ok(true);
+        }
+    }
+    let at = match (curve, e.start) {
+        (_, Some(start)) => model.geom().position(model.vertex(start).point),
+        (Curve::Line(line), None) => line.origin.clone(),
+        (Curve::Circle(circle), None) => circle_point(circle),
+        _ => return Ok(false),
+    };
+    Ok(steady(surface(a), curve, dec)?
+        && steady(surface(b), curve, dec)?
+        && tangent_faces(model, *a, *b, &at, dec)?)
 }
 /// Version 4 roll-over at a smooth input boundary. Where a contact foot
 /// reaches an edge across which its face continues tangentially, the run
@@ -760,11 +867,26 @@ fn connector(
     Err(bad("no end-curve arc lies in every active contact sector"))
 }
 
-/// The planes that cut a strip at its two end vertices, where each end has
-/// one face besides the strip's own two and that face is planar.
-fn end_planes(model: &Model, run: &Run, uses: &Uses) -> Option<[catallax_shapes::Plane; 2]> {
+/// The planes that cut a strip at its two end vertices, each as a point and
+/// a normal: the normal plane of its edge through a corner's ball centre in
+/// `centres`, the one face there besides the strip's own two when that face
+/// is planar, or the normal plane of its edge where another selected run
+/// continues it tangentially, the meridian of their join.
+fn end_cuts(
+    model: &Model,
+    run: &Run,
+    runs: &[Run],
+    uses: &Uses,
+    centres: &BTreeMap<(EdgeId, VertexId), Point3>,
+    dec: &mut Decider,
+) -> Result<Option<[(Point3, Vector3); 2]>, Refusal> {
     let e = model.edge(run.edge);
-    let plane_at = |v: VertexId| {
+    let mut cut_at = |v: VertexId| -> Result<Option<(Point3, Vector3)>, Refusal> {
+        if let (Some(centre), Curve::Line(line)) =
+            (centres.get(&(run.edge, v)), model.geom().curve(e.curve))
+        {
+            return Ok(Some((centre.clone(), line.dir.clone())));
+        }
         let others: BTreeSet<_> = uses
             .iter()
             .filter(|(edge, _)| {
@@ -774,34 +896,63 @@ fn end_planes(model: &Model, run: &Run, uses: &Uses) -> Option<[catallax_shapes:
             .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
             .filter(|f| !run.faces.contains(f))
             .collect();
-        let [face] = others.into_iter().collect::<Vec<_>>()[..] else {
-            return None;
-        };
-        match model.geom().surface(model.face(face).surface) {
-            Surface::Plane(p) => Some(p.clone()),
-            _ => None,
+        if let [face] = others.into_iter().collect::<Vec<_>>()[..]
+            && let Surface::Plane(p) = model.geom().surface(model.face(face).surface)
+        {
+            return Ok(Some((p.origin.clone(), p.normal.clone())));
         }
+        let Curve::Line(line) = model.geom().curve(e.curve) else {
+            return Ok(None);
+        };
+        let point = model.vertex(v).point;
+        for other in runs {
+            let o = model.edge(other.edge);
+            if other.edge == run.edge || (o.start != Some(v) && o.end != Some(v)) {
+                continue;
+            }
+            let [_, along] = catallax_intersect::tangent_at(model.geom(), o.curve, point, dec)?;
+            if sign(&along.cross(&line.dir).norm_squared(), dec)? == Sign::Zero {
+                return Ok(Some((model.geom().position(point), line.dir.clone())));
+            }
+        }
+        Ok(None)
     };
-    Some([plane_at(e.start?)?, plane_at(e.end?)?])
+    let (Some(start), Some(end)) = (e.start, e.end) else {
+        return Ok(None);
+    };
+    Ok(cut_at(start)?.zip(cut_at(end)?).map(|(a, b)| [a, b]))
 }
-/// A convex hull of a straight strip's region between its end planes. The
-/// strip ends on its end faces, so only that part can meet another face.
+/// Points whose convex hull holds a strip's region: a straight strip between
+/// its end cuts, or an arc strip over its input arc. A strip ends on its end
+/// faces, tangent joins and meridians there, so only that part can meet
+/// another face.
 fn hull(
     model: &Model,
     run: &Run,
+    runs: &[Run],
     uses: &Uses,
+    centres: &BTreeMap<(EdgeId, VertexId), Point3>,
     dec: &mut Decider,
-) -> Result<Option<[Point3; 6]>, Refusal> {
-    match end_planes(model, run, uses) {
-        Some([first, second]) => run.definition.cut_hull(
-            [
-                (&first.origin, &first.normal),
-                (&second.origin, &second.normal),
-            ],
-            dec,
-        ),
-        None => Ok(None),
+) -> Result<Option<Vec<Point3>>, Refusal> {
+    let e = model.edge(run.edge);
+    if let (Curve::Circle(_), Some(start), Some(end)) =
+        (model.geom().curve(e.curve), e.start, e.end)
+    {
+        let [from, to] = if e.sense == Sense::Same {
+            [start, end]
+        } else {
+            [end, start]
+        }
+        .map(|v| model.geom().position(model.vertex(v).point));
+        return run.definition.arc_hull([&from, &to], dec);
     }
+    Ok(match end_cuts(model, run, runs, uses, centres, dec)? {
+        Some([(a, m), (b, n)]) => run
+            .definition
+            .cut_hull([(&a, &m), (&b, &n)], dec)?
+            .map(Vec::from),
+        None => None,
+    })
 }
 
 /// Orders and orients the edges closing one strip end into a path from `from`.
@@ -919,11 +1070,171 @@ fn unequal_mitre(
     Ok((hits[deep].clone(), shallow, entry))
 }
 
+/// A strip ending where two earlier strips meet at a mitre, each strip
+/// tangent to one of its faces. When their retained definitions and the
+/// strip form the trihedral corner the three would have closed together,
+/// that corner's sphere sector closes the end and swallows the mitre: its
+/// boundary arcs trim both earlier strips, and its contact on their common
+/// support is the mitre's other end.
+struct Mitre {
+    corner: CornerDefinition,
+    /// The earlier strips' faces, in the corner's strip order after the run.
+    faces: [FaceId; 2],
+    /// The mitre between them, and its end away from the strip.
+    edge: EdgeId,
+    apex: VertexId,
+    /// The index of their common support in the corner, whose contact is
+    /// the apex.
+    shared: usize,
+}
+/// The earlier strip whose face this is, by its origin and carrier. A
+/// continued chain's strips share their origin.
+fn retained<'a>(
+    model: &Model,
+    face: FaceId,
+    earlier: &'a [FilletDefinition],
+) -> Option<&'a FilletDefinition> {
+    let origins = model.face_origins(face);
+    let surface = model.geom().surface(model.face(face).surface);
+    earlier
+        .iter()
+        .find(|strip| origins.contains(&strip.origin) && strip.surface.same_definition(surface))
+}
+#[allow(clippy::too_many_arguments)]
+fn mitre(
+    model: &Model,
+    body: BodyId,
+    uses: &Uses,
+    run: &Run,
+    old: VertexId,
+    earlier: &[FilletDefinition],
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<Option<Mitre>, Refusal> {
+    let at = |edge: &EdgeId| {
+        let e = model.edge(*edge);
+        e.start == Some(old) || e.end == Some(old)
+    };
+    let others: BTreeSet<_> = uses
+        .iter()
+        .filter(|(edge, _)| at(edge))
+        .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
+        .filter(|f| !run.faces.contains(f))
+        .collect();
+    let [c, d] = others.into_iter().collect::<Vec<_>>()[..] else {
+        return Ok(None);
+    };
+    let (Some(first), Some(second)) = (retained(model, c, earlier), retained(model, d, earlier))
+    else {
+        return Ok(None);
+    };
+    let Some(edge) = uses
+        .iter()
+        .find(|(edge, incident)| {
+            at(edge)
+                && incident.iter().any(|(f, _)| *f == c)
+                && incident.iter().any(|(f, _)| *f == d)
+        })
+        .map(|(edge, _)| *edge)
+    else {
+        return Ok(None);
+    };
+    // A smooth join of two earlier strips, such as a chain's meridian, is
+    // no mitre.
+    if smooth(model, edge, &uses[&edge], earlier, dec)? {
+        return Ok(None);
+    }
+    let corner_end = |detail: &str| Refusal::new(UNSUPPORTED_CORNER, detail);
+    let e = model.edge(edge);
+    let apex = if e.start == Some(old) { e.end } else { e.start }
+        .ok_or_else(|| corner_end("a mitre between earlier strips needs two ends"))?;
+    let name = model
+        .vertex_name(body, old)
+        .ok_or_else(|| bad("a corner vertex needs an unambiguous origin name"))?;
+    let corner = CornerDefinition::new(
+        Origin {
+            step: step.clone(),
+            role: Role::Corner { vertex: name },
+        },
+        [&run.definition, first, second],
+        dec,
+    )?;
+    let shared = corner.strips[1]
+        .into_iter()
+        .find(|i| corner.strips[2].contains(i))
+        .ok_or_else(|| corner_end("the earlier strips share no support"))?;
+    let tip = model.geom().position(model.vertex(apex).point);
+    if !same(&corner.sector.feet[shared], &tip, dec)? {
+        return Err(corner_end(
+            "the earlier strips' mitre does not end at the corner's contact on their common support",
+        ));
+    }
+    Ok(Some(Mitre {
+        corner,
+        faces: [c, d],
+        edge,
+        apex,
+        shared,
+    }))
+}
+/// Whether an edge is a mitre between two earlier strips at whose end
+/// another selected edge closes with a [`Mitre`] corner. That corner's ball
+/// is as wide as both strips and sits on both their axes, so the mitre's own
+/// ball has that one centre and rounds nothing beyond the corner; if the
+/// corner does not close, the selected edge refuses there.
+fn swallowed_mitre(
+    model: &Model,
+    edge: EdgeId,
+    selected: &[EdgeId],
+    uses: &Uses,
+    earlier: &[FilletDefinition],
+) -> bool {
+    let [(c, _), (d, _)] = uses[&edge][..] else {
+        return false;
+    };
+    if retained(model, c, earlier).is_none() || retained(model, d, earlier).is_none() {
+        return false;
+    }
+    let e = model.edge(edge);
+    [e.start, e.end].into_iter().flatten().any(|v| {
+        let at = |other: &EdgeId| {
+            let o = model.edge(*other);
+            o.start == Some(v) || o.end == Some(v)
+        };
+        let faces: BTreeSet<_> = uses
+            .iter()
+            .filter(|(other, _)| at(other))
+            .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
+            .collect();
+        faces.len() == 4
+            && selected.iter().any(|other| {
+                *other != edge
+                    && at(other)
+                    && uses[other]
+                        .iter()
+                        .all(|(f, _)| *f != c && *f != d && faces.contains(f))
+            })
+    })
+}
+/// Chains oriented boundary arcs into one closed loop.
+fn close(model: &Model, mut arcs: Vec<(EdgeId, Sense)>) -> Result<Vec<(EdgeId, Sense)>, Refusal> {
+    let mut path = vec![arcs.remove(0)];
+    while !arcs.is_empty() {
+        let end = edge_blend::ends(model, path.last().unwrap().0, path.last().unwrap().1).1;
+        let next = arcs
+            .iter()
+            .position(|(arc, sense)| edge_blend::ends(model, *arc, *sense).0 == end)
+            .ok_or_else(|| bad("corner boundary arcs do not close"))?;
+        path.push(arcs.remove(next));
+    }
+    Ok(path)
+}
+
 fn guard(
     model: &mut Model,
     body: BodyId,
     run: &Run,
-    hull: Option<&[Point3; 6]>,
+    hull: Option<&[Point3]>,
     uses: &Uses,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
@@ -1043,6 +1354,19 @@ fn corner_guard(
 
 type Strip = (EdgeId, [FaceId; 2], FilletDefinition);
 
+/// Whether two runs' input edges share a vertex.
+fn adjacent(model: &Model, a: &Run, b: &Run) -> bool {
+    let [a, b] = [a, b].map(|run| model.edge(run.edge));
+    [a.start, a.end]
+        .into_iter()
+        .flatten()
+        .any(|v| b.start == Some(v) || b.end == Some(v))
+}
+
+/// Rounds the selected edges of `body`. `earlier` holds the retained
+/// definitions of earlier strips, which tell their smooth rails apart from
+/// sharp edges whatever their carriers.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build(
     model: &mut Model,
     body: BodyId,
@@ -1050,6 +1374,7 @@ pub(crate) fn build(
     radius: &Real,
     roll_over: bool,
     step: &StepId,
+    earlier: &[FilletDefinition],
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
     let mut strips = Vec::new();
@@ -1061,6 +1386,7 @@ pub(crate) fn build(
         radius,
         roll_over,
         step,
+        earlier,
         &mut strips,
         &mut unfinished,
         dec,
@@ -1091,6 +1417,7 @@ fn build_strips(
     radius: &Real,
     roll_over: bool,
     step: &StepId,
+    earlier: &[FilletDefinition],
     strips: &mut Vec<Strip>,
     unfinished: &mut Option<&'static str>,
     dec: &mut Decider,
@@ -1102,7 +1429,26 @@ fn build_strips(
         ));
     }
     let uses = uses(model, body);
-    let selected = resolve(model, selection, &uses, dec)?;
+    let mut selected = resolve(model, selection, &uses, dec)?;
+    // Every edge leaves out the smooth ones, which no ball rounds; a smooth
+    // edge chosen by name still refuses below.
+    if matches!(selection, EdgeSelection::All) {
+        let mut sharp = Vec::with_capacity(selected.len());
+        for edge in selected {
+            if !smooth(model, edge, &uses[&edge], earlier, dec)? {
+                sharp.push(edge);
+            }
+        }
+        selected = sharp;
+        if roll_over {
+            let mitres: BTreeSet<_> = selected
+                .iter()
+                .copied()
+                .filter(|edge| swallowed_mitre(model, *edge, &selected, &uses, earlier))
+                .collect();
+            selected.retain(|edge| !mitres.contains(edge));
+        }
+    }
     if selected.is_empty() {
         return Ok((body, Vec::new()));
     }
@@ -1163,6 +1509,18 @@ fn build_strips(
             );
             fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec)
         })?;
+        // A ball as wide as a ring's cylinder consumes the whole face inside
+        // the ring, and consumed faces are not built yet: the ball reaches
+        // the ring's contact limit.
+        if definition.point_contact().is_some() && model.edge(edge).start.is_none() {
+            let refusal = Refusal::new(
+                "fillet.unsupported-contact",
+                "a ball as wide as the ring's cylinder consumes the face inside the ring",
+            );
+            return Err(fillet_limit::contact(
+                refusal, &given.0, same_sense, &given.1, radius, convex, dec,
+            ));
+        }
         strips.push((edge, faces, definition.clone()));
         runs.push(Run {
             edge,
@@ -1189,12 +1547,29 @@ fn build_strips(
     for run in &runs {
         rails_on_faces(model, run, dec)?;
     }
+    // Roll-over closes a strip ending at an earlier mitre with the corner the
+    // three strips share, a higher-contact stratum of version 4.
+    let mut mitres = BTreeMap::new();
+    if roll_over {
+        for (i, run) in runs.iter().enumerate() {
+            let e = model.edge(run.edge);
+            for old in [e.start, e.end].into_iter().flatten() {
+                if let Some(found) = mitre(model, body, &uses, run, old, earlier, step, dec)? {
+                    mitres.insert((i, old), found);
+                }
+            }
+        }
+    }
+    let centres = mitres
+        .iter()
+        .map(|((i, old), m)| ((runs[*i].edge, *old), m.corner.centre().clone()))
+        .collect();
     let hulls = runs
         .iter()
-        .map(|run| hull(model, run, &uses, dec))
+        .map(|run| hull(model, run, &runs, &uses, &centres, dec))
         .collect::<Result<Vec<_>, _>>()?;
     for (run, hull) in runs.iter().zip(&hulls) {
-        if let Err(refusal) = guard(model, body, run, hull.as_ref(), &uses, dec) {
+        if let Err(refusal) = guard(model, body, run, hull.as_deref(), &uses, dec) {
             // A lone closed ring may clear every countersink mouth, touch them
             // at single points, or continue over them; every other overflow,
             // and any ring outside that stratum, still refuses.
@@ -1245,15 +1620,18 @@ fn build_strips(
     }
     for (i, a) in runs.iter().enumerate() {
         for (j, b) in runs.iter().enumerate().skip(i + 1) {
-            let a_edge = model.edge(a.edge);
-            let b_edge = model.edge(b.edge);
-            if [a_edge.start, a_edge.end]
-                .into_iter()
-                .flatten()
-                .any(|v| b_edge.start == Some(v) || b_edge.end == Some(v))
-            {
+            if adjacent(model, a, b) {
                 continue;
             }
+            // Two strips joined at both ends of a sphere strip meet at its
+            // point contact, where all three share a vertex.
+            let touch = runs.iter().find_map(|run| {
+                let point = run.definition.point_contact()?;
+                let Curve::Circle(circle) = &run.definition.contacts[point] else {
+                    return None;
+                };
+                (adjacent(model, run, a) && adjacent(model, run, b)).then_some(&circle.center)
+            });
             for (index, face) in a.faces.iter().enumerate() {
                 if let Some(other) = b.faces.iter().position(|f| f == face)
                     && a.definition.bands_meet(index, &b.definition, other, dec)?
@@ -1270,7 +1648,10 @@ fn build_strips(
                 continue;
             }
             if let (Some(first), Some(second)) = (&hulls[i], &hulls[j])
-                && hulls_apart(first, second, dec)?
+                && match touch {
+                    Some(touch) => hulls_touch(first, second, touch, dec)?,
+                    None => hulls_apart(first, second, dec)?,
+                }
             {
                 continue;
             }
@@ -1302,6 +1683,7 @@ fn build_strips(
     let mut edit = Replacement::default();
     let mut end_changes = BTreeMap::new();
     let mut corners = Vec::new();
+    let mut swallowed = Vec::new();
     for old in model.vertices_of_body(body) {
         let active: Vec<_> = runs
             .iter()
@@ -1328,6 +1710,87 @@ fn build_strips(
         } else {
             UNSUPPORTED_CORNER
         });
+        if let [i] = active[..]
+            && let Some(m) = mitres.get(&(i, old))
+        {
+            let (corner, shared) = (&m.corner, m.shared);
+            let feet: Vec<_> = (0..3)
+                .map(|s| {
+                    if s == shared {
+                        m.apex
+                    } else {
+                        vertex(model, corner.sector.feet[s].clone())
+                    }
+                })
+                .collect();
+            let faces = runs[i].faces;
+            let [a, b] = corner.strips[0];
+            runs[i].ends.insert((old, faces[0]), feet[a]);
+            runs[i].ends.insert((old, faces[1]), feet[b]);
+            let curve = model.geom_mut().add_curve(corner.boundary(0));
+            let cap = model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: Some(feet[a]),
+                end: Some(feet[b]),
+            });
+            runs[i].caps.insert(old, vec![cap]);
+            // Each earlier strip's boundary arc replaces the mitre in its
+            // loop, from the mitre's far end to its own foot.
+            let mitre_edge = model.edge(m.edge).clone();
+            let mut arcs = Vec::with_capacity(2);
+            for (k, face) in [(1, m.faces[0]), (2, m.faces[1])] {
+                let [p, q] = corner.strips[k];
+                let own = feet[if p == shared { q } else { p }];
+                let (start, end) = if mitre_edge.start == Some(old) {
+                    (own, m.apex)
+                } else {
+                    (m.apex, own)
+                };
+                let curve = model.geom_mut().add_curve(corner.boundary(k));
+                let arc = model.add_edge(Edge {
+                    curve,
+                    sense: if start == feet[p] {
+                        Sense::Same
+                    } else {
+                        Sense::Reversed
+                    },
+                    start: Some(start),
+                    end: Some(end),
+                });
+                edit.edges.insert((face, m.edge), arc);
+                arcs.push((face, arc));
+            }
+            for (edge, adjacent) in &uses {
+                let e = model.edge(*edge);
+                if *edge == runs[i].edge
+                    || *edge == m.edge
+                    || (e.start != Some(old) && e.end != Some(old))
+                {
+                    continue;
+                }
+                let v = if adjacent.iter().any(|(f, _)| *f == faces[0]) {
+                    feet[a]
+                } else if adjacent.iter().any(|(f, _)| *f == faces[1]) {
+                    feet[b]
+                } else {
+                    return Err(bad("an edge at a mitre corner meets neither strip face"));
+                };
+                end_changes.insert((*edge, old), v);
+            }
+            let mut near = incident.clone();
+            near.extend(
+                uses.iter()
+                    .filter_map(|(edge, adjacent)| {
+                        let e = model.edge(*edge);
+                        (e.start == Some(m.apex) || e.end == Some(m.apex)).then_some(adjacent)
+                    })
+                    .flat_map(|adjacent| adjacent.iter().map(|(f, _)| *f)),
+            );
+            corner_guard(model, body, corner, &near, dec)?;
+            swallowed.push((old, i, arcs));
+            continue;
+        }
         if incident.len() != 3 {
             return Err(bad("a strip end needs a regular three-face vertex"));
         }
@@ -1438,8 +1901,29 @@ fn build_strips(
                         }
                     }
                 };
-                let p = vertex(model, p);
-                let q = vertex(model, qa);
+                // A sphere strip's contact on its plane is one point, so its
+                // two ends share that vertex there.
+                let point = |face: FaceId| {
+                    [*i, *j].into_iter().find_map(|index| {
+                        let run = &runs[index];
+                        let at = run.faces.iter().position(|f| *f == face)?;
+                        if run.definition.point_contact() != Some(at) {
+                            return None;
+                        }
+                        run.ends
+                            .iter()
+                            .find(|((_, f), _)| *f == face)
+                            .map(|(_, v)| *v)
+                    })
+                };
+                let p = match point(common) {
+                    Some(v) => v,
+                    None => vertex(model, p),
+                };
+                let q = match point(a).or_else(|| point(b)) {
+                    Some(v) => v,
+                    None => vertex(model, qa),
+                };
                 let unequal = unequal.map(|(shallow, m)| (shallow, vertex(model, m)));
                 for (index, run) in [*i, *j].into_iter().enumerate() {
                     for face in runs[run].faces {
@@ -1577,6 +2061,7 @@ fn build_strips(
     let mut cap_uses = BTreeMap::new();
     for run in &runs {
         let input = model.edge(run.edge).clone();
+        let point = run.definition.point_contact();
         let mut rails = Vec::with_capacity(2);
         for (i, face) in run.faces.iter().enumerate() {
             // Every other face is clear of the band, so a closed rail stays in
@@ -1633,6 +2118,12 @@ fn build_strips(
                     sense = reverse(sense);
                 }
             }
+            // A point contact leaves no rail: its face loses the input edge.
+            if point == Some(i) {
+                edit.removed.insert((*face, run.edge));
+                rails.push((None, reverse(run.senses[i]), *face));
+                continue;
+            }
             let curve = model
                 .geom_mut()
                 .add_curve(run.definition.contacts[i].clone());
@@ -1643,21 +2134,28 @@ fn build_strips(
                 end: input.end.map(|v| run.ends[&(v, *face)]),
             });
             edit.edges.insert((*face, run.edge), edge);
-            rails.push((edge, reverse(run.senses[i])));
+            rails.push((Some(edge), reverse(run.senses[i]), *face));
         }
         let paths = if input.start.is_none() && input.end.is_none() {
-            vec![vec![rails[0]], vec![rails[1]]]
+            rails
+                .iter()
+                .map(|(edge, sense, _)| {
+                    edge.map(|edge| vec![(edge, *sense)])
+                        .ok_or_else(|| bad("a ring strip keeps both rails"))
+                })
+                .collect::<Result<_, _>>()?
         } else {
             let mut path = Vec::with_capacity(4);
-            for rail in rails {
-                path.push(rail);
-                let end = edge_blend::ends(model, rail.0, rail.1).1.unwrap();
-                let old = if rail.1 == Sense::Same {
+            for (edge, sense, face) in rails {
+                if let Some(edge) = edge {
+                    path.push((edge, sense));
+                }
+                let old = if sense == Sense::Same {
                     input.end.unwrap()
                 } else {
                     input.start.unwrap()
                 };
-                for (cap, sense) in chain(model, &run.caps[&old], end)? {
+                for (cap, sense) in chain(model, &run.caps[&old], run.ends[&(old, face)])? {
                     cap_uses.insert(cap, sense);
                     path.push((cap, sense));
                 }
@@ -1686,7 +2184,7 @@ fn build_strips(
     for (old, indices, corner) in &corners {
         // Each quarter circle is used once by its strip and once, reversed,
         // by the sphere sector.
-        let mut caps: Vec<_> = indices
+        let caps: Vec<_> = indices
             .iter()
             .map(|index| {
                 let [cap] = runs[*index].caps[old][..] else {
@@ -1695,15 +2193,7 @@ fn build_strips(
                 (cap, reverse(cap_uses[&cap]))
             })
             .collect();
-        let mut path = vec![caps.remove(0)];
-        while !caps.is_empty() {
-            let end = edge_blend::ends(model, path.last().unwrap().0, path.last().unwrap().1).1;
-            let next = caps
-                .iter()
-                .position(|(cap, sense)| edge_blend::ends(model, *cap, *sense).0 == end)
-                .ok_or_else(|| bad("corner boundary arcs do not close"))?;
-            path.push(caps.remove(next));
-        }
+        let path = close(model, caps)?;
         // A concave corner's material lies outside its ball.
         let face = crate::extrude::face(
             model,
@@ -1718,6 +2208,46 @@ fn build_strips(
             vec![corner.origin.clone()],
         );
         edit.faces.push((runs[indices[0]].faces[0], face));
+    }
+    for (old, i, arcs) in &swallowed {
+        let corner = &mitres[&(*i, *old)].corner;
+        let [cap] = runs[*i].caps[old][..] else {
+            unreachable!("a mitre corner's strip end has one cap");
+        };
+        let mut sides = vec![(cap, reverse(cap_uses[&cap]))];
+        // Each arc is used once by its earlier strip, as the mitre was, and
+        // once, reversed, by the sphere sector.
+        let mitre = mitres[&(*i, *old)].edge;
+        for (face, arc) in arcs {
+            let sense = model
+                .face(*face)
+                .loops
+                .iter()
+                .find_map(|lp| match model.loop_(*lp) {
+                    Loop::Coedges(cs) => cs
+                        .iter()
+                        .map(|c| model.coedge(*c))
+                        .find(|c| c.edge == mitre)
+                        .map(|c| c.sense),
+                    Loop::Vertex(_) => None,
+                })
+                .ok_or_else(|| bad("an earlier strip does not use its mitre"))?;
+            sides.push((*arc, reverse(sense)));
+        }
+        let path = close(model, sides)?;
+        let face = crate::extrude::face(
+            model,
+            corner.sector.surface.clone(),
+            if corner.sector.convex {
+                Sense::Same
+            } else {
+                Sense::Reversed
+            },
+            vec![path],
+            None,
+            vec![corner.origin.clone()],
+        );
+        edit.faces.push((runs[*i].faces[0], face));
     }
     let result = edge_blend::apply(model, body, &edit)?;
     if let Some(trimming) = trimming {

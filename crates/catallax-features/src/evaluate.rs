@@ -941,6 +941,7 @@ fn evaluate_impl(
                         &radius.value().clone().into(),
                         recipe.format != catallax_recipe::FORMAT,
                         &step.id,
+                        &fillets,
                         dec,
                     )?;
                     fillets.extend(definitions);

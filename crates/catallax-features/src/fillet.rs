@@ -4,7 +4,7 @@ use catallax_numbers::{Decider, OperationSpan, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Origin, StepId};
 use catallax_shapes::{
     BallSide, Circle, Curve, Cylinder, Ellipse, Isometry, Line, Plane, Point3, RollingPipe,
-    RollingSaddle, RollingSaddleDefinition, RollingTorus, SplineSupport, Surface, Torus,
+    RollingSaddle, RollingSaddleDefinition, RollingTorus, Sphere, SplineSupport, Surface, Torus,
     TorusSheet, Vector3,
 };
 
@@ -33,7 +33,10 @@ pub struct FilletDefinition {
     pub convex: bool,
     /// Exact elementary carrier of the shorter contact arc.
     pub surface: Surface,
-    /// Contact curves, each paired with the corresponding input support.
+    /// Contact curves, each paired with the corresponding input support. On
+    /// a sphere strip, where the ball is as wide as its cylindrical support,
+    /// the plane contact is a circle of zero radius: the one point where the
+    /// cylinder's axis meets the plane.
     pub contacts: [Curve; 2],
 }
 
@@ -99,14 +102,16 @@ pub(crate) fn too_large(reason: &str, limit: Option<&Real>, dec: &mut Decider) -
 fn bad(detail: &str) -> Refusal {
     Refusal::new("fillet.unsupported-contact", detail)
 }
-fn unit(v: &Vector3) -> Vector3 {
-    let squared = v.norm_squared();
-    let norm = squared
+/// The square root, exact for a rational square.
+fn root(value: &Real) -> Real {
+    value
         .as_rational()
         .and_then(|r| crate::extrude::sqrt(&r))
         .map(Real::from)
-        .unwrap_or_else(|| squared.sqrt());
-    v.scaled(&(&Real::one() / &norm))
+        .unwrap_or_else(|| value.sqrt())
+}
+fn unit(v: &Vector3) -> Vector3 {
+    v.scaled(&(&Real::one() / &root(&v.norm_squared())))
 }
 fn normal(v: &Vector3, same: bool) -> Vector3 {
     unit(v).scaled(&Real::from_i64(if same { 1 } else { -1 }))
@@ -116,8 +121,9 @@ impl FilletDefinition {
     /// Reduces plane-plane, parallel-cylinder and cylinder-plane generator
     /// contacts to an exact cylinder, perpendicular plane-cylinder rings and
     /// other circles where two surfaces of revolution about one axis meet to
-    /// an exact torus, and oblique plane-cylinder ellipses to an exact
-    /// rational band. This does not publish a solid.
+    /// an exact torus, a plane-cylinder ring to an exact sphere when the ball
+    /// is as wide as the cylinder, and oblique plane-cylinder ellipses to an
+    /// exact rational band. This does not publish a solid.
     pub fn new(
         origin: Origin,
         supports: [Surface; 2],
@@ -289,6 +295,17 @@ impl FilletDefinition {
         })
     }
 
+    /// The index of a contact that collapses to one point: the plane contact
+    /// of a sphere strip.
+    pub fn point_contact(&self) -> Option<usize> {
+        if !matches!(self.surface, Surface::Sphere(_)) {
+            return None;
+        }
+        self.supports
+            .iter()
+            .position(|support| matches!(support, Surface::Plane(_)))
+    }
+
     /// Moves the retained definition and its exact reduction through an isometry.
     pub fn transform(&mut self, map: &Isometry) -> Result<(), Refusal> {
         let edge = match &self.edge {
@@ -386,6 +403,41 @@ impl FilletDefinition {
             }
         }
         Ok(points.try_into().ok())
+    }
+
+    /// Points whose convex hull holds the region of a ring strip over one arc
+    /// of its edge, from `from` to `to` turning positively about the edge
+    /// circle's normal, both on the edge. Each meridian section of the region
+    /// lies in the triangle of its edge point and contacts, as for
+    /// [`Self::cut_hull`]. The edge and both contacts are coaxial circles, and
+    /// each of their arcs lies in the triangle of its ends and the meeting
+    /// point of their tangents. `None` for other strips and for an arc of half
+    /// a turn or more.
+    pub fn arc_hull(
+        &self,
+        [from, to]: [&Point3; 2],
+        dec: &mut Decider,
+    ) -> Result<Option<Vec<Point3>>, Refusal> {
+        let (Curve::Circle(edge), [Curve::Circle(a), Curve::Circle(b)]) =
+            (&self.edge, &self.contacts)
+        else {
+            return Ok(None);
+        };
+        let [u, w] = [from, to].map(|p| p.minus(&edge.center));
+        if sign(&u.cross(&w).dot(&edge.normal), dec)? != Sign::Positive {
+            return Ok(None);
+        }
+        let size = root(&edge.radius_sq);
+        let [u, w] = [u, w].map(|v| v.scaled(&(&Real::one() / &size)));
+        let lift = &Real::one() + &u.dot(&w);
+        let mut points = Vec::with_capacity(9);
+        for circle in [edge, a, b] {
+            let radius = root(&circle.radius_sq);
+            points.push(circle.center.plus(&u.scaled(&radius)));
+            points.push(circle.center.plus(&w.scaled(&radius)));
+            points.push(circle.center.plus(&u.plus(&w).scaled(&(&radius / &lift))));
+        }
+        Ok(Some(points))
     }
 
     /// Whether this strip and another consume overlapping bands of one shared
@@ -659,9 +711,17 @@ fn plane_cylinder(
     // A wall contact on the axis side needs the ring torus. One away from
     // the axis keeps the tube angles of the outer quarter, where the distance
     // from the axis is at least `major`; for `0 < major <= radius` that
-    // quarter lies on the regular outer sheet of a horn or spindle torus.
+    // quarter lies on the regular outer sheet of a horn or spindle torus. A
+    // ball as wide as the cylinder sits on its axis and does not move: its
+    // plane contact collapses to the point where the axis meets the plane.
     let ring = sign(&(&major - radius), dec)? == Sign::Positive;
-    if !ring && sign(&major, dec)? != Sign::Positive {
+    let sheet = if ring {
+        Sign::Positive
+    } else {
+        sign(&major, dec)?
+    };
+    let collapsed = sheet == Sign::Zero;
+    if sheet == Sign::Negative {
         return Err(bad(
             "this contact requires a horn or spindle torus and its sheet continuation",
         ));
@@ -686,7 +746,15 @@ fn plane_cylinder(
     } else {
         cylinder.axis.clone()
     };
-    let surface = if ring {
+    let surface = if collapsed {
+        Surface::Sphere(Sphere::new(
+            centre.clone(),
+            radius.clone(),
+            n.scaled(k),
+            edge.ref_dir.clone(),
+            dec,
+        )?)
+    } else if ring {
         Surface::Torus(Torus {
             center: centre.clone(),
             axis,
@@ -758,6 +826,18 @@ fn bounds(
             let [low, high] = saddle.extent(axis, dec)?;
             return Ok(Some((Real::from(low), Real::from(high))));
         }
+        // Positive weights keep the band in the hull of its controls.
+        Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
+            let mut range: Option<(Rational, Rational)> = None;
+            for (control, _) in pipe.enclosed_controls(dec)? {
+                let (low, high) = (control[axis].lo(), control[axis].hi());
+                range = Some(match range {
+                    Some((least, most)) => (least.min(low), most.max(high)),
+                    None => (low, high),
+                });
+            }
+            return Ok(range.map(|(low, high)| (Real::from(low), Real::from(high))));
+        }
         _ => return Ok(None),
     };
     Ok(Some((&centre - &extent, &centre + &extent)))
@@ -807,18 +887,28 @@ pub fn hull_clear(
     Ok(false)
 }
 
-/// Proves two [`FilletDefinition::cut_hull`] point sets apart by a plane
-/// through a face of either hull: its own points on one side, the other's
-/// strictly on the other side.
+/// Proves two hull point sets apart by a plane through three points of
+/// either set: its own points on one side, the other's strictly on the other
+/// side. A [`FilletDefinition::cut_hull`] tries its five faces; other sets,
+/// such as [`FilletDefinition::arc_hull`] gives, try every triple, which
+/// includes every face of their hull.
 pub(crate) fn hulls_apart(
-    first: &[Point3; 6],
-    second: &[Point3; 6],
+    first: &[Point3],
+    second: &[Point3],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     // Both cuts, both supports and the chord plane through the two rails.
     const FACES: [[usize; 3]; 5] = [[0, 1, 2], [3, 4, 5], [0, 1, 3], [0, 2, 3], [1, 2, 4]];
     for (own, other) in [(first, second), (second, first)] {
-        'faces: for [i, j, k] in FACES {
+        let n = own.len();
+        let faces: Vec<[usize; 3]> = if n == 6 {
+            FACES.to_vec()
+        } else {
+            (0..n)
+                .flat_map(|i| (i + 1..n).flat_map(move |j| (j + 1..n).map(move |k| [i, j, k])))
+                .collect()
+        };
+        'faces: for [i, j, k] in faces {
             let normal = own[j].minus(&own[i]).cross(&own[k].minus(&own[i]));
             let mut side = Sign::Zero;
             for p in own {
@@ -843,6 +933,63 @@ pub(crate) fn hulls_apart(
         }
     }
     Ok(false)
+}
+
+/// Proves two hull point sets that share the point `touch` meet nowhere
+/// else: a plane through it keeps the first set on one closed side and the
+/// second, but for points at `touch`, strictly on the other, so the second
+/// hull meets that plane only there. The normals of planes through `touch`
+/// with each set on its own closed side form a cone. Its extreme rays are
+/// normal to two directions from `touch`, and their sum is strict wherever
+/// any normal in the cone is.
+pub(crate) fn hulls_touch(
+    first: &[Point3],
+    second: &[Point3],
+    touch: &Point3,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let mut directions = Vec::with_capacity(first.len() + second.len());
+    for (points, own) in [(first, true), (second, false)] {
+        for p in points {
+            let d = p.minus(touch);
+            if sign(&d.norm_squared(), dec)? != Sign::Zero {
+                directions.push((d, own));
+            }
+        }
+    }
+    // Whether each set stays on its own closed side, the second strictly
+    // when asked.
+    let holds = |n: &Vector3, strict: bool, dec: &mut Decider| -> Result<bool, Refusal> {
+        for (d, own) in &directions {
+            match (sign(&n.dot(d), dec)?, own) {
+                (Sign::Negative, true) | (Sign::Positive, false) => return Ok(false),
+                (Sign::Zero, false) if strict => return Ok(false),
+                _ => {}
+            }
+        }
+        Ok(true)
+    };
+    let mut sum: Option<Vector3> = None;
+    for (i, (a, _)) in directions.iter().enumerate() {
+        for (b, _) in &directions[i + 1..] {
+            let ray = a.cross(b);
+            if sign(&ray.norm_squared(), dec)? == Sign::Zero {
+                continue;
+            }
+            for ray in [ray.clone(), ray.scaled(&Real::from_i64(-1))] {
+                if holds(&ray, false, dec)? {
+                    sum = Some(match sum {
+                        Some(sum) => sum.plus(&ray),
+                        None => ray,
+                    });
+                }
+            }
+        }
+    }
+    match sum {
+        Some(n) => holds(&n, true, dec),
+        None => Ok(false),
+    }
 }
 
 pub(crate) fn separated(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<bool, Refusal> {

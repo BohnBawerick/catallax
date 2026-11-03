@@ -177,6 +177,42 @@ pub struct SaddleLaw {
     pub branch: i64,
     /// Which ring this is.
     pub ring: SaddleRing,
+    /// The gap's sign, `1` when the narrow axis lies toward `across`.
+    pub gap_sign: i64,
+}
+
+impl SaddleLaw {
+    /// The narrow axis.
+    pub fn narrow_axis(&self) -> Vector3 {
+        self.axis
+            .scaled(&self.cosine)
+            .plus(&self.along.scaled(&self.sine))
+    }
+
+    /// The direction square to the narrow axis and to `across`.
+    pub fn side_axis(&self) -> Vector3 {
+        self.along
+            .scaled(&self.cosine)
+            .minus(&self.axis.scaled(&self.sine))
+    }
+
+    /// For a rail's table, the direction from its cylinder's axis at angle zero,
+    /// and the way a growing angle turns it. `0` is the wide rail.
+    pub fn rail_zero(&self, rail: usize) -> [Vector3; 2] {
+        let facing = Real::from_i64(self.gap_sign);
+        match (self.ring, rail) {
+            (SaddleRing::Through, 0) => [
+                self.along.scaled(&Real::from_i64(self.branch)),
+                self.across.clone(),
+            ],
+            (SaddleRing::Through, _) => [self.across.clone(), self.side_axis()],
+            (SaddleRing::Overlap, 0) => [self.across.scaled(&facing), self.along.clone()],
+            (SaddleRing::Overlap, _) => [
+                self.across.scaled(&-&facing),
+                self.side_axis().scaled(&Real::from_i64(-1)),
+            ],
+        }
+    }
 }
 
 /// The exact law of a ball of radius `radius` resting on two nonparallel
@@ -424,6 +460,7 @@ impl RollingSaddleDefinition {
             sides: self.sides,
             branch: self.branch,
             ring: self.ring,
+            gap_sign: if self.gap_positive { 1 } else { -1 },
         }
     }
 

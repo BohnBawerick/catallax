@@ -3,9 +3,10 @@
 //! A rail keeps the carrier's chart parameter, so its cylinder sees an angle of
 //! the form `2 atan(f)`, which no polynomial represents exactly. The rail's
 //! height along its cylinder is a fitted cubic, so a table holds it exactly.
-//! The narrow rail's `f` is the chart's `s`, and the wide rail's is the fitted
-//! half-angle tangent. Each table is a piecewise cubic Hermite fit whose bound
-//! comes from an interval jet of the angle's slope.
+//! On a through ring the narrow rail's `f` is the chart's `s`, and on a loop it is
+//! a fitted half-angle tangent, as the wide rail's is on both. Each table is a
+//! piecewise cubic Hermite fit whose bound comes from an interval jet of the
+//! angle's slope.
 
 use super::*;
 use crate::ParameterTable;
@@ -48,17 +49,16 @@ impl RollingSaddle {
     /// direction toward `across`. The narrow angle is the law's `t`, from
     /// `across` toward the side axis, and it runs from `-pi/2` to `3 pi/2`. The
     /// height is the rail's station along that cylinder's axis, from the law's
-    /// origin on the wide axis and from `foot` on the narrow one. A rail the jet
-    /// cannot resolve within 2^12 pieces per span refuses.
+    /// origin on the wide axis and from `foot` on the narrow one. On a loop each
+    /// angle stays within a half turn of the side [`SaddleLaw::rail_zero`] names.
+    /// A rail the jet cannot resolve within 2^12 pieces per span refuses.
     pub fn parameter_table(
         &self,
         rail: usize,
         tolerance: &Rational,
         dec: &Decider,
     ) -> Result<ParameterTable, Refusal> {
-        if self.data.definition.ring != SaddleRing::Through {
-            return Err(invalid("a loop's rails have no parameter table yet"));
-        }
+        let looped = self.data.definition.ring == SaddleRing::Overlap;
         let bits = self.data.net.bits;
         let k = Constants::new(&self.data.definition, bits, dec)?;
         let nodes = &self.data.nodes;
@@ -66,6 +66,8 @@ impl RollingSaddle {
         let argument = |s: &Jet, pair: &[Node]| -> Result<Jet, Refusal> {
             if rail == 0 {
                 fitted(s, pair, HALF, bits)
+            } else if looped {
+                fitted(s, pair, TURNED, bits)
             } else {
                 Ok(Jet(s.0.clone()))
             }
@@ -114,7 +116,7 @@ impl RollingSaddle {
                     let s = Jet::linear(b(&x, bits), k.one.clone());
                     let f = argument(&s, pair)?;
                     let mut value = &k.two * &f.0[0].atan_checked(dec)?;
-                    if rail == 1 {
+                    if rail == 1 && !looped {
                         value = value + turn.clone();
                     }
                     let slope = turning(&f, &k)?;

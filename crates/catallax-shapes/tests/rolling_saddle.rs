@@ -730,9 +730,8 @@ fn a_rail_table_reads_the_rail_on_its_cylinder() {
         let origin = g(saddle.definition().origin());
         let foot = g(&law.foot);
         let [across, along, axis] = [f(&law.across), f(&law.along), f(&law.axis)];
-        let (cos, sin) = (n(&law.cosine), n(&law.sine));
-        let side = add(add([0.0; 3], along, cos), axis, -sin);
-        let narrow = add(add([0.0; 3], axis, cos), along, sin);
+        let side = f(&law.side_axis());
+        let narrow = f(&law.narrow_axis());
         let branch = law.branch as f64;
         for rail in 0..2 {
             let table = saddle.parameter_table(rail, &tolerance, &dec).unwrap();
@@ -1009,6 +1008,137 @@ fn an_overlap_refuses_a_ring_that_passes_through() {
         )
         .unwrap_err();
         assert_eq!(error.code, "shapes.rolling-saddle");
+    }
+}
+
+#[test]
+fn a_line_meets_a_loop_where_a_triangulation_says() {
+    for index in 0..overlap_cases().len() {
+        check_lines(&overlap(index));
+    }
+}
+
+#[test]
+fn a_loops_rails_answer_incidence_normals_and_sides() {
+    let case = &overlap_cases()[0];
+    let fitted = overlap(0);
+    let mut dec = decider();
+    let support = SplineSupport::from(fitted.clone());
+    let [wide, narrow] = fitted.rails();
+    let at = narrow.point_at(&real("1/2"), &mut dec).unwrap();
+    assert!(fitted.on_boundary(&at, &mut dec).unwrap());
+    let normal = fitted.normal_at(&at, &mut dec).unwrap();
+    assert!(zero(&normal.dot(&case.narrow.axis), &mut dec));
+    let [centre, ..] = fitted.definition().section(&q("1/2")).unwrap();
+    assert!(!fitted.on_boundary(&centre, &mut dec).unwrap());
+    let wide_at = wide.point_at(&real("2"), &mut dec).unwrap();
+    assert_eq!(fitted.side_at(&wide_at, &mut dec).unwrap(), Sign::Zero);
+    assert_eq!(fitted.side_at(&centre, &mut dec).unwrap(), Sign::Positive);
+    assert!(
+        support
+            .misses_point(&point(["100", "0", "0"]), &mut dec)
+            .unwrap()
+    );
+}
+
+#[test]
+fn a_loops_display_grid_and_range_hold_the_carrier() {
+    for index in [0, 2] {
+        let fitted = overlap(index);
+        let dec = decider();
+        let chord = q("1/100");
+        let grid = fitted.display_grid(&chord, 4_000_000, &dec).unwrap();
+        assert!(grid.chord <= chord);
+        let reach = grid.chord.to_f64_nearest();
+        let at = |column: usize, row: usize| -> V {
+            let p = &grid.points[column * grid.rows + row];
+            std::array::from_fn(|i| p[i].mid().to_f64_nearest())
+        };
+        for i in 0..200 {
+            let (x, y) = (0.137 + 0.618 * f64::from(i), 0.291 + 0.414 * f64::from(i));
+            let (column, row) = (
+                (x % (grid.columns - 1) as f64),
+                (y % (grid.rows - 1) as f64),
+            );
+            let (c, r) = (column.floor() as usize, row.floor() as usize);
+            let (s, t) = (column - c as f64, row - r as f64);
+            let u = -1.0 + 4.0 * column / (grid.columns - 1) as f64;
+            let v = row / (grid.rows - 1) as f64;
+            let on = sample(fitted.carrier(), u, v, &dec);
+            let near = add(
+                add([0.0; 3], at(c, r), (1.0 - s) * (1.0 - t)),
+                at(c + 1, r),
+                s * (1.0 - t),
+            );
+            let near = add(
+                add(near, at(c, r + 1), (1.0 - s) * t),
+                at(c + 1, r + 1),
+                s * t,
+            );
+            assert!(norm(sub(on, near)) <= reach, "{u} {v}");
+        }
+        for row in 0..grid.rows {
+            let first = &grid.points[row];
+            let last = &grid.points[(grid.columns - 1) * grid.rows + row];
+            for k in 0..3 {
+                assert!((&first[k].mid() - &last[k].mid()).abs() < q("1/1000000000"));
+            }
+        }
+        let width = q("1/1000000");
+        for axis in 0..3 {
+            let [[low, low_top], [high_low, high]] = fitted.range(axis, &width, &dec).unwrap();
+            assert!(&low_top - &low <= width && &high - &high_low <= width);
+            let values = grid.points.iter().map(|p| p[axis].mid());
+            let (mut small, mut large) = (None::<Rational>, None::<Rational>);
+            for value in values {
+                small = Some(small.map_or(value.clone(), |v| v.min(value.clone())));
+                large = Some(large.map_or(value.clone(), |v| v.max(value)));
+            }
+            let [small, large] = [small.unwrap(), large.unwrap()];
+            assert!(low <= small && large <= high, "axis {axis}");
+            assert!(
+                &small - &low_top <= chord && &high_low - &large <= chord,
+                "axis {axis}"
+            );
+        }
+    }
+}
+
+// A table's angle and height, turned back into a point from the law alone.
+#[test]
+fn a_loops_rail_tables_read_the_rails_on_their_cylinders() {
+    let tolerance = q("1/1000000000");
+    let dec = decider();
+    for index in 0..overlap_cases().len() {
+        let saddle = overlap(index);
+        let definition = saddle.definition();
+        let law = definition.law();
+        let foot = [g(definition.origin()), g(&law.foot)];
+        let axes = [f(&law.axis), f(&law.narrow_axis())];
+        let radii = [n(&law.wide), n(&law.narrow)];
+        for rail in 0..2 {
+            let [zero, turning] = law.rail_zero(rail).map(|v| f(&v));
+            let table = saddle.parameter_table(rail, &tolerance, &dec).unwrap();
+            assert!(table.bound <= tolerance);
+            for span in (0..table.knots.len() - 1).step_by(11) {
+                let [lo, hi] = [
+                    rational(&table.knots[span]),
+                    rational(&table.knots[span + 1]),
+                ];
+                let (share, width) = (0.3, hi - lo);
+                let angle = cubic([&table.angle[span], &table.angle[span + 1]], width, share);
+                let height = cubic([&table.height[span], &table.height[span + 1]], width, share);
+                assert!(angle.abs() < std::f64::consts::PI);
+                let at = add(foot[rail], axes[rail], height);
+                let found = add(
+                    add(at, zero, radii[rail] * angle.cos()),
+                    turning,
+                    radii[rail] * angle.sin(),
+                );
+                let seen = sample(saddle.carrier(), lo + share * width, rail as f64, &dec);
+                assert!(norm(sub(found, seen)) < 2e-8, "{index} {rail} {span}");
+            }
+        }
     }
 }
 

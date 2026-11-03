@@ -4,8 +4,8 @@ use catallax_numbers::{Decider, OperationSpan, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Origin, StepId};
 use catallax_shapes::{
     BallSide, Circle, Curve, Cylinder, Ellipse, Isometry, Line, Plane, Point3, RollingPipe,
-    RollingSaddle, RollingSaddleDefinition, Sphere, SplineSupport, Surface, Torus, TorusSheet,
-    Vector3,
+    RollingSaddle, RollingSaddleDefinition, RollingTorus, Sphere, SplineSupport, Surface, Torus,
+    TorusSheet, Vector3,
 };
 
 use crate::profile::sign;
@@ -119,10 +119,11 @@ fn normal(v: &Vector3, same: bool) -> Vector3 {
 
 impl FilletDefinition {
     /// Reduces plane-plane, parallel-cylinder and cylinder-plane generator
-    /// contacts to an exact cylinder, perpendicular plane-cylinder rings to an
-    /// exact torus, or to an exact sphere when the ball is as wide as the
-    /// cylinder, and oblique plane-cylinder ellipses to an exact rational
-    /// band. This does not publish a solid.
+    /// contacts to an exact cylinder, perpendicular plane-cylinder rings and
+    /// other circles where two surfaces of revolution about one axis meet to
+    /// an exact torus, a plane-cylinder ring to an exact sphere when the ball
+    /// is as wide as the cylinder, and oblique plane-cylinder ellipses to an
+    /// exact rational band. This does not publish a solid.
     pub fn new(
         origin: Origin,
         supports: [Surface; 2],
@@ -227,9 +228,12 @@ impl FilletDefinition {
             (Surface::Cylinder(a), Surface::Cylinder(b), Curve::Line(e)) => {
                 parallel::cylinders(a, b, e, same_sense, &radius, &k, &origin.step, dec)?
             }
+            (a, b, Curve::Circle(e)) => {
+                coaxial([a, b], e, same_sense, &radius, convex, &origin.step, dec)?
+            }
             _ => {
                 return Err(bad(
-                    "fillets need a line between planes, parallel cylinders or a cylinder and a parallel plane, or a plane section of a cylinder",
+                    "fillets need a line between planes, parallel cylinders or a cylinder and a parallel plane, a plane section of a cylinder, or a circle where two surfaces of revolution about one axis meet",
                 ));
             }
         };
@@ -569,6 +573,49 @@ fn ball_side(same_sense: bool, convex: bool) -> BallSide {
     } else {
         BallSide::Outside
     }
+}
+
+/// The exact torus of a circle where two surfaces of revolution about its axis
+/// meet, other than a plane and a cylinder. Contacts keep the edge's direction.
+fn coaxial(
+    supports: [&Surface; 2],
+    edge: &Circle,
+    same: [bool; 2],
+    radius: &Real,
+    convex: bool,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<(Surface, [Curve; 2]), Refusal> {
+    // The law builds its carrier's sections along with its contacts.
+    let contact_span = OperationSpan::begin("brep", step, "fillet.contact", dec);
+    let sides = same.map(|same| ball_side(same, convex));
+    let torus = match RollingTorus::new(supports, sides, edge, radius, dec) {
+        Ok(torus) => torus,
+        Err(refusal) if refusal.code == "shapes.rolling-torus-edge" => {
+            return Err(Refusal::new("fillet.invalid-edge", refusal.detail));
+        }
+        Err(refusal) if refusal.code == "shapes.rolling-torus" => {
+            let Some(limit) = RollingTorus::radius_limit(supports, sides, edge, dec)? else {
+                return Err(bad(&refusal.detail));
+            };
+            return Err(match sign(&(radius - &limit), dec)? {
+                Sign::Positive => too_large(
+                    "no ball of this radius rolls along the edge against both faces",
+                    Some(&limit),
+                    dec,
+                ),
+                Sign::Zero => too_large(
+                    "the ball reaches this edge's regular contact limit",
+                    Some(&limit),
+                    dec,
+                ),
+                Sign::Negative => bad(&refusal.detail),
+            });
+        }
+        Err(refusal) => return Err(refusal),
+    };
+    contact_span.finish(dec, None, None);
+    Ok((torus.surface, torus.contacts.map(Curve::Circle)))
 }
 
 #[allow(clippy::too_many_arguments)]

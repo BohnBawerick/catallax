@@ -1,6 +1,6 @@
 //! Exact setback contacts and ruled carriers for elementary bevels.
 
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Ball, Decider, Rational, Real, RealPoly, Refusal, Sign};
 use catallax_recipe::Origin;
 use catallax_shapes::{
     Circle, Cone, Curve, Cylinder, Isometry, Line, Plane, Point3, Surface, Vector3,
@@ -208,17 +208,10 @@ impl ChamferDefinition {
         let Some(polynomial) = surface.implicit() else {
             return Ok(false);
         };
-        let mut value = Ball::from_rational(&Rational::zero(), 128);
-        for (monomial, coefficient) in polynomial.terms() {
-            let mut term = dec.enclose_budgeted_at(&coefficient, 128)?;
-            for (exponent, coordinate) in monomial.exponents().iter().zip(&bounds) {
-                if *exponent != 0 {
-                    term = &term * &coordinate.pow_u32(*exponent);
-                }
-            }
-            value = &value + &term;
+        if signed_on(&polynomial, &bounds, dec)? {
+            return Ok(true);
         }
-        Ok(value.lo().sign() == Sign::Positive || value.hi().sign() == Sign::Negative)
+        separated_in_cells(&polynomial, &bounds, dec)
     }
 
     /// Conservative box of the entire swept affected region, including its
@@ -323,6 +316,85 @@ impl ChamferDefinition {
                 || sign(&(&al - &bh), dec)? == Sign::Positive,
         )
     }
+}
+
+/// Most cells one support separation may evaluate after the whole box fails.
+/// Each cell encloses at most one coefficient per monomial of the support's
+/// equation, so a quartic torus costs at most 64 * 35 enclosures.
+const SEPARATION_CELLS: usize = 64;
+
+/// Whether the expanded equation, evaluated monomial by monomial over the
+/// box, has a strict sign. A strict sign proves that the box misses the zero set.
+fn signed_on(polynomial: &RealPoly, bounds: &[Ball], dec: &mut Decider) -> Result<bool, Refusal> {
+    let mut value = Ball::from_rational(&Rational::zero(), 128);
+    for (monomial, coefficient) in polynomial.terms() {
+        let mut term = dec.enclose_budgeted_at(&coefficient, 128)?;
+        for (exponent, coordinate) in monomial.exponents().iter().zip(bounds) {
+            if *exponent != 0 {
+                term = &term * &coordinate.pow_u32(*exponent);
+            }
+        }
+        value = &value + &term;
+    }
+    Ok(value.lo().sign() == Sign::Positive || value.hi().sign() == Sign::Negative)
+}
+
+/// Proves that a box misses a zero set when the whole-box evaluation cannot.
+///
+/// Far from the coordinate origin, the monomials of an equation such as a
+/// torus's are large and cancel, and their separate ranges add up past zero.
+/// Each cell re-expands the equation about its own centre, where the terms
+/// are small, and a cell that still has no strict sign is halved across its
+/// widest side. Every cell's sign is proved, the cells cover the box, and
+/// after [`SEPARATION_CELLS`] cells the proof gives up, conservatively.
+fn separated_in_cells(
+    polynomial: &RealPoly,
+    bounds: &[Ball; 3],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let nvars = polynomial.nvars();
+    if nvars != 3 {
+        return Ok(false);
+    }
+    let two = Rational::from_i64(2);
+    let mut cells = vec![bounds.each_ref().map(|b| (b.lo(), b.hi()))];
+    let mut evaluated = 0;
+    while let Some(cell) = cells.pop() {
+        if evaluated == SEPARATION_CELLS {
+            return Ok(false);
+        }
+        evaluated += 1;
+        let mut centred = polynomial.clone();
+        let mut offsets = Vec::with_capacity(3);
+        for (i, (lo, hi)) in cell.iter().enumerate() {
+            let centre = &(lo + hi) / &two;
+            let shift = RealPoly::var(nvars, i) + RealPoly::constant(nvars, Real::from(centre));
+            centred = centred.substitute(i, &shift);
+            let radius = &(hi - lo) / &two;
+            offsets.push(
+                Ball::from_rational(&-radius.clone(), 128).hull(&Ball::from_rational(&radius, 128)),
+            );
+        }
+        if signed_on(&centred, &offsets, dec)? {
+            continue;
+        }
+        let widths = cell.each_ref().map(|(lo, hi)| hi - lo);
+        let mut widest = 0;
+        for i in 1..3 {
+            if widths[i] > widths[widest] {
+                widest = i;
+            }
+        }
+        let (lo, hi) = &cell[widest];
+        let middle = &(lo + hi) / &two;
+        let mut lower = cell.clone();
+        lower[widest].1 = middle.clone();
+        let mut upper = cell;
+        upper[widest].0 = middle;
+        cells.push(upper);
+        cells.push(lower);
+    }
+    Ok(true)
 }
 
 fn circular(

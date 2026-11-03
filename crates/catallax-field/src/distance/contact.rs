@@ -457,6 +457,11 @@ impl Plan {
             if self.leaf_registers[i].is_none() {
                 continue;
             }
+            if matches!(leaf.location(&p, dec)?, Location::Inside | Location::Outside) {
+                // Strict native sector/cone membership is locally constant;
+                // zero carrier extensions cannot supply an active contact.
+                continue;
+            }
             for constraint in leaf.constraints() {
                 dec.check_deadline()?;
                 if crate::polynomial_sign(&constraint.polynomial, &p, dec)? != Sign::Zero {

@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use catallax_features::{
-    cylinder_skin::CylinderSkin,
     draft::arrangement::{Patch, Skin},
     polyhedron::{ConvexCell, PlaneFace},
 };
@@ -150,8 +149,41 @@ fn tube_leaf(plan: &mut Plan, mut tube: Skin, bound: &Rational, dec: &mut Decide
     Ok(result)
 }
 
+struct EdgeIncident {
+    face: usize,
+    outward: Vector3,
+}
+
+struct VertexIncident {
+    face: usize,
+    toward: Option<[Vector3; 2]>,
+}
+
+fn region_leaf(
+    plan: &mut Plan,
+    surface: Surface,
+    origins: Vec<Origin>,
+    planes: Vec<Plane>,
+    bound: &Rational,
+    dec: &mut Decider,
+) -> Result<usize, Refusal> {
+    let faces = origins.into_iter()
+        .map(|origin| geometry::face(surface.clone(), origin, dec))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut surfaces = Vec::with_capacity(planes.len() + 1);
+    surfaces.push(surface);
+    for mut plane in planes {
+        cache_plane_rationals(&mut plane, dec)?;
+        surfaces.push(Surface::Plane(plane));
+    }
+    plan.leaf(
+        geometry::Leaf::Cell(geometry::Cell::new(surfaces, Some(bound.clone()))?),
+        faces, dec,
+    )
+}
+
 struct Vertex {
-    faces: Vec<usize>,
+    faces: Vec<VertexIncident>,
     kept: bool,
     convex: bool,
 }
@@ -174,7 +206,7 @@ impl Plan {
         let bound = &source_bound + thickness;
         let thickness = Real::from(thickness.clone());
         let mut walls = 0;
-        let mut edges: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
+        let mut edges: BTreeMap<(usize, usize), Vec<EdgeIncident>> = BTreeMap::new();
         let mut vertices: BTreeMap<usize, Vertex> = BTreeMap::new();
         for (face, patch) in skin.patches.iter().enumerate() {
             let kept = !selected.contains(&face);
@@ -186,22 +218,28 @@ impl Plan {
                 for i in 0..cycle.len() {
                     let a = cycle[i];
                     let b = cycle[(i + 1) % cycle.len()];
-                    edges.entry((a.min(b), a.max(b))).or_default().push(face);
+                    let outgoing = skin.vertices[b].minus(&skin.vertices[a]);
+                    edges.entry((a.min(b), a.max(b))).or_default().push(EdgeIncident {
+                        face,
+                        outward: outgoing.cross(&patch.plane.normal),
+                    });
                     let vertex = vertices.entry(a).or_insert_with(|| Vertex {
                         faces: Vec::new(), kept: false, convex: true,
                     });
-                    vertex.faces.push(face);
-                    if kept {
+                    let toward = if kept {
                         vertex.kept = true;
+                        let previous = cycle[(i + cycle.len() - 1) % cycle.len()];
+                        let incoming = skin.vertices[a].minus(&skin.vertices[previous]);
                         if vertex.convex {
-                            let previous = cycle[(i + cycle.len() - 1) % cycle.len()];
-                            let incoming = skin.vertices[a].minus(&skin.vertices[previous]);
-                            let outgoing = skin.vertices[b].minus(&skin.vertices[a]);
                             vertex.convex = geometry::sign(
                                 &incoming.cross(&outgoing).dot(&patch.plane.normal), dec,
                             )? == Sign::Positive;
                         }
-                    }
+                        Some([incoming.scaled(&Real::from_i64(-1)), outgoing])
+                    } else {
+                        None
+                    };
+                    vertex.faces.push(VertexIncident { face, toward });
                 }
             }
         }
@@ -209,30 +247,47 @@ impl Plan {
             let [first, second] = incident.as_slice() else {
                 return Err(bad("a physical planar edge needs two incident source faces"));
             };
-            if selected.contains(first) && selected.contains(second) {
+            if selected.contains(&first.face) && selected.contains(&second.face) {
                 continue;
             }
             let mut origins = Vec::with_capacity(
-                skin.patches[*first].origins.len() * skin.patches[*second].origins.len(),
+                skin.patches[first.face].origins.len() * skin.patches[second.face].origins.len(),
             );
-            for a in &skin.patches[*first].origins {
-                for b in &skin.patches[*second].origins {
+            for a in &skin.patches[first.face].origins {
+                for b in &skin.patches[second.face].origins {
                     let edge = EdgeName::new(a.clone(), b.clone()).map_err(|error| bad(&error.to_string()))?;
                     origins.push(Origin { step: step.clone(), role: Role::Round { edge } });
                 }
             }
             let ends = [skin.vertices[a].clone(), skin.vertices[b].clone()];
+            let axis = ends[1].minus(&ends[0]);
+            let reference = &skin.patches[first.face].plane.normal;
+            let mut planes = Vec::with_capacity(incident.len() + 2);
+            planes.push(Plane {
+                origin: ends[0].clone(),
+                normal: axis.scaled(&Real::from_i64(-1)),
+                ref_dir: reference.clone(),
+            });
+            planes.push(Plane {
+                origin: ends[1].clone(), normal: axis.clone(), ref_dir: reference.clone(),
+            });
+            for face in incident.iter().filter(|face| !selected.contains(&face.face)) {
+                // These planes bound the angular nearest-edge sector. At reflex
+                // edges the finite-face conormals select the opposite quadrant.
+                planes.push(Plane {
+                    origin: ends[0].clone(),
+                    normal: face.outward.scaled(&Real::from_i64(-1)),
+                    ref_dir: axis.clone(),
+                });
+            }
             let mut cylinder = Cylinder::new(
-                ends[0].clone(), ends[1].minus(&ends[0]), thickness.clone(),
-                skin.patches[*first].plane.normal.clone(), dec,
+                ends[0].clone(), axis, thickness.clone(), reference.clone(), dec,
             )?;
             cache_point_rationals(&mut cylinder.origin, dec)?;
             cache_vector_rationals(&mut cylinder.axis, dec)?;
             cache_vector_rationals(&mut cylinder.ref_dir, dec)?;
             cache_rational(&mut cylinder.radius_sq, dec)?;
-            let part = self.cylinder_leaf(CylinderSkin {
-                cylinder, ends, origins: [Vec::new(), Vec::new(), origins],
-            }, &bound, dec)?;
+            let part = region_leaf(self, Surface::Cylinder(cylinder), origins, planes, &bound, dec)?;
             walls = self.boolean(BooleanKind::Union, walls, part, dec)?;
         }
         for (index, vertex) in vertices {
@@ -242,11 +297,11 @@ impl Plan {
                 continue;
             }
             let mut origins: Vec<_> = vertex.faces.iter()
-                .flat_map(|face| skin.patches[*face].origins.iter().cloned()).collect();
+                .flat_map(|face| skin.patches[face.face].origins.iter().cloned()).collect();
             origins.sort();
             origins.dedup();
             let name = VertexName::new(origins).map_err(|error| bad(&error.to_string()))?;
-            let frame = &skin.patches[vertex.faces[0]].plane;
+            let frame = &skin.patches[vertex.faces[0].face].plane;
             let mut sphere = Sphere::new(
                 skin.vertices[index].clone(), thickness.clone(),
                 frame.normal.clone(), frame.ref_dir.clone(), dec,
@@ -255,9 +310,22 @@ impl Plan {
             cache_vector_rationals(&mut sphere.axis, dec)?;
             cache_vector_rationals(&mut sphere.ref_dir, dec)?;
             cache_rational(&mut sphere.radius, dec)?;
-            let part = self.radial_leaf(Surface::Sphere(sphere), vec![Origin {
+            let mut planes = Vec::with_capacity(vertex.faces.len() * 2);
+            for face in vertex.faces {
+                if let Some(toward) = face.toward {
+                    // The polar cone of the kept finite-face tangent directions
+                    // is its vertex-nearest normal cone, including both sides.
+                    for normal in toward {
+                        planes.push(Plane {
+                            origin: skin.vertices[index].clone(), normal,
+                            ref_dir: skin.patches[face.face].plane.normal.clone(),
+                        });
+                    }
+                }
+            }
+            let part = region_leaf(self, Surface::Sphere(sphere), vec![Origin {
                 step: step.clone(), role: Role::RoundCorner { vertex: name },
-            }], &bound, dec)?;
+            }], planes, &bound, dec)?;
             walls = self.boolean(BooleanKind::Union, walls, part, dec)?;
         }
         self.boolean(BooleanKind::Intersect, node, walls, dec)
